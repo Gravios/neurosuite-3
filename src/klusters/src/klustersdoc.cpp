@@ -3988,6 +3988,49 @@ static bool swapSpkEntries(const QString& spkPath, long idxA0, long idxB0,
     return true;
 }
 
+// Parse the realign argument string, overriding the caller-supplied defaults.
+// Phase-0 decomposition: lifted verbatim out of realignSpikes.  Pure -- it
+// touches no member or document state, only the argv-style token list and the
+// out-parameters, so it is a free function in this TU (no header change).
+static void parseRealignArgs(const QString& args,
+                             int& maxShift, float& minScore, int& nIter,
+                             int& nTopChan, bool& pcaRefine, bool& rmsRecenter,
+                             float& rMin)
+{
+    const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    for (qsizetype ti = 0; ti < tokens.size(); ++ti) {
+        const QString& tok = tokens[ti];
+        if ((tok == QStringLiteral("--threshold") || tok == QStringLiteral("-t"))
+                && ti + 1 < tokens.size()) {
+            bool ok2; float v = tokens[++ti].toFloat(&ok2);
+            if (ok2 && v > 0.0f && v <= 1.0f) minScore = v;
+        } else if ((tok == QStringLiteral("--iterations") || tok == QStringLiteral("-i"))
+                && ti + 1 < tokens.size()) {
+            bool ok2; int v = tokens[++ti].toInt(&ok2);
+            if (ok2 && v >= 1 && v <= 20) nIter = v;
+        } else if ((tok == QStringLiteral("--maxshift") || tok == QStringLiteral("-m"))
+                && ti + 1 < tokens.size()) {
+            bool ok2; int v = tokens[++ti].toInt(&ok2);
+            if (ok2 && v >= 1) maxShift = v;
+        } else if ((tok == QStringLiteral("--topchannels") || tok == QStringLiteral("-k"))
+                && ti + 1 < tokens.size()) {
+            bool ok2; int v = tokens[++ti].toInt(&ok2);
+            if (ok2 && v >= 0) nTopChan = v;
+        } else if (tok == QStringLiteral("--pca-refine") ||
+                   tok == QStringLiteral("-p")) {
+            // patch82 — no value, just a boolean flag.
+            pcaRefine = true;
+        } else if (tok == QStringLiteral("--recenter-rms")) {
+            // RMS circular group-recenter — no value, boolean flag.
+            rmsRecenter = true;
+        } else if (tok == QStringLiteral("--rmin")
+                && ti + 1 < tokens.size()) {
+            bool ok2; float v = tokens[++ti].toFloat(&ok2);
+            if (ok2 && v >= 0.0f && v <= 1.0f) rMin = v;
+        }
+    }
+}
+
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
@@ -4073,40 +4116,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     bool  pcaRefine = false;   // patch82: second-pass PCA-energy-max alignment
     bool  rmsRecenter = false; // post-alignment RMS circular group-recenter
     float rMin        = 0.4f;  // min mean-resultant-length to trust the centroid
-    {
-        const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        for (qsizetype ti = 0; ti < tokens.size(); ++ti) {
-            const QString& tok = tokens[ti];
-            if ((tok == QStringLiteral("--threshold") || tok == QStringLiteral("-t"))
-                    && ti + 1 < tokens.size()) {
-                bool ok2; float v = tokens[++ti].toFloat(&ok2);
-                if (ok2 && v > 0.0f && v <= 1.0f) minScore = v;
-            } else if ((tok == QStringLiteral("--iterations") || tok == QStringLiteral("-i"))
-                    && ti + 1 < tokens.size()) {
-                bool ok2; int v = tokens[++ti].toInt(&ok2);
-                if (ok2 && v >= 1 && v <= 20) nIter = v;
-            } else if ((tok == QStringLiteral("--maxshift") || tok == QStringLiteral("-m"))
-                    && ti + 1 < tokens.size()) {
-                bool ok2; int v = tokens[++ti].toInt(&ok2);
-                if (ok2 && v >= 1) maxShift = v;
-            } else if ((tok == QStringLiteral("--topchannels") || tok == QStringLiteral("-k"))
-                    && ti + 1 < tokens.size()) {
-                bool ok2; int v = tokens[++ti].toInt(&ok2);
-                if (ok2 && v >= 0) nTopChan = v;
-            } else if (tok == QStringLiteral("--pca-refine") ||
-                       tok == QStringLiteral("-p")) {
-                // patch82 — no value, just a boolean flag.
-                pcaRefine = true;
-            } else if (tok == QStringLiteral("--recenter-rms")) {
-                // RMS circular group-recenter — no value, boolean flag.
-                rmsRecenter = true;
-            } else if (tok == QStringLiteral("--rmin")
-                    && ti + 1 < tokens.size()) {
-                bool ok2; float v = tokens[++ti].toFloat(&ok2);
-                if (ok2 && v >= 0.0f && v <= 1.0f) rMin = v;
-            }
-        }
-    }
+    parseRealignArgs(args, maxShift, minScore, nIter, nTopChan,
+                     pcaRefine, rmsRecenter, rMin);
 
     const QString dir   = documentDirectory();
     const QString base  = documentBaseName();
