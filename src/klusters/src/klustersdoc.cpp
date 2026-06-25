@@ -4031,6 +4031,75 @@ static void parseRealignArgs(const QString& args,
     }
 }
 
+// Phase-0 decomposition of realignSpikes: optional post-alignment RMS circular
+// group-recenter (--recenter-rms).  Lifted verbatim out of realignSpikes; it
+// touches no member state -- it transforms the in-memory waveform buffer and
+// shift bookkeeping in place and logs through the caller-supplied stream and
+// flush -- so it is a free function in this TU (no header change).
+static void realignRmsRecenter(std::vector<int16_t>& wavBuf,
+                               std::vector<int>& cumShift, int& nShifted,
+                               int64_t N, int nChan, int nSamp,
+                               size_t spkElems, int peakSamp0, float rMin,
+                               QTextStream& log,
+                               const std::function<void()>& emitFlush)
+{
+    // Per-sample energy across the group, summed over all channels.
+    std::vector<double> energy(static_cast<size_t>(nSamp), 0.0);
+    for (int64_t i = 0; i < N; ++i) {
+        const int16_t* w = wavBuf.data()
+            + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+        for (int ch = 0; ch < nChan; ++ch) {
+            const int16_t* wc = w + ch * nSamp;
+            for (int t = 0; t < nSamp; ++t) {
+                const double v = static_cast<double>(wc[t]);
+                energy[static_cast<size_t>(t)] += v * v;
+            }
+        }
+    }
+
+    // Circular weighted mean of the energy profile (shared math).
+    const realign_center::RecenterResult rc =
+        realign_center::circularRecenterShift(energy.data(), nSamp,
+                                              peakSamp0, rMin);
+
+    if (!rc.applied) {
+        log << "RMS recenter: R=" << QString::number(rc.R, 'f', 3)
+            << " < rmin=" << QString::number(rMin, 'f', 2)
+            << " (energy not single-lobed) — recenter skipped.\n";
+        emitFlush();
+    } else {
+        const int dg = rc.shift;
+        if (dg != 0) {
+            std::vector<int16_t> tmp(spkElems);
+            for (int64_t i = 0; i < N; ++i) {
+                int16_t* w = wavBuf.data()
+                    + static_cast<ptrdiff_t>(i)
+                    * static_cast<ptrdiff_t>(spkElems);
+                for (int t = 0; t < nSamp; ++t) {
+                    const int src = (t + dg + nSamp) % nSamp;
+                    for (int ch = 0; ch < nChan; ++ch)
+                        tmp[static_cast<size_t>(ch * nSamp + t)] =
+                            w[static_cast<size_t>(ch * nSamp + src)];
+                }
+                std::copy(tmp.begin(), tmp.end(), w);
+                cumShift[static_cast<size_t>(i)] += dg;
+            }
+            // The uniform shift can move previously-unshifted spikes.
+            nShifted = 0;
+            for (int64_t i = 0; i < N; ++i)
+                if (cumShift[static_cast<size_t>(i)] != 0) ++nShifted;
+        }
+
+        log << "RMS recenter: centroid="
+            << QString::number(rc.centroid, 'f', 2)
+            << "  R=" << QString::number(rc.R, 'f', 3)
+            << "  group shift=" << dg << " sample(s)";
+        if (dg != 0) log << "  (now " << nShifted << " shifted)";
+        log << ".\n";
+        emitFlush();
+    }
+}
+
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
@@ -5104,63 +5173,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // circular roll of wavBuf only drives the diagnostics — the .spk content is
     // re-extracted linearly from .fil at clusterTs+cumShift, so the recenter is
     // measured circularly but realised as a clean unwrapped window.
-    if (rmsRecenter) {
-        // Per-sample energy across the group, summed over all channels.
-        std::vector<double> energy(static_cast<size_t>(nSamp), 0.0);
-        for (int64_t i = 0; i < N; ++i) {
-            const int16_t* w = wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            for (int ch = 0; ch < nChan; ++ch) {
-                const int16_t* wc = w + ch * nSamp;
-                for (int t = 0; t < nSamp; ++t) {
-                    const double v = static_cast<double>(wc[t]);
-                    energy[static_cast<size_t>(t)] += v * v;
-                }
-            }
-        }
-
-        // Circular weighted mean of the energy profile (shared math).
-        const realign_center::RecenterResult rc =
-            realign_center::circularRecenterShift(energy.data(), nSamp,
-                                                  peakSamp0, rMin);
-
-        if (!rc.applied) {
-            log << "RMS recenter: R=" << QString::number(rc.R, 'f', 3)
-                << " < rmin=" << QString::number(rMin, 'f', 2)
-                << " (energy not single-lobed) — recenter skipped.\n";
-            emitFlush();
-        } else {
-            const int dg = rc.shift;
-            if (dg != 0) {
-                std::vector<int16_t> tmp(spkElems);
-                for (int64_t i = 0; i < N; ++i) {
-                    int16_t* w = wavBuf.data()
-                        + static_cast<ptrdiff_t>(i)
-                        * static_cast<ptrdiff_t>(spkElems);
-                    for (int t = 0; t < nSamp; ++t) {
-                        const int src = (t + dg + nSamp) % nSamp;
-                        for (int ch = 0; ch < nChan; ++ch)
-                            tmp[static_cast<size_t>(ch * nSamp + t)] =
-                                w[static_cast<size_t>(ch * nSamp + src)];
-                    }
-                    std::copy(tmp.begin(), tmp.end(), w);
-                    cumShift[static_cast<size_t>(i)] += dg;
-                }
-                // The uniform shift can move previously-unshifted spikes.
-                nShifted = 0;
-                for (int64_t i = 0; i < N; ++i)
-                    if (cumShift[static_cast<size_t>(i)] != 0) ++nShifted;
-            }
-
-            log << "RMS recenter: centroid="
-                << QString::number(rc.centroid, 'f', 2)
-                << "  R=" << QString::number(rc.R, 'f', 3)
-                << "  group shift=" << dg << " sample(s)";
-            if (dg != 0) log << "  (now " << nShifted << " shifted)";
-            log << ".\n";
-            emitFlush();
-        }
-    }
+    if (rmsRecenter)
+        realignRmsRecenter(wavBuf, cumShift, nShifted, N, nChan, nSamp,
+                           spkElems, peakSamp0, rMin, log, emitFlush);
 
     // -----------------------------------------------------------------------
     // Score / shift statistics
