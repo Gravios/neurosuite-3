@@ -2741,17 +2741,19 @@ void KlustersApp::runUndoOrRedo(void (KlustersDoc::*op)(),
 
 void KlustersApp::slotUndo()
 {
-    runUndoOrRedo(&KlustersDoc::undo,  tr("Reverting last action..."));
+    runUndoOrRedo(&KlustersDoc::undoDispatch,  tr("Reverting last action..."));
 }
 
 void KlustersApp::slotRedo()
 {
-    runUndoOrRedo(&KlustersDoc::redo,  tr("Reverting last undo action..."));
+    runUndoOrRedo(&KlustersDoc::redoDispatch,  tr("Reverting last undo action..."));
 }
 
 void KlustersApp::slotUpdateUndoNb(int undoNb){
     currentNbUndo = undoNb;
-    if(currentNbUndo > 0) {
+    // Unified undo: the main Undo is live when EITHER the parent or the atom
+    // timeline still has an entry to revert.
+    if(currentNbUndo > 0 || (doc && doc->childUndoCount() > 0)) {
         slotStateChanged("undoState");
     }
     else {
@@ -2761,7 +2763,9 @@ void KlustersApp::slotUpdateUndoNb(int undoNb){
 
 void KlustersApp::slotUpdateRedoNb(int redoNb){
     currentNbRedo = redoNb;
-    if(currentNbRedo == 0) {
+    // Only disable Redo when BOTH timelines are exhausted (undoState/emptyUndoState
+    // keep mRedo enabled while either has redo).
+    if(currentNbRedo == 0 && !(doc && doc->childRedoCount() > 0)) {
         slotStateChanged("emptyRedoState");
     }
 }
@@ -3464,14 +3468,14 @@ void KlustersApp::slotUndoChildEdit(){
         statusBar()->showMessage(
             tr("Note: your most recent action was a fiber-layer edit (use Ctrl+Z). "
                "Ctrl+Shift+Z is reverting an earlier child-layer edit."), 7000);
-    doc->undoChildEdit(*activeView());
+    doc->undoChildEditDispatch();
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
 }
 
 void KlustersApp::slotRedoChildEdit(){
     if(!doc || !activeView()) return;
-    doc->redoChildEdit(*activeView());
+    doc->redoChildEditDispatch();
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
 }
@@ -7247,7 +7251,7 @@ void KlustersApp::dipPostCommitUndo()
     if (doc) {
         slotStatusMsg(tr("Reverting DipSplit..."));
         QApplication::setOverrideCursor(Qt::WaitCursor);
-        doc->undo();
+        doc->undoDispatch();
         QApplication::restoreOverrideCursor();
         // Refresh traceView state same as slotUndo would.
         KlustersView* view = activeView();
