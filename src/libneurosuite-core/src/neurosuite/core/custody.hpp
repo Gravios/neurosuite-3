@@ -46,6 +46,7 @@ inline const char* kDefaultMethod() { return "standard"; }
 inline bool isPerGroupType(const std::string& type)
 {
     return type == "res" || type == "spk" || type == "clu" ||
+           type == "clc" ||                                  // microfiber / pure-shape children (writeClu format)
            type == "fet" || type == "pca" || type == "col" ||
            type == "model" || type == "klg";
 }
@@ -62,6 +63,16 @@ inline bool isSessionWideType(const std::string& type)
 inline bool isKnownType(const std::string& token)
 {
     return isPerGroupType(token) || isSessionWideType(token);
+}
+
+// Positional cluster-id files: .clu (fibers / general units) and .clc (their
+// microfiber pure-shape children) share the writeClu binary format (int32
+// nClusters header + per-spike int32 ids, aligned to .res) and are both loaded
+// as the cluster source.  The policy of which types ARE cluster-id files lives
+// here so no call site decides it by hand.
+inline bool isClusterIdType(const std::string& type)
+{
+    return type == "clu" || type == "clc";
 }
 
 inline Klass classify(const std::string& type)

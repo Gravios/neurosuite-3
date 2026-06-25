@@ -36,7 +36,7 @@ __all__ = [
 
 DEFAULT_METHOD = "standard"
 
-_PER_GROUP = {"res", "spk", "clu", "fet", "pca", "col", "model", "klg"}
+_PER_GROUP = {"res", "spk", "clu", "clc", "fet", "pca", "col", "model", "klg"}
 _SESSION_WIDE = {"fil", "dat", "xml", "yaml", "nrs", "par", "eeg", "lfp"}
 
 

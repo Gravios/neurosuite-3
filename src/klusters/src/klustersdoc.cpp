@@ -329,43 +329,24 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     if(fileParts.count() < 3)
         return INCORRECT_FILE;
 
-    // Parse the opened .clu anchor.  Chain-of-custody form is
-    // <base>.clu.<method>.<grp>; an optional non-integer suffix after the group
-    // (e.g. .clu.<method>.<grp>.drift / .bak / .merged) shifts the group index.
-    // Legacy untagged <base>.clu.<grp> is read as method=standard.  The method
-    // pins resolution of every sibling (.spk/.fet/.pca/.res).
-    QString sessionMethod = QStringLiteral("standard");
-    qsizetype groupIdx = fileParts.count() - 1;
-    {
-        bool lastIsInt = false;
-        (void)fileParts.last().toInt(&lastIsInt);
-        if (!lastIsInt && fileParts.count() >= 4) {
-            bool prevIsInt = false;
-            (void)fileParts[fileParts.count() - 2].toInt(&prevIsInt);
-            if (prevIsInt)
-                groupIdx = fileParts.count() - 2;   // last token is a post-group suffix
-        }
-        // Method token sits immediately before the group, unless that slot is
-        // the type token "clu" itself (legacy untagged name).
-        if (groupIdx >= 2 && fileParts[groupIdx - 1] != QLatin1String("clu"))
-            sessionMethod = fileParts[groupIdx - 1];
-    }
-
-    // baseName = everything up to the "clu" type token.  With a method tag the
-    // type token is at groupIdx-2; without it (legacy) at groupIdx-1.
-    QString anchorType;
-    {
-        const bool tagged = (sessionMethod != QLatin1String("standard"))
-                         || (groupIdx >= 2 && fileParts[groupIdx - 2] == QLatin1String("clu"));
-        const qsizetype typeIdx = tagged ? (groupIdx - 2) : (groupIdx - 1);
-        if (typeIdx >= 0 && typeIdx < fileParts.count())
-            anchorType = fileParts[typeIdx];          // "clu", "fet", ...
-        baseName = fileParts[0];
-        for (qsizetype i = 1; i < typeIdx; ++i)
-            baseName += "." + fileParts[i];
-    }
-
-    electrodeGroupID = fileParts[groupIdx];
+    // Parse the opened anchor through the shared custody policy -- the single
+    // implementation of <base>.<type>[.<method>].<grp>[.<suffix>] (handles a
+    // dotted base, an optional method tag, and a post-group suffix such as
+    // .drift / .merged / .microfiber).  The anchor type may be a cluster-id file
+    // (.clu fibers / .clc microfiber children) or a sibling the user opened to
+    // bootstrap clustering (.fet); its method pins resolution of every sibling
+    // (.spk/.fet/.pca/.res).  An untagged legacy name yields method="" which is
+    // read as "standard".
+    const neurosuite::custody::Anchor anchor =
+        neurosuite::custody::parseAnchor(fileName.toStdString());
+    if (!anchor.ok)
+        return INCORRECT_FILE;
+    const QString anchorType    = QString::fromStdString(anchor.type);
+    const QString sessionMethod = anchor.method.empty()
+                                      ? QStringLiteral("standard")
+                                      : QString::fromStdString(anchor.method);
+    baseName         = QString::fromStdString(anchor.base);
+    electrodeGroupID = QString::number(anchor.group);
 
     //Create the files url to open (baseName.spk.x,baseName.clu.x,baseName.fet.x,baseName.par.x,baseName.par and baseName.yaml)
 
@@ -374,14 +355,15 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
         "spk", electrodeGroupID, sessionMethod);
 
-    // cluFileUrl: if the .clu itself was opened, use it verbatim (this preserves
-    // a post-group suffix such as .merged).  Otherwise the user opened a sibling
-    // (e.g. the .fet, to bootstrap clustering before KlustaKwik), so resolve the
-    // .clu sibling — a missing .clu then falls through to the all-cluster-1
-    // default, instead of the opened file being mis-read as a cluster file
-    // (which scatters every spike into its own cluster).
+    // cluFileUrl: if a cluster-id file itself was opened (.clu fibers or .clc
+    // microfiber children -- same writeClu format), use it verbatim (this
+    // preserves a post-group suffix such as .merged / .microfiber).  Otherwise
+    // the user opened a sibling (e.g. the .fet, to bootstrap clustering before
+    // KlustaKwik), so resolve the .clu sibling -- a missing .clu then falls
+    // through to the all-cluster-1 default, instead of the opened file being
+    // mis-read as a cluster file (which scatters every spike into its own cluster).
     QString cluFileUrl =
-        (anchorType == QLatin1String("clu"))
+        neurosuite::custody::isClusterIdType(anchorType.toStdString())
             ? urlFileInfo.absoluteFilePath()
             : resolveFeature(urlFileInfo.absolutePath() + QDir::separator() + baseName,
                              "clu", electrodeGroupID, sessionMethod);
@@ -790,37 +772,20 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         QString fileName = docUrlFileInfo.fileName();
         const QStringList fileParts = fileName.split(".", Qt::SkipEmptyParts);
 
-        // Same scan-from-end parser as openDocument.  Chain-of-custody form is
-        // <base>.<type>.<method>.<grp>[.suffix]; the method token sits between
-        // the type token and the integer group.  A SaveAs to a tagged path
-        // (e.g. foo.clu.stderiv.8 or foo.clu.standard.8.stack) must update
-        // baseName / electrodeGroupID / saMethod / cluFileSuffix_ correctly.
-        static const QStringList kTypeTokens = {
-            QStringLiteral("clu"), QStringLiteral("fet"),
-            QStringLiteral("spk"), QStringLiteral("par"),
-        };
-        qsizetype typeIdx = -1;
-        for (qsizetype probe = 2; probe <= 5 && probe <= fileParts.count(); ++probe) {
-            const qsizetype idx = fileParts.count() - probe;
-            if (idx < 1) break;
-            if (kTypeTokens.contains(fileParts[idx])) { typeIdx = idx; break; }
-        }
-        if (typeIdx >= 0) {
-            baseName = fileParts.first();
-            for (qsizetype i = 1; i < typeIdx; ++i)
-                baseName += "." + fileParts.at(i);
-            // After the type token: [.<method>].<grp>[.<suffix>].
-            qsizetype grpIdx = typeIdx + 1;
-            bool nextIsInt = false;
-            (void)fileParts.at(typeIdx + 1).toInt(&nextIsInt);
-            if (!nextIsInt && typeIdx + 2 < fileParts.count()) {
-                saMethod = fileParts.at(typeIdx + 1);     // method token
-                grpIdx   = typeIdx + 2;
-            }
-            electrodeGroupID = fileParts.at(grpIdx);
-            cluFileSuffix_.clear();
-            for (qsizetype i = grpIdx + 1; i < fileParts.count(); ++i)
-                cluFileSuffix_ += QLatin1Char('.') + fileParts.at(i);
+        // Parse the SaveAs target through the shared custody policy -- the same
+        // <base>.<type>[.<method>].<grp>[.<suffix>] parser as openDocument, so a
+        // tagged path (foo.clu.stderiv.8, foo.clu.standard.8.stack, or a .clc
+        // child) updates baseName / electrodeGroupID / saMethod / cluFileSuffix_.
+        const neurosuite::custody::Anchor anchor =
+            neurosuite::custody::parseAnchor(fileName.toStdString());
+        if (anchor.ok) {
+            baseName         = QString::fromStdString(anchor.base);
+            if (!anchor.method.empty())
+                saMethod     = QString::fromStdString(anchor.method);
+            electrodeGroupID = QString::number(anchor.group);
+            cluFileSuffix_   = anchor.suffix.empty()
+                                   ? QString()
+                                   : QLatin1Char('.') + QString::fromStdString(anchor.suffix);
         } else {
             // Legacy fallback (unrecognised filename) — preserves old behaviour
             // so callers that don't pass a tagged form still work.
