@@ -281,6 +281,14 @@ private Q_SLOTS:
     * @param selectedClusters list of clusters which have been selected to be shown.
     */
     void slotUpdateShownClusters(const QList<int> &selectedClusters);
+    /** View-menu toggle: load (lazily) + show or hide the child (.clc) palette. */
+    void slotHierarchicalViewToggled(bool on);
+    /** Child palette selection changed: re-scope the views to the selected
+     *  child's spikes, or back to the parent unit when nothing is selected. */
+    void slotChildSelectionChanged(const QList<int>& childClusters);
+    /** Rebuild the child palette with the children of @p parents (no-op unless
+     *  hierarchical view is visible). */
+    void repopulateChildPalette(const QList<int>& parents);
     /**Groups the clusters contain in @p selectedClusters list and trigger the update of the displays.
     * @param selectedClusters list of clusters which have been selected to be grouped.
     */
@@ -706,6 +714,11 @@ private:
     /** ClusterPalette is the Widget containing the cluster list. Inititalized in initClusterPanel()
     */
     ClusterPalette* clusterPalette;
+    /** Hierarchical view: dock + palette listing the children (.clc microfibers)
+     *  of the unit(s) selected in the main palette.  Hidden until the View-menu
+     *  toggle (mHierarchicalView) enables it. */
+    QDockWidget* childPanel = nullptr;
+    ClusterPalette* childPalette = nullptr;
 
     /**
     * Represents the document on which the application works
@@ -739,6 +752,7 @@ private:
     QAction* newOverViewDisplay;
     QAction* newGroupingAssistantDisplay;
     //time-chunk curation actions (see slotChunkModeToggled)
+    QAction* mHierarchicalView = nullptr;   // View: toggle the child (.clc) palette
     QAction* mChunkMode;
     QAction* mNextChunk;
     QAction* mPrevChunk;

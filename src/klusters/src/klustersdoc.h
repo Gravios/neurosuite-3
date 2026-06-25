@@ -40,6 +40,7 @@
 
 #include <QList>
 #include <QSet>
+#include <QMap>
 #include <QFile>
 #include <QEvent>
 #include <QDebug>
@@ -159,12 +160,19 @@ public:
     /**Returns the reference on the list of ClusterColor objects.
     * @return ItemColors containing the information on the clusters and their associated color.
     */
-    ItemColors& clusterColors() const {return *clusterColorList;}
+    ItemColors& clusterColors() const {return *(activeColorList ? activeColorList : clusterColorList);}
 
     /**Returns a reference on data (object containing all the information).
     * @return data object.
     */
-    Data& data() const {return *clusteringData;}
+    /** The clustering the VIEWS currently render.  Normally the parent (.clu)
+     *  clustering; while a child (.clc microfiber) is selected in hierarchical
+     *  mode it is the child clustering, so every view re-scopes to that child's
+     *  spikes -- a strict subset of its parent (the nesting invariant).  Edit
+     *  and save paths must use parentData(), never data(). */
+    Data& data() const {return *(activeData ? activeData : clusteringData);}
+    /** The parent (.clu) clustering, regardless of the hierarchical active state. */
+    Data& parentData() const {return *clusteringData;}
 
     /**Manages the color change of a single cluster.
     * Called when the palette is in immediate-update mode (no need to press
@@ -224,6 +232,36 @@ public:
     void clearMask();
     /**True iff @p clusterId is currently masked.*/
     bool isMasked(int clusterId) const {return maskedClusters.contains(clusterId);}
+
+    // ── hierarchical (.clc child) clustering ─────────────────────────────────
+    // Optional second clustering: the microfiber / pure-shape children of the
+    // parent .clu units, loaded from the .clc sibling and aligned to the same
+    // .res.  Views render through data()/clusterColors(), which follow the
+    // active pair; pointing them at the child clustering re-scopes every view
+    // to a selected child's spikes.
+    /** True if a .clc child sibling was detected next to the opened .clu. */
+    bool hasChildSibling()    const { return !clcSiblingPath.isEmpty(); }
+    /** True once the child clustering has actually been loaded into memory. */
+    bool hasChildClustering() const { return childData != nullptr; }
+    /** Lazily build childData/childColorList + the parent<->child maps from the
+     *  .clc sibling.  No-op returning true if already loaded; false (with
+     *  errorInformation) if the sibling is missing or unreadable. */
+    bool loadChildClustering(QString& errorInformation);
+    /** Child ids whose parent is one of @p parents (sorted, unique). */
+    QList<int> childrenOf(const QList<int>& parents) const;
+    /** Parent unit id owning @p childId, or -1 if @p childId is not a child. */
+    int parentOfChild(int childId) const { return childToParent.value(childId,-1); }
+    /** Point the VIEW-facing data()/clusterColors() at the child (true) or the
+     *  parent (false) clustering.  Parent is the default and the only state in
+     *  which the document may be edited or saved. */
+    void setActiveClustering(bool child);
+    bool isChildClusteringActive() const { return childScopeActive; }
+    /** Restrict the child palette to @p visibleChildren; the rest are hidden via
+     *  isChildScopeHidden(), which ClusterPalette::updateClusterList honours. */
+    void setChildScope(const QList<int>& visibleChildren);
+    /** True for a child id outside the current child scope (palette filter);
+     *  always false for parent ids and when no child clustering is loaded. */
+    bool isChildScopeHidden(int clusterId) const;
     /**True iff any cluster is currently masked.*/
     bool hasMask() const {return !maskedClusters.isEmpty();}
     /**Currently masked cluster ids.*/
@@ -1210,6 +1248,22 @@ private:
 
     /** Class containing all the data for the clusters cuting.*/
     Data* clusteringData = nullptr;
+
+    // ── hierarchical (.clc) child clustering (optional; null unless loaded) ──
+    Data*       childData       = nullptr;   // second clustering read from the .clc sibling
+    ItemColors* childColorList  = nullptr;   // colours for the child clusters
+    Data*       activeData      = nullptr;   // VIEW-facing: == clusteringData, or childData
+    ItemColors* activeColorList = nullptr;   // parallels activeData
+    QString     clcSiblingPath;              // resolved .clc path ("" if none detected)
+    // sibling paths captured at open so the child clustering can be re-read lazily
+    QString     siblingFetPath, siblingSpkPath, siblingYamlPath;
+    long        siblingSpkFileLength = 0;
+    bool        siblingYamlForm = false;
+    QMap<int,QList<int>> parentToChildren;   // parent unit id -> its child ids
+    QMap<int,int>        childToParent;      // child id -> parent unit id
+    QSet<int>            childScopeVisible;  // children currently shown in the child palette
+    bool                 childScopeActive = false;  // true while a child is the shown clustering
+    void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 
     /**Pointer on the parent widget (main window).*/
     QWidget* parent;
