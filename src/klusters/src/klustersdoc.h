@@ -166,6 +166,14 @@ public:
      *  clustering and is never collapsed to noise by a left-over child-active
      *  scope (the active list is the child list while a child is selected). */
     ItemColors& parentClusterColors() const {return *clusterColorList;}
+    /** The CHILD cluster colours, independent of which clustering is active.
+     *  The child palette binds to this so its row->index lookups stay valid
+     *  even when no child is selected -- at which point the ACTIVE list is the
+     *  parent list, which is shorter than the child list, so indexing a child
+     *  row position into it would walk off the end.  Falls back to the parent
+     *  list when the hierarchy has not been loaded, so the reference is always
+     *  valid; the child palette has no items in that state anyway. */
+    ItemColors& childClusterColors() const {return *(childColorList ? childColorList : clusterColorList);}
 
     /**Returns a reference on data (object containing all the information).
     * @return data object.
