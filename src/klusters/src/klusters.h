@@ -293,6 +293,9 @@ private Q_SLOTS:
     void slotMergeFibers();
     void slotPromoteChildren();
     void slotMoveChildrenToFiber();
+    void slotGroupChildrenIntoFiber();
+    void slotDissolveFiber();
+    void slotDropChildToNoise();
     /**Groups the clusters contain in @p selectedClusters list and trigger the update of the displays.
     * @param selectedClusters list of clusters which have been selected to be grouped.
     */
@@ -760,6 +763,9 @@ private:
     QAction* mMergeFibers = nullptr;        // Hierarchy: merge selected fibers
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)
     QAction* mMoveChild = nullptr;          // Hierarchy: move child(ren) to the selected fiber
+    QAction* mGroupChildren = nullptr;      // Hierarchy: group selected children into a new fiber
+    QAction* mDissolveFiber = nullptr;      // Hierarchy: explode a fiber into its children
+    QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise
     QAction* mChunkMode;
     QAction* mNextChunk;
     QAction* mPrevChunk;

@@ -728,12 +728,22 @@ void KlustersApp::createMenus()
     mMergeFibers = hierarchyMenu->addAction(tr("&Merge Selected Fibers"));
     mPromoteChild = hierarchyMenu->addAction(tr("&Promote Child to New Fiber"));
     mMoveChild = hierarchyMenu->addAction(tr("Move Child to Selected &Fiber"));
+    hierarchyMenu->addSeparator();
+    mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Fiber"));
+    mDissolveFiber = hierarchyMenu->addAction(tr("&Dissolve Fiber into Children"));
+    mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
     mMergeFibers->setEnabled(false);
     mPromoteChild->setEnabled(false);
     mMoveChild->setEnabled(false);
+    mGroupChildren->setEnabled(false);
+    mDissolveFiber->setEnabled(false);
+    mDropChildNoise->setEnabled(false);
     connect(mMergeFibers, &QAction::triggered, this, &KlustersApp::slotMergeFibers);
     connect(mPromoteChild, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
     connect(mMoveChild, &QAction::triggered, this, &KlustersApp::slotMoveChildrenToFiber);
+    connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotGroupChildrenIntoFiber);
+    connect(mDissolveFiber, &QAction::triggered, this, &KlustersApp::slotDissolveFiber);
+    connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
     //viewMenu = new QActionMenu(tr("&Window"), actionCollection(), "window_menu");
     newClusterDisplay = displayMenu->addAction(tr("New C&luster Display"));
     connect(newClusterDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewClusterDisplay);
@@ -3345,9 +3355,43 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
             doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
     }
     const bool editable = on && doc->hasChildClustering();
-    if(mMergeFibers)  mMergeFibers->setEnabled(editable);
-    if(mPromoteChild) mPromoteChild->setEnabled(editable);
-    if(mMoveChild)    mMoveChild->setEnabled(editable);
+    if(mMergeFibers)    mMergeFibers->setEnabled(editable);
+    if(mPromoteChild)   mPromoteChild->setEnabled(editable);
+    if(mMoveChild)      mMoveChild->setEnabled(editable);
+    if(mGroupChildren)  mGroupChildren->setEnabled(editable);
+    if(mDissolveFiber)  mDissolveFiber->setEnabled(editable);
+    if(mDropChildNoise) mDropChildNoise->setEnabled(editable);
+}
+
+void KlustersApp::slotGroupChildrenIntoFiber(){
+    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    const QList<int> kids = childPalette->selectedClusters();
+    if(kids.isEmpty()){
+        statusBar()->showMessage(tr("Select the children to group into a new fiber."), 4000);
+        return;
+    }
+    doc->groupChildrenIntoFiber(kids, *activeView());
+}
+
+void KlustersApp::slotDissolveFiber(){
+    if(!doc || !activeView()) return;
+    const QList<int> sel = clusterPalette->selectedClusters();
+    if(sel.size() != 1){
+        statusBar()->showMessage(tr("Select exactly one fiber to dissolve into its children."), 4000);
+        return;
+    }
+    doc->dissolveFiber(sel.first(), *activeView());
+}
+
+void KlustersApp::slotDropChildToNoise(){
+    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    const QList<int> kids = childPalette->selectedClusters();
+    if(kids.isEmpty()){
+        statusBar()->showMessage(tr("Select the child(ren) to drop to noise."), 4000);
+        return;
+    }
+    for(int c : kids)
+        doc->dropChildToNoise(c, *activeView());
 }
 
 void KlustersApp::slotMergeFibers(){
