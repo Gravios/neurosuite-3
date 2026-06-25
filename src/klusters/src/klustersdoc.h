@@ -262,6 +262,26 @@ public:
     /** True for a child id outside the current child scope (palette filter);
      *  always false for parent ids and when no child clustering is loaded. */
     bool isChildScopeHidden(int clusterId) const;
+
+    // ── hierarchy EDITS (operate on the parent .clu; re-derive maps after) ───
+    /** Merge fibers @p fibers into one (reuses groupClusters); their children
+     *  union under the kept id.  Returns the kept fiber id, or -1. */
+    int mergeParentFibers(const QList<int>& fibers, KlustersView& activeView);
+    /** Detach child @p childCluster from its fiber into a new fiber of its own
+     *  (the spikes become a new .clu cluster).  Returns the new fiber id, the
+     *  existing parent if it was the only child (no-op), or -1. */
+    int promoteChild(int childCluster, KlustersView& activeView);
+    /** Move child @p childCluster's spikes onto the existing fiber @p targetFiber. */
+    bool moveChild(int childCluster, int targetFiber, KlustersView& activeView);
+    /** Re-derive parentToChildren/childToParent from the live .clu + .clc (a
+     *  child's fiber is the .clu label of its spikes).  Cheap pure function of
+     *  the data, so it keeps the maps correct across edits AND undo/redo with no
+     *  separate map-undo stack. */
+    void rebuildHierarchyFromData();
+    /** Overwrite the .clc and .clp siblings (with .bak) from the current child
+     *  layer + child->parent map.  Called by saveDocument when a child
+     *  clustering is loaded. */
+    bool saveHierarchySiblings();
     /**True iff any cluster is currently masked.*/
     bool hasMask() const {return !maskedClusters.isEmpty();}
     /**Currently masked cluster ids.*/
@@ -892,6 +912,9 @@ Q_SIGNALS:
     void updateUndoNb(int undoNb);
     void updateRedoNb(int undoNb);
     void clustersGrouped(QList<int>& groupedClusters, int newClusterId);
+    /** Emitted after a hierarchy edit (merge/promote/move) or an undo/redo that
+     *  changed the fiber<-child maps, so the app can repopulate the child palette. */
+    void hierarchyChanged();
     void clustersDeleted(QList<int>& deletedClusters,int destinationCluster);
     void removeSpikesFromClusters(QList<int>& fromClusters, int destinationClusterId,QList<int>& emptiedClusters);
     void newClusterAdded(QList<int>& fromClusters,int clusterId,QList<int>& emptiedClusters);

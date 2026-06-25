@@ -289,6 +289,10 @@ private Q_SLOTS:
     /** Rebuild the child palette with the children of @p parents (no-op unless
      *  hierarchical view is visible). */
     void repopulateChildPalette(const QList<int>& parents);
+    /** Hierarchy edits driven from the palettes' current selection. */
+    void slotMergeFibers();
+    void slotPromoteChildren();
+    void slotMoveChildrenToFiber();
     /**Groups the clusters contain in @p selectedClusters list and trigger the update of the displays.
     * @param selectedClusters list of clusters which have been selected to be grouped.
     */
@@ -753,6 +757,9 @@ private:
     QAction* newGroupingAssistantDisplay;
     //time-chunk curation actions (see slotChunkModeToggled)
     QAction* mHierarchicalView = nullptr;   // View: toggle the child (.clc) palette
+    QAction* mMergeFibers = nullptr;        // Hierarchy: merge selected fibers
+    QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)
+    QAction* mMoveChild = nullptr;          // Hierarchy: move child(ren) to the selected fiber
     QAction* mChunkMode;
     QAction* mNextChunk;
     QAction* mPrevChunk;

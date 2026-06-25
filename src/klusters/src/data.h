@@ -555,6 +555,37 @@ public:
         return highestClusterId() + 1;
     }
 
+    /** Per-feature-row cluster label: returns a vector of size nbSpikes+1 where
+     *  result[r] is the cluster id of the spike at 1-based feature row r (index 0
+     *  unused).  Read-only; used by the hierarchical view to re-derive the
+     *  fiber<-child maps from the live clustering after an edit or undo. */
+    QVector<dataType> labelByFeatureRow() const {
+        QVector<dataType> out(static_cast<int>(nbSpikes) + 1, 0);
+        for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+            const dataType cid = it.key();
+            const dataType f = it.value().firstSpikePosition();
+            for (dataType i = f; i < f + it.value().nbSpikes(); ++i) {
+                const dataType row1 = (*spikesByCluster)(1, i);
+                if (row1 >= 1 && row1 <= nbSpikes) out[static_cast<int>(row1)] = cid;
+            }
+        }
+        return out;
+    }
+
+    /** 0-based .spk indices of the spikes in @p cluster (i.e. 1-based feature row
+     *  minus one), the form KlustersDoc::moveSpikeSubsetToCluster expects.  Empty
+     *  if the cluster is absent.  Read-only. */
+    QVector<int> clusterSpkIndices(int cluster) const {
+        QVector<int> out;
+        const auto it = clusterInfoMap->constFind(static_cast<dataType>(cluster));
+        if (it == clusterInfoMap->constEnd()) return out;
+        const dataType f = it.value().firstSpikePosition();
+        out.reserve(static_cast<int>(it.value().nbSpikes()));
+        for (dataType i = f; i < f + it.value().nbSpikes(); ++i)
+            out.append(static_cast<int>((*spikesByCluster)(1, i)) - 1);
+        return out;
+    }
+
     /** True iff `clusterInfoMap` has an entry for `clusterId` with a
      *  non-zero spike count.  createFeatureFile / integrateBasinLabeling
      *  / integrateReclusteredClusters all read this map; if the key is
