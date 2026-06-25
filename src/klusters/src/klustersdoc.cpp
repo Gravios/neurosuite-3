@@ -3602,7 +3602,11 @@ int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString
         return OPEN_ERROR;
 
     //Create the file
-    clusteringData->createFeatureFile(clustersToRecluster,fetFile);
+    // Route through the ACTIVE clustering and pin it for the async integrate.
+    // data() == clusteringData when no child is active (parent path unchanged),
+    // == childData in hierarchical mode (recluster the selected atom).
+    reclusterTarget = &data();
+    reclusterTarget->createFeatureFile(clustersToRecluster,fetFile);
     fetFile.close();
     if(fetFile.error() == QFile::NoError)
         return OK;
@@ -3626,7 +3630,8 @@ int KlustersDoc::createMeanSubtractedSubdimFeatureFile(
     if (nDimWritten) *nDimWritten = 0;
     QFile fetFile(reclusteringFetFileName);
     if (!fetFile.open(QIODevice::WriteOnly)) return OPEN_ERROR;
-    const int nDim = clusteringData->createMeanSubtractedSubdimFeatureFile(
+    reclusterTarget = &data();
+    const int nDim = reclusterTarget->createMeanSubtractedSubdimFeatureFile(
         clusterId, K, fetFile, eigvalsOut);
     // createMeanSubtractedSubdimFeatureFile closes fetFile internally
     // (it re-opens via fopen for binary I/O).
@@ -3647,7 +3652,8 @@ int KlustersDoc::createMedianWaveformResidualFeatureFile(
     if (nDimWritten) *nDimWritten = 0;
     QFile fetFile(reclusteringFetFileName);
     if (!fetFile.open(QIODevice::WriteOnly)) return OPEN_ERROR;
-    const int nDim = clusteringData->createMedianWaveformResidualFeatureFile(
+    reclusterTarget = &data();
+    const int nDim = reclusterTarget->createMedianWaveformResidualFeatureFile(
         clusterIds, K, fetFile, eigvalsOut);
     if (nDim <= 0) return CREATION_ERROR;
     if (nDimWritten) *nDimWritten = nDim;
@@ -3704,7 +3710,13 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     }
 
     //Actually integrate the new clusters.
-    if(!clusteringData->integrateReclusteredClusters(clustersToRecluster,reclusteredClusterList,cluFile)){
+    // Use the Data pinned when the .fet was built (childData in hierarchical
+    // mode), not the current active one -- selection may have changed during the
+    // async KlustaKwik run.  integrateReclusteredClusters offsets the new ids by
+    // this Data's highestClusterId(), so child atoms land above the highest
+    // child id and cannot collide with parent (or existing child) ids.
+    Data* rt = reclusterTarget ? reclusterTarget : clusteringData;
+    if(!rt->integrateReclusteredClusters(clustersToRecluster,reclusteredClusterList,cluFile)){
         cluFile.close();
         if(!QFile::remove(reclusteringFetFileName))
             QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
@@ -3730,6 +3742,25 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
 }
 
 void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList){
+    // Consume the pin set when the .fet was built.  If the recluster targeted the
+    // child (atom) layer, the new sub-atoms were already integrated into childData
+    // by integrateReclusteredClusters (ids offset above the highest child id ->
+    // no parent/child collision; childData->prepareUndo captured the edit on its
+    // own stack).  Refresh the child layer with the same known-good sequence the
+    // other hierarchy edits use and return: rebuildHierarchyFromData re-derives
+    // each new atom's parent (their spikes still belong to the original fiber),
+    // and hierarchyChanged repopulates the child palette.  The parent-oriented
+    // body below (undo, parent palette/colours/views) must NOT run for a child
+    // recluster.
+    const bool reclusterWasChild = (reclusterTarget && reclusterTarget == childData);
+    reclusterTarget = nullptr;
+    if (reclusterWasChild){
+        syncChildColors();
+        rebuildHierarchyFromData();
+        emit hierarchyChanged();
+        return;
+    }
+
     //Prepare the undo
     prepareReclusteringUndo(reclusteredClusterList,clustersToRecluster);
 
@@ -5949,6 +5980,13 @@ bool KlustersDoc::clusterHasMembers(int clusterId) const
 {
     if (!clusteringData) return false;
     return clusteringData->clusterHasMembers(clusterId);
+}
+
+bool KlustersDoc::activeClusterHasMembers(int clusterId) const
+{
+    // data() == childData in hierarchical mode, clusteringData otherwise, so a
+    // child id is validated against the clustering that actually owns it.
+    return data().clusterHasMembers(clusterId);
 }
 
 // ---------------------------------------------------------------------------

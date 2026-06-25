@@ -5156,7 +5156,7 @@ void KlustersApp::slotRecluster(){
     {
         QStringList emptyIds;
         for (int id : clustersToRecluster) {
-            if (!doc->clusterHasMembers(id))
+            if (!doc->activeClusterHasMembers(id))
                 emptyIds.append(QString::number(id));
         }
         if (!emptyIds.isEmpty()) {
