@@ -21,7 +21,8 @@ set(_core_srcs
 set(_core_hdrs
     neurosuite/core/neurosuite_core_export.h
     neurosuite/core/neurofileio.h
-    neurosuite/core/custody.hpp)
+    neurosuite/core/custody.hpp
+    neurosuite/core/pca_projection.hpp)
 
 add_library(neurosuite-core SHARED ${_core_srcs})
 add_library(Neurosuite::core ALIAS neurosuite-core)

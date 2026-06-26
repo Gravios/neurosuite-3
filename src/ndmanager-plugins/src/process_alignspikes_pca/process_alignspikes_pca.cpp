@@ -101,7 +101,8 @@
 
 // ─── Small helpers ─────────────────────────────────────────────────────────
 
-#include <neurosuite/core/custody.hpp>   // shared chain-of-custody resolver
+#include <neurosuite/core/custody.hpp>       // shared chain-of-custody resolver
+#include <neurosuite/core/pca_projection.hpp> // shared PcaBasis/loadPca/pcaProjectionEnergy
 
 static void die(const std::string& msg) {
     std::fprintf(stderr, "process_alignspikes_pca: ERROR: %s\n", msg.c_str());
@@ -224,46 +225,12 @@ static bool readFilWindow(std::FILE* fil, int64_t startSample,
 }
 
 // PCA basis loader.  File format (matches Klusters/KlustaKwik exactly):
-//   header [int32 × 5]: nCh, data2use, nComp, isCentered, recShift
-//   per channel ch ∈ [0, nCh):
-//     data2use × double  : per-channel sample means (if isCentered)
-//     nComp × data2use × double : eigenvectors, col-major
-struct PcaBasis {
-    int nCh = 0, data2use = 0, nComp = 0, recShift = 0;
-    bool centered = false;
-    std::vector<std::vector<double>> means;  // [ch][data2use]
-    std::vector<std::vector<double>> evec;   // [ch][data2use × nComp]
-    bool valid() const { return nCh > 0 && data2use > 0 && nComp > 0; }
-};
-
-static bool loadPca(const std::string& path, PcaBasis& pca) {
-    std::FILE* f = std::fopen(path.c_str(), "rb");
-    if (!f) return false;
-    int32_t hdr[5];
-    if (std::fread(hdr, 4, 5, f) != 5) { std::fclose(f); return false; }
-    pca.nCh      = hdr[0];
-    pca.data2use = hdr[1];
-    pca.nComp    = hdr[2];
-    pca.centered = (hdr[3] != 0);
-    pca.recShift = hdr[4];
-    pca.means.assign(pca.nCh, std::vector<double>(pca.data2use, 0.0));
-    pca.evec.assign(pca.nCh,
-                    std::vector<double>(static_cast<size_t>(pca.data2use)
-                                       * pca.nComp, 0.0));
-    for (int ch = 0; ch < pca.nCh; ++ch) {
-        if (pca.centered) {
-            if (std::fread(pca.means[ch].data(), 8,
-                            static_cast<size_t>(pca.data2use), f)
-                    != static_cast<size_t>(pca.data2use))
-            { std::fclose(f); return false; }
-        }
-        const size_t evSz = static_cast<size_t>(pca.data2use) * pca.nComp;
-        if (std::fread(pca.evec[ch].data(), 8, evSz, f) != evSz)
-        { std::fclose(f); return false; }
-    }
-    std::fclose(f);
-    return true;
-}
+// PcaBasis, loadPca and pcaProjectionEnergy now live in libneurosuite-core
+// (header-only): src/libneurosuite-core/src/neurosuite/core/pca_projection.hpp.
+// Bring them into scope so the call sites below are unchanged.
+using neurosuite::core::PcaBasis;
+using neurosuite::core::loadPca;
+using neurosuite::core::pcaProjectionEnergy;
 
 // ─── Algorithm core ────────────────────────────────────────────────────────
 
@@ -324,34 +291,9 @@ static void xcorrBestLag(const int16_t* spike, const int16_t* tmpl,
     outScore = static_cast<float>(bestScore);
 }
 
-// Compute Stage-2 PCA-projection energy of a channel-major waveform
-// at integer shift s ∈ [-maxShiftGlobal, +maxShiftGlobal].  The "shifted"
-// waveform is read fresh from .fil at the new start position.
-static double pcaProjectionEnergy(const int16_t* wfChannelMajor,
-                                   int nChan, int nSamp,
-                                   const PcaBasis& pca)
-{
-    // Use the SMALLER of pca.nCh and nChan in case the stderiv pipeline
-    // dropped one channel during PCA training (pca.nCh = nChan - 1).
-    const int chForPca = std::min(pca.nCh, nChan);
-    double energy = 0.0;
-    for (int ch = 0; ch < chForPca; ++ch) {
-        const auto& mu = pca.means[ch];
-        const auto& ev = pca.evec[ch];
-        for (int k = 0; k < pca.nComp; ++k) {
-            double score = 0.0;
-            for (int u = 0; u < pca.data2use; ++u) {
-                const int sIdx = pca.recShift + u;
-                if (sIdx < 0 || sIdx >= nSamp) continue;
-                double x = static_cast<double>(wfChannelMajor[ch * nSamp + sIdx]);
-                if (pca.centered) x -= mu[u];
-                score += ev[static_cast<size_t>(k * pca.data2use + u)] * x;
-            }
-            energy += score * score;
-        }
-    }
-    return energy;
-}
+// pcaProjectionEnergy moved to libneurosuite-core (see the using-declaration
+// above).  Stage 2 below calls it on the cluster mean at each candidate global
+// shift; the global-mean argmax policy stays local to this plugin.
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
