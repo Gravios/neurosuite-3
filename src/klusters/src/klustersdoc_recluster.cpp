@@ -346,54 +346,11 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         clusterPalette.selectItems(emptyList);
     }
 
-    // Hierarchical mode: a PARENT recluster splits the parent's spikes across the
-    // new parents, but the child (atom) layer was untouched -- so the parent's old
-    // atom(s) now span several new parents and rebuildHierarchyFromData (first-seen)
-    // hands the atom to only one of them, leaving the rest childless.  Re-cut the
-    // child layer so each new parent carries its own covering atom (derived atoms;
-    // the reclustered region's old sub-structure is replaced).
-    //
-    // moveSpikeSubset rebuilds spikesByCluster AND clusterInfoMap together (no
-    // phantom-cluster desync) and moves only the rows that are in the given source
-    // atom, so an atom straddling the reclustered parent and an untouched parent
-    // keeps its remainder.  nextFreeClusterId keeps each new atom id above the
-    // highest child id, so it cannot collide with a parent (or existing child) id;
-    // allocating it fresh per new parent picks up the previous atom just created.
-    //
-    // A child recluster never reaches here (reclusteringUpdate returns early for
-    // the child branch), so this runs only for parent reclusters.
-    if (childData) {
-        const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
-        const QVector<dataType> childByRow = childData->labelByFeatureRow();
-        // Snapshot child labels BEFORE the mint so a parent undo reverts it.
-        const QVector<dataType> childPreCut = childByRow;
-        bool recut = false;
-        const int n = qMin(cluByRow.size(), childByRow.size());
-        for (int newParent : reclusteredClusterList) {
-            QHash<int, QSet<dataType>> bySource;        // current child atom -> rows
-            for (int r = 1; r < n; ++r)
-                if (static_cast<int>(cluByRow[r]) == newParent
-                        && static_cast<int>(childByRow[r]) > 0)   // skip noise/unassigned
-                    bySource[static_cast<int>(childByRow[r])]
-                            .insert(static_cast<dataType>(r));
-            if (bySource.isEmpty()) continue;
-            const int newAtom = static_cast<int>(childData->nextFreeClusterId());
-            QList<int> fromC, emptied;
-            for (auto it = bySource.constBegin(); it != bySource.constEnd(); ++it){
-                childData->moveSpikeSubset(it.key(), it.value(), newAtom, fromC, emptied);
-                recut = true;
-            }
-        }
-        // Attach the pre-re-cut snapshot to this parent recluster's order marker so a
-        // parent undo reverts the mint atomically with the recluster.
-        if (recut && !editOrderUndo.isEmpty() && editOrderUndo.first().layer == EditLayer::Parent)
-            editOrderUndo.first().childPre = childPreCut;
-        // Atom-undo history invalidated by the re-cut; drop it (the recluster's undo
-        // is on the parent timeline and now carries the child revert via childPre).
-        childUndoStack.clear();
-        childRedoStack.clear();
-        syncChildColors();
-        rebuildHierarchyFromData();
-        emit hierarchyChanged();
-    }
+    // Hierarchical mode: a PARENT recluster redraws the parent's spikes across new
+    // parents, which leaves the child (atom) layer stale -- atoms minted on the old
+    // clustering may now span several new fibers.  The recluster no longer re-cuts
+    // the child implicitly (no covering-atom mint, no childPre coupling to the
+    // parent undo); the user runs refiberize() afterwards to re-establish the
+    // nesting and regenerate .clp.  Leaving the child untouched keeps the two layers
+    // independent and the parent undo free of any child coupling.
 }

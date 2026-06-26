@@ -273,24 +273,20 @@ void KlustersDoc::rebuildHierarchyFromData(){
     }
 }
 
-void KlustersDoc::resyncStraddlingAtoms(){
-    // After a manual parent split, the split-off spikes changed parent but kept
-    // their child-atom label, so any atom that spanned the cut now straddles two
-    // parents -- which breaks nesting and desynchronises the child view.  Carve
-    // ONLY those atoms: for a straddling atom, the first parent keeps the original
-    // atom id and each other parent's portion becomes a fresh atom.  Atoms wholly
-    // within one parent are left untouched, so the parent's existing sub-structure
-    // survives (a split, unlike a recluster, should not collapse unaffected
-    // children).  moveSpikeSubset rebuilds spikesByCluster + clusterInfoMap together
+void KlustersDoc::refiberize(){
+    // Explicit bridge between the two otherwise-independent layers.  The user
+    // reassigns and consolidates the fibers as a flat .clu workflow (split / move /
+    // merge), which leaves the child atoms where they were -- so an atom whose
+    // spikes now span more than one parent fiber straddles the nesting invariant.
+    // refiberize re-cuts ONLY those straddling atoms: the first parent keeps the
+    // original atom id and each other parent's portion becomes a fresh atom.  Atoms
+    // wholly within one fiber are left untouched, so existing sub-structure
+    // survives.  moveSpikeSubset rebuilds spikesByCluster + clusterInfoMap together
     // (no zero-spike phantom) and nextFreeClusterId keeps new atom ids in the
     // child-id space (above the highest child id; no parent/child collision).
     if (!childData) return;
     const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
     const QVector<dataType> childByRow = childData->labelByFeatureRow();
-    // Snapshot the child labels BEFORE the carve so a parent undo can revert it
-    // (the carve uses moveSpikeSubset, which pushes no childData undo level).
-    const QVector<dataType> childPreCut = childByRow;
-    bool recut = false;
     const int n = qMin(cluByRow.size(), childByRow.size());
     QHash<int, QHash<int, QSet<dataType>>> atomParentRows;   // atom -> parent -> rows
     for (int r = 1; r < n; ++r){
@@ -308,20 +304,16 @@ void KlustersDoc::resyncStraddlingAtoms(){
             const int newAtom = static_cast<int>(childData->nextFreeClusterId());
             QList<int> fromC, emptied;
             childData->moveSpikeSubset(a.key(), p.value(), newAtom, fromC, emptied);
-            recut = true;
         }
     }
-    // Attach the pre-re-cut snapshot to THIS parent edit's order marker (pushed by
-    // prepareClusterColorUndo earlier in the same split), so a parent undo reverts
-    // the carve atomically with the split.  Only when a carve actually happened.
-    if (recut && !editOrderUndo.isEmpty() && editOrderUndo.first().layer == EditLayer::Parent)
-        editOrderUndo.first().childPre = childPreCut;
-    // The atom-undo history is invalidated by this re-cut; drop it (the split's own
-    // undo is on the parent timeline -- and now carries the child revert via childPre).
+    // refiberize is its own deliberate resync, independent of the parent and atom
+    // undo timelines: it does NOT couple to a parent undo (no childPre snapshot --
+    // a parent undo no longer silently reverts the atom layer), and it resets the
+    // atom-edit history since the atom structure has just been re-cut.
+    // rebuildHierarchyFromData re-derives childToParent / parentToChildren from the
+    // new labels, which the next Save writes out as the regenerated .clp.
     childUndoStack.clear();
     childRedoStack.clear();
-    // Always refresh: even atoms that did not straddle may now sit under a new
-    // parent id (the split-off fiber), which rebuildHierarchyFromData re-derives.
     syncChildColors();
     rebuildHierarchyFromData();
     emit hierarchyChanged();

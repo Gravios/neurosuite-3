@@ -742,6 +742,10 @@ void KlustersApp::createMenus()
     mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Fiber"));
     mDissolveFiber = hierarchyMenu->addAction(tr("&Dissolve Fiber into Children"));
     mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
+    mRefiberize = hierarchyMenu->addAction(tr("Re&fiberize (re-cut atoms onto fibers)"));
+    mRefiberize->setToolTip(tr("Re-cut child atoms that now straddle more than one fiber so each\n"
+                               "atom belongs to a single fiber again, and regenerate the .clp\n"
+                               "parent map.  Run after reassigning / consolidating the fibers."));
     hierarchyMenu->addSeparator();
     mMergeChildren = hierarchyMenu->addAction(tr("Merge Selected &Children (atom)"));
     mUndoChildEdit = hierarchyMenu->addAction(tr("&Undo Child-Layer Edit"));
@@ -754,6 +758,7 @@ void KlustersApp::createMenus()
     mGroupChildren->setEnabled(false);
     mDissolveFiber->setEnabled(false);
     mDropChildNoise->setEnabled(false);
+    mRefiberize->setEnabled(false);
     mMergeChildren->setEnabled(false);
     mUndoChildEdit->setEnabled(false);
     mRedoChildEdit->setEnabled(false);
@@ -763,6 +768,7 @@ void KlustersApp::createMenus()
     connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotGroupChildrenIntoFiber);
     connect(mDissolveFiber, &QAction::triggered, this, &KlustersApp::slotDissolveFiber);
     connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
+    connect(mRefiberize, &QAction::triggered, this, &KlustersApp::slotRefiberize);
     connect(mMergeChildren, &QAction::triggered, this, &KlustersApp::slotMergeChildren);
     connect(mUndoChildEdit, &QAction::triggered, this, &KlustersApp::slotUndoChildEdit);
     connect(mRedoChildEdit, &QAction::triggered, this, &KlustersApp::slotRedoChildEdit);
@@ -3449,6 +3455,7 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
     if(mGroupChildren)  mGroupChildren->setEnabled(editable);
     if(mDissolveFiber)  mDissolveFiber->setEnabled(editable);
     if(mDropChildNoise) mDropChildNoise->setEnabled(editable);
+    if(mRefiberize)     mRefiberize->setEnabled(editable);
     if(mMergeChildren)  mMergeChildren->setEnabled(editable);
     if(mUndoChildEdit)  mUndoChildEdit->setEnabled(editable && doc->childUndoCount() > 0);
     if(mRedoChildEdit)  mRedoChildEdit->setEnabled(editable && doc->childRedoCount() > 0);
@@ -3510,6 +3517,12 @@ void KlustersApp::slotDissolveFiber(){
         return;
     }
     doc->dissolveFiber(sel.first(), *activeView());
+}
+
+void KlustersApp::slotRefiberize(){
+    if(!doc || !activeView()) return;
+    doc->refiberize();   // re-cut straddling atoms + rebuild the child<->fiber maps (.clp on Save)
+    statusBar()->showMessage(tr("Refiberized: atoms re-cut onto the current fibers."), 4000);
 }
 
 void KlustersApp::slotDropChildToNoise(){
