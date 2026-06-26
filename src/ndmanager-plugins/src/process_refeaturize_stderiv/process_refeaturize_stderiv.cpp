@@ -40,6 +40,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <neurosuite/core/pca_projection.hpp> // canonical PCAE loader (block-wise)
 
 static const char *VERSION = "process_refeaturize_stderiv 1.0";
 
@@ -66,40 +67,23 @@ struct PcaModel {
 
 static bool loadPcaModel(const char *path, PcaModel &m)
 {
-    FILE *f = fopen(path, "rb");
-    if (!f) { std::cerr << "error: cannot open '" << path << "'\n"; return false; }
-    int32_t magic, version, nc, d2u, ncomp, rshift, iscentered;
-    if (fread(&magic,4,1,f)!=1||fread(&version,4,1,f)!=1||fread(&nc,4,1,f)!=1||
-        fread(&d2u,4,1,f)!=1||fread(&ncomp,4,1,f)!=1||fread(&rshift,4,1,f)!=1||
-        fread(&iscentered,4,1,f)!=1) {
-        std::cerr << "error: truncated pca header\n"; fclose(f); return false;
+    // Canonical PCAE loader.  Fixes the same interleave bug as process_refeaturize:
+    // the inline reader parsed the PCAE header but read the body interleaved
+    // (mean[ch] then evec[ch] per channel) instead of block-wise (all means, then
+    // all eigenvectors), scrambling every channel past the first.  core also reads
+    // v1 and v2 (the inline reader rejected v2).
+    neurosuite::core::PcaBasis basis;
+    if (!neurosuite::core::loadPca(path, basis)) {
+        std::cerr << "error: cannot load PCAE pca file '" << path << "'\n";
+        return false;
     }
-    if (magic != static_cast<int32_t>(0x50434145)) {
-        std::cerr << "error: not a PCAE file\n"; fclose(f); return false;
-    }
-    if (version != 1) {
-        std::cerr << "error: unsupported pca version " << version << "\n";
-        fclose(f); return false;
-    }
-    m.nChannels=nc; m.data2use=d2u; m.nComponents=ncomp;
-    m.recShift=rshift; m.isCentered=(iscentered!=0);
-    m.mean.resize(static_cast<size_t>(nc));
-    m.eigvec.resize(static_cast<size_t>(nc));
-    for (int ch=0; ch<nc; ++ch) {
-        m.mean[static_cast<size_t>(ch)].resize(static_cast<size_t>(d2u));
-        if (fread(m.mean[static_cast<size_t>(ch)].data(),8,
-                  static_cast<size_t>(d2u),f) != static_cast<size_t>(d2u)) {
-            std::cerr << "error: truncated means ch " << ch << "\n";
-            fclose(f); return false;
-        }
-        size_t evSz=static_cast<size_t>(d2u*ncomp);
-        m.eigvec[static_cast<size_t>(ch)].resize(evSz);
-        if (fread(m.eigvec[static_cast<size_t>(ch)].data(),8,evSz,f)!=evSz) {
-            std::cerr << "error: truncated eigvec ch " << ch << "\n";
-            fclose(f); return false;
-        }
-    }
-    fclose(f);
+    m.nChannels   = basis.nCh;
+    m.data2use    = basis.data2use;
+    m.nComponents = basis.nComp;
+    m.recShift    = basis.recShift;
+    m.isCentered  = basis.centered;
+    m.mean        = basis.means;   // [ch][data2use]
+    m.eigvec      = basis.evec;    // [ch][data2use * nComp], col-major
     return true;
 }
 

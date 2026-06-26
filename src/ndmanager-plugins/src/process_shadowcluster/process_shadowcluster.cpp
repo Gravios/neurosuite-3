@@ -106,6 +106,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <neurosuite/core/pca_projection.hpp> // canonical PCAE loader
 #include <utility>
 #include <vector>
 
@@ -193,74 +194,23 @@ struct PcaModel {
 
 static bool loadPcaModel(const string &path, PcaModel &m)
 {
-    FILE *f = std::fopen(path.c_str(), "rb");
-    if (!f) { cerr << "error: cannot open PCA file '" << path << "'" << endl;
-              return false; }
-
-    int32_t w0 = 0;
-    if (std::fread(&w0, sizeof(int32_t), 1, f) != 1) {
-        cerr << "error: empty PCA file" << endl; std::fclose(f); return false;
+    // Canonical PCAE loader.  shadowcluster's inline reader was already block-wise
+    // and correct, but it accepted only version 1 and the magicless legacy 5-int
+    // header; core reads PCAE v1 and v2 and legacy bases are being regenerated, so
+    // delegate and keep one format owner.  The v2 method / nInputChannels fields
+    // are ignored here (shadowcluster projects through the basis directly).
+    neurosuite::core::PcaBasis basis;
+    if (!neurosuite::core::loadPca(path, basis)) {
+        cerr << "error: cannot load PCAE PCA file '" << path << "'" << endl;
+        return false;
     }
-
-    bool hasMagic = (w0 == (int32_t)0x50434145); // 'PCAE'
-    int32_t version = 1, nc, d2u, ncomp, rshift, iscent;
-
-    if (hasMagic) {
-        if (std::fread(&version, sizeof(int32_t), 1, f) != 1 ||
-            std::fread(&nc,      sizeof(int32_t), 1, f) != 1 ||
-            std::fread(&d2u,     sizeof(int32_t), 1, f) != 1 ||
-            std::fread(&ncomp,   sizeof(int32_t), 1, f) != 1 ||
-            std::fread(&rshift,  sizeof(int32_t), 1, f) != 1 ||
-            std::fread(&iscent,  sizeof(int32_t), 1, f) != 1) {
-            cerr << "error: truncated PCAE header" << endl;
-            std::fclose(f); return false;
-        }
-        if (version != 1) {
-            cerr << "error: unsupported PCAE version " << version << endl;
-            std::fclose(f); return false;
-        }
-    } else {
-        // Legacy 5-int32 header: [nCh, data2use, nComp, centered, recShift]
-        nc = w0;
-        if (std::fread(&d2u,    sizeof(int32_t), 1, f) != 1 ||
-            std::fread(&ncomp,  sizeof(int32_t), 1, f) != 1 ||
-            std::fread(&iscent, sizeof(int32_t), 1, f) != 1 ||
-            std::fread(&rshift, sizeof(int32_t), 1, f) != 1) {
-            cerr << "error: truncated legacy PCA header" << endl;
-            std::fclose(f); return false;
-        }
-    }
-
-    m.nChannels   = (int)nc;
-    m.data2use    = (int)d2u;
-    m.nComponents = (int)ncomp;
-    m.recShift    = (int)rshift;
-    m.isCentered  = (iscent != 0);
-
-    if (m.nChannels <= 0 || m.data2use <= 0 || m.nComponents <= 0) {
-        cerr << "error: invalid PCA dimensions in '" << path << "'" << endl;
-        std::fclose(f); return false;
-    }
-
-    m.mean.assign(m.nChannels, {});
-    m.eigvec.assign(m.nChannels, {});
-    for (int ch = 0; ch < m.nChannels; ++ch) {
-        m.mean[ch].resize(m.data2use);
-        if (std::fread(m.mean[ch].data(), sizeof(double), m.data2use, f) !=
-            (size_t)m.data2use) {
-            cerr << "error: truncated PCA mean (ch=" << ch << ")" << endl;
-            std::fclose(f); return false;
-        }
-    }
-    for (int ch = 0; ch < m.nChannels; ++ch) {
-        const size_t N = (size_t)m.data2use * (size_t)m.nComponents;
-        m.eigvec[ch].resize(N);
-        if (std::fread(m.eigvec[ch].data(), sizeof(double), N, f) != N) {
-            cerr << "error: truncated PCA eigvec (ch=" << ch << ")" << endl;
-            std::fclose(f); return false;
-        }
-    }
-    std::fclose(f);
+    m.nChannels   = basis.nCh;
+    m.data2use    = basis.data2use;
+    m.nComponents = basis.nComp;
+    m.recShift    = basis.recShift;
+    m.isCentered  = basis.centered;
+    m.mean        = basis.means;   // [ch][data2use]
+    m.eigvec      = basis.evec;    // [ch][k * data2use + s], col-major
     return true;
 }
 
