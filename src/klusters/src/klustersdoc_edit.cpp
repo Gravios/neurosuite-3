@@ -119,6 +119,7 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
 
     //Notify the errorMatrixView of the modification
     emit clustersGrouped(clustersToGroup,newClusterIdint);
+    updateSimilarityMatrices();   // recompute open error/template/residual matrices
     lastEditLayer = EditLayer::Parent;
 
     //Reset the color status in clusterColors if need it
@@ -189,6 +190,7 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     }
 
     emit removeSpikesFromClusters(fromClusters, toCluster, emptiedClusters);
+    updateSimilarityMatrices();   // recompute open error/template/residual matrices
     lastEditLayer = EditLayer::Parent;
 
     if (clusterColorList->isColorChanged())
@@ -279,6 +281,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 
     //Notify the errorMatrixView of the modification
     emit clustersDeleted(clustersToDelete,clusterId);
+    updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
     //Reset the color status in clusterColors if need it
     if(clusterColorList->isColorChanged()) clusterColorList->resetAllColorStatus();
@@ -380,6 +383,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
 
         //Notify the errorMatrixView of the modification
         emit removeSpikesFromClusters(fromClusters,destination,emptyClusters);
+        updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
         //Reset the color status in clusterColors if need it
         if(clusterColorList->isColorChanged()) clusterColorList->resetAllColorStatus();
@@ -460,6 +464,7 @@ void KlustersDoc::commitClusterCreation(int newId,
 
     // Notify the error-matrix / template-matrix views.
     emit newClusterAdded(fromClusters, newId, emptiedClusters);
+    updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
     if (clusterColorList->isColorChanged())
         clusterColorList->resetAllColorStatus();
@@ -562,6 +567,7 @@ void KlustersDoc::commitTwoClusterCreation(int leftId,
     // Recluster-shaped matrix-view notification: takes only the
     // sources-dissolved list, not per-cluster from-list.
     emit newClustersAdded(emptiedClusters);
+    updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
     if (clusterColorList->isColorChanged())
         clusterColorList->resetAllColorStatus();
@@ -752,6 +758,7 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
 
         //Notify the errorMatrixView of the modification
         emit newClustersAdded(fromToNewClusterIds,emptyClusters);
+        updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
 
         //Reset the color status in clusterColors if need it

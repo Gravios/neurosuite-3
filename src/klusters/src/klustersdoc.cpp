@@ -181,6 +181,21 @@ void KlustersDoc::forceClusterRefresh(int clusterId)
         viewList->at(i)->forceClusterRefresh(clusterId);
 }
 
+void KlustersDoc::updateSimilarityMatrices()
+{
+    // updateErrorMatrix()/updateTemplateMatrix()/updateResidualMatrix() each emit
+    // the view's compute signal; Qt delivers it only when a matrix dock is
+    // connected, so this is a no-op when none is open and a full recompute when
+    // one is.  Same effect as slotUpdateErrorMatrix (the U key) but across all
+    // views and driven by the atomic cluster edits rather than a manual keypress.
+    for (int i = 0; i < viewList->count(); ++i) {
+        KlustersView* view = viewList->at(i);
+        view->updateErrorMatrix();
+        view->updateTemplateMatrix();
+        view->updateResidualMatrix();
+    }
+}
+
 QList<int> KlustersDoc::getSiblingElectrodeGroups(int groupId) const
 {
     QList<int> result;

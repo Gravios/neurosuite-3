@@ -1028,6 +1028,13 @@ public Q_SLOTS:
      *  Equivalent to emitting spikesAddedToCluster on each KlustersView. */
     void forceClusterRefresh(int clusterId);
 
+    /** Triggers a recompute of any open error / template / residual
+     *  similarity-matrix docks across all views.  A no-op when no matrix is
+     *  open; called by the atomic cluster-edit operations so the matrices stay
+     *  current with the cluster configuration instead of only being flagged
+     *  stale until the user presses U. */
+    void updateSimilarityMatrices();
+
     /**Renumbers the clusters, so the the clusterIds will be consecutive.*/
     void renumberClusters();
 
