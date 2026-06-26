@@ -4655,6 +4655,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             << "  extraFeats=" << nExtraFeats << "\n";
     emitFlush();
 
+    // Spatial-derivative order for the stderiv reprojection below, taken from the
+    // basis (PCAE Method) rather than hardcoded.  The three transform sites
+    // (candidate refine, raw-source verify, disk-write) all used a fixed all-pairs
+    // formula; the basis is the authority now (cf. the nudge flatten).  Fall back
+    // to all-pairs for a non-temporal-diff / invalid basis, which keeps every
+    // existing stderiv session byte-identical and never reaches the transform with
+    // a raw basis anyway.
+    const neurosuite::core::SdiffOrder stderivOrder =
+        neurosuite::core::hasTemporalDiff(pca.method)
+            ? neurosuite::core::spatialOrder(pca.method)
+            : neurosuite::core::SdiffOrder::AllPairs;
+
     // -----------------------------------------------------------------------
     // Load cluster waveforms from binary .spk (int16, no header)
     // Layout: spike 0 samples, spike 1 samples, ...
@@ -5179,25 +5191,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                             wTgt[static_cast<size_t>(ci) * nSamp + t] =
                                 rawFrame[static_cast<size_t>(t) * totalNbChanP82
                                        + groupChannelsP82[ci]];
-                    if (useStder) {
-                        std::vector<int16_t> sdPrev(static_cast<size_t>(nChan), 0);
-                        for (int t = 0; t < nSamp; ++t) {
-                            int64_t sum = 0;
-                            for (int ci = 0; ci < nChan; ++ci)
-                                sum += wTgt[static_cast<size_t>(ci) * nSamp + t];
-                            for (int ci = 0; ci < nChan; ++ci) {
-                                const int v = wTgt[static_cast<size_t>(ci) * nSamp + t];
-                                const int sd = nChan * v - static_cast<int>(sum);
-                                const int16_t sdCl = (int16_t)
-                                    std::max(-32768, std::min(32767, sd));
-                                const int diff = static_cast<int>(sdCl)
-                                    - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
-                                sdPrev[static_cast<size_t>(ci)] = sdCl;
-                                wTgt[static_cast<size_t>(ci) * nSamp + t] = (int16_t)
-                                    std::max(-32768, std::min(32767, diff));
-                            }
-                        }
-                    }
+                    if (useStder)
+                        neurosuite::core::applyStderivTransform(
+                            stderivOrder, wTgt, nChan, nSamp, wTgt);
                 }
                 gpuPathRan = true;
             } while (false);
@@ -5244,28 +5240,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                                     t * totalNbChanP82 + groupChannelsP82[ci])];
 
                     // Apply stderiv transform in-place if pipeline needs it.
-                    // Mirrors the disk-write block's transform (lines 4280+).
-                    if (useStder) {
-                        std::vector<int16_t> sdPrev(
-                            static_cast<size_t>(nChan), 0);
-                        for (int t = 0; t < nSamp; ++t) {
-                            int64_t sum = 0;
-                            for (int ci = 0; ci < nChan; ++ci)
-                                sum += candCM[static_cast<size_t>(ci * nSamp + t)];
-                            for (int ci = 0; ci < nChan; ++ci) {
-                                const int v = candCM[static_cast<size_t>(ci * nSamp + t)];
-                                const int sd = nChan * v - static_cast<int>(sum);
-                                const int16_t sdCl = static_cast<int16_t>(
-                                    std::max(-32768, std::min(32767, sd)));
-                                const int diff = static_cast<int>(sdCl)
-                                    - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
-                                sdPrev[static_cast<size_t>(ci)] = sdCl;
-                                candCM[static_cast<size_t>(ci * nSamp + t)] =
-                                    static_cast<int16_t>(
-                                        std::max(-32768, std::min(32767, diff)));
-                            }
-                        }
-                    }
+                    // Spatial order from the basis; matches the disk-write block.
+                    if (useStder)
+                        neurosuite::core::applyStderivTransform(
+                            stderivOrder, candCM.data(), nChan, nSamp, candCM.data());
 
                     // PCA projection energy — shared primitive in
                     // libneurosuite-core (same math the GPU kernel mirrors and
@@ -5317,27 +5295,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                                     rawFrame[static_cast<size_t>(
                                         t * totalNbChanP82
                                       + groupChannelsP82[ci])];
-                        if (useStder) {
-                            std::vector<int16_t> sdPrev(
-                                static_cast<size_t>(nChan), 0);
-                            for (int t = 0; t < nSamp; ++t) {
-                                int64_t sum = 0;
-                                for (int ci = 0; ci < nChan; ++ci)
-                                    sum += wTgt[static_cast<size_t>(ci * nSamp + t)];
-                                for (int ci = 0; ci < nChan; ++ci) {
-                                    const int v = wTgt[static_cast<size_t>(ci * nSamp + t)];
-                                    const int sd = nChan * v - static_cast<int>(sum);
-                                    const int16_t sdCl = static_cast<int16_t>(
-                                        std::max(-32768, std::min(32767, sd)));
-                                    const int diff = static_cast<int>(sdCl)
-                                        - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
-                                    sdPrev[static_cast<size_t>(ci)] = sdCl;
-                                    wTgt[static_cast<size_t>(ci * nSamp + t)] =
-                                        static_cast<int16_t>(
-                                            std::max(-32768, std::min(32767, diff)));
-                                }
-                            }
-                        }
+                        if (useStder)
+                            neurosuite::core::applyStderivTransform(
+                                stderivOrder, wTgt, nChan, nSamp, wTgt);
                     }
                 }
                 return RefineResult::Refined;
@@ -5769,28 +5729,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             // Mirror the stderiv transform used in the per-spike loop, so
             // verifyWav lives in the same space as wavBuf for raw OR stderiv
             // .spk formats.
-            if (spkIsTransformed) {
-                std::vector<int16_t> sdPrev(static_cast<size_t>(nChan), 0);
-                std::vector<int16_t> sdOut(static_cast<size_t>(nChan * nSamp));
-                for (int s = 0; s < nSamp; ++s) {
-                    int64_t sum = 0;
-                    for (int ci = 0; ci < nChan; ++ci)
-                        sum += verifyWav[static_cast<size_t>(ci * nSamp + s)];
-                    for (int ci = 0; ci < nChan; ++ci) {
-                        const int v   = verifyWav[static_cast<size_t>(ci * nSamp + s)];
-                        const int sd  = nChan * v - static_cast<int>(sum);
-                        const int16_t sdCl = static_cast<int16_t>(
-                            std::max(-32768, std::min(32767, sd)));
-                        const int diff = static_cast<int>(sdCl)
-                            - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
-                        sdPrev[static_cast<size_t>(ci)] = sdCl;
-                        sdOut[static_cast<size_t>(ci * nSamp + s)] =
-                            static_cast<int16_t>(
-                                std::max(-32768, std::min(32767, diff)));
-                    }
-                }
-                verifyWav = std::move(sdOut);
-            }
+            if (spkIsTransformed)
+                neurosuite::core::applyStderivTransform(
+                    stderivOrder, verifyWav.data(), nChan, nSamp, verifyWav.data());
 
             // Compare to wavBuf[csV * spkElems ..] which holds the .spk
             // contents in channel-major layout (same as verifyWav above).
@@ -5894,33 +5835,15 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                         // wavBuf `w` parallel update must match the .spk format,
                         // so xcorr against the on-disk template stays consistent.
                         if (spkIsTransformed) {
-                            // Apply stderiv transform: spatial all-pairs derivative
-                            // then temporal first-difference.  Output updates both
-                            // spkRow (sample-major, for .spkD write) and w (channel-
-                            // major, so wavBuf stays in stderiv space for xcorr).
-                            std::vector<int16_t> sdWav(static_cast<size_t>(nSamp * nChan));
-                            std::vector<int16_t> sdPrev(static_cast<size_t>(nChan), 0);
-                            for (int s = 0; s < nSamp; ++s) {
-                                int64_t sum = 0;
+                            // stderiv into w (channel-major), then mirror into
+                            // spkRow (sample-major, what .spkD stores) so wavBuf
+                            // stays in stderiv space for xcorr and the two agree.
+                            neurosuite::core::applyStderivTransform(
+                                stderivOrder, rawCM.data(), nChan, nSamp, w);
+                            for (int s = 0; s < nSamp; ++s)
                                 for (int ci = 0; ci < nChan; ++ci)
-                                    sum += rawCM[static_cast<size_t>(ci * nSamp + s)];
-                                for (int ci = 0; ci < nChan; ++ci) {
-                                    const int v = rawCM[static_cast<size_t>(ci * nSamp + s)];
-                                    const int sd = nChan * v - static_cast<int>(sum);
-                                    const int16_t sdCl = static_cast<int16_t>(
-                                        std::max(-32768, std::min(32767, sd)));
-                                    const int diff = static_cast<int>(sdCl)
-                                        - static_cast<int>(sdPrev[static_cast<size_t>(ci)]);
-                                    sdPrev[static_cast<size_t>(ci)] = sdCl;
-                                    const int16_t tdv = static_cast<int16_t>(
-                                        std::max(-32768, std::min(32767, diff)));
-                                    sdWav[static_cast<size_t>(s * nChan + ci)] = tdv;
-                                    // Update wavBuf (channel-major) in stderiv space
-                                    w[static_cast<size_t>(ci * nSamp + s)] = tdv;
-                                }
-                            }
-                            // spkRow: sample-major stderiv (what .spkD stores)
-                            spkRow = std::move(sdWav);
+                                    spkRow[static_cast<size_t>(s * nChan + ci)] =
+                                        w[static_cast<size_t>(ci * nSamp + s)];
                         } else {
                             // Raw pipeline: sample-major for .spk, channel-major for w
                             for (int s = 0; s < nSamp; ++s)

@@ -37,6 +37,7 @@
 #include <QFileInfo>
 #include <functional>
 #include <neurosuite/core/pca_projection.hpp>  // header-only PcaBasis/loadPca/pcaProjectionEnergy
+#include <neurosuite/core/stderiv_transform.hpp> // header-only spatialOrder/applyStderivTransform
 
 
 #include <QList>
