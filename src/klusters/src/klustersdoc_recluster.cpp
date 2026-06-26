@@ -296,8 +296,11 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
                 }
                 clusterPalette.updateClusterList();
                 setActiveClustering(true);                // back to the atom layer the recluster ran in
+                setPendingFiberSelection({newFiber});     // rule 2: land on the synthesized fiber
             }
         }
+        else                                          // CASE 2: new atoms nest under one parent
+            emit hierarchyChildrenCreated(reclusteredClusterList);   // rule 1: select the atoms
 
         rebuildHierarchyFromData();
         emit hierarchyChanged();
@@ -310,6 +313,7 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
     // Parent-scope recluster: the freshly created fibers need realign.  (The child
     // branch returned above; its case-3 new fiber is marked via moveSpikeSubsetToCluster.)
     for (int nf : reclusteredClusterList) noteModifiedFiber(nf);
+    setPendingFiberSelection(reclusteredClusterList);   // land on the reclustered fibers
 
     //Check if the active view is a ProcessWidget
     bool isProcessWidget = dynamic_cast<KlustersApp*>(parent)->doesActiveDisplayContainProcessWidget();

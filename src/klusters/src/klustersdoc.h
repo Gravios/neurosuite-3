@@ -299,6 +299,17 @@ public:
     void noteModifiedFiber(int clusterId);
     /// Return and clear the fibers accumulated since the last drain.
     QList<int> takeModifiedFibers();
+
+    /// Record the parent fibers an operation produced/kept that the post-edit step
+    /// should land the selection on (parent scope).  Applied last, after the async
+    /// realign + renumber, by KlustersApp::applyPendingFiberSelection.  The first id
+    /// is treated as the primary (the one the views/palette centre on).
+    void setPendingFiberSelection(const QList<int>& fibers);
+    /// Return and clear the pending fiber selection.
+    QList<int> takePendingFiberSelection();
+    /// Translate the pending fiber selection through a renumber map (old->new), so a
+    /// selection recorded before renumber still points at the produced fibers after.
+    void renumberPendingFiberSelection(const QMap<int,int>& oldNew);
     /** Restrict the child palette to @p visibleChildren; the rest are hidden via
      *  isChildScopeHidden(), which ClusterPalette::updateClusterList honours. */
     void setChildScope(const QList<int>& visibleChildren);
@@ -1423,6 +1434,7 @@ private:
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
     bool                 childScopeActive = false;  // true while a child is the shown clustering
     QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
+    QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 
     /**Pointer on the parent widget (main window).*/
