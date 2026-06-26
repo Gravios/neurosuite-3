@@ -1400,27 +1400,22 @@ private:
     struct ChildEdit { QList<int> added; QList<int> modified; QList<int> deleted; };
     QList<ChildEdit> childUndoStack;
     QList<ChildEdit> childRedoStack;
-    // Which layer the most recent edit/undo/redo touched, so the atom-undo
+    // Which layer the most recent edit/undo/redo touched, so the explicit atom-undo
     // (Ctrl+Shift+Z) can warn when it would revert an atom edit that is NOT the
     // user's most recent action (their last action was a fiber-layer edit).
     enum class EditLayer { None, Parent, Atom };
     EditLayer lastEditLayer = EditLayer::None;
-    // One marker per edit on the unified order timeline.  The childPre/childPost
-    // fields are vestigial: they once let a parent undo revert the child re-cut that
-    // a parent split/recluster performed implicitly, but that re-cut is now the
-    // explicit refiberize() operation, so no edit populates childPre any more.  The
-    // fields (and the unified timeline itself) are removed when the undo stacks are
-    // split per layer.
-    struct EditMarker {
-        EditLayer         layer;
-        QVector<dataType> childPre;
-        QVector<dataType> childPost;
-    };
-    QList<EditMarker> editOrderUndo;
-    QList<EditMarker> editOrderRedo;
-    // Record one atom-layer edit: push its ChildEdit + an Atom order marker, and
-    // invalidate the atom + unified redo.  The single funnel for the child edits.
+    // The two undo stacks are independent and layer-scoped: undoDispatch/redoDispatch
+    // act on the active layer's own stack (parent clusteringData via undo()/redo(),
+    // or the atom childData stack above), so an undo never crosses layers.  There is
+    // no unified-order timeline -- switch scope to undo the other layer.
+    // Record one atom-layer edit: push its ChildEdit, invalidate the atom redo, and
+    // refresh the active-layer Undo/Redo enable.  The single funnel for child edits.
     void recordChildEdit(const ChildEdit& e);
+    // Emit updateUndoNb/updateRedoNb for the ACTIVE layer's stack, so the main Undo/
+    // Redo enable tracks whichever layer is shown.  Call after any edit/undo/redo and
+    // on every scope switch (setActiveClustering).
+    void refreshUndoRedoEnable();
     // sibling paths captured at open so the child clustering can be re-read lazily
     QString     siblingFetPath, siblingSpkPath, siblingYamlPath;
     long        siblingSpkFileLength = 0;
