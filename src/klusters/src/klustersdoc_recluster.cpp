@@ -259,7 +259,6 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
-        lastEditLayer = EditLayer::Atom;
         modified = true;
         return;
     }
