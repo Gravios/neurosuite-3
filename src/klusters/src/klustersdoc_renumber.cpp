@@ -110,6 +110,9 @@ void KlustersDoc::renumberClusters(){
     // Translate S-pinned cluster ids through the rename so any
     // pinning the user established before R survives the renumber.
     clusterPalette.renumberPinnedIds(clusterIdsOldNew);
+    // Translate a pending post-edit fiber selection through the same map so it still
+    // lands on the produced fibers after the ids are compacted.
+    renumberPendingFiberSelection(clusterIdsOldNew);
 
     //Notify all the views of the modification
     const int numberOfView(viewList->count());

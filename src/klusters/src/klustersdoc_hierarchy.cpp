@@ -327,6 +327,7 @@ int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activ
     setActiveClustering(false);                   // edits always target the parent
     const int kept = groupClusters(fibers, activeView);   // existing: mutate + undo + views
     noteModifiedFiber(kept);                              // merged fiber needs realign
+    setPendingFiberSelection({kept});                    // land on the merged fiber
     rebuildHierarchyFromData();
     emit hierarchyChanged();
     return kept;
@@ -352,6 +353,7 @@ int KlustersDoc::promoteChild(int childCluster, KlustersView& activeView){
         clusterPalette.updateClusterList();
     }
     rebuildHierarchyFromData();
+    setPendingFiberSelection({newId});
     emit hierarchyChanged();
     return newId;
 }
@@ -364,6 +366,7 @@ bool KlustersDoc::moveChild(int childCluster, int targetFiber, KlustersView& act
     if (spk.isEmpty()) return false;
     setActiveClustering(false);
     moveSpikeSubsetToCluster(parent, spk, targetFiber, activeView);   // targetFiber exists
+    setPendingFiberSelection({targetFiber});   // follow the moved child to its new fiber
     rebuildHierarchyFromData();
     emit hierarchyChanged();
     return true;
@@ -395,6 +398,7 @@ int KlustersDoc::groupChildrenIntoFiber(const QList<int>& children, KlustersView
     if (target < 0) return -1;
     clusterPalette.updateClusterList();
     rebuildHierarchyFromData();
+    setPendingFiberSelection({target});
     emit hierarchyChanged();
     return target;
 }
@@ -405,8 +409,10 @@ bool KlustersDoc::dissolveFiber(int fiber, KlustersView& activeView){
     if (kids.size() < 2) return false;                // nothing to explode
     // promoteChild detaches each child into its own fiber; the final child is
     // the only one left under `fiber` so its promote no-ops and it keeps the id.
+    QList<int> produced;
     for (int c : kids)
-        promoteChild(c, activeView);                  // each re-derives + emits
+        produced.append(promoteChild(c, activeView)); // each re-derives + emits
+    setPendingFiberSelection(produced);               // select all the exploded fibers
     return true;
 }
 
@@ -418,6 +424,7 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     if (spk.isEmpty()) return false;
     setActiveClustering(false);
     moveSpikeSubsetToCluster(parent, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
+    setPendingFiberSelection({parent});   // land on the source fiber (noise isn't selectable)
     rebuildHierarchyFromData();
     emit hierarchyChanged();
     return true;

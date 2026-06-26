@@ -1292,6 +1292,14 @@ private:
      * scoped to the given fibers and with no confirm dialog.*/
     void startPostOpRealign(const QList<int>& fibers, bool setChanged);
 
+    /**Apply the doc's pending post-edit fiber selection (KlustersDoc::
+     * takePendingFiberSelection): switch to parent scope and select/focus the
+     * produced fibers.  Called as the LAST step of the post-edit flow -- after the
+     * async realign + renumber -- so it is authoritative regardless of what the
+     * realign/refresh/tab-switch left selected.  No-op when nothing is pending
+     * (e.g. atom-only ops, which select via hierarchyChildrenCreated instead).*/
+    void applyPendingFiberSelection();
+
     /**Flush the deferred view refresh accumulated in realignBatchTouched:
      * invalidate the waveform/correlogram caches for every touched cluster,
      * then force one refresh pass.  Called once when a PCA-Center Align All

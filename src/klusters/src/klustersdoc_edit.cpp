@@ -151,6 +151,27 @@ QList<int> KlustersDoc::takeModifiedFibers()
     return out;
 }
 
+void KlustersDoc::setPendingFiberSelection(const QList<int>& fibers)
+{
+    pendingFiberSelection.clear();
+    for (int f : fibers)
+        if (f > 1 && !pendingFiberSelection.contains(f))
+            pendingFiberSelection.append(f);   // keep order; first stays primary
+}
+
+QList<int> KlustersDoc::takePendingFiberSelection()
+{
+    QList<int> out = pendingFiberSelection;
+    pendingFiberSelection.clear();
+    return out;
+}
+
+void KlustersDoc::renumberPendingFiberSelection(const QMap<int,int>& oldNew)
+{
+    for (int& id : pendingFiberSelection)
+        if (oldNew.contains(id)) id = oldNew.value(id);
+}
+
 void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
                                             const QVector<int>& spkFileIndices,
                                             int toCluster,
@@ -300,6 +321,8 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // Parent-scope delete: the destination fiber that absorbed the spikes changed
     // membership (child scope deletes atoms, so guard on the scope).
     if (!childScopeActive) noteModifiedFiber(clusterId);
+    // Deleted clusters are gone; land the selection on the surviving destination.
+    if (!childScopeActive) setPendingFiberSelection({clusterId});
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
     //Reset the color status in clusterColors if need it
@@ -666,6 +689,7 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // Parent-scope split: the new fiber and its source fibers changed membership.
         noteModifiedFiber(newClusterIdint);
         for (int src : fromClusters) noteModifiedFiber(src);
+        setPendingFiberSelection({newClusterIdint});   // land on the split-off fiber
 
         // Hierarchical mode: the split leaves the child atoms where they are; the
         // user runs refiberize() explicitly to re-cut atoms that now straddle fibers.
@@ -782,6 +806,7 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         if (!childScopeActive) {
             for (int nf : fromToNewClusterIds.values()) noteModifiedFiber(nf);
             for (int sf : fromToNewClusterIds.keys())   noteModifiedFiber(sf);
+            setPendingFiberSelection(fromToNewClusterIds.values());   // land on the new fibers
         }
         updateSimilarityMatrices();   // recompute open error/template/residual matrices
 

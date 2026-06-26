@@ -3968,6 +3968,10 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
         doc->renumberClusters();
     if (configuration().getAutoUpdateMatricesAfterMerge())
         slotUpdateErrorMatrix();
+    // Last step (mirrors the batch-finish path): land on the produced fibers.  For
+    // atom-only ops the pending set is empty and selection was handled at op time
+    // via hierarchyChildrenCreated.
+    applyPendingFiberSelection();
 }
 
 void KlustersApp::scheduleAutoPostClusterEdit(bool clusterSetChanged)
@@ -6880,6 +6884,9 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
         }
     }
     updateUndoRedoDisplay();
+    // Authoritative final step: land on the fibers the op produced (ids already
+    // translated through the renumber above).  No-op if nothing is pending.
+    applyPendingFiberSelection();
 }
 
 // ---------------------------------------------------------------------------
@@ -6960,6 +6967,36 @@ void KlustersApp::startPostOpRealign(const QList<int>& fibers, bool setChanged)
     slotStateChanged(QStringLiteral("realignState"));
     slotStatusMsg(tr("Auto-realign: 0 / %1 fiber(s) …").arg(fibers.size()));
     startRealignBatchWorker(fibers, realignBatchArgs);
+}
+
+// ---------------------------------------------------------------------------
+// applyPendingFiberSelection
+//
+// Last step of the post-edit flow: land the selection on the fibers the
+// operation produced/kept, in parent scope.  Runs after the async realign +
+// renumber, so the doc's pending ids have already been translated through the
+// renumber map and point at the final fibers.  Mirrors the selection path
+// renumberClusters uses (palette selectItems + shownClustersUpdate).
+//
+// Atom-only ops leave the pending set empty and select their new atoms via the
+// hierarchyChildrenCreated handler at op time instead.
+// ---------------------------------------------------------------------------
+void KlustersApp::applyPendingFiberSelection()
+{
+    if (!doc || !activeView()) return;
+    const QList<int> pending = doc->takePendingFiberSelection();
+    if (pending.isEmpty()) return;
+    QList<int> fibers;
+    for (int f : pending)
+        if (f > 1 && doc->clusterHasMembers(f))
+            fibers.append(f);
+    if (fibers.isEmpty()) return;
+    doc->setActiveClustering(false);                 // parent scope
+    if (clusterPalette) {
+        clusterPalette->selectItems(fibers);         // first id is the primary
+        clusterPalette->setFocusToList();
+    }
+    doc->shownClustersUpdate(fibers, *activeView());
 }
 
 // ---------------------------------------------------------------------------
