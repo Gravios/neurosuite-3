@@ -106,7 +106,6 @@ void KlustersDoc::prepareClusterColorUndo(){
     //Store the current clusterColors in the undo list and make the temporary become the current one.
     clusterColorListUndoList.prepend(clusterColorList);
     clusterColorList = clusterColorListTemp;
-    editOrderUndo.prepend(EditMarker{EditLayer::Parent, {}, {}});   // unified-order marker for this parent edit
 
     //if the number of undo has been reach remove the last element in the undo list (first inserted)
     int currentClusterColorsNbUndo = clusterColorListUndoList.count();
@@ -116,7 +115,6 @@ void KlustersDoc::prepareClusterColorUndo(){
     //Clear the redoList
     qDeleteAll(clusterColorListRedoList);
     clusterColorListRedoList.clear();
-    editOrderRedo.clear();   // a new parent edit invalidates the unified redo too
 
     //Signal to klusters the new number of undo and redo
     emit updateUndoNb(clusterColorListUndoList.count());

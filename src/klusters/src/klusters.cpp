@@ -2768,9 +2768,9 @@ void KlustersApp::slotRedo()
 
 void KlustersApp::slotUpdateUndoNb(int undoNb){
     currentNbUndo = undoNb;
-    // Unified undo: the main Undo is live when EITHER the parent or the atom
-    // timeline still has an entry to revert.
-    if(currentNbUndo > 0 || (doc && doc->childUndoCount() > 0)) {
+    // Layer-scoped undo: the count is already the shown layer's (parent or atom),
+    // so the main Undo reflects that layer alone.
+    if(currentNbUndo > 0) {
         slotStateChanged("undoState");
     }
     else {
@@ -2780,9 +2780,8 @@ void KlustersApp::slotUpdateUndoNb(int undoNb){
 
 void KlustersApp::slotUpdateRedoNb(int redoNb){
     currentNbRedo = redoNb;
-    // Only disable Redo when BOTH timelines are exhausted (undoState/emptyUndoState
-    // keep mRedo enabled while either has redo).
-    if(currentNbRedo == 0 && !(doc && doc->childRedoCount() > 0)) {
+    // Layer-scoped: disable Redo when the shown layer's redo stack is exhausted.
+    if(currentNbRedo == 0) {
         slotStateChanged("emptyRedoState");
     }
 }
