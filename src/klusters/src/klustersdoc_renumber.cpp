@@ -143,6 +143,14 @@ void KlustersDoc::renumberClusters(){
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(activeClusters);
     shownClustersUpdate(activeClusters,*activeView);
+    // Hierarchical: the renumber compacts parent ids but leaves child->parent
+    // pointing at the old ids, orphaning every renamed parent's atoms.  Re-derive
+    // the map from the (renumbered) parent spike labels.  No hierarchyChanged emit
+    // here: renumberClusters runs inside the deferred post-edit flow and that signal
+    // would re-enter it (see scheduleAutoPostClusterEdit, which deliberately hooks
+    // only renumber()).  The child palette refreshes on the post-edit parent
+    // selection (applyPendingFiberSelection) or the next user selection.
+    if (childData) rebuildHierarchyFromData();
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +259,16 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     QList<int> activeClusters = activeView->clusters();
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(activeClusters);
+    // Hierarchical: a parent rename (T-key renumber-to-end, Shift+S reorder,
+    // watershed) leaves child->parent pointing at the dead old id, so the renamed
+    // parent's atoms orphan and vanish from the child palette.  Re-derive the map
+    // from the renamed parent spike labels and refresh the child palette.  Unlike
+    // renumberClusters, this path is a direct user action (not the deferred post-edit
+    // flow), so emitting hierarchyChanged here cannot re-enter that flow.
+    if (childData) {
+        rebuildHierarchyFromData();
+        emit hierarchyChanged();
+    }
 }
 
 // ---------------------------------------------------------------------------
