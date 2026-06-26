@@ -264,6 +264,19 @@ public:
     // to a selected child's spikes.
     /** True if a .clc child sibling was detected next to the opened .clu. */
     bool hasChildSibling()    const { return !clcSiblingPath.isEmpty(); }
+    /** The two systems are mutually exclusive and the choice is committed at open
+     *  from the file set: a session is Hierarchical iff BOTH a .clc child layer and
+     *  a .clp parent-map sibling were found next to the opened .clu (the complete
+     *  triple that Save regenerates together); otherwise it is a Flat .clu session.
+     *  There is no runtime toggle between the two — a .clc without its .clp is a
+     *  flat session that ignores the orphan child file. */
+    enum class ClusteringMode { Flat, Hierarchical };
+    ClusteringMode clusteringMode() const {
+        return (!clcSiblingPath.isEmpty() && !clpSiblingPath.isEmpty())
+               ? ClusteringMode::Hierarchical : ClusteringMode::Flat;
+    }
+    /** True iff this is a committed hierarchical session (.clc + .clp present). */
+    bool isHierarchicalSession() const { return clusteringMode() == ClusteringMode::Hierarchical; }
     /** True once the child clustering has actually been loaded into memory. */
     bool hasChildClustering() const { return childData != nullptr; }
     /** Lazily build childData/childColorList + the parent<->child maps from the

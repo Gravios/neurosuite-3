@@ -719,11 +719,16 @@ void KlustersApp::createMenus()
 
     //Displays menu
     QMenu *displayMenu = menuBar()->addMenu(tr("&Displays"));
-    mHierarchicalView = displayMenu->addAction(tr("Show Child Clusters (.clc)"));
+    mHierarchicalView = displayMenu->addAction(tr("Hierarchical Session (.clc + .clp)"));
     mHierarchicalView->setCheckable(true);
     mHierarchicalView->setChecked(false);
-    mHierarchicalView->setEnabled(false);   // enabled on open iff a .clc sibling exists
-    connect(mHierarchicalView, &QAction::toggled, this, &KlustersApp::slotHierarchicalViewToggled);
+    mHierarchicalView->setEnabled(false);   // committed at open from the file set; never a runtime toggle
+    mHierarchicalView->setToolTip(tr("Checked when the opened clustering has both a .clc child\n"
+                                     "and a .clp parent-map sibling — the session is then\n"
+                                     "hierarchical.  Determined by the files present at open, not\n"
+                                     "toggled at runtime; a flat .clu session is the alternative."));
+    // No toggled() connection: the mode is set once in the open path
+    // (see slotHierarchicalViewToggled, called directly there).
     displayMenu->addSeparator();
 
     // Hierarchy edits (enabled only while the child palette is shown): merge the
@@ -1852,18 +1857,24 @@ void KlustersApp::initDisplay(){
     // Hierarchical view: enable the toggle when the opened document has a .clc
     // child sibling (auto-detected in KlustersDoc::openDocument), and turn it on
     // by default so the child palette is immediately available.
+    // Hierarchical vs flat is committed here, once, from the file set: a complete
+    // .clu + .clc + .clp triple opens a hierarchical session, anything else is a
+    // flat .clu session.  The menu entry is a disabled indicator of that choice,
+    // not a runtime toggle, so the two systems never mix within a session.
     if(childPanel) childPanel->hide();
     if(childPaletteA) childPaletteA->reset();
     if(childPaletteB) childPaletteB->reset();
     if(mHierarchicalView){
-        const bool hasChild = doc->hasChildSibling();
+        const bool hier = doc->isHierarchicalSession();
         {
-            const QSignalBlocker block(mHierarchicalView);   // set state without firing the slot
-            mHierarchicalView->setChecked(false);
-            mHierarchicalView->setEnabled(hasChild);
+            const QSignalBlocker block(mHierarchicalView);
+            mHierarchicalView->setChecked(hier);
+            mHierarchicalView->setEnabled(false);   // mode is fixed for the session
         }
-        if(hasChild)
-            mHierarchicalView->setChecked(true);   // default on -> fires the slot -> loads + shows
+        if(hier)
+            slotHierarchicalViewToggled(true);   // commit hierarchical: load + show the child layer
+        else
+            doc->setActiveClustering(false);     // flat: parent clustering active (child panel already hidden above)
     }
 
     // Once the view is shown and the WaveformThread has loaded the first
@@ -3405,9 +3416,10 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
 void KlustersApp::slotHierarchicalViewToggled(bool on){
     if(!doc){ if(mHierarchicalView) mHierarchicalView->setChecked(false); return; }
     if(on){
-        if(!doc->hasChildSibling()){
+        if(!doc->isHierarchicalSession()){
             QMessageBox::information(this,tr("Hierarchical view"),
-                tr("No .clc child file was found next to this clustering."));
+                tr("A hierarchical session needs both a .clc child file and a .clp\n"
+                   "parent-map sibling next to this clustering."));
             mHierarchicalView->setChecked(false);
             return;
         }
