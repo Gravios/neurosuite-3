@@ -292,6 +292,13 @@ public:
      *  which the document may be edited or saved. */
     void setActiveClustering(bool child);
     bool isChildClusteringActive() const { return childScopeActive; }
+
+    /// Record a parent fiber whose spike membership an operation created or changed.
+    /// Drained by takeModifiedFibers() in the coalesced post-edit step to drive the
+    /// per-fiber auto-realign.  Ignores noise/artifact (id <= 1) and de-duplicates.
+    void noteModifiedFiber(int clusterId);
+    /// Return and clear the fibers accumulated since the last drain.
+    QList<int> takeModifiedFibers();
     /** Restrict the child palette to @p visibleChildren; the rest are hidden via
      *  isChildScopeHidden(), which ClusterPalette::updateClusterList honours. */
     void setChildScope(const QList<int>& visibleChildren);
@@ -1415,6 +1422,7 @@ private:
     QMap<int,int>        childToParent;      // child id -> parent unit id
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
     bool                 childScopeActive = false;  // true while a child is the shown clustering
+    QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 
     /**Pointer on the parent widget (main window).*/

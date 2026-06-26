@@ -326,6 +326,7 @@ int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activ
     if (fibers.size() < 2) return -1;
     setActiveClustering(false);                   // edits always target the parent
     const int kept = groupClusters(fibers, activeView);   // existing: mutate + undo + views
+    noteModifiedFiber(kept);                              // merged fiber needs realign
     rebuildHierarchyFromData();
     emit hierarchyChanged();
     return kept;

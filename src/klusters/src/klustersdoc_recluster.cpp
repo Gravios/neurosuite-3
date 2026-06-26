@@ -307,6 +307,9 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
 
     //Prepare the undo
     prepareReclusteringUndo(reclusteredClusterList,clustersToRecluster);
+    // Parent-scope recluster: the freshly created fibers need realign.  (The child
+    // branch returned above; its case-3 new fiber is marked via moveSpikeSubsetToCluster.)
+    for (int nf : reclusteredClusterList) noteModifiedFiber(nf);
 
     //Check if the active view is a ProcessWidget
     bool isProcessWidget = dynamic_cast<KlustersApp*>(parent)->doesActiveDisplayContainProcessWidget();
