@@ -47,6 +47,7 @@ set(klusters_SRCS
     spikerealigndialog.cpp
     klusters.cpp
     klustersdoc.cpp
+    klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)
     klustersview.cpp
     klustersyamlreader.cpp
     main.cpp
