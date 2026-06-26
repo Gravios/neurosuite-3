@@ -52,6 +52,7 @@ set(klusters_SRCS
     klustersdoc_hierarchy.cpp   # KlustersDoc hierarchical (.clc child) clustering (split from klustersdoc.cpp)
     klustersdoc_edit.cpp        # KlustersDoc cluster-editing operations (split from klustersdoc.cpp)
     klustersdoc_renumber.cpp    # KlustersDoc cluster renumber/reorder (split from klustersdoc.cpp)
+    klustersdoc_io.cpp          # KlustersDoc document lifecycle / file I/O (split from klustersdoc.cpp)
     klustersview.cpp
     klustersyamlreader.cpp
     main.cpp
