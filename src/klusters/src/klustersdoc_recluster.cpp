@@ -398,11 +398,14 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         clusterPalette.selectItems(emptyList);
     }
 
-    // Hierarchical mode: a PARENT recluster redraws the parent's spikes across new
-    // parents, which leaves the child (atom) layer stale -- atoms minted on the old
-    // clustering may now span several new fibers.  The recluster no longer re-cuts
-    // the child implicitly (no covering-atom mint, no childPre coupling to the
-    // parent undo); the user runs refiberize() afterwards to re-establish the
-    // nesting and regenerate .clp.  Leaving the child untouched keeps the two layers
-    // independent and the parent undo free of any child coupling.
+    // Hierarchical mode: a PARENT recluster redraws the parent's spikes across the
+    // new fibers.  Re-derive child->parent from the new parent labels so the existing
+    // atoms re-nest under whichever new fiber their spikes now fall in (an atom whose
+    // spikes span several new fibers follows its first spike row).  Mirrors the
+    // case-2 child branch: rebuild, then hierarchyChanged repopulates the child
+    // palette.  childData-guarded; flat sessions are untouched.
+    if (childData) {
+        rebuildHierarchyFromData();
+        emit hierarchyChanged();
+    }
 }
