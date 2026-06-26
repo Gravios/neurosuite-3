@@ -50,6 +50,7 @@
 #include <vector>
 #include <string>
 #include <stdint.h>
+#include <neurosuite/core/pca_projection.hpp> // canonical PCAE loader (block-wise)
 
 using namespace std;
 
@@ -95,50 +96,24 @@ struct PcaModel {
 
 static bool loadPcaModel(const char* path, PcaModel& m)
 {
-    FILE* f = fopen(path, "rb");
-    if (!f) { cerr << "error: cannot open pca file '" << path << "'" << endl; return false; }
-
-    int32_t magic, version, nc, d2u, ncomp, rshift, iscentered;
-    if (fread(&magic,      sizeof(int32_t), 1, f) != 1 ||
-        fread(&version,    sizeof(int32_t), 1, f) != 1 ||
-        fread(&nc,         sizeof(int32_t), 1, f) != 1 ||
-        fread(&d2u,        sizeof(int32_t), 1, f) != 1 ||
-        fread(&ncomp,      sizeof(int32_t), 1, f) != 1 ||
-        fread(&rshift,     sizeof(int32_t), 1, f) != 1 ||
-        fread(&iscentered, sizeof(int32_t), 1, f) != 1) {
-        cerr << "error: truncated pca file header" << endl; fclose(f); return false;
+    // Delegate to the canonical PCAE loader.  This fixes a real bug: the previous
+    // inline reader parsed the PCAE header but then read the body INTERLEAVED
+    // (mean[ch] then evec[ch] per channel), whereas PCAE is BLOCK-WISE (all means,
+    // then all eigenvectors) — so every channel past the first was scrambled.  It
+    // also only accepted version 1; core reads v1 and v2 (and ignores the v2
+    // method / nInputChannels fields, which this raw refeaturize does not need).
+    neurosuite::core::PcaBasis basis;
+    if (!neurosuite::core::loadPca(path, basis)) {
+        cerr << "error: cannot load PCAE pca file '" << path << "'" << endl;
+        return false;
     }
-    if (magic != static_cast<int32_t>(0x50434145)) {
-        cerr << "error: bad magic in pca file (not a PCAE file)" << endl; fclose(f); return false;
-    }
-    if (version != 1) {
-        cerr << "error: unsupported pca file version " << version << endl; fclose(f); return false;
-    }
-
-    m.nChannels   = static_cast<int>(nc);
-    m.data2use    = static_cast<int>(d2u);
-    m.nComponents = static_cast<int>(ncomp);
-    m.recShift    = static_cast<int>(rshift);
-    m.isCentered  = (iscentered != 0);
-
-    m.mean.resize(static_cast<size_t>(m.nChannels));
-    m.eigvec.resize(static_cast<size_t>(m.nChannels));
-
-    for (int ch = 0; ch < m.nChannels; ++ch) {
-        m.mean[static_cast<size_t>(ch)].resize(static_cast<size_t>(m.data2use));
-        if (fread(m.mean[static_cast<size_t>(ch)].data(), sizeof(double),
-                  static_cast<size_t>(m.data2use), f) != static_cast<size_t>(m.data2use)) {
-            cerr << "error: truncated pca file (means, channel " << ch << ")" << endl;
-            fclose(f); return false;
-        }
-        size_t evSz = static_cast<size_t>(m.data2use * m.nComponents);
-        m.eigvec[static_cast<size_t>(ch)].resize(evSz);
-        if (fread(m.eigvec[static_cast<size_t>(ch)].data(), sizeof(double), evSz, f) != evSz) {
-            cerr << "error: truncated pca file (eigenvectors, channel " << ch << ")" << endl;
-            fclose(f); return false;
-        }
-    }
-    fclose(f);
+    m.nChannels   = basis.nCh;
+    m.data2use    = basis.data2use;
+    m.nComponents = basis.nComp;
+    m.recShift    = basis.recShift;
+    m.isCentered  = basis.centered;
+    m.mean        = basis.means;   // [ch][data2use]
+    m.eigvec      = basis.evec;    // [ch][data2use * nComp], col-major
     return true;
 }
 
