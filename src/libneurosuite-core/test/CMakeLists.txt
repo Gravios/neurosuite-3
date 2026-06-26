@@ -12,6 +12,17 @@ add_test(NAME core_test_custody_conformance
          COMMAND core_test_custody_conformance
                  "${CMAKE_CURRENT_SOURCE_DIR}/custody_vectors.tsv")
 
+# PCAE transform-method enum conformance.  Pins core::Method's integer values and
+# its spatialOrder/hasTemporalDiff/methodTag helpers against the shared table; the
+# fiber-kit Python mirror runs an identical copy so the cross-repo enum cannot drift.
+add_executable(core_test_pca_method_conformance pca_method_conformance_test.cpp)
+target_compile_features(core_test_pca_method_conformance PRIVATE cxx_std_17)
+target_include_directories(core_test_pca_method_conformance
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_pca_method_conformance
+         COMMAND core_test_pca_method_conformance
+                 "${CMAKE_CURRENT_SOURCE_DIR}/pca_method_vectors.tsv")
+
 # Run the Python mirror (ndm_resolve_io) against the SAME vectors, so the C++
 # and Python implementations are kept in lock-step by `ctest`.
 find_package(Python3 COMPONENTS Interpreter)
