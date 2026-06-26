@@ -979,6 +979,14 @@ void KlustersApp::createMenus()
         [this](QList<int>&) { scheduleAutoPostClusterEdit(true); });
     connect(doc, &KlustersDoc::spikesDeleted, this,
         [this]() { scheduleAutoPostClusterEdit(false); });
+    // Hierarchy-menu ops (fiber merge, promote/move/group/dissolve/drop, child
+    // recluster) emit hierarchyChanged rather than the flat signals above.  Route
+    // them through the same coalesced post-edit step so each one realigns the
+    // fibers it modified (drained from takeModifiedFibers) and refreshes matrices.
+    // Atom-only ops modify no fibers, so the drain is empty and only the matrix
+    // recompute runs.  (false: these never renumber on their own.)
+    connect(doc, &KlustersDoc::hierarchyChanged, this,
+        [this]() { scheduleAutoPostClusterEdit(false); });
 }
 
 
@@ -3935,8 +3943,27 @@ void KlustersApp::autoPostMerge()
 void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
 {
     if (!doc) return;
-    // Renumber first (only when the set actually changed and the option is on),
-    // then recompute matrices against the final ids.
+    // Drain the fibers this operation created/modified.  Always clear the set (so it
+    // never leaks across turns); realign only when the option is on and the realign
+    // lane is idle.  The realign-state lock means no edit can land while a job runs,
+    // so a busy lane here is only a manual realign in flight — fall back to inline.
+    const QList<int> dirty = doc->takeModifiedFibers();
+    if (configuration().getAutoRealignAfterMerge()
+            && !realignRunning && !realignBatchActive) {
+        QList<int> fibers;
+        for (int f : dirty)
+            if (f > 1 && doc->clusterHasMembers(f))
+                fibers.append(f);
+        if (!fibers.isEmpty()) {
+            // Async: lock change-initiating actions, show progress, realign the
+            // modified fibers as one batch, then renumber + matrix on batch finish.
+            startPostOpRealign(fibers, clusterSetChanged);
+            return;
+        }
+    }
+    // No realign (option off, lane busy, or nothing realignable): renumber first
+    // (only when the set actually changed and the option is on), then recompute
+    // matrices against the final ids.
     if (clusterSetChanged && configuration().getAutoRenumberAfterMerge())
         doc->renumberClusters();
     if (configuration().getAutoUpdateMatricesAfterMerge())
@@ -6831,6 +6858,16 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
                   .arg(realignBatchFailed)
                   .arg(realignBatchShiftedTotal));
     slotStateChanged(QStringLiteral("noRealignState"));
+    // Post-edit auto-realign: the modified fibers are now realigned, so run the
+    // renumber + matrix recompute the inline path would otherwise have done.  Only
+    // when this batch was launched by startPostOpRealign (not a manual Align-All).
+    if (realignPostOpRenumberMatrix) {
+        realignPostOpRenumberMatrix = false;
+        if (realignPostOpSetChanged && configuration().getAutoRenumberAfterMerge())
+            doc->renumberClusters();
+        if (configuration().getAutoUpdateMatricesAfterMerge())
+            slotUpdateErrorMatrix();
+    }
     // Switch back to the Overview Display so the user can immediately
     // arrow-key through clusters and see updated waveforms.
     if (tabsParent) {
@@ -6843,6 +6880,86 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
         }
     }
     updateUndoRedoDisplay();
+}
+
+// ---------------------------------------------------------------------------
+// startPostOpRealign
+//
+// Launch a batch realign of the parent fibers an edit just created/modified.
+// Mirrors the slotPcaAlignAllClusters launch (args derivation, progress widget,
+// batch-state init, realign lock, worker start) but scoped to the given fibers
+// and with no confirm dialog.  Sets realignPostOpRenumberMatrix so the batch
+// finish handler runs the renumber + matrix recompute.
+//
+// Preconditions (checked by the caller, autoPostClusterEdit): doc valid, fibers
+// non-empty and already filtered to existing members with id>1, and the realign
+// lane idle (!realignRunning && !realignBatchActive).
+// ---------------------------------------------------------------------------
+void KlustersApp::startPostOpRealign(const QList<int>& fibers, bool setChanged)
+{
+    if (!doc || fibers.isEmpty()) return;
+    // Refresh the saved-mode args (top-ch gate + --pca-refine) like the
+    // single-cluster and Align-All paths, then derive the batch args: strip any
+    // top-ch / pca-refine tokens and re-add for the current top-channel count.
+    realignArgs = buildRealignArgs();
+    const int topCh = realignTopChanSpinBox ? realignTopChanSpinBox->value() : 2;
+    {
+        const QStringList toks =
+            realignArgs.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        QStringList kept;
+        for (qsizetype i = 0; i < toks.size(); ++i) {
+            const QString& tok = toks[i];
+            if (tok == QStringLiteral("--topchannels") || tok == QStringLiteral("-k")) {
+                ++i;                  // also skip the value
+                continue;
+            }
+            if (tok == QStringLiteral("--pca-refine") || tok == QStringLiteral("-p")) {
+                continue;
+            }
+            kept << tok;
+        }
+        realignBatchArgs = kept.join(QLatin1Char(' ')).trimmed();
+        if (!realignBatchArgs.isEmpty()) realignBatchArgs += QLatin1Char(' ');
+        realignBatchArgs +=
+            QStringLiteral("--topchannels %1 --pca-refine").arg(topCh);
+    }
+    // Status-bar progress widget (the same one Align-All uses).
+    if (!realignProgressBar) {
+        realignProgressBar = new QProgressBar(this);
+        realignProgressBar->setObjectName(QStringLiteral("realignProgress"));
+        realignProgressBar->setTextVisible(true);
+        realignProgressBar->setMaximumWidth(280);
+        statusBar()->addPermanentWidget(realignProgressBar);
+    }
+    realignProgressBar->setRange(0, fibers.size());
+    realignProgressBar->setValue(0);
+    realignProgressBar->setFormat(tr("Auto-realign: %v / %m fiber(s)"));
+    realignProgressBar->show();
+    // Clean up any leftover thread / worker from a prior single-cluster run.
+    if (realignThread) {
+        realignThread->quit();
+        realignThread->wait(2000);
+        delete realignThread;
+        realignThread = nullptr;
+    }
+    if (realignWorker) {
+        delete realignWorker;
+        realignWorker = nullptr;
+    }
+    // Initialise batch state and launch ONE worker for the whole list.
+    realignBatchActive          = true;
+    realignBatchTotal           = fibers.size();
+    realignBatchAccepted        = 0;
+    realignBatchFailed          = 0;
+    realignBatchShiftedTotal    = 0;
+    realignBatchTouched.clear();
+    realignPostOpRenumberMatrix = true;       // run renumber+matrix on batch finish
+    realignPostOpSetChanged     = setChanged;
+    doc->beginRealignBatchLog(fibers);
+    realignRunning = true;
+    slotStateChanged(QStringLiteral("realignState"));
+    slotStatusMsg(tr("Auto-realign: 0 / %1 fiber(s) …").arg(fibers.size()));
+    startRealignBatchWorker(fibers, realignBatchArgs);
 }
 
 // ---------------------------------------------------------------------------

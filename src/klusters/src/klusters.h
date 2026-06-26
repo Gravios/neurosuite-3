@@ -1212,6 +1212,12 @@ private:
      * reported via slotRealignClusterDone and finalised in
      * slotRealignBatchFinished.*/
     bool realignBatchActive;
+    /**When a batch was launched by the post-edit auto-realign (startPostOpRealign),
+     * the batch-finish handler runs the renumber + matrix recompute that the inline
+     * path would otherwise do.  realignPostOpSetChanged carries the clusterSetChanged
+     * flag through to that step.*/
+    bool realignPostOpRenumberMatrix = false;
+    bool realignPostOpSetChanged = false;
     /**Total number of clusters scheduled at batch start — used to render
      * the "(i/N)" progress prefix in the output tab.*/
     int realignBatchTotal;
@@ -1278,6 +1284,13 @@ private:
      * so the ~450ms/cluster orchestration round-trip is paid once.*/
     void startRealignBatchWorker(const QList<int>& clusterIds,
                                  const QString& launchArgs);
+
+    /**Launch a batch realign of the parent fibers an edit just created/modified
+     * (drained from KlustersDoc::takeModifiedFibers), locking the change-initiating
+     * actions and showing the progress bar.  Sets realignPostOpRenumberMatrix so the
+     * batch-finish handler runs renumber + matrix.  Mirrors the Align-All launch but
+     * scoped to the given fibers and with no confirm dialog.*/
+    void startPostOpRealign(const QList<int>& fibers, bool setChanged);
 
     /**Flush the deferred view refresh accumulated in realignBatchTouched:
      * invalidate the waveform/correlogram caches for every touched cluster,
