@@ -138,6 +138,19 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
 }
 
 
+void KlustersDoc::noteModifiedFiber(int clusterId)
+{
+    if (clusterId > 1 && !modifiedFibers.contains(clusterId))
+        modifiedFibers.append(clusterId);
+}
+
+QList<int> KlustersDoc::takeModifiedFibers()
+{
+    QList<int> out = modifiedFibers;
+    modifiedFibers.clear();
+    return out;
+}
+
 void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
                                             const QVector<int>& spkFileIndices,
                                             int toCluster,
@@ -189,6 +202,11 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     }
 
     emit removeSpikesFromClusters(fromClusters, toCluster, emptiedClusters);
+    // This always mutates the parent (clusteringData), so from/to are fibers: mark
+    // them for the post-edit auto-realign (noise/artifact and emptied ids are
+    // filtered out downstream by id>1 + clusterHasMembers).
+    noteModifiedFiber(fromCluster);
+    noteModifiedFiber(toCluster);
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
     if (clusterColorList->isColorChanged())
@@ -279,6 +297,9 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 
     //Notify the errorMatrixView of the modification
     emit clustersDeleted(clustersToDelete,clusterId);
+    // Parent-scope delete: the destination fiber that absorbed the spikes changed
+    // membership (child scope deletes atoms, so guard on the scope).
+    if (!childScopeActive) noteModifiedFiber(clusterId);
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
     //Reset the color status in clusterColors if need it
@@ -642,6 +663,9 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // palette refresh — is in the shared helper.
         commitClusterCreation(newClusterIdint, fromClusters, emptyClusters,
                               activeView);
+        // Parent-scope split: the new fiber and its source fibers changed membership.
+        noteModifiedFiber(newClusterIdint);
+        for (int src : fromClusters) noteModifiedFiber(src);
 
         // Hierarchical mode: the split leaves the child atoms where they are; the
         // user runs refiberize() explicitly to re-cut atoms that now straddle fibers.
@@ -753,6 +777,12 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
 
         //Notify the errorMatrixView of the modification
         emit newClustersAdded(fromToNewClusterIds,emptyClusters);
+        // Parent-scope multi-split: the new fibers (values) and their sources (keys)
+        // changed membership.  In child scope these are atoms, so guard on the scope.
+        if (!childScopeActive) {
+            for (int nf : fromToNewClusterIds.values()) noteModifiedFiber(nf);
+            for (int sf : fromToNewClusterIds.keys())   noteModifiedFiber(sf);
+        }
         updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
 
