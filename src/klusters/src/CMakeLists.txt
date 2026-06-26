@@ -54,6 +54,7 @@ set(klusters_SRCS
     klustersdoc_renumber.cpp    # KlustersDoc cluster renumber/reorder (split from klustersdoc.cpp)
     klustersdoc_io.cpp          # KlustersDoc document lifecycle / file I/O (split from klustersdoc.cpp)
     klustersdoc_realign.cpp     # KlustersDoc spike realignment / nudge (split from klustersdoc.cpp)
+    klustersdoc_dipsplit.cpp    # KlustersDoc bimodality / KNN splitting (split from klustersdoc.cpp)
     klustersview.cpp
     klustersyamlreader.cpp
     main.cpp
