@@ -12,14 +12,18 @@
 // (plugin Stage 2) vs RMS-centroid recenter — stays at the call site; see
 // docs/pca-align-refine-behavioral-diff.md.
 //
-//   .pca file format (matches Klusters / KlustaKwik / process_pca exactly):
-//     header [int32 × 5]: nCh, data2use, nComp, isCentered, recShift
+//   .pca / .pcaD file format — PCAE (the single canonical format):
+//     header [int32 × 7]:
+//       magic = 0x50434145 ("PCAE"), version = 1,
+//       nChannels, data2use, nComponents, recShift, isCentered
 //     then, BLOCK-WISE:
 //       nCh × (data2use × double)           : per-channel means, ALWAYS present
 //       nCh × (data2use × nComp × double)   : per-channel eigenvectors, col-major
 //                                             (ev[k*data2use+u])
 //     The means block is written unconditionally; `isCentered` governs only
 //     whether the means are SUBTRACTED at projection time, not their presence.
+//     Block-wise (all means, then all eigenvectors) is canonical: it is what
+//     process_pca writes and what klusters / shadowcluster / KK read.
 
 #ifndef NEUROSUITE_PCA_PROJECTION_HPP
 #define NEUROSUITE_PCA_PROJECTION_HPP
@@ -41,26 +45,29 @@ struct PcaBasis {
     bool valid() const { return nCh > 0 && data2use > 0 && nComp > 0; }
 };
 
-// Load a .pca / .pcaD basis.  Returns false on open/short-read; on success the
-// header fields and per-channel means/eigenvectors are populated.
+inline constexpr int32_t kPcaeMagic   = 0x50434145;  // "PCAE"
+inline constexpr int32_t kPcaeVersion = 1;
+
+// Load a PCAE .pca / .pcaD basis.  Returns false on open / bad-magic /
+// unsupported-version / short-read.  Block-wise body: ALL per-channel means
+// first (always present), then ALL per-channel eigenvectors.
 inline bool loadPca(const std::string& path, PcaBasis& pca) {
     std::FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) return false;
-    int32_t hdr[5];
-    if (std::fread(hdr, 4, 5, f) != 5) { std::fclose(f); return false; }
-    pca.nCh      = hdr[0];
-    pca.data2use = hdr[1];
-    pca.nComp    = hdr[2];
-    pca.centered = (hdr[3] != 0);
-    pca.recShift = hdr[4];
+    int32_t hdr[7];
+    if (std::fread(hdr, 4, 7, f) != 7) { std::fclose(f); return false; }
+    if (hdr[0] != kPcaeMagic)   { std::fclose(f); return false; }  // not a PCAE file
+    if (hdr[1] != kPcaeVersion) { std::fclose(f); return false; }  // unsupported version
+    pca.nCh      = hdr[2];
+    pca.data2use = hdr[3];
+    pca.nComp    = hdr[4];
+    pca.recShift = hdr[5];
+    pca.centered = (hdr[6] != 0);
+    if (!pca.valid()) { std::fclose(f); return false; }
     const size_t d2u  = static_cast<size_t>(pca.data2use);
     const size_t evSz = d2u * static_cast<size_t>(pca.nComp);
     pca.means.assign(pca.nCh, std::vector<double>(d2u, 0.0));
     pca.evec.assign(pca.nCh, std::vector<double>(evSz, 0.0));
-    // Block-wise: ALL per-channel means first (always present), then ALL
-    // per-channel eigenvectors.  Reading means conditionally or interleaving
-    // means/evec per channel mis-offsets the eigenvectors and yields a
-    // scrambled basis (e.g. for the non-centered group-5 stderiv basis).
     for (int ch = 0; ch < pca.nCh; ++ch)
         if (std::fread(pca.means[ch].data(), 8, d2u, f) != d2u)
         { std::fclose(f); return false; }
@@ -71,6 +78,27 @@ inline bool loadPca(const std::string& path, PcaBasis& pca) {
     return true;
 }
 
+// Write a PCAE .pca / .pcaD basis (the single canonical writer).  Layout is
+// the exact inverse of loadPca; means are always emitted regardless of
+// `centered`.  Returns false on open / short-write.
+inline bool writePca(const std::string& path, const PcaBasis& pca) {
+    if (!pca.valid()) return false;
+    std::FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    const int32_t hdr[7] = {
+        kPcaeMagic, kPcaeVersion,
+        pca.nCh, pca.data2use, pca.nComp, pca.recShift, pca.centered ? 1 : 0
+    };
+    bool ok = (std::fwrite(hdr, 4, 7, f) == 7);
+    const size_t d2u  = static_cast<size_t>(pca.data2use);
+    const size_t evSz = d2u * static_cast<size_t>(pca.nComp);
+    for (int ch = 0; ch < pca.nCh && ok; ++ch)
+        ok = (std::fwrite(pca.means[ch].data(), 8, d2u, f) == d2u);
+    for (int ch = 0; ch < pca.nCh && ok; ++ch)
+        ok = (std::fwrite(pca.evec[ch].data(), 8, evSz, f) == evSz);
+    std::fclose(f);
+    return ok;
+}
 // PCA-projection energy of a channel-major waveform (wf[ch*nSamp + t]) against
 // the basis:  E = Σ_ch Σ_k ( Σ_u ev[k·data2use+u]·(x[recShift+u] − μ[u]) )².
 // Uses min(pca.nCh, nChan) channels so a stderiv basis trained on nChan−1
