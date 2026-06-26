@@ -69,9 +69,9 @@ void Configuration::read() {
     realignMode       = settings.value("realignMode",        0).toInt();
     curationLogging   = settings.value("curationLogging",    true).toBool();
     realignVerbose    = settings.value("realignVerbose",     false).toBool();
-    autoRealignAfterMerge = settings.value("autoRealignAfterMerge", false).toBool();
-    autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", false).toBool();
-    autoUpdateMatricesAfterMerge = settings.value("autoUpdateMatricesAfterMerge", false).toBool();
+    autoRealignAfterMerge = settings.value("autoRealignAfterMerge", true).toBool();
+    autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", true).toBool();
+    autoUpdateMatricesAfterMerge = settings.value("autoUpdateMatricesAfterMerge", true).toBool();
     dipSplitMinSize      = settings.value("dipSplitMinSize",      50).toInt();
     dipSplitBloatFactor  = settings.value("dipSplitBloatFactor",  0.0).toDouble();
     dipSplitValleyThresh = settings.value("dipSplitValleyThresh", 0.20).toDouble();

@@ -272,9 +272,9 @@ public:
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     bool   getCurationLoggingDefault()   const {return true;}
     bool   getRealignVerboseDefault()    const {return false;}
-    bool   getAutoRealignAfterMergeDefault() const {return false;}
-    bool   getAutoRenumberAfterMergeDefault() const {return false;}
-    bool   getAutoUpdateMatricesAfterMergeDefault() const {return false;}
+    bool   getAutoRealignAfterMergeDefault() const {return true;}
+    bool   getAutoRenumberAfterMergeDefault() const {return true;}
+    bool   getAutoUpdateMatricesAfterMergeDefault() const {return true;}
 
     int    getDipSplitMinSizeDefault()      const {return 50;}
     double getDipSplitBloatFactorDefault()  const {return 0.0;}
