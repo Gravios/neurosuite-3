@@ -2092,14 +2092,13 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // ── Load .pca.N / .pcaD.N model ──────────────────────────────────────
     // .pcaD.N is written by process_pca when its output is .fetD.N.
     // Its existence definitively identifies a stderiv session — no need
-    // for the nCh==nChan-1 heuristic.
-    // Header format (5 x int32): nCh, data2use, nComp, isCentered, recShift
-    struct PcaBasis {
-        int  nCh=0, data2use=0, nComp=0, recShift=0;
-        bool centered=false;
-        std::vector<std::vector<double>> means, evec;
-        bool valid() const { return nCh>0 && data2use>0 && nComp>0; }
-    } pca;
+    // for the nCh==nChan-1 heuristic.  Loaded below through the PCAE loader
+    // (neurosuite::core::loadPca), which validates the header and carries the
+    // transform Method the reprojection reads.  PcaBasis is the core type
+    // (KlustersDoc alias in klustersdoc.h); a local redefinition here used to
+    // shadow it, leaving pca with no `method` field and the wrong type for
+    // loadPca's reference parameter.
+    PcaBasis pca;
 
     // Derive session base: strip ".<type>[.<variant>].N" (handles .spk.N,
     // .spkD.N and dotted .spk.stderiv.N).
