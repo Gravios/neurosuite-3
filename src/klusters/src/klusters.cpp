@@ -5755,6 +5755,12 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     }
 
     const bool childRecluster = doc->reclusterTargetIsChild();   // capture before the pin is consumed
+    // The parent that owns the reclustered child, captured before reclusteringUpdate
+    // rebuilds the hierarchy.  slotTabChange (below) clears the parent palette when
+    // the recluster-output tab is active, so we re-select this afterward to keep the
+    // parent highlighted under the freshly split atoms.  (-1 for a parent recluster.)
+    const int reclusteredParent = (childRecluster && !clustersToRecluster.isEmpty())
+                                  ? doc->parentOfChild(clustersToRecluster.first()) : -1;
     doc->reclusteringUpdate(clustersToRecluster,clustersFromReclustering);
 
     // Restore focus to the palette rather than the 2D ClusterView.  After a
@@ -5783,6 +5789,14 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // whichever views are currently open.  A bare noReclusterState only
     // re-enables mReCluster and leaves everything else locked.
     slotTabChange(tabsParent->currentIndex());
+    // slotTabChange's recluster-output branch deselects the parent palette; for a
+    // child recluster restore the owning parent's highlight.  selectItems is silent
+    // (no scope switch), so the child scope and the new-atom selection in the child
+    // palette are preserved.  For a case-3 child recluster (spans >= 2 fibers) the
+    // deferred applyPendingFiberSelection later selects the synthesised fiber, which
+    // correctly overrides this.
+    if (childRecluster && reclusteredParent > 1 && clusterPalette)
+        clusterPalette->selectItems({reclusteredParent});
     QApplication::restoreOverrideCursor();
 }
 
