@@ -357,7 +357,12 @@ public:
      *  polygon split), carve only the child atoms that now straddle two or more
      *  parents so every parent regains whole atoms; atoms wholly inside one
      *  parent are left intact (a split must not collapse untouched children). */
-    void resyncStraddlingAtoms();
+    /** Explicit fiber/atom resync: re-cut any child atom whose spikes now span more
+     *  than one parent fiber so the nesting invariant holds again, then re-derive
+     *  the child<->parent maps (regenerated as .clp on Save).  Parent edits no
+     *  longer do this implicitly; the user reassigns/consolidates fibers and then
+     *  refiberizes.  Independent of the parent and atom undo stacks. */
+    void refiberize();
     /** Overwrite the .clc and .clp siblings (with .bak) from the current child
      *  layer + child->parent map.  Called by saveDocument when a child
      *  clustering is loaded. */
@@ -1400,13 +1405,12 @@ private:
     // user's most recent action (their last action was a fiber-layer edit).
     enum class EditLayer { None, Parent, Atom };
     EditLayer lastEditLayer = EditLayer::None;
-    // One marker per edit on the unified order timeline.  For a parent edit that
-    // also re-cut the child layer (the covering-atom mint after a parent recluster,
-    // or resyncStraddlingAtoms after a parent split -- both via moveSpikeSubset,
-    // which pushes no childData undo level), childPre holds the child label snapshot
-    // taken BEFORE the re-cut, so a parent undo can revert it atomically; childPost
-    // is filled at undo time so redo can re-apply it.  Empty for edits with no
-    // child re-cut (every atom edit, and parent edits made with no child layer).
+    // One marker per edit on the unified order timeline.  The childPre/childPost
+    // fields are vestigial: they once let a parent undo revert the child re-cut that
+    // a parent split/recluster performed implicitly, but that re-cut is now the
+    // explicit refiberize() operation, so no edit populates childPre any more.  The
+    // fields (and the unified timeline itself) are removed when the undo stacks are
+    // split per layer.
     struct EditMarker {
         EditLayer         layer;
         QVector<dataType> childPre;

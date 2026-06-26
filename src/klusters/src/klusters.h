@@ -297,6 +297,7 @@ private Q_SLOTS:
     void slotMoveChildrenToFiber();
     void slotGroupChildrenIntoFiber();
     void slotDissolveFiber();
+    void slotRefiberize();
     void slotDropChildToNoise();
     void slotMergeChildren();
     void slotUndoChildEdit();
@@ -806,6 +807,7 @@ private:
     QAction* mGroupChildren = nullptr;      // Hierarchy: group selected children into a new fiber
     QAction* mDissolveFiber = nullptr;      // Hierarchy: explode a fiber into its children
     QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise
+    QAction* mRefiberize = nullptr;         // Hierarchy: re-cut atoms onto the current fibers
     QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)
     QAction* mUndoChildEdit = nullptr;      // Hierarchy: undo last atom-layer edit
     QAction* mRedoChildEdit = nullptr;      // Hierarchy: redo last atom-layer edit

@@ -646,9 +646,8 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         commitClusterCreation(newClusterIdint, fromClusters, emptyClusters,
                               activeView);
 
-        // Hierarchical mode: the split moved spikes into a new fiber, so any child
-        // atom that spanned the cut now straddles two parents -- re-cut just those.
-        if (childData) resyncStraddlingAtoms();
+        // Hierarchical mode: the split leaves the child atoms where they are; the
+        // user runs refiberize() explicitly to re-cut atoms that now straddle fibers.
 
         // Log after: surviving source clusters + the new cluster
         QList<int> resultIds;
@@ -770,8 +769,8 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         clusterPalette.updateClusterList();
         clusterPalette.selectItems(clustersToShow);
 
-        // Hierarchical mode: re-cut child atoms that now straddle the split.
-        if (childData) resyncStraddlingAtoms();
+        // Hierarchical mode: the split leaves the child atoms where they are; the
+        // user runs refiberize() explicitly to re-cut atoms that now straddle fibers.
 
         // Log after: surviving sources + all newly created clusters
         {
