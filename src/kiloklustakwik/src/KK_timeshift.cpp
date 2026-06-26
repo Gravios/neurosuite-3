@@ -13,6 +13,7 @@
 #include "realign_xcorr.h"
 #include "realign_center.h"
 #include "klusters_realign.h"
+#include <neurosuite/core/pca_projection.hpp>  // canonical PCAE loader (block-wise, v1+v2)
 
 #include <algorithm>
 #include <cmath>
@@ -99,20 +100,20 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
     // --- Load raw PCA basis from .pca[D].N ---
     char pcaPath[STRLEN + 16];
     pickInputPath(pcaPath, sizeof(pcaPath), FileBase, "pca", ElecNo);
-    FILE* pf = fopen(pcaPath, "rb");
-    if (!pf) {
-        Output("InitTimeShift: %s not found — post-split shift probe disabled\n",
-               pcaPath);
+    // PCAE loader (libneurosuite-core): block-wise body, magic+version checked,
+    // v1 and v2 accepted.  Replaces the inline legacy 5-int reader, which would
+    // silently fail once process_pca writes PCAE.
+    neurosuite::core::PcaBasis tsBasis;
+    if (!neurosuite::core::loadPca(pcaPath, tsBasis)) {
+        Output("InitTimeShift: %s not found or not a valid PCAE basis — "
+               "post-split shift probe disabled\n", pcaPath);
         return false;
     }
-
-    auto rd32 = [&](int32_t& v) { return fread(&v, 4, 1, pf) == 1; };
-    int32_t nc, d2u, ncomp, ic, rs;
-    if (!rd32(nc) || !rd32(d2u) || !rd32(ncomp) || !rd32(ic) || !rd32(rs)) {
-        Output("InitTimeShift: truncated PCA header in %s — probe disabled\n",
-               pcaPath);
-        fclose(pf); return false;
-    }
+    const int32_t nc    = tsBasis.nCh;
+    const int32_t d2u   = tsBasis.data2use;
+    const int32_t ncomp = tsBasis.nComp;
+    const int32_t rs    = tsBasis.recShift;
+    const int32_t ic    = tsBasis.centered ? 1 : 0;
     // Channel-count check — accepts canonical .pca.N (nc == nChan) and
     // stderiv .pcaD.N variants with channel reduction.  For SDIFF_ALLPAIRS
     // (order 3) and SDIFF_FIRST (order 1), the last of nChan channels is
@@ -127,7 +128,7 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
                "(expected %d for full .pca or %d for reduced stderiv .pca) "
                "— probe disabled\n",
                nc, nChan, nChan, nChan - 1);
-        fclose(pf); return false;
+        return false;
     }
     if (isStderiv) {
         Output("InitTimeShift: stderiv mode (.pcaD.%d basis, %d effective "
@@ -148,32 +149,15 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
     if (N >= d2u / 2) {
         Output("InitTimeShift: N=%d is >= data2use/2=%d; shifted bases would "
                "be nearly empty — probe disabled\n", N, d2u/2);
-        fclose(pf); m_timeShiftBasis = TimeShiftBasis{}; return false;
+        m_timeShiftBasis = TimeShiftBasis{}; return false;
     }
 
-    // Stage the raw (unshifted) basis first — we discard it after building
-    // the (2N+1) pre-shifted copies.
-    std::vector<std::vector<double>> rawMean  (static_cast<size_t>(nc));
-    std::vector<std::vector<double>> rawEigvec(static_cast<size_t>(nc));
-    for (int ch = 0; ch < nc; ++ch) {
-        rawMean[static_cast<size_t>(ch)]
-            .resize(static_cast<size_t>(d2u));
-        if (fread(rawMean[static_cast<size_t>(ch)].data(),
-                  8, static_cast<size_t>(d2u), pf) != static_cast<size_t>(d2u)) {
-            Output("InitTimeShift: truncated PCA means (ch %d) — probe disabled\n", ch);
-            fclose(pf); m_timeShiftBasis = TimeShiftBasis{}; return false;
-        }
-    }
-    const size_t evSz = static_cast<size_t>(d2u * ncomp);
-    for (int ch = 0; ch < nc; ++ch) {
-        rawEigvec[static_cast<size_t>(ch)].resize(evSz);
-        if (fread(rawEigvec[static_cast<size_t>(ch)].data(),
-                  8, evSz, pf) != evSz) {
-            Output("InitTimeShift: truncated PCA eigenvectors (ch %d) — probe disabled\n", ch);
-            fclose(pf); m_timeShiftBasis = TimeShiftBasis{}; return false;
-        }
-    }
-    fclose(pf);
+    // Stage the raw (unshifted) basis (block-wise, from core) — discarded after
+    // building the (2N+1) pre-shifted copies.  tsBasis.nCh == nc, so means/evec
+    // already hold exactly the nc channels the projection iterates.
+    std::vector<std::vector<double>> rawMean   = tsBasis.means;
+    std::vector<std::vector<double>> rawEigvec = tsBasis.evec;
+    const size_t evSz = static_cast<size_t>(d2u) * static_cast<size_t>(ncomp);
 
     const int nPCAFeatures = m_timeShiftBasis.nChan * m_timeShiftBasis.nComp;
     if (nPCAFeatures > nDims - 1) {

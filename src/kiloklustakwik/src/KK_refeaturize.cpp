@@ -16,6 +16,7 @@
 #include "realign_xcorr.h"
 #include "realign_center.h"
 #include "klusters_realign.h"
+#include <neurosuite/core/pca_projection.hpp>  // canonical PCAE loader (block-wise, v1+v2)
 
 #include <algorithm>
 #include <cmath>
@@ -426,12 +427,6 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
     // Prefer canonical .pca.N; fall back to .pcaD.N (stderiv pipeline).
     char pcaPath[STRLEN + 16];
     pickInputPath(pcaPath, sizeof(pcaPath), FileBase, "pca", ElecNo);
-    FILE* pf = fopen(pcaPath, "rb");
-    if (!pf) {
-        Output("RefeaturizeFromShifts: %s not found — skipping re-projection\n",
-               pcaPath);
-        return;
-    }
 
     struct PcaModel {
         int nChan, data2use, nComp, recShift;
@@ -441,16 +436,17 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
     } pm;
 
     {
-        // Header written by process_pca: 5 x int32
-        //   [nChannels, data2use, nComponents, isCentered, recShift]
-        int32_t nc, d2u, ncomp, ic, rs;
-        auto rd = [&](int32_t& v) { return fread(&v, 4, 1, pf) == 1; };
-        if (!rd(nc)||!rd(d2u)||!rd(ncomp)||!rd(ic)||!rd(rs)) {
-            Output("RefeaturizeFromShifts: truncated PCA header in %s\n", pcaPath);
-            fclose(pf); return;
+        // PCAE loader (libneurosuite-core): block-wise body, magic+version
+        // checked, v1 and v2 both accepted.  Replaces the inline legacy 5-int
+        // reader, which would silently fail once process_pca writes PCAE.
+        neurosuite::core::PcaBasis basis;
+        if (!neurosuite::core::loadPca(pcaPath, basis)) {
+            Output("RefeaturizeFromShifts: %s not found or not a valid PCAE basis "
+                   "— skipping re-projection\n", pcaPath);
+            return;
         }
-        pm.nChan = nc; pm.data2use = d2u; pm.nComp = ncomp;
-        pm.recShift = rs; pm.isCentered = (ic != 0);
+        pm.nChan = basis.nCh; pm.data2use = basis.data2use; pm.nComp = basis.nComp;
+        pm.recShift = basis.recShift; pm.isCentered = basis.centered;
 
         Output("RefeaturizeFromShifts: PCA model — nChan=%d data2use=%d nComp=%d recShift=%d isCentered=%d\n",
                pm.nChan, pm.data2use, pm.nComp, pm.recShift, (int)pm.isCentered);
@@ -458,31 +454,11 @@ void KK::RefeaturizeFromShifts(const std::vector<int>& spikeShifts,
         if (pm.nChan != nChan) {
             Output("RefeaturizeFromShifts: PCA has %d channels, spike group has %d — "
                    "skipping\n", pm.nChan, nChan);
-            fclose(pf); return;
+            return;
         }
-
-        // process_pca writes ALL means first (all channels), then ALL eigenvectors.
-        // Layout: [mean_ch0..mean_ch(N-1)][evec_ch0..evec_ch(N-1)]
-        pm.mean.resize(static_cast<size_t>(nc));
-        pm.eigvec.resize(static_cast<size_t>(nc));
-        for (int ch = 0; ch < nc; ++ch) {
-            pm.mean[static_cast<size_t>(ch)].resize(static_cast<size_t>(d2u));
-            if (fread(pm.mean[static_cast<size_t>(ch)].data(), 8,
-                      static_cast<size_t>(d2u), pf) != static_cast<size_t>(d2u)) {
-                Output("RefeaturizeFromShifts: truncated PCA means (ch %d)\n", ch);
-                fclose(pf); return;
-            }
-        }
-        for (int ch = 0; ch < nc; ++ch) {
-            size_t evSz = static_cast<size_t>(d2u * ncomp);
-            pm.eigvec[static_cast<size_t>(ch)].resize(evSz);
-            if (fread(pm.eigvec[static_cast<size_t>(ch)].data(), 8, evSz, pf) != evSz) {
-                Output("RefeaturizeFromShifts: truncated PCA eigenvectors (ch %d)\n", ch);
-                fclose(pf); return;
-            }
-        }
+        pm.mean   = basis.means;   // [ch][data2use]
+        pm.eigvec = basis.evec;    // [ch][data2use*nComp], col-major
     }
-    fclose(pf);
 
     // Sanity check: print first mean and eigenvector values
     if (!pm.mean.empty() && !pm.mean[0].empty())
@@ -789,52 +765,39 @@ void KK::RefeaturizeChangedSpikes(
         return;
     }
 
-    // ── Load PCA model (same path as RefeaturizeFromShifts).  Local
-    //    copy of the loader keeps this function self-contained; if
-    //    you change the model format, update both call sites. ──
+    // ── Load PCA model via libneurosuite-core (PCAE, block-wise, v1+v2). ──
+    //    This fixes two pre-existing bugs in the old inline reader: it read the
+    //    body as float (process_pca writes double — so it consumed half the bytes
+    //    as garbage eigenvectors), and it read the header as
+    //    [nChan,data2use,nComp,recShift,isCentered], swapping recShift/isCentered
+    //    relative to the legacy writer.  core reads the correct layout; the
+    //    downstream projection keeps float, so the doubles are narrowed on copy.
     char pcaPath[STRLEN + 16];
     pickInputPath(pcaPath, sizeof(pcaPath), FileBase, "pca", ElecNo);
-    FILE* pf = fopen(pcaPath, "rb");
-    if (!pf) {
-        Output("RefeaturizeChangedSpikes: %s not found — skipping\n", pcaPath);
+    neurosuite::core::PcaBasis pcaBasis;
+    if (!neurosuite::core::loadPca(pcaPath, pcaBasis)) {
+        Output("RefeaturizeChangedSpikes: %s not found or not a valid PCAE basis "
+               "— skipping\n", pcaPath);
         return;
     }
-    int pcaNChan = 0, pcaData2use = 0, pcaNComp = 0, pcaRecShift = 0;
-    int pcaIsCentered = 0;
-    if (fread(&pcaNChan,    sizeof(int), 1, pf) != 1 ||
-        fread(&pcaData2use, sizeof(int), 1, pf) != 1 ||
-        fread(&pcaNComp,    sizeof(int), 1, pf) != 1 ||
-        fread(&pcaRecShift, sizeof(int), 1, pf) != 1 ||
-        fread(&pcaIsCentered, sizeof(int), 1, pf) != 1) {
-        Output("RefeaturizeChangedSpikes: truncated PCA header — skipping\n");
-        fclose(pf); return;
-    }
+    const int pcaNChan    = pcaBasis.nCh;
+    const int pcaData2use = pcaBasis.data2use;
+    const int pcaNComp    = pcaBasis.nComp;
+    const int pcaRecShift = pcaBasis.recShift;
+    const int pcaIsCentered = pcaBasis.centered ? 1 : 0;
+    (void)pcaRecShift; (void)pcaIsCentered;
     if (pcaNChan != nChan) {
         Output("RefeaturizeChangedSpikes: PCA nChan=%d != spike-group nChan=%d "
                "— skipping\n", pcaNChan, nChan);
-        fclose(pf); return;
+        return;
     }
 
     std::vector<std::vector<float>> pcaMean(pcaNChan);
     std::vector<std::vector<float>> pcaEv  (pcaNChan);
     for (int ch = 0; ch < pcaNChan; ++ch) {
-        pcaMean[ch].resize(pcaData2use);
-        if (fread(pcaMean[ch].data(), sizeof(float), pcaData2use, pf)
-                != static_cast<size_t>(pcaData2use)) {
-            Output("RefeaturizeChangedSpikes: PCA means truncated\n");
-            fclose(pf); return;
-        }
+        pcaMean[ch].assign(pcaBasis.means[ch].begin(), pcaBasis.means[ch].end());
+        pcaEv[ch].assign(pcaBasis.evec[ch].begin(),  pcaBasis.evec[ch].end());
     }
-    for (int ch = 0; ch < pcaNChan; ++ch) {
-        pcaEv[ch].resize(static_cast<size_t>(pcaNComp) * pcaData2use);
-        if (fread(pcaEv[ch].data(), sizeof(float),
-                  static_cast<size_t>(pcaNComp) * pcaData2use, pf)
-                != static_cast<size_t>(pcaNComp) * static_cast<size_t>(pcaData2use)) {
-            Output("RefeaturizeChangedSpikes: PCA eigvecs truncated\n");
-            fclose(pf); return;
-        }
-    }
-    fclose(pf);
 
     // ── Read int64 timestamps once (for affected spikes). ──
     char resPath[STRLEN + 8];
