@@ -120,7 +120,6 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     //Notify the errorMatrixView of the modification
     emit clustersGrouped(clustersToGroup,newClusterIdint);
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
-    lastEditLayer = EditLayer::Parent;
 
     //Reset the color status in clusterColors if need it
     if(clusterColorList->isColorChanged())
@@ -191,7 +190,6 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
 
     emit removeSpikesFromClusters(fromClusters, toCluster, emptiedClusters);
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
-    lastEditLayer = EditLayer::Parent;
 
     if (clusterColorList->isColorChanged())
         clusterColorList->resetAllColorStatus();
@@ -634,7 +632,6 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         rebuildHierarchyFromData();
         emit hierarchyChanged();
         emit hierarchyChildrenCreated(QList<int>{newAtom});
-        lastEditLayer = EditLayer::Atom;
         modified = true;
         logAfter(QList<int>{newAtom});
     }
@@ -721,7 +718,6 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         rebuildHierarchyFromData();
         emit hierarchyChanged();
         emit hierarchyChildrenCreated(newClusters);
-        lastEditLayer = EditLayer::Atom;
         modified = true;
         logAfter(newClusters);
     }

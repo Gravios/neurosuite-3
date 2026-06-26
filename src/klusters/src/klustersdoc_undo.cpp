@@ -578,7 +578,7 @@ void KlustersDoc::undo(){
     }
     // hierarchical view: an undo of a hierarchy edit reverts clusteringData, so
     // re-derive the fiber<-child maps and refresh the child palette.
-    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); lastEditLayer = EditLayer::Parent; }
+    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); }
 }
 
 
@@ -730,6 +730,6 @@ void KlustersDoc::redo(){
         curationLogger->notifyRedo();
     }
     // hierarchical view: a redo re-applies a hierarchy edit; re-derive the maps.
-    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); lastEditLayer = EditLayer::Parent; }
+    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); }
 }
 

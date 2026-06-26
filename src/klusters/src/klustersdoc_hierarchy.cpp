@@ -453,7 +453,6 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
-    lastEditLayer = EditLayer::Atom;
     modified = true;
     return newId;
 }
@@ -469,7 +468,6 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
-    lastEditLayer = EditLayer::Atom;
     modified = true;
     refreshUndoRedoEnable();
     return true;
@@ -485,7 +483,6 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
-    lastEditLayer = EditLayer::Atom;
     modified = true;
     refreshUndoRedoEnable();
     return true;

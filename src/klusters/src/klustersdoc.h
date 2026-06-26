@@ -329,10 +329,6 @@ public:
     bool redoChildEdit(KlustersView& activeView);
     int childUndoCount() const { return childUndoStack.count(); }
     int childRedoCount() const { return childRedoStack.count(); }
-    /** True when the top of the child-undo stack IS the user's most recent
-     *  action (so Ctrl+Shift+Z reverts what they just did).  False when the most
-     *  recent action was a fiber-layer edit/undo — the app warns in that case. */
-    bool childUndoMatchesLastAction() const { return lastEditLayer == EditLayer::Atom; }
     /** Unified undo/redo dispatcher.  Routes Ctrl+Z / Ctrl+Y to the parent
      *  (clusteringData) or atom (childData) timeline by the recorded order of
      *  edits, so one shortcut reverts the single most recent edit regardless of
@@ -1400,11 +1396,6 @@ private:
     struct ChildEdit { QList<int> added; QList<int> modified; QList<int> deleted; };
     QList<ChildEdit> childUndoStack;
     QList<ChildEdit> childRedoStack;
-    // Which layer the most recent edit/undo/redo touched, so the explicit atom-undo
-    // (Ctrl+Shift+Z) can warn when it would revert an atom edit that is NOT the
-    // user's most recent action (their last action was a fiber-layer edit).
-    enum class EditLayer { None, Parent, Atom };
-    EditLayer lastEditLayer = EditLayer::None;
     // The two undo stacks are independent and layer-scoped: undoDispatch/redoDispatch
     // act on the active layer's own stack (parent clusteringData via undo()/redo(),
     // or the atom childData stack above), so an undo never crosses layers.  There is

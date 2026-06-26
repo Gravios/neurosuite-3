@@ -743,6 +743,7 @@ void KlustersApp::createMenus()
     mDissolveFiber = hierarchyMenu->addAction(tr("&Dissolve Fiber into Children"));
     mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
     mRefiberize = hierarchyMenu->addAction(tr("Re&fiberize (re-cut atoms onto fibers)"));
+    mRefiberize->setShortcut(Qt::Key_F);
     mRefiberize->setToolTip(tr("Re-cut child atoms that now straddle more than one fiber so each\n"
                                "atom belongs to a single fiber again, and regenerate the .clp\n"
                                "parent map.  Run after reassigning / consolidating the fibers."));
@@ -3479,13 +3480,6 @@ void KlustersApp::slotUndoChildEdit(){
         statusBar()->showMessage(tr("No child-layer (atom) edit to undo."), 4000);
         return;
     }
-    // Two undo timelines exist: Ctrl+Z reverts fiber-layer edits, Ctrl+Shift+Z
-    // reverts atom-layer edits.  If the user's most recent action was NOT an
-    // atom edit, warn that this is reverting an earlier atom edit out of order.
-    if(!doc->childUndoMatchesLastAction())
-        statusBar()->showMessage(
-            tr("Note: your most recent action was a fiber-layer edit (use Ctrl+Z). "
-               "Ctrl+Shift+Z is reverting an earlier child-layer edit."), 7000);
     doc->undoChildEditDispatch();
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
