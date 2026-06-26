@@ -87,6 +87,9 @@ struct arguments {
 	bool   varimax;                   ///< --varimax: 0/1, default 0
 	int    varimaxMaxIter;            ///< --varimax-max-iter: default 30
 	double varimaxTol;                ///< --varimax-tol: change in criterion to call convergence, default 1e-6
+
+	int    pcaMethod;                 ///< --pca-method: neurosuite::core::Method (0..6) tagged into the PCAE basis; -1 => infer from filename
+	bool   isPcaMethodProvided;
 };
 
 
