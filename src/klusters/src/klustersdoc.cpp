@@ -4618,58 +4618,21 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             << (_pcaExists ? " [found]" : " [NOT FOUND]") << "\n";
         emitFlush();
         if (_pcaExists) {
-        FILE* fp = fopen(pcaPath.toLocal8Bit().constData(), "rb");
-        if (fp) {
-            int32_t hdr[5] = {};
-            bool ok = (fread(hdr, sizeof(int32_t), 5, fp) == 5);
-            if (ok) {
-                pca.nCh      = static_cast<int>(hdr[0]);
-                pca.data2use = static_cast<int>(hdr[1]);
-                pca.nComp    = static_cast<int>(hdr[2]);
-                pca.centered = (hdr[3] != 0);
-                pca.recShift = static_cast<int>(hdr[4]);
-                if (pca.nCh<=0    || pca.nCh>64       ||
-                    pca.data2use<=0 || pca.data2use>4096 ||
-                    pca.nComp<=0   || pca.nComp>64       ||
-                    pca.recShift<0 || pca.recShift+pca.data2use>nSamp) {
-                    log << "WARNING: .pca header out of range (nCh="
-                        << pca.nCh << " data2use=" << pca.data2use
-                        << " nComp=" << pca.nComp << " recShift="
-                        << pca.recShift << ") — ignoring .pca file\n";
-                    pca = PcaBasis{}; ok = false;
-                }
+            // PCAE loader (libneurosuite-core): validates magic/version, reads the
+            // block-wise body, and populates pca.method/nInputChannels.  core
+            // already rejects bad magic / version / short reads and guarantees
+            // nCh,data2use,nComp > 0; klusters keeps its upper-bound sanity checks
+            // (and the original log lines) against an absurd-but-valid header.
+            if (!neurosuite::core::loadPca(pcaPath.toStdString(), pca)) {
+                pca = PcaBasis{};
+            } else if (pca.nCh > 64 || pca.data2use > 4096 || pca.nComp > 64 ||
+                       pca.recShift < 0 || pca.recShift + pca.data2use > nSamp) {
+                log << "WARNING: .pca header out of range (nCh="
+                    << pca.nCh << " data2use=" << pca.data2use
+                    << " nComp=" << pca.nComp << " recShift="
+                    << pca.recShift << ") — ignoring .pca file\n";
+                pca = PcaBasis{};
             }
-            if (ok) {
-                pca.means.resize(static_cast<size_t>(pca.nCh));
-                for (int ch = 0; ch < pca.nCh && ok; ++ch) {
-                    pca.means[static_cast<size_t>(ch)].resize(
-                        static_cast<size_t>(pca.data2use));
-                    ok = (fread(pca.means[static_cast<size_t>(ch)].data(),
-                                sizeof(double),
-                                static_cast<size_t>(pca.data2use), fp)
-                          == static_cast<size_t>(pca.data2use));
-                }
-            }
-            if (ok) {
-                const size_t evSz = static_cast<size_t>(pca.data2use)
-                                  * static_cast<size_t>(pca.nComp);
-                try {
-                    pca.evec.resize(static_cast<size_t>(pca.nCh));
-                    for (int ch = 0; ch < pca.nCh && ok; ++ch) {
-                        pca.evec[static_cast<size_t>(ch)].resize(evSz);
-                        ok = (fread(pca.evec[static_cast<size_t>(ch)].data(),
-                                    sizeof(double), evSz, fp) == evSz);
-                    }
-                } catch (const std::bad_alloc&) {
-                    log << "WARNING: .pca evec allocation failed (data2use="
-                        << pca.data2use << " nComp=" << pca.nComp
-                        << ") — .pca file is corrupt or wrong format, ignoring\n";
-                    pca = PcaBasis{}; ok = false;
-                }
-            }
-            if (!ok) pca = PcaBasis{};
-            fclose(fp);
-        }
         }
         if (pca.valid()) {
             // Loaded fresh from disk — cache for the rest of the batch so the
