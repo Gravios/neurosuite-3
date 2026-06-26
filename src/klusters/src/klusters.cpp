@@ -6384,6 +6384,19 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSaveAction->setEnabled(false);
         mSaveAsAction->setEnabled(false);
         mRenumberAndSave->setEnabled(false);
+        // Hierarchy-menu mutators initiate parent/child membership changes too, so
+        // they must be locked for the duration of any realign (manual or post-edit);
+        // otherwise a GUI-thread edit could race the background realign worker.
+        if (mMergeFibers)    mMergeFibers->setEnabled(false);
+        if (mPromoteChild)   mPromoteChild->setEnabled(false);
+        if (mMoveChild)      mMoveChild->setEnabled(false);
+        if (mGroupChildren)  mGroupChildren->setEnabled(false);
+        if (mDissolveFiber)  mDissolveFiber->setEnabled(false);
+        if (mDropChildNoise) mDropChildNoise->setEnabled(false);
+        if (mRefiberize)     mRefiberize->setEnabled(false);
+        if (mMergeChildren)  mMergeChildren->setEnabled(false);
+        if (mUndoChildEdit)  mUndoChildEdit->setEnabled(false);
+        if (mRedoChildEdit)  mRedoChildEdit->setEnabled(false);
 
     } else if(state == QLatin1String("noRealignState")) {
         // Restore all actions that realignState locked.
@@ -6413,6 +6426,17 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisySpikes->setEnabled(true);
         mIncreaseAmplitudeCorrelation->setEnabled(true);
         mDecreaseAmplitudeCorrelation->setEnabled(true);
+        // Restore the hierarchy-menu mutators locked by realignState.
+        if (mMergeFibers)    mMergeFibers->setEnabled(true);
+        if (mPromoteChild)   mPromoteChild->setEnabled(true);
+        if (mMoveChild)      mMoveChild->setEnabled(true);
+        if (mGroupChildren)  mGroupChildren->setEnabled(true);
+        if (mDissolveFiber)  mDissolveFiber->setEnabled(true);
+        if (mDropChildNoise) mDropChildNoise->setEnabled(true);
+        if (mRefiberize)     mRefiberize->setEnabled(true);
+        if (mMergeChildren)  mMergeChildren->setEnabled(true);
+        if (mUndoChildEdit)  mUndoChildEdit->setEnabled(true);
+        if (mRedoChildEdit)  mRedoChildEdit->setEnabled(true);
         // Re-sync with tab state so any tab-specific disabling is reapplied.
         slotTabChange(tabsParent->currentIndex());
 
