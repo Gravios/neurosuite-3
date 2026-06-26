@@ -1464,7 +1464,7 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
 
-        // Hierarchy operations (Ctrl+arrows, M) while the dual child view is up.
+        // Hierarchy operations (Ctrl+arrows, G) while the dual child view is up.
         // Runs before the Left/Right tab-cycle handler so Ctrl+Left/Right is
         // claimed for custody transfer when a child pane has focus; otherwise it
         // returns false and the tab handler keeps Ctrl+Left/Right.
@@ -1573,9 +1573,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             ke->accept(); // claim the shortcut so the QAction doesn't fire
             return true;
         }
-        // M is the mean-presentation toggle globally, but the adaptive merge in
-        // the dual child view when a palette has focus; claim it there.
-        if(ke->key() == Qt::Key_M && ke->modifiers() == Qt::NoModifier
+        // G is the flat group-clusters action globally, but the adaptive merge in
+        // the dual child view when a palette has focus; claim it there so the
+        // group-clusters QAction doesn't fire.  (M used to be claimed here for the
+        // merge; it is now left to the mean-presentation toggle.)
+        if(ke->key() == Qt::Key_G && ke->modifiers() == Qt::NoModifier
            && childPanel && childPanel->isVisible() && paletteHasFocus()){
             ke->accept();
             return true;
@@ -3638,7 +3640,7 @@ void KlustersApp::cycleHierarchyFocus(bool forward){
 // Ctrl-arrow / M hierarchy operations, dispatched by selection state while the
 // dual child view is visible.  All operations reuse the existing doc primitives
 // (the same ones the &Hierarchy menu drives).  Returns true when consumed.
-//   M (no mod) ............ adaptive merge (see below)
+//   G (no mod) ............ adaptive merge (see below)
 //   Ctrl+Up ............... new fiber from selected children (or all children of 2+ parents)
 //   Ctrl+Down ............. group selected parents
 //   Ctrl+Shift+Down ....... dissolve the selected parent
@@ -3650,9 +3652,10 @@ bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
     const QList<int> parents = clusterPalette->selectedClusters();
     const QList<int> kidsAB  = selectedChildrenAB();
 
-    // M -- adaptive merge.  Only when a palette holds focus (otherwise M is the
-    // mean-presentation display toggle).
-    if(key == Qt::Key_M && mods == Qt::NoModifier){
+    // G -- adaptive merge.  Only when a palette holds focus (otherwise G is the
+    // flat group-clusters action).  M was the old binding; it now stays free for
+    // the mean-presentation display toggle.
+    if(key == Qt::Key_G && mods == Qt::NoModifier){
         if(!paletteHasFocus()) return false;
         if(kidsAB.size() >= 2){
             if(doc->mergeChildren(kidsAB, *activeView()) < 0)
@@ -7885,7 +7888,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"Ctrl+Shift+\u2190 / Ctrl+Shift+\u2192", "Cycle focus: palettes (parent / A / B) + toolbar fields"},
             {"S",              "Mark focused palette's item (parent or child)"},
             {"Esc",            "Return focus from a child palette to the parent"},
-            {"M",              "Merge (adaptive): children \u2192 one child; else fold fiber / parents"},
+            {"G",              "Merge (adaptive): children \u2192 one child; else fold fiber / parents"},
             {"Ctrl+\u2191",        "New fiber from selected children"},
             {"Ctrl+\u2193",        "Group selected parent fibers"},
             {"Ctrl+Shift+\u2193",  "Dissolve selected fiber into its children"},
