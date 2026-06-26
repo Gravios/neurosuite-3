@@ -299,11 +299,15 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
                 setPendingFiberSelection({newFiber});     // rule 2: land on the synthesized fiber
             }
         }
-        else                                          // CASE 2: new atoms nest under one parent
-            emit hierarchyChildrenCreated(reclusteredClusterList);   // rule 1: select the atoms
-
         rebuildHierarchyFromData();
         emit hierarchyChanged();
+        // CASE 2 (the new atoms nest under one parent): select them now -- AFTER the
+        // rebuild, which repopulates the child palette, so the selection isn't wiped
+        // the moment it is set.  Mirrors the child-split / child-createNewClusters
+        // emitters.  (Case 3's synthesised fiber is selected later via the pending-
+        // fiber path, applied after the post-edit flow.)
+        if (spikesBySrcFiber.size() < 2)
+            emit hierarchyChildrenCreated(reclusteredClusterList);   // rule 1
         modified = true;
         return;
     }
