@@ -6344,33 +6344,13 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         sessionBase, "pca", electrodeGroupID, nudgeMethod);
 
     if (QFileInfo::exists(chosenPca)) {
-        FILE* fp = fopen(chosenPca.toLocal8Bit().constData(), "rb");
-        if (fp) {
-            // 5-word header: nCh, data2use, nComp, isCentered, recShift
-            int32_t hdr[5] = {};
-            if (fread(hdr, sizeof(int32_t), 5, fp) == 5) {
-                pca.nCh=hdr[0]; pca.data2use=hdr[1]; pca.nComp=hdr[2];
-                pca.centered=(hdr[3]!=0); pca.recShift=hdr[4];
-                if (pca.nCh>0 && pca.nCh<=64 && pca.data2use>0 && pca.nComp>0) {
-                    pca.means.resize(static_cast<size_t>(pca.nCh));
-                    pca.evec .resize(static_cast<size_t>(pca.nCh));
-                    bool ok=true;
-                    for (int ch=0; ch<pca.nCh && ok; ++ch) {
-                        pca.means[static_cast<size_t>(ch)].resize(static_cast<size_t>(pca.data2use));
-                        ok=(fread(pca.means[static_cast<size_t>(ch)].data(),8,
-                                  static_cast<size_t>(pca.data2use),fp)
-                            == static_cast<size_t>(pca.data2use));
-                    }
-                    for (int ch=0; ch<pca.nCh && ok; ++ch) {
-                        const size_t evSz=static_cast<size_t>(pca.data2use*pca.nComp);
-                        pca.evec[static_cast<size_t>(ch)].resize(evSz);
-                        ok=(fread(pca.evec[static_cast<size_t>(ch)].data(),8,evSz,fp)==evSz);
-                    }
-                    if (!ok) pca=PcaBasis{};
-                } else { pca=PcaBasis{}; }
-            }
-            fclose(fp);
-        }
+        // PCAE loader (libneurosuite-core): validates magic/version and reads the
+        // block-wise body, and — crucially for the reprojection below — carries the
+        // transform Method, so the spatial-derivative order is taken from the basis
+        // itself rather than a separate YAML field.  Returns false (→ invalid, and
+        // the loud refusal below fires) on bad magic / version / short read.
+        if (!neurosuite::core::loadPca(chosenPca.toStdString(), pca))
+            pca = PcaBasis{};
     }
 
     // ── Refuse to nudge when the PCA basis failed to load ────────────────
@@ -6532,45 +6512,28 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     int64_t temporalClampCount = 0;
     int64_t temporalZeroCount  = 0;  // # of (sd - prev = 0) events
 
-    // ── Spatial-derivative order: read from YAML ─────────────────────────
+    // ── Spatial-derivative order: taken from the basis, not the YAML ─────
     // The canonical pipeline (process_extractspikes_stderiv) supports four
-    // spatial-derivative modes selected via -d / sdiffOrder:
+    // spatial-derivative modes:
     //   0 = SDIFF_NONE       (pass-through, no spatial transform)
     //   1 = SDIFF_FIRST      (val − val[ci+1], or val − val[ci-1] at the edge)
     //   2 = SDIFF_LAPLACIAN  (val − ½(val[ci-1] + val[ci+1]) at interior)
-    //   3 = SDIFF_ALLPAIRS   (nChan·val − Σ val   ←  the YAML default)
-    //
-    // Earlier nudge builds hardcoded SDIFF_ALLPAIRS.  Sessions clustered
-    // with any other mode would silently get wrong waveforms after nudge:
-    // the transform applied by nudge would not match the one applied by
-    // the original .spkD/.fetD/.pcaD generation, so the new waveform sits
-    // in a slightly off-axis subspace of the .pcaD eigenvector basis.
-    //
-    // Now read sdiffOrder from the session YAML.  The value is stored under
-    // ndm_extractspikes_stderiv (extraction time).  ndm_pca_stderiv stores
-    // its own copy under that program too, but they should agree — if they
-    // don't, the session is inconsistent and we should refuse to nudge.
-    // Default to ALLPAIRS only when the YAML doesn't carry the field at
-    // all (legacy sessions predating the YAML schema).
-    int sdiffOrder = 3;  // SDIFF_ALLPAIRS — the canonical default
-    if (!parameterFile.isEmpty()) {
-        ParameterYamlReader reader;
-        if (reader.parseFile(parameterFile)) {
-            const QString s = reader.getProgramParameter(
-                QStringLiteral("ndm_extractspikes_stderiv"),
-                QStringLiteral("sdiffOrder"));
-            if (!s.isEmpty()) {
-                bool ok = false;
-                const int v = s.toInt(&ok);
-                if (ok && v >= 0 && v <= 3) sdiffOrder = v;
-            }
-        }
-    }
-    // Capture as const inside the lambda to make the branch cheap.
-    const int kSdiffOrder = sdiffOrder;
+    //   3 = SDIFF_ALLPAIRS   (nChan·val − Σ val)
+    // Reprojection MUST apply the SAME order the .pcaD basis was built with, or
+    // the new waveform lands off-axis in the eigenvector subspace.  Earlier
+    // builds read this from two session-YAML copies (extraction + ndm_pca) that
+    // "should agree, else refuse"; the PCAE basis is now self-describing — its
+    // Method encodes the order — so it is the single authority and the YAML
+    // lookup is gone (spatialOrder()'s enum values 0..3 are exactly the modes
+    // above).  pca is valid here (we refused above otherwise); the ALLPAIRS
+    // fallback only covers a non-temporal-diff method, which should not reach
+    // this transform.
+    const int kSdiffOrder = neurosuite::core::hasTemporalDiff(pca.method)
+        ? static_cast<int>(neurosuite::core::spatialOrder(pca.method))
+        : 3;  // SDIFF_ALLPAIRS
     NS3_DIAG() << "[nudge] sdiffOrder=" << kSdiffOrder
-               << " (0=none 1=first 2=laplacian 3=allpairs)"
-               << " parameterFile=" << parameterFile;
+               << " (from basis method=" << static_cast<int>(pca.method)
+               << "; 0=none 1=first 2=laplacian 3=allpairs)";
 
     auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
                                      const std::vector<int16_t>& prevRaw,
