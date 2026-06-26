@@ -201,6 +201,7 @@ target_link_libraries(klusters
 target_include_directories(klusters PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/../"   # for config-klusters.h and AUTOUIC output
     "${_xcorr_dir}"                     # for realign_xcorr.h from shared location
+    "${CMAKE_SOURCE_DIR}/src/libneurosuite-core/src"  # header-only neurosuite::core (pca_projection.hpp)
 )
 
 # ---------------------------------------------------------------------------

@@ -5304,28 +5304,15 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                         }
                     }
 
-                    // PCA projection energy.  candCM is channel-major:
-                    //   candCM[ch * nSamp + t]
-                    // pca.means[ch] is [data2use], pca.evec[ch] is
-                    // [data2use * nComp] in col-major (same layout the
-                    // makeFetRow lambda uses below at ~line 3995).
-                    double energy = 0.0;
-                    for (int ch = 0; ch < chForPca; ++ch) {
-                        const auto& mu = pca.means[static_cast<size_t>(ch)];
-                        const auto& ev = pca.evec[static_cast<size_t>(ch)];
-                        for (int k = 0; k < kComp; ++k) {
-                            double score = 0.0;
-                            for (int u = 0; u < d2u; ++u) {
-                                const int sIdx = rShift + u;
-                                double x = static_cast<double>(
-                                    candCM[static_cast<size_t>(ch * nSamp + sIdx)]);
-                                if (centered)
-                                    x -= mu[static_cast<size_t>(u)];
-                                score += ev[static_cast<size_t>(k * d2u + u)] * x;
-                            }
-                            energy += score * score;
-                        }
-                    }
+                    // PCA projection energy — shared primitive in
+                    // libneurosuite-core (same math the GPU kernel mirrors and
+                    // the plugin's Stage 2 uses).  candCM is channel-major
+                    // [ch*nSamp+t]; core derives chForPca/kComp/d2u/rShift/
+                    // centered from pca.  The core fn additionally bounds-guards
+                    // sIdx, a no-op here because the loader rejects any basis with
+                    // recShift + data2use > nSamp.
+                    const double energy = neurosuite::core::pcaProjectionEnergy(
+                        candCM.data(), nChan, nSamp, pca);
                     ++validCandidates;
 
                     if (energy > bestEnergy) {
