@@ -36,6 +36,7 @@
 #include <QPoint>
 #include <QFileInfo>
 #include <functional>
+#include <neurosuite/core/pca_projection.hpp>  // header-only PcaBasis/loadPca/pcaProjectionEnergy
 
 
 #include <QList>
@@ -1309,13 +1310,11 @@ private:
      *  one group's basis, so it is read from .pca/.pcaD once and reused for every
      *  cluster instead of re-read per call.  Keyed by path + mtime so it
      *  self-invalidates if the basis file is regenerated. */
-    struct PcaBasis {
-        int  nCh=0, data2use=0, nComp=0, recShift=0;
-        bool centered = false;
-        std::vector<std::vector<double>> means;  // [ch][data2use]
-        std::vector<std::vector<double>> evec;   // [ch][data2use * nComp] col-major
-        bool valid() const { return nCh>0 && data2use>0 && nComp>0; }
-    };
+    // PcaBasis now lives in libneurosuite-core (header-only); the field layout
+    // is identical, the cached member and the inline validating loader populate
+    // it unchanged, and realign shares pcaProjectionEnergy with the
+    // process_alignspikes_pca plugin and the CUDA kernel.
+    using PcaBasis = neurosuite::core::PcaBasis;
     PcaBasis realignPcaCache;
     QString  realignPcaCachePath;
     qint64   realignPcaCacheMtime = -1;
