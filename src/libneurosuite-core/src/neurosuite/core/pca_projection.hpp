@@ -12,11 +12,14 @@
 // (plugin Stage 2) vs RMS-centroid recenter — stays at the call site; see
 // docs/pca-align-refine-behavioral-diff.md.
 //
-//   .pca file format (matches Klusters / KlustaKwik exactly):
+//   .pca file format (matches Klusters / KlustaKwik / process_pca exactly):
 //     header [int32 × 5]: nCh, data2use, nComp, isCentered, recShift
-//     per channel ch ∈ [0, nCh):
-//       data2use × double           : per-channel sample means (only if centered)
-//       nComp × data2use × double   : eigenvectors, col-major (ev[k*data2use+u])
+//     then, BLOCK-WISE:
+//       nCh × (data2use × double)           : per-channel means, ALWAYS present
+//       nCh × (data2use × nComp × double)   : per-channel eigenvectors, col-major
+//                                             (ev[k*data2use+u])
+//     The means block is written unconditionally; `isCentered` governs only
+//     whether the means are SUBTRACTED at projection time, not their presence.
 
 #ifndef NEUROSUITE_PCA_PROJECTION_HPP
 #define NEUROSUITE_PCA_PROJECTION_HPP
@@ -50,21 +53,20 @@ inline bool loadPca(const std::string& path, PcaBasis& pca) {
     pca.nComp    = hdr[2];
     pca.centered = (hdr[3] != 0);
     pca.recShift = hdr[4];
-    pca.means.assign(pca.nCh, std::vector<double>(pca.data2use, 0.0));
-    pca.evec.assign(pca.nCh,
-                    std::vector<double>(static_cast<size_t>(pca.data2use)
-                                       * pca.nComp, 0.0));
-    for (int ch = 0; ch < pca.nCh; ++ch) {
-        if (pca.centered) {
-            if (std::fread(pca.means[ch].data(), 8,
-                            static_cast<size_t>(pca.data2use), f)
-                    != static_cast<size_t>(pca.data2use))
-            { std::fclose(f); return false; }
-        }
-        const size_t evSz = static_cast<size_t>(pca.data2use) * pca.nComp;
+    const size_t d2u  = static_cast<size_t>(pca.data2use);
+    const size_t evSz = d2u * static_cast<size_t>(pca.nComp);
+    pca.means.assign(pca.nCh, std::vector<double>(d2u, 0.0));
+    pca.evec.assign(pca.nCh, std::vector<double>(evSz, 0.0));
+    // Block-wise: ALL per-channel means first (always present), then ALL
+    // per-channel eigenvectors.  Reading means conditionally or interleaving
+    // means/evec per channel mis-offsets the eigenvectors and yields a
+    // scrambled basis (e.g. for the non-centered group-5 stderiv basis).
+    for (int ch = 0; ch < pca.nCh; ++ch)
+        if (std::fread(pca.means[ch].data(), 8, d2u, f) != d2u)
+        { std::fclose(f); return false; }
+    for (int ch = 0; ch < pca.nCh; ++ch)
         if (std::fread(pca.evec[ch].data(), 8, evSz, f) != evSz)
         { std::fclose(f); return false; }
-    }
     std::fclose(f);
     return true;
 }
