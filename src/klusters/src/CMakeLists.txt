@@ -48,6 +48,7 @@ set(klusters_SRCS
     klusters.cpp
     klustersdoc.cpp
     klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)
+    klustersdoc_undo.cpp        # KlustersDoc undo/redo subsystem (split from klustersdoc.cpp)
     klustersview.cpp
     klustersyamlreader.cpp
     main.cpp
