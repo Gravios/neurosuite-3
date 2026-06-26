@@ -257,6 +257,48 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         ChildEdit e; e.added = reclusteredClusterList; e.deleted = clustersToRecluster;
         recordChildEdit(e);
         syncChildColors();
+
+        // Group the reclustered spikes by the parent fiber they currently sit in.
+        // The recluster pooled the selected atoms' spikes and re-split them, so a
+        // new atom's spikes can span several fibers.
+        const QVector<dataType> cluByRow = clusteringData->labelByFeatureRow();
+        QHash<int, QVector<int>> spikesBySrcFiber;        // source fiber -> .spk indices (0-based)
+        for (int atom : reclusteredClusterList)
+            for (int s : childData->clusterSpkIndices(atom)){
+                const int row = s + 1;                    // .spk index -> 1-based feature row
+                if (row > 0 && row < cluByRow.size())
+                    spikesBySrcFiber[static_cast<int>(cluByRow[row])].append(s);
+            }
+
+        if (spikesBySrcFiber.size() >= 2){
+            // CASE 3: the selection spanned >= 2 fibers, so the new atoms straddle and
+            // have no common parent.  Synthesise ONE new fiber and move every
+            // reclustered spike into it -- per source fiber, since moveSpikeSubset is
+            // single-source -- so all the new atoms nest under it.  Source fibers left
+            // empty by the move are dropped inside moveSpikeSubsetToCluster.  (A single
+            // source fiber is CASE 2: rebuildHierarchyFromData below nests the new
+            // atoms under it directly, nothing extra to do.)
+            KlustersView* v = app() ? app()->activeView() : nullptr;
+            if (v){
+                setActiveClustering(false);               // operate on the fiber layer
+                const int newFiber = static_cast<int>(clusteringData->nextFreeClusterId());
+                bool first = true;
+                for (auto it = spikesBySrcFiber.constBegin(); it != spikesBySrcFiber.constEnd(); ++it){
+                    moveSpikeSubsetToCluster(it.key(), it.value(), newFiber, *v);
+                    if (first){                           // colour after the first move so a
+                        first = false;                    // Ctrl+Z reverting it also drops the colour
+                        if (!clusterColorList->contains(newFiber)){
+                            QColor color;
+                            color.setHsv(static_cast<int>(fmod(static_cast<double>(newFiber) * 7, 36)) * 10, 200, 255);
+                            clusterColorList->append(newFiber, color);
+                        }
+                    }
+                }
+                clusterPalette.updateClusterList();
+                setActiveClustering(true);                // back to the atom layer the recluster ran in
+            }
+        }
+
         rebuildHierarchyFromData();
         emit hierarchyChanged();
         modified = true;
