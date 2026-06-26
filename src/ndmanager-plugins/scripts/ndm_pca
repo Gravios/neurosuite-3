@@ -105,6 +105,24 @@ methodOrder=$methodOrderOverride
 [ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
 methodOrder=${methodOrder:-3}
 
+# ── Flatten (method, methodOrder) into the neurosuite::core::Method enum int ──
+# baked into the PCAE basis header by process_pca (--pca-method), so every
+# downstream consumer reads the transform off the self-describing basis instead
+# of re-reading methodOrder from the YAML.  Enum: 0=standard,
+# 1-3=sdiff{first,laplacian,allpairs}, 4-6=stderiv{first,laplacian,allpairs}.
+case "$method" in
+	standard)
+		pcaMethod=0 ;;
+	sdiff|stderiv)
+		if [ "$methodOrder" -lt 1 ] || [ "$methodOrder" -gt 3 ]; then
+			echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-3)"
+			exit $GENERAL_ERROR
+		fi
+		if [ "$method" = sdiff ]; then pcaMethod=$methodOrder      # 1/2/3
+		else                           pcaMethod=$((methodOrder + 3)); fi  # 4/5/6
+		;;
+esac
+
 # Print a header to indicate current processing step
 print_header "$session - Computing PCA for spike sorting [method=$method]"
 
@@ -220,7 +238,7 @@ once()
 		pcaInput=$tmpspk
 	fi
 
-	process_pca -g $electrodeGroup -f $fetout.tmp -n $nPca -w $waveformLength -d $nFeatures $options ${@:2} $pcaInput
+	process_pca -g $electrodeGroup -f $fetout.tmp -n $nPca -w $waveformLength -d $nFeatures --pca-method $pcaMethod $options ${@:2} $pcaInput
 	check_command_status process_pca
 	[ -n "$tmpspk" ] && rm -f "$tmpspk"
 

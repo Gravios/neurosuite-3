@@ -42,6 +42,7 @@
 #include <iostream>
 #include <algorithm>
 #include <string>
+#include <neurosuite/core/pca_projection.hpp> // canonical PCAE PcaBasis/writePca
 using namespace std;
 
 
@@ -225,6 +226,9 @@ void help(const char* name)
 	cout << "                 most parsimonious spike-shape sources." << endl;
 	cout << " --varimax-max-iter N  max rotation iterations (default 30)" << endl;
 	cout << " --varimax-tol T      relative change in criterion to call convergence (default 1e-6)" << endl;
+	cout << " --pca-method M       transform tag baked into the PCAE basis header: 0=standard," << endl;
+	cout << "                      1-3=sdiff{first,laplacian,allpairs}, 4-6=stderiv{...}." << endl;
+	cout << "                      Default: inferred from the output name (.pcaD=>stderiv-allpairs)" << endl;
 	cout << " -v              verbose mode" << endl;
 	cout << " -h              display help" << endl;
 	cout << endl << "All arguments are mandatory except" << endl;
@@ -403,6 +407,8 @@ int main(int argc,char *argv[])
 	arguments.varimax        = false;      // patch52 defaults
 	arguments.varimaxMaxIter = 30;
 	arguments.varimaxTol     = 1e-6;
+	arguments.pcaMethod          = -1;     // -1 => infer method from output filename
+	arguments.isPcaMethodProvided = false;
 	
 	parseArgs(argc,argv,arguments); // Parse command-line
 	
@@ -792,11 +798,8 @@ int main(int argc,char *argv[])
 	fclose(outputFile);
 	progress->advance(); // Complete saving results
 
-	// Write .pca.N eigenvector file for use by klusters spike realignment.
-	// Binary format:
-	//   int32_t nCh, data2use, nComp, centered, recShift
-	//   for each channel: data2use * double  (mean vector)
-	//   for each channel: data2use * nComp * double  (eigenvectors, col-major)
+	// Write the .pca.N eigenvector basis (PCAE format, libneurosuite-core) for
+	// klusters spike realignment and the fiber-kit / refeaturize consumers.
 	{
 		// Derive .pca.N path from outputFileName: strip .tmp, replace .fet. with .pca.
 		std::string pcaPath(arguments.outputFileName);
@@ -810,48 +813,60 @@ int main(int argc,char *argv[])
 		const std::string pcaDStr(".pcaD.");
 		const std::string fetStr(".fet.");
 		const std::string pcaStr(".pca.");
+		bool isStderivPath = false;
 		size_t pos = pcaPath.rfind(fetDStr);
-		if (pos != std::string::npos)
+		if (pos != std::string::npos) {
 			pcaPath.replace(pos, fetDStr.size(), pcaDStr);
-		else {
+			isStderivPath = true;   // .pcaD => stderiv basis
+		} else {
 			pos = pcaPath.rfind(fetStr);
 			if (pos != std::string::npos)
 				pcaPath.replace(pos, fetStr.size(), pcaStr);
 		}
 
-		FILE *pcaFile = fopen(pcaPath.c_str(), "wb");
-		if (!pcaFile) {
-			cerr << "warning: cannot write .pca file: " << pcaPath << endl;
-		} else {
-			// Header: 5 x int32_t
-			int32_t hdr[5];
-			hdr[0] = (int32_t)arguments.nChannels;
-			hdr[1] = (int32_t)data2use;
-			hdr[2] = (int32_t)arguments.nComponents;
-			hdr[3] = arguments.isCenteredData ? 1 : 0;
-			hdr[4] = (int32_t)recShift;
-			fwrite(hdr, sizeof(int32_t), 5, pcaFile);
-			// Per-channel means (data2use doubles each)
-			for (int i = 0; i < arguments.nChannels; ++i)
-				fwrite(mean[i], sizeof(double), (size_t)data2use, pcaFile);
-			// Per-channel eigenvectors (data2use * nComponents doubles, col-major).
-			// Pack into a contiguous buffer and write in one fwrite per channel.
-			{
-				std::vector<double> evecBuf((size_t)data2use * arguments.nComponents);
-				for (int i = 0; i < arguments.nChannels; ++i) {
-					if (savedEvec[i]) {
-						for (int c = 0; c < arguments.nComponents; ++c)
-							for (int r = 0; r < data2use; ++r)
-								evecBuf[(size_t)c * data2use + r] =
-									gsl_matrix_get(savedEvec[i], r, c);
-						fwrite(evecBuf.data(), sizeof(double),
-						       (size_t)data2use * arguments.nComponents, pcaFile);
-					}
-				}
-			}
-			fclose(pcaFile);
-			if (verbose) cout << "Wrote " << pcaPath << endl;
+		// Build the basis and write it as PCAE via libneurosuite-core (the single
+		// canonical writer).  The transform Method is taken from --pca-method when
+		// the orchestrator supplied it (it knows method+order); otherwise it is
+		// inferred from the output filename (.pcaD => stderiv-allpairs, else
+		// standard) so a direct invocation still tags sensibly.
+		using neurosuite::core::Method;
+		using neurosuite::core::SdiffOrder;
+		const Method method = arguments.isPcaMethodProvided
+			? static_cast<Method>(arguments.pcaMethod)
+			: (isStderivPath ? Method::StderivAllPairs : Method::Standard);
+		// nInputChannels = raw channels the transform consumed.  The FIRST and
+		// ALLPAIRS spatial orders drop the trailing linearly-dependent channel
+		// upstream (process_pca_stderiv), so the basis has one fewer channel than
+		// the input; NONE/LAPLACIAN and Standard drop nothing.
+		const SdiffOrder so = neurosuite::core::spatialOrder(method);
+		const bool dropped = (so == SdiffOrder::First || so == SdiffOrder::AllPairs);
+		neurosuite::core::PcaBasis basis;
+		basis.nCh            = arguments.nChannels;
+		basis.data2use       = data2use;
+		basis.nComp          = arguments.nComponents;
+		basis.recShift       = recShift;
+		basis.centered       = arguments.isCenteredData;
+		basis.method         = method;
+		basis.nInputChannels = dropped ? arguments.nChannels + 1 : arguments.nChannels;
+		basis.means.assign((size_t)arguments.nChannels,
+		                   std::vector<double>((size_t)data2use, 0.0));
+		basis.evec.assign((size_t)arguments.nChannels,
+		                  std::vector<double>((size_t)data2use * arguments.nComponents, 0.0));
+		for (int i = 0; i < arguments.nChannels; ++i) {
+			std::copy(mean[i], mean[i] + data2use, basis.means[(size_t)i].begin());
+			if (savedEvec[i])                          // col-major (data2use × nComp)
+				for (int c = 0; c < arguments.nComponents; ++c)
+					for (int r = 0; r < data2use; ++r)
+						basis.evec[(size_t)i][(size_t)c * data2use + r] =
+							gsl_matrix_get(savedEvec[i], r, c);
+			// A null savedEvec leaves zeros, which keeps the block-wise PCAE
+			// layout aligned; the legacy writer skipped the channel entirely and
+			// produced a misaligned (means-without-evec) file instead.
 		}
+		if (!neurosuite::core::writePca(pcaPath, basis))
+			cerr << "warning: cannot write .pca file: " << pcaPath << endl;
+		else if (verbose)
+			cout << "Wrote " << pcaPath << endl;
 	}
 
 	// Free Memory
@@ -939,6 +954,20 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 				cerr << "error: --varimax-tol must be > 0" << endl;
 				exit(1);
 			}
+			continue;
+		}
+		if ( !strcmp(argv[i], "--pca-method") ) {
+			// Transform tag baked into the PCAE basis header (neurosuite::core::Method:
+			// 0=standard, 1-3=sdiff{first,laplacian,allpairs}, 4-6=stderiv{...}).
+			// When absent, the basis method is inferred from the output filename
+			// (.pcaD => stderiv-allpairs, else standard).
+			if ( i+1 >= nOptions ) error(argv[0]);
+			arguments.pcaMethod = atoi(argv[++i]);
+			if ( arguments.pcaMethod < 0 || arguments.pcaMethod > 6 ) {
+				cerr << "error: --pca-method must be in 0..6" << endl;
+				exit(1);
+			}
+			arguments.isPcaMethodProvided = true;
 			continue;
 		}
 
