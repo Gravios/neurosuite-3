@@ -482,8 +482,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // -----------------------------------------------------------------------
     // Cluster spike indices
     // -----------------------------------------------------------------------
+    // Resolve the selected cluster from the ACTIVE layer: the parent fiber normally, or a
+    // child atom when a child is shown (childScopeActive).  data() == clusteringData unless a
+    // child is active, so the parent / Align-All paths are byte-for-byte unchanged; this lets
+    // realign target a single microfiber whose spikes scatter relative to its parent's mean.
     SortableTable spkTable;
-    if (!clusteringData->spikePositions(clusterId, spkTable)) {
+    if (!data().spikePositions(clusterId, spkTable)) {
         log << "ERROR: cluster " << clusterId << " not found.\n";
         return false;
     }
@@ -1817,6 +1821,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             clusteringData->updateTimestamp(
                 static_cast<dataType>(dest + 1),
                 static_cast<dataType>(ts));
+            // Mirror into the child atom layer: childData is a second Data over the SAME
+            // spikes, so without this its scatter/feature views keep the pre-realign row
+            // (parent re-aligned, children shifted/scattered).  Hierarchical mode only.
+            if (childData) {
+                childData->updateFeatureRow(
+                    static_cast<dataType>(dest + 1), vals);
+                childData->updateTimestamp(
+                    static_cast<dataType>(dest + 1),
+                    static_cast<dataType>(ts));
+            }
         }
 
         rec.spkRow = std::move(spkRow);  // keep copy for flush-to-original
@@ -1891,6 +1905,17 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 void KlustersDoc::invalidateWaveformCache(int clusterId)
 {
     clusteringData->invalidateWaveformCache(clusterId);
+    // Keep the child atom layer in step so child views re-read the realigned .spk instead
+    // of serving stale cached waveforms.  A parent-fiber realign touches that fiber's atoms;
+    // a child-atom realign (child scope) touches the atom itself and its parent fiber.
+    if (childData) {
+        childData->invalidateWaveformCache(clusterId);
+        for (int kid : childrenOf(QList<int>{ clusterId }))
+            childData->invalidateWaveformCache(kid);
+        const auto it = childToParent.constFind(clusterId);
+        if (it != childToParent.constEnd())
+            clusteringData->invalidateWaveformCache(it.value());
+    }
 }
 
 void KlustersDoc::invalidateCorrelogramCache(int clusterId)
@@ -1929,6 +1954,10 @@ bool KlustersDoc::initPendingFiles()
         // Redirect the waveform reader and clu writer to the pending files.
         // They will remain here for the entire document session.
         clusteringData->setSpkFileName(pendingSpkPath);
+        // The child atom layer reads the SAME spikes; point its waveform reader at the same
+        // pending .spk so child views show the realigned waveforms.  Without this the parent
+        // reads pending (aligned) while children keep reading the original (shifted/scattered).
+        if (childData) childData->setSpkFileName(pendingSpkPath);
         tmpCluFile = pendingCluPath;
     }
     return ok;
