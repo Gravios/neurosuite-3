@@ -46,6 +46,9 @@ set(klusters_SRCS
     realignreviewdialog.cpp
     spikerealigndialog.cpp
     klusters.cpp
+    klusters_recluster.cpp      # KlustersApp reclustering / process execution (split from klusters.cpp)
+    klusters_state.cpp          # KlustersApp action-state machine slotStateChanged (split from klusters.cpp)
+    klusters_realign.cpp        # KlustersApp spike-realignment UI / batch driver (split from klusters.cpp)
     klustersdoc.cpp
     klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)
     klustersdoc_undo.cpp        # KlustersDoc undo/redo subsystem (split from klustersdoc.cpp)
