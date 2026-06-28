@@ -203,8 +203,14 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
     // (v1 re-reads the feature/spike arrays; they could later be shared with the
     // parent to halve memory.)
     childData = new Data();
+    // Read the SAME .spk the parent currently reads: if a realign earlier this session
+    // repointed clusteringData to the pending (realigned) .spk, the child must follow it,
+    // otherwise children open showing the original (shifted) waveforms.  Same spike count,
+    // so siblingSpkFileLength still applies.
+    const QString childSpkPath =
+        clusteringData ? clusteringData->getSpkFileName() : siblingSpkPath;
     const bool ok = childData->initialize(
-        fetFile, clcFile, siblingSpkFileLength, siblingSpkPath,
+        fetFile, clcFile, siblingSpkFileLength, childSpkPath,
         yamlParFile, electrodeGroupID.toInt(), errorInformation);
     yamlParFile.close(); fetFile.close(); clcFile.close();
     if (!ok){
