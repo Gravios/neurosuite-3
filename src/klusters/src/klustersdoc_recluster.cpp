@@ -398,14 +398,14 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         clusterPalette.selectItems(emptyList);
     }
 
-    // Hierarchical mode: a PARENT recluster redraws the parent's spikes across the
-    // new fibers.  Re-derive child->parent from the new parent labels so the existing
-    // atoms re-nest under whichever new fiber their spikes now fall in (an atom whose
-    // spikes span several new fibers follows its first spike row).  Mirrors the
-    // case-2 child branch: rebuild, then hierarchyChanged repopulates the child
-    // palette.  childData-guarded; flat sessions are untouched.
-    if (childData) {
-        rebuildHierarchyFromData();
-        emit hierarchyChanged();
-    }
+    // Hierarchical mode: a PARENT recluster re-draws the parent's spikes across the new
+    // fibers without touching the atom layer, so the source fiber's atom(s) now straddle them
+    // -- and a recluster of the artifact bin leaves the new fibers carrying only the reserve
+    // atom.  refiberize re-cuts the straddlers AND mints a covering atom per new fiber (incl.
+    // the artifact-derived ones), so each new fiber gets its own microfiber child instead of
+    // several fibers sharing one atom (or none).  It also rebuilds child->parent and emits
+    // hierarchyChanged to repopulate the child palette.  childData-guarded; flat sessions are
+    // untouched.
+    if (childData)
+        refiberize();
 }

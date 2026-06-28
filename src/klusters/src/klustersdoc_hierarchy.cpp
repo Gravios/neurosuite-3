@@ -288,7 +288,37 @@ void KlustersDoc::refiberize(){
     // (no zero-spike phantom) and nextFreeClusterId keeps new atom ids in the
     // child-id space (above the highest child id; no parent/child collision).
     if (!childData) return;
-    const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+    const QVector<dataType> cluByRow = clusteringData->labelByFeatureRow();
+
+    // Pass A -- covering atoms.  A recluster on the PARENT (or artifact) layer re-draws a
+    // fiber's spikes across new fibers without ever touching the atom layer, so a real fiber
+    // (id > 1) can end up holding spikes whose only atom is the reserve noise (0) or artifact
+    // (1) atom -- it has no microfiber of its own.  Reclustering the artifact cluster is the
+    // pure case: every reclustered spike still carries the artifact atom, so the new fibers
+    // would all be childless.  Mint ONE covering atom per such fiber over its reserve-atom
+    // spikes, so each new fiber has itself as a child.  Noise/artifact fibers (id <= 1) keep
+    // their reserve atoms.  (moveSpikeSubset self-guards a missing source cluster.)
+    {
+        const QVector<dataType> childByRow = childData->labelByFeatureRow();
+        const int nA = qMin(cluByRow.size(), childByRow.size());
+        QHash<int, QHash<int, QSet<dataType>>> coverRows;    // real fiber -> reserve atom -> rows
+        for (int r = 1; r < nA; ++r){
+            const int parent = static_cast<int>(cluByRow[r]);
+            if (parent <= 1) continue;                       // noise/artifact fibers keep reserve atoms
+            const int atom = static_cast<int>(childByRow[r]);
+            if (atom > 1) continue;                          // already a real microfiber
+            coverRows[parent][atom].insert(static_cast<dataType>(r));
+        }
+        for (auto f = coverRows.constBegin(); f != coverRows.constEnd(); ++f){
+            const int newAtom = static_cast<int>(childData->nextFreeClusterId());
+            for (auto rs = f.value().constBegin(); rs != f.value().constEnd(); ++rs){
+                QList<int> fromC, emptied;
+                childData->moveSpikeSubset(rs.key(), rs.value(), newAtom, fromC, emptied);
+            }
+        }
+    }
+
+    // Pass B -- straddle re-cut.  Pass A changed the atom labels, so re-read them.
     const QVector<dataType> childByRow = childData->labelByFeatureRow();
     const int n = qMin(cluByRow.size(), childByRow.size());
     QHash<int, QHash<int, QSet<dataType>>> atomParentRows;   // atom -> parent -> rows
