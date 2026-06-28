@@ -256,66 +256,22 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         // removed and the reclustered source atoms restored from the snapshot.
         ChildEdit e; e.added = reclusteredClusterList; e.deleted = clustersToRecluster;
         recordChildEdit(e);
-        syncChildColors();
 
-        // Group the reclustered spikes by the parent fiber they currently sit in.
-        // The recluster pooled the selected atoms' spikes and re-split them, so a
-        // new atom's spikes can span several fibers.
-        const QVector<dataType> cluByRow = clusteringData->labelByFeatureRow();
-        QHash<int, QVector<int>> spikesBySrcFiber;        // source fiber -> .spk indices (0-based)
-        for (int atom : reclusteredClusterList)
-            for (int s : childData->clusterSpkIndices(atom)){
-                const int row = s + 1;                    // .spk index -> 1-based feature row
-                if (row > 0 && row < cluByRow.size())
-                    spikesBySrcFiber[static_cast<int>(cluByRow[row])].append(s);
-            }
-
-        if (spikesBySrcFiber.size() >= 2){
-            // CASE 3: the selection spanned >= 2 fibers, so the new atoms straddle and
-            // have no common parent.  Synthesise ONE new fiber and move every
-            // reclustered spike into it -- per source fiber, since moveSpikeSubset is
-            // single-source -- so all the new atoms nest under it.  Source fibers left
-            // empty by the move are dropped inside moveSpikeSubsetToCluster.  (A single
-            // source fiber is CASE 2: rebuildHierarchyFromData below nests the new
-            // atoms under it directly, nothing extra to do.)
-            KlustersView* v = app() ? app()->activeView() : nullptr;
-            if (v){
-                setActiveClustering(false);               // operate on the fiber layer
-                const int newFiber = static_cast<int>(clusteringData->nextFreeClusterId());
-                bool first = true;
-                for (auto it = spikesBySrcFiber.constBegin(); it != spikesBySrcFiber.constEnd(); ++it){
-                    moveSpikeSubsetToCluster(it.key(), it.value(), newFiber, *v);
-                    if (first){                           // colour after the first move so a
-                        first = false;                    // Ctrl+Z reverting it also drops the colour
-                        if (!clusterColorList->contains(newFiber)){
-                            QColor color;
-                            color.setHsv(static_cast<int>(fmod(static_cast<double>(newFiber) * 7, 36)) * 10, 200, 255);
-                            clusterColorList->append(newFiber, color);
-                        }
-                    }
-                }
-                clusterPalette.updateClusterList();
-                setActiveClustering(true);                // back to the atom layer the recluster ran in
-                setPendingFiberSelection({newFiber});     // rule 2: land on the synthesized fiber
-            }
-        }
-        rebuildHierarchyFromData();
-        emit hierarchyChanged();
-        // CASE 2 (the new atoms nest under one parent): select them now -- AFTER the
-        // rebuild, which repopulates the child palette, so the selection isn't wiped
-        // the moment it is set.  Mirrors the child-split / child-createNewClusters
-        // emitters.  (Case 3's synthesised fiber is selected later via the pending-
-        // fiber path, applied after the post-edit flow.)
-        if (spikesBySrcFiber.size() < 2)
-            emit hierarchyChildrenCreated(reclusteredClusterList);   // rule 1
+        // The recluster pooled the selected atoms' spikes and re-split them, so a new atom can
+        // span several fibers.  Rather than invent a parent for it (which created spurious new
+        // fibers), nest each new atom under the fiber its spikes belong to: collapseToSelfChildren
+        // keeps an atom that lands wholly inside one fiber and collapses any straddling portion
+        // into that fiber's self child.  No new fiber, and every fiber keeps a covering child.
+        collapseToSelfChildren();
+        emit hierarchyChildrenCreated(reclusteredClusterList);   // select the new atoms after the rebuild
         modified = true;
         return;
     }
 
     //Prepare the undo
     prepareReclusteringUndo(reclusteredClusterList,clustersToRecluster);
-    // Parent-scope recluster: the freshly created fibers need realign.  (The child
-    // branch returned above; its case-3 new fiber is marked via moveSpikeSubsetToCluster.)
+    // Parent-scope recluster: the freshly created fibers need realign.  (The child branch
+    // returned above, nesting its new atoms under the existing fibers via collapseToSelfChildren.)
     for (int nf : reclusteredClusterList) noteModifiedFiber(nf);
     setPendingFiberSelection(reclusteredClusterList);   // land on the reclustered fibers
 

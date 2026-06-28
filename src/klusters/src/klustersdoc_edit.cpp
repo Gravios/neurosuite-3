@@ -691,8 +691,12 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         for (int src : fromClusters) noteModifiedFiber(src);
         setPendingFiberSelection({newClusterIdint});   // land on the split-off fiber
 
-        // Hierarchical mode: the split leaves the child atoms where they are; the
-        // user runs refiberize() explicitly to re-cut atoms that now straddle fibers.
+        // Hierarchical mode: the split leaves the child atoms where they were, so the new
+        // fiber has no covering child and the source fiber's atom now straddles both.  Re-
+        // establish the invariant immediately -- the new fiber gets its self child and any
+        // straddler collapses -- instead of leaving the layers inconsistent until a manual
+        // refiberize.  childData-guarded; flat sessions are untouched.
+        if (childData) refiberize();
 
         // Log after: surviving source clusters + the new cluster
         QList<int> resultIds;
@@ -820,8 +824,12 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         clusterPalette.updateClusterList();
         clusterPalette.selectItems(clustersToShow);
 
-        // Hierarchical mode: the split leaves the child atoms where they are; the
-        // user runs refiberize() explicitly to re-cut atoms that now straddle fibers.
+        // Hierarchical mode: the split leaves the child atoms where they were, so each new
+        // fiber has no covering child and the source fibers' atoms now straddle.  Re-establish
+        // the invariant immediately -- every new fiber gets its self child and straddlers
+        // collapse -- instead of leaving the layers inconsistent until a manual refiberize.
+        // childData-guarded; flat sessions are untouched.
+        if (childData) refiberize();
 
         // Log after: surviving sources + all newly created clusters
         {

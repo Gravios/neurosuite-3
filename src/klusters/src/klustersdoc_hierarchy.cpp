@@ -282,80 +282,63 @@ void KlustersDoc::rebuildHierarchyFromData(){
     }
 }
 
-void KlustersDoc::refiberize(){
-    // Explicit bridge between the two otherwise-independent layers.  The user
-    // reassigns and consolidates the fibers as a flat .clu workflow (split / move /
-    // merge), which leaves the child atoms where they were -- so an atom whose
-    // spikes now span more than one parent fiber straddles the nesting invariant.
-    // refiberize re-cuts ONLY those straddling atoms: the first parent keeps the
-    // original atom id and each other parent's portion becomes a fresh atom.  Atoms
-    // wholly within one fiber are left untouched, so existing sub-structure
-    // survives.  moveSpikeSubset rebuilds spikesByCluster + clusterInfoMap together
-    // (no zero-spike phantom) and nextFreeClusterId keeps new atom ids in the
-    // child-id space (above the highest child id; no parent/child collision).
+void KlustersDoc::collapseToSelfChildren(){
+    // The single hierarchy invariant: every fiber is covered by its child atom(s), and a fiber
+    // with one child IS that child (the "self child", atom id == fiber id -- the identity the
+    // .clc==.clu lift establishes).  Any flat-layer edit -- a parent recluster, an artifact
+    // recluster, a manual split, or a child recluster whose new atoms span fibers -- leaves
+    // "loose" spikes: in a real fiber (id > 1) but covered only by a reserve atom (noise 0 /
+    // artifact 1) or by an atom that now straddles several fibers.  Collapse every loose spike
+    // into its fiber's self child, so each fiber regains a covering child with no new fiber
+    // invented.  Atoms that are real (> 1) AND wholly inside one fiber are deliberate
+    // sub-structure and are preserved untouched.
     if (!childData) return;
-    const QVector<dataType> cluByRow = clusteringData->labelByFeatureRow();
-
-    // Pass A -- covering atoms.  A recluster on the PARENT (or artifact) layer re-draws a
-    // fiber's spikes across new fibers without ever touching the atom layer, so a real fiber
-    // (id > 1) can end up holding spikes whose only atom is the reserve noise (0) or artifact
-    // (1) atom -- it has no microfiber of its own.  Reclustering the artifact cluster is the
-    // pure case: every reclustered spike still carries the artifact atom, so the new fibers
-    // would all be childless.  Mint ONE covering atom per such fiber over its reserve-atom
-    // spikes, so each new fiber has itself as a child.  Noise/artifact fibers (id <= 1) keep
-    // their reserve atoms.  (moveSpikeSubset self-guards a missing source cluster.)
-    {
-        const QVector<dataType> childByRow = childData->labelByFeatureRow();
-        const int nA = qMin(cluByRow.size(), childByRow.size());
-        QHash<int, QHash<int, QSet<dataType>>> coverRows;    // real fiber -> reserve atom -> rows
-        for (int r = 1; r < nA; ++r){
-            const int parent = static_cast<int>(cluByRow[r]);
-            if (parent <= 1) continue;                       // noise/artifact fibers keep reserve atoms
-            const int atom = static_cast<int>(childByRow[r]);
-            if (atom > 1) continue;                          // already a real microfiber
-            coverRows[parent][atom].insert(static_cast<dataType>(r));
-        }
-        for (auto f = coverRows.constBegin(); f != coverRows.constEnd(); ++f){
-            const int newAtom = static_cast<int>(childData->nextFreeClusterId());
-            for (auto rs = f.value().constBegin(); rs != f.value().constEnd(); ++rs){
-                QList<int> fromC, emptied;
-                childData->moveSpikeSubset(rs.key(), rs.value(), newAtom, fromC, emptied);
-            }
-        }
-    }
-
-    // Pass B -- straddle re-cut.  Pass A changed the atom labels, so re-read them.
+    const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
     const QVector<dataType> childByRow = childData->labelByFeatureRow();
     const int n = qMin(cluByRow.size(), childByRow.size());
-    QHash<int, QHash<int, QSet<dataType>>> atomParentRows;   // atom -> parent -> rows
+
+    QHash<int, QSet<int>> atomFibers;                        // real atom -> fibers it appears in
     for (int r = 1; r < n; ++r){
-        const int atom = static_cast<int>(childByRow[r]);
-        if (atom <= 0) continue;                              // noise/unassigned: no atom to carve
-        const int parent = static_cast<int>(cluByRow[r]);
-        atomParentRows[atom][parent].insert(static_cast<dataType>(r));
+        const int a = static_cast<int>(childByRow[r]);
+        if (a <= 1) continue;
+        atomFibers[a].insert(static_cast<int>(cluByRow[r]));
     }
-    for (auto a = atomParentRows.constBegin(); a != atomParentRows.constEnd(); ++a){
-        const QHash<int, QSet<dataType>>& parentRows = a.value();
-        if (parentRows.size() < 2) continue;                 // wholly inside one parent -> intact
-        bool first = true;
-        for (auto p = parentRows.constBegin(); p != parentRows.constEnd(); ++p){
-            if (first){ first = false; continue; }           // first parent keeps the atom id
-            const int newAtom = static_cast<int>(childData->nextFreeClusterId());
-            QList<int> fromC, emptied;
-            childData->moveSpikeSubset(a.key(), p.value(), newAtom, fromC, emptied);
+    QSet<int> intact;                                        // real atoms wholly inside one fiber
+    for (auto it = atomFibers.constBegin(); it != atomFibers.constEnd(); ++it)
+        if (it.value().size() == 1) intact.insert(it.key());
+
+    // Group loose spikes by (source atom -> self child = fiber id) for moveSpikeSubset.
+    QHash<int, QHash<int, QSet<dataType>>> moves;
+    for (int r = 1; r < n; ++r){
+        const int F = static_cast<int>(cluByRow[r]);
+        if (F <= 1) continue;                                // noise/artifact fibers keep their atoms
+        const int a = static_cast<int>(childByRow[r]);
+        if (a > 1 && intact.contains(a)) continue;           // preserve deliberate sub-structure
+        if (a == F) continue;                                // already its own self child
+        moves[a][F].insert(static_cast<dataType>(r));
+    }
+    for (auto s = moves.constBegin(); s != moves.constEnd(); ++s)
+        for (auto t = s.value().constBegin(); t != s.value().constEnd(); ++t){
+            QList<int> fromC, emptied;                       // move loose rows of src atom into self child
+            childData->moveSpikeSubset(s.key(), t.value(), t.key(), fromC, emptied);
         }
-    }
-    // refiberize is its own deliberate resync, independent of the parent and atom
-    // undo timelines: it does NOT couple to a parent undo (no childPre snapshot --
-    // a parent undo no longer silently reverts the atom layer), and it resets the
-    // atom-edit history since the atom structure has just been re-cut.
-    // rebuildHierarchyFromData re-derives childToParent / parentToChildren from the
-    // new labels, which the next Save writes out as the regenerated .clp.
-    childUndoStack.clear();
-    childRedoStack.clear();
+
     syncChildColors();
     rebuildHierarchyFromData();
     emit hierarchyChanged();
+}
+
+void KlustersDoc::refiberize(){
+    // Deliberate full resync of the atom layer to the fiber layer, independent of the parent
+    // and atom undo timelines: collapse loose spikes to self children (above) and reset the
+    // atom-edit history since the atom structure has just been re-cut.  rebuildHierarchyFromData
+    // (inside collapseToSelfChildren) re-derives childToParent / parentToChildren, which the
+    // next Save writes out as the regenerated .clp.
+    collapseToSelfChildren();
+    if (childData){
+        childUndoStack.clear();
+        childRedoStack.clear();
+    }
 }
 
 int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activeView){

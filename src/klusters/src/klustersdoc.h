@@ -377,6 +377,12 @@ public:
      *  longer do this implicitly; the user reassigns/consolidates fibers and then
      *  refiberizes.  Independent of the parent and atom undo stacks. */
     void refiberize();
+    /** Shared core of refiberize: collapse "loose" spikes (in a real fiber but covered only
+     *  by a reserve or straddling atom) into their fiber's self child (atom id == fiber id),
+     *  preserving intact sub-structure, then rebuild child->parent and emit hierarchyChanged.
+     *  Does NOT touch the atom undo stack, so edit paths that record their own ChildEdit
+     *  (e.g. a child recluster) call this directly; refiberize wraps it with the undo reset. */
+    void collapseToSelfChildren();
     /** Overwrite the .clc and .clp siblings (with .bak) from the current child
      *  layer + child->parent map.  Called by saveDocument when a child
      *  clustering is loaded. */
