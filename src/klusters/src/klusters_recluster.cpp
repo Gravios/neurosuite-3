@@ -788,6 +788,14 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // correctly overrides this.
     if (childRecluster && reclusteredParent > 1 && clusterPalette)
         clusterPalette->selectItems({reclusteredParent});
+    // Recluster emits no renumber() (so the renumber() view-refresh hook does not
+    // cover it) and the selectItems calls above are silent (no updateShownClusters),
+    // so in hierarchical mode the dependent views (waveform / feature / ...) would
+    // show the pre-recluster state until the next manual selection change.  The child
+    // palette is already repopulated (via hierarchyChanged); re-drive the child-scope
+    // view refresh for the settled selection (the new atoms if any, else the parent).
+    if (childPanel && childPanel->isVisible())
+        slotChildSelectionChanged({});
     QApplication::restoreOverrideCursor();
 }
 
