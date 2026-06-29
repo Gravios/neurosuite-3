@@ -912,6 +912,23 @@ void KlustersApp::createMenus()
     connect(clusterPalette, &ClusterPalette::paletteGainedFocus, this, &KlustersApp::slotShowOverviewForPalette);
     connect(doc, &KlustersDoc::updateUndoNb, this, &KlustersApp::slotUpdateUndoNb);
     connect(doc, &KlustersDoc::updateRedoNb, this, &KlustersApp::slotUpdateRedoNb);
+    // A renumber (move-to-end, sort/reorder, the deferred auto-renumber after any
+    // set-changing edit, or an explicit Renumber) rewrites the shown-cluster ids but
+    // drives no view refresh -- so the dependent views (waveform / feature / ...) and
+    // the child palette would stay stale until the next selection change.  renumber()
+    // is otherwise unhooked (it carries no view mutation, so refreshing here cannot
+    // re-enter the doc).  Re-drive the refresh for whatever is currently shown: the
+    // child sub-selection if one is active (preserve the hierarchical child view),
+    // else the parent selection.
+    connect(doc, &KlustersDoc::renumber, this, [this](QMap<int,int>&){
+        if(!activeView()) return;
+        if(childPanel && childPanel->isVisible()
+           && ((childPaletteA && !childPaletteA->selectedClusters().isEmpty())
+            || (childPaletteB && !childPaletteB->selectedClusters().isEmpty())))
+            slotChildSelectionChanged({});
+        else if(clusterPalette)
+            slotUpdateShownClusters(clusterPalette->selectedClusters());
+    });
     // hierarchical view: after a hierarchy edit or an undo/redo of one, refresh
     // the child palette for the current parent selection.
     connect(doc, &KlustersDoc::hierarchyChanged, this, [this]{
