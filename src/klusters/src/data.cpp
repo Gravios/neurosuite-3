@@ -1076,6 +1076,75 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,Q
 
 
 
+// ---------------------------------------------------------------------------
+// resyncClusterInfoMapFromRowTable — in-memory repair of a row-table/cluster-
+// map desync, equivalent to a save+reopen round-trip but without touching disk.
+//
+// spikesByCluster (the row table) is the source of truth; clusterInfoMap is
+// derived from it.  A partially-committed merge/split/reorder/undo can leave a
+// cluster present in the row table but with a stale 0 count (or no entry) in
+// the map, which makes createFeatureFile size a recluster from an empty
+// ClusterInfo and write a header-only .fet.  This rebuilds the map from the row
+// table exactly the way initialize() does: count per cluster, assign each a
+// contiguous ascending-id span, and stable bucket-sort the row table into that
+// layout (preserving within-cluster time/fet order — an in-place sort(2) would
+// not be stable).  User info (structure/type/id/quality/notes) is kept from the
+// existing ClusterInfo where present; a cluster that exists only in the row
+// table gets an empty one (clusterUserInformationMap is cleared after load, so
+// there is no other source — same as it would have after a reopen).
+//
+// Dimension minima/maxima are NOT recomputed: the spikes and their feature
+// values are unchanged, only the per-cluster bookkeeping, and the display
+// ranges self-correct on the next view refresh.
+void Data::resyncClusterInfoMapFromRowTable()
+{
+    if (spikesByCluster == nullptr || clusterInfoMap == nullptr) return;
+
+    // Count spikes per cluster from the row table.
+    QMap<dataType,dataType> counts;
+    for (dataType i = 1; i <= nbSpikes; ++i)
+        ++counts[(*spikesByCluster)(2, i)];
+
+    // Assign contiguous spans in ascending cluster-id order; preserve user info.
+    QMap<dataType,dataType> positions;
+    ClusterInfoMap rebuilt;
+    dataType index = 1;
+    for (QMap<dataType,dataType>::ConstIterator it = counts.constBegin();
+         it != counts.constEnd(); ++it) {
+        const dataType id = it.key();
+        const dataType n  = it.value();
+        positions.insert(id, index);
+        if (clusterInfoMap->contains(id)) {
+            ClusterInfo ci = clusterInfoMap->value(id);   // keeps user info
+            ci.setFirstSpikePosition(index);
+            ci.setNbSpikes(n);
+            rebuilt.insert(id, ci);
+        } else {
+            rebuilt.insert(id, ClusterInfo(index, n));    // row-table-only cluster
+        }
+        index += n;
+    }
+
+    // Stable bucket-sort the row table into the new layout.
+    SortableTable* tmp = new SortableTable();
+    tmp->setSize(nbSpikes);
+    for (dataType i = 1; i <= nbSpikes; ++i) {
+        const dataType id  = (*spikesByCluster)(2, i);
+        const dataType pos = positions[id];
+        (*tmp)(1, pos) = (*spikesByCluster)(1, i);
+        (*tmp)(2, pos) = id;
+        ++positions[id];
+    }
+
+    {
+        QMutexLocker lk(&mutex);
+        delete spikesByCluster;
+        spikesByCluster = tmp;
+        *clusterInfoMap = rebuilt;
+    }
+}
+
+
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
     this->spkFileName = spkFileName;
     if(!configure(parXFile, parFile,errorInformation))

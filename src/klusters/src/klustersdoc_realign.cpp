@@ -2102,6 +2102,13 @@ bool KlustersDoc::activeClusterHasMembers(int clusterId) const
     return data().clusterHasMembers(clusterId);
 }
 
+void KlustersDoc::resyncActiveClusterInfoMap()
+{
+    // Repair a row-table/cluster-map desync on the active clustering (the same
+    // one activeClusterHasMembers validates against) without a save+reopen.
+    data().resyncClusterInfoMapFromRowTable();
+}
+
 // ---------------------------------------------------------------------------
 // KlustersDoc::nudgeClusterTimestamps
 // ---------------------------------------------------------------------------
