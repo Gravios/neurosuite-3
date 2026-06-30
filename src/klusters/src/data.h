@@ -686,6 +686,12 @@ public:
      *  true when the invariant holds. */
     bool checkSpikeFeatureInvariant(const char* where) const;
 
+    /**Read-only diagnostic: verifies clusterInfoMap (the cluster map) agrees
+     * with spikesByCluster (the row table) — per-cluster counts match and every
+     * row-table cluster has a map entry. Warns @p where on the first violation.
+     * Localises the partial-commit op that desyncs the two structures.*/
+    bool checkClusterInfoMapInvariant(const char* where) const;
+
     /**Rebuilds clusterInfoMap (the cluster map) from spikesByCluster (the row
      * table — the source of truth), the in-memory equivalent of save+reopen.
      * Repairs a partial-commit desync where a cluster present in the row table
