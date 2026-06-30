@@ -976,7 +976,21 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 if (N < PcaRefineGpu::gpuThreshold()) break;
                 if (nChan > 256) break;        // safety — kernel sums across nChan in one block
                 const int M       = 2 * maxShift + 1;
-                const int wideLen = nSamp + 2 * maxShift;
+                // Each candidate c in [0,M) feeds the kernel rShift+d2u raw
+                // samples at channel-row offset [c, c+rShift+d2u); the widest
+                // candidate (c = 2*maxShift) therefore needs
+                // 2*maxShift + rShift + d2u samples per channel row.  The old
+                // nSamp+2*maxShift only covers that when nSamp >= rShift+d2u.
+                // When the stderiv pre-roll plus the PCA window exceed nSamp
+                // (e.g. d2u == nSamp with rShift >= 1) the top candidates read
+                // past their channel row — into the next channel for interior
+                // spikes, and past the d_raw allocation for the last spike,
+                // which raises an illegal memory access that poisons the CUDA
+                // context for the rest of the session (every later GPU call,
+                // including the grouping-assistant malloc, then fails sticky).
+                // Size the buffer for the widest read so the absolute samples
+                // each candidate uses are unchanged but never truncated.
+                const int wideLen = 2 * maxShift + std::max(nSamp, rShift + d2u);
 
                 // Bound the working buffer at ~512 MB to avoid surprising
                 // the GPU on very large clusters.  Above this the CPU loop
