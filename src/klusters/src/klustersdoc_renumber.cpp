@@ -98,13 +98,36 @@ void KlustersDoc::renumberClusters(){
 
     prepareUndo(clusterIdsOldNew,clusterIdsNewOld);
 
-    //Update the clusterColorList, keep the same colors, only update the clusterIds
-    QList<dataType> clusterList = clusteringData->clusterIds();
-    int nbClusters = clusterList.size();
-
-    for (int i = 0; i < nbClusters; ++i){
-        int clusterId = static_cast<int>(clusterList[i]);
-        clusterColorList->changeItemId(i,clusterId);
+    //Update the clusterColorList: keep each cluster's colour, only relabel its
+    //stored id through the old->new map the renumber just produced.
+    //
+    //This previously walked clusterColorList positionally --
+    //  for (i in 0..clusteringData->clusterIds().size())
+    //      clusterColorList->changeItemId(i, clusterIds[i]);
+    //which assumes the colour list holds exactly one entry per data cluster, in the
+    //same order.  In the hierarchy paths the parent colour list can end up with
+    //fewer entries than clusteringData has clusters (clusters exist in the data with
+    //no colour entry), so the positional walk ran past the end of itemList.  Because
+    //ItemColors::changeItemId does an unchecked QList::at(), that dereferenced a
+    //garbage pointer -> the SIGSEGV seen via the deferred autoPostClusterEdit ->
+    //renumberClusters after grouping two parent fibers.
+    //
+    //Resolve every colour entry's position by its OLD id up front, then apply the
+    //new ids.  All lookups happen by old id BEFORE any mutation, so a freshly written
+    //new id can't alias an as-yet-unprocessed old id; the resolved indices stay valid
+    //through the apply loop because changeItemId only rewrites the id field, never
+    //reorders.  Clusters without a colour entry (and colour entries without a data
+    //cluster) are simply skipped instead of crashing.
+    {
+        QVector<QPair<int,int>> idUpdates;            // (colour-list index, new id)
+        idUpdates.reserve(clusterIdsOldNew.size());
+        for (auto it = clusterIdsOldNew.constBegin(); it != clusterIdsOldNew.constEnd(); ++it){
+            const int colorIndex = clusterColorList->itemIndex(it.key());   // by OLD id
+            if (colorIndex >= 0)
+                idUpdates.append(qMakePair(colorIndex, it.value()));
+        }
+        for (const QPair<int,int>& u : idUpdates)
+            clusterColorList->changeItemId(u.first, u.second);
     }
 
     // Translate S-pinned cluster ids through the rename so any
