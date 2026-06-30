@@ -1077,6 +1077,60 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,Q
 
 
 // ---------------------------------------------------------------------------
+// checkClusterInfoMapInvariant — read-only diagnostic.  Verifies that the
+// cluster map (clusterInfoMap) agrees with the row table (spikesByCluster, the
+// source of truth): every map entry's nbSpikes equals the actual row-table
+// count for that id, and every id that has spikes in the row table has a map
+// entry.  A partial-commit merge/split/reorder/undo that updates the row table
+// but leaves the map stale trips this, and calling it at the common commit
+// point (prepareUndo) makes the desync surface at the editing op that caused
+// it — named via @p where — instead of much later in a recluster abort.
+// Returns true when consistent; warns the first violation and returns false.
+bool Data::checkClusterInfoMapInvariant(const char* where) const
+{
+    if (spikesByCluster == nullptr || clusterInfoMap == nullptr) return true;
+    bool ok = true;
+
+    // Actual per-cluster counts from the row table.
+    QMap<dataType,dataType> actual;
+    const long nSpk = static_cast<long>(nbSpikes);
+    const long sbcCols = spikesByCluster->nbOfColumns();
+    const long lim = std::min(nSpk, sbcCols);
+    for (long s = 1; s <= lim; ++s)
+        ++actual[(*spikesByCluster)(2, s)];
+
+    // (A) every map entry's count must match the row-table count for that id.
+    for (ClusterInfoMap::ConstIterator it = clusterInfoMap->constBegin();
+         it != clusterInfoMap->constEnd(); ++it) {
+        const long mapN  = static_cast<long>(it.value().nbSpikes());
+        const long realN = static_cast<long>(actual.value(it.key(), 0));
+        if (mapN != realN) {
+            qWarning().nospace() << "[clustermap-invariant] " << where
+                << ": cluster " << it.key() << " map count=" << mapN
+                << " != row-table count=" << realN << " — first mismatch";
+            ok = false;
+            break;
+        }
+    }
+
+    // (B) every id with row-table spikes must have a map entry.
+    if (ok) {
+        for (QMap<dataType,dataType>::ConstIterator it = actual.constBegin();
+             it != actual.constEnd(); ++it) {
+            if (!clusterInfoMap->contains(it.key())) {
+                qWarning().nospace() << "[clustermap-invariant] " << where
+                    << ": cluster " << it.key() << " has " << it.value()
+                    << " row-table spikes but no clusterInfoMap entry";
+                ok = false;
+                break;
+            }
+        }
+    }
+    return ok;
+}
+
+
+// ---------------------------------------------------------------------------
 // resyncClusterInfoMapFromRowTable — in-memory repair of a row-table/cluster-
 // map desync, equivalent to a save+reopen round-trip but without touching disk.
 //
@@ -3357,6 +3411,13 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
     qDeleteAll(clusterInfoMapRedoList);
     clusterInfoMapRedoList.clear();
     dimensionChangedRedo.clear();
+
+    // Localisation probe: prepareUndo is the common commit point for every
+    // forward edit (merge/split/reorder/move), installing the new row table and
+    // cluster map together.  If the edit built a map that disagrees with the
+    // row table, this fires now — at the op that caused it — instead of later
+    // when a recluster trips the palette/clusterInfoMap guard.
+    checkClusterInfoMapInvariant("prepareUndo");
 }
 
 void Data::nbUndoChangedCleaning(int newNbUndo){
