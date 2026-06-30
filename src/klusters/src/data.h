@@ -1526,6 +1526,19 @@ private:
   */
     double spikeTime(SortableTable& spikesOfCluster,dataType spike){
         dataType currentPositionInFeatures = spikesOfCluster(1,spike);
+        // Guard the feature-row index against the spikesByCluster/features
+        // desync (a stale spikesByCluster(1,*) value that exceeds the feature
+        // matrix) which also crashes the centroid and snapshot paths.  Array::
+        // operator()'s assert is a release no-op, so an out-of-range row reads
+        // past the matrix and segfaults this reader — fatal here because it runs
+        // on a background CorrelationThread.  Clamp into range: a desynced spike
+        // then lands in a slightly-wrong correlogram bin instead of crashing.
+        // The desync itself is surfaced by checkSpikeFeatureInvariant /
+        // checkClusterInfoMapInvariant; this is the hot read path, so no warn.
+        const dataType featRows = static_cast<dataType>(features.nbOfRows());
+        if(featRows < 1) return 0.0;
+        if(currentPositionInFeatures < 1)             currentPositionInFeatures = 1;
+        else if(currentPositionInFeatures > featRows) currentPositionInFeatures = featRows;
         return static_cast<double>(features(currentPositionInFeatures,nbDimensions));
     }
 
