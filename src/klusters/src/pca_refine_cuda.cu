@@ -227,6 +227,16 @@ extern "C" int cuda_pca_refine(
     if (chForPca > nChan) chForPca = nChan;
     if (nChan > BLOCK_SIZE) return -2;   // single-block sum can't handle more
 
+    // Each candidate c in [0,M) reads rShift+d2u samples at channel-row offset
+    // [c, c+rShift+d2u); the widest candidate (c = M-1) therefore needs
+    // M-1 + rShift+d2u-1 < wideLen.  If the caller undersized the window, refuse
+    // here and let the dispatcher use the CPU path rather than launch a kernel
+    // that reads past d_raw on the device: an illegal access there is sticky —
+    // it corrupts the CUDA context, so every later GPU call in the session
+    // fails until the process restarts.  The caller sizes wideLen correctly
+    // (klustersdoc_realign), so this is defence in depth, not the primary fix.
+    if (wideLen < M + rShift + d2u - 1) return -2;   // window too small — caller uses CPU
+
     const size_t raw_bytes   = (size_t)K * nChan * wideLen * sizeof(int16_t);
     const size_t evec_bytes  = (size_t)chForPca * kComp * d2u * sizeof(float);
     const size_t means_bytes = (size_t)chForPca * d2u * sizeof(float);
