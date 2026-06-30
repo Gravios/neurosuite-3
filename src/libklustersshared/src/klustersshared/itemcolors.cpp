@@ -194,12 +194,26 @@ void ItemColors::resetAllColorStatus(){
 }
 
 void ItemColors::changeItemId(int index, int newItemId){
+    if (index < 0 || index >= itemList.count()) {
+        // Defensive: an out-of-range index must not dereference a garbage pointer.
+        // The unchecked at() below previously segfaulted when a caller indexed this
+        // list positionally past its end (see renumberClusters).  No mutator on a
+        // colour list should crash on a bad index; warn and ignore instead.
+        qWarning() << "ItemColors::changeItemId: index" << index
+                   << "out of range [0," << itemList.count() << ")";
+        return;
+    }
     ItemColors::ItemColor* theItemColor = itemList.at(static_cast<uint>(index));
 
     theItemColor->itemId = newItemId;
 }
 
 void ItemColors::changeItemLabel(int index, const QString &newItemLabel){
+    if (index < 0 || index >= itemList.count()) {
+        qWarning() << "ItemColors::changeItemLabel: index" << index
+                   << "out of range [0," << itemList.count() << ")";
+        return;
+    }
     ItemColors::ItemColor* theItemColor = itemList.at(static_cast<uint>(index));
 
     theItemColor->label = newItemLabel;
