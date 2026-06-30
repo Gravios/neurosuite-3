@@ -776,6 +776,10 @@ public:
      *  so a child id -- which never exists in the parent clustering -- is
      *  validated against the child clustering that actually owns it. */
     bool activeClusterHasMembers(int clusterId) const;
+    /** Repairs a row-table/cluster-map desync on the active clustering in
+     *  memory (the save+reopen equivalent) so a partial-commit desync need not
+     *  force a disk round-trip before reclustering. */
+    void resyncActiveClusterInfoMap();
     /** True while an in-flight recluster targets the child (atom) layer; lets the
      *  exit handler land focus on the new atoms in the child palette instead of
      *  the parent list.  Valid until reclusteringUpdate consumes the pin. */

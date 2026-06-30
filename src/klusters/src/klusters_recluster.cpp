@@ -227,6 +227,21 @@ void KlustersApp::slotRecluster(){
                 emptyIds.append(QString::number(id));
         }
         if (!emptyIds.isEmpty()) {
+            // The row table is the source of truth and clusterInfoMap is wholly
+            // derivable from it, so try the save+reopen repair in memory first:
+            // resync the map from the row table and re-test.  A partial-commit
+            // desync (cluster present in the row table, stale 0 count in the
+            // map) self-heals here without a disk round-trip.  Only the ids
+            // that are STILL empty afterwards are genuinely empty in the row
+            // table too, and those keep the original guidance below.
+            doc->resyncActiveClusterInfoMap();
+            emptyIds.clear();
+            for (int id : clustersToRecluster) {
+                if (!doc->activeClusterHasMembers(id))
+                    emptyIds.append(QString::number(id));
+            }
+        }
+        if (!emptyIds.isEmpty()) {
             QMessageBox::critical(this, tr("Recluster aborted"),
                 tr("Cluster(s) %1 appear in the palette but have zero "
                    "spikes registered in the clusterInfoMap — this is a "
@@ -234,6 +249,8 @@ void KlustersApp::slotRecluster(){
                    "It is typically caused by an earlier merge, split, "
                    "or undo that committed partially; nudge is not the "
                    "source even when it is the most recent action.\n\n"
+                   "An in-memory resync was attempted and did not resolve "
+                   "it, so %1 has no spikes in the row table either. "
                    "Save the session and re-open before reclustering. "
                    "Saving writes .clu from the row table (the source "
                    "of truth) and reopening rebuilds the cluster map "

@@ -686,6 +686,12 @@ public:
      *  true when the invariant holds. */
     bool checkSpikeFeatureInvariant(const char* where) const;
 
+    /**Rebuilds clusterInfoMap (the cluster map) from spikesByCluster (the row
+     * table — the source of truth), the in-memory equivalent of save+reopen.
+     * Repairs a partial-commit desync where a cluster present in the row table
+     * has a stale 0 count or no map entry, without a disk round-trip.*/
+    void resyncClusterInfoMapFromRowTable();
+
     /**Returns the sampling interval (time between two samples) in second.*/
     double intervalOfSampling()const{return samplingInterval;}
 
