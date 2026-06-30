@@ -91,6 +91,19 @@
 int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeView){
     //Call data to group the clusters
     logBefore(CurationLogger::ActionType::GROUP, clustersToGroup);
+
+    // Quiesce every background view thread BEFORE mutating Data.  groupClusters
+    // renumbers/reassigns spikes in clusteringData in place; a WaveformView,
+    // CorrelationView or matrix thread reading the old cluster layout at that
+    // instant gets a torn read or a stale array index -> the non-deterministic
+    // segfault seen on grouping (including grouping two parent fibers, which
+    // routes here via mergeParentFibers).  This is the same guard the undo
+    // (klustersdoc_undo) and realign (klustersdoc_realign) paths already take
+    // before their in-place Data mutations; group was the one mutating primitive
+    // that omitted it.
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
     float newClusterId = clusteringData->groupClusters(clustersToGroup);
     int newClusterIdint = static_cast<int>(newClusterId);
 
