@@ -126,6 +126,12 @@ public Q_SLOTS:
     /**Enables the caller to know if there is any thread running launch by the Widget.*/
     bool isThreadsRunning() const override;
 
+    /**Synchronously stops every running ErrorMatrixThread.  Overrides the (empty)
+     * ViewWidget::stopRunningThreads so KlustersView::stopAllViewThreads() actually
+     * quiesces this view's threads before a caller mutates Data (group/merge, undo,
+     * realign).  Does NOT set goingToDie, so a fresh matrix can be recomputed after.*/
+    void stopRunningThreads() override;
+
     /**Update the error matrix.*/
     void updateMatrixContents();
 

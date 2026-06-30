@@ -103,6 +103,31 @@ bool ErrorMatrixView::isThreadsRunning() const {
         return true;
 }
 
+void ErrorMatrixView::stopRunningThreads(){
+    // Synchronous quiesce mirroring CorrelationView::stopRunningThreads and this
+    // view's own destructor teardown: signal each ErrorMatrixThread to stop, wait
+    // for run() to return, delete it, and drop any completion event it posted so a
+    // later customEvent() can't fire with a dangling thread pointer.  Deliberately
+    // does NOT call willBeKilled()/set goingToDie, so a fresh matrix can be
+    // recomputed afterwards (updateMatrixContents).
+    //
+    // Required because ErrorMatrixView is a ViewWidget but — unlike CorrelationView —
+    // never overrode the empty ViewWidget::stopRunningThreads virtual.  Thus
+    // KlustersView::stopAllViewThreads() called the empty base on it, leaving the
+    // ErrorMatrixThread reading Data while a group/merge (and likewise undo/realign)
+    // mutated it in place — the non-deterministic QThread segfault when grouping
+    // from the error matrix.  stopProcessing() sets the thread's atomic
+    // haveToStopProcessing flag and stops its GroupingAssistant, so run() returns
+    // promptly and wait() cannot hang (same contract the destructor relies on).
+    for(ErrorMatrixThread* errorMatrixThread : threadsToBeKill)
+        errorMatrixThread->stopProcessing();
+    for(ErrorMatrixThread* errorMatrixThread : threadsToBeKill)
+        while(!errorMatrixThread->wait()){}
+    qDeleteAll(threadsToBeKill);
+    threadsToBeKill.clear();
+    QApplication::removePostedEvents(this);
+}
+
 void ErrorMatrixView::customEvent(QEvent* event){
     //Event sent by a ErrorMatrixThread to inform that the data are available.
     if(event->type() == QEvent::User + 600){
