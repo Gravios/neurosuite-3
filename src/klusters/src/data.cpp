@@ -478,6 +478,48 @@ static double chi2_sf(double x, int df)
 }
 
 // ---------------------------------------------------------------------------
+// checkSpikeFeatureInvariant — read-only diagnostic (see header)
+// ---------------------------------------------------------------------------
+bool Data::checkSpikeFeatureInvariant(const char* where) const
+{
+    const long featRows = features.nbOfRows();
+    const long featCols = features.nbOfColumns();
+    const long nSpk     = static_cast<long>(nbSpikes);
+    bool ok = true;
+
+    // (A) one feature row per spike.
+    if (featRows != nSpk) {
+        qWarning().nospace() << "[spike-invariant] " << where
+            << ": features rows=" << featRows << " != nbSpikes=" << nSpk
+            << "  (feature cols=" << featCols << ", nbDimensions=" << nbDimensions << ")";
+        ok = false;
+    }
+
+    // (B) every spikesByCluster feature-row index must be in [1, featRows].
+    if (spikesByCluster != nullptr) {
+        const long sbcCols = spikesByCluster->nbOfColumns();
+        if (sbcCols < nSpk) {
+            qWarning().nospace() << "[spike-invariant] " << where
+                << ": spikesByCluster columns=" << sbcCols << " < nbSpikes=" << nSpk;
+            ok = false;
+        }
+        const long lim = std::min(nSpk, sbcCols);
+        for (long s = 1; s <= lim; ++s) {
+            const long row = static_cast<long>((*spikesByCluster)(1, s));
+            if (row < 1 || row > featRows) {
+                qWarning().nospace() << "[spike-invariant] " << where
+                    << ": spikesByCluster(1," << s << ")=" << row
+                    << " outside feature rows [1," << featRows << "]  (nbSpikes="
+                    << nSpk << ") — first offending spike";
+                ok = false;
+                break;                       // one example pins the op; don't flood
+            }
+        }
+    }
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
 // computeAllCentroids — one pass over all spikes, amortised across snapshots
 // ---------------------------------------------------------------------------
 QMap<int, QVector<double>> Data::computeAllCentroids() const
@@ -5885,6 +5927,12 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
             }
         }
     }
+
+    // Localisation probe: the reclustered table was just installed (prepareUndo).
+    // If the recluster integration left spikesByCluster referencing a feature row
+    // past the matrix, this fires HERE (naming the op) rather than later in a
+    // curation-log snapshot.
+    checkSpikeFeatureInvariant("integrateReclusteredClusters");
 
     return 1;
 }

@@ -678,6 +678,14 @@ public:
      */
     QMap<int, QVector<double>> computeAllCentroids() const;
 
+    /** Diagnostic (read-only).  Verifies the invariant the centroid/snapshot passes
+     *  rely on: features has exactly nbSpikes rows, and every spikesByCluster(1,·)
+     *  feature-row index lies in [1, features rows].  qWarning()s the first violation,
+     *  tagged with @p where, so the operation that breaks it can be localised at its
+     *  own boundary instead of surfacing later in a curation-log snapshot.  Returns
+     *  true when the invariant holds. */
+    bool checkSpikeFeatureInvariant(const char* where) const;
+
     /**Returns the sampling interval (time between two samples) in second.*/
     double intervalOfSampling()const{return samplingInterval;}
 

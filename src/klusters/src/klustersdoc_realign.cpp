@@ -2021,6 +2021,13 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
     // the next realignment (or another save cycle) starts from a clean slate.
     initPendingFiles();
 
+    // Localisation probe (Data::checkSpikeFeatureInvariant): realignSpikes updated the
+    // in-memory feature rows in place (updateFeatureRow) before this commit.  If it
+    // left a feature-row/spike-count mismatch, this names the realign at its boundary
+    // instead of letting it surface later in a curation-log snapshot.
+    if (clusteringData) clusteringData->checkSpikeFeatureInvariant("realign-commit/parent");
+    if (childData)      childData->checkSpikeFeatureInvariant("realign-commit/child");
+
     if (!allOk && outError) *outError = firstError;
     return allOk;
 }
