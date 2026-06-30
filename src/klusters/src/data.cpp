@@ -485,6 +485,16 @@ QMap<int, QVector<double>> Data::computeAllCentroids() const
     const int nSpk  = static_cast<int>(nbSpikes);
     const int nFeat = nbDimensions - 1;     // timestamp is last column
 
+    // Feature-matrix extent.  A realign/recluster that resizes or reorders the
+    // feature matrix can leave a spikesByCluster row index pointing past it (and, in
+    // principle, nbDimensions ahead of the column count).  Array::operator()'s only
+    // guard is a Q_ASSERT_X, compiled out in release, so an out-of-range access reads
+    // raw past the buffer -> SIGSEGV.  Clamp every access to the real extent.
+    const long featRows = features.nbOfRows();
+    const long featCols = features.nbOfColumns();
+    const int  nReadFeat = static_cast<int>(std::min<long>(nFeat, featCols));
+    bool warnedRow = false;
+
     // Accumulate sum and count per cluster
     QMap<int, QVector<double>> sumMap;
     QMap<int, int>             cntMap;
@@ -493,12 +503,24 @@ QMap<int, QVector<double>> Data::computeAllCentroids() const
         const int cid = static_cast<int>((*spikesByCluster)(2, s));
         const int row = static_cast<int>((*spikesByCluster)(1, s));
 
+        // A stale feature-row index cannot contribute a valid centroid; skip it
+        // rather than dereference past the feature matrix and crash the whole
+        // snapshot/curation-log pass.
+        if (row < 1 || row > featRows) {
+            if (!warnedRow) {
+                qWarning() << "Data::computeAllCentroids: spike" << s << "feature row" << row
+                           << "outside [1," << featRows << "] — skipping (stale spikesByCluster?)";
+                warnedRow = true;
+            }
+            continue;
+        }
+
         if (!sumMap.contains(cid)) {
             sumMap[cid] = QVector<double>(nFeat, 0.0);
             cntMap[cid] = 0;
         }
         QVector<double>& acc = sumMap[cid];
-        for (int f = 1; f <= nFeat; ++f)
+        for (int f = 1; f <= nReadFeat; ++f)
             acc[f - 1] += static_cast<double>(features(row, f));
         ++cntMap[cid];
     }
@@ -546,10 +568,26 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
 
     const double invFs = (samplingRate > 0.0) ? (1.0 / samplingRate) : 0.0;
 
+    // Feature-matrix extent (see computeAllCentroids): skip spikes whose feature row
+    // is stale and never read past the last column, so a realign/recluster desync
+    // degrades the log snapshot instead of segfaulting.  Every later pass reads only
+    // rows collected here, so this one guard protects the whole function.
+    const long featRows = features.nbOfRows();
+    const long tsCol    = std::min<long>(nbDimensions, features.nbOfColumns());
+    bool warnedRow = false;
+
     for (int s = 1; s <= nSpkTotal; ++s) {
         if (static_cast<int>((*spikesByCluster)(2, s)) == clusterId) {
             const int row = static_cast<int>((*spikesByCluster)(1, s));
-            const double ts = static_cast<double>(features(row, nbDimensions)) * invFs;
+            if (row < 1 || row > featRows || tsCol < 1) {
+                if (!warnedRow) {
+                    qWarning() << "Data::computeSnapshot: cluster" << clusterId << "feature row" << row
+                               << "outside [1," << featRows << "] — skipping (stale spikesByCluster?)";
+                    warnedRow = true;
+                }
+                continue;
+            }
+            const double ts = static_cast<double>(features(row, tsCol)) * invFs;
             spikes.append({ ts, row });
         }
     }
