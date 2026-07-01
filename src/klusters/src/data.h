@@ -700,13 +700,15 @@ public:
 
     /**Validates the feature-row (Class A) invariant on a CANDIDATE row table
      * before it is installed by prepareUndo: it must have at least nbSpikes
-     * columns and every feature-row index (row 1) must lie in
-     * [1, features.nbOfRows()].  Unlike checkSpikeFeatureInvariant, which
-     * inspects the already-installed table, this inspects a temp table handed to
-     * prepareUndo, so an internally-inconsistent table (e.g. a zeroed/short tail
-     * from a short recluster/basin integrate) can be REFUSED before it is
-     * committed and later saved.  Returns true if the table is safe to install
-     * (or if the feature matrix is not loaded, in which case it cannot judge).*/
+     * columns and row 1 must be a permutation of the feature rows — every index
+     * in [1, features.nbOfRows()] and each used at most once (no in-range
+     * duplicate).  Unlike checkSpikeFeatureInvariant, which inspects the
+     * already-installed table, this inspects a temp table handed to prepareUndo,
+     * so an internally-inconsistent table (e.g. a zeroed/short tail from a short
+     * recluster/basin integrate, or a double-written source block) can be REFUSED
+     * before it is committed and later saved.  Returns true if the table is safe
+     * to install (or if the feature matrix is not loaded, in which case it cannot
+     * judge).*/
     bool candidateSpikeTableValid(const SortableTable* candidate) const;
 
     /**Returns the sampling interval (time between two samples) in second.*/
