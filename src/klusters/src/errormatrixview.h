@@ -190,6 +190,10 @@ public Q_SLOTS:
   * @param clusterIdsOldNew map given for each old clusterId the new clusterId.
   */
     void renumber(QMap<int,int>& clusterIdsOldNew);
+    /**A nudge/realign reprojected clusterId's features (membership unchanged).
+     * Mark it modified so it enters changedIds and its incremental row is
+     * refreshed rather than reused stale.*/
+    void clusterFeaturesReprojected(int clusterId);
 
     /**Updates the error matrix drawing due to the reversion of the last renumbering action.
   * @param clusterIdsNewOld map given for each new clusterId the old clusterId.

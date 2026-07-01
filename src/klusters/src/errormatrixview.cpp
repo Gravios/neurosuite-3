@@ -848,6 +848,24 @@ void ErrorMatrixView::clustersGrouped(QList<int>& groupedClusters, int newCluste
     drawContentsMode = REDRAW;
 }
 
+void ErrorMatrixView::clusterFeaturesReprojected(int clusterId){
+    // A nudge or realign reprojected this cluster's spikes onto the PCA basis, so
+    // its in-memory .fet features — and therefore its per-spike error-matrix
+    // probabilities — changed, even though its membership and id did not.  Mark
+    // it modified exactly like a cluster-editing slot would: it then shows as
+    // out-of-date AND, crucially, enters changedIds at the next update.  Being in
+    // changedIds makes the incremental path recompute this cluster's own column
+    // and, via changedSpans, its spikes' rows inside every reused column — so the
+    // stale pre-reprojection values are not reused for it.  Membership is
+    // unchanged, so no group/split/renumber signal fires for it otherwise.
+    if(clusterList.contains(clusterId) && !modifiedClusterList.contains(clusterId))
+        modifiedClusterList.append(clusterId);
+
+    nbActions++;
+
+    drawContentsMode = REDRAW;
+}
+
 void ErrorMatrixView::clustersDeleted(QList<int>& deletedClusters,int destinationCluster){
     QList<int> deletedList;
 
