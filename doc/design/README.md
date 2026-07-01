@@ -24,6 +24,7 @@ the time-ordered index; the design docs are the durable reference.
 | [`kk-prior.md`](kk-prior.md) | Per-probe empirical KK priors design (probe identity, hashes, friendly names) |
 | [`ndm-start-root.md`](ndm-start-root.md) | ndmanager Pipeline tab — editable node graph with `ndm_start` as sticky root, plus YAML-driven dispatcher |
 | [`optimization.md`](optimization.md) | Hardware and OS tuning recipe |
+| [`substrate-labeling-refactor.md`](substrate-labeling-refactor.md) | Split the spike substrate from cluster labeling; unify flat + hierarchical as an N-layer model |
 
 ## Related
 
