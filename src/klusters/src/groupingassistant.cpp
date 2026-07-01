@@ -239,6 +239,19 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     std::vector<std::pair<dataType,dataType>> spans; spans.reserve(static_cast<size_t>(nbClustersReal));
     for (const Col& c : cols) spans.push_back({ c.first, c.first + c.nb });
 
+    // Spikes belonging to CHANGED clusters may have had their .fet features
+    // rewritten in place (an auto-realign of the just-merged cluster rewrites its
+    // feature rows via Data::updateFeatureRow).  A changed cluster's own column is
+    // recomputed below, but its spikes ALSO appear as rows against every OTHER
+    // (reused) column — and a reused column is copied wholesale from the cache, so
+    // those spikes' entries there are stale.  Collect the changed clusters' spike
+    // spans once so each reused column can refresh exactly those spikes (the
+    // realigned cluster's ROW), leaving the rest of the column as the valid copy.
+    std::vector<std::pair<dataType,dataType>> changedSpans;
+    for (const Col& c : cols)
+        if (changedIds.contains(c.id))
+            changedSpans.push_back({ c.first, c.first + c.nb });
+
     int nbReused = 0;
     for (int cjIdx = 0; cjIdx < nbClustersReal; ++cjIdx) {
         if (haveToStopComputing) break;
@@ -255,6 +268,26 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             for (dataType s = 1; s <= nbSpikes; ++s)
                 (*raw)(s, ci1) = (*prevRaw)(s, srcCol);
             ++nbReused;
+            // Correct the copied column for the changed clusters' spikes, whose
+            // features may have moved (realign): recompute those rows under this
+            // reused column's own (unchanged) model.  Same Mahalanobis as the full
+            // fill below; only the set of spikes is scoped to changedSpans.
+            const double* L    = cj.L.data();
+            const double  logT = cj.logTerm;
+            for (const auto& span : changedSpans) {
+                for (dataType si = span.first; si < span.second; ++si) {
+                    const dataType featRow = (*spikesByCluster)(1, si);
+                    double root[64], mahal = 0.0;
+                    for (int d = 0; d < nbDimensions; ++d) {
+                        double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
+                        for (int j = 0; j < d; ++j)
+                            sv -= L[static_cast<size_t>(d + j*nbDimensions)] * root[j];
+                        root[d] = sv / L[static_cast<size_t>(d + d*nbDimensions)];
+                        mahal  += root[d] * root[d];
+                    }
+                    (*raw)(featRow, ci1) = exp(-0.5 * (mahal + logT));
+                }
+            }
             continue;
         }
 
