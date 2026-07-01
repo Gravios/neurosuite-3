@@ -31,7 +31,7 @@ void ErrorMatrixThread::run(){
             result = assistant.computeMeanProbabilitiesIncremental(
                 data, clusterList, computedClusterList, ignoreClusterIndex,
                 prevRaw, prevRawIds, prevRawSizes, prevNbDimensions, changedIds,
-                &newRaw, &newRawIds, &newRawSizes, &nbReused);
+                &newRaw, &newRawIds, &newRawSizes, &nbReused, verify);
 
             if(result != nullptr){
                 usedIncremental = true;

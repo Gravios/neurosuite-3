@@ -78,7 +78,7 @@ public:
         const QList<int>& prevRawSizes, int prevNbDimensions,
         const QSet<int>& changedIds,
         Array<double>** outRaw, QList<int>* outRawIds, QList<int>* outRawSizes,
-        int* outNbReused);
+        int* outNbReused, bool verifyReuse);
 
     /**Asks the GroupingAssistant to stop his work as soon as possible.*/
     inline void stopComputing(){haveToStopComputing = true;}
