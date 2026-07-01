@@ -827,6 +827,12 @@ public:
      */
     void invalidateWaveformCache(int clusterId);
     void invalidateCorrelogramCache(int clusterId);
+    /**Raises clusterFeaturesReprojected(clusterId) on the GUI thread.  Realign's
+     * feature commit runs on the worker thread, so its completion handlers (in
+     * KlustersApp, main thread) call this after the commit to notify the error
+     * matrix — synchronously, before the matrix update, avoiding the queued-event
+     * race a worker-thread emit would introduce.*/
+    void notifyClusterFeaturesReprojected(int clusterId);
 
     // ── Pending realignment ────────────────────────────────────────────────
     /** One modified spike record, held in memory until saveDocument() writes

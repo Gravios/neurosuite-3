@@ -462,6 +462,9 @@ void KlustersApp::flushRealignBatchRefresh()
     for (int id : realignBatchTouched) {
         doc->invalidateWaveformCache(id);
         doc->invalidateCorrelogramCache(id);
+        // Same as the single-cluster path: each batch-realigned cluster's
+        // features were reprojected, so mark it changed for the error matrix.
+        doc->notifyClusterFeaturesReprojected(id);
     }
     for (int id : realignBatchTouched)
         doc->forceClusterRefresh(id);
@@ -639,6 +642,11 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
             doc->invalidateWaveformCache(realignClusterId);
             doc->invalidateCorrelogramCache(realignClusterId);
             doc->forceClusterRefresh(realignClusterId);
+            // Realign reprojected this cluster's .fet features (membership
+            // unchanged), so no group/split/renumber signal fires for it.  Tell
+            // the error matrix so the incremental path treats it as changed and
+            // refreshes its row instead of reusing stale probabilities.
+            doc->notifyClusterFeaturesReprojected(realignClusterId);
         }
 
         // Switch to the Overview tab so the user immediately sees the
