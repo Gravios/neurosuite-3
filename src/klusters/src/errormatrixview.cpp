@@ -206,6 +206,14 @@ void ErrorMatrixView::customEvent(QEvent* event){
             } else {
                 invalidateRawProbCache("full recompute / fell-back result (customEvent)");
             }
+
+            // The accepted compute's clusterList / probabilities reflect current
+            // membership, so every pending edit is now applied — consume the
+            // changedIds tracking HERE (moved off dispatch).  A superseded compute
+            // never reaches this branch, so its changedIds accumulate for the
+            // compute that does accept.
+            modifiedClusterList.clear();
+            deletedMap.clear();
         } else {
             // Discard the stale / null result.  newProb ownership stays with us
             // when non-null; delete it to avoid a leak.  Same for any raw array
@@ -275,12 +283,17 @@ void ErrorMatrixView::updateMatrixContents(){
         threadsToBeKill.append(thread);
 
         //Reset the information used to show that the matrix is not up to date.
-        modifiedClusterList.clear();
+        // NB: modifiedClusterList / deletedMap — the changedIds tracking — are
+        // deliberately NOT cleared here.  Clearing them at *dispatch* discarded a
+        // merge's changedIds the instant its compute launched; when the auto-realign
+        // then preempted that compute (generation bump) the changes were lost and the
+        // next compute saw pending=0 and could only cold-seed a full recompute.  They
+        // are now cleared on *accept* (customEvent), when a compute has actually
+        // applied them, so pending survives a superseded compute.
         selectedPairs.clear();
         hasBeenRenumbered = false;
         rawCacheRenumberRemapped = false;
         renumbering.clear();
-        deletedMap.clear();
         nbActions = 0;
         nbRedo = 0;
         isNotUpToDate = false;
@@ -1125,6 +1138,22 @@ void ErrorMatrixView::renumber(QMap<int,int>& clusterIdsOldNew){
         for(int& id : rawProbCacheIds)
             id = clusterIdsOldNew.value(id, id);
         rawCacheRenumberRemapped = true;
+    }
+    // The changedIds tracking is now retained across a preempted compute, so at a
+    // renumber it can still hold pre-renumber ids — remap modifiedClusterList and
+    // the deletedMap keys/values through the same old->new map so
+    // changedClusterIdsSinceCache() resolves against the post-renumber clusters.
+    for(int& id : modifiedClusterList)
+        id = clusterIdsOldNew.value(id, id);
+    if(!deletedMap.isEmpty()){
+        QMap<int,QList<int> > remappedDeleted;
+        for(auto it = deletedMap.constBegin(); it != deletedMap.constEnd(); ++it){
+            QList<int> vals;
+            for(int v : it.value())
+                vals.append(clusterIdsOldNew.value(v, v));
+            remappedDeleted.insert(clusterIdsOldNew.value(it.key(), it.key()), vals);
+        }
+        deletedMap.swap(remappedDeleted);
     }
     nbActions++;
     renumbering.insert(nbActions,true);
