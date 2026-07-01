@@ -19,6 +19,7 @@
 
 //QT include files
 #include <QApplication>
+#include <QElapsedTimer>
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
@@ -26,6 +27,7 @@
 void ErrorMatrixThread::run(){
     if(!haveToStopProcessing){
         Array<double>* result = nullptr;
+        QElapsedTimer diagTimer; diagTimer.start();
 
         if(incremental){
             result = assistant.computeMeanProbabilitiesIncremental(
@@ -83,6 +85,31 @@ void ErrorMatrixThread::run(){
         }
 
         probabilities = result;
+
+        // Per-update path report: which computation actually ran, and how it went.
+        // Gated by NS3_ERRORMATRIX_DIAG so it costs nothing unless requested, and
+        // — unlike the verify line — does NOT trigger the expensive full recompute,
+        // so it is safe to leave on while curating.  It answers "full or
+        // incremental?" on every update, with the reuse count and wall time that
+        // make the difference obvious (incremental should be markedly faster and
+        // report reused ≈ clusters).
+        if(qEnvironmentVariableIntValue("NS3_ERRORMATRIX_DIAG") != 0){
+            const int nCl = static_cast<int>(clusterList.size());
+            const long long ms = static_cast<long long>(diagTimer.elapsed());
+            if(!incremental)
+                fprintf(stderr,
+                    "[errormatrix] FULL (incremental disabled) — %d clusters, %lld ms\n",
+                    nCl, ms);
+            else if(usedIncremental)
+                fprintf(stderr,
+                    "[errormatrix] INCREMENTAL — reused %d/%d columns, %d changed, %lld ms\n",
+                    nbReused, nCl, static_cast<int>(changedIds.size()), ms);
+            else
+                fprintf(stderr,
+                    "[errormatrix] FULL (incremental requested, fell back — precondition "
+                    "miss) — %d clusters, %d changed, %lld ms\n",
+                    nCl, static_cast<int>(changedIds.size()), ms);
+        }
     }
 
     //Send an event to the ErrorMatrixView to let it know that the computation is finish.
