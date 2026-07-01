@@ -3175,6 +3175,15 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     invalidateWaveformCache(clusterId);
     invalidateCorrelogramCache(clusterId);
 
+    // The reprojection rewrote this cluster's in-memory .fet rows, so any cached
+    // error-matrix probabilities for its spikes are now stale — in the reused
+    // columns of the incremental path as well as its own.  Tell the error matrix
+    // to treat this cluster as changed (it enters changedIds at the next update,
+    // so the incremental path recomputes its spikes' rows instead of reusing the
+    // pre-nudge values).  Membership is unchanged, so no merge/renumber signal
+    // would otherwise fire for it.
+    emit clusterFeaturesReprojected(clusterId);
+
     // Force every ClusterView to recalculate its world window.
     for (int i = 0; i < viewList->count(); ++i) {
         KlustersView* v = viewList->at(i);

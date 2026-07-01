@@ -1050,6 +1050,14 @@ Q_SIGNALS:
     void newClusterAdded(QList<int>& fromClusters,int clusterId,QList<int>& emptiedClusters);
     void newClustersAdded(QMap<int,int>& fromToNewClusterIds,QList<int>& emptiedClusters);
     void renumber(QMap<int,int>& clusterIdsOldNew);
+
+    /**Emitted after a nudge or realign reprojects a cluster's spikes onto the
+     * PCA basis, changing its in-memory .fet features (but NOT its membership or
+     * id).  The error matrix listens so its incremental cache treats this
+     * cluster as changed — its per-spike probabilities moved even though nothing
+     * merged, split, or renumbered.*/
+    void clusterFeaturesReprojected(int clusterId);
+
     void undoRenumbering(QMap<int,int>& clusterIdsNewOld);
     void undoAdditionModification(QList<int>& addedClusters,QList<int>& updatedClusters);
     void undoAddition(QList<int>& addedClusters);
