@@ -24,6 +24,7 @@
 #include "types.h"
 
 #include <QList>
+#include <QSet>
 
 
 /**
@@ -57,6 +58,27 @@ public:
  */
     Array<double>* computeMeanProbabilities(Data& clusteringData,QList<int>& clusterList,QList<int>& computedClusterList,
                                             QList<int>& ignoreClusterIndex);
+
+    /**Opt-in incremental variant of computeMeanProbabilities.  Reuses the RAW
+     * (pre-normalisation) per-cluster probability columns for clusters whose
+     * membership is unchanged since the cache (prevRaw / prevRawIds / prevRawSizes),
+     * recomputing raw columns only for clusters in changedIds (or absent from the
+     * cache, or size-mismatched), then redoing the full per-spike normalisation and
+     * error-matrix aggregation.  Because the posteriors are normalised per spike
+     * across ALL clusters, the reuse is at the raw-column level, never the cell
+     * level; the result is numerically identical to the full path.  Returns the
+     * error matrix and, via outRaw / outRawIds / outRawSizes, the new raw array for
+     * the caller to cache; outNbReused reports how many columns were reused.
+     * Returns nullptr (caller should fall back to computeMeanProbabilities) on any
+     * precondition miss.  CPU-only: the GPU path yields no raw columns to cache.*/
+    Array<double>* computeMeanProbabilitiesIncremental(
+        Data& clusteringData, QList<int>& clusterList, QList<int>& computedClusterList,
+        QList<int>& ignoreClusterIndex,
+        const Array<double>* prevRaw, const QList<int>& prevRawIds,
+        const QList<int>& prevRawSizes, int prevNbDimensions,
+        const QSet<int>& changedIds,
+        Array<double>** outRaw, QList<int>* outRawIds, QList<int>* outRawSizes,
+        int* outNbReused);
 
     /**Asks the GroupingAssistant to stop his work as soon as possible.*/
     inline void stopComputing(){haveToStopComputing = true;}

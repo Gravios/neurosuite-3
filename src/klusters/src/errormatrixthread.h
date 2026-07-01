@@ -28,6 +28,7 @@
 
 //include files for QT
 #include <QThread>
+#include <QSet>
 
 
 #include <QEvent>
@@ -52,6 +53,15 @@ public:
     QList<int> getClusterList() const {return clusterList;}
     QList<int> getComputedClusterList() const {return computedClusterList;}
     QList<int> getIgnoreClusterIndex() const {return ignoreClusterIndex;}
+
+    /**Refreshed raw (pre-normalisation) probability cache for the view to keep.
+     * getNewRaw() ownership transfers to the caller (view) on accept; nullptr if
+     * the incremental path was not used.*/
+    Array<double>* getNewRaw() const {return newRaw;}
+    QList<int> getNewRawIds() const {return newRawIds;}
+    QList<int> getNewRawSizes() const {return newRawSizes;}
+    int getNewRawDims() const {return newRawDims;}
+    bool getUsedIncremental() const {return usedIncremental;}
 
     /**Returns the generation counter at the time this thread was created.
      * Used by ErrorMatrixView::customEvent() to discard results from threads
@@ -96,7 +106,17 @@ protected:
 
 private:
 
-    ErrorMatrixThread(ErrorMatrixView& view,Data& d, int generation):errorMatrixView(view),data(d),generation(generation),haveToStopProcessing(false),probabilities(nullptr){
+    ErrorMatrixThread(ErrorMatrixView& view,Data& d, int generation,
+                      bool incremental, bool verify,
+                      const Array<double>* prevRaw, const QList<int>& prevRawIds,
+                      const QList<int>& prevRawSizes, int prevNbDimensions,
+                      const QSet<int>& changedIds)
+        : errorMatrixView(view),data(d),generation(generation),
+          haveToStopProcessing(false),probabilities(nullptr),
+          incremental(incremental),verify(verify),
+          prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),
+          prevNbDimensions(prevNbDimensions),changedIds(changedIds),
+          newRaw(nullptr),newRawDims(-1),nbReused(0),usedIncremental(false){
         start();
     }
 
@@ -110,6 +130,22 @@ private:
     /**True if the thread has to stop processing, false otherwise.*/
     std::atomic_bool haveToStopProcessing;
     GroupingAssistant assistant;
+
+    // ── Incremental error-matrix support (opt-in) ───────────────────────────
+    bool incremental;                 // use the incremental path when true
+    bool verify;                      // also run the full path and log max|delta|
+    const Array<double>* prevRaw;     // cached raw (pre-normalisation) columns
+    QList<int> prevRawIds;            // cluster id per cached raw column
+    QList<int> prevRawSizes;          // nbSpikes per cached raw column
+    int prevNbDimensions;             // dims the cache was built with
+    QSet<int> changedIds;             // ids whose membership changed since cache
+    // Outputs for the view to store as the refreshed cache:
+    Array<double>* newRaw;
+    QList<int> newRawIds;
+    QList<int> newRawSizes;
+    int newRawDims;
+    int nbReused;                     // columns reused (diagnostic)
+    bool usedIncremental;             // true if the incremental path produced the result
 
 };
 

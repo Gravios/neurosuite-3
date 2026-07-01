@@ -23,6 +23,7 @@
 #include <QMap>
 #include <QColor>
 #include <QList>
+#include <QSet>
 #include <QSize>
 
 #include <QResizeEvent>
@@ -289,6 +290,24 @@ private:
     QList<int> ignoreClusterIndex;
     /**Error matrix.*/
     Array<double>* probabilities;
+
+    // ── Incremental error-matrix cache (opt-in; default off) ────────────────
+    /**Cached RAW (pre-normalisation) per-cluster probability columns from the
+     * last successful incremental compute.  Reused for clusters whose membership
+     * is unchanged.  Owned here; deleted on refresh / invalidation / teardown.*/
+    Array<double>* rawProbCache = nullptr;
+    /**Cluster id per rawProbCache column, and nbSpikes per column (reuse guard).*/
+    QList<int> rawProbCacheIds;
+    QList<int> rawProbCacheSizes;
+    /**Feature dimensionality the cache was built with, and whether it is valid.*/
+    int  rawProbCacheDims = -1;
+    bool rawProbCacheValid = false;
+    /**Discards the raw cache (e.g. after a renumber or session change).*/
+    void invalidateRawProbCache();
+    /**Builds the set of cluster ids whose membership changed since the cache,
+     * from modifiedClusterList and the merge/delete targets in deletedMap.*/
+    QSet<int> changedClusterIdsSinceCache() const;
+
     /**List of the clusters which have been modified since the last computation of the errror matrix.*/
     QList<int> modifiedClusterList;
 

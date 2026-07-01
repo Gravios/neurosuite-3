@@ -91,6 +91,7 @@ ErrorMatrixView::~ErrorMatrixView(){
     qDeleteAll(threadsToBeKill);
     threadsToBeKill.clear();
     delete probabilities;
+    delete rawProbCache;
 
     // Drain any thread-posted events so they don't fire after our destruction.
     QApplication::removePostedEvents(this);
@@ -151,10 +152,29 @@ void ErrorMatrixView::customEvent(QEvent* event){
             clusterList = errorMatrixThread->getClusterList();
             computedClusterList = errorMatrixThread->getComputedClusterList();
             ignoreClusterIndex = errorMatrixThread->getIgnoreClusterIndex();
+
+            // Refresh the incremental raw cache from this compute.  If the thread
+            // used the incremental path it hands us a fresh raw array (ownership
+            // transfers here); otherwise (full-path fallback) the cache is now
+            // stale for the new cluster state, so drop it and let the next compute
+            // cold-seed a fresh one.
+            if(errorMatrixThread->getUsedIncremental()
+               && errorMatrixThread->getNewRaw() != nullptr){
+                delete rawProbCache;
+                rawProbCache      = errorMatrixThread->getNewRaw();  // take ownership
+                rawProbCacheIds   = errorMatrixThread->getNewRawIds();
+                rawProbCacheSizes = errorMatrixThread->getNewRawSizes();
+                rawProbCacheDims  = errorMatrixThread->getNewRawDims();
+                rawProbCacheValid = true;
+            } else {
+                invalidateRawProbCache();
+            }
         } else {
             // Discard the stale / null result.  newProb ownership stays with us
-            // when non-null; delete it to avoid a leak.
+            // when non-null; delete it to avoid a leak.  Same for any raw array
+            // the discarded thread produced.
             delete newProb;
+            delete errorMatrixThread->getNewRaw();
         }
 
         //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
@@ -223,9 +243,55 @@ void ErrorMatrixView::updateMatrixContents(){
     }
 }
 
-ErrorMatrixThread* ErrorMatrixView::computeMatrix(){  
+ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
+    // Opt-in incremental error matrix.  Read the environment once.  Default OFF:
+    // when disabled the full path is used unchanged.  VERIFY additionally runs the
+    // full path and logs the max cell discrepancy (validation aid, slower).
+    static const bool incrementalEnabled =
+        (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL") != 0);
+    static const bool incrementalVerify =
+        (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL_VERIFY") != 0);
+
+    // A renumber remaps cluster ids, so an id-keyed raw cache cannot be trusted
+    // across it — invalidate defensively (the compute then cold-seeds a new one).
+    if(hasBeenRenumbered)
+        invalidateRawProbCache();
+
+    const bool useIncremental = incrementalEnabled;
+    const QSet<int> changedIds = useIncremental ? changedClusterIdsSinceCache()
+                                                : QSet<int>();
+
     //The creation of a thread automatically start it.
-    return new ErrorMatrixThread(*this,doc.data(),generation);
+    return new ErrorMatrixThread(
+        *this, doc.data(), generation,
+        useIncremental, incrementalVerify,
+        (rawProbCacheValid ? rawProbCache : nullptr),
+        rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
+        changedIds);
+}
+
+void ErrorMatrixView::invalidateRawProbCache(){
+    delete rawProbCache;
+    rawProbCache = nullptr;
+    rawProbCacheIds.clear();
+    rawProbCacheSizes.clear();
+    rawProbCacheDims = -1;
+    rawProbCacheValid = false;
+}
+
+QSet<int> ErrorMatrixView::changedClusterIdsSinceCache() const {
+    // A cluster's raw column is reusable only if its membership (hence Gaussian
+    // model) is unchanged.  modifiedClusterList holds every source cluster
+    // touched by an edit; deletedMap keys hold the merge/delete TARGETS whose
+    // membership grew.  Their union is the set whose raw columns must be
+    // recomputed; every other cluster keeps its cached column.
+    QSet<int> changed;
+    for(int id : modifiedClusterList) changed.insert(id);
+    for(auto it = deletedMap.constBegin(); it != deletedMap.constEnd(); ++it){
+        changed.insert(it.key());
+        for(int id : it.value()) changed.insert(id);
+    }
+    return changed;
 }
 
 // ---------------------------------------------------------------------------
@@ -879,6 +945,10 @@ void ErrorMatrixView::newClustersAdded(QList<int>& clustersToRecluster){
 
 void ErrorMatrixView::renumber(QMap<int,int>& clusterIdsOldNew){
     hasBeenRenumbered = true;
+    // The raw-column cache is keyed by cluster id; a renumber remaps ids, so the
+    // cache can no longer be matched to the new ids — drop it (next compute
+    // cold-seeds a fresh one).
+    invalidateRawProbCache();
     nbActions++;
     renumbering.insert(nbActions,true);
     drawContentsMode = REDRAW;

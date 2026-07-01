@@ -26,12 +26,15 @@
 #include "groupingassistant_gpu.h"
 
 #include <QMap>
+#include <QHash>
+#include <QSet>
 #include <QList>
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <vector>
+#include <utility>
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -110,6 +113,268 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
     delete spikesByCluster;
     delete clusterInfoMap;
     delete probabilities;
+    return errorMatrix;
+}
+
+// ---------------------------------------------------------------------------
+// computeMeanProbabilitiesIncremental
+//
+// Opt-in incremental variant of computeMeanProbabilities.  The posteriors are
+// row-normalised PER SPIKE across ALL clusters, so a single edit shifts every
+// cell's value via the denominator — the reuse therefore happens at the RAW
+// (pre-normalisation) per-cluster-column level, NOT at the error-matrix cell
+// level.  For each cluster we either recompute its raw column (cluster in
+// changedIds, or new, or size-mismatched vs the cache) or copy the cached raw
+// column verbatim (membership unchanged => model unchanged => identical column).
+// The (cheap, O(nbClusters*nbSpikes)) row-normalisation and error-matrix
+// aggregation are then redone IN FULL, so the denominator is always correct and
+// the result is numerically identical to the full path.
+//
+// Model building (meanCovarianceComputation + cholesky) and every numeric loop
+// below are the SAME code the full path uses; only the raw fill is scoped.  On
+// any precondition miss this returns nullptr and the caller falls back to the
+// full path.  CPU-only by construction: the GPU path returns already-normalised
+// probabilities, so it exposes no raw columns to cache.
+// ---------------------------------------------------------------------------
+Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
+        Data& clusteringData,
+        QList<int>& clusterList, QList<int>& computedClusterList,
+        QList<int>& ignoreClusterIndex,
+        const Array<double>* prevRaw, const QList<int>& prevRawIds,
+        const QList<int>& prevRawSizes, int prevNbDimensions,
+        const QSet<int>& changedIds,
+        Array<double>** outRaw, QList<int>* outRawIds, QList<int>* outRawSizes,
+        int* outNbReused)
+{
+    if (outRaw)      *outRaw = nullptr;
+    if (outRawIds)   outRawIds->clear();
+    if (outRawSizes) outRawSizes->clear();
+    if (outNbReused) *outNbReused = 0;
+    if (haveToStopComputing) return nullptr;
+
+    const dataType nbSpikes     = clusteringData.totalNbOfSpikes();
+    const int      nbDimensions = clusteringData.nbOfDimensionsTotal() - 1;
+
+    // A cache is USABLE for reuse only if its geometry matches the current
+    // session.  When it does not (cold start, session reload, dimensionality
+    // change) we still run this path but reuse nothing — every column is
+    // recomputed and the fresh raw array is emitted to seed the cache.  This
+    // path returns nullptr (=> caller falls back to the full path) only on a
+    // hard error below (stop requested, or no clusters).
+    const bool cacheUsable =
+        prevRaw != nullptr
+        && prevRaw->nbOfRows()    == static_cast<long>(nbSpikes)
+        && prevRaw->nbOfColumns() == static_cast<long>(prevRawIds.size())
+        && prevRawSizes.size()    == prevRawIds.size()
+        && prevNbDimensions       == nbDimensions;
+
+    QHash<int,int> prevCol, prevSize;
+    if (cacheUsable) {
+        for (int c = 0; c < prevRawIds.size(); ++c) {
+            prevCol.insert(prevRawIds[c], c + 1);      // 1-based col in prevRaw
+            prevSize.insert(prevRawIds[c], prevRawSizes[c]);
+        }
+    }
+
+    clusteringData.duplicate(spikesByCluster, clusterInfoMap);
+    if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
+    const int nbClustersReal = clusterInfoMap->count();
+    if (nbClustersReal < 1 || haveToStopComputing) {
+        delete spikesByCluster; delete clusterInfoMap;
+        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        return nullptr;
+    }
+
+    // Models for every cluster (identical to computeProbabilities; cheap).
+    meanCovarianceComputation(nbClustersReal, nbDimensions, nbSpikes,
+                              clusteringData, ignoreClusterIndex);
+    if (haveToStopComputing) {
+        delete spikesByCluster; delete clusterInfoMap;
+        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        return nullptr;
+    }
+
+    const double piTerm = log(2.0 * M_PI) * nbDimensions / 2.0;
+    existCluster1 = false;
+    initIndex     = 1;
+
+    struct Col { int id; dataType first; dataType nb; bool ignore; std::vector<double> L; double logTerm; };
+    std::vector<Col> cols; cols.reserve(static_cast<size_t>(nbClustersReal));
+    {
+        Data::ClusterInfoMap::Iterator it; int ci = 1;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci) {
+            Col cd;
+            cd.id     = static_cast<int>(it.key());
+            cd.first  = it.value().firstSpikePosition();
+            cd.nb     = it.value().nbSpikes();
+            cd.ignore = (ignoreClusterIndex.contains(ci) != 0);
+            cd.logTerm = 0.0;
+            if (cd.id == 1) existCluster1 = true;
+            clusterList.append(cd.id);
+            if (!cd.ignore) {
+                Array<double> chol; chol.setSize(nbDimensions, nbDimensions);
+                if (cholesky(chol, nbDimensions, ci)) {
+                    ignoreClusterIndex.append(ci); cd.ignore = true;
+                } else {
+                    computedClusterList.append(cd.id);
+                    double logRootDet = 0.0;
+                    for (int d = 1; d <= nbDimensions; ++d) logRootDet += log(chol(d, d));
+                    double weight = log(static_cast<double>(cd.nb) / static_cast<double>(nbSpikes));
+                    cd.logTerm = logRootDet - weight + piTerm;
+                    cd.L.assign(static_cast<size_t>(nbDimensions * nbDimensions), 0.0);
+                    for (int row = 1; row <= nbDimensions; ++row)
+                        for (int col = 1; col <= row; ++col)
+                            cd.L[static_cast<size_t>((row-1) + (col-1)*nbDimensions)] = chol(row, col);
+                }
+            }
+            cols.push_back(std::move(cd));
+        }
+    }
+
+    // Raw (pre-normalisation) probabilities: reuse cached columns for unchanged
+    // clusters, recompute the rest with the exact CPU-path Mahalanobis fill.
+    Array<double>* raw = new Array<double>(nbSpikes, nbClustersReal);
+    raw->fillWithZeros();
+
+    std::vector<std::pair<dataType,dataType>> spans; spans.reserve(static_cast<size_t>(nbClustersReal));
+    for (const Col& c : cols) spans.push_back({ c.first, c.first + c.nb });
+
+    int nbReused = 0;
+    for (int cjIdx = 0; cjIdx < nbClustersReal; ++cjIdx) {
+        if (haveToStopComputing) break;
+        const Col& cj = cols[static_cast<size_t>(cjIdx)];
+        const int  ci1 = cjIdx + 1;                        // 1-based column
+        if (cj.ignore) continue;                           // stays all-zero (matches full path)
+
+        const bool reusable =
+            !changedIds.contains(cj.id)
+            && prevCol.contains(cj.id)
+            && prevSize.value(cj.id) == static_cast<int>(cj.nb);
+        if (reusable) {
+            const int srcCol = prevCol.value(cj.id);
+            for (dataType s = 1; s <= nbSpikes; ++s)
+                (*raw)(s, ci1) = (*prevRaw)(s, srcCol);
+            ++nbReused;
+            continue;
+        }
+
+        const double* L    = cj.L.data();
+        const double  logT = cj.logTerm;
+        for (int ci2 = 0; ci2 < nbClustersReal; ++ci2) {
+            if (haveToStopComputing) break;
+            if (cols[static_cast<size_t>(ci2)].ignore) continue;
+            const dataType first = spans[static_cast<size_t>(ci2)].first;
+            const dataType last  = spans[static_cast<size_t>(ci2)].second;
+            for (dataType si = first; si < last; ++si) {
+                const dataType featRow = (*spikesByCluster)(1, si);
+                double root[64], mahal = 0.0;
+                for (int d = 0; d < nbDimensions; ++d) {
+                    double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
+                    for (int j = 0; j < d; ++j)
+                        sv -= L[static_cast<size_t>(d + j*nbDimensions)] * root[j];
+                    root[d] = sv / L[static_cast<size_t>(d + d*nbDimensions)];
+                    mahal  += root[d] * root[d];
+                }
+                (*raw)(featRow, ci1) = exp(-0.5 * (mahal + logT));
+            }
+        }
+    }
+    if (haveToStopComputing) {
+        delete raw; delete spikesByCluster; delete clusterInfoMap;
+        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        return nullptr;
+    }
+    if (outNbReused) *outNbReused = nbReused;
+
+    // Hand the raw array (pre cluster-1 prepend) + its id/size lists back for
+    // caching, keyed by ascending real cluster id == raw column order.
+    if (outRaw)      *outRaw = new Array<double>(*raw);
+    if (outRawIds)   *outRawIds = clusterList;
+    if (outRawSizes) for (const Col& c : cols) outRawSizes->append(static_cast<int>(c.nb));
+
+    // ---- Post-processing: identical to computeProbabilities + computeMeanProbabilities ----
+    int nbClusters = nbClustersReal;
+    Array<double>* probabilities = raw;
+
+    // (a) synthetic cluster-1 column when cluster 1 is absent.
+    if (!existCluster1) {
+        Array<double>* tmp = new Array<double>(nbSpikes, nbClusters + 1);
+        tmp->fillWithZeros();
+        tmp->copyAndPrependColumn(*probabilities);
+        delete probabilities; probabilities = tmp;
+        clusterList.prepend(1);
+        computedClusterList.prepend(1);
+        for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
+            ignoreClusterIndex[i] += 1;
+        ++nbClusters;
+        initIndex = 2;
+    }
+
+    // (b) row-wise normalisation (verbatim from computeProbabilities).
+    int cluster1Col1 = initIndex;
+    if (existCluster1) {
+        int ci = 1; Data::ClusterInfoMap::Iterator it;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
+            if (it.key() == 1) { cluster1Col1 = ci; break; }
+    }
+    {
+        int clusterIndex = initIndex; Data::ClusterInfoMap::Iterator it;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++clusterIndex) {
+            if (haveToStopComputing) break;
+            if (ignoreClusterIndex.contains(clusterIndex)) continue;
+            dataType first = it.value().firstSpikePosition();
+            dataType last  = first + it.value().nbSpikes();
+            for (dataType si = first; si < last; ++si) {
+                dataType featRow = (*spikesByCluster)(1, si);
+                double sum = 0.0;
+                for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2)
+                    sum += (*probabilities)(featRow, ci2);
+                if (sum == 0.0) { sum = 1.0; (*probabilities)(featRow, cluster1Col1) = 1.0; }
+                double inv = 1.0 / sum;
+                for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2)
+                    (*probabilities)(featRow, ci2) *= inv;
+            }
+        }
+    }
+    if (haveToStopComputing) {
+        delete probabilities; delete spikesByCluster; delete clusterInfoMap;
+        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        return nullptr;
+    }
+
+    // (c) error-matrix aggregation (verbatim from computeMeanProbabilities).
+    Array<double>* errorMatrix = new Array<double>(nbClusters, nbClusters);
+    errorMatrix->fillWithZeros();
+    struct CE { dataType first; dataType nb; int idx; };
+    std::vector<CE> entries; entries.reserve(static_cast<size_t>(clusterInfoMap->count()));
+    {
+        Data::ClusterInfoMap::Iterator it; int ci = initIndex;
+        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
+            entries.push_back({ it.value().firstSpikePosition(), it.value().nbSpikes(), ci });
+    }
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) default(none) \
+    shared(entries, ignoreClusterIndex, probabilities, errorMatrix, nbClusters)
+#endif
+    for (int ei = 0; ei < static_cast<int>(entries.size()); ++ei) {
+        if (haveToStopComputing) continue;
+        const CE& e = entries[static_cast<size_t>(ei)];
+        if (ignoreClusterIndex.contains(e.idx)) continue;
+        dataType last = e.first + e.nb;
+        for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2) {
+            if (ignoreClusterIndex.contains(ci2)) continue;
+            if (haveToStopComputing) break;
+            double sum = 0.0;
+            for (dataType i = e.first; i < last; ++i)
+                sum += (*probabilities)((*spikesByCluster)(1, i), ci2);
+            (*errorMatrix)(e.idx, ci2) = sum / static_cast<double>(e.nb);
+        }
+    }
+    for (int ci = 1; ci <= nbClusters; ++ci)
+        (*errorMatrix)(ci, ci) = 0.0;
+
+    delete spikesByCluster; delete clusterInfoMap; delete probabilities;
+    spikesByCluster = nullptr; clusterInfoMap = nullptr;
     return errorMatrix;
 }
 
