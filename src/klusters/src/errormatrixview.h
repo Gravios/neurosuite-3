@@ -42,6 +42,7 @@
 class KlustersDoc;
 class KlustersView;
 class ErrorMatrixThread;
+class QTimer;
 
 /**
   * View displaying the Error Matrix. Each element in the matrix
@@ -386,6 +387,15 @@ private:
     double userCenterFy{0.5};
     /// Rebuild `window` from (userZoom, userCenterFx, userCenterFy).
     void   applyViewToWindow();
+
+    /// While zooming or panning, the selected-pair overlay is suppressed: redrawing
+    /// its boxes every interaction frame is costly (an O(nbClusters) clusterList
+    /// index lookup per pair, per repaint) and makes the gesture stutter.  A
+    /// single-shot timer, restarted on each wheel/pan event, clears the flag and
+    /// repaints the overlay once the gesture settles.
+    bool    suppressPairBoxes{false};
+    QTimer* pairBoxSettleTimer{nullptr};
+    static constexpr int pairBoxSettleMs{140};
 
     /**List of pointers on the threads which have to be suppress when this object is destroy.*/
     QList<ErrorMatrixThread*> threadsToBeKill;
