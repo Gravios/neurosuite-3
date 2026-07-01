@@ -6009,6 +6009,40 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
         index += clusterIterator.value();
     }
 
+    // ── ROOT GUARD: the reclustered table must account for EXACTLY nbSpikes ──
+    // spikesByClusterTemp was sized to nbSpikes.  The writes fill
+    //   [1, upperInsertionIndex)      from the unchanged clusters, and
+    //   [upperInsertionIndex, index)  from the reclustered spikes,
+    // so (index - 1) is the total number of spikes this integration accounts for.
+    // A correct recluster only RE-LABELS existing spikes, so this must equal
+    // nbSpikes.  If the reclustering .clu came back with a different spike count
+    // than the clusters sent to KlustaKwik (a short/long count from the recluster
+    // pipeline — e.g. a preceding realign that dropped spikes), then:
+    //   * short -> the tail [index, nbSpikes] is never written and stays
+    //              zero-initialised.  Those positions read as cluster 0 (row 2==0)
+    //              with feature row 0 (row 1==0): cluster 0's row-table count is
+    //              inflated over its clusterInfoMap count ([clustermap-invariant]
+    //              fires at the next prepareUndo) and every features(0,f) read
+    //              runs off the front of the matrix — and prepareUndo commits, then
+    //              a save PERSISTS, the corrupt table.
+    //   * long  -> the Pass-D writes below would overrun the nbSpikes-sized buffer.
+    // Refuse rather than commit corruption.  We abort BEFORE prepareUndo and before
+    // the fill loop, so spikesByCluster / clusterInfoMap are untouched; the
+    // KlustersDoc wrapper maps false -> INCORRECT_CONTENT and cleans up the temp
+    // files, matching the existing loadReclusteredClusters-failure abort contract.
+    if(static_cast<dataType>(index) - 1 != nbSpikes){
+        qWarning() << "Data::integrateReclusteredClusters: spike accounting mismatch —"
+                   << "unchanged" << (upperInsertionIndex - 1)
+                   << "+ reclustered" << reclusteringNbSpikes
+                   << "=" << (static_cast<dataType>(index) - 1)
+                   << "!= nbSpikes" << nbSpikes
+                   << "— aborting integration, cluster state unchanged";
+        reclusteringSpikesByCluster.setSize(0,true);
+        delete spikesByClusterTemp;
+        delete clusterInfoMapTemp;
+        return 0;
+    }
+
     //Fill spikesByClusterTemp with the data of the reclustered clusters sorted by cluster and by time (<=> position in the fet file)
     for(dataType i = 1; i < max; ++i){
         dataType clusterId = reclusteringSpikesByCluster(2,i);
