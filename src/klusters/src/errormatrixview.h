@@ -307,6 +307,10 @@ private:
     /**Feature dimensionality the cache was built with, and whether it is valid.*/
     int  rawProbCacheDims = -1;
     bool rawProbCacheValid = false;
+    /**Set by the forward renumber slot when it has remapped rawProbCacheIds in
+     * place through the old->new map, so the compute launch can skip the
+     * defensive hasBeenRenumbered invalidate; consumed (reset) each launch.*/
+    bool rawCacheRenumberRemapped = false;
     /**Discards the raw cache (e.g. after a renumber or session change).*/
     void invalidateRawProbCache(const char* reason = "");
     /**Builds the set of cluster ids whose membership changed since the cache,
