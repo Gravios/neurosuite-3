@@ -278,6 +278,7 @@ void ErrorMatrixView::updateMatrixContents(){
         modifiedClusterList.clear();
         selectedPairs.clear();
         hasBeenRenumbered = false;
+        rawCacheRenumberRemapped = false;
         renumbering.clear();
         deletedMap.clear();
         nbActions = 0;
@@ -300,10 +301,14 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     static const bool incrementalVerify =
         (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL_VERIFY") != 0);
 
-    // A renumber remaps cluster ids, so an id-keyed raw cache cannot be trusted
-    // across it — invalidate defensively (the compute then cold-seeds a new one).
-    if(hasBeenRenumbered)
+    // A renumber remaps cluster ids.  The forward renumber slot remaps the
+    // id-keyed cache in place through the old->new map and sets
+    // rawCacheRenumberRemapped, so the cache IS trustworthy across that case —
+    // skip the defensive invalidate for it.  Undo/redo renumber paths do not
+    // remap, so they still fall through to the conservative invalidate.
+    if(hasBeenRenumbered && !rawCacheRenumberRemapped)
         invalidateRawProbCache("renumber seen at compute launch (hasBeenRenumbered)");
+    rawCacheRenumberRemapped = false;
 
     // Conservative gate: only take the incremental path when AT MOST ONE edit
     // operation has accumulated since the last matrix update.  nbActions is the
@@ -1108,10 +1113,19 @@ void ErrorMatrixView::newClustersAdded(QList<int>& clustersToRecluster){
 
 void ErrorMatrixView::renumber(QMap<int,int>& clusterIdsOldNew){
     hasBeenRenumbered = true;
-    // The raw-column cache is keyed by cluster id; a renumber remaps ids, so the
-    // cache can no longer be matched to the new ids — drop it (next compute
-    // cold-seeds a fresh one).
-    invalidateRawProbCache("renumber slot (ids remapped)");
+    // A renumber is a pure relabel: cluster models and spikes are unchanged, so
+    // each cached raw column raw_p(s,id) is byte-identical under the new id — only
+    // its column label moves.  Remap the id-keyed column labels in place through
+    // the old->new map (ids absent from the map keep their id) instead of
+    // discarding a still-valid cache, and flag that the renumber was absorbed so
+    // the launch gate does not re-invalidate defensively.  This id compaction is
+    // what a merge's cleanup performs; discarding the cache here is precisely what
+    // forced every post-merge matrix to a full GPU recompute.
+    if(rawProbCacheValid){
+        for(int& id : rawProbCacheIds)
+            id = clusterIdsOldNew.value(id, id);
+        rawCacheRenumberRemapped = true;
+    }
     nbActions++;
     renumbering.insert(nbActions,true);
     drawContentsMode = REDRAW;
