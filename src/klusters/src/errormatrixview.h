@@ -442,6 +442,14 @@ private:
     /**Launches a ErrorMatrixThread to comput the error matrix.*/
     ErrorMatrixThread* computeMatrix();
 
+    /**Launches a background, display-less ErrorMatrixThread that recomputes the raw
+     * probability columns (parallel cold-seed) purely to populate rawProbCache after
+     * a full/GPU compute left it empty — so the first edit is a fast incremental
+     * update instead of a cold seed.  Carries the current generation, so an edit that
+     * supersedes it discards its result and cold-seeds itself.  No-op unless the
+     * incremental path is enabled.*/
+    void launchCacheWarmer();
+
     /**Updates the dimensions of the window.*/
     void updateWindow();
 

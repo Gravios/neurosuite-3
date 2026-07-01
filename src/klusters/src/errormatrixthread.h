@@ -62,6 +62,9 @@ public:
     QList<int> getNewRawSizes() const {return newRawSizes;}
     int getNewRawDims() const {return newRawDims;}
     bool getUsedIncremental() const {return usedIncremental;}
+    /**True for a background cache-warmer thread: customEvent() installs only the raw
+     * cache it produced and never touches the displayed matrix.*/
+    bool getSeedOnly() const {return seedOnly;}
 
     /**Returns the generation counter at the time this thread was created.
      * Used by ErrorMatrixView::customEvent() to discard results from threads
@@ -110,13 +113,14 @@ private:
                       bool incremental, bool verify,
                       const Array<double>* prevRaw, const QList<int>& prevRawIds,
                       const QList<int>& prevRawSizes, int prevNbDimensions,
-                      const QSet<int>& changedIds)
+                      const QSet<int>& changedIds, bool seedOnly = false)
         : errorMatrixView(view),data(d),generation(generation),
           haveToStopProcessing(false),probabilities(nullptr),
           incremental(incremental),verify(verify),
           prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),
           prevNbDimensions(prevNbDimensions),changedIds(changedIds),
-          newRaw(nullptr),newRawDims(-1),nbReused(0),usedIncremental(false){
+          newRaw(nullptr),newRawDims(-1),nbReused(0),usedIncremental(false),
+          seedOnly(seedOnly){
         start();
     }
 
@@ -146,6 +150,7 @@ private:
     int newRawDims;
     int nbReused;                     // columns reused (diagnostic)
     bool usedIncremental;             // true if the incremental path produced the result
+    bool seedOnly;                    // background cache warmer: install raw cache only, no display
 
 };
 

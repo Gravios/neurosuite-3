@@ -146,6 +146,30 @@ void ErrorMatrixView::customEvent(QEvent* event){
         // fast post-renumber thread would silently overwrite the correct result.
         const bool accepted = (newProb != nullptr
                                && errorMatrixThread->getGeneration() == generation);
+
+        // Background cache warmer: it never drives the display.  Install only the raw
+        // cache it produced (if still current) so the next edit is a fast incremental
+        // update; the normalized matrix it computed as a byproduct is discarded.  No
+        // repaint, no matrixUpdated, no cursor change, and no warmer relaunch.
+        if(errorMatrixThread->getSeedOnly()){
+            if(accepted && errorMatrixThread->getUsedIncremental()
+               && errorMatrixThread->getNewRaw() != nullptr){
+                delete rawProbCache;
+                rawProbCache      = errorMatrixThread->getNewRaw();   // take ownership
+                rawProbCacheIds   = errorMatrixThread->getNewRawIds();
+                rawProbCacheSizes = errorMatrixThread->getNewRawSizes();
+                rawProbCacheDims  = errorMatrixThread->getNewRawDims();
+                rawProbCacheValid = true;
+            } else {
+                delete errorMatrixThread->getNewRaw();                // superseded / unusable
+            }
+            delete newProb;                                          // byproduct, never shown
+            while(!errorMatrixThread->wait()){};
+            threadsToBeKill.removeAll(errorMatrixThread);
+            delete errorMatrixThread;
+            return;
+        }
+
         if(accepted){
             delete probabilities;  // release the previous result before overwriting
             probabilities = newProb;
@@ -200,6 +224,17 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 // Emitted last so observers seeing the signal can immediately
                 // read matrixData() / matrixComputedClusterList() and trust it.
                 emit matrixUpdated();
+
+                // A full/GPU compute (startup, reload, post-renumber or 2+-edit bail)
+                // leaves the incremental cache empty — it was just invalidated above.
+                // If the incremental path is enabled, seed the cache in the background
+                // now, using all cores, so the first edit is a fast incremental update
+                // rather than a CPU cold-seed.  An edit arriving before the warmer
+                // finishes supersedes it (generation bump + stopProcessing) and
+                // cold-seeds itself, so nothing is lost.
+                if(!rawProbCacheValid
+                   && qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL") != 0)
+                    launchCacheWarmer();
             } else {
                 // Stale result discarded — restore cursor if no other thread is still
                 // computing, so the UI is not stuck in wait-cursor state.
@@ -297,6 +332,25 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
         (rawProbCacheValid ? rawProbCache : nullptr),
         rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
         changedIds);
+}
+
+void ErrorMatrixView::launchCacheWarmer(){
+    // Display-less cold-seed: force the incremental path (prevRaw == nullptr, so it
+    // reuses nothing and recomputes every raw column — now parallel across cores) and
+    // mark it seedOnly so customEvent() installs ONLY the raw cache.  Carries the
+    // current generation; an edit that supersedes it (generation bump + stopProcessing
+    // in updateMatrixContents) makes customEvent discard its result, and that edit
+    // cold-seeds itself.  Deliberately leaves the cursor alone — this is a background
+    // task that must neither block nor signal the UI.  Added to threadsToBeKill so it
+    // is quiesced with the others before any Data mutation (the stopRunningThreads
+    // contract).
+    ErrorMatrixThread* warmer = new ErrorMatrixThread(
+        *this, doc.data(), generation,
+        /*incremental*/ true, /*verify*/ false,
+        /*prevRaw*/ nullptr, QList<int>(), QList<int>(), -1,
+        /*changedIds*/ QSet<int>(),
+        /*seedOnly*/ true);
+    threadsToBeKill.append(warmer);
 }
 
 void ErrorMatrixView::invalidateRawProbCache(){
