@@ -204,7 +204,7 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 rawProbCacheDims  = errorMatrixThread->getNewRawDims();
                 rawProbCacheValid = true;
             } else {
-                invalidateRawProbCache();
+                invalidateRawProbCache("full recompute / fell-back result (customEvent)");
             }
         } else {
             // Discard the stale / null result.  newProb ownership stays with us
@@ -303,7 +303,7 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     // A renumber remaps cluster ids, so an id-keyed raw cache cannot be trusted
     // across it — invalidate defensively (the compute then cold-seeds a new one).
     if(hasBeenRenumbered)
-        invalidateRawProbCache();
+        invalidateRawProbCache("renumber seen at compute launch (hasBeenRenumbered)");
 
     // Conservative gate: only take the incremental path when AT MOST ONE edit
     // operation has accumulated since the last matrix update.  nbActions is the
@@ -357,10 +357,10 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             : static_cast<int>(changedClusterIdsSinceCache().size());
         fprintf(stderr,
             "[errormatrix] launch: clusters=%d spikes=%lld nbActions=%d cacheValid=%d "
-            "incrementalEnabled=%d coldSeed=%d pending=%d -> %s\n",
+            "renumbered=%d incrementalEnabled=%d coldSeed=%d pending=%d -> %s\n",
             launchClusters, launchSpikes, nbActions,
-            rawProbCacheValid ? 1 : 0, incrementalEnabled ? 1 : 0,
-            coldSeedRefresh ? 1 : 0, pending,
+            rawProbCacheValid ? 1 : 0, hasBeenRenumbered ? 1 : 0,
+            incrementalEnabled ? 1 : 0, coldSeedRefresh ? 1 : 0, pending,
             useIncremental        ? "INCREMENTAL"
             : !incrementalEnabled ? "FULL(disabled)"
             : coldSeedRefresh     ? "FULL(cold-seed refresh)"
@@ -396,7 +396,15 @@ void ErrorMatrixView::launchCacheWarmer(){
     threadsToBeKill.append(warmer);
 }
 
-void ErrorMatrixView::invalidateRawProbCache(){
+void ErrorMatrixView::invalidateRawProbCache(const char* reason){
+    // Log the invalidations that actually drop a live cache (skip the redundant
+    // ones where it was already cold) so a "FULL (cold-seed refresh)" launch can be
+    // traced to the exact edit that wiped the cache — the renumber that a merge's
+    // cleanup performs is the prime suspect, and it dictates whether the fix is to
+    // REMAP the cached ids through the renumber map rather than invalidate.
+    if(rawProbCacheValid && qEnvironmentVariableIntValue("NS3_ERRORMATRIX_DIAG") != 0)
+        fprintf(stderr, "[errormatrix] raw cache invalidated: %s\n",
+                (reason && *reason) ? reason : "unspecified");
     delete rawProbCache;
     rawProbCache = nullptr;
     rawProbCacheIds.clear();
@@ -1103,7 +1111,7 @@ void ErrorMatrixView::renumber(QMap<int,int>& clusterIdsOldNew){
     // The raw-column cache is keyed by cluster id; a renumber remaps ids, so the
     // cache can no longer be matched to the new ids — drop it (next compute
     // cold-seeds a fresh one).
-    invalidateRawProbCache();
+    invalidateRawProbCache("renumber slot (ids remapped)");
     nbActions++;
     renumbering.insert(nbActions,true);
     drawContentsMode = REDRAW;

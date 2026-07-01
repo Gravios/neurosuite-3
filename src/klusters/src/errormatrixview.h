@@ -308,7 +308,7 @@ private:
     int  rawProbCacheDims = -1;
     bool rawProbCacheValid = false;
     /**Discards the raw cache (e.g. after a renumber or session change).*/
-    void invalidateRawProbCache();
+    void invalidateRawProbCache(const char* reason = "");
     /**Builds the set of cluster ids whose membership changed since the cache,
      * from modifiedClusterList and the merge/delete targets in deletedMap.*/
     QSet<int> changedClusterIdsSinceCache() const;
