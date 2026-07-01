@@ -47,6 +47,7 @@ public:
     //Only the method computeMatrix of ErrorMatrixView has access to the private part of ErrorMatrixThread,
     //the constructor of ErrorMatrixThread being private, only this method con create a new ErrorMatrixThread
     friend ErrorMatrixThread* ErrorMatrixView::computeMatrix();
+    friend void ErrorMatrixView::launchCacheWarmer();
 
     ~ErrorMatrixThread(){}
     Array<double>* getProbabilities() const {return probabilities;}
