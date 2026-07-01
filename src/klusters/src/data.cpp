@@ -480,6 +480,25 @@ static double chi2_sf(double x, int df)
 // ---------------------------------------------------------------------------
 // checkSpikeFeatureInvariant — read-only diagnostic (see header)
 // ---------------------------------------------------------------------------
+bool Data::candidateSpikeTableValid(const SortableTable* candidate) const
+{
+    if (candidate == nullptr) return false;
+    const long featRows = features.nbOfRows();
+    const long nSpk     = static_cast<long>(nbSpikes);
+    // Cannot judge if the feature matrix is not loaded (e.g. early init) — do
+    // not block those installs.
+    if (featRows < 1) return true;
+    // A correctly built table has one column per spike; a short/zeroed tail
+    // (the recluster/basin undercount) shows up as too few columns and/or as
+    // feature-row indices of 0 (never-written positions).
+    if (candidate->nbOfColumns() < nSpk) return false;
+    for (long s = 1; s <= nSpk; ++s) {
+        const long row = static_cast<long>((*candidate)(1, s));
+        if (row < 1 || row > featRows) return false;
+    }
+    return true;
+}
+
 bool Data::checkSpikeFeatureInvariant(const char* where) const
 {
     const long featRows = features.nbOfRows();
@@ -3395,6 +3414,36 @@ void Data::splitClusterTwoWays(int sourceCluster,
 }
 
 void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp, bool dimensionChanged){
+    // ── CHOKEPOINT ENFORCEMENT (Class A: feature-row / row-table integrity) ──
+    // prepareUndo is the single point through which EVERY forward edit installs
+    // its rebuilt (spikesByCluster, clusterInfoMap) pair.  Historically it trusted
+    // whatever the caller built; a committer that produced an internally-
+    // inconsistent row table — a zeroed/short tail from a short recluster or basin
+    // integrate (index-1 < nbSpikes), those positions reading as feature-row 0 —
+    // got installed here and then SAVED, corrupting the sort, while its garbage
+    // feature-row values later segfaulted a dozen unrelated readers.
+    //
+    // This class is UNREPAIRABLE from inside Data (the original .fet row indices
+    // for the zeroed positions are gone), so the only safe response is to refuse:
+    // drop the edit and keep the current, valid tables.  Refusing costs the user
+    // one dropped edit; installing costs them a corrupted, saved sort.  The check
+    // is a no-op on every well-formed edit (their tables have one in-range column
+    // per spike), so healthy editing is unaffected; it only ever fires on a table
+    // that would otherwise crash or corrupt.  This is the net that makes the
+    // per-builder accounting guards (e.g. integrateReclusteredClusters) and the
+    // per-reader feature-row clamps defence-in-depth rather than load-bearing.
+    if(!candidateSpikeTableValid(spikesByClusterTemp)){
+        qWarning() << "Data::prepareUndo: REFUSING to install an internally-inconsistent"
+                   << "row table (wrong column count or feature-row index out of"
+                   << "[1," << features.nbOfRows() << "]) — edit dropped, previous"
+                   << "state kept.  A committer built a table that does not account"
+                   << "for all" << nbSpikes << "spikes; this is the safety net that"
+                   << "prevents corrupting and saving the sort.";
+        delete spikesByClusterTemp;
+        delete clusterInfoMapTemp;
+        return;
+    }
+
     //Store the current spikesByCluster in the undo list and make the temporary becomes the current one.
     spikesByClusterUndoList.prepend(spikesByCluster);
     //Store the current map in the undo list and make the temporary become the current one.
