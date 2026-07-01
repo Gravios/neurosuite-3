@@ -17,6 +17,7 @@
 //include files for the application
 #include <cmath>
 #include <QApplication>
+#include <QTimer>
 #include "errormatrixview.h"
 #include "errormatrixthread.h"
 #include "groupingassistant.h"
@@ -70,6 +71,18 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
     setMouseTracking(true);
 
     initializeColorMap();
+
+    // Settle timer for the selected-pair overlay: restarted on each zoom/pan event,
+    // it fires once the gesture stops and repaints the boxes that were suppressed
+    // during interaction.  Single-shot; parented to this so it is destroyed with the
+    // view.
+    pairBoxSettleTimer = new QTimer(this);
+    pairBoxSettleTimer->setSingleShot(true);
+    connect(pairBoxSettleTimer, &QTimer::timeout, this, [this]{
+        suppressPairBoxes = false;
+        drawContentsMode = REDRAW;
+        update();
+    });
 
     //Compute the error matrix.
     updateMatrixContents();
@@ -639,7 +652,7 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
     // matrix origin.  A cosmetic pen keeps the outline a constant 2 px at any
     // zoom level.  Pairs whose cluster no longer exists (id -1, or removed) are
     // skipped.
-    if(!selectedPairs.isEmpty()){
+    if(!suppressPairBoxes && !selectedPairs.isEmpty()){
         const int baseX = abscissaMin + widthBorder;
         const int baseY = ordinateMin + heightBorder;
         QPen selPen(Qt::yellow);
@@ -709,6 +722,9 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
                 userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
             }
             updateWindow();
+            // Same as the wheel path: suppress the overlay while the drag is live.
+            suppressPairBoxes = true;
+            pairBoxSettleTimer->start(pairBoxSettleMs);
             drawContentsMode = REDRAW;
             update();
         }
@@ -859,6 +875,10 @@ void ErrorMatrixView::wheelEvent(QWheelEvent* e){
     }
     userZoom = newZoom;
     updateWindow();
+    // Hold the selected-pair overlay off during the zoom gesture; it is repainted
+    // when the settle timer fires after the wheel goes quiet.
+    suppressPairBoxes = true;
+    pairBoxSettleTimer->start(pairBoxSettleMs);
     drawContentsMode = REDRAW;
     update();
     emit zoomChanged(userZoom);
@@ -887,6 +907,10 @@ void ErrorMatrixView::setZoomLevel(double newZoom){
     userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
     userZoom = newZoom;
     updateWindow();
+    // Synced zoom from the template view is still a zoom gesture; suppress the
+    // overlay and let the settle timer bring it back when it stops.
+    suppressPairBoxes = true;
+    pairBoxSettleTimer->start(pairBoxSettleMs);
     drawContentsMode = REDRAW;
     update();
 }
