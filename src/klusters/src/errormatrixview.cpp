@@ -338,6 +338,36 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     const QSet<int> changedIds = useIncremental ? changedClusterIdsSinceCache()
                                                 : QSet<int>();
 
+    // Launch-time diagnostic (gated by NS3_ERRORMATRIX_DIAG): log the gate INPUTS and
+    // the chosen path at the moment the compute is dispatched.  The worker's own line
+    // reports the OUTCOME (reused / fell back / ms) but not why the path was taken, so
+    // "FULL (incremental disabled)" and the fell-back "0 clusters" line cannot be
+    // told apart from it.  Reading the active Data here settles the key question: if
+    // clusters/spikes are already 0 at launch, the compute was dispatched against an
+    // empty clustering (a trigger-side problem) rather than producing empty from good
+    // data; nbActions / cacheValid / coldSeed separate a batched-edit bail from a
+    // cold-seed refresh.  Cheap and side-effect-free; only the pending-set recompute
+    // on the full branch costs anything, and only when the switch is on.
+    if(qEnvironmentVariableIntValue("NS3_ERRORMATRIX_DIAG") != 0){
+        const int launchClusters = doc.data().nbOfClusters();
+        const long long launchSpikes =
+            static_cast<long long>(doc.data().totalNbOfSpikes());
+        const int pending = useIncremental
+            ? static_cast<int>(changedIds.size())
+            : static_cast<int>(changedClusterIdsSinceCache().size());
+        fprintf(stderr,
+            "[errormatrix] launch: clusters=%d spikes=%lld nbActions=%d cacheValid=%d "
+            "incrementalEnabled=%d coldSeed=%d pending=%d -> %s\n",
+            launchClusters, launchSpikes, nbActions,
+            rawProbCacheValid ? 1 : 0, incrementalEnabled ? 1 : 0,
+            coldSeedRefresh ? 1 : 0, pending,
+            useIncremental        ? "INCREMENTAL"
+            : !incrementalEnabled ? "FULL(disabled)"
+            : coldSeedRefresh     ? "FULL(cold-seed refresh)"
+            : !singleEdit         ? "FULL(batched >=2 edits)"
+            :                       "FULL(?)");
+    }
+
     //The creation of a thread automatically start it.
     return new ErrorMatrixThread(
         *this, doc.data(), generation,
