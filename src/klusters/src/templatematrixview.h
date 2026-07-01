@@ -184,10 +184,18 @@ private:
     QPoint  panAnchorPx;        // mouse position where Ctrl-drag started
     double  panAnchorX{0.0};    // panX at drag start
     double  panAnchorY{0.0};    // panY at drag start
-    static constexpr double zoomMin{0.5};
+    static constexpr double zoomMin{0.5};    // baseline zoom-out floor; effZoomMin() lowers it to fit large grids
     static constexpr double zoomMax{20.0};
     static constexpr double zoomStep{1.15};  // wheel/key zoom multiplier per tick
     static constexpr int    panDragThreshold{3};  // px before press → pan
+
+    /// Adaptive minimum zoom (maximum zoom-out).  At zoom Z the matrix spans
+    /// n*cellWidth*Z pixels; for large cluster counts cellWidth bottoms out at 4px
+    /// and the grid no longer fits the viewport even at the 0.5 floor.  Lower the
+    /// floor just enough to let the whole matrix fit on screen (so all clusters are
+    /// visible at ~10000), but never above the historical 0.5, so small grids are
+    /// unaffected.
+    double  effZoomMin() const;
 
     inline double effCellSize() const { return cellWidth * zoom; }
     inline QPointF effMatrixTopLeft() const {

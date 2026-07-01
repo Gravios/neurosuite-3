@@ -770,7 +770,7 @@ void ErrorMatrixView::wheelEvent(QWheelEvent* e){
     const int delta = e->angleDelta().y();
     if(delta == 0){ e->accept(); return; }
     const double factor  = (delta > 0) ? wheelZoomStep : (1.0 / wheelZoomStep);
-    const double newZoom = qBound(1.0, userZoom * factor, userZoomMax);
+    const double newZoom = qBound(1.0, userZoom * factor, effZoomMax());
     if(newZoom == userZoom){ e->accept(); return; }
 
     const double fullW = static_cast<double>(abscissaMax - abscissaMin);
@@ -813,7 +813,7 @@ void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){
 }
 
 void ErrorMatrixView::setZoomLevel(double newZoom){
-    newZoom = qBound(1.0, newZoom, userZoomMax);
+    newZoom = qBound(1.0, newZoom, effZoomMax());
     if(std::abs(newZoom - userZoom) < 1e-9) return;
     // Re-bound the centre to the new zoom and rebuild the window; no signal is
     // emitted so a cross-connected view does not echo the change back.
