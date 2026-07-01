@@ -275,7 +275,18 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     //                       single-edit update cold-seeds it again.
     // The full/GPU path is unchanged in every bailed case.
     const bool singleEdit = (nbActions <= 1);
-    const bool useIncremental = incrementalEnabled && singleEdit;
+    // On a COLD cache with no pending edit — startup, or the first refresh after a
+    // renumber / 2+-edit bail invalidated the cache — the incremental path would
+    // "cold-seed": recompute every column with ZERO reuse.  And it would do that on
+    // the CPU, because the incremental path is CPU-only (the GPU path returns
+    // already-normalised probabilities, so it cannot emit the raw columns the cache
+    // stores).  That is exactly the case the full path wins, since it DOES use the
+    // GPU.  Route it to the full/GPU path instead; the raw cache is then seeded
+    // lazily by the first actual edit (nbActions==1, still cold), after which reuse
+    // begins from the second edit on.  Net effect: fast GPU startup, one CPU
+    // cold-seed on the first edit, incremental thereafter.
+    const bool coldSeedRefresh = !rawProbCacheValid && (nbActions == 0);
+    const bool useIncremental = incrementalEnabled && singleEdit && !coldSeedRefresh;
     const QSet<int> changedIds = useIncremental ? changedClusterIdsSinceCache()
                                                 : QSet<int>();
 
