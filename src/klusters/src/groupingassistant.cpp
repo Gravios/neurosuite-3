@@ -260,8 +260,21 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     QSet<int> unregisteredReuse;
 
     int nbReused = 0;
+    // Parallelise the raw-column computation across cores.  Each iteration writes
+    // exclusively to its own column ci1 of `raw` (distinct per cjIdx), exactly like
+    // the full path's per-column loop, so the fills do not race.  This is the
+    // dominant cost of a cold seed (every column recomputed with zero reuse), so
+    // spreading it over all cores is what lets the background cache seed finish
+    // quickly.  default(shared) is used deliberately: every per-iteration value is
+    // declared inside the loop (hence private), the only cross-iteration writes are
+    // nbReused (reduction) and, under verify, unregisteredReuse (critical), and
+    // everything else is read-only shared.  break is not allowed on a parallel for,
+    // so the stop check skips the iteration instead.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) default(shared) reduction(+:nbReused)
+#endif
     for (int cjIdx = 0; cjIdx < nbClustersReal; ++cjIdx) {
-        if (haveToStopComputing) break;
+        if (haveToStopComputing) continue;
         const Col& cj = cols[static_cast<size_t>(cjIdx)];
         const int  ci1 = cjIdx + 1;                        // 1-based column
         if (cj.ignore) continue;                           // stays all-zero (matches full path)
@@ -325,7 +338,10 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
                         double diff = fresh - (*raw)(featRow, ci1);
                         if (diff < 0) diff = -diff;
                         if (diff > 1e-9) {              // one stale spike flags the cluster
-                            unregisteredReuse.insert(cols[static_cast<size_t>(cc)].id);
+#ifdef _OPENMP
+#pragma omp critical
+#endif
+                            { unregisteredReuse.insert(cols[static_cast<size_t>(cc)].id); }
                             flagged = true;
                         }
                     }
