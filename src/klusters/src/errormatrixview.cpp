@@ -257,7 +257,25 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     if(hasBeenRenumbered)
         invalidateRawProbCache();
 
-    const bool useIncremental = incrementalEnabled;
+    // Conservative gate: only take the incremental path when AT MOST ONE edit
+    // operation has accumulated since the last matrix update.  nbActions is the
+    // net count of cluster-editing actions since updateMatrixContents last reset
+    // it, so:
+    //   * nbActions == 0  → no-op update, or the cold first compute — nothing to
+    //                       reuse incorrectly; incremental just (re)seeds.
+    //   * nbActions == 1  → a single edit, which maps cleanly onto
+    //                       changedClusterIdsSinceCache(): that one operation's
+    //                       modifiedClusterList + deletedMap entries fully and
+    //                       unambiguously describe which clusters changed.
+    //   * nbActions >= 2  → two or more edits have batched up; the accumulated
+    //                       union bookkeeping is harder to trust cluster-for-
+    //                       cluster (interleaved merges/splits/moves, transient
+    //                       ids), so we bail to the full recompute.  That path
+    //                       invalidates the raw cache (customEvent), and the next
+    //                       single-edit update cold-seeds it again.
+    // The full/GPU path is unchanged in every bailed case.
+    const bool singleEdit = (nbActions <= 1);
+    const bool useIncremental = incrementalEnabled && singleEdit;
     const QSet<int> changedIds = useIncremental ? changedClusterIdsSinceCache()
                                                 : QSet<int>();
 
