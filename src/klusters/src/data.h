@@ -1525,6 +1525,26 @@ private:
   * @param spike position.
   */
     double spikeTime(SortableTable& spikesOfCluster,dataType spike){
+        // Guard the snapshot-column index against the clusterInfoMap/row-table
+        // count desync.  A stale clusterInfoMap[id].nbSpikes()==0 makes
+        // spikePositions() build the snapshot with subset(.,1,first,first-1) --
+        // a zero-length subset (a 1x0 SortableTable whose buffer is null) -- yet
+        // still return true, so an empty snapshot reaches calculateCorrelation.
+        // It then calls this with spike==cluster2NbSpikes==0 (the break test) and
+        // spike==1 (the autocorrelogram time), and spikesOfCluster(1,spike) runs
+        // Array::operator() with an out-of-range column: array[(0)*0 + (spike-1)]
+        // == array[-1] on a null buffer -> segfault, on the background
+        // CorrelationThread.  Array::operator()'s assert is a release no-op so it
+        // is not caught.  0074 clamped the *feature-row* index below but left this
+        // *snapshot-column* index unguarded, which is why the correlogram crash
+        // survived it.  Clamp into range; an empty snapshot has no spike time, so
+        // return 0.0 (the same bail the featRows<1 branch takes).  Hot per-spike
+        // read path, so no qWarning; the desync is surfaced by the
+        // checkClusterInfoMapInvariant / checkSpikeFeatureInvariant probes.
+        const dataType nbSnapshotSpikes = static_cast<dataType>(spikesOfCluster.nbOfColumns());
+        if(nbSnapshotSpikes < 1) return 0.0;
+        if(spike < 1)                     spike = 1;
+        else if(spike > nbSnapshotSpikes) spike = nbSnapshotSpikes;
         dataType currentPositionInFeatures = spikesOfCluster(1,spike);
         // Guard the feature-row index against the spikesByCluster/features
         // desync (a stale spikesByCluster(1,*) value that exceeds the feature
