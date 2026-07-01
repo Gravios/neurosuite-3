@@ -492,9 +492,21 @@ bool Data::candidateSpikeTableValid(const SortableTable* candidate) const
     // (the recluster/basin undercount) shows up as too few columns and/or as
     // feature-row indices of 0 (never-written positions).
     if (candidate->nbOfColumns() < nSpk) return false;
+
+    // Feature row 1 must be a PERMUTATION of the feature rows: every index in
+    // [1, featRows] AND each used at most once across the nbSpikes spikes.  The
+    // range test alone misses an in-range DUPLICATE — two spikes claiming the
+    // same .fet row — which still corrupts the sort (a merge/split rebuild that
+    // double-writes a source block leaves one spike's row copied over another)
+    // even though no single read goes out of bounds.  `seen` is one bit per
+    // feature row, so this stays a single O(nbSpikes) pass: a bounds test plus a
+    // bit test per spike, ~featRows/8 bytes transient.
+    std::vector<bool> seen(static_cast<size_t>(featRows) + 1, false);
     for (long s = 1; s <= nSpk; ++s) {
         const long row = static_cast<long>((*candidate)(1, s));
-        if (row < 1 || row > featRows) return false;
+        if (row < 1 || row > featRows) return false;      // out of range
+        if (seen[static_cast<size_t>(row)])   return false;      // duplicate .fet row
+        seen[static_cast<size_t>(row)] = true;
     }
     return true;
 }
