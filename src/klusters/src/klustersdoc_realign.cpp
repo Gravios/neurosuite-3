@@ -1932,6 +1932,18 @@ void KlustersDoc::invalidateWaveformCache(int clusterId)
     }
 }
 
+void KlustersDoc::notifyClusterFeaturesReprojected(int clusterId)
+{
+    // Thin main-thread emitter for realign.  Nudge emits clusterFeaturesReprojected
+    // directly (it runs on the GUI thread), but realignSpikes — and its in-place
+    // updateFeatureRow commit — runs on the realign worker thread.  Emitting there
+    // would queue the slot, which could then land AFTER the post-realign matrix
+    // update it must precede.  Realign's completion handlers run on the GUI thread
+    // once the worker has finished committing, so they call this to raise the
+    // signal synchronously and in order.
+    emit clusterFeaturesReprojected(clusterId);
+}
+
 void KlustersDoc::invalidateCorrelogramCache(int clusterId)
 {
     clusteringData->invalidateCorrelogramCache(clusterId);
