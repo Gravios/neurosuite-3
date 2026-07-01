@@ -28,6 +28,7 @@
 #include <QMap>
 #include <QHash>
 #include <QSet>
+#include <QString>
 #include <QList>
 
 #include <math.h>
@@ -144,7 +145,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         const QList<int>& prevRawSizes, int prevNbDimensions,
         const QSet<int>& changedIds,
         Array<double>** outRaw, QList<int>* outRawIds, QList<int>* outRawSizes,
-        int* outNbReused)
+        int* outNbReused, bool verifyReuse)
 {
     if (outRaw)      *outRaw = nullptr;
     if (outRawIds)   outRawIds->clear();
@@ -252,6 +253,12 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         if (changedIds.contains(c.id))
             changedSpans.push_back({ c.first, c.first + c.nb });
 
+    // Self-check accumulator (verify mode only): clusters whose reused column was
+    // found stale — i.e. their spikes' features moved without the cluster entering
+    // changedIds.  A correctly wired feature-changing op (merge, nudge, realign)
+    // always registers, so a non-empty set at the end means an operation forgot to.
+    QSet<int> unregisteredReuse;
+
     int nbReused = 0;
     for (int cjIdx = 0; cjIdx < nbClustersReal; ++cjIdx) {
         if (haveToStopComputing) break;
@@ -288,6 +295,42 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
                     (*raw)(featRow, ci1) = exp(-0.5 * (mahal + logT));
                 }
             }
+
+            if (verifyReuse) {
+                // A reused column must be bit-identical to a fresh recompute for
+                // every spike whose cluster is NOT in changedIds (unchanged model
+                // AND unchanged features).  Any divergence means that spike's
+                // features moved without its cluster being registered as changed —
+                // a feature-changing op forgot to emit clusterFeaturesReprojected /
+                // mark it modified, and its row would be served stale.  changedIds
+                // clusters are skipped: their rows were just refreshed above, so
+                // they match fresh by construction.
+                for (int cc = 0; cc < nbClustersReal; ++cc) {
+                    if (cols[static_cast<size_t>(cc)].ignore) continue;
+                    if (changedIds.contains(cols[static_cast<size_t>(cc)].id)) continue;
+                    const dataType f0 = spans[static_cast<size_t>(cc)].first;
+                    const dataType f1 = spans[static_cast<size_t>(cc)].second;
+                    bool flagged = false;
+                    for (dataType si = f0; si < f1 && !flagged; ++si) {
+                        const dataType featRow = (*spikesByCluster)(1, si);
+                        double root[64], mahal = 0.0;
+                        for (int d = 0; d < nbDimensions; ++d) {
+                            double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
+                            for (int j = 0; j < d; ++j)
+                                sv -= L[static_cast<size_t>(d + j*nbDimensions)] * root[j];
+                            root[d] = sv / L[static_cast<size_t>(d + d*nbDimensions)];
+                            mahal  += root[d] * root[d];
+                        }
+                        const double fresh = exp(-0.5 * (mahal + logT));
+                        double diff = fresh - (*raw)(featRow, ci1);
+                        if (diff < 0) diff = -diff;
+                        if (diff > 1e-9) {              // one stale spike flags the cluster
+                            unregisteredReuse.insert(cols[static_cast<size_t>(cc)].id);
+                            flagged = true;
+                        }
+                    }
+                }
+            }
             continue;
         }
 
@@ -318,6 +361,19 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         return nullptr;
     }
     if (outNbReused) *outNbReused = nbReused;
+
+    if (verifyReuse && !unregisteredReuse.isEmpty()) {
+        QString ids;
+        for (int id : unregisteredReuse) ids += QString::number(id) + ' ';
+        fprintf(stderr,
+            "[errormatrix-incremental] SELF-CHECK FAILED: %d cluster(s) had .fet "
+            "feature changes NOT registered in changedIds, so their reused columns "
+            "were stale: %s. A feature-changing operation on these clusters did not "
+            "notify the error matrix (expected clusterFeaturesReprojected or an edit "
+            "signal).\n",
+            static_cast<int>(unregisteredReuse.size()),
+            ids.trimmed().toUtf8().constData());
+    }
 
     // Hand the raw array (pre cluster-1 prepend) + its id/size lists back for
     // caching, keyed by ascending real cluster id == raw column order.
