@@ -441,6 +441,25 @@ void TemplateMatrixView::updateWindow()
     heightBorder     = cellWidth / 3 + 14;
 }
 
+double TemplateMatrixView::effZoomMin() const
+{
+    // Mirror updateWindow()'s available-area math.  The grid spans n*cellWidth
+    // pixels at zoom 1; the fit-all zoom is the ratio that shrinks it to the
+    // available area.  When the grid overflows even at the 0.5 floor (large n,
+    // cellWidth pinned at 4px), drop the floor to fit-all so the whole matrix can
+    // be viewed; otherwise keep the historical 0.5.
+    const int n = clusterList.size();
+    if (n <= 0 || cellWidth <= 0) return zoomMin;
+    const int matH   = std::max(height() - CONTROLS_H, 1);
+    const int availW = width() - LABEL_MARGIN - 10;
+    const int availH = matH - 14 - 10;
+    const int avail  = std::min(availW, availH);
+    if (avail <= 0) return zoomMin;
+    const double fitAll = static_cast<double>(avail)
+                        / (static_cast<double>(n) * cellWidth);
+    return std::min(zoomMin, fitAll);
+}
+
 QPoint TemplateMatrixView::matrixTopLeft() const
 {
     return QPoint(LABEL_MARGIN + widthBorder, heightBorder);
@@ -767,7 +786,7 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
 
 void TemplateMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
 {
-    newZoom = std::clamp(newZoom, zoomMin, zoomMax);
+    newZoom = std::clamp(newZoom, effZoomMin(), zoomMax);
     if (zoom <= 0.0) return;
     const double ratio = newZoom / zoom;
     const QPoint  base = matrixTopLeft();
@@ -790,7 +809,7 @@ void TemplateMatrixView::resetPanZoom()
 
 void TemplateMatrixView::setZoomLevel(double newZoom)
 {
-    newZoom = std::clamp(newZoom, zoomMin, zoomMax);
+    newZoom = std::clamp(newZoom, effZoomMin(), zoomMax);
     if (zoom <= 0.0 || std::abs(newZoom - zoom) < 1e-9) return;
     // Zoom around the widget centre; no signal is emitted so a cross-connected
     // view does not echo the change back.

@@ -348,7 +348,17 @@ private:
     static constexpr int    panDragThreshold{3};  // px before a press → pan
     static constexpr int    selectionSuppressMove{2};  // px of Ctrl-drag that cancels the cell selection on release
     static constexpr double wheelZoomStep{1.25};  // zoom multiplier per tick
-    static constexpr double userZoomMax{20.0};    // max zoom-in factor
+    static constexpr double userZoomMaxFloor{20.0}; // baseline zoom-in ceiling
+
+    /// Adaptive maximum zoom-in factor.  The matrix is clusterList.size() cells
+    /// across at full view (userZoom==1), so a zoom of N shows size/N cells across
+    /// and a zoom equal to the cluster count brings a single cell up to the full
+    /// viewport.  Cap the zoom there — deeper is pointless — but never below the
+    /// historical 20x, so small matrices still zoom in generously.  This is what
+    /// lets individual cells stay resolvable at large cluster counts (~10000).
+    double effZoomMax() const {
+        return qMax(userZoomMaxFloor, static_cast<double>(clusterList.size()));
+    }
 
     // Layout cache: the world geometry + ZoomWindow are rebuilt only when these
     // inputs change — a widget resize or a cluster-count change.  Rebuilding on
