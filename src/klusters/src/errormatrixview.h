@@ -353,16 +353,17 @@ private:
     static constexpr int    selectionSuppressMove{2};  // px of Ctrl-drag that cancels the cell selection on release
     static constexpr double wheelZoomStep{1.25};  // zoom multiplier per tick
     static constexpr double userZoomMaxFloor{20.0}; // baseline zoom-in ceiling
-    static constexpr double minCellsAtMaxZoom{8.0}; // cells kept across the viewport at full zoom-in
+    static constexpr double minCellsAtMaxZoom{1.0}; // cells kept across the viewport at full zoom-in
 
     /// Adaptive maximum zoom-in factor.  The matrix is clusterList.size() cells
     /// across at full view (userZoom==1), so a zoom of N shows size/N cells across.
-    /// Cap the zoom where about minCellsAtMaxZoom cells still span the viewport —
-    /// enough to read a cell and its immediate neighbours — rather than at the
-    /// cluster count, which drives a single cell to fill the whole view and wastes
-    /// most of the wheel's travel.  Never below the historical 20x, so small
-    /// matrices still zoom in generously.  At ~10000 clusters this is ~1250x (still
-    /// ample), at a few hundred it is a few tens.
+    /// Cap the zoom where about minCellsAtMaxZoom cells still span the viewport.
+    /// With minCellsAtMaxZoom == 1 a single cell can fill the viewport — the natural
+    /// deepest useful zoom — so cells stay resolvable at any cluster count; raise the
+    /// constant to leave more neighbours in view, lower it (below 1) to let a cell
+    /// exceed the viewport.  Never below the historical 20x, so small matrices still
+    /// zoom in generously.  At ~10000 clusters this is ~10000x; at a few hundred, a
+    /// few hundred.
     double effZoomMax() const {
         return qMax(userZoomMaxFloor,
                     static_cast<double>(clusterList.size()) / minCellsAtMaxZoom);
