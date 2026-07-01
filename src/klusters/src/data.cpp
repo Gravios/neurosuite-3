@@ -612,8 +612,10 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
 
     // Feature-matrix extent (see computeAllCentroids): skip spikes whose feature row
     // is stale and never read past the last column, so a realign/recluster desync
-    // degrades the log snapshot instead of segfaulting.  Every later pass reads only
-    // rows collected here, so this one guard protects the whole function.
+    // degrades the log snapshot instead of segfaulting.  Every later pass that reads
+    // THIS cluster's spikes reads only rows collected here.  The one exception is the
+    // L-ratio / isolation-distance pass below, which walks NON-cluster spikes
+    // straight from spikesByCluster and is guarded separately at its own read.
     const long featRows = features.nbOfRows();
     const long tsCol    = std::min<long>(nbDimensions, features.nbOfColumns());
     bool warnedRow = false;
@@ -975,6 +977,17 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
                     continue;   // skip own spikes
 
                 const int row = static_cast<int>((*spikesByCluster)(1, s));
+                // This pass reads feature rows for NON-cluster spikes, which are
+                // exactly the spikes excluded from the validated `spikes` list
+                // above — so the 0068 guard, which only vets rows collected into
+                // that list, does not cover them.  Guard the same Class A stale-row
+                // desync here (features(row,f) with an out-of-range row reads past
+                // the matrix and segfaults — the move-to-end snapshot crash, in a
+                // reader 0068 missed).  A stale non-cluster spike is dropped from
+                // the L-ratio / isolation-distance accumulation (diagnostic
+                // metrics) instead of crashing; the desync is surfaced by the
+                // checkSpikeFeatureInvariant probe.
+                if (row < 1 || row > featRows) continue;
                 double d2 = 0.0;
                 for (int f = 1; f <= nFeat; ++f) {
                     const double d = static_cast<double>(features(row, f)) - centroid[f - 1];
