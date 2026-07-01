@@ -340,7 +340,18 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     //                       invalidates the raw cache (customEvent), and the next
     //                       single-edit update cold-seeds it again.
     // The full/GPU path is unchanged in every bailed case.
-    const bool singleEdit = (nbActions <= 1);
+    //
+    // A renumber is NOT one of those independent edits: it is a pure relabel (the
+    // id compaction a merge/delete cleanup performs), and since 0100 the raw cache
+    // survives it in place, so it changes nothing changedClusterIdsSinceCache()
+    // must recompute.  renumbering holds one entry per renumber counted in
+    // nbActions, so nbActions - renumbering.size() is the count of genuine editing
+    // actions.  Excluding renumbers lets a merge whose auto-realign cleanup
+    // renumbers (nbActions=2: the reprojection plus the renumber) read as the
+    // single semantic edit it is, and take the incremental path, instead of
+    // tripping the 2+-edit bail on a relabel.
+    const int  semanticEdits = qMax(0, nbActions - static_cast<int>(renumbering.size()));
+    const bool singleEdit = (semanticEdits <= 1);
     // On a COLD cache with no pending edit — startup, or the first refresh after a
     // renumber / 2+-edit bail invalidated the cache — the incremental path would
     // "cold-seed": recompute every column with ZERO reuse.  And it would do that on
@@ -374,9 +385,9 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             ? static_cast<int>(changedIds.size())
             : static_cast<int>(changedClusterIdsSinceCache().size());
         fprintf(stderr,
-            "[errormatrix] launch: clusters=%d spikes=%lld nbActions=%d cacheValid=%d "
-            "renumbered=%d incrementalEnabled=%d coldSeed=%d pending=%d -> %s\n",
-            launchClusters, launchSpikes, nbActions,
+            "[errormatrix] launch: clusters=%d spikes=%lld nbActions=%d semEdits=%d "
+            "cacheValid=%d renumbered=%d incrementalEnabled=%d coldSeed=%d pending=%d -> %s\n",
+            launchClusters, launchSpikes, nbActions, semanticEdits,
             rawProbCacheValid ? 1 : 0, hasBeenRenumbered ? 1 : 0,
             incrementalEnabled ? 1 : 0, coldSeedRefresh ? 1 : 0, pending,
             useIncremental        ? "INCREMENTAL"
