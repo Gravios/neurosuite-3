@@ -3863,6 +3863,32 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
 }
 
 void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNewOld){
+    // ── ROOT GUARD: validate the row-table / clusterInfoMap pairing before the
+    //    memcpy rebuild below ──────────────────────────────────────────────
+    // renumber rebuilds spikesByCluster block-by-block, memcpy'ing each cluster's
+    // [firstSpikePosition, firstSpikePosition+nbSpikes()) span (from clusterInfoMap)
+    // between two nbSpikes-sized tables.  On a consistent map every span is
+    // contiguous and within [1, nbSpikes], so this is safe.  But a prior desync
+    // (e.g. the recluster zero-tail that inflates a cluster's row-table count over
+    // its map count -- now prevented at source by the integrate accounting guard,
+    // but still present in sessions saved before that fix) leaves a map span whose
+    // firstPosition+count exceeds nbSpikes; the memcpy at data.cpp:3911 then runs
+    // off BOTH buffers and SIGSEGVs in memcpy.  renumber fires from autoPostClusterEdit
+    // after edits, so a corrupt session hits this on the next auto-renumber.
+    //
+    // Only repair when actually inconsistent: the probe is a read-only O(nbSpikes)
+    // scan (it also names the op in the log if the map arrived stale).  On a healthy
+    // session it passes and nothing else runs -- no rebuild, no realloc, no behavioural
+    // change.  On a desynced one, resyncClusterInfoMapFromRowTable() rebuilds the map
+    // from the row table (the source of truth) and stable-sorts the table into
+    // contiguous ascending-id spans, so every memcpy span below is guaranteed
+    // in-bounds.  This is the same self-heal already used at the recluster/realign
+    // commit points; it repairs the count/position desync, not the individual
+    // feature-row-0 tail entries (those remain, and stay covered by the existing
+    // computeSnapshot/centroid feature-row clamps).
+    if(!checkClusterInfoMapInvariant("renumber/pre"))
+        resyncClusterInfoMapFromRowTable();
+
     //The new information about the cluster will be inserted in the table pointed by spikesByClusterTemp
     SortableTable* spikesByClusterTemp = new SortableTable();
     spikesByClusterTemp->setSize(nbSpikes);
