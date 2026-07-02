@@ -42,7 +42,7 @@ int cuda_compute_probabilities(
     const double* logTerms,
     double*       probOut,
     const int*    ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision);
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col);
 
 /**
  * Compute posteriors and aggregate them into the nbClusters x nbClusters error
@@ -61,7 +61,7 @@ int cuda_compute_error_matrix(
     const double* logTerms, const int* ignoreFlags,
     const int* featRow, const int* first, const int* nb,
     double* errOut,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col);
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision);
 
 int hip_compute_probabilities(
     const double* features,
