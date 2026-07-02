@@ -188,6 +188,10 @@ static int cuda_compute_probabilities_f32(
     const double* logTerms, double* probOut, const int* ignoreFlags,
     int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
 {
+    const bool timing = errmxTiming();
+    ns3clock::time_point t0, tIn, tUp, tKer, tDl, tConv;
+    if (timing) t0 = ns3clock::now();
+
     std::vector<float> h_feat ((size_t)nbSpikes   * nbDim);
     std::vector<float> h_chol ((size_t)nbClusters * nbDim * nbDim);
     std::vector<float> h_means((size_t)nbClusters * nbDim);
@@ -196,6 +200,7 @@ static int cuda_compute_probabilities_f32(
     for (size_t i = 0; i < h_chol.size();  ++i) h_chol [i] = (float)choleskyAll[i];
     for (size_t i = 0; i < h_means.size(); ++i) h_means[i] = (float)means[i];
     for (size_t i = 0; i < h_log.size();   ++i) h_log  [i] = (float)logTerms[i];
+    if (timing) tIn = ns3clock::now();
 
     float *d_feat=nullptr,*d_chol=nullptr,*d_means=nullptr,*d_log=nullptr,*d_prob=nullptr;
     int   *d_ign=nullptr;
@@ -226,6 +231,7 @@ static int cuda_compute_probabilities_f32(
     CUDA_CHECK_F(cudaMemcpy(d_log,   h_log.data(),   logSz,   cudaMemcpyHostToDevice));
     CUDA_CHECK_F(cudaMemcpy(d_ign,   ignoreFlags,    ignSz,   cudaMemcpyHostToDevice));
     CUDA_CHECK_F(cudaMemset(d_prob,  0, probSz));
+    if (timing) tUp = ns3clock::now();
 
     { dim3 blk(BLOCK_X,1); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X, nbClusters);
       cuda_mahalanobis_kernel_f32<<<grd,blk>>>(d_feat,d_chol,d_means,d_log,d_prob,d_ign,
@@ -237,11 +243,18 @@ static int cuda_compute_probabilities_f32(
       CUDA_CHECK_F(cudaGetLastError()); }
 
     CUDA_CHECK_F(cudaDeviceSynchronize());
+    if (timing) tKer = ns3clock::now();
     {
         std::vector<float> h_prob((size_t)nbSpikes * nbClusters);
         CUDA_CHECK_F(cudaMemcpy(h_prob.data(), d_prob, probSz, cudaMemcpyDeviceToHost));
+        if (timing) tDl = ns3clock::now();
         const size_t n = h_prob.size();
         for (size_t i = 0; i < n; ++i) probOut[i] = (double)h_prob[i];
+        if (timing) { tConv = ns3clock::now();
+            fprintf(stderr,
+                "[errormatrix-timing] cuda-fp32: inConv=%lld upload=%lld kernel=%lld "
+                "download=%lld outConv=%lld ms\n",
+                ms_(t0,tIn), ms_(tIn,tUp), ms_(tUp,tKer), ms_(tKer,tDl), ms_(tDl,tConv)); }
     }
 
     cudaFree(d_feat); cudaFree(d_chol); cudaFree(d_means);
@@ -290,6 +303,10 @@ int cuda_compute_probabilities(
                    logTerms, probOut, ignoreFlags,
                    nbSpikes, nbClusters, nbDim, cluster1Col);
 
+    const bool timing = errmxTiming();
+    ns3clock::time_point t0, tUp, tKer, tDl;
+    if (timing) t0 = ns3clock::now();
+
     double *d_feat=nullptr,*d_chol=nullptr,*d_means=nullptr;
     double *d_log=nullptr, *d_prob=nullptr;
     int    *d_ign=nullptr;
@@ -320,6 +337,7 @@ int cuda_compute_probabilities(
     CUDA_CHECK(cudaMemcpy(d_log,   logTerms,    logSz,   cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_prob,  probOut,     probSz,  cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_ign,   ignoreFlags, ignSz,   cudaMemcpyHostToDevice));
+    if (timing) tUp = ns3clock::now();
 
     { dim3 blk(BLOCK_X,1); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X, nbClusters);
       cuda_mahalanobis_kernel<<<grd,blk>>>(d_feat,d_chol,d_means,d_log,d_prob,d_ign,
@@ -331,7 +349,12 @@ int cuda_compute_probabilities(
       CUDA_CHECK(cudaGetLastError()); }
 
     CUDA_CHECK(cudaDeviceSynchronize());
+    if (timing) tKer = ns3clock::now();
     CUDA_CHECK(cudaMemcpy(probOut,d_prob,probSz,cudaMemcpyDeviceToHost));
+    if (timing) { tDl = ns3clock::now();
+        fprintf(stderr,
+            "[errormatrix-timing] cuda-fp64: upload=%lld kernel=%lld download=%lld ms\n",
+            ms_(t0,tUp), ms_(tUp,tKer), ms_(tKer,tDl)); }
 
     cudaFree(d_feat); cudaFree(d_chol); cudaFree(d_means);
     cudaFree(d_log);  cudaFree(d_prob); cudaFree(d_ign);

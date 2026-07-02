@@ -30,6 +30,7 @@
 #include <QSet>
 #include <QString>
 #include <QList>
+#include <QElapsedTimer>
 
 #include <math.h>
 #include <stdio.h>
@@ -70,9 +71,13 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
 {
     if (haveToStopComputing) return new Array<double>(0, 0);
 
+    QElapsedTimer emxTmg;
+    const bool emxTiming = qEnvironmentVariableIntValue("NS3_ERRORMATRIX_TIMING") != 0;
+    if (emxTiming) emxTmg.start();
     Array<double>* probabilities =
         computeProbabilities(clusteringData, clusterList,
                              computedClusterList, ignoreClusterIndex);
+    const qint64 emxMsProb = emxTiming ? emxTmg.restart() : 0;
 
     int nbClusters = clusterList.size();
     Array<double>* errorMatrix =
@@ -112,6 +117,12 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
 
     for (int ci = 1; ci <= nbClusters; ++ci)
         (*errorMatrix)(ci, ci) = 0.0;
+
+    if (emxTiming)
+        fprintf(stderr,
+            "[errormatrix-timing] host: probabilities=%lld ms aggregate=%lld ms\n",
+            static_cast<long long>(emxMsProb),
+            static_cast<long long>(emxTmg.elapsed()));
 
     delete spikesByCluster;
     delete clusterInfoMap;
