@@ -165,7 +165,11 @@ int cuda_compute_probabilities(
     CUDA_CHECK(cudaMemcpy(d_chol,  choleskyAll, cholSz,  cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_means, means,       meansSz, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_log,   logTerms,    logSz,   cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_prob,  probOut,     probSz,  cudaMemcpyHostToDevice));
+    // Zero the output buffer device-side instead of uploading the (already
+    // zeroed) ~15 GB host probOut.  The kernel writes only non-ignored cells and
+    // ignored cells must read as 0, so a memset is equivalent to the upload but
+    // avoids a large H2D transfer (~0.4 s at this matrix size).
+    CUDA_CHECK(cudaMemset(d_prob, 0, probSz));
     CUDA_CHECK(cudaMemcpy(d_ign,   ignoreFlags, ignSz,   cudaMemcpyHostToDevice));
     if (timing) tUp = ns3clock::now();
 
