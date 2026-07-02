@@ -30,6 +30,10 @@ bool   PrefRefinement::getCurationLogging() const { return curationLoggingCheckB
 void   PrefRefinement::setRealignVerbose(bool b) { realignVerboseCheckBox->setChecked(b); }
 bool   PrefRefinement::getRealignVerbose() const { return realignVerboseCheckBox->isChecked(); }
 
+void   PrefRefinement::setErrorMatrixIncremental(bool b)  { errorMatrixIncrementalCheckBox->setChecked(b); }
+bool   PrefRefinement::getErrorMatrixIncremental() const  { return errorMatrixIncrementalCheckBox->isChecked(); }
+void   PrefRefinement::setErrorMatrixLowPrecision(bool b) { errorMatrixLowPrecisionCheckBox->setChecked(b); }
+bool   PrefRefinement::getErrorMatrixLowPrecision() const { return errorMatrixLowPrecisionCheckBox->isChecked(); }
 void   PrefRefinement::setAutoRealignAfterMerge(bool b) { autoRealignAfterMergeCheckBox->setChecked(b); }
 bool   PrefRefinement::getAutoRealignAfterMerge() const { return autoRealignAfterMergeCheckBox->isChecked(); }
 void   PrefRefinement::setAutoRenumberAfterMerge(bool b) { autoRenumberAfterMergeCheckBox->setChecked(b); }
