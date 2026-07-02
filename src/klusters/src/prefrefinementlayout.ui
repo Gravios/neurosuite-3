@@ -295,6 +295,19 @@
         </property>
        </widget>
       </item>
+      <item row="1" column="0">
+       <widget class="QCheckBox" name="errorMatrixLowPrecisionCheckBox">
+        <property name="text">
+         <string>Low-precision GPU compute (FP32, faster)</string>
+        </property>
+        <property name="toolTip">
+         <string>Compute the error matrix in single precision (FP32) on the GPU. On Blackwell the FP64 rate is ~1/64 of FP32, so FP32 roughly halves the compute time for the same qualitative matrix, at ~5e-4 numerical error in the cells — invisible for visual curation. Uncheck for exact FP64 values (slower). Both paths use GPU-side aggregation (no large host buffer). Overridden by NS3_ERRORMATRIX_LOWPRECISION when that variable is set. Default: on.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

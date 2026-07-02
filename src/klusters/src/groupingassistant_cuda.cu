@@ -200,8 +200,9 @@ __global__ void cuda_normalize_kernel_f32(
 // cluster i's spikes occupy contiguous positions [first[i], first[i]+nb[i]).
 // Ignored clusters (as rows or columns) yield 0, matching the CPU aggregation.
 // ---------------------------------------------------------------------------
-__global__ void cuda_aggregate_kernel(
-    const float*  __restrict__ prob,
+template<typename T>
+__global__ void cuda_aggregate_kernel_t(
+    const T*      __restrict__ prob,
     const int*    __restrict__ featRow,
     const int*    __restrict__ first,
     const int*    __restrict__ nb,
@@ -216,17 +217,16 @@ __global__ void cuda_aggregate_kernel(
     const int  n  = nb[i];
     for (int j = threadIdx.x; j < nbClusters; j += blockDim.x) {
         if (ig || ignoreFlags[j] || n <= 0) { errOut[(size_t)i * nbClusters + j] = 0.0; continue; }
-        // Accumulate in float: the posteriors are already FP32, so promoting each
-        // read to double buys no accuracy (the ~5e-4 FP32 floor dominates) while
-        // costing a per-element float->double conversion x nSpikes x nClusters,
-        // which on the throttled-FP64 GB202 runs through the scarce FP64 path.
-        // The mean's float rounding error is ~1e-5 relative, well under that floor.
-        float sum = 0.0f;
+        // Accumulate in the posterior's own type: for FP32 this keeps the sum in
+        // float (the ~5e-4 FP32 posterior error already dominates, and it avoids a
+        // per-element float->double promotion that runs through the throttled FP64
+        // path on Blackwell); for FP64 it accumulates in double for exact values.
+        T sum = (T)0;
         for (int s = 0; s < n; ++s) {
             int row = featRow[f + s];
             sum += prob[(size_t)row * nbClusters + j];
         }
-        errOut[(size_t)i * nbClusters + j] = (double)(sum / (float)n);
+        errOut[(size_t)i * nbClusters + j] = (double)(sum / (T)n);
     }
 }
 
@@ -337,7 +337,7 @@ int cuda_compute_error_matrix(
     const double* logTerms, const int* ignoreFlags,
     const int* featRow, const int* first, const int* nb,
     double* errOut,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision)
 {
     if (nbDim <= 0 || nbDim > CUDA_MAHAL_MAX_DIM) {
         fprintf(stderr,
@@ -351,14 +351,15 @@ int cuda_compute_error_matrix(
     if (timing) t0 = ns3clock::now();
 
     double *d_feat=nullptr,*d_chol=nullptr,*d_means=nullptr,*d_log=nullptr,*d_err=nullptr;
-    float  *d_prob=nullptr;   // FP32 posteriors: halves the buffer and aggregate reads
+    void   *d_prob=nullptr;   // float (FP32, default) or double (FP64) per lowPrecision
     int    *d_ign=nullptr,*d_featRow=nullptr,*d_first=nullptr,*d_nb=nullptr;
 
     size_t featSz  = (size_t)nbSpikes   * nbDim         * sizeof(double);
     size_t cholSz  = (size_t)nbClusters * nbDim * nbDim * sizeof(double);
     size_t meansSz = (size_t)nbClusters * nbDim         * sizeof(double);
     size_t logSz   = (size_t)nbClusters                 * sizeof(double);
-    size_t probSz  = (size_t)nbSpikes   * nbClusters    * sizeof(float);
+    size_t elemSz  = lowPrecision ? sizeof(float) : sizeof(double);
+    size_t probSz  = (size_t)nbSpikes   * nbClusters    * elemSz;
     size_t ignSz   = (size_t)nbClusters                 * sizeof(int);
     size_t frSz    = (size_t)nbSpikes                   * sizeof(int);
     size_t spanSz  = (size_t)nbClusters                 * sizeof(int);
@@ -390,26 +391,43 @@ int cuda_compute_error_matrix(
     CUDA_CHECK_E(cudaMemcpy(d_featRow, featRow,     frSz,    cudaMemcpyHostToDevice));
     CUDA_CHECK_E(cudaMemcpy(d_first,   first,       spanSz,  cudaMemcpyHostToDevice));
     CUDA_CHECK_E(cudaMemcpy(d_nb,      nb,          spanSz,  cudaMemcpyHostToDevice));
+    // FP64 path: the double Mahalanobis kernel skips ignored clusters, so their
+    // cells must be pre-zeroed.  The FP32 kernel writes every cell (-1e30f for
+    // ignored), so it needs no memset.
+    if (!lowPrecision) CUDA_CHECK_E(cudaMemset(d_prob, 0, probSz));
     if (timing) tUp = ns3clock::now();
-    // No d_prob memset: the FP32 Mahalanobis kernel writes every cell (ignored
-    // clusters get -1e30f, which the softmax drops).
 
-    // FP32 compute: the error matrix is qualitative, so the ~1:64 FP64 throttle
-    // on Blackwell is not worth paying.  Cholesky L + mean are staged in shared
-    // memory (one cluster per blockIdx.y block); posteriors stay FP32 on device
-    // and the aggregation promotes to double so the matrix values stay accurate.
+    // Precision is user-selectable (errorMatrixLowPrecision).  FP32 dodges the
+    // ~1:64 FP64 throttle on Blackwell and stages Cholesky L + mean in shared
+    // memory; the error matrix is qualitative so its ~5e-4 error is invisible.
+    // FP64 gives exact values at the cost of the throttled kernel.  Both keep the
+    // posteriors device-resident and aggregate on the GPU (no large host buffer).
     { dim3 blk(BLOCK_X,1); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X, nbClusters);
-      cuda_mahalanobis_kernel_f32<<<grd,blk,shBytes>>>(d_feat,d_chol,d_means,d_log,d_prob,d_ign,
-                                                       nbSpikes,nbClusters,nbDim);
-      CUDA_CHECK_E(cudaGetLastError()); }
-    { dim3 blk(BLOCK_X); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X);
-      cuda_normalize_kernel_f32<<<grd,blk>>>(d_prob,nbSpikes,nbClusters,cluster1Col);
-      CUDA_CHECK_E(cudaGetLastError()); }
+      dim3 nblk(BLOCK_X);  dim3 ngrd((nbSpikes+BLOCK_X-1)/BLOCK_X);
+      if (lowPrecision) {
+          cuda_mahalanobis_kernel_f32<<<grd,blk,shBytes>>>(
+              d_feat,d_chol,d_means,d_log,(float*)d_prob,d_ign,nbSpikes,nbClusters,nbDim);
+          CUDA_CHECK_E(cudaGetLastError());
+          cuda_normalize_kernel_f32<<<ngrd,nblk>>>((float*)d_prob,nbSpikes,nbClusters,cluster1Col);
+          CUDA_CHECK_E(cudaGetLastError());
+      } else {
+          cuda_mahalanobis_kernel<<<grd,blk>>>(
+              d_feat,d_chol,d_means,d_log,(double*)d_prob,d_ign,nbSpikes,nbClusters,nbDim);
+          CUDA_CHECK_E(cudaGetLastError());
+          cuda_normalize_kernel<<<ngrd,nblk>>>((double*)d_prob,nbSpikes,nbClusters,cluster1Col);
+          CUDA_CHECK_E(cudaGetLastError());
+      }
+    }
     CUDA_CHECK_E(cudaDeviceSynchronize());
     if (timing) tKer = ns3clock::now();
 
     { dim3 blk(BLOCK_X); dim3 grd(nbClusters);
-      cuda_aggregate_kernel<<<grd,blk>>>(d_prob,d_featRow,d_first,d_nb,d_ign,d_err,nbClusters);
+      if (lowPrecision)
+          cuda_aggregate_kernel_t<float><<<grd,blk>>>(
+              (float*)d_prob,d_featRow,d_first,d_nb,d_ign,d_err,nbClusters);
+      else
+          cuda_aggregate_kernel_t<double><<<grd,blk>>>(
+              (double*)d_prob,d_featRow,d_first,d_nb,d_ign,d_err,nbClusters);
       CUDA_CHECK_E(cudaGetLastError()); }
     CUDA_CHECK_E(cudaDeviceSynchronize());
     if (timing) tAgg = ns3clock::now();
@@ -417,7 +435,8 @@ int cuda_compute_error_matrix(
     CUDA_CHECK_E(cudaMemcpy(errOut, d_err, errSz, cudaMemcpyDeviceToHost));
     if (timing) { tDl = ns3clock::now();
         fprintf(stderr,
-            "[errormatrix-timing] cuda-agg: upload=%lld kernel=%lld aggregate=%lld download=%lld ms\n",
+            "[errormatrix-timing] cuda-agg[%s]: upload=%lld kernel=%lld aggregate=%lld download=%lld ms\n",
+            lowPrecision ? "fp32" : "fp64",
             ms_(t0,tUp), ms_(tUp,tKer), ms_(tKer,tAgg), ms_(tAgg,tDl)); }
 
     cudaFree(d_feat); cudaFree(d_chol); cudaFree(d_means); cudaFree(d_log);

@@ -26,7 +26,7 @@ extern "C" {
         const double*, double*, const int*, int, int, int, int) { return -1; }
     int cuda_compute_error_matrix(const double*, const double*, const double*,
         const double*, const int*, const int*, const int*, const int*,
-        double*, int, int, int, int) { return -1; }
+        double*, int, int, int, int, int) { return -1; }
 }
 #endif
 
@@ -133,12 +133,13 @@ int computeErrorMatrix(
     const double* logTerms, const int* ignoreFlags,
     const int* featRow, const int* first, const int* nb,
     double* errOut,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision)
 {
     if (activeBackend() == Backend::CUDA)
         return cuda_compute_error_matrix(features, choleskyAll, means, logTerms,
                                          ignoreFlags, featRow, first, nb, errOut,
-                                         nbSpikes, nbClusters, nbDim, cluster1Col);
+                                         nbSpikes, nbClusters, nbDim, cluster1Col,
+                                         lowPrecision);
     return -1;  // host aggregation fallback
 }
 
