@@ -39,6 +39,16 @@ static bool errorMatrixIncrementalEnabled(){
     return configuration().getErrorMatrixIncremental();
 }
 
+// Low-precision (FP32) GPU compute is the same preference/override pattern.
+// NS3_ERRORMATRIX_LOWPRECISION overrides the preference when set.  This mirrors
+// what GroupingAssistant::computeProbabilities reads; used here only for the
+// launch diagnostic so the selected precision is visible in the log.
+static bool errorMatrixLowPrecisionEnabled(){
+    if(qEnvironmentVariableIsSet("NS3_ERRORMATRIX_LOWPRECISION"))
+        return qEnvironmentVariableIntValue("NS3_ERRORMATRIX_LOWPRECISION") != 0;
+    return configuration().getErrorMatrixLowPrecision();
+}
+
 // include files for Qt
 
 
@@ -395,10 +405,11 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             : static_cast<int>(changedClusterIdsSinceCache().size());
         fprintf(stderr,
             "[errormatrix] launch: clusters=%d spikes=%lld nbActions=%d semEdits=%d "
-            "cacheValid=%d renumbered=%d incrementalEnabled=%d coldSeed=%d pending=%d -> %s\n",
+            "cacheValid=%d renumbered=%d incrementalEnabled=%d lowPrec=%d coldSeed=%d pending=%d -> %s\n",
             launchClusters, launchSpikes, nbActions, semanticEdits,
             rawProbCacheValid ? 1 : 0, hasBeenRenumbered ? 1 : 0,
-            incrementalEnabled ? 1 : 0, coldSeedRefresh ? 1 : 0, pending,
+            incrementalEnabled ? 1 : 0, errorMatrixLowPrecisionEnabled() ? 1 : 0,
+            coldSeedRefresh ? 1 : 0, pending,
             useIncremental        ? "INCREMENTAL"
             : !incrementalEnabled ? "FULL(disabled)"
             : coldSeedRefresh     ? "FULL(cold-seed refresh)"

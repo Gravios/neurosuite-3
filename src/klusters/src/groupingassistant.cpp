@@ -619,8 +619,12 @@ Array<double>* GroupingAssistant::computeProbabilities(
         // used for qualitative visual curation, so this is ample, and on cards
         // whose FP64 rate is throttled it is far faster.  The host arrays and the
         // returned matrix stay double either way.
+        // NS3_ERRORMATRIX_LOWPRECISION overrides the preference when set (mirrors
+        // NS3_ERRORMATRIX_INCREMENTAL), for command-line verification of the FP32 path.
         const int lowPrecision =
-            configuration().getErrorMatrixLowPrecision() ? 1 : 0;
+            qEnvironmentVariableIsSet("NS3_ERRORMATRIX_LOWPRECISION")
+                ? (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_LOWPRECISION") != 0 ? 1 : 0)
+                : (configuration().getErrorMatrixLowPrecision() ? 1 : 0);
         int rc = GpuDispatch::computeProbabilities(
             h_features.data(), h_chol.data(), h_means.data(),
             h_logTerms.data(), h_prob.data(), h_ignore.data(),
