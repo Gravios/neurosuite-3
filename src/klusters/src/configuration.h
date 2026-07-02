@@ -95,6 +95,8 @@ public:
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
     void setAutoUpdateMatricesAfterMerge(bool b) {autoUpdateMatricesAfterMerge = b;}
+    void setErrorMatrixIncremental(bool b)  {errorMatrixIncremental  = b;}
+    void setErrorMatrixLowPrecision(bool b) {errorMatrixLowPrecision = b;}
 
     void setDipSplitMinSize(int n)       {dipSplitMinSize     = qMax(2, n);}
     void setDipSplitBloatFactor(double v){dipSplitBloatFactor = qBound(0.0, v, 10.0);}
@@ -196,6 +198,10 @@ public:
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
     bool   getAutoUpdateMatricesAfterMerge() const {return autoUpdateMatricesAfterMerge;}
+    /**Error matrix: reuse cached raw columns on a single edit (incremental) vs. full recompute.*/
+    bool   getErrorMatrixIncremental()  const {return errorMatrixIncremental;}
+    /**Error matrix: FP32 (low) vs FP64 (high) GPU probability compute.*/
+    bool   getErrorMatrixLowPrecision() const {return errorMatrixLowPrecision;}
 
     int    getDipSplitMinSize()     const {return dipSplitMinSize;}
     double getDipSplitBloatFactor() const {return dipSplitBloatFactor;}
@@ -275,6 +281,8 @@ public:
     bool   getAutoRealignAfterMergeDefault() const {return true;}
     bool   getAutoRenumberAfterMergeDefault() const {return true;}
     bool   getAutoUpdateMatricesAfterMergeDefault() const {return true;}
+    bool   getErrorMatrixIncrementalDefault()  const {return false;}
+    bool   getErrorMatrixLowPrecisionDefault() const {return false;}
 
     int    getDipSplitMinSizeDefault()      const {return 50;}
     double getDipSplitBloatFactorDefault()  const {return 0.0;}
@@ -410,6 +418,8 @@ private:
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
     bool    autoUpdateMatricesAfterMerge;  // recompute error/template/residual matrices after each merge
+    bool    errorMatrixIncremental;   // error matrix: incremental reuse on single edits (else full recompute)
+    bool    errorMatrixLowPrecision;  // error matrix: FP32 GPU probability compute (else FP64)
 
     int     dipSplitMinSize;       ///< minimum cluster size to consider for DipSplit
     double  dipSplitBloatFactor;   ///< Mahalanobis bloat threshold (× χ²(d, 0.9))
