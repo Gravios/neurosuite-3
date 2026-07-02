@@ -49,7 +49,7 @@ namespace GpuDispatch {
     bool hasGpu();
     int  computeProbabilities(
         const double*, const double*, const double*, const double*,
-        double*, const int*, int, int, int, int, int);
+        double*, const int*, int, int, int, int);
 }
 
 GroupingAssistant::GroupingAssistant()
