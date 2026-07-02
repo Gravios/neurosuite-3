@@ -157,6 +157,10 @@ public:
      *  addView(ERROR_MATRIX) + addView(TEMPLATE_MATRIX).
      */
     void applyOverviewLayout();
+
+    /// Flip the tabified Error/Template matrix dock frame to its other tab
+    /// (bound to "E").
+    void toggleMatrixTab();
     
     /**List of the names for the different type of view available.*/
     static const QString DisplayTypeNames[];
