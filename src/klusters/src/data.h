@@ -699,6 +699,13 @@ public:
      * has a stale 0 count or no map entry, without a disk round-trip.*/
     void resyncClusterInfoMapFromRowTable();
 
+    /**Loud in-memory self-heal: if the derived clusterInfoMap disagrees with the
+     * row table on entry, rebuild it (and normalise the row-table layout) from the
+     * authoritative per-spike cluster assignments, then re-check.  Called at the top
+     * of every tiling committer so it builds a consistent table and the edit
+     * proceeds rather than being dropped by prepareUndo.  Returns final consistency.*/
+    bool healClusterInfoMapIfDesynced(const char* where);
+
     /**Validates the feature-row (Class A) invariant on a CANDIDATE row table
      * before it is installed by prepareUndo: it must have at least nbSpikes
      * columns and row 1 must be a permutation of the feature rows — every index
