@@ -5355,10 +5355,10 @@ void KlustersApp::slotShowShortcutHelp()
             "</style>");
     for (const auto& sec : kSections) {
         html += QStringLiteral("<h3>%1</h3><table>")
-                .arg(QLatin1String(sec.title));
+                .arg(QString::fromUtf8(sec.title));
         for (const auto& e : sec.entries)
             html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
-                    .arg(QLatin1String(e.key)).arg(QLatin1String(e.desc));
+                    .arg(QString::fromUtf8(e.key)).arg(QString::fromUtf8(e.desc));
         html += QStringLiteral("</table>");
     }
 
