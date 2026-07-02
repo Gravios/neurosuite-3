@@ -216,12 +216,17 @@ __global__ void cuda_aggregate_kernel(
     const int  n  = nb[i];
     for (int j = threadIdx.x; j < nbClusters; j += blockDim.x) {
         if (ig || ignoreFlags[j] || n <= 0) { errOut[(size_t)i * nbClusters + j] = 0.0; continue; }
-        double sum = 0.0;
+        // Accumulate in float: the posteriors are already FP32, so promoting each
+        // read to double buys no accuracy (the ~5e-4 FP32 floor dominates) while
+        // costing a per-element float->double conversion x nSpikes x nClusters,
+        // which on the throttled-FP64 GB202 runs through the scarce FP64 path.
+        // The mean's float rounding error is ~1e-5 relative, well under that floor.
+        float sum = 0.0f;
         for (int s = 0; s < n; ++s) {
             int row = featRow[f + s];
-            sum += (double)prob[(size_t)row * nbClusters + j];
+            sum += prob[(size_t)row * nbClusters + j];
         }
-        errOut[(size_t)i * nbClusters + j] = sum / (double)n;
+        errOut[(size_t)i * nbClusters + j] = (double)(sum / (float)n);
     }
 }
 
