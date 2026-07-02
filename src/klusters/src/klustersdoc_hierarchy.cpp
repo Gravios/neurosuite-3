@@ -309,15 +309,35 @@ void KlustersDoc::collapseToSelfChildren(){
     const QVector<dataType> childByRow = childData->labelByFeatureRow();
     const int n = qMin(cluByRow.size(), childByRow.size());
 
-    QHash<int, QSet<int>> atomFibers;                        // real atom -> fibers it appears in
+    // Per real atom, count its spikes in each fiber.  This distinguishes a wholly-
+    // inside atom (one fiber) from a straddler, AND picks a straddler's "home" fiber
+    // -- the one holding the plurality of its spikes.  A manual polygon split clips
+    // some of a fiber's spikes into a new fiber; if that clip crosses a deliberate
+    // sub-cluster atom, the old code dissolved that atom into self children on BOTH
+    // sides, so the source fiber lost the child.  Keeping the straddler whole on its
+    // home fiber -- and collapsing only the clipped-off remainder into the new
+    // fiber's self child -- preserves the sub-cluster where it still mostly lives.
+    QHash<int, QHash<int,int>> atomFiberCount;               // real atom -> fiber -> spike count
     for (int r = 1; r < n; ++r){
         const int a = static_cast<int>(childByRow[r]);
         if (a <= 1) continue;
-        atomFibers[a].insert(static_cast<int>(cluByRow[r]));
+        atomFiberCount[a][static_cast<int>(cluByRow[r])] += 1;
     }
     QSet<int> intact;                                        // real atoms wholly inside one fiber
-    for (auto it = atomFibers.constBegin(); it != atomFibers.constEnd(); ++it)
-        if (it.value().size() == 1) intact.insert(it.key());
+    QHash<int,int> homeFiber;                                // straddler -> fiber to keep it whole on
+    for (auto it = atomFiberCount.constBegin(); it != atomFiberCount.constEnd(); ++it){
+        const QHash<int,int>& perFiber = it.value();
+        if (perFiber.size() == 1){ intact.insert(it.key()); continue; }
+        const int a = it.key();
+        // A self child (atom id == a fiber id) stays on its own fiber; any other atom
+        // stays on the fiber holding the plurality of its spikes (ties -> lower fiber
+        // id == the pre-existing source, not the freshly minted split-off fiber).
+        if (perFiber.contains(a)){ homeFiber[a] = a; continue; }
+        int best = -1, bestN = -1;
+        for (auto f = perFiber.constBegin(); f != perFiber.constEnd(); ++f)
+            if (f.value() > bestN || (f.value() == bestN && f.key() < best)){ bestN = f.value(); best = f.key(); }
+        homeFiber[a] = best;
+    }
 
     // Group loose spikes by (source atom -> self child = fiber id) for moveSpikeSubset.
     QHash<int, QHash<int, QSet<dataType>>> moves;
@@ -325,9 +345,10 @@ void KlustersDoc::collapseToSelfChildren(){
         const int F = static_cast<int>(cluByRow[r]);
         if (F <= 1) continue;                                // noise/artifact fibers keep their atoms
         const int a = static_cast<int>(childByRow[r]);
-        if (a > 1 && intact.contains(a)) continue;           // preserve deliberate sub-structure
+        if (a > 1 && intact.contains(a)) continue;           // wholly-inside atom: deliberate, preserved
         if (a == F) continue;                                // already its own self child
-        moves[a][F].insert(static_cast<dataType>(r));
+        if (a > 1 && homeFiber.value(a, -1) == F) continue;  // straddler kept whole on its home fiber
+        moves[a][F].insert(static_cast<dataType>(r));         // collapse only the clipped-off remainder
     }
     for (auto s = moves.constBegin(); s != moves.constEnd(); ++s)
         for (auto t = s.value().constBegin(); t != s.value().constEnd(); ++t){
