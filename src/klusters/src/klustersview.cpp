@@ -525,6 +525,13 @@ void KlustersView::stopAllViewThreads()
         rmv->stopRunningThreadsSync();
 }
 
+bool KlustersView::errorMatrixConsolidating() const{
+    const QList<ErrorMatrixView*> emvs = findChildren<ErrorMatrixView*>();
+    for(ErrorMatrixView* emv : emvs)
+        if(emv && emv->isComputing()) return true;
+    return false;
+}
+
 void KlustersView::invalidateClusterDisplay(int clusterId)
 {
     if (!shownClusters->contains(clusterId))

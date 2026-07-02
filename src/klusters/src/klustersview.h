@@ -617,6 +617,11 @@ public:
      *  mid-fread when the write happens. */
     void stopAllViewThreads();
 
+    /// True while this view's error matrix has a display-driving compute in
+    /// flight (post-edit consolidation).  Used to block cluster edits until the
+    /// consolidation finishes.
+    bool errorMatrixConsolidating() const;
+
     /** Force a full scatter REDRAW and waveform/correlogram reload for
      *  @p clusterId after an in-place data modification (e.g. timestamp
      *  nudge).  Unlike forceClusterRefresh() this sets REDRAW mode on

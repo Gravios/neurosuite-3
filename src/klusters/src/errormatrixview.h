@@ -78,6 +78,12 @@ public:
 
     /// True once at least one matrix computation has completed.
     bool hasComputedData() const { return dataReady; }
+
+    /// True while a display-driving (non-seedOnly) error-matrix compute is in
+    /// flight.  Excludes the background incremental cache warmer (a seedOnly
+    /// thread), which must never block editing.  Used to gate cluster edits until
+    /// the post-edit matrix consolidation has finished.
+    bool isComputing() const;
     /// True if the matrix has never been computed OR is currently flagged
     /// stale.  This MUST mirror exactly the predicate drawMatrix() uses to
     /// paint the red "out of date" border:

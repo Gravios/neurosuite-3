@@ -277,6 +277,15 @@ void ErrorMatrixView::customEvent(QEvent* event){
     }
 }
 
+bool ErrorMatrixView::isComputing() const{
+    // A display-driving compute is any non-seedOnly thread still pending in
+    // threadsToBeKill.  The background cache warmer is seedOnly and is excluded
+    // so it never holds the edit lock.
+    for(ErrorMatrixThread* t : threadsToBeKill)
+        if(t && !t->getSeedOnly()) return true;
+    return false;
+}
+
 void ErrorMatrixView::updateMatrixContents(){
     if(!goingToDie){
         //Bump the generation so that customEvent() can identify — and discard — results
