@@ -1889,10 +1889,10 @@ void KlustersView::connectMatrixZoomSync()
     TemplateMatrixView* tmv = overviewTemplateMatrixDock
         ? qobject_cast<TemplateMatrixView*>(overviewTemplateMatrixDock->widget()) : nullptr;
     if (emv && tmv) {
-        connect(emv, &ErrorMatrixView::zoomChanged,
-                tmv, &TemplateMatrixView::setZoomLevel, Qt::UniqueConnection);
-        connect(tmv, &TemplateMatrixView::zoomChanged,
-                emv, &ErrorMatrixView::setZoomLevel, Qt::UniqueConnection);
+        connect(emv, &ErrorMatrixView::viewChanged,
+                tmv, &TemplateMatrixView::setViewState, Qt::UniqueConnection);
+        connect(tmv, &TemplateMatrixView::viewChanged,
+                emv, &ErrorMatrixView::setViewState, Qt::UniqueConnection);
     }
 }
 

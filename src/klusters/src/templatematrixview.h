@@ -52,9 +52,9 @@ public:
     friend class PairXcorrThread;
 
     /// Set the zoom level from an external source (e.g. the synchronised error
-    /// matrix view), zooming around the widget centre. Does not emit
-    /// zoomChanged, so the two views can be cross-connected without a loop.
-    void setZoomLevel(double zoom);
+    /// matrix view): sets the full zoom + pan state. Does not emit
+    /// viewChanged, so the two views can be cross-connected without a loop.
+    void setViewState(double zoom, double px, double py);
 
     explicit TemplateMatrixView(KlustersDoc& doc, KlustersView& view,
                                 const QColor& backgroundColor,
@@ -128,7 +128,7 @@ Q_SIGNALS:
 
     /// Emitted when the user changes this view's zoom level (wheel, +/- keys,
     /// reset). Used to keep the error and template matrix zooms synchronised.
-    void zoomChanged(double zoom);
+    void viewChanged(double zoom, double panX, double panY);
 
     /// Emitted from customEvent() each time a freshly computed matrix is
     /// accepted.  Symmetric with ErrorMatrixView::matrixUpdated() so
