@@ -1508,13 +1508,28 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
 
-        // ── Tab / Shift+Tab ─────────────────────────────────────────────────
-        // Cycle: cluster list  →  tab area (single stop, Overview if entering)
-        //        →  toolbar fields  →  (wrap)
-        // Ctrl+Shift+Left/Right cycles keyboard focus across the focus ring
-        // (cluster palette, child palettes A/B when shown, toolbar spinboxes).
-        // This replaces the former Tab cycling.  Placed before the Left/Right
-        // tab-display handler so it is not swallowed as a tab switch.
+        // ── Tab / Shift+Tab — move focus between windows & fields ───────────
+        // Tab advances (Shift+Tab reverses) across the focus-zone ring: cluster
+        // palette, child palettes A/B (while the hierarchical view is shown), and
+        // the toolbar spinboxes / line-edits.  This is the default focus mover.
+        // Guarded so it never hijacks Tab inside a modal dialog or any widget
+        // outside the main window, where Tab must keep ordinary field-to-field
+        // traversal.  Placed before the Left/Right tab-display handler.
+        if((ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab)
+           && !(ke->modifiers() & (Qt::ControlModifier | Qt::AltModifier
+                                   | Qt::MetaModifier))
+           && !isInit && doc && activeView()
+           && !QApplication::activeModalWidget()){
+            QWidget* fw = QApplication::focusWidget();
+            if(fw && fw->window() == this){
+                cycleHierarchyFocus(ke->key() == Qt::Key_Tab);
+                return true;
+            }
+        }
+        // Ctrl+Shift+Left/Right cycles the same focus ring (kept as an
+        // alternative; Ctrl+Left/Right is the hierarchy custody transfer, so
+        // plain Tab is now the primary focus mover).  Placed before the
+        // Left/Right tab-display handler so it is not swallowed as a tab switch.
         if((ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right)
            && (ke->modifiers() & Qt::ControlModifier)
            && (ke->modifiers() & Qt::ShiftModifier)){
@@ -5287,7 +5302,7 @@ void KlustersApp::slotShowShortcutHelp()
         {"Display tabs", {
             {"\u2190 / \u2192",           "Cycle display tabs \u2014 only while the tab bar itself has focus (click a tab handle); inside a view the arrows stay cluster navigation"},
             {"Ctrl+\u2190 / Ctrl+\u2192",   "From inside a view: jump to the Overview tab.  From the tab bar: cycle tabs (prev / next, wrapping)"},
-            {"Ctrl+Shift+\u2190 / Ctrl+Shift+\u2192", "Cycle keyboard focus across the ring: cluster palette \u2192 child palettes A/B (when shown) \u2192 toolbar fields"},
+            {"Tab / Shift+Tab", "Move focus between the cluster palette, child palettes A/B (when shown) and toolbar fields (Ctrl+Shift+\u2190/\u2192 does the same ring)"},
             {"E",              "Switch between the Error Matrix and Template Matrix tabs (matrix panel)"},
         }},
         {"Cluster operations", {
