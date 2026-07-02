@@ -116,14 +116,14 @@ Q_SIGNALS:
 
     /// Emitted when the user changes this view's zoom level (wheel, reset).
     /// Used to keep the error and template matrix zooms synchronised.
-    void zoomChanged(double zoom);
+    void viewChanged(double zoom, double panX, double panY);
 
 public Q_SLOTS:
 
     /// Set the zoom level from an external source (the synchronised template
-    /// matrix view), keeping the current centre. Does not emit zoomChanged, so
+    /// matrix view): sets the full zoom + pan state. Does not emit viewChanged, so
     /// the two views can be cross-connected without a loop.
-    void setZoomLevel(double zoom);
+    void setViewState(double zoom, double px, double py);
 
     /**Enables the caller to know if there is any thread running launch by the Widget.*/
     bool isThreadsRunning() const override;
@@ -344,53 +344,40 @@ private:
     /**The width of a cell of the error matrix.*/
     int cellWidth;
 
-    // ── pan / zoom interaction (drives the inherited BaseFrame ZoomWindow) ──
-    // Ctrl + Left-drag pans; Ctrl + wheel zooms around the cursor; double-click
-    // resets to the full matrix.  Plain click stays pair-selection, and a quick
-    // Ctrl-click that never crosses the drag threshold falls through to the
-    // Ctrl-add selection path (so multi-select still works).
-    bool   panArmed{false};      // Ctrl+press seen; awaiting drag threshold
-    bool   panning{false};       // drag threshold crossed → actively panning
-    QPoint panAnchorPx;          // pixel position where the Ctrl-drag began
-    double panCenterStartFx{0.5};// userCenterFx at drag start
-    double panCenterStartFy{0.5};// userCenterFy at drag start
-    static constexpr int    panDragThreshold{3};  // px before a press → pan
+    // ── pan / zoom interaction (pixel model — copied from TemplateMatrixView) ──
+    // The matrix is rendered at an effective top-left of matrixTopLeft()+(panX,panY)
+    // with each cell at effective size cellWidth*zoom.  Pan is in widget pixels;
+    // zoom is a multiplier clamped to [effZoomMin(), zoomMax].  Ctrl+Left-drag pans;
+    // Ctrl+Wheel zooms around the cursor; double-click resets.  A quick Ctrl-click
+    // that never crosses the drag threshold still reaches Ctrl-add pair-selection.
+    static constexpr int    CELL_WIDTH   = 50;
+    static constexpr int    LABEL_MARGIN = 16;
+    static constexpr int    CONTROLS_H   = 0;   // ErrorMatrixView has no control bar
+    double  panX{0.0};
+    double  panY{0.0};
+    double  zoom{1.0};
+    bool    panArmed{false};     // Ctrl+press seen; awaiting drag threshold
+    bool    panning{false};      // drag threshold crossed → actively panning
+    QPoint  panAnchorPx;         // mouse position where Ctrl-drag started
+    double  panAnchorX{0.0};     // panX at drag start
+    double  panAnchorY{0.0};     // panY at drag start
+    static constexpr int    panDragThreshold{3};       // px before press → pan
     static constexpr int    selectionSuppressMove{2};  // px of Ctrl-drag that cancels the cell selection on release
-    static constexpr double wheelZoomStep{1.25};  // zoom multiplier per tick
-    static constexpr double userZoomMaxFloor{20.0}; // baseline zoom-in ceiling
-    static constexpr double minCellsAtMaxZoom{1.0}; // cells kept across the viewport at full zoom-in
+    static constexpr double zoomMin{0.5};    // baseline zoom-out floor; effZoomMin() lowers it to fit large grids
+    static constexpr double zoomMax{20.0};
+    static constexpr double zoomStep{1.15};  // wheel zoom multiplier per tick
 
-    /// Adaptive maximum zoom-in factor.  The matrix is clusterList.size() cells
-    /// across at full view (userZoom==1), so a zoom of N shows size/N cells across.
-    /// Cap the zoom where about minCellsAtMaxZoom cells still span the viewport.
-    /// With minCellsAtMaxZoom == 1 a single cell can fill the viewport — the natural
-    /// deepest useful zoom — so cells stay resolvable at any cluster count; raise the
-    /// constant to leave more neighbours in view, lower it (below 1) to let a cell
-    /// exceed the viewport.  Never below the historical 20x, so small matrices still
-    /// zoom in generously.  At ~10000 clusters this is ~10000x; at a few hundred, a
-    /// few hundred.
-    double effZoomMax() const {
-        return qMax(userZoomMaxFloor,
-                    static_cast<double>(clusterList.size()) / minCellsAtMaxZoom);
+    double  effZoomMin() const;              // adaptive max-zoom-out to fit large grids
+    QPoint  matrixTopLeft() const;           // fixed grid origin (label strips reserved)
+    inline double  effCellSize() const { return cellWidth * zoom; }
+    inline QPointF effMatrixTopLeft() const {
+        const QPoint b = matrixTopLeft();
+        return QPointF(b.x() + panX, b.y() + panY);
     }
-
-    // Layout cache: the world geometry + ZoomWindow are rebuilt only when these
-    // inputs change — a widget resize or a cluster-count change.  Rebuilding on
-    // every REDRAW is wasted work; -1 / empty force a rebuild on the first paint.
-    QSize  layoutViewportSize;
-    int    layoutClusterCount{-1};
-
-    // Persistent zoom / pan state — the authoritative view, exactly like the
-    // template matrix view.  userZoom is a multiplier (1 = full matrix, >1 =
-    // zoomed in); userCenterFx/Fy are the view centre as fractions of the full
-    // world.  updateWindow() derives the ZoomWindow from these every layout, so
-    // the zoom is re-applied on top of the recomputed fit and never lost to a
-    // matrix update, cluster-count change or resize.
-    double userZoom{1.0};
-    double userCenterFx{0.5};
-    double userCenterFy{0.5};
-    /// Rebuild `window` from (userZoom, userCenterFx, userCenterFy).
-    void   applyViewToWindow();
+    int  cellAtX(int viewX) const;
+    int  cellAtY(int viewY) const;
+    void zoomAroundPoint(double newZoom, const QPointF& pivot);
+    void resetPanZoom();
 
     /// While zooming or panning, the selected-pair overlay is suppressed: redrawing
     /// its boxes every interaction frame is costly (an O(nbClusters) clusterList

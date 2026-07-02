@@ -678,6 +678,7 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
             panX = panAnchorX + d.x();
             panY = panAnchorY + d.y();
             update();
+            emit viewChanged(zoom, panX, panY);
             e->accept();
             return;
         }
@@ -796,7 +797,7 @@ void TemplateMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
     panY += dy;
     zoom = newZoom;
     update();
-    emit zoomChanged(zoom);
+    emit viewChanged(zoom, panX, panY);
 }
 
 void TemplateMatrixView::resetPanZoom()
@@ -804,21 +805,17 @@ void TemplateMatrixView::resetPanZoom()
     panX = panY = 0.0;
     zoom = 1.0;
     update();
-    emit zoomChanged(zoom);
+    emit viewChanged(zoom, panX, panY);
 }
 
-void TemplateMatrixView::setZoomLevel(double newZoom)
+void TemplateMatrixView::setViewState(double newZoom, double px, double py)
 {
-    newZoom = std::clamp(newZoom, effZoomMin(), zoomMax);
-    if (zoom <= 0.0 || std::abs(newZoom - zoom) < 1e-9) return;
-    // Zoom around the widget centre; no signal is emitted so a cross-connected
-    // view does not echo the change back.
-    const QPointF pivot(width() / 2.0, height() / 2.0);
-    const double ratio = newZoom / zoom;
-    const QPoint base = matrixTopLeft();
-    panX += (pivot.x() - base.x() - panX) * (1.0 - ratio);
-    panY += (pivot.y() - base.y() - panY) * (1.0 - ratio);
-    zoom = newZoom;
+    // Full (zoom + pan) state pushed from the cross-connected error-matrix view.
+    // The two views share an identical pixel layout at equal size, so panX/panY
+    // transfer directly.  No signal is emitted so the change is not echoed back.
+    zoom = std::clamp(newZoom, effZoomMin(), zoomMax);
+    panX = px;
+    panY = py;
     update();
 }
 

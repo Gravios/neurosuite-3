@@ -16,6 +16,7 @@
  ***************************************************************************/
 //include files for the application
 #include <cmath>
+#include <algorithm>
 #include <QApplication>
 #include <QTimer>
 #include "errormatrixview.h"
@@ -471,188 +472,153 @@ QSet<int> ErrorMatrixView::changedClusterIdsSinceCache() const {
 // number of clusters so the matrix always fills the available space.
 // Must be called before updateWindow() uses cellWidth.
 // ---------------------------------------------------------------------------
+// recomputeCellWidth — pixel-model cell size, capped at CELL_WIDTH and clamped to
+// >=4px (copied from TemplateMatrixView::updateCellWidth).  Called when the data
+// or the layout inputs change; the pan/zoom transform is applied on top via
+// effCellSize()/effMatrixTopLeft().
 void ErrorMatrixView::recomputeCellWidth()
 {
     const int n = clusterList.size();
-    if (n <= 0) { cellWidth = 50; return; }
-    QRect cr = contentsRect();
-    // Leave room for the 15-px left legend strip and bottom label strip.
-    const int available = qMin(cr.width() - 15, cr.height() - 15);
-    // Border ≈ 1/30 of total matrix width on each side (2 borders total).
-    // total = 2*border + n*cw  where border = cw*n/30
-    // total = cw*n*(1 + 2/30)  =>  cw = total / (n * 32/30)
-    cellWidth = qMax(4, static_cast<int>(available * 30 / (n * 32)));
+    if (n <= 0) { cellWidth = CELL_WIDTH; widthBorder = 5; heightBorder = 14; return; }
+    const int matH   = std::max(height() - CONTROLS_H, 1);
+    const int availW = width() - LABEL_MARGIN - 10;
+    const int availH = matH - 14 - 10;
+    const int fitW   = (availW > 0) ? availW / n : CELL_WIDTH;
+    const int fitH   = (availH > 0) ? availH / n : CELL_WIDTH;
+    cellWidth        = std::max(4, std::min({fitW, fitH, CELL_WIDTH}));
+    widthBorder      = cellWidth / 3 + 5;
+    heightBorder     = cellWidth / 3 + 14;
 }
 
+// updateWindow — retained entry point for the data-arrival / resize callers.
+// In the pixel model it simply recomputes the base cell size; the pan/zoom
+// transform is layered on top by effCellSize()/effMatrixTopLeft().
 void ErrorMatrixView::updateWindow(){
     recomputeCellWidth();
-    int nbOfClusters = clusterList.size();
-
-    widthBorder = (cellWidth * nbOfClusters) / 30;
-    heightBorder = (cellWidth * nbOfClusters) / 30;
-
-    abscissaMax =  2 * widthBorder + (cellWidth * nbOfClusters);
-    // widthBorder/heightBorder are unsigned, so the bare unary minus below would
-    // evaluate in unsigned arithmetic and wrap (e.g. -6390 -> 2^32-6390), landing
-    // a huge positive value in the signed `ordinateMin`.  The paint path hid this
-    // because QPoint truncates back to 32 bits, but applyViewToWindow computes
-    // fullH = ordinateMax - ordinateMin as a double from the untruncated long,
-    // gets a large negative fullH, and short-circuits to "full view" on every
-    // call — silently discarding all wheel-zoom and Ctrl-drag-pan.  Force signed
-    // arithmetic so ordinateMin is a proper negative.
-    ordinateMin = -(2L * static_cast<long>(heightBorder)
-                    + static_cast<long>(cellWidth) * nbOfClusters);
-
-    // Derive the ZoomWindow from the persistent zoom/pan state.  The zoom is a
-    // multiplier re-applied on top of the always-recomputed fit (never read back
-    // from the window), so it stays stable across matrix updates, cluster-count
-    // changes and resizes — the same model as the template matrix view.
-    applyViewToWindow();
-
-    //update the drawing mode if needed (if UPDATE, no change is need it).
-    if(drawContentsMode == REFRESH)drawContentsMode = REDRAW ;
+    if(drawContentsMode == REFRESH) drawContentsMode = REDRAW;
 }
 
-// ---------------------------------------------------------------------------
-// applyViewToWindow — rebuild `window` from (userZoom, userCenterFx/Fy).
-// userZoom == 1 gives the full matrix (and so reset()/double-click restores it);
-// userZoom > 1 gives a sub-rect of size fullExtent/userZoom centred on the
-// stored centre fraction, clamped to stay inside the full extent.
-// ---------------------------------------------------------------------------
-void ErrorMatrixView::applyViewToWindow(){
-    const QRect full(QPoint(abscissaMin,ordinateMin),QPoint(abscissaMax,ordinateMax));
-    window = ZoomWindow(full);
-
-    const double fullW = static_cast<double>(abscissaMax - abscissaMin);
-    const double fullH = static_cast<double>(ordinateMax - ordinateMin);
-    if(userZoom <= 1.0001 || fullW <= 0.0 || fullH <= 0.0)
-        return;                                       // full view
-
-    const double w = fullW / userZoom;
-    const double h = fullH / userZoom;
-    double cx = abscissaMin + userCenterFx * fullW;
-    double cy = ordinateMin + userCenterFy * fullH;
-    cx = qBound(abscissaMin + w / 2.0, cx, abscissaMax - w / 2.0);
-    cy = qBound(ordinateMin + h / 2.0, cy, ordinateMax - h / 2.0);
-
-    const int zl = qRound(cx - w / 2.0), zr = qRound(cx + w / 2.0);
-    const int zt = qRound(cy - h / 2.0), zb = qRound(cy + h / 2.0);
-    window.zoom(zl, zt, zr, zb);                      // zoom-to-rect, clamped to full
+QPoint ErrorMatrixView::matrixTopLeft() const
+{
+    return QPoint(LABEL_MARGIN + static_cast<int>(widthBorder),
+                  static_cast<int>(heightBorder));
 }
 
+int ErrorMatrixView::cellAtX(int viewX) const
+{
+    const double eff = effCellSize();
+    if (eff <= 0.0) return -1;
+    const double mx = effMatrixTopLeft().x();
+    const int ci = static_cast<int>(std::floor((viewX - mx) / eff));
+    return (ci >= 0 && ci < clusterList.size()) ? ci : -1;
+}
+
+int ErrorMatrixView::cellAtY(int viewY) const
+{
+    const double eff = effCellSize();
+    if (eff <= 0.0) return -1;
+    const double my = effMatrixTopLeft().y();
+    const int ci = static_cast<int>(std::floor((viewY - my) / eff));
+    return (ci >= 0 && ci < clusterList.size()) ? ci : -1;
+}
+
+// Adaptive minimum zoom (maximum zoom-out): fit the whole grid on screen when it
+// overflows even at the zoomMin floor (large n, cellWidth pinned at 4px).
+double ErrorMatrixView::effZoomMin() const
+{
+    const int n = clusterList.size();
+    if (n <= 0 || cellWidth <= 0) return zoomMin;
+    const int matH   = std::max(height() - CONTROLS_H, 1);
+    const int availW = width() - LABEL_MARGIN - 10;
+    const int availH = matH - 14 - 10;
+    const int avail  = std::min(availW, availH);
+    if (avail <= 0) return zoomMin;
+    const double fitAll = static_cast<double>(avail)
+                        / (static_cast<double>(n) * cellWidth);
+    return std::min(zoomMin, fitAll);
+}
+
+void ErrorMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
+{
+    newZoom = std::clamp(newZoom, effZoomMin(), zoomMax);
+    if (zoom <= 0.0) return;
+    const double ratio = newZoom / zoom;
+    const QPoint  base = matrixTopLeft();
+    panX += (pivot.x() - base.x() - panX) * (1.0 - ratio);
+    panY += (pivot.y() - base.y() - panY) * (1.0 - ratio);
+    zoom = newZoom;
+    // Hold the selected-pair overlay off during the gesture; the settle timer
+    // repaints it once the wheel goes quiet.
+    suppressPairBoxes = true;
+    pairBoxSettleTimer->start(pairBoxSettleMs);
+    drawContentsMode = REDRAW;
+    update();
+    emit viewChanged(zoom, panX, panY);
+}
+
+void ErrorMatrixView::resetPanZoom()
+{
+    panX = panY = 0.0;
+    zoom = 1.0;
+    drawContentsMode = REDRAW;
+    update();
+    emit viewChanged(zoom, panX, panY);
+}
 
 void ErrorMatrixView::paintEvent ( QPaintEvent*){
     QPainter p(this);
     if(drawContentsMode == REDRAW){
-        QRect contentsRec = contentsRect();
-        viewport = QRect(contentsRec.left() + 15,contentsRec.top(),contentsRec.width() - 15,contentsRec.height() - 15);
-
-        // Recompute cell size + world bounds and reset the ZoomWindow ONLY when
-        // the layout inputs change (widget resized or cluster count changed).
-        // updateWindow() rebuilds `window` to the full matrix extent, so calling
-        // it on every REDRAW threw away the user's wheel-zoom/pan (each zoom
-        // notch requests a REDRAW).  On a plain zoom/pan repaint the viewport
-        // size and cluster count are unchanged, so `window` — carrying the
-        // current zoom — is preserved.
-        if (!clusterList.isEmpty()) {
-            const QSize vpSize = viewport.size();
-            if (vpSize != layoutViewportSize ||
-                clusterList.size() != layoutClusterCount) {
-                updateWindow();
-                layoutViewportSize = vpSize;
-                layoutClusterCount = clusterList.size();
-            }
-        }
-
-        //Resize the double buffer with the width and the height of the widget(QFrame)
-
-        // Always allocate the doublebuffer to the current viewport size.
-        // Do NOT copy the old buffer: since cellWidth is recomputed above,
-        // the old content is at the wrong scale and must be fully redrawn.
-        if (viewport.size() != doublebuffer.size())
-            doublebuffer = QPixmap(viewport.width() + 15, viewport.height() + 15);
-
-
-        //Create a painter to paint on the double buffer
-        QPainter painter;
-        painter.begin(&doublebuffer);
-
-        //Set the window (part of the world I want to show)
-        QRect r((QRect)window);
-        painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
-
-        //Set the viewport (part of the device I want to write on).
-        //By default, the viewport is the same as the device's rectangle (contentsRec), taking a smaller
-        //one will ensure that the legends (cluster ids) will not ovelap a correlogram.
-        painter.setViewport(viewport);
-
-        //Fill the double buffer with the background
+        if(doublebuffer.size() != size())
+            doublebuffer = QPixmap(size());
         doublebuffer.fill(palette().color(backgroundRole()));
-
-        //Paint the matrix
-        if(dataReady)
+        QPainter painter(&doublebuffer);
+        if(dataReady){
             drawMatrix(painter);
-
-        if(dataReady && init){
-            //Allowed to detect where the mouse is in order to write the corresponding probability
-            //in the status bar.
-            setMouseTracking(true);
-            init = false;
+            drawClusterIds(painter);
+            if(init){ setMouseTracking(true); init = false; }
+        } else {
+            painter.setPen(colorLegend);
+            painter.drawText(rect(), Qt::AlignCenter,
+                             QStringLiteral("Computing error matrix..."));
         }
-
-        //reset transformation due to setWindow and setViewport
-        painter.resetTransform() ;
-
-        //Draw the cluster Ids along the matrix.
-        drawClusterIds(painter);
-
-        //Closes the painter on the double buffer
         painter.end();
-
-        //Back to the default
         drawContentsMode = REFRESH;
     }
-    //if drawContentsMode == REFRESH, we reuse the double buffer (pixmap)
-
-    //Draw the double buffer (pixmap) by copying it into the paint device.
     p.drawPixmap(0, 0, doublebuffer);
 }
 
 void ErrorMatrixView::drawClusterIds(QPainter& painter){
-    QFont f("Helvetica",8);
+    const int n = clusterList.size();
+    const QPoint  base = matrixTopLeft();
+    const QPointF oriF = effMatrixTopLeft();
+    const double  eff  = effCellSize();
+    const int     w    = std::max(1, static_cast<int>(std::round(eff)));
+    const int fontSize = std::max(5, std::min(14,
+                            static_cast<int>(std::round(eff / 5.0))));
+    QFont f("Helvetica", fontSize);
     painter.setFont(f);
-    painter.setPen(colorLegend); //set the color for the legends.
+    painter.setPen(colorLegend);
 
-    //Draw the absciss ids
-
-    //The abscissa of the legend for the current matrix cell.
-    uint X = abscissaMin + widthBorder + 4;
-    //The ordinate of the legend for the current matrix cell.
-    uint Y = 0;
-
-    QList<int>::iterator iterator;
-    for(iterator = clusterList.begin(); iterator != clusterList.end(); ++iterator){
-        //the abscissa is increase by the font size to adjust for conversion from world coordinates to viewport coordinates.
-        QRect r(worldToViewport(X,-Y).x() + 15,worldToViewport(X,-Y).y() + 2,worldToViewportWidth(cellWidth),12);
-        painter.drawText(r,Qt::AlignHCenter,QString::fromLatin1("%1").arg(*iterator));
-        X += cellWidth;
+    // Column labels: top strip [0, base.y()], x tracks the cell columns.
+    for(int col = 0; col < n; ++col){
+        const int px = static_cast<int>(std::round(oriF.x() + col * eff));
+        painter.drawText(QRect(px, 0, w, base.y()),
+                         Qt::AlignHCenter | Qt::AlignBottom,
+                         QString::number(clusterList[col]));
     }
-
-    //Draw the ordinate ids
-    X = 0;
-    Y = heightBorder + clusterList.size() * cellWidth - 2;
-
-    for(iterator = clusterList.begin(); iterator != clusterList.end(); ++iterator){
-        QRect r(worldToViewport(X,-Y).x(),worldToViewport(X,-Y).y(),15,worldToViewportHeight(cellWidth));
-        painter.drawText(r,Qt::AlignCenter,QString::fromLatin1("%1").arg(*iterator));
-        Y -= cellWidth;
+    // Row labels: left strip [0, LABEL_MARGIN-2], y tracks the cell rows.
+    for(int row = 0; row < n; ++row){
+        const int py = static_cast<int>(std::round(oriF.y() + row * eff));
+        painter.drawText(QRect(0, py, LABEL_MARGIN - 2, w),
+                         Qt::AlignRight | Qt::AlignVCenter,
+                         QString::number(clusterList[row]));
     }
 }
 
 void ErrorMatrixView::drawMatrix(QPainter& painter){
-    int x = abscissaMin + widthBorder;
-    int y = ordinateMin + heightBorder;
-    int nbClusters = clusterList.size();
+    const int nbClusters = clusterList.size();
+    const QPointF oriF = effMatrixTopLeft();
+    const double  eff  = effCellSize();
     if(!modifiedClusterList.isEmpty() || hasBeenRenumbered || isNotUpToDate){
         //Draw a red rectangle around the matrix to warn the user that
         //the matrix is not up to date anymore.
@@ -661,13 +627,10 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         pen.setStyle(Qt::SolidLine);
         painter.setPen(pen);
         painter.setRenderHints(QPainter::Antialiasing);
-        const QRect rect = QRect(x - 1,
-                         y - 3,
-                         (nbClusters * cellWidth) + 4,
-                         (nbClusters * cellWidth)  + 5).normalized();
-        painter.drawRect(rect);
-
+        painter.drawRect(QRectF(oriF.x() - 1, oriF.y() - 1,
+                                nbClusters * eff + 2, nbClusters * eff + 2));
         painter.setPen(Qt::black);
+        painter.setRenderHint(QPainter::Antialiasing, false);
     }
 
     // O(1) ignore lookup instead of QList::contains() (linear) twice per cell
@@ -714,10 +677,8 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         const bool prevSmooth =
             painter.testRenderHint(QPainter::SmoothPixmapTransform);
         painter.setRenderHint(QPainter::SmoothPixmapTransform, false); // crisp cells
-        painter.drawImage(QRect(abscissaMin + widthBorder,
-                                ordinateMin + heightBorder,
-                                nbClusters * cellWidth,
-                                nbClusters * cellWidth),
+        painter.drawImage(QRectF(oriF.x(), oriF.y(),
+                                 nbClusters * eff, nbClusters * eff),
                           matrixImg);
         painter.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
     }
@@ -729,8 +690,6 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
     // zoom level.  Pairs whose cluster no longer exists (id -1, or removed) are
     // skipped.
     if(!suppressPairBoxes && !selectedPairs.isEmpty()){
-        const int baseX = abscissaMin + widthBorder;
-        const int baseY = ordinateMin + heightBorder;
         QPen selPen(Qt::yellow);
         selPen.setWidth(2);
         selPen.setCosmetic(true);
@@ -741,8 +700,8 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
             const int row = clusterList.indexOf(selectedPair.second);
             if(col < 0 || row < 0)
                 continue;
-            painter.drawRect(baseX + col * cellWidth, baseY + row * cellWidth,
-                             cellWidth + 1, cellWidth + 1);
+            painter.drawRect(QRectF(oriF.x() + col * eff, oriF.y() + row * eff,
+                                    eff, eff));
         }
         painter.setPen(Qt::black);
     }
@@ -764,65 +723,44 @@ void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
     // selection path in mouseReleaseEvent.  A plain press does nothing here;
     // selection happens on release (as it did with the previous empty press).
     if((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
-        panArmed       = true;
-        panning        = false;
-        panAnchorPx    = e->position().toPoint();
-        panCenterStartFx = userCenterFx;
-        panCenterStartFy = userCenterFy;
+        panArmed    = true;
+        panning     = false;
+        panAnchorPx = e->position().toPoint();
+        panAnchorX  = panX;
+        panAnchorY  = panY;
         setCursor(Qt::ClosedHandCursor);
         e->accept();
     }
 }
 
 void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
-    // Pan path: Ctrl + Left-drag translates the ZoomWindow.  The world delta is
-    // taken as the difference of two viewportToWorld conversions, so it is
-    // independent of the window's current offset and of axis orientation; the
-    // window size is unchanged (zoom factor 1.0) so the world-per-pixel scale
-    // is constant through the drag.  New centre = centre-at-start − world delta
-    // makes the grabbed point track the cursor.
+    // Pan path (pixel model): Ctrl + Left-drag adds the pixel delta to panX/panY,
+    // exactly like TemplateMatrixView.  effMatrixTopLeft() applies it.
     if(panArmed && (e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
         const QPoint d = e->position().toPoint() - panAnchorPx;
         if(!panning && (qAbs(d.x()) + qAbs(d.y()) >= panDragThreshold))
             panning = true;
         if(panning){
-            const QPoint wa = viewportToWorld(panAnchorPx.x() - 15, panAnchorPx.y());
-            const QPoint wc = viewportToWorld(e->position().toPoint().x() - 15, e->position().toPoint().y());
-            const double fullW = static_cast<double>(abscissaMax - abscissaMin);
-            const double fullH = static_cast<double>(ordinateMax - ordinateMin);
-            if(fullW > 0.0 && fullH > 0.0){
-                userCenterFx = panCenterStartFx - static_cast<double>(wc.x() - wa.x()) / fullW;
-                userCenterFy = panCenterStartFy - static_cast<double>(wc.y() - wa.y()) / fullH;
-                const double hf = 0.5 / userZoom;
-                userCenterFx = qBound(hf, userCenterFx, 1.0 - hf);
-                userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
-            }
-            updateWindow();
-            // Same as the wheel path: suppress the overlay while the drag is live.
+            panX = panAnchorX + d.x();
+            panY = panAnchorY + d.y();
+            // Suppress the overlay while the drag is live; settle timer restores it.
             suppressPairBoxes = true;
             pairBoxSettleTimer->start(pairBoxSettleMs);
             drawContentsMode = REDRAW;
             update();
+            emit viewChanged(zoom, panX, panY);
         }
         e->accept();
         return;
     }
 
     //Write the current probability in the statusbar.
-    QPoint current = viewportToWorld(e->position().toPoint().x() - 15,e->position().toPoint().y());
-
-    int x = abscissaMin + widthBorder;
-    int y = ordinateMin + heightBorder;
-
-    int cluster1Index = static_cast<int>((current.x() - x) / cellWidth);
-    int cluster2Index = static_cast<int>((current.y() - y) / cellWidth);
-
-    int indexMax = clusterList.size() - 1;
-    if((cluster1Index > -1) && (cluster1Index <= indexMax) &&
-            (cluster2Index > -1) && (cluster2Index <= indexMax)){
-        statusBar->showMessage("Clusters (" + QString::number(clusterList[cluster2Index]) + "," +
-                               QString::number(clusterList[cluster1Index]) + "): p = " +
-                               QString::fromLatin1("%1").arg((*probabilities)(cluster2Index + 1,cluster1Index + 1)));
+    const int col = cellAtX(e->position().toPoint().x());
+    const int row = cellAtY(e->position().toPoint().y());
+    if(col >= 0 && row >= 0){
+        statusBar->showMessage("Clusters (" + QString::number(clusterList[row]) + "," +
+                               QString::number(clusterList[col]) + "): p = " +
+                               QString::fromLatin1("%1").arg((*probabilities)(row + 1, col + 1)));
     }
 }
 
@@ -850,13 +788,13 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
     if(clusterList.isEmpty())
         return;
     //Select the clusters corresponding to the current cell of the matrix (if they still exist)
-    QPoint current = viewportToWorld(e->position().toPoint().x() -15,e->position().toPoint().y());
-
-    int x = abscissaMin + widthBorder;
-    int y = ordinateMin + heightBorder;
-
-    int cluster1Index = qMin(qMax(0,static_cast<int>((current.x() - x) / cellWidth)),clusterList.count()-1);
-    int cluster2Index = qMin(qMax(0,static_cast<int>((current.y() - y) / cellWidth)),clusterList.count()-1);
+    const double eff = effCellSize();
+    const QPointF oriF = effMatrixTopLeft();
+    int cluster1Index = 0, cluster2Index = 0;
+    if(eff > 0.0){
+        cluster1Index = qBound(0, static_cast<int>(std::floor((e->position().toPoint().x() - oriF.x()) / eff)), clusterList.count()-1);
+        cluster2Index = qBound(0, static_cast<int>(std::floor((e->position().toPoint().y() - oriF.y()) / eff)), clusterList.count()-1);
+    }
 
     int cluster1 = clusterList[cluster1Index];
     int cluster2 = clusterList[cluster2Index];
@@ -916,75 +854,31 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
 }
 
 void ErrorMatrixView::wheelEvent(QWheelEvent* e){
-    // Ctrl + wheel zooms around the cursor.  Without Ctrl, defer to the base.
-    // Zoom is stored as a persistent multiplier (userZoom) + centre fraction so
-    // it survives matrix updates / cluster-count changes / resizes; updateWindow()
-    // re-derives the ZoomWindow from that state.
+    // Ctrl + wheel zooms around the cursor (pixel model, copied from the template
+    // matrix view).  Without Ctrl, defer to the base.
     if(!(e->modifiers() & Qt::ControlModifier)){
         ViewWidget::wheelEvent(e);
         return;
     }
     const int delta = e->angleDelta().y();
     if(delta == 0){ e->accept(); return; }
-    const double factor  = (delta > 0) ? wheelZoomStep : (1.0 / wheelZoomStep);
-    const double newZoom = qBound(1.0, userZoom * factor, effZoomMax());
-    if(newZoom == userZoom){ e->accept(); return; }
-
-    const double fullW = static_cast<double>(abscissaMax - abscissaMin);
-    const double fullH = static_cast<double>(ordinateMax - ordinateMin);
-    if(fullW > 0.0 && fullH > 0.0){
-        // Keep the world point under the cursor fixed.  As the window half-size
-        // scales by userZoom/newZoom, the centre that pins the pivot is
-        //   cNew = pivot + (userZoom/newZoom) * (cOld - pivot).
-        const QPoint pivot = viewportToWorld(e->position().toPoint().x() - 15,
-                                             e->position().toPoint().y());
-        const double cOldX = abscissaMin + userCenterFx * fullW;
-        const double cOldY = ordinateMin + userCenterFy * fullH;
-        const double k = userZoom / newZoom;
-        const double cNewX = pivot.x() + k * (cOldX - pivot.x());
-        const double cNewY = pivot.y() + k * (cOldY - pivot.y());
-        userCenterFx = (cNewX - abscissaMin) / fullW;
-        userCenterFy = (cNewY - ordinateMin) / fullH;
-        const double hf = 0.5 / newZoom;
-        userCenterFx = qBound(hf, userCenterFx, 1.0 - hf);
-        userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
-    }
-    userZoom = newZoom;
-    updateWindow();
-    // Hold the selected-pair overlay off during the zoom gesture; it is repainted
-    // when the settle timer fires after the wheel goes quiet.
-    suppressPairBoxes = true;
-    pairBoxSettleTimer->start(pairBoxSettleMs);
-    drawContentsMode = REDRAW;
-    update();
-    emit zoomChanged(userZoom);
+    const double factor = (delta > 0) ? zoomStep : 1.0 / zoomStep;
+    zoomAroundPoint(zoom * factor, e->position());
     e->accept();
 }
 
 void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){
-    // Double-click resets pan & zoom to the full matrix.
-    userZoom     = 1.0;
-    userCenterFx = 0.5;
-    userCenterFy = 0.5;
-    updateWindow();
-    drawContentsMode = REDRAW;
-    update();
-    emit zoomChanged(userZoom);
+    // Double-click resets pan & zoom.
+    resetPanZoom();
     e->accept();
 }
 
-void ErrorMatrixView::setZoomLevel(double newZoom){
-    newZoom = qBound(1.0, newZoom, effZoomMax());
-    if(std::abs(newZoom - userZoom) < 1e-9) return;
-    // Re-bound the centre to the new zoom and rebuild the window; no signal is
-    // emitted so a cross-connected view does not echo the change back.
-    const double hf = 0.5 / newZoom;
-    userCenterFx = qBound(hf, userCenterFx, 1.0 - hf);
-    userCenterFy = qBound(hf, userCenterFy, 1.0 - hf);
-    userZoom = newZoom;
-    updateWindow();
-    // Synced zoom from the template view is still a zoom gesture; suppress the
-    // overlay and let the settle timer bring it back when it stops.
+void ErrorMatrixView::setViewState(double newZoom, double px, double py){
+    // Full (zoom + pan) state pushed from the cross-connected template view.  No
+    // signal is emitted so the two views do not echo the change back and forth.
+    zoom = std::clamp(newZoom, effZoomMin(), zoomMax);
+    panX = px;
+    panY = py;
     suppressPairBoxes = true;
     pairBoxSettleTimer->start(pairBoxSettleMs);
     drawContentsMode = REDRAW;
@@ -1523,61 +1417,36 @@ void ErrorMatrixView::willBeKilled(){
 }
 
 void ErrorMatrixView::print(QPainter& printPainter,int width,int height, bool whiteBackground){
-    //Draw the double buffer (pixmap) by copying it into the printer device throught the painter.
-    QRect viewportOld = QRect(viewport.left(),viewport.top(),viewport.width(),viewport.height());
-
-    //If the left margin is not visible (the user zoomed without taking it in his selection), the viewport and the printer
-    //have the same size.
-    QRect r((QRect)window);
-    viewport = QRect(printPainter.viewport().left() + 15,printPainter.viewport().top(),printPainter.viewport().width() - 15,printPainter.viewport().height()-15);
-
-    //Set the window (part of the world I want to show)
-    printPainter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
-
-    //Set the viewport (part of the device I want to write on).
-    //By default, the viewport is the same as the device's rectangle (contentsRec), taking a smaller
-    //one will ensure that the legends (cluster ids) will not ovelap a correlogram.
-    printPainter.setViewport(viewport);
-
-    //Fill the background with the background color and ensure we draw the same portion of the world than on the screen
-    QRect back = QRect(r.left(),r.top(),r.width(),r.height());
-    float heightRatio = (static_cast<float>(back.height())/static_cast<float>(height));
-    back.setBottom(r.top() + r.height() - 1 + static_cast<long>(15 * heightRatio));
-    float widthRatio = (static_cast<float>(back.width())/static_cast<float>(width));
-    if(r.left() == 0) back.setLeft(r.left() - static_cast<long>(15 * widthRatio));
-
-    QColor colorLegendTmp = colorLegend;
-    QColor background= palette().color(backgroundRole());
+    Q_UNUSED(width); Q_UNUSED(height);
+    // Pixel model: the on-screen doublebuffer holds the rendered matrix at the
+    // current zoom/pan.  Re-render it (optionally on a white background for
+    // print), then scale-blit it into the printer viewport preserving aspect.
+    QColor   legendTmp = colorLegend;
+    QPalette palTmp    = palette();
     if(whiteBackground){
         colorLegend = Qt::black;
-        QPalette palette;
-        palette.setColor(backgroundRole(), Qt::white);
-        setPalette(palette);
+        QPalette pal = palTmp;
+        pal.setColor(backgroundRole(), Qt::white);
+        setPalette(pal);
+    }
+    drawContentsMode = REDRAW;
+    repaint();                      // synchronous paintEvent -> refresh doublebuffer
+
+    const QRect vp = printPainter.viewport();
+    if(!doublebuffer.isNull()){
+        QSize sz = doublebuffer.size();
+        sz.scale(vp.size(), Qt::KeepAspectRatio);
+        const QRect target(vp.left() + (vp.width()  - sz.width())  / 2,
+                           vp.top()  + (vp.height() - sz.height()) / 2,
+                           sz.width(), sz.height());
+        printPainter.drawPixmap(target, doublebuffer, doublebuffer.rect());
     }
 
-    printPainter.fillRect(back,palette().color(backgroundRole()));
-    printPainter.setClipRect(back);
-
-    //Paint the matrix
-    drawMatrix(printPainter);
-
-    //reset transformation due to setWindow and setViewport
-    printPainter.resetTransform();
-
-    //Draw the cluster Ids along the matrix.
-    drawClusterIds(printPainter);
-
-    printPainter.setClipping(false);
-
-    //Restore the colors.
     if(whiteBackground){
-        colorLegend = colorLegendTmp;
-        QPalette palette;
-        palette.setColor(backgroundRole(), background);
-        setPalette(palette);
+        colorLegend = legendTmp;
+        setPalette(palTmp);
+        drawContentsMode = REDRAW;
+        repaint();                  // restore on-screen appearance
     }
-
-    //Restore the previous state
-    viewport = QRect(viewportOld.left(),viewportOld.top(),viewportOld.width(),viewportOld.height());
 }
 
