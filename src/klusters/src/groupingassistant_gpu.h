@@ -17,7 +17,6 @@
  *   probOut     [nbSpikes  × nbClusters]        output, in-place normalized
  *
  * cluster1Col : 0-based column index of cluster 1 (used for zero-probability fallback)
- * lowPrecision: nonzero = FP32 device compute (else FP64); output is still double
  ***************************************************************************/
 
 #pragma once
@@ -43,7 +42,7 @@ int cuda_compute_probabilities(
     const double* logTerms,
     double*       probOut,
     const int*    ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision);
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col);
 
 int hip_compute_probabilities(
     const double* features,
@@ -52,7 +51,7 @@ int hip_compute_probabilities(
     const double* logTerms,
     double*       probOut,
     const int*    ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision);
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col);
 
 int sycl_compute_probabilities(
     const double* features,
@@ -61,7 +60,7 @@ int sycl_compute_probabilities(
     const double* logTerms,
     double*       probOut,
     const int*    ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision);
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col);
 
 #ifdef __cplusplus
 }

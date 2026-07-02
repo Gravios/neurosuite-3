@@ -23,7 +23,7 @@
 extern "C" {
     int cuda_device_available() { return 0; }
     int cuda_compute_probabilities(const double*, const double*, const double*,
-        const double*, double*, const int*, int, int, int, int, int) { return -1; }
+        const double*, double*, const int*, int, int, int, int) { return -1; }
 }
 #endif
 
@@ -31,7 +31,7 @@ extern "C" {
 extern "C" {
     int hip_device_available() { return 0; }
     int hip_compute_probabilities(const double*, const double*, const double*,
-        const double*, double*, const int*, int, int, int, int, int) { return -1; }
+        const double*, double*, const int*, int, int, int, int) { return -1; }
 }
 #endif
 
@@ -39,7 +39,7 @@ extern "C" {
 extern "C" {
     int sycl_device_available() { return 0; }
     int sycl_compute_probabilities(const double*, const double*, const double*,
-        const double*, double*, const int*, int, int, int, int, int) { return -1; }
+        const double*, double*, const int*, int, int, int, int) { return -1; }
 }
 #endif
 
@@ -100,21 +100,21 @@ int computeProbabilities(
     const double* logTerms,
     double*       probOut,
     const int*    ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision)
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
 {
     switch (activeBackend()) {
     case Backend::CUDA:
         return cuda_compute_probabilities(features, choleskyAll, means, logTerms,
                                           probOut, ignoreFlags,
-                                          nbSpikes, nbClusters, nbDim, cluster1Col, lowPrecision);
+                                          nbSpikes, nbClusters, nbDim, cluster1Col);
     case Backend::HIP:
         return hip_compute_probabilities(features, choleskyAll, means, logTerms,
                                          probOut, ignoreFlags,
-                                         nbSpikes, nbClusters, nbDim, cluster1Col, lowPrecision);
+                                         nbSpikes, nbClusters, nbDim, cluster1Col);
     case Backend::SYCL:
         return sycl_compute_probabilities(features, choleskyAll, means, logTerms,
                                           probOut, ignoreFlags,
-                                          nbSpikes, nbClusters, nbDim, cluster1Col, lowPrecision);
+                                          nbSpikes, nbClusters, nbDim, cluster1Col);
     default:
         return -1;  // No GPU — caller uses OpenMP.
     }
