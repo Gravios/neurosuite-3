@@ -4055,6 +4055,26 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
     if(!checkClusterInfoMapInvariant("renumber/pre"))
         resyncClusterInfoMapFromRowTable();
 
+    // No-op fast path.  If the ids are already canonically compact -- 0 and 1 left
+    // as-is, then 2,3,4,... contiguous for the rest -- renumber would relabel every
+    // cluster to its current id.  That is the usual state right after a manual split
+    // (which appends the next free, already-contiguous id), yet the full path below
+    // still rebuilds spikesByCluster and pushes an undo snapshot.  Detect it and
+    // return with clusterIdsOldNew / clusterIdsNewOld left EMPTY, so the sole caller
+    // (KlustersDoc::renumberClusters) can in turn skip its own undo entry, view churn
+    // and -- the point of this -- the full palette rebuild.
+    {
+        int expected = 2;
+        bool compact = true;
+        for(auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it){
+            const int id = static_cast<int>(it.key());
+            if(id == 0 || id == 1) continue;
+            if(id != expected){ compact = false; break; }
+            ++expected;
+        }
+        if(compact) return;   // maps stay empty == "nothing renumbered"
+    }
+
     //The new information about the cluster will be inserted in the table pointed by spikesByClusterTemp
     SortableTable* spikesByClusterTemp = new SortableTable();
     spikesByClusterTemp->setSize(nbSpikes);
