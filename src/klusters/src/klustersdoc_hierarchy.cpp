@@ -356,6 +356,49 @@ void KlustersDoc::collapseToSelfChildren(){
             childData->moveSpikeSubset(s.key(), t.value(), t.key(), fromC, emptied);
         }
 
+    // ── Normalize the self-child naming ────────────────────────────────────────
+    // After the collapse a fiber can be left covered by a single atom whose id is not
+    // the fiber's own -- e.g. a split moved a fiber's entire self child onto a new
+    // fiber, so the source fiber's sole remaining atom is a deliberate sub-cluster
+    // while the new fiber's sole atom still carries the source fiber's id.  The maps
+    // stay correct (a child's parent is derived from its spikes), but the convention
+    // "a fiber with one child IS that child, atom id == fiber id" breaks, and the
+    // stray id can later collide with a freshly minted fiber.  Rename each such sole
+    // child to its fiber's id so the self-child identity holds again.  (A fiber with
+    // two or more atoms is genuine sub-structure and is left untouched.)
+    const QVector<dataType> childAfter = childData->labelByFeatureRow();
+    const int nA = qMin(cluByRow.size(), childAfter.size());
+    QHash<int, QSet<int>> fiberAtoms;                        // fiber -> its covering atoms
+    QSet<int> existingAtoms;                                 // every atom id currently present
+    for (int r = 1; r < nA; ++r){
+        const int a = static_cast<int>(childAfter[r]);
+        if (a <= 0) continue;
+        existingAtoms.insert(a);
+        fiberAtoms[static_cast<int>(cluByRow[r])].insert(a);
+    }
+    QMap<int,int> renameToSelf;                              // sole non-self child -> fiber (self) id
+    for (auto it = fiberAtoms.constBegin(); it != fiberAtoms.constEnd(); ++it){
+        const int F = it.key();
+        if (F <= 1 || it.value().size() != 1) continue;      // noise/artifact or genuine sub-structure
+        const int C = *it.value().constBegin();
+        if (C != F) renameToSelf.insert(C, F);
+    }
+    if (!renameToSelf.isEmpty()){
+        // renumberPartial buckets by NEW id, so a target still held by an atom that is
+        // NOT itself being renamed away would merge two atoms.  Keep only targets that
+        // are free or are themselves sources -- a plain split satisfies this for all of
+        // them (a source fiber and its split-off both hand their sole atom back) -- and
+        // leave any rarer case with its naming oddity rather than corrupt the layer.
+        QSet<int> sources;
+        for (auto it = renameToSelf.constBegin(); it != renameToSelf.constEnd(); ++it)
+            sources.insert(it.key());
+        QMap<int,int> safe;
+        for (auto it = renameToSelf.constBegin(); it != renameToSelf.constEnd(); ++it)
+            if (!existingAtoms.contains(it.value()) || sources.contains(it.value()))
+                safe.insert(it.key(), it.value());
+        if (!safe.isEmpty()) childData->renumberPartial(safe);
+    }
+
     syncChildColors();
     rebuildHierarchyFromData();
     emit hierarchyChanged();
