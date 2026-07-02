@@ -513,17 +513,25 @@ Array<double>* GroupingAssistant::computeProbabilities(
     // by 1 channel for stderiv sessions (PCA is on nChan-1 channels).
     int      nbDimensions = clusteringData.nbOfDimensionsTotal() - 1;
 
+    QElapsedTimer pt;
+    const bool pTiming = qEnvironmentVariableIntValue("NS3_ERRORMATRIX_TIMING") != 0;
+    qint64 t_dup=0, t_mean=0, t_alloc=0, t_chol=0, t_feat=0, t_gpu=0;
+    if (pTiming) pt.start();
+
     clusteringData.duplicate(spikesByCluster, clusterInfoMap);
     if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
     int nbClusters = clusterInfoMap->count();
+    if (pTiming) t_dup = pt.restart();
 
     if (haveToStopComputing) return new Array<double>(0, 0);
 
     meanCovarianceComputation(nbClusters, nbDimensions, nbSpikes,
                               clusteringData, ignoreClusterIndex);
+    if (pTiming) t_mean = pt.restart();
 
     Array<double>* probabilities = new Array<double>(nbSpikes, nbClusters);
     probabilities->fillWithZeros();
+    if (pTiming) t_alloc = pt.restart();
 
     double piTerm = log(2.0 * M_PI) * nbDimensions / 2.0;
 
@@ -584,6 +592,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
     // ------------------------------------------------------------------
     // GPU path via dispatcher (CUDA / HIP / SYCL — first available).
     // ------------------------------------------------------------------
+    if (pTiming) t_chol = pt.restart();
     bool usedGpu = false;
 
     if (GpuDispatch::hasGpu()) {
@@ -622,12 +631,21 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 if (it.key() == 1) { cluster1Col = ci; break; }
         }
 
+        if (pTiming) t_feat = pt.restart();
         int rc = GpuDispatch::computeProbabilities(
             h_features.data(), h_chol.data(), h_means.data(),
             h_logTerms.data(), probabilities->data(), h_ignore.data(),
             static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col);
+        if (pTiming) t_gpu = pt.restart();
 
         if (rc == 0) {
+            if (pTiming)
+                fprintf(stderr,
+                    "[errormatrix-timing] prep: duplicate=%lld meanCov=%lld alloc=%lld "
+                    "cholesky=%lld hostArrays=%lld gpu=%lld ms\n",
+                    static_cast<long long>(t_dup),  static_cast<long long>(t_mean),
+                    static_cast<long long>(t_alloc),static_cast<long long>(t_chol),
+                    static_cast<long long>(t_feat), static_cast<long long>(t_gpu));
             // The GPU wrote directly into the probabilities buffer: probOut is
             // row-major [spike][cluster] and Array::operator()(s,c) maps to
             // array[(s-1)*nbClusters + (c-1)] — the same layout — so no host
