@@ -47,6 +47,14 @@ ClusterPaletteWidget::ClusterPaletteWidget(QWidget *parent)
     : QListWidget(parent)
 {
     setViewMode(QListView::IconMode);
+    // Lay the icons out in batches off the event loop rather than in one
+    // synchronous pass.  A hierarchical session runs to several thousand atoms, and
+    // a single-pass IconMode relayout on every rebuild is the dominant cost of a
+    // cluster edit -- it blocks the GUI thread, and a cluster edit rebuilds the list
+    // several times (a split alone drives it via shownClustersUpdate and the post-op
+    // renumber).  Batched defers the relayout so no single rebuild stalls the UI.
+    // Applies to the ListMode (user-cluster-info) view too.
+    setLayoutMode(QListView::Batched);
     setDragDropMode(QAbstractItemView::NoDragDrop);
 }
 
@@ -400,6 +408,15 @@ void ClusterPalette::createClusterList(KlustersDoc* document){
 void ClusterPalette::updateClusterList(){
     if(!doc)
         return;
+    // Rebuild the whole item list inside one updates-disabled window.  Otherwise the
+    // live QListWidget repaints/relayouts after every one of the (up to several
+    // thousand) inserts below -- O(n^2) work that blocks the GUI thread for tens of
+    // seconds on a large hierarchical session -- and a single cluster edit runs this
+    // several times (the split path drives it via shownClustersUpdate and again via
+    // the post-op renumber).  Disabling updates coalesces the rebuild into one
+    // repaint; Batched layout (set in the widget ctor) then defers the relayout.
+    const bool prevUpdates = iconView->updatesEnabled();
+    iconView->setUpdatesEnabled(false);
     iconView->clear();
 
     // iconView->clear() destroys every QListWidgetItem; lastSPressItem
@@ -492,6 +509,10 @@ void ClusterPalette::updateClusterList(){
         }
         iconView->sPinnedIds = stillPresent;
     }
+
+    // Single repaint for the whole rebuild; restore the caller's prior state so a
+    // nested updates-disabled window (if any) is left intact.
+    iconView->setUpdatesEnabled(prevUpdates);
 }
 
 void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
