@@ -179,6 +179,25 @@ void KlustersDoc::forceClusterRefresh(int clusterId)
 {
     for (int i = 0; i < viewList->count(); ++i)
         viewList->at(i)->forceClusterRefresh(clusterId);
+
+    // Hierarchical (.clc child layer): a parent-fiber realign shifts spikes that
+    // also belong to the fiber's child atoms.  A child-scoped view will NOT
+    // refresh on the parent id -- KlustersView::forceClusterRefresh() only acts
+    // when the id is in that view's shownClusters, which for a selected child is
+    // the child ids -- so it keeps drawing pre-realign waveforms.  Mirror the
+    // child propagation already done in invalidateWaveformCache(): refresh the
+    // fiber's children, plus the parent fiber when clusterId is itself a child.
+    // The per-view guard makes this a no-op for any view not showing the id, so
+    // it costs nothing outside hierarchical mode.
+    if (childData) {
+        for (int kid : childrenOf(QList<int>{ clusterId }))
+            for (int i = 0; i < viewList->count(); ++i)
+                viewList->at(i)->forceClusterRefresh(kid);
+        const int parent = parentOfChild(clusterId);
+        if (parent > 0)
+            for (int i = 0; i < viewList->count(); ++i)
+                viewList->at(i)->forceClusterRefresh(parent);
+    }
 }
 
 void KlustersDoc::updateSimilarityMatrices()
