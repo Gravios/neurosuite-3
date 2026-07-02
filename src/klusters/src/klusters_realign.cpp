@@ -307,16 +307,22 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
                   .arg(realignBatchFailed)
                   .arg(realignBatchShiftedTotal));
     slotStateChanged(QStringLiteral("noRealignState"));
-    // Post-edit auto-realign: the modified fibers are now realigned, so run the
-    // renumber + matrix recompute the inline path would otherwise have done.  Only
-    // when this batch was launched by startPostOpRealign (not a manual Align-All).
+    // Post-edit auto-realign only: reapply the renumber the inline path would
+    // otherwise have done.  A manual PCA-Center Align All does not renumber.
     if (realignPostOpRenumberMatrix) {
         realignPostOpRenumberMatrix = false;
         if (realignPostOpSetChanged && configuration().getAutoRenumberAfterMerge())
             doc->renumberClusters();
-        if (configuration().getAutoUpdateMatricesAfterMerge())
-            slotUpdateErrorMatrix();
     }
+    // The batch realign shifted spikes, so waveforms and the reprojected features
+    // changed and the error / template / residual matrices are now stale.
+    // Recompute them when the "auto-update matrices after cluster edits"
+    // preference is on — for a manual PCA-Center Align All as well as a post-op
+    // realign, mirroring the inline-edit path.  slotUpdateErrorMatrix() also
+    // refreshes the template matrix (view->updateTemplateMatrix) and no-ops for
+    // any matrix view that isn't open.
+    if (configuration().getAutoUpdateMatricesAfterMerge())
+        slotUpdateErrorMatrix();
     // Switch back to the Overview Display so the user can immediately
     // arrow-key through clusters and see updated waveforms.
     if (tabsParent) {
