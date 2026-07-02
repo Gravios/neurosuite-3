@@ -15,6 +15,19 @@
 #include <stdio.h>
 #include <vector>
 #include <cfloat>
+#include <chrono>
+#include <cstdlib>
+
+// Opt-in phase timing (NS3_ERRORMATRIX_TIMING): separates host<->device transfer
+// from kernel compute so the error-matrix cost can be attributed. Zero overhead
+// when the variable is unset.
+namespace {
+    using ns3clock = std::chrono::steady_clock;
+    inline bool errmxTiming(){ static const bool on = (std::getenv("NS3_ERRORMATRIX_TIMING")!=nullptr); return on; }
+    inline long long ms_(ns3clock::time_point a, ns3clock::time_point b){
+        return std::chrono::duration_cast<std::chrono::milliseconds>(b-a).count();
+    }
+}
 
 #include "groupingassistant_gpu.h"
 
