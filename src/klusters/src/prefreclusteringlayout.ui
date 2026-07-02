@@ -13,12 +13,6 @@
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
-       <property name="maximumSize">
-        <size>
-         <width>32767</width>
-         <height>120</height>
-        </size>
-       </property>
        <property name="title">
         <string>Reclustering (KlustaKwik)</string>
        </property>
@@ -26,7 +20,7 @@
         <item row="0" column="0">
          <layout class="QVBoxLayout">
           <property name="spacing">
-           <number>0</number>
+           <number>6</number>
           </property>
           <item>
            <layout class="QHBoxLayout">
