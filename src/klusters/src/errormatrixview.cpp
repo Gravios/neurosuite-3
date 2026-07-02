@@ -25,8 +25,19 @@
 #include "klustersview.h"
 #include "klustersdoc.h"
 #include "data.h"
+#include "configuration.h"
 
 #include "timer.h"
+
+// Incremental error-matrix reuse is a user preference (Preferences > Refinement).
+// The NS3_ERRORMATRIX_INCREMENTAL environment variable, when set, overrides the
+// preference (used by the diagnostic workflow).  Read live so toggling the
+// preference takes effect without a restart.
+static bool errorMatrixIncrementalEnabled(){
+    if(qEnvironmentVariableIsSet("NS3_ERRORMATRIX_INCREMENTAL"))
+        return qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL") != 0;
+    return configuration().getErrorMatrixIncremental();
+}
 
 // include files for Qt
 
@@ -253,8 +264,7 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 // rather than a CPU cold-seed.  An edit arriving before the warmer
                 // finishes supersedes it (generation bump + stopProcessing) and
                 // cold-seeds itself, so nothing is lost.
-                if(!rawProbCacheValid
-                   && qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL") != 0)
+                if(!rawProbCacheValid && errorMatrixIncrementalEnabled())
                     launchCacheWarmer();
             } else {
                 // Stale result discarded — restore cursor if no other thread is still
@@ -309,8 +319,7 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     // Opt-in incremental error matrix.  Read the environment once.  Default OFF:
     // when disabled the full path is used unchanged.  VERIFY additionally runs the
     // full path and logs the max cell discrepancy (validation aid, slower).
-    static const bool incrementalEnabled =
-        (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL") != 0);
+    const bool incrementalEnabled = errorMatrixIncrementalEnabled();
     static const bool incrementalVerify =
         (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL_VERIFY") != 0);
 
