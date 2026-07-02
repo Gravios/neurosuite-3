@@ -699,9 +699,16 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // palette refresh — is in the shared helper.
         commitClusterCreation(newClusterIdint, fromClusters, emptyClusters,
                               activeView);
-        // Parent-scope split: the new fiber and its source fibers changed membership.
+        // Parent-scope split.  Queue only the split-off fiber for the post-op
+        // auto-realign: it carries a genuinely new template.  The source fibers merely
+        // LOST a subset -- their remaining spikes are unchanged and their template is
+        // essentially the same -- so realigning them re-extracts the whole (typically
+        // large) source cluster from .fil for negligible gain, which is what made a
+        // manual split lock editing for many seconds.  noteModifiedFiber feeds ONLY
+        // the realign (nothing else drains takeModifiedFibers), so this is scope, not
+        // correctness: the matrices/renumber on the batch finish still cover every
+        // cluster, and the source keeps its already-aligned spikes.
         noteModifiedFiber(newClusterIdint);
-        for (int src : fromClusters) noteModifiedFiber(src);
         setPendingFiberSelection({newClusterIdint});   // land on the split-off fiber
 
         // Hierarchical mode: the split leaves the child atoms where they were, so the new
@@ -818,11 +825,16 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
 
         //Notify the errorMatrixView of the modification
         emit newClustersAdded(fromToNewClusterIds,emptyClusters);
-        // Parent-scope multi-split: the new fibers (values) and their sources (keys)
-        // changed membership.  In child scope these are atoms, so guard on the scope.
+        // Parent-scope multi-split.  Queue only the new fibers (values) for the
+        // post-op auto-realign -- they carry new templates -- and NOT the source
+        // fibers (keys), which only lost a subset and whose template is essentially
+        // unchanged; realigning them would re-extract the whole (typically large)
+        // source cluster from .fil for negligible gain, the main cause of a manual
+        // split locking editing for seconds.  noteModifiedFiber feeds only the realign
+        // (nothing else drains takeModifiedFibers), so matrices/renumber on the batch
+        // finish still cover every cluster.  In child scope these are atoms, so guard.
         if (!childScopeActive) {
             for (int nf : fromToNewClusterIds.values()) noteModifiedFiber(nf);
-            for (int sf : fromToNewClusterIds.keys())   noteModifiedFiber(sf);
             setPendingFiberSelection(fromToNewClusterIds.values());   // land on the new fibers
         }
         updateSimilarityMatrices();   // recompute open error/template/residual matrices
