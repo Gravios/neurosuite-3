@@ -199,6 +199,18 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
         if (yamlParFile.isOpen()) yamlParFile.close();
         return false;
     }
+    // Stop any in-flight per-view worker threads before touching Data.  Committing
+    // the hierarchical session (this call) rebuilds the parent cluster map and
+    // reads its .spk over the shared feature/spike arrays; a matrix or waveform
+    // worker iterating clusterInfoMap concurrently races that rebuild.  On startup
+    // the session is committed immediately after the KlustersView — and thus its
+    // just-launched TemplateMatrixThread — is created, so the two overlap and the
+    // load crashes intermittently.  This is the same stop-before-mutation guard the
+    // merge, realign, and undo paths already take before their Data mutations.
+    if (viewList)
+        for (KlustersView* v : *viewList)
+            v->stopAllViewThreads();
+
     // Second Data over the SAME fet/spk/par, with the .clc as the cluster file.
     // (v1 re-reads the feature/spike arrays; they could later be shared with the
     // parent to halve memory.)
