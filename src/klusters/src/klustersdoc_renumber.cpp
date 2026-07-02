@@ -96,6 +96,14 @@ void KlustersDoc::renumberClusters(){
 
     clusteringData->renumber(clusterIdsOldNew,clusterIdsNewOld);
 
+    // A no-op renumber (ids already compact -- the usual case right after a manual
+    // split, which appends a contiguous id) comes back with empty maps from
+    // Data::renumber.  Nothing changed, so skip the undo entry and, the reason this
+    // matters, the updateClusterList() rebuild below: the triggering edit already
+    // rebuilt the palette this same event-loop turn, and on a large hierarchical
+    // session that second full rebuild is pure redundant cost (and a stray undo step).
+    if(clusterIdsOldNew.isEmpty()) return;
+
     prepareUndo(clusterIdsOldNew,clusterIdsNewOld);
 
     //Update the clusterColorList: keep each cluster's colour, only relabel its
