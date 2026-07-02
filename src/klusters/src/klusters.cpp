@@ -1501,6 +1501,13 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
 
+        // "E" — switch between the Error Matrix and Template Matrix tabs
+        if(ke->key() == Qt::Key_E && ke->modifiers() == Qt::NoModifier
+           && !isInit && doc && activeView()){
+            activeView()->toggleMatrixTab();
+            return true;
+        }
+
         // ── Tab / Shift+Tab ─────────────────────────────────────────────────
         // Cycle: cluster list  →  tab area (single stop, Overview if entering)
         //        →  toolbar fields  →  (wrap)

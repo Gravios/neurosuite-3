@@ -1896,6 +1896,22 @@ void KlustersView::connectMatrixZoomSync()
     }
 }
 
+void KlustersView::toggleMatrixTab()
+{
+    // The Error Matrix and Template Matrix docks open tabified into a single
+    // frame (see applyOverviewLayout()).  "E" flips between them by raising
+    // whichever is currently behind: visibleRegion() is empty for the occluded
+    // (back) tab and non-empty for the front tab.  No-op when either dock has
+    // been closed; harmless when they are not tabified (raising a lone dock
+    // does nothing visible).
+    if(!overviewErrorMatrixDock || !overviewTemplateMatrixDock)
+        return;
+    if(overviewErrorMatrixDock->visibleRegion().isEmpty())
+        overviewErrorMatrixDock->raise();     // Error is behind -> show it
+    else
+        overviewTemplateMatrixDock->raise();  // Error is in front -> show Template
+}
+
 void KlustersView::updateTraceView(const QString& name,ItemColors* clusterColors,bool active){     
     //Set the list of the current clusters as the list of clusters to look up in the ClusterProvider.
     if(doc.getClustersProvider()  )
