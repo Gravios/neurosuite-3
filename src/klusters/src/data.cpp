@@ -615,7 +615,8 @@ QMap<int, QVector<double>> Data::computeAllCentroids() const
 // ---------------------------------------------------------------------------
 ClusterSnapshot Data::computeSnapshot(int clusterId,
                                        double isiThreshMs,
-                                       const QMap<int, QVector<double>>* allCentroids) const
+                                       const QMap<int, QVector<double>>* allCentroids,
+                                       bool liteIsolation) const
 {
     ClusterSnapshot snap;
     snap.clusterId      = clusterId;
@@ -974,7 +975,19 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
     // Diagonal Mahalanobis approximation — valid because PCA features are
     // by construction uncorrelated, so the off-diagonal covariance is zero.
     // Reference: Schmitzer-Torbert et al. (2005) Neuroscience 131(1).
-    if (n >= 2 && nFeat > 0 && snap.featVarFrobenius > 0.0) {
+    //
+    // This is an O(nSpikes) Mahalanobis pass over EVERY spike in the group, per
+    // cluster.  During a PCA-Center Align All (thousands of clusters, each doing
+    // a before+after snapshot) it dominates the whole run — the other realign
+    // phases measure ~0 ms while this is ~95 ms/snapshot.  In batch mode the
+    // caller passes liteIsolation to skip it: the realign only shifts spikes
+    // within a cluster, so these spike-level isolation metrics barely move from
+    // their batch-start values.  -1 marks them "not computed" in the log (both
+    // are >= 0 when computed), rather than a misleading 0.
+    if (liteIsolation) {
+        snap.lRatio        = -1.0;
+        snap.isolationDist = -1.0;
+    } else if (n >= 2 && nFeat > 0 && snap.featVarFrobenius > 0.0) {
         // Build inverse-variance vector (1/σ²_f) with epsilon guard.
         QVector<double> invVar(nFeat);
         bool anyNonzero = false;

@@ -988,8 +988,10 @@ public:
      *                       nearest-cluster metrics. */
     ClusterSnapshot snapshotCluster(int clusterId,
                                      double isiThreshMs = 3.0,
-                                     const QMap<int,QVector<double>>* allCentroids = nullptr) const {
-        return clusteringData->computeSnapshot(clusterId, isiThreshMs, allCentroids);
+                                     const QMap<int,QVector<double>>* allCentroids = nullptr,
+                                     bool liteIsolation = false) const {
+        return clusteringData->computeSnapshot(clusterId, isiThreshMs, allCentroids,
+                                               liteIsolation);
     }
 
     /** Convenience: snapshot each cluster in @p clusterIds.
@@ -1004,9 +1006,13 @@ public:
             return snaps;
         snaps.reserve(clusterIds.size());
         if (centroidCacheEnabled) {
+            // Batch (PCA-Center Align All): skip the O(nSpikes) L-ratio /
+            // isolation-distance pass, the dominant per-cluster cost — see
+            // computeSnapshot()'s liteIsolation parameter.
             const QMap<int,QVector<double>>& centroids = cachedCentroids();
             for (int id : clusterIds)
-                snaps.append(clusteringData->computeSnapshot(id, isiThreshMs, &centroids));
+                snaps.append(clusteringData->computeSnapshot(id, isiThreshMs, &centroids,
+                                                             /*liteIsolation=*/true));
             return snaps;
         }
         // Compute all centroids once — amortises the O(N×D) pass across
