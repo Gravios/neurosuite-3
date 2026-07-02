@@ -160,7 +160,7 @@ __global__ void cuda_normalize_kernel_f32(
 static int cuda_compute_probabilities_f32(
     const double* features, const double* choleskyAll, const double* means,
     const double* logTerms, double* probOut, const int* ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision)
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
 {
     std::vector<float> h_feat ((size_t)nbSpikes   * nbDim);
     std::vector<float> h_chol ((size_t)nbClusters * nbDim * nbDim);
@@ -245,7 +245,7 @@ int cuda_device_available()
 int cuda_compute_probabilities(
     const double* features, const double* choleskyAll, const double* means,
     const double* logTerms, double* probOut, const int* ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision)
 {
     // The Mahalanobis kernel uses fixed-width per-thread stack arrays
     // (CUDA_MAHAL_MAX_DIM).  Refuse anything wider rather than overrun them on
