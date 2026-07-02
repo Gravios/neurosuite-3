@@ -614,9 +614,6 @@ Array<double>* GroupingAssistant::computeProbabilities(
                    static_cast<size_t>(nbDimensions * nbDimensions) * sizeof(double));
         }
 
-        std::vector<double> h_prob(
-            static_cast<size_t>(nbSpikes) * nbClusters, 0.0);
-
         int cluster1Col = 0;
         if (existCluster1) {
             int ci = 0;
@@ -638,15 +635,16 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 : (configuration().getErrorMatrixLowPrecision() ? 1 : 0);
         int rc = GpuDispatch::computeProbabilities(
             h_features.data(), h_chol.data(), h_means.data(),
-            h_logTerms.data(), h_prob.data(), h_ignore.data(),
+            h_logTerms.data(), probabilities->data(), h_ignore.data(),
             static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col,
             lowPrecision);
 
         if (rc == 0) {
-            for (dataType s = 1; s <= nbSpikes; ++s)
-                for (int c = 1; c <= nbClusters; ++c)
-                    (*probabilities)(s, c) =
-                        h_prob[static_cast<size_t>((s-1)*nbClusters + (c-1))];
+            // The GPU wrote directly into the probabilities buffer: probOut is
+            // row-major [spike][cluster] and Array::operator()(s,c) maps to
+            // array[(s-1)*nbClusters + (c-1)] — the same layout — so no host
+            // copy-back is needed.  (The old element-wise copy over ~nSpikes x
+            // nClusters cells ran single-threaded and dominated the compute.)
             usedGpu = true;
 
             if (!existCluster1) {
