@@ -14,6 +14,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <vector>
+#include <cfloat>
 
 #include "groupingassistant_gpu.h"
 
@@ -137,21 +138,46 @@ __global__ void cuda_mahalanobis_kernel_f32(
     for (int d = 0; d < nbDim; ++d) b[d] = x[d] - mu[d];
 
     float mahal = forwardSubstituteSq_f32(L, b, nbDim);
+    // Store the log-probability (logit), NOT expf: the normalize kernel does a
+    // numerically stable softmax (subtract the per-row max before expf).  In FP32,
+    // expf(-0.5*(mahal+logTerm)) underflows to 0 once the exponent drops below
+    // ~-88 — routine for a 24-D space — which collapses whole rows to the zero-sum
+    // fallback and corrupts the matrix.  Double (range ~1e-308) never hits this,
+    // so the double path keeps its direct expf.
     probOut[spike * nbClusters + cluster] =
-        expf(-0.5f * (mahal + logTerms[cluster]));
+        -0.5f * (mahal + logTerms[cluster]);
 }
 
 __global__ void cuda_normalize_kernel_f32(
-    float* probOut, int nbSpikes, int nbClusters, int cluster1Col)
+    float* probOut, const int* __restrict__ ignoreFlags,
+    int nbSpikes, int nbClusters, int cluster1Col)
 {
     int spike = blockIdx.x * blockDim.x + threadIdx.x;
     if (spike >= nbSpikes) return;
     float* row = probOut + spike * nbClusters;
+
+    // Row cells hold logits from the mahalanobis kernel.  Stable softmax over the
+    // non-ignored clusters: subtract the row max so the largest term is expf(0)=1
+    // and nothing underflows.  Ignored clusters were never written by kernel 1, so
+    // skip them via ignoreFlags rather than trusting their contents.  The result
+    // matches the double path's exp/sum normalization (softmax is scale-invariant).
+    float maxL = -FLT_MAX;
+    for (int c = 0; c < nbClusters; ++c)
+        if (!ignoreFlags[c] && row[c] > maxL) maxL = row[c];
+
     float sum = 0.0f;
-    for (int c = 0; c < nbClusters; ++c) sum += row[c];
-    if (sum == 0.0f) { sum = 1.0f; row[cluster1Col] = 1.0f; }
+    if (maxL > -FLT_MAX)
+        for (int c = 0; c < nbClusters; ++c)
+            if (!ignoreFlags[c]) sum += expf(row[c] - maxL);
+
+    if (sum == 0.0f) {              // no valid cluster (all ignored) — match double fallback
+        for (int c = 0; c < nbClusters; ++c) row[c] = 0.0f;
+        row[cluster1Col] = 1.0f;
+        return;
+    }
     float inv = 1.0f / sum;
-    for (int c = 0; c < nbClusters; ++c) row[c] *= inv;
+    for (int c = 0; c < nbClusters; ++c)
+        row[c] = ignoreFlags[c] ? 0.0f : expf(row[c] - maxL) * inv;
 }
 
 // Host FP32 path.  Signature mirrors the double contract: double host in/out,
@@ -207,7 +233,7 @@ static int cuda_compute_probabilities_f32(
       CUDA_CHECK_F(cudaGetLastError()); }
 
     { dim3 blk(BLOCK_X); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X);
-      cuda_normalize_kernel_f32<<<grd,blk>>>(d_prob,nbSpikes,nbClusters,cluster1Col);
+      cuda_normalize_kernel_f32<<<grd,blk>>>(d_prob,d_ign,nbSpikes,nbClusters,cluster1Col);
       CUDA_CHECK_F(cudaGetLastError()); }
 
     CUDA_CHECK_F(cudaDeviceSynchronize());
