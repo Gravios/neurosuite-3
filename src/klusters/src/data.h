@@ -669,7 +669,8 @@ public:
      */
     ClusterSnapshot computeSnapshot(int clusterId,
                                     double isiThreshMs = 3.0,
-                                    const QMap<int, QVector<double>>* allCentroids = nullptr) const;
+                                    const QMap<int, QVector<double>>* allCentroids = nullptr,
+                                    bool liteIsolation = false) const;
 
     /** Compute the feature-space centroid for every cluster currently in memory.
      *  Returns a map: clusterId → centroid vector of length (nbDimensions-1).
