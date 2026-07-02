@@ -5284,6 +5284,12 @@ void KlustersApp::slotShowShortcutHelp()
             {"Page Up / Page Down", "Nudge selected cluster timestamps \u00b11 sample"},
             {"H",              "Show this keyboard shortcut reference"},
         }},
+        {"Display tabs", {
+            {"\u2190 / \u2192",           "Cycle display tabs \u2014 only while the tab bar itself has focus (click a tab handle); inside a view the arrows stay cluster navigation"},
+            {"Ctrl+\u2190 / Ctrl+\u2192",   "From inside a view: jump to the Overview tab.  From the tab bar: cycle tabs (prev / next, wrapping)"},
+            {"Ctrl+Shift+\u2190 / Ctrl+Shift+\u2192", "Cycle keyboard focus across the ring: cluster palette \u2192 child palettes A/B (when shown) \u2192 toolbar fields"},
+            {"E",              "Switch between the Error Matrix and Template Matrix tabs (matrix panel)"},
+        }},
         {"Cluster operations", {
             {"1",              "New Cluster mode \u2014 draw selection polygon"},
             {"2",              "Split Clusters mode \u2014 draw selection polygon"},
