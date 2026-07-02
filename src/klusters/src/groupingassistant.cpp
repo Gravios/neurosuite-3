@@ -52,7 +52,7 @@ namespace GpuDispatch {
         double*, const int*, int, int, int, int);
     int  computeErrorMatrix(
         const double*, const double*, const double*, const double*, const int*,
-        const int*, const int*, const int*, double*, int, int, int, int);
+        const int*, const int*, const int*, double*, int, int, int, int, int);
 }
 
 GroupingAssistant::GroupingAssistant()
@@ -675,11 +675,18 @@ Array<double>* GroupingAssistant::computeProbabilities(
             std::vector<double> errGpu(static_cast<size_t>(nbClusters) * nbClusters);
             const qint64 aPrep = pTiming ? at.restart() : 0;
 
+            // FP32 (fast, default) vs FP64 (exact) is user-selectable; the
+            // NS3_ERRORMATRIX_LOWPRECISION env var overrides the preference.
+            const bool lowPrecision =
+                qEnvironmentVariableIsSet("NS3_ERRORMATRIX_LOWPRECISION")
+                    ? (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_LOWPRECISION") != 0)
+                    : configuration().getErrorMatrixLowPrecision();
             int rcAgg = GpuDispatch::computeErrorMatrix(
                 h_features.data(), h_chol.data(), h_means.data(), h_logTerms.data(),
                 h_ignore.data(), h_featRow.data(), h_first.data(), h_nb.data(),
                 errGpu.data(),
-                static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col);
+                static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col,
+                lowPrecision ? 1 : 0);
             const qint64 aGpu = pTiming ? at.restart() : 0;
 
             if (rcAgg == 0) {

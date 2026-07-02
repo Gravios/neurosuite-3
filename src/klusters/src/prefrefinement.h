@@ -36,6 +36,8 @@ public:
     bool   getAutoUpdateMatricesAfterMerge() const;
     void   setErrorMatrixIncremental(bool b);
     bool   getErrorMatrixIncremental() const;
+    void   setErrorMatrixLowPrecision(bool b);
+    bool   getErrorMatrixLowPrecision() const;
 
     // DipSplit
     void   setDipSplitMinSize(int n);

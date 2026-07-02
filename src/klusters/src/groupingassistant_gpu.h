@@ -42,7 +42,7 @@ int cuda_compute_probabilities(
     const double* logTerms,
     double*       probOut,
     const int*    ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col);
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision);
 
 /**
  * Compute posteriors and aggregate them into the nbClusters x nbClusters error
