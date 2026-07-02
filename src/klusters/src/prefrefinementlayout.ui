@@ -267,34 +267,49 @@
           </property>
          </widget>
         </item>
-        <item row="8" column="0">
-         <widget class="QCheckBox" name="errorMatrixIncrementalCheckBox">
-          <property name="text">
-           <string>Error matrix: incremental reuse (else full recompute)</string>
-          </property>
-          <property name="toolTip">
-           <string>When a single cluster edit changes the error matrix, reuse the cached per-cluster probability columns for unchanged clusters and recompute only the changed ones, rather than recomputing the whole matrix. On a fast GPU the full recompute is usually quicker; incremental helps most without a GPU or at very large cluster counts. Overridden by NS3_ERRORMATRIX_INCREMENTAL when that variable is set. Default: off.</string>
-          </property>
-          <property name="checked">
-           <bool>false</bool>
-          </property>
-         </widget>
-        </item>
-        <item row="9" column="0">
-         <widget class="QCheckBox" name="errorMatrixLowPrecisionCheckBox">
-          <property name="text">
-           <string>Error matrix: low-precision (FP32) GPU compute</string>
-          </property>
-          <property name="toolTip">
-           <string>Compute the error-matrix probabilities in single precision (FP32) on the GPU instead of double (FP64). The matrix is used only for qualitative visual curation, so FP32 is ample, and on GPUs whose FP64 rate is throttled (e.g. RTX PRO 6000 Blackwell) it is much faster and uses half the memory. No effect on the CPU fallback path. Default: off (FP64).</string>
-          </property>
-          <property name="checked">
-           <bool>false</bool>
-          </property>
-         </widget>
-        </item>
        </layout>
       </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_errormatrix">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="title">
+      <string>Error Matrix (visual curation)</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_errormatrix">
+      <item row="0" column="0">
+       <widget class="QCheckBox" name="errorMatrixIncrementalCheckBox">
+        <property name="text">
+         <string>Incremental reuse (else full recompute)</string>
+        </property>
+        <property name="toolTip">
+         <string>When a single cluster edit changes the error matrix, reuse the cached per-cluster probability columns for unchanged clusters and recompute only the changed ones, rather than recomputing the whole matrix. On a fast GPU the full recompute is usually quicker; incremental helps most without a GPU or at very large cluster counts. Overridden by NS3_ERRORMATRIX_INCREMENTAL when that variable is set. Default: off.</string>
+        </property>
+        <property name="checked">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QCheckBox" name="errorMatrixLowPrecisionCheckBox">
+        <property name="text">
+         <string>Low-precision (FP32) GPU compute</string>
+        </property>
+        <property name="toolTip">
+         <string>Compute the error-matrix probabilities in single precision (FP32) on the GPU instead of double (FP64). The matrix is used only for qualitative visual curation, so FP32 is ample, and on GPUs whose FP64 rate is throttled (e.g. RTX PRO 6000 Blackwell) it is much faster and uses half the memory. No effect on the CPU fallback path. Overridden by NS3_ERRORMATRIX_LOWPRECISION when that variable is set. Default: off (FP64).</string>
+        </property>
+        <property name="checked">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
    </item>
    <item>
 <widget class="QGroupBox" name="groupBox_dipsplit">
