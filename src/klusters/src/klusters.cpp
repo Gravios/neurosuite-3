@@ -1485,18 +1485,18 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         // Runs before the Left/Right tab-cycle handler so Ctrl+Left/Right is
         // claimed for custody transfer when a child pane has focus; otherwise it
         // returns false and the tab handler keeps Ctrl+Left/Right.
-        if(childPanel && childPanel->isVisible()
+        if(childPanel && childPanel->isVisible() && !editConsolidationLock
            && dispatchHierarchyKey(ke->key(), ke->modifiers()))
             return true;
         // "1" — new cluster mode
         if(ke->key() == Qt::Key_1 && ke->modifiers() == Qt::NoModifier
-           && !isInit && doc && activeView()){
+           && !isInit && doc && activeView() && !editConsolidationLock){
             slotSingleNew();
             return true;
         }
         // "2" — split clusters mode
         if(ke->key() == Qt::Key_2 && ke->modifiers() == Qt::NoModifier
-           && !isInit && doc && activeView()){
+           && !isInit && doc && activeView() && !editConsolidationLock){
             slotMultipleNew();
             return true;
         }
@@ -3656,6 +3656,39 @@ void KlustersApp::autoPostMerge()
     autoPostClusterEdit(true);
 }
 
+void KlustersApp::maybeLockEditsForConsolidation(){
+    if(editConsolidationLock) return;
+    KlustersView* view = activeView();
+    if(!view || !view->errorMatrixConsolidating()) return;
+    editConsolidationLock = true;
+    // Reuse the realign lock's action set to grey out every editing command for
+    // the duration of the consolidation.  A post-edit consolidation and a realign
+    // are mutually exclusive (autoPostClusterEdit takes the realign branch OR the
+    // matrix branch that calls this), so realignRunning is false here and the
+    // noRealignState restore in pollConsolidationUnlock() is safe.
+    slotStateChanged(QStringLiteral("realignState"));
+    if(!consolidationPollTimer){
+        consolidationPollTimer = new QTimer(this);
+        consolidationPollTimer->setInterval(100);
+        connect(consolidationPollTimer, &QTimer::timeout,
+                this, &KlustersApp::pollConsolidationUnlock);
+    }
+    consolidationPollTimer->start();
+    slotStatusMsg(tr("Consolidating previous edit \u2014 editing locked\u2026"));
+}
+
+void KlustersApp::pollConsolidationUnlock(){
+    KlustersView* view = activeView();
+    if(view && view->errorMatrixConsolidating()) return;   // still computing
+    if(consolidationPollTimer) consolidationPollTimer->stop();
+    if(!editConsolidationLock) return;
+    editConsolidationLock = false;
+    // Only restore if a real realign has not meanwhile taken the lock.
+    if(!realignRunning && !realignBatchActive)
+        slotStateChanged(QStringLiteral("noRealignState"));
+    slotStatusMsg(tr("Ready."));
+}
+
 void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
 {
     if (!doc) return;
@@ -3682,8 +3715,13 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
     // matrices against the final ids.
     if (clusterSetChanged && configuration().getAutoRenumberAfterMerge())
         doc->renumberClusters();
-    if (configuration().getAutoUpdateMatricesAfterMerge())
+    if (configuration().getAutoUpdateMatricesAfterMerge()){
         slotUpdateErrorMatrix();
+        // The matrix recompute runs on a background thread; lock further edits
+        // until it finishes so the next edit's stopAllViewThreads() cannot stall
+        // on the in-flight (un-interruptible) GPU kernel.
+        maybeLockEditsForConsolidation();
+    }
     // Last step (mirrors the batch-finish path): land on the produced fibers.  For
     // atom-only ops the pending set is empty and selection was handled at op time
     // via hierarchyChildrenCreated.

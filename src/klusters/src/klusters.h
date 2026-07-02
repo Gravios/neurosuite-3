@@ -767,6 +767,10 @@ private:
     void refreshChildUndoActions();
     /** Cycle keyboard focus across the three palettes: parent <-> A <-> B. */
     void cycleHierarchyFocus(bool forward);
+    /**Lock cluster edits if the post-edit matrix consolidation is still running,
+     * releasing them (via consolidationPollTimer) once it finishes.*/
+    void maybeLockEditsForConsolidation();
+    void pollConsolidationUnlock();
 
     /**
     * Represents the document on which the application works
@@ -1217,6 +1221,14 @@ private:
      * path would otherwise do.  realignPostOpSetChanged carries the clusterSetChanged
      * flag through to that step.*/
     bool realignPostOpRenumberMatrix = false;
+
+    /**True while a post-edit matrix consolidation is running and cluster edits
+     * are locked (see maybeLockEditsForConsolidation).*/
+    bool editConsolidationLock = false;
+    /**Polls the error-matrix compute so the edit lock is released as soon as the
+     * consolidation finishes.  A poll is robust to superseded / no-view computes
+     * that never emit matrixUpdated(), which a signal-driven lock would miss.*/
+    QTimer* consolidationPollTimer = nullptr;
     bool realignPostOpSetChanged = false;
     /**Total number of clusters scheduled at batch start — used to render
      * the "(i/N)" progress prefix in the output tab.*/
