@@ -1207,6 +1207,25 @@ bool Data::checkClusterInfoMapInvariant(const char* where) const
 // Dimension minima/maxima are NOT recomputed: the spikes and their feature
 // values are unchanged, only the per-cluster bookkeeping, and the display
 // ranges self-correct on the next view refresh.
+bool Data::healClusterInfoMapIfDesynced(const char* where)
+{
+    if(checkClusterInfoMapInvariant(where)) return true;   // already consistent — no-op
+    qWarning().nospace() << "[clustermap-selfheal] " << where
+        << ": clusterInfoMap disagrees with the row table on entry — rebuilding the "
+           "map and normalising the row-table layout from the authoritative per-spike "
+           "cluster assignments before this edit builds its table.";
+    resyncClusterInfoMapFromRowTable();
+    const bool ok = checkClusterInfoMapInvariant(where);
+    if(ok)
+        qWarning().nospace() << "[clustermap-selfheal] " << where
+            << ": repaired — map now consistent with the row table; edit proceeds.";
+    else
+        qWarning().nospace() << "[clustermap-selfheal] " << where
+            << ": STILL inconsistent after rebuild (the row table itself is corrupt) — "
+               "prepareUndo will refuse the edit to protect the sort.";
+    return ok;
+}
+
 void Data::resyncClusterInfoMapFromRowTable()
 {
     if (spikesByCluster == nullptr || clusterInfoMap == nullptr) return;
@@ -1494,14 +1513,12 @@ QList<int> Data::clustersInTimeWindow(long t0, long t1, int minSpikes) const {
 }
 
 dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
-    // Entry desync probe: this builder tiles spikesByClusterTemp straight from the
-    // current clusterInfoMap ranges (memcpy per unchanged cluster, in-place split
-    // of each origin cluster), so if the map already disagrees with the row table
-    // on entry the rebuild inherits an unwritten/zeroed gap and prepareUndo's net
-    // then drops the edit with the generic "does not account for all spikes"
-    // message.  Firing the invariant here (…-entry) distinguishes a PRE-EXISTING
-    // desync (a prior op is the root) from one this op itself introduces.
-    checkClusterInfoMapInvariant("createNewCluster-entry");
+    // Entry self-heal: this builder tiles spikesByClusterTemp straight from the
+    // current clusterInfoMap ranges, so a map that already disagrees with the row
+    // table on entry would propagate a gap and get the edit dropped by prepareUndo.
+    // Repair the map (loudly) from the authoritative per-spike assignments FIRST so
+    // the edit builds a consistent table and proceeds.
+    healClusterInfoMapIfDesynced("createNewCluster");
     //Set the new cluster number to the biggest existing number plus one
     dataType newClusterId = nextFreeClusterId();
     dataType nbSpikesInNewCluster = 0;
@@ -1672,10 +1689,9 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
 }
 
 QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY,QList <int>& emptyClusters){
-    // Entry desync probe (see createNewCluster): the multi-cluster split rebuilds
-    // the row table from the current clusterInfoMap ranges, so a pre-existing
-    // map/row-table desync surfaces as a dropped edit at prepareUndo.  Name it here.
-    checkClusterInfoMapInvariant("createNewClusters-entry");
+    // Entry self-heal (see createNewCluster): repair a pre-existing map/row-table
+    // desync before the multi-cluster split tiles its table, so the edit proceeds.
+    healClusterInfoMapIfDesynced("createNewClusters");
     QMap<int,int> fromToClusterIds;
     QMap<int,int> fromToNewClusterIds;
     ClusterInfoMap clusterInfoMapTemp; //used in the first part of the function
@@ -1917,12 +1933,10 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
                                    const QHash<dataType,int>& featureRowToBasin,
                                    QList<int>& newClusterList)
 {
-    // Entry desync probe (see createNewCluster): watershed integration buckets and
-    // rewrites spikes by the current clusterInfoMap ranges, so a pre-existing
-    // map/row-table desync would propagate into the rebuilt table.  The per-cluster
-    // presence check below catches a missing input id; this catches a count
-    // mismatch too, and names the op if the input was already inconsistent.
-    checkClusterInfoMapInvariant("integrateBasinLabeling-entry");
+    // Entry self-heal (see createNewCluster): repair a pre-existing map/row-table
+    // desync before watershed integration rebuilds its table.  The per-cluster
+    // presence check below still guards a missing input id.
+    healClusterInfoMapIfDesynced("integrateBasinLabeling");
 
     // 1. Mirror createFeatureFile's first half: bucket all spikes from
     //    clustersToRecluster into reclusteringSpikesByCluster.
@@ -2099,6 +2113,10 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
                                           QList<int>& emptiedClusters,
                                           QString& errorMessage)
 {
+    // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
+    // row-table desync before this builder tiles its table, so the edit proceeds
+    // rather than being dropped by prepareUndo's net.
+    healClusterInfoMapIfDesynced("splitClusterByKnnVsReferences");
     newClusters.clear();
     matchedReferences.clear();
     emptiedClusters.clear();
@@ -2387,6 +2405,10 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
   Cluster one is the destination and cluster 0 can contain spikes to be deleted.
  */
 void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clustersOfOrigin, int destinationCluster, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
+    // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
+    // row-table desync before this builder tiles its table, so the edit proceeds
+    // rather than being dropped by prepareUndo's net.
+    healClusterInfoMapIfDesynced("deleteSpikesFromClusters");
     //The new information about the cluster will be inserted in the table pointed by spikesByClusterTemp
     SortableTable* spikesByClusterTemp = new SortableTable();
     spikesByClusterTemp->setSize(nbSpikes);
@@ -2693,6 +2715,10 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
 }
 
 void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
+    // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
+    // row-table desync before this builder tiles its table, so the edit proceeds
+    // rather than being dropped by prepareUndo's net.
+    healClusterInfoMapIfDesynced("moveClustersToArtefact");
     //If clustersToDelete is not empty, the cluster 0 will be modified and the max and min dimensions
     //have to be recalculated. If minMaxThread is running, clusterZeroJustModified will
     //inform it that it has to stop (the computation will be done again on the new data).
@@ -2834,6 +2860,10 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
 
 
 void Data::moveClustersToNoise(QList<int>& clustersToDelete){
+    // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
+    // row-table desync before this builder tiles its table, so the edit proceeds
+    // rather than being dropped by prepareUndo's net.
+    healClusterInfoMapIfDesynced("moveClustersToNoise");
     //If clustersToDelete contains the cluster 0, the max and min dimensions
     //have to be recalculated. If minMaxThread is running, clusterZeroJustModified will
     //inform it that it has to stop (the computation will be done again on the new data).
@@ -2999,6 +3029,10 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
 }
 
 dataType Data::groupClusters(QList<int>& clustersToGroup){
+    // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
+    // row-table desync before this builder tiles its table, so the edit proceeds
+    // rather than being dropped by prepareUndo's net.
+    healClusterInfoMapIfDesynced("groupClusters");
     //If the clusters to group contain the cluster 0, the max and min
     // dimensions have to be recalculated. If minMaxThread is running, clusterZeroJustModified will
     //inform it that it has to stop (the computation will be done again on the new data).
@@ -3159,6 +3193,10 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
                             int toCluster,
                             QList<int>& fromClusters, QList<int>& emptiedClusters)
 {
+    // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
+    // row-table desync before this builder tiles its table, so the edit proceeds
+    // rather than being dropped by prepareUndo's net.
+    healClusterInfoMapIfDesynced("moveSpikeSubset");
     if (featureRowSet.isEmpty()) return;
     if (!clusterInfoMap->contains(static_cast<dataType>(fromCluster))) return;
 
@@ -3350,6 +3388,10 @@ void Data::splitClusterTwoWays(int sourceCluster,
                                 QList<int>& emptiedClusters,
                                 QList<int>& newClusters)
 {
+    // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
+    // row-table desync before this builder tiles its table, so the edit proceeds
+    // rather than being dropped by prepareUndo's net.
+    healClusterInfoMapIfDesynced("splitClusterTwoWays");
     if (!clusterInfoMap->contains(static_cast<dataType>(sourceCluster))) return;
     if (leftId == rightId) return;
     if (clusterInfoMap->contains(static_cast<dataType>(leftId)))  return;
