@@ -44,6 +44,25 @@ int cuda_compute_probabilities(
     const int*    ignoreFlags,
     int nbSpikes, int nbClusters, int nbDim, int cluster1Col);
 
+/**
+ * Compute posteriors and aggregate them into the nbClusters x nbClusters error
+ * matrix entirely on the device; only errOut (nbClusters^2 doubles) is written
+ * back, not the full nbSpikes x nbClusters intermediate.
+ *   featRow [nbSpikes]     : 0-based feature row of the spike at each position
+ *   first   [nbClusters]   : 0-based first position of each cluster's spikes
+ *   nb      [nbClusters]   : spike count per cluster (contiguous positions)
+ *   errOut  [nbClusters^2] : errOut[i*nbClusters + j] = mean over cluster-i's
+ *                            spikes of the posterior under cluster j (0 if either
+ *                            cluster is ignored).
+ * Only CUDA implements this; other backends return non-zero (host fallback).
+ */
+int cuda_compute_error_matrix(
+    const double* features, const double* choleskyAll, const double* means,
+    const double* logTerms, const int* ignoreFlags,
+    const int* featRow, const int* first, const int* nb,
+    double* errOut,
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col);
+
 int hip_compute_probabilities(
     const double* features,
     const double* choleskyAll,

@@ -133,7 +133,8 @@ private:
  * probabilities of belonging to each cluster of Fet2, for each point of Fet1.
  */
     Array<double>* computeProbabilities(Data& clusteringData,QList<int>& clusterList,QList<int>& computedClusterList,
-                                        QList<int>& ignoreClusterIndex);
+                                        QList<int>& ignoreClusterIndex,
+                                        Array<double>** errorMatrixOut = nullptr);
 
     /**
   * Computes a Cholesky Decomposition.
