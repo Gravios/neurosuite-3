@@ -1494,6 +1494,14 @@ QList<int> Data::clustersInTimeWindow(long t0, long t1, int minSpikes) const {
 }
 
 dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
+    // Entry desync probe: this builder tiles spikesByClusterTemp straight from the
+    // current clusterInfoMap ranges (memcpy per unchanged cluster, in-place split
+    // of each origin cluster), so if the map already disagrees with the row table
+    // on entry the rebuild inherits an unwritten/zeroed gap and prepareUndo's net
+    // then drops the edit with the generic "does not account for all spikes"
+    // message.  Firing the invariant here (…-entry) distinguishes a PRE-EXISTING
+    // desync (a prior op is the root) from one this op itself introduces.
+    checkClusterInfoMapInvariant("createNewCluster-entry");
     //Set the new cluster number to the biggest existing number plus one
     dataType newClusterId = nextFreeClusterId();
     dataType nbSpikesInNewCluster = 0;
@@ -1664,6 +1672,10 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
 }
 
 QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY,QList <int>& emptyClusters){
+    // Entry desync probe (see createNewCluster): the multi-cluster split rebuilds
+    // the row table from the current clusterInfoMap ranges, so a pre-existing
+    // map/row-table desync surfaces as a dropped edit at prepareUndo.  Name it here.
+    checkClusterInfoMapInvariant("createNewClusters-entry");
     QMap<int,int> fromToClusterIds;
     QMap<int,int> fromToNewClusterIds;
     ClusterInfoMap clusterInfoMapTemp; //used in the first part of the function
@@ -1905,7 +1917,13 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
                                    const QHash<dataType,int>& featureRowToBasin,
                                    QList<int>& newClusterList)
 {
- 
+    // Entry desync probe (see createNewCluster): watershed integration buckets and
+    // rewrites spikes by the current clusterInfoMap ranges, so a pre-existing
+    // map/row-table desync would propagate into the rebuilt table.  The per-cluster
+    // presence check below catches a missing input id; this catches a count
+    // mismatch too, and names the op if the input was already inconsistent.
+    checkClusterInfoMapInvariant("integrateBasinLabeling-entry");
+
     // 1. Mirror createFeatureFile's first half: bucket all spikes from
     //    clustersToRecluster into reclusteringSpikesByCluster.
 
