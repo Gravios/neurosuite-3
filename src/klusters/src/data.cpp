@@ -3475,6 +3475,25 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
     // that would otherwise crash or corrupt.  This is the net that makes the
     // per-builder accounting guards (e.g. integrateReclusteredClusters) and the
     // per-reader feature-row clamps defence-in-depth rather than load-bearing.
+
+    // INPUT-desync probe.  Before judging the candidate table, report whether the
+    // CURRENT (pre-install) clusterInfoMap already disagrees with the current
+    // spikesByCluster — i.e. whether this edit was handed an inconsistent state.
+    // prepareUndo is the one commit point EVERY forward edit funnels through, so a
+    // single check here covers all committers, including group/split/move/delete,
+    // which (unlike createNewCluster / createNewClusters / integrateBasinLabeling)
+    // have no per-builder "…-entry" probe.  Reading the pair together classifies
+    // the next occurrence unambiguously:
+    //   * "prepareUndo-input" fires AND the refusal below fires  -> the input was
+    //     already desynced; a PRIOR op (or a non-prepareUndo mutation) is the root
+    //     and the committer merely tiled the bad map into a bad table.
+    //   * "prepareUndo-input" is silent but the refusal fires    -> the committer
+    //     built an inconsistent table from a CONSISTENT input; the root is in that
+    //     committer's build.
+    // The end-of-prepareUndo invariant only runs on ACCEPTED installs, so the
+    // refusal path (early return below) would otherwise leave this class unclassified.
+    checkClusterInfoMapInvariant("prepareUndo-input");
+
     if(!candidateSpikeTableValid(spikesByClusterTemp)){
         qWarning() << "Data::prepareUndo: REFUSING to install an internally-inconsistent"
                    << "row table (wrong column count or feature-row index out of"
