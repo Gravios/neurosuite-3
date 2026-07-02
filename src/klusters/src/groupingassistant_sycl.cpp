@@ -69,8 +69,9 @@ extern "C" int sycl_compute_probabilities(
     const double* logTerms,
     double*       probOut,
     const int*    ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision)
 {
+    (void)lowPrecision;  // FP32 mode unimplemented on this backend; always FP64
     try {
         // Select GPU; fall back to any device if no dedicated GPU.
         queue q;

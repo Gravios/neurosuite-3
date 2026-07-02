@@ -109,8 +109,9 @@ int hip_compute_probabilities(
     const double* logTerms,
     double*       probOut,
     const int*    ignoreFlags,
-    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision)
 {
+    (void)lowPrecision;  // FP32 mode unimplemented on this backend; always FP64
     double *d_feat=nullptr, *d_chol=nullptr, *d_means=nullptr;
     double *d_log=nullptr,  *d_prob=nullptr;
     int    *d_ign=nullptr;

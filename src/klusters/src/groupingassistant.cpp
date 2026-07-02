@@ -34,6 +34,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "configuration.h"
 #include <vector>
 #include <utility>
 
@@ -46,7 +48,7 @@ namespace GpuDispatch {
     bool hasGpu();
     int  computeProbabilities(
         const double*, const double*, const double*, const double*,
-        double*, const int*, int, int, int, int);
+        double*, const int*, int, int, int, int, int);
 }
 
 GroupingAssistant::GroupingAssistant()
@@ -612,10 +614,18 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 if (it.key() == 1) { cluster1Col = ci; break; }
         }
 
+        // Precision is a user preference (Preferences > Refinement).  Low
+        // precision runs the device kernels in FP32 — the error matrix is only
+        // used for qualitative visual curation, so this is ample, and on cards
+        // whose FP64 rate is throttled it is far faster.  The host arrays and the
+        // returned matrix stay double either way.
+        const int lowPrecision =
+            configuration().getErrorMatrixLowPrecision() ? 1 : 0;
         int rc = GpuDispatch::computeProbabilities(
             h_features.data(), h_chol.data(), h_means.data(),
             h_logTerms.data(), h_prob.data(), h_ignore.data(),
-            static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col);
+            static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col,
+            lowPrecision);
 
         if (rc == 0) {
             for (dataType s = 1; s <= nbSpikes; ++s)
