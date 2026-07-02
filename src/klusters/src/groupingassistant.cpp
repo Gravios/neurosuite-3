@@ -622,22 +622,10 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 if (it.key() == 1) { cluster1Col = ci; break; }
         }
 
-        // Precision is a user preference (Preferences > Refinement).  Low
-        // precision runs the device kernels in FP32 — the error matrix is only
-        // used for qualitative visual curation, so this is ample, and on cards
-        // whose FP64 rate is throttled it is far faster.  The host arrays and the
-        // returned matrix stay double either way.
-        // NS3_ERRORMATRIX_LOWPRECISION overrides the preference when set (mirrors
-        // NS3_ERRORMATRIX_INCREMENTAL), for command-line verification of the FP32 path.
-        const int lowPrecision =
-            qEnvironmentVariableIsSet("NS3_ERRORMATRIX_LOWPRECISION")
-                ? (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_LOWPRECISION") != 0 ? 1 : 0)
-                : (configuration().getErrorMatrixLowPrecision() ? 1 : 0);
         int rc = GpuDispatch::computeProbabilities(
             h_features.data(), h_chol.data(), h_means.data(),
             h_logTerms.data(), probabilities->data(), h_ignore.data(),
-            static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col,
-            lowPrecision);
+            static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col);
 
         if (rc == 0) {
             // The GPU wrote directly into the probabilities buffer: probOut is

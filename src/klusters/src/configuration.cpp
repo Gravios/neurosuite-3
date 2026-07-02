@@ -73,7 +73,6 @@ void Configuration::read() {
     autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", true).toBool();
     autoUpdateMatricesAfterMerge = settings.value("autoUpdateMatricesAfterMerge", true).toBool();
     errorMatrixIncremental  = settings.value("errorMatrixIncremental",  false).toBool();
-    errorMatrixLowPrecision = settings.value("errorMatrixLowPrecision", false).toBool();
     dipSplitMinSize      = settings.value("dipSplitMinSize",      50).toInt();
     dipSplitBloatFactor  = settings.value("dipSplitBloatFactor",  0.0).toDouble();
     dipSplitValleyThresh = settings.value("dipSplitValleyThresh", 0.20).toDouble();
@@ -153,7 +152,6 @@ void Configuration::write() const {
     settings.setValue("autoRenumberAfterMerge", autoRenumberAfterMerge);
     settings.setValue("autoUpdateMatricesAfterMerge", autoUpdateMatricesAfterMerge);
     settings.setValue("errorMatrixIncremental",  errorMatrixIncremental);
-    settings.setValue("errorMatrixLowPrecision", errorMatrixLowPrecision);
     settings.setValue("dipSplitMinSize",      dipSplitMinSize);
     settings.setValue("dipSplitBloatFactor",  dipSplitBloatFactor);
     settings.setValue("dipSplitValleyThresh", dipSplitValleyThresh);

@@ -295,19 +295,6 @@
         </property>
        </widget>
       </item>
-      <item row="1" column="0">
-       <widget class="QCheckBox" name="errorMatrixLowPrecisionCheckBox">
-        <property name="text">
-         <string>Low-precision (FP32) GPU compute</string>
-        </property>
-        <property name="toolTip">
-         <string>Compute the error-matrix probabilities in single precision (FP32) on the GPU instead of double (FP64). The matrix is used only for qualitative visual curation, so FP32 is ample, and on GPUs whose FP64 rate is throttled (e.g. RTX PRO 6000 Blackwell) it is much faster and uses half the memory. No effect on the CPU fallback path. Overridden by NS3_ERRORMATRIX_LOWPRECISION when that variable is set. Default: off (FP64).</string>
-        </property>
-        <property name="checked">
-         <bool>false</bool>
-        </property>
-       </widget>
-      </item>
      </layout>
     </widget>
    </item>
