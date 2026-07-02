@@ -56,6 +56,22 @@ forwardSubstituteSq(const double* __restrict__ L,
     return sq;
 }
 
+__device__ static float
+forwardSubstituteSq_f32(const float* __restrict__ L,
+                        const float* __restrict__ b, int dim)
+{
+    float x[CUDA_MAHAL_MAX_DIM];
+    float sq = 0.f;
+    for (int i = 0; i < dim; ++i) {
+        float s = b[i];
+        for (int j = 0; j < i; ++j)
+            s -= L[i + j * dim] * x[j];
+        x[i] = s / L[i + i * dim];
+        sq  += x[i] * x[i];
+    }
+    return sq;
+}
+
 // ---------------------------------------------------------------------------
 // Kernel 1: Mahalanobis → raw probabilities
 // Grid: (ceil(nbSpikes/256), nbClusters)   Block: (256,1)
@@ -88,6 +104,49 @@ __global__ void cuda_mahalanobis_kernel(
         exp(-0.5 * (mahal + logTerms[cluster]));
 }
 
+// FP32 Mahalanobis (error-matrix path).  Reads the double inputs and casts to
+// float; stages this block's cluster Cholesky L and mean in shared memory (all
+// threads in a blockIdx.y block share one cluster), then writes the UNNORMALIZED
+// log-posterior -0.5*(mahal + logTerm) to probOut (float).  Ignored clusters get
+// -1e30f so the softmax drops them.  Writing log-posteriors (not exp) lets the
+// normalize pass stabilize the softmax, avoiding FP32 exp underflow.
+__global__ void cuda_mahalanobis_kernel_f32(
+    const double* __restrict__ features,
+    const double* __restrict__ choleskyAll,
+    const double* __restrict__ means,
+    const double* __restrict__ logTerms,
+    float*                     probOut,
+    const int*   __restrict__  ignoreFlags,
+    int nbSpikes, int nbClusters, int nbDim)
+{
+    int cluster = blockIdx.y;
+    if (cluster >= nbClusters) return;
+    const bool ig = ignoreFlags[cluster] != 0;
+
+    extern __shared__ float sh[];
+    float* shL  = sh;
+    float* shMu = sh + nbDim * nbDim;
+    if (!ig) {
+        for (int t = threadIdx.x; t < nbDim * nbDim; t += blockDim.x)
+            shL[t]  = (float)choleskyAll[(size_t)cluster * nbDim * nbDim + t];
+        for (int t = threadIdx.x; t < nbDim; t += blockDim.x)
+            shMu[t] = (float)means[(size_t)cluster * nbDim + t];
+    }
+    __syncthreads();
+
+    int spike = blockIdx.x * blockDim.x + threadIdx.x;
+    if (spike >= nbSpikes) return;
+    if (ig) { probOut[(size_t)spike * nbClusters + cluster] = -1e30f; return; }
+
+    const double* x = features + (size_t)spike * nbDim;
+    float b[CUDA_MAHAL_MAX_DIM];
+    for (int d = 0; d < nbDim; ++d) b[d] = (float)x[d] - shMu[d];
+
+    float mahal = forwardSubstituteSq_f32(shL, b, nbDim);
+    probOut[(size_t)spike * nbClusters + cluster] =
+        -0.5f * (mahal + (float)logTerms[cluster]);
+}
+
 // ---------------------------------------------------------------------------
 // Kernel 2: row-wise normalization
 // ---------------------------------------------------------------------------
@@ -104,6 +163,32 @@ __global__ void cuda_normalize_kernel(
     for (int c = 0; c < nbClusters; ++c) row[c] *= inv;
 }
 
+// FP32 row-wise softmax of the log-posteriors, stabilized by the row max so exp()
+// cannot underflow the whole row to zero (the failure mode of a naive FP32
+// softmax).  To match the FP64 path for genuine outliers, if even the best
+// cluster's log-posterior is below the FP64 exp underflow threshold the spike is
+// assigned wholly to cluster 1 (noise) instead of its least-bad cluster.
+__global__ void cuda_normalize_kernel_f32(
+    float* probOut, int nbSpikes, int nbClusters, int cluster1Col)
+{
+    int spike = blockIdx.x * blockDim.x + threadIdx.x;
+    if (spike >= nbSpikes) return;
+    float* row = probOut + (size_t)spike * nbClusters;
+
+    float mx = -3.0e38f;
+    for (int c = 0; c < nbClusters; ++c) mx = fmaxf(mx, row[c]);
+
+    if (mx < -745.0f) {   // FP64 exp() underflows here too -> unclassifiable
+        for (int c = 0; c < nbClusters; ++c) row[c] = 0.0f;
+        row[cluster1Col] = 1.0f;
+        return;
+    }
+    float sum = 0.0f;
+    for (int c = 0; c < nbClusters; ++c) { float e = __expf(row[c] - mx); row[c] = e; sum += e; }
+    float inv = 1.0f / sum;
+    for (int c = 0; c < nbClusters; ++c) row[c] *= inv;
+}
+
 // ---------------------------------------------------------------------------
 // Kernel 3: aggregate row-normalized posteriors into the cluster x cluster
 // error matrix, on the device — so only the small (nbClusters^2) result crosses
@@ -116,7 +201,7 @@ __global__ void cuda_normalize_kernel(
 // Ignored clusters (as rows or columns) yield 0, matching the CPU aggregation.
 // ---------------------------------------------------------------------------
 __global__ void cuda_aggregate_kernel(
-    const double* __restrict__ prob,
+    const float*  __restrict__ prob,
     const int*    __restrict__ featRow,
     const int*    __restrict__ first,
     const int*    __restrict__ nb,
@@ -134,7 +219,7 @@ __global__ void cuda_aggregate_kernel(
         double sum = 0.0;
         for (int s = 0; s < n; ++s) {
             int row = featRow[f + s];
-            sum += prob[(size_t)row * nbClusters + j];
+            sum += (double)prob[(size_t)row * nbClusters + j];
         }
         errOut[(size_t)i * nbClusters + j] = sum / (double)n;
     }
@@ -260,19 +345,20 @@ int cuda_compute_error_matrix(
     ns3clock::time_point t0, tUp, tKer, tAgg, tDl;
     if (timing) t0 = ns3clock::now();
 
-    double *d_feat=nullptr,*d_chol=nullptr,*d_means=nullptr,*d_log=nullptr;
-    double *d_prob=nullptr,*d_err=nullptr;
+    double *d_feat=nullptr,*d_chol=nullptr,*d_means=nullptr,*d_log=nullptr,*d_err=nullptr;
+    float  *d_prob=nullptr;   // FP32 posteriors: halves the buffer and aggregate reads
     int    *d_ign=nullptr,*d_featRow=nullptr,*d_first=nullptr,*d_nb=nullptr;
 
     size_t featSz  = (size_t)nbSpikes   * nbDim         * sizeof(double);
     size_t cholSz  = (size_t)nbClusters * nbDim * nbDim * sizeof(double);
     size_t meansSz = (size_t)nbClusters * nbDim         * sizeof(double);
     size_t logSz   = (size_t)nbClusters                 * sizeof(double);
-    size_t probSz  = (size_t)nbSpikes   * nbClusters    * sizeof(double);
+    size_t probSz  = (size_t)nbSpikes   * nbClusters    * sizeof(float);
     size_t ignSz   = (size_t)nbClusters                 * sizeof(int);
     size_t frSz    = (size_t)nbSpikes                   * sizeof(int);
     size_t spanSz  = (size_t)nbClusters                 * sizeof(int);
     size_t errSz   = (size_t)nbClusters * nbClusters    * sizeof(double);
+    size_t shBytes = (size_t)(nbDim * nbDim + nbDim)     * sizeof(float);
 
 #define CUDA_CHECK_E(call) \
     do { cudaError_t e=(call); if(e!=cudaSuccess){ \
@@ -299,15 +385,20 @@ int cuda_compute_error_matrix(
     CUDA_CHECK_E(cudaMemcpy(d_featRow, featRow,     frSz,    cudaMemcpyHostToDevice));
     CUDA_CHECK_E(cudaMemcpy(d_first,   first,       spanSz,  cudaMemcpyHostToDevice));
     CUDA_CHECK_E(cudaMemcpy(d_nb,      nb,          spanSz,  cudaMemcpyHostToDevice));
-    CUDA_CHECK_E(cudaMemset(d_prob,    0, probSz));
     if (timing) tUp = ns3clock::now();
+    // No d_prob memset: the FP32 Mahalanobis kernel writes every cell (ignored
+    // clusters get -1e30f, which the softmax drops).
 
+    // FP32 compute: the error matrix is qualitative, so the ~1:64 FP64 throttle
+    // on Blackwell is not worth paying.  Cholesky L + mean are staged in shared
+    // memory (one cluster per blockIdx.y block); posteriors stay FP32 on device
+    // and the aggregation promotes to double so the matrix values stay accurate.
     { dim3 blk(BLOCK_X,1); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X, nbClusters);
-      cuda_mahalanobis_kernel<<<grd,blk>>>(d_feat,d_chol,d_means,d_log,d_prob,d_ign,
-                                            nbSpikes,nbClusters,nbDim);
+      cuda_mahalanobis_kernel_f32<<<grd,blk,shBytes>>>(d_feat,d_chol,d_means,d_log,d_prob,d_ign,
+                                                       nbSpikes,nbClusters,nbDim);
       CUDA_CHECK_E(cudaGetLastError()); }
     { dim3 blk(BLOCK_X); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X);
-      cuda_normalize_kernel<<<grd,blk>>>(d_prob,nbSpikes,nbClusters,cluster1Col);
+      cuda_normalize_kernel_f32<<<grd,blk>>>(d_prob,nbSpikes,nbClusters,cluster1Col);
       CUDA_CHECK_E(cudaGetLastError()); }
     CUDA_CHECK_E(cudaDeviceSynchronize());
     if (timing) tKer = ns3clock::now();
