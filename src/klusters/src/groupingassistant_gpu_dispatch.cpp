@@ -24,6 +24,9 @@ extern "C" {
     int cuda_device_available() { return 0; }
     int cuda_compute_probabilities(const double*, const double*, const double*,
         const double*, double*, const int*, int, int, int, int) { return -1; }
+    int cuda_compute_error_matrix(const double*, const double*, const double*,
+        const double*, const int*, const int*, const int*, const int*,
+        double*, int, int, int, int) { return -1; }
 }
 #endif
 
@@ -118,6 +121,25 @@ int computeProbabilities(
     default:
         return -1;  // No GPU — caller uses OpenMP.
     }
+}
+
+/**
+ * Dispatch the fused posterior + error-matrix aggregation. Only CUDA implements
+ * it; on HIP/SYCL/None this returns non-zero and the caller falls back to the
+ * host path (full posteriors + OpenMP aggregation).
+ */
+int computeErrorMatrix(
+    const double* features, const double* choleskyAll, const double* means,
+    const double* logTerms, const int* ignoreFlags,
+    const int* featRow, const int* first, const int* nb,
+    double* errOut,
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
+{
+    if (activeBackend() == Backend::CUDA)
+        return cuda_compute_error_matrix(features, choleskyAll, means, logTerms,
+                                         ignoreFlags, featRow, first, nb, errOut,
+                                         nbSpikes, nbClusters, nbDim, cluster1Col);
+    return -1;  // host aggregation fallback
 }
 
 bool hasGpu() { return activeBackend() != Backend::None; }

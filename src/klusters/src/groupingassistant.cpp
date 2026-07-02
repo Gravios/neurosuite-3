@@ -50,6 +50,9 @@ namespace GpuDispatch {
     int  computeProbabilities(
         const double*, const double*, const double*, const double*,
         double*, const int*, int, int, int, int);
+    int  computeErrorMatrix(
+        const double*, const double*, const double*, const double*, const int*,
+        const int*, const int*, const int*, double*, int, int, int, int);
 }
 
 GroupingAssistant::GroupingAssistant()
@@ -74,10 +77,24 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
     QElapsedTimer emxTmg;
     const bool emxTiming = qEnvironmentVariableIntValue("NS3_ERRORMATRIX_TIMING") != 0;
     if (emxTiming) emxTmg.start();
+    Array<double>* gpuErrorMatrix = nullptr;
     Array<double>* probabilities =
         computeProbabilities(clusteringData, clusterList,
-                             computedClusterList, ignoreClusterIndex);
+                             computedClusterList, ignoreClusterIndex,
+                             &gpuErrorMatrix);
     const qint64 emxMsProb = emxTiming ? emxTmg.restart() : 0;
+
+    // GPU-side aggregation produced the error matrix directly: no host
+    // materialization of the ~15 GB posteriors and no CPU aggregation pass.
+    if (gpuErrorMatrix) {
+        if (emxTiming)
+            fprintf(stderr,
+                "[errormatrix-timing] host: probabilities=%lld ms aggregate=0 ms (gpu-agg)\n",
+                static_cast<long long>(emxMsProb));
+        delete spikesByCluster; delete clusterInfoMap;
+        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        return gpuErrorMatrix;
+    }
 
     int nbClusters = clusterList.size();
     Array<double>* errorMatrix =
@@ -504,7 +521,8 @@ Array<double>* GroupingAssistant::computeProbabilities(
         Data& clusteringData,
         QList<int>& clusterList,
         QList<int>& computedClusterList,
-        QList<int>& ignoreClusterIndex)
+        QList<int>& ignoreClusterIndex,
+        Array<double>** errorMatrixOut)
 {
     dataType nbSpikes     = clusteringData.totalNbOfSpikes();
     // Use the actual number of PCA features loaded from the .fetD file
@@ -529,12 +547,10 @@ Array<double>* GroupingAssistant::computeProbabilities(
                               clusteringData, ignoreClusterIndex);
     if (pTiming) t_mean = pt.restart();
 
-    // The Array constructor value-initializes (zeroes) the buffer via make_unique,
-    // and on the GPU path the device download overwrites every cell, so the explicit
-    // second zeroing pass over the ~15 GB buffer was pure redundancy.  The CPU
-    // fallback re-zeroes in its own branch when the GPU is unavailable.
-    Array<double>* probabilities = new Array<double>(nbSpikes, nbClusters);
-    if (pTiming) t_alloc = pt.restart();
+    // probabilities (the ~15 GB nSpikes x nClusters intermediate) is allocated
+    // lazily: the GPU-side aggregation path below never materializes it; only the
+    // full-posteriors GPU path and the CPU fallback allocate it.
+    Array<double>* probabilities = nullptr;
 
     double piTerm = log(2.0 * M_PI) * nbDimensions / 2.0;
 
@@ -590,7 +606,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
         }
     }
 
-    if (haveToStopComputing) return probabilities;
+    if (haveToStopComputing) return new Array<double>(0, 0);
 
     // ------------------------------------------------------------------
     // GPU path via dispatcher (CUDA / HIP / SYCL — first available).
@@ -634,7 +650,76 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 if (it.key() == 1) { cluster1Col = ci; break; }
         }
 
-        if (pTiming) t_feat = pt.restart();
+        // === GPU-side aggregation (fused posteriors + reduction) ==========
+        // Compute posteriors AND reduce them into the nbClusters^2 error matrix
+        // on the device; copy back only ~99 MB, never the ~15 GB intermediate.
+        // Requested via errorMatrixOut; falls through to the full host path if
+        // unavailable (HIP/SYCL) or on GPU failure.
+        if (errorMatrixOut) {
+            QElapsedTimer at; if (pTiming) at.start();
+            std::vector<int> h_featRow(static_cast<size_t>(nbSpikes));
+            for (dataType p = 1; p <= nbSpikes; ++p)
+                h_featRow[static_cast<size_t>(p - 1)] =
+                    static_cast<int>((*spikesByCluster)(1, p)) - 1;   // 0-based feature row
+            std::vector<int> h_first(static_cast<size_t>(nbClusters));
+            std::vector<int> h_nb   (static_cast<size_t>(nbClusters));
+            {
+                Data::ClusterInfoMap::Iterator it; int c0 = 0;
+                for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++c0) {
+                    h_first[static_cast<size_t>(c0)] =
+                        static_cast<int>(it.value().firstSpikePosition()) - 1;  // 0-based
+                    h_nb[static_cast<size_t>(c0)] =
+                        static_cast<int>(it.value().nbSpikes());
+                }
+            }
+            std::vector<double> errGpu(static_cast<size_t>(nbClusters) * nbClusters);
+            const qint64 aPrep = pTiming ? at.restart() : 0;
+
+            int rcAgg = GpuDispatch::computeErrorMatrix(
+                h_features.data(), h_chol.data(), h_means.data(), h_logTerms.data(),
+                h_ignore.data(), h_featRow.data(), h_first.data(), h_nb.data(),
+                errGpu.data(),
+                static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col);
+            const qint64 aGpu = pTiming ? at.restart() : 0;
+
+            if (rcAgg == 0) {
+                // Place the GPU-space [count x count] block into the final matrix,
+                // prepending a synthetic zero row/col for cluster 1 when absent
+                // (initIndex = 2), else mapping directly (initIndex = 1).
+                int initLocal = 1;
+                if (!existCluster1) {
+                    clusterList.prepend(1);
+                    computedClusterList.prepend(1);
+                    for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
+                        ignoreClusterIndex[i] += 1;
+                    initLocal = 2;
+                }
+                initIndex = initLocal;
+                const int dim = clusterList.size();
+                Array<double>* errorMatrix = new Array<double>(dim, dim);
+                errorMatrix->fillWithZeros();
+                for (int i0 = 0; i0 < nbClusters; ++i0)
+                    for (int j0 = 0; j0 < nbClusters; ++j0)
+                        (*errorMatrix)(initLocal + i0, initLocal + j0) =
+                            errGpu[static_cast<size_t>(i0) * nbClusters + j0];
+                for (int ci = 1; ci <= dim; ++ci) (*errorMatrix)(ci, ci) = 0.0;
+                if (pTiming)
+                    fprintf(stderr,
+                        "[errormatrix-timing] agg-prep: duplicate=%lld meanCov=%lld "
+                        "cholesky=%lld hostArrays=%lld gpu=%lld ms\n",
+                        static_cast<long long>(t_dup),  static_cast<long long>(t_mean),
+                        static_cast<long long>(t_chol), static_cast<long long>(aPrep),
+                        static_cast<long long>(aGpu));
+                *errorMatrixOut = errorMatrix;
+                return nullptr;
+            }
+            fprintf(stderr, "[klusters] GPU error-matrix aggregation failed - "
+                            "falling back to full posteriors + host aggregation.\n");
+        }
+
+        // Full-posteriors GPU path (also used when errorMatrixOut is null).
+        probabilities = new Array<double>(nbSpikes, nbClusters);
+        if (pTiming) { t_alloc = pt.restart(); t_feat = pt.restart(); }
         int rc = GpuDispatch::computeProbabilities(
             h_features.data(), h_chol.data(), h_means.data(),
             h_logTerms.data(), probabilities->data(), h_ignore.data(),
@@ -682,6 +767,11 @@ Array<double>* GroupingAssistant::computeProbabilities(
     }
 
     (void)usedGpu;
+
+    if (!probabilities) {
+        probabilities = new Array<double>(nbSpikes, nbClusters);
+        probabilities->fillWithZeros();
+    }
 
     // ------------------------------------------------------------------
     // CPU / OpenMP path.

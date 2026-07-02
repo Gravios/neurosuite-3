@@ -105,6 +105,42 @@ __global__ void cuda_normalize_kernel(
 }
 
 // ---------------------------------------------------------------------------
+// Kernel 3: aggregate row-normalized posteriors into the cluster x cluster
+// error matrix, on the device — so only the small (nbClusters^2) result crosses
+// PCIe, not the full nbSpikes x nbClusters intermediate.
+// Grid: (nbClusters) blocks, one per source cluster i (matrix row).
+// Block: (BLOCK_X) threads striding over destination clusters j (columns).
+//   errOut[i*nbClusters + j] = mean over cluster-i's spikes of prob[featRow][j]
+// featRow[first[i] + s] is the 0-based feature row of cluster i's s-th spike;
+// cluster i's spikes occupy contiguous positions [first[i], first[i]+nb[i]).
+// Ignored clusters (as rows or columns) yield 0, matching the CPU aggregation.
+// ---------------------------------------------------------------------------
+__global__ void cuda_aggregate_kernel(
+    const double* __restrict__ prob,
+    const int*    __restrict__ featRow,
+    const int*    __restrict__ first,
+    const int*    __restrict__ nb,
+    const int*    __restrict__ ignoreFlags,
+    double*                    errOut,
+    int nbClusters)
+{
+    int i = blockIdx.x;
+    if (i >= nbClusters) return;
+    const bool ig = ignoreFlags[i] != 0;
+    const int  f  = first[i];
+    const int  n  = nb[i];
+    for (int j = threadIdx.x; j < nbClusters; j += blockDim.x) {
+        if (ig || ignoreFlags[j] || n <= 0) { errOut[(size_t)i * nbClusters + j] = 0.0; continue; }
+        double sum = 0.0;
+        for (int s = 0; s < n; ++s) {
+            int row = featRow[f + s];
+            sum += prob[(size_t)row * nbClusters + j];
+        }
+        errOut[(size_t)i * nbClusters + j] = sum / (double)n;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public C interface
 // ---------------------------------------------------------------------------
 extern "C" {
@@ -200,6 +236,106 @@ cuda_error:
     if(d_prob)  cudaFree(d_prob);  if(d_ign)   cudaFree(d_ign);
     return -1;
 #undef CUDA_CHECK
+}
+
+// Compute posteriors AND aggregate them into the error matrix entirely on the
+// device; only the nbClusters x nbClusters result is copied back.  nbClusters
+// here is the GPU-space cluster count (clusterInfoMap order); the caller places
+// the result into the final matrix with any cluster-1 prepend offset.
+int cuda_compute_error_matrix(
+    const double* features, const double* choleskyAll, const double* means,
+    const double* logTerms, const int* ignoreFlags,
+    const int* featRow, const int* first, const int* nb,
+    double* errOut,
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
+{
+    if (nbDim <= 0 || nbDim > CUDA_MAHAL_MAX_DIM) {
+        fprintf(stderr,
+                "[klusters] grouping CUDA: nbDim=%d unsupported (max %d) - using CPU\n",
+                nbDim, CUDA_MAHAL_MAX_DIM);
+        return -1;
+    }
+
+    const bool timing = errmxTiming();
+    ns3clock::time_point t0, tUp, tKer, tAgg, tDl;
+    if (timing) t0 = ns3clock::now();
+
+    double *d_feat=nullptr,*d_chol=nullptr,*d_means=nullptr,*d_log=nullptr;
+    double *d_prob=nullptr,*d_err=nullptr;
+    int    *d_ign=nullptr,*d_featRow=nullptr,*d_first=nullptr,*d_nb=nullptr;
+
+    size_t featSz  = (size_t)nbSpikes   * nbDim         * sizeof(double);
+    size_t cholSz  = (size_t)nbClusters * nbDim * nbDim * sizeof(double);
+    size_t meansSz = (size_t)nbClusters * nbDim         * sizeof(double);
+    size_t logSz   = (size_t)nbClusters                 * sizeof(double);
+    size_t probSz  = (size_t)nbSpikes   * nbClusters    * sizeof(double);
+    size_t ignSz   = (size_t)nbClusters                 * sizeof(int);
+    size_t frSz    = (size_t)nbSpikes                   * sizeof(int);
+    size_t spanSz  = (size_t)nbClusters                 * sizeof(int);
+    size_t errSz   = (size_t)nbClusters * nbClusters    * sizeof(double);
+
+#define CUDA_CHECK_E(call) \
+    do { cudaError_t e=(call); if(e!=cudaSuccess){ \
+        fprintf(stderr,"CUDA error %s at %s:%d\n", \
+                cudaGetErrorString(e),__FILE__,__LINE__); \
+        goto cuda_error_e; } } while(0)
+
+    CUDA_CHECK_E(cudaMalloc(&d_feat,    featSz));
+    CUDA_CHECK_E(cudaMalloc(&d_chol,    cholSz));
+    CUDA_CHECK_E(cudaMalloc(&d_means,   meansSz));
+    CUDA_CHECK_E(cudaMalloc(&d_log,     logSz));
+    CUDA_CHECK_E(cudaMalloc(&d_prob,    probSz));
+    CUDA_CHECK_E(cudaMalloc(&d_ign,     ignSz));
+    CUDA_CHECK_E(cudaMalloc(&d_featRow, frSz));
+    CUDA_CHECK_E(cudaMalloc(&d_first,   spanSz));
+    CUDA_CHECK_E(cudaMalloc(&d_nb,      spanSz));
+    CUDA_CHECK_E(cudaMalloc(&d_err,     errSz));
+
+    CUDA_CHECK_E(cudaMemcpy(d_feat,    features,    featSz,  cudaMemcpyHostToDevice));
+    CUDA_CHECK_E(cudaMemcpy(d_chol,    choleskyAll, cholSz,  cudaMemcpyHostToDevice));
+    CUDA_CHECK_E(cudaMemcpy(d_means,   means,       meansSz, cudaMemcpyHostToDevice));
+    CUDA_CHECK_E(cudaMemcpy(d_log,     logTerms,    logSz,   cudaMemcpyHostToDevice));
+    CUDA_CHECK_E(cudaMemcpy(d_ign,     ignoreFlags, ignSz,   cudaMemcpyHostToDevice));
+    CUDA_CHECK_E(cudaMemcpy(d_featRow, featRow,     frSz,    cudaMemcpyHostToDevice));
+    CUDA_CHECK_E(cudaMemcpy(d_first,   first,       spanSz,  cudaMemcpyHostToDevice));
+    CUDA_CHECK_E(cudaMemcpy(d_nb,      nb,          spanSz,  cudaMemcpyHostToDevice));
+    CUDA_CHECK_E(cudaMemset(d_prob,    0, probSz));
+    if (timing) tUp = ns3clock::now();
+
+    { dim3 blk(BLOCK_X,1); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X, nbClusters);
+      cuda_mahalanobis_kernel<<<grd,blk>>>(d_feat,d_chol,d_means,d_log,d_prob,d_ign,
+                                            nbSpikes,nbClusters,nbDim);
+      CUDA_CHECK_E(cudaGetLastError()); }
+    { dim3 blk(BLOCK_X); dim3 grd((nbSpikes+BLOCK_X-1)/BLOCK_X);
+      cuda_normalize_kernel<<<grd,blk>>>(d_prob,nbSpikes,nbClusters,cluster1Col);
+      CUDA_CHECK_E(cudaGetLastError()); }
+    CUDA_CHECK_E(cudaDeviceSynchronize());
+    if (timing) tKer = ns3clock::now();
+
+    { dim3 blk(BLOCK_X); dim3 grd(nbClusters);
+      cuda_aggregate_kernel<<<grd,blk>>>(d_prob,d_featRow,d_first,d_nb,d_ign,d_err,nbClusters);
+      CUDA_CHECK_E(cudaGetLastError()); }
+    CUDA_CHECK_E(cudaDeviceSynchronize());
+    if (timing) tAgg = ns3clock::now();
+
+    CUDA_CHECK_E(cudaMemcpy(errOut, d_err, errSz, cudaMemcpyDeviceToHost));
+    if (timing) { tDl = ns3clock::now();
+        fprintf(stderr,
+            "[errormatrix-timing] cuda-agg: upload=%lld kernel=%lld aggregate=%lld download=%lld ms\n",
+            ms_(t0,tUp), ms_(tUp,tKer), ms_(tKer,tAgg), ms_(tAgg,tDl)); }
+
+    cudaFree(d_feat); cudaFree(d_chol); cudaFree(d_means); cudaFree(d_log);
+    cudaFree(d_prob); cudaFree(d_ign);  cudaFree(d_featRow); cudaFree(d_first);
+    cudaFree(d_nb);   cudaFree(d_err);
+    return 0;
+
+cuda_error_e:
+    if(d_feat)cudaFree(d_feat);   if(d_chol)cudaFree(d_chol);  if(d_means)cudaFree(d_means);
+    if(d_log)cudaFree(d_log);     if(d_prob)cudaFree(d_prob);  if(d_ign)cudaFree(d_ign);
+    if(d_featRow)cudaFree(d_featRow); if(d_first)cudaFree(d_first); if(d_nb)cudaFree(d_nb);
+    if(d_err)cudaFree(d_err);
+    return -1;
+#undef CUDA_CHECK_E
 }
 
 } // extern "C"
