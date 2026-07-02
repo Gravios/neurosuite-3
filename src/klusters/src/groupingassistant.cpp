@@ -529,8 +529,11 @@ Array<double>* GroupingAssistant::computeProbabilities(
                               clusteringData, ignoreClusterIndex);
     if (pTiming) t_mean = pt.restart();
 
+    // The Array constructor value-initializes (zeroes) the buffer via make_unique,
+    // and on the GPU path the device download overwrites every cell, so the explicit
+    // second zeroing pass over the ~15 GB buffer was pure redundancy.  The CPU
+    // fallback re-zeroes in its own branch when the GPU is unavailable.
     Array<double>* probabilities = new Array<double>(nbSpikes, nbClusters);
-    probabilities->fillWithZeros();
     if (pTiming) t_alloc = pt.restart();
 
     double piTerm = log(2.0 * M_PI) * nbDimensions / 2.0;
