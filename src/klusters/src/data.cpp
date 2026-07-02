@@ -3578,12 +3578,25 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
     clusterInfoMapRedoList.clear();
     dimensionChangedRedo.clear();
 
-    // Localisation probe: prepareUndo is the common commit point for every
-    // forward edit (merge/split/reorder/move), installing the new row table and
-    // cluster map together.  If the edit built a map that disagrees with the
-    // row table, this fires now — at the op that caused it — instead of later
-    // when a recluster trips the palette/clusterInfoMap guard.
-    checkClusterInfoMapInvariant("prepareUndo");
+    // Active consistency guarantee.  prepareUndo is the single commit point every
+    // forward edit (merge/split/reorder/move/basin) funnels through, installing the
+    // new row table and cluster map together.  The row table has already passed
+    // candidateSpikeTableValid (a valid 1..nbSpikes permutation), so if the just-
+    // installed clusterInfoMap disagrees with it, the map is the wrong half of the
+    // pair — a committer built a valid table but a miscounted map.  Rather than only
+    // logging that (which would let the desync persist until the next tiling edit
+    // trips the net), re-derive clusterInfoMap from the committed row table's
+    // authoritative per-spike assignments (resync preserves user info and
+    // within-cluster order).  This makes it structurally impossible for a commit to
+    // leave the two out of sync — preventing the desync at its source rather than
+    // healing it at the next edit (the committer-entry self-heal) or downstream (the
+    // recluster pre-launch resync).
+    if (!checkClusterInfoMapInvariant("prepareUndo")) {
+        qWarning() << "Data::prepareUndo: the committed clusterInfoMap disagreed with"
+                   << "the row table — re-deriving it from the row table so the commit"
+                   << "stays consistent (a committer built a valid table but a wrong map).";
+        resyncClusterInfoMapFromRowTable();
+    }
 }
 
 void Data::nbUndoChangedCleaning(int newNbUndo){
