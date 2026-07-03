@@ -23,7 +23,6 @@
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
-#include "reorder_similarity_dispatch.h"
 #include "clusterPalette.h"
 #include "autoMerge.h"      // patch 0069
 #include "savethread.h"
@@ -4742,63 +4741,85 @@ void KlustersApp::slotReorderClustersBySimilarity()
     std::vector<bool>             alive(N, true);
     for (int i = 0; i < N; ++i) leaves[i].push_back(i);
 
-    // GPU acceleration.  For N below a small threshold (handled inside the
-    // dispatcher) and when no GPU backend is compiled in or no device is
-    // available, the call returns non-zero and we fall through to the CPU
-    // loop below.  The GPU produces a merge log (bi, bj per step) rather
-    // than the leaf order itself — leaf-list bookkeeping with variable-
-    // length per-node lists is awkward on the device, and cheap to
-    // reconstruct on the host (N simple appends).
-    std::vector<int> mergeBi(N - 1, -2);
-    std::vector<int> mergeBj(N - 1, -2);
-    const int gpuRc = ReorderSimilarityGpu::singleLinkage(
-        S.data(), N, mergeBi.data(), mergeBj.data());
-
-    if (gpuRc == 0) {
-        // GPU path — replay the merge log to build leaves[] and alive[].
-        // S is no longer needed (the GPU consumed/updated its own copy)
-        // but we keep the host vector around in case the CPU branch is
-        // re-entered for any later assertion.
-        for (int step = 0; step < N - 1; ++step) {
-            const int bi = mergeBi[step];
-            const int bj = mergeBj[step];
-            if (bi < 0 || bj < 0) break;     // disconnected — sentinel
-            leaves[bi].insert(leaves[bi].end(),
-                              leaves[bj].begin(), leaves[bj].end());
-            alive[bj] = false;
+    // ── Single-linkage via Prim's maximum spanning tree — O(N²) ─────────
+    // Single-linkage agglomerative clustering is equivalent to the maximum
+    // spanning tree of the similarity graph: every merge joins the two
+    // components linked by the current largest cross-similarity edge, which is
+    // exactly an MST edge, and the merge order is the MST edges taken in
+    // decreasing weight.  So build the MST once with Prim's (O(N²) on a dense
+    // matrix) and replay its edges heaviest-first.  This replaces the previous
+    // O(N³) global-argmax-per-step loop (and the single-CUDA-block kernel that
+    // parallelised that same O(N³) work over one SM): at N in the thousands --
+    // routine for a hierarchical session -- it is ~N× fewer operations and runs
+    // in milliseconds on the CPU, so no GPU round-trip is needed.
+    //
+    // The leaf order is reproduced exactly: each merge lets the lower-indexed
+    // component survive with its leaves first (union-find keeps the minimum
+    // original index as representative), matching the old loop's `bi < bj;
+    // leaves[bi] += leaves[bj]`.  For distinct similarities the resulting rename
+    // is identical; exact ties (astronomically unlikely on double-valued matrix
+    // entries) may yield a different but equally valid single-linkage order.
+    {
+        // 1) Prim's maximum spanning tree.  primParent[v]/primKey[v] hold the
+        //    heaviest edge attaching v to the tree.  Off-diagonal S entries are
+        //    all finite (possibly negative for template correlations), so every
+        //    node is reached and receives exactly one parent edge.
+        std::vector<int>    primParent(N, -1);
+        std::vector<double> primKey(N, -std::numeric_limits<double>::infinity());
+        std::vector<char>   inTree(N, 0);
+        primKey[0] = std::numeric_limits<double>::infinity();   // seed at node 0
+        for (int iter = 0; iter < N; ++iter) {
+            int    u    = -1;
+            double best = -std::numeric_limits<double>::infinity();
+            for (int v = 0; v < N; ++v)
+                if (!inTree[v] && primKey[v] > best) { best = primKey[v]; u = v; }
+            if (u < 0) break;                        // no reachable node left
+            inTree[u] = 1;
+            const double* Su = &S[static_cast<size_t>(u) * N];
+            for (int v = 0; v < N; ++v) {
+                if (inTree[v]) continue;
+                const double w = Su[v];
+                if (w > primKey[v]) { primKey[v] = w; primParent[v] = u; }
+            }
         }
-    } else {
-        // CPU fallback — O(N³) merge loop, fast for N ≤ ~200 and the
-        // sole code path when no GPU is available.
-        for (int step = 0; step < N - 1; ++step) {
-            // Find best (i*, j*) among alive nodes
-            double bestSim = -std::numeric_limits<double>::infinity();
-            int    bi = -1, bj = -1;
-            for (int i = 0; i < N; ++i) {
-                if (!alive[i]) continue;
-                for (int j = i + 1; j < N; ++j) {
-                    if (!alive[j]) continue;
-                    const double s = S[static_cast<size_t>(i) * N + j];
-                    if (s > bestSim) { bestSim = s; bi = i; bj = j; }
-                }
-            }
-            if (bi < 0 || bj < 0) break;   // disconnected — leave the rest
 
-            // Merge bj into bi
-            leaves[bi].insert(leaves[bi].end(),
-                              leaves[bj].begin(), leaves[bj].end());
-            alive[bj] = false;
+        // 2) MST edges, heaviest first == single-linkage merge order.  Tie-break
+        //    by (smaller endpoint, larger endpoint) ascending, matching the old
+        //    loop's lowest-i-then-lowest-j pick on exact ties.
+        struct MstEdge { double w; int a; int b; };   // a < b
+        std::vector<MstEdge> edges;
+        edges.reserve(N > 1 ? static_cast<size_t>(N - 1) : 0);
+        for (int v = 1; v < N; ++v) {
+            if (primParent[v] < 0) continue;          // unreached (disconnected)
+            int a = primParent[v], b = v;
+            if (a > b) std::swap(a, b);
+            edges.push_back({ primKey[v], a, b });
+        }
+        std::sort(edges.begin(), edges.end(),
+                  [](const MstEdge& x, const MstEdge& y){
+                      if (x.w != y.w) return x.w > y.w;
+                      if (x.a != y.a) return x.a < y.a;
+                      return x.b < y.b;
+                  });
 
-            // Update similarities to all remaining alive nodes (single-linkage
-            // = max).  Diagonal kept at 0; symmetric write.
-            for (int k = 0; k < N; ++k) {
-                if (!alive[k] || k == bi) continue;
-                const double a = S[static_cast<size_t>(bi) * N + k];
-                const double b = S[static_cast<size_t>(bj) * N + k];
-                const double m = std::max(a, b);
-                S[static_cast<size_t>(bi) * N + k] = m;
-                S[static_cast<size_t>(k)  * N + bi] = m;
-            }
+        // 3) Union-find with the minimum original index as representative,
+        //    merging heaviest edge first and concatenating leaves lower-first.
+        std::vector<int> ufParent(N);
+        for (int i = 0; i < N; ++i) ufParent[i] = i;
+        auto findRep = [&](int x){
+            while (ufParent[x] != x) { ufParent[x] = ufParent[ufParent[x]]; x = ufParent[x]; }
+            return x;
+        };
+        for (const MstEdge& e : edges) {
+            const int ra = findRep(e.a);
+            const int rb = findRep(e.b);
+            if (ra == rb) continue;
+            const int lo = std::min(ra, rb);          // lower index survives
+            const int hi = std::max(ra, rb);
+            leaves[lo].insert(leaves[lo].end(),
+                              leaves[hi].begin(), leaves[hi].end());
+            alive[hi]    = false;
+            ufParent[hi] = lo;
         }
     }
 
