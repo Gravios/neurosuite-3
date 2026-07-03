@@ -620,6 +620,8 @@ int main(int argc,char *argv[])
 	{
 		cerr << "error: insufficient number of records in the file (" << nRecordsRead 
 		<< ", expecting " << nRecords << ")" << endl;
+		progress->setFailed();
+		delete progress;
 		exit(1);
 	}
 	progress->advance(); // Complete data importation
@@ -771,6 +773,8 @@ int main(int argc,char *argv[])
 	outputFile = fopen(arguments.outputFileName, "wb");
 	if (!outputFile) {
 		cerr << "error: cannot open output file '" << arguments.outputFileName << "'." << endl;
+		progress->setFailed();
+		delete progress;
 		exit(1);
 	}
 	// Write .fet output — pack all values into a single buffer then write once.
