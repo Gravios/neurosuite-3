@@ -37,6 +37,12 @@ public:
     int    getMinClusterSize() const;
     void   setMinClusterSize(int n);
 
+    // Criterion
+    bool   getUseErrorMatrix() const;         ///< true = error-matrix, false = template xcorr
+    void   setUseErrorMatrix(bool b);
+    double getErrorProbThreshold() const;
+    void   setErrorProbThreshold(double v);
+
     // Scope
     int  getScope() const;                    ///< 0 = selected, 1 = all active
     void setScope(int s);

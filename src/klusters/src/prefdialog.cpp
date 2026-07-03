@@ -187,6 +187,8 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefAutoMerge->scopeSelectedRadio,        &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
     connect(prefAutoMerge->scopeAllActiveRadio,       &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
     connect(prefAutoMerge->previewBeforeApplyCheckBox,&QAbstractButton::clicked,      this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->useErrorMatrixCheckBox,    &QAbstractButton::clicked,      this, &PrefDialog::enableApply);
+    connect(prefAutoMerge->errorProbThresholdSpinBox, &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
 
     // Cluster + Waveform views (unchanged)
     connect(prefclusterView->intervalSpinBox,  &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -264,6 +266,8 @@ void PrefDialog::updateDialog()
     prefAutoMerge->setAlgorithm(configuration().getAutoMergeAlgorithm());
     prefAutoMerge->setMedianK(configuration().getAutoMergeMedianK());
     prefAutoMerge->setScoreThreshold(configuration().getAutoMergeScoreThreshold());
+    prefAutoMerge->setUseErrorMatrix(configuration().getAutoMergeUseErrorMatrix());
+    prefAutoMerge->setErrorProbThreshold(configuration().getAutoMergeErrorProbThreshold());
     prefAutoMerge->setMaxShift(configuration().getAutoMergeMaxShift());
     prefAutoMerge->setTaperSamples(configuration().getAutoMergeTaperSamples());
     prefAutoMerge->setMinClusterSize(configuration().getAutoMergeMinClusterSize());
@@ -337,6 +341,8 @@ void PrefDialog::updateConfiguration()
     configuration().setAutoMergeAlgorithm(prefAutoMerge->getAlgorithm());
     configuration().setAutoMergeMedianK(prefAutoMerge->getMedianK());
     configuration().setAutoMergeScoreThreshold(prefAutoMerge->getScoreThreshold());
+    configuration().setAutoMergeUseErrorMatrix(prefAutoMerge->getUseErrorMatrix());
+    configuration().setAutoMergeErrorProbThreshold(prefAutoMerge->getErrorProbThreshold());
     configuration().setAutoMergeMaxShift(prefAutoMerge->getMaxShift());
     configuration().setAutoMergeTaperSamples(prefAutoMerge->getTaperSamples());
     configuration().setAutoMergeMinClusterSize(prefAutoMerge->getMinClusterSize());
@@ -411,6 +417,8 @@ void PrefDialog::slotDefault()
     prefAutoMerge->setAlgorithm(configuration().getAutoMergeAlgorithmDefault());
     prefAutoMerge->setMedianK(configuration().getAutoMergeMedianKDefault());
     prefAutoMerge->setScoreThreshold(configuration().getAutoMergeScoreThresholdDefault());
+    prefAutoMerge->setUseErrorMatrix(configuration().getAutoMergeUseErrorMatrixDefault());
+    prefAutoMerge->setErrorProbThreshold(configuration().getAutoMergeErrorProbThresholdDefault());
     prefAutoMerge->setMaxShift(configuration().getAutoMergeMaxShiftDefault());
     prefAutoMerge->setTaperSamples(configuration().getAutoMergeTaperSamplesDefault());
     prefAutoMerge->setMinClusterSize(configuration().getAutoMergeMinClusterSizeDefault());
