@@ -429,7 +429,8 @@ void KlustersApp::createMenus()
     // Group the cluster-ordering actions under a "Sort Clusters" submenu; they
     // keep their shortcuts, icons, and enabled-state wiring -- only the parent
     // menu changes.
-    QMenu* sortMenu = actionMenu->addMenu(tr("Sort Clusters"));
+    mClusterSortMenu = actionMenu->addMenu(tr("Sort Clusters"));
+    QMenu* sortMenu = mClusterSortMenu;
 
     mReorderClustersBySimilarity = sortMenu->addAction(tr("Re&order Clusters by Similarity"));
     mReorderClustersBySimilarity->setIcon(QIcon(":/icons/reorder_by_similarity"));
@@ -3905,6 +3906,19 @@ void KlustersApp::slotPurgeSmallClusters()
 
     moveSelectedClustersToReservedId(small, /*noise=*/1,
         tr("Purging %1 small cluster(s) into noise...").arg(small.size()));
+}
+
+// ---------------------------------------------------------------------------
+// clusterSortActions
+//
+// The "Sort Clusters" submenu's actions, exposed so other widgets (a view's
+// right-click menu) can present the same sorting options.  Returning the
+// submenu's own actions keeps this in sync automatically as options are added
+// or removed.
+// ---------------------------------------------------------------------------
+QList<QAction*> KlustersApp::clusterSortActions() const
+{
+    return mClusterSortMenu ? mClusterSortMenu->actions() : QList<QAction*>();
 }
 
 // ---------------------------------------------------------------------------

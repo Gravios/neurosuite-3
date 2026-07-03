@@ -116,6 +116,12 @@ public:
     */
     void widgetAddToDisplay(KlustersView::DisplayType displayType);
 
+    /**Returns the cluster-sorting actions -- the contents of the "Sort Clusters"
+     * submenu -- so other widgets (e.g. a view's right-click menu) can offer the
+     * same options.  Each action keeps its own text, enabled state, and
+     * triggered() connection, so adding it elsewhere needs no extra dispatch.*/
+    QList<QAction*> clusterSortActions() const;
+
     /**Updates the menu due to the removal of a view (ClusterView, WaveformView or CorrelationView) in the active display.
     * @param displayType type of view to add (ClusterView,WaveformView or CorrelationView).
     */
@@ -603,6 +609,7 @@ private:
     // Plugins (descriptor discovery; read-only listing in v1).
     PluginRegistry mPluginRegistry;
     QMenu* mPluginsMenu = nullptr;
+    QMenu* mClusterSortMenu = nullptr;   ///< the "Sort Clusters" submenu (source of clusterSortActions())
     void populatePluginsMenu();
     void slotReloadPlugins();
     /** Resolve base/group/variant/tag from the open document for a plugin's
