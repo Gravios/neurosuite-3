@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# Continuous integration — CPU build gate.
+#
+# Builds the whole monorepo on the documented Ubuntu 24.04 toolchain with the
+# GPU backends disabled (GitHub runners have no CUDA / HIP / SYCL device), so it
+# exercises the CPU / OpenMP path that every GPU backend falls back to.  The
+# job's purpose is to catch build-breaking regressions before they land and to
+# surface -Wall -Wextra -Wshadow diagnostics in the build log.
+#
+# Warnings are NOT errors here.  To promote -Wshadow to a hard gate that locks
+# in the m_-prefix audit, append -Werror=shadow to CMAKE_CXX_FLAGS below — but
+# only after confirming a green baseline locally: klusters and libklustersshared
+# are shadow-clean (see STANDARDIZATION.md), whereas kiloklustakwik, ndmanager
+# and neuroscope have not been shadow-audited yet and may still emit -Wshadow
+# warnings that would fail the build.  When a slot signature genuinely needs it,
+# silence -Wunused-parameter at that site with a scoped
+# `#pragma GCC diagnostic ignored "-Wunused-parameter"` rather than disabling the
+# warning globally.
+# ---------------------------------------------------------------------------
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
+  pull_request:
+    branches: [main]
+    paths: ['src/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (ubuntu-24.04, CPU, Qt6)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git \
+            qt6-base-dev qt6-tools-dev libqt6svg6-dev \
+            libgl-dev libxkbcommon-dev libxcb-cursor0 \
+            libyaml-cpp-dev libxml2-dev libgsl-dev \
+            libhdf5-dev libsamplerate0-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            ffmpeg python3 python3-yaml python3-numpy
+
+      - name: Configure (GPU backends off; warnings on, non-fatal)
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF \
+            -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wshadow"
+
+      - name: Build
+        run: cmake --build build --parallel
