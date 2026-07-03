@@ -338,7 +338,9 @@ QVector<double> Data::featureVariancesForCluster(int clusterId) const
     // past the buffer -> SIGSEGV in release (Array::operator()'s bounds check is a
     // compiled-out Q_ASSERT_X).  Dropping the stale spike degrades the variance
     // estimate instead of crashing the recluster setup that calls this.
-    const long featRows = features.nbOfRows();
+    const long featRows  = features.nbOfRows();
+    const long featCols  = features.nbOfColumns();
+    const int  nReadFeat = static_cast<int>(std::min<long>(nFeat, featCols));
     QVector<int> rows;   // 1-based rows into the features array
     rows.reserve(256);
     bool warnedRow = false;
@@ -363,23 +365,23 @@ QVector<double> Data::featureVariancesForCluster(int clusterId) const
 
     const double n = static_cast<double>(rows.size());
 
-    // 2. Per-feature mean
+    // 2. Per-feature mean (read span clamped to the real column count)
     QVector<double> mean(nFeat, 0.0);
     for (int row : rows)
-        for (int f = 1; f <= nFeat; ++f)
+        for (int f = 1; f <= nReadFeat; ++f)
             mean[f - 1] += static_cast<double>(features(row, f));
-    for (int f = 0; f < nFeat; ++f)
+    for (int f = 0; f < nReadFeat; ++f)
         mean[f] /= n;
 
     // 3. Sample variance (n-1 denominator)
     QVector<double> var(nFeat, 0.0);
     for (int row : rows) {
-        for (int f = 1; f <= nFeat; ++f) {
+        for (int f = 1; f <= nReadFeat; ++f) {
             double d = static_cast<double>(features(row, f)) - mean[f - 1];
             var[f - 1] += d * d;
         }
     }
-    for (int f = 0; f < nFeat; ++f)
+    for (int f = 0; f < nReadFeat; ++f)
         var[f] /= (n - 1.0);
 
     return var;
@@ -401,7 +403,9 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
     // spikesByCluster row1 = feature-file row (1-based), row2 = cluster id.
     // Skip stale feature rows the same way featureVariancesForCluster does — an
     // out-of-range row would read past the feature matrix and SIGSEGV in release.
-    const long featRows = features.nbOfRows();
+    const long featRows  = features.nbOfRows();
+    const long featCols  = features.nbOfColumns();
+    const int  nReadFeat = static_cast<int>(std::min<long>(nFeat, featCols));
     QVector<int> rows;
     rows.reserve(256);
     bool warnedRow = false;
@@ -424,23 +428,23 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
 
     const double n = static_cast<double>(rows.size());
 
-    // Per-feature mean
+    // Per-feature mean (read span clamped to the real column count)
     QVector<double> mean(nFeat, 0.0);
     for (int row : rows)
-        for (int f = 1; f <= nFeat; ++f)
+        for (int f = 1; f <= nReadFeat; ++f)
             mean[f - 1] += static_cast<double>(features(row, f));
-    for (int f = 0; f < nFeat; ++f)
+    for (int f = 0; f < nReadFeat; ++f)
         mean[f] /= n;
 
     // Sample variance (n-1 denominator)
     QVector<double> var(nFeat, 0.0);
     for (int row : rows) {
-        for (int f = 1; f <= nFeat; ++f) {
+        for (int f = 1; f <= nReadFeat; ++f) {
             double d = static_cast<double>(features(row, f)) - mean[f - 1];
             var[f - 1] += d * d;
         }
     }
-    for (int f = 0; f < nFeat; ++f)
+    for (int f = 0; f < nReadFeat; ++f)
         var[f] /= (n - 1.0);
 
     return var;
