@@ -4543,7 +4543,9 @@ bool Data::spikePositions(int clusterId,SortableTable& subsetTable){
         return false;
     }
 
-    ClusterInfo clusterInfo  = (*clusterInfoMap)[clusterId];
+    // Const, non-detaching read (see Data::nbOfSpikes): operator[] would
+    // copy-on-write-detach the shared map, racing the other worker threads.
+    ClusterInfo clusterInfo  = clusterInfoMap->value(clusterId);
     dataType firstSpikePosition = clusterInfo.firstSpikePosition();
     dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
 
@@ -4564,7 +4566,8 @@ bool Data::spikePositionsNotModified(int clusterId,SortableTable& subsetTable){
         return false;
     }
 
-    ClusterInfo clusterInfo  = (*clusterInfoMap)[clusterId];
+    // Const, non-detaching read (see Data::nbOfSpikes).
+    ClusterInfo clusterInfo  = clusterInfoMap->value(clusterId);
     dataType firstSpikePosition = clusterInfo.firstSpikePosition();
     dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
 
