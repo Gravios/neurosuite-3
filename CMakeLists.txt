@@ -161,8 +161,15 @@ endif()
 # runtime reserves large virtual mappings that overlap ASan's shadow gap, so run
 # with the shadow-gap guard off:
 #
-#   ASAN_OPTIONS=protect_shadow_gap=0:detect_leaks=0:abort_on_error=1 \
+#   ASAN_OPTIONS=protect_shadow_gap=0:detect_leaks=0:abort_on_error=1:detect_odr_violation=1 \
 #       ./build-asan/klusters/src/klusters <session> <group>
+#
+# detect_odr_violation=1 is required because klusters links libneurosuite-qt.so:
+# the executable and the shared object each register the standard library's
+# inline globals (std::piecewise_construct etc.), and ASan's default ODR checker
+# (=2) aborts in _dl_init reporting that same-size duplicate as an "odr-violation"
+# before main() runs.  Level 1 still flags genuine ODR violations (definitions
+# whose sizes differ) but ignores these identical duplicates.
 #
 # If the corruption reproduces only with the GPU active, also configure a second
 # tree with -DUSE_CUDA=OFF -DNS_ASAN=ON to rule the CUDA host stubs in or out.
@@ -180,7 +187,7 @@ if(NS_ASAN)
     endif()
     add_link_options(-fsanitize=address)
     message(STATUS "neurosuite-3: AddressSanitizer ENABLED for host code — run with "
-                   "ASAN_OPTIONS=protect_shadow_gap=0")
+                   "ASAN_OPTIONS=protect_shadow_gap=0:detect_odr_violation=1")
 endif()
 
 
