@@ -855,7 +855,7 @@ public:
     void setUserClusterInformation(int clusterId, const QString& structure,
                                           const QString&	type,const QString& ID, const QString&	quality, const QString& notes){
         if((*clusterInfoMap).contains(static_cast<dataType>(clusterId))){
-            ClusterInfo currentClusterInfo = (*clusterInfoMap)[static_cast<dataType>(clusterId)];
+            ClusterInfo currentClusterInfo = clusterInfoMap->value(static_cast<dataType>(clusterId));
 
             currentClusterInfo.setStructure(structure);
             currentClusterInfo.setType(type);
@@ -879,7 +879,7 @@ public:
     void getUserClusterInformation(int clusterId,QList<QString>& clusterInformation){
 
         if((*clusterInfoMap).contains(static_cast<dataType>(clusterId))){
-            ClusterInfo currentClusterInfo = (*clusterInfoMap)[static_cast<dataType>(clusterId)];
+            ClusterInfo currentClusterInfo = clusterInfoMap->value(static_cast<dataType>(clusterId));
 
             clusterInformation.append(currentClusterInfo.getStructure());
             clusterInformation.append(currentClusterInfo.getType());

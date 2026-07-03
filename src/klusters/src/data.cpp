@@ -1573,12 +1573,12 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
     //never checked inside the per-spike loop, which is long for a high-rate
     //cluster.  Reading a private copy closes the race regardless of timing.
     ClusterInfoMap clusterInfoMapTemp;
-    ClusterInfoMap::Iterator iterator;
+    ClusterInfoMap::ConstIterator iterator;
     std::unique_ptr<SortableTable> spikesSnapshot;
     {
         QMutexLocker lk(&mutex);
         spikesSnapshot = std::make_unique<SortableTable>(*spikesByCluster);
-        for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
+        for(iterator = clusterInfoMap->constBegin(); iterator != clusterInfoMap->constEnd(); ++iterator){
             clusterInfoMapTemp.insert(iterator.key(),iterator.value());
         }
     }
@@ -1721,12 +1721,12 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
     ClusterInfoMap* clusterInfoMapTemp = new ClusterInfoMap();
 
     //Iteration on the clusters
-    ClusterInfoMap::Iterator iterator;
+    ClusterInfoMap::ConstIterator iterator;
     dataType upperInsertionIndex = 1;
     dataType lowerInsertionIndex = nbSpikes;
 
     //NB: the iterator iterates on the items sorted by their key
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
+    for(iterator = clusterInfoMap->constBegin(); iterator != clusterInfoMap->constEnd(); ++iterator){
         dataType firstSpikePosition = iterator.value().firstSpikePosition();
         dataType nbSpikesOfCluster = iterator.value().nbSpikes();
         dataType clusterId = iterator.key();
@@ -1898,12 +1898,12 @@ QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& cluste
     spikesByClusterTemp->setSize(nbSpikes);
 
     //Iteration on the clusters
-    ClusterInfoMap::Iterator iterator;
+    ClusterInfoMap::ConstIterator iterator;
     dataType upperInsertionIndex = 1;
     dataType lowerInsertionIndex = nbSpikes;
 
     //NB: the iterator iterates on the items sorted by their key
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
+    for(iterator = clusterInfoMap->constBegin(); iterator != clusterInfoMap->constEnd(); ++iterator){
         dataType firstSpikePosition = iterator.value().firstSpikePosition();
         dataType nbSpikesOfCluster = iterator.value().nbSpikes();
         dataType clusterId = iterator.key();
@@ -2148,14 +2148,14 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
 
     dataType reclusteringNbSpikes = 0;
     for (int cid : clustersToRecluster) {
-        ClusterInfo info = (*clusterInfoMap)[static_cast<dataType>(cid)];
+        ClusterInfo info = clusterInfoMap->value(static_cast<dataType>(cid));
         reclusteringNbSpikes += info.nbSpikes();
     }
     reclusteringSpikesByCluster.setSize(reclusteringNbSpikes);
 
     dataType upperInsertionIndex = 1;
     for (int cid : clustersToRecluster) {
-        ClusterInfo info             = (*clusterInfoMap)[static_cast<dataType>(cid)];
+        ClusterInfo info             = clusterInfoMap->value(static_cast<dataType>(cid));
         const dataType firstSpikePos = info.firstSpikePosition();
         const dataType nbSpikesOfCl  = info.nbSpikes();
         memcpy(&(reclusteringSpikesByCluster)(1, upperInsertionIndex),
@@ -2204,7 +2204,7 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
 
     // 3a. Copy untouched clusters.
     upperInsertionIndex = 1;
-    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+    for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it) {
         const dataType firstSpikePos = it.value().firstSpikePosition();
         const dataType nbSpikesOfCl  = it.value().nbSpikes();
         const dataType clusterId     = it.key();
@@ -2327,8 +2327,8 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
         return false;
     }
 
-    const dataType srcFirst = (*clusterInfoMap)[sourceCluster].firstSpikePosition();
-    const dataType srcN     = (*clusterInfoMap)[sourceCluster].nbSpikes();
+    const dataType srcFirst = clusterInfoMap->value(sourceCluster).firstSpikePosition();
+    const dataType srcN     = clusterInfoMap->value(sourceCluster).nbSpikes();
     if (srcN < static_cast<dataType>(K + 1)) {
         errorMessage = QStringLiteral("source cluster has %1 spikes, need "
             "at least K+1 = %2").arg(srcN).arg(K + 1);
@@ -2339,7 +2339,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
     QVector<dataType> refRows;
     QVector<int>      refRowCluster;
     QList<int>        refClusterIds;
-    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+    for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it) {
         const int cid = static_cast<int>(it.key());
         if (cid == sourceCluster) continue;
         if (cid <= 1) continue;                       // skip artifact + MUA
@@ -2493,7 +2493,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
 
     dataType pos = 1;
 
-    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+    for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it) {
         const dataType cid      = it.key();
         const dataType firstPos = it.value().firstSpikePosition();
         const dataType nSpk     = it.value().nbSpikes();
@@ -2932,7 +2932,7 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     dataType lastSpikePositionForCurrentClusterZeroPlus1;
 
     if(clusterInfoMap->contains(0)){
-        ClusterInfo currentClusterInfo = (*clusterInfoMap)[0];
+        ClusterInfo currentClusterInfo = clusterInfoMap->value(0);
         dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
         dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
 
@@ -3081,7 +3081,7 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     dataType nbSpikesOfCluster = 0;
     dataType firstSpikePosition;
     for(;i<max;++i){
-        ClusterInfo currentClusterInfo = (*clusterInfoMap)[i];
+        ClusterInfo currentClusterInfo = clusterInfoMap->value(i);
         nbSpikesOfCluster = currentClusterInfo.nbSpikes();
         firstSpikePosition = currentClusterInfo.firstSpikePosition();
 
@@ -3253,13 +3253,13 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     dataType lowerInsertionIndex = nbSpikes + 1;
 
     //Iteration on the clusters
-    ClusterInfoMap::Iterator iterator;
+    ClusterInfoMap::ConstIterator iterator;
 
     //Variable used to determined
     bool first = true;
 
     //NB: the iterator iterates on the items sorted by their key
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator) {
+    for(iterator = clusterInfoMap->constBegin(); iterator != clusterInfoMap->constEnd(); ++iterator) {
         dataType firstSpikePosition = iterator.value().firstSpikePosition();
         dataType nbSpikesOfCluster = iterator.value().nbSpikes();
         dataType clusterId = iterator.key();
@@ -3397,7 +3397,7 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
     // Collect feature-row indices that are actually in fromCluster.
     QList<dataType> movedRows;
     {
-        const ClusterInfo& fi = (*clusterInfoMap)[static_cast<dataType>(fromCluster)];
+        const ClusterInfo& fi = clusterInfoMap->value(static_cast<dataType>(fromCluster));
         for (dataType i = fi.firstSpikePosition();
              i < fi.firstSpikePosition() + fi.nbSpikes(); ++i) {
             dataType row1 = (*spikesByCluster)(1, i);
@@ -3418,7 +3418,7 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
 
     dataType pos = 1;  // 1-based insertion cursor
 
-    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+    for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it) {
         const dataType cid      = it.key();
         const dataType firstPos = it.value().firstSpikePosition();
         const dataType nSpk     = it.value().nbSpikes();
@@ -3594,7 +3594,7 @@ void Data::splitClusterTwoWays(int sourceCluster,
     QList<dataType> leftMoved;
     QList<dataType> rightMoved;
     {
-        const ClusterInfo& fi = (*clusterInfoMap)[static_cast<dataType>(sourceCluster)];
+        const ClusterInfo& fi = clusterInfoMap->value(static_cast<dataType>(sourceCluster));
         for (dataType i = fi.firstSpikePosition();
              i < fi.firstSpikePosition() + fi.nbSpikes(); ++i) {
             const dataType row1 = (*spikesByCluster)(1, i);
@@ -3625,7 +3625,7 @@ void Data::splitClusterTwoWays(int sourceCluster,
     dataType pos = 1;
 
     // 2a. Untouched clusters.
-    for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {
+    for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it) {
         const dataType cid      = it.key();
         const dataType firstPos = it.value().firstSpikePosition();
         const dataType nSpk     = it.value().nbSpikes();
@@ -4276,7 +4276,7 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
     //process the clusters 0 and 1 separately as, if they exist, they are never renumber.
     for(int i = 0; i < 2; ++i){
         if(clusterInfoMap->contains(i)){
-            ClusterInfo currentClusterInfo = (*clusterInfoMap)[i];
+            ClusterInfo currentClusterInfo = clusterInfoMap->value(i);
             dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
             dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
 
@@ -4296,11 +4296,11 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
     }
 
     //Iteration on the clusters
-    ClusterInfoMap::Iterator iterator;
+    ClusterInfoMap::ConstIterator iterator;
     int clusterNumber = 2;
 
     //NB: the iterator iterates on the items sorted by their key
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator) {
+    for(iterator = clusterInfoMap->constBegin(); iterator != clusterInfoMap->constEnd(); ++iterator) {
         dataType firstSpikePosition = iterator.value().firstSpikePosition();
         dataType nbSpikesOfCluster = iterator.value().nbSpikes();
         dataType clusterId = iterator.key();
@@ -4416,8 +4416,8 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
         ClusterInfo info;
     };
     QMap<int, Bucket> bucketsByNewId;          // sorted by new-id (QMap iterates ascending)
-    for (ClusterInfoMap::Iterator it = clusterInfoMap->begin();
-         it != clusterInfoMap->end(); ++it)
+    for (ClusterInfoMap::ConstIterator it = clusterInfoMap->constBegin();
+         it != clusterInfoMap->constEnd(); ++it)
     {
         const int oldId = static_cast<int>(it.key());
         const int newId = oldToNew.contains(oldId)
@@ -4521,7 +4521,7 @@ bool Data::saveClusters(FILE* clusterFile)
     {
         QMutexLocker lk(&mutex);
         spikesByClusterTemp = *spikesByCluster;
-        for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it)
+        for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it)
             clusterInfoMapTemp.insert(it.key(), it.value());
     }
 
@@ -5815,7 +5815,7 @@ int Data::createMeanSubtractedSubdimFeatureFile(int clusterId, int K,
         return 0;
     const dataType cid = static_cast<dataType>(clusterId);
     if (!clusterInfoMap->contains(cid)) return 0;
-    const ClusterInfo info = (*clusterInfoMap)[cid];
+    const ClusterInfo info = clusterInfoMap->value(cid);
     const dataType firstPos = info.firstSpikePosition();
     const dataType nSp      = info.nbSpikes();
     if (nSp < 3) return 0;        // need at least 3 spikes for a meaningful covariance
@@ -6054,7 +6054,7 @@ int Data::medianWaveformResidualImpl(const QList<int>& clusterIds, int K,
     for (int c : clusterIds) {
         const dataType cc = static_cast<dataType>(c);
         if (!clusterInfoMap->contains(cc)) return 0;
-        nSp += (*clusterInfoMap)[cc].nbSpikes();
+        nSp += clusterInfoMap->value(cc).nbSpikes();
     }
     if (nSp < 3) return 0;
     if (nbDimensions < 2) return 0;
@@ -6070,7 +6070,7 @@ int Data::medianWaveformResidualImpl(const QList<int>& clusterIds, int K,
     {
         dataType ins = 1;
         for (int c : clusterIds) {
-            const ClusterInfo info = (*clusterInfoMap)[static_cast<dataType>(c)];
+            const ClusterInfo info = clusterInfoMap->value(static_cast<dataType>(c));
             const dataType fp = info.firstSpikePosition();
             const dataType n  = info.nbSpikes();
             memcpy(&(reclusteringSpikesByCluster)(1, ins),
@@ -6313,7 +6313,7 @@ void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
     //Loop on the selected clusters to calculate the total number of spikes
     QList<int>::iterator iterator;
     for(iterator = clustersToRecluster.begin(); iterator != clustersToRecluster.end(); ++iterator ){
-        ClusterInfo clusterInfo = (*clusterInfoMap)[static_cast<dataType>(*iterator)];
+        ClusterInfo clusterInfo = clusterInfoMap->value(static_cast<dataType>(*iterator));
         reclusteringNbSpikes += clusterInfo.nbSpikes();
     }
     reclusteringSpikesByCluster.setSize(reclusteringNbSpikes);//erase any previous data.
@@ -6321,7 +6321,7 @@ void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
     //Loop on the selected clusters
     dataType upperInsertionIndex = 1;
     for(iterator = clustersToRecluster.begin(); iterator != clustersToRecluster.end(); ++iterator ){
-        ClusterInfo clusterInfo = (*clusterInfoMap)[static_cast<dataType>(*iterator)];
+        ClusterInfo clusterInfo = clusterInfoMap->value(static_cast<dataType>(*iterator));
         dataType firstSpikePosition = clusterInfo.firstSpikePosition();
         dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
         //copy the 2 rows of spikesByCluster for the given cluster
@@ -6364,11 +6364,11 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
     ClusterInfoMap* clusterInfoMapTemp = new ClusterInfoMap();
 
     //Iteration on the clusters to copy the unchanged clusters.
-    ClusterInfoMap::Iterator infoMapIterator;
+    ClusterInfoMap::ConstIterator infoMapIterator;
     dataType upperInsertionIndex = 1;
 
     //NB: the iterator iterates on the items sorted by their key
-    for(infoMapIterator = clusterInfoMap->begin(); infoMapIterator != clusterInfoMap->end(); ++infoMapIterator){
+    for(infoMapIterator = clusterInfoMap->constBegin(); infoMapIterator != clusterInfoMap->constEnd(); ++infoMapIterator){
         dataType firstSpikePosition = infoMapIterator.value().firstSpikePosition();
         dataType nbSpikesOfCluster = infoMapIterator.value().nbSpikes();
         dataType clusterId = infoMapIterator.key();
