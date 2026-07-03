@@ -426,7 +426,12 @@ void KlustersApp::createMenus()
            "Press U to (re)compute it along with the error/template matrices."));
     connect(mNewResidualMatrix,&QAction::triggered, this,&KlustersApp::slotNewResidualMatrix);
 
-    mReorderClustersBySimilarity = actionMenu->addAction(tr("Re&order Clusters by Similarity"));
+    // Group the cluster-ordering actions under a "Sort Clusters" submenu; they
+    // keep their shortcuts, icons, and enabled-state wiring -- only the parent
+    // menu changes.
+    QMenu* sortMenu = actionMenu->addMenu(tr("Sort Clusters"));
+
+    mReorderClustersBySimilarity = sortMenu->addAction(tr("Re&order Clusters by Similarity"));
     mReorderClustersBySimilarity->setIcon(QIcon(":/icons/reorder_by_similarity"));
     mReorderClustersBySimilarity->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_S));
     mReorderClustersBySimilarity->setToolTip(
@@ -446,7 +451,7 @@ void KlustersApp::createMenus()
     // count (largest cluster becomes 2).  Needs no matrix, just the cluster
     // sizes, so it follows the document/cluster-op enabled state (mirrors
     // mAutoMerge) rather than the matrix-availability gate above.  Undoable.
-    mSortClustersBySpikeCount = actionMenu->addAction(tr("Sort Clusters by Spike &Count"));
+    mSortClustersBySpikeCount = sortMenu->addAction(tr("Sort Clusters by Spike &Count"));
     mSortClustersBySpikeCount->setToolTip(
         tr("Renumber clusters so their IDs run from largest to smallest by spike\n"
            "count (the biggest cluster becomes 2).  Clusters 0 (artefact) and 1\n"
@@ -458,7 +463,7 @@ void KlustersApp::createMenus()
     // of each cluster's earliest spike (the cluster that fires first becomes 2).
     // Needs no matrix, just spike timestamps, so it follows the same
     // document/cluster-op enabled state as the spike-count sort.  Undoable.
-    mSortClustersByTime = actionMenu->addAction(tr("Sort Clusters by &Time"));
+    mSortClustersByTime = sortMenu->addAction(tr("Sort Clusters by &Time"));
     mSortClustersByTime->setToolTip(
         tr("Renumber clusters so their IDs run by ascending starting time — the\n"
            "cluster whose earliest spike comes first becomes 2.  Clusters 0\n"
@@ -470,7 +475,7 @@ void KlustersApp::createMenus()
     // violation fraction (2 ms window), so the most-contaminated cluster becomes
     // 2 and lands at the top of the palette for review.  Needs no matrix, just
     // spike timestamps, so it follows the same enabled state.  Undoable.
-    mSortClustersByContamination = actionMenu->addAction(tr("Sort Clusters by C&ontamination"));
+    mSortClustersByContamination = sortMenu->addAction(tr("Sort Clusters by C&ontamination"));
     mSortClustersByContamination->setToolTip(
         tr("Renumber clusters by descending refractory contamination — the\n"
            "fraction of inter-spike intervals shorter than 2 ms.  The most\n"
@@ -483,7 +488,7 @@ void KlustersApp::createMenus()
     // cleanest-waveform cluster becomes 2.  Reads the cached mean waveforms, so
     // it is only meaningful once waveforms are computed; it otherwise follows the
     // same enabled state as the other sorts.  Undoable.
-    mSortClustersBySnr = actionMenu->addAction(tr("Sort Clusters by &SNR"));
+    mSortClustersBySnr = sortMenu->addAction(tr("Sort Clusters by &SNR"));
     mSortClustersBySnr->setToolTip(
         tr("Renumber clusters by descending mean-waveform SNR (peak-to-trough on\n"
            "the best channel over baseline noise).  Best-SNR cluster becomes 2.\n"
@@ -497,7 +502,7 @@ void KlustersApp::createMenus()
     // merge candidate ends up adjacent and the top pairs land at low ids.
     // Reads a matrix view, so it reports if none is computed; it otherwise
     // follows the same enabled state as the other sorts.  Undoable.
-    mSortClustersByErrorPval = actionMenu->addAction(tr("Sort Clusters by Error &p-value"));
+    mSortClustersByErrorPval = sortMenu->addAction(tr("Sort Clusters by Error &p-value"));
     mSortClustersByErrorPval->setToolTip(
         tr("Renumber clusters by descending error-matrix merge affinity — each\n"
            "cluster's highest same-neuron probability against any other cluster.\n"
@@ -512,7 +517,7 @@ void KlustersApp::createMenus()
     // block last (lower-right), and seriates each block by residual-matrix
     // similarity.  Needs a computed residual matrix, so it follows the matrix-
     // availability gate (enabled when a ResidualMatrixView is created).  Undoable.
-    mSortByResidualGated = actionMenu->addAction(tr("Sort by Residual (&Gated by Count)"));
+    mSortByResidualGated = sortMenu->addAction(tr("Sort by Residual (&Gated by Count)"));
     mSortByResidualGated->setToolTip(
         tr("Renumber clusters using the residual matrix, gated by spike count.\n"
            "Clusters with >= the prompted threshold go to the upper-left (low\n"
