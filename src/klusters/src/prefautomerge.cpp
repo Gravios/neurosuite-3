@@ -35,6 +35,11 @@ void PrefAutoMerge::setTaperSamples(int n)      { taperSpinBox->setValue(n); }
 int  PrefAutoMerge::getMinClusterSize() const   { return minClusterSizeSpinBox->value(); }
 void PrefAutoMerge::setMinClusterSize(int n)    { minClusterSizeSpinBox->setValue(n); }
 
+bool PrefAutoMerge::getUseErrorMatrix() const   { return useErrorMatrixCheckBox->isChecked(); }
+void PrefAutoMerge::setUseErrorMatrix(bool b)   { useErrorMatrixCheckBox->setChecked(b); }
+double PrefAutoMerge::getErrorProbThreshold() const { return errorProbThresholdSpinBox->value(); }
+void   PrefAutoMerge::setErrorProbThreshold(double v){ errorProbThresholdSpinBox->setValue(v); }
+
 int  PrefAutoMerge::getScope() const {
     return scopeAllActiveRadio->isChecked() ? ScopeAllActive : ScopeSelected;
 }

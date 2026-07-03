@@ -23,6 +23,16 @@
     </widget>
    </item>
    <item>
+    <widget class="QGroupBox" name="groupBoxCriterion">
+     <property name="title"><string>Merge criterion</string></property>
+     <layout class="QGridLayout">
+      <item row="0" column="0" colspan="2"><widget class="QCheckBox" name="useErrorMatrixCheckBox"><property name="text"><string>Use &amp;error-matrix probability (instead of template cross-correlation)</string></property><property name="toolTip"><string>Score cluster pairs by the posterior-confusion matrix shown in the Error Matrix view rather than by template cross-correlation. A pair is proposed when max(P(i-&gt;j), P(j-&gt;i)) reaches the threshold below. Computing the error matrix takes seconds on a large session and is not cancellable mid-computation.</string></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="errorProbThresholdLabel"><property name="text"><string>Error-matrix threshold:</string></property></widget></item>
+      <item row="1" column="1"><widget class="QDoubleSpinBox" name="errorProbThresholdSpinBox"><property name="minimum"><double>0.000000000000000</double></property><property name="maximum"><double>1.000000000000000</double></property><property name="singleStep"><double>0.010000000000000</double></property><property name="decimals"><number>3</number></property><property name="toolTip"><string>Minimum value of max(P(i-&gt;j), P(j-&gt;i)) for a cluster pair to be merged when the error-matrix criterion is selected. Only used when the checkbox above is ticked.</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QGroupBox" name="groupBoxScoring">
      <property name="title"><string>Scoring (pairwise template xcorr)</string></property>
      <layout class="QGridLayout">
