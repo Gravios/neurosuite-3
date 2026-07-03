@@ -2623,7 +2623,7 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
     if(destinationCluster == 0){
         //Copy cluster 0 as it is if exists
         if(clusterInfoMap->contains(0)){
-            ClusterInfo currentClusterInfo = (*clusterInfoMap)[0];
+            ClusterInfo currentClusterInfo = clusterInfoMap->value(0);
             dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
             dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
 
@@ -2650,7 +2650,7 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
     }
     if(destinationCluster == 1){
         if(clusterInfoMap->contains(0)){
-            ClusterInfo currentClusterInfo = (*clusterInfoMap)[0];
+            ClusterInfo currentClusterInfo = clusterInfoMap->value(0);
             dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
             dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
 
@@ -2723,7 +2723,7 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
         } //end of exists cluster 0
 
         if(clusterInfoMap->contains(1)){
-            ClusterInfo currentClusterInfo = (*clusterInfoMap)[1];
+            ClusterInfo currentClusterInfo = clusterInfoMap->value(1);
             dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
             dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
 
@@ -2760,14 +2760,17 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
 
         if(clusterId == destinationCluster || clusterId == 0) continue;
 
-        dataType firstSpikePosition = (*clusterInfoMap)[clusterId].firstSpikePosition();
-        dataType nbSpikesOfCluster = (*clusterInfoMap)[clusterId].nbSpikes();
+        // Single const, non-detaching read (value()); operator[] would
+        // copy-on-write-detach the shared map, racing worker-thread reads.
+        ClusterInfo currentClusterInfo = clusterInfoMap->value(clusterId);
+        dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
+        dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
         //The user information of the different clusters.
-        QString structure = (*clusterInfoMap)[clusterId].getStructure();
-        QString	type = (*clusterInfoMap)[clusterId].getType();
-        QString	iD = (*clusterInfoMap)[clusterId].getId();
-        QString	quality = (*clusterInfoMap)[clusterId].getQuality();
-        QString	notes = (*clusterInfoMap)[clusterId].getNotes();
+        QString structure = currentClusterInfo.getStructure();
+        QString	type = currentClusterInfo.getType();
+        QString	iD = currentClusterInfo.getId();
+        QString	quality = currentClusterInfo.getQuality();
+        QString	notes = currentClusterInfo.getNotes();
 
 
         //if clustersOfOrigin does not contains the current cluster, this cluster is let unchanged
@@ -3848,7 +3851,7 @@ void Data::moveClusters(QList<int>& clustersToDelete,SortableTable* spikesByClus
                      static_cast<long long>(clusterId), destinationId);
             continue;
         }
-        ClusterInfo currentClusterInfo = (*clusterInfoMap)[clusterId];
+        ClusterInfo currentClusterInfo = clusterInfoMap->value(clusterId);
         dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
         dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
 
@@ -3867,10 +3870,13 @@ void Data::moveClusters(QList<int>& clustersToDelete,SortableTable* spikesByClus
 
     //Copy the 2 rows for all the other clusters
     //Iteration on the clusters starting with the cluster following cluster 1
-    ClusterInfoMap::Iterator iterator;
+    // A mutable QMap iterator detaches the shared map (copy-on-write); this loop
+    // only reads iterator.value(), so a const iterator (constBegin/constEnd) is
+    // both correct and safe against concurrent worker-thread reads.
+    ClusterInfoMap::ConstIterator iterator;
 
     //NB: the iterator iterates on the items sorted by their key
-    for(iterator = clusterInfoMap->begin(); iterator != clusterInfoMap->end(); ++iterator){
+    for(iterator = clusterInfoMap->constBegin(); iterator != clusterInfoMap->constEnd(); ++iterator){
         dataType clusterId = iterator.key();
         if(clusterId <= destinationId) continue;
         if(!clustersToDelete.contains(static_cast<int>(clusterId))){
