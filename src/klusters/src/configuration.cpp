@@ -67,6 +67,7 @@ void Configuration::read() {
     realignIterations = settings.value("realignIterations",  2).toInt();
     realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
     realignMode       = settings.value("realignMode",        0).toInt();
+    reorderMethod     = settings.value("reorderMethod",      0).toInt();
     curationLogging   = settings.value("curationLogging",    true).toBool();
     realignVerbose    = settings.value("realignVerbose",     false).toBool();
     autoRealignAfterMerge = settings.value("autoRealignAfterMerge", true).toBool();
@@ -147,6 +148,7 @@ void Configuration::write() const {
     settings.setValue("realignIterations", realignIterations);
     settings.setValue("realignMaxShift",   realignMaxShift);
     settings.setValue("realignMode",       realignMode);
+    settings.setValue("reorderMethod",     reorderMethod);
     settings.setValue("curationLogging",   curationLogging);
     settings.setValue("realignVerbose",    realignVerbose);
     settings.setValue("autoRealignAfterMerge", autoRealignAfterMerge);

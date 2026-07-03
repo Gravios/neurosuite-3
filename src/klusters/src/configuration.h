@@ -90,6 +90,7 @@ public:
     void setRealignMaxShift(int n)        {realignMaxShift = qMax(0, n);}
     /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     void setRealignMode(int m)            {realignMode = (m < 0 || m > 2) ? 0 : m;}
+    void setReorderMethod(int m)          {reorderMethod = (m < 0 || m > 1) ? 0 : m;}
     void setCurationLogging(bool b)       {curationLogging = b;}
     void setRealignVerbose(bool b)        {realignVerbose = b;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
@@ -193,6 +194,7 @@ public:
     int    getRealignMaxShift()   const {return realignMaxShift;}
     /**Returns the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     int    getRealignMode()       const {return realignMode;}
+    int    getReorderMethod()     const {return reorderMethod;}
     bool   getCurationLogging()   const {return curationLogging;}
     bool   getRealignVerbose()    const {return realignVerbose;}
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
@@ -275,6 +277,7 @@ public:
     int    getRealignIterationsDefault() const {return 2;}
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
+    int    getReorderMethodDefault()     const {return 0;}  // 0 = single-linkage (MST), 1 = spectral (Fiedler)
     bool   getCurationLoggingDefault()   const {return true;}
     bool   getRealignVerboseDefault()    const {return false;}
     bool   getAutoRealignAfterMergeDefault() const {return true;}
@@ -412,6 +415,7 @@ private:
     int     realignIterations;
     int     realignMaxShift;
     int     realignMode;
+    int     reorderMethod;   // reorder-by-similarity: 0 = single-linkage (MST), 1 = spectral (Fiedler)
     bool    curationLogging;   // record per-action curation audit snapshots
     bool    realignVerbose;    // stream per-spike realignment detail to stderr
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
