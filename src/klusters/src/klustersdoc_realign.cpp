@@ -2118,6 +2118,13 @@ void KlustersDoc::resyncActiveClusterInfoMap()
 {
     // Repair a row-table/cluster-map desync on the active clustering (the same
     // one activeClusterHasMembers validates against) without a save+reopen.
+    //
+    // This rebuilds clusterInfoMap in place, so quiesce worker threads first
+    // (same reasoning as the edit/renumber paths): a concurrent correlogram /
+    // matrix reader would torn-read the map mid-rebuild.
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
     data().resyncClusterInfoMapFromRowTable();
 }
 
