@@ -799,6 +799,14 @@ public:
   */
     dataType totalNbOfSpikes() const{return nbSpikes;}
 
+    /** Earliest spike timestamp (feature-file time column) for every cluster,
+     *  computed in a single pass over spikesByCluster.  Used by the "Sort
+     *  Clusters by Time" action to order clusters by their starting edge; the
+     *  value is monotonic in real time, which is all the sort needs.  Spikes
+     *  whose feature row is out of range (stale spikesByCluster) are skipped so
+     *  a desync degrades the ordering instead of reading past the matrix. */
+    QHash<int,double> firstSpikeTimes() const;
+
     /**
   * String indicating in scale mode the user is using (raw, scale by the maximum,
   * scale by the shoulder) in the correlationView.
