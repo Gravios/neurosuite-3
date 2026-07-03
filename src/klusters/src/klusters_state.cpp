@@ -157,6 +157,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
         mSortClustersBySnr->setEnabled(false);
+        mSortClustersByErrorPval->setEnabled(false);
 
         mPurgeSmallClusters->setEnabled(false);
         mUpdateDisplay->setEnabled(false);
@@ -229,6 +230,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
         mDeleteArtifact->setEnabled(true);
@@ -318,6 +320,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByErrorPval->setEnabled(true);
 
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noClusterViewState")) {
@@ -344,6 +347,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noCorrelationViewState")) {
         scaleByMax->setEnabled(false);
@@ -368,6 +372,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noErrorMatrixViewState")) {
         mUpdateErrorMatrix->setEnabled(false);
@@ -384,6 +389,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
 
     } else if(state == QLatin1String("groupingAssistantDisplayExists")) {
@@ -420,6 +426,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
         mSortClustersBySnr->setEnabled(false);
+        mSortClustersByErrorPval->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         shoulderLine->setEnabled(false);
         mIncreaseAmplitude->setEnabled(false);
@@ -441,6 +448,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
         mSortClustersBySnr->setEnabled(false);
+        mSortClustersByErrorPval->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
@@ -481,6 +489,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
         mSortClustersBySnr->setEnabled(false);
+        mSortClustersByErrorPval->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
@@ -534,6 +543,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
         mDeleteArtifact->setEnabled(true);
         mDeleteArtifactSpikes->setEnabled(true);

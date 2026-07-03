@@ -334,6 +334,11 @@ private Q_SLOTS:
      *  cluster becomes 2).  Requires computed mean waveforms; clusters without a
      *  ready cache sort last.  Clusters 0/1 untouched; undoable. */
     void slotSortClustersBySnr();
+    /** Renumber clusters so IDs run by descending error-matrix merge affinity
+     *  (each cluster's strongest off-diagonal probability); the best merge
+     *  candidate becomes 2.  Requires a computed, up-to-date error matrix in the
+     *  active display.  Clusters 0/1 untouched; undoable. */
+    void slotSortClustersByErrorPval();
     /** Reorder non-special clusters by residual-matrix similarity, gated by
      *  spike count (high-count block upper-left, low-count lower-right). */
     void slotSortByResidualGated();
@@ -856,6 +861,7 @@ private:
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination
     QAction *mSortClustersBySnr;         // renumber clusters by descending mean-waveform SNR
+    QAction *mSortClustersByErrorPval;   // renumber clusters by descending error-matrix affinity
     QAction *mSortByResidualGated;      // residual-matrix sort, gated by spike count
     /** Last spike-count threshold used by slotPurgeSmallClusters (remembered
      *  for the session; the purge dialog is pre-filled with it). */
