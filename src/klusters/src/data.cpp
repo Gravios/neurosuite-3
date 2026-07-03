@@ -732,9 +732,19 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
         QVector<double> isiSorted = isi;
         const int mid = nPairs / 2;
         std::nth_element(isiSorted.begin(), isiSorted.begin() + mid, isiSorted.end());
+        // Even count: average the two central order statistics.  After
+        // nth_element(mid), isiSorted[mid] is the upper central value and every
+        // element in [begin, begin+mid) is <= it, so the lower central value is
+        // the max of that prefix (mid >= 1 in the even branch, so the range is
+        // never empty).  The previous code took
+        // min_element(begin+mid+1, end): it both averaged the wrong pair AND, when
+        // mid+1 == nPairs (nPairs == 2, i.e. a 3-spike cluster), dereferenced
+        // end() -- the heap-buffer-overflow read at data.cpp:737 that aborted
+        // "Align all clusters" while snapshotting for the curation log.
         snap.isiMedianMs = (nPairs % 2 == 1)
             ? isiSorted[mid]
-            : 0.5 * (isiSorted[mid] + *std::min_element(isiSorted.begin() + mid + 1, isiSorted.end()));
+            : 0.5 * (isiSorted[mid]
+                     + *std::max_element(isiSorted.begin(), isiSorted.begin() + mid));
 
         // CV = std / mean
         if (meanIsi > 0.0) {
