@@ -202,6 +202,10 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
         featureRowSet.insert(static_cast<dataType>(idx + 1));
 
     QList<int> fromClusters, emptiedClusters;
+        // Quiesce background view threads before mutating Data, so a view/matrix
+        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        for (KlustersView* view : *viewList)
+            view->stopAllViewThreads();
     clusteringData->moveSpikeSubset(fromCluster, featureRowSet,
                                      toCluster, fromClusters, emptiedClusters);
 
@@ -258,6 +262,12 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     logBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
                               : CurationLogger::ActionType::DELETE_ARTEFACT,
               clustersToDelete);
+
+        // Quiesce background view threads before mutating Data, so a view/matrix
+        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        for (KlustersView* view : *viewList)
+            view->stopAllViewThreads();
+
 
     QList<int> modifiedcluster;
     modifiedcluster.append(clusterId);
@@ -385,6 +395,10 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
     QList <int> emptyClusters;
     QList<int> clustersToShow(clustersOfOrigin);
 
+        // Quiesce background view threads before mutating Data, so a view/matrix
+        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        for (KlustersView* view : *viewList)
+            view->stopAllViewThreads();
     clusteringData->deleteSpikesFromClusters(region,clustersOfOrigin,destination,dimensionX,dimensionY,fromClusters,emptyClusters);
 
     //Get the active view.
@@ -666,6 +680,10 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
     // Route through the ACTIVE clustering: childData when a child is selected (the
     // split becomes a new sibling atom under the same parent), clusteringData
     // otherwise -- data() == clusteringData then, so the parent path is unchanged.
+        // Quiesce background view threads before mutating Data, so a view/matrix
+        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        for (KlustersView* view : *viewList)
+            view->stopAllViewThreads();
     Data& targetData = data();
     const bool onChild = (&targetData == childData);
     float newClusterId = targetData.createNewCluster(region,clustersOfOrigin,dimensionX,dimensionY,fromClusters,emptyClusters);
@@ -766,6 +784,10 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
     // Route through the ACTIVE clustering (childData when a child is selected ->
     // the new clusters are sibling atoms under the same parent; clusteringData
     // otherwise, unchanged parent path).
+        // Quiesce background view threads before mutating Data, so a view/matrix
+        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        for (KlustersView* view : *viewList)
+            view->stopAllViewThreads();
     Data& targetData = data();
     const bool onChild = (&targetData == childData);
     QMap<int,int> fromToNewClusterIds = targetData.createNewClusters(region,clustersOfOrigin,dimensionX,dimensionY,emptyClusters);
