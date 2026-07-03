@@ -830,72 +830,25 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
 
         QMouseEvent* mouseEvent = dynamic_cast<QMouseEvent*>(event);
         if(mouseEvent->button() == Qt::RightButton){
-            //Create the popmenu
-            QMenu menu(tr("Add a View"),this);
+            //Create the popmenu: the cluster-sorting options.  Reuse the main
+            //window's "Sort Clusters" actions directly, so each item carries its
+            //own text, enabled state, and triggered() connection -- selecting one
+            //runs its slot with no extra dispatch here.  (View creation remains on
+            //the Display menu.)
+            QMenu menu(tr("Sort Clusters"),this);
             QWidgetAction *act = new QWidgetAction(&menu);
-            QLabel *lab = new QLabel(tr("Add a View"));
+            QLabel *lab = new QLabel(tr("Sort Clusters"));
             lab->setAlignment(Qt::AlignCenter);
             act->setDefaultWidget(lab);
             menu.addAction(act);
             menu.addSeparator();
-            QAction* clusterView = menu.addAction(tr("Add a ClusterView"));
-            QAction* waveformView = menu.addAction(tr("Add a WaveformView"));
-            QAction* correlationView = menu.addAction(tr("Add a CorrelationView"));
-            QAction* errorMatrixView    = menu.addAction(tr("Add an ErrorMatrixView"));
-            QAction* templateMatrixView = menu.addAction(tr("Add a Template Matrix View"));
-            QAction* traceView = menu.addAction(tr("Add a TraceView"));
-
-            //A traceView is possible only if the variables it needs are available (provided in the new parameter file) and
-            //the .dat file exists.
-            if(!doc.areTraceDataAvailable() || !doc.isTraceViewVariablesAvailable())
-                traceView->setEnabled(false);
-
-            //For the moment only one WaveformView and TraceView are allowed per View.
-            if(viewCounter.contains("WaveformView"))
-                waveformView->setEnabled(false);
-
-            if(viewCounter.contains("CorrelationView"))
-                correlationView->setEnabled(true);
-
-            if(viewCounter.contains("TraceView"))
-                traceView->setEnabled(false);
-
-            //Only one ErrorMatrixView is allowed for the whole application.
-            if(mainWindow.isExistAnErrorMatrix())
-                errorMatrixView->setEnabled(false);
-
-            // Only one TemplateMatrixView per application.
-            if(mainWindow.isExistATemplateMatrix())
-                templateMatrixView->setEnabled(false);
+            const QList<QAction*> sortActions = mainWindow.clusterSortActions();
+            for(QAction* sortAction : sortActions)
+                menu.addAction(sortAction);
 
             menu.setMouseTracking(true);
-            QAction* id = menu.exec(QCursor::pos());
-
-            if(id == clusterView){
-                mainWindow.widgetAddToDisplay(CLUSTERS);
-                return true;
-            }
-            else if(id == waveformView){
-                mainWindow.widgetAddToDisplay(WAVEFORMS);
-                return true;
-            }
-            else if(id == correlationView){
-                mainWindow.widgetAddToDisplay(CORRELATIONS);
-                return true;
-            }
-            else if(id == errorMatrixView){
-                mainWindow.widgetAddToDisplay(ERROR_MATRIX);
-                return true;
-            }
-            else if(id == templateMatrixView){
-                mainWindow.widgetAddToDisplay(TEMPLATE_MATRIX);
-                return true;
-            }
-            else if(id == traceView){
-                mainWindow.widgetAddToDisplay(TRACES);
-                return true;
-            }
-            else return QWidget::eventFilter(object,event);    // standard event processing
+            menu.exec(QCursor::pos());
+            return true;
         }
         else return QWidget::eventFilter(object,event);    // standard event processing
     }
