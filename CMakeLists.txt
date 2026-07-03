@@ -143,6 +143,48 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # ---------------------------------------------------------------------------
+# AddressSanitizer (opt-in; OFF by default so normal builds are unaffected)
+#
+# Instruments HOST code (C, C++, and the host side of .cu translation units) to
+# catch heap/stack buffer overflows and use-after-free AT THE BAD ACCESS, with a
+# symbolised stack trace.  Use this to locate memory corruption whose crash
+# surfaces far from the write site -- e.g. a later free() aborting inside an
+# unrelated code path with "munmap_chunk(): invalid pointer", "free(): invalid
+# pointer", or "malloc(): corrupted top size".  Such a backtrace shows only
+# where the damage was noticed, never the write that caused it; ASan does.
+#
+#   cmake -B build-asan -DNS_ASAN=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+#   cmake --build build-asan --parallel N
+#
+# Then reproduce the crash under the sanitizer.  CUDA DEVICE code is not
+# instrumented (nvcc device passes ignore -fsanitize=address), and the CUDA
+# runtime reserves large virtual mappings that overlap ASan's shadow gap, so run
+# with the shadow-gap guard off:
+#
+#   ASAN_OPTIONS=protect_shadow_gap=0:detect_leaks=0:abort_on_error=1 \
+#       ./build-asan/klusters/src/klusters <session> <group>
+#
+# If the corruption reproduces only with the GPU active, also configure a second
+# tree with -DUSE_CUDA=OFF -DNS_ASAN=ON to rule the CUDA host stubs in or out.
+# ---------------------------------------------------------------------------
+option(NS_ASAN "Build host code with AddressSanitizer (locate memory corruption)" OFF)
+if(NS_ASAN)
+    # Apply to C/C++ directly; thread the same flags through nvcc for the .cu
+    # host side.  -fno-omit-frame-pointer keeps the reported stacks readable.
+    add_compile_options(
+        "$<$<COMPILE_LANGUAGE:C>:-fsanitize=address;-fno-omit-frame-pointer>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-fsanitize=address;-fno-omit-frame-pointer>")
+    if(_cuda_lang)
+        add_compile_options(
+            "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fsanitize=address;-Xcompiler=-fno-omit-frame-pointer>")
+    endif()
+    add_link_options(-fsanitize=address)
+    message(STATUS "neurosuite-3: AddressSanitizer ENABLED for host code — run with "
+                   "ASAN_OPTIONS=protect_shadow_gap=0")
+endif()
+
+
+# ---------------------------------------------------------------------------
 # Per-component skip flags
 # ---------------------------------------------------------------------------
 option(NS_SKIP_NPHYS_DATA          "Skip nphys-data"         OFF)
