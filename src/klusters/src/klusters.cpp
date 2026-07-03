@@ -479,6 +479,19 @@ void KlustersApp::createMenus()
     connect(mSortClustersByContamination,&QAction::triggered,
             this,&KlustersApp::slotSortClustersByContamination);
 
+    // Sort by SNR: renumber clusters by descending mean-waveform SNR, so the
+    // cleanest-waveform cluster becomes 2.  Reads the cached mean waveforms, so
+    // it is only meaningful once waveforms are computed; it otherwise follows the
+    // same enabled state as the other sorts.  Undoable.
+    mSortClustersBySnr = actionMenu->addAction(tr("Sort Clusters by &SNR"));
+    mSortClustersBySnr->setToolTip(
+        tr("Renumber clusters by descending mean-waveform SNR (peak-to-trough on\n"
+           "the best channel over baseline noise).  Best-SNR cluster becomes 2.\n"
+           "Requires computed mean waveforms — clusters without one sort last.\n"
+           "Clusters 0 (artefact) and 1 (noise) are preserved.  Undoable with Ctrl+Z."));
+    connect(mSortClustersBySnr,&QAction::triggered,
+            this,&KlustersApp::slotSortClustersBySnr);
+
     // Sort by residual, gated by spike count.  Partitions clusters into a
     // high-count block (>= a prompted threshold) and a low-count block, places
     // the high block first (upper-left of the matrix / low ids) and the low
@@ -3995,6 +4008,51 @@ void KlustersApp::slotSortClustersByContamination()
         slotStatusMsg(tr("Sort by contamination: reorder rejected (cluster set changed?)."));
     else
         slotStatusMsg(tr("Sorted %1 clusters by contamination (most contaminated first).").arg(nRenamed));
+}
+
+// ---------------------------------------------------------------------------
+// slotSortClustersBySnr
+//
+// Renumber non-special clusters by descending mean-waveform SNR so the cleanest
+// cluster becomes 2.  Mirrors slotSortClustersByContamination; metric =
+// Data::clusterWaveformSnrs().  Clusters without a ready waveform cache are
+// absent from the metric and sort last via a -1 sentinel.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortClustersBySnr()
+{
+    if (!mSortClustersBySnr->isEnabled()) return;
+    if (!doc || !activeView()) return;
+
+    auto& d = doc->data();
+    QList<int> clusters;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+
+    if (clusters.size() < 2) {
+        slotStatusMsg(tr("Sort by SNR: fewer than 2 non-noise clusters; nothing to sort."));
+        return;
+    }
+
+    const QHash<int,double> snr = d.clusterWaveformSnrs();
+    if (snr.isEmpty()) {
+        slotStatusMsg(tr("Sort by SNR: no cluster has a computed mean waveform yet; "
+                         "compute waveforms first."));
+        return;
+    }
+
+    // Clusters without a ready waveform cache are absent; sort them last via a
+    // -1 sentinel (below any real SNR) under descending order.
+    std::stable_sort(clusters.begin(), clusters.end(),
+        [&snr](int a, int b){
+            return snr.value(a, -1.0) > snr.value(b, -1.0);
+        });
+
+    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by SNR: reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters by SNR (highest first).").arg(nRenamed));
 }
 
 

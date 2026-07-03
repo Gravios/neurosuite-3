@@ -813,6 +813,13 @@ public:
      *  sort; stale feature rows are skipped.  Empty if samplingRate is unset. */
     QHash<int,double> refractoryViolationFractions(double refractoryMs) const;
 
+    /** Per-cluster waveform SNR (peak-to-trough on the best channel / 2x baseline
+     *  RMS), read from the cached mean waveform -- the same computation
+     *  computeSnapshot performs.  Only clusters whose mean-waveform cache is
+     *  READY appear; others are absent (they sort last).  Used by "Sort Clusters
+     *  by SNR". */
+    QHash<int,double> clusterWaveformSnrs() const;
+
     /**
   * String indicating in scale mode the user is using (raw, scale by the maximum,
   * scale by the shoulder) in the correlationView.
