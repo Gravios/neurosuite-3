@@ -537,13 +537,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             // block-wise body, and populates pca.method/nInputChannels.  core
             // already rejects bad magic / version / short reads and guarantees
             // nCh,data2use,nComp > 0; klusters keeps its upper-bound sanity checks
-            // (and the original log lines) against an absurd-but-valid header.
+            // (and the original log lines) against an absurd-but-valid header.  The
+            // channel bound is the group's own channel count (nChan) rather than a
+            // fixed cap, so high-density probes (Neuropixels-class, nChan > 64) are
+            // not spuriously rejected; a valid per-group basis has nCh == nChan
+            // (raw) or nChan-1 (stderiv), never more.
             if (!neurosuite::core::loadPca(pcaPath.toStdString(), pca)) {
                 pca = PcaBasis{};
-            } else if (pca.nCh > 64 || pca.data2use > 4096 || pca.nComp > 64 ||
+            } else if (pca.nCh > nChan || pca.data2use > 4096 || pca.nComp > 64 ||
                        pca.recShift < 0 || pca.recShift + pca.data2use > nSamp) {
                 log << "WARNING: .pca header out of range (nCh="
-                    << pca.nCh << " data2use=" << pca.data2use
+                    << pca.nCh << " nChan=" << nChan
+                    << " data2use=" << pca.data2use
                     << " nComp=" << pca.nComp << " recShift="
                     << pca.recShift << ") — ignoring .pca file\n";
                 pca = PcaBasis{};
