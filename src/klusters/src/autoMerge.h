@@ -31,6 +31,8 @@ struct Settings {
     int    algorithm           = 1;     ///< 0 = mean, 1 = median
     int    medianK             = 50;    ///< median: per-cluster subsample cap
     double scoreThreshold      = 0.98;
+    bool   useErrorMatrix      = false; ///< true: score pairs by error-matrix confusion, not template xcorr
+    double errorProbThreshold  = 0.15;  ///< error-matrix mode: merge when max(P(i->j),P(j->i)) >= this
     int    maxShift            = 0;     ///< 0 = auto (nSamp/4)
     int    taperSamples        = 0;     ///< 0 = no Hann taper
     int    minClusterSize      = 25;

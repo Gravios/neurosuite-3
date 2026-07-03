@@ -87,6 +87,8 @@ void Configuration::read() {
     autoMergeAlgorithm           = settings.value("autoMergeAlgorithm",           1).toInt();
     autoMergeMedianK             = settings.value("autoMergeMedianK",             50).toInt();
     autoMergeScoreThreshold      = settings.value("autoMergeScoreThreshold",      0.98).toDouble();
+    autoMergeUseErrorMatrix      = settings.value("autoMergeUseErrorMatrix",      false).toBool();
+    autoMergeErrorProbThreshold  = settings.value("autoMergeErrorProbThreshold",  0.15).toDouble();
     autoMergeMaxShift            = settings.value("autoMergeMaxShift",            0).toInt();
     autoMergeTaperSamples        = settings.value("autoMergeTaperSamples",        0).toInt();
     autoMergeMinClusterSize      = settings.value("autoMergeMinClusterSize",      25).toInt();
@@ -168,6 +170,8 @@ void Configuration::write() const {
     settings.setValue("autoMergeAlgorithm",           autoMergeAlgorithm);
     settings.setValue("autoMergeMedianK",             autoMergeMedianK);
     settings.setValue("autoMergeScoreThreshold",      autoMergeScoreThreshold);
+    settings.setValue("autoMergeUseErrorMatrix",      autoMergeUseErrorMatrix);
+    settings.setValue("autoMergeErrorProbThreshold",  autoMergeErrorProbThreshold);
     settings.setValue("autoMergeMaxShift",            autoMergeMaxShift);
     settings.setValue("autoMergeTaperSamples",        autoMergeTaperSamples);
     settings.setValue("autoMergeMinClusterSize",      autoMergeMinClusterSize);

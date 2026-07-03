@@ -3637,6 +3637,8 @@ void KlustersApp::slotAutoMerge()
     s.algorithm          = configuration().getAutoMergeAlgorithm();
     s.medianK            = configuration().getAutoMergeMedianK();
     s.scoreThreshold     = configuration().getAutoMergeScoreThreshold();
+    s.useErrorMatrix     = configuration().getAutoMergeUseErrorMatrix();
+    s.errorProbThreshold = configuration().getAutoMergeErrorProbThreshold();
     s.maxShift           = configuration().getAutoMergeMaxShift();
     s.taperSamples       = configuration().getAutoMergeTaperSamples();
     s.minClusterSize     = configuration().getAutoMergeMinClusterSize();

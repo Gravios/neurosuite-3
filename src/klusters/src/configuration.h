@@ -117,6 +117,8 @@ public:
     void setAutoMergeAlgorithm(int a)           {autoMergeAlgorithm     = qBound(0, a, 1);}
     void setAutoMergeMedianK(int k)             {autoMergeMedianK       = qBound(1, k, 500);}
     void setAutoMergeScoreThreshold(double v)   {autoMergeScoreThreshold= qBound(0.0, v, 1.0);}
+    void setAutoMergeUseErrorMatrix(bool b)      {autoMergeUseErrorMatrix = b;}
+    void setAutoMergeErrorProbThreshold(double v){autoMergeErrorProbThreshold = qBound(0.0, v, 1.0);}
     void setAutoMergeMaxShift(int n)            {autoMergeMaxShift      = qBound(0, n, 128);}
     void setAutoMergeTaperSamples(int n)        {autoMergeTaperSamples  = qBound(0, n, 64);}
     void setAutoMergeMinClusterSize(int n)      {autoMergeMinClusterSize= qBound(2, n, 1000000);}
@@ -217,6 +219,8 @@ public:
     int    getAutoMergeAlgorithm()       const {return autoMergeAlgorithm;}
     int    getAutoMergeMedianK()         const {return autoMergeMedianK;}
     double getAutoMergeScoreThreshold()  const {return autoMergeScoreThreshold;}
+    bool   getAutoMergeUseErrorMatrix()  const {return autoMergeUseErrorMatrix;}
+    double getAutoMergeErrorProbThreshold() const {return autoMergeErrorProbThreshold;}
     int    getAutoMergeMaxShift()        const {return autoMergeMaxShift;}
     int    getAutoMergeTaperSamples()    const {return autoMergeTaperSamples;}
     int    getAutoMergeMinClusterSize()  const {return autoMergeMinClusterSize;}
@@ -299,6 +303,8 @@ public:
     int    getAutoMergeAlgorithmDefault()        const {return 1;}      ///< median (matches KKE MedianKnn preference)
     int    getAutoMergeMedianKDefault()          const {return 50;}     ///< matches KKE MedianKnnTemplateMatchK
     double getAutoMergeScoreThresholdDefault()   const {return 0.98;}   ///< matches KKE TemplateMatchScore
+    bool   getAutoMergeUseErrorMatrixDefault()     const {return false;}  ///< default criterion is template xcorr
+    double getAutoMergeErrorProbThresholdDefault() const {return 0.15;}   ///< error-matrix mode merge threshold
     int    getAutoMergeMaxShiftDefault()         const {return 0;}      ///< 0 = auto (nSamp/4)
     int    getAutoMergeTaperSamplesDefault()     const {return 0;}      ///< off
     int    getAutoMergeMinClusterSizeDefault()   const {return 25;}     ///< matches KKE min
@@ -441,6 +447,8 @@ private:
     int     autoMergeAlgorithm;    ///< 0 = mean templates, 1 = median templates
     int     autoMergeMedianK;      ///< neighbour count for median template (median mode only)
     double  autoMergeScoreThreshold; ///< minimum xcorr score to merge a pair (0.0-1.0)
+    bool    autoMergeUseErrorMatrix; ///< true = error-matrix criterion, false = template xcorr
+    double  autoMergeErrorProbThreshold; ///< error-matrix mode: merge threshold on max directed confusion (0.0-1.0)
     int     autoMergeMaxShift;     ///< max xcorr shift in samples; 0 = auto (nSamp/4)
     int     autoMergeTaperSamples; ///< Hann taper window length on each end; 0 = off
     int     autoMergeMinClusterSize; ///< clusters smaller than this are skipped
