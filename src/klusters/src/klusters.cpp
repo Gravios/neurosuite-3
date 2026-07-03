@@ -466,6 +466,19 @@ void KlustersApp::createMenus()
     connect(mSortClustersByTime,&QAction::triggered,
             this,&KlustersApp::slotSortClustersByTime);
 
+    // Sort by contamination: renumber clusters by descending refractory ISI-
+    // violation fraction (2 ms window), so the most-contaminated cluster becomes
+    // 2 and lands at the top of the palette for review.  Needs no matrix, just
+    // spike timestamps, so it follows the same enabled state.  Undoable.
+    mSortClustersByContamination = actionMenu->addAction(tr("Sort Clusters by C&ontamination"));
+    mSortClustersByContamination->setToolTip(
+        tr("Renumber clusters by descending refractory contamination — the\n"
+           "fraction of inter-spike intervals shorter than 2 ms.  The most\n"
+           "contaminated cluster becomes 2 (top of the palette).  Clusters 0\n"
+           "(artefact) and 1 (noise) are preserved at the start.  Undoable with Ctrl+Z."));
+    connect(mSortClustersByContamination,&QAction::triggered,
+            this,&KlustersApp::slotSortClustersByContamination);
+
     // Sort by residual, gated by spike count.  Partitions clusters into a
     // high-count block (>= a prompted threshold) and a low-count block, places
     // the high block first (upper-left of the matrix / low ids) and the low
@@ -3942,6 +3955,46 @@ void KlustersApp::slotSortClustersByTime()
         slotStatusMsg(tr("Sort by time: reorder rejected (cluster set changed?)."));
     else
         slotStatusMsg(tr("Sorted %1 clusters by starting time (earliest first).").arg(nRenamed));
+}
+
+// ---------------------------------------------------------------------------
+// slotSortClustersByContamination
+//
+// Renumber non-special clusters by descending refractory ISI-violation fraction
+// (2 ms window) so the most contaminated cluster becomes 2.  Mirrors
+// slotSortClustersByTime; metric = Data::refractoryViolationFractions(2.0).
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortClustersByContamination()
+{
+    if (!mSortClustersByContamination->isEnabled()) return;
+    if (!doc || !activeView()) return;
+
+    auto& d = doc->data();
+    QList<int> clusters;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+
+    if (clusters.size() < 2) {
+        slotStatusMsg(tr("Sort by contamination: fewer than 2 non-noise clusters; nothing to sort."));
+        return;
+    }
+
+    // Refractory contamination at a 2 ms window, one pass over all spikes.
+    const QHash<int,double> contam = d.refractoryViolationFractions(2.0);
+
+    // Missing clusters (no in-range spikes) have no contamination; sort them last
+    // via a -1 sentinel (below any real fraction in [0,1]) under descending order.
+    std::stable_sort(clusters.begin(), clusters.end(),
+        [&contam](int a, int b){
+            return contam.value(a, -1.0) > contam.value(b, -1.0);
+        });
+
+    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by contamination: reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters by contamination (most contaminated first).").arg(nRenamed));
 }
 
 

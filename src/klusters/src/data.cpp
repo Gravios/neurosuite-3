@@ -480,6 +480,46 @@ QHash<int,double> Data::firstSpikeTimes() const
 }
 
 // ---------------------------------------------------------------------------
+// refractoryViolationFractions — per-cluster refractory ISI-violation fraction.
+// One pass buckets each cluster's spike timestamps (feature-file time column),
+// then per cluster sorts and counts consecutive ISIs shorter than refractoryMs,
+// divided by the number of ISIs.  Used by "Sort Clusters by Contamination".
+// Robust to a stale feature row (skipped) and to samplingRate<=0 (returns {}).
+// ---------------------------------------------------------------------------
+QHash<int,double> Data::refractoryViolationFractions(double refractoryMs) const
+{
+    QHash<int,double> out;
+    if (!spikesByCluster || samplingRate <= 0.0) return out;
+
+    const int  nSpk     = static_cast<int>(nbSpikes);
+    const long featRows = features.nbOfRows();
+    const long tsCol    = std::min<long>(nbDimensions, features.nbOfColumns());
+    if (tsCol < 1) return out;
+    const double refractorySamples = (refractoryMs / 1000.0) * samplingRate;
+
+    // Bucket timestamps per cluster (one pass over all spikes).
+    QHash<int, QVector<double>> tsByCluster;
+    for (int s = 1; s <= nSpk; ++s) {
+        const int cid = static_cast<int>((*spikesByCluster)(2, s));
+        const int row = static_cast<int>((*spikesByCluster)(1, s));
+        if (row < 1 || row > featRows) continue;
+        tsByCluster[cid].append(static_cast<double>(features(row, tsCol)));
+    }
+
+    // Per cluster: sort, count ISIs below the refractory threshold.
+    for (auto it = tsByCluster.begin(); it != tsByCluster.end(); ++it) {
+        QVector<double>& ts = it.value();
+        if (ts.size() < 2) { out[it.key()] = 0.0; continue; }
+        std::sort(ts.begin(), ts.end());
+        int viol = 0;
+        for (int i = 1; i < ts.size(); ++i)
+            if ((ts[i] - ts[i - 1]) < refractorySamples) ++viol;
+        out[it.key()] = static_cast<double>(viol) / static_cast<double>(ts.size() - 1);
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // Chi-squared survival function — used for L-ratio computation
 // Schmitzer-Torbert et al. (2005): L = Σ chi2_sf(d²_mahal, D) / n_cluster
 //
