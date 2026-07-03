@@ -454,6 +454,18 @@ void KlustersApp::createMenus()
     connect(mSortClustersBySpikeCount,&QAction::triggered,
             this,&KlustersApp::slotSortClustersBySpikeCount);
 
+    // Sort by starting-edge time: renumber clusters so IDs run by ascending time
+    // of each cluster's earliest spike (the cluster that fires first becomes 2).
+    // Needs no matrix, just spike timestamps, so it follows the same
+    // document/cluster-op enabled state as the spike-count sort.  Undoable.
+    mSortClustersByTime = actionMenu->addAction(tr("Sort Clusters by &Time"));
+    mSortClustersByTime->setToolTip(
+        tr("Renumber clusters so their IDs run by ascending starting time — the\n"
+           "cluster whose earliest spike comes first becomes 2.  Clusters 0\n"
+           "(artefact) and 1 (noise) are preserved at the start.  Undoable with Ctrl+Z."));
+    connect(mSortClustersByTime,&QAction::triggered,
+            this,&KlustersApp::slotSortClustersByTime);
+
     // Sort by residual, gated by spike count.  Partitions clusters into a
     // high-count block (>= a prompted threshold) and a low-count block, places
     // the high block first (upper-left of the matrix / low ids) and the low
@@ -3888,6 +3900,48 @@ void KlustersApp::slotSortClustersBySpikeCount()
         slotStatusMsg(tr("Sort by spike count: reorder rejected (cluster set changed?)."));
     else
         slotStatusMsg(tr("Sorted %1 clusters by spike count (largest first).").arg(nRenamed));
+}
+
+// ---------------------------------------------------------------------------
+// slotSortClustersByTime
+//
+// Renumber non-special clusters by ascending starting-edge time (earliest spike
+// first).  Mirrors slotSortClustersBySpikeCount; the per-cluster metric is
+// Data::firstSpikeTimes() (a single pass over all spikes), and the reorder /
+// undo / log / palette bookkeeping stays inside reorderClustersByPermutation.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortClustersByTime()
+{
+    if (!mSortClustersByTime->isEnabled()) return;
+    if (!doc || !activeView()) return;
+
+    auto& d = doc->data();
+    QList<int> clusters;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+
+    if (clusters.size() < 2) {
+        slotStatusMsg(tr("Sort by time: fewer than 2 non-noise clusters; nothing to sort."));
+        return;
+    }
+
+    // Snapshot each cluster's earliest spike time once (one pass over all spikes).
+    const QHash<int,double> firstTs = d.firstSpikeTimes();
+
+    // A cluster with no in-range spikes is absent from the hash; sort those last,
+    // deterministically, via a +inf sentinel.
+    const double sentinel = std::numeric_limits<double>::max();
+    std::stable_sort(clusters.begin(), clusters.end(),
+        [&firstTs, sentinel](int a, int b){
+            return firstTs.value(a, sentinel) < firstTs.value(b, sentinel);
+        });
+
+    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by time: reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters by starting time (earliest first).").arg(nRenamed));
 }
 
 

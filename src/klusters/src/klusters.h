@@ -322,6 +322,10 @@ private Q_SLOTS:
     /** Renumber clusters so IDs run by descending spike count (largest = 2).
      *  Clusters 0/1 untouched; undoable. */
     void slotSortClustersBySpikeCount();
+    /** Renumber clusters so IDs run by ascending starting-edge time (the
+     *  cluster whose earliest spike comes first becomes 2).  Needs no matrix,
+     *  just spike timestamps; clusters 0/1 untouched; undoable. */
+    void slotSortClustersByTime();
     /** Reorder non-special clusters by residual-matrix similarity, gated by
      *  spike count (high-count block upper-left, low-count lower-right). */
     void slotSortByResidualGated();
@@ -841,6 +845,7 @@ private:
     QAction *mAutoMerge;            // patch 0069 — Auto-Merge action
     QAction *mPurgeSmallClusters;   // move all clusters below N spikes to noise
     QAction *mSortClustersBySpikeCount; // renumber clusters by descending spike count
+    QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortByResidualGated;      // residual-matrix sort, gated by spike count
     /** Last spike-count threshold used by slotPurgeSmallClusters (remembered
      *  for the session; the purge dialog is pre-filled with it). */

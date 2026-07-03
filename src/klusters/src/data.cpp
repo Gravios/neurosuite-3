@@ -451,6 +451,35 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
 }
 
 // ---------------------------------------------------------------------------
+// firstSpikeTimes — earliest spike timestamp per cluster, one pass.
+// The timestamp is read from the feature-file time column (min(nbDimensions,
+// featCols)); its units don't matter to the caller, only that it is monotonic
+// in real time.  A spike whose feature row is out of range is skipped, mirroring
+// the reader guards in computeSnapshot / computeAllCentroids.
+// ---------------------------------------------------------------------------
+QHash<int,double> Data::firstSpikeTimes() const
+{
+    QHash<int,double> out;
+    if (!spikesByCluster) return out;
+
+    const int  nSpk     = static_cast<int>(nbSpikes);
+    const long featRows = features.nbOfRows();
+    const long tsCol    = std::min<long>(nbDimensions, features.nbOfColumns());
+    if (tsCol < 1) return out;
+
+    for (int s = 1; s <= nSpk; ++s) {
+        const int cid = static_cast<int>((*spikesByCluster)(2, s));
+        const int row = static_cast<int>((*spikesByCluster)(1, s));
+        if (row < 1 || row > featRows) continue;
+        const double ts = static_cast<double>(features(row, tsCol));
+        auto it = out.find(cid);
+        if (it == out.end() || ts < it.value())
+            out[cid] = ts;
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // Chi-squared survival function — used for L-ratio computation
 // Schmitzer-Torbert et al. (2005): L = Σ chi2_sf(d²_mahal, D) / n_cluster
 //
