@@ -520,6 +520,57 @@ QHash<int,double> Data::refractoryViolationFractions(double refractoryMs) const
 }
 
 // ---------------------------------------------------------------------------
+// clusterWaveformSnrs — per-cluster mean-waveform SNR from the waveform cache.
+// Mirrors computeSnapshot section H's SNR: best channel = max peak-to-trough,
+// SNR = that amplitude / (2 x baseline RMS over the first samples).  Only
+// clusters with a READY sample-mean cache are included; the rest are absent and
+// sort last in the caller.
+// ---------------------------------------------------------------------------
+QHash<int,double> Data::clusterWaveformSnrs() const
+{
+    QHash<int,double> out;
+    const int nSamp = nbSamplesInWaveform;
+    const int nChan = nbChannels;
+    if (nSamp < 1 || nChan < 1) return out;
+
+    for (auto it = waveformStatusMap.constBegin(); it != waveformStatusMap.constEnd(); ++it) {
+        const int cid = it.key();
+        if (it.value().sampleMeanStatus() != READY) continue;
+        const QString key = QString::number(cid);
+        if (!waveformDict.contains(key)) continue;
+        const Waveforms* wf = waveformDict.value(key);
+        if (!wf) continue;
+
+        // Best channel = maximum peak-to-trough amplitude of the mean waveform.
+        // Layout: index = sample * nChan + channel.
+        double bestAmp = -1.0;
+        int    bestCh  = 0;
+        for (int ch = 0; ch < nChan; ++ch) {
+            double chMax = static_cast<double>(wf->getSampleMean(ch));   // sample 0
+            double chMin = chMax;
+            for (int smp = 1; smp < nSamp; ++smp) {
+                const double v = static_cast<double>(wf->getSampleMean(smp * nChan + ch));
+                if (v > chMax) chMax = v;
+                if (v < chMin) chMin = v;
+            }
+            const double amp = chMax - chMin;
+            if (amp > bestAmp) { bestAmp = amp; bestCh = ch; }
+        }
+
+        // SNR = peak-to-trough / (2 x baseline RMS over the first samples).
+        const int nBase = std::min(4, nSamp);
+        double baseRms = 0.0;
+        for (int smp = 0; smp < nBase; ++smp) {
+            const double v = static_cast<double>(wf->getSampleMean(smp * nChan + bestCh));
+            baseRms += v * v;
+        }
+        baseRms = std::sqrt(baseRms / static_cast<double>(nBase));
+        out[cid] = (baseRms > 0.0) ? (bestAmp / (2.0 * baseRms)) : 0.0;
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // Chi-squared survival function — used for L-ratio computation
 // Schmitzer-Torbert et al. (2005): L = Σ chi2_sf(d²_mahal, D) / n_cluster
 //
