@@ -331,11 +331,31 @@ QVector<double> Data::featureVariancesForCluster(int clusterId) const
     // spikesByCluster is the sort map: row1 = feature-file row (1-based),
     // row2 = cluster id. The features array uses the feature-file row as its
     // row index, NOT the sorted position s.
+    //
+    // Skip stale feature rows (see computeAllCentroids / computeSnapshot): a
+    // realign or recluster can leave a spikesByCluster row index pointing past
+    // the feature matrix, and features(row,f) with an out-of-range row reads raw
+    // past the buffer -> SIGSEGV in release (Array::operator()'s bounds check is a
+    // compiled-out Q_ASSERT_X).  Dropping the stale spike degrades the variance
+    // estimate instead of crashing the recluster setup that calls this.
+    const long featRows = features.nbOfRows();
     QVector<int> rows;   // 1-based rows into the features array
     rows.reserve(256);
+    bool warnedRow = false;
     for (int s = 1; s <= nSpk; ++s){
-        if (static_cast<int>((*spikesByCluster)(2, s)) == clusterId)
-            rows.append(static_cast<int>((*spikesByCluster)(1, s)));
+        if (static_cast<int>((*spikesByCluster)(2, s)) == clusterId) {
+            const int row = static_cast<int>((*spikesByCluster)(1, s));
+            if (row < 1 || row > featRows) {
+                if (!warnedRow) {
+                    qWarning() << "Data::featureVariancesForCluster: cluster" << clusterId
+                               << "feature row" << row << "outside [1," << featRows
+                               << "] — skipping (stale spikesByCluster?)";
+                    warnedRow = true;
+                }
+                continue;
+            }
+            rows.append(row);
+        }
     }
 
     if (rows.size() < 2)
@@ -379,11 +399,25 @@ QVector<double> Data::featureVariancesForClusters(const QList<int>& clusterIds) 
 
     // Collect feature-file row indices for spikes in the listed clusters.
     // spikesByCluster row1 = feature-file row (1-based), row2 = cluster id.
+    // Skip stale feature rows the same way featureVariancesForCluster does — an
+    // out-of-range row would read past the feature matrix and SIGSEGV in release.
+    const long featRows = features.nbOfRows();
     QVector<int> rows;
     rows.reserve(256);
+    bool warnedRow = false;
     for (int s = 1; s <= nSpk; ++s)
-        if (idSet.contains(static_cast<int>((*spikesByCluster)(2, s))))
-            rows.append(static_cast<int>((*spikesByCluster)(1, s)));
+        if (idSet.contains(static_cast<int>((*spikesByCluster)(2, s)))) {
+            const int row = static_cast<int>((*spikesByCluster)(1, s));
+            if (row < 1 || row > featRows) {
+                if (!warnedRow) {
+                    qWarning() << "Data::featureVariancesForClusters: feature row" << row
+                               << "outside [1," << featRows << "] — skipping (stale spikesByCluster?)";
+                    warnedRow = true;
+                }
+                continue;
+            }
+            rows.append(row);
+        }
 
     if (rows.size() < 2)
         return QVector<double>();
