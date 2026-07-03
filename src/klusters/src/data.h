@@ -807,6 +807,12 @@ public:
      *  a desync degrades the ordering instead of reading past the matrix. */
     QHash<int,double> firstSpikeTimes() const;
 
+    /** Fraction of consecutive-spike ISIs shorter than @p refractoryMs, per
+     *  cluster -- the refractory contamination estimate used by "Sort Clusters
+     *  by Contamination".  One pass to bucket timestamps, then a per-cluster
+     *  sort; stale feature rows are skipped.  Empty if samplingRate is unset. */
+    QHash<int,double> refractoryViolationFractions(double refractoryMs) const;
+
     /**
   * String indicating in scale mode the user is using (raw, scale by the maximum,
   * scale by the shoulder) in the correlationView.
