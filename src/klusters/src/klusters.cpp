@@ -4586,6 +4586,102 @@ void KlustersApp::slotNewResidualMatrix()
 // stack, curation log, palette refresh, and dock-side renumber signals
 // all work without further wiring.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// reorderSpectralFiedlerOrder -- spectral seriation of the cluster similarity
+// matrix.  Orders the N nodes by the Fiedler vector (the eigenvector of the
+// second-smallest eigenvalue) of the similarity Laplacian L = D - W, laying
+// clusters out along the dominant similarity gradient -- typically a smoother
+// heatmap ordering than single-linkage, which tends to chain.
+//
+// W is the input matrix S clamped to non-negative affinities: template
+// correlations can be negative, and a negative affinity is meaningless for a
+// Laplacian, so anti-correlated pairs contribute 0.  The Fiedler vector is found
+// by shifted power iteration on M = cI - L, with c = 2*max_i d_i + 1 an upper
+// bound on lambda_max(L) (Gershgorin).  M's largest eigenpair is the constant
+// vector (deflated out every step by subtracting the mean), so the iteration
+// converges to the second -- the Fiedler vector.  Each step is one dense mat-vec
+// (W*x), parallelised with OpenMP; the pragmas are unknown-pragma-safe, so this
+// degrades to a correct serial computation when OpenMP is not enabled.
+//
+// Returns a permutation of [0, N) in Fiedler order, or an empty vector on a
+// degenerate input so the caller falls back to the identity order.
+static std::vector<int> reorderSpectralFiedlerOrder(const std::vector<double>& S, int N)
+{
+    if (N < 2) return {};
+
+    // Non-negative degrees and the Gershgorin shift c >= lambda_max(L).
+    std::vector<double> deg(static_cast<size_t>(N), 0.0);
+    double maxDeg = 0.0;
+    #pragma omp parallel for reduction(max:maxDeg) schedule(static)
+    for (int i = 0; i < N; ++i) {
+        const double* Si = &S[static_cast<size_t>(i) * N];
+        double d = 0.0;
+        for (int j = 0; j < N; ++j) {
+            if (j == i) continue;
+            const double w = Si[j];
+            if (w > 0.0) d += w;
+        }
+        deg[i] = d;
+        if (d > maxDeg) maxDeg = d;
+    }
+    const double c = 2.0 * maxDeg + 1.0;
+
+    auto normalise = [&](std::vector<double>& v) -> double {
+        double s = 0.0;
+        for (int i = 0; i < N; ++i) s += v[i] * v[i];
+        s = std::sqrt(s);
+        if (s < 1e-300) return 0.0;
+        const double inv = 1.0 / s;
+        for (int i = 0; i < N; ++i) v[i] *= inv;
+        return s;
+    };
+
+    // Deterministic, non-constant, already-mean-zero seed (a linear ramp).
+    std::vector<double> x(static_cast<size_t>(N)), y(static_cast<size_t>(N));
+    const double mid = 0.5 * (N - 1);
+    for (int i = 0; i < N; ++i) x[i] = static_cast<double>(i) - mid;
+    normalise(x);
+
+    const int    maxIters = 1000;
+    const double tol      = 1e-9;
+    double prevEig = 0.0;
+    for (int iter = 0; iter < maxIters; ++iter) {
+        // Project x orthogonal to the all-ones vector (deflate the constant
+        // eigenvector so the iteration lands on the Fiedler vector, not 1).
+        double mean = 0.0;
+        for (int i = 0; i < N; ++i) mean += x[i];
+        mean /= N;
+        for (int i = 0; i < N; ++i) x[i] -= mean;
+
+        // y = M x = (c - deg).*x + W x   (W = S clamped to non-negative)
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < N; ++i) {
+            const double* Si = &S[static_cast<size_t>(i) * N];
+            double acc = 0.0;
+            for (int j = 0; j < N; ++j) {
+                if (j == i) continue;
+                const double w = Si[j];
+                if (w > 0.0) acc += w * x[j];
+            }
+            y[i] = (c - deg[i]) * x[i] + acc;
+        }
+
+        const double eig = normalise(y);   // ~ (c - lambda_2) once converged
+        x.swap(y);
+        if (iter > 0 && std::fabs(eig - prevEig) <= tol * std::max(1.0, std::fabs(eig)))
+            break;
+        prevEig = eig;
+    }
+
+    // Order nodes by ascending Fiedler component; stable tie-break by index so
+    // the result is deterministic.
+    std::vector<int> order(static_cast<size_t>(N));
+    for (int i = 0; i < N; ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(),
+                     [&](int a, int b){ return x[a] < x[b]; });
+    return order;
+}
+
 void KlustersApp::slotReorderClustersBySimilarity()
 {
     KlustersView* view = activeView();
@@ -4736,6 +4832,15 @@ void KlustersApp::slotReorderClustersBySimilarity()
         }
     }
 
+    // ── Turn the similarity matrix into an order over node indices ──────
+    // Method chosen in Preferences -> Refinement -> "Reorder-by-similarity
+    // method": 0 = single-linkage (MST leaf order, default), 1 = spectral
+    // (sort by the Fiedler vector of the similarity Laplacian).  Both consume
+    // the same working matrix S and produce orderIdx over node indices.
+    std::vector<int> orderIdx;
+    if (configuration().getReorderMethod() == 1) {
+        orderIdx = reorderSpectralFiedlerOrder(S, N);   // parallel power iteration
+    } else {
     // ── Single-linkage agglomerative merge → leaf order ─────────────────
     std::vector<std::vector<int>> leaves(N);
     std::vector<bool>             alive(N, true);
@@ -4823,18 +4928,20 @@ void KlustersApp::slotReorderClustersBySimilarity()
         }
     }
 
-    // Recover the leaf order: walk alive[] and concatenate leaves[] in
-    // index order.  In a fully-connected matrix only one node is alive;
-    // a disconnected matrix leaves multiple — append them in order.
-    std::vector<int> orderIdx;
-    orderIdx.reserve(N);
-    for (int i = 0; i < N; ++i) {
-        if (!alive[i]) continue;
-        for (int leaf : leaves[i]) orderIdx.push_back(leaf);
-    }
+        // Recover the leaf order: walk alive[] and concatenate leaves[] in
+        // index order.  In a fully-connected matrix only one node is alive;
+        // a disconnected matrix leaves multiple — append them in order.
+        orderIdx.reserve(N);
+        for (int i = 0; i < N; ++i) {
+            if (!alive[i]) continue;
+            for (int leaf : leaves[i]) orderIdx.push_back(leaf);
+        }
+    }   // end single-linkage (MST) branch
+
     if (static_cast<int>(orderIdx.size()) != N) {
-        // Belt and braces: if something went wrong with the merge, fall
-        // back to the original order rather than corrupting the rename.
+        // Belt and braces: if the chosen method produced a short or invalid
+        // order, fall back to the original order rather than corrupting the
+        // rename.
         orderIdx.clear();
         for (int i = 0; i < N; ++i) orderIdx.push_back(i);
     }

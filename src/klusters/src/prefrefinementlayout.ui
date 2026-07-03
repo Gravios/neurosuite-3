@@ -308,6 +308,36 @@
         </property>
        </widget>
       </item>
+      <item row="2" column="0">
+       <layout class="QHBoxLayout" name="reorderMethodRow">
+        <item>
+         <widget class="QLabel" name="reorderMethodLabel">
+          <property name="text">
+           <string>Reorder-by-similarity method:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="reorderMethodComboBox">
+          <property name="toolTip">
+           <string>Algorithm used by Reorder Clusters by Similarity (Shift+S) to turn the similarity matrix into a cluster ordering. Single-linkage (MST): the maximum-spanning-tree leaf order, very fast (O(N^2)) but tends to chain. Spectral (Fiedler): sort by the Fiedler vector of the similarity Laplacian via a parallel power iteration, often a smoother heatmap gradient. Both read whichever matrix is computed (error or template). Default: Single-linkage (MST).</string>
+          </property>
+          <item>
+           <property name="text"><string>Single-linkage (MST)</string></property>
+          </item>
+          <item>
+           <property name="text"><string>Spectral (Fiedler)</string></property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <spacer name="reorderMethodSpacer">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
      </layout>
     </widget>
    </item>

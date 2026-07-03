@@ -156,6 +156,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRefinement->errorMatrixLowPrecisionCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModePcaRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeRmsRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
+    connect(prefRefinement->reorderMethodComboBox,      &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitMinSizeSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitBloatFactorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitValleyThreshSpinBox,&QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -232,6 +233,7 @@ void PrefDialog::updateDialog()
     prefRefinement->setRealignIterations(configuration().getRealignIterations());
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShift());
     prefRefinement->setRealignMode(configuration().getRealignMode());
+    prefRefinement->setReorderMethod(configuration().getReorderMethod());
     prefRefinement->setCurationLogging(configuration().getCurationLogging());
     prefRefinement->setRealignVerbose(configuration().getRealignVerbose());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMerge());
@@ -304,6 +306,7 @@ void PrefDialog::updateConfiguration()
     configuration().setRealignIterations(prefRefinement->getRealignIterations());
     configuration().setRealignMaxShift(prefRefinement->getRealignMaxShift());
     configuration().setRealignMode(prefRefinement->getRealignMode());
+    configuration().setReorderMethod(prefRefinement->getReorderMethod());
     configuration().setCurationLogging(prefRefinement->getCurationLogging());
     configuration().setRealignVerbose(prefRefinement->getRealignVerbose());
     configuration().setAutoRealignAfterMerge(prefRefinement->getAutoRealignAfterMerge());
@@ -381,6 +384,7 @@ void PrefDialog::slotDefault()
     prefRefinement->setRealignIterations(configuration().getRealignIterationsDefault());
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
     prefRefinement->setRealignMode(configuration().getRealignModeDefault());
+    prefRefinement->setReorderMethod(configuration().getReorderMethodDefault());
     prefRefinement->setCurationLogging(configuration().getCurationLoggingDefault());
     prefRefinement->setRealignVerbose(configuration().getRealignVerboseDefault());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMergeDefault());

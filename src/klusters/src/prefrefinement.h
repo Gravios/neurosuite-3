@@ -20,6 +20,9 @@ public:
     // Post-alignment mode: 0 = off, 1 = PCA refine, 2 = RMS recenter
     void   setRealignMode(int m);
     int    getRealignMode()       const;
+    // Reorder-by-similarity method: 0 = single-linkage (MST), 1 = spectral (Fiedler)
+    void   setReorderMethod(int m);
+    int    getReorderMethod()     const;
 
     // Curation logging (per-action audit snapshots)
     void   setCurationLogging(bool b);
