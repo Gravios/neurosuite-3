@@ -790,7 +790,14 @@ public:
   * @return the number of spikes of the cluster @p clusterId.
   */
     dataType nbOfSpikes(dataType clusterId){
-        ClusterInfo currentClusterInfo = (*clusterInfoMap)[clusterId];
+        // value() is a const, non-detaching read: unlike operator[] it neither
+        // copy-on-write-detaches nor inserts a default entry.  This accessor is
+        // called lock-free from the correlogram / template-matrix / residual-
+        // matrix worker threads; operator[]'s detach mutates the shared QMap's
+        // control block, so two of those threads reading at once raced and freed
+        // each other's tree nodes (heap-use-after-free).  A pure const read does
+        // not touch the control block, so concurrent reads are safe.
+        ClusterInfo currentClusterInfo = clusterInfoMap->value(clusterId);
         return currentClusterInfo.nbSpikes();
     }
 
