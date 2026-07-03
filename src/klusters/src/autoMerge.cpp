@@ -30,6 +30,8 @@
 #include "sortabletable.h"
 #include "configuration.h"
 #include "templatematrixthread.h"   // tmReadSpikeFloat
+#include "groupingassistant.h"      // computeMeanProbabilities (error-matrix criterion)
+#include "array.h"                  // Array<double> error matrix
 
 #include <QApplication>
 #include <QCheckBox>
@@ -93,6 +95,88 @@ struct UnionFind {
     }
 };
 
+// Error-matrix merge criterion (alternative to the template xcorr in
+// computeProposals).  Scores each candidate pair by the posterior-confusion
+// matrix the Error Matrix view shows -- GroupingAssistant::computeMeanProbabilities,
+// whose cell (i,j) is the mean over cluster i's spikes of their posterior under
+// cluster j -- and proposes a merge when the larger of the two directed
+// probabilities reaches the threshold (the matrix is not symmetric).  The
+// union-find / group emission mirrors the template path exactly.  Note:
+// computeMeanProbabilities is a single blocking call (seconds on a large
+// session) and, unlike the template path, is not cancellable mid-computation.
+QList<MergeGroup> computeProposalsByErrorMatrix(
+    Data& data, const Settings& settings, const QList<int>& candidates,
+    QWidget* parent)
+{
+    QList<MergeGroup> result;
+    const int nClusters = candidates.size();
+
+    QProgressDialog progress(
+        QObject::tr("Auto-Merge: computing error matrix..."),
+        QString(), 0, 0, parent);           // busy indicator; the call below is atomic
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(100);
+    progress.setValue(0);
+    QApplication::processEvents();
+
+    // clusterList (out) gives the cluster id at each 1-based row/column of the
+    // returned [nClusters x nClusters] matrix.
+    GroupingAssistant assistant;
+    QList<int> clusterList, computedClusterList, ignoreClusterIndex;
+    Array<double>* err = assistant.computeMeanProbabilities(
+        data, clusterList, computedClusterList, ignoreClusterIndex);
+    if (err == nullptr) return result;
+
+    // Map each cluster id to its 1-based index in the matrix.
+    std::map<int,int> rowOf;
+    for (int k = 0; k < clusterList.size(); ++k)
+        rowOf[clusterList[k]] = k + 1;
+
+    // A candidate pair merges when the larger directed confusion probability
+    // reaches the threshold; both directions are read because P(i->j) != P(j->i).
+    const double thr = settings.errorProbThreshold;
+    std::vector<std::tuple<int,int,float>> highPairs;
+    for (int a = 0; a < nClusters; ++a) {
+        const auto ita = rowOf.find(candidates[a]);
+        if (ita == rowOf.end()) continue;              // cluster absent from the matrix
+        for (int b = a + 1; b < nClusters; ++b) {
+            const auto itb = rowOf.find(candidates[b]);
+            if (itb == rowOf.end()) continue;
+            const double pij = (*err)(ita->second, itb->second);
+            const double pji = (*err)(itb->second, ita->second);
+            const double sc  = std::max(pij, pji);
+            if (sc >= thr)
+                highPairs.emplace_back(a, b, static_cast<float>(sc));
+        }
+    }
+    delete err;
+
+    // Union-find on the score graph -> groups of size >= 2 (mirrors section 5).
+    UnionFind uf(nClusters);
+    for (const auto& p : highPairs) uf.unite(std::get<0>(p), std::get<1>(p));
+
+    std::map<int, MergeGroup> groupsByRoot;
+    for (int i = 0; i < nClusters; ++i) {
+        const int r = uf.find(i);
+        groupsByRoot[r].clusters.append(candidates[i]);
+        groupsByRoot[r].totalSpikes +=
+            static_cast<int>(data.nbOfSpikes(candidates[i]));
+    }
+    for (const auto& p : highPairs) {
+        const int r = uf.find(std::get<0>(p));
+        const float sc = std::get<2>(p);
+        if (static_cast<double>(sc) > groupsByRoot[r].maxPairScore)
+            groupsByRoot[r].maxPairScore = static_cast<double>(sc);
+    }
+    for (auto& kv : groupsByRoot) {
+        MergeGroup& g = kv.second;
+        if (g.clusters.size() < 2) continue;
+        std::sort(g.clusters.begin(), g.clusters.end());
+        result.append(g);
+    }
+    return result;
+}
+
 }  // anonymous namespace
 
 
@@ -117,6 +201,11 @@ QList<MergeGroup> computeProposals(
 
     const int nClusters = candidates.size();
     if (nClusters < 2) return result;
+
+    // Error-matrix criterion: score pairs by posterior confusion instead of
+    // template cross-correlation.  Self-contained; the template path is untouched.
+    if (settings.useErrorMatrix)
+        return computeProposalsByErrorMatrix(data, settings, candidates, parent);
 
     const int    nChan    = data.nbOfChannels();
     const int    nSamp    = data.nbSamplesPerWaveform();
