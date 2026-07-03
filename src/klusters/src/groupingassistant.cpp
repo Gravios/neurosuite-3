@@ -309,6 +309,12 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         const int  ci1 = cjIdx + 1;                        // 1-based column
         if (cj.ignore) continue;                           // stays all-zero (matches full path)
 
+        // Per-iteration (hence per-thread) Mahalanobis scratch, sized to the
+        // actual feature dimensionality.  Replaces a fixed double[64] that
+        // overran the stack for high-density probes (nbDimensions = nCh*nComp
+        // can exceed 64); reused across this column's inner spike loops.
+        std::vector<double> root(static_cast<size_t>(nbDimensions));
+
         const bool reusable =
             !changedIds.contains(cj.id)
             && prevCol.contains(cj.id)
@@ -327,7 +333,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             for (const auto& span : changedSpans) {
                 for (dataType si = span.first; si < span.second; ++si) {
                     const dataType featRow = (*spikesByCluster)(1, si);
-                    double root[64], mahal = 0.0;
+                    double mahal = 0.0;
                     for (int d = 0; d < nbDimensions; ++d) {
                         double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
                         for (int j = 0; j < d; ++j)
@@ -356,7 +362,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
                     bool flagged = false;
                     for (dataType si = f0; si < f1 && !flagged; ++si) {
                         const dataType featRow = (*spikesByCluster)(1, si);
-                        double root[64], mahal = 0.0;
+                        double mahal = 0.0;
                         for (int d = 0; d < nbDimensions; ++d) {
                             double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
                             for (int j = 0; j < d; ++j)
@@ -389,7 +395,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             const dataType last  = spans[static_cast<size_t>(ci2)].second;
             for (dataType si = first; si < last; ++si) {
                 const dataType featRow = (*spikesByCluster)(1, si);
-                double root[64], mahal = 0.0;
+                double mahal = 0.0;
                 for (int d = 0; d < nbDimensions; ++d) {
                     double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
                     for (int j = 0; j < d; ++j)
@@ -806,6 +812,11 @@ Array<double>* GroupingAssistant::computeProbabilities(
         const ClusterData& cd = cdata[static_cast<size_t>(ci)];
         if (cd.ignore) continue;
 
+        // Per-iteration (hence per-thread) Mahalanobis scratch, sized to
+        // nbDimensions; replaces a fixed double[64] that overran for
+        // nbDimensions > 64.
+        std::vector<double> root(static_cast<size_t>(nbDimensions));
+
         const double* L    = cd.L.data();
         double        logT = cd.logTerm;
         int           ci1  = ci + 1;
@@ -817,7 +828,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
             dataType last  = spans[static_cast<size_t>(ci2)].last;
             for (dataType si = first; si < last; ++si) {
                 dataType featRow = (*spikesByCluster)(1, si);
-                double root[64], mahal = 0.0;
+                double mahal = 0.0;
                 for (int d = 0; d < nbDimensions; ++d) {
                     double s = clusteringData.features(featRow, d + 1)
                                - means(ci1, d + 1);
@@ -943,6 +954,11 @@ void GroupingAssistant::meanCovarianceComputation(
 
         dataType last = c.first + c.nb;
 
+        // Per-cluster (hence per-thread) mean-subtracted feature scratch,
+        // sized to nbDimensions; replaces a fixed double[64] that overran
+        // for nbDimensions > 64.
+        std::vector<double> dmm(static_cast<size_t>(nbDimensions));
+
         for (dataType i = c.first; i < last; ++i) {
             dataType featRow = (*spikesByCluster)(1, i);
             for (int j = 1; j <= nbDimensions; ++j)
@@ -954,7 +970,6 @@ void GroupingAssistant::meanCovarianceComputation(
 
         for (dataType i = c.first; i < last; ++i) {
             dataType featRow = (*spikesByCluster)(1, i);
-            double dmm[64];
             for (int j = 1; j <= nbDimensions; ++j)
                 dmm[j-1] = static_cast<double>(clusteringData.features(featRow, j))
                            - means(c.idx, j);

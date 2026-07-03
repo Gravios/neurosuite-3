@@ -71,6 +71,18 @@ extern "C" int sycl_compute_probabilities(
     const int*    ignoreFlags,
     int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
 {
+    // The device Mahalanobis path uses fixed-width per-work-item stack arrays
+    // (double x[64] / b[64] in forwardSubstituteSq and the kernel).  Refuse
+    // anything wider rather than overrun them on-device; the dispatcher then
+    // falls back to the CPU path, which sizes its scratch to nbDimensions and
+    // has no such bound.  (Typical feature counts are well under 64.)
+    if (nbDim <= 0 || nbDim > 64) {
+        fprintf(stderr,
+                "[klusters] grouping SYCL: nbDim=%d unsupported (max 64) — using CPU\n",
+                nbDim);
+        return -1;
+    }
+
     try {
         // Select GPU; fall back to any device if no dedicated GPU.
         queue q;
