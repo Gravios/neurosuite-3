@@ -94,6 +94,14 @@ void KlustersDoc::renumberClusters(){
     QMap<int,int> clusterIdsOldNew;
     QMap<int,int> clusterIdsNewOld;
 
+    // Quiesce worker threads before mutating the shared cluster layout, mirroring
+    // the group/delete/undo/realign paths: renumber rebuilds spikesByCluster and
+    // swaps clusterInfoMap, which a concurrent correlogram/matrix reader would
+    // torn-read.  (Data::renumber early-returns on already-compact ids, so this is
+    // a no-op stop in that common case.)
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
     clusteringData->renumber(clusterIdsOldNew,clusterIdsNewOld);
 
     // A no-op renumber (ids already compact -- the usual case right after a manual
@@ -349,6 +357,13 @@ void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
     }
     if (partialOldToNew.isEmpty()) return;
 
+    // Quiesce worker threads before mutating the shared cluster layout, mirroring
+    // the group/delete/undo/realign paths: the id-remap rebuilds spikesByCluster
+    // and swaps clusterInfoMap, which a concurrent correlogram/matrix reader would
+    // torn-read.
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
     // ── Curation log: this is a renumber, not a group ──
     logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL, clustersToRenumber);
 
@@ -444,6 +459,13 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
     // Curation log + undo snapshot use the same pattern as
     // renumberClustersToEnd, so undo/redo behaviour and log replay
     // both treat this as a partial-renumber action.
+    // Quiesce worker threads before mutating the shared cluster layout, mirroring
+    // the group/delete/undo/realign paths: the id-remap rebuilds spikesByCluster
+    // and swaps clusterInfoMap, which a concurrent correlogram/matrix reader would
+    // torn-read.
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
     logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL, renamedClusters);
     prepareUndo(fullOldToNew, fullNewToOld);
     applyClusterRename(partialOldToNew, &fullOldToNew);
