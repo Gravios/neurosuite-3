@@ -427,6 +427,7 @@ void KlustersApp::createMenus()
     connect(mNewResidualMatrix,&QAction::triggered, this,&KlustersApp::slotNewResidualMatrix);
 
     mReorderClustersBySimilarity = actionMenu->addAction(tr("Re&order Clusters by Similarity"));
+    mReorderClustersBySimilarity->setIcon(QIcon(":/icons/reorder_by_similarity"));
     mReorderClustersBySimilarity->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_S));
     mReorderClustersBySimilarity->setToolTip(
         tr("Renumber clusters so that similar clusters get adjacent IDs, using\n"
