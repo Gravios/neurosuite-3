@@ -492,6 +492,20 @@ void KlustersApp::createMenus()
     connect(mSortClustersBySnr,&QAction::triggered,
             this,&KlustersApp::slotSortClustersBySnr);
 
+    // Sort by error-matrix p-value: renumber clusters by descending merge
+    // affinity read from the active error matrix, so each cluster's strongest
+    // merge candidate ends up adjacent and the top pairs land at low ids.
+    // Reads a matrix view, so it reports if none is computed; it otherwise
+    // follows the same enabled state as the other sorts.  Undoable.
+    mSortClustersByErrorPval = actionMenu->addAction(tr("Sort Clusters by Error &p-value"));
+    mSortClustersByErrorPval->setToolTip(
+        tr("Renumber clusters by descending error-matrix merge affinity — each\n"
+           "cluster's highest same-neuron probability against any other cluster.\n"
+           "The strongest merge candidate becomes 2.  Requires a computed,\n"
+           "up-to-date error matrix in the active display.  Undoable with Ctrl+Z."));
+    connect(mSortClustersByErrorPval,&QAction::triggered,
+            this,&KlustersApp::slotSortClustersByErrorPval);
+
     // Sort by residual, gated by spike count.  Partitions clusters into a
     // high-count block (>= a prompted threshold) and a low-count block, places
     // the high block first (upper-left of the matrix / low ids) and the low
@@ -4053,6 +4067,80 @@ void KlustersApp::slotSortClustersBySnr()
         slotStatusMsg(tr("Sort by SNR: reorder rejected (cluster set changed?)."));
     else
         slotStatusMsg(tr("Sorted %1 clusters by SNR (highest first).").arg(nRenamed));
+}
+
+// ---------------------------------------------------------------------------
+// slotSortClustersByErrorPval
+//
+// Renumber non-special clusters by descending error-matrix merge affinity: each
+// cluster's summary is the maximum symmetrised off-diagonal probability (its
+// strongest same-neuron candidate).  Reads the active ErrorMatrixView's
+// probability matrix directly (matrixData / matrixComputedClusterList); the
+// order then goes through reorderClustersByPermutation like the other sorts.
+// Unlike the timestamp/SNR sorts it needs a computed, up-to-date matrix, so it
+// reports rather than sorting on missing or stale data.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortClustersByErrorPval()
+{
+    if (!mSortClustersByErrorPval->isEnabled()) return;
+    KlustersView* view = activeView();
+    if (!doc || !view) return;
+
+    ErrorMatrixView* emv = view->findChild<ErrorMatrixView*>();
+    if (!emv || !emv->hasComputedData()) {
+        QMessageBox::information(this, tr("Sort by Error p-value"),
+            tr("No computed error matrix in the active display.\n"
+               "Open an error matrix and press U to compute it, then try again."));
+        return;
+    }
+    if (emv->isOutOfDate()) {
+        slotStatusMsg(tr("Sort by Error p-value: error matrix is out of date; "
+                         "press U to recompute it, then retry."));
+        return;
+    }
+
+    const Array<double>* M    = emv->matrixData();
+    const QList<int>     cids = emv->matrixComputedClusterList();
+    const int N = cids.size();
+    if (!M || N < 2) {
+        slotStatusMsg(tr("Sort by Error p-value: matrix too small to sort."));
+        return;
+    }
+
+    // Per-cluster summary = max symmetrised off-diagonal probability.  cids[k] is
+    // matrix row/col k+1 (the Array is 1-based).
+    QHash<int,double> affinity;
+    affinity.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        double best = -1.0;
+        for (int j = 0; j < N; ++j) {
+            if (j == i) continue;
+            const double sij = 0.5 * ((*M)(i + 1, j + 1) + (*M)(j + 1, i + 1));
+            if (sij > best) best = sij;
+        }
+        affinity.insert(cids[i], best);
+    }
+
+    // Order every non-noise cluster by descending affinity; clusters absent from
+    // the matrix's computed list sort last via a -1 sentinel.
+    QList<int> clusters;
+    const auto ids = doc->data().clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+    if (clusters.size() < 2) {
+        slotStatusMsg(tr("Sort by Error p-value: fewer than 2 non-noise clusters; nothing to sort."));
+        return;
+    }
+    std::stable_sort(clusters.begin(), clusters.end(),
+        [&affinity](int a, int b){
+            return affinity.value(a, -1.0) > affinity.value(b, -1.0);
+        });
+
+    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by Error p-value: reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters by error-matrix affinity (strongest merge candidate first).").arg(nRenamed));
 }
 
 
