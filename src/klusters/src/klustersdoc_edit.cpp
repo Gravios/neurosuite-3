@@ -146,6 +146,13 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     QList<int> clustersToShow;
     clustersToShow.append(newClusterIdint);
     clusterPalette.selectItems(clustersToShow);
+    // Re-select the merge output after the deferred post-op.  autoPostMerge's
+    // realign/renumber pass rebuilds the palette and clears this op-time
+    // selection, and applyPendingFiberSelection() -- the guaranteed final step
+    // -- no-ops on an empty pending set.  Recording the produced fiber as the
+    // pending selection makes it the landing selection, translated through any
+    // renumber (parent scope only, mirroring the delete / split / merge-fiber ops).
+    if (!childScopeActive) setPendingFiberSelection(clustersToShow);
     logAfter(clustersToShow);
     return newClusterIdint;
 }
@@ -253,6 +260,10 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     activeView.showAllWidgets();
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(clustersToShow);
+    // Land the post-op selection on the move's output fibers (surviving source
+    // + destination) so the deferred realign/renumber refresh cannot leave them
+    // deselected; applyPendingFiberSelection() translates it through any renumber.
+    if (!childScopeActive) setPendingFiberSelection(clustersToShow);
     logAfter(clustersToShow);
 }
 
@@ -462,6 +473,9 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
         //Update the palette of cluster
         clusterPalette.updateClusterList();
         clusterPalette.selectItems(clustersToShow);
+        // Land the post-op selection on the surviving source fibers so the
+        // deferred realign/renumber refresh cannot leave them deselected.
+        if (!childScopeActive) setPendingFiberSelection(clustersToShow);
 
         //Notify the application that spikes have been deleted.
         emit spikesDeleted();
