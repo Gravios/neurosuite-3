@@ -111,6 +111,17 @@ int hip_compute_probabilities(
     const int*    ignoreFlags,
     int nbSpikes, int nbClusters, int nbDim, int cluster1Col)
 {
+    // The device Mahalanobis path uses fixed-width per-thread stack arrays
+    // (double x[64] / b[64]).  Refuse anything wider rather than overrun them
+    // on-device; the dispatcher then falls back to the CPU path, which sizes
+    // its scratch to nbDimensions and has no such bound.
+    if (nbDim <= 0 || nbDim > 64) {
+        fprintf(stderr,
+                "[klusters] grouping HIP: nbDim=%d unsupported (max 64) — using CPU\n",
+                nbDim);
+        return -1;
+    }
+
     double *d_feat=nullptr, *d_chol=nullptr, *d_means=nullptr;
     double *d_log=nullptr,  *d_prob=nullptr;
     int    *d_ign=nullptr;
