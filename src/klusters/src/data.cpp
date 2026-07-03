@@ -491,7 +491,13 @@ bool Data::candidateSpikeTableValid(const SortableTable* candidate) const
     // A correctly built table has one column per spike; a short/zeroed tail
     // (the recluster/basin undercount) shows up as too few columns and/or as
     // feature-row indices of 0 (never-written positions).
-    if (candidate->nbOfColumns() < nSpk) return false;
+    if (candidate->nbOfColumns() < nSpk) {
+        qWarning() << "Data::candidateSpikeTableValid: SHORT table — columns"
+                   << candidate->nbOfColumns() << "< nbSpikes" << nSpk
+                   << "— the committer left an undercounted / zeroed tail"
+                   << "(recluster / basin-integrate class).";
+        return false;
+    }
 
     // Feature row 1 must be a PERMUTATION of the feature rows: every index in
     // [1, featRows] AND each used at most once across the nbSpikes spikes.  The
@@ -504,8 +510,19 @@ bool Data::candidateSpikeTableValid(const SortableTable* candidate) const
     std::vector<bool> seen(static_cast<size_t>(featRows) + 1, false);
     for (long s = 1; s <= nSpk; ++s) {
         const long row = static_cast<long>((*candidate)(1, s));
-        if (row < 1 || row > featRows) return false;      // out of range
-        if (seen[static_cast<size_t>(row)])   return false;      // duplicate .fet row
+        if (row < 1 || row > featRows) {                  // out of range
+            qWarning() << "Data::candidateSpikeTableValid: feature-row" << row
+                       << "at spike" << s << "outside [1," << featRows
+                       << "] — the committer wrote an out-of-range / zeroed row.";
+            return false;
+        }
+        if (seen[static_cast<size_t>(row)]) {             // duplicate .fet row
+            qWarning() << "Data::candidateSpikeTableValid: feature-row" << row
+                       << "re-used at spike" << s
+                       << "— the committer double-wrote a source block"
+                       << "(merge / split rebuild class).";
+            return false;
+        }
         seen[static_cast<size_t>(row)] = true;
     }
     return true;
