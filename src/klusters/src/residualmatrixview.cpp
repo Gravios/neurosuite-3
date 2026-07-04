@@ -377,6 +377,28 @@ void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
         return;
     }
     setCursor(Qt::ArrowCursor);
+
+    // A plain click selects the clicked cell's pair -- row cluster A and column
+    // cluster B -- and shows just those clusters in the scatter / waveform views;
+    // Ctrl-click adds them to the current selection instead.  Mirrors the error-
+    // matrix click behaviour so the residual matrix is usable for curation, not
+    // just inspection.  (A stationary Ctrl-click reaches here with panning == false
+    // because the pan only engages past the drag threshold in mouseMoveEvent.)
+    emit viewInteracted();
+    if (!dataReady || clusterList.isEmpty())
+        return;
+    const int col = cellAtX(e->position().toPoint().x());
+    const int row = cellAtY(e->position().toPoint().y());
+    if (row < 0 || col < 0)
+        return;
+    QList<int> clustersToShow;
+    clustersToShow.append(clusterList[row]);
+    if (clusterList[col] != clusterList[row])
+        clustersToShow.append(clusterList[col]);
+    if (e->modifiers() & Qt::ControlModifier)
+        doc.addClustersToActiveView(clustersToShow);
+    else
+        doc.shownClustersUpdate(clustersToShow);
 }
 
 void ResidualMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
