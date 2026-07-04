@@ -531,21 +531,26 @@ void KlustersApp::createMenus()
 
     actionMenu->addSeparator();
 
-    mReCluster = actionMenu->addAction(tr("Re&cluster"));
+    // Recluster + split methods grouped into their own Actions submenu.
+    QMenu* reclusterMenu = actionMenu->addMenu(tr("&Recluster"));
+
+    mReCluster = reclusterMenu->addAction(tr("Re&cluster"));
     mReCluster->setShortcut(QKeySequence(Qt::SHIFT  | Qt::Key_R));
     connect(mReCluster,&QAction::triggered, this,&KlustersApp::slotRecluster);
 
-    mReclusterMedian = actionMenu->addAction(tr("Recluster (&median-waveform residual)"));
+    mReclusterMedian = reclusterMenu->addAction(tr("Recluster (&median-waveform residual)"));
     mReclusterMedian->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_M));
     mReclusterMedian->setToolTip(tr("Recluster the selected cluster(s) on the residuals of their pooled median waveform"));
     connect(mReclusterMedian,&QAction::triggered, this,&KlustersApp::slotReclusterMedianResidual);
 
-    mReclusterChannelVar = actionMenu->addAction(tr("Recluster (&channel-variance features)"));
+    mReclusterChannelVar = reclusterMenu->addAction(tr("Recluster (&channel-variance features)"));
     mReclusterChannelVar->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_C));
     mReclusterChannelVar->setToolTip(tr("Recluster using the highest-variance channels' features"));
     connect(mReclusterChannelVar,&QAction::triggered, this,&KlustersApp::slotReclusterChannelVariance);
 
-    mSplitByKnn = actionMenu->addAction(tr("Split by &KNN voting…"));
+    reclusterMenu->addSeparator();
+
+    mSplitByKnn = reclusterMenu->addAction(tr("Split by &KNN voting…"));
     mSplitByKnn->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_K));
     mSplitByKnn->setToolTip(
         tr("Partition the selected cluster into new sub-clusters using "
@@ -578,7 +583,7 @@ void KlustersApp::createMenus()
     connect(mPcaAlignAllClusters, &QAction::triggered,
             this, &KlustersApp::slotPcaAlignAllClusters);
 
-    mDipSplit = actionMenu->addAction(tr("&DipSplit Selected Cluster"));
+    mDipSplit = reclusterMenu->addAction(tr("&DipSplit Selected Cluster"));
     mDipSplit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
     mDipSplit->setToolTip(
         tr("Test the selected cluster for hidden bimodality.  If a valley is\n"
@@ -648,8 +653,7 @@ void KlustersApp::createMenus()
     // Select Time can still be invoked via the menu / toolbar icon.
     connect(mSelectTime,&QAction::triggered, this,&KlustersApp::slotSelectTime);
 
-    toolsMenu->addSeparator();
-    mWatershed = toolsMenu->addAction(tr("&Watershed Split"));
+    mWatershed = reclusterMenu->addAction(tr("&Watershed Split"));
     mWatershed->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_W));
     mWatershed->setStatusTip(tr(
         "Split the currently-shown clusters into one new cluster per "
