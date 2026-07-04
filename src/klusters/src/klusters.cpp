@@ -589,13 +589,10 @@ void KlustersApp::createMenus()
     actionMenu->addSeparator();
 
     mGenerateProbeDrift = actionMenu->addAction(tr("&Generate Probe Drift…"));
-    // Shortcut: Shift+P (P for Probe). Previously Shift+D, which clashed with
-    // mDecreaseAmplitudeCorrelation in the Correlations menu — Qt resolved it
-    // as an ambiguous overload and dispatched neither, producing
-    // "QAction::event: Ambiguous shortcut overload: Shift+D" on every press.
-    // The Shift+I/Shift+D Increase/Decrease pair is preserved, in line with
-    // Ctrl+I/Ctrl+D (waveforms) and Ctrl+Shift+I/Ctrl+Shift+D (channels).
-    mGenerateProbeDrift->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
+    // No keyboard shortcut: Shift+P is owned by "PCA-Center Align All Clusters"
+    // (mPcaAlignAllClusters, above).  Both actions used to bind Shift+P, so Qt
+    // reported an ambiguous shortcut overload and dispatched neither; probe
+    // drift is now reachable from the Actions menu only.
     mGenerateProbeDrift->setToolTip(
         tr("Run ndm_estimatedrift on the current electrode group to estimate probe "
            "displacement over time.  Requires that this group is already curated "
@@ -5913,7 +5910,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"U",              "Update error matrix (+ template matrix if open)"},
             {"F",              "Toggle autoscale in cluster view"},
             {"Enter / Return", "Close selection polygon (New / Split modes)"},
-            {"Shift+P",        "Generate probe-drift estimate (current group)"},
+            {"Shift+P",        "PCA-center align all clusters (top-N channels)"},
             {"Shift+F",        "Apply drift to sibling sessions"},
         }},
         {"File", {
