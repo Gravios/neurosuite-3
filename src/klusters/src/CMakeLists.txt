@@ -73,6 +73,7 @@ set(klusters_SRCS
     prefreclustering.cpp
     prefrefinement.cpp
     prefautomerge.cpp
+    prefsorting.cpp
     prefwaveformview.cpp
     processlinemaker.cpp
     processwidget.cpp
@@ -95,6 +96,7 @@ set(klusters_SRCS
     prefreclusteringlayout.cpp
     prefrefinementlayout.cpp
     prefautomergelayout.cpp
+    prefsortinglayout.cpp
     prefwaveformviewlayout.cpp
     prefclusterviewlayout.cpp
 )
@@ -116,7 +118,7 @@ endif()
 
 qt_add_resources(klusters_SRCS klusters-cursors.qrc klusters-icons.qrc)
 
-set(klusters_UI prefwaveformviewlayout.ui prefdisplaylayout.ui prefsessionlayout.ui prefreclusteringlayout.ui prefrefinementlayout.ui prefautomergelayout.ui prefclusterviewlayout.ui)
+set(klusters_UI prefwaveformviewlayout.ui prefdisplaylayout.ui prefsessionlayout.ui prefreclusteringlayout.ui prefrefinementlayout.ui prefautomergelayout.ui prefsortinglayout.ui prefclusterviewlayout.ui)
 qt_wrap_ui(klusters_SRCS ${klusters_UI})
 
 add_executable(klusters WIN32 ${klusters_SRCS})

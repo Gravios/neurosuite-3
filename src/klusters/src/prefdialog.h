@@ -26,6 +26,7 @@ class PrefDisplay;
 class PrefSession;
 class PrefReclustering;
 class PrefRefinement;
+class PrefSorting;
 class PrefAutoMerge;
 class PrefWaveformView;
 class PrefClusterView;
@@ -61,6 +62,7 @@ class PrefDialog : public QPageDialog {
     PrefSession*      prefSession;
     PrefReclustering* prefReclustering;
     PrefRefinement*   prefRefinement;
+    PrefSorting*      prefSorting;
     PrefAutoMerge*    prefAutoMerge;
 
     PrefWaveformView* prefWaveformView;
