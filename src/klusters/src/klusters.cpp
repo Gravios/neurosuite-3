@@ -5336,7 +5336,17 @@ void KlustersApp::reorderClustersByFeatureSpace()
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
     // Per-cluster centroid in fet space -- one pass over each cluster's spikes.
+    // This is the method's dominant cost (the only pass over all spikes) and is
+    // embarrassingly parallel over clusters: each k writes a disjoint cent[] slice
+    // through its own iterator, and the feature store is read-only (Array's const
+    // operator() is a plain indexed read, and Data::iterator only reads
+    // clusterInfoMap), so there is no shared mutable state and no reduction.
+    // schedule(dynamic,1) balances the uneven per-cluster spike counts (bursty /
+    // high-rate units) by handing clusters out one at a time.  Everything after
+    // this loop (D x D scatter, PC1 power iteration, projection) is O(N*D^2) with
+    // D ~ tens, so it stays serial.
     std::vector<double> cent(static_cast<size_t>(N) * D, 0.0);
+    #pragma omp parallel for schedule(dynamic, 1)
     for (int k = 0; k < N; ++k) {
         double* ck = &cent[static_cast<size_t>(k) * D];
         Data::Iterator it = d.iterator(clusters[k]);
