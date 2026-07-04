@@ -24,6 +24,7 @@
 #include "prefsession.h"
 #include "prefreclustering.h"
 #include "prefrefinement.h"
+#include "prefsorting.h"
 #include "prefautomerge.h"
 #include "prefwaveformview.h"
 #include "prefclusterview.h"
@@ -71,6 +72,14 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     prefRefinement = new PrefRefinement(w);
     item = new QPageWidgetItem(prefRefinement, tr("Refinement"));
     item->setHeader(tr("Cluster Refinement Configuration"));
+    item->setIcon(QIcon(":/icons/refinement"));
+    addPage(item);
+
+    // ── Sorting (reorder clusters by similarity) ───────────────
+    w = new QWidget(this);
+    prefSorting = new PrefSorting(w);
+    item = new QPageWidgetItem(prefSorting, tr("Sorting"));
+    item->setHeader(tr("Cluster Sorting Configuration"));
     item->setIcon(QIcon(":/icons/refinement"));
     addPage(item);
 
@@ -149,7 +158,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRefinement->realignMaxShiftSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeOffRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->curationLoggingCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefRefinement->reorderDisplayOnlyCheckBox, &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
+    connect(prefSorting->reorderDisplayOnlyCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->autoRealignAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
     connect(prefRefinement->autoRenumberAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
     connect(prefRefinement->autoUpdateMatricesAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
@@ -157,7 +166,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRefinement->errorMatrixLowPrecisionCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModePcaRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeRmsRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefRefinement->reorderMethodComboBox,      &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
+    connect(prefSorting->reorderMethodComboBox,         &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitMinSizeSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitBloatFactorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitValleyThreshSpinBox,&QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -236,9 +245,9 @@ void PrefDialog::updateDialog()
     prefRefinement->setRealignIterations(configuration().getRealignIterations());
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShift());
     prefRefinement->setRealignMode(configuration().getRealignMode());
-    prefRefinement->setReorderMethod(configuration().getReorderMethod());
+    prefSorting->setReorderMethod(configuration().getReorderMethod());
     prefRefinement->setCurationLogging(configuration().getCurationLogging());
-    prefRefinement->setReorderDisplayOnly(configuration().getReorderDisplayOnly());
+    prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnly());
     prefRefinement->setRealignVerbose(configuration().getRealignVerbose());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMerge());
     prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMerge());
@@ -312,9 +321,9 @@ void PrefDialog::updateConfiguration()
     configuration().setRealignIterations(prefRefinement->getRealignIterations());
     configuration().setRealignMaxShift(prefRefinement->getRealignMaxShift());
     configuration().setRealignMode(prefRefinement->getRealignMode());
-    configuration().setReorderMethod(prefRefinement->getReorderMethod());
+    configuration().setReorderMethod(prefSorting->getReorderMethod());
     configuration().setCurationLogging(prefRefinement->getCurationLogging());
-    configuration().setReorderDisplayOnly(prefRefinement->getReorderDisplayOnly());
+    configuration().setReorderDisplayOnly(prefSorting->getReorderDisplayOnly());
     configuration().setRealignVerbose(prefRefinement->getRealignVerbose());
     configuration().setAutoRealignAfterMerge(prefRefinement->getAutoRealignAfterMerge());
     configuration().setAutoRenumberAfterMerge(prefRefinement->getAutoRenumberAfterMerge());
@@ -393,9 +402,9 @@ void PrefDialog::slotDefault()
     prefRefinement->setRealignIterations(configuration().getRealignIterationsDefault());
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
     prefRefinement->setRealignMode(configuration().getRealignModeDefault());
-    prefRefinement->setReorderMethod(configuration().getReorderMethodDefault());
+    prefSorting->setReorderMethod(configuration().getReorderMethodDefault());
     prefRefinement->setCurationLogging(configuration().getCurationLoggingDefault());
-    prefRefinement->setReorderDisplayOnly(configuration().getReorderDisplayOnlyDefault());
+    prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnlyDefault());
     prefRefinement->setRealignVerbose(configuration().getRealignVerboseDefault());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMergeDefault());
     prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMergeDefault());

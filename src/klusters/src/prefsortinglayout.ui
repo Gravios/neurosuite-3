@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PrefSortingLayout</class>
+ <widget class="QWidget" name="PrefSortingLayout">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>520</width><height>300</height></rect></property>
+  <property name="windowTitle"><string>Sorting</string></property>
+  <layout class="QVBoxLayout" name="topLayout">
+   <item>
+    <widget class="QGroupBox" name="groupBox_reorder">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="title">
+      <string>Reorder Clusters by Similarity (Shift+S)</string>
+     </property>
+     <layout class="QVBoxLayout" name="reorderGroupLayout">
+      <item>
+       <layout class="QHBoxLayout" name="reorderMethodRow">
+        <item>
+         <widget class="QLabel" name="reorderMethodLabel">
+          <property name="text">
+           <string>Reorder-by-similarity method:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="reorderMethodComboBox">
+          <property name="toolTip">
+           <string>Algorithm used by Reorder Clusters by Similarity (Shift+S) to turn the similarity matrix into a cluster ordering. Single-linkage (MST): the maximum-spanning-tree leaf order, very fast (O(N^2)) but tends to chain. Spectral (Fiedler): sort by the Fiedler vector of the similarity Laplacian via a parallel power iteration, often a smoother heatmap gradient. Feature-space (fet centroids): order clusters by the first principal component of their fet-space centroids -- needs no similarity matrix and is O(N) in the cluster count, so it stays fast where Spectral does not at large N. The first two read whichever matrix is computed (error or template). Default: Single-linkage (MST).</string>
+          </property>
+          <item>
+           <property name="text"><string>Single-linkage (MST)</string></property>
+          </item>
+          <item>
+           <property name="text"><string>Spectral (Fiedler)</string></property>
+          </item>
+          <item>
+           <property name="text"><string>Feature-space (fet centroids)</string></property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <spacer name="reorderMethodSpacer">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="reorderDisplayOnlyCheckBox">
+        <property name="text">
+         <string>Reorder matrix display only (do not renumber clusters)</string>
+        </property>
+        <property name="toolTip">
+         <string>When Reorder Clusters by Similarity (Shift+S) runs, rearrange only the rows/columns of the error-matrix display into similarity order, leaving cluster IDs unchanged. This skips the full cluster renumber (rewriting every spike label, rebuilding spikesByCluster, invalidating and recomputing the matrix), so it is near-instant at large cluster counts. The new order is view-only: it is not saved to the .clu file and axis labels will be out of numeric order. Off: renumber clusters into similarity order (persistent, slower). Applies to the error matrix only. Default: off.</string>
+        </property>
+        <property name="checked"><bool>false</bool></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item><spacer name="vSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
