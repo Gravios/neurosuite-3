@@ -320,13 +320,16 @@
         <item>
          <widget class="QComboBox" name="reorderMethodComboBox">
           <property name="toolTip">
-           <string>Algorithm used by Reorder Clusters by Similarity (Shift+S) to turn the similarity matrix into a cluster ordering. Single-linkage (MST): the maximum-spanning-tree leaf order, very fast (O(N^2)) but tends to chain. Spectral (Fiedler): sort by the Fiedler vector of the similarity Laplacian via a parallel power iteration, often a smoother heatmap gradient. Both read whichever matrix is computed (error or template). Default: Single-linkage (MST).</string>
+           <string>Algorithm used by Reorder Clusters by Similarity (Shift+S) to turn the similarity matrix into a cluster ordering. Single-linkage (MST): the maximum-spanning-tree leaf order, very fast (O(N^2)) but tends to chain. Spectral (Fiedler): sort by the Fiedler vector of the similarity Laplacian via a parallel power iteration, often a smoother heatmap gradient. Feature-space (fet centroids): order clusters by the first principal component of their fet-space centroids -- needs no similarity matrix and is O(N) in the cluster count, so it stays fast where Spectral does not at large N. The first two read whichever matrix is computed (error or template). Default: Single-linkage (MST).</string>
           </property>
           <item>
            <property name="text"><string>Single-linkage (MST)</string></property>
           </item>
           <item>
            <property name="text"><string>Spectral (Fiedler)</string></property>
+          </item>
+          <item>
+           <property name="text"><string>Feature-space (fet centroids)</string></property>
           </item>
          </widget>
         </item>

@@ -474,6 +474,9 @@ private Q_SLOTS:
      *  the error matrix or template matrix is currently relevant (see
      *  lastMatrixUsed below).  Triggered by Shift+S. */
     void slotReorderClustersBySimilarity();
+    /** Reorder-by-similarity method 2: order non-special clusters by the first
+     *  principal component of their fet-space centroids (no matrix needed). */
+    void reorderClustersByFeatureSpace();
 
     /** Track which matrix view the user most recently interacted with.
      *  Connected from ErrorMatrixView::viewInteracted /
