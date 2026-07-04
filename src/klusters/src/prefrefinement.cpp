@@ -25,7 +25,7 @@ int    PrefRefinement::getRealignMode() const {
     return 0;
 }
 
-void   PrefRefinement::setReorderMethod(int m) { reorderMethodComboBox->setCurrentIndex((m == 1) ? 1 : 0); }
+void   PrefRefinement::setReorderMethod(int m) { reorderMethodComboBox->setCurrentIndex((m < 0 || m > 2) ? 0 : m); }
 int    PrefRefinement::getReorderMethod() const { return reorderMethodComboBox->currentIndex(); }
 
 void   PrefRefinement::setCurationLogging(bool b) { curationLoggingCheckBox->setChecked(b); }

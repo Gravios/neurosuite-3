@@ -4962,6 +4962,14 @@ void KlustersApp::slotReorderClustersBySimilarity()
     KlustersView* view = activeView();
     if (!view) return;
 
+    // Feature-space method (Preferences -> Refinement): order clusters by their
+    // fet-space centroids instead of the similarity matrix.  Needs no matrix and
+    // avoids the N x N Fiedler power iteration that scales poorly at large N.
+    if (configuration().getReorderMethod() == 2) {
+        reorderClustersByFeatureSpace();
+        return;
+    }
+
     // ── Pick the source matrix view ─────────────────────────────────────
     ErrorMatrixView*    emv = view->findChild<ErrorMatrixView*>();
     TemplateMatrixView* tmv = view->findChild<TemplateMatrixView*>();
@@ -5259,6 +5267,132 @@ void KlustersApp::slotReorderClustersBySimilarity()
     // view->updateErrorMatrix()/updateTemplateMatrix() which short-circuit
     // when their respective Qt-connected listeners are gone.
     slotUpdateErrorMatrix();
+}
+
+// ---------------------------------------------------------------------------
+// reorderClustersByFeatureSpace  (reorder-by-similarity method 2)
+//
+// Orders the non-special clusters along the first principal component of their
+// fet-space centroids, then renumbers them so feature-space-adjacent clusters
+// get adjacent IDs.  Unlike the matrix methods this needs no error/template
+// matrix, and unlike the spectral (Fiedler) method it does no N x N eigen-
+// iteration: the only per-cluster-pair-free costs are one pass over each
+// cluster's spikes (centroids, O(total_spikes * D)) and a D x D scatter/power
+// iteration (D ~= tens), so it stays fast for N in the thousands where the
+// N x N Fiedler power iteration does not.  PC1 is a linear seriation (the
+// dominant axis of between-cluster variation); it will not block-diagonalise
+// arbitrarily complex structure, but it is deterministic, connected (no zero-
+// similarity graph to fragment), and cheap.
+// ---------------------------------------------------------------------------
+void KlustersApp::reorderClustersByFeatureSpace()
+{
+    if (!doc || !activeView()) return;
+    Data& d = doc->data();
+
+    // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).
+    QList<int> clusters;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+    const int N = clusters.size();
+    if (N < 2) {
+        slotStatusMsg(tr("Reorder (feature-space): fewer than 2 non-noise clusters; nothing to do."));
+        return;
+    }
+
+    // nbOfDimensionsTotal() counts the timestamp as its last column, so the fet
+    // (PCA) dimensions are 1 .. D with D = total - 1.
+    const int D = d.nbOfDimensionsTotal() - 1;
+    if (D < 1) {
+        slotStatusMsg(tr("Reorder (feature-space): no feature dimensions available."));
+        return;
+    }
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    // Per-cluster centroid in fet space -- one pass over each cluster's spikes.
+    std::vector<double> cent(static_cast<size_t>(N) * D, 0.0);
+    for (int k = 0; k < N; ++k) {
+        double* ck = &cent[static_cast<size_t>(k) * D];
+        Data::Iterator it = d.iterator(clusters[k]);
+        long cnt = 0;
+        while (it.hasNext()) {
+            for (int dim = 0; dim < D; ++dim)
+                ck[dim] += static_cast<double>(it(dim + 1));   // 1-based fet dims
+            ++cnt;
+            it.next();
+        }
+        if (cnt > 0) {
+            const double inv = 1.0 / static_cast<double>(cnt);
+            for (int dim = 0; dim < D; ++dim) ck[dim] *= inv;
+        }
+    }
+
+    // Centre the centroids so PC1 is the dominant axis of between-cluster spread.
+    std::vector<double> mean(static_cast<size_t>(D), 0.0);
+    for (int k = 0; k < N; ++k) {
+        const double* ck = &cent[static_cast<size_t>(k) * D];
+        for (int dim = 0; dim < D; ++dim) mean[dim] += ck[dim];
+    }
+    for (int dim = 0; dim < D; ++dim) mean[dim] /= static_cast<double>(N);
+    for (int k = 0; k < N; ++k) {
+        double* ck = &cent[static_cast<size_t>(k) * D];
+        for (int dim = 0; dim < D; ++dim) ck[dim] -= mean[dim];
+    }
+
+    // D x D scatter matrix over the centred centroids (D small).
+    std::vector<double> cov(static_cast<size_t>(D) * D, 0.0);
+    for (int k = 0; k < N; ++k) {
+        const double* ck = &cent[static_cast<size_t>(k) * D];
+        for (int a = 0; a < D; ++a) {
+            const double va = ck[a];
+            if (va == 0.0) continue;
+            double* row = &cov[static_cast<size_t>(a) * D];
+            for (int b = 0; b < D; ++b) row[b] += va * ck[b];
+        }
+    }
+
+    // PC1 = leading eigenvector of the scatter matrix by power iteration.  D x D
+    // is tiny, so this is negligible (the point of the method: no N x N iterate).
+    std::vector<double> v(static_cast<size_t>(D), 1.0 / std::sqrt(static_cast<double>(D)));
+    std::vector<double> t(static_cast<size_t>(D), 0.0);
+    for (int iter = 0; iter < 256; ++iter) {
+        for (int a = 0; a < D; ++a) {
+            const double* row = &cov[static_cast<size_t>(a) * D];
+            double acc = 0.0;
+            for (int b = 0; b < D; ++b) acc += row[b] * v[b];
+            t[a] = acc;
+        }
+        double nrm = 0.0;
+        for (int dim = 0; dim < D; ++dim) nrm += t[dim] * t[dim];
+        nrm = std::sqrt(nrm);
+        if (nrm < 1e-300) break;                       // degenerate: centroids coincide
+        const double inv = 1.0 / nrm;
+        double dot = 0.0;
+        for (int dim = 0; dim < D; ++dim) { t[dim] *= inv; dot += t[dim] * v[dim]; }
+        v.swap(t);
+        if (std::fabs(std::fabs(dot) - 1.0) < 1e-12) break;   // converged
+    }
+
+    // Project each centroid onto PC1 -> per-cluster scalar; stable-sort ascending.
+    QHash<int,double> proj;
+    proj.reserve(N);
+    for (int k = 0; k < N; ++k) {
+        const double* ck = &cent[static_cast<size_t>(k) * D];
+        double pp = 0.0;
+        for (int dim = 0; dim < D; ++dim) pp += ck[dim] * v[dim];
+        proj.insert(clusters[k], pp);
+    }
+    std::stable_sort(clusters.begin(), clusters.end(),
+        [&proj](int a, int b){ return proj.value(a) < proj.value(b); });
+
+    QApplication::restoreOverrideCursor();
+
+    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Reorder (feature-space): reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Reordered %1 clusters by feature-space layout (PC1 of fet centroids).").arg(nRenamed));
 }
 
 void KlustersApp::slotSelectAll(){
