@@ -92,6 +92,7 @@ public:
     void setRealignMode(int m)            {realignMode = (m < 0 || m > 2) ? 0 : m;}
     void setReorderMethod(int m)          {reorderMethod = (m < 0 || m > 2) ? 0 : m;}
     void setCurationLogging(bool b)       {curationLogging = b;}
+    void setReorderDisplayOnly(bool b)    {reorderDisplayOnly = b;}
     void setRealignVerbose(bool b)        {realignVerbose = b;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
@@ -198,6 +199,7 @@ public:
     int    getRealignMode()       const {return realignMode;}
     int    getReorderMethod()     const {return reorderMethod;}
     bool   getCurationLogging()   const {return curationLogging;}
+    bool   getReorderDisplayOnly()const {return reorderDisplayOnly;}
     bool   getRealignVerbose()    const {return realignVerbose;}
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
@@ -283,6 +285,7 @@ public:
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     int    getReorderMethodDefault()     const {return 0;}  // 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
     bool   getCurationLoggingDefault()   const {return true;}
+    bool   getReorderDisplayOnlyDefault()const {return false;}
     bool   getRealignVerboseDefault()    const {return false;}
     bool   getAutoRealignAfterMergeDefault() const {return true;}
     bool   getAutoRenumberAfterMergeDefault() const {return true;}
@@ -423,6 +426,7 @@ private:
     int     realignMode;
     int     reorderMethod;   // reorder-by-similarity: 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
     bool    curationLogging;   // record per-action curation audit snapshots
+    bool    reorderDisplayOnly;// reorder-by-similarity: rearrange matrix display only, no cluster renumber
     bool    realignVerbose;    // stream per-spike realignment detail to stderr
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)

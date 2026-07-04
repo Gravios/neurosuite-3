@@ -30,6 +30,8 @@ int    PrefRefinement::getReorderMethod() const { return reorderMethodComboBox->
 
 void   PrefRefinement::setCurationLogging(bool b) { curationLoggingCheckBox->setChecked(b); }
 bool   PrefRefinement::getCurationLogging() const { return curationLoggingCheckBox->isChecked(); }
+void   PrefRefinement::setReorderDisplayOnly(bool b) { reorderDisplayOnlyCheckBox->setChecked(b); }
+bool   PrefRefinement::getReorderDisplayOnly() const { return reorderDisplayOnlyCheckBox->isChecked(); }
 void   PrefRefinement::setRealignVerbose(bool b) { realignVerboseCheckBox->setChecked(b); }
 bool   PrefRefinement::getRealignVerbose() const { return realignVerboseCheckBox->isChecked(); }
 

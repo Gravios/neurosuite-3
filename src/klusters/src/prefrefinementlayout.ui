@@ -341,6 +341,17 @@
         </item>
        </layout>
       </item>
+      <item>
+       <widget class="QCheckBox" name="reorderDisplayOnlyCheckBox">
+        <property name="text">
+         <string>Reorder matrix display only (do not renumber clusters)</string>
+        </property>
+        <property name="toolTip">
+         <string>When Reorder Clusters by Similarity (Shift+S) runs, rearrange only the rows/columns of the error-matrix display into similarity order, leaving cluster IDs unchanged. This skips the full cluster renumber (rewriting every spike label, rebuilding spikesByCluster, invalidating and recomputing the matrix), so it is near-instant at large cluster counts. The new order is view-only: it is not saved to the .clu file and axis labels will be out of numeric order. Off: renumber clusters into similarity order (persistent, slower). Applies to the error matrix only. Default: off.</string>
+        </property>
+        <property name="checked"><bool>false</bool></property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
