@@ -28,7 +28,6 @@
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
-#include "reorder_similarity_dispatch.h"
 #include "clusterPalette.h"
 #include "autoMerge.h"      // patch 0069
 #include "savethread.h"
