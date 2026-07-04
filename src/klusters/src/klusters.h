@@ -325,6 +325,12 @@ private Q_SLOTS:
     /** Move every cluster with fewer than N spikes into the noise cluster (1),
      *  after asking for N and a Yes/No confirmation (default Yes). */
     void slotPurgeSmallClusters();
+    /** Strip feature-space artefacts: for every real cluster (id >= 2), move any
+     *  spike lying more than 5 sigma from that cluster's per-dimension feature
+     *  mean (in ANY single feature dimension) into the artefact cluster (0).
+     *  Detection is a non-mutating two-pass scan so the exact spike count can be
+     *  confirmed before anything moves; the moves are undoable. */
+    void slotStripFeatureOutliers();
     /** Renumber clusters so IDs run by descending spike count (largest = 2).
      *  Clusters 0/1 untouched; undoable. */
     void slotSortClustersBySpikeCount();
@@ -867,6 +873,7 @@ private:
     QAction *mGroupeClusters;
     QAction *mAutoMerge;            // patch 0069 — Auto-Merge action
     QAction *mPurgeSmallClusters;   // move all clusters below N spikes to noise
+    QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artefact(0)
     QAction *mSortClustersBySpikeCount; // renumber clusters by descending spike count
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination

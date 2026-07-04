@@ -398,6 +398,13 @@ void KlustersApp::createMenus()
     mPurgeSmallClusters = actionMenu->addAction(tr("&Purge Small Clusters…"));
     connect(mPurgeSmallClusters, &QAction::triggered, this, &KlustersApp::slotPurgeSmallClusters);
 
+    // Bulk artefact removal: move every spike more than 5 sigma from its cluster's
+    // per-dimension feature mean (in any one dimension) into the artefact cluster.
+    // Non-mutating scan first, then a Yes/No confirmation showing the exact spike
+    // count (default No, since it is destructive); undoable.
+    mStripOutliers = actionMenu->addAction(tr("Strip Feature &Outliers (5\u03c3)\u2026"));
+    connect(mStripOutliers, &QAction::triggered, this, &KlustersApp::slotStripFeatureOutliers);
+
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
@@ -3907,6 +3914,128 @@ void KlustersApp::slotPurgeSmallClusters()
 
     moveSelectedClustersToReservedId(small, /*noise=*/1,
         tr("Purging %1 small cluster(s) into noise...").arg(small.size()));
+}
+
+// ---------------------------------------------------------------------------
+// slotStripFeatureOutliers  --  bulk feature-space artefact removal
+//
+// For every real cluster (id >= 2), flag any spike lying more than kSigma
+// standard deviations from that cluster's mean in ANY single feature dimension,
+// and move all flagged spikes into the artefact cluster (0).
+//
+// The criterion is per-DIMENSION, not Mahalanobis, and that is deliberate: in
+// D ~ 24 feature dimensions the typical Mahalanobis distance of an ordinary in-
+// cluster spike is ~sqrt(D) ~ 4.9, so a raw "5 sigma" Mahalanobis cut would flag
+// roughly HALF of every cluster -- catastrophic for a destructive op.  The
+// per-dimension max-z cut keeps the familiar one-dimensional "5 sigma" tail
+// (P ~ 6e-7 per dim, ~1.4e-5 across 24 dims), so only genuine outliers are
+// caught and, in practice, only the few largest clusters contribute any.
+// (kSigma is a named constant here; promoting it to a preference later is easy.)
+//
+// Detection is a non-mutating two-pass scan (per-dimension mean/variance, then
+// max-z) so the user is shown the exact spike count and confirms before anything
+// moves; the moves themselves go through the tested, undoable
+// moveSpikeSubsetToCluster (one undoable step per contributing source cluster).
+// ---------------------------------------------------------------------------
+void KlustersApp::slotStripFeatureOutliers()
+{
+    if (!doc || !activeView()) return;
+    Data& d = doc->data();
+
+    // nbOfDimensionsTotal() counts the timestamp as its last column, so the fet
+    // dimensions are 1 .. D with D = total - 1.
+    const int D = d.nbOfDimensionsTotal() - 1;
+    if (D < 1) {
+        slotStatusMsg(tr("Strip outliers: no feature dimensions available."));
+        return;
+    }
+    constexpr double kSigma = 5.0;
+
+    // Detection pass (no mutation).  Collect, per cluster, the 0-based .spk file
+    // indices of its outlier spikes.  moveSpikeSubsetToCluster expects 0-based
+    // .spk indices, and (.spk index) == (1-based feature row) - 1.
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    QMap<int, QVector<int>> outliersByCluster;
+    long long totalOutliers = 0;
+    const auto ids = d.clusterIds();
+    for (const auto idRaw : ids) {
+        const int c = static_cast<int>(idRaw);
+        if (c < 2) continue;                        // skip artefact(0) / noise(1)
+
+        SortableTable pos;
+        if (!d.spikePositions(c, pos)) continue;
+        const int n = static_cast<int>(pos.nbOfColumns());
+        if (n < 2) continue;                        // need >= 2 spikes for a variance
+
+        // Pass 1: per-dimension mean + variance via streaming sum / sum-of-squares.
+        std::vector<double> sum(static_cast<size_t>(D), 0.0);
+        std::vector<double> sumsq(static_cast<size_t>(D), 0.0);
+        for (int i = 1; i <= n; ++i) {
+            const dataType row = pos(1, i);         // 1-based feature row
+            for (int dim = 0; dim < D; ++dim) {
+                const double v = static_cast<double>(d.featureValue(row, dim + 1));
+                sum[dim]   += v;
+                sumsq[dim] += v * v;
+            }
+        }
+        std::vector<double> mean(static_cast<size_t>(D), 0.0);
+        std::vector<double> sd(static_cast<size_t>(D), 0.0);
+        const double invN = 1.0 / static_cast<double>(n);
+        for (int dim = 0; dim < D; ++dim) {
+            mean[dim] = sum[dim] * invN;
+            const double var = sumsq[dim] * invN - mean[dim] * mean[dim];
+            sd[dim] = (var > 0.0) ? std::sqrt(var) : 0.0;
+        }
+
+        // Pass 2: flag spikes exceeding kSigma in any non-degenerate dimension.
+        QVector<int> flagged;
+        for (int i = 1; i <= n; ++i) {
+            const dataType row = pos(1, i);
+            bool outlier = false;
+            for (int dim = 0; dim < D; ++dim) {
+                if (sd[dim] <= 0.0) continue;       // constant dimension: nothing to exceed
+                const double z = std::fabs(static_cast<double>(d.featureValue(row, dim + 1)) - mean[dim]) / sd[dim];
+                if (z > kSigma) { outlier = true; break; }
+            }
+            if (outlier) flagged.append(static_cast<int>(row) - 1);   // -> 0-based .spk index
+        }
+        if (!flagged.isEmpty()) {
+            totalOutliers += flagged.size();
+            outliersByCluster.insert(c, flagged);
+        }
+    }
+    QApplication::restoreOverrideCursor();
+
+    if (totalOutliers == 0) {
+        slotStatusMsg(tr("Strip outliers: no spikes beyond %1 sigma in any cluster.")
+                          .arg(kSigma));
+        return;
+    }
+
+    // Destructive and spans every cluster: confirm with the exact counts first,
+    // defaulting to No.
+    QMessageBox box(QMessageBox::Question, tr("Strip Feature Outliers"),
+        tr("Move %1 spike(s) lying more than %2 sigma (in any feature dimension) "
+           "from their cluster centre into the artefact cluster (0)?\n\n"
+           "%3 cluster(s) contribute outliers.  This can be undone.")
+            .arg(totalOutliers).arg(kSigma).arg(outliersByCluster.size()),
+        QMessageBox::Yes | QMessageBox::No, this);
+    box.setDefaultButton(QMessageBox::No);
+    if (box.exec() != QMessageBox::Yes) return;
+
+    // Apply: one undoable move per contributing source cluster.  Feature rows are
+    // stable spike identities, so a cluster's flagged rows stay in that cluster
+    // regardless of earlier moves in this loop.
+    int movedClusters = 0;
+    for (auto it = outliersByCluster.constBegin(); it != outliersByCluster.constEnd(); ++it) {
+        KlustersView* view = activeView();
+        if (!view) break;                           // view could close mid-loop
+        doc->moveSpikeSubsetToCluster(it.key(), it.value(), /*artefact=*/0, *view);
+        ++movedClusters;
+    }
+
+    slotStatusMsg(tr("Stripped %1 outlier spike(s) from %2 cluster(s) into the artefact cluster.")
+                      .arg(totalOutliers).arg(movedClusters));
 }
 
 // ---------------------------------------------------------------------------
