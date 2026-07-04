@@ -201,6 +201,7 @@ void ErrorMatrixView::customEvent(QEvent* event){
             clusterList = errorMatrixThread->getClusterList();
             computedClusterList = errorMatrixThread->getComputedClusterList();
             ignoreClusterIndex = errorMatrixThread->getIgnoreClusterIndex();
+            displayOrder.clear();   // a fresh compute invalidates any display reorder
 
             // Refresh the incremental raw cache from this compute.  If the thread
             // used the incremental path it hands us a fresh raw array (ownership
@@ -613,15 +614,37 @@ void ErrorMatrixView::drawClusterIds(QPainter& painter){
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
         painter.drawText(QRect(px, 0, w, base.y()),
                          Qt::AlignHCenter | Qt::AlignBottom,
-                         QString::number(clusterList[col]));
+                         QString::number(clusterList[displayToMatrix(col)]));
     }
     // Row labels: left strip [0, LABEL_MARGIN-2], y tracks the cell rows.
     for(int row = 0; row < n; ++row){
         const int py = static_cast<int>(std::round(oriF.y() + row * eff));
         painter.drawText(QRect(0, py, LABEL_MARGIN - 2, w),
                          Qt::AlignRight | Qt::AlignVCenter,
-                         QString::number(clusterList[row]));
+                         QString::number(clusterList[displayToMatrix(row)]));
     }
+}
+
+void ErrorMatrixView::setDisplayOrder(const QList<int>& order)
+{
+    // Accept only a full permutation of [0, nbClusters); otherwise ignore so a
+    // stale/short order can never index out of range at render time.
+    const int n = clusterList.size();
+    if(order.size() != n){ displayOrder.clear(); update(); return; }
+    std::vector<char> seen(static_cast<size_t>(n), 0);
+    for(int v : order){
+        if(v < 0 || v >= n || seen[static_cast<size_t>(v)]){ displayOrder.clear(); update(); return; }
+        seen[static_cast<size_t>(v)] = 1;
+    }
+    displayOrder = order;
+    update();
+}
+
+void ErrorMatrixView::resetDisplayOrder()
+{
+    if(displayOrder.isEmpty()) return;
+    displayOrder.clear();
+    update();
 }
 
 void ErrorMatrixView::drawMatrix(QPainter& painter){
@@ -666,12 +689,12 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         table.append(qRgb(0, 0, 0));
         matrixImg.setColorTable(table);
 
-        for(int r = 0; r < nbClusters; ++r){            // row = clusterIndex
-            const int ci = r + 1;
+        for(int r = 0; r < nbClusters; ++r){            // row = display position
+            const int ci = displayToMatrix(r) + 1;      // -> 1-based matrix row
             const bool ciIgnored = ignored[static_cast<size_t>(ci)];
             uchar* line = matrixImg.scanLine(r);
-            for(int c = 0; c < nbClusters; ++c){        // col = clusterIndex2
-                const int ci2 = c + 1;
+            for(int c = 0; c < nbClusters; ++c){        // col = display position
+                const int ci2 = displayToMatrix(c) + 1; // -> 1-based matrix col
                 if(ci == ci2 || ciIgnored || ignored[static_cast<size_t>(ci2)]){
                     line[c] = static_cast<uchar>(blackIdx);
                 } else {
@@ -705,8 +728,8 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         painter.setPen(selPen);
         painter.setBrush(Qt::NoBrush);
         for(const Pair& selectedPair : selectedPairs){
-            const int col = clusterList.indexOf(selectedPair.first);
-            const int row = clusterList.indexOf(selectedPair.second);
+            const int col = matrixToDisplay(clusterList.indexOf(selectedPair.first));
+            const int row = matrixToDisplay(clusterList.indexOf(selectedPair.second));
             if(col < 0 || row < 0)
                 continue;
             painter.drawRect(QRectF(oriF.x() + col * eff, oriF.y() + row * eff,
@@ -767,9 +790,9 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
     const int col = cellAtX(e->position().toPoint().x());
     const int row = cellAtY(e->position().toPoint().y());
     if(col >= 0 && row >= 0){
-        statusBar->showMessage("Clusters (" + QString::number(clusterList[row]) + "," +
-                               QString::number(clusterList[col]) + "): p = " +
-                               QString::fromLatin1("%1").arg((*probabilities)(row + 1, col + 1)));
+        statusBar->showMessage("Clusters (" + QString::number(clusterList[displayToMatrix(row)]) + "," +
+                               QString::number(clusterList[displayToMatrix(col)]) + "): p = " +
+                               QString::fromLatin1("%1").arg((*probabilities)(displayToMatrix(row) + 1, displayToMatrix(col) + 1)));
     }
 }
 
@@ -805,8 +828,8 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
         cluster2Index = qBound(0, static_cast<int>(std::floor((e->position().toPoint().y() - oriF.y()) / eff)), clusterList.count()-1);
     }
 
-    int cluster1 = clusterList[cluster1Index];
-    int cluster2 = clusterList[cluster2Index];
+    int cluster1 = clusterList[displayToMatrix(cluster1Index)];
+    int cluster2 = clusterList[displayToMatrix(cluster2Index)];
     Pair pair(cluster1,cluster2);
     QList<int> clustersToShow;
     QList<int> previousSelectedClusters;

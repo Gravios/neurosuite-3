@@ -5236,6 +5236,30 @@ void KlustersApp::slotReorderClustersBySimilarity()
     targetOrder.reserve(N);
     for (int leaf : orderIdx) targetOrder.append(nodeCids[leaf]);
 
+    // Display-only fast path (Preferences -> Refinement -> "Reorder matrix
+    // display only"): rearrange the error-matrix rows/columns in the view
+    // WITHOUT renumbering clusters -- no per-spike label rewrite, no undo
+    // snapshot, no matrix recompute, so it is near-instant at large N.  The
+    // matrix rows include the specials (0/1); orderIdx covers only the >= 2
+    // clusters, so build a display permutation over ALL rows: specials keep
+    // their positions at the front, the >= 2 rows follow in similarity order.
+    // Only the error matrix carries a display map today; a template/residual
+    // reorder falls through to the renumber below.
+    if (configuration().getReorderDisplayOnly() && emv && chosenMatrixView == emv) {
+        QList<int> displayPerm;
+        displayPerm.reserve(nClustersInMatrix);
+        for (int i = 0; i < nClustersInMatrix; ++i)
+            if (clusterIdsInMatrix[i] <= 1) displayPerm.append(i);          // specials first
+        for (int leaf : orderIdx)
+            displayPerm.append(matrixCidToRow.value(nodeCids[leaf]) - 1);   // 0-based matrix row
+        emv->setDisplayOrder(displayPerm);
+        statusBar()->showMessage(
+            tr("Reorder: rearranged the error-matrix display (%1 rows) by "
+               "similarity -- clusters were not renumbered.").arg(displayPerm.size()),
+            4000);
+        return;
+    }
+
     const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
     if (nRenamed < 0) {
         QMessageBox::warning(this, tr("Reorder Clusters by Similarity"),

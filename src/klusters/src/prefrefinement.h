@@ -27,6 +27,8 @@ public:
     // Curation logging (per-action audit snapshots)
     void   setCurationLogging(bool b);
     bool   getCurationLogging()   const;
+    void   setReorderDisplayOnly(bool b);
+    bool   getReorderDisplayOnly()const;
     void   setRealignVerbose(bool b);
     bool   getRealignVerbose()    const;
 

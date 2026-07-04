@@ -102,6 +102,13 @@ public:
     QList<int> matrixClusterList() const { return clusterList; }
     /// Cluster IDs that actually have computed probabilities.
     QList<int> matrixComputedClusterList() const { return computedClusterList; }
+    /// Reorder the matrix DISPLAY (rows/cols) by a permutation of matrix indices
+    /// [0, nbClusters): order[d] is the 0-based matrix index shown at display
+    /// position d.  Clusters are NOT renumbered -- this is view-local and cheap
+    /// (a repaint), unlike the Shift+S renumber.  Empty/wrong-sized => identity.
+    void setDisplayOrder(const QList<int>& order);
+    /// Drop any display permutation (back to matrix/computed order).
+    void resetDisplayOrder();
     /// Pointer to the [N x N] probability matrix (1-based; may be null).
     const Array<double>* matrixData() const { return probabilities; }
 
@@ -301,6 +308,20 @@ private:
     QList<int> ignoreClusterIndex;
     /**Error matrix.*/
     Array<double>* probabilities;
+    /**Display permutation: display position -> 0-based matrix index.  Empty =
+     * identity (matrix/computed order).  Set by setDisplayOrder (Shift+S display-
+     * only reorder); reset on every recompute.  Renders reordered rows/cols
+     * without touching probabilities/clusterList, so no cluster renumber.*/
+    QList<int> displayOrder;
+    /**0-based display position -> 0-based matrix index (identity if unset).*/
+    int displayToMatrix(int d) const {
+        return (displayOrder.size() == clusterList.size() && d >= 0 && d < displayOrder.size())
+               ? displayOrder[d] : d;
+    }
+    /**0-based matrix index -> 0-based display position (identity if unset).*/
+    int matrixToDisplay(int m) const {
+        return (displayOrder.size() == clusterList.size()) ? displayOrder.indexOf(m) : m;
+    }
 
     // ── Incremental error-matrix cache (opt-in; default off) ────────────────
     /**Cached RAW (pre-normalisation) per-cluster probability columns from the
