@@ -112,9 +112,21 @@ void ResidualMatrixThread::run()
     }
     if (haveToStopProcessing) { post(); return; }
 
-    // ── 4. Asymmetric residual matrix ─────────────────────────────────────
-    //   M(i,j) = mean_p ( var_i[p] + (mean_i[p] − mean_j[p])^2 )
-    // Diagonal M(i,i) = mean_p var_i[p] (within-cluster noise floor).
+    // ── 4. Asymmetric separability matrix ─────────────────────────────────────
+    //   noise_i  = mean_p var_i[p]                    (within-cluster floor)
+    //   gap(i,j) = mean_p (mean_i[p] − mean_j[p])^2     (squared template gap)
+    //   M(i,j)   = gap(i,j) / (noise_i + gap(i,j))     in [0,1)
+    //
+    // M is the fraction of the residual of i's spikes about j's template that is
+    // SYSTEMATIC (template difference) rather than noise -- a bounded
+    // discriminability index: 0 => i is indistinguishable from j's template given
+    // i's own noise (a merge candidate), ->1 => clearly distinct.  The raw residual
+    // noise_i + gap is the expected squared residual, but it is dominated by gap
+    // for distinct clusters, so a single far pair set the colour scale and squashed
+    // every mergeable pair into the first bin.  Bounding makes distinct pairs
+    // saturate near 1, freeing the low end for merge candidates.  M(i,i) keeps the
+    // raw within-cluster variance (noise_i): the diagonal is drawn black and
+    // excluded from the colour scale, so the value is kept only for the hover.
     scores = new Array<double>();
     scores->setSize(nClusters, nClusters);
 
@@ -132,8 +144,8 @@ void ResidualMatrixThread::run()
     for (int i = 0; i < nClusters; ++i)
         (*scores)(i + 1, i + 1) = meanVar[static_cast<size_t>(i)];
 
-    // Symmetric squared-template-gap per unordered pair, computed once; the
-    // two directed cells differ only by the var_i / var_j offset.
+    // Squared template gap is symmetric, computed once per unordered pair; the
+    // two directed cells share it but each normalises by its own row floor.
     std::vector<std::pair<int,int>> pairs;
     pairs.reserve(static_cast<size_t>(nClusters * (nClusters - 1) / 2));
     for (int i = 0; i < nClusters; ++i)
@@ -157,8 +169,10 @@ void ResidualMatrixThread::run()
             gap += d * d;
         }
         gap *= invPts;                               // mean_p (mean_i − mean_j)^2
-        (*scores)(i + 1, j + 1) = meanVar[static_cast<size_t>(i)] + gap;  // var_i + gap
-        (*scores)(j + 1, i + 1) = meanVar[static_cast<size_t>(j)] + gap;  // var_j + gap
+        const double di = meanVar[static_cast<size_t>(i)] + gap;
+        const double dj = meanVar[static_cast<size_t>(j)] + gap;
+        (*scores)(i + 1, j + 1) = (di > 0.0) ? gap / di : 0.0;   // systematic fraction, row i
+        (*scores)(j + 1, i + 1) = (dj > 0.0) ? gap / dj : 0.0;   // systematic fraction, row j
     }
 
     post();

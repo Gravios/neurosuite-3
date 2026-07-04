@@ -54,8 +54,9 @@ ResidualMatrixView::ResidualMatrixView(KlustersDoc& doc_, KlustersView& view_,
     infoLabel = new QLabel(this);
     infoLabel->setFixedHeight(INFO_H);
     infoLabel->setContentsMargins(8,0,8,0);
-    infoLabel->setText(tr("Residual matrix — cell(row A,col B) = variance of A's spikes about B's template; "
-                          "red = small (similar), blue = large; diagonal = within-cluster variance."));
+    infoLabel->setText(tr("Separability — cell(row A, col B) = fraction of A's residual about B's template "
+                          "that is systematic vs noise, in [0,1]; red ≈ 0 (indistinguishable given A's noise, "
+                          "merge candidate), blue ≈ 1 (distinct); diagonal = A's within-cluster variance."));
     mainLayout->addWidget(infoLabel, 0);
 
     initializeColorMap();
@@ -134,14 +135,12 @@ ResidualMatrixThread* ResidualMatrixView::launchComputeThread()
 
 void ResidualMatrixView::recomputeDisplayMax()
 {
+    // M(i,j) is a bounded separability fraction in [0,1], so the colour scale is
+    // fixed and absolute at 1.0: red at 0 (merge candidate), blue at 1 (distinct).
+    // No data-dependent rescale, so an all-mergeable matrix is not stretched up to
+    // full blue.  (The diagonal holds the raw within-cluster variance but is drawn
+    // black and never colour-mapped, so it does not affect this scale.)
     displayMax = 1.0;
-    if (!scores) return;
-    const int n = clusterList.size();
-    double gmax = 0.0;
-    for (int i = 1; i <= n; ++i)
-        for (int j = 1; j <= n; ++j)
-            if (i != j) gmax = std::max(gmax, (*scores)(i, j));
-    if (gmax > 0.0) displayMax = gmax;
 }
 
 // ── customEvent (User+603) ───────────────────────────────────────────────────
@@ -361,9 +360,9 @@ void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)
                 infoLabel->setText(tr("cluster %1: within-cluster variance %2")
                     .arg(a).arg((*scores)(row+1, col+1), 0, 'g', 4));
             else
-                infoLabel->setText(tr("A=%1 vs B=%2: residual %3   (A's noise floor %4)")
+                infoLabel->setText(tr("A=%1 vs B=%2: separability %3   (A's noise floor %4)")
                     .arg(a).arg(b)
-                    .arg((*scores)(row+1, col+1), 0, 'g', 4)
+                    .arg((*scores)(row+1, col+1), 0, 'g', 3)
                     .arg((*scores)(row+1, row+1), 0, 'g', 4));
         }
     }
