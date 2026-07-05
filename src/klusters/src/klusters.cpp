@@ -551,6 +551,20 @@ void KlustersApp::createMenus()
     connect(mSortByWaveformNN,&QAction::triggered,
             this,&KlustersApp::slotSortByWaveformNN);
 
+    // Spectral (global) counterpart of the nearest-neighbour waveform sort: same
+    // median-waveform distances, but ordered by the Fiedler vector of the
+    // similarity Laplacian, so the layout respects global waveform structure and
+    // not just local nearest neighbours.  Also matrix-free; enabled by default.
+    mSortByWaveformSpectral = sortMenu->addAction(tr("Sort by Waveform (&Global / Spectral)"));
+    mSortByWaveformSpectral->setToolTip(
+        tr("Renumber clusters by spectral (Fiedler) seriation of their per-sample\n"
+           "MEDIAN waveforms: orders clusters so the whole layout respects the\n"
+           "GLOBAL waveform structure, not just each cluster's nearest neighbour.\n"
+           "Reads the .spk file; needs no matrix.  Clusters 0/1 preserved at the\n"
+           "start.  Undoable with Ctrl+Z."));
+    connect(mSortByWaveformSpectral,&QAction::triggered,
+            this,&KlustersApp::slotSortByWaveformSpectral);
+
     actionMenu->addSeparator();
 
     // Recluster + split methods grouped into their own Actions submenu.
@@ -5595,9 +5609,22 @@ void KlustersApp::reorderClustersByFeatureSpace()
 // at very large N.  Each worker holds one cluster's spikes at a time to take the
 // per-sample median.  All under a wait cursor.
 // ---------------------------------------------------------------------------
-void KlustersApp::slotSortByWaveformNN()
+// ---------------------------------------------------------------------------
+// computeMedianWaveformDistances  --  shared by the two median-waveform sorts
+//
+// clustersOut <- non-special clusters (id >= 2); distOut <- their N x N Euclidean
+// distance matrix over per-sample MEDIAN waveforms (read from the .spk file,
+// robust to the odd artefact spike that a mean would follow).  Returns false,
+// after a status message, if there is nothing to sort or the .spk data is
+// unavailable.  Callers wrap the call in a wait cursor.  Cost: the read/median is
+// O(total_spikes * nPts) (disk-bound, parallelised over clusters with per-worker
+// FILE handles, mirroring the residual thread); the distance matrix O(N^2 * nPts);
+// each worker holds one cluster's spikes at a time for the per-sample median.
+// ---------------------------------------------------------------------------
+bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
+                                                 std::vector<float>& distOut)
 {
-    if (!doc || !activeView()) return;
+    if (!doc || !activeView()) return false;
     Data& d = doc->data();
 
     // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).
@@ -5607,24 +5634,23 @@ void KlustersApp::slotSortByWaveformNN()
         if (id >= 2) clusters.append(static_cast<int>(id));
     const int N = clusters.size();
     if (N < 2) {
-        slotStatusMsg(tr("Reorder (waveform NN): fewer than 2 non-noise clusters; nothing to do."));
-        return;
+        slotStatusMsg(tr("Sort by waveform: fewer than 2 non-noise clusters; nothing to do."));
+        return false;
     }
 
     const int nChan = d.nbOfChannels();
     const int nSamp = d.nbSamplesPerWaveform();
     const int nPts  = nChan * nSamp;
     if (nPts < 1) {
-        slotStatusMsg(tr("Reorder (waveform NN): no waveform samples available."));
-        return;
+        slotStatusMsg(tr("Sort by waveform: no waveform samples available."));
+        return false;
     }
     const QString spkPath = d.getSpkFileName();
     if (spkPath.isEmpty()) {
-        slotStatusMsg(tr("Reorder (waveform NN): no .spk file available."));
-        return;
+        slotStatusMsg(tr("Sort by waveform: no .spk file available."));
+        return false;
     }
 
-    QApplication::setOverrideCursor(Qt::WaitCursor);
 
     // Pre-fetch each cluster's 0-based .spk file indices (serial; Data access is
     // not thread-safe).  posTable(1,s+1) is the 1-based .spk position.
@@ -5698,6 +5724,30 @@ void KlustersApp::slotSortByWaveformNN()
         }
     }
 
+    clustersOut = clusters;
+    distOut     = std::move(dist);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// slotSortByWaveformNN  --  greedy nearest-neighbour median-waveform sort (LOCAL)
+//
+// Places each cluster next to its most waveform-similar unused neighbour.  Each
+// step is locally optimal, but there is no global objective, so when a local
+// neighbourhood is exhausted the chain can jump.  For a sort that also respects
+// GLOBAL waveform structure, see slotSortByWaveformSpectral.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortByWaveformNN()
+{
+    QList<int>         clusters;
+    std::vector<float> dist;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    if (!computeMedianWaveformDistances(clusters, dist)) {
+        QApplication::restoreOverrideCursor();
+        return;
+    }
+    const int N = clusters.size();
+
     // Greedy nearest-neighbour chain: start at the first cluster, then repeatedly
     // append the nearest not-yet-placed cluster.  O(N^2), deterministic.
     std::vector<char> visited(static_cast<size_t>(N), 0);
@@ -5731,6 +5781,59 @@ void KlustersApp::slotSortByWaveformNN()
         slotStatusMsg(tr("Reorder (waveform NN): reorder rejected (cluster set changed?)."));
     else
         slotStatusMsg(tr("Reordered %1 clusters by nearest-neighbour median-waveform chain.").arg(nRenamed));
+}
+
+// ---------------------------------------------------------------------------
+// slotSortByWaveformSpectral  --  spectral (Fiedler) median-waveform sort (GLOBAL)
+//
+// Same median-waveform distances as the nearest-neighbour sort, but orders the
+// clusters by the Fiedler vector of the waveform-SIMILARITY Laplacian instead of
+// a greedy chain.  The Fiedler ordering minimises a GLOBAL objective -- the
+// similarity-weighted sum of squared position differences -- so the whole layout
+// respects the global waveform structure (which groups of clusters sit where),
+// not just each cluster's nearest neighbour, and it avoids the greedy chain's
+// jumps.  Similarity is (dmax - distance), diagonal 0, matching the matrix
+// reorders; the Fiedler solve reuses the same routine as the Shift+S spectral
+// path.  Cost adds the N x N Fiedler power iteration on top of the shared median
+// pass; both are under the wait cursor.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortByWaveformSpectral()
+{
+    QList<int>         clusters;
+    std::vector<float> dist;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    if (!computeMedianWaveformDistances(clusters, dist)) {
+        QApplication::restoreOverrideCursor();
+        return;
+    }
+    const int N = clusters.size();
+
+    // Distance -> similarity (dmax - d, diagonal 0), then Fiedler seriation.
+    float dmax = 0.0f;
+    for (const float x : dist) if (x > dmax) dmax = x;
+    std::vector<double> S(static_cast<size_t>(N) * N, 0.0);
+    for (int i = 0; i < N; ++i) {
+        const float* di = &dist[static_cast<size_t>(i) * N];
+        double*      Si = &S   [static_cast<size_t>(i) * N];
+        for (int j = 0; j < N; ++j)
+            Si[j] = (i == j) ? 0.0 : static_cast<double>(dmax - di[j]);
+    }
+
+    const std::vector<int> order = reorderSpectralFiedlerOrder(S, N);
+    QList<int> ordered;
+    ordered.reserve(N);
+    if (static_cast<int>(order.size()) == N)
+        for (const int idx : order) ordered.append(clusters[idx]);
+    else                                   // Fiedler failed -> leave order unchanged
+        ordered = clusters;
+
+    QApplication::restoreOverrideCursor();
+
+    const int nRenamed = doc->reorderClustersByPermutation(ordered);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Reorder (waveform spectral): reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Reordered %1 clusters by spectral (Fiedler) median-waveform seriation.").arg(nRenamed));
 }
 
 void KlustersApp::slotSelectAll(){

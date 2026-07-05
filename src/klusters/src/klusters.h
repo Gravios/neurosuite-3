@@ -340,6 +340,11 @@ private Q_SLOTS:
      *  clusters get adjacent IDs.  Needs no matrix (reads the .spk file directly).
      *  Clusters 0/1 preserved at the front; undoable. */
     void slotSortByWaveformNN();
+    /** Like slotSortByWaveformNN but orders clusters by the Fiedler vector of the
+     *  median-waveform similarity Laplacian (spectral seriation) rather than a
+     *  greedy chain, so the layout also respects GLOBAL waveform structure, not
+     *  just each cluster's nearest neighbour.  Clusters 0/1 preserved; undoable. */
+    void slotSortByWaveformSpectral();
     /** Renumber clusters so IDs run by ascending starting-edge time (the
      *  cluster whose earliest spike comes first becomes 2).  Needs no matrix,
      *  just spike timestamps; clusters 0/1 untouched; undoable. */
@@ -489,6 +494,13 @@ private Q_SLOTS:
     /** Reorder-by-similarity method 2: order non-special clusters by the first
      *  principal component of their fet-space centroids (no matrix needed). */
     void reorderClustersByFeatureSpace();
+    /** Shared by the two median-waveform sorts: fills @p clustersOut with the
+     *  non-special clusters (id >= 2) and @p distOut with their N x N Euclidean
+     *  distance matrix over per-sample MEDIAN waveforms (read from the .spk file).
+     *  Returns false (after a status message) if there is nothing to sort or the
+     *  .spk data is unavailable.  Callers set the wait cursor. */
+    bool computeMedianWaveformDistances(QList<int>& clustersOut,
+                                        std::vector<float>& distOut);
 
     /** Track which matrix view the user most recently interacted with.
      *  Connected from ErrorMatrixView::viewInteracted /
@@ -884,6 +896,7 @@ private:
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination
     QAction *mSortByWaveformNN;         // renumber by nearest-neighbour median-waveform chain
+    QAction *mSortByWaveformSpectral;   // renumber by spectral (Fiedler) median-waveform seriation
     QAction *mSortClustersBySnr;         // renumber clusters by descending mean-waveform SNR
     QAction *mSortClustersByErrorPval;   // renumber clusters by descending error-matrix affinity
     QAction *mSortByResidualGated;      // residual-matrix sort, gated by spike count
