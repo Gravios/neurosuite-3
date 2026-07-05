@@ -38,6 +38,7 @@
 #include "errormatrixview.h"
 #include "templatematrixview.h"
 #include "residualmatrixview.h"
+#include "templatematrixthread.h"   // tmReadSpikeFloat (median-waveform NN sort)
 #include "array.h"
 
 
@@ -535,6 +536,20 @@ void KlustersApp::createMenus()
     mSortByResidualGated->setEnabled(false);
     connect(mSortByResidualGated,&QAction::triggered,
             this,&KlustersApp::slotSortByResidualGated);
+
+    // Nearest-neighbour median-waveform sort: renumber clusters along a greedy
+    // nearest-neighbour chain over their per-sample median waveforms, so that
+    // waveform-similar clusters get adjacent IDs.  Reads the .spk file directly,
+    // needs no matrix, so (like Sort by Spike Count) it is enabled by default and
+    // follows the document/cluster-op state rather than the matrix gate.  Undoable.
+    mSortByWaveformNN = sortMenu->addAction(tr("Sort by &Nearest-Neighbour Waveform"));
+    mSortByWaveformNN->setToolTip(
+        tr("Renumber clusters along a nearest-neighbour chain over their per-sample\n"
+           "MEDIAN waveforms (Euclidean distance): each cluster is placed next to\n"
+           "its most waveform-similar unused neighbour.  Reads the .spk file; needs\n"
+           "no matrix.  Clusters 0/1 preserved at the start.  Undoable with Ctrl+Z."));
+    connect(mSortByWaveformNN,&QAction::triggered,
+            this,&KlustersApp::slotSortByWaveformNN);
 
     actionMenu->addSeparator();
 
@@ -5562,6 +5577,160 @@ void KlustersApp::reorderClustersByFeatureSpace()
         slotStatusMsg(tr("Reorder (feature-space): reorder rejected (cluster set changed?)."));
     else
         slotStatusMsg(tr("Reordered %1 clusters by feature-space layout (PC1 of fet centroids).").arg(nRenamed));
+}
+
+// ---------------------------------------------------------------------------
+// slotSortByWaveformNN  --  nearest-neighbour median-waveform sort
+//
+// Renumbers the non-special clusters along a greedy nearest-neighbour chain over
+// their per-sample MEDIAN waveforms, so waveform-similar clusters get adjacent
+// ids.  Unlike the matrix reorders this reads no error/template matrix -- it
+// pulls each cluster's spikes straight from the .spk file and takes a robust
+// per-sample median (resistant to the odd artefact spike, which a mean is not).
+//
+// Cost: the read + median is O(total_spikes * nPts) -- the dominant, disk-bound
+// term, parallelised over clusters with per-thread FILE handles (mirrors the
+// residual thread) -- while the N x N median-waveform distance matrix and the
+// chain are O(N^2 * nPts) / O(N^2), fine for moderate N and only the slow part
+// at very large N.  Each worker holds one cluster's spikes at a time to take the
+// per-sample median.  All under a wait cursor.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSortByWaveformNN()
+{
+    if (!doc || !activeView()) return;
+    Data& d = doc->data();
+
+    // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).
+    QList<int> clusters;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+    const int N = clusters.size();
+    if (N < 2) {
+        slotStatusMsg(tr("Reorder (waveform NN): fewer than 2 non-noise clusters; nothing to do."));
+        return;
+    }
+
+    const int nChan = d.nbOfChannels();
+    const int nSamp = d.nbSamplesPerWaveform();
+    const int nPts  = nChan * nSamp;
+    if (nPts < 1) {
+        slotStatusMsg(tr("Reorder (waveform NN): no waveform samples available."));
+        return;
+    }
+    const QString spkPath = d.getSpkFileName();
+    if (spkPath.isEmpty()) {
+        slotStatusMsg(tr("Reorder (waveform NN): no .spk file available."));
+        return;
+    }
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    // Pre-fetch each cluster's 0-based .spk file indices (serial; Data access is
+    // not thread-safe).  posTable(1,s+1) is the 1-based .spk position.
+    std::vector<std::vector<int>> allFileIdx(static_cast<size_t>(N));
+    for (int k = 0; k < N; ++k) {
+        SortableTable posTable;
+        if (!d.spikePositions(clusters[k], posTable)) continue;
+        const long nSpk = static_cast<long>(d.nbOfSpikes(clusters[k]));
+        allFileIdx[static_cast<size_t>(k)].reserve(static_cast<size_t>(nSpk));
+        for (long s = 0; s < nSpk; ++s)
+            allFileIdx[static_cast<size_t>(k)].push_back(
+                static_cast<int>(posTable(1, s + 1)) - 1);
+    }
+
+    // Per-cluster median waveform (channel-major, length nPts).  Parallel over
+    // clusters, each worker with its own FILE handle.
+    std::vector<std::vector<float>> medWav(
+        static_cast<size_t>(N), std::vector<float>(static_cast<size_t>(nPts), 0.0f));
+    const QByteArray spkBytes = spkPath.toLocal8Bit();
+    const char*      spkCStr  = spkBytes.constData();
+
+    #pragma omp parallel for schedule(dynamic, 1)
+    for (int k = 0; k < N; ++k) {
+        const auto& fidx = allFileIdx[static_cast<size_t>(k)];
+        const long  nSpk = static_cast<long>(fidx.size());
+        if (nSpk == 0) continue;
+
+        FILE* spk = fopen(spkCStr, "rb");
+        if (!spk) continue;
+
+        // Pack valid spikes contiguously as [valid][nPts]; then median each column.
+        std::vector<float>   buf(static_cast<size_t>(nSpk) * nPts);
+        std::vector<int16_t> raw;
+        std::vector<float>   sp;
+        long valid = 0;
+        for (long s = 0; s < nSpk; ++s) {
+            if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)], nChan, nSamp, raw, sp))
+                continue;
+            std::copy(sp.begin(), sp.begin() + nPts,
+                      buf.begin() + static_cast<size_t>(valid) * nPts);
+            ++valid;
+        }
+        fclose(spk);
+        if (valid == 0) continue;
+
+        std::vector<float> colv(static_cast<size_t>(valid));
+        const size_t mid = static_cast<size_t>(valid) / 2;
+        for (int p = 0; p < nPts; ++p) {
+            for (long s = 0; s < valid; ++s)
+                colv[static_cast<size_t>(s)] = buf[static_cast<size_t>(s) * nPts + p];
+            std::nth_element(colv.begin(), colv.begin() + mid, colv.end());
+            medWav[static_cast<size_t>(k)][static_cast<size_t>(p)] = colv[mid];
+        }
+    }
+
+    // N x N Euclidean distance matrix over the median waveforms (parallel rows).
+    std::vector<float> dist(static_cast<size_t>(N) * N, 0.0f);
+    #pragma omp parallel for schedule(dynamic, 8)
+    for (int a = 0; a < N; ++a) {
+        const float* wa = medWav[static_cast<size_t>(a)].data();
+        for (int b = a + 1; b < N; ++b) {
+            const float* wb = medWav[static_cast<size_t>(b)].data();
+            double acc = 0.0;
+            for (int p = 0; p < nPts; ++p) {
+                const double diff = static_cast<double>(wa[p]) - static_cast<double>(wb[p]);
+                acc += diff * diff;
+            }
+            const float dd = static_cast<float>(std::sqrt(acc));
+            dist[static_cast<size_t>(a) * N + b] = dd;
+            dist[static_cast<size_t>(b) * N + a] = dd;
+        }
+    }
+
+    // Greedy nearest-neighbour chain: start at the first cluster, then repeatedly
+    // append the nearest not-yet-placed cluster.  O(N^2), deterministic.
+    std::vector<char> visited(static_cast<size_t>(N), 0);
+    QList<int> ordered;
+    ordered.reserve(N);
+    int cur = 0;
+    visited[0] = 1;
+    ordered.append(clusters[0]);
+    for (int step = 1; step < N; ++step) {
+        const float* dc = &dist[static_cast<size_t>(cur) * N];
+        int   best  = -1;
+        float bestD = std::numeric_limits<float>::max();
+        for (int j = 0; j < N; ++j) {
+            if (visited[static_cast<size_t>(j)]) continue;
+            if (dc[j] < bestD) { bestD = dc[j]; best = j; }
+        }
+        if (best < 0) break;
+        visited[static_cast<size_t>(best)] = 1;
+        ordered.append(clusters[best]);
+        cur = best;
+    }
+    // Belt and braces: append anything the chain somehow missed.
+    if (ordered.size() != N)
+        for (int k = 0; k < N; ++k)
+            if (!visited[static_cast<size_t>(k)]) ordered.append(clusters[k]);
+
+    QApplication::restoreOverrideCursor();
+
+    const int nRenamed = doc->reorderClustersByPermutation(ordered);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Reorder (waveform NN): reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Reordered %1 clusters by nearest-neighbour median-waveform chain.").arg(nRenamed));
 }
 
 void KlustersApp::slotSelectAll(){
