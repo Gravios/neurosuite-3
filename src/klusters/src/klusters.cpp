@@ -1000,7 +1000,6 @@ void KlustersApp::createMenus()
     connect(clusterPalette, &ClusterPalette::singleChangeColor, this, &KlustersApp::slotSingleColorUpdate);
     connect(clusterPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotUpdateShownClusters);
     connect(childPaletteA, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotChildSelectionChanged);
-    connect(childPaletteB, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotChildSelectionChanged);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::groupClusters), this, &KlustersApp::slotGroupClusters);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToNoise), this, &KlustersApp::slotMoveClustersToNoise);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToArtefact), this, &KlustersApp::slotMoveClustersToArtefact);
@@ -1019,8 +1018,7 @@ void KlustersApp::createMenus()
     connect(doc, &KlustersDoc::renumber, this, [this](QMap<int,int>&){
         if(!activeView()) return;
         if(childPanel && childPanel->isVisible()
-           && ((childPaletteA && !childPaletteA->selectedClusters().isEmpty())
-            || (childPaletteB && !childPaletteB->selectedClusters().isEmpty())))
+           && childPaletteA && !childPaletteA->selectedClusters().isEmpty())
             slotChildSelectionChanged({});
         else if(clusterPalette)
             slotUpdateShownClusters(clusterPalette->selectedClusters());
@@ -1511,13 +1509,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         return true;
     }
 
-    // Keep the childPalette alias pointing at whichever child palette (A/B) most
-    // recently gained focus -- by keyboard (Tab) or mouse -- so the hierarchy
-    // ops that act on "the focused child palette" target the right one.
+    // Keep the childPalette alias pointing at the child palette when it gains
+    // focus -- by keyboard (Tab) or mouse.
     if(event->type() == QEvent::FocusIn){
         for(QObject* w = object; w; w = w->parent()){
             if(w == childPaletteA){ childPalette = childPaletteA; break; }
-            if(w == childPaletteB){ childPalette = childPaletteB; break; }
         }
     }
 
@@ -1596,7 +1592,7 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
 
-        // Esc from a child (A/B) palette returns focus to the parent palette.
+        // Esc from the child palette returns focus to the parent palette.
         // (When the temporary child error/template matrices exist, Esc will
         // also dismiss them first -- added with that feature.)
         if(ke->key() == Qt::Key_Escape && ke->modifiers() == Qt::NoModifier
@@ -1635,7 +1631,7 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
 
         // ── Tab / Shift+Tab — move focus between windows & fields ───────────
         // Tab advances (Shift+Tab reverses) across the focus-zone ring: cluster
-        // palette, child palettes A/B (while the hierarchical view is shown), and
+        // palette, the child palette (while the hierarchical view is shown), and
         // the toolbar spinboxes / line-edits.  This is the default focus mover.
         // Guarded so it never hijacks Tab inside a modal dialog or any widget
         // outside the main window, where Tab must keep ordinary field-to-field
@@ -1752,7 +1748,7 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier
            && paletteHasFocus()){
             // s marks the focused palette's current item: parents in the main
-            // palette, children when an A/B child palette holds focus.
+            // palette, children when the child palette holds focus.
             ClusterPalette* target = focusedChildPalette();
             if(!target) target = clusterPalette;
             target->toggleCurrentSelection();
@@ -1831,15 +1827,19 @@ void KlustersApp::buildFocusZones()
 {
     // Tab / Ctrl+Shift+Left/Right focus ring:
     //   1. Cluster (parent) palette
-    //   2. Toolbar spinboxes / line-edits (left-to-right order)
-    // The child palettes A/B are intentionally NOT in the ring (reach them by
-    // click); the tab-display area is likewise excluded so focus never lands
-    // inside the waveform/scatter/correlation views.
+    //   2. Child palette (when the hierarchical view is open)
+    //   3. Toolbar spinboxes / line-edits (left-to-right order)
+    // The tab-display area is excluded so focus never lands inside the
+    // waveform/scatter/correlation views.
     focusZones.clear();
 
     // 1. Cluster list
     if(clusterPanel && clusterPanel->isVisible() && clusterPalette)
         focusZones.append(clusterPalette);
+
+    // 1b. Child palette, only while the hierarchical view is open.
+    if(childPanel && childPanel->isVisible() && childPaletteA)
+        focusZones.append(childPaletteA);
 
     // 2. Toolbar fields only
     if(paramBar){
@@ -1889,7 +1889,7 @@ bool KlustersApp::paletteHasFocus() const
     // matching clusterPalette means the palette tree owns focus.
     if (!clusterPalette) return false;
     for (QWidget* w = QApplication::focusWidget(); w; w = w->parentWidget())
-        if (w == clusterPalette || w == childPaletteA || w == childPaletteB) return true;
+        if (w == clusterPalette || w == childPaletteA) return true;
     return false;
 }
 
@@ -1929,18 +1929,12 @@ void KlustersApp::initClusterPanel()
     // of the unit(s) selected in the main palette.  Hidden until the View-menu
     // toggle enables it; stacked directly below the main palette in initView().
     childPanel = new QDockWidget(tr("Child clusters (.clc)"),nullptr);
-    // Two child palettes stacked vertically: A (top, parent A) over B (bottom,
-    // parent B).  Each is scope-bound to its own parent's children.
-    QSplitter* childSplit = new QSplitter(Qt::Vertical, childPanel);
-    childSplit->setChildrenCollapsible(false);
-    childPaletteA = new ClusterPalette(backgroundColor,childSplit,statusBar(),"ChildClusterPaletteA");
-    childPaletteB = new ClusterPalette(backgroundColor,childSplit,statusBar(),"ChildClusterPaletteB");
+    // Single child palette listing the children (.clc microfibers) of the parent
+    // selected in the main palette; scope-bound to that parent's children.
+    childPaletteA = new ClusterPalette(backgroundColor,childPanel,statusBar(),"ChildClusterPaletteA");
     childPaletteA->setShowsChildScope(true);
-    childPaletteB->setShowsChildScope(true);
-    childSplit->addWidget(childPaletteA);
-    childSplit->addWidget(childPaletteB);
-    childPalette = childPaletteA;          // alias: focused child palette, default A
-    childPanel->setWidget(childSplit);
+    childPalette = childPaletteA;          // alias: the child palette
+    childPanel->setWidget(childPaletteA);
     childPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
     childPanel->hide();
 }
@@ -2038,7 +2032,6 @@ void KlustersApp::initDisplay(){
     // not a runtime toggle, so the two systems never mix within a session.
     if(childPanel) childPanel->hide();
     if(childPaletteA) childPaletteA->reset();
-    if(childPaletteB) childPaletteB->reset();
     if(mHierarchicalView){
         const bool hier = doc->isHierarchicalSession();
         {

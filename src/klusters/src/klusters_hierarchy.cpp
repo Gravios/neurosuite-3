@@ -136,8 +136,7 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
     } else {
         childPanel->hide();
         childPaletteA->reset();
-        childPaletteB->reset();
-        parentSlotA = parentSlotB = -1;
+        parentSlotA = -1;
         childPalette = childPaletteA;
         doc->setActiveClustering(false);                 // views back to the parent
         if(activeView())
@@ -284,7 +283,6 @@ ClusterPalette* KlustersApp::focusedChildPalette() const {
     QWidget* f = QApplication::focusWidget();
     while(f){
         if(f == childPaletteA) return childPaletteA;
-        if(f == childPaletteB) return childPaletteB;
         f = f->parentWidget();
     }
     return nullptr;
@@ -293,7 +291,6 @@ ClusterPalette* KlustersApp::focusedChildPalette() const {
 QList<int> KlustersApp::selectedChildrenAB() const {
     QList<int> kids;
     if(childPaletteA) kids += childPaletteA->selectedClusters();
-    if(childPaletteB) kids += childPaletteB->selectedClusters();
     return kids;
 }
 
@@ -303,7 +300,7 @@ void KlustersApp::refreshChildUndoActions(){
 }
 
 void KlustersApp::cycleHierarchyFocus(bool forward){
-    // Cycle focus across the full ring: cluster palette, child palettes A/B
+    // Cycle focus across the full ring: cluster palette, the child palette
     // (when shown), then the toolbar spinboxes/line-edits.  Mirrors the focus
     // logic formerly bound to Tab.
     buildFocusZones();
@@ -323,13 +320,14 @@ void KlustersApp::cycleHierarchyFocus(bool forward){
 }
 
 // Ctrl-arrow / M hierarchy operations, dispatched by selection state while the
-// dual child view is visible.  All operations reuse the existing doc primitives
+// child view is visible.  All operations reuse the existing doc primitives
 // (the same ones the &Hierarchy menu drives).  Returns true when consumed.
 //   G (no mod) ............ adaptive merge (see below)
 //   Ctrl+Up ............... new fiber from selected children (or all children of 2+ parents)
 //   Ctrl+Down ............. group selected parents
 //   Ctrl+Shift+Down ....... dissolve the selected parent
-//   Ctrl+Left/Right ....... spike-custody transfer B->A / A->B (needs A/B focus)
+// (The Ctrl+Left/Right A<->B spike-custody transfer was retired with the second
+//  child palette.)
 bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
     if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return false;
     const bool ctrl  = mods & Qt::ControlModifier;
@@ -387,45 +385,30 @@ bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
         doc->mergeParentFibers(parents, *activeView());
         return true;
     }
-    if((key == Qt::Key_Left || key == Qt::Key_Right) && !shift){   // spike-custody A<->B
-        if(focusedChildPalette() == nullptr) return false;         // only from a child pane
-        if(parentSlotA < 0 || parentSlotB < 0){
-            statusBar()->showMessage(tr("Custody transfer needs a parent in both A and B."), 5000);
-            return true;
-        }
-        const bool toB = (key == Qt::Key_Right);
-        ClusterPalette* src = toB ? childPaletteA : childPaletteB;
-        const int targetParent = toB ? parentSlotB : parentSlotA;
-        const QList<int> moving = src ? src->selectedClusters() : QList<int>();
-        if(moving.isEmpty()){
-            statusBar()->showMessage(tr("Select the child(ren) to transfer in the source pane."), 4000);
-            return true;
-        }
-        for(int c : moving) doc->moveChild(c, targetParent, *activeView());
-        return true;
+    if((key == Qt::Key_Left || key == Qt::Key_Right) && !shift){
+        // The Left/Right A<->B spike-custody transfer needed two child panes; with
+        // a single child palette there is no second pane to transfer to/from, so
+        // the gesture is retired.  Let the key fall through to its default handling.
+        return false;
     }
     return false;
 }
 
 void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     if(!doc || !childPanel || !childPanel->isVisible()) return;
-    // The first selected parent populates slot A, the second slot B; further
-    // parents are ignored by the dual view (pairwise by design).  A single
-    // selected parent fills A and clears B.
+    // The first selected parent populates the child palette; further parents are
+    // ignored (the child view shows one parent's children at a time).
     parentSlotA = parents.size() >= 1 ? parents[0] : -1;
-    parentSlotB = parents.size() >= 2 ? parents[1] : -1;
     assignChildSlot(childPaletteA, parentSlotA);
-    assignChildSlot(childPaletteB, parentSlotB);
     if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
 }
 
 void KlustersApp::slotChildSelectionChanged(const QList<int>&){
     if(!doc || !activeView()) return;
-    // The views reflect the union of children selected across A and B; with no
-    // child selected they fall back to the parent unit(s).
+    // The views reflect the children selected in the child palette; with no child
+    // selected they fall back to the parent unit(s).
     QList<int> kids;
     if(childPaletteA) kids += childPaletteA->selectedClusters();
-    if(childPaletteB) kids += childPaletteB->selectedClusters();
     if(kids.isEmpty()){
         doc->setActiveClustering(false);                 // no child selected -> parent view
         doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
