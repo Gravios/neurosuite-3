@@ -794,32 +794,28 @@ private:
      *  of the unit(s) selected in the main palette.  Hidden until the View-menu
      *  toggle (mHierarchicalView) enables it. */
     QDockWidget* childPanel = nullptr;
-    /** The two child palettes of the hierarchical view, stacked vertically in
-     *  childPanel: A (top) and B (bottom).  Each lists the children of one
-     *  selected parent and carries its own scope.  childPalette is a NON-owning
-     *  alias to whichever of A/B currently holds focus (default A), so the
-     *  existing single-palette hierarchy ops keep working against "the focused
-     *  child palette". */
+    /** The child palette of the hierarchical view, shown in childPanel: it lists
+     *  the children of the selected parent and carries its own (child) scope.
+     *  childPalette is a NON-owning alias to it, kept so the existing hierarchy
+     *  ops that act on "the focused child palette" keep working. */
     ClusterPalette* childPaletteA = nullptr;
-    ClusterPalette* childPaletteB = nullptr;
-    ClusterPalette* childPalette  = nullptr;   // alias -> focused child palette
-    int parentSlotA = -1;   // parent id shown in palette A (-1 = unassigned)
-    int parentSlotB = -1;   // parent id shown in palette B
+    ClusterPalette* childPalette  = nullptr;   // alias -> the child palette (== childPaletteA)
+    int parentSlotA = -1;   // parent id shown in the child palette (-1 = unassigned)
     /** Build palette @p pal scoped to the children of @p parentId (or clear it
-     *  when parentId < 0).  Used to (re)assign a parent to slot A or B. */
+     *  when parentId < 0).  Used to (re)assign a parent to the child palette. */
     void assignChildSlot(ClusterPalette* pal, int parentId);
-    /** The child palette (A or B) that currently owns keyboard focus, or nullptr
-     *  if neither does. */
+    /** The child palette if it currently owns keyboard focus, else nullptr. */
     ClusterPalette* focusedChildPalette() const;
-    /** Union of the children selected across palettes A and B. */
+    /** The children currently selected in the child palette. */
     QList<int> selectedChildrenAB() const;
     /** Route a Ctrl-modified arrow / M key to the matching hierarchy operation
-     *  based on the current parent/child selection, while the dual child view is
+     *  based on the current parent/child selection, while the child view is
      *  visible.  Returns true if the key was consumed. */
     bool dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods);
     /** Re-enable/disable the atom (child-layer) undo/redo menu items. */
     void refreshChildUndoActions();
-    /** Cycle keyboard focus across the three palettes: parent <-> A <-> B. */
+    /** Cycle keyboard focus across the palettes / toolbar fields: parent ->
+     *  child (when shown) -> toolbar -> parent. */
     void cycleHierarchyFocus(bool forward);
     /**Lock cluster edits if the post-edit matrix consolidation is still running,
      * releasing them (via consolidationPollTimer) once it finishes.*/
