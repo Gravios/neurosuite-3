@@ -67,6 +67,7 @@
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QSpinBox>
+#include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QSlider>
@@ -1284,6 +1285,24 @@ void KlustersApp::initSelectionBoxes(){
     autoNFeaturesLabelAction->setVisible(false);
     autoNFeaturesSpinBoxAction->setVisible(false);
 
+    // "time" checkbox next to the N-feat spin box: include the spike timestamp as a
+    // clustering feature when auto-selecting features for reclustering.  Off by
+    // default (time over-fits within-session drift); shares the spin box's
+    // visibility.  Its checked state is synced from the configuration in the
+    // show/hide code (initializePreferences).
+    autoNFeaturesTimeCheckBox = new QCheckBox(tr("time"), paramBar);
+    autoNFeaturesTimeCheckBox->setObjectName("autoNFeaturesTimeCheckBox");
+    autoNFeaturesTimeCheckBox->setFont(font);
+    autoNFeaturesTimeCheckBox->setToolTip(tr(
+        "Include the spike timestamp as a clustering feature when auto-selecting\n"
+        "features for reclustering.  Off by default: including time makes the\n"
+        "reclusterer over-fit to within-session drift (spikes separated by when\n"
+        "they fired rather than by waveform shape)."));
+    connect(autoNFeaturesTimeCheckBox, &QCheckBox::toggled,
+            this, &KlustersApp::slotUpdateIncludeTimeFeature);
+    autoNFeaturesTimeCheckBoxAction = paramBar->addWidget(autoNFeaturesTimeCheckBox);
+    autoNFeaturesTimeCheckBoxAction->setVisible(false);
+
     // Realign top-channels spinbox — 0 means "use all channels".
     // When > 0, only the N highest-amplitude channels (by template peak)
     // contribute to alignment, excluding collision/noise on other channels.
@@ -1448,6 +1467,17 @@ void KlustersApp::applyPreferences() {
         autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
         autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
         if(!isInit) autoNFeaturesSpinBox->setValue(autoSelectNFeatures);
+        if(autoNFeaturesTimeCheckBoxAction){
+            autoNFeaturesTimeCheckBoxAction->setVisible(autoSelectFeatures);
+            const bool inclTime = configuration().getIncludeTimeInAutoSelect();
+            if(autoNFeaturesTimeCheckBox->isChecked() != inclTime){
+                // Programmatic sync: block the toggled() signal so it doesn't
+                // re-write the (unchanged) setting on every preferences refresh.
+                const bool prev = autoNFeaturesTimeCheckBox->blockSignals(true);
+                autoNFeaturesTimeCheckBox->setChecked(inclTime);
+                autoNFeaturesTimeCheckBox->blockSignals(prev);
+            }
+        }
     }
 }
 
@@ -4696,6 +4726,12 @@ void KlustersApp::slotUpdateAutoNFeatures(int n){
     configuration().write();
     // Keep the preferences spinbox in sync if the dialog is open.
     if(prefDialog) prefDialog->syncAutoNFeatures(n);
+}
+
+void KlustersApp::slotUpdateIncludeTimeFeature(bool on){
+    if(isInit) return;
+    configuration().setIncludeTimeInAutoSelect(on);
+    configuration().write();
 }
 
 void KlustersApp::slotUpdateRealignTopChan(int n){

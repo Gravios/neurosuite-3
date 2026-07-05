@@ -328,6 +328,13 @@ public:
     bool getAutoSelectFeaturesDefault() const { return autoSelectFeaturesDefault; }
     void setAutoSelectFeatures(bool b) { autoSelectFeatures = b; }
 
+    /**Whether the spike timestamp is included as a clustering feature when
+     * auto-selecting features for reclustering.  Off by default: including the
+     * normalised timestamp makes the reclusterer over-fit to within-session drift.*/
+    bool getIncludeTimeInAutoSelect() const { return includeTimeInAutoSelect; }
+    bool getIncludeTimeInAutoSelectDefault() const { return includeTimeInAutoSelectDefault; }
+    void setIncludeTimeInAutoSelect(bool b) { includeTimeInAutoSelect = b; }
+
     /**Returns number of top-variance features to pass to KlustaKwik.*/
     int  getAutoSelectNFeatures()        const { return autoSelectNFeatures; }
     /**Returns the default for autoSelectNFeatures.*/
@@ -469,6 +476,8 @@ private:
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;
     static const bool autoSelectFeaturesDefault;
+    bool includeTimeInAutoSelect;
+    static const bool includeTimeInAutoSelectDefault;
     int  autoSelectNFeatures;
     static const int  autoSelectNFeaturesDefault;
 

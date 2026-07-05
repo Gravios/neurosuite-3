@@ -26,6 +26,8 @@
 
 const bool Configuration::crashRecoveryDefault = true;
 const bool Configuration::autoSelectFeaturesDefault = false;
+// Off by default: including the timestamp as a clustering feature over-fits drift.
+const bool Configuration::includeTimeInAutoSelectDefault = false;
 const int  Configuration::autoSelectNFeaturesDefault = 7;
 // patch76 — opt-in: off by default to preserve existing recluster behaviour
 const bool Configuration::reclusterMeanSubtractedSubdimDefault = false;
@@ -106,6 +108,7 @@ void Configuration::read() {
     templateXcorrMetric = qBound(0, templateXcorrMetric, 4);
     useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
     autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
+    includeTimeInAutoSelect = settings.value("includeTimeInAutoSelect", includeTimeInAutoSelectDefault).toBool();
     autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
     // patch76 — single-cluster mean-subtracted sub-dimensional recluster
     reclusterMeanSubtractedSubdim = settings.value(
@@ -186,6 +189,7 @@ void Configuration::write() const {
     settings.setValue("templateXcorrMetric", templateXcorrMetric);
     settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
     settings.setValue("autoSelectFeatures", autoSelectFeatures);
+    settings.setValue("includeTimeInAutoSelect", includeTimeInAutoSelect);
     settings.setValue("autoSelectNFeatures", autoSelectNFeatures);
     // patch76
     settings.setValue("reclusterMeanSubtractedSubdim",
