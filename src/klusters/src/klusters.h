@@ -334,6 +334,12 @@ private Q_SLOTS:
     /** Renumber clusters so IDs run by descending spike count (largest = 2).
      *  Clusters 0/1 untouched; undoable. */
     void slotSortClustersBySpikeCount();
+    /** Renumber clusters by a nearest-neighbour chain over their MEDIAN
+     *  waveforms: compute each cluster's per-sample median waveform, then walk a
+     *  greedy nearest-neighbour path (Euclidean distance) so waveform-adjacent
+     *  clusters get adjacent IDs.  Needs no matrix (reads the .spk file directly).
+     *  Clusters 0/1 preserved at the front; undoable. */
+    void slotSortByWaveformNN();
     /** Renumber clusters so IDs run by ascending starting-edge time (the
      *  cluster whose earliest spike comes first becomes 2).  Needs no matrix,
      *  just spike timestamps; clusters 0/1 untouched; undoable. */
@@ -877,6 +883,7 @@ private:
     QAction *mSortClustersBySpikeCount; // renumber clusters by descending spike count
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination
+    QAction *mSortByWaveformNN;         // renumber by nearest-neighbour median-waveform chain
     QAction *mSortClustersBySnr;         // renumber clusters by descending mean-waveform SNR
     QAction *mSortClustersByErrorPval;   // renumber clusters by descending error-matrix affinity
     QAction *mSortByResidualGated;      // residual-matrix sort, gated by spike count
