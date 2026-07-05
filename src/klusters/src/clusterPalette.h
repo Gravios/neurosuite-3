@@ -156,6 +156,17 @@ public:
     }
     /** Drop the scope filter entirely (list every bound cluster). */
     void clearPaletteScope(){ paletteScope.clear(); paletteScoped = false; }
+    /** Set a VIEW-ONLY display order for the PARENT palette: the >= 2 clusters are
+     *  listed in the given cluster-id order (produced by Reorder-by-similarity in
+     *  display-only mode), with the artefact(0)/noise(1) specials pinned first and
+     *  any cluster not named in the order appended afterwards in natural id order.
+     *  Cluster ids are NOT changed.  This is a parent-level feature only: on a
+     *  child-scoped palette the call is ignored, so child lists keep their natural
+     *  order.  The order is stored by id and self-heals across edits (ids no longer
+     *  present drop out; new clusters fall to the natural-order tail). */
+    void setSimilarityOrder(const QList<int>& orderedIds);
+    /** Drop the view-only similarity order (back to natural id order). */
+    void clearSimilarityOrder();
     void selectItems(const QList<int> &selectedClusters);
 
     /** Rewrite the S-pinned-ids set through a partial cluster-rename map.
@@ -234,6 +245,10 @@ private:
      *  child colour list, the scope filter drops the out-of-scope children, and
      *  the list collapses to only the (un-scoped) noise cluster. */
     bool showsChildScope = false;
+    /** View-only PARENT-palette display order: cluster ids of the >= 2 clusters in
+     *  similarity order; empty = natural id order.  Ignored on child-scoped
+     *  palettes.  See setSimilarityOrder. */
+    QList<int> similarityOrder;
     /** Per-palette child scope: the child ids this palette is allowed to list.
      *  Each child palette (A / B) carries its OWN scope so the two can display
      *  different parents' children at once -- the scope is no longer global doc

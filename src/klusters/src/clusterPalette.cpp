@@ -405,6 +405,23 @@ void ClusterPalette::createClusterList(KlustersDoc* document){
     updateClusterList();
 }
 
+void ClusterPalette::setSimilarityOrder(const QList<int>& orderedIds){
+    // View-only reorder is a PARENT-level feature: a child-scoped palette keeps
+    // its natural id order.  Guard here so the constraint holds regardless of
+    // caller.
+    if(showsChildScope)
+        return;
+    similarityOrder = orderedIds;
+    updateClusterList();
+}
+
+void ClusterPalette::clearSimilarityOrder(){
+    if(similarityOrder.isEmpty())
+        return;
+    similarityOrder.clear();
+    updateClusterList();
+}
+
 void ClusterPalette::updateClusterList(){
     if(!doc)
         return;
@@ -439,7 +456,38 @@ void ClusterPalette::updateClusterList(){
     //swatch was always a solid cluster colour.)
     QHash<QRgb, QPixmap> swatchCache;
 
-    for(int i = 0; i<nbClusters; ++i){
+    // Visiting order over ItemColors indices.  Default is natural (index) order.
+    // A parent-level similarity order (set by Reorder-by-similarity in display-only
+    // mode; ignored on child palettes) visits the artefact(0)/noise(1) specials
+    // first, then the >= 2 clusters in similarity order, then any cluster not named
+    // in the order in natural index order.  Stored by id, so it self-heals: ids no
+    // longer bound are skipped (contains()), and unlisted clusters fall through to
+    // the tail.  Each item still records its own INDEX + CLUSTER_ID below, so
+    // selection and colour editing (which resolve by data role, not row) are
+    // unaffected by the reordering.
+    QList<int> visitOrder;
+    visitOrder.reserve(nbClusters);
+    if(!similarityOrder.isEmpty() && !showsChildScope){
+        QSet<int> placed;
+        placed.reserve(nbClusters);
+        for(int i = 0; i < nbClusters; ++i){                 // specials first
+            const int id = clusterColors.itemId(i);
+            if(id == 0 || id == 1){ visitOrder.append(i); placed.insert(i); }
+        }
+        for(int cid : similarityOrder){                      // then similarity order
+            if(!clusterColors.contains(cid)) continue;
+            const int idx = clusterColors.itemIndex(cid);
+            if(idx >= 0 && idx < nbClusters && !placed.contains(idx)){
+                visitOrder.append(idx); placed.insert(idx);
+            }
+        }
+        for(int i = 0; i < nbClusters; ++i)                  // then the rest
+            if(!placed.contains(i)) visitOrder.append(i);
+    } else {
+        for(int i = 0; i < nbClusters; ++i) visitOrder.append(i);
+    }
+
+    for(int i : visitOrder){
         const QColor swatchColor = clusterColors.color(i,ItemColors::BY_INDEX);
         const QRgb   swatchKey   = swatchColor.rgb();
         QPixmap pix;
@@ -892,6 +940,7 @@ void ClusterPalette::reset(){
     mode = IMMEDIATE;
     isInSelectItems = false;
     isUpToDate = true;
+    similarityOrder.clear();   // a fresh session starts in natural id order
 }
 
 void ClusterPalette::showUserClusterInformation(int electrodeGroupId){
@@ -908,7 +957,9 @@ void ClusterPalette::showUserClusterInformation(int electrodeGroupId){
     ClusterUserInformation currentClusterInformation;
 
     for(int i =0; i< iconView->count() ; ++i) {
-        int clusterId = clusterColors.itemId(i);
+        // Resolve by the item's stored CLUSTER_ID, not itemId(i): under a parent
+        // similarity order (or any masking) display row i is not ItemColors index i.
+        int clusterId = iconView->item(i)->data(CLUSTER_ID).toInt();
 
         QString clusterText = iconView->item(i)->text();
 
@@ -981,7 +1032,9 @@ void ClusterPalette::hideUserClusterInformation(){
     ItemColors& clusterColors = boundColors();
 
     for(int i = 0; i < iconView->count(); ++i) {
-        int clusterId = clusterColors.itemId(i);
+        // Resolve by stored CLUSTER_ID (display row != ItemColors index under a
+        // parent similarity order or masking).
+        int clusterId = iconView->item(i)->data(CLUSTER_ID).toInt();
         iconView->item(i)->setText(QString::number(clusterId));
     }
 

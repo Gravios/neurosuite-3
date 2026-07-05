@@ -5383,6 +5383,11 @@ void KlustersApp::slotReorderClustersBySimilarity()
         for (int leaf : orderIdx)
             displayPerm.append(matrixCidToRow.value(nodeCids[leaf]) - 1);   // 0-based matrix row
         emv->setDisplayOrder(displayPerm);
+        // Mirror the same order onto the PARENT cluster palette (view-only, ids
+        // unchanged) so the cluster list follows the sort too.  targetOrder is the
+        // >= 2 cluster ids in similarity order; the palette pins the specials 0/1
+        // and appends any unlisted cluster.  Child palettes are left untouched.
+        if(clusterPalette) clusterPalette->setSimilarityOrder(targetOrder);
         statusBar()->showMessage(
             tr("Reorder: rearranged the error-matrix display (%1 rows) by "
                "similarity -- clusters were not renumbered.").arg(displayPerm.size()),
