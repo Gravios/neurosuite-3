@@ -379,6 +379,9 @@ private Q_SLOTS:
     /**Triggers an update of the dimensions due to a change of the abscissa dimension.*/
     void slotUpdateDimensionX(int dimensionX);
     void slotUpdateAutoNFeatures(int n);
+    /** Toolbar "time" checkbox: include/exclude the spike timestamp as a clustering
+     *  feature when auto-selecting features for reclustering. */
+    void slotUpdateIncludeTimeFeature(bool on);
     void slotUpdateRealignTopChan(int n);
     void slotDipSplit();
     /** Shift timestamps of the selected cluster by ±1 sample. */
@@ -1404,6 +1407,8 @@ private:
     SpinBox *autoNFeaturesSpinBox;
     QAction *autoNFeaturesLabelAction;
     QAction *autoNFeaturesSpinBoxAction;
+    QCheckBox *autoNFeaturesTimeCheckBox;        ///< include timestamp as a recluster feature
+    QAction   *autoNFeaturesTimeCheckBoxAction;
 
     QLabel  *realignTopChanLabel;
     SpinBox *realignTopChanSpinBox;

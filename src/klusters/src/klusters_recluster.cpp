@@ -402,10 +402,14 @@ void KlustersApp::slotRecluster(){
                     //
                     // The manual / fallback path below still appends '1'
                     // for the timestamp to preserve the historical
-                    // default behaviour when auto-select is off.
+                    // default behaviour when auto-select is off (that path
+                    // is not affected by the checkbox).
                     for(int i = 0; i < nFeatureCols; ++i)
                         features.append(selected.contains(i) ? QLatin1Char('1') : QLatin1Char('0'));
-                    features.append(QLatin1Char('0'));
+                    // Timestamp column: OFF by default (see above), unless the user
+                    // ticks the "time" checkbox next to the N-feat spin box.
+                    features.append(configuration().getIncludeTimeInAutoSelect()
+                                        ? QLatin1Char('1') : QLatin1Char('0'));
                     usedAutoSelect = true;
                 }
             }
