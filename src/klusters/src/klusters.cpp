@@ -6399,14 +6399,14 @@ void KlustersApp::slotShowShortcutHelp()
                                "Next / previous spike (in trace view)"},
         }},
         {"Hierarchical view (.clc child layer)", {
-            {"Ctrl+Shift+\u2190 / Ctrl+Shift+\u2192", "Cycle focus: palettes (parent / A / B) + toolbar fields"},
+            {"Tab / Shift+Tab", "Cycle focus: parent palette \u2192 child palette \u2192 toolbar fields"},
+            {"Ctrl+Shift+\u2190 / Ctrl+Shift+\u2192", "Cycle focus (alternative to Tab)"},
             {"S",              "Mark focused palette's item (parent or child)"},
-            {"Esc",            "Return focus from a child palette to the parent"},
+            {"Esc",            "Return focus from the child palette to the parent"},
             {"G",              "Merge (adaptive): children \u2192 one child; else fold fiber / parents"},
             {"Ctrl+\u2191",        "New fiber from selected children"},
             {"Ctrl+\u2193",        "Group selected parent fibers"},
             {"Ctrl+Shift+\u2193",  "Dissolve selected fiber into its children"},
-            {"Ctrl+\u2190 / Ctrl+\u2192", "Spike-custody transfer between A and B"},
             {"Ctrl+Shift+Z / Ctrl+Shift+Y", "Undo / redo atom (child-layer) edit"},
         }},
     };

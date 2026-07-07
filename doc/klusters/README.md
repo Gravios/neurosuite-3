@@ -47,7 +47,9 @@ go back to the same format.
 | File | Role |
 |---|---|
 | `session.fet.N` / `session.fetD.N` | **Required.** Feature vectors — primary input (binary int64 or legacy text) |
-| `session.clu.N` | Cluster assignments — read on open, **overwritten on save** |
+| `session.clu.N` | Cluster assignments — read on open, **overwritten on save**. In a hierarchical session this is the **fiber (parent)** layer |
+| `session.clc.N` | **Hierarchical sessions only.** Child (**atom**) layer — the over-split micro-clusters nested inside the `.clu` fibers. Read on open, regenerated on save. See [Hierarchical clustering](hierarchical-clustering.md) |
+| `session.clp.N` | **Hierarchical sessions only.** Atom→fiber map (which fiber each atom belongs to). Regenerated on save, with a `.bak` backup |
 | `session.spk.N` / `session.spkD.N` | Spike waveforms — enables Waveform View. `.spkD.N` contains stderiv-transformed waveforms |
 | `session.yaml` | Session parameters (nChannels, samplingRate, waveform geometry, cluster notes) |
 | `session.res.N` | Spike timestamps — used by Trace View and by nudge/realign |
@@ -148,6 +150,26 @@ Double-click a cluster button (when the info panel is visible) to edit any field
 After any operation that auto-selects the next cluster in the palette (delete-to-noise, delete-to-artefact, recluster completion, realign accept/reject), focus returns to the palette rather than to the 2-D scatter. This means arrow keys continue to step through clusters without requiring a Tab press to reach the palette.
 
 The one exception is the cluster-editing slots whose natural follow-up is 2-D inspection (undo, redo, group-merge, nudge): these leave focus on the scatter view.
+
+---
+
+## Hierarchical clustering (fibers and atoms)
+
+Klusters can open a **two-level** clustering: the units you curate
+(**fibers**, the `.clu` layer) are assembled from a finer over-split layer
+(**atoms**, the `.clc` layer), with a `.clp` sibling mapping each atom to
+its fiber. Opening a `.clu.N` that has `.clc.N` + `.clp.N` siblings enables
+**Displays → Hierarchical Session (.clc + .clp)**.
+
+When it is on, the main palette lists the **fibers** and a second **Child
+clusters (.clc)** dock lists the **atoms of the selected fiber**. `Tab`
+cycles focus parent → child → toolbar. `G` merges atoms, `Ctrl+Up` forms a
+new fiber from selected atoms, `Ctrl+Down` groups fibers, and
+`Ctrl+Shift+Down` dissolves a fiber into its atoms; the atom layer has its
+own undo/redo. Saving regenerates the `.clu`/`.clc`/`.clp` triple together.
+
+See **[Hierarchical clustering](hierarchical-clustering.md)** for the full
+model, the file formats, and every operation.
 
 ---
 
@@ -263,6 +285,31 @@ Pairwise waveform similarity matrix for the currently-shown clusters. Each cell 
 - The matrix auto-recomputes after Apply and after any cluster-editing operation that invalidates waveforms. Parallel computation via OpenMP.
 - The noise cluster (cluster 1) is included in the matrix — useful for identifying clusters that have drifted into MUA.
 
+### Residual Matrix Display
+
+Pairwise **separability** matrix over the shown clusters' waveforms. Each
+off-diagonal cell (i, j) is a bounded separability fraction — the share of
+the cross-template residual between clusters i and j that is *systematic*
+(template gap) rather than *noise* (within-cluster variance):
+
+```
+M(i, j) = gap / (meanVar[i] + gap)      ∈ [0, 1)
+```
+
+- **Near 0** (red) — the two templates differ by less than the noise, so
+  the clusters are hard to tell apart: a **merge candidate**.
+- **Near 1** (blue) — distinct given the noise.
+- The scale is absolute (`[0, 1]`), so distinct pairs saturate near 1
+  instead of stretching the colour map; the diagonal holds each cluster's
+  own waveform variance (drawn separately, hover-only).
+- **Click a cell to select clusters**: a plain click shows the pair
+  (row cluster and column cluster) in the scatter/waveform views;
+  Ctrl-click adds them to the current selection — the same entry points as
+  the error matrix, so the residual matrix is usable for curation, not
+  only inspection. Pan with Ctrl-drag, zoom with the wheel.
+- Computed by a background thread (per-cluster mean/variance, then the
+  pairwise metric, both parallelised); recomputes after edits.
+
 ### Trace Display
 
 Shows raw or high-pass filtered signal (`session.dat` or `session.fil`). Spike timestamps from the current electrode group are overlaid as coloured tick marks.
@@ -288,6 +335,7 @@ All operations push onto the undo stack. The full session history is preserved u
 | New cluster from lasso | `1` | Creates a new cluster ID and assigns the lasso-enclosed spikes to it |
 | Delete selected spikes → artefact (0) | menu only (Tools → Delete Artifact Spikes) | Moves lasso-enclosed spikes to cluster 0 (artefact) |
 | Delete selected spikes → noise (1) | menu only (Tools → Delete Noisy Spikes) | Moves lasso-enclosed spikes to cluster 1 (noise/MUA) |
+| Strip feature outliers (5σ) | menu only (Actions → Strip Feature Outliers) | Across **all** clusters, moves every spike lying more than 5σ from its cluster's per-dimension feature mean (in any single feature dimension) into the artefact cluster (0). A non-mutating scan runs first and asks for confirmation with the exact spike/cluster count; undoable. Per-dimension (not Mahalanobis) is deliberate — a raw 5σ Mahalanobis cut in ~24-D would flag roughly half of every cluster |
 | Delete cluster(s) → artefact (0) | `Shift+Delete` | Moves all spikes of selected clusters to cluster 0 |
 | Delete cluster(s) → noise (1) | `Delete` | Moves all spikes of selected clusters to cluster 1 |
 | Renumber selected to end | `T` (palette focus) | Reassigns the selected cluster IDs to be greater than the current maximum, moving them to the tail of the palette |
@@ -298,6 +346,12 @@ All operations push onto the undo stack. The full session history is preserved u
 | Update Display | — | Forces all views to recompute from current cluster assignments |
 
 **Cluster 0** is the artefact pseudo-cluster (waveforms that are not spikes). **Cluster 1** is the noise/MUA pseudo-cluster. Both are always shown at the top of the palette. Spikes sent to these clusters are not deleted — they remain in the feature file and can be retrieved by undo.
+
+Operations that change cluster **order** rather than membership — Reorder
+by Similarity (`Shift+S`) and the standalone sorts (by spike count, time,
+contamination, SNR, waveform, …) — live under **Actions → Sort Clusters**
+and are documented separately in
+**[Cluster sorting and reordering](cluster-sorting.md)**.
 
 ### DipSplit — automatic bimodal split
 
@@ -725,9 +779,11 @@ When **Auto-select features** is enabled in the Preferences (and the **N feat** 
 3. The **N feat** spinbox sets a ceiling on the number of features passed.
 4. A variance drop-off threshold (5 % of the top feature's variance) trims features that have fallen to noise level — if only 4 of the requested 10 carry meaningful information, only those 4 are passed.
 5. At least one feature is always selected.
-6. The timestamp dimension (last column) is never included.
+6. The timestamp dimension (last column) is **off by default** — including the normalised timestamp as a clustering feature makes the reclusterer over-fit within-session drift (spikes get separated by *when* they fired rather than by waveform shape). The **time** checkbox next to the **N feat** spinbox lets you include it when you want it; it shares the spinbox's visibility and its state is persisted in the configuration.
 
-When no clusters are selected or auto-select is disabled, klusters falls back to passing all PCA feature dimensions (timestamp excluded).
+When no clusters are selected or auto-select is disabled, klusters falls back to passing all PCA feature dimensions **with** the timestamp (the historical manual default). The **time** checkbox affects only the auto-select path, not this fallback.
+
+**Channel-level variance selection** (Preferences → Recluster) is a variant that ranks whole *channels* by aggregate feature variance and keeps every PCA column of the top **N feat** channels, so a high-variance channel's components are never split across the kept/dropped boundary.
 
 ---
 
@@ -846,6 +902,7 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | Group (merge) clusters | `G` |
 | Renumber clusters (full sequential) | `R` |
 | Renumber selected to end (palette focus) | `T` |
+| Reorder clusters by similarity | `Shift+S` |
 | Update error matrix + template matrix | `U` |
 | Recluster (KiloKlustaKwik) | `Shift+R` |
 | Realign spikes | `Shift+L` |
@@ -856,6 +913,27 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 | DipSplit (auto bimodal split) | `Shift+D` |
 | Watershed split (2D density basins) | `Shift+W` |
 | Shortcut help dialog | `H` |
+
+The remaining sorts — Sort Clusters by Spike Count / Time / Contamination
+/ SNR / Error p-value, Sort by Residual, and the two waveform sorts — and
+**Strip Feature Outliers (5σ)** are menu-only (Actions menu). See
+[Cluster sorting and reordering](cluster-sorting.md).
+
+### Hierarchy (hierarchical sessions only)
+
+| Action | Shortcut |
+|---|---|
+| Cycle focus: parent → child palette → toolbar | `Tab` / `Shift+Tab` |
+| Cycle focus (alternative) | `Ctrl+Shift+←` / `Ctrl+Shift+→` |
+| Mark focused palette's item | `S` |
+| Return focus from child palette to parent | `Esc` |
+| Adaptive merge (atoms → one; else fold fiber / fibers) | `G` |
+| New fiber from selected atoms | `Ctrl+↑` |
+| Group selected fibers | `Ctrl+↓` |
+| Dissolve fiber into its atoms | `Ctrl+Shift+↓` |
+| Undo / redo atom (child-layer) edit | `Ctrl+Shift+Z` / `Ctrl+Shift+Y` |
+
+See [Hierarchical clustering](hierarchical-clustering.md).
 
 ### Tools
 
@@ -924,6 +1002,7 @@ The **Parameters** toolbar (Settings → Show Parameters) shows context-sensitiv
 | Bin size (ms) | Correlogram View | Width of each correlogram bin |
 | Half duration (ms) | Correlogram View | Half-width of the correlogram time window |
 | N feat | All (when auto-select is on) | Maximum number of features passed to KiloKlustaKwik |
+| time (checkbox) | Next to **N feat** (when auto-select is on) | Include the spike timestamp as a clustering feature (off by default; time over-fits within-session drift) |
 
 ---
 

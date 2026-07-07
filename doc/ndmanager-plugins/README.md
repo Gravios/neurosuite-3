@@ -75,7 +75,9 @@ For task-oriented walkthroughs that span multiple programs, see
 | [`.spk.N` / `.spkD.N`](formats/spk.md) | Spike waveforms |
 | [`.fet.N` / `.fetD.N`](formats/fet.md) | PCA feature vectors |
 | [`.pca.N` / `.pcaD.N`](formats/pca.md) | PCA eigenvector basis |
-| [`.clu.N`](formats/clu.md) | Cluster assignments |
+| [`.clu.N`](formats/clu.md) | Cluster assignments (fiber layer in a hierarchical session) |
+| [`.clc.N`](formats/clc.md) | Child (atom) layer of a hierarchical clustering |
+| [`.clp.N`](formats/clp.md) | Atom→fiber map for a hierarchical clustering |
 | [`.col.N`](formats/col.md) | Collision decomposition results |
 | [`.drift`](formats/drift.md) | Probe drift trajectories |
 | [`.chunks.N`](formats/chunks.md) | Adaptive KiloKlustaKwik chunk boundaries |
