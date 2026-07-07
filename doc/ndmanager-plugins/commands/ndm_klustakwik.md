@@ -10,7 +10,7 @@ When `session.yaml` is omitted, the current directory name is used as
 the session basename. When `group` is omitted, all groups run
 sequentially.
 
-**Input:** `session.fet.N` or `session.fetD.N` per spike group
+**Input:** `session.fet.<method>.N` per spike group (variant selected by `--method`)
 **Output:** `session.clu.N` per spike group
 
 ## Description
@@ -18,7 +18,7 @@ sequentially.
 Runs KiloKlustaKwik sequentially for each `spikeDetection` group.
 KiloKlustaKwik is internally multi-threaded (OpenMP across chunks and
 runs); groups run sequentially to avoid CPU contention. Accepts
-either `.fet.N` or `.fetD.N` per group — the choice is made inside
+the `.fet.<method>.N` for the resolved method per group — the choice is made inside
 KiloKlustaKwik at `LoadData` via `pickInputPath`, and the picked variant
 is propagated through every subsequent session-file open (refeaturization
 checkpoint, template matching, realignment), so stderiv-sorted and

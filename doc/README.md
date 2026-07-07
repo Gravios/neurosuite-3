@@ -89,8 +89,8 @@ automatic feature selection (variance-ranked, noise-floor trimmed,
 multi-cluster aware). Interactive spike realignment via normalised
 cross-correlation and per-sample timestamp nudging are also available
 — both use a transactional pending-file model so edits can be
-accepted or rolled back in one atomic step. Pipeline-variant aware:
-correctly handles raw `.spk` / stderiv `.fetD` mixed configurations.
+accepted or rolled back in one atomic step. Variant-aware: resolves every file through the shared method-tagged
+naming convention (`standard` / `stderiv`).
 
 Supports **hierarchical (two-level) sessions** — fibers assembled from an
 over-split atom layer (`.clu` + `.clc` + `.clp`) — a **residual
@@ -107,8 +107,9 @@ Grouping Assistant matrix computation and realignment cross-correlation.
 
 ### [klustakwik](kiloklustakwik/README.md)
 
-Automatic spike sorter using Classification EM (CEM). Reads a `.fet.N`
-or `.fetD.N` feature file and writes a `.clu.N` cluster assignment file.
+Automatic spike sorter using Classification EM (CEM). Reads a
+`.fet.<method>.N` feature file and writes a `.clu.<method>.N` cluster
+assignment file.
 The default chunked-CEM pipeline runs in five phases (Phase 0–2 plus
 waveform realignment as Phase 1.5 and subspace reclustering as Phase
 2.5) — designed for multi-hour recordings with electrode drift. A
@@ -141,17 +142,22 @@ the interactive realignment inside klusters.
 
 ## Pipeline variants — raw vs stderiv
 
-Two detection transforms are supported across the toolchain. The choice
-is encoded in the filename extension of every downstream artefact:
+Two detection transforms (**methods**) are supported across the toolchain:
+`standard` (raw waveforms) and `stderiv` (spatial + temporal derivative).
+The method is an explicit tag in every per-group filename —
+`<base>.<type>.<method>.<group>` — under the shared
+[variant naming convention](ndmanager-plugins/formats/naming.md):
 
-| Canonical (raw) | stderiv D variant |
+| `standard` | `stderiv` |
 |---|---|
-| `.spk.N` — raw waveform | `.spkD.N` — spatial + temporal derivative |
-| `.fet.N` — PCA on raw | `.fetD.N` — PCA on stderiv |
-| `.pca.N` — raw eigenvectors | `.pcaD.N` — stderiv eigenvectors |
+| `.fet.standard.N` — PCA on raw waveforms | `.fet.stderiv.N` — PCA on the stderiv transform |
+| `.pca.standard.N` — raw eigenvectors | `.pca.stderiv.N` — stderiv eigenvectors |
 
-`.res.N` (timestamps) and `.clu.N` (cluster IDs) have no variant — they
-are pipeline-neutral.
+The raw `.spk` and `.res` are **shared** across methods (one physical copy;
+the stderiv transform is applied downstream at PCA time), so there is no
+separate stderiv waveform file. `.clu` / `.clc` cluster files are
+method-specific (`.clu.standard.N`, `.clu.stderiv.N`). The old
+`.spkD` / `.fetD` / `.pcaD` "D-suffix" scheme is retired.
 
 Within a single session, groups can mix pipelines. Every downstream
 tool (klusters, KiloKlustaKwik, shadowcluster, nudge, realign) auto-detects
@@ -208,10 +214,10 @@ Raw acquisition files (.mat / .ncs / .smr / .dat)
 ndmanager session.yaml        ← edit parameters, then run pipeline
         │  (calls ndm_start internally, which drives ndmanager-plugins)
         ▼
-session.dat → .fil → .res.N + .spk.N (or .spkD.N)
+session.dat → .fil → .res.N + .spk.<method>.N
                        │
                        ▼
-                    .fet.N (or .fetD.N)
+                    .fet.<method>.N
         │
         ▼
 KiloKlustaKwik session N         ← automatic cluster assignment

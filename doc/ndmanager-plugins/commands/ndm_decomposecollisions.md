@@ -6,7 +6,7 @@
 ndm_decomposecollisions [session.yaml]
 ```
 
-**Input:** `session.clu.N`, `session.res.N`, `session.spk.N` (or `.spkD.N`)
+**Input:** `session.clu.<method>.N`, `session.res.<method>.N`, `session.spk.<method>.N`
 **Output:** `session.col.N` per spike group (binary; see [`.col.N` format](../formats/col.md))
 
 The original `.clu`, `.res`, and `.spk` files are never modified.

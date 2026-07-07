@@ -1,4 +1,4 @@
-# `.clu.N` — cluster assignments
+# `.clu.<method>.N` — cluster assignments
 
 Binary (canonical) or plain-text (legacy). Binary format: `int32_t`
 header (number of clusters) followed by `int32_t` cluster IDs, one per
@@ -6,7 +6,13 @@ spike. Text format: one line with the cluster count, then one cluster
 ID per spike, newline-separated.
 
 Cluster ID conventions: `0` = noise/artefact, `1` = unsorted MUA,
-`≥ 2` = candidate single units. Same spike order as `.res.N`.
+`≥ 2` = candidate single units. Same spike order as the group's `.res`.
+
+`.clu` is a **MethodSpecific** artifact under the
+[variant naming convention](naming.md): resolved strictly as
+`<base>.clu.<method>.N` (e.g. `.clu.standard.N`, `.clu.stderiv.N`), with no
+fallback to another variant. Opening a `.clu` fixes the session's variant;
+its `.spk` / `.fet` / `.pca` / … siblings are resolved in the same method.
 
 ## Hierarchical sessions
 

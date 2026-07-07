@@ -13,8 +13,8 @@ Both variants take the same arguments and produce the same file
 layout — they differ only in detection signal and waveform value
 space (see Description).
 
-**Input:** `session.fil`, `session.res.N`, `session.clu.N`, `session.fet.N` (or `.fetD.N`), `session.pca.N` (or `.pcaD.N`)
-**Output:** updated `session.res.N`, `session.spk.N` (or `.spkD.N`), `session.clu.N`, `session.fet.N` (or `.fetD.N`); per-group backups (`*.bak`)
+**Input:** `session.fil`, `session.res.<method>.N`, `session.clu.<method>.N`, `session.fet.<method>.N`, `session.pca.<method>.N` (variant selected by `--method`)
+**Output:** updated `session.res.N`, `session.spk.<method>.N`, `session.clu.<method>.N`, `session.fet.<method>.N`; per-group backups (`*.bak`)
 
 ## Description
 
@@ -34,8 +34,8 @@ value space:
 - `ndm_reextractspikes_stderiv` — detection on the stderiv signal
   (same spatial + temporal first-difference transform as
   `ndm_extractspikes_stderiv`); waveforms **also written in stderiv
-  space** to `.spkD.N` so they stay in the same value space as the
-  reference rows and the `.pcaD.N` basis they will be projected
+  space** to the resolved `.spk` so they stay in the same value space as the
+  reference rows and the `pca.stderiv.N` basis they will be projected
   through.
 
 ## Transactional safety
@@ -44,8 +44,8 @@ Both scripts are transactional: Pass 2 writes to a sandbox stem
 (`$mergeStem.*`) and only commits (atomic `mv`) to the live session
 files after every output file is verified present and non-empty. On
 failure, live files are byte-identical to their pre-run state.
-Per-group backups (`*.res.N.bak`, `*.spk.N.bak` / `*.spkD.N.bak`,
-`*.clu.N.bak`, `*.fet.N.bak` / `*.fetD.N.bak`) are written on first
+Per-group backups (`*.res.N.bak`, `*.spk.<method>.N.bak`,
+`*.clu.<method>.N.bak`, `*.fet.<method>.N.bak`) are written on first
 merge so a full rollback is always a `mv` away.
 
 ## Parameters

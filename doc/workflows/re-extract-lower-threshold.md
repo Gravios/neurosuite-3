@@ -17,9 +17,9 @@ process_extractspikes_stderiv session.yaml --threshold-factor 4.0
 ```
 
 (Default is typically 5.0 or 6.0; lowering to 4.0 typically doubles
-the spike count. Tune for your noise floor.) The new `.res.N` and
-`.spkD.N` will include all originally-detected spikes plus the new
-weak ones.
+the spike count. Tune for your noise floor.) The new `.res` and shared
+`.spk` will include all originally-detected spikes plus the new weak ones
+(the stderiv domain is produced downstream at PCA time as `.fet.stderiv.N`).
 
 ### 2. Run shadow-clustered re-extraction
 

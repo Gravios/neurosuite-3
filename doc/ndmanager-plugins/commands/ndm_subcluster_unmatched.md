@@ -10,7 +10,7 @@ When `session.yaml` is omitted, the current directory name is used as
 the session basename. When `group` is omitted, all groups are
 processed sequentially.
 
-**Input:** `session.clu.N`, `session.fet.N` (or `.fetD.N`), `session.spk.N` (or `.spkD.N`), `session.res.N`
+**Input:** `session.clu.<method>.N`, `session.fet.<method>.N`, `session.spk.<method>.N`, `session.res.<method>.N`
 **Output:** updated `session.clu.N` (with new IDs above the prior maximum), backup of the original
 
 ## Description

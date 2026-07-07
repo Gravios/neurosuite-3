@@ -1,7 +1,10 @@
-# `.col.N` — collision decomposition results (YAML)
+# `.col.<method>.N` — collision decomposition results (YAML)
 
 Written by `ndm_decomposecollisions`. One entry per candidate collision
-spike. Original `.clu.N` / `.res.N` / `.spk.N` files are not modified.
+spike. A **MethodSpecific** artifact under the
+[variant naming convention](naming.md), resolved strictly as
+`<base>.col.<method>.N`. The source `.clu` / `.res` / `.spk` files are not
+modified.
 
 ```yaml
 collisions:

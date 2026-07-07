@@ -20,12 +20,12 @@ ndm_pca session.yaml 3     # single electrode group
 
 ---
 
-## `ndm_pca_stderiv` — stderiv-waveform PCA (`.spkD` → `.fetD`, `.pcaD`)
+## `ndm_pca_stderiv` — deprecated alias for `ndm_pca --method stderiv`
 
-PCA on stderiv-transformed waveforms. Reads `.spkD.N`, passes the
+PCA in the stderiv method. Reads the shared raw `.spk`, applies the stderiv transform, passes the
 waveforms through `process_pca_stderiv` (channel reduction for
 rank-deficient orders 1 and 3), then through `process_pca` on the
-reduced channel set. Writes `.fetD.N` and `.pcaD.N`. Klusters and
+reduced channel set. Writes `.fet.stderiv.N` and `.pca.stderiv.N`. Klusters and
 KiloKlustaKwik auto-detect the D variant at open time.
 
 For SDIFF_FIRST and SDIFF_ALLPAIRS (orders 1 and 3), one channel is

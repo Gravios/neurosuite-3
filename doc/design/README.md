@@ -9,6 +9,13 @@ The convention: every `CHANGELOG.md` entry that runs longer than a
 paragraph gets a `doc/design/<topic>.md` sibling. The CHANGELOG is
 the time-ordered index; the design docs are the durable reference.
 
+> **Note on file naming.** Several documents below predate the
+> [variant naming convention](../ndmanager-plugins/formats/naming.md) and
+> describe the retired `.spkD` / `.fetD` / `.pcaD` "D-suffix" scheme (and the
+> bash shims that bridged it). They are kept as historical design records;
+> for the current naming — `<base>.<type>.<method>.<group>` — see the naming
+> reference.
+
 ## Index
 
 | File | Topic |
