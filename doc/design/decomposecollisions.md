@@ -1,5 +1,8 @@
 ## ndmanager-plugins — process_decomposecollisions fixes (2026-04-19)
 
+
+> *Historical design record. Describes the retired `.spkD` / `.fetD` / `.pcaD` naming; the current scheme is the [variant convention](../ndmanager-plugins/formats/naming.md).*
+
 Four bugs fixed in the collision-decomposition pipeline.  The `.col.N`
 binary format and the on-disk layout are unchanged except for the
 documented semantic fix to `shift_frac` in the second component (see

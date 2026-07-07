@@ -1,5 +1,8 @@
 ## ndmanager-plugins — reextractspikes + shadow clustering (2026-04-18)
 
+
+> *Historical design record. Describes the retired `.spkD` / `.fetD` / `.pcaD` naming; the current scheme is the [variant convention](../ndmanager-plugins/formats/naming.md).*
+
 New two-stage pipeline for second-pass spike detection.  Re-runs
 threshold detection with a reduced threshold while masking out timestamps
 already present in `$session.res.N`, then assigns each newly-detected

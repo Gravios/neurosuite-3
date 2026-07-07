@@ -36,7 +36,7 @@ compatibility with earlier sessions.
 
 Detection runs on `stderiv[t, ch] = sdiff[t, ch] − sdiff[t−1, ch]`,
 where `sdiff` is the spatial derivative across the group's channels.
-Written waveforms are **transformed** — the `.spkD.N` file contains
+In the stderiv method the transform is applied downstream at PCA time (`ndm_pca --method stderiv`), not stored as a separate waveform file; the `.fet.stderiv.N` it produces contains
 the stderiv-space waveform directly, not the raw signal. This is the
 recommended pipeline for high-density probes: common-mode noise is
 rejected twice (spatial, then temporal) and downstream PCA sees a

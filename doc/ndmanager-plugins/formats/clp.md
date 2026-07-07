@@ -1,9 +1,10 @@
-# `.clp.N` — child→parent (atom→fiber) map
+# `.clp.<method>.N` — child→parent (atom→fiber) map
 
 The **linkage** file of a hierarchical clustering session: which fiber
-each atom belongs to. Unlike `.clu.N`/`.clc.N`, this is indexed by
+each atom belongs to. Unlike `.clu`/`.clc`, this is indexed by
 **cluster ID**, not by spike, so it is `O(nAtoms)` rather than
-`O(nSpikes)`.
+`O(nSpikes)`. It carries the same `<method>` tag as the `.clu`/`.clc` it
+links (see the [variant naming convention](naming.md)).
 
 ## Layout
 

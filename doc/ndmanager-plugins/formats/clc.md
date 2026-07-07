@@ -1,9 +1,11 @@
-# `.clc.N` — child (atom) cluster assignments
+# `.clc.<method>.N` — child (atom) cluster assignments
 
 The **child layer** of a hierarchical clustering session. Same binary
-(or legacy text) layout as [`.clu.N`](clu.md): an `int32_t` header giving
+(or legacy text) layout as [`.clu`](clu.md): an `int32_t` header giving
 the cluster count, followed by one `int32_t` cluster ID per spike. Same
-spike order as `.res.N`.
+spike order as the group's `.res`. Like `.clu` it is a **MethodSpecific**
+artifact under the [variant naming convention](naming.md) (`.clc.standard.N`,
+`.clc.stderiv.N`, …), resolved strictly with no cross-variant fallback.
 
 Where `.clu.N` assigns each spike to a **fiber** (an assembled unit), the
 sibling `.clc.N` assigns the same spike to an **atom** — the finest,

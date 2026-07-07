@@ -1,7 +1,7 @@
 # kiloklustakwik — Automatic Spike Sorter
 
 KiloKlustaKwik performs automatic spike sorting via Classification EM (CEM).
-It reads a `.fet.N` or `.fetD.N` feature file produced by `ndm_pca` or
+It reads a `.fet.<method>.N` feature file produced by `ndm_pca` (method
 `ndm_pca_stderiv` and writes a `.clu.N` cluster assignment file. GPU
 acceleration is available for the E-step distance computations via CUDA
 (NVIDIA), HIP (AMD ROCm), or SYCL (Intel Arc/oneAPI).
@@ -91,9 +91,10 @@ KiloKlustaKwik FileBase ElecNo [options]
 ```
 
 `FileBase` and `ElecNo` together identify the input file `FileBase.fet.ElecNo`.
-If a `FileBase.fetD.ElecNo` exists and a `FileBase.fet.ElecNo` does not,
-the D variant is loaded automatically (`pickInputPath` — see the
-"File extension fallback" section below).
+Under the [variant naming convention](../ndmanager-plugins/formats/naming.md)
+the input is `FileBase.fet.<method>.ElecNo`, with the method selected by the
+`ndm_klustakwik` wrapper; a legacy untagged / `.fetD` name is still accepted
+as a fallback (`pickInputPath` — see "File extension resolution" below).
 
 ### Examples
 
@@ -127,23 +128,25 @@ KiloKlustaKwik jg05-20120316 7 \
 | `FileBase.clu.ElecNo` | Cluster assignment per spike. `0` = artefact, `1` = noise/MUA, `≥ 2` = single units |
 | `FileBase.klg.ElecNo` | Run log (only when `-Log 1`) |
 | `FileBase.model.ElecNo` | Gaussian model parameters (omit with `-fSaveModel 0`) |
-| `FileBase.fet.ElecNo.pending` / `FileBase.fetD.ElecNo.pending` | Phase 1.5 refeaturization checkpoint; atomically renamed to the original extension on success |
-| `FileBase.spk.ElecNo.pending` / `FileBase.spkD.ElecNo.pending` | Phase 1.5 waveform checkpoint (same rename rule) |
+| `FileBase.fet.<method>.ElecNo.pending` | Phase 1.5 refeaturization checkpoint; atomically renamed to the resolved feature file on success |
+| `FileBase.spk.<method>.ElecNo.pending` | Phase 1.5 waveform checkpoint (same rename rule) |
 
 ---
 
-## File extension fallback
+## File extension resolution
 
-KiloKlustaKwik auto-detects raw vs stderiv session files. For each session
-file it needs (`.spk`, `.fet`, `.pca`), it resolves the path via
-`pickInputPath`, which prefers the canonical extension and falls back
-to the D variant if canonical is absent:
+Under the [variant naming convention](../ndmanager-plugins/formats/naming.md)
+the session **method** (`standard` / `stderiv`) is selected by the
+`ndm_klustakwik` wrapper, which resolves `.fet.<method>.N` /
+`.pca.<method>.N` (and the shared `.spk`). Internally `pickInputPath`
+resolves each file it needs, preferring the method-tagged name and falling
+back to the legacy untagged / D-suffix name for backward compatibility:
 
 ```
-pickInputPath:  .fet.N   → exists → load
-                         → missing → try .fetD.N
-                .spk.N   → same logic
-                .pca.N   → same logic
+pickInputPath:  .fet.<method>.N  → exists → load
+                                 → else legacy .fet.N / .fetD.N
+                .spk             → shared: method → standard → untagged
+                .pca.<method>.N  → same logic as .fet
 ```
 
 The chosen variant is propagated through every subsequent open
@@ -153,11 +156,11 @@ and `WritePhase15Checkpoint` — so stderiv-sorted and raw-sorted groups
 can coexist in a single session without cross-contamination.
 
 The `WritePhase15Checkpoint` `.pending` filenames are derived from the
-**picked** path, so a successful rename writes back to `.spkD.N` / `.fetD.N`
-on the D-variant side, not to canonical names.
+**resolved** path, so a successful rename writes back to the same
+method-tagged file it read.
 
-`.res.N` and `.clu.N` are always read / written under canonical extensions
-— they have no D variant.
+`.res` is shared across methods (one copy); `.clu` is method-specific and is
+written as `.clu.<method>.N`.
 
 Startup banner displays `(stderiv variant)` on stderr when the D variant
 was chosen.
@@ -248,7 +251,7 @@ After all per-chunk runs complete, Phase 1.5 realigns waveforms at the
 peak sample using normalised cross-correlation against the per-cluster
 mean template, re-extracts the shifted waveform from the raw `.fil` (or
 circular-shifts from `.spk` if `.fil` is not present), reprojects through
-the saved `.pca.N` / `.pcaD.N` eigenvectors, and writes a transactional
+the saved `.pca.<method>.N` eigenvectors, and writes a transactional
 checkpoint to `.pending` files that are atomically renamed to the session
 files on success.
 

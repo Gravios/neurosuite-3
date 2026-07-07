@@ -70,15 +70,16 @@ For task-oriented walkthroughs that span multiple programs, see
 
 | File | Description |
 |---|---|
-| [`.dat` / `.lfp` / `.fil`](formats/dat.md) | Binary signal files |
-| [`.res.N`](formats/res.md) | Spike timestamps |
-| [`.spk.N` / `.spkD.N`](formats/spk.md) | Spike waveforms |
-| [`.fet.N` / `.fetD.N`](formats/fet.md) | PCA feature vectors |
-| [`.pca.N` / `.pcaD.N`](formats/pca.md) | PCA eigenvector basis |
-| [`.clu.N`](formats/clu.md) | Cluster assignments (fiber layer in a hierarchical session) |
-| [`.clc.N`](formats/clc.md) | Child (atom) layer of a hierarchical clustering |
-| [`.clp.N`](formats/clp.md) | Atom→fiber map for a hierarchical clustering |
-| [`.col.N`](formats/col.md) | Collision decomposition results |
+| [**Naming convention**](formats/naming.md) | The `<base>.<type>.<method>.<group>` **variant** scheme shared by all files below |
+| [`.dat` / `.lfp` / `.fil`](formats/dat.md) | Binary signal files (session-wide) |
+| [`.res.<method>.N`](formats/res.md) | Spike timestamps (shared across variants) |
+| [`.spk.<method>.N`](formats/spk.md) | Spike waveforms (shared across variants) |
+| [`.fet.<method>.N`](formats/fet.md) | PCA feature vectors (`standard` / `stderiv`) |
+| [`.pca.<method>.N`](formats/pca.md) | PCA eigenvector basis (`standard` / `stderiv`) |
+| [`.clu.<method>.N`](formats/clu.md) | Cluster assignments (fiber layer in a hierarchical session) |
+| [`.clc.<method>.N`](formats/clc.md) | Child (atom) layer of a hierarchical clustering |
+| [`.clp.<method>.N`](formats/clp.md) | Atom→fiber map for a hierarchical clustering |
+| [`.col.<method>.N`](formats/col.md) | Collision decomposition results |
 | [`.drift`](formats/drift.md) | Probe drift trajectories |
 | [`.chunks.N`](formats/chunks.md) | Adaptive KiloKlustaKwik chunk boundaries |
 | [`.loc.N`](formats/loc.md) | Per-spike source locations |
@@ -108,20 +109,25 @@ CUDA is absent.
 
 ## Pipeline variants and file extensions
 
-Two spike-detection transforms are supported. The choice is encoded
-in the filename extension of every downstream artefact. `.clu` and
-`.res` have no variant — they are always written under the canonical
-extensions regardless of which detection pipeline was used.
+Two spike-detection transforms (**methods**) are supported: `standard`
+(raw waveforms) and `stderiv`. The method is an explicit tag in every
+per-group filename under the shared
+[variant naming convention](formats/naming.md).
 
-| Canonical | stderiv D variant | Writer |
-|---|---|---|
-| `.res.N` | *(no variant)* | `ndm_extractspikes*`, `ndm_reextractspikes*` |
-| `.spk.N` | `.spkD.N` | `ndm_extractspikes` vs `ndm_extractspikes_stderiv` |
-| `.fet.N` | `.fetD.N` | `ndm_pca` vs `ndm_pca_stderiv` |
-| `.pca.N` | `.pcaD.N` | `ndm_pca` vs `ndm_pca_stderiv` |
-| `.clu.N` | *(no variant)* | `ndm_klustakwik`, klusters |
+| Type | `standard` | `stderiv` | Class / writer |
+|---|---|---|---|
+| `.res` | `.res.standard.N` | *(shared — same file)* | **Shared**; `ndm_extractspikes*` |
+| `.spk` | `.spk.standard.N` | *(shared — same raw file)* | **Shared** (raw); `ndm_extractspikes*` |
+| `.fet` | `.fet.standard.N` | `.fet.stderiv.N` | **MethodSpecific**; `ndm_pca` / `ndm_pca_stderiv` |
+| `.pca` | `.pca.standard.N` | `.pca.stderiv.N` | **MethodSpecific**; `ndm_pca` / `ndm_pca_stderiv` |
+| `.clu` | `.clu.standard.N` | `.clu.stderiv.N` | **MethodSpecific**; `ndm_klustakwik`, klusters |
 
-Within a single session, groups can freely mix pipelines. Every
+`.res` / `.spk` are **shared** across methods — one physical copy, since the
+stderiv transform is applied downstream at PCA time rather than stored as a
+separate waveform file, so a stderiv session reads the same raw `.spk`. The
+old `.spkD` / `.fetD` / `.pcaD` naming is retired.
+
+Within a single session, groups can freely mix methods. Every
 downstream tool that reads waveforms or features auto-detects both
 extensions and prefers the D variant when both are present, or picks
 the one the group was sorted with. See

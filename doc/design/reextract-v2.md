@@ -1,5 +1,8 @@
 ## ndm_reextractspikes{,_stderiv} + ndmanager — drop-in patch (2026-04-21 rev 3)
 
+
+> *Historical design record. Describes the retired `.spkD` / `.fetD` / `.pcaD` naming; the current scheme is the [variant convention](../ndmanager-plugins/formats/naming.md).*
+
 Three related changes:
 
 1. `ndm_reextractspikes` and `ndm_reextractspikes_stderiv` now

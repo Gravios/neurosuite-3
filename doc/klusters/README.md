@@ -38,48 +38,49 @@ When opened from a `.fet.N` file, klusters automatically locates the paired `.cl
 
 ## Files read and written
 
-Klusters transparently handles both pipeline variants via extension
-probing at open time. When both a canonical file and its D variant
-exist for a given group, the D variant (stderiv) is preferred. The
-picked variant is remembered for the rest of the session so all edits
-go back to the same format.
+Klusters resolves every file it needs through the shared
+[variant naming convention](../ndmanager-plugins/formats/naming.md). The
+**variant** (method — `standard` or `stderiv`) is read from the `.clu` you
+open: opening `rat01.clu.stderiv.5` selects the `stderiv` variant, and
+every sibling (`.spk`, `.fet`, `.pca`, `.res`, …) is then resolved in that
+same method (with `.spk`/`.res` falling back to `.standard`/untagged, since
+they are shared across variants). The variant is remembered for the session
+so all edits go back to the same files.
 
 | File | Role |
 |---|---|
-| `session.fet.N` / `session.fetD.N` | **Required.** Feature vectors — primary input (binary int64 or legacy text) |
-| `session.clu.N` | Cluster assignments — read on open, **overwritten on save**. In a hierarchical session this is the **fiber (parent)** layer |
-| `session.clc.N` | **Hierarchical sessions only.** Child (**atom**) layer — the over-split micro-clusters nested inside the `.clu` fibers. Read on open, regenerated on save. See [Hierarchical clustering](hierarchical-clustering.md) |
-| `session.clp.N` | **Hierarchical sessions only.** Atom→fiber map (which fiber each atom belongs to). Regenerated on save, with a `.bak` backup |
-| `session.spk.N` / `session.spkD.N` | Spike waveforms — enables Waveform View. `.spkD.N` contains stderiv-transformed waveforms |
+| `session.fet.<method>.N` | **Required.** Feature vectors — primary input (binary int64 or legacy text). **MethodSpecific** (`fet.standard.N` / `fet.stderiv.N`), resolved strictly in the session variant |
+| `session.clu.<method>.N` | Cluster assignments — read on open, **overwritten on save**. Opening it fixes the session variant. In a hierarchical session this is the **fiber (parent)** layer |
+| `session.clc.<method>.N` | **Hierarchical sessions only.** Child (**atom**) layer — the over-split micro-clusters nested inside the `.clu` fibers. Read on open, regenerated on save. See [Hierarchical clustering](hierarchical-clustering.md) |
+| `session.clp.<method>.N` | **Hierarchical sessions only.** Atom→fiber map (which fiber each atom belongs to). Regenerated on save, with a `.bak` backup |
+| `session.spk.<method>.N` | Spike waveforms — enables Waveform View. **Shared** (raw): one copy across variants, resolved to the session method then `.standard` then untagged. The old `.spkD.N` is retired — stderiv is a downstream PCA-time transform |
 | `session.yaml` | Session parameters (nChannels, samplingRate, waveform geometry, cluster notes) |
 | `session.res.N` | Spike timestamps — used by Trace View and by nudge/realign |
 | `session.dat` / `session.fil` | Raw / filtered signal — opened by Trace View; read by nudge/realign for waveform re-extraction |
-| `session.pca.N` / `session.pcaD.N` | PCA eigenvectors — used by spike realignment and nudge to reproject features after shifting timestamps |
-| `session.{res,spk,fet,clu}.N.pending` | Transactional working copies — all realign/nudge edits go here first and are atomically renamed on save |
+| `session.pca.<method>.N` | PCA eigenvectors — used by spike realignment and nudge to reproject features after shifting timestamps. **MethodSpecific** (`pca.standard.N` / `pca.stderiv.N`) |
+| `session.<type>.<method>.N.pending` | Transactional working copies (res/spk/fet/clu) — all realign/nudge edits go here first and are atomically renamed on save |
 | `session.curation_log.N.jl` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
 | `session.#.clu.N` | Autosave (crash-recovery) files written periodically |
 
-### Pipeline variant detection
+### File variant resolution
 
-Two flags govern which transforms to apply during nudge / realign:
+Klusters resolves files through the shared
+[chain-of-custody policy](../ndmanager-plugins/formats/naming.md)
+(`custody.hpp` / `parseAnchor`). The session's **method** comes from the
+`.clu` you open; `.spk` / `.fet` / `.pca` / … are then resolved in that
+method, with the shared `.spk` / `.res` falling back to `.standard` and
+then the untagged legacy name.
 
-- **`spkIsTransformed`** = true iff the `.spk` file loaded has the
-  `.spkD.` suffix. When writing a re-extracted waveform back, the
-  stderiv transform is applied iff this flag is true (Pipeline D) and
-  skipped otherwise (raw `.spk`; Pipelines A and C).
-- **`fetIsStderiv`** = true iff the `.fet` file loaded has the
-  `.fetD.` suffix. When reprojecting features from a re-extracted
-  waveform, the stderiv transform is applied before the PCA projection
-  iff this flag is true, and the `.pcaD.N` eigenvector basis is used
-  rather than `.pca.N`.
+Whether the loaded features are in the **stderiv** domain is decided by the
+*resolved method*, not by a filename suffix: it is `true` iff the session
+method is `stderiv`. This drives the nudge / realign re-projection — when
+the method is `stderiv`, the stderiv transform is applied before the PCA
+projection and the `pca.stderiv.N` basis is used; otherwise the raw path
+and `pca.standard.N` are used. Because the raw `.spk` is shared across
+variants, a stderiv session applies the transform on re-extraction rather
+than reading a separate stderiv waveform file (the old `.spkD.N`).
 
-These flags are independent. Pipeline C (raw `.spk` + stderiv
-`.fetD`/`.pcaD`) is a real configuration that occurs when features
-are recomputed from a raw `.spk` via `ndm_pca_stderiv` without
-replacing the `.spk` file; klusters handles this correctly by
-consulting the two flags separately.
-
-### Feature file format (`.fet.N`)
+### Feature file format (`.fet.<method>.N`)
 
 Binary format (neurosuite-3 default):
 ```
@@ -797,31 +798,32 @@ For each spike in the selected clusters:
 
 1. The cluster mean waveform is computed.
 2. The spike's waveform is cross-correlated against the mean template at each lag within ±maxShift samples.
-3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the appropriate eigenvector basis (`.pcaD.N` for stderiv features, `.pca.N` for raw).
+3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the eigenvector basis matching the session method (`pca.stderiv.N` when the method is stderiv, else `pca.standard.N`).
 4. If a timestamp shift would violate chronological order, the affected `.res`/`.spk`/`.clu`/`.fet` rows are swapped.
 
 ### Pipeline variant awareness
 
-Realignment and nudge both respect the two-flag variant detection
-described in the Files section above:
+Realignment and nudge respect the session variant resolved from the
+[chain-of-custody policy](../ndmanager-plugins/formats/naming.md) (see the
+Files section above):
 
-- If the loaded `.spk` is the stderiv variant (`.spkD.N`), the
-  re-extracted waveform is transformed (spatial derivative + temporal
-  first-difference, with `sdiff[-1] = 0` boundary) before being written
-  back, so on-disk `.spkD` stays in stderiv space. If the loaded `.spk`
-  is raw, the re-extracted waveform is written back raw.
-- If the loaded `.fet` is the stderiv variant (`.fetD.N`), the
-  re-extracted waveform is transformed before PCA projection, and the
-  `.pcaD.N` eigenvector basis is used. If the loaded `.fet` is raw,
-  the `.pca.N` basis is used and no transform is applied.
+- The `.spk` is **shared** (raw): the re-extracted waveform snippet is
+  written back to it raw, regardless of the session method — there is no
+  separate stderiv waveform file to keep in sync.
+- If the session method is **stderiv**, the re-extracted waveform is
+  transformed (spatial derivative + temporal first-difference, with
+  `sdiff[-1] = 0` boundary) before the PCA projection, and the
+  `pca.stderiv.N` basis is used to update `fet.stderiv.N`. If the method is
+  **standard**, no transform is applied and `pca.standard.N` is used.
 
-This correctly handles Pipeline C (raw `.spk` + stderiv
-`.fetD`/`.pcaD`) where the two flags disagree.
+Because the stderiv domain lives only in the feature / PCA files (not in a
+second `.spk`), realign never has to reconcile a raw-vs-stderiv waveform
+file — it re-projects through whichever basis the resolved method selects.
 
 ### Transactional pending-file model
 
 All edits from realign and nudge go into `.pending` sidecar files
-(`.spk.N.pending`, `.fetD.N.pending`, etc.) rather than the live
+(`spk.<method>.N.pending`, `fet.<method>.N.pending`, etc.) rather than the live
 session files. The session files are updated atomically on save:
 
 - On **Apply** (or save), each `.pending` is renamed over its

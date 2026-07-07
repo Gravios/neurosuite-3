@@ -25,14 +25,14 @@ For other systems, see [format conversion](../ndmanager-plugins/commands/format-
 Run the standard preprocessing chain:
 
 ```sh
-ndm_hipass             recording_001.yaml   # → .fil
-ndm_lfp                recording_001.yaml   # → .lfp
-ndm_extractspikes_stderiv recording_001.yaml   # → .res.N, .spkD.N
-ndm_pca_stderiv        recording_001.yaml   # → .fetD.N, .pcaD.N
+ndm_hipass         recording_001.yaml                   # → .fil
+ndm_lfp            recording_001.yaml                   # → .lfp
+ndm_extractspikes  recording_001.yaml                   # → .res.standard.N, .spk.standard.N (shared, raw)
+ndm_pca            recording_001.yaml --method stderiv  # → .fet.stderiv.N, .pca.stderiv.N
 ```
 
-For the raw (non-stderiv) variant, swap `_stderiv` for nothing and
-add `ndm_spikecleaner` + `ndm_denoiseuniform` before PCA. See
+For the raw (`standard`) variant, drop `--method stderiv` (standard is
+the default) and add `ndm_spikecleaner` + `ndm_denoiseuniform` before PCA. See
 [spike detection](../ndmanager-plugins/commands/spike-detection.md)
 for the trade-offs.
 

@@ -60,8 +60,8 @@ changed.
 ### 3. Rebuild features and re-sort
 
 ```sh
-ndm_pca_stderiv  session.yaml      # → fresh .fetD.N, .pcaD.N
-ndm_klustakwik   session.yaml      # → updated .clu.N
+ndm_pca        session.yaml --method stderiv  # → fresh .fet.stderiv.N, .pca.stderiv.N
+ndm_klustakwik session.yaml --method stderiv  # → updated .clu.stderiv.N
 ```
 
 The new spikes will join existing clusters where they fit and form
