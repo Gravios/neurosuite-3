@@ -6,7 +6,8 @@
 // (see audit).  Gated by -FiberStageEnable (default 0).
 //
 // The numerical core (fiber_stage.h) is audited to machine precision against
-// the validated Python on chunk_g5_min183-193 (100% identical labels, 96.28%).
+// the validated Python reference (the standalone fiber-kit project) on
+// chunk_g5_min183-193 (100% identical labels, 96.28%).
 // The NEW glue is the fragment->fiber grouping (trajectoryCoherenceMerge); it
 // is the piece the fil-vs-stderiv comparison is meant to validate.
 //
