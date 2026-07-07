@@ -3,7 +3,7 @@
  *
  *  Records cluster characteristic snapshots before and after every curation
  *  action (group, split, recluster, realign, nudge, delete-to-noise/artefact).
- *  The resulting .jl file is human-readable and directly importable into
+ *  The resulting log file is human-readable and directly importable into
  *  pandas/scikit-learn for empirical decision-tree training.
  *
  *  Log format: one JSON object per line, UTF-8.
@@ -205,7 +205,8 @@ public:
     CurationLogger& operator=(const CurationLogger&) = delete;
 
     /** Open a new log file for the given session.
-     *  @param logPath         Full path for the .jl output file.
+     *  @param logPath         Full path for the log output file
+     *                         (<base>.curation_log.<group>.<method>).
      *  @param baseName Base name shown in every line's "file" field.
      *  @param groupId  Electrode group ID string (e.g. "1").
      *  @param samplingRateHz  Sampling frequency in Hz.

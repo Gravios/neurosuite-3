@@ -2,7 +2,7 @@
  * KK_prior.h  —  Empirical prior for KlustaKwik CEM initialisation
  *
  * Built offline by scripts/kk_build_prior.py from accumulated Klusters
- * curation logs (.curation_log.N.jl).  Loaded at runtime via -PriorFile.
+ * curation logs (.curation_log.<group>.<method>).  Loaded at runtime via -PriorFile.
  *
  * The prior encodes what well-curated clusters look like for a given
  * probe geometry:

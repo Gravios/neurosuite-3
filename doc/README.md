@@ -227,7 +227,7 @@ session.clu.N
         │
         ▼
 klusters session.yaml         ← manual curation (split / merge / realign / nudge / dipsplit)
-        │  writes session.curation_log.N.jl per-group audit trail
+        │  writes session.curation_log.<group>.<method> per-group audit trail
         ▼
 ndm_reextractspikes{,_stderiv} + ndm_subcluster_unmatched
         │     ↑ kk_resolve_prior.py picks up <probe_id>.<group>.prior.yaml

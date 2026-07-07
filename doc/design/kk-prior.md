@@ -16,7 +16,7 @@ troubleshooting), see
 
 ### `kk_build_prior.py` — train a per-probe prior
 
-Reads one or more `.curation_log.<group>.jl` files (the JSON-line
+Reads one or more `.curation_log.<group>.<method>` files (the JSON-line
 audit trail Klusters writes for every editing operation), filters to
 curator-accepted clusters by quality / L-ratio / isolation distance,
 and emits `<probe_id>.<group>.prior.yaml` containing:

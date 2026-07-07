@@ -86,7 +86,7 @@ the curation log gates which clusters feed the prior. Without quality
 labels, only the structural filters (L-ratio, isolation distance, spike
 count) apply.
 
-When you save and close, `session_a.curation_log.<group>.jl` accumulates
+When you save and close, `session_a.curation_log.<group>.<method>` accumulates
 one JSON-line record per action. See
 [klusters/README.md](../klusters/README.md) for the
 log schema.
@@ -106,9 +106,9 @@ representative session YAML:
 mkdir -p ~/.ndm/priors
 
 kk_build_prior.py \
-    /data/session_a/session_a.curation_log.7.jl \
-    /data/session_b/session_b.curation_log.7.jl \
-    /data/session_c/session_c.curation_log.7.jl \
+    /data/session_a/session_a.curation_log.7.stderiv \
+    /data/session_b/session_b.curation_log.7.stderiv \
+    /data/session_c/session_c.curation_log.7.stderiv \
     --session-yaml /data/session_a/session_a.yaml \
     --electrode-group 7 \
     --out-dir ~/.ndm/priors
@@ -213,7 +213,7 @@ old one in place:
 
 ```sh
 kk_build_prior.py \
-    /data/session_*/session_*.curation_log.7.jl \
+    /data/session_*/session_*.curation_log.7.stderiv \
     --session-yaml /data/session_a/session_a.yaml \
     --electrode-group 7 \
     --out-dir ~/.ndm/priors

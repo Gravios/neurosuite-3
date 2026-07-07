@@ -68,7 +68,7 @@ for [empirical-prior training](empirical-priors.md) later.
 
 Save with `Ctrl+S`. Klusters writes
 `recording_001.clu.N` and appends to
-`recording_001.curation_log.N.jl`.
+`recording_001.curation_log.<group>.<method>`.
 
 Repeat for each shank.
 

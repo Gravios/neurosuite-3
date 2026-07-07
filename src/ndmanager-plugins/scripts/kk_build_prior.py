@@ -2,7 +2,7 @@
 """
 kk_build_prior.py  —  Build a KlustaKwik empirical prior from curation logs.
 
-Reads one or more .curation_log.N.jl files produced by Klusters, filters to
+Reads one or more .curation_log.<group>.<method> files produced by Klusters, filters to
 well-isolated clusters, learns the spatial structure of the feature space, and
 writes a .prior.N.yaml file that KlustaKwik can load via -PriorFile.
 
@@ -46,13 +46,13 @@ distribution of d_eff so KlustaKwik can use chi²(d_eff, 0.9999) per pair:
 
 Usage
 ─────
-  python kk_build_prior.py session1.curation_log.1.jl session2.curation_log.1.jl \\
+  python kk_build_prior.py session1.curation_log.1.stderiv session2.curation_log.1.stderiv \\
       --out session_combined.prior.1.yaml \\
       [--min-quality 2]     # only quality-annotated confident events
       [--max-l-ratio 0.05]  # L-ratio contamination filter
       [--min-isolation 20]  # isolation distance filter
       [--min-spikes 30]     # minimum spikes per accepted cluster
-      [--session-preseed path/to/latest_session.curation_log.1.jl]
+      [--session-preseed path/to/latest_session.curation_log.1.stderiv]
           # populate preseed_centres from the most recent curated session
 
 Output: a YAML file readable by KlustaKwik's -PriorFile parameter.
@@ -235,7 +235,7 @@ def _pct(arr, q):
 
 def load_log(path, min_quality, max_l_ratio, min_isolation, min_spikes):
     """
-    Read one .jl log file and return a list of accepted cluster dicts.
+    Read one JSON-line log file and return a list of accepted cluster dicts.
 
     Filtering strategy
     ──────────────────
@@ -532,7 +532,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("log_files", nargs="+",
-                    help=".curation_log.N.jl files to analyse")
+                    help=".curation_log.<group>.<method> files to analyse")
     ap.add_argument("--session-yaml", required=True,
                     help="Path to a session .yaml from this probe.  Used to "
                          "compute probe_id and channel_groups.  Any session "
