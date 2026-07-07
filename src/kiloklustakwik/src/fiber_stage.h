@@ -1,6 +1,6 @@
 // fiber_stage.h — validated fiber method, C++ port (header-only math core).
 // Every function here is audited to machine precision against the Python
-// reference (fiber_lib/fiber_tracer) on chunk_g5_min183-193:
+// reference (the standalone fiber-kit project) on chunk_g5_min183-193:
 //   whitener 1.7e-16 | features 6.6e-13 | trajectory 5.8e-15 |
 //   assignment 100% identical labels (16656/16656, 96.28%) | cal_T/edges exact.
 // std-only, no external deps — drops into KKK (which is Qt/dep-free at this layer).
