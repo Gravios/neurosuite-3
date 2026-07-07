@@ -92,6 +92,14 @@ cross-correlation and per-sample timestamp nudging are also available
 accepted or rolled back in one atomic step. Pipeline-variant aware:
 correctly handles raw `.spk` / stderiv `.fetD` mixed configurations.
 
+Supports **hierarchical (two-level) sessions** — fibers assembled from an
+over-split atom layer (`.clu` + `.clc` + `.clp`) — a **residual
+separability matrix** view, and a range of **cluster sorting/reordering**
+methods (similarity seriation, feature-space, and waveform
+nearest-neighbour / spectral). See
+[Hierarchical clustering](klusters/hierarchical-clustering.md) and
+[Cluster sorting and reordering](klusters/cluster-sorting.md).
+
 **Depends on:** Qt6, libklustersshared. CUDA/ROCm/oneAPI optional for
 Grouping Assistant matrix computation and realignment cross-correlation.
 
