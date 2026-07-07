@@ -1316,6 +1316,12 @@ private:
      * churn — only the visibility and range/value are toggled.*/
     QProgressBar* realignProgressBar;
 
+    /** Status-bar progress bar for the waveform cluster sorts (the median-read
+     *  and distance phases inside computeMedianWaveformDistances).  Created on
+     *  first use as a permanent widget so it survives tab changes, and hidden
+     *  when the sort finishes; mirrors realignProgressBar's lifecycle. */
+    QProgressBar* sortProgressBar;
+
     /**Set up the realign output tab, lock the UI, and launch the realignment
      * worker for a single @p clusterId using the current saved settings
      * (buildRealignArgs()).  No dialog is shown.  Used by slotRealignSpikes
