@@ -59,7 +59,7 @@ so all edits go back to the same files.
 | `session.dat` / `session.fil` | Raw / filtered signal — opened by Trace View; read by nudge/realign for waveform re-extraction |
 | `session.pca.<method>.N` | PCA eigenvectors — used by spike realignment and nudge to reproject features after shifting timestamps. **MethodSpecific** (`pca.standard.N` / `pca.stderiv.N`) |
 | `session.<type>.<method>.N.pending` | Transactional working copies (res/spk/fet/clu) — all realign/nudge edits go here first and are atomically renamed on save |
-| `session.curation_log.N.jl` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
+| `session.curation_log.<group>.<method>` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
 | `session.#.clu.N` | Autosave (crash-recovery) files written periodically |
 
 ### File variant resolution
@@ -588,7 +588,7 @@ whole watershed in one step.
 ## Curation logging
 
 Every editing operation in Klusters writes a JSON-line record to
-`session.curation_log.<group>.jl` alongside the `.clu.N` file. The log
+`session.curation_log.<group>.<method>` alongside the `.clu.N` file. The log
 is the audit trail for both crash forensics and the empirical-prior
 training pipeline (`kk_build_prior.py` in ndmanager-plugins; see
 [that workflow](../workflows/empirical-priors.md)).

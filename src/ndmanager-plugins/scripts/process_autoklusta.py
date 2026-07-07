@@ -97,6 +97,7 @@ neurosuite-3 contributors  GPL-3.0-or-later
 """
 
 import argparse
+import glob
 import json
 import os
 import struct
@@ -574,7 +575,7 @@ def recover_actions(g: Group):
 # ════════════════════════════════════════════════════════════════════════
 #
 # Klusters appends a per-group JSON-Lines action log,
-# <session>.curation_log.<group>.jl, recording every GROUP/SPLIT/DELETE/...
+# <session>.curation_log.<group>.<method>, recording every GROUP/SPLIT/DELETE/...
 # action with before/after cluster snapshots.  Unlike endpoint-diffing the
 # (raw, curated) .clu pair, this captures SPLITs — a raw cluster the human
 # fanned into several units — which endpoint-diffing can detect (low purity)
@@ -594,16 +595,26 @@ def recover_actions(g: Group):
 def curation_log_path(args, group):
     """Resolve the optional curation log for a group, or None when disabled.
 
-    --curation-log: ""/false -> off; true/auto -> <session>.curation_log.<g>.jl;
-    a directory -> that dir; else an explicit path (may contain {g})."""
+    --curation-log: ""/false -> off; true/auto -> the staged Klusters log
+    <session>.curation_log.<group>.<method> (matched by suffix); a directory
+    -> the matching log in that dir; else an explicit path (may contain {g})."""
     v = (getattr(args, "curation_log", "") or "").strip()
     if v == "" or v.lower() in ("false", "no", "0", "off"):
         return None
-    canonical = f"{args.session}.curation_log.{group}.jl"
+
+    def _staged_log(dirpath):
+        # Klusters names the log for the clustering stage,
+        # <session>.curation_log.<group>.<method> (no ".jl"). Match whichever
+        # staged log exists for this group, ignoring .bak backups.
+        stem = os.path.basename(args.session)
+        pat = os.path.join(dirpath, f"{stem}.curation_log.{group}.*")
+        hits = sorted(p for p in glob.glob(pat) if not p.endswith(".bak"))
+        return hits[0] if hits else None
+
     if v.lower() in ("true", "auto", "yes", "on", "1"):
-        return canonical
+        return _staged_log(os.path.dirname(args.session) or ".")
     if os.path.isdir(v):
-        return os.path.join(v, os.path.basename(canonical))
+        return _staged_log(v)
     return v.replace("{g}", str(group))
 
 
@@ -1376,7 +1387,7 @@ def parse_args():
     p.add_argument("--probe-library", default="")
     p.add_argument("--curation-log", default="",
                    help="optional Klusters curation log for split supervision: "
-                        "''/false=off, true/auto=<session>.curation_log.<g>.jl, "
+                        "''/false=off, true/auto=<session>.curation_log.<g>.<method>, "
                         "or a directory / explicit path (may contain {g})")
     return p.parse_args()
 

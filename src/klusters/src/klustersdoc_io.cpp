@@ -546,9 +546,10 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         // low-overhead path for performance testing; undo/redo are unaffected
         // (rollback is driven by clusteringData->undo, not the logger).
         // The curation log is named for the clustering stage (the .clu variant,
-        // e.g. "stderiv"): the stage replaces the generic ".jl" suffix, so each
-        // stage keeps its own log instead of overwriting one file. The untagged
-        // default stage ("standard") is treated as "no stage" and gets no log.
+        // e.g. "stderiv"): the stage is the file's trailing suffix
+        // (<base>.curation_log.<group>.<method>), so each stage keeps its own
+        // log instead of overwriting one file. The untagged default stage
+        // ("standard") is treated as "no stage" and gets no log.
         const bool stagedClustering = (sessionMethod != QLatin1String("standard"));
         if (configuration().getCurationLogging() && stagedClustering) {
             const QString logPath = urlFileInfo.absolutePath() + QDir::separator()

@@ -848,7 +848,7 @@ def main():
     ap.add_argument("--res", help=".res file (binary int64) for per-cluster mean time")
     ap.add_argument("--nch", type=int, help="channels in the group")
     ap.add_argument("--nsamp", type=int, help="samples per spike")
-    ap.add_argument("--curation-log", help="curation_log .jl for GROUP ground truth")
+    ap.add_argument("--curation-log", help="curation_log (.curation_log.<group>.<method>) for GROUP ground truth")
     ap.add_argument("--k", type=int, default=6, help="nuisance modes allowed to move")
     ap.add_argument("--c", type=float, default=3.0, help="movement bound in sigma")
     ap.add_argument("--floor-frac", type=float, default=0.02,

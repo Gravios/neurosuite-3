@@ -1,6 +1,6 @@
 # `kk_build_prior.py` — train a per-probe empirical KiloKlustaKwik prior
 
-Reads one or more `.curation_log.<group>.jl` files (produced by
+Reads one or more `.curation_log.<group>.<method>` files (produced by
 Klusters), filters to curator-accepted clusters by quality / L-ratio /
 isolation distance, and emits `<probe_id>.<group>.prior.yaml`
 containing per-shank cluster-count distribution, effective
@@ -25,7 +25,7 @@ kk_build_prior.py <log_files...> \
 
 | Argument | Purpose |
 |---|---|
-| `log_files` | One or more `.curation_log.N.jl` files for the same shank |
+| `log_files` | One or more `.curation_log.<group>.<method>` files for the same shank |
 | `--session-yaml` | Any session YAML on the target probe — used only to compute probe identity |
 | `--electrode-group` | 1-based shank number |
 | `--out-dir` | Output directory; default `.` |
