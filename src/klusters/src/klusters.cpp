@@ -63,6 +63,10 @@
 #include <QDialogButtonBox>
 #include <QListWidget>
 #include <QProgressBar>
+#include <QEventLoop>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include <QScrollArea>
 #include <QVBoxLayout>
 #include <QFormLayout>
@@ -153,6 +157,7 @@ KlustersApp::KlustersApp()
       realignBatchFailed(0),
       realignBatchShiftedTotal(0),
       realignProgressBar(nullptr),
+      sortProgressBar(nullptr),
       errorMatrixExists(false),
       templateMatrixExists(false),
       // Null-initialized here because initializePreferences() -> buildRealignArgs()
@@ -5701,8 +5706,35 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
     const QByteArray spkBytes = spkPath.toLocal8Bit();
     const char*      spkCStr  = spkBytes.constData();
 
+    // Progress bar for the dominant, disk-bound per-cluster median-read phase.
+    // Clusters are read in chunks (chunk >= the OpenMP width, so each chunk
+    // still fills the workers) and the bar advances between chunks; only the
+    // cross-chunk load-steal is traded away for the progress feedback.  Events
+    // are pumped with user input EXCLUDED, so the bar repaints but the user
+    // cannot re-enter a second sort mid-run.
+    if (!sortProgressBar) {
+        sortProgressBar = new QProgressBar(this);
+        sortProgressBar->setObjectName(QStringLiteral("sortProgress"));
+        sortProgressBar->setTextVisible(true);
+        sortProgressBar->setMaximumWidth(280);
+        statusBar()->addPermanentWidget(sortProgressBar);
+    }
+    sortProgressBar->setRange(0, 100);
+    sortProgressBar->setFormat(tr("Sorting by waveform… %p%"));
+    sortProgressBar->setValue(0);
+    sortProgressBar->show();
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+#ifdef _OPENMP
+    const int nThreads = std::max(1, omp_get_max_threads());
+#else
+    const int nThreads = 1;
+#endif
+    const int chunkSize = std::max(nThreads, (N + 23) / 24);   // <= ~24 ticks
+    for (int cstart = 0; cstart < N; cstart += chunkSize) {
+        const int cend = std::min(cstart + chunkSize, N);
     #pragma omp parallel for schedule(dynamic, 1)
-    for (int k = 0; k < N; ++k) {
+    for (int k = cstart; k < cend; ++k) {
         const auto& fidx = allFileIdx[static_cast<size_t>(k)];
         const long  nSpk = static_cast<long>(fidx.size());
         if (nSpk == 0) continue;
@@ -5734,6 +5766,9 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
             medWav[static_cast<size_t>(k)][static_cast<size_t>(p)] = colv[mid];
         }
     }
+        sortProgressBar->setValue((90 * cend) / N);   // median read -> [0,90]
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    }
 
     // N x N Euclidean distance matrix over the median waveforms (parallel rows).
     std::vector<float> dist(static_cast<size_t>(N) * N, 0.0f);
@@ -5752,6 +5787,10 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
             dist[static_cast<size_t>(b) * N + a] = dd;
         }
     }
+
+    sortProgressBar->setValue(100);           // distance phase done
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    sortProgressBar->hide();
 
     clustersOut = clusters;
     distOut     = std::move(dist);
