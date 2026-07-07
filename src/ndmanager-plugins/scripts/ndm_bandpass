@@ -1,0 +1,97 @@
+#!/bin/bash
+
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Band-pass filtering (for spikes)
+#//
+#//   Produces the .fil file with a band-pass instead of a plain high-pass:
+#//   the non-linear median high-pass (process_medianfilter, as in ndm_hipass)
+#//   sets the lower edge while preserving spike-waveform shape, and a
+#//   linear-phase FIR low-pass (process_lowpass) then attenuates noise above
+#//   the spike band.  Use as an alternative to ndm_hipass.
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -gt 1 ]
+then
+	echo_error "usage: $program [parameter-file]"
+	exit $GENERAL_ERROR
+fi
+ndm_resolve_session "$@"
+[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+param_ext=$(param_file_ext "$session")
+
+# Print a header to indicate current processing step
+print_header "$session - Band-pass filtering"
+
+# Check input and output files
+outputs_exist $session.fil && exit $OUTPUTS_EXIST
+inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
+
+# Check required programs
+check_commands_installed xpathReader process_medianfilter process_lowpass
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read Parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+windowHalfLength=$(read_script_parameter $session windowHalfLength)
+lowpassCutoff=$(read_script_parameter $session lowpassCutoff)
+lowpassHalfLength=$(read_script_parameter $session lowpassHalfLength)
+
+# chunkSize: bytes to process per pass (default 128 MiB).
+# Can be overridden per-session in the parameter file's <ndm_bandpass> block.
+# Read directly with the <n> element XPath, mirroring ndm_hipass.
+chunkSize=$(yaml_read $session "//program/n[.='ndm_bandpass']/../parameters/parameter/n[.='chunkSize']/../value")
+chunkSize=${chunkSize:-134217728}   # default: 128 MiB = 128*1024*1024
+
+# Cap at 512 MiB regardless of what the parameter file says, to prevent OOM on
+# large multi-channel recordings (matches ndm_hipass).
+maxChunkSize=536870912   # 512 MiB
+if [ "$chunkSize" -gt "$maxChunkSize" ] 2>/dev/null; then
+    echo "ndm_bandpass: chunkSize $chunkSize exceeds cap, clamping to $maxChunkSize"
+    chunkSize=$maxChunkSize
+fi
+
+# lowpassHalfLength is optional; default to a 32-sample half length (65 taps).
+lowpassHalfLength=${lowpassHalfLength:-32}
+
+check_mandatory_variable $nChannels        "missing number of channels"
+check_mandatory_variable $samplingRate     "missing sampling rate"
+check_mandatory_variable $windowHalfLength "missing window half-length"
+check_mandatory_variable $lowpassCutoff    "missing low-pass cutoff (Hz)"
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Process
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+#
+# Two stages, composed so the expensive median high-pass still uses its CUDA
+# path when available:
+#   1. process_medianfilter : .dat -> high-passed temporary  (lower edge)
+#   2. process_lowpass      : temporary -> .fil              (upper edge)
+
+tmpFil=$session.fil.hp.tmp
+# Remove any stale temporary and make sure it is cleaned up on exit/interrupt.
+rm -f "$tmpFil"
+trap 'rm -f "$tmpFil"' EXIT
+
+process_medianfilter -n $nChannels -w $windowHalfLength -b $chunkSize -v $session.dat "$tmpFil"
+check_command_status process_medianfilter
+
+process_lowpass -n $nChannels -f $lowpassCutoff -s $samplingRate -m $lowpassHalfLength -b $chunkSize -v "$tmpFil" $session.fil
+check_command_status process_lowpass
+
+rm -f "$tmpFil"

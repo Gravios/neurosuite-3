@@ -1,0 +1,121 @@
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"
+          "http://www.oasis-open.org/docbook/xml/4.1.2/docbookx.dtd">
+<refentry id="process_lowpass">
+
+	<refmeta>
+		<refentrytitle>process_lowpass</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_lowpass</refname><refpurpose>low-pass filter multiplexed binary data files.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>process_lowpass</command>
+		<arg>
+			<option>-n</option> <replaceable>nChannels</replaceable>
+		</arg>
+		<arg>
+			<option>-f</option> <replaceable>cutoffHz</replaceable>
+		</arg>
+		<arg>
+			<option>-s</option> <replaceable>rateHz</replaceable>
+		</arg>
+		<arg>
+			<option>-m</option> <replaceable>nSamples</replaceable>
+		</arg>
+		<arg>
+			<option>-b</option> <replaceable>buffer</replaceable>
+		</arg>
+		<arg>
+			<option>-v</option>
+		</arg>
+		<arg choice="plain">
+			<replaceable>input</replaceable>
+		</arg>
+		<arg choice="plain">
+			<replaceable>output</replaceable>
+		</arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>Description</title>
+		<para>
+			<command>process_lowpass</command> low-pass filters multiplexed binary data files using a linear-phase (symmetric windowed-sinc) FIR filter, so the waveform of the input signal is preserved up to a fixed, compensated group delay. It is intended to be combined with <command>process_medianfilter</command> (via <command>ndm_bandpass</command>) to band-pass a .dat file for spike extraction: the median stage sets the lower edge and this stage attenuates noise above the spike band.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Options</title>
+		<variablelist>
+			<varlistentry>
+				<term><option>-n</option> <replaceable>nChannels</replaceable></term>
+				<listitem>
+					<para>
+						number of channels in the file (default = 1)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-f</option> <replaceable>cutoffHz</replaceable></term>
+				<listitem>
+					<para>
+						low-pass cutoff frequency, in Hz (must be below Nyquist)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-s</option> <replaceable>rateHz</replaceable></term>
+				<listitem>
+					<para>
+						sampling rate of the data, in Hz (used to normalise the cutoff)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-m</option> <replaceable>nSamples</replaceable></term>
+				<listitem>
+					<para>
+						FIR half length in samples; the filter has 2*nSamples+1 taps, and a larger value gives a sharper transition (default = 32)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-b</option> <replaceable>buffer</replaceable></term>
+				<listitem>
+					<para>
+						buffer size (this can be used to optimize file I/O throughput)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-v</option></term>
+				<listitem>
+					<para>
+						verbose mode, displays progress information
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>input</replaceable></term>
+				<listitem>
+					<para>
+						input file
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><replaceable>output</replaceable></term>
+				<listitem>
+					<para>
+						output file
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
+	</refsect1>
+
+</refentry>
