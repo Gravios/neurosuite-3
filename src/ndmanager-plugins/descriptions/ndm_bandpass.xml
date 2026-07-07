@@ -1,0 +1,50 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <name>ndm_bandpass</name>
+  <parameters>
+   <parameter>
+    <name>windowHalfLength</name>
+    <value>16</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <name>lowpassCutoff</name>
+    <value>6000</value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <name>lowpassHalfLength</name>
+    <value>32</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>chunkSize</name>
+    <value>134217728</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Band-pass filter a .dat file (an alternative to ndm_hipass for spike extraction).
+
+Combines a non-linear median high-pass, which preserves spike waveform shape, with a linear-phase FIR low-pass that removes noise above the spike band. The result is written to the .fil file, exactly like ndm_hipass, so downstream spike extraction is unchanged.
+
+PARAMETERS
+
+# windowHalfLength
+
+Median high-pass window half length; sets the lower cutoff (identical to ndm_hipass). Determines the lower cutoff frequency.
+
+# lowpassCutoff
+
+Upper cutoff frequency, in Hz (e.g. 6000). Attenuates high-frequency noise above the spike band. Must be below the Nyquist frequency.
+
+# lowpassHalfLength
+
+FIR low-pass half length in samples; the filter has 2*lowpassHalfLength+1 taps, and a larger value gives a sharper transition (optional, default 32).
+
+# chunkSize
+
+Number of bytes to process per pass (optional; used to tune file I/O throughput).
+</help>
+ </program>
+</parameter>
