@@ -741,6 +741,43 @@ programs:
     Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
     Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
 
+- name: ndm_bandpass
+  parameters:
+  - {name: windowHalfLength,  value: 16,         status: Mandatory}
+  - {name: lowpassCutoff,     value: 6000,       status: Mandatory}
+  - {name: lowpassHalfLength, value: 32,         status: Optional}
+  - {name: chunkSize,         value: 134217728,  status: Mandatory}
+  help: |-
+    Band-pass filter a .dat file (alternative to ndm_hipass for spike extraction).
+
+    Combines the median-based (non-linear) high-pass, which minimises spike
+    waveform distortion, with a linear-phase FIR low-pass that removes noise
+    above the spike band. Writes .fil exactly like ndm_hipass, so downstream
+    spike extraction is unchanged. Run EITHER ndm_hipass OR ndm_bandpass, not
+    both (both write .fil).
+
+    PARAMETERS
+
+    # windowHalfLength
+
+    Half-length (samples) of the median high-pass window; sets the lower cutoff
+    (identical to ndm_hipass). At 32 kHz, 16 samples gives approximately 600 Hz.
+
+    # lowpassCutoff
+
+    Upper cutoff frequency (Hz) of the FIR low-pass; attenuates noise above the
+    spike band. Must be below the Nyquist frequency. ~6000 suits a 32 kHz octrode.
+
+    # lowpassHalfLength
+
+    FIR half-length (samples); the filter has 2*n+1 taps, and a larger value
+    gives a sharper transition (default 32).
+
+    # chunkSize
+
+    Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
+    Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
+
 - name: ndm_denoiseuniform
   parameters:
   - {name: uniformityThreshold, value: 0.30, status: Optional}
