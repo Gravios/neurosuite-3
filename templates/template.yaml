@@ -219,17 +219,35 @@ programs:
 # == Master orchestrator ======================================================
 - name: ndm_start
   parameters:
-  - {name: suffixes, value: nlx,     status: Mandatory}
-  - {name: log,      value: 'false', status: Mandatory}
+    - name: suffixes
+      value: nlx
+      status: Mandatory
+    - name: log
+      value: 'false'
+      status: Mandatory
   # Optional flags -- all default true except clean.
   # Uncomment to override:
-  # - {name: wideband,      value: 'true',  status: Optional}
-  # - {name: video,         value: 'true',  status: Optional}
-  # - {name: events,        value: 'true',  status: Optional}
-  # - {name: concatenation, value: 'true',  status: Optional}
-  # - {name: spikes,        value: 'true',  status: Optional}
-  # - {name: lfp,           value: 'true',  status: Optional}
-  # - {name: clean,         value: 'false', status: Optional}
+    # - name: wideband
+    #   value: 'true'
+    #   status: Optional
+    # - name: video
+    #   value: 'true'
+    #   status: Optional
+    # - name: events
+    #   value: 'true'
+    #   status: Optional
+    # - name: concatenation
+    #   value: 'true'
+    #   status: Optional
+    # - name: spikes
+    #   value: 'true'
+    #   status: Optional
+    # - name: lfp
+    #   value: 'true'
+    #   status: Optional
+    # - name: clean
+    #   value: 'false'
+    #   status: Optional
   help: |-
     Perform all processing steps for a multiple sets of multiple-session
     recordings: format conversion, channel extraction and reordering, video
@@ -281,8 +299,12 @@ programs:
 # == Acquisition format converters ============================================
 - name: ndm_aom2dat
   parameters:
-  - {name: matFile,      value: ~,        status: Mandatory}
-  - {name: chunkSamples, value: 10000000, status: Optional}
+    - name: matFile
+      value: ~
+      status: Mandatory
+    - name: chunkSamples
+      value: 10000000
+      status: Optional
   help: |-
     Convert an AlphaOmega .mat recording (HDF5 v7.3 format) to SESSION.dat.
 
@@ -310,10 +332,18 @@ programs:
 
 - name: ndm_ncs2dat
   parameters:
-  - {name: reverse,  value: 'false', status: Mandatory}
-  - {name: suffixes, value: nlx,     status: Mandatory}
-  # - {name: gap,          value: 1,       status: Optional}
-  # - {name: ignoreEvents, value: 'false', status: Optional}
+    - name: reverse
+      value: 'false'
+      status: Mandatory
+    - name: suffixes
+      value: nlx
+      status: Mandatory
+    # - name: gap
+    #   value: 1
+    #   status: Optional
+    # - name: ignoreEvents
+    #   value: 'false'
+    #   status: Optional
   help: |-
     Convert from .ncs (Neuralynx files) to .dat format.
 
@@ -341,9 +371,15 @@ programs:
 
 - name: ndm_smr2dat
   parameters:
-  - {name: reverse,          value: 'true', status: Mandatory}
-  - {name: suffixes,         value: ~,      status: Mandatory}
-  - {name: channelsExcluded, value: ~,      status: Mandatory}
+    - name: reverse
+      value: 'true'
+      status: Mandatory
+    - name: suffixes
+      value: ~
+      status: Mandatory
+    - name: channelsExcluded
+      value: ~
+      status: Mandatory
   help: |-
     Convert from .smr (CED files) to .dat format.
 
@@ -363,8 +399,12 @@ programs:
 
 - name: ndm_nev2evt
   parameters:
-  - {name: suffixes, value: nlx, status: Mandatory}
-  # - {name: gap, value: 1, status: Optional}
+    - name: suffixes
+      value: nlx
+      status: Mandatory
+    # - name: gap
+    #   value: 1
+    #   status: Optional
   help: |-
     Convert from .nev (Neuralynx files) to .evt format.
 
@@ -382,8 +422,12 @@ programs:
 
 - name: ndm_smr2evt
   parameters:
-  - {name: suffixes, value: ~, status: Optional}
-  - {name: rename,   value: ~, status: Optional}
+    - name: suffixes
+      value: ~
+      status: Optional
+    - name: rename
+      value: ~
+      status: Optional
   help: |-
     Convert from .smr (CED files) to .evt format.
 
@@ -399,8 +443,12 @@ programs:
 
 - name: ndm_nvt2spots
   parameters:
-  - {name: suffix, value: ~, status: Mandatory}
-  # - {name: gap, value: 1, status: Optional}
+    - name: suffix
+      value: ~
+      status: Mandatory
+    # - name: gap
+    #   value: 1
+    #   status: Optional
   help: |-
     Extract spots from .nvt (Neuralynx files).
 
@@ -418,7 +466,9 @@ programs:
 
 - name: ndm_tsp2sts
   parameters:
-  - {name: suffix, value: ~, status: Mandatory}
+    - name: suffix
+      value: ~
+      status: Mandatory
   help: |-
     Extract spots timestamps from .tsp and .meta (Amplipex files).
 
@@ -430,8 +480,12 @@ programs:
 
 - name: ndm_smi2sts
   parameters:
-  - {name: suffix, value: ~, status: Mandatory}
-  # - {name: gap, value: 1, status: Optional}
+    - name: suffix
+      value: ~
+      status: Mandatory
+    # - name: gap
+    #   value: 1
+    #   status: Optional
   help: |-
     Extract spots timestamps from .smi (Neuralynx files).
 
@@ -454,11 +508,21 @@ programs:
 # == Video ====================================================================
 - name: ndm_extractleds
   parameters:
-  - {name: suffix,         value: ~,       status: Mandatory}
-  - {name: useTrackerData, value: 'true',  status: Mandatory}
-  - {name: threshold,      value: 90,      status: Mandatory}
-  - {name: extension,      value: avi,     status: Mandatory}
-  - {name: show,           value: 'false', status: Mandatory}
+    - name: suffix
+      value: ~
+      status: Mandatory
+    - name: useTrackerData
+      value: 'true'
+      status: Mandatory
+    - name: threshold
+      value: 90
+      status: Mandatory
+    - name: extension
+      value: avi
+      status: Mandatory
+    - name: show
+      value: 'false'
+      status: Mandatory
   help: |-
     Extract LEDs (= bright spots) from a video file.
 
@@ -487,10 +551,18 @@ programs:
 
 - name: ndm_transcodevideo
   parameters:
-  - {name: suffix,    value: ~,   status: Mandatory}
-  - {name: extension, value: avi, status: Mandatory}
-  - {name: codec,     value: ~,   status: Mandatory}
-  # - {name: frequency, value: 30, status: Optional}
+    - name: suffix
+      value: ~
+      status: Mandatory
+    - name: extension
+      value: avi
+      status: Mandatory
+    - name: codec
+      value: ~
+      status: Mandatory
+    # - name: frequency
+    #   value: 30
+    #   status: Optional
   help: |-
     Transcode video file (convert to a different codec).
 
@@ -518,8 +590,12 @@ programs:
 # == Data preparation =========================================================
 - name: ndm_concatenate
   parameters:
-  - {name: spotsSamplingRate, value: 50, status: Mandatory}
-  # - {name: maxShift, value: 3, status: Optional}
+    - name: spotsSamplingRate
+      value: 50
+      status: Mandatory
+    # - name: maxShift
+    #   value: 3
+    #   status: Optional
   help: |-
     Concatenate all session files (.dat, .pos and .evt) recorded on the same day.
 
@@ -540,8 +616,12 @@ programs:
 
 - name: ndm_extractchannels
   parameters:
-  - {name: nChannels, value: ~, status: Mandatory}
-  - {name: channels,  value: ~, status: Mandatory}
+    - name: nChannels
+      value: ~
+      status: Mandatory
+    - name: channels
+      value: ~
+      status: Mandatory
   help: |-
     Extract channels from .dat file (remove those not listed).
 
@@ -557,8 +637,12 @@ programs:
 
 - name: ndm_mergedat
   parameters:
-  - {name: suffixes,  value: ~, status: Mandatory}
-  - {name: nChannels, value: ~, status: Mandatory}
+    - name: suffixes
+      value: ~
+      status: Mandatory
+    - name: nChannels
+      value: ~
+      status: Mandatory
   help: |-
     Merge multiple .dat files recorded simultaneously.
 
@@ -574,9 +658,15 @@ programs:
 
 - name: ndm_resample
   parameters:
-  - {name: suffixes,      value: ~, status: Mandatory}
-  - {name: samplingRates, value: ~, status: Mandatory}
-  - {name: nChannels,     value: ~, status: Mandatory}
+    - name: suffixes
+      value: ~
+      status: Mandatory
+    - name: samplingRates
+      value: ~
+      status: Mandatory
+    - name: nChannels
+      value: ~
+      status: Mandatory
   help: |-
     Resample individual .dat files from their original sampling rates to the
     common sampling rate of the final .dat file.
@@ -597,8 +687,12 @@ programs:
 
 - name: ndm_rescale
   parameters:
-  - {name: suffixes,       value: ~, status: Mandatory}
-  - {name: scalingFactors, value: ~, status: Mandatory}
+    - name: suffixes
+      value: ~
+      status: Mandatory
+    - name: scalingFactors
+      value: ~
+      status: Mandatory
   help: |-
     Rescale individual .dat files from their original input ranges to the
     common range (smallest).
@@ -615,7 +709,9 @@ programs:
 
 - name: ndm_reorderchannels
   parameters:
-  - {name: channels, value: ~, status: Mandatory}
+    - name: channels
+      value: ~
+      status: Mandatory
   help: |-
     Reorder channels in .dat file.
 
@@ -628,11 +724,21 @@ programs:
 # == Group setup ==============================================================
 - name: ndm_setupgroups
   parameters:
-  - {name: nSamples,         value: 52,    status: Optional}
-  - {name: peakSampleIndex,  value: 26,    status: Optional}
-  - {name: nFeatures,        value: 3,     status: Optional}
-  - {name: probeLibrary,     value: '',    status: Optional}
-  - {name: overwrite,        value: false, status: Optional}
+    - name: nSamples
+      value: 52
+      status: Optional
+    - name: peakSampleIndex
+      value: 26
+      status: Optional
+    - name: nFeatures
+      value: 3
+      status: Optional
+    - name: probeLibrary
+      value: ''
+      status: Optional
+    - name: overwrite
+      value: false
+      status: Optional
   help: "Build anatomicalDescription and spikeDetection channel groups from the probe\
     \ library entries declared in probes:.\n\nMust be run BEFORE ndm_extractspikes.\
     \ Reads each .probe file listed in the probes: section, creates one anatomical\
@@ -657,15 +763,33 @@ programs:
 # == Spike detection pipeline =================================================
 - name: ndm_spikegrouper
   parameters:
-  - {name: thresholdFactor, value: 3.0, status: Mandatory}
-  - {name: refractoryMs,    value: 1.0, status: Mandatory}
-  - {name: coincidenceMs,   value: 0.4, status: Mandatory}
-  - {name: windowSec,       value: 60,  status: Mandatory}
-  - {name: maxSubGroups,    value: 16,  status: Mandatory}
-  - {name: minChannels,     value: 4,   status: Mandatory}
-  - {name: maxMergedSize,   value: 12,  status: Mandatory}
-  - {name: channelOverlap,  value: 0,   status: Mandatory}
-  # - {name: excludeChannels, value: '', status: Optional}
+    - name: thresholdFactor
+      value: 3.0
+      status: Mandatory
+    - name: refractoryMs
+      value: 1.0
+      status: Mandatory
+    - name: coincidenceMs
+      value: 0.4
+      status: Mandatory
+    - name: windowSec
+      value: 60
+      status: Mandatory
+    - name: maxSubGroups
+      value: 16
+      status: Mandatory
+    - name: minChannels
+      value: 4
+      status: Mandatory
+    - name: maxMergedSize
+      value: 12
+      status: Mandatory
+    - name: channelOverlap
+      value: 0
+      status: Mandatory
+    # - name: excludeChannels
+    #   value: ''
+    #   status: Optional
   help: |-
     Discover optimal spikeDetection channel groups from the high-pass filtered
     .fil file and write them back to the YAML parameter file.
@@ -722,8 +846,12 @@ programs:
 
 - name: ndm_hipass
   parameters:
-  - {name: windowHalfLength, value: 16,        status: Mandatory}
-  - {name: chunkSize,        value: 134217728,  status: Mandatory}
+    - name: windowHalfLength
+      value: 16
+      status: Mandatory
+    - name: chunkSize
+      value: 134217728
+      status: Mandatory
   help: |-
     High-pass filter a .dat file (required for spike extraction).
 
@@ -788,10 +916,18 @@ programs:
 
 - name: ndm_denoiseuniform
   parameters:
-  - {name: uniformityThreshold, value: 0.30, status: Optional}
-  - {name: minAmplitude,        value: 0,    status: Optional}
-  - {name: removeFlat,          value: 1,    status: Optional}
-  - {name: dryRun,              value: 0,    status: Optional}
+    - name: uniformityThreshold
+      value: 0.30
+      status: Optional
+    - name: minAmplitude
+      value: 0
+      status: Optional
+    - name: removeFlat
+      value: 1
+      status: Optional
+    - name: dryRun
+      value: 0
+      status: Optional
   help: |-
     Remove electrically uniform noise events from spike data.
 
@@ -823,18 +959,34 @@ programs:
 
 - name: ndm_extractspikes
   parameters:
-  - {name: thresholdFactor,  value: 1.5, status: Mandatory}
-  - {name: refractoryPeriod, value: 25,  status: Mandatory}
-  - {name: peakSearchLength, value: 50,  status: Mandatory}
-  - {name: start,            value: 0,   status: Mandatory}
-  - {name: duration,         value: 60,  status: Mandatory}
+    - name: thresholdFactor
+      value: 1.5
+      status: Mandatory
+    - name: refractoryPeriod
+      value: 25
+      status: Mandatory
+    - name: peakSearchLength
+      value: 50
+      status: Mandatory
+    - name: start
+      value: 0
+      status: Mandatory
+    - name: duration
+      value: 60
+      status: Mandatory
   # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
   # <session>.<type>.<method>.<group> and selects the detection/feature space.
-  - {name: method,      value: standard, status: Optional}
+    - name: method
+      value: standard
+      status: Optional
   # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
   # name for the deprecated sdiffOrder alias.
-  - {name: methodOrder, value: 3,        status: Optional}
-  # - {name: memCapGB, value: 2, status: Optional}
+    - name: methodOrder
+      value: 3
+      status: Optional
+    # - name: memCapGB
+    #   value: 2
+    #   status: Optional
   help: |-
     Extract spikes from high-pass filtered .fil file (creates .res and .spk files).
 
@@ -868,13 +1020,27 @@ programs:
 
 - name: ndm_extractspikes_sdiff
   parameters:
-  - {name: thresholdFactor,  value: 1.5, status: Mandatory}
-  - {name: refractoryPeriod, value: 16,  status: Mandatory}
-  - {name: peakSearchLength, value: 32,  status: Mandatory}
-  - {name: start,            value: 0,   status: Mandatory}
-  - {name: duration,         value: 60,  status: Mandatory}
-  - {name: sdiffOrder,       value: 2,   status: Optional}
-  # - {name: memCapGB, value: 2, status: Optional}
+    - name: thresholdFactor
+      value: 1.5
+      status: Mandatory
+    - name: refractoryPeriod
+      value: 16
+      status: Mandatory
+    - name: peakSearchLength
+      value: 32
+      status: Mandatory
+    - name: start
+      value: 0
+      status: Mandatory
+    - name: duration
+      value: 60
+      status: Mandatory
+    - name: sdiffOrder
+      value: 2
+      status: Optional
+    # - name: memCapGB
+    #   value: 2
+    #   status: Optional
   help: |-
     Extract spikes using the spatial derivative across probe channels to suppress
     common-mode noise before threshold detection.
@@ -921,13 +1087,27 @@ programs:
 
 - name: ndm_extractspikes_stderiv
   parameters:
-  - {name: thresholdFactor,  value: 1.5, status: Mandatory}
-  - {name: refractoryPeriod, value: 16,  status: Mandatory}
-  - {name: peakSearchLength, value: 32,  status: Mandatory}
-  - {name: start,            value: 0,   status: Mandatory}
-  - {name: duration,         value: 60,  status: Mandatory}
-  - {name: sdiffOrder,       value: 3,   status: Optional}
-  # - {name: memCapGB, value: 2, status: Optional}
+    - name: thresholdFactor
+      value: 1.5
+      status: Mandatory
+    - name: refractoryPeriod
+      value: 16
+      status: Mandatory
+    - name: peakSearchLength
+      value: 32
+      status: Mandatory
+    - name: start
+      value: 0
+      status: Mandatory
+    - name: duration
+      value: 60
+      status: Mandatory
+    - name: sdiffOrder
+      value: 3
+      status: Optional
+    # - name: memCapGB
+    #   value: 2
+    #   status: Optional
   help: |-
     Extract spikes using spatial derivative + temporal first-difference for
     both detection AND waveform storage.
@@ -1003,11 +1183,17 @@ programs:
 
 - name: ndm_alignspikes
   parameters:
-  - {name: maxShift, value: 3,   status: Optional}
-  - {name: minScore, value: 0.0, status: Optional}
+    - name: maxShift
+      value: 3
+      status: Optional
+    - name: minScore
+      value: 0.0
+      status: Optional
   # Chain-of-custody method (must match the detection/PCA pipeline that produced
   # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
-  - {name: method, value: standard, status: Optional}
+    - name: method
+      value: standard
+      status: Optional
   help: |-
     Align spike waveform snippets to their true energy peak before PCA.
 
@@ -1050,14 +1236,26 @@ programs:
 
 - name: ndm_pca_stderiv
   parameters:
-  - {name: before,          value: 12,      status: Optional}
-  - {name: after,           value: 12,      status: Optional}
-  - {name: extra,           value: 'false', status: Optional}
-  - {name: sdiffOrder,      value: 3,       status: Optional}
-  - {name: excludeClusters, value: '',      status: Optional}
+    - name: before
+      value: 12
+      status: Optional
+    - name: after
+      value: 12
+      status: Optional
+    - name: extra
+      value: 'false'
+      status: Optional
+    - name: sdiffOrder
+      value: 3
+      status: Optional
+    - name: excludeClusters
+      value: ''
+      status: Optional
   # threadsPerGroup: number of OMP threads per group when running all groups in
   # parallel. Default = floor(nCores / nGroups). Set explicitly to limit CPU use.
-  # - {name: threadsPerGroup, value: 2,     status: Optional}
+    # - name: threadsPerGroup
+    #   value: 2
+    #   status: Optional
   help: |-
     Compute PCA features on spatial+temporal derivative waveforms for sorting.
 
@@ -1148,8 +1346,12 @@ programs:
 
 - name: ndm_spikecleaner
   parameters:
-  - {name: removeFlatChannels, value: 1, status: Optional}
-  - {name: dryRun,             value: 0, status: Optional}
+    - name: removeFlatChannels
+      value: 1
+      status: Optional
+    - name: dryRun
+      value: 0
+      status: Optional
   help: |-
     Remove spike waveforms where one or more channels have dropped out.
 
@@ -1182,13 +1384,27 @@ programs:
 
 - name: ndm_stripdat
   parameters:
-  - {name: redetectSpikes,   value: 'no',                    status: Optional}
-  - {name: stripClusters,    value: 'default',               status: Optional}
-  - {name: overwrite,        value: 'false',                 status: Optional}
-  - {name: subtractionMode,  value: 'raw',                   status: Optional}
-  - {name: botmRidge,        value: '1e-3',                  status: Optional}
-  - {name: autoStrip,        value: 'true',                  status: Optional}
-  - {name: qualityTags,      value: 'good,great,excellent',  status: Optional}
+    - name: redetectSpikes
+      value: 'no'
+      status: Optional
+    - name: stripClusters
+      value: 'default'
+      status: Optional
+    - name: overwrite
+      value: 'false'
+      status: Optional
+    - name: subtractionMode
+      value: 'raw'
+      status: Optional
+    - name: botmRidge
+      value: '1e-3'
+      status: Optional
+    - name: autoStrip
+      value: 'true'
+      status: Optional
+    - name: qualityTags
+      value: 'good,great,excellent'
+      status: Optional
   help: |-
     Strip spike waveforms from the raw .dat file to produce a spike-cleaned
     recording: <session>-spkclean.dat
@@ -1329,14 +1545,30 @@ programs:
 
 - name: ndm_reextractspikes
   parameters:
-  - {name: reextractThresholdFactor, value: 0.75,   status: Optional}
-  - {name: reextractMaskHalfWidth,   value: '',     status: Optional}
-  - {name: reextractMinClusterSize,  value: 50,     status: Optional}
-  - {name: reextractChi2,            value: 0.999,  status: Optional}
-  - {name: reextractExtraFeat,       value: 'auto', status: Optional}
-  - {name: reextractInflationRatio,  value: 5.0,    status: Optional}
-  - {name: reextractInflationCap,    value: 500,    status: Optional}
-  - {name: reextractAutoSubcluster,  value: 0,      status: Optional}
+    - name: reextractThresholdFactor
+      value: 0.75
+      status: Optional
+    - name: reextractMaskHalfWidth
+      value: ''
+      status: Optional
+    - name: reextractMinClusterSize
+      value: 50
+      status: Optional
+    - name: reextractChi2
+      value: 0.999
+      status: Optional
+    - name: reextractExtraFeat
+      value: 'auto'
+      status: Optional
+    - name: reextractInflationRatio
+      value: 5.0
+      status: Optional
+    - name: reextractInflationCap
+      value: 500
+      status: Optional
+    - name: reextractAutoSubcluster
+      value: 0
+      status: Optional
   help: |-
     Second-pass spike detection with mask exclusion and IN-PLACE shadow
     clustering.
@@ -1466,14 +1698,30 @@ programs:
 
 - name: ndm_reextractspikes_stderiv
   parameters:
-  - {name: reextractThresholdFactor, value: 0.75,   status: Optional}
-  - {name: reextractMaskHalfWidth,   value: '',     status: Optional}
-  - {name: reextractMinClusterSize,  value: 50,     status: Optional}
-  - {name: reextractChi2,            value: 0.999,  status: Optional}
-  - {name: reextractExtraFeat,       value: 'auto', status: Optional}
-  - {name: reextractInflationRatio,  value: 5.0,    status: Optional}
-  - {name: reextractInflationCap,    value: 500,    status: Optional}
-  - {name: reextractAutoSubcluster,  value: 0,      status: Optional}
+    - name: reextractThresholdFactor
+      value: 0.75
+      status: Optional
+    - name: reextractMaskHalfWidth
+      value: ''
+      status: Optional
+    - name: reextractMinClusterSize
+      value: 50
+      status: Optional
+    - name: reextractChi2
+      value: 0.999
+      status: Optional
+    - name: reextractExtraFeat
+      value: 'auto'
+      status: Optional
+    - name: reextractInflationRatio
+      value: 5.0
+      status: Optional
+    - name: reextractInflationCap
+      value: 500
+      status: Optional
+    - name: reextractAutoSubcluster
+      value: 0
+      status: Optional
   help: |-
     Second-pass spike detection variant that runs threshold detection on
     the spatial-derivative + temporal first-difference signal (matching
@@ -1511,38 +1759,92 @@ programs:
 - name: ndm_subcluster_unmatched
   parameters:
   # ── Cluster count (tuned for the outlier bin) ──────────────────────────────
-  - {name: minClusters,          value: 2,       status: Optional}
-  - {name: maxClusters,          value: 100,     status: Optional}
-  - {name: maxPossibleClusters,  value: 1000,    status: Optional}
+    - name: minClusters
+      value: 2
+      status: Optional
+    - name: maxClusters
+      value: 100
+      status: Optional
+    - name: maxPossibleClusters
+      value: 1000
+      status: Optional
   # ── Initialisation ─────────────────────────────────────────────────────────
-  - {name: nStarts,              value: 5,       status: Optional}
-  - {name: nRuns,                value: 0,       status: Optional}
-  - {name: phase15Iters,         value: 2,       status: Optional}
-  - {name: subspaceDims,          value: 3,       status: Optional}
-  - {name: subspaceRecluster,     value: 1,       status: Optional}
-  - {name: subspaceReclusterDepth,  value: 2,     status: Optional}
-  - {name: splitRecurseDepth,       value: 1,     status: Optional}
-  - {name: templateMatchScore,    value: 0.85,    status: Optional}
-  - {name: templateMatchIters,    value: 10,      status: Optional}
-  - {name: crossChunkTemplateScore, value: 0.0,   status: Optional}
-  - {name: initMethod,           value: farthest, status: Optional}
-  - {name: penaltyMix,           value: 0.25,    status: Optional}
+    - name: nStarts
+      value: 5
+      status: Optional
+    - name: nRuns
+      value: 0
+      status: Optional
+    - name: phase15Iters
+      value: 2
+      status: Optional
+    - name: subspaceDims
+      value: 3
+      status: Optional
+    - name: subspaceRecluster
+      value: 1
+      status: Optional
+    - name: subspaceReclusterDepth
+      value: 2
+      status: Optional
+    - name: splitRecurseDepth
+      value: 1
+      status: Optional
+    - name: templateMatchScore
+      value: 0.85
+      status: Optional
+    - name: templateMatchIters
+      value: 10
+      status: Optional
+    - name: crossChunkTemplateScore
+      value: 0.0
+      status: Optional
+    - name: initMethod
+      value: farthest
+      status: Optional
+    - name: penaltyMix
+      value: 0.25
+      status: Optional
   # ── Chunked CEM ────────────────────────────────────────────────────────────
-  - {name: chunkMinutes,         value: 10,      status: Optional}
-  - {name: chunkOverlapMinutes,  value: 2,       status: Optional}
-  - {name: chunkPreseedFraction, value: 0.05,    status: Optional}
+    - name: chunkMinutes
+      value: 10
+      status: Optional
+    - name: chunkOverlapMinutes
+      value: 2
+      status: Optional
+    - name: chunkPreseedFraction
+      value: 0.05
+      status: Optional
   # ── Merge / split ──────────────────────────────────────────────────────────
-  - {name: mergeThresh,          value: 30.0,    status: Optional}
-  - {name: globalMergeIter,      value: 50,      status: Optional}
-  - {name: timeMergeIter,        value: 50,      status: Optional}
-  - {name: splitEvery,           value: 25,      status: Optional}
+    - name: mergeThresh
+      value: 30.0
+      status: Optional
+    - name: globalMergeIter
+      value: 50
+      status: Optional
+    - name: timeMergeIter
+      value: 50
+      status: Optional
+    - name: splitEvery
+      value: 25
+      status: Optional
   # ── CEM convergence ────────────────────────────────────────────────────────
-  - {name: maxIter,              value: 500,     status: Optional}
-  - {name: distThresh,           value: 6.9,     status: Optional}
-  - {name: fullStepEvery,        value: 10,      status: Optional}
-  - {name: changedThresh,        value: 0.05,    status: Optional}
+    - name: maxIter
+      value: 500
+      status: Optional
+    - name: distThresh
+      value: 6.9
+      status: Optional
+    - name: fullStepEvery
+      value: 10
+      status: Optional
+    - name: changedThresh
+      value: 0.05
+      status: Optional
   # ── Parallelism ─────────────────────────────────────────────────────────────
-  - {name: nThreads,             value: 0,       status: Optional}
+    - name: nThreads
+      value: 0
+      status: Optional
   help: |-
     Re-cluster the "unmatched" bin produced by process_shadowcluster
     (via ndm_reextractspikes / ndm_reextractspikes_stderiv).
@@ -1708,8 +2010,12 @@ programs:
 
 - name: ndm_lfp
   parameters:
-  - {name: samplingRate,   value: 1250,   status: Mandatory}
-  - {name: subtractSpikes, value: 'auto', status: Optional}
+    - name: samplingRate
+      value: 1250
+      status: Mandatory
+    - name: subtractSpikes
+      value: 'auto'
+      status: Optional
   help: |-
     Downsample a .dat file to create the LFP file.
 
@@ -1744,19 +2050,33 @@ programs:
 
 - name: ndm_pca
   parameters:
-  - {name: before,          value: 12,      status: Mandatory}
-  - {name: after,           value: 12,      status: Mandatory}
-  - {name: extra,           value: 'false', status: Mandatory}
-  - {name: excludeClusters, value: '',      status: Optional}
+    - name: before
+      value: 12
+      status: Mandatory
+    - name: after
+      value: 12
+      status: Mandatory
+    - name: extra
+      value: 'false'
+      status: Mandatory
+    - name: excludeClusters
+      value: ''
+      status: Optional
   # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
   # <session>.<type>.<method>.<group> and selects the detection/feature space.
-  - {name: method,      value: standard, status: Optional}
+    - name: method
+      value: standard
+      status: Optional
   # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
   # name for the deprecated sdiffOrder alias.
-  - {name: methodOrder, value: 3,        status: Optional}
+    - name: methodOrder
+      value: 3
+      status: Optional
   # threadsPerGroup: number of OMP threads per group when running all groups in
   # parallel. Default = floor(nCores / nGroups). Set explicitly to limit CPU use.
-  # - {name: threadsPerGroup, value: 2,     status: Optional}
+    # - name: threadsPerGroup
+    #   value: 2
+    #   status: Optional
   help: |-
     Compute principal component analysis (PCA) to produce .fet files for sorting.
 
@@ -1819,49 +2139,117 @@ programs:
 - name: ndm_klustakwik
   parameters:
   # ── Cluster count ──────────────────────────────────────────────────────────
-  - {name: minClusters,          value: 2,       status: Optional}
-  - {name: maxClusters,          value: 100,     status: Optional}
-  - {name: maxPossibleClusters,  value: 500,     status: Optional}
+    - name: minClusters
+      value: 2
+      status: Optional
+    - name: maxClusters
+      value: 100
+      status: Optional
+    - name: maxPossibleClusters
+      value: 500
+      status: Optional
   # ── Initialisation ─────────────────────────────────────────────────────────
-  - {name: nStarts,              value: 3,       status: Optional}
-  - {name: nRuns,                value: 0,       status: Optional}
-  - {name: phase15Iters,         value: 1,       status: Optional}
-  - {name: subspaceDims,          value: 0,       status: Optional}
-  - {name: subspaceRecluster,     value: 0,       status: Optional}
-  - {name: templateMatchScore,    value: 0.0,     status: Optional}
-  - {name: templateMatchIters,    value: 10,      status: Optional}
-  - {name: splitRecurseDepth,       value: 1,       status: Optional}
-  - {name: subspaceReclusterDepth,  value: 0,       status: Optional}
-  - {name: crossChunkTemplateScore, value: 0.0,   status: Optional}
-  - {name: initMethod,           value: farthest, status: Optional}
-  - {name: penaltyMix,           value: 0,       status: Optional}
+    - name: nStarts
+      value: 3
+      status: Optional
+    - name: nRuns
+      value: 0
+      status: Optional
+    - name: phase15Iters
+      value: 1
+      status: Optional
+    - name: subspaceDims
+      value: 0
+      status: Optional
+    - name: subspaceRecluster
+      value: 0
+      status: Optional
+    - name: templateMatchScore
+      value: 0.0
+      status: Optional
+    - name: templateMatchIters
+      value: 10
+      status: Optional
+    - name: splitRecurseDepth
+      value: 1
+      status: Optional
+    - name: subspaceReclusterDepth
+      value: 0
+      status: Optional
+    - name: crossChunkTemplateScore
+      value: 0.0
+      status: Optional
+    - name: initMethod
+      value: farthest
+      status: Optional
+    - name: penaltyMix
+      value: 0
+      status: Optional
   # Chain-of-custody method (must match the detection/PCA pipeline that produced
   # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
-  - {name: method, value: standard, status: Optional}
+    - name: method
+      value: standard
+      status: Optional
   # ── Chunked CEM ────────────────────────────────────────────────────────────
-  - {name: chunkMinutes,         value: 10,      status: Optional}
-  - {name: chunkOverlapMinutes,  value: 2,       status: Optional}
-  - {name: chunkPreseedFraction, value: 0.05,    status: Optional}
+    - name: chunkMinutes
+      value: 10
+      status: Optional
+    - name: chunkOverlapMinutes
+      value: 2
+      status: Optional
+    - name: chunkPreseedFraction
+      value: 0.05
+      status: Optional
   # ── Merge / split ──────────────────────────────────────────────────────────
-  - {name: mergeThresh,          value: 42.0,    status: Optional}
-  - {name: globalMergeIter,      value: 50,      status: Optional}
-  - {name: timeMergeIter,        value: 50,      status: Optional}
-  - {name: splitEvery,           value: 25,      status: Optional}
+    - name: mergeThresh
+      value: 42.0
+      status: Optional
+    - name: globalMergeIter
+      value: 50
+      status: Optional
+    - name: timeMergeIter
+      value: 50
+      status: Optional
+    - name: splitEvery
+      value: 25
+      status: Optional
   # ── CEM convergence ────────────────────────────────────────────────────────
-  - {name: maxIter,              value: 500,     status: Optional}
-  - {name: distThresh,           value: 6.9,     status: Optional}
-  - {name: fullStepEvery,        value: 10,      status: Optional}
-  - {name: changedThresh,        value: 0.05,    status: Optional}
+    - name: maxIter
+      value: 500
+      status: Optional
+    - name: distThresh
+      value: 6.9
+      status: Optional
+    - name: fullStepEvery
+      value: 10
+      status: Optional
+    - name: changedThresh
+      value: 0.05
+      status: Optional
   # ── Output / logging ───────────────────────────────────────────────────────
-  - {name: log,                  value: 1,       status: Optional}
-  - {name: screen,               value: 0,       status: Optional}
-  - {name: fSaveModel,           value: 1,       status: Optional}
-  - {name: saveIntermediates,    value: 0,       status: Optional}
+    - name: log
+      value: 1
+      status: Optional
+    - name: screen
+      value: 0
+      status: Optional
+    - name: fSaveModel
+      value: 1
+      status: Optional
+    - name: saveIntermediates
+      value: 0
+      status: Optional
   # ── Re-run control ─────────────────────────────────────────────────────────
-  - {name: overwrite,            value: 0,       status: Optional}
+    - name: overwrite
+      value: 0
+      status: Optional
   # ── Parallelism ─────────────────────────────────────────────────────────────
-  - {name: nThreads,             value: 0,       status: Optional}
-  - {name: parallelK,            value: 0,       status: Optional}
+    - name: nThreads
+      value: 0
+      status: Optional
+    - name: parallelK
+      value: 0
+      status: Optional
   help: |-
     Run KlustaKwik automatic spike sorting for each spikeDetection group.
 
@@ -2036,22 +2424,54 @@ programs:
 
 - name: ndm_autoklusta
   parameters:
-  - {name: mode,           value: apply,        status: Optional}
-  - {name: group,          value: ~,            status: Optional}
-  - {name: rawCluExt,      value: ~,            status: Optional}
-  - {name: curatedCluExt,  value: ~,            status: Optional}
-  - {name: outCluExt,      value: autocur,      status: Optional}
-  - {name: modelKey,       value: default,      status: Optional}
-  - {name: modelPath,      value: ~,            status: Optional}
-  - {name: noiseClusters,  value: '0,1',        status: Optional}
-  - {name: keepThreshold,  value: -1,           status: Optional}
-  - {name: mergeThreshold, value: -1,           status: Optional}
-  - {name: splitPurity,    value: 0.8,          status: Optional}
-  - {name: useWaveforms,   value: 'true',       status: Optional}
-  - {name: refractoryMs,   value: 2.0,          status: Optional}
-  - {name: reset,          value: 'false',      status: Optional}
-  - {name: force,          value: 'false',      status: Optional}
-  - {name: probeLibrary,   value: ~,            status: Optional}
+    - name: mode
+      value: apply
+      status: Optional
+    - name: group
+      value: ~
+      status: Optional
+    - name: rawCluExt
+      value: ~
+      status: Optional
+    - name: curatedCluExt
+      value: ~
+      status: Optional
+    - name: outCluExt
+      value: autocur
+      status: Optional
+    - name: modelKey
+      value: default
+      status: Optional
+    - name: modelPath
+      value: ~
+      status: Optional
+    - name: noiseClusters
+      value: '0,1'
+      status: Optional
+    - name: keepThreshold
+      value: -1
+      status: Optional
+    - name: mergeThreshold
+      value: -1
+      status: Optional
+    - name: splitPurity
+      value: 0.8
+      status: Optional
+    - name: useWaveforms
+      value: 'true'
+      status: Optional
+    - name: refractoryMs
+      value: 2.0
+      status: Optional
+    - name: reset
+      value: 'false'
+      status: Optional
+    - name: force
+      value: 'false'
+      status: Optional
+    - name: probeLibrary
+      value: ~
+      status: Optional
   help: |-
     Learn manual spike-sorting curation from (auto, curated) .clu pairs and
     replay it on fresh KlustaKwik output.
@@ -2193,11 +2613,21 @@ programs:
 
 - name: ndm_estimatedrift
   parameters:
-  - {name: windowSec,    value: 60,      status: Optional}
-  - {name: minUnits,     value: 3,       status: Optional}
-  - {name: minSpikes,    value: 20,      status: Optional}
-  - {name: excludeNoise, value: 'true',  status: Optional}
-  - {name: probeLibrary, value: ~,       status: Optional}
+    - name: windowSec
+      value: 60
+      status: Optional
+    - name: minUnits
+      value: 3
+      status: Optional
+    - name: minSpikes
+      value: 20
+      status: Optional
+    - name: excludeNoise
+      value: 'true'
+      status: Optional
+    - name: probeLibrary
+      value: ~
+      status: Optional
   help: |-
     Estimate in-vivo spatial probe drift from curated spike-sorting results.
 
@@ -2241,19 +2671,39 @@ programs:
 
 - name: ndm_applydrift
   parameters:
-  - {name: sourceGroup,     value: 1,       status: Optional}
-  - {name: threshUm,        value: 5.0,     status: Optional}
-  - {name: minChunkSec,     value: 30.0,    status: Optional}
-  - {name: runKlustaKwik,   value: 'false', status: Optional}
+    - name: sourceGroup
+      value: 1
+      status: Optional
+    - name: threshUm
+      value: 5.0
+      status: Optional
+    - name: minChunkSec
+      value: 30.0
+      status: Optional
+    - name: runKlustaKwik
+      value: 'false'
+      status: Optional
   # Chain-of-custody method (must match how the session was sorted): the
   # drift-adaptive re-clustering reads .fet.<method>.N and runs KlustaKwik
   # -Method <method>.  standard | sdiff | stderiv.
-  - {name: method,          value: standard, status: Optional}
-  - {name: minClusters,     value: 2,       status: Optional}
-  - {name: maxClusters,     value: 100,     status: Optional}
-  - {name: mergeThresh,     value: 35,      status: Optional}
-  - {name: globalMergeIter, value: 30,      status: Optional}
-  - {name: timeMergeIter,   value: 35,      status: Optional}
+    - name: method
+      value: standard
+      status: Optional
+    - name: minClusters
+      value: 2
+      status: Optional
+    - name: maxClusters
+      value: 100
+      status: Optional
+    - name: mergeThresh
+      value: 35
+      status: Optional
+    - name: globalMergeIter
+      value: 30
+      status: Optional
+    - name: timeMergeIter
+      value: 35
+      status: Optional
   help: |-
     Apply the drift timeseries estimated for a curated shank to its sibling
     groups on the same probe.
@@ -2303,19 +2753,41 @@ programs:
 
 - name: ndm_decomposecollisions
   parameters:
-  - {name: maxShiftSamp,      value: 10,      status: Optional}
-  - {name: corrThreshold,     value: 0.85,    status: Optional}
-  - {name: residualThreshold, value: 0.25,    status: Optional}
-  - {name: minSnrRms,         value: 4.0,     status: Optional}
-  - {name: minSpikesTemplate, value: 30,      status: Optional}
-  - {name: corrWindow,        value: 0,       status: Optional}
-  - {name: excludeNoise,      value: 'true',  status: Optional}
-  - {name: overwrite,         value: 'false', status: Optional}
-  - {name: nWorkers,          value: 0,       status: Optional}
-  - {name: useGpu,            value: 'false', status: Optional}
+    - name: maxShiftSamp
+      value: 10
+      status: Optional
+    - name: corrThreshold
+      value: 0.85
+      status: Optional
+    - name: residualThreshold
+      value: 0.25
+      status: Optional
+    - name: minSnrRms
+      value: 4.0
+      status: Optional
+    - name: minSpikesTemplate
+      value: 30
+      status: Optional
+    - name: corrWindow
+      value: 0
+      status: Optional
+    - name: excludeNoise
+      value: 'true'
+      status: Optional
+    - name: overwrite
+      value: 'false'
+      status: Optional
+    - name: nWorkers
+      value: 0
+      status: Optional
+    - name: useGpu
+      value: 'false'
+      status: Optional
   # Chain-of-custody method (must match the detection/PCA pipeline that produced
   # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
-  - {name: method, value: standard, status: Optional}
+    - name: method
+      value: standard
+      status: Optional
   help: |-
     Detect and decompose spike collision waveforms into single-unit components.
 
@@ -2388,12 +2860,24 @@ programs:
 # == Post-sorting analysis (continued) ========================================
 - name: ndm_localise
   parameters:
-  - {name: method,         value: monopole, status: Optional}
-  - {name: clusterFilter,  value: good,     status: Optional}
-  - {name: maxDistUm,      value: 200,      status: Optional}
-  - {name: nBootstrap,     value: 0,        status: Optional}
-  - {name: overwrite,      value: 0,        status: Optional}
-  - {name: probeLibrary,   value: ~,        status: Optional}
+    - name: method
+      value: monopole
+      status: Optional
+    - name: clusterFilter
+      value: good
+      status: Optional
+    - name: maxDistUm
+      value: 200
+      status: Optional
+    - name: nBootstrap
+      value: 0
+      status: Optional
+    - name: overwrite
+      value: 0
+      status: Optional
+    - name: probeLibrary
+      value: ~
+      status: Optional
   help: |-
     Inverse model of spike positions relative to the probe shank.
 
@@ -2507,11 +2991,21 @@ programs:
 
 - name: ndm_clean
   # Optional flags -- uncomment to override defaults:
-  # - {name: wideband, value: 'true',  status: Optional}
-  # - {name: xml,      value: 'true',  status: Optional}
-  # - {name: hipass,   value: 'true',  status: Optional}
-  # - {name: spots,    value: 'false', status: Optional}
-  # - {name: pos,      value: 'false', status: Optional}
+    # - name: wideband
+    #   value: 'true'
+    #   status: Optional
+    # - name: xml
+    #   value: 'true'
+    #   status: Optional
+    # - name: hipass
+    #   value: 'true'
+    #   status: Optional
+    # - name: spots
+    #   value: 'false'
+    #   status: Optional
+    # - name: pos
+    #   value: 'false'
+    #   status: Optional
   help: |-
     Clean intermediate files after pre-processing is complete.
 
@@ -2542,17 +3036,45 @@ programs:
 # values are the recommended tuned baseline.  Edit here or in the Programs tab.
 - name: ndm_fiber-kit
   parameters:
-  - {name: intrachunk.gate, value: cfiber, status: Optional}
-  - {name: intrachunk.cos_thr, value: 0.85, status: Optional}
-  - {name: intrachunk.off_thr, value: 1.0, status: Optional}
-  - {name: intrachunk.depth_gate, value: 35.0, status: Optional}
-  - {name: intrachunk.amp_gate, value: 1.1, status: Optional}
-  - {name: intrachunk.refrac_ceiling, value: 1.0, status: Optional}
-  - {name: intrachunk.pre_merge_cos, value: 0.97, status: Optional}
-  - {name: intrachunk.linkage, value: complete, status: Optional}
-  - {name: intrachunk.align_lag, value: 6, status: Optional}
-  - {name: intrachunk.align_upsample, value: 1, status: Optional}
-  - {name: intrachunk.cfiber_q, value: 0.9, status: Optional}
-  - {name: intrachunk.cfiber_null, value: order, status: Optional}
-  - {name: intrachunk.cfiber_thr_floor, value: 0.0, status: Optional}
-  - {name: intrachunk.sig_cap, value: 8000, status: Optional}
+    - name: intrachunk.gate
+      value: cfiber
+      status: Optional
+    - name: intrachunk.cos_thr
+      value: 0.85
+      status: Optional
+    - name: intrachunk.off_thr
+      value: 1.0
+      status: Optional
+    - name: intrachunk.depth_gate
+      value: 35.0
+      status: Optional
+    - name: intrachunk.amp_gate
+      value: 1.1
+      status: Optional
+    - name: intrachunk.refrac_ceiling
+      value: 1.0
+      status: Optional
+    - name: intrachunk.pre_merge_cos
+      value: 0.97
+      status: Optional
+    - name: intrachunk.linkage
+      value: complete
+      status: Optional
+    - name: intrachunk.align_lag
+      value: 6
+      status: Optional
+    - name: intrachunk.align_upsample
+      value: 1
+      status: Optional
+    - name: intrachunk.cfiber_q
+      value: 0.9
+      status: Optional
+    - name: intrachunk.cfiber_null
+      value: order
+      status: Optional
+    - name: intrachunk.cfiber_thr_floor
+      value: 0.0
+      status: Optional
+    - name: intrachunk.sig_cap
+      value: 8000
+      status: Optional
