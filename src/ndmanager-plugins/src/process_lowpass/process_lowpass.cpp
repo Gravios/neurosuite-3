@@ -160,14 +160,6 @@ int main(int argc, char* argv[])
 
     const vector<double> kernel = makeLowpassKernel(fcn, half);
 
-    if (verbose)
-        cout << "process_lowpass: cutoff " << cutoffHz << " Hz @ " << samplingRate
-             << " Hz, " << (2 * half + 1) << " taps"
-#ifdef _OPENMP
-             << ", OpenMP " << omp_get_max_threads() << " threads"
-#endif
-             << "\n";
-
     FILE* in  = fopen(inputPath,  "rb");
     if (!in)  { cerr << "error: cannot open '"  << inputPath  << "'\n"; exit(1); }
     FILE* out = fopen(outputPath, "wb");
@@ -185,6 +177,22 @@ int main(int argc, char* argv[])
     long long       chunkSPC           = chunkSize / sampleSize / nChannels;
     if (chunkSPC < 1) chunkSPC = 1;
     const long long nChunks = (nSamplesPerChannel + chunkSPC - 1) / chunkSPC;
+
+    if (verbose) {
+        printf("\n[process_lowpass]\n");
+        printf("  File:             %s  (%.2f GB)\n", inputPath, fileBytes / 1e9);
+        printf("  Channels:         %d\n", nChannels);
+        printf("  Cutoff:           %.0f Hz  (@ %.0f Hz, %d taps)\n",
+               cutoffHz, samplingRate, 2 * half + 1);
+        printf("  Chunk:            %.1f MB  (%lld samples/ch)\n",
+               static_cast<double>(chunkSPC * nChannels * sampleSize) / 1e6, chunkSPC);
+#ifdef _OPENMP
+        printf("  Threads:          %d  (OpenMP)\n", omp_get_max_threads());
+#else
+        printf("  Threads:          1  (no OpenMP)\n");
+#endif
+        fflush(stdout);
+    }
 
     vector<short> inbuf, outbuf;
     long long     chunkIdx = 0;
@@ -208,7 +216,6 @@ int main(int argc, char* argv[])
         }
 
         outbuf.resize(static_cast<size_t>(len * nChannels));
-        if (verbose) cout << "Chunk " << (++chunkIdx) << "/" << nChunks << " " << flush;
 #ifdef _OPENMP
         #pragma omp parallel for schedule(dynamic)
 #endif
@@ -217,9 +224,17 @@ int main(int argc, char* argv[])
                             inbuf.data(), outbuf.data());
 
         fwrite(outbuf.data(), sampleSize, static_cast<size_t>(len * nChannels), out);
-        if (verbose) cout << "#" << flush;
+
+        // Progress on a single line, updated in place with a carriage return
+        // (rather than one "Chunk n/N" token per chunk scrolling off-screen).
+        if (verbose) {
+            ++chunkIdx;
+            printf("\r  Progress:         %lld/%lld chunks (%lld%%)",
+                   chunkIdx, nChunks, (100 * chunkIdx) / nChunks);
+            fflush(stdout);
+        }
     }
-    if (verbose) cout << "\n";
+    if (verbose) printf("\n  Done.\n");
 
     fclose(in);
     fclose(out);
