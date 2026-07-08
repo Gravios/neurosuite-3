@@ -743,10 +743,18 @@ programs:
 
 - name: ndm_bandpass
   parameters:
-  - {name: windowHalfLength,  value: 16,         status: Mandatory}
-  - {name: lowpassCutoff,     value: 6000,       status: Mandatory}
-  - {name: lowpassHalfLength, value: 32,         status: Optional}
-  - {name: chunkSize,         value: 134217728,  status: Mandatory}
+    - name: windowHalfLength
+      value: 16
+      status: Mandatory
+    - name: lowpassCutoff
+      value: 6000
+      status: Mandatory
+    - name: lowpassHalfLength
+      value: 32
+      status: Optional
+    - name: chunkSize
+      value: 134217728
+      status: Mandatory
   help: |-
     Band-pass filter a .dat file (alternative to ndm_hipass for spike extraction).
 
