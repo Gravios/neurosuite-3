@@ -8,7 +8,7 @@
  * are exposed so the view can recompute the matrix cheaply as the drift slider
  * moves, without re-reading the .spk file.
  *
- * Posts DriftMatrixEvent (User+602) to the target QObject when finished.  The
+ * Posts DriftMatrixEvent (User+604) to the target QObject when finished.  The
  * thread is deliberately decoupled from DriftMatrixView (it only needs a
  * QObject to post to), so the compute backend can be built and reviewed ahead
  * of the view.
@@ -58,7 +58,7 @@ public:
         ~DriftMatrixEvent() override {}
     private:
         explicit DriftMatrixEvent(DriftMatrixThread& t)
-            : QEvent(QEvent::Type(QEvent::User + 602)), thread(t) {}
+            : QEvent(QEvent::Type(QEvent::User + 604)), thread(t) {}
         DriftMatrixThread& thread;
     };
 
