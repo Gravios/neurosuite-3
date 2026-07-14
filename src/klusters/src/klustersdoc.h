@@ -141,6 +141,10 @@ public:
     int saveDocument(const QString &url, const char* format=nullptr);
     /**Returns the QString of the document. */
     const QString& url() const{return docUrl;}
+    /**Returns the absolute path of the session YAML parameter file, or an empty
+     * string if the document was opened without one.  Note this is NOT url():
+     * that one is the .clu file the document was opened from.*/
+    const QString& parameterFileUrl() const{return parameterFile;}
     /**Sets the URL of the document. */
     void setURL(const QString& url){docUrl=url;}
     /**Sends back the full name of the document with the electrode group Id append.*/
