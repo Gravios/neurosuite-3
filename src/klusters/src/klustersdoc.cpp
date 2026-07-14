@@ -212,6 +212,7 @@ void KlustersDoc::updateSimilarityMatrices()
         view->updateErrorMatrix();
         view->updateTemplateMatrix();
         view->updateResidualMatrix();
+        view->updateDriftMatrix();
     }
 }
 

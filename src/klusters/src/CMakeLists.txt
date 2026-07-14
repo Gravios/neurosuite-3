@@ -35,6 +35,7 @@ set(klusters_SRCS
     pairxcorrthread.cpp
     driftgeometry.cpp
     driftmatrixthread.cpp
+    driftmatrixview.cpp
     eventsprovider.cpp
     groupingassistant.cpp
     groupingassistant_gpu_dispatch.cpp

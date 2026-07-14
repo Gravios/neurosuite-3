@@ -88,6 +88,11 @@ inline void dmDriftShift(const std::vector<float>& in, int nChan, int nSamp,
 // The ROW cluster is the one shifted: upper triangle (i<j) uses +deltaUm, lower
 // (i>j) uses -deltaUm; the diagonal is 1.  Matrix must already be sized
 // nClusters x nClusters and provide a 1-based operator()(int,int).
+//
+// Parallel over rows: iteration i writes only row i+1, so no two threads touch
+// the same cell and the result is bit-identical to the serial order.  The view
+// calls this on every drift-slider step, so this is what keeps the drag
+// interactive on sessions with many clusters.
 template <class Matrix>
 void dmComputeDriftMatrix(const std::vector<std::vector<float>>& meanWav,
                           const std::vector<float>& depths,
@@ -95,8 +100,11 @@ void dmComputeDriftMatrix(const std::vector<std::vector<float>>& meanWav,
                           Matrix& scores)
 {
     const int n = static_cast<int>(meanWav.size());
-    std::vector<float> shPlus, shMinus;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
     for (int i = 0; i < n; ++i) {
+        std::vector<float> shPlus, shMinus;   // per-thread scratch
         scores(i + 1, i + 1) = 1.0;
         dmDriftShift(meanWav[static_cast<size_t>(i)], nChan, nSamp, depths, +deltaUm, shPlus);
         dmDriftShift(meanWav[static_cast<size_t>(i)], nChan, nSamp, depths, -deltaUm, shMinus);

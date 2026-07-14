@@ -514,6 +514,8 @@ private Q_SLOTS:
     void slotResidualMatrixInteracted();
     /** Add a ResidualMatrixView dock to the active display (Actions menu). */
     void slotNewResidualMatrix();
+    /** Add a DriftMatrixView dock to the active display (Actions menu). */
+    void slotNewDriftMatrix();
 
     /**Select all the clusters.*/
     void slotSelectAll();
@@ -961,6 +963,7 @@ private:
     QAction *mRenumberAndSave;
     QAction *mUpdateErrorMatrix;
     QAction *mNewResidualMatrix;
+    QAction *mNewDriftMatrix;
     QAction *mReorderClustersBySimilarity;
     QAction *mPreferenceAction;
 

@@ -38,6 +38,7 @@
 #include "errormatrixview.h"
 #include "templatematrixview.h"
 #include "residualmatrixview.h"
+#include "driftmatrixview.h"
 #include "templatematrixthread.h"   // tmReadSpikeFloat (median-waveform NN sort)
 #include "array.h"
 
@@ -439,6 +440,19 @@ void KlustersApp::createMenus()
            "B's mean waveform; the diagonal is A's within-cluster variance.\n"
            "Press U to (re)compute it along with the error/template matrices."));
     connect(mNewResidualMatrix,&QAction::triggered, this,&KlustersApp::slotNewResidualMatrix);
+
+    // Open a drift-shifted correlation matrix on the active display.  Purely
+    // diagnostic: it never moves spikes and takes no part in the reorder /
+    // residual-gated sort decisions.
+    mNewDriftMatrix = actionMenu->addAction(tr("New &Drift Matrix Display"));
+    mNewDriftMatrix->setToolTip(
+        tr("Add a drift-matrix display to the active view.  Cell (row A,\n"
+           "col B) is the correlation between A's mean waveform shifted along\n"
+           "the probe depth axis by the slider's µm value and B's mean: +Δ\n"
+           "above the diagonal, −Δ below.  A unit pair split by probe drift\n"
+           "reads high at the Δ that realigns it.  Needs probe geometry\n"
+           "(the session YAML probes: section)."));
+    connect(mNewDriftMatrix,&QAction::triggered, this,&KlustersApp::slotNewDriftMatrix);
 
     // Group the cluster-ordering actions under a "Sort Clusters" submenu; they
     // keep their shortcuts, icons, and enabled-state wiring -- only the parent
@@ -4969,6 +4983,8 @@ void KlustersApp::slotUpdateErrorMatrix(){
     // Same rationale for the residual matrix: emit unconditionally, Qt makes
     // it a no-op when no ResidualMatrixView is open.
     view->updateResidualMatrix();
+    // Likewise the drift matrix.
+    view->updateDriftMatrix();
 }
 
 // ---------------------------------------------------------------------------
@@ -5012,6 +5028,18 @@ void KlustersApp::slotNewResidualMatrix()
     }
     widgetAddToDisplay(KlustersView::RESIDUAL_MATRIX);
     activeView()->updateResidualMatrix();
+}
+
+// slotNewDriftMatrix — add a DriftMatrixView dock to the active display.
+void KlustersApp::slotNewDriftMatrix()
+{
+    if (!doc || !activeView()) return;
+    if (activeView()->containsDriftMatrixView()) {
+        slotStatusMsg(tr("This display already contains a drift matrix."));
+        return;
+    }
+    widgetAddToDisplay(KlustersView::DRIFT_MATRIX);
+    activeView()->updateDriftMatrix();
 }
 
 // ---------------------------------------------------------------------------
@@ -6025,6 +6053,11 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
                         this, &KlustersApp::slotResidualMatrixInteracted,
                         Qt::UniqueConnection);
             }
+            break;
+        case KlustersView::DRIFT_MATRIX:
+            // Diagnostic only: deliberately does NOT set lastMatrixUsed and does
+            // not enable the reorder / residual-gated sort, so opening it never
+            // changes which matrix those actions operate on.
             break;
         case KlustersView::OVERVIEW:
             break;

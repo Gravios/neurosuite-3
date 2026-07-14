@@ -42,6 +42,7 @@
 #include "errormatrixview.h"
 #include "templatematrixview.h"
 #include "residualmatrixview.h"
+#include "driftmatrixview.h"
 #include "tracewidget.h"
 #include "correlationview.h"
 #include "viewwidget.h"
@@ -523,6 +524,13 @@ void KlustersView::stopAllViewThreads()
         findChildren<ResidualMatrixView*>();
     for (ResidualMatrixView* rmv : rmvs)
         rmv->stopRunningThreadsSync();
+
+    // DriftMatrixView: same story again — plain QWidget dock child whose
+    // DriftMatrixThread reads .spk directly.
+    const QList<DriftMatrixView*> dmvs =
+        findChildren<DriftMatrixView*>();
+    for (DriftMatrixView* dmv : dmvs)
+        dmv->stopRunningThreadsSync();
 }
 
 bool KlustersView::errorMatrixConsolidating() const{
@@ -715,6 +723,10 @@ void KlustersView::residualMatrixDockClosed(QObject*){
     isThereResidualMatrixView = false;
 }
 
+void KlustersView::driftMatrixDockClosed(QObject*){
+    isThereDriftMatrixView = false;
+}
+
 void KlustersView::updateTemplateMatrixSliderRange(){
     for(ViewWidget* w : qAsConst(viewList)) {
         TemplateMatrixView* tmv = qobject_cast<TemplateMatrixView*>(w);
@@ -874,6 +886,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
     QDockWidget* errorMatrix;
     QDockWidget* templateMatrix;
     QDockWidget* residualMatrix;
+    QDockWidget* driftMatrix;
     ViewWidget* clusterView;
     ViewWidget* waveformView;
     ViewWidget* correlationView;
@@ -1047,6 +1060,30 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
             overviewTemplateMatrixDock->raise();
         }
         setConnections(RESIDUAL_MATRIX,qobject_cast<ResidualMatrixView*>(residualMatrix->widget()),residualMatrix);
+        break;
+    case DRIFT_MATRIX:
+        newViewType = true;
+        isThereDriftMatrixView = true;
+        driftMatrix = new QDockWidget(tr("Drift Matrix"));
+        driftMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
+        driftMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
+        driftMatrix->setWidget(new DriftMatrixView(doc,*this,backgroundColor,statusBar,driftMatrix));
+        driftMatrix->installEventFilter(this);
+        addDockWidget(Qt::RightDockWidgetArea,driftMatrix);
+        overviewDriftMatrixDock = driftMatrix;
+        // Share the right-hand pane with whichever matrix dock already exists;
+        // keep the existing one as the front tab.
+        if (overviewErrorMatrixDock) {
+            tabifyDockWidget(overviewErrorMatrixDock, driftMatrix);
+            overviewErrorMatrixDock->raise();
+        } else if (overviewTemplateMatrixDock) {
+            tabifyDockWidget(overviewTemplateMatrixDock, driftMatrix);
+            overviewTemplateMatrixDock->raise();
+        } else if (overviewResidualMatrixDock) {
+            tabifyDockWidget(overviewResidualMatrixDock, driftMatrix);
+            overviewResidualMatrixDock->raise();
+        }
+        setConnections(DRIFT_MATRIX,qobject_cast<DriftMatrixView*>(driftMatrix->widget()),driftMatrix);
         break;
     case TRACES:
         if(!isThereTraceView){
@@ -1810,6 +1847,22 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
                 rmv,  static_cast<void(ResidualMatrixView::*)(QList<int>&)>(&ResidualMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber,                 rmv, &ResidualMatrixView::renumber);
+        connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
+            QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
+            view->setPalette(pal); view->update(); });
+    } else if(displayType == DRIFT_MATRIX){
+        DriftMatrixView* dmv = qobject_cast<DriftMatrixView*>(view);
+        connect(this, &KlustersView::computeDriftMatrix, dmv, &DriftMatrixView::updateMatrixContents);
+        connect(view, &QObject::destroyed, this, &KlustersView::driftMatrixDockClosed);
+        connect(&doc, &KlustersDoc::clustersGrouped,          dmv, &DriftMatrixView::clustersGrouped);
+        connect(&doc, &KlustersDoc::clustersDeleted,          dmv, &DriftMatrixView::clustersDeleted);
+        connect(&doc, &KlustersDoc::removeSpikesFromClusters, dmv, &DriftMatrixView::removeSpikesFromClusters);
+        connect(&doc, &KlustersDoc::newClusterAdded,          dmv, &DriftMatrixView::newClusterAdded);
+        connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
+                dmv,  static_cast<void(DriftMatrixView::*)(QMap<int,int>&,QList<int>&)>(&DriftMatrixView::newClustersAdded));
+        connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
+                dmv,  static_cast<void(DriftMatrixView::*)(QList<int>&)>(&DriftMatrixView::newClustersAdded));
+        connect(&doc, &KlustersDoc::renumber,                 dmv, &DriftMatrixView::renumber);
         connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
             QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
             view->setPalette(pal); view->update(); });
