@@ -150,6 +150,7 @@ private:
     int   nSampCached{0};
     int   maxShiftCached{1};
     bool  geometryOk{false};
+    QString geometryError;   // why depths were unavailable (shown when disabled)
     int   currentDriftUm{0};
 
     QList<DriftMatrixThread*> threadsToBeKill;

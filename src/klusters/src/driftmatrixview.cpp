@@ -157,9 +157,20 @@ DriftMatrixThread* DriftMatrixView::launchComputeThread()
     // Resolve per-channel probe depths from the session YAML `probes:` section
     // + the referenced .probe geometry.  An empty result disables the slider;
     // the worker then falls back to a plain unshifted mean xcorr.
+    //
+    // NB: this needs parameterFileUrl(), the session .yaml — NOT url(), which is
+    // the .clu the document was opened from.  Feeding a .clu to the YAML parser
+    // yields a scalar, no probes section, and a silently dead drift slider.
     QString err;
-    std::vector<float> chanDepths =
-        loadGroupChannelDepths(doc.url(), doc.data().getCurrentChannels(), &err);
+    const QString yamlPath = doc.parameterFileUrl();
+    if (yamlPath.isEmpty())
+        err = tr("session has no YAML parameter file");
+
+    std::vector<float> chanDepths;
+    if (err.isEmpty())
+        chanDepths = loadGroupChannelDepths(yamlPath, doc.data().getCurrentChannels(), &err);
+
+    geometryError = chanDepths.empty() ? err : QString();
 
     if (chanDepths.empty() && !err.isEmpty() && statusBar)
         statusBar->showMessage(tr("Drift matrix: no probe geometry (%1) — "
@@ -216,11 +227,19 @@ void DriftMatrixView::customEvent(QEvent* event)
     if (!goingToDie) {
         if (accepted) {
             // Without geometry the shift is meaningless: keep the (unshifted)
-            // matrix visible but make it clear the slider does nothing.
+            // matrix visible but say why the slider is dead rather than leaving
+            // the user to guess.
             driftSlider->setEnabled(geometryOk);
             maxUmSpin->setEnabled(geometryOk);
-            if (!geometryOk)
+            if (!geometryOk) {
                 driftLabel->setText(tr("Drift: n/a"));
+                const QString why = geometryError.isEmpty()
+                                        ? tr("no probe geometry for this group")
+                                        : geometryError;
+                driftSlider->setToolTip(tr("Drift shifting needs probe geometry: %1.").arg(why));
+                infoLabel->setText(tr("No probe geometry (%1) — showing unshifted "
+                                      "correlations; the drift slider is disabled.").arg(why));
+            }
 
             updateWindow();
             dataReady = true;
