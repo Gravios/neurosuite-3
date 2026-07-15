@@ -1,4 +1,5 @@
 #include "templatematrixthread.h"
+#include "channelmask.h"
 #include "templatematrixview.h"
 #include "sortabletable.h"
 #include "configuration.h"
@@ -288,6 +289,34 @@ void TemplateMatrixThread::run()
 
     if (haveToStopProcessing) { post(); return; }
 
+    // ── 3b. Restrict the MATRIX to the selected channels ──────────────────
+    // Into local copies, deliberately: meanWav is handed to PairXcorrThread by
+    // the view together with Data::nbOfChannels(), so the member must keep every
+    // channel or that spike scoring would read past a compacted template.  The
+    // matrix below uses the compacted copies instead.  Compacted rather than
+    // zeroed — see channelmask.h.
+    const std::vector<std::vector<float>>* matMean  = &meanWav;
+    const std::vector<std::vector<float>>* matNoise = &noiseWav;
+    std::vector<std::vector<float>> maskedMean, maskedNoise;
+    {
+        std::vector<int> sel;
+        sel.reserve(static_cast<size_t>(selection.size()));
+        for (int c : selection) sel.push_back(c);
+        const std::vector<int> keep = cmResolveMask(sel, nChan);
+        if (!keep.empty()) {
+            maskedMean.resize(meanWav.size());
+            for (size_t k = 0; k < meanWav.size(); ++k)
+                cmCompactChannels(meanWav[k], nChan, nSamp, keep, maskedMean[k]);
+            maskedNoise.resize(noiseWav.size());
+            for (size_t k = 0; k < noiseWav.size(); ++k)
+                cmCompactChannels(noiseWav[k], nChan, nSamp, keep, maskedNoise[k]);
+            matMean  = &maskedMean;
+            matNoise = &maskedNoise;
+        }
+    }
+    const std::vector<std::vector<float>>& mMean  = *matMean;
+    const std::vector<std::vector<float>>& mNoise = *matNoise;
+
     // ── 4. Parallel pairwise mean xcorr matrix ────────────────────────────
     scores = new Array<double>();
     scores->setSize(nClusters, nClusters);
@@ -307,7 +336,7 @@ void TemplateMatrixThread::run()
     const bool fastap   = (metric == 4);
 
 #pragma omp parallel for schedule(dynamic,4) default(none) \
-    shared(meanWav, noiseWav, pairs, scores) \
+    shared(mMean, mNoise, pairs, scores) \
     firstprivate(nPairs, maxShift, pearson, raw, disatten, fastap, nChan, nSamp, peak)
     for (int pi = 0; pi < nPairs; ++pi) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
@@ -315,20 +344,20 @@ void TemplateMatrixThread::run()
         const int cj = pairs[static_cast<size_t>(pi)].second;
         float s;
         if (raw)
-            s = tmRawXcorr(meanWav[static_cast<size_t>(ci)],
-                           meanWav[static_cast<size_t>(cj)], maxShift);
+            s = tmRawXcorr(mMean[static_cast<size_t>(ci)],
+                           mMean[static_cast<size_t>(cj)], maxShift);
         else if (disatten)
-            s = tmDisattenXcorr(meanWav[static_cast<size_t>(ci)],
-                                meanWav[static_cast<size_t>(cj)],
-                                noiseWav[static_cast<size_t>(ci)],
-                                noiseWav[static_cast<size_t>(cj)], maxShift);
+            s = tmDisattenXcorr(mMean[static_cast<size_t>(ci)],
+                                mMean[static_cast<size_t>(cj)],
+                                mNoise[static_cast<size_t>(ci)],
+                                mNoise[static_cast<size_t>(cj)], maxShift);
         else if (fastap)
-            s = tmFastWinXcorr(meanWav[static_cast<size_t>(ci)],
-                               meanWav[static_cast<size_t>(cj)],
+            s = tmFastWinXcorr(mMean[static_cast<size_t>(ci)],
+                               mMean[static_cast<size_t>(cj)],
                                nChan, nSamp, peak, maxShift);
         else
-            s = tmNormXcorr(meanWav[static_cast<size_t>(ci)],
-                            meanWav[static_cast<size_t>(cj)], maxShift, pearson);
+            s = tmNormXcorr(mMean[static_cast<size_t>(ci)],
+                            mMean[static_cast<size_t>(cj)], maxShift, pearson);
         (*scores)(ci+1, cj+1) = s;
         (*scores)(cj+1, ci+1) = s;
     }

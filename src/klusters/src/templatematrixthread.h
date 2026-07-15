@@ -93,6 +93,9 @@ public:
     QList<int>                          getClusterList() const { return clusterList; }
     const std::vector<std::vector<float>>& getMeanWav()  const { return meanWav; }
     const std::vector<std::vector<int>>&   getAllFileIdx()const { return allFileIdx; }
+    /// The channel selection this run was launched for (empty = all channels).
+    /// The view files the result in the matching cache slot.
+    QList<int>                             getSelection() const { return selection; }
 
     class TemplateMatrixEvent : public QEvent {
         friend class TemplateMatrixThread;
@@ -109,9 +112,18 @@ protected:
     void run() override;
 
 private:
-    TemplateMatrixThread(TemplateMatrixView& v, Data& d, int gen)
+    /**
+     * @param sel  Channel selection (group-local indices, empty = all channels).
+     *             Only the MATRIX is restricted to it: getMeanWav() stays
+     *             full-width because TemplateMatrixView hands those templates to
+     *             PairXcorrThread together with Data::nbOfChannels(), which
+     *             would mismatch a compacted template.
+     */
+    TemplateMatrixThread(TemplateMatrixView& v, Data& d, int gen,
+                         QList<int> sel = QList<int>())
         : view(v), data(d), generation(gen),
-          haveToStopProcessing(false), scores(nullptr) { start(); }
+          haveToStopProcessing(false), scores(nullptr),
+          selection(std::move(sel)) { start(); }
 
     TemplateMatrixView&          view;
     Data&                        data;
@@ -122,6 +134,7 @@ private:
     QList<int>                   clusterList;
     std::vector<std::vector<float>> meanWav;    // [clusterIdx] → channel-major mean
     std::vector<std::vector<int>>   allFileIdx; // [clusterIdx] → 0-based .spk indices
+    QList<int>                      selection;  // empty = all channels
 };
 
 #endif // TEMPLATEMATRIXTHREAD_H

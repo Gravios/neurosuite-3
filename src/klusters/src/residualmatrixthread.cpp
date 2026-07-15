@@ -1,4 +1,5 @@
 #include "residualmatrixthread.h"
+#include "channelmask.h"
 #include "residualmatrixview.h"
 #include "templatematrixthread.h"   // shared tmReadSpikeFloat
 #include "sortabletable.h"
@@ -130,7 +131,28 @@ void ResidualMatrixThread::run()
     scores = new Array<double>();
     scores->setSize(nClusters, nClusters);
 
-    const double invPts = 1.0 / static_cast<double>(nPts);
+    // ── Restrict to the selected channels ──────────────────────────────────
+    // After the means/variances are built: the .spk read is the expensive part
+    // and identical either way, so this costs a memcpy.  meanWav/varWav are
+    // locals here (nothing outside this thread sees them), so compact in place.
+    // Compacted out rather than zeroed — see channelmask.h.
+    int effChan = nChan;
+    {
+        std::vector<int> sel;
+        sel.reserve(static_cast<size_t>(selection.size()));
+        for (int c : selection) sel.push_back(c);
+        const std::vector<int> keep = cmResolveMask(sel, nChan);
+        if (!keep.empty()) {
+            std::vector<float> tmp;
+            for (auto& m : meanWav) { cmCompactChannels(m, nChan, nSamp, keep, tmp); m.swap(tmp); }
+            for (auto& v : varWav)  { cmCompactChannels(v, nChan, nSamp, keep, tmp); v.swap(tmp); }
+            effChan = static_cast<int>(keep.size());
+        }
+    }
+    const int effPts = effChan * nSamp;
+    if (effPts <= 0) { post(); return; }
+
+    const double invPts = 1.0 / static_cast<double>(effPts);
 
     // Per-cluster mean variance (the diagonal, and the var_i offset added to
     // every cell in row i).
@@ -138,7 +160,7 @@ void ResidualMatrixThread::run()
     for (int ci = 0; ci < nClusters; ++ci) {
         double s = 0.0;
         const auto& v = varWav[static_cast<size_t>(ci)];
-        for (int p = 0; p < nPts; ++p) s += v[static_cast<size_t>(p)];
+        for (int p = 0; p < effPts; ++p) s += v[static_cast<size_t>(p)];
         meanVar[static_cast<size_t>(ci)] = s * invPts;
     }
     for (int i = 0; i < nClusters; ++i)
@@ -155,7 +177,7 @@ void ResidualMatrixThread::run()
 
 #pragma omp parallel for schedule(dynamic,4) default(none) \
     shared(meanWav, meanVar, pairs, scores) \
-    firstprivate(nPairs, nPts, invPts)
+    firstprivate(nPairs, effPts, invPts)
     for (int pi = 0; pi < nPairs; ++pi) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
         const int i = pairs[static_cast<size_t>(pi)].first;
@@ -163,7 +185,7 @@ void ResidualMatrixThread::run()
         const auto& mi = meanWav[static_cast<size_t>(i)];
         const auto& mj = meanWav[static_cast<size_t>(j)];
         double gap = 0.0;
-        for (int p = 0; p < nPts; ++p) {
+        for (int p = 0; p < effPts; ++p) {
             const double d = static_cast<double>(mi[static_cast<size_t>(p)])
                            - static_cast<double>(mj[static_cast<size_t>(p)]);
             gap += d * d;

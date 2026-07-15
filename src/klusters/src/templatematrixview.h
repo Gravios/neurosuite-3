@@ -56,6 +56,10 @@ public:
     /// viewChanged, so the two views can be cross-connected without a loop.
     void setViewState(double zoom, double px, double py);
 
+    /// Channel selection committed in the waveform view (empty = all channels).
+    /// Swaps in a cached matrix when one matches, otherwise recomputes.
+    void selectedChannelsChanged(const QList<int>& channels);
+
     explicit TemplateMatrixView(KlustersDoc& doc, KlustersView& view,
                                 const QColor& backgroundColor,
                                 QStatusBar* statusBar,
@@ -206,7 +210,22 @@ private:
     void  resetPanZoom();
 
     // ── matrix data (from main thread) ──────────────────────────────────────
-    Array<double>* scores;        // [nClusters × nClusters], 1-based mean xcorr
+    /**All-channel result and the result for cachedSelection.  Both are owned;
+     * `scores` is a NON-owning pointer at whichever is displayed.  Keeping both
+     * makes flicking the channel selection on and off an instant swap instead of
+     * a recompute.*/
+    Array<double>* scoresAll = nullptr;
+    Array<double>* scoresSel = nullptr;
+    QList<int>     cachedSelection;
+    bool           haveSelCache = false;
+
+    /**Drop both cached results (the spikes themselves changed).*/
+    void invalidateCaches();
+    /**Start a compute for the document's current selection WITHOUT touching the
+     * caches — a selection change must keep the other slot.*/
+    void launchCompute();
+
+    Array<double>* scores;        // [nClusters × nClusters] (NON-owning alias)
     QList<int>     clusterList;
     bool           dataReady;
     bool           goingToDie;
