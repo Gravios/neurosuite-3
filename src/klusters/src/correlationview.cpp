@@ -23,6 +23,7 @@
 #include "itemcolors.h"
 #include "correlationthread.h"
 #include "correlationview.h"
+#include "correlationgrid.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -75,15 +76,22 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
 
     //Compute variable to draw tick marks
     int n = 0;
-    if((timeWindow - 1)/2 <= 30)
-        n = 5;
-    if((timeWindow - 1)/2 > 30 && (timeWindow - 1)/2 <= 100)
-        n = 10;
-    if((timeWindow - 1)/2 >= 100)
-        n = 20;
+    // Grid/tick interval tracks the Duration (see correlationgrid.h).  The old
+    // fixed ladder topped out at 20 ms, which is 22 marks per side at a 900 ms
+    // Duration and 50 at 2000 ms.
+    n = cvGridStepMs(timeWindow);
     int pixelPerTimeWindow = (timeWindow * binWidth) / binSize;
-    tickMarkStep = static_cast<float>(pixelPerTimeWindow * n) / static_cast<float>(timeWindow);
-    nbTickMarks = static_cast<int>(floor(0.5 + static_cast<float>((timeWindow/2) / static_cast<float>(n))));
+    tickMarkStep = (n > 0 && timeWindow > 0)
+        ? static_cast<float>(pixelPerTimeWindow * n) / static_cast<float>(timeWindow)
+        : 0.0f;
+    // floor, not round: rounding put the outermost mark BEYOND the half-window
+    // (Duration 90, step 10 -> (90/2)/10 = 4.5 -> 5 marks, the last at 50 ms on a
+    // 45 ms half-axis).  The marks are drawn unclipped so that one landed outside
+    // the correlogram, and the grid lines below — which are clipped to it — would
+    // silently disagree with it.
+    nbTickMarks = (n > 0)
+        ? static_cast<int>(floor(static_cast<float>(timeWindow/2) / static_cast<float>(n)))
+        : 0;
 
     tickMarkZero = ((nbBins - 1)/2)* binWidth + binWidth/2;
 
@@ -527,6 +535,29 @@ void CorrelationView::drawCorrelograms(QPainter& painter,QList<Pair>& pairList){
         } else  {
             painter.setClipRect(X,-(Y+YsizeForMaxAmp),binWidth * nbBins + 1,YsizeForMaxAmp + 1);
         }
+
+        //Vertical grid lines every cvGridStepMs(timeWindow) milliseconds, at the
+        //same abscissae as the tick marks on the baseline so the two agree.
+        //Drawn BEFORE the bars and inside the correlogram's clip rect: they sit
+        //behind the data (the bars are opaque, so no bin is obscured) and cannot
+        //bleed into the neighbouring correlogram.
+        if(nbTickMarks > 0 && tickMarkStep > 0.0f){
+            painter.save();
+            QPen gridPen(QColor(120,120,120),0,Qt::DashLine);
+            gridPen.setCosmetic(true);
+            painter.setPen(gridPen);
+            painter.setBrush(Qt::NoBrush);
+            const int gridTop = -(Y + YsizeForMaxAmp);
+            //i == 0 is the zero-lag line; the rest are mirrored either side.
+            for(int i = 0; i <= nbTickMarks; ++i){
+                const int step = static_cast<int>(floor(0.5 + (i * tickMarkStep)));
+                painter.drawLine(X + tickMarkZero + step,-Y,X + tickMarkZero + step,gridTop);
+                if(i > 0)
+                    painter.drawLine(X + tickMarkZero - step,-Y,X + tickMarkZero - step,gridTop);
+            }
+            painter.restore();   //restore the bar pen/brush set above
+        }
+
         //Iterate over the values of the current correlogram and draw them.
         for(;iterator.hasNext();){
             //Need to look at it
@@ -578,16 +609,20 @@ void CorrelationView::setBinSizeAndTimeWindow(int size,int width){
     shift = nbBins * binWidth + Xspace;
 
     //Compute variable to draw tick marks
-    int n = 0;
-    if((timeWindow - 1)/2 <= 30)
-        n = 5;
-    else if((timeWindow - 1)/2 > 30 && (timeWindow - 1)/2 <= 100)
-        n = 10;
-    else if((timeWindow - 1)/2 >= 100)
-        n = 20;
+    // Same interval rule as the constructor — see correlationgrid.h.
+    const int n = cvGridStepMs(timeWindow);
     int pixelPerTimeWindow = (timeWindow * binWidth) / binSize;
-    tickMarkStep = static_cast<float>(pixelPerTimeWindow * n) / static_cast<float>(timeWindow);
-    nbTickMarks = static_cast<int>(floor(0.5 + static_cast<float>((timeWindow/2) / static_cast<float>(n))));
+    tickMarkStep = (n > 0 && timeWindow > 0)
+        ? static_cast<float>(pixelPerTimeWindow * n) / static_cast<float>(timeWindow)
+        : 0.0f;
+    // floor, not round: rounding put the outermost mark BEYOND the half-window
+    // (Duration 90, step 10 -> (90/2)/10 = 4.5 -> 5 marks, the last at 50 ms on a
+    // 45 ms half-axis).  The marks are drawn unclipped so that one landed outside
+    // the correlogram, and the grid lines below — which are clipped to it — would
+    // silently disagree with it.
+    nbTickMarks = (n > 0)
+        ? static_cast<int>(floor(static_cast<float>(timeWindow/2) / static_cast<float>(n)))
+        : 0;
 
     tickMarkZero = ((nbBins - 1)/2)* binWidth + binWidth/2;
 
