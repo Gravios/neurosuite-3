@@ -162,6 +162,12 @@ public:
     /// order Error -> Template -> Residual -> Drift -> Error (bound to "E").
     /// Docks that are closed drop out of the cycle.
     void toggleMatrixTab();
+
+    /// The matrix docks that are currently open, in the canonical order
+    /// Error, Template, Residual, Drift.  Single source of that order: the "E"
+    /// cycle, the tabify order and the layout anchor all read it, so they can
+    /// never disagree.  Closed docks (QPointer-null) are omitted.
+    QList<QDockWidget*> matrixDocks() const;
     
     /**List of the names for the different type of view available.*/
     static const QString DisplayTypeNames[];

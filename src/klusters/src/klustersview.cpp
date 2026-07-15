@@ -397,30 +397,26 @@ void KlustersView::applyOverviewLayout(){
         addDockWidget(Qt::TopDockWidgetArea, overviewWaveformDock);
     if (overviewCorrelationDock)
         addDockWidget(Qt::TopDockWidgetArea, overviewCorrelationDock);
-    if (overviewErrorMatrixDock)
-        addDockWidget(Qt::TopDockWidgetArea, overviewErrorMatrixDock);
-    if (overviewTemplateMatrixDock)
-        addDockWidget(Qt::TopDockWidgetArea, overviewTemplateMatrixDock);
+    for (QDockWidget* d : matrixDocks())
+        addDockWidget(Qt::TopDockWidgetArea, d);
 
     // Step 2 — carve the right pane (full window height) BEFORE any
     // vertical splits.  Pick whichever matrix dock exists as the anchor.
-    QDockWidget* rightAnchor = nullptr;
-    if (overviewErrorMatrixDock)
-        rightAnchor = overviewErrorMatrixDock.data();
-    else if (overviewTemplateMatrixDock)
-        rightAnchor = overviewTemplateMatrixDock.data();
+    const QList<QDockWidget*> matrices = matrixDocks();
+    QDockWidget* rightAnchor = matrices.isEmpty() ? nullptr : matrices.first();
     if (rightAnchor) {
         splitDockWidget(mainDock, rightAnchor, Qt::Horizontal);
     }
 
     // Step 3 — tabify the second matrix on top of the first so they
     // share a single frame with tabs at the bottom.
-    if (overviewErrorMatrixDock && overviewTemplateMatrixDock) {
-        tabifyDockWidget(overviewErrorMatrixDock,
-                         overviewTemplateMatrixDock);
-        // Front-tab is the Error Matrix — the cluster-quality review
-        // workflow reads errors first, then flips to templates.
-        overviewErrorMatrixDock->raise();
+    for (int i = 1; i < matrices.size(); ++i)
+        tabifyDockWidget(matrices.first(), matrices.at(i));
+    if (!matrices.isEmpty()) {
+        // Front-tab is the first matrix in canonical order (the Error Matrix
+        // when it is open) — the cluster-quality review workflow reads errors
+        // first, then steps through the rest with "E".
+        matrices.first()->raise();
     }
 
     // Step 4 — stack the left column vertically.  Each call splits the
@@ -450,11 +446,8 @@ void KlustersView::applyOverviewLayout(){
         // close to a typical Klusters window so the relative-weight
         // fallback for the un-allocated space lands on the intended
         // ratio even when child min-sizes consume some of the budget.
-        QDockWidget* rDock = nullptr;
-        if (overviewErrorMatrixDock)
-            rDock = overviewErrorMatrixDock.data();
-        else if (overviewTemplateMatrixDock)
-            rDock = overviewTemplateMatrixDock.data();
+        const QList<QDockWidget*> rMatrices = matrixDocks();
+        QDockWidget* rDock = rMatrices.isEmpty() ? nullptr : rMatrices.first();
         if (rDock) {
             resizeDocks({mainDock, rDock}, {450, 550}, Qt::Horizontal);
         }
@@ -1932,6 +1925,16 @@ void KlustersView::connectMatrixZoomSync()
     linkMatrixZoom(dmv, emv);  linkMatrixZoom(dmv, tmv);  linkMatrixZoom(dmv, rmv);
 }
 
+QList<QDockWidget*> KlustersView::matrixDocks() const
+{
+    QList<QDockWidget*> docks;
+    if (overviewErrorMatrixDock)    docks << overviewErrorMatrixDock.data();
+    if (overviewTemplateMatrixDock) docks << overviewTemplateMatrixDock.data();
+    if (overviewResidualMatrixDock) docks << overviewResidualMatrixDock.data();
+    if (overviewDriftMatrixDock)    docks << overviewDriftMatrixDock.data();
+    return docks;
+}
+
 void KlustersView::toggleMatrixTab()
 {
     // The matrix docks open tabified into a single frame (see
@@ -1942,13 +1945,8 @@ void KlustersView::toggleMatrixTab()
     // the cycle, so "E" keeps working with any subset.  No-op with fewer than
     // two matrices open (raising a lone dock does nothing visible).
     QList<QDockWidget*> docks;
-    const auto addDock = [&docks](QDockWidget* d) {
-        if (d && !d->isHidden()) docks.append(d);
-    };
-    addDock(overviewErrorMatrixDock.data());
-    addDock(overviewTemplateMatrixDock.data());
-    addDock(overviewResidualMatrixDock.data());
-    addDock(overviewDriftMatrixDock.data());
+    for (QDockWidget* d : matrixDocks())
+        if (!d->isHidden()) docks.append(d);
     if (docks.size() < 2)
         return;
 
