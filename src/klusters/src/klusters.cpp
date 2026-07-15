@@ -1628,14 +1628,18 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         if(childPanel && childPanel->isVisible() && !editConsolidationLock
            && dispatchHierarchyKey(ke->key(), ke->modifiers()))
             return true;
-        // "1" — new cluster mode
-        if(ke->key() == Qt::Key_1 && ke->modifiers() == Qt::NoModifier
+        // Ctrl+1 — new cluster mode
+        // Ctrl, not a bare digit: this filter is installed on the application, so
+        // a bare "1"/"2" was swallowed here before the focused widget saw it —
+        // which made those two digits untypeable in the parameter bar's Bin size
+        // and Duration boxes.
+        if(ke->key() == Qt::Key_1 && ctrlHeld
            && !isInit && doc && activeView() && !editConsolidationLock){
             slotSingleNew();
             return true;
         }
-        // "2" — split clusters mode
-        if(ke->key() == Qt::Key_2 && ke->modifiers() == Qt::NoModifier
+        // Ctrl+2 — split clusters mode
+        if(ke->key() == Qt::Key_2 && ctrlHeld
            && !isInit && doc && activeView() && !editConsolidationLock){
             slotMultipleNew();
             return true;
@@ -6450,8 +6454,8 @@ void KlustersApp::slotShowShortcutHelp()
             {"E",              "Switch between the Error Matrix and Template Matrix tabs (matrix panel)"},
         }},
         {"Cluster operations", {
-            {"1",              "New Cluster mode \u2014 draw selection polygon"},
-            {"2",              "Split Clusters mode \u2014 draw selection polygon"},
+            {"Ctrl+1",         "New Cluster mode \u2014 draw selection polygon"},
+            {"Ctrl+2",         "Split Clusters mode \u2014 draw selection polygon"},
             {"Shift+D",        "DipSplit (live preview \u2014 Enter apply, Esc cancel)"},
             {"Shift+W",        "Watershed split (live preview \u2014 \u2190/\u2192 \u03c3, \u2191/\u2193 thr, Enter apply, Esc cancel)"},
             {"G",              "Group selected clusters"},
