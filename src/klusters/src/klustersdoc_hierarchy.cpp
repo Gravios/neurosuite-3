@@ -111,15 +111,82 @@ void KlustersDoc::buildHierarchyMaps(){
     childToParent.clear();
     if (!clusteringData) return;
 
-    // Preferred source: the .clp child->parent map (binary clu-format, one int32
-    // header = nFibers, then nChildren int32 parent-fiber ids indexed by child id;
-    // parent[c-1] owns child c, child ids are global 1..nChildren).  Authoritative
-    // and O(nChildren) -- no per-spike scan, and correct even if a child id were
-    // reused across parents in the per-spike arrays.
-    if (!clpSiblingPath.isEmpty()){
+    // The per-spike arrays are the TRUTH: .clu (== docUrl) is what curation edits and what the user
+    // sees, and .clc is the child layer aligned to the same .res.  The .clp is only a CACHE of the
+    // derived child->parent map -- it is rewritten on Save, and the child layer is loaded lazily, so
+    // a session curated without ever opening the hierarchical view leaves a .clp that no longer
+    // matches its .clu.  NOTE the per-spike .clu to read is the live PENDING copy, not docUrl.  It used to be PREFERRED here and returned early with no cross-check, so a
+    // stale cache silently overrode the real mapping.  Scan the per-spike arrays first (one pass over
+    // two int32 arrays -- negligible beside the .fet/.spk load); the .clp is consulted only when the
+    // per-spike arrays cannot be read, and is otherwise merely cross-checked and reported.
+    bool haveScan = false;
+    bool nestingViolation = false;
+    if (!clcSiblingPath.isEmpty()){
+        // The live .clu for the session is the PENDING copy, not docUrl: initPendingFiles() seeds
+        // <docUrl>.pending and redirects the clu writer there "for the entire document session", and
+        // commitAndRenewPending() only copies it back over docUrl at the very END of saveDocument --
+        // long after saveHierarchySiblings() runs, and long after a realign has rewritten it.  Reading
+        // docUrl here would see the pre-save / pre-realign labels.
+        const QString liveClu = (!pendingCluPath.isEmpty() && QFile::exists(pendingCluPath))
+                              ? pendingCluPath : docUrl;
+        const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+        const neurofileio::CluFile par = neurofileio::readCluBinary(liveClu.toStdString(), nSpikes);
+        const neurofileio::CluFile chi = neurofileio::readCluBinary(clcSiblingPath.toStdString(), nSpikes);
+        if (par.ok && chi.ok && par.ids.size() == chi.ids.size()){
+            haveScan = true;
+            // child -> parent must be a function (nesting invariant): each child id is owned by
+            // exactly one parent.  A violation means the .clc is not nested in the .clu; we keep the
+            // first-seen owner and warn rather than silently merge.
+            const std::size_t n = par.ids.size();
+            for (std::size_t i = 0; i < n; ++i){
+                const int p = par.ids[i];
+                const int c = chi.ids[i];
+                const auto existing = childToParent.constFind(c);
+                if (existing != childToParent.constEnd()){
+                    if (existing.value() != p) nestingViolation = true;
+                } else {
+                    childToParent.insert(c, p);
+                    parentToChildren[p].append(c);
+                }
+            }
+            if (nestingViolation)
+                qWarning() << "[hierarchy] .clc is not nested in .clu (a child id spans "
+                              "multiple parents); kept first-seen parent for each child.";
+        } else {
+            qWarning() << "[hierarchy] could not read aligned .clu/.clc; falling back to the .clp cache";
+        }
+    }
+
+    if (haveScan){
+        // Cross-check the cache against the truth and report drift; the scan wins either way and
+        // saveHierarchySiblings() regenerates the .clp on the next Save.
+        if (!clpSiblingPath.isEmpty()){
+            const qint64 bytes = QFileInfo(clpSiblingPath).size();
+            if (bytes > 4){
+                const int64_t nChildren = (bytes - 4) / 4;      // minus the int32 header
+                const neurofileio::CluFile clp =
+                    neurofileio::readCluBinary(clpSiblingPath.toStdString(), nChildren);
+                if (clp.ok && static_cast<int64_t>(clp.ids.size()) == nChildren){
+                    int stale = 0;
+                    for (auto it = childToParent.constBegin(); it != childToParent.constEnd(); ++it){
+                        const int c = it.key();
+                        if (c <= 0 || static_cast<int64_t>(c) > nChildren) continue;
+                        if (clp.ids[c - 1] != it.value()) ++stale;
+                    }
+                    if (stale)
+                        qWarning() << "[hierarchy] .clp is STALE:" << stale << "of"
+                                   << childToParent.size()
+                                   << "children disagree with the per-spike .clu/.clc; using the "
+                                      "scan.  The .clp is regenerated on the next Save.";
+                }
+            }
+        }
+    } else if (!clpSiblingPath.isEmpty()){
+        // No readable per-spike arrays: the cache is all we have.  Binary clu-format, int32 header
+        // then nChildren int32 parent ids; parent[c-1] owns child c, child ids are global 1..nChildren.
         const qint64 bytes = QFileInfo(clpSiblingPath).size();
         if (bytes > 4){
-            const int64_t nChildren = (bytes - 4) / 4;            // minus the int32 header
+            const int64_t nChildren = (bytes - 4) / 4;
             const neurofileio::CluFile clp =
                 neurofileio::readCluBinary(clpSiblingPath.toStdString(), nChildren);
             if (clp.ok && static_cast<int64_t>(clp.ids.size()) == nChildren){
@@ -130,55 +197,25 @@ void KlustersDoc::buildHierarchyMaps(){
                     childToParent.insert(childId, parentId);
                     parentToChildren[parentId].append(childId);
                 }
-                for (auto it = parentToChildren.begin(); it != parentToChildren.end(); ++it){
-                    QList<int>& kids = it.value();
-                    std::sort(kids.begin(), kids.end());
-                    kids.erase(std::unique(kids.begin(), kids.end()), kids.end());
-                }
-                qDebug() << "[hierarchy] built from .clp:" << childToParent.size()
-                         << "children under" << parentToChildren.size() << "parents";
+                qWarning() << "[hierarchy] built from the .clp cache alone (no readable .clu/.clc); "
+                              "it may not reflect the current curation.";
+            } else {
+                qWarning() << "[hierarchy] .clp unreadable and no aligned .clu/.clc; hierarchy maps empty";
                 return;
             }
-            qWarning() << "[hierarchy] .clp present but unreadable; falling back to .clu/.clc scan";
         }
-    }
-
-    // Fallback: derive from the aligned per-spike parent (.clu == docUrl) and
-    // child (.clc) id arrays; both are binary clu-format aligned to the same .res.
-    if (clcSiblingPath.isEmpty()) return;
-    const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
-    const neurofileio::CluFile par = neurofileio::readCluBinary(docUrl.toStdString(), nSpikes);
-    const neurofileio::CluFile chi = neurofileio::readCluBinary(clcSiblingPath.toStdString(), nSpikes);
-    if (!par.ok || !chi.ok || par.ids.size() != chi.ids.size()){
-        qWarning() << "[hierarchy] could not read aligned .clu/.clc; hierarchy maps empty";
+    } else {
+        qWarning() << "[hierarchy] no .clc sibling and no .clp; hierarchy maps empty";
         return;
     }
-
-    // child -> parent must be a function (nesting invariant): each child id is
-    // owned by exactly one parent.  A violation means the .clc is not nested in
-    // the .clu; we keep the first-seen owner and warn rather than silently merge.
-    bool nestingViolation = false;
-    const std::size_t n = par.ids.size();
-    for (std::size_t i = 0; i < n; ++i){
-        const int p = par.ids[i];
-        const int c = chi.ids[i];
-        const auto existing = childToParent.constFind(c);
-        if (existing != childToParent.constEnd()){
-            if (existing.value() != p) nestingViolation = true;
-        } else {
-            childToParent.insert(c, p);
-            parentToChildren[p].append(c);
-        }
-    }
-    if (nestingViolation)
-        qWarning() << "[hierarchy] .clc is not nested in .clu (a child id spans "
-                      "multiple parents); kept first-seen parent for each child.";
 
     for (auto it = parentToChildren.begin(); it != parentToChildren.end(); ++it){
         QList<int>& kids = it.value();
         std::sort(kids.begin(), kids.end());
         kids.erase(std::unique(kids.begin(), kids.end()), kids.end());
     }
+    qDebug() << "[hierarchy]" << childToParent.size() << "children under"
+             << parentToChildren.size() << "parents";
 }
 
 bool KlustersDoc::loadChildClustering(QString& errorInformation){
@@ -645,7 +682,12 @@ bool KlustersDoc::redoChildEditDispatch(){
 }
 
 bool KlustersDoc::saveHierarchySiblings(){
-    if (!childData || clcSiblingPath.isEmpty()) return true;   // nothing to write
+    if (clcSiblingPath.isEmpty()) return true;                 // not a hierarchical session
+    // The child layer is loaded lazily, so a session curated WITHOUT ever opening the hierarchical
+    // view has an empty map here while the .clu we just wrote has changed -- which is exactly how the
+    // .clp went stale.  Rebuild the map from the freshly-written per-spike arrays in that case.
+    if (childToParent.isEmpty()) buildHierarchyMaps();
+    if (childToParent.isEmpty()) return true;                  // nothing derivable -> leave siblings alone
     // .clc — the per-spike child layer (unchanged by merge/promote/move, but
     // rewritten so the triple is regenerated together); .clp — the edited
     // child->parent map.  Overwrite in place with a .bak backup of each.
@@ -657,11 +699,15 @@ bool KlustersDoc::saveHierarchySiblings(){
         }
     };
     bool ok = true;
-    backup(clcSiblingPath);
-    if (FILE* f = fopen(qPrintable(clcSiblingPath), "wb")){
-        ok &= childData->saveClusters(f);
-        fclose(f);
-    } else ok = false;
+    // .clc: only the loaded child layer can rewrite it.  Curation does not change the child ids, so
+    // when the child view was never opened the on-disk .clc is already correct and is left alone.
+    if (childData){
+        backup(clcSiblingPath);
+        if (FILE* f = fopen(qPrintable(clcSiblingPath), "wb")){
+            ok &= childData->saveClusters(f);
+            fclose(f);
+        } else ok = false;
+    }
 
     if (!clpSiblingPath.isEmpty()){
         int nChildren = 0;

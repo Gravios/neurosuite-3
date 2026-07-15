@@ -695,7 +695,9 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // child->parent map so the triple stays consistent.  Only on a regular Save
     // (the captured sibling paths are the originals); SaveAs of the triple is a
     // follow-up.
-    if (!isSaveAs && childData)
+    // Not gated on childData: the .clp must be regenerated whenever the .clu changes, even if the
+    // hierarchical view was never opened this session -- otherwise it is left stale on disk.
+    if (!isSaveAs)
         saveHierarchySiblings();
 
     QString cluFileSuffix_;
