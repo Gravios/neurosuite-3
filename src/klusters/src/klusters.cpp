@@ -4905,7 +4905,16 @@ void KlustersApp::resetState(){
 
 void KlustersApp::slotUpdateCorrelogramsHalfDuration(){
     if(!isInit){
-        int halfTimeFrame = (correlogramsHalfDuration->displayText()).toInt();
+        const int halfTimeFrame = (correlogramsHalfDuration->displayText()).toInt();
+        // Symmetric with slotUpdateBinSize: refuse a non-positive Duration and
+        // put the last good value back.  The validator's minimum is 1, but an
+        // empty box still reads back as 0, and setText() (used below and by
+        // slotUpdateBinSize) does not run the validator at all.
+        if(halfTimeFrame <= 0){
+            correlogramsHalfDuration->setText(
+                QString::fromLatin1("%1").arg(std::max(1, correlogramTimeFrame / 2)));
+            return;
+        }
         if(halfTimeFrame > (maximumTime - binSize) / 2){
             correlogramsHalfDuration->setText(QString::fromLatin1("%1").arg((correlogramTimeFrame - binSize) / 2));
             return;
@@ -4917,9 +4926,12 @@ void KlustersApp::slotUpdateCorrelogramsHalfDuration(){
         int k = static_cast<int>(x + 0.5);
         if(k < 0) k = 0;
 
+        // See slotUpdateBinSize: keep the written half-duration at or above the
+        // box's own minimum, which setText() would otherwise bypass.
+        if((2*k+1)*binSize < 2) k = 1;
         correlogramTimeFrame = (2*k+1)*binSize;
-        if(k != x){
-            correlogramsHalfDuration->setText(QString::fromLatin1("%1").arg(static_cast<int>(correlogramTimeFrame / 2)));
+        if(static_cast<float>(k) != x){
+            correlogramsHalfDuration->setText(QString::fromLatin1("%1").arg(std::max(1, correlogramTimeFrame / 2)));
         }
         activeView()->updateBinSizeAndTimeFrame(binSize,correlogramTimeFrame);
     }
@@ -4946,10 +4958,15 @@ void KlustersApp::slotUpdateBinSize(){
                          /static_cast<float>(binSize)-1)*0.5;
         int k = static_cast<int>(x + 0.5);
         if(k < 0) k = 0;
+        // (2k+1)*binSize is an ODD multiple, so halving it truncates: binSize 1
+        // with k 0 would write 0 into a box whose minimum is 1.  k >= 1 there
+        // keeps the written value at or above the minimum (and a 1-bin
+        // correlogram was never useful anyway).
+        if((2*k+1) * binSize < 2) k = 1;
         correlogramTimeFrame = (2*k+1) * binSize;
         if(static_cast<float>(k) != x)
             correlogramsHalfDuration->setText(
-                QString::fromLatin1("%1").arg(static_cast<int>(correlogramTimeFrame / 2)));
+                QString::fromLatin1("%1").arg(std::max(1, correlogramTimeFrame / 2)));
 
         activeView()->updateBinSizeAndTimeFrame(binSize,correlogramTimeFrame);
     }
