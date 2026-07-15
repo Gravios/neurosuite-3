@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "driftmatrixview.h"
+#include "matrixbadge.h"
 #include "driftmatrixthread.h"
 #include "driftmatrixkernel.h"
 #include "driftgeometry.h"
@@ -191,6 +192,7 @@ void DriftMatrixView::launchCompute()
 {
     if (goingToDie) return;
     ++generation;
+    computing = true;      // paint a badge over the old matrix, do not blank
 
     for (DriftMatrixThread* t : threadsToBeKill)
         t->stopProcessing();
@@ -224,6 +226,10 @@ void DriftMatrixView::customEvent(QEvent* event)
     Array<double>* newScores = thread->getScores();
     const bool accepted = (newScores != nullptr
                            && thread->getGeneration() == generation);
+    // Only the generation we are waiting on ends the "computing" state: a
+    // superseded result arriving must not cancel the badge for the newer
+    // compute that replaced it.
+    if (thread->getGeneration() == generation) computing = false;
 
     if (accepted) {
         // File the result under the selection it was computed for, together with
@@ -313,11 +319,14 @@ void DriftMatrixView::activateCache(const Cache& c)
 
 void DriftMatrixView::invalidateCaches()
 {
-    delete cacheAll.scores; cacheAll = Cache();
-    delete cacheSel.scores; cacheSel = Cache();
+    // Mark both slots out of date without freeing them, and leave `scores` and
+    // dataReady alone: the matrix already on screen keeps being painted while
+    // the replacement computes, and its memory is released when the new result
+    // is filed into its slot.  Only `valid` gates the instant-swap path, so a
+    // stale matrix is displayed but never swapped in as current.
+    cacheAll.valid = false;
+    cacheSel.valid = false;
     cachedSelection.clear();
-    scores    = nullptr;
-    dataReady = false;
 }
 
 void DriftMatrixView::selectedChannelsChanged(const QList<int>& channels)
@@ -419,12 +428,15 @@ void DriftMatrixView::paintEvent(QPaintEvent*)
     if (dataReady) {
         drawMatrix(buf);
         drawClusterIds(buf);
-    } else {
-        buf.setPen(textColor);
-        buf.drawText(QRect(0, CTRL_H, width(),
-                           std::max(height() - CTRL_H - INFO_H, 1)),
-                     Qt::AlignCenter, tr("Computing drift matrix\u2026"));
     }
+    // A recompute no longer wipes the frame: whatever was there stays up and a
+    // small badge says fresh numbers are coming.  With nothing to show yet (the
+    // first compute) the badge centres itself instead.  Confined to the matrix
+    // area, between the control bar and the info line.
+    if (computing)
+        mbDrawComputingBadge(buf, QRect(0, CTRL_H, width(),
+                                        std::max(height() - CTRL_H - INFO_H, 1)),
+                             tr("Computing drift matrix\u2026"), dataReady);
     buf.end();
 
     QPainter p(this);

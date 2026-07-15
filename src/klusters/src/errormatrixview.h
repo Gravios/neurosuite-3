@@ -466,6 +466,9 @@ private:
     int nbPreviousRedo;
 
     /**True if the widget is about to be deleted, false otherwise.*/
+    /**A recompute is in flight: overlay a small badge rather than leave the
+     * user guessing whether the matrix on screen is current.*/
+    bool computing = false;
     bool goingToDie;
 
     /**Monotonically increasing counter, bumped each time updateMatrixContents() is called.

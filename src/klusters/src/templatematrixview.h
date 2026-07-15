@@ -221,7 +221,15 @@ private:
     Array<double>* scoresAll = nullptr;
     Array<double>* scoresSel = nullptr;
     QList<int>     cachedSelection;
+    /**Whether each slot's matrix is CURRENT.  Kept separate from the pointers
+     * because an out-of-date matrix is still worth displaying while its
+     * replacement computes — it stays allocated and on screen, but these flags
+     * stop it being swapped in as though it were current.*/
+    bool           haveAllCache = false;
     bool           haveSelCache = false;
+    /**A recompute is in flight: the view keeps painting whatever it has and
+     * overlays a small badge instead of blanking the frame.*/
+    bool           computing = false;
 
     /**Drop both cached results (the spikes themselves changed).*/
     void invalidateCaches();

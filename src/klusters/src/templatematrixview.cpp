@@ -1,4 +1,5 @@
 #include "templatematrixview.h"
+#include "matrixbadge.h"
 #include "templatematrixthread.h"
 #include "pairxcorrthread.h"
 #include "klustersdoc.h"
@@ -289,6 +290,7 @@ void TemplateMatrixView::launchCompute()
 {
     if (goingToDie) return;
     ++generation;
+    computing = true;      // paint a badge over the old matrix, do not blank
     stopPairThread();
     // The pair scores are per-template; a different channel subset changes the
     // templates, so they cannot be reused across a selection change either.
@@ -319,12 +321,14 @@ void TemplateMatrixView::launchCompute()
 
 void TemplateMatrixView::invalidateCaches()
 {
-    delete scoresAll; scoresAll = nullptr;
-    delete scoresSel; scoresSel = nullptr;
+    // Mark both slots out of date, but do NOT free them and do NOT drop
+    // dataReady: `scores` keeps pointing at the matrix already on screen so the
+    // view can go on painting it while the replacement computes.  The memory is
+    // released when the new result is filed into its slot.  Only the flags gate
+    // the instant-swap path, so nothing stale is ever swapped in as current.
+    haveAllCache = false;
     haveSelCache = false;
     cachedSelection.clear();
-    scores    = nullptr;   // non-owning
-    dataReady = false;
 }
 
 void TemplateMatrixView::updateMatrixContents()
@@ -344,7 +348,7 @@ void TemplateMatrixView::selectedChannelsChanged(const QList<int>& channels)
     // an uncached selection costs a recompute.  This does NOT invalidate:
     // keeping the other slot is what makes swapping back free.
     if (channels.isEmpty()) {
-        if (scoresAll) {
+        if (haveAllCache && scoresAll) {
             scores = scoresAll;
             dataReady = true;
             updateWindow();
@@ -417,6 +421,10 @@ void TemplateMatrixView::customEvent(QEvent* event)
         Array<double>* newScores = thread->getScores();
         const bool accepted = (newScores != nullptr
                                && thread->getGeneration() == generation);
+        // Only the generation we are waiting on ends the "computing" state: a
+        // superseded result must not cancel the badge for the newer compute
+        // that replaced it.
+        if (thread->getGeneration() == generation) computing = false;
 
         if (accepted) {
             // File under the selection it was computed for, so the other slot
@@ -424,7 +432,8 @@ void TemplateMatrixView::customEvent(QEvent* event)
             const QList<int> ranFor = thread->getSelection();
             if (ranFor.isEmpty()) {
                 delete scoresAll;
-                scoresAll = newScores;
+                scoresAll    = newScores;
+                haveAllCache = true;
             } else {
                 delete scoresSel;
                 scoresSel       = newScores;
@@ -562,10 +571,13 @@ void TemplateMatrixView::paintEvent(QPaintEvent*)
     if (dataReady) {
         drawMatrix(buf);
         drawClusterIds(buf);
-    } else {
-        buf.setPen(textColor);
-        buf.drawText(matRect, Qt::AlignCenter, "Computing template matrix\u2026");
     }
+    // A recompute no longer wipes the frame: whatever was there stays up and a
+    // small badge says fresh numbers are coming.  With nothing to show yet (the
+    // first compute) the badge centres itself instead.
+    if (computing)
+        mbDrawComputingBadge(buf, rect(), tr("Computing template matrix\u2026"),
+                             dataReady);
     buf.end();
 
     QPainter p(this);
