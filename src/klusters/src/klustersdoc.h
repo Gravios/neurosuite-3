@@ -145,6 +145,24 @@ public:
      * string if the document was opened without one.  Note this is NOT url():
      * that one is the .clu file the document was opened from.*/
     const QString& parameterFileUrl() const{return parameterFile;}
+
+    /**The channel subset the user selected in the waveform view, as group-local
+     * indices 0..Data::nbOfchannels()-1 (the same indexing the .spk waveforms
+     * and the matrix means use), sorted ascending.
+     *
+     * An EMPTY list is the normal state and means "no restriction": every
+     * consumer uses all channels.  A non-empty list asks the correlation
+     * matrices and the clustering/splitting feature selection to consider only
+     * those channels.
+     */
+    const QList<int>& selectedChannels() const {return channelSelection;}
+
+    /**Replace the channel selection.  Indices outside 0..nbOfchannels()-1 are
+     * dropped and the result is sorted and de-duplicated, so callers may pass a
+     * raw click order.  Emits selectedChannelsChanged() only when the resulting
+     * list actually differs, so committing an unchanged selection is free.
+     */
+    void setSelectedChannels(const QList<int>& channels);
     /**Sets the URL of the document. */
     void setURL(const QString& url){docUrl=url;}
     /**Sends back the full name of the document with the electrode group Id append.*/
@@ -1052,6 +1070,10 @@ Q_SIGNALS:
     /** Emitted after a hierarchy edit (merge/promote/move) or an undo/redo that
      *  changed the fiber<-child maps, so the app can repopulate the child palette. */
     void hierarchyChanged();
+
+    /**Emitted when the waveform-view channel selection changes.  Empty list =
+     * no restriction (all channels).*/
+    void selectedChannelsChanged(const QList<int>& channels);
     /** Emitted after a child (atom) split mints new sibling atoms, carrying their
      *  ids so the child palette can select and focus them. */
     void hierarchyChildrenCreated(const QList<int>& newChildren);
@@ -1409,6 +1431,9 @@ private:
 
     /**The path to the YAML parameter file. */
     QString parameterFile;
+
+    /**Group-local channel indices selected in the waveform view; empty = all.*/
+    QList<int> channelSelection;
 
     /**The electrode number*/
     QString electrodeGroupID;
