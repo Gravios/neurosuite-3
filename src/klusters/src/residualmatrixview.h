@@ -149,6 +149,13 @@ private:
     QRect   matrixViewport;
 
     QLabel* infoLabel;            // bottom status line: hovered pair + raw value
+    QString infoText;             // unelided text; infoLabel shows an elided copy
+
+    /// Set the bottom info line.  Stores the full text and displays an elided
+    /// copy, so the label never demands the width of its whole string.
+    void setInfoText(const QString& text);
+    /// Re-elide infoText to the label's current width.
+    void updateInfoElide();
 
     // ── helpers ──────────────────────────────────────────────────────────
     ResidualMatrixThread* launchComputeThread();

@@ -22,6 +22,7 @@
 #include <QImage>
 #include <QEvent>
 #include <QFont>
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -100,7 +101,11 @@ DriftMatrixView::DriftMatrixView(KlustersDoc& doc_, KlustersView& view_,
     infoLabel = new QLabel(this);
     infoLabel->setFixedHeight(INFO_H);
     infoLabel->setContentsMargins(8,0,8,0);
-    infoLabel->setText(tr("Drift matrix — cell(row A, col B) = xcorr of A's mean shifted "
+    // Ignored horizontally: a plain QLabel reports its entire (non-wrapping)
+    // text width as its minimum, which would floor the whole matrix dock frame
+    // at ~1000 px and stop the user narrowing the pane.
+    infoLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    setInfoText(tr("Drift matrix — cell(row A, col B) = xcorr of A's mean shifted "
                           "along depth (+Δ above the diagonal, −Δ below) against B's mean; "
                           "red ≈ 1 (same shape at that drift, merge candidate), blue ≈ 0."));
     mainLayout->addWidget(infoLabel, 0);
@@ -237,8 +242,8 @@ void DriftMatrixView::customEvent(QEvent* event)
                                         ? tr("no probe geometry for this group")
                                         : geometryError;
                 driftSlider->setToolTip(tr("Drift shifting needs probe geometry: %1.").arg(why));
-                infoLabel->setText(tr("No probe geometry (%1) — showing unshifted "
-                                      "correlations; the drift slider is disabled.").arg(why));
+                setInfoText(tr("No probe geometry (%1) — showing unshifted "
+                               "correlations; the drift slider is disabled.").arg(why));
             }
 
             updateWindow();
@@ -330,6 +335,7 @@ QSize DriftMatrixView::sizeHint() const
 void DriftMatrixView::resizeEvent(QResizeEvent* e)
 {
     QWidget::resizeEvent(e);
+    updateInfoElide();
     if (dataReady) updateWindow();
     update();
 }
@@ -422,6 +428,31 @@ void DriftMatrixView::drawClusterIds(QPainter& p)
                    Qt::AlignRight | Qt::AlignVCenter,
                    QString::number(clusterList[row]));
     }
+}
+
+
+void DriftMatrixView::setInfoText(const QString& text)
+{
+    infoText = text;
+    updateInfoElide();
+}
+
+void DriftMatrixView::updateInfoElide()
+{
+    // The label is QSizePolicy::Ignored horizontally so it never contributes to
+    // the widget's (and hence the dock's, and hence the tabbed matrix frame's)
+    // minimum width.  That means it can be handed less room than its text needs,
+    // so elide rather than letting Qt clip mid-word.
+    // Use the view's width, not infoLabel->width(): Qt resizes children only
+    // after the parent's resizeEvent, so the label's own width lags by one
+    // event.  The label spans the full width (the main layout has no margins),
+    // so they are the same value once settled.
+    const QFontMetrics fm(infoLabel->font());
+    const int avail = width() - infoLabel->contentsMargins().left()
+                              - infoLabel->contentsMargins().right();
+    infoLabel->setText(avail > 0 ? fm.elidedText(infoText, Qt::ElideRight, avail)
+                                 : QString());
+    infoLabel->setToolTip(infoText);
 }
 
 // ── pan / zoom ───────────────────────────────────────────────────────────────
@@ -535,10 +566,10 @@ void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
         if (row >= 0 && col >= 0) {
             const int a = clusterList[row], b = clusterList[col];
             if (row == col) {
-                infoLabel->setText(tr("cluster %1 (diagonal)").arg(a));
+                setInfoText(tr("cluster %1 (diagonal)").arg(a));
             } else {
                 const int sign = (row < col) ? +1 : -1;
-                infoLabel->setText(
+                setInfoText(
                     tr("A=%1 shifted %2%3 µm vs B=%4: xcorr %5")
                         .arg(a)
                         .arg(sign < 0 ? QStringLiteral("−") : QStringLiteral("+"))

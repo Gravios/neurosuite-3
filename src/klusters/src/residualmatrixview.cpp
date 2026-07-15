@@ -10,6 +10,7 @@
 #include <QImage>
 #include <QEvent>
 #include <QFont>
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -54,7 +55,11 @@ ResidualMatrixView::ResidualMatrixView(KlustersDoc& doc_, KlustersView& view_,
     infoLabel = new QLabel(this);
     infoLabel->setFixedHeight(INFO_H);
     infoLabel->setContentsMargins(8,0,8,0);
-    infoLabel->setText(tr("Separability — cell(row A, col B) = fraction of A's residual about B's template "
+    // Ignored horizontally: a plain QLabel reports its entire (non-wrapping)
+    // text width as its minimum, which would floor the whole matrix dock frame
+    // at ~1300 px and stop the user narrowing the pane.
+    infoLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    setInfoText(tr("Separability — cell(row A, col B) = fraction of A's residual about B's template "
                           "that is systematic vs noise, in [0,1]; red ≈ 0 (indistinguishable given A's noise, "
                           "merge candidate), blue ≈ 1 (distinct); diagonal = A's within-cluster variance."));
     mainLayout->addWidget(infoLabel, 0);
@@ -358,10 +363,10 @@ void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)
         if (row >= 0 && col >= 0) {
             const int a = clusterList[row], b = clusterList[col];
             if (row == col)
-                infoLabel->setText(tr("cluster %1: within-cluster variance %2")
+                setInfoText(tr("cluster %1: within-cluster variance %2")
                     .arg(a).arg((*scores)(row+1, col+1), 0, 'g', 4));
             else
-                infoLabel->setText(tr("A=%1 vs B=%2: separability %3   (A's noise floor %4)")
+                setInfoText(tr("A=%1 vs B=%2: separability %3   (A's noise floor %4)")
                     .arg(a).arg(b)
                     .arg((*scores)(row+1, col+1), 0, 'g', 3)
                     .arg((*scores)(row+1, row+1), 0, 'g', 4));
@@ -400,6 +405,31 @@ void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
         doc.addClustersToActiveView(clustersToShow);
     else
         doc.shownClustersUpdate(clustersToShow);
+}
+
+
+void ResidualMatrixView::setInfoText(const QString& text)
+{
+    infoText = text;
+    updateInfoElide();
+}
+
+void ResidualMatrixView::updateInfoElide()
+{
+    // The label is QSizePolicy::Ignored horizontally so it never contributes to
+    // the widget's (and hence the dock's, and hence the tabbed matrix frame's)
+    // minimum width.  That means it can be handed less room than its text needs,
+    // so elide rather than letting Qt clip mid-word.
+    // Use the view's width, not infoLabel->width(): Qt resizes children only
+    // after the parent's resizeEvent, so the label's own width lags by one
+    // event.  The label spans the full width (the main layout has no margins),
+    // so they are the same value once settled.
+    const QFontMetrics fm(infoLabel->font());
+    const int avail = width() - infoLabel->contentsMargins().left()
+                              - infoLabel->contentsMargins().right();
+    infoLabel->setText(avail > 0 ? fm.elidedText(infoText, Qt::ElideRight, avail)
+                                 : QString());
+    infoLabel->setToolTip(infoText);
 }
 
 void ResidualMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
@@ -489,6 +519,7 @@ void ResidualMatrixView::renumber(QMap<int,int>&)                               
 void ResidualMatrixView::resizeEvent(QResizeEvent* e)
 {
     QWidget::resizeEvent(e);
+    updateInfoElide();
     if (dataReady) updateWindow();
     update();
 }
