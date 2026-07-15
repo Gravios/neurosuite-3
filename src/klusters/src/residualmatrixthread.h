@@ -60,6 +60,9 @@ public:
     // Results exposed to ResidualMatrixView after the thread finishes.
     Array<double>* getScores()      const { return scores; }
     QList<int>     getClusterList() const { return clusterList; }
+    /// The channel selection this run was launched for (empty = all channels).
+    /// The view files the result in the matching cache slot.
+    QList<int>     getSelection()   const { return selection; }
 
     class ResidualMatrixEvent : public QEvent {
         friend class ResidualMatrixThread;
@@ -76,9 +79,16 @@ protected:
     void run() override;
 
 private:
-    ResidualMatrixThread(ResidualMatrixView& v, Data& d, int gen)
+    /**
+     * @param sel  Channel selection (group-local indices, empty = all channels).
+     *             The means and variances are restricted to it before the matrix
+     *             is built.
+     */
+    ResidualMatrixThread(ResidualMatrixView& v, Data& d, int gen,
+                         QList<int> sel = QList<int>())
         : view(v), data(d), generation(gen),
-          haveToStopProcessing(false), scores(nullptr) { start(); }
+          haveToStopProcessing(false), scores(nullptr),
+          selection(std::move(sel)) { start(); }
 
     ResidualMatrixView&          view;
     Data&                        data;
@@ -88,6 +98,7 @@ private:
     Array<double>*               scores;       // [N x N], 1-based, asymmetric
     QList<int>                   clusterList;   // matrix row/col -> cluster id
     std::vector<std::vector<int>> allFileIdx;   // [clusterIdx] -> 0-based .spk rows
+    QList<int>                   selection;    // empty = all channels
 };
 
 #endif // RESIDUALMATRIXTHREAD_H

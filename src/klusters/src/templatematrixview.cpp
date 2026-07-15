@@ -163,7 +163,8 @@ TemplateMatrixView::~TemplateMatrixView()
         while (!t->wait()) {}
     qDeleteAll(threadsToBeKill);
     threadsToBeKill.clear();
-    delete scores;
+    delete scoresAll;
+    delete scoresSel;   // `scores` is non-owning: it aliases one of these
     QApplication::removePostedEvents(this);
 }
 
@@ -280,11 +281,13 @@ void TemplateMatrixView::updateSliderRange()
 
 // ── compute ──────────────────────────────────────────────────────────────────
 
-void TemplateMatrixView::updateMatrixContents()
+void TemplateMatrixView::launchCompute()
 {
     if (goingToDie) return;
     ++generation;
     stopPairThread();
+    // The pair scores are per-template; a different channel subset changes the
+    // templates, so they cannot be reused across a selection change either.
     pairCache.clear();
 
     // Reflect the current metric (it may have been changed via the Display
@@ -310,9 +313,54 @@ void TemplateMatrixView::updateMatrixContents()
     update();
 }
 
+void TemplateMatrixView::invalidateCaches()
+{
+    delete scoresAll; scoresAll = nullptr;
+    delete scoresSel; scoresSel = nullptr;
+    haveSelCache = false;
+    cachedSelection.clear();
+    scores    = nullptr;   // non-owning
+    dataReady = false;
+}
+
+void TemplateMatrixView::updateMatrixContents()
+{
+    if (goingToDie) return;
+    // The spikes changed: both cached matrices are stale.  Only this path
+    // invalidates — a mere selection change must keep the other slot.
+    invalidateCaches();
+    launchCompute();
+}
+
+void TemplateMatrixView::selectedChannelsChanged(const QList<int>& channels)
+{
+    if (goingToDie) return;
+
+    // Swap in a cached result when we already have one for this selection; only
+    // an uncached selection costs a recompute.  This does NOT invalidate:
+    // keeping the other slot is what makes swapping back free.
+    if (channels.isEmpty()) {
+        if (scoresAll) {
+            scores = scoresAll;
+            dataReady = true;
+            updateWindow();
+            update();
+            return;
+        }
+    } else if (haveSelCache && channels == cachedSelection && scoresSel) {
+        scores = scoresSel;
+        dataReady = true;
+        updateWindow();
+        update();
+        return;
+    }
+    launchCompute();
+}
+
 TemplateMatrixThread* TemplateMatrixView::launchComputeThread()
 {
-    return new TemplateMatrixThread(*this, doc.data(), generation);
+    return new TemplateMatrixThread(*this, doc.data(), generation,
+                                    doc.selectedChannels());
 }
 
 void TemplateMatrixView::launchPairXcorr(int sourceCluster, int targetCluster)
@@ -367,7 +415,18 @@ void TemplateMatrixView::customEvent(QEvent* event)
                                && thread->getGeneration() == generation);
 
         if (accepted) {
-            delete scores;
+            // File under the selection it was computed for, so the other slot
+            // stays available for an instant swap.
+            const QList<int> ranFor = thread->getSelection();
+            if (ranFor.isEmpty()) {
+                delete scoresAll;
+                scoresAll = newScores;
+            } else {
+                delete scoresSel;
+                scoresSel       = newScores;
+                cachedSelection = ranFor;
+                haveSelCache    = true;
+            }
             scores      = newScores;
             clusterList = thread->getClusterList();
             meanWav   = thread->getMeanWav();

@@ -85,6 +85,10 @@ Q_SIGNALS:
     void viewChanged(double zoom, double panX, double panY);
 
 public Q_SLOTS:
+    /**Channel selection committed in the waveform view (empty = all channels).
+     * Swaps in a cached matrix when one matches, otherwise recomputes.*/
+    void selectedChannelsChanged(const QList<int>& channels);
+
     /// Set the full zoom + pan state from another (cross-connected) matrix
     /// view.  Does not emit viewChanged, so the views can be cross-connected
     /// without a feedback loop.
@@ -128,7 +132,22 @@ private:
     void  resetPanZoom();
 
     // ── matrix data ──────────────────────────────────────────────────────
-    Array<double>* scores;        // [N x N], 1-based, asymmetric raw residual
+    /**All-channel result and the result for cachedSelection.  Both are owned;
+     * `scores` is a NON-owning pointer at whichever is displayed.  Keeping both
+     * makes flicking the channel selection on and off an instant swap instead of
+     * a recompute.*/
+    Array<double>* scoresAll = nullptr;
+    Array<double>* scoresSel = nullptr;
+    QList<int>     cachedSelection;
+    bool           haveSelCache = false;
+
+    /**Drop both cached results (the spikes themselves changed).*/
+    void invalidateCaches();
+    /**Start a compute for the document's current selection WITHOUT touching the
+     * caches — a selection change must keep the other slot.*/
+    void launchCompute();
+
+    Array<double>* scores;        // [N x N], 1-based (NON-owning alias)
     QList<int>     clusterList;
     bool           dataReady;
     bool           goingToDie;

@@ -1826,6 +1826,7 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
                 tmv,  static_cast<void(TemplateMatrixView::*)(QList<int>&)>(&TemplateMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber,                 tmv, &TemplateMatrixView::renumber);
+        connect(&doc, &KlustersDoc::selectedChannelsChanged,  tmv, &TemplateMatrixView::selectedChannelsChanged);
         connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
             QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
             view->setPalette(pal); view->update(); });
@@ -1842,6 +1843,7 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
                 rmv,  static_cast<void(ResidualMatrixView::*)(QList<int>&)>(&ResidualMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber,                 rmv, &ResidualMatrixView::renumber);
+        connect(&doc, &KlustersDoc::selectedChannelsChanged,  rmv, &ResidualMatrixView::selectedChannelsChanged);
         connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
             QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
             view->setPalette(pal); view->update(); });
