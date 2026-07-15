@@ -644,6 +644,11 @@ public:
     /**Returns the total number of PCAs used
   * (number of channels times number of PCA by channel).*/
     int totalNbOfPCAs()const{return (nbChannels*nbFeaturesbyChannel);}
+    /**Number of PCA components per channel (the YAML's per-group nFeatures).
+     * Needed to map a .fet column back to its channel: the PCA block is written
+     * channel-major with this stride.  NB totalNbOfPCAs() above assumes the PCA
+     * covers every channel, which is not true on stderiv sessions.*/
+    int nbOfFeaturesByChannel()const{return nbFeaturesbyChannel;}
 
     /** Per-feature sample variance for all spikes belonging to @p clusterId.
      *  Returned vector has length nbDimensions-1 (timestamp column excluded).
