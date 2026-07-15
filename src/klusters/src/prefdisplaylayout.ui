@@ -200,10 +200,10 @@
        
        <widget class="QCheckBox" name="autoShowMatricesOnOpenCheckBox">
         <property name="text">
-         <string>Auto-show error &amp;&amp; template matrices on open</string>
+         <string>Auto-show matrix displays on open</string>
         </property>
         <property name="toolTip">
-         <string>When checked, opening a document automatically creates a Grouping Assistant Display with both the Error Matrix and Template Matrix docks, then triggers an Update Error Matrix to populate them.  Saves the user from manually doing this on every document open.  Combines with the global window-geometry restore (already saved on close) to give a consistent layout across sessions.</string>
+         <string>When checked, opening a document automatically creates a Grouping Assistant Display with the Error, Template, Residual and Drift Matrix docks tabified into one frame (press E to step through them), then triggers an Update Error Matrix to populate them.  Saves the user from manually doing this on every document open.  Combines with the global window-geometry restore (already saved on close) to give a consistent layout across sessions.</string>
         </property>
        </widget>
       </item>

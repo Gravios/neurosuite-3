@@ -2139,18 +2139,21 @@ void KlustersApp::initDisplay(){
             if (!doc) return;                       // document was closed mid-defer
             // The Overview Display is the active view at this point —
             // widgetAddToDisplay routes through view->addView() which
-            // adds the matrix docks to it.  Order matters: ERROR_MATRIX
-            // first so it ends up as the front tab (TEMPLATE_MATRIX
-            // tabifies on top of it then raise() restores Error in
-            // applyOverviewLayout / addView's TEMPLATE_MATRIX case).
+            // adds the matrix docks to it.  Added in the same canonical
+            // order KlustersView::matrixDocks() reports, so ERROR_MATRIX
+            // ends up the front tab and "E" steps through them in that
+            // order; applyOverviewLayout tabifies the rest onto it.
             widgetAddToDisplay(KlustersView::ERROR_MATRIX);
             widgetAddToDisplay(KlustersView::TEMPLATE_MATRIX);
+            widgetAddToDisplay(KlustersView::RESIDUAL_MATRIX);
+            widgetAddToDisplay(KlustersView::DRIFT_MATRIX);
             // Now arrange the dock layout — splits the left column
             // vertically and positions the matrices on the right.
             if (KlustersView* view = activeView()) {
                 view->applyOverviewLayout();
             }
-            // Populate both matrices.
+            // Populate every matrix (slotUpdateErrorMatrix emits the
+            // compute signal for all four; Qt drops the ones not open).
             slotUpdateErrorMatrix();
         });
     }
