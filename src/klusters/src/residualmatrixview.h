@@ -80,6 +80,16 @@ Q_SIGNALS:
     void viewInteracted();
     void matrixUpdated();
 
+    /// Emitted when the user changes this view's zoom or pan (wheel, drag,
+    /// reset).  Keeps every matrix view's zoom/pan synchronised.
+    void viewChanged(double zoom, double panX, double panY);
+
+public Q_SLOTS:
+    /// Set the full zoom + pan state from another (cross-connected) matrix
+    /// view.  Does not emit viewChanged, so the views can be cross-connected
+    /// without a feedback loop.
+    void setViewState(double zoom, double px, double py);
+
 protected:
     void paintEvent(QPaintEvent*) override;
     void customEvent(QEvent* event) override;
