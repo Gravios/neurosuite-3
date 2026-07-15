@@ -10,6 +10,7 @@
  ***************************************************************************/
 #include "driftmatrixthread.h"
 #include "driftmatrixkernel.h"
+#include "channelmask.h"
 #include "templatematrixthread.h"   // tmReadSpikeFloat (shared .spk reader)
 #include "sortabletable.h"
 
@@ -109,12 +110,42 @@ void DriftMatrixThread::run()
     }
     if (haveToStopProcessing) { post(); return; }
 
+    // ── 3b. Restrict to the selected channels ──────────────────────────────
+    // Applied AFTER the means are built: the .spk read is the expensive part and
+    // is identical either way, so masking here costs a memcpy.  Channels are
+    // compacted out rather than zeroed — see channelmask.h.  Depths are
+    // compacted in step so the drift shift still interpolates on the right
+    // geometry (on a sparse selection that interpolation is necessarily
+    // coarser, which is inherent to asking for fewer channels).
+    // nChan stays the FILE's channel count (the .spk read above depends on it);
+    // effChan is what the maths below sees.
+    int effChan = nChan;
+    {
+        std::vector<int> sel;
+        sel.reserve(static_cast<size_t>(selection.size()));
+        for (int c : selection) sel.push_back(c);
+        const std::vector<int> keep = cmResolveMask(sel, nChan);
+        if (!keep.empty()) {
+            std::vector<float> tmp;
+            for (auto& m : meanWav) {
+                cmCompactChannels(m, nChan, nSamp, keep, tmp);
+                m.swap(tmp);
+            }
+            std::vector<float> dTmp;
+            cmCompactPerChannel(depths, keep, dTmp);
+            depths.swap(dTmp);
+            effChan     = static_cast<int>(keep.size());
+            nChanCached = effChan;
+            depthsValid = (static_cast<int>(depths.size()) == effChan);
+        }
+    }
+
     // ── 4. Initial drift-shifted xcorr matrix (view recomputes on slider) ───
     scores = new Array<double>();
     scores->setSize(nClusters, nClusters);
 
     if (depthsValid) {
-        dmComputeDriftMatrix(meanWav, depths, nChan, nSamp, maxShift,
+        dmComputeDriftMatrix(meanWav, depths, effChan, nSamp, maxShift,
                              initialDeltaUm, *scores);
     } else {
         // No usable geometry: plain unshifted mean xcorr so the view still

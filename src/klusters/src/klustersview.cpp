@@ -1858,6 +1858,7 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
                 dmv,  static_cast<void(DriftMatrixView::*)(QList<int>&)>(&DriftMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber,                 dmv, &DriftMatrixView::renumber);
+        connect(&doc, &KlustersDoc::selectedChannelsChanged,  dmv, &DriftMatrixView::selectedChannelsChanged);
         connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
             QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
             view->setPalette(pal); view->update(); });

@@ -115,6 +115,11 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
+public Q_SLOTS:
+    /**Channel selection committed in the waveform view (empty = all channels).
+     * Swaps in a cached matrix when one matches, otherwise recomputes.*/
+    void selectedChannelsChanged(const QList<int>& channels);
+
 private Q_SLOTS:
     void driftSliderChanged(int um);
     void driftRangeChanged(int maxUm);
@@ -146,7 +151,37 @@ private:
     void  resetPanZoom();
 
     // ── matrix data ──────────────────────────────────────────────────────
-    Array<double>* scores;        // [N x N], 1-based, xcorr in [0,1]
+    /**One computed matrix and everything the view needs to keep using it.
+     * The drift slider rebuilds the matrix from meanWav/depths, so a cached
+     * matrix is only usable together with the means it was computed from —
+     * caching the Array alone would leave the slider recomputing a
+     * differently-masked matrix.*/
+    struct Cache {
+        Array<double>*                  scores = nullptr;   // owned
+        std::vector<std::vector<float>> meanWav;
+        std::vector<float>              depths;
+        int                             nChan = 0;
+        bool                            geometryOk = false;
+        bool                            valid = false;
+    };
+    /**All-channel result and the result for cachedSelection.  Keeping both is
+     * what makes flicking the channel selection on and off an instant swap
+     * instead of a recompute.*/
+    Cache      cacheAll;
+    Cache      cacheSel;
+    QList<int> cachedSelection;   // the selection cacheSel was computed for
+
+    /**Make @p c the displayed matrix (no recompute).*/
+    void activateCache(const Cache& c);
+    /**Drop both cached results (the spikes themselves changed).*/
+    void invalidateCaches();
+    /**Start a compute for the document's current channel selection WITHOUT
+     * touching the caches.  A selection change must not discard the other
+     * slot — keeping it is what makes swapping back free.*/
+    void launchCompute();
+
+    Array<double>* scores;        // [N x N], 1-based, xcorr in [0,1] (NON-owning:
+                                  // aliases cacheAll.scores or cacheSel.scores)
     QList<int>     clusterList;
     bool           dataReady;
     bool           goingToDie;

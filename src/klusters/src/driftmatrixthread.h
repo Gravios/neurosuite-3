@@ -50,6 +50,9 @@ public:
     int                                    getNbSamples()   const { return nSampCached; }
     int                                    getMaxShift()    const { return maxShiftCached; }
     bool                                   geometryOk()     const { return depthsValid; }
+    /// The channel selection this run was launched for (empty = all channels).
+    /// The view uses it to file the result in the right cache slot.
+    QList<int>                             getSelection()   const { return selection; }
 
     class DriftMatrixEvent : public QEvent {
         friend class DriftMatrixThread;
@@ -71,11 +74,18 @@ public:
      * @param deltaUm   Initial drift shift for the first matrix.
      * @param gen       Generation counter (stale events are ignored by the view).
      */
+    /**
+     * @param sel  Channel selection (group-local indices, empty = all channels).
+     *             The mean waveforms and depths are compacted to it, so every
+     *             result this thread exposes is already restricted; the view's
+     *             drift-slider recompute needs no further masking.
+     */
     DriftMatrixThread(QObject& view, Data& d, std::vector<float> chanDepths,
-                      float deltaUm, int gen)
+                      float deltaUm, int gen, QList<int> sel = QList<int>())
         : target(view), data(d), depths(std::move(chanDepths)),
           initialDeltaUm(deltaUm), generation(gen),
-          haveToStopProcessing(false), scores(nullptr) { start(); }
+          haveToStopProcessing(false), scores(nullptr),
+          selection(std::move(sel)) { start(); }
 
 protected:
     void run() override;
@@ -95,6 +105,7 @@ private:
     int                             nSampCached   = 0;
     int                             maxShiftCached = 1;
     bool                            depthsValid   = false;
+    QList<int>                      selection;       // empty = all channels
 };
 
 #endif // DRIFTMATRIXTHREAD_H
