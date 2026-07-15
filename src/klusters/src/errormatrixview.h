@@ -19,6 +19,7 @@
 #define ERRORMATRIXVIEW_H
 
 // include files for Qt
+#include <vector>
 #include <QWidget>
 #include <QMap>
 #include <QColor>
@@ -138,6 +139,10 @@ public Q_SLOTS:
     /// the two views can be cross-connected without a loop.
     void setViewState(double zoom, double px, double py);
 
+    /// Channel selection committed in the waveform view (empty = all channels).
+    /// Recomputes over just those channels' feature columns.
+    void selectedChannelsChanged(const QList<int>& channels);
+
     /**Enables the caller to know if there is any thread running launch by the Widget.*/
     bool isThreadsRunning() const override;
 
@@ -149,6 +154,15 @@ public Q_SLOTS:
 
     /**Update the error matrix.*/
     void updateMatrixContents();
+
+private:
+    /**The feature dimensions the current channel selection maps to (empty = all).
+     * Warns once, via the status bar, about any selected channel that carries no
+     * feature columns — on a stderiv session process_pca_stderiv drops the last
+     * channel, so selecting it can have no effect here.*/
+    std::vector<int> activeFeatureDims();
+
+public Q_SLOTS:
 
     /**Updates the error matrix drawing by adding a red border
   * if the rearrangement of clusters have modified clusters presented in the matrix.

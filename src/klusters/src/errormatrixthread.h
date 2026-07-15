@@ -19,6 +19,7 @@
 #define ERRORMATRIXTHREAD_H
 
 #include <atomic>
+#include <vector>
 
 //include files for the application
 #include "errormatrixview.h"
@@ -114,14 +115,18 @@ private:
                       bool incremental, bool verify,
                       const Array<double>* prevRaw, const QList<int>& prevRawIds,
                       const QList<int>& prevRawSizes, int prevNbDimensions,
-                      const QSet<int>& changedIds, bool seedOnly = false)
+                      const QSet<int>& changedIds, bool seedOnly = false,
+                      std::vector<int> activeDims = std::vector<int>())
         : errorMatrixView(view),data(d),generation(generation),
           haveToStopProcessing(false),probabilities(nullptr),
           incremental(incremental),verify(verify),
           prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),
           prevNbDimensions(prevNbDimensions),changedIds(changedIds),
           newRaw(nullptr),newRawDims(-1),nbReused(0),usedIncremental(false),
-          seedOnly(seedOnly){
+          seedOnly(seedOnly),activeDims(std::move(activeDims)){
+        // Restrict the model to the selected channels' feature columns before
+        // anything is computed; empty = every dimension, i.e. unchanged.
+        assistant.setActiveDimensions(this->activeDims);
         start();
     }
 
@@ -152,6 +157,10 @@ private:
     int nbReused;                     // columns reused (diagnostic)
     bool usedIncremental;             // true if the incremental path produced the result
     bool seedOnly;                    // background cache warmer: install raw cache only, no display
+    /**0-based feature dimensions the model is restricted to (see featuremask.h);
+     * empty = every dimension.  Declared last: the ctor initialises it last, and
+     * -Wall warns when the init order and the declaration order disagree.*/
+    std::vector<int> activeDims;
 
 };
 

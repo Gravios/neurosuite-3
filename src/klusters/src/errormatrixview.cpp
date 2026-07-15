@@ -20,6 +20,9 @@
 #include <QApplication>
 #include <QTimer>
 #include "errormatrixview.h"
+#include "featuremask.h"
+#include <QStringList>
+#include <vector>
 #include "errormatrixthread.h"
 #include "groupingassistant.h"
 #include "array.h"
@@ -417,13 +420,73 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             :                       "FULL(?)");
     }
 
+std::vector<int> ErrorMatrixView::activeFeatureDims()
+{
+    const QList<int> selection = doc.selectedChannels();
+    if (selection.isEmpty()) return {};                 // no restriction
+
+    Data& d = doc.data();
+    const int nFeatureDims = d.nbOfDimensionsTotal() - 1;   // timestamp excluded
+    const FeatureLayout layout =
+        fmResolveLayout(nFeatureDims, d.nbOfchannels(),
+                        d.nbOfFeaturesByChannel(), doc.isStderivSession());
+
+    std::vector<int> sel;
+    sel.reserve(static_cast<size_t>(selection.size()));
+    for (int c : selection) sel.push_back(c);
+
+    if (!layout.valid) {
+        // The .fet does not match any layout process_pca can emit, so which
+        // column belongs to which channel is unknown.  Masking on a guessed
+        // stride would silently corrupt the model: use every dimension instead.
+        if (statusBar)
+            statusBar->showMessage(
+                tr("Error matrix: unrecognised feature layout (%1 dims, %2 channels, "
+                   "%3 per channel) — channel selection ignored.")
+                    .arg(nFeatureDims).arg(d.nbOfchannels())
+                    .arg(d.nbOfFeaturesByChannel()), 6000);
+        return {};
+    }
+
+    // Channels with no feature columns at all: on a stderiv session
+    // process_pca_stderiv drops the last (linearly dependent) channel before the
+    // PCA, so selecting it cannot influence anything feature-based.  Say so and
+    // carry on with the channels that do have columns.
+    const std::vector<int> dead = fmChannelsWithoutFeatures(sel, layout);
+    if (!dead.empty() && statusBar) {
+        QStringList names;
+        for (int c : dead) names << QString::number(c);
+        statusBar->showMessage(
+            tr("Error matrix: channel%1 %2 carr%3 no feature columns "
+               "(dropped before the PCA on this session) — ignored in the "
+               "channel selection.")
+                .arg(dead.size() > 1 ? QStringLiteral("s") : QString())
+                .arg(names.join(QStringLiteral(", ")))
+                .arg(dead.size() > 1 ? QStringLiteral("y") : QStringLiteral("ies")),
+            8000);
+    }
+
+    return fmSelectedDims(sel, layout, nFeatureDims);
+}
+
+void ErrorMatrixView::selectedChannelsChanged(const QList<int>&)
+{
+    if (goingToDie) return;
+    // The model's dimensions changed, so every cached column is meaningless.
+    // Note the incremental cache only compares prevNbDimensions (a COUNT), so it
+    // cannot notice a swap between two different selections of the same size --
+    // dropping it here is what keeps that correct.
+    invalidateRawProbCache("channel selection changed");
+    updateMatrixContents();
+}
+
     //The creation of a thread automatically start it.
     return new ErrorMatrixThread(
         *this, doc.data(), generation,
         useIncremental, incrementalVerify,
         (rawProbCacheValid ? rawProbCache : nullptr),
         rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
-        changedIds);
+        changedIds, /*seedOnly*/ false, activeFeatureDims());
 }
 
 void ErrorMatrixView::launchCacheWarmer(){
@@ -441,7 +504,7 @@ void ErrorMatrixView::launchCacheWarmer(){
         /*incremental*/ true, /*verify*/ false,
         /*prevRaw*/ nullptr, QList<int>(), QList<int>(), -1,
         /*changedIds*/ QSet<int>(),
-        /*seedOnly*/ true);
+        /*seedOnly*/ true, activeFeatureDims());
     threadsToBeKill.append(warmer);
 }
 
