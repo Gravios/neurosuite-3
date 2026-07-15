@@ -126,7 +126,8 @@ DriftMatrixView::~DriftMatrixView()
         while (!t->wait()) {}
     qDeleteAll(threadsToBeKill);
     threadsToBeKill.clear();
-    delete scores;
+    delete cacheAll.scores;
+    delete cacheSel.scores;   // `scores` is non-owning: it aliases one of these
     QApplication::removePostedEvents(this);
 }
 
@@ -182,10 +183,11 @@ DriftMatrixThread* DriftMatrixView::launchComputeThread()
                                   "showing unshifted correlations.").arg(err), 5000);
 
     return new DriftMatrixThread(*this, doc.data(), std::move(chanDepths),
-                                 static_cast<float>(currentDriftUm), generation);
+                                 static_cast<float>(currentDriftUm), generation,
+                                 doc.selectedChannels());
 }
 
-void DriftMatrixView::updateMatrixContents()
+void DriftMatrixView::launchCompute()
 {
     if (goingToDie) return;
     ++generation;
@@ -200,6 +202,18 @@ void DriftMatrixView::updateMatrixContents()
     update();
 }
 
+void DriftMatrixView::updateMatrixContents()
+{
+    if (goingToDie) return;
+
+    // The spikes themselves changed, so BOTH cached matrices are stale — drop
+    // them rather than let a later selection toggle swap in an outdated one.
+    // Only this path invalidates: a mere selection change must keep the other
+    // slot, or swapping back would cost a recompute.
+    invalidateCaches();
+    launchCompute();
+}
+
 void DriftMatrixView::customEvent(QEvent* event)
 {
     if (event->type() != QEvent::Type(QEvent::User + 604)) return;
@@ -212,15 +226,24 @@ void DriftMatrixView::customEvent(QEvent* event)
                            && thread->getGeneration() == generation);
 
     if (accepted) {
-        delete scores;
-        scores         = newScores;
+        // File the result under the selection it was computed for, together with
+        // the means it came from, so the other slot stays usable for an instant
+        // swap later.
+        const QList<int> ranFor = thread->getSelection();
+        Cache& slot = ranFor.isEmpty() ? cacheAll : cacheSel;
+        delete slot.scores;
+        slot.scores     = newScores;
+        slot.meanWav    = thread->getMeanWav();
+        slot.depths     = thread->getDepths();
+        slot.nChan      = thread->getNbChannels();
+        slot.geometryOk = thread->geometryOk();
+        slot.valid      = true;
+        if (!ranFor.isEmpty()) cachedSelection = ranFor;
+
         clusterList    = thread->getClusterList();
-        meanWav        = thread->getMeanWav();
-        depths         = thread->getDepths();
-        nChanCached    = thread->getNbChannels();
         nSampCached    = thread->getNbSamples();
         maxShiftCached = thread->getMaxShift();
-        geometryOk     = thread->geometryOk();
+        activateCache(slot);
     } else {
         delete newScores;
     }
@@ -268,6 +291,50 @@ void DriftMatrixView::recomputeAtCurrentDrift()
                          maxShiftCached, static_cast<float>(currentDriftUm),
                          *scores);
     update();
+}
+
+void DriftMatrixView::activateCache(const Cache& c)
+{
+    // Point at a cached result and restore the state the drift slider rebuilds
+    // from, so a swap needs no .spk read and the slider keeps working on the
+    // means this matrix was actually computed from.
+    scores      = c.scores;
+    meanWav     = c.meanWav;
+    depths      = c.depths;
+    nChanCached = c.nChan;
+    geometryOk  = c.geometryOk;
+    driftSlider->setEnabled(geometryOk);
+    maxUmSpin->setEnabled(geometryOk);
+    dataReady = true;
+    updateWindow();
+    setCursor(Qt::ArrowCursor);
+    update();
+}
+
+void DriftMatrixView::invalidateCaches()
+{
+    delete cacheAll.scores; cacheAll = Cache();
+    delete cacheSel.scores; cacheSel = Cache();
+    cachedSelection.clear();
+    scores    = nullptr;
+    dataReady = false;
+}
+
+void DriftMatrixView::selectedChannelsChanged(const QList<int>& channels)
+{
+    if (goingToDie) return;
+
+    // Swap in a cached result when we already have one for this selection; only
+    // a selection we have not computed costs a recompute.  That is the whole
+    // point of keeping two: flicking the selection on and off is free.
+    if (channels.isEmpty()) {
+        if (cacheAll.valid) { activateCache(cacheAll); return; }
+    } else if (cacheSel.valid && channels == cachedSelection) {
+        activateCache(cacheSel);
+        return;
+    }
+    // Not cached: compute it, but keep the other slot intact.
+    launchCompute();
 }
 
 void DriftMatrixView::driftSliderChanged(int um)
