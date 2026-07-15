@@ -440,12 +440,26 @@ void DriftMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
     }
     zoom = newZoom;
     update();
+    emit viewChanged(zoom, panX, panY);
 }
 
 void DriftMatrixView::resetPanZoom()
 {
     panX = panY = 0.0;
     zoom = 1.0;
+    update();
+    emit viewChanged(zoom, panX, panY);
+}
+
+void DriftMatrixView::setViewState(double newZoom, double px, double py)
+{
+    // Full (zoom + pan) state pushed from another cross-connected matrix view.
+    // All matrix views share an identical pixel layout at equal size, so
+    // panX/panY transfer directly.  No signal is emitted so the change is not
+    // echoed back to the sender.
+    zoom = std::max(zoomMin, std::min(zoomMax, newZoom));
+    panX = px;
+    panY = py;
     update();
 }
 
@@ -508,6 +522,7 @@ void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
             panX = panAnchorX + d.x();
             panY = panAnchorY + d.y();
             update();
+            emit viewChanged(zoom, panX, panY);
         }
         e->accept();
         return;

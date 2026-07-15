@@ -1060,6 +1060,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
             overviewTemplateMatrixDock->raise();
         }
         setConnections(RESIDUAL_MATRIX,qobject_cast<ResidualMatrixView*>(residualMatrix->widget()),residualMatrix);
+        connectMatrixZoomSync();
         break;
     case DRIFT_MATRIX:
         newViewType = true;
@@ -1084,6 +1085,7 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
             overviewResidualMatrixDock->raise();
         }
         setConnections(DRIFT_MATRIX,qobject_cast<DriftMatrixView*>(driftMatrix->widget()),driftMatrix);
+        connectMatrixZoomSync();
         break;
     case TRACES:
         if(!isThereTraceView){
@@ -1895,18 +1897,39 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
     }
 }
 
+namespace {
+/// One-way zoom/pan link: src's viewChanged drives dst's setViewState.  Null
+/// ends are ignored, so callers need no per-dock guards.  UniqueConnection
+/// makes re-running the wiring (every time a matrix dock is added) idempotent.
+/// setViewState never emits viewChanged, so cross-linking cannot loop.
+template <class Src, class Dst>
+void linkMatrixZoom(Src* src, Dst* dst)
+{
+    if (!src || !dst) return;
+    QObject::connect(src, &Src::viewChanged,
+                     dst, &Dst::setViewState, Qt::UniqueConnection);
+}
+}   // namespace
+
 void KlustersView::connectMatrixZoomSync()
 {
+    // Every matrix view shares an identical pixel layout at equal size, so the
+    // zoom + pan state transfers verbatim between any pair: panning one matrix
+    // keeps the same cluster pairs under the cursor in all of them.  Wire all
+    // ordered pairs; the helper skips whichever docks are absent.
     ErrorMatrixView* emv = overviewErrorMatrixDock
         ? qobject_cast<ErrorMatrixView*>(overviewErrorMatrixDock->widget()) : nullptr;
     TemplateMatrixView* tmv = overviewTemplateMatrixDock
         ? qobject_cast<TemplateMatrixView*>(overviewTemplateMatrixDock->widget()) : nullptr;
-    if (emv && tmv) {
-        connect(emv, &ErrorMatrixView::viewChanged,
-                tmv, &TemplateMatrixView::setViewState, Qt::UniqueConnection);
-        connect(tmv, &TemplateMatrixView::viewChanged,
-                emv, &ErrorMatrixView::setViewState, Qt::UniqueConnection);
-    }
+    ResidualMatrixView* rmv = overviewResidualMatrixDock
+        ? qobject_cast<ResidualMatrixView*>(overviewResidualMatrixDock->widget()) : nullptr;
+    DriftMatrixView* dmv = overviewDriftMatrixDock
+        ? qobject_cast<DriftMatrixView*>(overviewDriftMatrixDock->widget()) : nullptr;
+
+    linkMatrixZoom(emv, tmv);  linkMatrixZoom(emv, rmv);  linkMatrixZoom(emv, dmv);
+    linkMatrixZoom(tmv, emv);  linkMatrixZoom(tmv, rmv);  linkMatrixZoom(tmv, dmv);
+    linkMatrixZoom(rmv, emv);  linkMatrixZoom(rmv, tmv);  linkMatrixZoom(rmv, dmv);
+    linkMatrixZoom(dmv, emv);  linkMatrixZoom(dmv, tmv);  linkMatrixZoom(dmv, rmv);
 }
 
 void KlustersView::toggleMatrixTab()
