@@ -1,6 +1,8 @@
 #ifndef TEMPLATEMATRIXVIEW_H
 #define TEMPLATEMATRIXVIEW_H
 
+#include <algorithm>
+#include "rangeslider.h"
 #include <QWidget>
 #include <QMap>
 #include <QColor>
@@ -153,7 +155,9 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
 
 private Q_SLOTS:
-    void onThresholdChanged(int sliderValue);
+    /**Span moved: @p low is the colour axis floor, @p high is both the colour
+     * axis ceiling and the highlight threshold.*/
+    void onThresholdChanged(double low, double high);
     void onApplyClicked();
     /// Live metric selector (Cosine / Pearson / Raw) next to the threshold
     /// slider.  Writes configuration().templateXcorrMetric (shared with the
@@ -267,15 +271,22 @@ private:
     QRect   matrixViewport;
     QList<Pair> selectedPairs;
 
-    // ── threshold UI ─────────────────────────────────────────────────────────
-    QSlider*     thresholdSlider;
+    // ── threshold / colour-axis UI ───────────────────────────────────────────
+    /**Two-handle span.  The span IS the colour-scale axis: scores at or below
+     * colourLow draw as the bottom of the ramp, at or above colourHigh as the
+     * top, so narrowing it stretches the ramp over the interesting range.  The
+     * UPPER handle doubles as the highlight threshold (currentThreshold), which
+     * is what the white cell outlines and the Apply spike-move both key off, so
+     * the top of the colour scale and the "interesting" cut are the same edge.*/
+    RangeSlider* thresholdSlider;
     QLabel*      thresholdLabel;
     QLabel*      countLabel;
     QPushButton* applyButton;
     // ── metric selector (Cosine / Pearson / Raw / Disatten. / Fast-AP),
     //    shares configuration().templateXcorrMetric; index == metric int.
     QComboBox* metricCombo;
-    double       currentThreshold;
+    double       currentThreshold;   // == the span's UPPER handle
+    double       colourLow;         // == the span's LOWER handle
     double       sliderMin;
     double       sliderMax;
 
@@ -287,17 +298,22 @@ private:
     void drawMatrix(QPainter& painter);
     void drawClusterIds(QPainter& painter);
     void updateSliderPreview();
+    /**Refresh the label showing the colour axis and the threshold.*/
+    void updateThresholdLabel();
 
     QPoint matrixTopLeft() const;
     int    cellAtX(int viewX) const;
     int    cellAtY(int viewY) const;
 
-    double sliderToThreshold(int v) const {
-        return sliderMin + (sliderMax - sliderMin) * v / 100.0;
-    }
-    int thresholdToSlider(double t) const {
-        if (sliderMax <= sliderMin) return 0;
-        return static_cast<int>((t - sliderMin) / (sliderMax - sliderMin) * 100.0 + 0.5);
+    /**Map a score to a colour index using the span as the axis.  Degenerate
+     * spans (both handles together) collapse to a single step rather than
+     * dividing by zero.*/
+    int colourIndexFor(double score, int nbColors) const {
+        const double lo = colourLow, hi = currentThreshold;
+        double f = (hi > lo) ? (score - lo) / (hi - lo) : (score >= hi ? 1.0 : 0.0);
+        f = std::max(0.0, std::min(1.0, f));
+        return std::max(0, std::min(nbColors - 1,
+                                    static_cast<int>(f * (nbColors - 1) + 0.5)));
     }
 };
 

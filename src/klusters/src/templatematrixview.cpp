@@ -39,6 +39,7 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
       selectedA(-1), selectedB(-1),
       cellWidth(CELL_WIDTH), widthBorder(0), heightBorder(0),
       currentThreshold(0.90),
+      colourLow(0.0),
       sliderMin(configuration().getTemplateThresholdMin()),
       sliderMax(configuration().getTemplateThresholdMax())
 {
@@ -71,10 +72,11 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     thresholdLabel = new QLabel(controlBar);
     thresholdLabel->setMinimumWidth(130);
 
-    thresholdSlider = new QSlider(Qt::Horizontal, controlBar);
-    thresholdSlider->setRange(0, 100);
-    thresholdSlider->setTickPosition(QSlider::TicksBelow);
-    thresholdSlider->setTickInterval(10);
+    thresholdSlider = new RangeSlider(controlBar);
+    thresholdSlider->setToolTip(
+        tr("Drag the two handles to set the colour-scale limits.  The UPPER "
+           "handle is also the highlight threshold: cells at or above it are "
+           "outlined and are what Apply moves."));
 
     countLabel = new QLabel("", controlBar);
     countLabel->setMinimumWidth(200);
@@ -137,7 +139,7 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
 
     mainLayout->addWidget(controlBar, 0);
 
-    connect(thresholdSlider, &QSlider::valueChanged,
+    connect(thresholdSlider, &RangeSlider::spanChanged,
             this, &TemplateMatrixView::onThresholdChanged);
     connect(applyButton, &QPushButton::clicked,
             this, &TemplateMatrixView::onApplyClicked);
@@ -147,9 +149,10 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
             this, &TemplateMatrixView::onMetricChanged);
 
     currentThreshold = std::max(sliderMin, std::min(sliderMax, currentThreshold));
-    thresholdSlider->setValue(thresholdToSlider(currentThreshold));
-    thresholdLabel->setText(
-        QString("Threshold: %1").arg(currentThreshold, 0, 'f', 2));
+    colourLow        = sliderMin;
+    thresholdSlider->setRange(sliderMin, sliderMax);
+    thresholdSlider->setSpan(colourLow, currentThreshold);
+    updateThresholdLabel();
 
     initializeColorMap();
     updateMatrixContents();
@@ -272,9 +275,10 @@ void TemplateMatrixView::updateSliderRange()
     sliderMin = configuration().getTemplateThresholdMin();
     sliderMax = configuration().getTemplateThresholdMax();
     currentThreshold = std::max(sliderMin, std::min(sliderMax, currentThreshold));
-    thresholdSlider->setValue(thresholdToSlider(currentThreshold));
-    thresholdLabel->setText(
-        QString("Threshold: %1").arg(currentThreshold, 0, 'f', 2));
+    colourLow        = std::max(sliderMin, std::min(currentThreshold, colourLow));
+    thresholdSlider->setRange(sliderMin, sliderMax);
+    thresholdSlider->setSpan(colourLow, currentThreshold);   // no echo: setSpan is silent
+    updateThresholdLabel();
     updateSliderPreview();
     update();
 }
@@ -601,10 +605,10 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
             uchar* line = img.scanLine(row);
             for (int col = 0; col < n; ++col) {
                 if (row == col) { line[col] = static_cast<uchar>(blackIdx); continue; }
+                // Colour axis = the slider's span, so the ramp is stretched
+                // over [colourLow, currentThreshold] rather than a fixed [0,1].
                 const double sc = (*scores)(row+1, col+1);
-                int idx = static_cast<int>(sc * (NB_COLORS-1) + 0.5);
-                idx = std::max(0, std::min(NB_COLORS-1, idx));
-                line[col] = static_cast<uchar>(idx);
+                line[col] = static_cast<uchar>(colourIndexFor(sc, NB_COLORS));
             }
         }
 
@@ -909,13 +913,28 @@ void TemplateMatrixView::onMetricChanged()
     updateMatrixContents();
 }
 
-void TemplateMatrixView::onThresholdChanged(int sliderValue)
+void TemplateMatrixView::onThresholdChanged(double low, double high)
 {
-    currentThreshold = sliderToThreshold(sliderValue);
-    thresholdLabel->setText(
-        QString("Threshold: %1").arg(currentThreshold, 0, 'f', 2));
+    // The upper handle is the threshold: the white cell outlines, the Apply
+    // spike-move and the top of the colour ramp all key off the same edge.
+    colourLow        = low;
+    currentThreshold = high;
+    updateThresholdLabel();
     updateSliderPreview();
     update();
+}
+
+void TemplateMatrixView::updateThresholdLabel()
+{
+    // Kept short on purpose: this label has setMinimumWidth(130) and sits in the
+    // control bar that already floors the tabbed matrix dock's width, so a
+    // longer natural text would widen that floor.  The threshold leads because
+    // it is the actionable number (outlines + Apply); the second value is the
+    // colour axis floor.  No need to print the threshold twice — it IS the
+    // span's upper handle, which the tooltip and the filled handle both say.
+    thresholdLabel->setText(QString("Thr %1  lo %2")
+                                .arg(currentThreshold, 0, 'f', 2)
+                                .arg(colourLow, 0, 'f', 2));
 }
 
 void TemplateMatrixView::updateSliderPreview()
