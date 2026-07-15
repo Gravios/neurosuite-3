@@ -1641,7 +1641,8 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
 
-        // "E" — switch between the Error Matrix and Template Matrix tabs
+        // "E" — step through the open matrix tabs (Error → Template →
+        // Residual → Drift → Error)
         if(ke->key() == Qt::Key_E && ke->modifiers() == Qt::NoModifier
            && !isInit && doc && activeView()){
             activeView()->toggleMatrixTab();

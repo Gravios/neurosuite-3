@@ -1934,18 +1934,32 @@ void KlustersView::connectMatrixZoomSync()
 
 void KlustersView::toggleMatrixTab()
 {
-    // The Error Matrix and Template Matrix docks open tabified into a single
-    // frame (see applyOverviewLayout()).  "E" flips between them by raising
-    // whichever is currently behind: visibleRegion() is empty for the occluded
-    // (back) tab and non-empty for the front tab.  No-op when either dock has
-    // been closed; harmless when they are not tabified (raising a lone dock
-    // does nothing visible).
-    if(!overviewErrorMatrixDock || !overviewTemplateMatrixDock)
+    // The matrix docks open tabified into a single frame (see
+    // applyOverviewLayout()).  "E" steps through whichever of them are open, in
+    // a fixed order: Error -> Template -> Residual -> Drift -> Error.  The front
+    // tab is the one whose visibleRegion() is non-empty; occluded (back) tabs
+    // have an empty one.  Closed docks are QPointer-null and simply drop out of
+    // the cycle, so "E" keeps working with any subset.  No-op with fewer than
+    // two matrices open (raising a lone dock does nothing visible).
+    QList<QDockWidget*> docks;
+    const auto addDock = [&docks](QDockWidget* d) {
+        if (d && !d->isHidden()) docks.append(d);
+    };
+    addDock(overviewErrorMatrixDock.data());
+    addDock(overviewTemplateMatrixDock.data());
+    addDock(overviewResidualMatrixDock.data());
+    addDock(overviewDriftMatrixDock.data());
+    if (docks.size() < 2)
         return;
-    if(overviewErrorMatrixDock->visibleRegion().isEmpty())
-        overviewErrorMatrixDock->raise();     // Error is behind -> show it
-    else
-        overviewTemplateMatrixDock->raise();  // Error is in front -> show Template
+
+    // First visible dock == the front tab of the tabified frame.  When the user
+    // has torn matrices into separate areas several are visible at once; taking
+    // the first still yields a sensible round-robin.
+    int front = -1;
+    for (int i = 0; i < docks.size(); ++i) {
+        if (!docks.at(i)->visibleRegion().isEmpty()) { front = i; break; }
+    }
+    docks.at(front < 0 ? 0 : (front + 1) % docks.size())->raise();
 }
 
 void KlustersView::updateTraceView(const QString& name,ItemColors* clusterColors,bool active){     

@@ -158,8 +158,9 @@ public:
      */
     void applyOverviewLayout();
 
-    /// Flip the tabified Error/Template matrix dock frame to its other tab
-    /// (bound to "E").
+    /// Step the tabified matrix dock frame to the next open matrix, in the
+    /// order Error -> Template -> Residual -> Drift -> Error (bound to "E").
+    /// Docks that are closed drop out of the cycle.
     void toggleMatrixTab();
     
     /**List of the names for the different type of view available.*/
