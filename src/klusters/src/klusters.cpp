@@ -1990,8 +1990,12 @@ void KlustersApp::initDisplay(){
     long totalNbSpikes = doc->totalNbOfSpikes();
     spikesTodisplay->setRange(1,totalNbSpikes);
     maximumTime *= 1000;
-    correlogramsHalfTimeFrameValidator.setRange(0,static_cast<int>((maximumTime - 1) / 2));
-    binSizeValidator.setRange(0,maximumTime);
+    // Lower bound 1, not 0: both boxes feed divisions (nbBins = timeWindow /
+    // binSize), and the comments where these boxes are built already promise
+    // "integers between 1 and a max".  Accepting 0 made typing one reachable and
+    // crashed the correlation view with SIGFPE.
+    correlogramsHalfTimeFrameValidator.setRange(1,static_cast<int>((maximumTime - 1) / 2));
+    binSizeValidator.setRange(1,static_cast<int>(maximumTime));
 
 
     //If the setting dialog exists (has already be open once), enable the settings for the channels.
@@ -4903,9 +4907,11 @@ void KlustersApp::slotUpdateCorrelogramsHalfDuration(){
             return;
         }
 
+        if(binSize <= 0) return;   // nothing sensible to snap to; see slotUpdateBinSize
         float x = (2*static_cast<float>(halfTimeFrame)
                    /static_cast<float>(binSize)-1) * 0.5;
         int k = static_cast<int>(x + 0.5);
+        if(k < 0) k = 0;
 
         correlogramTimeFrame = (2*k+1)*binSize;
         if(k != x){
@@ -4917,7 +4923,30 @@ void KlustersApp::slotUpdateCorrelogramsHalfDuration(){
 
 void KlustersApp::slotUpdateBinSize(){
     if(!isInit){
-        binSize = (binSizeBox->displayText()).toInt();
+        const int sizeOfBin = (binSizeBox->displayText()).toInt();
+        // A zero bin size divides by zero all the way down (nbBins =
+        // timeWindow / binSize, and the correlogram's own hover readout), which
+        // is a SIGFPE rather than a misdraw.  Refuse it and put the last good
+        // value back.
+        if(sizeOfBin <= 0){
+            binSizeBox->setText(QString::fromLatin1("%1").arg(binSize));
+            return;
+        }
+        binSize = sizeOfBin;
+
+        // correlogramTimeFrame (2 * correlogramsHalfDuration) has to be
+        // (2k + 1) * binSize.  Applied here, once, rather than from inside the
+        // validator on every keystroke.
+        const int halfTimeFrame = (correlogramsHalfDuration->displayText()).toInt();
+        const float x = (2*static_cast<float>(halfTimeFrame)
+                         /static_cast<float>(binSize)-1)*0.5;
+        int k = static_cast<int>(x + 0.5);
+        if(k < 0) k = 0;
+        correlogramTimeFrame = (2*k+1) * binSize;
+        if(static_cast<float>(k) != x)
+            correlogramsHalfDuration->setText(
+                QString::fromLatin1("%1").arg(static_cast<int>(correlogramTimeFrame / 2)));
+
         activeView()->updateBinSizeAndTimeFrame(binSize,correlogramTimeFrame);
     }
 }

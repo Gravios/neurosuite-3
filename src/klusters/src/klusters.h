@@ -1112,26 +1112,16 @@ private:
             //If the state determine in validate was invalid, fix by setting back the last correct value.
             input = QString::fromLatin1("%1").arg(klusters->binSize);
         }
+        // Deliberately a plain range check with no side effects.  This used to
+        // divide by the number being typed and rewrite the Duration box from
+        // inside validate(), which Qt calls on EVERY keystroke -- so a partial
+        // entry ("1" on the way to "15") snapped the Duration to fit a bin size
+        // the user had not finished typing, and the boxes fought back as you
+        // typed.  The (2k+1)*binSize relation is now applied once, on
+        // returnPressed, in KlustersApp::slotUpdateBinSize(), which mirrors what
+        // slotUpdateCorrelogramsHalfDuration() already did for the other box.
         QValidator::State validate(QString &input,int& pos) const{
-            QValidator::State state = QIntValidator::validate(input,pos);
-            //Let the QIntValidator validates the value as to know if it is a correct integer (within the range).
-            if(state != QValidator::Acceptable) return state;
-            //If the value is a correct integer, update the correlogramsHalfDuration if need it.
-            // correlogramTimeFrame (2 * correlogramsHalfDuration) has to be (2k + 1) * binSize.
-            else{
-                int sizeOfBin = input.toInt();
-                int halfTimeFrame = (klusters->correlogramsHalfDuration->displayText()).toInt();
-
-                float x = (2*static_cast<float>(halfTimeFrame)/static_cast<float>(sizeOfBin)-1)*0.5;
-                int k = static_cast<int>(x + 0.5);
-
-                klusters->correlogramTimeFrame = (2*k+1) * sizeOfBin;
-                if(k != x){
-                    // klusters->correlogramsHalfDuration->setText(QString::fromLatin1("%1").arg(k * sizeOfBin));
-                    klusters->correlogramsHalfDuration->setText(QString::fromLatin1("%1").arg(static_cast<int>(klusters->correlogramTimeFrame / 2)));
-                }
-                return state;
-            }
+            return QIntValidator::validate(input,pos);
         }
     private:
         KlustersApp* klusters;
