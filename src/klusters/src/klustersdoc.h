@@ -173,13 +173,19 @@ public:
 
     /**Sends back the directory where is store the document.*/
     QString documentDirectory() const;
-    /** Returns true if this session uses the stderiv pipeline
-     *  (.spkD.N / .fetD.N / .pcaD.N files). */
+    /** Returns true if this session uses the stderiv pipeline.
+     *
+     *  Matches the chain-of-custody naming the loader actually builds —
+     *  <base>.spk.<method>.<group>, e.g. foo.spk.stderiv.5 — and still accepts
+     *  the retired flat .spkD.N form for old sessions.  Testing only for
+     *  ".spkD." (as this did) never matched a custody-named session, so this
+     *  silently reported every stderiv session as standard. */
     /** Returns a snapshot copy of the view list safe to iterate during teardown. */
     QList<KlustersView*> viewListCopy() const
     { return viewList ? *viewList : QList<KlustersView*>(); }
     bool isStderivSession() const
-        { return origSpkPath.contains(QStringLiteral(".spkD.")); }
+        { return origSpkPath.contains(QStringLiteral(".spk.stderiv."))
+              || origSpkPath.contains(QStringLiteral(".spkD.")); }
 
     /**Returns the reference on the list of ClusterColor objects.
     * @return ItemColors containing the information on the clusters and their associated color.
