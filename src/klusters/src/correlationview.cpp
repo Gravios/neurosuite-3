@@ -62,7 +62,7 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
     mode = ZOOM;
 
     //Set the drawing variables
-    nbBins = timeWindow / binSize;
+    nbBins = (binSize > 0) ? timeWindow / binSize : 0;
     binWidth = 100;
     widthBorder = (nbBins * binWidth) / 30;
     heightBorder = 20;
@@ -80,7 +80,7 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
     // fixed ladder topped out at 20 ms, which is 22 marks per side at a 900 ms
     // Duration and 50 at 2000 ms.
     n = cvGridStepMs(timeWindow);
-    int pixelPerTimeWindow = (timeWindow * binWidth) / binSize;
+    int pixelPerTimeWindow = (binSize > 0) ? (timeWindow * binWidth) / binSize : 0;
     tickMarkStep = (n > 0 && timeWindow > 0)
         ? static_cast<float>(pixelPerTimeWindow * n) / static_cast<float>(timeWindow)
         : 0.0f;
@@ -603,7 +603,7 @@ void CorrelationView::drawCorrelograms(QPainter& painter,QList<Pair>& pairList){
 void CorrelationView::setBinSizeAndTimeWindow(int size,int width){
     binSize = size;
     timeWindow = width;
-    nbBins = timeWindow / binSize;
+    nbBins = (binSize > 0) ? timeWindow / binSize : 0;
     Xspace = (nbBins * binWidth) / 10;
     widthBorder = (nbBins * binWidth) / 30;
     shift = nbBins * binWidth + Xspace;
@@ -611,7 +611,7 @@ void CorrelationView::setBinSizeAndTimeWindow(int size,int width){
     //Compute variable to draw tick marks
     // Same interval rule as the constructor — see correlationgrid.h.
     const int n = cvGridStepMs(timeWindow);
-    int pixelPerTimeWindow = (timeWindow * binWidth) / binSize;
+    int pixelPerTimeWindow = (binSize > 0) ? (timeWindow * binWidth) / binSize : 0;
     tickMarkStep = (n > 0 && timeWindow > 0)
         ? static_cast<float>(pixelPerTimeWindow * n) / static_cast<float>(timeWindow)
         : 0.0f;
@@ -853,6 +853,9 @@ void CorrelationView::mouseMoveEvent(QMouseEvent* event){
 
     if(x < 0) statusBar->clearMessage();//on the left side of the first correlogram.
     else{
+        // binWidth / binSize is an INTEGER division: a zero bin size is a SIGFPE
+        // here, in a mouse-move handler, not just at recompute time.
+        if(binSize <= 0){ statusBar->clearMessage(); return; }
         float time = (static_cast<float>(fmod(x,static_cast<float>(nbBins * binWidth + Xspace))
                                          - static_cast<float>(nbBins * binWidth / 2))
                       / static_cast<float>(binWidth / binSize));
