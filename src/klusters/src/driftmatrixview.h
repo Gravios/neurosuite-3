@@ -169,6 +169,9 @@ private:
      * instead of a recompute.*/
     Cache      cacheAll;
     Cache      cacheSel;
+    /**A recompute is in flight: the view keeps painting whatever it has and
+     * overlays a small badge instead of blanking the frame.*/
+    bool       computing = false;
     QList<int> cachedSelection;   // the selection cacheSel was computed for
 
     /**Make @p c the displayed matrix (no recompute).*/

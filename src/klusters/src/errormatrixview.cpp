@@ -20,6 +20,7 @@
 #include <QApplication>
 #include <QTimer>
 #include "errormatrixview.h"
+#include "matrixbadge.h"
 #include "featuremask.h"
 #include <QStringList>
 #include <vector>
@@ -174,6 +175,9 @@ void ErrorMatrixView::customEvent(QEvent* event){
         // fast post-renumber thread would silently overwrite the correct result.
         const bool accepted = (newProb != nullptr
                                && errorMatrixThread->getGeneration() == generation);
+    // Only the generation we are waiting on ends the "computing" state: a
+    // superseded result must not cancel the badge for the newer compute.
+    if(errorMatrixThread->getGeneration() == generation) computing = false;
 
         // Background cache warmer: it never drives the display.  Install only the raw
         // cache it produced (if still current) so the next edit is a fast incremental
@@ -291,6 +295,7 @@ bool ErrorMatrixView::isComputing() const{
 }
 
 void ErrorMatrixView::updateMatrixContents(){
+    computing = true;      // paint a badge over the old matrix, do not blank
     if(!goingToDie){
         //Bump the generation so that customEvent() can identify — and discard — results
         //from any threads that were launched before this call.  This prevents a slow
@@ -649,11 +654,13 @@ void ErrorMatrixView::paintEvent ( QPaintEvent*){
             drawMatrix(painter);
             drawClusterIds(painter);
             if(init){ setMouseTracking(true); init = false; }
-        } else {
-            painter.setPen(colorLegend);
-            painter.drawText(rect(), Qt::AlignCenter,
-                             QStringLiteral("Computing error matrix..."));
         }
+        // A recompute no longer wipes the frame: whatever was there stays up and
+        // a small badge says fresh numbers are coming.  With nothing to show yet
+        // (the first compute) the badge centres itself instead.
+        if(computing)
+            mbDrawComputingBadge(painter, rect(),
+                                 tr("Computing error matrix\u2026"), dataReady);
         painter.end();
         drawContentsMode = REFRESH;
     }
