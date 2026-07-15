@@ -467,8 +467,36 @@ void DriftMatrixView::mousePressEvent(QMouseEvent* e)
 
 void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (panning) { panning = false; e->accept(); return; }
-    QWidget::mouseReleaseEvent(e);
+    if (panning) {
+        panning = false;
+        setCursor(Qt::ArrowCursor);
+        e->accept();
+        return;
+    }
+    setCursor(Qt::ArrowCursor);
+
+    // A plain click selects the clicked cell's pair -- row cluster A and column
+    // cluster B -- and shows just those clusters in the scatter / waveform
+    // views; Ctrl-click adds them to the current selection instead.  Mirrors
+    // the error and residual matrix click behaviour, so a promising cell (high
+    // correlation at some drift) can be inspected without hunting for the pair
+    // by eye.  A stationary Ctrl-click reaches here with panning == false
+    // because the pan only engages past the drag threshold in mouseMoveEvent.
+    emit viewInteracted();
+    if (!dataReady || clusterList.isEmpty())
+        return;
+    const int col = cellAtX(e->position().toPoint().x());
+    const int row = cellAtY(e->position().toPoint().y());
+    if (row < 0 || col < 0)
+        return;
+    QList<int> clustersToShow;
+    clustersToShow.append(clusterList[row]);
+    if (clusterList[col] != clusterList[row])
+        clustersToShow.append(clusterList[col]);
+    if (e->modifiers() & Qt::ControlModifier)
+        doc.addClustersToActiveView(clustersToShow);
+    else
+        doc.shownClustersUpdate(clustersToShow);
 }
 
 void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
