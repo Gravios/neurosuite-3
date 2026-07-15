@@ -1801,6 +1801,7 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(&doc, &KlustersDoc::newClusterAdded, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::newClusterAdded);
         connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded), qobject_cast<ErrorMatrixView*>(view), static_cast<void(ErrorMatrixView::*)(QMap<int,int>&,QList<int>&)>(&ErrorMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::renumber);
+        connect(&doc, &KlustersDoc::selectedChannelsChanged, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::selectedChannelsChanged);
         connect(&doc, &KlustersDoc::clusterFeaturesReprojected, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::clusterFeaturesReprojected);
         connect(&doc, &KlustersDoc::undoRenumbering, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::undoRenumbering);
         connect(&doc, &KlustersDoc::undoAdditionModification, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::undoAdditionModification);

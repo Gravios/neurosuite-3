@@ -19,6 +19,7 @@
 #define GROUPINGASSISTANT_H
 
 //include files for the application
+#include <vector>
 #include "data.h"
 #include "array.h"
 #include "types.h"
@@ -148,6 +149,40 @@ private:
   * @return 0 if OK, 1 if matrix is not positive definite.
   */
     int cholesky(Array<double>& out,int nbDimensions,int clusterIndex);
+
+public:
+    /**Restrict every computation to these 0-based feature dimensions (see
+     * featuremask.h).  Empty — the default — means use every dimension, so
+     * existing callers are unaffected.
+     *
+     * The means and covariances are then built over the selected dimensions
+     * only, which makes them the marginal model over that subspace: the
+     * covariance of a subset of dimensions IS the corresponding submatrix of
+     * the full covariance, so the Cholesky and the Mahalanobis distance below
+     * stay exactly as they are and simply see a smaller model.
+     *
+     * Must be set before computeMeanProbabilities* is called.*/
+    void setActiveDimensions(const std::vector<int>& dims) { activeDims = dims; }
+    const std::vector<int>& activeDimensions() const { return activeDims; }
+
+private:
+    /**0-based feature dimensions to use; empty = all.*/
+    std::vector<int> activeDims;
+
+    /**Map a 1-based model dimension to the 1-based .fet column it reads.
+     * Identity when unrestricted.*/
+    inline int dimCol(int modelDim1Based) const {
+        return activeDims.empty()
+                   ? modelDim1Based
+                   : activeDims[static_cast<size_t>(modelDim1Based - 1)] + 1;
+    }
+    /**Model dimensionality: the selection size, or @p fullNbDims when
+     * unrestricted.*/
+    inline int activeDimCount(int fullNbDims) const {
+        return activeDims.empty() ? fullNbDims
+                                  : static_cast<int>(activeDims.size());
+    }
+
 
     /**Computes the means and the covariances.
   * @param nbClusters number of clusters.

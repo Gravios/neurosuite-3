@@ -115,4 +115,29 @@ inline std::vector<int> fmSelectedDims(const std::vector<int>& selection,
     return dims;
 }
 
+/**
+ * The selected channels that carry no feature columns at all, ascending.
+ *
+ * Reachable on a stderiv session: process_pca_stderiv drops the last
+ * (linearly dependent) channel, so it has no PCA columns and selecting it can
+ * have no effect on anything feature-based.  fmSelectedDims already ignores
+ * such channels; this reports them so the caller can say so rather than leave
+ * the user wondering why picking that channel changed nothing.
+ *
+ * Returns empty when the layout is unresolved (nothing is masked in that case,
+ * so there is nothing to warn about).
+ */
+inline std::vector<int> fmChannelsWithoutFeatures(const std::vector<int>& selection,
+                                                  const FeatureLayout& layout)
+{
+    std::vector<int> dead;
+    if (!layout.valid) return dead;
+    for (int c : selection)
+        if (c < 0 || c >= layout.pcaChans)      // outside the PCA block => no columns
+            if (std::find(dead.begin(), dead.end(), c) == dead.end())
+                dead.push_back(c);
+    std::sort(dead.begin(), dead.end());
+    return dead;
+}
+
 #endif // FEATUREMASK_H

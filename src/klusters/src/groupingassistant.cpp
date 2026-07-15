@@ -184,7 +184,12 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     if (haveToStopComputing) return nullptr;
 
     const dataType nbSpikes     = clusteringData.totalNbOfSpikes();
-    const int      nbDimensions = clusteringData.nbOfDimensionsTotal() - 1;
+    // Model dimensionality: the active feature subspace (all dimensions unless
+    // setActiveDimensions() restricted it).  The incremental cache's
+    // prevNbDimensions check below then invalidates it automatically whenever
+    // the selection changes, since the model geometry changed.
+    const int      nbDimensions =
+        activeDimCount(clusteringData.nbOfDimensionsTotal() - 1);
 
     // A cache is USABLE for reuse only if its geometry matches the current
     // session.  When it does not (cold start, session reload, dimensionality
@@ -335,7 +340,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
                     const dataType featRow = (*spikesByCluster)(1, si);
                     double mahal = 0.0;
                     for (int d = 0; d < nbDimensions; ++d) {
-                        double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
+                        double sv = clusteringData.features(featRow, dimCol(d + 1)) - means(ci1, d + 1);
                         for (int j = 0; j < d; ++j)
                             sv -= L[static_cast<size_t>(d + j*nbDimensions)] * root[j];
                         root[d] = sv / L[static_cast<size_t>(d + d*nbDimensions)];
@@ -364,7 +369,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
                         const dataType featRow = (*spikesByCluster)(1, si);
                         double mahal = 0.0;
                         for (int d = 0; d < nbDimensions; ++d) {
-                            double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
+                            double sv = clusteringData.features(featRow, dimCol(d + 1)) - means(ci1, d + 1);
                             for (int j = 0; j < d; ++j)
                                 sv -= L[static_cast<size_t>(d + j*nbDimensions)] * root[j];
                             root[d] = sv / L[static_cast<size_t>(d + d*nbDimensions)];
@@ -397,7 +402,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
                 const dataType featRow = (*spikesByCluster)(1, si);
                 double mahal = 0.0;
                 for (int d = 0; d < nbDimensions; ++d) {
-                    double sv = clusteringData.features(featRow, d + 1) - means(ci1, d + 1);
+                    double sv = clusteringData.features(featRow, dimCol(d + 1)) - means(ci1, d + 1);
                     for (int j = 0; j < d; ++j)
                         sv -= L[static_cast<size_t>(d + j*nbDimensions)] * root[j];
                     root[d] = sv / L[static_cast<size_t>(d + d*nbDimensions)];
@@ -535,7 +540,8 @@ Array<double>* GroupingAssistant::computeProbabilities(
     // (nbDimensions - 1, excluding the timestamp column) rather than
     // totalNbOfPCAs() = nbChannels × nbFeatPerChannel, which over-counts
     // by 1 channel for stderiv sessions (PCA is on nChan-1 channels).
-    int      nbDimensions = clusteringData.nbOfDimensionsTotal() - 1;
+    int      nbDimensions =
+        activeDimCount(clusteringData.nbOfDimensionsTotal() - 1);
 
     QElapsedTimer pt;
     const bool pTiming = qEnvironmentVariableIntValue("NS3_ERRORMATRIX_TIMING") != 0;
@@ -626,7 +632,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
         for (dataType s = 1; s <= nbSpikes; ++s)
             for (int d = 1; d <= nbDimensions; ++d)
                 h_features[static_cast<size_t>((s-1)*nbDimensions + (d-1))] =
-                    clusteringData.features(s, d);
+                    clusteringData.features(s, dimCol(d));
 
         std::vector<double> h_chol(
             static_cast<size_t>(nbClusters) * nbDimensions * nbDimensions, 0.0);
@@ -830,7 +836,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 dataType featRow = (*spikesByCluster)(1, si);
                 double mahal = 0.0;
                 for (int d = 0; d < nbDimensions; ++d) {
-                    double s = clusteringData.features(featRow, d + 1)
+                    double s = clusteringData.features(featRow, dimCol(d + 1))
                                - means(ci1, d + 1);
                     for (int j = 0; j < d; ++j)
                         s -= L[static_cast<size_t>(d + j*nbDimensions)] * root[j];
@@ -963,7 +969,7 @@ void GroupingAssistant::meanCovarianceComputation(
             dataType featRow = (*spikesByCluster)(1, i);
             for (int j = 1; j <= nbDimensions; ++j)
                 means(c.idx, j) +=
-                    static_cast<double>(clusteringData.features(featRow, j));
+                    static_cast<double>(clusteringData.features(featRow, dimCol(j)));
         }
         for (int j = 1; j <= nbDimensions; ++j)
             means(c.idx, j) /= static_cast<double>(c.nb);
@@ -971,7 +977,7 @@ void GroupingAssistant::meanCovarianceComputation(
         for (dataType i = c.first; i < last; ++i) {
             dataType featRow = (*spikesByCluster)(1, i);
             for (int j = 1; j <= nbDimensions; ++j)
-                dmm[j-1] = static_cast<double>(clusteringData.features(featRow, j))
+                dmm[j-1] = static_cast<double>(clusteringData.features(featRow, dimCol(j)))
                            - means(c.idx, j);
             for (int ii = 1; ii <= nbDimensions; ++ii)
                 for (int jj = 1; jj <= nbDimensions; ++jj)
