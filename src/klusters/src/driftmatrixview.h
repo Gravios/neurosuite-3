@@ -178,6 +178,13 @@ private:
     QSpinBox* maxUmSpin;
     QLabel*   driftLabel;
     QLabel*   infoLabel;
+    QString   infoText;      // unelided text; infoLabel shows an elided copy
+
+    /// Set the bottom info line.  Stores the full text and displays an elided
+    /// copy, so the label never demands the width of its whole string.
+    void setInfoText(const QString& text);
+    /// Re-elide infoText to the label's current width.
+    void updateInfoElide();
 
     // ── helpers ──────────────────────────────────────────────────────────
     DriftMatrixThread* launchComputeThread();
