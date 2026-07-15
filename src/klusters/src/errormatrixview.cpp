@@ -420,6 +420,15 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             :                       "FULL(?)");
     }
 
+    //The creation of a thread automatically start it.
+    return new ErrorMatrixThread(
+        *this, doc.data(), generation,
+        useIncremental, incrementalVerify,
+        (rawProbCacheValid ? rawProbCache : nullptr),
+        rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
+        changedIds, /*seedOnly*/ false, activeFeatureDims());
+}
+
 std::vector<int> ErrorMatrixView::activeFeatureDims()
 {
     const QList<int> selection = doc.selectedChannels();
@@ -478,15 +487,6 @@ void ErrorMatrixView::selectedChannelsChanged(const QList<int>&)
     // dropping it here is what keeps that correct.
     invalidateRawProbCache("channel selection changed");
     updateMatrixContents();
-}
-
-    //The creation of a thread automatically start it.
-    return new ErrorMatrixThread(
-        *this, doc.data(), generation,
-        useIncremental, incrementalVerify,
-        (rawProbCacheValid ? rawProbCache : nullptr),
-        rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
-        changedIds, /*seedOnly*/ false, activeFeatureDims());
 }
 
 void ErrorMatrixView::launchCacheWarmer(){
