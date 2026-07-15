@@ -271,7 +271,14 @@ protected:
   * as all the views are sharing the same data.
   * @param event mouse release event.
   */
+    void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    /**Watches the application for the Ctrl release that commits a channel
+     * selection.  The view hierarchy sets no focus policy, so it never receives
+     * key events itself; filtering the application avoids having to give it
+     * focus, which would disturb the Tab/arrow-key focus ring KlustersApp
+     * manages.*/
+    bool eventFilter(QObject* watched, QEvent* event) override;
     /**The view responds to a resize event.
   * The waveforms are retrieve in case the data have changed (an other view has changed its parameters)
   * as all the views are sharing the same data.
@@ -363,6 +370,22 @@ private:
 
     /**Index positions of the channels*/
     std::vector<int> channelPositions;
+
+    /**Channel indices (group-local) toggled by Ctrl+click but not yet pushed to
+     * the document: the selection is committed only when Ctrl is released, so a
+     * multi-channel pick triggers one recompute rather than one per click.*/
+    QList<int> pendingChannelSelection;
+    /**True once a Ctrl+click changed pendingChannelSelection; cleared on commit.*/
+    bool channelSelectionDirty = false;
+
+    /**Group-local channel index drawn at world ordinate @p worldY, or -1 if the
+     * point falls outside every channel band.  Inverts the layout used by
+     * drawWaveforms: channel j is drawn about the baseline
+     * -(Y0 - channelPositions[j] * (YsizeForMaxAmp + Yspace)).*/
+    int channelAtWorldY(long worldY) const;
+
+    /**Shade the bands of the channels in pendingChannelSelection.*/
+    void drawChannelSelection(QPainter& painter);
 
     /**When the presentation mode is time frame, this variable keeps track of
   * the current start time of the time window.*/

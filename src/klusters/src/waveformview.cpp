@@ -41,6 +41,8 @@
 #include <QResizeEvent>
 #include <QMouseEvent>
 #include <QEvent>
+#include <QKeyEvent>
+#include <cmath>
 
 
 const int WaveformView::XMARGIN = 0;
@@ -73,6 +75,8 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
     shift = (nbSamplesInWaveform - 1) * Xstep + Xspace;
     Yspace = 40;
     YsizeForMaxAmp = 100;
+    // Ctrl release commits the channel selection; see eventFilter().
+    qApp->installEventFilter(this);
     Yfactor = static_cast<float>(YsizeForMaxAmp)/static_cast<float>(acquisitionGain);
     gain = 0;
 
@@ -451,6 +455,9 @@ void WaveformView::paintEvent ( QPaintEvent *){
             //Fill the double buffer with the background
             doublebuffer.fill(palette().color(backgroundRole()));
 
+            //Shade the selected channels, then paint the waveforms on top.
+            drawChannelSelection(painter);
+
             //Paint all the waveforms in the shownclusters list (in the double buffer)
             drawWaveforms(painter,view.clusters());
         }
@@ -804,7 +811,39 @@ void WaveformView::mouseDoubleClickEvent (QMouseEvent *e){
 }
 
 
+void WaveformView::mousePressEvent(QMouseEvent* e){
+    // Ctrl+Left picks channels.  Swallow it here: BaseFrame::mousePressEvent
+    // would otherwise arm a zoom rubber band on the same press.
+    if((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+        e->accept();
+        return;
+    }
+    ViewWidget::mousePressEvent(e);
+}
+
 void WaveformView::mouseReleaseEvent(QMouseEvent* e){
+    // Ctrl+Left toggles the clicked channel.  Swallow it before the parent:
+    // BaseFrame::mouseReleaseEvent treats a plain left click in ZOOM mode as
+    // "zoom in by 2", which would fire on every pick.
+    if((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+        const QPoint world = viewportToWorld(e->position().toPoint().x(),
+                                             e->position().toPoint().y());
+        const int channel = channelAtWorldY(world.y());
+        if(channel >= 0){
+            if(pendingChannelSelection.contains(channel))
+                pendingChannelSelection.removeAll(channel);
+            else
+                pendingChannelSelection.append(channel);
+            channelSelectionDirty = true;
+            // Repaint the shading immediately; the document (and so the
+            // matrices) is only told once Ctrl is released.
+            drawContentsMode = REDRAW;
+            update();
+        }
+        e->accept();
+        return;
+    }
+
     //Trigger parent event
     ViewWidget::mouseReleaseEvent(e);
 
@@ -834,6 +873,64 @@ void WaveformView::mouseReleaseEvent(QMouseEvent* e){
     isZoomed = true;
 }
 
+
+int WaveformView::channelAtWorldY(long worldY) const{
+    // drawWaveforms puts channel j's baseline at world ordinate
+    //   -(Y0 - channelPositions[j] * step),  step = YsizeForMaxAmp + Yspace
+    // so worldY + Y0 == channelPositions[j] * step at the baseline.  Round to
+    // the nearest band and reject anything past its half-width (the gap
+    // between two channels belongs to neither).
+    const int step = YsizeForMaxAmp + Yspace;
+    if(step <= 0 || nbchannels <= 0) return -1;
+    const long rel = worldY + Y0;
+    // Half-open bands: position p owns rel in [p*step - step/2, p*step + step/2),
+    // which is exactly the rectangle drawChannelSelection shades.  Floor rather
+    // than round: lround() rounds halves AWAY from zero, so the top edge of the
+    // topmost band would land on position -1 and be rejected, leaving a dead
+    // line where the shading says the channel is clickable.
+    const int position = static_cast<int>(
+        std::floor((static_cast<double>(rel) + step / 2.0) / step));
+    if(position < 0 || position >= nbchannels) return -1;
+    for(int j = 0; j < nbchannels; ++j)
+        if(channelPositions[j] == position) return j;
+    return -1;
+}
+
+void WaveformView::drawChannelSelection(QPainter& painter){
+    if(pendingChannelSelection.isEmpty()) return;
+    // Shade the full width of each selected channel's band.  Drawn before the
+    // waveforms so the traces stay on top.
+    const QRect r((QRect)window);
+    const int step = YsizeForMaxAmp + Yspace;
+    QColor shade = palette().color(backgroundRole()).lightness() > 127
+                       ? QColor(0, 0, 0, 30)      // light background -> darken
+                       : QColor(255, 255, 255, 40);   // dark background -> lighten
+    painter.save();
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(shade);
+    for(int channel : pendingChannelSelection){
+        if(channel < 0 || channel >= nbchannels) continue;
+        const long baseline = -(Y0 - static_cast<long>(channelPositions[channel]) * step);
+        painter.drawRect(QRect(r.left(), static_cast<int>(baseline - step / 2),
+                               r.width(), step));
+    }
+    painter.restore();
+}
+
+bool WaveformView::eventFilter(QObject* watched, QEvent* event){
+    // Commit the pending selection when Ctrl is released, so picking several
+    // channels costs one matrix recompute rather than one per click.  Filtering
+    // the application (rather than handling keyReleaseEvent) is deliberate: no
+    // view in this hierarchy sets a focus policy, so key events never reach it.
+    if(event->type() == QEvent::KeyRelease && channelSelectionDirty){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_Control){
+            channelSelectionDirty = false;
+            doc.setSelectedChannels(pendingChannelSelection);
+        }
+    }
+    return ViewWidget::eventFilter(watched, event);
+}
 
 void WaveformView::resizeEvent(QResizeEvent* e){
     drawContentsMode = REDRAW;

@@ -216,6 +216,27 @@ void KlustersDoc::updateSimilarityMatrices()
     }
 }
 
+void KlustersDoc::setSelectedChannels(const QList<int>& channels)
+{
+    // Normalise first: callers hand us raw click order, possibly with repeats,
+    // and a stale index if the group changed under them.  Comparing normalised
+    // lists is what makes an unchanged commit free -- the waveform view commits
+    // on every Ctrl release, whether or not anything actually moved.
+    const int nbChannels = clusteringData ? clusteringData->nbOfchannels() : 0;
+    QList<int> normalised;
+    for (int c : channels) {
+        if (c >= 0 && c < nbChannels && !normalised.contains(c))
+            normalised.append(c);
+    }
+    std::sort(normalised.begin(), normalised.end());
+
+    if (normalised == channelSelection)
+        return;
+
+    channelSelection = normalised;
+    emit selectedChannelsChanged(channelSelection);
+}
+
 QList<int> KlustersDoc::getSiblingElectrodeGroups(int groupId) const
 {
     QList<int> result;
