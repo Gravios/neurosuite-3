@@ -2109,9 +2109,24 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
     // applied to disk (even if a later step failed).  Don't replay them.
     pendingRealign.clear();
 
-    // Step 2 — renew: re-seed the pending files from the fresh originals so
-    // the next realignment (or another save cycle) starts from a clean slate.
-    initPendingFiles();
+    // Step 2 — renew.  The commit above copied each pending file OVER its original, so the two are
+    // now byte-identical: re-seeding orig -> pending would copy a file onto content that already
+    // matches it, and the redirects are already in place.  That is ~459 MB of pure I/O per save on
+    // an 8-channel group here (spk 337 + fet 116 + res 4 + clu 2), doubling the cost of every save.
+    // The one case that genuinely needs a re-seed is SaveAs: it repoints origSpkPath/origResPath/
+    // origFetPath and docUrl at a NEW location, so the pending files still sitting next to the old
+    // one are orphans and a fresh set must be derived there.
+    const bool pathsMoved =
+           pendingSpkPath != origSpkPath + QStringLiteral(".pending")
+        || pendingResPath != origResPath + QStringLiteral(".pending")
+        || pendingFetPath != origFetPath + QStringLiteral(".pending")
+        || pendingCluPath != docUrl      + QStringLiteral(".pending");
+    if (pathsMoved) {
+        // Drop the now-orphaned pending copies at the old location before deriving the new ones.
+        for (const QString& stale : { pendingSpkPath, pendingResPath, pendingFetPath, pendingCluPath })
+            if (!stale.isEmpty()) QFile::remove(stale);
+        initPendingFiles();
+    }
 
     // Localisation probe (Data::checkSpikeFeatureInvariant): realignSpikes updated the
     // in-memory feature rows in place (updateFeatureRow) before this commit.  If it
