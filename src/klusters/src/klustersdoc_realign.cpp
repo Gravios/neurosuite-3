@@ -1990,6 +1990,15 @@ bool KlustersDoc::initPendingFiles()
         QFile::remove(dst);
         if (!QFile::copy(src, dst)) {
             qWarning() << "[initPendingFiles] copy failed:" << src << "->" << dst;
+            QFile::remove(dst);          // a failed copy can leave a partial file behind
+            return false;
+        }
+        // A partial seed must never survive: commitAndRenewPending checks only that the pending file
+        // EXISTS, so a truncated one would later be copied straight over a good original.
+        if (QFileInfo(src).size() != QFileInfo(dst).size()) {
+            qWarning() << "[initPendingFiles] incomplete copy (" << QFileInfo(dst).size() << "of"
+                       << QFileInfo(src).size() << "bytes):" << src << "->" << dst;
+            QFile::remove(dst);
             return false;
         }
         return true;
@@ -2009,12 +2018,26 @@ bool KlustersDoc::initPendingFiles()
         // reads pending (aligned) while children keep reading the original (shifted/scattered).
         if (childData) childData->setSpkFileName(pendingSpkPath);
         tmpCluFile = pendingCluPath;
+    } else {
+        // Leave NO half-state.  The four paths are assigned above, BEFORE the copies, so on failure
+        // they pointed at files that were never seeded: saveDocument would still target
+        // pendingCluPath, commitAndRenewPending would try to commit files that do not exist (a
+        // spurious "save failed" on a save that in fact worked), and the lazy retry guard
+        // `if (pendingResPath.isEmpty())` could never fire.  Clear them instead: the session then
+        // runs in plain non-pending mode -- tmpCluFile still names the real .clu, saveDocument writes
+        // there directly, commitAndRenewPending no-ops -- and the next realign retries the seed.
+        pendingSpkPath.clear(); pendingResPath.clear();
+        pendingFetPath.clear(); pendingCluPath.clear();
     }
     return ok;
 }
 
 bool KlustersDoc::commitAndRenewPending(QString* outError)
 {
+    // Not running with pending files (the seed failed and initPendingFiles cleared the paths):
+    // saveDocument wrote straight to the real .clu, so there is nothing to commit and reporting a
+    // failure here would be spurious.
+    if (pendingCluPath.isEmpty()) return true;
     // patch63 — Step 1: copy each pending file over the original.
     // QFile::copy refuses to overwrite, so remove the target first.
     // Each step now reports failure via outError + return value instead
@@ -2032,6 +2055,25 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
             }
             qWarning().noquote() << "[commitAndRenewPending]" << label
                                  << "pending missing:" << src;
+            return false;
+        }
+        // exists() above proves only that the file is there, not that its seed completed.  Every
+        // pending file is size-invariant for a session (realign rewrites rows in place with "r+b";
+        // saveClusters writes an int32 header + nbSpikes int32 ids), so a pending whose size differs
+        // from the original it is about to replace is truncated -- refuse rather than clobber a good
+        // file with it.  On SaveAs dst is a fresh path that need not exist yet, so only check when it
+        // does; a size clash there means the target is a different recording, which is worth refusing.
+        if (QFile::exists(dst) && QFileInfo(src).size() != QFileInfo(dst).size()) {
+            if (firstError.isEmpty()) {
+                firstError = QString(
+                    "Cannot commit %1 — the pending file is %2 bytes but the file it would replace "
+                    "is %3.\nThe pending copy looks incomplete, so nothing was overwritten:\n%4\n→ %5")
+                    .arg(QString::fromLatin1(label))
+                    .arg(QFileInfo(src).size()).arg(QFileInfo(dst).size()).arg(src).arg(dst);
+            }
+            qWarning().noquote() << "[commitAndRenewPending]" << label
+                                 << "size mismatch, refusing to commit:" << src
+                                 << QFileInfo(src).size() << "vs" << dst << QFileInfo(dst).size();
             return false;
         }
         QFile::remove(dst);    // OK if dst doesn't exist
