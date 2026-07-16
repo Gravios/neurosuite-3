@@ -132,9 +132,12 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
             return;
         }
         childPanel->show();
+        if(recommendPanel) recommendPanel->show();
         repopulateChildPalette(clusterPalette->selectedClusters());
+        slotRefreshMergeRecommendations();
     } else {
         childPanel->hide();
+        if(recommendPanel) recommendPanel->hide();
         childPaletteA->reset();
         parentSlotA = -1;
         childPalette = childPaletteA;

@@ -61,6 +61,7 @@ class QMenu;
 // forward declaration of the Klusters classes
 class KlustersDoc;
 class ClusterPalette;
+class MergeRecommendView;
 class ClusterView;     // for watershed live-preview overlay
 class SaveThread;
 class PrefDialog;
@@ -359,6 +360,10 @@ private Q_SLOTS:
     void slotSortClustersBySnr();
     void slotSortClustersByAmplitude();
     void slotSortClustersByAmplitudeByChannel();
+    /**Recompute the merge recommendations from the active display's matrices.*/
+    void slotRefreshMergeRecommendations();
+    /**A recommendation was double-clicked: select that pair in the main palette.*/
+    void slotRecommendationActivated(const QList<int>& clusters);
     /** Renumber clusters so IDs run by descending error-matrix merge affinity
      *  (each cluster's strongest off-diagonal probability); the best merge
      *  candidate becomes 2.  Requires a computed, up-to-date error matrix in the
@@ -798,6 +803,11 @@ private:
      *  of the unit(s) selected in the main palette.  Hidden until the View-menu
      *  toggle (mHierarchicalView) enables it. */
     QDockWidget* childPanel = nullptr;
+    /** Third section of the palette stack, under the child palette: recommended
+     *  PARENT merges, ranked by agreement between the error and residual
+     *  matrices.  Shown/hidden with the hierarchical view, like childPanel. */
+    QDockWidget*        recommendPanel = nullptr;
+    MergeRecommendView* recommendView  = nullptr;
     /** The child palette of the hierarchical view, shown in childPanel: it lists
      *  the children of the selected parent and carries its own (child) scope.
      *  childPalette is a NON-owning alias to it, kept so the existing hierarchy
