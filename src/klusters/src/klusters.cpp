@@ -4318,8 +4318,9 @@ void KlustersApp::slotSortClustersByContamination()
 //
 // Renumber non-special clusters by descending mean-waveform SNR so the cleanest
 // cluster becomes 2.  Mirrors slotSortClustersByContamination; metric =
-// Data::clusterWaveformSnrs().  Clusters without a ready waveform cache are
-// absent from the metric and sort last via a -1 sentinel.
+// Data::clusterWaveformSnrs(), which covers every cluster (templates are built
+// on demand).  A cluster whose template could not be built is absent from the
+// metric and sorts last via a -1 sentinel.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotSortClustersBySnr()
 {
@@ -4337,14 +4338,20 @@ void KlustersApp::slotSortClustersBySnr()
         return;
     }
 
+    // Build templates for every cluster first.  Without this the metric only
+    // covers clusters the waveform view happens to be showing, and the rest fall
+    // to the -1 sentinel and sort last -- so the sort looked like it worked while
+    // ranking a handful of clusters and dumping the others at the end.
+    ensureClusterTemplates();
+
     const QHash<int,double> snr = d.clusterWaveformSnrs();
     if (snr.isEmpty()) {
-        slotStatusMsg(tr("Sort by SNR: no cluster has a computed mean waveform yet; "
-                         "compute waveforms first."));
+        slotStatusMsg(tr("Sort by SNR: no cluster template could be built \u2014 "
+                         "is the .spk file readable?"));
         return;
     }
 
-    // Clusters without a ready waveform cache are absent; sort them last via a
+    // A cluster whose template could not be built is absent; sort it last via a
     // -1 sentinel (below any real SNR) under descending order.
     std::stable_sort(clusters.begin(), clusters.end(),
         [&snr](int a, int b){
@@ -4381,14 +4388,17 @@ void KlustersApp::slotSortClustersByAmplitude()
         return;
     }
 
+    // Build templates for every cluster first; see slotSortClustersBySnr.
+    ensureClusterTemplates();
+
     const QHash<int,double> amp = d.clusterWaveformAmplitudes();
     if (amp.isEmpty()) {
-        slotStatusMsg(tr("Sort by amplitude: no cluster has a computed mean waveform yet; "
-                         "compute waveforms first."));
+        slotStatusMsg(tr("Sort by amplitude: no cluster template could be built \u2014 "
+                         "is the .spk file readable?"));
         return;
     }
 
-    // Clusters without a ready waveform cache are absent; sort them last via a
+    // A cluster whose template could not be built is absent; sort it last via a
     // -1 sentinel (below any real amplitude) under descending order.
     std::stable_sort(clusters.begin(), clusters.end(),
         [&amp](int a, int b){
@@ -4425,18 +4435,25 @@ void KlustersApp::slotSortClustersByAmplitudeByChannel()
         return;
     }
 
+    // Build templates for every cluster first.  This is the sort that showed the
+    // problem most plainly: the peak-channel blocks are only meaningful if EVERY
+    // cluster has a peak channel, and clusters without a loaded waveform had none,
+    // so they all collapsed into the sentinel block past the last channel.
+    ensureClusterTemplates();
+
     const QHash<int,double> amp = d.clusterWaveformAmplitudes();
     const QHash<int,int>    pk  = d.clusterWaveformPeakChannels();
     if (amp.isEmpty()) {
-        slotStatusMsg(tr("Sort by amplitude by channel: no cluster has a computed mean "
-                         "waveform yet; compute waveforms first."));
+        slotStatusMsg(tr("Sort by amplitude by channel: no cluster template could be "
+                         "built \u2014 is the .spk file readable?"));
         return;
     }
 
     // Primary key: peak channel ascending, so the blocks run down the probe.
-    // Secondary: amplitude descending within a block.  Clusters with no ready
-    // waveform have no peak channel either; a sentinel past the last channel
-    // parks them in a trailing block rather than salting them through channel 0.
+    // Secondary: amplitude descending within a block.  A cluster whose template
+    // could not be built has no peak channel either; a sentinel past the last
+    // channel parks it in a trailing block rather than salting it through
+    // channel 0.
     const int noChannel = d.nbOfchannels();
     std::stable_sort(clusters.begin(), clusters.end(),
         [&amp, &pk, noChannel](int a, int b){

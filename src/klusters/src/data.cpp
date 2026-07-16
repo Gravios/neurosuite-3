@@ -545,23 +545,24 @@ bool Data::clusterBestChannelAmplitude(int clusterId, double& amplitude,
     const int nChan = nbChannels;
     if (nSamp < 1 || nChan < 1) return false;
 
-    const auto it = waveformStatusMap.constFind(clusterId);
-    if (it == waveformStatusMap.constEnd()) return false;
-    if (it.value().sampleMeanStatus() != READY) return false;
-
-    const QString key = QString::number(clusterId);
-    if (!waveformDict.contains(key)) return false;
-    const Waveforms* wf = waveformDict.value(key);
-    if (!wf) return false;
+    // Read the template cache, NOT waveformDict.  waveformDict only holds the
+    // clusters the waveform view is currently drawing, so reading it here made
+    // every amplitude/SNR/peak-channel answer depend on what happened to be
+    // selected -- the sorts silently ranked a handful of clusters and skipped the
+    // rest.  The template cache covers every cluster.
+    const auto it = clusterTemplates.constFind(clusterId);
+    if (it == clusterTemplates.constEnd()) return false;
+    const ClusterTemplate& t = it.value();
+    if (static_cast<int>(t.mean.size()) != nSamp * nChan) return false;
 
     // Layout: index = sample * nChan + channel.
     double bestAmp = -1.0;
     int    bestCh  = 0;
     for (int ch = 0; ch < nChan; ++ch) {
-        double chMax = static_cast<double>(wf->getSampleMean(ch));   // sample 0
+        double chMax = t.mean[static_cast<size_t>(ch)];               // sample 0
         double chMin = chMax;
         for (int smp = 1; smp < nSamp; ++smp) {
-            const double v = static_cast<double>(wf->getSampleMean(smp * nChan + ch));
+            const double v = t.mean[static_cast<size_t>(smp * nChan + ch)];
             if (v > chMax) chMax = v;
             if (v < chMin) chMin = v;
         }
@@ -576,7 +577,7 @@ bool Data::clusterBestChannelAmplitude(int clusterId, double& amplitude,
 QHash<int,double> Data::clusterWaveformAmplitudes() const
 {
     QHash<int,double> out;
-    for (auto it = waveformStatusMap.constBegin(); it != waveformStatusMap.constEnd(); ++it) {
+    for (auto it = clusterTemplates.constBegin(); it != clusterTemplates.constEnd(); ++it) {
         double amp = 0.0; int ch = 0;
         if (clusterBestChannelAmplitude(it.key(), amp, ch))
             out[it.key()] = amp;
@@ -751,7 +752,7 @@ int Data::buildMissingClusterTemplates()
 QHash<int,int> Data::clusterWaveformPeakChannels() const
 {
     QHash<int,int> out;
-    for (auto it = waveformStatusMap.constBegin(); it != waveformStatusMap.constEnd(); ++it) {
+    for (auto it = clusterTemplates.constBegin(); it != clusterTemplates.constEnd(); ++it) {
         double amp = 0.0; int ch = 0;
         if (clusterBestChannelAmplitude(it.key(), amp, ch))
             out[it.key()] = ch;
@@ -766,20 +767,20 @@ QHash<int,double> Data::clusterWaveformSnrs() const
     const int nChan = nbChannels;
     if (nSamp < 1 || nChan < 1) return out;
 
-    for (auto it = waveformStatusMap.constBegin(); it != waveformStatusMap.constEnd(); ++it) {
+    for (auto it = clusterTemplates.constBegin(); it != clusterTemplates.constEnd(); ++it) {
         const int cid = it.key();
         double bestAmp = 0.0;
         int    bestCh  = 0;
         if (!clusterBestChannelAmplitude(cid, bestAmp, bestCh)) continue;
 
-        const Waveforms* wf = waveformDict.value(QString::number(cid));
-        if (!wf) continue;
+        const ClusterTemplate& t = it.value();
+        if (static_cast<int>(t.mean.size()) != nSamp * nChan) continue;
 
         // SNR = peak-to-trough / (2 x baseline RMS over the first samples).
         const int nBase = std::min(4, nSamp);
         double baseRms = 0.0;
         for (int smp = 0; smp < nBase; ++smp) {
-            const double v = static_cast<double>(wf->getSampleMean(smp * nChan + bestCh));
+            const double v = t.mean[static_cast<size_t>(smp * nChan + bestCh)];
             baseRms += v * v;
         }
         baseRms = std::sqrt(baseRms / static_cast<double>(nBase));
