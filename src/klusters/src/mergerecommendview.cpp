@@ -62,7 +62,7 @@ void MergeRecommendView::onItemActivated(QTreeWidgetItem* item, int /*column*/)
     emit recommendationActivated(QList<int>{ a, b });
 }
 
-void MergeRecommendView::refreshFrom(KlustersView* view)
+void MergeRecommendView::refreshFrom(KlustersView* view, const QList<int>& selected)
 {
     tree->clear();
 
@@ -121,12 +121,19 @@ void MergeRecommendView::refreshFrom(KlustersView* view)
     const double eFloor  = configuration().getMergeRecommendErrorFloor();
     const double qFloor  = configuration().getMergeRecommendQualityFloor();
 
+    std::vector<int> restrict;
+    restrict.reserve(static_cast<size_t>(selected.size()));
+    for (const int id : selected) restrict.push_back(id);
+
     const std::vector<MergeCandidate> recs =
         mrRecommendMerges(eIds, errAt, rIds, resAt,
-                          static_cast<size_t>(maxRecs), eFloor, qFloor);
+                          static_cast<size_t>(maxRecs), eFloor, qFloor, restrict);
 
     if (recs.empty()) {
-        setNotice(tr("No pair clears both matrices right now."));
+        setNotice(selected.isEmpty()
+            ? tr("No pair clears both matrices right now.")
+            : tr("Nothing worth merging with the selected cluster(s).\n"
+                 "Clear the selection to see the whole session."));
         return;
     }
     setNotice(QString());

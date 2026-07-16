@@ -38,8 +38,13 @@ public:
 public Q_SLOTS:
     /**Recompute the list from @p view's matrices.  Safe to call with nullptr
      * (clears), or when either matrix is missing, uncomputed or stale — the
-     * panel then says why rather than showing numbers it cannot stand behind.*/
-    void refreshFrom(KlustersView* view);
+     * panel then says why rather than showing numbers it cannot stand behind.
+     *
+     * @p selected restricts the list to pairs involving those clusters (the
+     * palette selection); empty lists the whole session's best.  The restriction
+     * filters the OUTPUT only: quality is always ranked over every pair, so it
+     * means the same thing whatever happens to be selected.*/
+    void refreshFrom(KlustersView* view, const QList<int>& selected = QList<int>());
 
 Q_SIGNALS:
     /**A row was activated: select these clusters in the main palette.*/

@@ -12,9 +12,17 @@
  *   - SYMMETRY.  Neither is symmetric.  The residual matrix is asymmetric by
  *     construction — upper-right is A-vs-B, lower-left B-vs-A, each row scaled
  *     by its own reference variance — and the error matrix's P(spike|cluster)
- *     normalisation is per-column.  Both are symmetrised here by taking the
- *     PESSIMISTIC direction, so a pair only scores well when it scores well
- *     BOTH ways round.
+ *     normalisation is per-column.  Both are symmetrised by AVERAGING the two
+ *     directions, which is what KlustersApp::slotSortClustersByErrorPval already
+ *     does with the same matrix: 0.5 * (M(i,j) + M(j,i)).
+ *
+ *     This started out taking the pessimistic direction instead (min probability,
+ *     max residual).  That was wrong, and wrong in a way that quietly hid the
+ *     best candidates: these matrices are asymmetric for a REASON.  A fragment
+ *     sitting inside a larger unit scores high one way (the fragment's spikes fit
+ *     the big model) and low the other (the big cluster's spikes do not fit the
+ *     fragment's tight model), and a fragment rejoining its parent is exactly the
+ *     merge this panel exists to find.  Taking the minimum threw those away.
  *   - SCALE.  A probability and a variance-scaled residual share no units, and
  *     the residual's spread is data-dependent.  They are therefore combined by
  *     RANK, not by value: each metric is turned into its own percentile over
@@ -87,7 +95,10 @@ inline std::vector<double> mrPercentileRanks(const std::vector<double>& v,
  * @param maxCount hard cap on the returned list.
  * @param errorMin  ABSOLUTE floor on the symmetrised error probability.
  * @param qualityFloor minimum combined rank to be called "high quality".
- * @param onlyWith if >= 0, keep only pairs involving this cluster.
+ * @param restrictTo if non-empty, keep only pairs with at least one member in
+ *        this set — the panel passes the palette selection, so recommendations
+ *        answer "what should merge with what I am looking at".  Empty = every
+ *        pair.
  *
  * quality = min(errorRank, residualRank): a pair is only as good as its WEAKER
  * witness, so one matrix cannot carry a pair the other dislikes.  That is the
@@ -111,7 +122,7 @@ inline std::vector<MergeCandidate> mrRecommendMerges(
     std::size_t maxCount,
     double errorMin,
     double qualityFloor,
-    int onlyWith = -1)
+    const std::vector<int>& restrictTo = std::vector<int>())
 {
     std::vector<MergeCandidate> out;
 
@@ -126,21 +137,32 @@ inline std::vector<MergeCandidate> mrRecommendMerges(
     std::sort(shared.begin(), shared.end());
     if (shared.size() < 2) return out;
 
+    std::vector<int> sel(restrictTo);
+    std::sort(sel.begin(), sel.end());
+    const bool restricted = !sel.empty();
+    auto isSelected = [&sel](int id){
+        return std::binary_search(sel.begin(), sel.end(), id);
+    };
+
+    // NB the restriction is applied AFTER ranking, not here.  Ranking only the
+    // selected cluster's own pairs would make "top decile" mean "top decile among
+    // this cluster's partners", so a cluster with nothing worth merging would
+    // still present its least-bad partner as a 0.9+ recommendation.  Quality has
+    // to mean the same thing whatever is selected, so the percentiles are always
+    // taken over every pair in the session and the selection only filters what is
+    // shown.
     std::vector<MergeCandidate> pairs;
     std::vector<double> errVals, resVals;
     for (std::size_t i = 0; i < shared.size(); ++i) {
         for (std::size_t j = i + 1; j < shared.size(); ++j) {
             const int a = shared[i], b = shared[j];
-            if (onlyWith >= 0 && a != onlyWith && b != onlyWith) continue;
 
             const int ea = errRow[a], eb = errRow[b];
             const int ra = resRow[a], rb = resRow[b];
 
-            // Pessimistic symmetrisation: the error matrix must look convincing
-            // from BOTH directions, so take the smaller probability; the residual
-            // must look small from both, so take the larger residual.
-            const double e = std::min(errAt(ea, eb), errAt(eb, ea));
-            const double r = std::max(resAt(ra, rb), resAt(rb, ra));
+            // Mean of the two directions, matching slotSortClustersByErrorPval.
+            const double e = 0.5 * (errAt(ea, eb) + errAt(eb, ea));
+            const double r = 0.5 * (resAt(ra, rb) + resAt(rb, ra));
 
             // Absolute gate before ranking, so a disbelieved pair cannot be
             // ranked into the list by being merely less bad than the rest — and
@@ -169,6 +191,7 @@ inline std::vector<MergeCandidate> mrRecommendMerges(
     for (const MergeCandidate& c : pairs) {
         if (out.size() >= maxCount) break;
         if (c.quality < qualityFloor) break;   // sorted: nothing after this passes
+        if (restricted && !isSelected(c.a) && !isSelected(c.b)) continue;
         out.push_back(c);
     }
     return out;
