@@ -64,6 +64,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QListWidget>
+#include <QElapsedTimer>
 #include <QProgressBar>
 #include <QEventLoop>
 #ifdef _OPENMP
@@ -4510,28 +4511,42 @@ void KlustersApp::ensureClusterTemplates()
     // clusters it touched, so only those are re-read.
     Data& d = doc->data();
 
-    // Only the cold build is worth showing: it streams the whole .spk, and since
-    // the amplitude/SNR sorts now depend on it, it is the first thing that runs
-    // when a curator opens a session and hits a sort.  The incremental case is a
-    // few clusters and would only make the bar flicker, so it stays silent.
-    const bool cold = (d.clusterTemplateCount() == 0);
-    if (!cold) {
-        d.buildMissingClusterTemplates();
-        return;
-    }
-
+    // Show the bar on ELAPSED TIME, not on whether the cache is cold.
+    //
+    // Gating on cold was wrong. This is called from slotUpdateShownClusters among
+    // others, so the first cluster CLICK after a session opens does the whole .spk
+    // sweep -- the bar flashed there, unwatched, and every later build was "not
+    // cold" and silent no matter how long it took. Time is the thing actually
+    // worth reacting to: below the threshold nobody wants a flicker, above it
+    // everybody wants a bar, and it does not matter which call happened to be
+    // first.
+    //
+    // This is QProgressDialog::setMinimumDuration's idea, done by hand because the
+    // bar lives in the status bar rather than a dialog.
     buildingClusterTemplates = true;
-    beginSortProgress(tr("Reading waveform templates\u2026 %p%"));
+
+    QElapsedTimer timer;
+    timer.start();
+    bool shown = false;
+
     const int built = d.buildMissingClusterTemplates(
-        [this](int done, int total) {
-            if (total > 0) updateSortProgress(static_cast<int>((100LL * done) / total));
+        [this, &timer, &shown](int done, int total) {
+            if (!shown && timer.elapsed() >= 200) {
+                beginSortProgress(tr("Reading waveform templates\u2026 %p%"));
+                shown = true;
+            }
+            if (shown && total > 0)
+                updateSortProgress(static_cast<int>((100LL * done) / total));
         });
-    endSortProgress();
+
+    if (shown) endSortProgress();
     buildingClusterTemplates = false;
 
-    slotStatusMsg(built > 0
-        ? tr("Read waveform templates for %1 clusters.").arg(built)
-        : tr("No cluster waveform templates could be built \u2014 is the .spk readable?"));
+    // Only speak up when work was actually done; this runs on every selection
+    // change, and "Read waveform templates for 0 clusters" on each click would be
+    // noise.
+    if (built > 0)
+        slotStatusMsg(tr("Read waveform templates for %1 clusters.").arg(built));
 }
 
 void KlustersApp::slotRefreshMergeRecommendations()
@@ -4769,6 +4784,19 @@ void KlustersApp::slotSortByResidualGated()
     const double wTot = wHi + wLo;
     const int hiSpan = (wTot > 0.0) ? static_cast<int>((100.0 * wHi) / wTot) : 50;
 
+    // Same elapsed-time rule as the template build: a small session seriates in
+    // milliseconds and does not want a bar flickering at it, a large one does.
+    QElapsedTimer sortTimer;
+    sortTimer.start();
+    bool barShown = false;
+    auto tick = [this, &sortTimer, &barShown](int pct) {
+        if (!barShown && sortTimer.elapsed() >= 200) {
+            beginSortProgress(tr("Sorting by residual\u2026 %p%"));
+            barShown = true;
+        }
+        if (barShown) updateSortProgress(pct);
+    };
+
     auto seriate = [&](const QVector<int>& blk, int pctBase, int pctSpan) -> QList<int> {
         const int n = blk.size();
         QList<int> order;
@@ -4800,7 +4828,7 @@ void KlustersApp::slotSortByResidualGated()
         const int reportEvery = std::max(1, (n - 1) / 100);
         for (int step = 0; step < n - 1; ++step) {
             if (pctSpan > 0 && (step % reportEvery) == 0)
-                updateSortProgress(pctBase + (pctSpan * step) / std::max(1, n - 1));
+                tick(pctBase + (pctSpan * step) / std::max(1, n - 1));
 
             double best = -std::numeric_limits<double>::infinity();
             int bi = -1, bj = -1;
@@ -4835,11 +4863,12 @@ void KlustersApp::slotSortByResidualGated()
         return order;
     };
 
-    beginSortProgress(tr("Sorting by residual\u2026 %p%"));
     QList<int> targetOrder = seriate(hi, 0, hiSpan);
     targetOrder += seriate(lo, hiSpan, 100 - hiSpan);
-    updateSortProgress(100);
-    endSortProgress();
+    if (barShown) {
+        updateSortProgress(100);
+        endSortProgress();
+    }
 
     const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
     if (nRenamed < 0)
