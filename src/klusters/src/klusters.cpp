@@ -4584,6 +4584,114 @@ void KlustersApp::slotRefreshMergeRecommendations()
 }
 
 //////////////////////////////////////////////////////////////////////////////
+// singleLinkageLeafOrder
+//
+// Leaf order of a single-linkage agglomeration over the dense similarity matrix
+// @p S (n x n, row-major, higher = closer, diagonal ignored).  Returns node
+// indices in [0,n).
+//
+// Single-linkage is equivalent to the MAXIMUM SPANNING TREE of the similarity
+// graph: every merge joins the two components linked by the current largest
+// cross-similarity edge, which is exactly an MST edge, and the merge order is the
+// MST edges taken in decreasing weight.  So build the MST once with Prim's --
+// O(n^2) on a dense matrix -- and replay its edges heaviest first, rather than
+// rescanning every live pair every round for a global argmax, which is O(n^3).
+//
+// Extracted from slotReorderClustersBySimilarity, which had already been moved to
+// this algorithm.  slotSortByResidualGated's comment claimed it "mirrors the
+// Shift+S CPU path", but it still ran the O(n^3) loop this had replaced: the two
+// drifted, and the slow one was the copy.  One definition now, so they cannot.
+//
+// The leaf order is reproduced exactly: each merge lets the lower-indexed
+// component survive with its leaves first (union-find keeps the minimum original
+// index as representative), matching the old loop's `bi < bj; leaves[bi] +=
+// leaves[bj]`.  For distinct similarities the result is identical; exact ties
+// (astronomically unlikely on double-valued matrix entries) may yield a different
+// but equally valid single-linkage order.
+//////////////////////////////////////////////////////////////////////////////
+static std::vector<int> singleLinkageLeafOrder(const std::vector<double>& S, int n)
+{
+    std::vector<int> orderIdx;
+    if (n <= 0) return orderIdx;
+    if (n == 1) { orderIdx.push_back(0); return orderIdx; }
+
+    std::vector<std::vector<int>> leaves(n);
+    std::vector<bool>             alive(n, true);
+    for (int i = 0; i < n; ++i) leaves[i].push_back(i);
+
+    // 1) Prim's maximum spanning tree.  primParent[v]/primKey[v] hold the
+    //    heaviest edge attaching v to the tree.  Off-diagonal S entries are all
+    //    finite (possibly negative), so every node is reached and receives
+    //    exactly one parent edge.
+    std::vector<int>    primParent(n, -1);
+    std::vector<double> primKey(n, -std::numeric_limits<double>::infinity());
+    std::vector<char>   inTree(n, 0);
+    primKey[0] = std::numeric_limits<double>::infinity();   // seed at node 0
+    for (int iter = 0; iter < n; ++iter) {
+        int    u    = -1;
+        double best = -std::numeric_limits<double>::infinity();
+        for (int v = 0; v < n; ++v)
+            if (!inTree[v] && primKey[v] > best) { best = primKey[v]; u = v; }
+        if (u < 0) break;                        // no reachable node left
+        inTree[u] = 1;
+        const double* Su = &S[static_cast<size_t>(u) * n];
+        for (int v = 0; v < n; ++v) {
+            if (inTree[v]) continue;
+            const double w = Su[v];
+            if (w > primKey[v]) { primKey[v] = w; primParent[v] = u; }
+        }
+    }
+
+    // 2) MST edges, heaviest first == single-linkage merge order.  Tie-break by
+    //    (smaller endpoint, larger endpoint) ascending, matching the old loop's
+    //    lowest-i-then-lowest-j pick on exact ties.
+    struct MstEdge { double w; int a; int b; };   // a < b
+    std::vector<MstEdge> edges;
+    edges.reserve(static_cast<size_t>(n - 1));
+    for (int v = 1; v < n; ++v) {
+        if (primParent[v] < 0) continue;          // unreached (disconnected)
+        int a = primParent[v], b = v;
+        if (a > b) std::swap(a, b);
+        edges.push_back({ primKey[v], a, b });
+    }
+    std::sort(edges.begin(), edges.end(),
+              [](const MstEdge& x, const MstEdge& y){
+                  if (x.w != y.w) return x.w > y.w;
+                  if (x.a != y.a) return x.a < y.a;
+                  return x.b < y.b;
+              });
+
+    // 3) Union-find with the minimum original index as representative, merging
+    //    heaviest edge first and concatenating leaves lower-first.
+    std::vector<int> ufParent(n);
+    for (int i = 0; i < n; ++i) ufParent[i] = i;
+    auto findRep = [&ufParent](int x){
+        while (ufParent[x] != x) { ufParent[x] = ufParent[ufParent[x]]; x = ufParent[x]; }
+        return x;
+    };
+    for (const MstEdge& e : edges) {
+        const int ra = findRep(e.a);
+        const int rb = findRep(e.b);
+        if (ra == rb) continue;
+        const int lo = std::min(ra, rb);          // lower index survives
+        const int hi = std::max(ra, rb);
+        leaves[lo].insert(leaves[lo].end(), leaves[hi].begin(), leaves[hi].end());
+        alive[hi]    = false;
+        ufParent[hi] = lo;
+    }
+
+    // Recover the leaf order: walk alive[] and concatenate leaves[] in index
+    // order.  In a fully-connected matrix only one node is alive; a disconnected
+    // matrix leaves several -- append them in order.
+    orderIdx.reserve(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        if (!alive[i]) continue;
+        for (int leaf : leaves[i]) orderIdx.push_back(leaf);
+    }
+    return orderIdx;
+}
+
+//////////////////////////////////////////////////////////////////////////////
 // slotRecommendationActivated
 //
 // A recommendation was double-clicked.  Select the pair in the MAIN palette and
@@ -4768,36 +4876,13 @@ void KlustersApp::slotSortByResidualGated()
 
     // Seriate one block of matrix indices by single-linkage on residual
     // similarity; returns the block's cluster ids in leaf order.
-    // The agglomeration below is O(n^3) in the block size -- n rounds, each
-    // rescanning the whole live pair set for the closest surviving pair.  The
-    // count gate splits at the MEDIAN, so each block is about half the session and
-    // "modest" is optimistic: at ~1300 clusters that is a few hundred million
-    // operations per block.  It grows cubically from there, so the wait wants
-    // showing.  A bar does not make it faster, but it does stop the window looking
-    // hung.
     //
-    // Progress is weighted by n^3 rather than by n, because that is where the time
-    // actually goes: a 900/400 split is 92% of the work in the first block, and a
-    // bar that gave each block half would sit at 50% for almost the whole run.
-    const double wHi = std::pow(static_cast<double>(hi.size()), 3.0);
-    const double wLo = std::pow(static_cast<double>(lo.size()), 3.0);
-    const double wTot = wHi + wLo;
-    const int hiSpan = (wTot > 0.0) ? static_cast<int>((100.0 * wHi) / wTot) : 50;
-
-    // Same elapsed-time rule as the template build: a small session seriates in
-    // milliseconds and does not want a bar flickering at it, a large one does.
-    QElapsedTimer sortTimer;
-    sortTimer.start();
-    bool barShown = false;
-    auto tick = [this, &sortTimer, &barShown](int pct) {
-        if (!barShown && sortTimer.elapsed() >= 200) {
-            beginSortProgress(tr("Sorting by residual\u2026 %p%"));
-            barShown = true;
-        }
-        if (barShown) updateSortProgress(pct);
-    };
-
-    auto seriate = [&](const QVector<int>& blk, int pctBase, int pctSpan) -> QList<int> {
+    // No progress bar here any more.  It was added to make an O(n^3)
+    // global-argmax agglomeration bearable; that loop is gone, and the O(n^2) MST
+    // replacing it finishes in milliseconds even on the largest block this gate
+    // produces, so a bar would only flicker.  Fixing the algorithm removed the
+    // reason for the feedback, rather than the feedback excusing the wait.
+    auto seriate = [&](const QVector<int>& blk) -> QList<int> {
         const int n = blk.size();
         QList<int> order;
         if (n <= 0) return order;
@@ -4818,57 +4903,27 @@ void KlustersApp::slotSortByResidualGated()
             for (int b = 0; b < n; ++b)
                 S[static_cast<size_t>(a)*n + b] = (a == b) ? 0.0 : (dmax - D[static_cast<size_t>(a)*n + b]);
 
-        // Single-linkage agglomeration -> leaf order (CPU loop; block sizes
-        // are modest after the count gate).  Mirrors the Shift+S CPU path.
-        std::vector<bool> alive(n, true);
-        std::vector<std::vector<int>> leaves(n);
-        for (int i = 0; i < n; ++i) leaves[i].push_back(i);
-        // Report at most ~100 times across the block: each report pumps the event
-        // loop, which is far dearer than one agglomeration round.
-        const int reportEvery = std::max(1, (n - 1) / 100);
-        for (int step = 0; step < n - 1; ++step) {
-            if (pctSpan > 0 && (step % reportEvery) == 0)
-                tick(pctBase + (pctSpan * step) / std::max(1, n - 1));
-
-            double best = -std::numeric_limits<double>::infinity();
-            int bi = -1, bj = -1;
-            for (int i = 0; i < n; ++i) {
-                if (!alive[i]) continue;
-                for (int j = i + 1; j < n; ++j) {
-                    if (!alive[j]) continue;
-                    const double s = S[static_cast<size_t>(i)*n + j];
-                    if (s > best) { best = s; bi = i; bj = j; }
-                }
-            }
-            if (bi < 0 || bj < 0) break;
-            leaves[bi].insert(leaves[bi].end(), leaves[bj].begin(), leaves[bj].end());
-            alive[bj] = false;
-            for (int k = 0; k < n; ++k) {
-                if (!alive[k] || k == bi) continue;
-                const double m = std::max(S[static_cast<size_t>(bi)*n + k],
-                                          S[static_cast<size_t>(bj)*n + k]);
-                S[static_cast<size_t>(bi)*n + k] = m;
-                S[static_cast<size_t>(k)*n + bi] = m;
-            }
-        }
-        std::vector<int> leafIdx;
-        leafIdx.reserve(n);
-        for (int i = 0; i < n; ++i)
-            if (alive[i]) for (int leaf : leaves[i]) leafIdx.push_back(leaf);
+        // Single-linkage leaf order, shared with the Shift+S reorder.  This was
+        // an inline global-argmax loop -- n rounds, each rescanning every live
+        // pair, O(n^3) -- under a comment claiming it mirrored the Shift+S path.
+        // It did not: Shift+S had already been moved to Prim's MST and this copy
+        // was left on the algorithm that move replaced.
+        //
+        // The count gate splits at the MEDIAN spike count, so a block is about
+        // half the session: at ~1300 clusters that was a few hundred million
+        // operations per block and is now a few hundred thousand.
+        std::vector<int> leafIdx = singleLinkageLeafOrder(S, n);
         if (static_cast<int>(leafIdx.size()) != n) {     // belt and braces
             leafIdx.clear();
+            leafIdx.reserve(static_cast<size_t>(n));
             for (int i = 0; i < n; ++i) leafIdx.push_back(i);
         }
         for (int leaf : leafIdx) order.append(cids[blk[leaf]]);
         return order;
     };
 
-    QList<int> targetOrder = seriate(hi, 0, hiSpan);
-    targetOrder += seriate(lo, hiSpan, 100 - hiSpan);
-    if (barShown) {
-        updateSortProgress(100);
-        endSortProgress();
-    }
+    QList<int> targetOrder = seriate(hi);
+    targetOrder += seriate(lo);
 
     const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
     if (nRenamed < 0)
@@ -5737,102 +5792,8 @@ void KlustersApp::slotReorderClustersBySimilarity()
     if (configuration().getReorderMethod() == 1) {
         orderIdx = reorderSpectralFiedlerOrder(S, N);   // parallel power iteration
     } else {
-    // ── Single-linkage agglomerative merge → leaf order ─────────────────
-    std::vector<std::vector<int>> leaves(N);
-    std::vector<bool>             alive(N, true);
-    for (int i = 0; i < N; ++i) leaves[i].push_back(i);
-
-    // ── Single-linkage via Prim's maximum spanning tree — O(N²) ─────────
-    // Single-linkage agglomerative clustering is equivalent to the maximum
-    // spanning tree of the similarity graph: every merge joins the two
-    // components linked by the current largest cross-similarity edge, which is
-    // exactly an MST edge, and the merge order is the MST edges taken in
-    // decreasing weight.  So build the MST once with Prim's (O(N²) on a dense
-    // matrix) and replay its edges heaviest-first.  This replaces the previous
-    // O(N³) global-argmax-per-step loop (and the single-CUDA-block kernel that
-    // parallelised that same O(N³) work over one SM): at N in the thousands --
-    // routine for a hierarchical session -- it is ~N× fewer operations and runs
-    // in milliseconds on the CPU, so no GPU round-trip is needed.
-    //
-    // The leaf order is reproduced exactly: each merge lets the lower-indexed
-    // component survive with its leaves first (union-find keeps the minimum
-    // original index as representative), matching the old loop's `bi < bj;
-    // leaves[bi] += leaves[bj]`.  For distinct similarities the resulting rename
-    // is identical; exact ties (astronomically unlikely on double-valued matrix
-    // entries) may yield a different but equally valid single-linkage order.
-    {
-        // 1) Prim's maximum spanning tree.  primParent[v]/primKey[v] hold the
-        //    heaviest edge attaching v to the tree.  Off-diagonal S entries are
-        //    all finite (possibly negative for template correlations), so every
-        //    node is reached and receives exactly one parent edge.
-        std::vector<int>    primParent(N, -1);
-        std::vector<double> primKey(N, -std::numeric_limits<double>::infinity());
-        std::vector<char>   inTree(N, 0);
-        primKey[0] = std::numeric_limits<double>::infinity();   // seed at node 0
-        for (int iter = 0; iter < N; ++iter) {
-            int    u    = -1;
-            double best = -std::numeric_limits<double>::infinity();
-            for (int v = 0; v < N; ++v)
-                if (!inTree[v] && primKey[v] > best) { best = primKey[v]; u = v; }
-            if (u < 0) break;                        // no reachable node left
-            inTree[u] = 1;
-            const double* Su = &S[static_cast<size_t>(u) * N];
-            for (int v = 0; v < N; ++v) {
-                if (inTree[v]) continue;
-                const double w = Su[v];
-                if (w > primKey[v]) { primKey[v] = w; primParent[v] = u; }
-            }
-        }
-
-        // 2) MST edges, heaviest first == single-linkage merge order.  Tie-break
-        //    by (smaller endpoint, larger endpoint) ascending, matching the old
-        //    loop's lowest-i-then-lowest-j pick on exact ties.
-        struct MstEdge { double w; int a; int b; };   // a < b
-        std::vector<MstEdge> edges;
-        edges.reserve(N > 1 ? static_cast<size_t>(N - 1) : 0);
-        for (int v = 1; v < N; ++v) {
-            if (primParent[v] < 0) continue;          // unreached (disconnected)
-            int a = primParent[v], b = v;
-            if (a > b) std::swap(a, b);
-            edges.push_back({ primKey[v], a, b });
-        }
-        std::sort(edges.begin(), edges.end(),
-                  [](const MstEdge& x, const MstEdge& y){
-                      if (x.w != y.w) return x.w > y.w;
-                      if (x.a != y.a) return x.a < y.a;
-                      return x.b < y.b;
-                  });
-
-        // 3) Union-find with the minimum original index as representative,
-        //    merging heaviest edge first and concatenating leaves lower-first.
-        std::vector<int> ufParent(N);
-        for (int i = 0; i < N; ++i) ufParent[i] = i;
-        auto findRep = [&](int x){
-            while (ufParent[x] != x) { ufParent[x] = ufParent[ufParent[x]]; x = ufParent[x]; }
-            return x;
-        };
-        for (const MstEdge& e : edges) {
-            const int ra = findRep(e.a);
-            const int rb = findRep(e.b);
-            if (ra == rb) continue;
-            const int lo = std::min(ra, rb);          // lower index survives
-            const int hi = std::max(ra, rb);
-            leaves[lo].insert(leaves[lo].end(),
-                              leaves[hi].begin(), leaves[hi].end());
-            alive[hi]    = false;
-            ufParent[hi] = lo;
-        }
+        orderIdx = singleLinkageLeafOrder(S, N);        // O(N^2) Prim's MST
     }
-
-        // Recover the leaf order: walk alive[] and concatenate leaves[] in
-        // index order.  In a fully-connected matrix only one node is alive;
-        // a disconnected matrix leaves multiple — append them in order.
-        orderIdx.reserve(N);
-        for (int i = 0; i < N; ++i) {
-            if (!alive[i]) continue;
-            for (int leaf : leaves[i]) orderIdx.push_back(leaf);
-        }
-    }   // end single-linkage (MST) branch
 
     if (static_cast<int>(orderIdx.size()) != N) {
         // Belt and braces: if the chosen method produced a short or invalid
