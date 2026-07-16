@@ -264,9 +264,16 @@ bool Data::loadClusters(QFile& clusterFile, long spkFileLength, QString& errorIn
     const neurofileio::CluFile clu =
         neurofileio::readCluBinary(path.toStdString(), nbSpikes);
     if (!clu.ok) {
-        errorInformation = QObject::tr(
-            "Cannot open or fully read cluster file (expected %1 entries): %2")
-            .arg(nbSpikes).arg(path);
+        // nInFile >= 0 means the file was readable but holds a different number of ids than the .spk
+        // implies -- i.e. a .clu from another run / group / variant.  Say so rather than "cannot read".
+        errorInformation = (clu.nInFile >= 0 && clu.nInFile != nbSpikes)
+            ? QObject::tr(
+                  "Cluster file does not match this electrode group: it holds %1 entries but the "
+                  "spike file implies %2.  This .clu belongs to a different run, group or variant:\n%3")
+                  .arg(clu.nInFile).arg(nbSpikes).arg(path)
+            : QObject::tr(
+                  "Cannot open or fully read cluster file (expected %1 entries): %2")
+                  .arg(nbSpikes).arg(path);
         return false;
     }
     if (clu.nClusters < 0 || clu.nClusters > 65536) {

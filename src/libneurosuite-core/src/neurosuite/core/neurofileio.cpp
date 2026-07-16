@@ -50,6 +50,22 @@ CluFile readCluBinary(const std::string& path, int64_t nSpikes)
     std::ifstream in(path, std::ios::binary);
     if (!in) return out;
 
+    // Validate the length BEFORE reading.  A well-formed binary .clu is exactly
+    //     int32 header + nSpikes * int32 ids
+    // and must be 1:1 with the .res it is paired against.  Reading only the first nSpikes ids of a
+    // LONGER file silently accepts a clustering belonging to a different .res -- another run, group
+    // or variant -- and mislabels every spike while still reporting ok, leaving the caller no way to
+    // notice.  (loadClusterRes()'s own `clu.ids.size() != nSpikes` guard further down could never
+    // fire for exactly this reason.)  Record what the file actually holds so callers can name it.
+    in.seekg(0, std::ios::end);
+    const std::streamoff bytes = in.tellg();
+    in.seekg(0, std::ios::beg);
+    if (bytes < static_cast<std::streamoff>(sizeof(int32_t))) return out;   // no header
+    const int64_t payload = static_cast<int64_t>(bytes) - static_cast<int64_t>(sizeof(int32_t));
+    if (payload % static_cast<int64_t>(sizeof(int32_t)) != 0) return out;   // not a binary .clu
+    out.nInFile = payload / static_cast<int64_t>(sizeof(int32_t));
+    if (out.nInFile != nSpikes) return out;                                 // different clustering
+
     int32_t header = 0;
     in.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (in.gcount() != static_cast<std::streamsize>(sizeof(header))) return out;
