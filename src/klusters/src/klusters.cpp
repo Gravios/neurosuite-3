@@ -526,6 +526,34 @@ void KlustersApp::createMenus()
     connect(mSortClustersBySnr,&QAction::triggered,
             this,&KlustersApp::slotSortClustersBySnr);
 
+    // Sort by amplitude: renumber clusters by descending peak-to-trough of the
+    // mean waveform, measured on whichever channel carries it largest, so the
+    // biggest unit becomes 2.  Reads the same waveform cache as the SNR sort.
+    mSortClustersByAmplitude = sortMenu->addAction(tr("Sort Clusters by Largest &Amplitude"));
+    mSortClustersByAmplitude->setToolTip(
+        tr("Renumber clusters by descending peak-to-trough amplitude of the mean\n"
+           "waveform, taken on the channel where it is largest.  The biggest unit\n"
+           "becomes 2.  Requires computed mean waveforms — clusters without one\n"
+           "sort last.  Clusters 0 (artefact) and 1 (noise) are preserved.\n"
+           "Undoable with Ctrl+Z."));
+    connect(mSortClustersByAmplitude,&QAction::triggered,
+            this,&KlustersApp::slotSortClustersByAmplitude);
+
+    // Tiered version: block the clusters by which channel carries their largest
+    // amplitude (channel order, so the blocks run down the probe), and order each
+    // block by descending amplitude.  Groups units by site while keeping the
+    // biggest first within a site.
+    mSortClustersByAmplitudeByChannel =
+        sortMenu->addAction(tr("Sort Clusters by Largest Amplitude by C&hannel"));
+    mSortClustersByAmplitudeByChannel->setToolTip(
+        tr("Renumber clusters in blocks: one block per channel, in channel order,\n"
+           "each holding the clusters whose largest peak-to-trough amplitude falls\n"
+           "on that channel, ordered biggest first.  Requires computed mean\n"
+           "waveforms — clusters without one sort last.  Clusters 0 (artefact) and\n"
+           "1 (noise) are preserved.  Undoable with Ctrl+Z."));
+    connect(mSortClustersByAmplitudeByChannel,&QAction::triggered,
+            this,&KlustersApp::slotSortClustersByAmplitudeByChannel);
+
     // Sort by error-matrix p-value: renumber clusters by descending merge
     // affinity read from the active error matrix, so each cluster's strongest
     // merge candidate ends up adjacent and the top pairs land at low ids.
@@ -4301,6 +4329,102 @@ void KlustersApp::slotSortClustersBySnr()
         slotStatusMsg(tr("Sort by SNR: reorder rejected (cluster set changed?)."));
     else
         slotStatusMsg(tr("Sorted %1 clusters by SNR (highest first).").arg(nRenamed));
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// slotSortClustersByAmplitude
+//
+// Renumber clusters by descending peak-to-trough of the mean waveform, taken on
+// the channel where it is largest.  Mirrors slotSortClustersBySnr; the metric is
+// the amplitude itself rather than amplitude over baseline noise.
+//////////////////////////////////////////////////////////////////////////////
+void KlustersApp::slotSortClustersByAmplitude()
+{
+    if (!mSortClustersByAmplitude->isEnabled()) return;
+    if (!doc || !activeView()) return;
+
+    auto& d = doc->data();
+    QList<int> clusters;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+
+    if (clusters.size() < 2) {
+        slotStatusMsg(tr("Sort by amplitude: fewer than 2 non-noise clusters; nothing to sort."));
+        return;
+    }
+
+    const QHash<int,double> amp = d.clusterWaveformAmplitudes();
+    if (amp.isEmpty()) {
+        slotStatusMsg(tr("Sort by amplitude: no cluster has a computed mean waveform yet; "
+                         "compute waveforms first."));
+        return;
+    }
+
+    // Clusters without a ready waveform cache are absent; sort them last via a
+    // -1 sentinel (below any real amplitude) under descending order.
+    std::stable_sort(clusters.begin(), clusters.end(),
+        [&amp](int a, int b){
+            return amp.value(a, -1.0) > amp.value(b, -1.0);
+        });
+
+    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by amplitude: reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters by amplitude (largest first).").arg(nRenamed));
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// slotSortClustersByAmplitudeByChannel
+//
+// Tiered: block by the channel carrying each cluster's largest peak-to-trough,
+// blocks in channel order, and order each block by descending amplitude.
+//////////////////////////////////////////////////////////////////////////////
+void KlustersApp::slotSortClustersByAmplitudeByChannel()
+{
+    if (!mSortClustersByAmplitudeByChannel->isEnabled()) return;
+    if (!doc || !activeView()) return;
+
+    auto& d = doc->data();
+    QList<int> clusters;
+    const auto ids = d.clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));
+
+    if (clusters.size() < 2) {
+        slotStatusMsg(tr("Sort by amplitude by channel: fewer than 2 non-noise clusters; "
+                         "nothing to sort."));
+        return;
+    }
+
+    const QHash<int,double> amp = d.clusterWaveformAmplitudes();
+    const QHash<int,int>    pk  = d.clusterWaveformPeakChannels();
+    if (amp.isEmpty()) {
+        slotStatusMsg(tr("Sort by amplitude by channel: no cluster has a computed mean "
+                         "waveform yet; compute waveforms first."));
+        return;
+    }
+
+    // Primary key: peak channel ascending, so the blocks run down the probe.
+    // Secondary: amplitude descending within a block.  Clusters with no ready
+    // waveform have no peak channel either; a sentinel past the last channel
+    // parks them in a trailing block rather than salting them through channel 0.
+    const int noChannel = d.nbOfchannels();
+    std::stable_sort(clusters.begin(), clusters.end(),
+        [&amp, &pk, noChannel](int a, int b){
+            const int ca = pk.value(a, noChannel);
+            const int cb = pk.value(b, noChannel);
+            if (ca != cb) return ca < cb;
+            return amp.value(a, -1.0) > amp.value(b, -1.0);
+        });
+
+    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by amplitude by channel: reorder rejected (cluster set changed?)."));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters into per-channel blocks by amplitude "
+                         "(largest first in each).").arg(nRenamed));
 }
 
 // ---------------------------------------------------------------------------

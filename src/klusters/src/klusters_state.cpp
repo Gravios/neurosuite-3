@@ -156,6 +156,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
         mSortClustersBySnr->setEnabled(false);
+        mSortClustersByAmplitude->setEnabled(false);
+        mSortClustersByAmplitudeByChannel->setEnabled(false);
         mSortClustersByErrorPval->setEnabled(false);
 
         mPurgeSmallClusters->setEnabled(false);
@@ -229,6 +231,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByAmplitude->setEnabled(true);
+        mSortClustersByAmplitudeByChannel->setEnabled(true);
         mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
@@ -319,6 +323,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByAmplitude->setEnabled(true);
+        mSortClustersByAmplitudeByChannel->setEnabled(true);
         mSortClustersByErrorPval->setEnabled(true);
 
         mPurgeSmallClusters->setEnabled(true);
@@ -346,6 +352,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByAmplitude->setEnabled(true);
+        mSortClustersByAmplitudeByChannel->setEnabled(true);
         mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noCorrelationViewState")) {
@@ -371,6 +379,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByAmplitude->setEnabled(true);
+        mSortClustersByAmplitudeByChannel->setEnabled(true);
         mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noErrorMatrixViewState")) {
@@ -388,6 +398,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByAmplitude->setEnabled(true);
+        mSortClustersByAmplitudeByChannel->setEnabled(true);
         mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
 
@@ -425,6 +437,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
         mSortClustersBySnr->setEnabled(false);
+        mSortClustersByAmplitude->setEnabled(false);
+        mSortClustersByAmplitudeByChannel->setEnabled(false);
         mSortClustersByErrorPval->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         shoulderLine->setEnabled(false);
@@ -447,6 +461,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
         mSortClustersBySnr->setEnabled(false);
+        mSortClustersByAmplitude->setEnabled(false);
+        mSortClustersByAmplitudeByChannel->setEnabled(false);
         mSortClustersByErrorPval->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
@@ -488,6 +504,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
         mSortClustersBySnr->setEnabled(false);
+        mSortClustersByAmplitude->setEnabled(false);
+        mSortClustersByAmplitudeByChannel->setEnabled(false);
         mSortClustersByErrorPval->setEnabled(false);
         mPurgeSmallClusters->setEnabled(false);
         mDeleteArtifact->setEnabled(false);
@@ -542,6 +560,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
         mSortClustersBySnr->setEnabled(true);
+        mSortClustersByAmplitude->setEnabled(true);
+        mSortClustersByAmplitudeByChannel->setEnabled(true);
         mSortClustersByErrorPval->setEnabled(true);
         mPurgeSmallClusters->setEnabled(true);
         mDeleteArtifact->setEnabled(true);

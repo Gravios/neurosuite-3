@@ -533,6 +533,67 @@ QHash<int,double> Data::refractoryViolationFractions(double refractoryMs) const
 // clusters with a READY sample-mean cache are included; the rest are absent and
 // sort last in the caller.
 // ---------------------------------------------------------------------------
+// clusterBestChannelAmplitude — peak-to-trough of a cluster's mean waveform on
+// the channel where it is largest.  Extracted so the SNR, amplitude and
+// peak-channel accessors share one definition of "best channel"; three copies of
+// this loop would be three chances to disagree.
+bool Data::clusterBestChannelAmplitude(int clusterId, double& amplitude,
+                                       int& channel) const
+{
+    const int nSamp = nbSamplesInWaveform;
+    const int nChan = nbChannels;
+    if (nSamp < 1 || nChan < 1) return false;
+
+    const auto it = waveformStatusMap.constFind(clusterId);
+    if (it == waveformStatusMap.constEnd()) return false;
+    if (it.value().sampleMeanStatus() != READY) return false;
+
+    const QString key = QString::number(clusterId);
+    if (!waveformDict.contains(key)) return false;
+    const Waveforms* wf = waveformDict.value(key);
+    if (!wf) return false;
+
+    // Layout: index = sample * nChan + channel.
+    double bestAmp = -1.0;
+    int    bestCh  = 0;
+    for (int ch = 0; ch < nChan; ++ch) {
+        double chMax = static_cast<double>(wf->getSampleMean(ch));   // sample 0
+        double chMin = chMax;
+        for (int smp = 1; smp < nSamp; ++smp) {
+            const double v = static_cast<double>(wf->getSampleMean(smp * nChan + ch));
+            if (v > chMax) chMax = v;
+            if (v < chMin) chMin = v;
+        }
+        const double amp = chMax - chMin;
+        if (amp > bestAmp) { bestAmp = amp; bestCh = ch; }
+    }
+    amplitude = bestAmp;
+    channel   = bestCh;
+    return true;
+}
+
+QHash<int,double> Data::clusterWaveformAmplitudes() const
+{
+    QHash<int,double> out;
+    for (auto it = waveformStatusMap.constBegin(); it != waveformStatusMap.constEnd(); ++it) {
+        double amp = 0.0; int ch = 0;
+        if (clusterBestChannelAmplitude(it.key(), amp, ch))
+            out[it.key()] = amp;
+    }
+    return out;
+}
+
+QHash<int,int> Data::clusterWaveformPeakChannels() const
+{
+    QHash<int,int> out;
+    for (auto it = waveformStatusMap.constBegin(); it != waveformStatusMap.constEnd(); ++it) {
+        double amp = 0.0; int ch = 0;
+        if (clusterBestChannelAmplitude(it.key(), amp, ch))
+            out[it.key()] = ch;
+    }
+    return out;
+}
+
 QHash<int,double> Data::clusterWaveformSnrs() const
 {
     QHash<int,double> out;
@@ -542,27 +603,12 @@ QHash<int,double> Data::clusterWaveformSnrs() const
 
     for (auto it = waveformStatusMap.constBegin(); it != waveformStatusMap.constEnd(); ++it) {
         const int cid = it.key();
-        if (it.value().sampleMeanStatus() != READY) continue;
-        const QString key = QString::number(cid);
-        if (!waveformDict.contains(key)) continue;
-        const Waveforms* wf = waveformDict.value(key);
-        if (!wf) continue;
-
-        // Best channel = maximum peak-to-trough amplitude of the mean waveform.
-        // Layout: index = sample * nChan + channel.
-        double bestAmp = -1.0;
+        double bestAmp = 0.0;
         int    bestCh  = 0;
-        for (int ch = 0; ch < nChan; ++ch) {
-            double chMax = static_cast<double>(wf->getSampleMean(ch));   // sample 0
-            double chMin = chMax;
-            for (int smp = 1; smp < nSamp; ++smp) {
-                const double v = static_cast<double>(wf->getSampleMean(smp * nChan + ch));
-                if (v > chMax) chMax = v;
-                if (v < chMin) chMin = v;
-            }
-            const double amp = chMax - chMin;
-            if (amp > bestAmp) { bestAmp = amp; bestCh = ch; }
-        }
+        if (!clusterBestChannelAmplitude(cid, bestAmp, bestCh)) continue;
+
+        const Waveforms* wf = waveformDict.value(QString::number(cid));
+        if (!wf) continue;
 
         // SNR = peak-to-trough / (2 x baseline RMS over the first samples).
         const int nBase = std::min(4, nSamp);
