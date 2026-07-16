@@ -809,9 +809,18 @@ private:
     QDockWidget*        recommendPanel = nullptr;
     MergeRecommendView* recommendView  = nullptr;
     /**Build any missing per-cluster waveform templates, which is what the
-     * recommendation panel scores overlaps from.  Synchronous: see
-     * Data::buildMissingClusterTemplates() for why it is not threaded.*/
+     * recommendation panel scores overlaps from and what the amplitude/SNR sorts
+     * rank by.  Synchronous: see Data::buildMissingClusterTemplates() for why it
+     * is not threaded.*/
     void ensureClusterTemplates();
+    /** Guards ensureClusterTemplates against re-entry.  The cold build pumps the
+     *  event loop to paint its progress bar, and although that pump excludes USER
+     *  input it still delivers POSTED events -- including the matrix threads',
+     *  whose views emit matrixUpdated(), which is wired to
+     *  slotRefreshMergeRecommendations() and so back into here.  The builder
+     *  mutates the template cache while iterating the cluster tables, so a
+     *  re-entrant call would be operating on containers already being written. */
+    bool buildingClusterTemplates = false;
     /** The child palette of the hierarchical view, shown in childPanel: it lists
      *  the children of the selected parent and carries its own (child) scope.
      *  childPalette is a NON-owning alias to it, kept so the existing hierarchy
@@ -1332,6 +1341,22 @@ private:
      *  first use as a permanent widget so it survives tab changes, and hidden
      *  when the sort finishes; mirrors realignProgressBar's lifecycle. */
     QProgressBar* sortProgressBar;
+
+    /**Show the shared status-bar progress bar with @p format (a QProgressBar
+     * format string, so it should contain %p%) and pump events once so it paints.
+     *
+     * The three of these exist because more than one long operation needs the
+     * bar, and a second copy of the lazy-construct/show/hide dance would be a
+     * second chance to leave it stranded on screen.
+     *
+     * Events are pumped with user input EXCLUDED: the bar repaints, but the user
+     * cannot re-enter the operation that is already running.*/
+    void beginSortProgress(const QString& format);
+    /**Set the bar to @p percent (clamped to 0..100) and pump events.  A no-op if
+     * beginSortProgress() was not called.*/
+    void updateSortProgress(int percent);
+    /**Hide the bar.  Safe to call when it was never shown.*/
+    void endSortProgress();
 
     /**Set up the realign output tab, lock the UI, and launch the realignment
      * worker for a single @p clusterId using the current saved settings

@@ -4494,6 +4494,14 @@ void KlustersApp::ensureClusterTemplates()
 {
     if (!doc) return;
 
+    // Re-entrancy guard: the cold build below pumps the event loop to paint its
+    // progress bar, and that pump delivers posted events even though it excludes
+    // user input -- a matrix thread finishing mid-build emits matrixUpdated(),
+    // which lands in slotRefreshMergeRecommendations() and comes straight back
+    // here.  The builder is iterating the cluster tables and writing the template
+    // cache at that point, so re-entering it would corrupt both.
+    if (buildingClusterTemplates) return;
+
     // Synchronous on purpose.  buildMissingClusterTemplates() reads the cluster
     // tables and writes the template cache, none of them locked, and an edit
     // mutates all of them -- so a worker would race both the edit and the panel
@@ -4501,19 +4509,29 @@ void KlustersApp::ensureClusterTemplates()
     // call sweeps the .spk once, and after that an edit only invalidates the
     // clusters it touched, so only those are re-read.
     Data& d = doc->data();
+
+    // Only the cold build is worth showing: it streams the whole .spk, and since
+    // the amplitude/SNR sorts now depend on it, it is the first thing that runs
+    // when a curator opens a session and hits a sort.  The incremental case is a
+    // few clusters and would only make the bar flicker, so it stays silent.
     const bool cold = (d.clusterTemplateCount() == 0);
-    if (cold) {
-        QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-        slotStatusMsg(tr("Building cluster waveform templates for the merge "
-                         "recommendations\u2026"));
+    if (!cold) {
+        d.buildMissingClusterTemplates();
+        return;
     }
-    const int built = d.buildMissingClusterTemplates();
-    if (cold) {
-        QApplication::restoreOverrideCursor();
-        slotStatusMsg(built > 0
-            ? tr("Built %1 cluster waveform templates.").arg(built)
-            : tr("No cluster waveform templates could be built \u2014 is the .spk readable?"));
-    }
+
+    buildingClusterTemplates = true;
+    beginSortProgress(tr("Reading waveform templates\u2026 %p%"));
+    const int built = d.buildMissingClusterTemplates(
+        [this](int done, int total) {
+            if (total > 0) updateSortProgress(static_cast<int>((100LL * done) / total));
+        });
+    endSortProgress();
+    buildingClusterTemplates = false;
+
+    slotStatusMsg(built > 0
+        ? tr("Read waveform templates for %1 clusters.").arg(built)
+        : tr("No cluster waveform templates could be built \u2014 is the .spk readable?"));
 }
 
 void KlustersApp::slotRefreshMergeRecommendations()
@@ -6003,6 +6021,48 @@ void KlustersApp::reorderClustersByFeatureSpace()
 // FILE handles, mirroring the residual thread); the distance matrix O(N^2 * nPts);
 // each worker holds one cluster's spikes at a time for the per-sample median.
 // ---------------------------------------------------------------------------
+//////////////////////////////////////////////////////////////////////////////
+// beginSortProgress / updateSortProgress / endSortProgress
+//
+// One status-bar progress bar, shared by every long operation that wants one.
+// Extracted from computeMedianWaveformDistances, which was the only caller and
+// therefore the only place that knew how to build the thing.
+//
+// processEvents() with ExcludeUserInputEvents is the load-bearing detail: the
+// bar repaints, but keyboard and mouse events are NOT delivered, so the user
+// cannot re-enter the running operation through the menu or a shortcut while it
+// pumps. Without that exclusion these calls would turn every long operation into
+// a re-entrancy hazard.
+//////////////////////////////////////////////////////////////////////////////
+void KlustersApp::beginSortProgress(const QString& format)
+{
+    if (!sortProgressBar) {
+        sortProgressBar = new QProgressBar(this);
+        sortProgressBar->setObjectName(QStringLiteral("sortProgress"));
+        sortProgressBar->setTextVisible(true);
+        sortProgressBar->setMaximumWidth(280);
+        statusBar()->addPermanentWidget(sortProgressBar);
+    }
+    sortProgressBar->setRange(0, 100);
+    sortProgressBar->setFormat(format);
+    sortProgressBar->setValue(0);
+    sortProgressBar->show();
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+}
+
+void KlustersApp::updateSortProgress(int percent)
+{
+    if (!sortProgressBar) return;
+    sortProgressBar->setValue(qBound(0, percent, 100));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+}
+
+void KlustersApp::endSortProgress()
+{
+    if (!sortProgressBar) return;
+    sortProgressBar->hide();
+}
+
 bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
                                                  std::vector<float>& distOut)
 {
@@ -6057,21 +6117,8 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
     // Progress bar for the dominant, disk-bound per-cluster median-read phase.
     // Clusters are read in chunks (chunk >= the OpenMP width, so each chunk
     // still fills the workers) and the bar advances between chunks; only the
-    // cross-chunk load-steal is traded away for the progress feedback.  Events
-    // are pumped with user input EXCLUDED, so the bar repaints but the user
-    // cannot re-enter a second sort mid-run.
-    if (!sortProgressBar) {
-        sortProgressBar = new QProgressBar(this);
-        sortProgressBar->setObjectName(QStringLiteral("sortProgress"));
-        sortProgressBar->setTextVisible(true);
-        sortProgressBar->setMaximumWidth(280);
-        statusBar()->addPermanentWidget(sortProgressBar);
-    }
-    sortProgressBar->setRange(0, 100);
-    sortProgressBar->setFormat(tr("Sorting by waveform… %p%"));
-    sortProgressBar->setValue(0);
-    sortProgressBar->show();
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    // cross-chunk load-steal is traded away for the progress feedback.
+    beginSortProgress(tr("Sorting by waveform… %p%"));
 
 #ifdef _OPENMP
     const int nThreads = std::max(1, omp_get_max_threads());
@@ -6114,8 +6161,7 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
             medWav[static_cast<size_t>(k)][static_cast<size_t>(p)] = colv[mid];
         }
     }
-        sortProgressBar->setValue((90 * cend) / N);   // median read -> [0,90]
-        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        updateSortProgress((90 * cend) / N);          // median read -> [0,90]
     }
 
     // N x N Euclidean distance matrix over the median waveforms (parallel rows).
@@ -6136,9 +6182,8 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
         }
     }
 
-    sortProgressBar->setValue(100);           // distance phase done
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    sortProgressBar->hide();
+    updateSortProgress(100);                  // distance phase done
+    endSortProgress();
 
     clustersOut = clusters;
     distOut     = std::move(dist);
