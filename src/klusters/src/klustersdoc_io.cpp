@@ -647,7 +647,10 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
 
     // For a regular Save:  write clu to the pending clu file (crash-safe).
     // For a SaveAs:        write directly to the new URL (no pending for it).
-    const QString cluWritePath = isSaveAs ? saveUrl : pendingCluPath;
+    // tmpCluFile is the session's clu write target: the real .clu at open, redirected to
+    // pendingCluPath by initPendingFiles only when the seed SUCCEEDED.  Using pendingCluPath directly
+    // wrote to a phantom path when the seed had failed.
+    const QString cluWritePath = isSaveAs ? saveUrl : tmpCluFile;
 
     //Open the clu file in write mode
     FILE* cluFile = fopen(qPrintable(cluWritePath),"wb");
