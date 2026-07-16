@@ -855,6 +855,48 @@ public:
      * asymmetric and force a choice about which direction to believe.*/
     bool clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou) const;
 
+    /**Compact per-cluster template: the mean and SD of every sample on every
+     * channel, laid out exactly like the waveform cache (sample * nChan + ch).
+     *
+     * Kept SEPARATE from waveformDict on purpose.  That cache is display-driven:
+     * it holds every displayed spike for the handful of clusters the waveform
+     * view is showing, and it only exists for clusters somebody selected.  This
+     * one is small (mean+SD only, ~5 KB per cluster on an 8x42 octrode), covers
+     * EVERY cluster, and survives selection changes -- which is what a matrix of
+     * pairwise overlaps needs.*/
+    struct ClusterTemplate {
+        std::vector<double> mean;
+        std::vector<double> sd;
+        long nSpikes = 0;
+    };
+
+    /**Build templates for every cluster that lacks a current one, in a single
+     * sequential pass over the .spk file.  One pass, not one seek per cluster:
+     * the file is read front to back and each record accumulated into its own
+     * cluster's sums, so the cost is the file size rather than the cluster count.
+     *
+     * Incremental: clusters whose template is already current are skipped, and
+     * only those clusters' spikes are visited, so the first call after a session
+     * opens pays the read and an edit costs only what it touched.
+     *
+     * GUI-THREAD ONLY.  It reads clusterInfoMap and spikesByCluster and writes
+     * clusterTemplates, none of which are locked, and an edit mutates all three.
+     * Running it on a worker would race both against edits and against
+     * clusterEnvelopeOverlap reading the cache.  The codebase's answer to that
+     * elsewhere is stopAllViewThreads() before an edit; this is not part of that
+     * machinery, so it stays synchronous rather than pretending to be safe.
+     *
+     * @return the number of templates built (0 = everything was current).*/
+    int buildMissingClusterTemplates();
+
+    /**Drop @p clusterId's template so the next build recomputes it.  Empty
+     * clusterId list = drop all.*/
+    void invalidateClusterTemplate(int clusterId);
+    void invalidateAllClusterTemplates();
+
+    /**How many clusters currently have a template, and how many exist.*/
+    int clusterTemplateCount() const { return clusterTemplates.size(); }
+
 private:
     /**Peak-to-trough amplitude of cluster @p clusterId's mean waveform and the
      * channel it occurs on.  Returns false when that cluster has no mean
@@ -1378,6 +1420,10 @@ private:
   * for which data have been asked are present in this dictionary.
   */
     QHash<QString, Waveforms*> waveformDict;
+
+    /**Compact mean/SD template per cluster; see buildMissingClusterTemplates().
+     * Independent of waveformDict, which only covers displayed clusters.*/
+    QHash<int, ClusterTemplate> clusterTemplates;
 
     /**Boolean use to inform the MinMaxThread that an undo or a redo is in process and that it has to stop.*/
     std::atomic_bool undoRedoInProcess;

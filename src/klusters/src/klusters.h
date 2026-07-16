@@ -808,6 +808,10 @@ private:
      *  matrices.  Shown/hidden with the hierarchical view, like childPanel. */
     QDockWidget*        recommendPanel = nullptr;
     MergeRecommendView* recommendView  = nullptr;
+    /**Build any missing per-cluster waveform templates, which is what the
+     * recommendation panel scores overlaps from.  Synchronous: see
+     * Data::buildMissingClusterTemplates() for why it is not threaded.*/
+    void ensureClusterTemplates();
     /** The child palette of the hierarchical view, shown in childPanel: it lists
      *  the children of the selected parent and carries its own (child) scope.
      *  childPalette is a NON-owning alias to it, kept so the existing hierarchy

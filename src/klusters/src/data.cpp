@@ -590,26 +590,162 @@ bool Data::clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou) const
     const int nChan = nbChannels;
     if (nSamp < 1 || nChan < 1) return false;
 
-    auto ready = [this](int cid) -> const Waveforms* {
-        const auto it = waveformStatusMap.constFind(cid);
-        if (it == waveformStatusMap.constEnd())        return nullptr;
-        if (it.value().sampleMeanStatus() != READY)    return nullptr;
-        const QString key = QString::number(cid);
-        if (!waveformDict.contains(key))               return nullptr;
-        return waveformDict.value(key);
-    };
-    const Waveforms* wa = ready(clusterA);
-    const Waveforms* wb = ready(clusterB);
-    if (!wa || !wb) return false;
+    // Read the template cache, NOT waveformDict.  waveformDict only holds the
+    // clusters the waveform view is currently showing, which is why the overlap
+    // used to demand that every cluster be selected before a pair could be
+    // scored.  The template cache covers every cluster and does not care what is
+    // selected.
+    const auto ita = clusterTemplates.constFind(clusterA);
+    const auto itb = clusterTemplates.constFind(clusterB);
+    if (ita == clusterTemplates.constEnd()) return false;
+    if (itb == clusterTemplates.constEnd()) return false;
 
-    // Same indexing as the rest of the waveform cache: sample * nChan + channel.
+    const ClusterTemplate& ta = ita.value();
+    const ClusterTemplate& tb = itb.value();
+    const int nTotal = nSamp * nChan;
+    if (static_cast<int>(ta.mean.size()) != nTotal) return false;
+    if (static_cast<int>(tb.mean.size()) != nTotal) return false;
+
     iou = wfEnvelopeIou(
-        [wa](int i){ return static_cast<double>(wa->getSampleMean(i)); },
-        [wa](int i){ return static_cast<double>(wa->getSampleStDeviation(i)); },
-        [wb](int i){ return static_cast<double>(wb->getSampleMean(i)); },
-        [wb](int i){ return static_cast<double>(wb->getSampleStDeviation(i)); },
-        nSamp * nChan, 1.0);
+        [&ta](int i){ return ta.mean[static_cast<size_t>(i)]; },
+        [&ta](int i){ return ta.sd  [static_cast<size_t>(i)]; },
+        [&tb](int i){ return tb.mean[static_cast<size_t>(i)]; },
+        [&tb](int i){ return tb.sd  [static_cast<size_t>(i)]; },
+        nTotal, 1.0);
     return true;
+}
+
+void Data::invalidateClusterTemplate(int clusterId)
+{
+    clusterTemplates.remove(clusterId);
+}
+
+void Data::invalidateAllClusterTemplates()
+{
+    clusterTemplates.clear();
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// buildMissingClusterTemplates
+//
+// One sequential pass over the .spk file, accumulating each record into its own
+// cluster's running sums.  Deliberately NOT a seek per cluster: the file is read
+// front to back, so the cost is the file size rather than the cluster count, and
+// on a session with a thousand-plus clusters that is the difference between one
+// streamed read and a thousand scattered ones.
+//
+// Only clusters WITHOUT a current template are accumulated, so the first call
+// after a session opens pays the read and an edit costs only what it touched.
+//////////////////////////////////////////////////////////////////////////////
+int Data::buildMissingClusterTemplates()
+{
+    const int nSamp  = nbSamplesInWaveform;
+    const int nChan  = nbChannels;
+    const int nTotal = nSamp * nChan;
+    if (nTotal < 1 || nbSpikes < 1) return 0;
+
+    // Collect (record, cluster) for the clusters that still need a template, by
+    // walking only THEIR spans -- not every spike in the session.  That is what
+    // makes the incremental case cheap: after an edit only the touched clusters
+    // lack a template, so this walks a few thousand entries rather than millions.
+    std::vector<std::pair<long,int>> recs;
+    for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it) {
+        const int cid = static_cast<int>(it.key());
+        if (clusterTemplates.contains(cid)) continue;
+        const dataType f  = it.value().firstSpikePosition();
+        const dataType nb = it.value().nbSpikes();
+        for (dataType i = f; i < f + nb; ++i)
+            recs.push_back({ static_cast<long>((*spikesByCluster)(1, i)), cid });
+    }
+    if (recs.empty()) return 0;
+
+    // Read in FILE order.  The records of one cluster are scattered through the
+    // .spk (it is in spike-time order), so reading cluster by cluster would seek
+    // backwards constantly; sorting first turns the whole build into one
+    // forward sweep.
+    std::sort(recs.begin(), recs.end(),
+              [](const std::pair<long,int>& a, const std::pair<long,int>& b){
+                  return a.first < b.first;
+              });
+
+    FILE* spikeFile = fopen(qPrintable(spkFileName), "rb");
+    if (spikeFile == nullptr) return 0;
+
+    // Running sums.  Doubles throughout: the samples are small integers, so the
+    // naive sum / sum-of-squares is exact enough (verified against a two-pass
+    // reference) and a second pass would cost another read of the file.
+    QHash<int, std::vector<double>> sum, sumsq;
+    QHash<int, long>               count;
+
+    const bool twoBytes = isTwoBytesRecording;
+    const size_t elemSize = twoBytes ? sizeof(short) : sizeof(long);
+    std::vector<short> bufS(twoBytes ? static_cast<size_t>(nTotal) : 0);
+    std::vector<long>  bufL(twoBytes ? 0 : static_cast<size_t>(nTotal));
+
+    for (const auto& rc : recs) {
+        const long rec = rc.first;
+        const int  cid = rc.second;
+        if (rec < 1 || rec > static_cast<long>(nbSpikes)) continue;
+
+        if (!sum.contains(cid)) {
+            sum.insert(cid,   std::vector<double>(static_cast<size_t>(nTotal), 0.0));
+            sumsq.insert(cid, std::vector<double>(static_cast<size_t>(nTotal), 0.0));
+            count.insert(cid, 0);
+        }
+
+        const long long off = static_cast<long long>(rec - 1)
+                            * static_cast<long long>(nTotal)
+                            * static_cast<long long>(elemSize);
+        if (fseeko64(spikeFile, off, SEEK_SET) != 0) continue;
+
+        std::vector<double>& sm = sum[cid];
+        std::vector<double>& sq = sumsq[cid];
+        if (twoBytes) {
+            if (fread(bufS.data(), sizeof(short), static_cast<size_t>(nTotal), spikeFile)
+                != static_cast<size_t>(nTotal)) continue;
+            for (int k = 0; k < nTotal; ++k) {
+                const double v = static_cast<double>(bufS[static_cast<size_t>(k)]);
+                sm[static_cast<size_t>(k)] += v;
+                sq[static_cast<size_t>(k)] += v * v;
+            }
+        } else {
+            if (fread(bufL.data(), sizeof(long), static_cast<size_t>(nTotal), spikeFile)
+                != static_cast<size_t>(nTotal)) continue;
+            for (int k = 0; k < nTotal; ++k) {
+                const double v = static_cast<double>(bufL[static_cast<size_t>(k)]);
+                sm[static_cast<size_t>(k)] += v;
+                sq[static_cast<size_t>(k)] += v * v;
+            }
+        }
+        ++count[cid];
+    }
+    fclose(spikeFile);
+
+    int built = 0;
+    for (auto it = count.constBegin(); it != count.constEnd(); ++it) {
+        const int  cid = it.key();
+        const long n   = it.value();
+        if (n < 1) continue;                                // nothing read: no template
+        ClusterTemplate t;
+        t.nSpikes = n;
+        t.mean.resize(static_cast<size_t>(nTotal));
+        t.sd.resize(static_cast<size_t>(nTotal));
+        const std::vector<double>& sm = sum[cid];
+        const std::vector<double>& sq = sumsq[cid];
+        for (int k = 0; k < nTotal; ++k) {
+            const double m = sm[static_cast<size_t>(k)] / static_cast<double>(n);
+            // max(0,...): rounding can push a zero variance slightly negative and
+            // sqrt of that is NaN, which would silently poison every overlap this
+            // cluster appears in.
+            const double var = std::max(0.0, sq[static_cast<size_t>(k)]
+                                             / static_cast<double>(n) - m * m);
+            t.mean[static_cast<size_t>(k)] = m;
+            t.sd  [static_cast<size_t>(k)] = std::sqrt(var);
+        }
+        clusterTemplates.insert(cid, t);
+        ++built;
+    }
+    return built;
 }
 
 QHash<int,int> Data::clusterWaveformPeakChannels() const
@@ -6725,6 +6861,13 @@ void Data::swapSpikes(dataType idxA, dataType idxB)
 
 void Data::invalidateWaveformCache(int clusterId)
 {
+    // The compact template dies with the display cache: every edit path already
+    // calls this, so hanging the template off it means a template can never
+    // outlive the membership it was computed from.  Unlike the display cache
+    // there is no in-flight case to worry about -- the template builder does not
+    // run concurrently with an edit.
+    clusterTemplates.remove(clusterId);
+
     // Mirror the pattern used throughout data.cpp for cache invalidation:
     // - If no thread is currently loading waveforms for this cluster, delete
     //   the cached data immediately and remove the status entry so the next
