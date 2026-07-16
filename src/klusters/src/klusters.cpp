@@ -20,6 +20,7 @@
 #include "config-klusters.h"
 // application specific includes
 #include "klusters.h"
+#include "mergerecommendview.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
@@ -252,6 +253,11 @@ void KlustersApp::initView()
     clusterStack->setChildrenCollapsible(false);
     clusterStack->addWidget(clusterPanel);
     clusterStack->addWidget(childPanel);
+    clusterStack->addWidget(recommendPanel);
+    // Main palette gets the top half; the child palette and the recommendations
+    // split the bottom half between them.  Sizes are a starting ratio only --
+    // the splitter is user-draggable from here.
+    clusterStack->setSizes({ 200, 100, 100 });
     splitter->addWidget(clusterStack);
     splitter->setChildrenCollapsible(false);
     tabsParent = new QExtendTabWidget(this);
@@ -1145,6 +1151,12 @@ void KlustersApp::createMenus()
     // recompute runs.  (false: these never renumber on their own.)
     connect(doc, &KlustersDoc::hierarchyChanged, this,
         [this]() { scheduleAutoPostClusterEdit(false); });
+
+    // Merging fibers emits hierarchyChanged, which is exactly when the
+    // recommendations become wrong -- the merged pair no longer exists, and the
+    // survivor's affinities have moved.  Refresh on it.
+    connect(doc, &KlustersDoc::hierarchyChanged, this,
+        [this]() { slotRefreshMergeRecommendations(); });
 }
 
 
@@ -1989,6 +2001,18 @@ void KlustersApp::initClusterPanel()
     childPanel->setWidget(childPaletteA);
     childPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
     childPanel->hide();
+
+    // Third section of the palette stack: recommended PARENT merges, ranked by
+    // agreement between the error and residual matrices.  A reader only -- it
+    // selects a pair in the main palette and leaves the merge to the existing
+    // hierarchy ops, so undo and colour handling stay in one place.
+    recommendPanel = new QDockWidget(tr("Recommended merges"),nullptr);
+    recommendView  = new MergeRecommendView(recommendPanel);
+    recommendPanel->setWidget(recommendView);
+    recommendPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    recommendPanel->hide();
+    connect(recommendView,&MergeRecommendView::recommendationActivated,
+            this,&KlustersApp::slotRecommendationActivated);
 }
 
 void KlustersApp::initDisplay(){
@@ -2087,6 +2111,7 @@ void KlustersApp::initDisplay(){
     // flat .clu session.  The menu entry is a disabled indicator of that choice,
     // not a runtime toggle, so the two systems never mix within a session.
     if(childPanel) childPanel->hide();
+    if(recommendPanel) recommendPanel->hide();
     if(childPaletteA) childPaletteA->reset();
     if(mHierarchicalView){
         const bool hier = doc->isHierarchicalSession();
@@ -4425,6 +4450,52 @@ void KlustersApp::slotSortClustersByAmplitudeByChannel()
     else
         slotStatusMsg(tr("Sorted %1 clusters into per-channel blocks by amplitude "
                          "(largest first in each).").arg(nRenamed));
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// slotRefreshMergeRecommendations
+//
+// Recompute the recommended parent merges from the active display's error and
+// residual matrices.  Cheap (it reads two already-computed matrices), so it is
+// wired to every event that can change the answer rather than to a button.
+//////////////////////////////////////////////////////////////////////////////
+void KlustersApp::slotRefreshMergeRecommendations()
+{
+    if (!recommendView) return;
+    if (!recommendPanel || !recommendPanel->isVisible()) return;
+
+    // The matrices recompute on worker threads, so the panel must also wake when
+    // a result LANDS, not only when an edit is requested -- otherwise a refresh
+    // that arrives mid-compute reads a stale matrix, reports it, and never comes
+    // back.  Both views emit matrixUpdated() on accepting a fresh result;
+    // Qt::UniqueConnection keeps repeated refreshes from stacking duplicates.
+    if (KlustersView* v = activeView()) {
+        if (ErrorMatrixView* emv = v->findChild<ErrorMatrixView*>())
+            connect(emv, &ErrorMatrixView::matrixUpdated,
+                    this, &KlustersApp::slotRefreshMergeRecommendations,
+                    static_cast<Qt::ConnectionType>(Qt::AutoConnection | Qt::UniqueConnection));
+        if (ResidualMatrixView* rmv = v->findChild<ResidualMatrixView*>())
+            connect(rmv, &ResidualMatrixView::matrixUpdated,
+                    this, &KlustersApp::slotRefreshMergeRecommendations,
+                    static_cast<Qt::ConnectionType>(Qt::AutoConnection | Qt::UniqueConnection));
+    }
+
+    recommendView->refreshFrom(activeView());
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// slotRecommendationActivated
+//
+// A recommendation was double-clicked.  Select the pair in the MAIN palette and
+// leave the merge to the existing op: the panel is a reader, so undo, hierarchy
+// rebuild and colour handling all stay where they already work.
+//////////////////////////////////////////////////////////////////////////////
+void KlustersApp::slotRecommendationActivated(const QList<int>& clusters)
+{
+    if (!clusterPalette || clusters.isEmpty()) return;
+    clusterPalette->selectItems(clusters);
+    slotStatusMsg(tr("Selected clusters %1 and %2 \u2014 merge them from the palette.")
+                      .arg(clusters.first()).arg(clusters.last()));
 }
 
 // ---------------------------------------------------------------------------

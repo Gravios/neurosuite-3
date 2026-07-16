@@ -37,6 +37,7 @@ set(klusters_SRCS
     driftmatrixthread.cpp
     driftmatrixview.cpp
     rangeslider.cpp
+    mergerecommendview.cpp
     eventsprovider.cpp
     groupingassistant.cpp
     groupingassistant_gpu_dispatch.cpp
