@@ -3640,6 +3640,7 @@ void KlustersApp::slotSingleColorUpdate(int clusterId){
 }
 
 void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
+    slotRefreshMergeRecommendations();   // recommendations follow the selection
     //Trigger ths action only if the active display does not contain a ProcessWidget
     if(!activeView())
         return;
@@ -4480,7 +4481,12 @@ void KlustersApp::slotRefreshMergeRecommendations()
                     static_cast<Qt::ConnectionType>(Qt::AutoConnection | Qt::UniqueConnection));
     }
 
-    recommendView->refreshFrom(activeView());
+    // Restrict to the palette selection: the question a curator is asking with a
+    // cluster selected is "what should merge with THIS", not "what is best in the
+    // session".  Empty selection falls back to the session-wide list.
+    recommendView->refreshFrom(activeView(),
+                               clusterPalette ? clusterPalette->selectedClusters()
+                                              : QList<int>());
 }
 
 //////////////////////////////////////////////////////////////////////////////
