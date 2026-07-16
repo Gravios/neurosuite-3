@@ -2601,6 +2601,7 @@ bool KlustersApp::queryClose()
 
 //TO implement , see documentation
 void KlustersApp::customEvent (QEvent* event){
+
     //Event sent by the SaveThread
     if(event->type() == QEvent::User + 100){
         slotStatusMsg(tr("Save file done."));
@@ -4460,10 +4461,52 @@ void KlustersApp::slotSortClustersByAmplitudeByChannel()
 // residual matrices.  Cheap (it reads two already-computed matrices), so it is
 // wired to every event that can change the answer rather than to a button.
 //////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+// ensureClusterTemplates
+//
+// The overlap witness needs a template for EVERY cluster, not just the ones the
+// waveform view happens to be showing -- otherwise a pair can only be scored
+// after both its clusters have been selected, which is no use for a panel whose
+// whole job is to point at pairs you have NOT looked at yet.
+//
+// Data::buildMissingClusterTemplates() is incremental, so this is cheap after
+// the first run: an edit invalidates only the clusters it touched (via
+// invalidateWaveformCache), and only those are rebuilt.
+//////////////////////////////////////////////////////////////////////////////
+void KlustersApp::ensureClusterTemplates()
+{
+    if (!doc) return;
+
+    // Synchronous on purpose.  buildMissingClusterTemplates() reads the cluster
+    // tables and writes the template cache, none of them locked, and an edit
+    // mutates all of them -- so a worker would race both the edit and the panel
+    // reading the cache.  It is affordable because it is incremental: the first
+    // call sweeps the .spk once, and after that an edit only invalidates the
+    // clusters it touched, so only those are re-read.
+    Data& d = doc->data();
+    const bool cold = (d.clusterTemplateCount() == 0);
+    if (cold) {
+        QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+        slotStatusMsg(tr("Building cluster waveform templates for the merge "
+                         "recommendations\u2026"));
+    }
+    const int built = d.buildMissingClusterTemplates();
+    if (cold) {
+        QApplication::restoreOverrideCursor();
+        slotStatusMsg(built > 0
+            ? tr("Built %1 cluster waveform templates.").arg(built)
+            : tr("No cluster waveform templates could be built \u2014 is the .spk readable?"));
+    }
+}
+
 void KlustersApp::slotRefreshMergeRecommendations()
 {
     if (!recommendView) return;
     if (!recommendPanel || !recommendPanel->isVisible()) return;
+
+    // Templates are what the overlap is scored from, and they are only rebuilt
+    // for clusters an edit invalidated, so asking on every refresh is cheap.
+    ensureClusterTemplates();
 
     // The matrices recompute on worker threads, so the panel must also wake when
     // a result LANDS, not only when an edit is requested -- otherwise a refresh
