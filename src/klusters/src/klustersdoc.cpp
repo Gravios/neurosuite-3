@@ -126,6 +126,11 @@ KlustersDoc::~KlustersDoc(){
         delete deletedClusters;
     }
 
+    // Drop the .pending scratch copies now that nothing reads them (clusteringData, which had its
+    // spk reader redirected there, is gone).  Anything worth keeping was committed to the originals
+    // by Save; a close without saving discards them by design.
+    removePendingFiles();
+
     //If an autoSaveThread exists and has not finish, wait until it is done
     if(autoSave && autoSaveThread != nullptr){
         if(!autoSaveThread->isRunning()){

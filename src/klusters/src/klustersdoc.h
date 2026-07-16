@@ -1266,6 +1266,13 @@ private:
      *  Called on open, after commit (save), and after reject. */
     bool initPendingFiles();
 
+    /** Delete the four .pending scratch copies and forget their paths.  Called from the destructor:
+     *  their contents are committed to the originals by Save, a session closed without saving has
+     *  deliberately discarded them, and nothing reads them across sessions (initPendingFiles()
+     *  re-seeds unconditionally).  Leaving them behind simply doubles the on-disk footprint of every
+     *  group that was ever opened. */
+    void removePendingFiles();
+
     /** Original file paths — set on open, updated on SaveAs. */
     QString origSpkPath;
     QString origResPath;

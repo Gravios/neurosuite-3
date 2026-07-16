@@ -2032,6 +2032,20 @@ bool KlustersDoc::initPendingFiles()
     return ok;
 }
 
+void KlustersDoc::removePendingFiles()
+{
+    // Scratch only: Save commits their contents to the originals, and a session closed without saving
+    // has deliberately discarded them.  Nothing reads them across sessions -- initPendingFiles()
+    // re-seeds unconditionally, so a leftover set is never trusted, only overwritten.  Removing them
+    // here keeps a closed session from leaving a second full copy of spk/res/fet/clu on disk (~459 MB
+    // per 8-channel group here, for every group ever opened).
+    for (const QString& p : { pendingSpkPath, pendingResPath, pendingFetPath, pendingCluPath })
+        if (!p.isEmpty()) QFile::remove(p);
+    pendingSpkPath.clear(); pendingResPath.clear();
+    pendingFetPath.clear(); pendingCluPath.clear();
+}
+
+
 bool KlustersDoc::commitAndRenewPending(QString* outError)
 {
     // Not running with pending files (the seed failed and initPendingFiles cleared the paths):
