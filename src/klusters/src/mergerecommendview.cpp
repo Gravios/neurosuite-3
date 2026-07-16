@@ -6,6 +6,7 @@
  ***************************************************************************/
 #include "mergerecommendview.h"
 
+#include "configuration.h"
 #include "errormatrixview.h"
 #include "klustersview.h"
 #include "mergerecommend.h"
@@ -113,10 +114,16 @@ void MergeRecommendView::refreshFrom(KlustersView* view)
         return (*R)(i + 1, j + 1);
     };
 
+    // Read the knobs fresh each refresh so a Preferences change lands on the
+    // next refresh rather than at the next restart.  Configuration clamps them,
+    // so the cast to size_t below cannot underflow into "no cap".
+    const int    maxRecs = configuration().getMergeRecommendMax();
+    const double eFloor  = configuration().getMergeRecommendErrorFloor();
+    const double qFloor  = configuration().getMergeRecommendQualityFloor();
+
     const std::vector<MergeCandidate> recs =
         mrRecommendMerges(eIds, errAt, rIds, resAt,
-                          static_cast<size_t>(maxRecommendations()),
-                          errorFloor(), qualityFloor());
+                          static_cast<size_t>(maxRecs), eFloor, qFloor);
 
     if (recs.empty()) {
         setNotice(tr("No pair clears both matrices right now."));

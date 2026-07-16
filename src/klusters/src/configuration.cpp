@@ -70,6 +70,13 @@ void Configuration::read() {
     realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
     realignMode       = settings.value("realignMode",        0).toInt();
     reorderMethod     = settings.value("reorderMethod",      0).toInt();
+    // Through the setters, not straight to the members like the knobs above: a
+    // hand-edited settings file could otherwise put a negative max here, and the
+    // panel casts it to size_t -- which underflows to "no cap" and lists every
+    // pair in the session.  The setters clamp.
+    setMergeRecommendMax(settings.value("mergeRecommendMax",                 20).toInt());
+    setMergeRecommendErrorFloor(settings.value("mergeRecommendErrorFloor",   0.05).toDouble());
+    setMergeRecommendQualityFloor(settings.value("mergeRecommendQualityFloor", 0.90).toDouble());
     curationLogging   = settings.value("curationLogging",    true).toBool();
     reorderDisplayOnly= settings.value("reorderDisplayOnly", false).toBool();
     realignVerbose    = settings.value("realignVerbose",     false).toBool();
@@ -155,6 +162,9 @@ void Configuration::write() const {
     settings.setValue("realignMaxShift",   realignMaxShift);
     settings.setValue("realignMode",       realignMode);
     settings.setValue("reorderMethod",     reorderMethod);
+    settings.setValue("mergeRecommendMax",          mergeRecommendMax);
+    settings.setValue("mergeRecommendErrorFloor",   mergeRecommendErrorFloor);
+    settings.setValue("mergeRecommendQualityFloor", mergeRecommendQualityFloor);
     settings.setValue("curationLogging",   curationLogging);
     settings.setValue("reorderDisplayOnly",reorderDisplayOnly);
     settings.setValue("realignVerbose",    realignVerbose);

@@ -91,6 +91,19 @@ public:
     /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     void setRealignMode(int m)            {realignMode = (m < 0 || m > 2) ? 0 : m;}
     void setReorderMethod(int m)          {reorderMethod = (m < 0 || m > 2) ? 0 : m;}
+    /**Merge recommendations: cap on the listed pairs.  Clamped to 1..200 -- the
+     * panel ranks every pair before capping, so an unbounded value would only
+     * lengthen a list nobody reads to the end of.*/
+    void setMergeRecommendMax(int n)      {mergeRecommendMax = (n < 1) ? 1 : ((n > 200) ? 200 : n);}
+    /**Absolute floor on the symmetrised error probability, below which a pair is
+     * dropped whatever the residual says.  Clamped to [0,1]: it is a
+     * probability, and a floor of 1 simply admits nothing.*/
+    void setMergeRecommendErrorFloor(double v)
+        {mergeRecommendErrorFloor = (v < 0.0) ? 0.0 : ((v > 1.0) ? 1.0 : v);}
+    /**Minimum combined percentile rank to list a pair.  Clamped to [0,1]; it is
+     * a rank, not a score.*/
+    void setMergeRecommendQualityFloor(double v)
+        {mergeRecommendQualityFloor = (v < 0.0) ? 0.0 : ((v > 1.0) ? 1.0 : v);}
     void setCurationLogging(bool b)       {curationLogging = b;}
     void setReorderDisplayOnly(bool b)    {reorderDisplayOnly = b;}
     void setRealignVerbose(bool b)        {realignVerbose = b;}
@@ -198,6 +211,9 @@ public:
     /**Returns the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     int    getRealignMode()       const {return realignMode;}
     int    getReorderMethod()     const {return reorderMethod;}
+    int    getMergeRecommendMax()          const {return mergeRecommendMax;}
+    double getMergeRecommendErrorFloor()   const {return mergeRecommendErrorFloor;}
+    double getMergeRecommendQualityFloor() const {return mergeRecommendQualityFloor;}
     bool   getCurationLogging()   const {return curationLogging;}
     bool   getReorderDisplayOnly()const {return reorderDisplayOnly;}
     bool   getRealignVerbose()    const {return realignVerbose;}
@@ -284,6 +300,13 @@ public:
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     int    getReorderMethodDefault()     const {return 0;}  // 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
+    // Merge-recommendation defaults.  These are starting guesses, not measured
+    // values: 0.05 is low enough to keep any pair the error matrix does not
+    // actively disbelieve, and 0.90 asks both matrices to rank a pair in their
+    // own top decile before it is called a recommendation.
+    int    getMergeRecommendMaxDefault()          const {return 20;}
+    double getMergeRecommendErrorFloorDefault()   const {return 0.05;}
+    double getMergeRecommendQualityFloorDefault() const {return 0.90;}
     bool   getCurationLoggingDefault()   const {return true;}
     bool   getReorderDisplayOnlyDefault()const {return false;}
     bool   getRealignVerboseDefault()    const {return false;}
@@ -432,6 +455,9 @@ private:
     int     realignMaxShift;
     int     realignMode;
     int     reorderMethod;   // reorder-by-similarity: 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
+    int     mergeRecommendMax;            // merge recommendations: max pairs listed
+    double  mergeRecommendErrorFloor;     // absolute floor on the error probability
+    double  mergeRecommendQualityFloor;   // min combined percentile rank
     bool    curationLogging;   // record per-action curation audit snapshots
     bool    reorderDisplayOnly;// reorder-by-similarity: rearrange matrix display only, no cluster renumber
     bool    realignVerbose;    // stream per-spike realignment detail to stderr

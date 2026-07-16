@@ -167,6 +167,9 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRefinement->realignModePcaRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeRmsRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefSorting->reorderMethodComboBox,         &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
+    connect(prefSorting->mergeRecommendMaxSpinBox,          &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefSorting->mergeRecommendErrorFloorSpinBox,   &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefSorting->mergeRecommendQualityFloorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitMinSizeSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitBloatFactorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitValleyThreshSpinBox,&QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -246,6 +249,9 @@ void PrefDialog::updateDialog()
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShift());
     prefRefinement->setRealignMode(configuration().getRealignMode());
     prefSorting->setReorderMethod(configuration().getReorderMethod());
+    prefSorting->setMergeRecommendMax(configuration().getMergeRecommendMax());
+    prefSorting->setMergeRecommendErrorFloor(configuration().getMergeRecommendErrorFloor());
+    prefSorting->setMergeRecommendQualityFloor(configuration().getMergeRecommendQualityFloor());
     prefRefinement->setCurationLogging(configuration().getCurationLogging());
     prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnly());
     prefRefinement->setRealignVerbose(configuration().getRealignVerbose());
@@ -322,6 +328,9 @@ void PrefDialog::updateConfiguration()
     configuration().setRealignMaxShift(prefRefinement->getRealignMaxShift());
     configuration().setRealignMode(prefRefinement->getRealignMode());
     configuration().setReorderMethod(prefSorting->getReorderMethod());
+    configuration().setMergeRecommendMax(prefSorting->getMergeRecommendMax());
+    configuration().setMergeRecommendErrorFloor(prefSorting->getMergeRecommendErrorFloor());
+    configuration().setMergeRecommendQualityFloor(prefSorting->getMergeRecommendQualityFloor());
     configuration().setCurationLogging(prefRefinement->getCurationLogging());
     configuration().setReorderDisplayOnly(prefSorting->getReorderDisplayOnly());
     configuration().setRealignVerbose(prefRefinement->getRealignVerbose());
@@ -403,6 +412,9 @@ void PrefDialog::slotDefault()
     prefRefinement->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
     prefRefinement->setRealignMode(configuration().getRealignModeDefault());
     prefSorting->setReorderMethod(configuration().getReorderMethodDefault());
+    prefSorting->setMergeRecommendMax(configuration().getMergeRecommendMaxDefault());
+    prefSorting->setMergeRecommendErrorFloor(configuration().getMergeRecommendErrorFloorDefault());
+    prefSorting->setMergeRecommendQualityFloor(configuration().getMergeRecommendQualityFloorDefault());
     prefRefinement->setCurationLogging(configuration().getCurationLoggingDefault());
     prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnlyDefault());
     prefRefinement->setRealignVerbose(configuration().getRealignVerboseDefault());

@@ -19,7 +19,8 @@
 
 class KlustersView;
 
-/**Lists up to maxRecommendations() parent-merge candidates, best first.
+/**Lists the top parent-merge candidates, best first (cap and thresholds come
+ * from Preferences -> Sorting -> Recommended Merges).
  *
  * The panel is a READER: it never moves spikes and never edits the document.
  * Double-clicking a row selects that pair in the main palette, leaving the
@@ -31,17 +32,9 @@ class MergeRecommendView : public QWidget {
 public:
     explicit MergeRecommendView(QWidget* parent = nullptr);
 
-    /**Hard cap on the listed recommendations.*/
-    static int maxRecommendations() { return 20; }
-
-    /**Absolute floor on the symmetrised error probability. Below this the error
-     * matrix is saying "not one unit", and no residual agreement should rescue
-     * the pair.*/
-    static double errorFloor() { return 0.05; }
-
-    /**Minimum combined percentile rank to be listed at all.*/
-    static double qualityFloor() { return 0.90; }
-
+    // The three knobs live in Preferences -> Sorting -> Recommended Merges and
+    // are read from Configuration at each refresh, so a change applies to the
+    // next refresh without restarting.
 public Q_SLOTS:
     /**Recompute the list from @p view's matrices.  Safe to call with nullptr
      * (clears), or when either matrix is missing, uncomputed or stale — the
