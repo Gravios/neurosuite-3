@@ -4753,7 +4753,23 @@ void KlustersApp::slotSortByResidualGated()
 
     // Seriate one block of matrix indices by single-linkage on residual
     // similarity; returns the block's cluster ids in leaf order.
-    auto seriate = [&](const QVector<int>& blk) -> QList<int> {
+    // The agglomeration below is O(n^3) in the block size -- n rounds, each
+    // rescanning the whole live pair set for the closest surviving pair.  The
+    // count gate splits at the MEDIAN, so each block is about half the session and
+    // "modest" is optimistic: at ~1300 clusters that is a few hundred million
+    // operations per block.  It grows cubically from there, so the wait wants
+    // showing.  A bar does not make it faster, but it does stop the window looking
+    // hung.
+    //
+    // Progress is weighted by n^3 rather than by n, because that is where the time
+    // actually goes: a 900/400 split is 92% of the work in the first block, and a
+    // bar that gave each block half would sit at 50% for almost the whole run.
+    const double wHi = std::pow(static_cast<double>(hi.size()), 3.0);
+    const double wLo = std::pow(static_cast<double>(lo.size()), 3.0);
+    const double wTot = wHi + wLo;
+    const int hiSpan = (wTot > 0.0) ? static_cast<int>((100.0 * wHi) / wTot) : 50;
+
+    auto seriate = [&](const QVector<int>& blk, int pctBase, int pctSpan) -> QList<int> {
         const int n = blk.size();
         QList<int> order;
         if (n <= 0) return order;
@@ -4779,7 +4795,13 @@ void KlustersApp::slotSortByResidualGated()
         std::vector<bool> alive(n, true);
         std::vector<std::vector<int>> leaves(n);
         for (int i = 0; i < n; ++i) leaves[i].push_back(i);
+        // Report at most ~100 times across the block: each report pumps the event
+        // loop, which is far dearer than one agglomeration round.
+        const int reportEvery = std::max(1, (n - 1) / 100);
         for (int step = 0; step < n - 1; ++step) {
+            if (pctSpan > 0 && (step % reportEvery) == 0)
+                updateSortProgress(pctBase + (pctSpan * step) / std::max(1, n - 1));
+
             double best = -std::numeric_limits<double>::infinity();
             int bi = -1, bj = -1;
             for (int i = 0; i < n; ++i) {
@@ -4813,8 +4835,11 @@ void KlustersApp::slotSortByResidualGated()
         return order;
     };
 
-    QList<int> targetOrder = seriate(hi);
-    targetOrder += seriate(lo);
+    beginSortProgress(tr("Sorting by residual\u2026 %p%"));
+    QList<int> targetOrder = seriate(hi, 0, hiSpan);
+    targetOrder += seriate(lo, hiSpan, 100 - hiSpan);
+    updateSortProgress(100);
+    endSortProgress();
 
     const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
     if (nRenamed < 0)
@@ -6036,6 +6061,11 @@ void KlustersApp::reorderClustersByFeatureSpace()
 //////////////////////////////////////////////////////////////////////////////
 void KlustersApp::beginSortProgress(const QString& format)
 {
+    // The OUTERMOST caller owns the bar.  A nested begin (see sortProgressDepth)
+    // must not relabel it or reset it to 0%, and its matching end must not hide
+    // it out from under the operation that is really running.
+    if (sortProgressDepth++ > 0) return;
+
     if (!sortProgressBar) {
         sortProgressBar = new QProgressBar(this);
         sortProgressBar->setObjectName(QStringLiteral("sortProgress"));
@@ -6053,12 +6083,15 @@ void KlustersApp::beginSortProgress(const QString& format)
 void KlustersApp::updateSortProgress(int percent)
 {
     if (!sortProgressBar) return;
+    if (sortProgressDepth > 1) return;      // a nested operation does not drive the bar
     sortProgressBar->setValue(qBound(0, percent, 100));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 }
 
 void KlustersApp::endSortProgress()
 {
+    if (sortProgressDepth > 0) --sortProgressDepth;
+    if (sortProgressDepth > 0) return;      // an outer operation still owns it
     if (!sortProgressBar) return;
     sortProgressBar->hide();
 }
