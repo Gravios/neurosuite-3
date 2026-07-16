@@ -638,7 +638,7 @@ void Data::invalidateAllClusterTemplates()
 // Only clusters WITHOUT a current template are accumulated, so the first call
 // after a session opens pays the read and an edit costs only what it touched.
 //////////////////////////////////////////////////////////////////////////////
-int Data::buildMissingClusterTemplates()
+int Data::buildMissingClusterTemplates(const std::function<void(int,int)>& progress)
 {
     const int nSamp  = nbSamplesInWaveform;
     const int nChan  = nbChannels;
@@ -683,7 +683,18 @@ int Data::buildMissingClusterTemplates()
     std::vector<short> bufS(twoBytes ? static_cast<size_t>(nTotal) : 0);
     std::vector<long>  bufL(twoBytes ? 0 : static_cast<size_t>(nTotal));
 
+    // Report every 1/200th of the work rather than per spike: the callback pumps
+    // the event loop, which costs far more than reading one record, so calling it
+    // per spike would make the progress bar the dominant cost of the build.
+    const size_t total    = recs.size();
+    const size_t reportEvery = std::max<size_t>(1, total / 200);
+    size_t done = 0;
+
     for (const auto& rc : recs) {
+        if (progress && (done % reportEvery) == 0)
+            progress(static_cast<int>(done), static_cast<int>(total));
+        ++done;
+
         const long rec = rc.first;
         const int  cid = rc.second;
         if (rec < 1 || rec > static_cast<long>(nbSpikes)) continue;
@@ -721,6 +732,7 @@ int Data::buildMissingClusterTemplates()
         ++count[cid];
     }
     fclose(spikeFile);
+    if (progress) progress(static_cast<int>(total), static_cast<int>(total));
 
     int built = 0;
     for (auto it = count.constBegin(); it != count.constEnd(); ++it) {

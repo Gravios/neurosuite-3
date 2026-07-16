@@ -27,6 +27,8 @@
 #include "curationlogger.h"   // for ClusterSnapshot return type
 
 //Include files for QT
+#include <functional>   // buildMissingClusterTemplates' progress callback
+
 #include <QList>
 #include <QSet>
 #include <QHash>
@@ -886,8 +888,14 @@ public:
      * elsewhere is stopAllViewThreads() before an edit; this is not part of that
      * machinery, so it stays synchronous rather than pretending to be safe.
      *
+     * @p progress, if set, is called periodically with (spikes done, spikes to
+     * do) so a caller can drive a progress bar.  It is a plain callback rather
+     * than a signal or a widget because the cold build is the only slow part and
+     * Data has no business knowing what a status bar is.
+     *
      * @return the number of templates built (0 = everything was current).*/
-    int buildMissingClusterTemplates();
+    int buildMissingClusterTemplates(
+        const std::function<void(int,int)>& progress = std::function<void(int,int)>());
 
     /**Drop @p clusterId's template so the next build recomputes it.  Empty
      * clusterId list = drop all.*/
