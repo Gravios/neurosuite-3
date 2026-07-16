@@ -832,6 +832,28 @@ public:
      *  by SNR". */
     QHash<int,double> clusterWaveformSnrs() const;
 
+    /**Peak-to-trough amplitude of each cluster's mean waveform, taken on the
+     * channel where that amplitude is largest.  Keyed by cluster id; clusters
+     * whose mean waveform is not computed yet are absent.
+     *
+     * NB this is the MEAN waveform — the same per-cluster template the waveform
+     * view draws and clusterWaveformSnrs() measures.  Klusters caches no median
+     * template.*/
+    QHash<int,double> clusterWaveformAmplitudes() const;
+
+    /**The channel carrying each cluster's largest peak-to-trough amplitude
+     * (group-local index).  Same keys as clusterWaveformAmplitudes().*/
+    QHash<int,int> clusterWaveformPeakChannels() const;
+
+private:
+    /**Peak-to-trough amplitude of cluster @p clusterId's mean waveform and the
+     * channel it occurs on.  Returns false when that cluster has no mean
+     * waveform ready.  Shared by the SNR, amplitude and peak-channel
+     * accessors so the three cannot disagree about what "best channel" means.*/
+    bool clusterBestChannelAmplitude(int clusterId, double& amplitude,
+                                     int& channel) const;
+public:
+
     /**
   * String indicating in scale mode the user is using (raw, scale by the maximum,
   * scale by the shoulder) in the correlationView.

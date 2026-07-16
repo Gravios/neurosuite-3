@@ -357,6 +357,8 @@ private Q_SLOTS:
      *  cluster becomes 2).  Requires computed mean waveforms; clusters without a
      *  ready cache sort last.  Clusters 0/1 untouched; undoable. */
     void slotSortClustersBySnr();
+    void slotSortClustersByAmplitude();
+    void slotSortClustersByAmplitudeByChannel();
     /** Renumber clusters so IDs run by descending error-matrix merge affinity
      *  (each cluster's strongest off-diagonal probability); the best merge
      *  candidate becomes 2.  Requires a computed, up-to-date error matrix in the
@@ -899,6 +901,8 @@ private:
     QAction *mSortByWaveformNN;         // renumber by nearest-neighbour median-waveform chain
     QAction *mSortByWaveformSpectral;   // renumber by spectral (Fiedler) median-waveform seriation
     QAction *mSortClustersBySnr;         // renumber clusters by descending mean-waveform SNR
+    QAction *mSortClustersByAmplitude;   // renumber clusters by descending peak-to-trough amplitude
+    QAction *mSortClustersByAmplitudeByChannel; // as above, blocked by peak channel
     QAction *mSortClustersByErrorPval;   // renumber clusters by descending error-matrix affinity
     QAction *mSortByResidualGated;      // residual-matrix sort, gated by spike count
     /** Last spike-count threshold used by slotPurgeSmallClusters (remembered
