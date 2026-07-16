@@ -37,6 +37,10 @@ struct CluFile {
     int              nClusters = 0;  ///< value on the header line
     std::vector<int> ids;            ///< one cluster id per spike (header excluded)
     bool             ok = false;     ///< false on open/parse failure
+    int64_t          nInFile = -1;   ///< binary .clu only: ids the file actually holds
+                                     ///< ((bytes-4)/4), or -1 if it was never determined.  Set even
+                                     ///< when ok is false, so a caller can report "expected N,
+                                     ///< file holds M" instead of a bare read failure.
 };
 NEUROSUITE_CORE_EXPORT CluFile readClu(const std::string& path);
 NEUROSUITE_CORE_EXPORT bool    writeClu(const std::string& path, int nClusters,
@@ -44,6 +48,9 @@ NEUROSUITE_CORE_EXPORT bool    writeClu(const std::string& path, int nClusters,
 
 // Binary .clu: int32_t cluster-count header, then nSpikes × int32_t ids.
 // nSpikes must be known up front (from the matching .res — see below).
+// The file length is validated: a .clu holding a different number of ids than nSpikes belongs to
+// another .res (a different run, group or variant) and is REJECTED (ok = false, nInFile = the count
+// found) rather than silently truncated to the first nSpikes.
 NEUROSUITE_CORE_EXPORT CluFile readCluBinary(const std::string& path, int64_t nSpikes);
 
 // ── .res.N ────────────────────────────────────────────────────────────────
