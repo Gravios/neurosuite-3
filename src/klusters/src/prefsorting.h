@@ -16,6 +16,14 @@ public:
     int  getReorderMethod()      const;
     void setReorderDisplayOnly(bool b);
     bool getReorderDisplayOnly() const;
+
+    // Merge recommendations (the panel under the child palette).
+    void   setMergeRecommendMax(int n);
+    int    getMergeRecommendMax()          const;
+    void   setMergeRecommendErrorFloor(double v);
+    double getMergeRecommendErrorFloor()   const;
+    void   setMergeRecommendQualityFloor(double v);
+    double getMergeRecommendQualityFloor() const;
 };
 
 #endif

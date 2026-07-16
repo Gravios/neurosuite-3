@@ -9,3 +9,10 @@ void PrefSorting::setReorderMethod(int m) { reorderMethodComboBox->setCurrentInd
 int  PrefSorting::getReorderMethod() const { return reorderMethodComboBox->currentIndex(); }
 void PrefSorting::setReorderDisplayOnly(bool b) { reorderDisplayOnlyCheckBox->setChecked(b); }
 bool PrefSorting::getReorderDisplayOnly() const { return reorderDisplayOnlyCheckBox->isChecked(); }
+
+void   PrefSorting::setMergeRecommendMax(int n) { mergeRecommendMaxSpinBox->setValue(n); }
+int    PrefSorting::getMergeRecommendMax() const { return mergeRecommendMaxSpinBox->value(); }
+void   PrefSorting::setMergeRecommendErrorFloor(double v) { mergeRecommendErrorFloorSpinBox->setValue(v); }
+double PrefSorting::getMergeRecommendErrorFloor() const { return mergeRecommendErrorFloorSpinBox->value(); }
+void   PrefSorting::setMergeRecommendQualityFloor(double v) { mergeRecommendQualityFloorSpinBox->setValue(v); }
+double PrefSorting::getMergeRecommendQualityFloor() const { return mergeRecommendQualityFloorSpinBox->value(); }
