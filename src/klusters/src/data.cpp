@@ -585,7 +585,8 @@ QHash<int,double> Data::clusterWaveformAmplitudes() const
     return out;
 }
 
-bool Data::clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou) const
+bool Data::clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou,
+                                  int maxShift, int* bestShift) const
 {
     const int nSamp = nbSamplesInWaveform;
     const int nChan = nbChannels;
@@ -607,12 +608,12 @@ bool Data::clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou) const
     if (static_cast<int>(ta.mean.size()) != nTotal) return false;
     if (static_cast<int>(tb.mean.size()) != nTotal) return false;
 
-    iou = wfEnvelopeIou(
+    iou = wfEnvelopeIouBestShift(
         [&ta](int i){ return ta.mean[static_cast<size_t>(i)]; },
         [&ta](int i){ return ta.sd  [static_cast<size_t>(i)]; },
         [&tb](int i){ return tb.mean[static_cast<size_t>(i)]; },
         [&tb](int i){ return tb.sd  [static_cast<size_t>(i)]; },
-        nTotal, 1.0);
+        nSamp, nChan, maxShift, 1.0, bestShift);
     return true;
 }
 

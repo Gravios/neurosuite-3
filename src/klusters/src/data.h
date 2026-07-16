@@ -855,7 +855,19 @@ public:
      * This is the same band the waveform view draws, and it is symmetric by
      * construction — unlike the error and residual matrices, which are
      * asymmetric and force a choice about which direction to believe.*/
-    bool clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou) const;
+    /**Envelope overlap between two clusters' cached templates, maximised over a
+     * lag of up to @p maxShift samples.
+     *
+     * @p maxShift = 0 is the old zero-shift comparison.  It is not the right
+     * default here: spikes are extracted at a detected peak and that alignment is
+     * not exact -- the realignment subsystem exists because of it -- so two halves
+     * of one neuron offset by a single sample (30 us at sr=32552) scored like
+     * unrelated units and were never recommended.
+     *
+     * @p bestShift, if non-null, receives the winning lag: positive means B sits
+     * that many samples later in its extraction window than A.*/
+    bool clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou,
+                                int maxShift = 0, int* bestShift = nullptr) const;
 
     /**Compact per-cluster template: the mean and SD of every sample on every
      * channel, laid out exactly like the waveform cache (sample * nChan + ch).
