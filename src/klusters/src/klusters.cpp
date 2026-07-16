@@ -4932,6 +4932,10 @@ void KlustersApp::slotTabChange(int index){
         }
         slotStateChanged(QStringLiteral("reclusterViewState"));
     }
+
+    // Each display has its own matrices, so the recommendations belong to the
+    // display being switched to, not the one left behind.
+    slotRefreshMergeRecommendations();
 }
 
 void KlustersApp::slotUpdateDimensionX(int dimensionXValue){
@@ -6329,6 +6333,13 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
     if(view->containsClusterView() && view->containsTraceView()){
         slotStateChanged("traceViewClusterViewState");
     }
+
+    // A matrix may have just appeared.  Without this the recommendations panel
+    // only learned about views that existed when it last refreshed: adding an
+    // error or residual matrix afterwards left it reporting them missing
+    // forever, because its matrixUpdated() hookup is made during a refresh and
+    // so was never armed for a view that did not yet exist.
+    slotRefreshMergeRecommendations();
 }
 
 void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType){
