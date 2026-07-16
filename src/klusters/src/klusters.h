@@ -592,7 +592,6 @@ private Q_SLOTS:
     void slotApplyDriftSiblings();
 
     /**Stops the separate process which is reclustering some clusters.*/
-    void slotStopRecluster();
 
     /**Triggers the update of data incorporating the new data from the reclustering.
      *  Wired to QProcess::finished, so the parameters match Qt's signal: an
@@ -944,7 +943,6 @@ private:
     ReclusterOnce reclusterOnce = ReclusterOnce::None;
 
     QAction *mSplitByKnn;
-    QAction *mAbortReclustering;
     QAction *mRealignSpikes;
     /** PCA-centered batch realignment across every cluster (skipping
      *  noise=0 and artifact=1), using the top 2 channels per cluster.

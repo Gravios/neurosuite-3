@@ -819,11 +819,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     QApplication::restoreOverrideCursor();
 }
 
-void KlustersApp::slotStopRecluster(){
-    processWidget->killJob();
-    processKilled = true;
-    slotStateChanged("stoppedReclusterState");
-}
+
 
 void KlustersApp::slotOutputTreatmentOver(){
     processOutputsFinished = true;
