@@ -4,33 +4,29 @@
  *
  * Qt-free and header-only so the ranking can be unit-tested without a GUI.
  *
- * The two matrices disagree about almost everything mechanical:
+ * The two witnesses are the error matrix and the waveform-envelope overlap
+ * (waveformiou.h).  They are combined by RANK, because they have no common unit:
+ * one is a probability under a Gaussian feature model, the other a fraction of
+ * overlapping envelope area.
  *
- *   - POLARITY.  The error matrix holds probabilities: HIGH means "these two
- *     look like one unit".  The residual matrix holds distances: LOW means the
- *     same thing.  They cannot be added without flipping one.
- *   - SYMMETRY.  Neither is symmetric.  The residual matrix is asymmetric by
- *     construction — upper-right is A-vs-B, lower-left B-vs-A, each row scaled
- *     by its own reference variance — and the error matrix's P(spike|cluster)
- *     normalisation is per-column.  Both are symmetrised by AVERAGING the two
- *     directions, which is what KlustersApp::slotSortClustersByErrorPval already
- *     does with the same matrix: 0.5 * (M(i,j) + M(j,i)).
+ * The second witness used to be the residual matrix.  It was replaced because it
+ * forced two things this does not:
  *
- *     This started out taking the pessimistic direction instead (min probability,
- *     max residual).  That was wrong, and wrong in a way that quietly hid the
- *     best candidates: these matrices are asymmetric for a REASON.  A fragment
- *     sitting inside a larger unit scores high one way (the fragment's spikes fit
- *     the big model) and low the other (the big cluster's spikes do not fit the
- *     fragment's tight model), and a fragment rejoining its parent is exactly the
- *     merge this panel exists to find.  Taking the minimum threw those away.
- *   - SCALE.  A probability and a variance-scaled residual share no units, and
- *     the residual's spread is data-dependent.  They are therefore combined by
- *     RANK, not by value: each metric is turned into its own percentile over
- *     the pairs actually on offer.
- *   - MEMBERSHIP.  The two matrices are computed independently and can hold
- *     different cluster sets (one recomputed since the last edit, the other
- *     not).  Only the intersection is scored; a pair missing from either matrix
- *     has no opinion from it and is dropped rather than guessed at.
+ *   - SYMMETRY.  The residual matrix is asymmetric by construction (each row
+ *     scaled by its own reference variance), so it demanded a choice about which
+ *     direction to believe — and the first choice, the pessimistic one, silently
+ *     discarded exactly the fragment/parent pairs the panel exists to find.  IOU
+ *     is symmetric with nothing to choose.
+ *   - AVAILABILITY.  It required a residual matrix display to be open and
+ *     computed.  The overlap reads the cached mean and SD, which are already
+ *     there for the waveform view.
+ *
+ * The error matrix remains asymmetric, so it is still symmetrised — by averaging
+ * the two directions, matching KlustersApp::slotSortClustersByErrorPval:
+ * 0.5 * (M(i,j) + M(j,i)).
+ *
+ * Membership still matters: a cluster with no computed waveform has no overlap to
+ * report, and such pairs are dropped rather than guessed at.
  *
  * Copyright (C) 2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -44,15 +40,15 @@
 #include <map>
 #include <vector>
 
-/**One recommended merge.  @a errorScore and @a residualScore are the raw
- * symmetrised values (for display); @a quality is the combined rank in [0,1],
- * 1 being the best pair on offer.*/
+/**One recommended merge.  @a errorScore is the symmetrised probability and
+ * @a overlapScore the envelope IOU (both for display); @a quality is the
+ * combined rank in [0,1], 1 being the best pair on offer.*/
 struct MergeCandidate {
     int    a = -1;
     int    b = -1;
-    double errorScore    = 0.0;   // symmetrised probability, higher = closer
-    double residualScore = 0.0;   // symmetrised residual, lower = closer
-    double quality       = 0.0;   // min of the two percentile ranks
+    double errorScore   = 0.0;   // symmetrised probability, higher = closer
+    double overlapScore = 0.0;   // envelope IOU in [0,1], higher = closer
+    double quality      = 0.0;   // min of the two percentile ranks
 };
 
 /**Percentile rank of each value in @p v, in [0,1].  @p bestIsHigh selects the
@@ -90,8 +86,8 @@ inline std::vector<double> mrPercentileRanks(const std::vector<double>& v,
  *
  * @param errIds   cluster ids, in error-matrix row/col order.
  * @param errAt    0-based accessor into the error matrix.
- * @param resIds   cluster ids, in residual-matrix row/col order.
- * @param resAt    0-based accessor into the residual matrix.
+ * @param overlapOf  envelope IOU for a pair of CLUSTER IDS; returns false when
+ *        either cluster has no computed waveform, and that pair is then dropped.
  * @param maxCount hard cap on the returned list.
  * @param errorMin  ABSOLUTE floor on the symmetrised error probability.
  * @param qualityFloor minimum combined rank to be called "high quality".
@@ -117,8 +113,7 @@ inline std::vector<double> mrPercentileRanks(const std::vector<double>& v,
 inline std::vector<MergeCandidate> mrRecommendMerges(
     const std::vector<int>& errIds,
     const std::function<double(int,int)>& errAt,
-    const std::vector<int>& resIds,
-    const std::function<double(int,int)>& resAt,
+    const std::function<bool(int,int,double&)>& overlapOf,
     std::size_t maxCount,
     double errorMin,
     double qualityFloor,
@@ -126,14 +121,10 @@ inline std::vector<MergeCandidate> mrRecommendMerges(
 {
     std::vector<MergeCandidate> out;
 
-    std::map<int,int> errRow, resRow;
+    std::map<int,int> errRow;
     for (std::size_t i = 0; i < errIds.size(); ++i) errRow[errIds[i]] = static_cast<int>(i);
-    for (std::size_t i = 0; i < resIds.size(); ++i) resRow[resIds[i]] = static_cast<int>(i);
 
-    // Only clusters BOTH matrices know about can be scored by both.
-    std::vector<int> shared;
-    for (const int id : errIds)
-        if (resRow.count(id)) shared.push_back(id);
+    std::vector<int> shared(errIds);
     std::sort(shared.begin(), shared.end());
     if (shared.size() < 2) return out;
 
@@ -158,28 +149,30 @@ inline std::vector<MergeCandidate> mrRecommendMerges(
             const int a = shared[i], b = shared[j];
 
             const int ea = errRow[a], eb = errRow[b];
-            const int ra = resRow[a], rb = resRow[b];
 
-            // Mean of the two directions, matching slotSortClustersByErrorPval.
+            // The error matrix is asymmetric: mean of the two directions, matching
+            // slotSortClustersByErrorPval.  The overlap needs no such choice.
             const double e = 0.5 * (errAt(ea, eb) + errAt(eb, ea));
-            const double r = 0.5 * (resAt(ra, rb) + resAt(rb, ra));
 
             // Absolute gate before ranking, so a disbelieved pair cannot be
             // ranked into the list by being merely less bad than the rest — and
             // so it does not occupy a rank slot and depress the real ones.
             if (e < errorMin) continue;
 
+            double ov = 0.0;
+            if (!overlapOf(a, b, ov)) continue;   // no waveform -> no opinion
+
             MergeCandidate c;
-            c.a = a; c.b = b; c.errorScore = e; c.residualScore = r;
+            c.a = a; c.b = b; c.errorScore = e; c.overlapScore = ov;
             pairs.push_back(c);
             errVals.push_back(e);
-            resVals.push_back(r);
+            resVals.push_back(ov);
         }
     }
     if (pairs.empty()) return out;
 
     const std::vector<double> eRank = mrPercentileRanks(errVals, /*bestIsHigh*/ true);
-    const std::vector<double> rRank = mrPercentileRanks(resVals, /*bestIsHigh*/ false);
+    const std::vector<double> rRank = mrPercentileRanks(resVals, /*bestIsHigh*/ true);   // IOU: higher = closer
     for (std::size_t k = 0; k < pairs.size(); ++k)
         pairs[k].quality = std::min(eRank[k], rRank[k]);
 

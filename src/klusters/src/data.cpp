@@ -22,6 +22,7 @@
  ***************************************************************************/
 //Application include files
 #include "data.h"
+#include "waveformiou.h"
 #include "binfile.h"
 #include "minmaxthread.h"
 #include "waveformview.h"
@@ -581,6 +582,34 @@ QHash<int,double> Data::clusterWaveformAmplitudes() const
             out[it.key()] = amp;
     }
     return out;
+}
+
+bool Data::clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou) const
+{
+    const int nSamp = nbSamplesInWaveform;
+    const int nChan = nbChannels;
+    if (nSamp < 1 || nChan < 1) return false;
+
+    auto ready = [this](int cid) -> const Waveforms* {
+        const auto it = waveformStatusMap.constFind(cid);
+        if (it == waveformStatusMap.constEnd())        return nullptr;
+        if (it.value().sampleMeanStatus() != READY)    return nullptr;
+        const QString key = QString::number(cid);
+        if (!waveformDict.contains(key))               return nullptr;
+        return waveformDict.value(key);
+    };
+    const Waveforms* wa = ready(clusterA);
+    const Waveforms* wb = ready(clusterB);
+    if (!wa || !wb) return false;
+
+    // Same indexing as the rest of the waveform cache: sample * nChan + channel.
+    iou = wfEnvelopeIou(
+        [wa](int i){ return static_cast<double>(wa->getSampleMean(i)); },
+        [wa](int i){ return static_cast<double>(wa->getSampleStDeviation(i)); },
+        [wb](int i){ return static_cast<double>(wb->getSampleMean(i)); },
+        [wb](int i){ return static_cast<double>(wb->getSampleStDeviation(i)); },
+        nSamp * nChan, 1.0);
+    return true;
 }
 
 QHash<int,int> Data::clusterWaveformPeakChannels() const
