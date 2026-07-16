@@ -174,32 +174,76 @@ inline bool writePca(const std::string& path, const PcaBasis& pca) {
     std::fclose(f);
     return ok;
 }
-// PCA-projection energy of a channel-major waveform (wf[ch*nSamp + t]) against
-// the basis:  E = Σ_ch Σ_k ( Σ_u ev[k·data2use+u]·(x[recShift+u] − μ[u]) )².
-// Uses min(pca.nCh, nChan) channels so a stderiv basis trained on nChan−1
-// channels still projects.  The sIdx bounds guard is a no-op whenever the
-// header invariant recShift + data2use ≤ nSamp holds; it is kept so a stray
-// shifted window can never read out of bounds.
-inline double pcaProjectionEnergy(const int16_t* wfChannelMajor,
-                                  int nChan, int nSamp,
-                                  const PcaBasis& pca) {
+// PCA scores of a channel-major waveform (wf[ch*nSamp + t]) against the basis.
+//
+//   score[ch][k] = Sum_u ev[k*data2use + u] * ( x[recShift + sampleShift + u] - mu[u] )
+//
+// @p out receives chForPca * nComp scores, channel-major: out[ch*nComp + k].  It is
+// resized to fit.  Returns the number of channels projected (min(pca.nCh, nChan)),
+// or 0 if the basis is unusable.
+//
+// @p sampleShift slides the READ WINDOW along the waveform without touching the
+// waveform or the file.  0 is the ordinary projection.
+//
+// SIGN, stated exactly because it is easy to get backwards and a mis-signed lag
+// silently compares the wrong pair: sampleShift = +s reads samples s LATER, which
+// yields the same scores as a waveform whose peak sits s samples EARLIER in its
+// extraction window.  Sliding the window and moving the waveform are opposite
+// operations.  The equality is exact -- the read is x[recShift + sampleShift + u],
+// so sliding the index and shifting the samples are the same arithmetic and no
+// interpolation is involved -- and it is asserted in the unit test.
+//
+// This exists because spikes are extracted at a detected peak and that alignment is
+// not exact -- the realignment subsystem exists because of it -- so asking whether
+// two clusters are one neuron is a question about a lag, not only about
+// sample-for-sample identity.
+//
+// The bounds guard is what makes a shifted window safe: recShift + data2use <= nSamp
+// is the header invariant for sampleShift == 0, but a shift can walk the window off
+// either end, and those samples are SKIPPED rather than read.  Skipping is not free
+// of meaning -- a score built from fewer samples is not on the same footing as a
+// full one -- so a caller comparing scores across shifts must keep the usable window
+// the same for every shift rather than letting each shift use whatever it can reach.
+inline int pcaProjectScores(const int16_t* wfChannelMajor,
+                            int nChan, int nSamp,
+                            const PcaBasis& pca,
+                            std::vector<double>& out,
+                            int sampleShift = 0) {
+    if (!pca.valid() || nChan < 1 || nSamp < 1) { out.clear(); return 0; }
     const int chForPca = std::min(pca.nCh, nChan);
-    double energy = 0.0;
+    out.assign(static_cast<size_t>(chForPca) * pca.nComp, 0.0);
     for (int ch = 0; ch < chForPca; ++ch) {
         const std::vector<double>& mu = pca.means[ch];
         const std::vector<double>& ev = pca.evec[ch];
         for (int k = 0; k < pca.nComp; ++k) {
             double score = 0.0;
             for (int u = 0; u < pca.data2use; ++u) {
-                const int sIdx = pca.recShift + u;
+                const int sIdx = pca.recShift + sampleShift + u;
                 if (sIdx < 0 || sIdx >= nSamp) continue;
                 double x = static_cast<double>(wfChannelMajor[ch * nSamp + sIdx]);
                 if (pca.centered) x -= mu[u];
                 score += ev[static_cast<size_t>(k * pca.data2use + u)] * x;
             }
-            energy += score * score;
+            out[static_cast<size_t>(ch) * pca.nComp + k] = score;
         }
     }
+    return chForPca;
+}
+
+// PCA-projection energy: E = Sum_ch Sum_k score[ch][k]^2.
+//
+// Defined in terms of pcaProjectScores so the projection arithmetic exists once.
+// It used to be written out here separately; this file is shared by
+// process_alignspikes_pca and klusters' realign, and two spellings of one
+// computation is how things drift apart.
+inline double pcaProjectionEnergy(const int16_t* wfChannelMajor,
+                                  int nChan, int nSamp,
+                                  const PcaBasis& pca,
+                                  int sampleShift = 0) {
+    std::vector<double> scores;
+    pcaProjectScores(wfChannelMajor, nChan, nSamp, pca, scores, sampleShift);
+    double energy = 0.0;
+    for (double v : scores) energy += v * v;
     return energy;
 }
 
