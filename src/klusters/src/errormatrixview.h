@@ -348,6 +348,14 @@ private:
     /**Feature dimensionality the cache was built with, and whether it is valid.*/
     int  rawProbCacheDims = -1;
     bool rawProbCacheValid = false;
+    /**Which clustering the cached raw columns were computed against: false =
+     * the parent clustering, true = a child's.  KlustersDoc::data() follows the
+     * ACTIVE clustering, and the two share their spikes and their .fet, so the
+     * cache's own geometry checks (rows, columns, sizes, dimensions) all pass
+     * across a scope switch and cannot tell the columns apart.  Without this,
+     * a parent cluster whose id and spike count happen to match a cached child
+     * cluster silently reuses P(spike | child N) as P(spike | parent N).*/
+    bool rawProbCacheChildScope = false;
     /**Set by the forward renumber slot when it has remapped rawProbCacheIds in
      * place through the old->new map, so the compute launch can skip the
      * defensive hasBeenRenumbered invalidate; consumed (reset) each launch.*/

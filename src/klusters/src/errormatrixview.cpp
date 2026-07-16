@@ -192,6 +192,7 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 rawProbCacheSizes = errorMatrixThread->getNewRawSizes();
                 rawProbCacheDims  = errorMatrixThread->getNewRawDims();
                 rawProbCacheValid = true;
+                rawProbCacheChildScope = doc.isChildClusteringActive();
             } else {
                 delete errorMatrixThread->getNewRaw();                // superseded / unusable
             }
@@ -223,6 +224,7 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 rawProbCacheSizes = errorMatrixThread->getNewRawSizes();
                 rawProbCacheDims  = errorMatrixThread->getNewRawDims();
                 rawProbCacheValid = true;
+                rawProbCacheChildScope = doc.isChildClusteringActive();
             } else {
                 invalidateRawProbCache("full recompute / fell-back result (customEvent)");
             }
@@ -390,6 +392,15 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     // lazily by the first actual edit (nbActions==1, still cold), after which reuse
     // begins from the second edit on.  Net effect: fast GPU startup, one CPU
     // cold-seed on the first edit, incremental thereafter.
+    // The cached columns belong to whichever clustering was active when they were
+    // computed.  A hierarchy op can switch that under us -- groupChildrenIntoFiber
+    // (promoting children to a new fiber) calls setActiveClustering(false), so a
+    // cache seeded in child scope would be reused against the parent clustering.
+    // Nothing downstream can catch it: the two clusterings share their spikes and
+    // their .fet, so every geometry check in cacheUsable passes.
+    if(rawProbCacheValid && rawProbCacheChildScope != doc.isChildClusteringActive())
+        invalidateRawProbCache("clustering scope changed");
+
     const bool coldSeedRefresh = !rawProbCacheValid && (nbActions == 0);
     const bool useIncremental = incrementalEnabled && singleEdit && !coldSeedRefresh;
     const QSet<int> changedIds = useIncremental ? changedClusterIdsSinceCache()
