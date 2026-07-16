@@ -4485,6 +4485,7 @@ void KlustersApp::slotRefreshMergeRecommendations()
     // cluster selected is "what should merge with THIS", not "what is best in the
     // session".  Empty selection falls back to the session-wide list.
     recommendView->refreshFrom(activeView(),
+                               doc ? &doc->data() : nullptr,
                                clusterPalette ? clusterPalette->selectedClusters()
                                               : QList<int>());
 }

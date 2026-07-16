@@ -108,7 +108,7 @@
         </item>
         <item>
          <widget class="QDoubleSpinBox" name="mergeRecommendErrorFloorSpinBox">
-          <property name="toolTip"><string>Absolute floor on the symmetrised error-matrix probability. A pair scoring below this is dropped no matter how well the residual matrix likes it: the error matrix holds probabilities, so a low value means &quot;these are not one unit&quot; and is a fact, not a ranking. This gate is applied BEFORE ranking, so a disbelieved pair does not occupy a rank slot. Raise it to demand stronger evidence; 0 disables the gate and leaves only the relative quality floor. Default: 0.05.</string></property>
+          <property name="toolTip"><string>Absolute floor on the symmetrised error-matrix probability. A pair scoring below this is dropped no matter how well the waveform envelopes overlap: the error matrix holds probabilities, so a low value means &quot;these are not one unit&quot; and is a fact, not a ranking. This gate is applied BEFORE ranking, so a disbelieved pair does not occupy a rank slot. Raise it to demand stronger evidence; 0 disables the gate and leaves only the relative quality floor. Default: 0.05.</string></property>
           <property name="decimals"><number>3</number></property>
           <property name="minimum"><double>0.000000000000000</double></property>
           <property name="maximum"><double>1.000000000000000</double></property>
@@ -133,7 +133,7 @@
         </item>
         <item>
          <widget class="QDoubleSpinBox" name="mergeRecommendQualityFloorSpinBox">
-          <property name="toolTip"><string>Minimum combined quality for a pair to be listed. Quality is the WEAKER of the two matrices&apos; percentile ranks, so 0.90 means both the error and the residual matrix must rank the pair in their own top decile. Because it is a percentile it is relative to the pairs on offer, which is why the absolute error floor above exists alongside it. Lower it to see more marginal suggestions. Default: 0.90.</string></property>
+          <property name="toolTip"><string>Minimum combined quality for a pair to be listed. Quality is the WEAKER of the two witnesses&apos; percentile ranks, so 0.90 means both the error matrix and the waveform-envelope overlap must rank the pair in their own top decile. Because it is a percentile it is relative to the pairs on offer, which is why the absolute error floor above exists alongside it. Lower it to see more marginal suggestions. Default: 0.90.</string></property>
           <property name="decimals"><number>2</number></property>
           <property name="minimum"><double>0.000000000000000</double></property>
           <property name="maximum"><double>1.000000000000000</double></property>

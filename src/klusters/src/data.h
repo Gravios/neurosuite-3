@@ -845,6 +845,16 @@ public:
      * (group-local index).  Same keys as clusterWaveformAmplitudes().*/
     QHash<int,int> clusterWaveformPeakChannels() const;
 
+    /**Overlap of two clusters' waveform envelopes: intersection-over-union of
+     * their mean +/- SD bands, accumulated over every sample and channel.  1 =
+     * the envelopes coincide, 0 = they never touch.  Returns false when either
+     * cluster's mean waveform is not computed yet.
+     *
+     * This is the same band the waveform view draws, and it is symmetric by
+     * construction — unlike the error and residual matrices, which are
+     * asymmetric and force a choice about which direction to believe.*/
+    bool clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou) const;
+
 private:
     /**Peak-to-trough amplitude of cluster @p clusterId's mean waveform and the
      * channel it occurs on.  Returns false when that cluster has no mean

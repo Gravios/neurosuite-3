@@ -8,9 +8,9 @@
 
 #include "configuration.h"
 #include "errormatrixview.h"
+#include "data.h"
 #include "klustersview.h"
 #include "mergerecommend.h"
-#include "residualmatrixview.h"
 
 #include <QHeaderView>
 #include <QVBoxLayout>
@@ -32,7 +32,7 @@ MergeRecommendView::MergeRecommendView(QWidget* parent)
 
     tree = new QTreeWidget(this);
     tree->setColumnCount(4);
-    tree->setHeaderLabels({ tr("Merge"), tr("Error"), tr("Residual"), tr("Quality") });
+    tree->setHeaderLabels({ tr("Merge"), tr("Error"), tr("Overlap"), tr("Quality") });
     tree->setRootIsDecorated(false);
     tree->setUniformRowHeights(true);
     tree->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -62,56 +62,52 @@ void MergeRecommendView::onItemActivated(QTreeWidgetItem* item, int /*column*/)
     emit recommendationActivated(QList<int>{ a, b });
 }
 
-void MergeRecommendView::refreshFrom(KlustersView* view, const QList<int>& selected)
+void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
+                                     const QList<int>& selected)
 {
     tree->clear();
 
-    if (!view) {
+    if (!view || !data) {
         setNotice(tr("No active display."));
         return;
     }
 
-    ErrorMatrixView*    emv = view->findChild<ErrorMatrixView*>();
-    ResidualMatrixView* rmv = view->findChild<ResidualMatrixView*>();
+    ErrorMatrixView* emv = view->findChild<ErrorMatrixView*>();
 
-    // Both witnesses are required.  Recommending from one alone would be a
-    // different (weaker) feature wearing this one's name, so say what is missing
-    // instead of quietly degrading to a single matrix.
-    if (!emv || !rmv) {
-        setNotice(tr("Needs both an error matrix and a residual matrix in this display."));
+    // Only the error matrix is needed now.  The second witness is the waveform
+    // envelope overlap, which reads the cached mean/SD the waveform view already
+    // uses -- so no residual matrix display has to be open or computed.
+    if (!emv) {
+        setNotice(tr("Needs an error matrix in this display."));
         return;
     }
-    if (!emv->hasComputedData() || !rmv->hasComputedData()) {
-        setNotice(tr("Compute both matrices (press U) to get recommendations."));
+    if (!emv->hasComputedData()) {
+        setNotice(tr("Compute the error matrix (press U) to get recommendations."));
         return;
     }
-    if (emv->isOutOfDate() || rmv->isOutOfDate()) {
-        setNotice(tr("A matrix is out of date \u2014 press U to recompute, then these refresh."));
+    if (emv->isOutOfDate()) {
+        setNotice(tr("The error matrix is out of date \u2014 press U to recompute, "
+                     "then these refresh."));
         return;
     }
 
     const Array<double>* E = emv->matrixData();
-    const Array<double>* R = rmv->matrixData();
-    if (!E || !R) {
+    if (!E) {
         setNotice(tr("Matrix data unavailable."));
         return;
     }
 
     const QList<int> eIdsQ = emv->matrixComputedClusterList();
-    const QList<int> rIdsQ = rmv->matrixClusterList();
-
-    std::vector<int> eIds, rIds;
+    std::vector<int> eIds;
     eIds.reserve(static_cast<size_t>(eIdsQ.size()));
-    rIds.reserve(static_cast<size_t>(rIdsQ.size()));
     for (const int id : eIdsQ) eIds.push_back(id);
-    for (const int id : rIdsQ) rIds.push_back(id);
 
-    // Both Arrays are 1-based; mrRecommendMerges hands out 0-based indices.
+    // The Array is 1-based; mrRecommendMerges hands out 0-based indices.
     std::function<double(int,int)> errAt = [E](int i, int j){
         return (*E)(i + 1, j + 1);
     };
-    std::function<double(int,int)> resAt = [R](int i, int j){
-        return (*R)(i + 1, j + 1);
+    std::function<bool(int,int,double&)> overlapOf = [data](int a, int b, double& iou){
+        return data->clusterEnvelopeOverlap(a, b, iou);
     };
 
     // Read the knobs fresh each refresh so a Preferences change lands on the
@@ -126,12 +122,13 @@ void MergeRecommendView::refreshFrom(KlustersView* view, const QList<int>& selec
     for (const int id : selected) restrict.push_back(id);
 
     const std::vector<MergeCandidate> recs =
-        mrRecommendMerges(eIds, errAt, rIds, resAt,
+        mrRecommendMerges(eIds, errAt, overlapOf,
                           static_cast<size_t>(maxRecs), eFloor, qFloor, restrict);
 
     if (recs.empty()) {
         setNotice(selected.isEmpty()
-            ? tr("No pair clears both matrices right now.")
+            ? tr("No pair clears both witnesses right now.\n"
+                 "(Waveforms must be computed for the overlap.)")
             : tr("Nothing worth merging with the selected cluster(s).\n"
                  "Clear the selection to see the whole session."));
         return;
@@ -142,11 +139,11 @@ void MergeRecommendView::refreshFrom(KlustersView* view, const QList<int>& selec
         QTreeWidgetItem* it = new QTreeWidgetItem(tree);
         it->setText(0, tr("%1 + %2").arg(c.a).arg(c.b));
         it->setText(1, QString::number(c.errorScore,    'f', 3));
-        it->setText(2, QString::number(c.residualScore, 'f', 3));
+        it->setText(2, QString::number(c.overlapScore, 'f', 3));
         it->setText(3, QString::number(c.quality,       'f', 2));
         it->setData(0, Qt::UserRole,     c.a);
         it->setData(0, Qt::UserRole + 1, c.b);
-        it->setToolTip(0, tr("Both matrices rank this pair highly.\n"
+        it->setToolTip(0, tr("Both the error matrix and the envelope overlap rank this pair highly.\n"
                              "Double-click to select it in the main palette."));
     }
     for (int c = 0; c < 3; ++c) tree->resizeColumnToContents(c);

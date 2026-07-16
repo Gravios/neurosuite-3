@@ -2,9 +2,9 @@
  * mergerecommendview.h — panel listing recommended parent-cluster merges.
  *
  * Sits in the third section of the palette stack, under the main palette and
- * the child palette.  It reads the error matrix and the residual matrix of the
- * active display and lists the pairs both agree on; the ranking itself lives in
- * mergerecommend.h, which is Qt-free and unit-tested.
+ * the child palette.  It reads the error matrix of the active display and the
+ * cached waveform envelopes, and lists the pairs both agree on; the ranking
+ * itself lives in mergerecommend.h, which is Qt-free and unit-tested.
  *
  * Copyright (C) 2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -17,6 +17,7 @@
 #include <QTreeWidget>
 #include <QWidget>
 
+class Data;
 class KlustersView;
 
 /**Lists the top parent-merge candidates, best first (cap and thresholds come
@@ -44,7 +45,8 @@ public Q_SLOTS:
      * palette selection); empty lists the whole session's best.  The restriction
      * filters the OUTPUT only: quality is always ranked over every pair, so it
      * means the same thing whatever happens to be selected.*/
-    void refreshFrom(KlustersView* view, const QList<int>& selected = QList<int>());
+    void refreshFrom(KlustersView* view, Data* data,
+                     const QList<int>& selected = QList<int>());
 
 Q_SIGNALS:
     /**A row was activated: select these clusters in the main palette.*/
