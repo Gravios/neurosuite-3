@@ -1504,6 +1504,25 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     if (nSwapped > 0)
         log << nSwapped << " spike(s) reordered.\n";
 
+    // A reorder permutes the per-spike rows WITHIN this cluster's own file slots.  The .clu survives
+    // that (every slot carries the same cluster id), but the .clc does NOT: child ids vary inside a
+    // parent, so the child layer would silently de-align from the spikes it labels.  Nothing permutes
+    // it -- the .clc is not part of the pending set (spk/res/fet/clu), it is only rewritten when the
+    // child layer happens to be loaded, and the in-memory mirror further down follows features and
+    // timestamps but not child ids.
+    //
+    // This should be unreachable: maxShift is +-peakSamp0/2 (+-10 samples for a 21-sample peak) while
+    // two spikes of one cluster are refractory-separated (~65 samples at 32.5 kHz), so their
+    // timestamps cannot cross.  A reorder therefore means the cluster is badly contaminated, or the
+    // shift cap has been raised.  Say so loudly rather than corrupt the hierarchy in silence.
+    if (nSwapped > 0 && !clcSiblingPath.isEmpty()) {
+        log << "WARNING: hierarchical session -- the .clc child layer cannot follow this\n"
+               "         permutation and is now stale for this cluster.  Re-cut its children.\n";
+        qWarning() << "[realign] .clc de-aligned:" << nSwapped
+                   << "spike(s) reordered in cluster" << clusterId
+                   << "-- the child layer does not follow the permutation (no .clc.pending).";
+    }
+
     // -----------------------------------------------------------------------
     // Project waveform onto per-channel PCA basis → full .fet row (timeDim values)
     // Row layout: [pca_ch0_pc0, pca_ch0_pc1, ..., pca_chN_pcK, extras..., timestamp]
