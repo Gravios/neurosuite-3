@@ -205,7 +205,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         showHideLabels->setEnabled(false);
         mOpenAction->setEnabled(true);
         mFileOpenRecent->setEnabled(true);
-        mAbortReclustering->setEnabled(false);
 
     } else if(state == QLatin1String("documentState")) {
         viewClusterInfo->setEnabled(true);
@@ -476,7 +475,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         nudgePlusAction->setEnabled(false);
         mRenumberClusters->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
-        mAbortReclustering->setEnabled(true);
         mIncreaseAmplitudeCorrelation->setEnabled(false);
         mDecreaseAmplitudeCorrelation->setEnabled(false);
     } else if(state == QLatin1String("noReclusterState")) {
@@ -487,9 +485,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         mPcaAlignAllClusters->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
         nudgePlusAction->setEnabled(true);
-        mAbortReclustering->setEnabled(false);
-    } else if(state == QLatin1String("stoppedReclusterState")) {
-        mAbortReclustering->setEnabled(false);
 
     // ── Realignment states — mirror reclusterState locks exactly ─────────────
     } else if(state == QLatin1String("realignState")) {
@@ -520,7 +515,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         mRenumberClusters->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
         mDeleteNoisySpikes->setEnabled(false);
-        mAbortReclustering->setEnabled(false);
         mIncreaseAmplitudeCorrelation->setEnabled(false);
         mDecreaseAmplitudeCorrelation->setEnabled(false);
         mSaveAction->setEnabled(false);

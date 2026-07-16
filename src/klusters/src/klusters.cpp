@@ -440,27 +440,6 @@ void KlustersApp::createMenus()
     // Open a mean-waveform residual matrix on the active display.  Diagnostic
     // display (asymmetric: cell(row A,col B) = variance of A's spikes about
     // B's template); also the source matrix for the spike-count-gated sort.
-    mNewResidualMatrix = actionMenu->addAction(tr("New &Residual Matrix Display"));
-    mNewResidualMatrix->setToolTip(
-        tr("Add a residual-matrix display to the active view.  Cell (row A,\n"
-           "col B) is the variance of cluster A's spikes taken about cluster\n"
-           "B's mean waveform; the diagonal is A's within-cluster variance.\n"
-           "Press U to (re)compute it along with the error/template matrices."));
-    connect(mNewResidualMatrix,&QAction::triggered, this,&KlustersApp::slotNewResidualMatrix);
-
-    // Open a drift-shifted correlation matrix on the active display.  Purely
-    // diagnostic: it never moves spikes and takes no part in the reorder /
-    // residual-gated sort decisions.
-    mNewDriftMatrix = actionMenu->addAction(tr("New &Drift Matrix Display"));
-    mNewDriftMatrix->setToolTip(
-        tr("Add a drift-matrix display to the active view.  Cell (row A,\n"
-           "col B) is the correlation between A's mean waveform shifted along\n"
-           "the probe depth axis by the slider's µm value and B's mean: +Δ\n"
-           "above the diagonal, −Δ below.  A unit pair split by probe drift\n"
-           "reads high at the Δ that realigns it.  Needs probe geometry\n"
-           "(the session YAML probes: section)."));
-    connect(mNewDriftMatrix,&QAction::triggered, this,&KlustersApp::slotNewDriftMatrix);
-
     // Group the cluster-ordering actions under a "Sort Clusters" submenu; they
     // keep their shortcuts, icons, and enabled-state wiring -- only the parent
     // menu changes.
@@ -652,8 +631,17 @@ void KlustersApp::createMenus()
             this, &KlustersApp::slotSplitClusterByKnn);
 
     
-    mAbortReclustering = actionMenu->addAction(tr("&Abort Reclustering"));
-    connect(mAbortReclustering, &QAction::triggered, this, &KlustersApp::slotStopRecluster);
+    // Watershed lives on the Actions menu proper, not in the Recluster submenu.
+    // Its construction used to sit in the middle of the Tools menu block -- it was
+    // added to reclusterMenu 121 lines after that submenu was built and after the
+    // Tools menu had been created, so anyone adding a Tools item beside it would
+    // have landed in the Recluster submenu instead.
+    mWatershed = actionMenu->addAction(tr("&Watershed Split"));
+    mWatershed->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_W));
+    mWatershed->setStatusTip(tr(
+        "Split the currently-shown clusters into one new cluster per "
+        "density basin in the active scatter view."));
+    connect(mWatershed, &QAction::triggered, this, &KlustersApp::slotWatershedSplit);
 
     actionMenu->addSeparator();
 
@@ -744,12 +732,6 @@ void KlustersApp::createMenus()
     // Select Time can still be invoked via the menu / toolbar icon.
     connect(mSelectTime,&QAction::triggered, this,&KlustersApp::slotSelectTime);
 
-    mWatershed = reclusterMenu->addAction(tr("&Watershed Split"));
-    mWatershed->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_W));
-    mWatershed->setStatusTip(tr(
-        "Split the currently-shown clusters into one new cluster per "
-        "density basin in the active scatter view."));
-    connect(mWatershed, &QAction::triggered, this, &KlustersApp::slotWatershedSplit);
 
 
 
@@ -944,6 +926,27 @@ void KlustersApp::createMenus()
     mNewTraceDisplay = displayMenu->addAction(tr("New &Trace Display"));
     connect(mNewTraceDisplay,&QAction::triggered, this,&KlustersApp::slotNewTraceDisplay);
 
+
+    mNewResidualMatrix = displayMenu->addAction(tr("New &Residual Matrix Display"));
+    mNewResidualMatrix->setToolTip(
+        tr("Add a residual-matrix display to the active view.  Cell (row A,\n"
+           "col B) is the variance of cluster A's spikes taken about cluster\n"
+           "B's mean waveform; the diagonal is A's within-cluster variance.\n"
+           "Press U to (re)compute it along with the error/template matrices."));
+    connect(mNewResidualMatrix,&QAction::triggered, this,&KlustersApp::slotNewResidualMatrix);
+
+    // Open a drift-shifted correlation matrix on the active display.  Purely
+    // diagnostic: it never moves spikes and takes no part in the reorder /
+    // residual-gated sort decisions.
+    mNewDriftMatrix = displayMenu->addAction(tr("New &Drift Matrix Display"));
+    mNewDriftMatrix->setToolTip(
+        tr("Add a drift-matrix display to the active view.  Cell (row A,\n"
+           "col B) is the correlation between A's mean waveform shifted along\n"
+           "the probe depth axis by the slider's µm value and B's mean: +Δ\n"
+           "above the diagonal, −Δ below.  A unit pair split by probe drift\n"
+           "reads high at the Δ that realigns it.  Needs probe geometry\n"
+           "(the session YAML probes: section)."));
+    connect(mNewDriftMatrix,&QAction::triggered, this,&KlustersApp::slotNewDriftMatrix);
 
     displayMenu->addSeparator();
 
