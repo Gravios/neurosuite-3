@@ -3672,10 +3672,13 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
 
 
 void KlustersApp::slotChunkModeToggled(bool on){
-    if(!doc){
-        mChunkMode->setChecked(false);
-        return;
-    }
+    // No `if (!doc)` guard here: doc is created in the constructor and destroyed
+    // in the destructor, never nulled, so that test can never be true.  It read
+    // like the no-document protection and was not one -- the action simply stayed
+    // enabled at startup and this ran on an empty document, popping the dialog
+    // below before any session existed.  The protection is now where the other 67
+    // actions keep theirs: slotStateChanged disables mChunkMode until a document
+    // is open, and re-disables it while a recluster or realign owns the data.
     if(on){
         bool ok = false;
         const double minutes = QInputDialog::getDouble(
