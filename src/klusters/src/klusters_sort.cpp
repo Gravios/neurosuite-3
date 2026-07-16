@@ -481,7 +481,7 @@ void KlustersApp::slotSortClustersByErrorPval()
 {
     if (!mSortClustersByErrorPval->isEnabled()) return;
     KlustersView* view = activeView();
-    if (!doc || !view) return;
+    if (!view) return;
 
     ErrorMatrixView* emv = view->findChild<ErrorMatrixView*>();
     if (!emv || !emv->hasComputedData()) {
@@ -555,7 +555,7 @@ void KlustersApp::slotSortByResidualGated()
 {
     if (!mSortByResidualGated->isEnabled()) return;
     KlustersView* view = activeView();
-    if (!doc || !view) return;
+    if (!view) return;
 
     ResidualMatrixView* rmv = view->findChild<ResidualMatrixView*>();
     if (!rmv || !rmv->hasComputedData()) {
@@ -1089,7 +1089,7 @@ void KlustersApp::slotReorderClustersBySimilarity()
 // ---------------------------------------------------------------------------
 void KlustersApp::reorderClustersByFeatureSpace()
 {
-    if (!doc || !activeView()) return;
+    if (!activeView()) return;
     Data& d = doc->data();
 
     // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).
@@ -1254,7 +1254,7 @@ QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sor
 {
     QList<int> clusters;
     if (action && !action->isEnabled()) return clusters;
-    if (!doc || !activeView()) return clusters;
+    if (!activeView()) return clusters;
 
     const auto ids = doc->data().clusterIds();
     for (const auto id : ids)
@@ -1272,7 +1272,7 @@ QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sor
 void KlustersApp::applySortedOrder(const QList<int>& order, const QString& sortName,
                                    const QString& detail)
 {
-    if (!doc || order.isEmpty()) return;
+    if (order.isEmpty()) return;
     const int nRenamed = doc->reorderClustersByPermutation(order);
     if (nRenamed < 0)
         slotStatusMsg(tr("Sort by %1: reorder rejected (cluster set changed?).")
@@ -1335,7 +1335,7 @@ void KlustersApp::endSortProgress()
 bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
                                                  std::vector<float>& distOut)
 {
-    if (!doc || !activeView()) return false;
+    if (!activeView()) return false;
     Data& d = doc->data();
 
     // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).

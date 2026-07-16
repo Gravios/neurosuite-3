@@ -115,7 +115,6 @@
 extern int nbUndo;
 
 void KlustersApp::slotHierarchicalViewToggled(bool on){
-    if(!doc){ if(mHierarchicalView) mHierarchicalView->setChecked(false); return; }
     if(on){
         if(!doc->isHierarchicalSession()){
             QMessageBox::information(this,tr("Hierarchical view"),
@@ -159,7 +158,7 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
 }
 
 void KlustersApp::slotMergeChildren(){
-    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
     if(kids.size() < 2){
         statusBar()->showMessage(tr("Select two or more children of the same fiber to merge."), 4000);
@@ -172,7 +171,7 @@ void KlustersApp::slotMergeChildren(){
 }
 
 void KlustersApp::slotUndoChildEdit(){
-    if(!doc || !activeView()) return;
+    if(!activeView()) return;
     if(doc->childUndoCount() == 0){
         statusBar()->showMessage(tr("No child-layer (atom) edit to undo."), 4000);
         return;
@@ -183,14 +182,14 @@ void KlustersApp::slotUndoChildEdit(){
 }
 
 void KlustersApp::slotRedoChildEdit(){
-    if(!doc || !activeView()) return;
+    if(!activeView()) return;
     doc->redoChildEditDispatch();
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
 }
 
 void KlustersApp::slotGroupChildrenIntoFiber(){
-    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
     if(kids.isEmpty()){
         statusBar()->showMessage(tr("Select the children to group into a new fiber."), 4000);
@@ -200,7 +199,7 @@ void KlustersApp::slotGroupChildrenIntoFiber(){
 }
 
 void KlustersApp::slotDissolveFiber(){
-    if(!doc || !activeView()) return;
+    if(!activeView()) return;
     const QList<int> sel = clusterPalette->selectedClusters();
     if(sel.size() != 1){
         statusBar()->showMessage(tr("Select exactly one fiber to dissolve into its children."), 4000);
@@ -210,13 +209,13 @@ void KlustersApp::slotDissolveFiber(){
 }
 
 void KlustersApp::slotRefiberize(){
-    if(!doc || !activeView()) return;
+    if(!activeView()) return;
     doc->refiberize();   // re-cut straddling atoms + rebuild the child<->fiber maps (.clp on Save)
     statusBar()->showMessage(tr("Refiberized: atoms re-cut onto the current fibers."), 4000);
 }
 
 void KlustersApp::slotDropChildToNoise(){
-    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
     if(kids.isEmpty()){
         statusBar()->showMessage(tr("Select the child(ren) to drop to noise."), 4000);
@@ -227,7 +226,7 @@ void KlustersApp::slotDropChildToNoise(){
 }
 
 void KlustersApp::slotMergeFibers(){
-    if(!doc || !activeView()) return;
+    if(!activeView()) return;
     const QList<int> sel = clusterPalette->selectedClusters();
     if(sel.size() < 2){
         statusBar()->showMessage(tr("Select two or more fibers in the main palette to merge."), 4000);
@@ -237,7 +236,7 @@ void KlustersApp::slotMergeFibers(){
 }
 
 void KlustersApp::slotPromoteChildren(){
-    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
     if(kids.isEmpty()){
         statusBar()->showMessage(tr("Select one or more children to promote."), 4000);
@@ -257,7 +256,7 @@ void KlustersApp::slotPromoteChildren(){
 }
 
 void KlustersApp::slotMoveChildrenToFiber(){
-    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return;
+    if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
     const QList<int> target = clusterPalette->selectedClusters();
     if(kids.isEmpty() || target.size() != 1){
@@ -270,7 +269,7 @@ void KlustersApp::slotMoveChildrenToFiber(){
 }
 
 void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
-    if(!pal || !doc) return;
+    if(!pal) return;
     if(parentId < 0){ pal->clearPaletteScope(); pal->reset(); return; }
     const QList<int> kids = doc->childrenOf(QList<int>{parentId});
     // Build the palette from the child clustering's colours, scoped to this
@@ -332,7 +331,7 @@ void KlustersApp::cycleHierarchyFocus(bool forward){
 // (The Ctrl+Left/Right A<->B spike-custody transfer was retired with the second
 //  child palette.)
 bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
-    if(!doc || !activeView() || !childPanel || !childPanel->isVisible()) return false;
+    if(!activeView() || !childPanel || !childPanel->isVisible()) return false;
     const bool ctrl  = mods & Qt::ControlModifier;
     const bool shift = mods & Qt::ShiftModifier;
     const QList<int> parents = clusterPalette->selectedClusters();
@@ -398,7 +397,7 @@ bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
 }
 
 void KlustersApp::repopulateChildPalette(const QList<int>& parents){
-    if(!doc || !childPanel || !childPanel->isVisible()) return;
+    if(!childPanel || !childPanel->isVisible()) return;
     // The first selected parent populates the child palette; further parents are
     // ignored (the child view shows one parent's children at a time).
     parentSlotA = parents.size() >= 1 ? parents[0] : -1;
@@ -407,7 +406,7 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
 }
 
 void KlustersApp::slotChildSelectionChanged(const QList<int>&){
-    if(!doc || !activeView()) return;
+    if(!activeView()) return;
     // The views reflect the children selected in the child palette; with no child
     // selected they fall back to the parent unit(s).
     QList<int> kids;

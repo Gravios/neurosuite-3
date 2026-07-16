@@ -149,7 +149,7 @@ void KlustersApp::slotDipSplit()
         // no-op.  Use Enter to dismiss or Esc to undo.
         return;
     }
-    if (!doc || !activeView() || !clusterPalette) return;
+    if (!activeView() || !clusterPalette) return;
     if (doesActiveDisplayContainProcessWidget()) return;
 
     // Pick the current cluster: first non-noise / non-artefact cluster
@@ -391,7 +391,7 @@ void KlustersApp::dipDismissPostCommitHud()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotGenerateProbeDrift()
 {
-    if (!doc || doc->url().isEmpty()) return;
+    if (doc->url().isEmpty()) return;
 
     const QString dir      = doc->documentDirectory();
     const QString session  = doc->documentBaseName();
@@ -469,7 +469,7 @@ void KlustersApp::slotGenerateProbeDrift()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotApplyDriftSiblings()
 {
-    if (!doc || doc->url().isEmpty()) return;
+    if (doc->url().isEmpty()) return;
 
     const QString dir     = doc->documentDirectory();
     const QString session = doc->documentBaseName();
@@ -584,7 +584,7 @@ void KlustersApp::slotApplyDriftSiblings()
 // ---------------------------------------------------------------------------
 void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
 {
-    if (nudgeInProgress || isInit || !doc || !activeView()) return;
+    if (nudgeInProgress || isInit || !activeView()) return;
     const QList<int>& shown = activeView()->clusters();
     if (shown.size() != 1) {
         statusBar()->showMessage(
@@ -637,7 +637,7 @@ void KlustersApp::slotNudgeTimestampPlus()  { nudgeSelectedSingleCluster(+1); }
 // ---------------------------------------------------------------------------
 void KlustersApp::slotMoveSelectedClustersToEnd()
 {
-    if (!doc || !clusterPalette || !activeView()) return;
+    if (!clusterPalette || !activeView()) return;
     QList<int> sel = clusterPalette->selectedClusters();
     if (sel.isEmpty()) {
         statusBar()->showMessage(

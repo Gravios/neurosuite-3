@@ -2201,7 +2201,7 @@ void KlustersApp::initDisplay(){
     // events before firing.
     if (configuration().getAutoShowMatricesOnOpen()) {
         QTimer::singleShot(0, this, [this]() {
-            if (!doc) return;                       // document was closed mid-defer
+// document was closed mid-defer
             // The Overview Display is the active view at this point —
             // widgetAddToDisplay routes through view->addView() which
             // adds the matrix docks to it.  Added in the same canonical
@@ -3304,7 +3304,7 @@ void KlustersApp::slotWatershedSplit()
 
 bool KlustersApp::wsEnter()
 {
-    if (!doc || !activeView() || !clusterPalette) return false;
+    if (!activeView() || !clusterPalette) return false;
     if (doesActiveDisplayContainProcessWidget()) return false;
 
     QList<int> sel = clusterPalette->selectedClusters();
@@ -3636,7 +3636,7 @@ void KlustersApp::wsRefreshOverlay()
 
 
 void KlustersApp::slotSingleColorUpdate(int clusterId){
-    if (!doc || !activeView()) return;
+    if (!activeView()) return;
     //Trigger the action only if the active display does not contain a ProcessWidget
     if(!doesActiveDisplayContainProcessWidget()){
         KlustersView* view = activeView();
@@ -3696,21 +3696,21 @@ void KlustersApp::slotChunkModeToggled(bool on){
 }
 
 void KlustersApp::slotNextChunk(){
-    if(!doc || !doc->inChunkMode())
+    if(!doc->inChunkMode())
         return;
     doc->nextChunk();
     updateChunkStatus();
 }
 
 void KlustersApp::slotPrevChunk(){
-    if(!doc || !doc->inChunkMode())
+    if(!doc->inChunkMode())
         return;
     doc->prevChunk();
     updateChunkStatus();
 }
 
 void KlustersApp::updateChunkStatus(){
-    if(!doc || !doc->inChunkMode()){
+    if(!doc->inChunkMode()){
         mPrevChunk->setEnabled(false);
         mNextChunk->setEnabled(false);
         return;
@@ -3784,7 +3784,6 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
 // ---------------------------------------------------------------------------
 void KlustersApp::slotAutoMerge()
 {
-    if (!doc) return;
     slotStatusMsg(tr("Auto-merge: computing proposals..."));
 
     AutoMerge::Settings s;
@@ -3904,7 +3903,6 @@ void KlustersApp::pollConsolidationUnlock(){
 
 void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
 {
-    if (!doc) return;
     // Drain the fibers this operation created/modified.  Always clear the set (so it
     // never leaks across turns); realign only when the option is on and the realign
     // lane is idle.  The realign-state lock means no edit can land while a job runs,
@@ -4023,7 +4021,7 @@ void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters)
 void KlustersApp::slotPurgeSmallClusters()
 {
     if (!mPurgeSmallClusters->isEnabled()) return;   // mirror cluster-op guard
-    if (!doc || !activeView()) return;
+    if (!activeView()) return;
 
     bool ok = false;
     const int n = QInputDialog::getInt(
@@ -4084,7 +4082,7 @@ void KlustersApp::slotPurgeSmallClusters()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotStripFeatureOutliers()
 {
-    if (!doc || !activeView()) return;
+    if (!activeView()) return;
     Data& d = doc->data();
 
     // nbOfDimensionsTotal() counts the timestamp as its last column, so the fet
@@ -4197,7 +4195,6 @@ QList<QAction*> KlustersApp::clusterSortActions() const
 }
 void KlustersApp::ensureClusterTemplates()
 {
-    if (!doc) return;
 
     // Re-entrancy guard: the cold build below pumps the event loop to paint its
     // progress bar, and that pump delivers posted events even though it excludes
@@ -4306,7 +4303,7 @@ void KlustersApp::slotDelaySelection(){
 }
 
 void KlustersApp::slotTabChange(int index){
-    if (!tabsParent || !doc) return;  // guard against call during teardown
+    if (!tabsParent) return;  // guard against call during teardown
     QWidget *widget = tabsParent->widget(index);
     DockArea *area = dynamic_cast<DockArea*>(widget);
     if(area) {
@@ -4827,7 +4824,7 @@ void KlustersApp::slotResidualMatrixInteracted()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotNewResidualMatrix()
 {
-    if (!doc || !activeView()) return;
+    if (!activeView()) return;
     if (activeView()->containsResidualMatrixView()) {
         slotStatusMsg(tr("This display already contains a residual matrix."));
         return;
@@ -4839,7 +4836,7 @@ void KlustersApp::slotNewResidualMatrix()
 // slotNewDriftMatrix — add a DriftMatrixView dock to the active display.
 void KlustersApp::slotNewDriftMatrix()
 {
-    if (!doc || !activeView()) return;
+    if (!activeView()) return;
     if (activeView()->containsDriftMatrixView()) {
         slotStatusMsg(tr("This display already contains a drift matrix."));
         return;
@@ -5187,11 +5184,6 @@ void KlustersApp::slotUpdateStartTime(int start)
 // ---------------------------------------------------------------------------
 void KlustersApp::slotSplitClusterByKnn()
 {
-    if (!doc) {
-        QMessageBox::information(this, tr("No document"),
-                                 tr("Open a session before splitting by KNN."));
-        return;
-    }
     KlustersView* view = activeView();
     if (!view) {
         QMessageBox::information(this, tr("No view"),
@@ -5457,7 +5449,7 @@ void KlustersApp::populatePluginsMenu()
             act->setStatusTip(tip);
             const KlustersPlugin info = p;   // capture by value for the dialog
             connect(act, &QAction::triggered, this, [this, info]() {
-                if (!doc || doc->url().isEmpty()) {
+                if (doc->url().isEmpty()) {
                     QMessageBox::information(this, tr("Plugins"),
                         tr("Open a clustering before running a plugin."));
                     return;
@@ -5499,8 +5491,6 @@ void KlustersApp::slotReloadPlugins()
 QMap<QString, QString> KlustersApp::pluginContext() const
 {
     QMap<QString, QString> ctx;
-    if (!doc)
-        return ctx;
     const QString url = doc->url();
     const QFileInfo fi(url);
     // Session base = the path up to the ".clu" token (e.g.

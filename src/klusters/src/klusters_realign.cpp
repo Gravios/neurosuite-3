@@ -116,11 +116,6 @@ extern int nbUndo;
 
 void KlustersApp::slotRealignSpikes()
 {
-    if (!doc) {
-        QMessageBox::information(this, tr("No document"),
-                                 tr("Please open a file first."));
-        return;
-    }
 
     // Don't allow a second realignment while one is running.
     if (realignRunning) {
@@ -354,7 +349,7 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
 // ---------------------------------------------------------------------------
 void KlustersApp::startPostOpRealign(const QList<int>& fibers, bool setChanged)
 {
-    if (!doc || fibers.isEmpty()) return;
+    if (fibers.isEmpty()) return;
     // Refresh the saved-mode args (top-ch gate + --pca-refine) like the
     // single-cluster and Align-All paths, then derive the batch args: strip any
     // top-ch / pca-refine tokens and re-add for the current top-channel count.
@@ -433,7 +428,7 @@ void KlustersApp::startPostOpRealign(const QList<int>& fibers, bool setChanged)
 // ---------------------------------------------------------------------------
 void KlustersApp::applyPendingFiberSelection()
 {
-    if (!doc || !activeView()) return;
+    if (!activeView()) return;
     const QList<int> pending = doc->takePendingFiberSelection();
     if (pending.isEmpty()) return;
     QList<int> fibers;
@@ -487,11 +482,6 @@ void KlustersApp::flushRealignBatchRefresh()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotPcaAlignAllClusters()
 {
-    if (!doc) {
-        QMessageBox::information(this, tr("No document"),
-                                 tr("Please open a file first."));
-        return;
-    }
 
     if (realignRunning) {
         QMessageBox::information(this, tr("Realignment in progress"),
