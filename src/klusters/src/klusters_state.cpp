@@ -151,6 +151,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mGroupeClusters->setEnabled(false);
 
         mAutoMerge->setEnabled(false);
+        mChunkMode->setEnabled(false);
 
         mSortClustersBySpikeCount->setEnabled(false);
         mSortClustersByTime->setEnabled(false);
@@ -226,6 +227,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mChunkMode->setEnabled(true);
         mSortClustersBySpikeCount->setEnabled(true);
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
@@ -317,6 +319,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mGroupeClusters->setEnabled(true);
 
         mAutoMerge->setEnabled(true);
+        mChunkMode->setEnabled(true);
 
         mSortClustersBySpikeCount->setEnabled(true);
         mSortClustersByTime->setEnabled(true);
@@ -347,6 +350,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisy->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mChunkMode->setEnabled(true);
         mSortClustersBySpikeCount->setEnabled(true);
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
@@ -374,6 +378,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mRenumberClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mChunkMode->setEnabled(true);
         mSortClustersBySpikeCount->setEnabled(true);
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
@@ -393,6 +398,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifact->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mChunkMode->setEnabled(true);
         mSortClustersBySpikeCount->setEnabled(true);
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
@@ -432,6 +438,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         scaleByMax->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mChunkMode->setEnabled(false);
         mSortClustersBySpikeCount->setEnabled(false);
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
@@ -456,6 +463,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mChunkMode->setEnabled(false);
         mSortClustersBySpikeCount->setEnabled(false);
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
@@ -495,6 +503,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(false);
         mGroupeClusters->setEnabled(false);
         mAutoMerge->setEnabled(false);
+        mChunkMode->setEnabled(false);
         mSortClustersBySpikeCount->setEnabled(false);
         mSortClustersByTime->setEnabled(false);
         mSortClustersByContamination->setEnabled(false);
@@ -550,6 +559,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(true);
         mGroupeClusters->setEnabled(true);
         mAutoMerge->setEnabled(true);
+        mChunkMode->setEnabled(true);
         mSortClustersBySpikeCount->setEnabled(true);
         mSortClustersByTime->setEnabled(true);
         mSortClustersByContamination->setEnabled(true);
