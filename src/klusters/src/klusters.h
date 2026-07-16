@@ -1352,6 +1352,14 @@ private:
      * Events are pumped with user input EXCLUDED: the bar repaints, but the user
      * cannot re-enter the operation that is already running.*/
     void beginSortProgress(const QString& format);
+    /** Nesting depth for the shared progress bar.  Both long operations that use
+     *  it pump the event loop, and that pump can deliver a posted event which
+     *  starts the other one (a matrix landing mid-sort reaches
+     *  slotRefreshMergeRecommendations and so ensureClusterTemplates).  Without a
+     *  depth count the inner operation's endSortProgress() would hide the bar
+     *  while the outer one was still running, and the outer would then drive a
+     *  bar nobody can see.  The outermost caller owns it. */
+    int sortProgressDepth = 0;
     /**Set the bar to @p percent (clamped to 0..100) and pump events.  A no-op if
      * beginSortProgress() was not called.*/
     void updateSortProgress(int percent);
