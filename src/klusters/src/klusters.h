@@ -1351,6 +1351,26 @@ private:
      *
      * Events are pumped with user input EXCLUDED: the bar repaints, but the user
      * cannot re-enter the operation that is already running.*/
+    /**Common prologue for the metric sorts: verify @p action is live and a
+     * document and display exist, then collect the non-noise clusters (id >= 2).
+     * Reports and returns an EMPTY list when the sort should not proceed, so the
+     * caller's whole guard is `if (clusters.isEmpty()) return;`.
+     *
+     * @p sortName is the human name used in every message ("spike count", "SNR"),
+     * so the wording of one sort cannot drift from another's.
+     *
+     * This exists because the skeleton was copied per sort and the copies had
+     * already drifted -- see the two single-linkage implementations that diverged
+     * by an entire order of complexity, and the three amplitude/SNR accessors that
+     * shared one bug.*/
+    QList<int> clustersToSort(const QAction* action, const QString& sortName);
+
+    /**Common epilogue: hand @p order to the doc layer, which owns the undo, log,
+     * palette and view bookkeeping, and report the outcome.  @p detail is the
+     * parenthetical ("largest first").*/
+    void applySortedOrder(const QList<int>& order, const QString& sortName,
+                          const QString& detail);
+
     void beginSortProgress(const QString& format);
     /** Nesting depth for the shared progress bar.  Both long operations that use
      *  it pump the event loop, and that pump can deliver a posted event which

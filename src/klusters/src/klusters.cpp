@@ -4202,19 +4202,9 @@ QList<QAction*> KlustersApp::clusterSortActions() const
 // ---------------------------------------------------------------------------
 void KlustersApp::slotSortClustersBySpikeCount()
 {
-    if (!mSortClustersBySpikeCount->isEnabled()) return;
-    if (!doc || !activeView()) return;
-
+    QList<int> clusters = clustersToSort(mSortClustersBySpikeCount, tr("spike count"));
+    if (clusters.isEmpty()) return;
     auto& d = doc->data();
-    QList<int> clusters;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
-
-    if (clusters.size() < 2) {
-        slotStatusMsg(tr("Sort by spike count: fewer than 2 non-noise clusters; nothing to sort."));
-        return;
-    }
 
     // Snapshot the counts once (avoids re-locking Data in the comparator).
     QHash<int, qint64> spikeCount;
@@ -4225,11 +4215,7 @@ void KlustersApp::slotSortClustersBySpikeCount()
     std::stable_sort(clusters.begin(), clusters.end(),
         [&spikeCount](int a, int b){ return spikeCount.value(a) > spikeCount.value(b); });
 
-    const int nRenamed = doc->reorderClustersByPermutation(clusters);
-    if (nRenamed < 0)
-        slotStatusMsg(tr("Sort by spike count: reorder rejected (cluster set changed?)."));
-    else
-        slotStatusMsg(tr("Sorted %1 clusters by spike count (largest first).").arg(nRenamed));
+    applySortedOrder(clusters, tr("spike count"), tr("largest first"));
 }
 
 // ---------------------------------------------------------------------------
@@ -4242,19 +4228,9 @@ void KlustersApp::slotSortClustersBySpikeCount()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotSortClustersByTime()
 {
-    if (!mSortClustersByTime->isEnabled()) return;
-    if (!doc || !activeView()) return;
-
+    QList<int> clusters = clustersToSort(mSortClustersByTime, tr("time"));
+    if (clusters.isEmpty()) return;
     auto& d = doc->data();
-    QList<int> clusters;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
-
-    if (clusters.size() < 2) {
-        slotStatusMsg(tr("Sort by time: fewer than 2 non-noise clusters; nothing to sort."));
-        return;
-    }
 
     // Snapshot each cluster's earliest spike time once (one pass over all spikes).
     const QHash<int,double> firstTs = d.firstSpikeTimes();
@@ -4267,11 +4243,7 @@ void KlustersApp::slotSortClustersByTime()
             return firstTs.value(a, sentinel) < firstTs.value(b, sentinel);
         });
 
-    const int nRenamed = doc->reorderClustersByPermutation(clusters);
-    if (nRenamed < 0)
-        slotStatusMsg(tr("Sort by time: reorder rejected (cluster set changed?)."));
-    else
-        slotStatusMsg(tr("Sorted %1 clusters by starting time (earliest first).").arg(nRenamed));
+    applySortedOrder(clusters, tr("starting time"), tr("earliest first"));
 }
 
 // ---------------------------------------------------------------------------
@@ -4283,19 +4255,9 @@ void KlustersApp::slotSortClustersByTime()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotSortClustersByContamination()
 {
-    if (!mSortClustersByContamination->isEnabled()) return;
-    if (!doc || !activeView()) return;
-
+    QList<int> clusters = clustersToSort(mSortClustersByContamination, tr("contamination"));
+    if (clusters.isEmpty()) return;
     auto& d = doc->data();
-    QList<int> clusters;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
-
-    if (clusters.size() < 2) {
-        slotStatusMsg(tr("Sort by contamination: fewer than 2 non-noise clusters; nothing to sort."));
-        return;
-    }
 
     // Refractory contamination at a 2 ms window, one pass over all spikes.
     const QHash<int,double> contam = d.refractoryViolationFractions(2.0);
@@ -4307,11 +4269,7 @@ void KlustersApp::slotSortClustersByContamination()
             return contam.value(a, -1.0) > contam.value(b, -1.0);
         });
 
-    const int nRenamed = doc->reorderClustersByPermutation(clusters);
-    if (nRenamed < 0)
-        slotStatusMsg(tr("Sort by contamination: reorder rejected (cluster set changed?)."));
-    else
-        slotStatusMsg(tr("Sorted %1 clusters by contamination (most contaminated first).").arg(nRenamed));
+    applySortedOrder(clusters, tr("contamination"), tr("most contaminated first"));
 }
 
 // ---------------------------------------------------------------------------
@@ -4325,19 +4283,9 @@ void KlustersApp::slotSortClustersByContamination()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotSortClustersBySnr()
 {
-    if (!mSortClustersBySnr->isEnabled()) return;
-    if (!doc || !activeView()) return;
-
+    QList<int> clusters = clustersToSort(mSortClustersBySnr, tr("SNR"));
+    if (clusters.isEmpty()) return;
     auto& d = doc->data();
-    QList<int> clusters;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
-
-    if (clusters.size() < 2) {
-        slotStatusMsg(tr("Sort by SNR: fewer than 2 non-noise clusters; nothing to sort."));
-        return;
-    }
 
     // Build templates for every cluster first.  Without this the metric only
     // covers clusters the waveform view happens to be showing, and the rest fall
@@ -4359,11 +4307,7 @@ void KlustersApp::slotSortClustersBySnr()
             return snr.value(a, -1.0) > snr.value(b, -1.0);
         });
 
-    const int nRenamed = doc->reorderClustersByPermutation(clusters);
-    if (nRenamed < 0)
-        slotStatusMsg(tr("Sort by SNR: reorder rejected (cluster set changed?)."));
-    else
-        slotStatusMsg(tr("Sorted %1 clusters by SNR (highest first).").arg(nRenamed));
+    applySortedOrder(clusters, tr("SNR"), tr("highest first"));
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -4375,19 +4319,9 @@ void KlustersApp::slotSortClustersBySnr()
 //////////////////////////////////////////////////////////////////////////////
 void KlustersApp::slotSortClustersByAmplitude()
 {
-    if (!mSortClustersByAmplitude->isEnabled()) return;
-    if (!doc || !activeView()) return;
-
+    QList<int> clusters = clustersToSort(mSortClustersByAmplitude, tr("amplitude"));
+    if (clusters.isEmpty()) return;
     auto& d = doc->data();
-    QList<int> clusters;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
-
-    if (clusters.size() < 2) {
-        slotStatusMsg(tr("Sort by amplitude: fewer than 2 non-noise clusters; nothing to sort."));
-        return;
-    }
 
     // Build templates for every cluster first; see slotSortClustersBySnr.
     ensureClusterTemplates();
@@ -4406,11 +4340,7 @@ void KlustersApp::slotSortClustersByAmplitude()
             return amp.value(a, -1.0) > amp.value(b, -1.0);
         });
 
-    const int nRenamed = doc->reorderClustersByPermutation(clusters);
-    if (nRenamed < 0)
-        slotStatusMsg(tr("Sort by amplitude: reorder rejected (cluster set changed?)."));
-    else
-        slotStatusMsg(tr("Sorted %1 clusters by amplitude (largest first).").arg(nRenamed));
+    applySortedOrder(clusters, tr("amplitude"), tr("largest first"));
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -4421,20 +4351,9 @@ void KlustersApp::slotSortClustersByAmplitude()
 //////////////////////////////////////////////////////////////////////////////
 void KlustersApp::slotSortClustersByAmplitudeByChannel()
 {
-    if (!mSortClustersByAmplitudeByChannel->isEnabled()) return;
-    if (!doc || !activeView()) return;
-
+    QList<int> clusters = clustersToSort(mSortClustersByAmplitudeByChannel, tr("amplitude by channel"));
+    if (clusters.isEmpty()) return;
     auto& d = doc->data();
-    QList<int> clusters;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
-
-    if (clusters.size() < 2) {
-        slotStatusMsg(tr("Sort by amplitude by channel: fewer than 2 non-noise clusters; "
-                         "nothing to sort."));
-        return;
-    }
 
     // Build templates for every cluster first.  This is the sort that showed the
     // problem most plainly: the peak-channel blocks are only meaningful if EVERY
@@ -4464,12 +4383,8 @@ void KlustersApp::slotSortClustersByAmplitudeByChannel()
             return amp.value(a, -1.0) > amp.value(b, -1.0);
         });
 
-    const int nRenamed = doc->reorderClustersByPermutation(clusters);
-    if (nRenamed < 0)
-        slotStatusMsg(tr("Sort by amplitude by channel: reorder rejected (cluster set changed?)."));
-    else
-        slotStatusMsg(tr("Sorted %1 clusters into per-channel blocks by amplitude "
-                         "(largest first in each).").arg(nRenamed));
+    applySortedOrder(clusters, tr("amplitude by channel"),
+                     tr("per-channel blocks, largest first in each"));
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -4773,11 +4688,7 @@ void KlustersApp::slotSortClustersByErrorPval()
             return affinity.value(a, -1.0) > affinity.value(b, -1.0);
         });
 
-    const int nRenamed = doc->reorderClustersByPermutation(clusters);
-    if (nRenamed < 0)
-        slotStatusMsg(tr("Sort by Error p-value: reorder rejected (cluster set changed?)."));
-    else
-        slotStatusMsg(tr("Sorted %1 clusters by error-matrix affinity (strongest merge candidate first).").arg(nRenamed));
+    applySortedOrder(clusters, tr("error p-value"), tr("strongest merge candidate first"));
 }
 
 
@@ -4925,12 +4836,9 @@ void KlustersApp::slotSortByResidualGated()
     QList<int> targetOrder = seriate(hi);
     targetOrder += seriate(lo);
 
-    const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
-    if (nRenamed < 0)
-        slotStatusMsg(tr("Sort by Residual: reorder rejected (cluster set changed?)."));
-    else
-        slotStatusMsg(tr("Sorted %1 clusters by residual (%2 high / %3 low, threshold %4 spikes).")
-            .arg(nRenamed).arg(hi.size()).arg(lo.size()).arg(thr));
+    applySortedOrder(targetOrder, tr("residual"),
+                     tr("%1 high / %2 low, threshold %3 spikes")
+                         .arg(hi.size()).arg(lo.size()).arg(thr));
 }
 
 
@@ -6036,6 +5944,52 @@ void KlustersApp::reorderClustersByFeatureSpace()
 // FILE handles, mirroring the residual thread); the distance matrix O(N^2 * nPts);
 // each worker holds one cluster's spikes at a time for the per-sample median.
 // ---------------------------------------------------------------------------
+//////////////////////////////////////////////////////////////////////////////
+// clustersToSort / applySortedOrder
+//
+// The metric sorts (spike count, time, contamination, SNR, amplitude, amplitude
+// by channel) were the same fourteen lines each, wrapped around three that
+// differed: gather the non-noise clusters, bail if there are fewer than two,
+// stable_sort by some metric, hand the order to the doc, report. The copies had
+// already drifted -- the doc/view guard is spelled two ways, and elsewhere in this
+// file two copies of single-linkage diverged by a whole order of complexity while
+// one claimed to mirror the other. Shared skeleton, so there is one thing to fix
+// when it is wrong and one wording to read when it speaks.
+//
+// What stays in each slot is what actually differs: the metric and its order.
+//////////////////////////////////////////////////////////////////////////////
+QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sortName)
+{
+    QList<int> clusters;
+    if (action && !action->isEnabled()) return clusters;
+    if (!doc || !activeView()) return clusters;
+
+    const auto ids = doc->data().clusterIds();
+    for (const auto id : ids)
+        if (id >= 2) clusters.append(static_cast<int>(id));   // 0/1 are noise/artefact
+
+    if (clusters.size() < 2) {
+        slotStatusMsg(tr("Sort by %1: fewer than 2 non-noise clusters; nothing to sort.")
+                          .arg(sortName));
+        clusters.clear();
+        return clusters;
+    }
+    return clusters;
+}
+
+void KlustersApp::applySortedOrder(const QList<int>& order, const QString& sortName,
+                                   const QString& detail)
+{
+    if (!doc || order.isEmpty()) return;
+    const int nRenamed = doc->reorderClustersByPermutation(order);
+    if (nRenamed < 0)
+        slotStatusMsg(tr("Sort by %1: reorder rejected (cluster set changed?).")
+                          .arg(sortName));
+    else
+        slotStatusMsg(tr("Sorted %1 clusters by %2 (%3).")
+                          .arg(nRenamed).arg(sortName, detail));
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // beginSortProgress / updateSortProgress / endSortProgress
 //
