@@ -107,7 +107,18 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
         return (*E)(i + 1, j + 1);
     };
     std::function<bool(int,int,double&)> overlapOf = [data](int a, int b, double& iou){
-        return data->clusterEnvelopeOverlap(a, b, iou);
+        // Search a lag rather than demanding the two templates line up exactly.
+        // Spikes are extracted at a detected peak and that alignment is not exact,
+        // so a pair split by one sample (30 us at sr=32552) used to score like an
+        // unrelated pair and was never listed -- which is the pair most worth
+        // listing.
+        // The winning lag is discarded here: mrRecommendMerges' overlap callback is
+        // bool(int,int,double&) and has nowhere to put it.  It is worth showing --
+        // a pair that only matches at +/-1 is a different finding from one that
+        // matches at 0 -- but that means widening Recommendation and the panel's
+        // columns, which is a separate change from fixing the score.
+        return data->clusterEnvelopeOverlap(
+            a, b, iou, configuration().getMergeRecommendMaxShift(), nullptr);
     };
 
     // Read the knobs fresh each refresh so a Preferences change lands on the
