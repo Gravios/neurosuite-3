@@ -145,6 +145,7 @@ void KlustersApp::slotSortClustersBySpikeCount()
 {
     QList<int> clusters = clustersToSort(mSortClustersBySpikeCount, tr("spike count"));
     if (clusters.isEmpty()) return;
+    SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
     auto& d = doc->data();
 
     // Snapshot the counts once (avoids re-locking Data in the comparator).
@@ -171,6 +172,7 @@ void KlustersApp::slotSortClustersByTime()
 {
     QList<int> clusters = clustersToSort(mSortClustersByTime, tr("time"));
     if (clusters.isEmpty()) return;
+    SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
     auto& d = doc->data();
 
     // Snapshot each cluster's earliest spike time once (one pass over all spikes).
@@ -198,6 +200,7 @@ void KlustersApp::slotSortClustersByContamination()
 {
     QList<int> clusters = clustersToSort(mSortClustersByContamination, tr("contamination"));
     if (clusters.isEmpty()) return;
+    SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
     auto& d = doc->data();
 
     // Refractory contamination at a 2 ms window, one pass over all spikes.
@@ -226,6 +229,7 @@ void KlustersApp::slotSortClustersBySnr()
 {
     QList<int> clusters = clustersToSort(mSortClustersBySnr, tr("SNR"));
     if (clusters.isEmpty()) return;
+    SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
     auto& d = doc->data();
 
     // Build templates for every cluster first.  Without this the metric only
@@ -262,6 +266,7 @@ void KlustersApp::slotSortClustersByAmplitude()
 {
     QList<int> clusters = clustersToSort(mSortClustersByAmplitude, tr("amplitude"));
     if (clusters.isEmpty()) return;
+    SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
     auto& d = doc->data();
 
     // Build templates for every cluster first; see slotSortClustersBySnr.
@@ -294,6 +299,7 @@ void KlustersApp::slotSortClustersByAmplitudeByChannel()
 {
     QList<int> clusters = clustersToSort(mSortClustersByAmplitudeByChannel, tr("amplitude by channel"));
     if (clusters.isEmpty()) return;
+    SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
     auto& d = doc->data();
 
     // Build templates for every cluster first.  This is the sort that showed the
@@ -504,6 +510,8 @@ void KlustersApp::slotSortClustersByErrorPval()
         return;
     }
 
+    SortBusyCursor busy;   // every bail above is a message, not work
+
     // Per-cluster summary = max symmetrised off-diagonal probability.  cids[k] is
     // matrix row/col k+1 (the Array is 1-based).
     QHash<int,double> affinity;
@@ -616,6 +624,11 @@ void KlustersApp::slotSortByResidualGated()
            "seriated by residual similarity."),
         defThr, 0, std::numeric_limits<int>::max(), 1, &ok);
     if (!ok) return;
+
+    // The cursor starts HERE, after the prompt.  Spinning it over a dialog asking
+    // the curator to type a threshold would claim the application is busy while it
+    // is in fact waiting for them.
+    SortBusyCursor busy;
 
     // Partition matrix indices (0-based) by spike count, skipping specials 0/1
     // (reorderClustersByPermutation preserves them at the front).
@@ -880,6 +893,8 @@ void KlustersApp::slotReorderClustersBySimilarity()
 
     if (!simMatrix) return;
 
+    SortBusyCursor busy;   // every bail above is a message; the work starts here
+
     // ── Auto-update if the chosen matrix is stale ─────────────────────────
     // Reordering uses the similarity matrix as ground truth for the
     // single-linkage merge.  If the matrix is out of date (red-bordered
@@ -1041,6 +1056,9 @@ void KlustersApp::slotReorderClustersBySimilarity()
 
     const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
     if (nRenamed < 0) {
+        // Drop the cursor before the box: this dialog is the curator's to read,
+        // and a wait cursor over it claims the application is still working.
+        busy.restore();
         QMessageBox::warning(this, tr("Reorder Clusters by Similarity"),
             tr("Could not apply the reorder — the cluster table changed\n"
                "between the matrix computation and now, or an invalid\n"
@@ -1111,7 +1129,7 @@ void KlustersApp::reorderClustersByFeatureSpace()
         return;
     }
 
-    QApplication::setOverrideCursor(Qt::WaitCursor);
+    SortBusyCursor busy;
 
     // Per-cluster centroid in fet space -- one pass over each cluster's spikes.
     // This is the method's dominant cost (the only pass over all spikes) and is
@@ -1199,8 +1217,6 @@ void KlustersApp::reorderClustersByFeatureSpace()
     std::stable_sort(clusters.begin(), clusters.end(),
         [&proj](int a, int b){ return proj.value(a) < proj.value(b); });
 
-    QApplication::restoreOverrideCursor();
-
     const int nRenamed = doc->reorderClustersByPermutation(clusters);
     if (nRenamed < 0)
         slotStatusMsg(tr("Reorder (feature-space): reorder rejected (cluster set changed?)."));
@@ -1236,6 +1252,47 @@ void KlustersApp::reorderClustersByFeatureSpace()
 // FILE handles, mirroring the residual thread); the distance matrix O(N^2 * nPts);
 // each worker holds one cluster's spikes at a time for the per-sample median.
 // ---------------------------------------------------------------------------
+//////////////////////////////////////////////////////////////////////////////
+// SortBusyCursor
+//
+// Busy cursor for the duration of a sort, restored however the slot leaves --
+// early return, exception, any of it.  Balancing setOverrideCursor by hand across
+// a function with half a dozen exits is how a cursor gets stranded and the whole
+// application looks hung until the next one is pushed.
+//
+// A cursor is NOT redundant with the status-bar progress bar, which is what I
+// claimed when I removed the wait cursor from the template build. The bar is gated
+// on 200ms elapsed, deliberately, so nothing appears for the first fifth of a
+// second; and the sorts that finish under that threshold still are not instant. The
+// cursor answers "did my click register" and the bar answers "how long", and those
+// are different questions.
+//
+// restore() exists because it must NOT span a dialog. Sorts prompt (the residual
+// gate asks for a spike-count threshold) and report (the reorder warns when a
+// permutation is rejected), and a wait cursor sitting over a box asking the curator
+// to type a number is telling them the application is busy while it waits for them.
+// Where a dialog follows the work, the cursor is dropped first.
+//////////////////////////////////////////////////////////////////////////////
+namespace {
+class SortBusyCursor {
+public:
+    SortBusyCursor() { QApplication::setOverrideCursor(QCursor(Qt::WaitCursor)); }
+    ~SortBusyCursor() { restore(); }
+    /** Drop the cursor now.  Idempotent, so the destructor after an explicit call
+     *  is a no-op: restoreOverrideCursor() pops a stack, and an unbalanced extra pop
+     *  would strip a cursor some outer scope pushed. */
+    void restore() {
+        if (!active) return;
+        active = false;
+        QApplication::restoreOverrideCursor();
+    }
+    SortBusyCursor(const SortBusyCursor&) = delete;
+    SortBusyCursor& operator=(const SortBusyCursor&) = delete;
+private:
+    bool active = true;
+};
+} // namespace
+
 //////////////////////////////////////////////////////////////////////////////
 // clustersToSort / applySortedOrder
 //
@@ -1471,11 +1528,10 @@ void KlustersApp::slotSortByWaveformNN()
 {
     QList<int>         clusters;
     std::vector<float> dist;
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    if (!computeMedianWaveformDistances(clusters, dist)) {
-        QApplication::restoreOverrideCursor();
-        return;
-    }
+    // These two already set a wait cursor by hand and popped it at each exit.  Same
+    // cursor, now scoped, so a new early return cannot forget to pop it.
+    SortBusyCursor busy;
+    if (!computeMedianWaveformDistances(clusters, dist)) return;
     const int N = clusters.size();
 
     // Greedy nearest-neighbour chain: start at the first cluster, then repeatedly
@@ -1504,8 +1560,6 @@ void KlustersApp::slotSortByWaveformNN()
         for (int k = 0; k < N; ++k)
             if (!visited[static_cast<size_t>(k)]) ordered.append(clusters[k]);
 
-    QApplication::restoreOverrideCursor();
-
     const int nRenamed = doc->reorderClustersByPermutation(ordered);
     if (nRenamed < 0)
         slotStatusMsg(tr("Reorder (waveform NN): reorder rejected (cluster set changed?)."));
@@ -1531,11 +1585,10 @@ void KlustersApp::slotSortByWaveformSpectral()
 {
     QList<int>         clusters;
     std::vector<float> dist;
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    if (!computeMedianWaveformDistances(clusters, dist)) {
-        QApplication::restoreOverrideCursor();
-        return;
-    }
+    // These two already set a wait cursor by hand and popped it at each exit.  Same
+    // cursor, now scoped, so a new early return cannot forget to pop it.
+    SortBusyCursor busy;
+    if (!computeMedianWaveformDistances(clusters, dist)) return;
     const int N = clusters.size();
 
     // Distance -> similarity (dmax - d, diagonal 0), then Fiedler seriation.
@@ -1556,8 +1609,6 @@ void KlustersApp::slotSortByWaveformSpectral()
         for (const int idx : order) ordered.append(clusters[idx]);
     else                                   // Fiedler failed -> leave order unchanged
         ordered = clusters;
-
-    QApplication::restoreOverrideCursor();
 
     const int nRenamed = doc->reorderClustersByPermutation(ordered);
     if (nRenamed < 0)
