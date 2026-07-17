@@ -20,6 +20,7 @@
 #include <QApplication>
 #include <QTimer>
 #include "errormatrixview.h"
+#include "matrixgrid.h"
 #include "matrixbadge.h"
 #include "featuremask.h"
 #include <QStringList>
@@ -793,6 +794,10 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         painter.drawImage(QRectF(oriF.x(), oriF.y(),
                                  nbClusters * eff, nbClusters * eff),
                           matrixImg);
+        // One-pixel dashed grid so adjacent cells read as separate elements.
+        // Full-span lines only; boxing each cell would draw every interior edge
+        // twice for the same picture.
+        drawMatrixGrid(painter, oriF, eff, nbClusters);
         painter.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
     }
 
