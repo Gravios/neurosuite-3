@@ -180,6 +180,16 @@ public Q_SLOTS:
 
     /** Updates the widgets so that new user settings take effect.*/
     void applyPreferences();
+    /**Push the auto-feature-selection settings onto the parameter toolbar: show or
+     * hide the N-features label, spin box and "time" checkbox, and sync their
+     * values from the configuration.
+     *
+     * Extracted from applyPreferences() because applyPreferences() runs ONLY when
+     * the preferences dialog reports a change, so at startup nothing ever pushed
+     * the settings onto the toolbar and the widgets kept the setVisible(false)
+     * they were created with.  The constructor calls this once the widgets
+     * exist.*/
+    void syncAutoFeatureToolbar();
 
     /**Initializes some of the variables defined in the settings (preferences).*/
     void initializePreferences();

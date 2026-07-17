@@ -213,6 +213,16 @@ KlustersApp::KlustersApp()
     //Prepare the spineboxes and line edit
     initSelectionBoxes();
 
+    // Push the auto-feature settings onto the toolbar now that the widgets exist.
+    // This has to happen HERE and not in initializePreferences(): that runs above,
+    // before initSelectionBoxes() has created the spin box and the "time" checkbox,
+    // so it has nothing to show or hide.  Without this call the only thing that ever
+    // pushed the settings was applyPreferences(), which fires only when the
+    // preferences dialog reports an actual CHANGE -- so with auto-select already
+    // enabled in the saved settings, the widgets stayed hidden from launch and the
+    // only way to see them was to toggle the preference off, apply, on, apply.
+    syncAutoFeatureToolbar();
+
     setMinimumSize(QSize(600,400));
 
 
@@ -1349,8 +1359,10 @@ void KlustersApp::initSelectionBoxes(){
     // "time" checkbox next to the N-feat spin box: include the spike timestamp as a
     // clustering feature when auto-selecting features for reclustering.  Off by
     // default (time over-fits within-session drift); shares the spin box's
-    // visibility.  Its checked state is synced from the configuration in the
-    // show/hide code (initializePreferences).
+    // visibility.  Created hidden; syncAutoFeatureToolbar() decides whether it is
+    // shown and syncs its checked state from the configuration.  (This used to say
+    // initializePreferences() did that.  It did not, which is why the checkbox never
+    // appeared until the preferences dialog reported a change.)
     autoNFeaturesTimeCheckBox = new QCheckBox(tr("time"), paramBar);
     autoNFeaturesTimeCheckBox->setObjectName("autoNFeaturesTimeCheckBox");
     autoNFeaturesTimeCheckBox->setFont(font);
@@ -1521,23 +1533,40 @@ void KlustersApp::applyPreferences() {
     useWhiteColorDuringPrinting = configuration().getUseWhiteColorDuringPrinting();
     autoSelectFeatures  = configuration().getAutoSelectFeatures();
     autoSelectNFeatures = configuration().getAutoSelectNFeatures();
-    if(autoNFeaturesSpinBoxAction){
-        // Show the N-feat spinbox whenever autoSelectFeatures is on and a doc is open.
-        // It is used at recluster time regardless of which sub-view is currently active,
-        // so it must not be gated on the scatter-plot X/Y selectors being visible.
-        autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
-        autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
-        if(!isInit) autoNFeaturesSpinBox->setValue(autoSelectNFeatures);
-        if(autoNFeaturesTimeCheckBoxAction){
-            autoNFeaturesTimeCheckBoxAction->setVisible(autoSelectFeatures);
-            const bool inclTime = configuration().getIncludeTimeInAutoSelect();
-            if(autoNFeaturesTimeCheckBox->isChecked() != inclTime){
-                // Programmatic sync: block the toggled() signal so it doesn't
-                // re-write the (unchanged) setting on every preferences refresh.
-                const bool prev = autoNFeaturesTimeCheckBox->blockSignals(true);
-                autoNFeaturesTimeCheckBox->setChecked(inclTime);
-                autoNFeaturesTimeCheckBox->blockSignals(prev);
-            }
+    syncAutoFeatureToolbar();
+}
+
+void KlustersApp::syncAutoFeatureToolbar(){
+    if(!autoNFeaturesSpinBoxAction) return;      // toolbar not built yet
+
+    // Show the N-feat spinbox whenever autoSelectFeatures is on and a doc is open.
+    // It is used at recluster time regardless of which sub-view is currently active,
+    // so it must not be gated on the scatter-plot X/Y selectors being visible.
+    autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
+    autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
+
+    // Programmatic sync throughout: block the widget's signal rather than gating on
+    // isInit.  The old `if(!isInit) setValue(...)` skipped the spin box during
+    // startup -- which was invisible while the toolbar itself never appeared at
+    // startup, but the moment it does appear the box would read 1 (its minimum)
+    // instead of the configured value.  Blocking the signal gets the value in
+    // without the valueChanged -> slotUpdateAutoNFeatures round trip that the isInit
+    // guard existed to prevent.
+    if(autoNFeaturesSpinBox->value() != autoSelectNFeatures){
+        const bool prev = autoNFeaturesSpinBox->blockSignals(true);
+        autoNFeaturesSpinBox->setValue(autoSelectNFeatures);
+        autoNFeaturesSpinBox->blockSignals(prev);
+    }
+
+    if(autoNFeaturesTimeCheckBoxAction){
+        autoNFeaturesTimeCheckBoxAction->setVisible(autoSelectFeatures);
+        const bool inclTime = configuration().getIncludeTimeInAutoSelect();
+        if(autoNFeaturesTimeCheckBox->isChecked() != inclTime){
+            // Block the toggled() signal so it doesn't re-write the (unchanged)
+            // setting on every preferences refresh.
+            const bool prev = autoNFeaturesTimeCheckBox->blockSignals(true);
+            autoNFeaturesTimeCheckBox->setChecked(inclTime);
+            autoNFeaturesTimeCheckBox->blockSignals(prev);
         }
     }
 }
