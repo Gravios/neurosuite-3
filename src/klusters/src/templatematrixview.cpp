@@ -1,4 +1,5 @@
 #include "templatematrixview.h"
+#include "matrixgrid.h"
 #include "matrixbadge.h"
 #include "templatematrixthread.h"
 #include "pairxcorrthread.h"
@@ -627,6 +628,10 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
         const bool prevSmooth = p.testRenderHint(QPainter::SmoothPixmapTransform);
         p.setRenderHint(QPainter::SmoothPixmapTransform, false);   // crisp cells
         p.drawImage(QRectF(oriF.x(), oriF.y(), n * eff, n * eff), img);
+        // One-pixel dashed grid so adjacent cells read as separate elements.
+        // Full-span lines only; boxing each cell would draw every interior edge
+        // twice for the same picture.
+        drawMatrixGrid(p, oriF, eff, n);
         p.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
 
         // Threshold outlines drawn over the image — the n*n scan is cheap (score

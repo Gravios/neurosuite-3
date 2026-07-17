@@ -1,4 +1,5 @@
 #include "residualmatrixview.h"
+#include "matrixgrid.h"
 #include "matrixbadge.h"
 #include "residualmatrixthread.h"
 #include "klustersdoc.h"
@@ -360,6 +361,10 @@ void ResidualMatrixView::drawMatrix(QPainter& p)
         const bool prevSmooth = p.testRenderHint(QPainter::SmoothPixmapTransform);
         p.setRenderHint(QPainter::SmoothPixmapTransform, false);
         p.drawImage(QRectF(oriF.x(), oriF.y(), n * eff, n * eff), img);
+        // One-pixel dashed grid so adjacent cells read as separate elements.
+        // Full-span lines only; boxing each cell would draw every interior edge
+        // twice for the same picture.
+        drawMatrixGrid(p, oriF, eff, n);
         p.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
     }
 }

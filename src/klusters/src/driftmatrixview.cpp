@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "driftmatrixview.h"
+#include "matrixgrid.h"
 #include "matrixbadge.h"
 #include "driftmatrixthread.h"
 #include "driftmatrixkernel.h"
@@ -479,6 +480,10 @@ void DriftMatrixView::drawMatrix(QPainter& p)
         }
         p.drawImage(QRectF(oriF.x(), oriF.y(), n * eff, n * eff), img,
                     QRectF(0, 0, n, n));
+        // One-pixel dashed grid so adjacent cells read as separate elements.
+        // Full-span lines only; boxing each cell would draw every interior edge
+        // twice for the same picture.
+        drawMatrixGrid(p, oriF, eff, n);
     }
 }
 
