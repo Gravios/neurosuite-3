@@ -131,6 +131,7 @@ using klustersdoc_internal::stripFeatureSuffix;
 
 #include "realign_xcorr.h"   // XcorrDispatch lives here via the dispatch TU
 #include "realign_center.h"  // realign_center::circularRecenterShift (shared)
+#include "channelmask.h"
 #include "pca_refine_dispatch.h"
 
 // Forward declaration — XcorrDispatch is defined in realign_xcorr_dispatch.cpp
@@ -923,6 +924,59 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     //   - the cluster's spikes' windows would run off the end of .fil
     //     at any candidate shift (handled per-spike)
     if (pcaRefine && pca.valid()) {
+        // ── Channel restriction ───────────────────────────────────────────────
+        // Ctrl+click on the waveform view picks channels; the matrix views already
+        // honour that selection and the alignment did not.  The refine pass scores
+        // each candidate shift by PCA-projection energy summed over channels, so a
+        // channel the curator has excluded was still voting on where every spike
+        // lands.
+        //
+        // The restriction is applied to a COPY OF THE BASIS, by zeroing the
+        // eigenvector rows of the dropped channels, rather than by teaching the
+        // scoring code about a mask.  Two reasons, both load-bearing:
+        //
+        //  1. The energy is Σ_ch Σ_k (Σ_u ev[k·d2u+u]·(x−μ))².  A zeroed ev row
+        //     makes that channel's score identically zero, so it contributes
+        //     nothing.  The CPU loop reads pca.evec and the CUDA kernel is handed
+        //     evecFlat packed from the same pca.evec, so BOTH honour the mask with
+        //     no kernel change and no dispatch-signature change.  Put the mask in
+        //     the code instead and the CPU and GPU become two implementations of
+        //     one rule -- which is exactly how this codebase ended up with two
+        //     single-linkage routines that differed by an order of complexity.
+        //
+        //  2. It must NOT touch `pca` itself.  That object is cached into
+        //     realignPcaCache for the rest of the batch (a masked cache would
+        //     silently follow a stale selection into the next cluster), and it is
+        //     ALSO the basis the feature recomputation projects through -- zeroing
+        //     it there would write zeroed features for the dropped channels into
+        //     the .fet.  The mask belongs to the refine pass and nowhere else.
+        PcaBasis pcaRef = pca;
+        {
+            std::vector<int> sel;
+            sel.reserve(channelSelection.size());
+            for (int c : channelSelection) sel.push_back(c);
+            // Mask against the BASIS channel count, not the group's: a stderiv
+            // basis is built on nChan-1 channels (the trailing one is linearly
+            // dependent and dropped), so pca.nCh is the only count that indexes
+            // pca.evec safely.
+            const std::vector<int> keep = cmResolveMask(sel, pcaRef.nCh);
+            if (!keep.empty()) {
+                for (int ch = 0; ch < pcaRef.nCh; ++ch) {
+                    if (std::find(keep.begin(), keep.end(), ch) != keep.end()) continue;
+                    std::fill(pcaRef.evec[static_cast<size_t>(ch)].begin(),
+                              pcaRef.evec[static_cast<size_t>(ch)].end(), 0.0);
+                }
+                log << "PCA-projection refine restricted to " << keep.size()
+                    << " of " << pcaRef.nCh << " basis channels (selection:";
+                for (int c : keep) log << " " << c;
+                log << ")\n";
+                if (pca.nCh != nChan)
+                    log << "  NOTE: this basis is stderiv-derived (" << pca.nCh
+                        << " basis channels for " << nChan << " raw), so a basis "
+                        << "channel is a spatial derivative, not raw channel n.\n";
+            }
+        }
+
         log << "PCA-projection refine pass: search ±" << maxShift
             << " samples, "
             << pca.nCh << " channels × " << pca.nComp << " components\n";
@@ -1060,7 +1114,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 std::vector<float> meansFlat(
                     centered ? static_cast<size_t>(chForPca) * d2u : 0);
                 for (int ch = 0; ch < chForPca; ++ch) {
-                    const auto& ev = pca.evec[static_cast<size_t>(ch)];
+                    const auto& ev = pcaRef.evec[static_cast<size_t>(ch)];
                     for (int k = 0; k < kComp; ++k)
                         for (int u = 0; u < d2u; ++u)
                             evecFlat[static_cast<size_t>(ch) * kComp * d2u
@@ -1187,7 +1241,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                     // sIdx, a no-op here because the loader rejects any basis with
                     // recShift + data2use > nSamp.
                     const double energy = neurosuite::core::pcaProjectionEnergy(
-                        candCM.data(), nChan, nSamp, pca);
+                        candCM.data(), nChan, nSamp, pcaRef);
                     ++validCandidates;
 
                     if (energy > bestEnergy) {
