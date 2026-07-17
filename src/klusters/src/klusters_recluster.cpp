@@ -25,6 +25,7 @@
 #include "config-klusters.h"
 // application specific includes
 #include "klusters.h"
+#include "channelmask.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
@@ -326,9 +327,58 @@ void KlustersApp::slotRecluster(){
                             return a.second > b.second;
                         });
 
+                    // ── Channel restriction ──────────────────────────────────
+                    // Ctrl+click on the waveform view picks channels.  An explicit
+                    // pick beats an automatic ranking, so the selection restricts
+                    // the CANDIDATE POOL and everything below then works within it:
+                    // the variance ranking still chooses, it just no longer gets to
+                    // choose channels the curator has ruled out.
+                    //
+                    // The .fet layout is channel-major, so channel c owns PCA
+                    // columns [c*featPerCh, (c+1)*featPerCh).  Extra (non-PCA)
+                    // columns sit past totalNbOfPCAs and belong to no channel; they
+                    // are left out of a restricted pool, since "only these channels"
+                    // cannot sensibly admit a column that is not a channel's.
+                    const int nChTotal  = doc->nbOfchannels();
+                    const int featPerChSel = (nChTotal > 0) ? totalNbOfPCAs / nChTotal : 0;
+                    QSet<int> allowedCols;          // empty == no restriction
+                    std::vector<int> keepCh;
+                    {
+                        std::vector<int> rawSel;
+                        rawSel.reserve(doc->selectedChannels().size());
+                        for(int c : doc->selectedChannels()) rawSel.push_back(c);
+                        keepCh = cmResolveMask(rawSel, nChTotal);   // all-or-none == no restriction
+                        if(!keepCh.empty() && featPerChSel > 0)
+                            for(int ch : keepCh)
+                                for(int p = 0; p < featPerChSel; ++p)
+                                    allowedCols.insert(ch * featPerChSel + p);
+                    }
+                    if(!allowedCols.isEmpty()){
+                        QVector<QPair<int,double>> ivKeep;
+                        ivKeep.reserve(allowedCols.size());
+                        for(const QPair<int,double>& e : iv)
+                            if(allowedCols.contains(e.first)) ivKeep.append(e);
+                        iv = ivKeep;
+                    }
+
                     // nSelect is a ceiling, not a target: stop early if variance
                     // drops below 5 % of the top feature (noise-floor trim).
                     int    nSelect  = qBound(1, autoSelectNFeatures, nFeatureCols);
+
+                    // The "time" checkbox spends one of the N slots rather than
+                    // adding a dimension on top.  N is what the curator asked the
+                    // reclusterer to work in; ticking time should change what fills
+                    // it, not silently widen it to N+1.
+                    const bool inclTimeSel = configuration().getIncludeTimeInAutoSelect();
+                    if(inclTimeSel) nSelect = std::max(1, nSelect - 1);
+
+                    // Asking for more features than the selected channels can supply
+                    // means take all of them -- there is nothing else to give, and
+                    // reaching outside the selection to make up the number would
+                    // defeat the point of having made one.
+                    if(!allowedCols.isEmpty())
+                        nSelect = std::min(nSelect, allowedCols.size());
+
                     double topVar   = iv.isEmpty() ? 0.0 : iv[0].second;
                     double minVar   = topVar * 0.05;
 
@@ -355,8 +405,14 @@ void KlustersApp::slotRecluster(){
 
                             QVector<QPair<int,double>> cv;
                             cv.reserve(nCh);
-                            for(int c = 0; c < nCh; ++c)
+                            for(int c = 0; c < nCh; ++c){
+                                // Rank only the channels the curator left in.  An
+                                // empty keepCh means no selection, i.e. all of them.
+                                if(!keepCh.empty()
+                                   && std::find(keepCh.begin(), keepCh.end(), c) == keepCh.end())
+                                    continue;
                                 cv.append(qMakePair(c, chVar[c]));
+                            }
                             std::sort(cv.begin(), cv.end(),
                                 [](const QPair<int,double>& a, const QPair<int,double>& b){
                                     return a.second > b.second;
@@ -367,7 +423,16 @@ void KlustersApp::slotRecluster(){
                             // take exactly the top nChSel channels by variance,
                             // with no noise-floor trim, so the spin box value is
                             // authoritative.
-                            const int nChSel = qBound(1, autoSelectNFeatures, nCh);
+                            // In this mode the spin box counts CHANNELS, so the
+                            // time checkbox does not spend a slot here -- a
+                            // timestamp is not a channel and dropping a whole
+                            // channel to pay for it would be a much bigger price
+                            // than the curator asked.  It still sets the timestamp
+                            // column below.  The cap is the number of channels
+                            // actually available after the selection, not nCh.
+                            const int nChAvail = cv.size();
+                            const int nChSel = qBound(1, autoSelectNFeatures,
+                                                      std::max(1, nChAvail));
                             for(int c = 0; c < cv.size() && c < nChSel; ++c){
                                 const int ch = cv[c].first;
                                 for(int p = 0; p < featPerCh; ++p)
