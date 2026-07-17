@@ -377,7 +377,8 @@ void KlustersApp::slotRecluster(){
                     // reaching outside the selection to make up the number would
                     // defeat the point of having made one.
                     if(!allowedCols.isEmpty())
-                        nSelect = std::min(nSelect, allowedCols.size());
+                        nSelect = std::min(nSelect,
+                                           static_cast<int>(allowedCols.size()));
 
                     double topVar   = iv.isEmpty() ? 0.0 : iv[0].second;
                     double minVar   = topVar * 0.05;
@@ -430,7 +431,7 @@ void KlustersApp::slotRecluster(){
                             // than the curator asked.  It still sets the timestamp
                             // column below.  The cap is the number of channels
                             // actually available after the selection, not nCh.
-                            const int nChAvail = cv.size();
+                            const int nChAvail = static_cast<int>(cv.size());
                             const int nChSel = qBound(1, autoSelectNFeatures,
                                                       std::max(1, nChAvail));
                             for(int c = 0; c < cv.size() && c < nChSel; ++c){
