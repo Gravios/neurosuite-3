@@ -4,6 +4,10 @@ add_executable(process_reextractspikes_stderiv
     process_reextractspikes_stderiv.cpp
 )
 target_compile_features(process_reextractspikes_stderiv PRIVATE cxx_std_17)
+# Pull in the shared klustersshared headers (sdiff_pairs.h is header-only, so no
+# extra source is compiled — only the include directory is needed).
+target_include_directories(process_reextractspikes_stderiv
+    PRIVATE "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)

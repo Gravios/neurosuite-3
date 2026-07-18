@@ -32,6 +32,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include "process_reextractspikes_stderiv.h"
+#include "sdiff_pairs.h"      // shared SDIFF_CUSTOM pair-pattern parser
 
 #include <algorithm>
 #include <cerrno>
@@ -66,12 +67,22 @@ static const char *programVersion =
 
 // =========================================================================
 // Spatial derivative at a single (time-sample, group-channel) position.
-// Ported unchanged from process_extractspikes_stderiv::computeSDiff.
+// Ported from process_extractspikes_stderiv::computeSDiff, plus SDIFF_CUSTOM.
 // =========================================================================
+static std::vector<std::vector<int> > g_custom_partner;   // one map per group; set from -P
+
+// The partner map for group g, or an empty map when g carries no custom pattern.
+static const std::vector<int>& groupPartner(int g)
+{
+    static const std::vector<int> none;
+    return (g >= 0 && g < (int)g_custom_partner.size()) ? g_custom_partner[g] : none;
+}
+
 static double computeSDiff(const int16_t *rec,
                             const int     *chanList,
                             int ci, int nChanGrp,
-                            SdiffOrder order)
+                            SdiffOrder order,
+                            const std::vector<int>& customPartner)
 {
     const double val = rec[chanList[ci]];
     switch (order) {
@@ -86,6 +97,10 @@ static double computeSDiff(const int16_t *rec,
         if (ci == 0)                 return val - rec[chanList[1]];
         if (ci == nChanGrp - 1)      return val - rec[chanList[nChanGrp - 2]];
         return val - 0.5 * (rec[chanList[ci - 1]] + rec[chanList[ci + 1]]);
+    case SDIFF_CUSTOM:
+        if (nChanGrp > 1 && (int)customPartner.size() == nChanGrp)
+            return val - rec[chanList[customPartner[ci]]];
+        [[fallthrough]];
     case SDIFF_ALLPAIRS:
     default: {
         if (nChanGrp == 1) return 0.0;
@@ -100,12 +115,13 @@ static double computeSDiff(const int16_t *rec,
 static inline double stderivAt(const int16_t *data,
                                 int64_t t, int nChanTot,
                                 const int *chans, int ci, int nChanGrp,
-                                SdiffOrder order)
+                                SdiffOrder order,
+                                const std::vector<int>& customPartner)
 {
     const int16_t *recT    = data + t       * nChanTot;
     const int16_t *recTm1  = data + (t - 1) * nChanTot;
-    return computeSDiff(recT,   chans, ci, nChanGrp, order)
-         - computeSDiff(recTm1, chans, ci, nChanGrp, order);
+    return computeSDiff(recT,   chans, ci, nChanGrp, order, customPartner)
+         - computeSDiff(recTm1, chans, ci, nChanGrp, order, customPartner);
 }
 
 // =========================================================================
@@ -157,7 +173,7 @@ static void computeThresholds(const int16_t *data,
             for (int ci = 0; ci < nCG; ++ci)
                 absBuf[g][ci].push_back(
                     std::fabs(stderivAt(data, t, nChanTot,
-                                         chGroups[g].data(), ci, nCG, order)));
+                                         chGroups[g].data(), ci, nCG, order, groupPartner(g))));
         }
     }
 
@@ -250,7 +266,7 @@ static void usage(const char *name)
     cerr << "usage: " << name
          << " -n nCh -c channels -w wLen -p peak -l pslen -r ref"
             " -f factor -B startByte -Z sizeBytes"
-            " [-d sdiffOrder] [-m maskBase] [-M maskHalf] [-i in.fil] [-v]"
+            " [-d sdiffOrder] [-P g1:g2:...] [-m maskBase] [-M maskHalf] [-i in.fil] [-v]"
             " basename" << endl;
 }
 
@@ -271,6 +287,8 @@ static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
         else if (arg == "-B" && i+1 < argc) a.threshStartByte    = (off_t)std::atoll(argv[++i]);
         else if (arg == "-Z" && i+1 < argc) a.threshSizeBytes    = (off_t)std::atoll(argv[++i]);
         else if (arg == "-d" && i+1 < argc) a.sdiffOrder         = (SdiffOrder)std::atoi(argv[++i]);
+        else if (arg == "-P" && i+1 < argc) { g_custom_partner = parseSdiffPairsPerGroup(argv[++i]);
+                                              a.sdiffOrder = SDIFF_CUSTOM; }
         else if (arg == "-m" && i+1 < argc) a.maskBaseFileName   = argv[++i];
         else if (arg == "-M" && i+1 < argc) a.maskHalfWidth      = std::atoll(argv[++i]);
         else if (arg == "-i" && i+1 < argc) inputOverride        = argv[++i];
@@ -391,7 +409,7 @@ int main(int argc, char **argv)
             int hitCi = -1; bool hitNeg = false;
             for (int ci = 0; ci < nChanG; ++ci) {
                 const double v  = stderivAt(data, t, nChanT, chans.data(),
-                                             ci, nChanG, ord);
+                                             ci, nChanG, ord, groupPartner(g));
                 if (std::fabs(v) >= std::fabs(tg[ci])) {
                     hitCi = ci; hitNeg = (v < 0.0); break;
                 }
@@ -401,11 +419,11 @@ int main(int argc, char **argv)
             // Local extremum on the stderiv signal.
             int64_t peakT = t;
             double  peakV = stderivAt(data, t, nChanT, chans.data(),
-                                       hitCi, nChanG, ord);
+                                       hitCi, nChanG, ord, groupPartner(g));
             const int64_t pEnd = std::min<int64_t>(t + psl, nSamples);
             for (int64_t s = t + 1; s < pEnd; ++s) {
                 const double v = stderivAt(data, s, nChanT, chans.data(),
-                                            hitCi, nChanG, ord);
+                                            hitCi, nChanG, ord, groupPartner(g));
                 if ((hitNeg && v < peakV) || (!hitNeg && v > peakV)) {
                     peakV = v; peakT = s;
                 }
@@ -413,9 +431,9 @@ int main(int argc, char **argv)
             if (peakT <= 1 || peakT >= nSamples - 1) continue;
 
             const double pb = stderivAt(data, peakT - 1, nChanT,
-                                         chans.data(), hitCi, nChanG, ord);
+                                         chans.data(), hitCi, nChanG, ord, groupPartner(g));
             const double pa = stderivAt(data, peakT + 1, nChanT,
-                                         chans.data(), hitCi, nChanG, ord);
+                                         chans.data(), hitCi, nChanG, ord, groupPartner(g));
             if (!isRealPeak(peakV, pb, pa)) continue;
             if (std::fabs(peakV) < std::fabs(tg[hitCi])) continue;
 
@@ -490,7 +508,7 @@ int main(int argc, char **argv)
                         data + (int64_t)(start + s) * a.totalChannelNumber;
                     for (int ci = 0; ci < nChanG; ++ci) {
                         double sd = computeSDiff(frame, chans.data(),
-                                                  ci, nChanG, a.sdiffOrder);
+                                                  ci, nChanG, a.sdiffOrder, groupPartner(g));
                         int iv = (int)std::llround(sd);
                         if (iv >  32767) iv =  32767;
                         if (iv < -32768) iv = -32768;

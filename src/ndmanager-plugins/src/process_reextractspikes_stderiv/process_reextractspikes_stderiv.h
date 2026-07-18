@@ -45,7 +45,8 @@ enum SdiffOrder {
     SDIFF_NONE      = 0,
     SDIFF_FIRST     = 1,
     SDIFF_LAPLACIAN = 2,
-    SDIFF_ALLPAIRS  = 3
+    SDIFF_ALLPAIRS  = 3,
+    SDIFF_CUSTOM    = 4   // per-channel partner map supplied via -P sdiffPairs
 };
 
 struct ReextractStderivArgs {
