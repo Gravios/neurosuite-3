@@ -107,6 +107,13 @@ void SpikePage::setGroups(const QMap<int, QList<int> >& groups,const QMap<int, Q
 
         groupTable->setItem(row, 0, new QTableWidgetItem(group));
 
+        // Give every parameter column a cell up front so an optional field the
+        // session file omits (e.g. the custom difference pattern) still has an
+        // editable cell to type into -- matching addGroup(), which does the same
+        // for new rows.  The loop below overwrites the columns the file provides.
+        for(int col = 1; col < groupTable->columnCount(); ++col)
+            groupTable->setItem(row, col, new QTableWidgetItem());
+
         QMap<QString,QString> groupInformation = information[iterator.key()];
         QMap<QString,QString>::Iterator iterator2;
         for(iterator2 = groupInformation.begin(); iterator2 != groupInformation.end(); ++iterator2){
