@@ -21,6 +21,7 @@
 #include "spikepage.h"
 #include <QTableWidget>
 #include <QPushButton>
+#include <QMessageBox>
 #include "tags.h"
 
 // include files for QT
@@ -51,6 +52,7 @@ SpikePage::SpikePage(QWidget* parent)
     connect(groupTable, &QTableWidget::currentCellChanged, this, &SpikePage::slotValidate);
     connect(addGroupButton, &QAbstractButton::clicked, this, &SpikePage::addGroup);
     connect(removeGroupButton, &QAbstractButton::clicked, this, &SpikePage::removeGroup);
+    connect(applyToAllButton, &QAbstractButton::clicked, this, &SpikePage::applyToAllGroups);
     connect(groupTable, &QTableWidget::cellChanged, this, &SpikePage::groupChanged);
 
 }
@@ -191,6 +193,58 @@ void SpikePage::removeGroup(){
         }
     }
     emit nbGroupsModified(groupTable->rowCount());
+}
+
+void SpikePage::applyToAllGroups(){
+    const int nRows = groupTable->rowCount();
+    if(nRows < 2)
+        return;                       // no other group to copy to
+
+    const int srcRow = groupTable->currentRow();
+    if(srcRow < 0 || srcRow >= nRows){
+        QMessageBox::information(this, tr("Apply to all groups"),
+            tr("Select a group first; its number of samples, peak sample index, "
+               "feature count and difference pattern are then copied to every "
+               "other group."));
+        return;
+    }
+
+    // Capture the selected group's parameter columns (1..last).  Column 0 is the
+    // channel list, unique to each group and never copied.  The difference-pattern
+    // column rides along, so identical shanks can be configured once and applied.
+    // An empty source cell is skipped so it can never blank that column elsewhere.
+    const int nCol = groupTable->columnCount();
+    QVector<QString> src(nCol);
+    bool haveValue = false;
+    for(int col = 1; col < nCol; ++col){
+        QTableWidgetItem* item = groupTable->item(srcRow, col);
+        const QString text = item ? item->text().simplified() : QString();
+        if(!text.isEmpty()){ src[col] = text; haveValue = true; }
+    }
+    if(!haveValue)
+        return;
+
+    // Rewrite the other rows without firing cellChanged for each cell; the values
+    // come from an already-validated row, so mark the page modified once.
+    const bool blocked = groupTable->blockSignals(true);
+    for(int row = 0; row < nRows; ++row){
+        if(row == srcRow)
+            continue;
+        QTableWidgetItem* col0 = groupTable->item(row, 0);
+        if(!col0 || col0->text().simplified().isEmpty())
+            continue;                 // skip placeholder / blank rows
+        for(int col = 1; col < nCol; ++col){
+            if(src[col].isEmpty())
+                continue;
+            QTableWidgetItem* cell = groupTable->item(row, col);
+            if(cell)
+                cell->setText(src[col]);
+            else
+                groupTable->setItem(row, col, new QTableWidgetItem(src[col]));
+        }
+    }
+    groupTable->blockSignals(blocked);
+    modified = true;
 }
 
 void SpikePage::groupChanged(int row,int column){

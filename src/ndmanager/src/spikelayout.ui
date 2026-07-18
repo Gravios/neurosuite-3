@@ -181,6 +181,31 @@
          </property>
         </widget>
        </item>
+       <item row="0" column="5">
+        <widget class="QPushButton" name="applyToAllButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>150</width>
+           <height>32767</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Apply to all</string>
+         </property>
+        </widget>
+       </item>
       </layout>
      </item>
      <item row="2" column="0">
