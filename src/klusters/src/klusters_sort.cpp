@@ -130,6 +130,48 @@
 
 extern int nbUndo;
 
+//////////////////////////////////////////////////////////////////////////////
+// SortBusyCursor
+//
+// Busy cursor for the duration of a sort, restored however the slot leaves --
+// early return, exception, any of it.  Balancing setOverrideCursor by hand across
+// a function with half a dozen exits is how a cursor gets stranded and the whole
+// application looks hung until the next one is pushed.
+//
+// A cursor is NOT redundant with the status-bar progress bar, which is what I
+// claimed when I removed the wait cursor from the template build. The bar is gated
+// on 200ms elapsed, deliberately, so nothing appears for the first fifth of a
+// second; and the sorts that finish under that threshold still are not instant. The
+// cursor answers "did my click register" and the bar answers "how long", and those
+// are different questions.
+//
+// restore() exists because it must NOT span a dialog. Sorts prompt (the residual
+// gate asks for a spike-count threshold) and report (the reorder warns when a
+// permutation is rejected), and a wait cursor sitting over a box asking the curator
+// to type a number is telling them the application is busy while it waits for them.
+// Where a dialog follows the work, the cursor is dropped first.
+//////////////////////////////////////////////////////////////////////////////
+namespace {
+class SortBusyCursor {
+public:
+    SortBusyCursor() { QApplication::setOverrideCursor(QCursor(Qt::WaitCursor)); }
+    ~SortBusyCursor() { restore(); }
+    /** Drop the cursor now.  Idempotent, so the destructor after an explicit call
+     *  is a no-op: restoreOverrideCursor() pops a stack, and an unbalanced extra pop
+     *  would strip a cursor some outer scope pushed. */
+    void restore() {
+        if (!active) return;
+        active = false;
+        QApplication::restoreOverrideCursor();
+    }
+    SortBusyCursor(const SortBusyCursor&) = delete;
+    SortBusyCursor& operator=(const SortBusyCursor&) = delete;
+private:
+    bool active = true;
+};
+} // namespace
+
+
 
 // ---------------------------------------------------------------------------
 // slotSortClustersBySpikeCount
@@ -1252,47 +1294,6 @@ void KlustersApp::reorderClustersByFeatureSpace()
 // FILE handles, mirroring the residual thread); the distance matrix O(N^2 * nPts);
 // each worker holds one cluster's spikes at a time for the per-sample median.
 // ---------------------------------------------------------------------------
-//////////////////////////////////////////////////////////////////////////////
-// SortBusyCursor
-//
-// Busy cursor for the duration of a sort, restored however the slot leaves --
-// early return, exception, any of it.  Balancing setOverrideCursor by hand across
-// a function with half a dozen exits is how a cursor gets stranded and the whole
-// application looks hung until the next one is pushed.
-//
-// A cursor is NOT redundant with the status-bar progress bar, which is what I
-// claimed when I removed the wait cursor from the template build. The bar is gated
-// on 200ms elapsed, deliberately, so nothing appears for the first fifth of a
-// second; and the sorts that finish under that threshold still are not instant. The
-// cursor answers "did my click register" and the bar answers "how long", and those
-// are different questions.
-//
-// restore() exists because it must NOT span a dialog. Sorts prompt (the residual
-// gate asks for a spike-count threshold) and report (the reorder warns when a
-// permutation is rejected), and a wait cursor sitting over a box asking the curator
-// to type a number is telling them the application is busy while it waits for them.
-// Where a dialog follows the work, the cursor is dropped first.
-//////////////////////////////////////////////////////////////////////////////
-namespace {
-class SortBusyCursor {
-public:
-    SortBusyCursor() { QApplication::setOverrideCursor(QCursor(Qt::WaitCursor)); }
-    ~SortBusyCursor() { restore(); }
-    /** Drop the cursor now.  Idempotent, so the destructor after an explicit call
-     *  is a no-op: restoreOverrideCursor() pops a stack, and an unbalanced extra pop
-     *  would strip a cursor some outer scope pushed. */
-    void restore() {
-        if (!active) return;
-        active = false;
-        QApplication::restoreOverrideCursor();
-    }
-    SortBusyCursor(const SortBusyCursor&) = delete;
-    SortBusyCursor& operator=(const SortBusyCursor&) = delete;
-private:
-    bool active = true;
-};
-} // namespace
-
 //////////////////////////////////////////////////////////////////////////////
 // clustersToSort / applySortedOrder
 //
