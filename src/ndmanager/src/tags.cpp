@@ -103,6 +103,7 @@ extern const QString QUALITY = "quality";
 extern const QString NB_SAMPLES = "nSamples";
 extern const QString PEAK_SAMPLE_INDEX = "peakSampleIndex";
 extern const QString NB_FEATURES = "nFeatures";
+extern const QString SDIFF_PAIRS = "sdiffPairs";
 
 //Tag included in FILES
 extern const QString FILE = "file";

@@ -156,6 +156,8 @@ extern const QString NB_SAMPLES;
 extern const QString PEAK_SAMPLE_INDEX;
 /**Tag for the nFeatures element included in the spike element.*/
 extern const QString NB_FEATURES;
+/**Tag for the optional per-group custom difference pattern (stderiv pipeline).*/
+extern const QString SDIFF_PAIRS;
 
 
 /**Tag for the file element included in the files element.*/

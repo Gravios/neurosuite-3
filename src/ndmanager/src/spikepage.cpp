@@ -114,6 +114,8 @@ void SpikePage::setGroups(const QMap<int, QList<int> >& groups,const QMap<int, Q
                 groupTable->setItem(row, 2, new QTableWidgetItem(iterator2.value()));
             else if(iterator2.key() == NB_FEATURES)
                 groupTable->setItem(row, 3, new QTableWidgetItem(iterator2.value()));
+            else if(iterator2.key() == SDIFF_PAIRS)
+                groupTable->setItem(row, 4, new QTableWidgetItem(iterator2.value()));
         }
     }//end of groups loop
 }
@@ -159,6 +161,8 @@ void SpikePage::getGroupInformation(QMap<int,  QMap<QString,QString> >& groupInf
                 information.insert(PEAK_SAMPLE_INDEX,infoItem);
             else if(j == 3)
                 information.insert(NB_FEATURES,infoItem);
+            else if(j == 4)
+                information.insert(SDIFF_PAIRS,infoItem);
         }
         groupInformation.insert(groupId,information);
         groupId++;
