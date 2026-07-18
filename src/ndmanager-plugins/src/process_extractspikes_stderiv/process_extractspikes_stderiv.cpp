@@ -1969,6 +1969,16 @@ int main(int argc, char *argv[])
                 writeIdx++;
             }
             wbuf.resize(static_cast<size_t>(writeIdx) * wavLen);
+            // The .spk file was written before this rejection pass and still holds
+            // a zeroed slot for each rejected spike; rewrite it from the compacted
+            // buffer so .spk and .res stay in lockstep even when the sort pass below
+            // is skipped (freshly extracted spikes are already in time order).
+            FILE *csf = fopen(spkFileNames[static_cast<size_t>(grp)].c_str(), "wb");
+            if(csf) {
+                if(!wbuf.empty())
+                    fwrite(wbuf.data(), sizeof(short), wbuf.size(), csf);
+                fclose(csf);
+            }
         } else {
             // Streaming path: .spk was written to disk; read back, compact,
             // and rewrite.
