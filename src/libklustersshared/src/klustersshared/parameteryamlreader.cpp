@@ -374,6 +374,11 @@ void ParameterYamlReader::getSpikeDescription(
         info[QStringLiteral("nSamples")]       = QString::number(nodeAs<int>(grp["nSamples"],       0));
         info[QStringLiteral("peakSampleIndex")]= QString::number(nodeAs<int>(grp["peakSampleIndex"],0));
         info[QStringLiteral("nFeatures")]      = QString::number(nodeAs<int>(grp["nFeatures"],      0));
+        // Optional per-group custom difference pattern for the stderiv pipeline.
+        // Recorded only when present, so sessions that do not use it round-trip
+        // unchanged (no empty sdiffPairs is written back).
+        if (grp["sdiffPairs"] && grp["sdiffPairs"].IsDefined())
+            info[QStringLiteral("sdiffPairs")] = nodeStr(grp["sdiffPairs"]);
         information[groupId] = info;
         ++groupId;
     }

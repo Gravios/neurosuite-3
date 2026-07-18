@@ -166,6 +166,10 @@ do
 	check_mandatory_variable $electrodes "missing electrode list for group $electrodeGroup"
 	electrodes=$(echo $electrodes | sed 's/ /,/g') # replace spaces with commas
 	electrodeList="$electrodeList:$electrodes"
+	# Collect this group's optional custom difference pattern, aligned 1:1
+	# with electrodeList; empty when the group defines none.
+	_pairs=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/sdiffPairs")
+	sdiffPairsList="$sdiffPairsList:$_pairs"
 
 	_ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
 	_ps=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
@@ -182,6 +186,18 @@ do
 done
 n=$((${#electrodeList}-1))
 electrodeList=${electrodeList:1:$n} # remove leading ':'
+
+# Per-group custom difference patterns come straight from the spike groups in
+# the session file (the 'Diff pairs' column), colon-separated and aligned with
+# -c.  -P is passed only for stderiv, and only when at least one group defines a
+# pattern; otherwise every group uses the base spatial-derivative order (-d).
+sdiffPairsList=${sdiffPairsList#:}
+sdiffPairsArg=
+if [ "$method" = stderiv ]; then
+	case "$sdiffPairsList" in
+		*[!:]*) sdiffPairsArg="-P $sdiffPairsList" ;;
+	esac
+fi
 
 thresholdFactor=$(read_script_parameter $session thresholdFactor)
 refractoryPeriod=$(read_script_parameter $session refractoryPeriod)
@@ -205,6 +221,7 @@ durationInBytes=$(secondsToBytes $duration)
 
 echo_info "Processing channels $electrodeList"
 [ "$method" != standard ] && echo_info " Spatial derivative order : $methodOrder"
+[ -n "$sdiffPairsArg" ] && echo_info " Custom difference patterns : $sdiffPairsList"
 echo_info " Threshold factor         : $thresholdFactor"
 echo_info " Noise window             : ${start}s – $((start + duration))s"
 echo_info "   (= byte offset $startInBytes, length $durationInBytes)"
@@ -273,6 +290,7 @@ case "$method" in
 			-r $refractoryPeriod -l $peakSearchLength \
 			-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
 			-d $methodOrder \
+			$sdiffPairsArg \
 			$reExtractFlag $tmp
 		;;
 esac

@@ -230,6 +230,11 @@ void ParameterYamlWriter::setSpikeDetectionInformation(
         grp["nSamples"]        = nSamples;
         grp["peakSampleIndex"] = peakSample;
         grp["nFeatures"]       = info.value(QStringLiteral("nFeatures"),       QStringLiteral("0")).toInt();
+        // Emit the custom difference pattern only for groups that carry one, so
+        // standard sessions stay free of an empty sdiffPairs key.
+        if (info.contains(QStringLiteral("sdiffPairs")) &&
+            !info.value(QStringLiteral("sdiffPairs")).isEmpty())
+            grp["sdiffPairs"]  = info.value(QStringLiteral("sdiffPairs")).toStdString();
         groups.push_back(grp);
 
         if (globalNSamples == 0 && nSamples > 0) {

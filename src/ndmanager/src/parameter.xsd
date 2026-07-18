@@ -168,6 +168,7 @@
     <xsd:element name="nSamples" type="xsd:int"/>
     <xsd:element name="peakSampleIndex" type="xsd:int"/>
     <xsd:element name="nFeatures" type="xsd:int"/>
+    <xsd:element name="sdiffPairs" type="xsd:string" minOccurs="0"/>
   </xsd:sequence>
   <xsd:attribute name="displayName" type="xsd:string" fixed="Group"/>
 </xsd:complexType>
