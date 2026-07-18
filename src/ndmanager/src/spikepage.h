@@ -90,6 +90,10 @@ public slots:
     /**Removes the selected lines from the group table.*/
     void removeGroup();
 
+    /**Copies the selected group's parameter columns (samples, peak, features and
+       difference pattern) to every other group, leaving each group's channels.*/
+    void applyToAllGroups();
+
     /**Validates the current entry in the group table.*/
     void slotValidate();
 
