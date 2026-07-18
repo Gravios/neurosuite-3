@@ -44,11 +44,18 @@
 //                           = n * (x[i] - mean(x))
 //                      Does not require channels to be in probe order.
 //                      Maximum common-mode rejection for any group geometry.
+//  4  SDIFF_CUSTOM     per-channel partner map (see -P sdiffPairs).  Output
+//                      channel i is x[i] - x[partner[i]], the partner taken from
+//                      an explicit "a-b" pair list of 1-based within-group
+//                      positions.  Lets a geometry-matched, physically local
+//                      difference pattern be extracted directly.  A group whose
+//                      size does not match the pattern falls back to order 3.
 enum SdiffOrder {
     SDIFF_NONE      = 0,
     SDIFF_FIRST     = 1,
     SDIFF_LAPLACIAN = 2,
-    SDIFF_ALLPAIRS  = 3   // default
+    SDIFF_ALLPAIRS  = 3,  // default
+    SDIFF_CUSTOM    = 4   // per-channel partner map supplied via -P sdiffPairs
 };
 
 struct arguments {
