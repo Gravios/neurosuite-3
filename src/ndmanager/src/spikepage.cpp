@@ -256,6 +256,17 @@ void SpikePage::applyToAllGroups(){
 
 void SpikePage::groupChanged(int row,int column){
     modified = true;
+
+    // The "Diff pairs" column (SDIFF_PAIRS, col 4) holds an "a-b,c-d,..." custom
+    // difference pattern, not a numeric channel list, so it is exempt from the
+    // digits/whitespace check below.  Validating a pattern against that charset
+    // flags every valid pattern (it contains '-' and ',') as an incorrect row,
+    // and the eventFilter then traps focus in the cell and consumes the table's
+    // events -- which presents as a freeze.  The pattern is structurally
+    // validated by process_extractspikes_stderiv when the pipeline runs.
+    if(column == 4)
+        return;
+
     QString group = groupTable->item(row,column)->text();
 
     if(isIncorrectRow){
