@@ -31,6 +31,7 @@
 
 #include "process_extractspikes_stderiv.h"
 #include "progressbar.h"      // BlockProgress - defrag-style stage progress
+#include "sdiff_pairs.h"      // shared SDIFF_CUSTOM pair-pattern parser
 
 #include <algorithm>
 #include <numeric>
@@ -72,6 +73,21 @@ static bool verbose         = false;
 // chunk so the t=0 temporal difference at the next chunk is continuous.
 static std::vector<short> g_prev_sdiff;
 
+// SDIFF_CUSTOM per-group, per-channel partner maps.  g_custom_partner[grp][ci]
+// is the within-group index that output channel ci of group grp is differenced
+// against, so s[ci] = x[ci] - x[partner[ci]].  Built once from the colon-separated
+// -P spec (one segment per group, aligned with -c).  A group with an empty
+// segment (or a map whose size != its channel count) has an empty/mismatched map
+// and falls back to SDIFF_ALLPAIRS, so mixed group sizes and probes are safe.
+static std::vector<std::vector<int> > g_custom_partner;
+
+// The partner map for group g, or an empty map when g carries no custom pattern.
+static const std::vector<int>& groupPartner(int g)
+{
+    static const std::vector<int> none;
+    return (g >= 0 && g < (int)g_custom_partner.size()) ? g_custom_partner[g] : none;
+}
+
 static const char *program_version = "process_extractspikes_stderiv 1.0";
 
 // =========================================================================
@@ -82,7 +98,8 @@ double computeSDiff(const short *record,
                     const int   *chanList,
                     int          idx,
                     int          nChanGrp,
-                    SdiffOrder   order)
+                    SdiffOrder   order,
+                    const std::vector<int>& customPartner)
 {
     const double val = record[chanList[idx]];
 
@@ -101,6 +118,12 @@ double computeSDiff(const short *record,
         if(idx == nChanGrp - 1) return val - record[chanList[nChanGrp - 2]];
         return val - 0.5 * (record[chanList[idx - 1]] +
                              record[chanList[idx + 1]]);
+
+    case SDIFF_CUSTOM:
+        if(nChanGrp > 1 && (int)customPartner.size() == nChanGrp)
+            return val - record[chanList[customPartner[idx]]];
+        // pattern does not fit this group -> fall through to ALLPAIRS
+        [[fallthrough]];
 
     case SDIFF_ALLPAIRS:
     default: {
@@ -168,7 +191,7 @@ static void fill_sdiff_buffer(const short *raw,
             for(int ci = 0; ci < nCG; ci++) {
                 double v = (order == SDIFF_NONE)
                              ? (double)rawRec[cList[ci]]
-                             : computeSDiff(rawRec, cList, ci, nCG, order);
+                             : computeSDiff(rawRec, cList, ci, nCG, order, groupPartner(g));
                 int iv = (int)round(v);
                 if(iv >  32767) iv =  32767;
                 if(iv < -32768) iv = -32768;
@@ -267,7 +290,7 @@ void computeSdiffThresholds(FILE       *fp,
                 const int *cList = channelList[g];
                 for(int ci = 0; ci < nCG; ci++)
                     absBuf[g][ci].push_back(
-                        fabs(computeSDiff(rec, cList, ci, nCG, order)));
+                        fabs(computeSDiff(rec, cList, ci, nCG, order, groupPartner(g))));
             }
         }
         samplesRead += gotSamples;
@@ -633,7 +656,12 @@ static void help(const char *name)
          << "  -B startByte    byte offset into .fil for noise window\n"
          << "  -Z sizeBytes    byte length of noise window\n\n"
          << "Spatial derivative:\n"
-         << "  -d order        0=none  1=first-diff  2=Laplacian  3=allpairs (default)\n\n"
+         << "  -d order        0=none  1=first-diff  2=Laplacian  3=allpairs (default)\n"
+         << "  -P g1:g2:...    custom per-group difference patterns.  Each group is\n"
+         << "                  a-b,c-d,... of 1-based within-group positions (output\n"
+         << "                  channel a = x[a]-x[b]); groups are colon-separated and\n"
+         << "                  aligned with -c.  An empty group segment (or a size that\n"
+         << "                  does not match the pattern) uses order 3 for that group.\n\n"
          << "Re-extract mode (patch86):\n"
          << "  -R              skip detection; read basename.res.<grp> instead\n"
          << "                  and re-extract waveforms at those exact timestamps,\n"
@@ -709,6 +737,9 @@ void parseArgs(int argc, char **argv, arguments &a)
                     }
                     a.sdiffOrder = static_cast<SdiffOrder>(o);
                     a.isSdiffOrderProvided = true; break; }
+        case 'P': g_custom_partner = parseSdiffPairsPerGroup(argv[++i]);
+                  a.sdiffOrder = SDIFF_CUSTOM;
+                  a.isSdiffOrderProvided = true; break;
         default:  cerr << "error: unknown option '" << argv[i] << "'." << endl;
                   exit(1);
         }
@@ -915,7 +946,7 @@ static int runFromRes(const arguments &args,
                     if(ord == SDIFF_NONE) {
                         v = (double)raw[ channelList[grp][ci] ];
                     } else {
-                        v = computeSDiff(raw, channelList[grp], ci, nCG, ord);
+                        v = computeSDiff(raw, channelList[grp], ci, nCG, ord, groupPartner(grp));
                     }
                     int iv = (int)round(v);
                     if(iv >  32767) iv =  32767;
@@ -1716,6 +1747,13 @@ int main(int argc, char *argv[])
                         else               sd = xPrev[ci]-0.5*(xPrev[ci-1]+xPrev[ci+1]);
                         break;
                     }
+                    case SDIFF_CUSTOM:
+                        if((int)groupPartner(grp).size() == nCG) {
+                            double xPrev[64] = {};
+                            for(int jj=0;jj<nCG;jj++) xPrev[jj]=frPrev[cL[jj]];
+                            sd = xPrev[ci] - xPrev[groupPartner(grp)[ci]]; break;
+                        }
+                        [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
                         double sum=0.0;
                         for(int jj=0;jj<nCG;jj++) sum+=frPrev[cL[jj]];
@@ -1743,6 +1781,11 @@ int main(int argc, char *argv[])
                         else if(ci==nCG-1) sd = row[ci]-row[nCG-2];
                         else               sd = row[ci]-0.5*(row[ci-1]+row[ci+1]);
                         break;
+                    case SDIFF_CUSTOM:
+                        if((int)groupPartner(grp).size() == nCG) {
+                            sd = row[ci] - row[groupPartner(grp)[ci]]; break;
+                        }
+                        [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
                         double sum=0.0;
                         for(int j=0;j<nCG;j++) sum+=row[j];
@@ -1804,6 +1847,11 @@ int main(int argc, char *argv[])
                         else if(ci==nCG-1) sd = val - rt[nCG-2];
                         else             sd = val - 0.5*(rt[ci-1]+rt[ci+1]);
                         break;
+                    case SDIFF_CUSTOM:
+                        if((int)groupPartner(grp).size() == nCG) {
+                            sd = val - rt[groupPartner(grp)[ci]]; break;
+                        }
+                        [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
                         double sum=0.0;
                         for(int j=0;j<nCG;j++) sum+=rt[j];
