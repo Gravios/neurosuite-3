@@ -25,7 +25,11 @@
 #include <string>
 #include <vector>
 
-inline std::vector<int> parseSdiffPairs(const char *spec)
+// When `ok` is non-null the parser never exits: any malformed input sets *ok=false
+// and returns an empty map (for GUI callers such as klusters, which must not abort
+// on a bad session string).  With ok==nullptr (the extractor's use) a malformed
+// pattern prints to stderr and exits, exactly as before.
+inline std::vector<int> parseSdiffPairs(const char *spec, bool *ok = nullptr)
 {
     std::vector<int> src, dst, partner;
     int maxPos = 0;
@@ -37,12 +41,14 @@ inline std::vector<int> parseSdiffPairs(const char *spec)
         if(!tok.empty()) {
             size_t dash = tok.find('-');
             if(dash == std::string::npos) {
+                if(ok) { *ok = false; return std::vector<int>(); }
                 std::cerr << "error: bad sdiffPairs token '" << tok << "' (want a-b).\n";
                 exit(1);
             }
             int a = atoi(tok.substr(0, dash).c_str());
             int b = atoi(tok.substr(dash + 1).c_str());
             if(a < 1 || b < 1 || a == b) {
+                if(ok) { *ok = false; return std::vector<int>(); }
                 std::cerr << "error: bad sdiffPairs token '" << tok << "'.\n";
                 exit(1);
             }
@@ -54,11 +60,15 @@ inline std::vector<int> parseSdiffPairs(const char *spec)
         if(c == std::string::npos) break;
         p = c + 1;
     }
-    if(src.empty()) { std::cerr << "error: empty sdiffPairs.\n"; exit(1); }
+    if(src.empty()) {
+        if(ok) { *ok = false; return std::vector<int>(); }
+        std::cerr << "error: empty sdiffPairs.\n"; exit(1);
+    }
 
     partner.assign(maxPos, -1);
     for(size_t k = 0; k < src.size(); k++) {
         if(partner[src[k]] != -1) {
+            if(ok) { *ok = false; return std::vector<int>(); }
             std::cerr << "error: sdiffPairs channel " << src[k] + 1
                       << " has two difference targets.\n";
             exit(1);
@@ -71,11 +81,13 @@ inline std::vector<int> parseSdiffPairs(const char *spec)
     for(int idx = 0; idx < maxPos; idx++)
         if(partner[idx] == -1) roots.push_back(idx);
     if(roots.size() != 1) {
+        if(ok) { *ok = false; return std::vector<int>(); }
         std::cerr << "error: sdiffPairs must form a spanning tree with exactly one "
                      "root; got " << roots.size() << " channels with no target.\n";
         exit(1);
     }
     if(roots[0] != maxPos - 1) {
+        if(ok) { *ok = false; return std::vector<int>(); }
         std::cerr << "error: sdiffPairs root channel " << roots[0] + 1
                   << " must be the last position (" << maxPos << ").\n";
         exit(1);
@@ -83,9 +95,13 @@ inline std::vector<int> parseSdiffPairs(const char *spec)
     int pred = -1;                                   // wire the root to a predecessor
     for(int j = 0; j < maxPos; j++)
         if(partner[j] == roots[0]) { pred = j; break; }
-    if(pred < 0) { std::cerr << "error: sdiffPairs root is disconnected.\n"; exit(1); }
+    if(pred < 0) {
+        if(ok) { *ok = false; return std::vector<int>(); }
+        std::cerr << "error: sdiffPairs root is disconnected.\n"; exit(1);
+    }
     partner[roots[0]] = pred;
 
+    if(ok) *ok = true;
     return partner;
 }
 

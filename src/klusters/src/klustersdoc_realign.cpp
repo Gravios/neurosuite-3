@@ -81,6 +81,7 @@
 #include "parameteryamlmodifier.h"
 #include "dipsplit.h"
 #include "parameteryamlreader.h"
+#include "sdiff_pairs.h"   // shared SDIFF_CUSTOM parser (noexit mode for the GUI)
 #include "clusteruserinformation.h"
 
 //C, C++ include files
@@ -583,10 +584,45 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // to all-pairs for a non-temporal-diff / invalid basis, which keeps every
     // existing stderiv session byte-identical and never reaches the transform with
     // a raw basis anyway.
-    const neurosuite::core::SdiffOrder stderivOrder =
+    neurosuite::core::SdiffOrder stderivOrder =
         neurosuite::core::hasTemporalDiff(pca.method)
             ? neurosuite::core::spatialOrder(pca.method)
             : neurosuite::core::SdiffOrder::AllPairs;
+
+    // A group extracted with a custom difference pattern has a basis whose
+    // method reports all-pairs (the PCAE cannot encode a pattern), so consult
+    // the session and reproject with the same per-channel operator the
+    // .spk/.fet were built with.  On any parse failure or channel-count
+    // mismatch we leave the basis order untouched (fall back to all-pairs)
+    // rather than misreproject or abort.
+    std::vector<int> stderivPartner;
+    if (isStderivRealign && !parameterFile.isEmpty()) {
+        ParameterYamlReader rdr;
+        if (rdr.parseFile(parameterFile)) {
+            QMap<int, QList<int> >             sgChans;
+            QMap<int, QMap<QString, QString> > sgInfo;
+            rdr.getSpikeDescription(d.getTotalNbChannels(), sgChans, sgInfo);
+            const QString pairs =
+                sgInfo.value(grpId.toInt()).value(QStringLiteral("sdiffPairs"));
+            if (!pairs.isEmpty()) {
+                bool ok = false;
+                std::vector<int> pm =
+                    parseSdiffPairs(pairs.toUtf8().constData(), &ok);
+                if (ok && static_cast<int>(pm.size()) == nChan) {
+                    stderivPartner = std::move(pm);
+                    stderivOrder   = neurosuite::core::SdiffOrder::Custom;
+                    log << "custom difference pattern for group " << grpId
+                        << ": " << pairs << "\n";
+                } else {
+                    log << "WARNING: group " << grpId << " sdiffPairs '"
+                        << pairs << "' did not parse to " << nChan
+                        << " channels; reprojecting with all-pairs\n";
+                }
+            }
+        }
+    }
+    const int* stderivPartnerPtr =
+        stderivPartner.empty() ? nullptr : stderivPartner.data();
 
     // -----------------------------------------------------------------------
     // Load cluster waveforms from binary .spk (int16, no header)
@@ -1181,7 +1217,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                                        + groupChannelsP82[ci]];
                     if (useStder)
                         neurosuite::core::applyStderivTransform(
-                            stderivOrder, wTgt, nChan, nSamp, wTgt);
+                            stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr);
                 }
                 gpuPathRan = true;
             } while (false);
@@ -1231,7 +1267,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                     // Spatial order from the basis; matches the disk-write block.
                     if (useStder)
                         neurosuite::core::applyStderivTransform(
-                            stderivOrder, candCM.data(), nChan, nSamp, candCM.data());
+                            stderivOrder, candCM.data(), nChan, nSamp, candCM.data(), stderivPartnerPtr);
 
                     // PCA projection energy — shared primitive in
                     // libneurosuite-core (same math the GPU kernel mirrors and
@@ -1285,7 +1321,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                                       + groupChannelsP82[ci])];
                         if (useStder)
                             neurosuite::core::applyStderivTransform(
-                                stderivOrder, wTgt, nChan, nSamp, wTgt);
+                                stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr);
                     }
                 }
                 return RefineResult::Refined;
@@ -1738,7 +1774,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             // .spk formats.
             if (spkIsTransformed)
                 neurosuite::core::applyStderivTransform(
-                    stderivOrder, verifyWav.data(), nChan, nSamp, verifyWav.data());
+                    stderivOrder, verifyWav.data(), nChan, nSamp, verifyWav.data(), stderivPartnerPtr);
 
             // Compare to wavBuf[csV * spkElems ..] which holds the .spk
             // contents in channel-major layout (same as verifyWav above).
@@ -1846,7 +1882,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                             // spkRow (sample-major, what .spkD stores) so wavBuf
                             // stays in stderiv space for xcorr and the two agree.
                             neurosuite::core::applyStderivTransform(
-                                stderivOrder, rawCM.data(), nChan, nSamp, w);
+                                stderivOrder, rawCM.data(), nChan, nSamp, w, stderivPartnerPtr);
                             for (int s = 0; s < nSamp; ++s)
                                 for (int ci = 0; ci < nChan; ++ci)
                                     spkRow[static_cast<size_t>(s * nChan + ci)] =
@@ -2549,12 +2585,37 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // above).  pca is valid here (we refused above otherwise); the ALLPAIRS
     // fallback only covers a non-temporal-diff method, which should not reach
     // this transform.
-    const int kSdiffOrder = neurosuite::core::hasTemporalDiff(pca.method)
+    int kSdiffOrder = neurosuite::core::hasTemporalDiff(pca.method)
         ? static_cast<int>(neurosuite::core::spatialOrder(pca.method))
         : 3;  // SDIFF_ALLPAIRS
+
+    // A custom difference pattern is not encoded in the basis method (which
+    // reports all-pairs), so consult the session; if this group carries one,
+    // switch to the custom operator (kSdiffOrder = 4) with the parsed partner
+    // map.  On parse failure or channel-count mismatch we keep the basis order.
+    std::vector<int> nudgePartner;
+    if (neurosuite::core::hasTemporalDiff(pca.method) && !parameterFile.isEmpty()) {
+        ParameterYamlReader rdr;
+        if (rdr.parseFile(parameterFile)) {
+            QMap<int, QList<int> >             sgChans;
+            QMap<int, QMap<QString, QString> > sgInfo;
+            rdr.getSpikeDescription(d.getTotalNbChannels(), sgChans, sgInfo);
+            const QString pairs = sgInfo.value(electrodeGroupID.toInt())
+                                      .value(QStringLiteral("sdiffPairs"));
+            if (!pairs.isEmpty()) {
+                bool ok = false;
+                std::vector<int> pm =
+                    parseSdiffPairs(pairs.toUtf8().constData(), &ok);
+                if (ok && static_cast<int>(pm.size()) == nChan) {
+                    nudgePartner = std::move(pm);
+                    kSdiffOrder  = 4;  // SDIFF_CUSTOM
+                }
+            }
+        }
+    }
     NS3_DIAG() << "[nudge] sdiffOrder=" << kSdiffOrder
                << " (from basis method=" << static_cast<int>(pca.method)
-               << "; 0=none 1=first 2=laplacian 3=allpairs)";
+               << "; 0=none 1=first 2=laplacian 3=allpairs 4=custom)";
 
     auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
                                      const std::vector<int16_t>& prevRaw,
@@ -2607,6 +2668,12 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                             ? (twoVal + 1) / 2
                             : -((-twoVal + 1) / 2);
                     }
+                    break; }
+                case 4: {  // SDIFF_CUSTOM - val minus partner-channel
+                    sd = nudgePartner.empty()
+                        ? val
+                        : val - wavCM[static_cast<size_t>(
+                              nudgePartner[static_cast<size_t>(ci)] * nSamp + s)];
                     break; }
                 case 3:  // SDIFF_ALLPAIRS — fall through (default)
                 default: {
@@ -2685,6 +2752,12 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                             ? (twoVal + 1) / 2
                             : -((-twoVal + 1) / 2);
                     }
+                    break; }
+                case 4: {  // SDIFF_CUSTOM
+                    sd = nudgePartner.empty()
+                        ? val
+                        : val - prevRaw[static_cast<size_t>(
+                              nudgePartner[static_cast<size_t>(ci)])];
                     break; }
                 case 3:  // SDIFF_ALLPAIRS (default)
                 default: {

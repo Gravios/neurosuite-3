@@ -42,7 +42,7 @@ inline int16_t clampToInt16(double v) {
 // `chanRow[0..nChan)`.  Byte-identical to
 // process_extractspikes_stderiv::computeSDiff (and the process_pca_stderiv copy).
 inline double spatialDeriv(SdiffOrder order, const double* chanRow,
-                           int idx, int nChan) {
+                           int idx, int nChan, const int* partner = nullptr) {
     const double val = chanRow[idx];
     switch (order) {
         case SdiffOrder::None:
@@ -55,6 +55,14 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
             if (idx == 0)          return val - chanRow[1];
             if (idx == nChan - 1)  return val - chanRow[nChan - 2];
             return val - 0.5 * (chanRow[idx - 1] + chanRow[idx + 1]);
+        case SdiffOrder::Custom:
+            // Per-channel custom difference: x[idx] - x[partner[idx]], where
+            // partner[] is the within-group index each output channel is
+            // differenced against (from the session's sdiffPairs).  Byte-identical
+            // to process_extractspikes_stderiv's SDIFF_CUSTOM case.  A null map (or
+            // single-channel group) falls back to pass-through so a caller that
+            // mislabels the order can never read out of bounds.
+            return (partner && nChan > 1) ? val - chanRow[partner[idx]] : val;
         case SdiffOrder::AllPairs:
         default: {
             // Single-channel group has no pairs; the extractor returns 0 here.
@@ -75,6 +83,7 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
 inline void applyStderivTransform(SdiffOrder order,
                                   const int16_t* in, int nChan, int nSamp,
                                   int16_t* out,
+                                  const int* partner = nullptr,
                                   const int16_t* prevSeed = nullptr) {
     std::vector<double>  row(static_cast<size_t>(nChan));
     std::vector<int16_t> prev(static_cast<size_t>(nChan));
@@ -86,7 +95,7 @@ inline void applyStderivTransform(SdiffOrder order,
             row[static_cast<size_t>(ci)] =
                 static_cast<double>(in[static_cast<size_t>(ci) * nSamp + t]);
         for (int ci = 0; ci < nChan; ++ci) {
-            const int16_t sd = clampToInt16(spatialDeriv(order, row.data(), ci, nChan));
+            const int16_t sd = clampToInt16(spatialDeriv(order, row.data(), ci, nChan, partner));
             const int diff = static_cast<int>(sd)
                            - static_cast<int>(prev[static_cast<size_t>(ci)]);
             prev[static_cast<size_t>(ci)] = sd;
