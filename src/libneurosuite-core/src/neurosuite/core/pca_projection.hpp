@@ -39,7 +39,7 @@ namespace core {
 
 // Spatial-derivative order (the extractor's SdiffOrder, kept here so callers
 // need not include the plugin header).
-enum class SdiffOrder : int32_t { None = 0, First = 1, Laplacian = 2, AllPairs = 3 };
+enum class SdiffOrder : int32_t { None = 0, First = 1, Laplacian = 2, AllPairs = 3, Custom = 4 };
 
 // The transform a basis was trained against — a single explicit method rather
 // than a (transform × order) cross-product, so an illegal combination cannot be
