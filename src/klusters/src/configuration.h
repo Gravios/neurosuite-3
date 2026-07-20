@@ -112,6 +112,7 @@ public:
     void setCurationLogging(bool b)       {curationLogging = b;}
     void setReorderDisplayOnly(bool b)    {reorderDisplayOnly = b;}
     void setRealignVerbose(bool b)        {realignVerbose = b;}
+    void setReextractSpikesOnSave(bool b) {reextractSpikesOnSave = b;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
     void setAutoUpdateMatricesAfterMerge(bool b) {autoUpdateMatricesAfterMerge = b;}
@@ -223,6 +224,7 @@ public:
     bool   getCurationLogging()   const {return curationLogging;}
     bool   getReorderDisplayOnly()const {return reorderDisplayOnly;}
     bool   getRealignVerbose()    const {return realignVerbose;}
+    bool   getReextractSpikesOnSave() const {return reextractSpikesOnSave;}
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
     bool   getAutoUpdateMatricesAfterMerge() const {return autoUpdateMatricesAfterMerge;}
@@ -317,6 +319,7 @@ public:
     bool   getCurationLoggingDefault()   const {return true;}
     bool   getReorderDisplayOnlyDefault()const {return false;}
     bool   getRealignVerboseDefault()    const {return false;}
+    bool   getReextractSpikesOnSaveDefault() const {return false;}
     bool   getAutoRealignAfterMergeDefault() const {return true;}
     bool   getAutoRenumberAfterMergeDefault() const {return true;}
     bool   getAutoUpdateMatricesAfterMergeDefault() const {return true;}
@@ -469,6 +472,7 @@ private:
     bool    curationLogging;   // record per-action curation audit snapshots
     bool    reorderDisplayOnly;// reorder-by-similarity: rearrange matrix display only, no cluster renumber
     bool    realignVerbose;    // stream per-spike realignment detail to stderr
+    bool    reextractSpikesOnSave;  // re-extract .spk from .fil at save (off)
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
     bool    autoUpdateMatricesAfterMerge;  // recompute error/template/residual matrices after each merge
