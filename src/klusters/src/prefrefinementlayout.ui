@@ -267,6 +267,19 @@
           </property>
          </widget>
         </item>
+          <item row="8" column="0">
+           <widget class="QCheckBox" name="reextractSpikesOnSaveCheckBox">
+            <property name="text">
+             <string>Re-extract spike waveforms from .fil on save</string>
+            </property>
+            <property name="toolTip">
+             <string>When saving, re-extract every spike waveform for the current group from the .fil at its current .res timestamp and rewrite the .spk, so the .spk stays consistent with the timestamps (e.g. after nudging / realigning). Applies the same spatial transform the feature space was built with, including a per-group custom difference pattern. Off by default; when on this rewrites the .spk on every save and costs one .fil pass over the group.</string>
+            </property>
+            <property name="checked">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
        </layout>
       </widget>
    </item>

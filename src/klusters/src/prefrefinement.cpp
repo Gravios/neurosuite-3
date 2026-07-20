@@ -29,6 +29,8 @@ void   PrefRefinement::setCurationLogging(bool b) { curationLoggingCheckBox->set
 bool   PrefRefinement::getCurationLogging() const { return curationLoggingCheckBox->isChecked(); }
 void   PrefRefinement::setRealignVerbose(bool b) { realignVerboseCheckBox->setChecked(b); }
 bool   PrefRefinement::getRealignVerbose() const { return realignVerboseCheckBox->isChecked(); }
+void   PrefRefinement::setReextractSpikesOnSave(bool b) { reextractSpikesOnSaveCheckBox->setChecked(b); }
+bool   PrefRefinement::getReextractSpikesOnSave() const { return reextractSpikesOnSaveCheckBox->isChecked(); }
 
 void   PrefRefinement::setErrorMatrixIncremental(bool b)  { errorMatrixIncrementalCheckBox->setChecked(b); }
 bool   PrefRefinement::getErrorMatrixIncremental() const  { return errorMatrixIncrementalCheckBox->isChecked(); }

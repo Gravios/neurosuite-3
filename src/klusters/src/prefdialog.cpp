@@ -255,6 +255,7 @@ void PrefDialog::updateDialog()
     prefRefinement->setCurationLogging(configuration().getCurationLogging());
     prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnly());
     prefRefinement->setRealignVerbose(configuration().getRealignVerbose());
+    prefRefinement->setReextractSpikesOnSave(configuration().getReextractSpikesOnSave());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMerge());
     prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMerge());
     prefRefinement->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMerge());
@@ -334,6 +335,7 @@ void PrefDialog::updateConfiguration()
     configuration().setCurationLogging(prefRefinement->getCurationLogging());
     configuration().setReorderDisplayOnly(prefSorting->getReorderDisplayOnly());
     configuration().setRealignVerbose(prefRefinement->getRealignVerbose());
+    configuration().setReextractSpikesOnSave(prefRefinement->getReextractSpikesOnSave());
     configuration().setAutoRealignAfterMerge(prefRefinement->getAutoRealignAfterMerge());
     configuration().setAutoRenumberAfterMerge(prefRefinement->getAutoRenumberAfterMerge());
     configuration().setAutoUpdateMatricesAfterMerge(prefRefinement->getAutoUpdateMatricesAfterMerge());
@@ -418,6 +420,7 @@ void PrefDialog::slotDefault()
     prefRefinement->setCurationLogging(configuration().getCurationLoggingDefault());
     prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnlyDefault());
     prefRefinement->setRealignVerbose(configuration().getRealignVerboseDefault());
+    prefRefinement->setReextractSpikesOnSave(configuration().getReextractSpikesOnSaveDefault());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMergeDefault());
     prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMergeDefault());
     prefRefinement->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMergeDefault());

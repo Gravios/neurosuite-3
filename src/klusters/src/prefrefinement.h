@@ -26,6 +26,8 @@ public:
     bool   getCurationLogging()   const;
     void   setRealignVerbose(bool b);
     bool   getRealignVerbose()    const;
+    void   setReextractSpikesOnSave(bool b);
+    bool   getReextractSpikesOnSave() const;
 
     // Auto-run spike alignment after each interactive merge
     void   setAutoRealignAfterMerge(bool b);
