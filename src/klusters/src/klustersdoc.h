@@ -1261,6 +1261,17 @@ private:
      *  unchanged when QFile::copy failed (e.g. NTFS permission issues). */
     bool commitAndRenewPending(QString* outError = nullptr);
 
+    /** Re-extract every spike of the current group from the raw .fil (or .dat)
+     *  at its current .res/.fet timestamp and rewrite @p targetSpkPath, so the
+     *  .spk stays consistent with the timestamps (e.g. after nudging/realigning).
+     *  Applies the same spatial transform the .spk was built with: raw for a
+     *  "standard" .spk, the stderiv transform (spatial order from the PCAE basis,
+     *  custom pattern from the session) for a "stderiv" .spk.  Any other method is
+     *  left untouched.  Writes a temp file and renames it over the target
+     *  (crash-safe, independent of the pending/commit path).  Returns false and
+     *  leaves the .spk unchanged on any error. */
+    bool reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut);
+
     /** Seed all four .pending files from their originals.
      *  Redirects spkFileName and tmpCluFile to the pending paths.
      *  Called on open, after commit (save), and after reject. */

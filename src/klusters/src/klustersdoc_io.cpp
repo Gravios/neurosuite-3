@@ -645,6 +645,24 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // Determine whether this is a Save (same URL) or SaveAs (new URL).
     const bool isSaveAs = (docUrl != saveUrl);
 
+    // Optional (Refinement preferences): rebuild the current group's .spk from the
+    // raw .fil at every spike's current timestamp before committing, so the .spk
+    // stays consistent with the .res/.fet (e.g. after nudging / realigning).  Off
+    // by default.  Writes the reader's .spk -- the pending copy when a pending set
+    // is live -- which commitAndRenewPending below then promotes to the original,
+    // so no extra re-seed is needed.  Plain Save only (SaveAs of the waveform
+    // triple is a separate step) and non-fatal: on failure the existing .spk is
+    // left in place and the save proceeds.
+    if (!isSaveAs && clusteringData
+        && configuration().getReextractSpikesOnSave()) {
+        QString reLog;
+        const bool reOk =
+            reextractAllSpikesFromFil(clusteringData->getSpkFileName(), reLog);
+        qWarning().noquote()
+            << "[saveDocument]" << (reOk ? "re-extract:" : "re-extract FAILED:")
+            << reLog;
+    }
+
     // For a regular Save:  write clu to the pending clu file (crash-safe).
     // For a SaveAs:        write directly to the new URL (no pending for it).
     // tmpCluFile is the session's clu write target: the real .clu at open, redirected to

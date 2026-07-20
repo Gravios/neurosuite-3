@@ -3442,3 +3442,173 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     return true;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KlustersDoc::reextractAllSpikesFromFil
+//
+// Full rebuild of the current group's .spk from the raw .fil/.dat at every
+// spike's current .res/.fet timestamp.  Reuses the realign read→transform→write
+// pattern: read the peak-aligned window (sample-major on disk), gather the group
+// channels channel-major, apply the .spk's spatial transform, transpose back to
+// sample-major, write.  A "standard" .spk is raw (no transform); a "stderiv" .spk
+// uses the spatial order carried by the PCAE basis, overridden to the custom
+// per-channel operator when the session carries an sdiffPairs pattern (same rule
+// as realignSpikes / nudgeClusterTimestamps).  Writes a temp file + rename so a
+// crash can never leave a half-written .spk.
+// ─────────────────────────────────────────────────────────────────────────────
+bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut)
+{
+    logOut.clear();
+    if (!clusteringData) return false;
+    QTextStream log(&logOut);
+
+    const int     nChan       = clusteringData->nbOfChannels();
+    const int     nSamp       = clusteringData->nbSamplesPerWaveform();
+    const int     peakSamp0   = clusteringData->peakSampleIndex() - 1;  // 0-based
+    const int     totalNbChan = clusteringData->getTotalNbChannels();
+    const int     timeDim     = clusteringData->timeDimension();
+    const QList<int>& groupChannels = clusteringData->getCurrentChannels();
+    const int64_t nSpikes     = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+    if (nChan < 1 || nSamp < 1 || totalNbChan < 1 || nSpikes < 1
+        || groupChannels.size() < nChan) {
+        log << "re-extract: nothing to do (empty / inconsistent group)";
+        return false;
+    }
+
+    // Only the two waveform storages we can reproduce byte-for-byte.
+    const QString spkMethod = featureMethod(targetSpkPath);
+    const bool spkIsStderiv  = (spkMethod == QLatin1String("stderiv"));
+    const bool spkIsStandard = (spkMethod == QLatin1String("standard"));
+    if (!spkIsStderiv && !spkIsStandard) {
+        log << "re-extract: unsupported .spk method '" << spkMethod
+            << "' — .spk left unchanged";
+        return false;
+    }
+
+    const QString dir   = documentDirectory();
+    const QString base  = documentBaseName();
+    const QString grpId = currentElectrodeGroupID();
+
+    QString filPath = dir + QLatin1Char('/') + base + QStringLiteral(".fil");
+    if (!QFileInfo::exists(filPath))
+        filPath = dir + QLatin1Char('/') + base + QStringLiteral(".dat");
+    FILE* filF = std::fopen(filPath.toLocal8Bit().constData(), "rb");
+    if (!filF) { log << "re-extract: cannot open raw file " << filPath; return false; }
+    const int64_t totalSamples =
+        static_cast<int64_t>(QFileInfo(filPath).size())
+        / (static_cast<int64_t>(sizeof(short)) * totalNbChan);
+
+    // Spatial transform for a stderiv .spk: order from the basis, custom pattern
+    // from the session (identical determination to realignSpikes/nudge).
+    neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
+    std::vector<int> partner;
+    if (spkIsStderiv) {
+        const QString pcaPath = resolveFeature(dir + QLatin1Char('/') + base,
+                                               QStringLiteral("pca"), grpId,
+                                               QStringLiteral("stderiv"));
+        neurosuite::core::PcaBasis pca;
+        if (QFileInfo::exists(pcaPath)
+            && neurosuite::core::loadPca(pcaPath.toStdString(), pca)
+            && neurosuite::core::hasTemporalDiff(pca.method))
+            order = neurosuite::core::spatialOrder(pca.method);
+        if (!parameterFile.isEmpty()) {
+            ParameterYamlReader rdr;
+            if (rdr.parseFile(parameterFile)) {
+                QMap<int, QList<int> >             sgChans;
+                QMap<int, QMap<QString, QString> > sgInfo;
+                rdr.getSpikeDescription(totalNbChan, sgChans, sgInfo);
+                const QString pairs = sgInfo.value(grpId.toInt())
+                                          .value(QStringLiteral("sdiffPairs"));
+                if (!pairs.isEmpty()) {
+                    bool ok = false;
+                    std::vector<int> pm =
+                        parseSdiffPairs(pairs.toUtf8().constData(), &ok);
+                    if (ok && static_cast<int>(pm.size()) == nChan) {
+                        partner = std::move(pm);
+                        order   = neurosuite::core::SdiffOrder::Custom;
+                    }
+                }
+            }
+        }
+    }
+    const int* partnerPtr = partner.empty() ? nullptr : partner.data();
+
+    const QString tmpPath = targetSpkPath + QStringLiteral(".reextract.tmp");
+    FILE* out = std::fopen(tmpPath.toLocal8Bit().constData(), "wb");
+    if (!out) {
+        std::fclose(filF);
+        log << "re-extract: cannot open temp file " << tmpPath;
+        return false;
+    }
+
+    const int spkElems = nChan * nSamp;
+    std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp) * totalNbChan);
+    std::vector<int16_t> wavCM(static_cast<size_t>(nChan) * nSamp);
+    std::vector<int16_t> spkRow(static_cast<size_t>(spkElems));
+    int64_t written = 0, outOfRange = 0;
+    bool writeErr = false;
+
+    for (int64_t i = 1; i <= nSpikes && !writeErr; ++i) {
+        const int64_t ts          = static_cast<int64_t>(clusteringData->featureValue(i, timeDim));
+        const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
+        bool got = false;
+        if (startSample >= 0 && startSample + nSamp <= totalSamples) {
+            const off_t rawOff = static_cast<off_t>(startSample)
+                               * static_cast<off_t>(totalNbChan)
+                               * static_cast<off_t>(sizeof(short));
+            if (fseeko(filF, rawOff, SEEK_SET) == 0
+                && std::fread(rawFrame.data(), sizeof(short),
+                              rawFrame.size(), filF) == rawFrame.size())
+                got = true;
+        }
+        if (got) {
+            for (int s = 0; s < nSamp; ++s)
+                for (int ci = 0; ci < nChan; ++ci)
+                    wavCM[static_cast<size_t>(ci) * nSamp + s] =
+                        rawFrame[static_cast<size_t>(s) * totalNbChan
+                                 + groupChannels[ci]];
+            if (spkIsStderiv)
+                neurosuite::core::applyStderivTransform(
+                    order, wavCM.data(), nChan, nSamp, wavCM.data(), partnerPtr);
+            for (int s = 0; s < nSamp; ++s)
+                for (int ch = 0; ch < nChan; ++ch)
+                    spkRow[static_cast<size_t>(s) * nChan + ch] =
+                        wavCM[static_cast<size_t>(ch) * nSamp + s];
+        } else {
+            std::fill(spkRow.begin(), spkRow.end(), static_cast<int16_t>(0));
+            ++outOfRange;
+        }
+        if (std::fwrite(spkRow.data(), sizeof(int16_t),
+                        static_cast<size_t>(spkElems), out)
+            != static_cast<size_t>(spkElems))
+            writeErr = true;
+        ++written;
+    }
+
+    std::fclose(filF);
+    if (std::fclose(out) != 0) writeErr = true;
+
+    if (writeErr) {
+        QFile::remove(tmpPath);
+        log << "re-extract: write error after " << written
+            << " spikes; .spk left unchanged";
+        return false;
+    }
+
+    // Atomically replace the target .spk.  std::rename overwrites in place on a
+    // single filesystem (tmp is a sibling of the target), so a failure leaves the
+    // original .spk untouched rather than deleting it first.
+    if (std::rename(tmpPath.toLocal8Bit().constData(),
+                    targetSpkPath.toLocal8Bit().constData()) != 0) {
+        QFile::remove(tmpPath);
+        log << "re-extract: could not install rebuilt .spk over " << targetSpkPath
+            << " (original left in place)";
+        return false;
+    }
+
+    log << "re-extracted " << (written - outOfRange) << " / " << nSpikes
+        << " spikes (" << spkMethod << ") from " << filPath;
+    if (outOfRange)
+        log << "; " << outOfRange << " window(s) out of range → zeroed";
+    return true;
+}
