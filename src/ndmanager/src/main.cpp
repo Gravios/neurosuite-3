@@ -106,12 +106,27 @@ int main(int argc, char **argv)
             qInfo() << "ndmanager: no argument given, opening" << url;
             manager->openDocumentFile(url);
         } else if (yamls.size() > 1) {
-            qWarning() << "ndmanager: no argument given and"
-                       << yamls.size()
-                       << "candidate .yaml files in" << QDir::currentPath();
-            qWarning() << "  pass one explicitly:";
+            // Multiple candidates: prefer the file whose base name matches the
+            // session directory (foo/foo.yaml), the canonical parameter file.
+            const QString stem = QDir::current().dirName();
+            QString match;
             for (const QString& y : yamls) {
-                qWarning().noquote() << "    ndmanager " << y;
+                if (QFileInfo(y).completeBaseName() == stem) { match = y; break; }
+            }
+            if (!match.isEmpty()) {
+                const QString url = QDir::currentPath() + QDir::separator() + match;
+                qInfo() << "ndmanager: no argument given," << yamls.size()
+                        << "candidates; opening the one matching the directory:" << url;
+                manager->openDocumentFile(url);
+            } else {
+                qWarning() << "ndmanager: no argument given and"
+                           << yamls.size()
+                           << "candidate .yaml files in" << QDir::currentPath()
+                           << "(none match the directory name" << stem << ")";
+                qWarning() << "  pass one explicitly:";
+                for (const QString& y : yamls) {
+                    qWarning().noquote() << "    ndmanager " << y;
+                }
             }
         }
     }
