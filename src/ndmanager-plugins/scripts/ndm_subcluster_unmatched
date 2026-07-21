@@ -27,11 +27,9 @@
 #//   shadowcluster entirely.
 #//
 #//   Pipeline-aware extension detection:
-#//     - Reads from .fetD.N if present (stderiv / sdiffOrder ∈ {1, 3}
-#//       pipeline), otherwise from .fet.N (raw pipeline).  This matches
-#//       the convention established by ndm_reextractspikes.  .clu.N
-#//       and .res.N are canonical (no D
-#//       variant).
+#//     - Reads .fet.<method>.N and .clu.<method>.N (ndm_method_path resolves
+#//       the dotted name written by ndm_reextractspikes, falling back to the
+#//       canonical form for the standard pipeline).
 #//     - Sandbox output is ALWAYS written as .fet (not .fetD) regardless
 #//       of the input variant, because KlustaKwik hard-codes the .fet
 #//       extension when reading (klustakwik/KK.cpp:117).  There's no
@@ -85,14 +83,35 @@
 source ndm_functions
 
 program=$(basename "$0")
-if [ $# -gt 2 ]; then
-    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+# Method selects the dotted artifact names (.clu.<method>.N / .fet.<method>.N /
+# .shadowmark.<method>.N) written by ndm_reextractspikes, so the sub-cluster
+# reads exactly what the shadow-merge produced.
+positionals=()
+methodOverride=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --method)    methodOverride="$2";      shift 2 ;;
+        --method=*)  methodOverride="${1#*=}"; shift ;;
+        -*)          echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
+        *)           positionals+=("$1");      shift ;;
+    esac
+done
+if [ ${#positionals[@]} -gt 2 ]; then
+    echo_error "usage: $program [parameter-file] [electrodeGroup] [--method M]"
     exit $GENERAL_ERROR
 fi
-ndm_resolve_session "$@"
-[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+ndm_resolve_session "${positionals[@]}"
+[ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
 param_ext=$(param_file_ext "$session")
-electrodeGroup=$2
+electrodeGroup=${positionals[1]:-}
+
+method=$methodOverride
+[ -z "$method" ] && method=$(read_script_parameter $session method)
+method=${method:-standard}
+case "$method" in
+    standard|sdiff|stderiv) : ;;
+    *) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
+esac
 
 print_header "$session - Re-cluster unmatched bin from shadow-cluster merge"
 
@@ -105,19 +124,20 @@ if [ "$nElectrodeGroups" -eq 0 ]; then
 fi
 
 # ////////////////////////////////////////////////////////////////////////////
-# //  Helper: extract unmatched rows from .fet OR .fetD into a sandbox
-# //  .fet file (output is always .fet because KlustaKwik hard-codes that
-# //  extension when reading its input).
+# //  Helper: extract unmatched rows from the .fet.<method>.N file into a
+# //  sandbox .fet file (output is always plain .fet because KlustaKwik
+# //  hard-codes that extension when reading its input).
 # //
-# //  The .fet.N / .fetD.N format is identical:
+# //  The .fet.N format is:
 # //    int32 nDims header; then nSpikes × nDims × int64 rows.
 # //  The .clu.N format is:
 # //    int32 nClusters header; then nSpikes × int32 IDs.
 # //  The two files are row-aligned (same index).
 # //
 # //  Caller passes:
-# //    fetExt        ∈ {"fet","fetD"} — which variant to read from
-# //    unmatchedId   the bin id taken from $session.shadowmark.<g>
+# //    cluFile       resolved .clu.<method>.N (ndm_method_path)
+# //    fetFile       resolved .fet.<method>.N (ndm_method_path)
+# //    unmatchedId   the bin id taken from $session.shadowmark.<method>.<g>
 # //                  (NOT inferred from max(clu_ids); see the rationale
 # //                  in once() below)
 # //
@@ -130,22 +150,20 @@ extract_unmatched()
 {
     local group=$1
     local sandboxStem=$2
-    local fetExt=$3       # "fet" or "fetD"
-    local unmatchedId=$4  # authoritative id from the shadowmark sidecar
+    local cluFile=$3      # resolved dotted .clu.<method>.N
+    local fetFile=$4      # resolved dotted .fet.<method>.N
+    local unmatchedId=$5  # authoritative id from the shadowmark sidecar
 
-    python3 - "$session" "$group" "$sandboxStem" "$fetExt" "$unmatchedId" <<'PYEOF'
+    python3 - "$group" "$sandboxStem" "$cluFile" "$fetFile" "$unmatchedId" <<'PYEOF'
 import struct, sys, os
-session, group, sandboxStem, fetExt, unmatched_id = (
+group, sandboxStem, clu_path, fet_path, unmatched_id = (
     sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))
 
-# .clu.N is canonical (no D variant, per the shadowcluster convention
-# established in reextract rev 1+).  Feature file is the .fetExt variant
-# — could be .fet or .fetD depending on whether the sort ran through
-# the raw or stderiv pipeline.  KlustaKwik, however, hard-codes .fet
-# when reading (klustakwik/KK.cpp:117), so the sandbox OUTPUT must
-# always be .fet regardless of input.
-clu_path = f"{session}.clu.{group}"
-fet_path = f"{session}.{fetExt}.{group}"
+# clu_path and fet_path are the resolved dotted .clu.<method>.N and
+# .fet.<method>.N (passed in by the caller via ndm_method_path).  They
+# are row-aligned.  KlustaKwik hard-codes .fet when reading
+# (klustakwik/KK.cpp:117), so the sandbox OUTPUT is always plain .fet
+# regardless of the input method.
 out_fet  = f"{sandboxStem}.fet.{group}"
 
 with open(clu_path, "rb") as f:
@@ -207,13 +225,13 @@ merge_subcluster()
 {
     local group=$1
     local sandboxStem=$2
-    local unmatchedId=$3
+    local cluFile=$3
+    local unmatchedId=$4
 
-    python3 - "$session" "$group" "$sandboxStem" "$unmatchedId" <<'PYEOF'
+    python3 - "$group" "$sandboxStem" "$cluFile" "$unmatchedId" <<'PYEOF'
 import struct, sys
-session, group, sandboxStem, unmatched_id = \
+group, sandboxStem, live_clu, unmatched_id = \
     sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
-live_clu = f"{session}.clu.{group}"
 sub_clu  = f"{sandboxStem}.clu.{group}"
 
 with open(live_clu, "rb") as f:
@@ -272,23 +290,15 @@ once()
 {
     local group=$1
 
-    # .clu.N is canonical (no D variant); .param_ext is the session yaml.
-    inputs_missing "$session.$param_ext" \
-                   "$session.clu.$group" \
+    # Method-tagged artifacts, matching what ndm_reextractspikes wrote:
+    # .clu.<method>.N and .fet.<method>.N (ndm_method_path resolves the dotted
+    # name, falling back to the canonical form for the standard pipeline).
+    local cluFile=$(ndm_method_path "$session" clu "$group" "$method")
+    local fetFile=$(ndm_method_path "$session" fet "$group" "$method")
+    inputs_missing "$session.$param_ext" "$cluFile" \
         && return $INPUTS_MISSING
-
-    # Feature file: prefer the stderiv variant (.fetD) then fall back to
-    # raw (.fet).  ndm_pca_stderiv writes .fetD for sdiffOrder ∈ {1, 3}
-    # pipelines; ndm_pca writes .fet for the standard raw pipeline.  The
-    # shadowcluster merge (rev 6 onward) leaves whichever extension the
-    # sort was performed in, so the sub-clustering must honour the same.
-    local fetExt
-    if   [ -f "$session.fetD.$group" ]; then
-        fetExt=fetD
-    elif [ -f "$session.fet.$group" ]; then
-        fetExt=fet
-    else
-        echo_warning "  group $group: no .fet or .fetD — skipping"
+    if [ ! -f "$fetFile" ]; then
+        echo_warning "  group $group: no $fetFile — skipping"
         return $INPUTS_MISSING
     fi
 
@@ -308,7 +318,7 @@ once()
     # here is the residual bin".  If absent, we skip — the operator
     # should re-run ndm_reextractspikes / _stderiv to (re)produce the
     # sidecar before sub-clustering.
-    local markFile="$session.shadowmark.$group"
+    local markFile="$session.shadowmark.$method.$group"
     if [ ! -f "$markFile" ]; then
         echo_info "  group $group: no $markFile — shadowcluster did not run on this group; skipping"
         return $NO_ERROR
@@ -330,8 +340,8 @@ once()
     # Idempotence: if we've already sub-clustered this group, the backup
     # .clu.$group.bak-sub exists.  Don't re-process — the operator can
     # rm the .bak-sub to force a re-run.
-    if [ -f "$session.clu.$group.bak-sub" ]; then
-        echo_info "  group $group: .clu.$group.bak-sub exists — skipping"
+    if [ -f "$cluFile.bak-sub" ]; then
+        echo_info "  group $group: $cluFile.bak-sub exists — skipping"
         echo_info "    (remove the .bak-sub file to force a re-sub-cluster)"
         return $OUTPUTS_EXIST
     fi
@@ -339,9 +349,9 @@ once()
     local sandboxStem=$session-unmatched-$group
 
     # Clean any stragglers from a previous aborted run.  Sandbox output is
-    # always .fet (not .fetD) because KlustaKwik hard-codes .fet — no
-    # consumer reads .fetD.  The extractor below writes {sandbox}.fet.{g}
-    # regardless of whether input was .fet.{g} or .fetD.{g}.  The yaml
+    # always .fet because KlustaKwik hard-codes that extension.  The
+    # extractor below writes {sandbox}.fet.{g} regardless of the input
+    # method (.fet.<method>.{g}).  The yaml
     # symlink (for KK's session-param auto-detection) is also cleaned
     # so a stale dangling link does not poison this run.
     rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group" \
@@ -351,7 +361,7 @@ once()
     # Pass 1: extract unmatched rows to sandbox .fet using the unmatched
     # id supplied by the shadowmark sidecar.
     local nUnmatched
-    nUnmatched=$(extract_unmatched "$group" "$sandboxStem" "$fetExt" "$unmatchedId")
+    nUnmatched=$(extract_unmatched "$group" "$sandboxStem" "$cluFile" "$fetFile" "$unmatchedId")
     if [ -z "$nUnmatched" ]; then
         echo_info "  group $group: shadowmark unmatched_id=$unmatchedId not present in live .clu — skipping"
         echo_info "    (group may have been hand-edited since the shadow merge)"
@@ -359,7 +369,7 @@ once()
         return $NO_ERROR
     fi
 
-    echo_info "  group $group: unmatched cluster id=$unmatchedId, $nUnmatched spikes (read from .$fetExt.$group)"
+    echo_info "  group $group: unmatched cluster id=$unmatchedId, $nUnmatched spikes (read from $fetFile)"
 
     # Pass 2: KlustaKwik on the sandbox stem.  Uses the same three-tier
     # parameter resolution as ndm_klustakwik by delegating through that
@@ -589,22 +599,22 @@ PYEOF
     unset OMP_NUM_THREADS OMP_WAIT_POLICY
 
     if [ $kk_status -ne 0 ]; then
-        echo_error "  group $group: KlustaKwik on unmatched bin failed (exit $kk_status); live .clu.$group untouched"
+        echo_error "  group $group: KlustaKwik on unmatched bin failed (exit $kk_status); live $cluFile untouched"
         rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group"
         return $kk_status
     fi
 
     if [ ! -s "$sandboxStem.clu.$group" ]; then
-        echo_error "  group $group: KlustaKwik produced empty .clu.$group; live .clu.$group untouched"
+        echo_error "  group $group: KlustaKwik produced empty .clu.$group; live $cluFile untouched"
         rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group"
         return $GENERAL_ERROR
     fi
 
     # Pass 3: backup live .clu, then merge sandbox IDs back with offset.
     # Atomic through temp-write + rename inside merge_subcluster.
-    cp "$session.clu.$group" "$session.clu.$group.bak-sub"
+    cp "$cluFile" "$cluFile.bak-sub"
     local merge_report
-    merge_report=$(merge_subcluster "$group" "$sandboxStem" "$unmatchedId")
+    merge_report=$(merge_subcluster "$group" "$sandboxStem" "$cluFile" "$unmatchedId")
     echo_info "  group $group: $merge_report"
 
     # Cleanup sandbox.
