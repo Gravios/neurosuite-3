@@ -2228,42 +2228,6 @@ $session.{res,spk,fet,clu}.N files with shadow cluster IDs paired to
 existing clusters.</help>
   </program>
   <program>
-   <n>ndm_reextractspikes_stderiv</n>
-   <parameters>
-    <parameter>
-     <n>reextractThresholdFactor</n>
-     <value>0.75</value>
-     <status>Optional</status>
-    </parameter>
-    <parameter>
-     <n>reextractMaskHalfWidth</n>
-     <value></value>
-     <status>Optional</status>
-    </parameter>
-    <parameter>
-     <n>reextractMinClusterSize</n>
-     <value>50</value>
-     <status>Optional</status>
-    </parameter>
-    <parameter>
-     <n>reextractChi2</n>
-     <value>0.9999</value>
-     <status>Optional</status>
-    </parameter>
-    <parameter>
-     <n>reextractExtraFeat</n>
-     <value>auto</value>
-     <status>Optional</status>
-    </parameter>
-   </parameters>
-   <help>Second-pass spike detection (stderiv variant) with in-place shadow clustering.
-
-Same shadow-clustering parameters as ndm_reextractspikes, but detection
-runs on the spatial + temporal first-difference signal.  Inherits
-thresholdFactor, refractoryPeriod, peakSearchLength, start, duration,
-sdiffOrder from ndm_extractspikes_stderiv.</help>
-  </program>
-  <program>
    <n>ndm_lfp</n>
    <parameters>
     <parameter>

@@ -1768,68 +1768,7 @@ programs:
 
     SEE ALSO
 
-      ndm_reextractspikes_stderiv — spatial+temporal derivative variant
       ndm_redetectspikes          — residual-dat re-detection pipeline
-      ndm_subcluster_unmatched    — re-cluster the unmatched bin
-
-- name: ndm_reextractspikes_stderiv
-  parameters:
-    - name: reextractThresholdFactor
-      value: 0.75
-      status: Optional
-    - name: reextractMaskHalfWidth
-      value: ''
-      status: Optional
-    - name: reextractMinClusterSize
-      value: 50
-      status: Optional
-    - name: reextractChi2
-      value: 0.999
-      status: Optional
-    - name: reextractExtraFeat
-      value: 'auto'
-      status: Optional
-    - name: reextractInflationRatio
-      value: 5.0
-      status: Optional
-    - name: reextractInflationCap
-      value: 500
-      status: Optional
-    - name: reextractAutoSubcluster
-      value: 0
-      status: Optional
-  help: |-
-    Second-pass spike detection variant that runs threshold detection on
-    the spatial-derivative + temporal first-difference signal (matching
-    ndm_extractspikes_stderiv), then applies in-place shadow-cluster
-    assignment.
-
-    Thresholds are computed internally from the stderiv signal over the
-    [start, start+duration) window using the Quiroga (2004) robust
-    formula:  thr = thresholdFactor * 4 * median(|stderiv|) / 0.6745.
-    Waveform extraction writes stderiv-transformed amplitudes so
-    downstream PCA / feature projection sees the same signal space as
-    ndm_extractspikes_stderiv's .spkD.N output.
-
-    Inherits thresholdFactor, refractoryPeriod, peakSearchLength, start,
-    duration, and sdiffOrder from ndm_extractspikes_stderiv.  The
-    shadow-clustering parameters are identical to ndm_reextractspikes;
-    see that program for details on reextractChi2, the inflation guard
-    (reextractInflationRatio / reextractInflationCap), and
-    reextractAutoSubcluster.
-
-    OUTPUT
-
-      Merges in-place into $session.{res,spk,fet,clu}.N.  Originals
-      preserved at $session.<ext>.<N>.bak on first run.  A
-      $session.shadowmark.<N> sidecar is written for every merged
-      group; see ndm_reextractspikes (OUTPUT block) for the contract
-      with ndm_subcluster_unmatched.
-
-    SEE ALSO
-
-      ndm_reextractspikes         — raw-signal variant
-      ndm_extractspikes_stderiv   — first-pass stderiv detector
       ndm_subcluster_unmatched    — re-cluster the unmatched bin
 
 - name: ndm_subcluster_unmatched
@@ -1923,7 +1862,7 @@ programs:
       status: Optional
   help: |-
     Re-cluster the "unmatched" bin produced by process_shadowcluster
-    (via ndm_reextractspikes / ndm_reextractspikes_stderiv).
+    (via ndm_reextractspikes with method: stderiv).
 
     After a re-extraction pass, each group's .clu.N contains the
     original cluster IDs plus:
@@ -2081,7 +2020,7 @@ programs:
     SEE ALSO
 
       ndm_reextractspikes          — raw-signal re-extraction
-      ndm_reextractspikes_stderiv  — stderiv re-extraction
+      ndm_reextractspikes (method: stderiv)  — stderiv re-extraction
       ndm_klustakwik               — primary sort + parameter reference
 
 - name: ndm_lfp

@@ -3,7 +3,7 @@
 #//
 #//   Re-cluster the "unmatched" bin produced by process_shadowcluster.
 #//
-#//   After a ndm_reextractspikes / ndm_reextractspikes_stderiv run,
+#//   After a ndm_reextractspikes run (any method),
 #//   each group's .clu.N contains the original cluster IDs plus:
 #//     - shadow(k) = maxExistingId + 1 + k    (new spikes gated into
 #//                   cluster k by robust Mahalanobis distance)
@@ -29,8 +29,8 @@
 #//   Pipeline-aware extension detection:
 #//     - Reads from .fetD.N if present (stderiv / sdiffOrder ∈ {1, 3}
 #//       pipeline), otherwise from .fet.N (raw pipeline).  This matches
-#//       the convention established by ndm_reextractspikes_stderiv and
-#//       ndm_reextractspikes.  .clu.N and .res.N are canonical (no D
+#//       the convention established by ndm_reextractspikes.  .clu.N
+#//       and .res.N are canonical (no D
 #//       variant).
 #//     - Sandbox output is ALWAYS written as .fet (not .fetD) regardless
 #//       of the input variant, because KlustaKwik hard-codes the .fet

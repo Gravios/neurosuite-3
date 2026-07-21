@@ -123,9 +123,6 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         { "ndm_reextractspikes", "Reextract Spikes", "2nd-pass detection + shadow clustering", "postprocess", "spikes",
           {{ "reextractThresholdFactor","0.75","Optional" }, { "reextractMinClusterSize","50","Optional" },
            { "reextractChi2","0.999","Optional" }, { "reextractAutoSubcluster","0","Optional" }} },
-        { "ndm_reextractspikes_stderiv", "Reextract (StDeriv)", "2nd-pass with stderiv detection", "postprocess", "spikes",
-          {{ "reextractThresholdFactor","0.75","Optional" }, { "reextractMinClusterSize","50","Optional" },
-           { "reextractChi2","0.999","Optional" }} },
         { "ndm_subcluster_unmatched", "Subcluster Unmatched", "Re-cluster the unmatched bin", "postprocess", "spikes",
           {{ "minClusters","2","Optional" }, { "maxClusters","100","Optional" }, { "penaltyMix","0.25","Optional" }} },
         { "ndm_stripdat", "Strip DAT", "Remove sorted spikes from .dat", "postprocess", "spikes",
@@ -840,7 +837,7 @@ PipelineDesignerPage::PipelineDesignerPage(QWidget* parent) : QWidget(parent)
     presetCombo->addItem(tr("Full pipeline (D + reextract + drift + LFP)"),
         QVariant(QStringList{"ndm_hipass","ndm_denoiseuniform","ndm_extractspikes_stderiv",
                               "ndm_alignspikes","ndm_pca","ndm_klustakwik",
-                              "ndm_reextractspikes_stderiv","ndm_subcluster_unmatched",
+                              "ndm_reextractspikes","ndm_subcluster_unmatched",
                               "ndm_estimatedrift","ndm_decomposecollisions","ndm_lfp"}));
     connect(presetCombo, QOverload<int>::of(&QComboBox::activated),
             this, &PipelineDesignerPage::onPresetChanged);

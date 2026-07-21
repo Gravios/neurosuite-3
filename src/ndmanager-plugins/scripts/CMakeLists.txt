@@ -52,7 +52,6 @@ install(PROGRAMS
     # .spk / .fet / .pca.  Both commit atomically via a sandbox --out
     # stem and preserve .bak backups of the pre-merge files.
     ndm_reextractspikes
-    ndm_reextractspikes_stderiv
     # Re-cluster the unmatched residual bin left by process_shadowcluster.
     # Runs KlustaKwik on just the .fet rows whose .clu == unmatched_id,
     # then merges sub-cluster IDs back into the live .clu with an offset
