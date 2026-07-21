@@ -24,7 +24,7 @@ the spike count. Tune for your noise floor.) The new `.res` and shared
 ### 2. Run shadow-clustered re-extraction
 
 ```sh
-ndm_reextractspikes_stderiv session.yaml
+ndm_reextractspikes session.yaml --method stderiv
 ```
 
 This is the key step. For each new spike:
