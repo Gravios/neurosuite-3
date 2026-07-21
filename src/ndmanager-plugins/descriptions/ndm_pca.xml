@@ -18,6 +18,21 @@
     <value>true</value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>varimax</name>
+    <value>false</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>varimaxMaxIter</name>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>varimaxTol</name>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Compute principal component analysis (PCA).
 
@@ -37,6 +52,18 @@ Number of samples after the peak to use for the PCA. This can be either a space-
 
 # extra
 
-Whether extra features (spike peak value) should be included in the output files.</help>
+Whether extra features (spike peak value) should be included in the output files.
+
+# varimax
+
+Apply a Varimax rotation to each channel's kept PCA components before projection (default false). Total explained variance is unchanged, but each rotated component tends to localise on a few waveform samples, which can make cluster structure easier to read during manual sorting. The rotation is baked into the saved .pca basis, so all downstream tools (including Klusters reprojection) follow it automatically. Applies to standard and stderiv methods alike.
+
+# varimaxMaxIter
+
+Maximum number of Varimax rotation sweeps (default 30). Only used when varimax is enabled.
+
+# varimaxTol
+
+Relative change in the Varimax criterion at which the rotation is considered converged (default 1e-6). Only used when varimax is enabled.</help>
  </program>
 </parameter>
