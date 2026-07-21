@@ -8,6 +8,11 @@
     <value>10</value>
     <status>Mandatory</status>
    </parameter>
+   <parameter>
+    <name>inputExtension</name>
+    <value>dat</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>High-pass filter a .dat file (required for spike extraction).
 
@@ -18,6 +23,12 @@ PARAMETERS
 # windowHalfWidth
 
 Determines the cutoff frequency
+
+# inputExtension
+
+Extension of the data file read for filtering, without the leading dot (default
+dat). Point it at an alternative, externally-processed source (e.g. car.dat) to
+filter that file instead of the raw recording.
 </help>
  </program>
 </parameter>

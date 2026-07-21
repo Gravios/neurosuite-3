@@ -35,9 +35,15 @@ param_ext=$(param_file_ext "$session")
 # Print a header to indicate current processing step
 print_header "$session - Band-pass filtering"
 
+# Input data extension: the filter reads $session.$inputExtension (default dat),
+# so it can filter an alternative, externally-processed source instead of the
+# raw .dat (YAML field inputExtension; defaults to dat when unset).
+inputExtension=$(read_script_parameter $session inputExtension)
+inputExtension=${inputExtension:-dat}
+
 # Check input and output files
 outputs_exist $session.fil && exit $OUTPUTS_EXIST
-inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
+inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
 
 # Check required programs
 check_commands_installed xpathReader process_medianfilter process_lowpass
@@ -88,7 +94,7 @@ tmpFil=$session.fil.hp.tmp
 rm -f "$tmpFil"
 trap 'rm -f "$tmpFil"' EXIT
 
-process_medianfilter -n $nChannels -w $windowHalfLength -b $chunkSize -v $session.dat "$tmpFil"
+process_medianfilter -n $nChannels -w $windowHalfLength -b $chunkSize -v "$session.$inputExtension" "$tmpFil"
 check_command_status process_medianfilter
 
 process_lowpass -n $nChannels -f $lowpassCutoff -s $samplingRate -m $lowpassHalfLength -b $chunkSize -v "$tmpFil" $session.fil

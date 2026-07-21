@@ -23,6 +23,11 @@
     <value>134217728</value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>inputExtension</name>
+    <value>dat</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Band-pass filter a .dat file (an alternative to ndm_hipass for spike extraction).
 
@@ -45,6 +50,12 @@ FIR low-pass half length in samples; the filter has 2*lowpassHalfLength+1 taps, 
 # chunkSize
 
 Number of bytes to process per pass (optional; used to tune file I/O throughput).
+
+# inputExtension
+
+Extension of the data file read for filtering, without the leading dot (default
+dat). Point it at an alternative, externally-processed source (e.g. car.dat) to
+filter that file instead of the raw recording.
 </help>
  </program>
 </parameter>

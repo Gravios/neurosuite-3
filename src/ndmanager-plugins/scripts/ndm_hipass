@@ -32,9 +32,15 @@ param_ext=$(param_file_ext "$session")
 # Print a header to indicate current processing step
 print_header "$session - High-pass filtering"
 
+# Input data extension: the filter reads $session.$inputExtension (default dat),
+# so it can filter an alternative, externally-processed source instead of the
+# raw .dat (YAML field inputExtension; defaults to dat when unset).
+inputExtension=$(read_script_parameter $session inputExtension)
+inputExtension=${inputExtension:-dat}
+
 # Check input and output files
 outputs_exist $session.fil && exit $OUTPUTS_EXIST
-inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
+inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
 
 # Check required programs
 check_commands_installed xpathReader process_medianfilter
@@ -67,5 +73,5 @@ check_mandatory_variable $windowHalfLength "missing window half-length"
 # // Process
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-process_medianfilter -n $nChannels -w $windowHalfLength -b $chunkSize -v $session.dat $session.fil
+process_medianfilter -n $nChannels -w $windowHalfLength -b $chunkSize -v "$session.$inputExtension" $session.fil
 check_command_status process_medianfilter
