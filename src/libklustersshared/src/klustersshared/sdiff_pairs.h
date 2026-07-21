@@ -128,4 +128,93 @@ inline std::vector<std::vector<int> > parseSdiffPairsPerGroup(const char *spec)
     return perGroup;
 }
 
+
+// ── Order 5 (SDIFF_CUSTOM_CAR): per-channel reference SET ─────────────────────
+// Pattern "a-b+c+d,e-f+g,..." of 0-based within-group positions: setMap[a] =
+// {b,c,d}, so output channel a becomes x[a] - mean({x[b],x[c],x[d]}).  A single
+// target "a-b" gives the singleton {b} (== order-4 bipolar on that channel), so
+// order 5 generalises order 4; with the full channel set it reduces to order-3
+// all-pairs.  Every channel must carry a (non-empty) set and no channel may
+// reference itself.  There is NO root/last-position requirement (x - mean(set) is
+// generally full rank); the downstream SDIFF_PASS still drops the last channel,
+// so place the least-informative channel last.
+inline std::vector<std::vector<int> > parseSdiffSets(const char *spec, bool *ok = nullptr)
+{
+    std::vector<std::vector<int> > setMap;
+    int maxPos = 0;
+    std::string s(spec ? spec : "");
+    // Two passes: first learn maxPos so setMap can be sized and completeness checked.
+    std::vector<std::pair<int, std::vector<int> > > toks;
+    size_t p = 0;
+    auto fail = [&](const std::string& msg) {
+        if(ok) { *ok = false; }
+        else { std::cerr << "error: " << msg << "\n"; exit(1); }
+    };
+    while(true) {
+        size_t comma = s.find(',', p);
+        std::string tok = (comma == std::string::npos) ? s.substr(p) : s.substr(p, comma - p);
+        if(!tok.empty()) {
+            size_t dash = tok.find('-');
+            if(dash == std::string::npos) { fail("bad sdiffSets token '" + tok + "' (want a-b[+c...])"); return std::vector<std::vector<int> >(); }
+            int a = atoi(tok.substr(0, dash).c_str());
+            if(a < 0) { fail("bad sdiffSets source '" + tok + "'"); return std::vector<std::vector<int> >(); }
+            std::vector<int> set;
+            std::string rhs = tok.substr(dash + 1);
+            size_t q = 0;
+            while(true) {
+                size_t plus = rhs.find('+', q);
+                std::string m = (plus == std::string::npos) ? rhs.substr(q) : rhs.substr(q, plus - q);
+                int b = atoi(m.c_str());
+                if(m.empty() || b < 0 || b == a) { fail("bad sdiffSets target in '" + tok + "'"); return std::vector<std::vector<int> >(); }
+                set.push_back(b);
+                if(b + 1 > maxPos) maxPos = b + 1;
+                if(plus == std::string::npos) break;
+                q = plus + 1;
+            }
+            if(a + 1 > maxPos) maxPos = a + 1;
+            toks.push_back(std::make_pair(a, set));
+        }
+        if(comma == std::string::npos) break;
+        p = comma + 1;
+    }
+    if(toks.empty()) { fail("empty sdiffSets"); return std::vector<std::vector<int> >(); }
+    setMap.assign(maxPos, std::vector<int>());
+    for(size_t k = 0; k < toks.size(); k++) {
+        if(!setMap[toks[k].first].empty()) { fail("sdiffSets channel specified twice"); return std::vector<std::vector<int> >(); }
+        setMap[toks[k].first] = toks[k].second;
+    }
+    for(int i = 0; i < maxPos; i++)
+        if(setMap[i].empty()) { fail("sdiffSets channel has no reference set (all channels must be specified)"); return std::vector<std::vector<int> >(); }
+    if(ok) *ok = true;
+    return setMap;
+}
+
+// True iff the spec uses order-5 SET syntax (any '+' target list) rather than the
+// order-4 single-partner "a-b" spanning-tree syntax.  Lets a caller pick the order.
+inline bool sdiffSpecUsesSets(const char *spec)
+{
+    std::string s(spec ? spec : "");
+    return s.find('+') != std::string::npos;
+}
+
+// Per-group version of parseSdiffSets ("g1sets:g2sets:...").
+inline std::vector<std::vector<std::vector<int> > > parseSdiffSetsPerGroup(const char *spec)
+{
+    std::vector<std::vector<std::vector<int> > > perGroup;
+    std::string s(spec ? spec : "");
+    size_t p = 0;
+    while(true) {
+        size_t c = s.find(':', p);
+        std::string seg = (c == std::string::npos) ? s.substr(p) : s.substr(p, c - p);
+        size_t a = seg.find_first_not_of(" \t");
+        size_t b = seg.find_last_not_of(" \t");
+        std::string tok = (a == std::string::npos) ? std::string() : seg.substr(a, b - a + 1);
+        if(tok.empty()) perGroup.push_back(std::vector<std::vector<int> >());
+        else            perGroup.push_back(parseSdiffSets(tok.c_str()));
+        if(c == std::string::npos) break;
+        p = c + 1;
+    }
+    return perGroup;
+}
+
 #endif // KLUSTERSSHARED_SDIFF_PAIRS_H

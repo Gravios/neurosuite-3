@@ -88,6 +88,19 @@ static const std::vector<int>& groupPartner(int g)
     return (g >= 0 && g < (int)g_custom_partner.size()) ? g_custom_partner[g] : none;
 }
 
+// SDIFF_CUSTOM_CAR per-group reference sets.  g_custom_partner_sets[grp][ci] is the
+// set of within-group indices output channel ci is referenced against, so
+// s[ci] = x[ci] - mean(x over the set).  Selected when -P uses "a-b+c..." syntax.
+// Full rank in general (no dropped root), but SDIFF_PASS still drops the last
+// channel downstream, so the least-informative channel should be placed last.
+static std::vector<std::vector<std::vector<int> > > g_custom_partner_sets;
+
+static const std::vector<std::vector<int> >& groupPartnerSet(int g)
+{
+    static const std::vector<std::vector<int> > none;
+    return (g >= 0 && g < (int)g_custom_partner_sets.size()) ? g_custom_partner_sets[g] : none;
+}
+
 static const char *program_version = "process_extractspikes_stderiv 1.0";
 
 // =========================================================================
@@ -99,7 +112,9 @@ double computeSDiff(const short *record,
                     int          idx,
                     int          nChanGrp,
                     SdiffOrder   order,
-                    const std::vector<int>& customPartner)
+                    const std::vector<int>& customPartner,
+                    const std::vector<std::vector<int> >& customSets =
+                        std::vector<std::vector<int> >())
 {
     const double val = record[chanList[idx]];
 
@@ -123,6 +138,17 @@ double computeSDiff(const short *record,
         if(nChanGrp > 1 && (int)customPartner.size() == nChanGrp)
             return val - record[chanList[customPartner[idx]]];
         // pattern does not fit this group -> fall through to ALLPAIRS
+        [[fallthrough]];
+
+    case SDIFF_CUSTOM_CAR:
+        if(nChanGrp > 1 && (int)customSets.size() == nChanGrp
+           && !customSets[idx].empty()) {
+            double sum = 0.0;
+            for(size_t k = 0; k < customSets[idx].size(); k++)
+                sum += record[chanList[customSets[idx][k]]];
+            return val - sum / (double)customSets[idx].size();
+        }
+        // set-map does not fit this group -> fall through to ALLPAIRS
         [[fallthrough]];
 
     case SDIFF_ALLPAIRS:
@@ -191,7 +217,7 @@ static void fill_sdiff_buffer(const short *raw,
             for(int ci = 0; ci < nCG; ci++) {
                 double v = (order == SDIFF_NONE)
                              ? (double)rawRec[cList[ci]]
-                             : computeSDiff(rawRec, cList, ci, nCG, order, groupPartner(g));
+                             : computeSDiff(rawRec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g));
                 int iv = (int)round(v);
                 if(iv >  32767) iv =  32767;
                 if(iv < -32768) iv = -32768;
@@ -290,7 +316,7 @@ void computeSdiffThresholds(FILE       *fp,
                 const int *cList = channelList[g];
                 for(int ci = 0; ci < nCG; ci++)
                     absBuf[g][ci].push_back(
-                        fabs(computeSDiff(rec, cList, ci, nCG, order, groupPartner(g))));
+                        fabs(computeSDiff(rec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g))));
             }
         }
         samplesRead += gotSamples;
@@ -660,7 +686,10 @@ static void help(const char *name)
          << "  -P g1:g2:...    custom per-group difference patterns.  Each group is\n"
          << "                  a-b,c-d,... of 0-based within-group positions (output\n"
          << "                  channel a = x[a]-x[b]); groups are colon-separated and\n"
-         << "                  aligned with -c.  An empty group segment (or a size that\n"
+         << "                  aligned with -c.  Set syntax \"a-b+c+d\" (order 5) makes\n"
+         << "                  channel a = x[a]-mean(x[b],x[c],x[d]) — local geometry\n"
+         << "                  with common-mode rejection; every channel needs a set.\n"
+         << "                  An empty group segment (or a size that\n"
          << "                  does not match the pattern) uses order 3 for that group.\n\n"
          << "Re-extract mode (patch86):\n"
          << "  -R              skip detection; read basename.res.<grp> instead\n"
@@ -737,9 +766,16 @@ void parseArgs(int argc, char **argv, arguments &a)
                     }
                     a.sdiffOrder = static_cast<SdiffOrder>(o);
                     a.isSdiffOrderProvided = true; break; }
-        case 'P': g_custom_partner = parseSdiffPairsPerGroup(argv[++i]);
-                  a.sdiffOrder = SDIFF_CUSTOM;
-                  a.isSdiffOrderProvided = true; break;
+        case 'P': {
+                    const char *pat = argv[++i];
+                    if(sdiffSpecUsesSets(pat)) {
+                        g_custom_partner_sets = parseSdiffSetsPerGroup(pat);
+                        a.sdiffOrder = SDIFF_CUSTOM_CAR;   // order 5: reference-set mean
+                    } else {
+                        g_custom_partner = parseSdiffPairsPerGroup(pat);
+                        a.sdiffOrder = SDIFF_CUSTOM;        // order 4: single partner
+                    }
+                    a.isSdiffOrderProvided = true; break; }
         default:  cerr << "error: unknown option '" << argv[i] << "'." << endl;
                   exit(1);
         }
@@ -946,7 +982,7 @@ static int runFromRes(const arguments &args,
                     if(ord == SDIFF_NONE) {
                         v = (double)raw[ channelList[grp][ci] ];
                     } else {
-                        v = computeSDiff(raw, channelList[grp], ci, nCG, ord, groupPartner(grp));
+                        v = computeSDiff(raw, channelList[grp], ci, nCG, ord, groupPartner(grp), groupPartnerSet(grp));
                     }
                     int iv = (int)round(v);
                     if(iv >  32767) iv =  32767;
@@ -1754,6 +1790,15 @@ int main(int argc, char *argv[])
                             sd = xPrev[ci] - xPrev[groupPartner(grp)[ci]]; break;
                         }
                         [[fallthrough]];
+                    case SDIFF_CUSTOM_CAR:
+                        if((int)groupPartnerSet(grp).size()==nCG && !groupPartnerSet(grp)[ci].empty()) {
+                            const std::vector<int>& st=groupPartnerSet(grp)[ci];
+                            double xp[64]={}, sm=0.0;
+                            for(int jj=0;jj<nCG;jj++) xp[jj]=frPrev[cL[jj]];
+                            for(size_t k=0;k<st.size();k++) sm+=xp[st[k]];
+                            sd = xp[ci] - sm/(double)st.size(); break;
+                        }
+                        [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
                         double sum=0.0;
                         for(int jj=0;jj<nCG;jj++) sum+=frPrev[cL[jj]];
@@ -1784,6 +1829,14 @@ int main(int argc, char *argv[])
                     case SDIFF_CUSTOM:
                         if((int)groupPartner(grp).size() == nCG) {
                             sd = row[ci] - row[groupPartner(grp)[ci]]; break;
+                        }
+                        [[fallthrough]];
+                    case SDIFF_CUSTOM_CAR:
+                        if((int)groupPartnerSet(grp).size()==nCG && !groupPartnerSet(grp)[ci].empty()) {
+                            const std::vector<int>& st=groupPartnerSet(grp)[ci];
+                            double sm=0.0;
+                            for(size_t k=0;k<st.size();k++) sm+=row[st[k]];
+                            sd = row[ci] - sm/(double)st.size(); break;
                         }
                         [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
@@ -1850,6 +1903,14 @@ int main(int argc, char *argv[])
                     case SDIFF_CUSTOM:
                         if((int)groupPartner(grp).size() == nCG) {
                             sd = val - rt[groupPartner(grp)[ci]]; break;
+                        }
+                        [[fallthrough]];
+                    case SDIFF_CUSTOM_CAR:
+                        if((int)groupPartnerSet(grp).size()==nCG && !groupPartnerSet(grp)[ci].empty()) {
+                            const std::vector<int>& st=groupPartnerSet(grp)[ci];
+                            double sm=0.0;
+                            for(size_t k=0;k<st.size();k++) sm+=rt[st[k]];
+                            sd = val - sm/(double)st.size(); break;
                         }
                         [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
