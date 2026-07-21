@@ -28,6 +28,11 @@
     <value>60</value>
     <status>Mandatory</status>
    </parameter>
+   <parameter>
+    <name>inputExtension</name>
+    <value>fil</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Extract spikes from high-pass filtered .fil file (this creates .res and .spk files).
 
@@ -54,6 +59,13 @@ Starting point in the file (in s) for computation of baseline 'noise' level
 # duration
 
 Duration (in s) for computation of baseline 'noise' level
+
+# inputExtension
+
+Extension of the data file read for extraction, without the leading dot (default
+fil, i.e. &lt;session&gt;.fil). Set it to an alternative, externally-processed source
+(e.g. car.fil or filtered.dat) to detect/extract from that file instead. The source
+must be high-pass filtered like the usual .fil; ndm_extractspikes does not filter it.
 </help>
  </program>
 </parameter>
