@@ -1,0 +1,182 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Re-featurize spikes — re-project onto the saved PCA basis (unified,
+#//   method-dispatching)
+#//
+#//   copyright       (C) 2007-2010 by Michaël Zugaro
+#//                   (C) 2025-2026 Gravios / NeuroSuite-3 contributors
+#//   email           michael.zugaro@college-de-france.fr
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+#
+#  DESCRIPTION
+#  -----------
+#  Re-projects spike waveforms onto the eigenvectors already saved in
+#  .pca.<method>.N (by ndm_pca) and writes .fet.<method>.N, WITHOUT refitting the
+#  PCA.  Use it as a fast alternative to a full ndm_pca re-run when the spikes have
+#  shifted but the basis is still valid — e.g. after ndm_alignspikes_pca — so the
+#  features stay consistent with the updated .spk.<method>.N.
+#
+#  The `method` selects the transform, exactly as in ndm_pca:
+#    standard / sdiff : project the raw-amplitude .spk.<method>.N directly.
+#    stderiv          : the .spk is written full-width by ndm_extractspikes, so the
+#                       linearly-dependent channel (orders 1 and 3) is dropped here
+#                       by process_pca_stderiv (-d 4, SDIFF_PASS) before projection
+#                       — the exact input ndm_pca fit the basis on, so the reduced
+#                       channel count matches the basis.
+#  process_refeaturize ignores the basis method tag and performs a raw projection;
+#  no stderiv-specific refeaturize binary is required.
+#
+#  PARAMETERS (session file, ndm_refeaturize node)
+#    method       standard | sdiff | stderiv        (default standard)
+#    methodOrder  spatial-derivative order 1-3       (sdiff/stderiv; default 3)
+#    extra        true to append per-channel peak values (must match ndm_pca)
+#
+#  USAGE
+#    ndm_refeaturize [parameter-file] [electrodeGroup] [--method M] [--methodOrder N]
+#    CLI flags override the YAML fields.  With no electrodeGroup, every group is
+#    re-featurized.  The .fet.<method>.N is overwritten (that is the point).
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+program=$(basename $0)
+
+# ── Parse command-line: <=2 positionals (parameter file, electrodeGroup) ─────
+positionals=()
+methodOverride=
+methodOrderOverride=
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--method)         methodOverride="$2";          shift 2 ;;
+		--method=*)       methodOverride="${1#*=}";      shift ;;
+		--methodOrder)    methodOrderOverride="$2";      shift 2 ;;
+		--methodOrder=*)  methodOrderOverride="${1#*=}"; shift ;;
+		-*)               echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
+		*)                positionals+=("$1");           shift ;;
+	esac
+done
+if [ ${#positionals[@]} -gt 2 ]; then
+	echo_error "usage: $program [parameter-file] [electrodeGroup] [--method M] [--methodOrder N]"
+	exit $GENERAL_ERROR
+fi
+ndm_resolve_session "${positionals[@]}"
+[ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
+param_ext=$(param_file_ext "$session")
+electrodeGroup=${positionals[1]:-}
+
+# ── Resolve method + methodOrder (CLI override > YAML > default) ──────────────
+method=$methodOverride
+[ -z "$method" ] && method=$(read_script_parameter $session method)
+method=${method:-standard}
+case "$method" in
+	standard|sdiff|stderiv) : ;;
+	*) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
+esac
+methodOrder=$methodOrderOverride
+[ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
+methodOrder=${methodOrder:-3}
+if [ "$method" != standard ]; then
+	if [ "$methodOrder" -lt 1 ] || [ "$methodOrder" -gt 3 ]; then
+		echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-3)"
+		exit $GENERAL_ERROR
+	fi
+fi
+
+print_header "$session - Re-featurizing spikes [method=$method]"
+
+check_commands_installed xpathReader process_refeaturize process_mergefeatures
+[ "$method" = stderiv ] && check_commands_installed process_pca_stderiv
+
+once()
+{
+	local electrodeGroup=$1
+
+	# Method-tagged artifact paths (chain-of-custody).  .res holds method-
+	# independent spike times — resolve it across all methods (Shared), falling
+	# back to the strict name only so a missing input reports a meaningful path.
+	local spkfile=$(ndm_method_path "$session" spk "$electrodeGroup" "$method")
+	local pcafile=$(ndm_method_path "$session" pca "$electrodeGroup" "$method")
+	local resfile=$(ndm_resolve_any "$session" res "$electrodeGroup" "$method")
+	[ -z "$resfile" ] && resfile=$(ndm_method_path "$session" res "$electrodeGroup" "$method")
+	local fetout=$(ndm_method_path "$session" fet "$electrodeGroup" "$method")
+
+	# Inputs: parameter file, the waveforms, the basis, and the spike times.
+	inputs_missing "$session.$param_ext" "$spkfile" "$pcafile" "$resfile" && exit $INPUTS_MISSING
+
+	local nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+	check_mandatory_variable $nElectrodeGroups "missing electrode groups"
+	if [ $electrodeGroup -gt $nElectrodeGroups ]; then
+		echo_error "the spike group $electrodeGroup is undefined."
+		exit $GENERAL_ERROR
+	fi
+
+	local electrodes=($(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
+	local nElectrodes=${#electrodes[*]}
+	local waveformLength=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
+	check_mandatory_variable $waveformLength "missing number of samples per waveform"
+
+	# Extra features (per-channel peak values appended) — must match whatever
+	# ndm_pca used when the basis was fit, or the column count will disagree.
+	local options=""
+	local extra=$(read_script_parameter $session extra)
+	check_optional_variable $extra || extra=false
+	$extra && options="$options -x"
+
+	# standard / sdiff : project the raw-amplitude .spk directly.
+	# stderiv          : reduce first with process_pca_stderiv (-d 4 = SDIFF_PASS,
+	#                    dropping the linearly-dependent channel for orders 1 and 3
+	#                    so the projected width equals the basis width), then project
+	#                    the reduced waveform.  This mirrors ndm_pca, which fits the
+	#                    basis on exactly this reduced input.
+	local projInput=$spkfile
+	local nProj=$nElectrodes
+	local tmpspk=
+	if [ "$method" = stderiv ]; then
+		if [ "$methodOrder" = "1" ] || [ "$methodOrder" = "3" ]; then
+			nProj=$(( nElectrodes - 1 ))
+		fi
+		tmpspk=$(mktemp /tmp/refeat_stderiv_${session##*/}_${electrodeGroup}_XXXXXX)
+		process_pca_stderiv -n $nElectrodes -w $waveformLength -d 4 "$spkfile" > $tmpspk
+		check_command_status process_pca_stderiv
+		projInput=$tmpspk
+	fi
+
+	# Re-project onto the saved eigenvectors.  With no -i, process_refeaturize
+	# re-features every spike and emits PC-score rows (process_pca's feature
+	# format) on stdout.
+	process_refeaturize -p "$pcafile" -w $waveformLength -n $nProj $options "$projInput" > $fetout.tmp
+	check_command_status process_refeaturize
+	[ -n "$tmpspk" ] && rm -f "$tmpspk"
+
+	# Merge PC-score rows with the .res timestamps into the final .fet — exactly
+	# the same last step as ndm_pca.
+	process_mergefeatures $fetout.tmp $resfile $fetout
+	check_command_status process_mergefeatures
+	rm $fetout.tmp
+
+	echo_info "  group $electrodeGroup: re-featurized -> $fetout"
+}
+
+if [ -z "$electrodeGroup" ]; then
+	nGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
+	if [ $nGroups -eq 0 ]; then
+		echo_error "missing spike groups"
+		exit $GENERAL_ERROR
+	fi
+	for ((i=1;i<=$nGroups;i++)); do
+		once $i
+	done
+	exit $NO_ERROR
+else
+	once $electrodeGroup
+	exit $NO_ERROR
+fi

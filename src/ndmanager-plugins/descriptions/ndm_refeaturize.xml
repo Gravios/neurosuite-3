@@ -1,0 +1,25 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <name>ndm_refeaturize</name>
+  <parameters>
+   <parameter>
+    <name>extra</name>
+    <value>true</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Re-project spike waveforms onto the saved PCA basis and rewrite .fet (without refitting PCA).
+
+ndm_refeaturize reads .spk.&lt;method&gt;.N and the eigenvectors in .pca.&lt;method&gt;.N (written by ndm_pca) and recomputes .fet.&lt;method&gt;.N by projection only. Use it as a fast alternative to a full ndm_pca re-run when the spikes have shifted but the basis is still valid — e.g. after ndm_alignspikes_pca — so the features stay consistent with the updated waveforms.
+
+The engine (method: standard, sdiff, or stderiv) and, for sdiff/stderiv, the spatial-derivative order (methodOrder) are set in the session's ndm_refeaturize program node; they are not declared here. For stderiv the linearly-dependent channel (orders 1 and 3) is dropped before projection, matching the input ndm_pca fit the basis on. The .fet.&lt;method&gt;.N is overwritten.
+
+PARAMETERS
+
+# extra
+
+Append per-channel peak values as extra features. Must match the `extra` setting ndm_pca used when the basis was fit, or the feature column count will disagree.
+</help>
+ </program>
+</parameter>
