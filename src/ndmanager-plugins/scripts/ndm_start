@@ -399,6 +399,8 @@ do_spikes()
 	$spikes || return
 	ndm_hipass $directory
 	step_completed ndm_hipass || return
+	ndm_detectspikes $directory
+	step_completed ndm_detectspikes || return
 	ndm_extractspikes $directory
 	step_completed ndm_extractspikes || return
 	ndm_pca $directory

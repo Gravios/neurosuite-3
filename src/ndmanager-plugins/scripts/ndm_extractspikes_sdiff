@@ -1,12 +1,15 @@
 #!/bin/bash
 #////////////////////////////////////////////////////////////////////////////
-#//   DEPRECATED: folded into ndm_extractspikes.
-#//   `ndm_extractspikes_sdiff [args]` == `ndm_extractspikes --method sdiff [args]`.
+#//   DEPRECATED: spike processing is now split into detection and extraction.
+#//   `ndm_extractspikes_sdiff [args]` was a single detect+extract pass; it now runs
+#//     ndm_detectspikes  --method sdiff [args]   (writes the shared .res)
+#//     ndm_extractspikes --method sdiff [args]   (extracts .spk.sdiff.N at that .res)
 #//   Kept as a thin shim so existing pipelines / session-YAML program entries
-#//   keep running.  Prefer setting `method: sdiff` under ndm_extractspikes.
+#//   keep running.  Prefer separate ndm_detectspikes / ndm_extractspikes steps
+#//   with `method: sdiff`.
 #////////////////////////////////////////////////////////////////////////////
 # Legacy sessions keep their parameters under the old program node; export
 # alt_program so read_script_parameter falls back to it.
 export alt_program=ndm_extractspikes_sdiff
-echo "ndm_extractspikes_sdiff is deprecated; use 'ndm_extractspikes --method sdiff'." >&2
-exec ndm_extractspikes --method sdiff "$@"
+echo "ndm_extractspikes_sdiff is deprecated; use separate 'ndm_detectspikes --method sdiff' and 'ndm_extractspikes --method sdiff'." >&2
+ndm_detectspikes --method sdiff "$@" && exec ndm_extractspikes --method sdiff "$@"

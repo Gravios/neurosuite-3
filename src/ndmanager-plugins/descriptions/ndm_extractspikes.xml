@@ -4,67 +4,24 @@
   <name>ndm_extractspikes</name>
   <parameters>
    <parameter>
-    <name>thresholdFactor</name>
-    <value>1.5</value>
-    <status>Mandatory</status>
-   </parameter>
-   <parameter>
-    <name>refractoryPeriod</name>
-    <value>16</value>
-    <status>Mandatory</status>
-   </parameter>
-   <parameter>
-    <name>peakSearchLength</name>
-    <value>32</value>
-    <status>Mandatory</status>
-   </parameter>
-   <parameter>
-    <name>start</name>
-    <value>0</value>
-    <status>Mandatory</status>
-   </parameter>
-   <parameter>
-    <name>duration</name>
-    <value>60</value>
-    <status>Mandatory</status>
-   </parameter>
-   <parameter>
     <name>inputExtension</name>
     <value>fil</value>
     <status>Optional</status>
    </parameter>
   </parameters>
-  <help>Extract spikes from high-pass filtered .fil file (this creates .res and .spk files).
+  <help>Extract spike waveforms at previously-detected spike times (this creates .spk files).
 
-First, the program automatically computes a baseline 'noise' level, using a subset of the data. Then, spikes are extracted whenever the signal crosses a threshold proportional to the baseline 'noise' level. To avoid spurious detections, the signal must have a local maximum (or minimum, depending on the sign of the signal) within a fixed search window starting at threshold crossing. Also, the duration between consecutive spikes must be greater than a fixed 'refractory' period.
+Spike times are produced by ndm_detectspikes and stored in the shared .res files. ndm_extractspikes re-extracts a waveform for every one of those spikes and writes .spk; it does not detect, and errors if no .res exists yet. Because the spike times are method-independent, the extraction engine (method: standard, sdiff, or stderiv) may differ from the one used for detection, and ndm_extractspikes may be run several times with different methods to produce waveforms in different domains, each reusing the same .res.
+
+The engine (method) and, for sdiff/stderiv, the spatial-derivative order (methodOrder) are set in the session's ndm_extractspikes program node; they are not declared here. Extraction needs no threshold or noise-window parameters — those belong to ndm_detectspikes.
 
 PARAMETERS
-
-# thresholdFactor
-
-Threshold = thresholdFactor * baseline 'noise' level
-
-# refractoryPeriod
-
-Number of samples to skip after a spike, before trying to detect a new spike
-
-# peakSearchLength
-
-Length of the peak search window (in number of samples)
-
-# start
-
-Starting point in the file (in s) for computation of baseline 'noise' level
-
-# duration
-
-Duration (in s) for computation of baseline 'noise' level
 
 # inputExtension
 
 Extension of the data file read for extraction, without the leading dot (default
 fil, i.e. &lt;session&gt;.fil). Set it to an alternative, externally-processed source
-(e.g. car.fil or filtered.dat) to detect/extract from that file instead. The source
+(e.g. car.fil or filtered.dat) to extract from that file instead. The source
 must be high-pass filtered like the usual .fil; ndm_extractspikes does not filter it.
 </help>
  </program>
