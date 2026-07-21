@@ -658,7 +658,7 @@ static void help(const char *name)
          << "Spatial derivative:\n"
          << "  -d order        0=none  1=first-diff  2=Laplacian  3=allpairs (default)\n"
          << "  -P g1:g2:...    custom per-group difference patterns.  Each group is\n"
-         << "                  a-b,c-d,... of 1-based within-group positions (output\n"
+         << "                  a-b,c-d,... of 0-based within-group positions (output\n"
          << "                  channel a = x[a]-x[b]); groups are colon-separated and\n"
          << "                  aligned with -c.  An empty group segment (or a size that\n"
          << "                  does not match the pattern) uses order 3 for that group.\n\n"

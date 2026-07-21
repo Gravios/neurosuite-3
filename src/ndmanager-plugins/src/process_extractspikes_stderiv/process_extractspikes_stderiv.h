@@ -46,7 +46,7 @@
 //                      Maximum common-mode rejection for any group geometry.
 //  4  SDIFF_CUSTOM     per-channel partner map (see -P sdiffPairs).  Output
 //                      channel i is x[i] - x[partner[i]], the partner taken from
-//                      an explicit "a-b" pair list of 1-based within-group
+//                      an explicit "a-b" pair list of 0-based within-group
 //                      positions.  Lets a geometry-matched, physically local
 //                      difference pattern be extracted directly.  A group whose
 //                      size does not match the pattern falls back to order 3.
