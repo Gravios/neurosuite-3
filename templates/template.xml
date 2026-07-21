@@ -2100,7 +2100,7 @@ Whether the video should be displayed during LED extraction
 </help>
   </program>
   <program>
-   <n>ndm_extractspikes</n>
+   <n>ndm_detectspikes</n>
    <parameters>
     <parameter>
      <n>thresholdFactor</n>
@@ -2128,9 +2128,11 @@ Whether the video should be displayed during LED extraction
      <status>Mandatory</status>
     </parameter>
    </parameters>
-   <help>Extract spikes from high-pass filtered .fil file (this creates .res and .spk files).
+   <help>Detect spikes on the high-pass filtered .fil file and write the shared spike-time .res files.
 
-First, the program automatically computes a baseline 'noise' level, using a subset of the data. Then, spikes are extracted whenever the signal crosses a threshold proportional to the baseline 'noise' level. To avoid spurious detections, the signal must have a local maximum (or minimum, depending on the sign of the signal) within a fixed search window starting at threshold crossing. Also, the duration between consecutive spikes must be greater than a fixed 'refractory' period.
+First, the program automatically computes a baseline 'noise' level, using a subset of the data. Then, spikes are detected whenever the signal crosses a threshold proportional to the baseline 'noise' level. To avoid spurious detections, the signal must have a local maximum (or minimum, depending on the sign of the signal) within a fixed search window starting at threshold crossing. Also, the duration between consecutive spikes must be greater than a fixed 'refractory' period.
+
+The engine also produces a .spk in passing (there is no detect-only engine mode); it is discarded, so detection contributes only the shared .res. ndm_extractspikes produces the waveform files from that .res.
 
 PARAMETERS
 
@@ -2153,6 +2155,15 @@ Starting point in the file (in s) for computation of baseline 'noise' level
 # duration
 
 Duration (in s) for computation of baseline 'noise' level
+</help>
+  </program>
+  <program>
+   <n>ndm_extractspikes</n>
+   <parameters>
+   </parameters>
+   <help>Extract spike waveforms at previously-detected spike times (this creates .spk files).
+
+Spike times are produced by ndm_detectspikes and stored in the shared .res files. ndm_extractspikes re-extracts a waveform for every one of those spikes and writes .spk; it does not detect, and errors if no .res exists yet. Because the spike times are method-independent, the extraction engine (method: standard, sdiff, or stderiv) may differ from the one used for detection, and ndm_extractspikes may be run several times with different methods to produce waveforms in different domains, each reusing the same .res. Extraction needs no threshold or noise-window parameters.
 </help>
   </program>
   <program>

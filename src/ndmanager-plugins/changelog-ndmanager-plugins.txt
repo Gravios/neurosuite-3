@@ -1,4 +1,25 @@
 ------------------------------------------------------------------------------------------------------------
+neurosuite-3 fork — 2026-07-21
+
+* ndm_extractspikes — split into ndm_detectspikes + ndm_extractspikes.
+
+    Spike processing was a single method-dispatching script that detected and
+    extracted in one pass.  It is now two steps: ndm_detectspikes writes the
+    shared, method-independent spike times (.res); ndm_extractspikes re-extracts
+    waveforms (-R) at that .res (.spk).  Because read_script_parameter keys on the
+    program name, each script reads its own method/methodOrder from its own program
+    node, so the extraction engine may differ from the detection engine and
+    extraction may be re-run with different methods over the one .res.  The shared
+    driver is ndm_process_spikes() in ndm_functions; both scripts are thin wrappers.
+
+    Behavior change: pipelines that ran ndm_extractspikes to detect+extract must
+    now run ndm_detectspikes first, and the detection parameters (thresholdFactor,
+    refractoryPeriod, peakSearchLength, start, duration) move from the
+    ndm_extractspikes program node to the ndm_detectspikes node.  ndm_start's
+    default pipeline, ndm_reextractspikes, the deprecated _sdiff / _stderiv shims,
+    the descriptions/, and the session templates were updated accordingly.
+
+------------------------------------------------------------------------------------------------------------
 neurosuite-3 fork — 2026-06-01
 
 * process_extractspikes / _sdiff / _stderiv — double-buffered reader.
