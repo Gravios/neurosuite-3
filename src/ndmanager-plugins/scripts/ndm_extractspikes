@@ -48,10 +48,14 @@
 #                 `sdiffOrder`.
 #  plus the usual thresholdFactor / refractoryPeriod / peakSearchLength /
 #  start / duration / memCapGB.
+#    inputExtension  data file extension read for extraction (default fil).  Point
+#                 it at an alternative processed source, e.g. car.fil or
+#                 filtered.dat, to extract from that instead of <session>.fil.
 #
 #  CLI OVERRIDES
 #  -------------
 #    ndm_extractspikes [parameter-file] [--method M] [--methodOrder N]
+#                      [--inputExtension EXT]
 #  CLI flags take precedence over the YAML fields.
 #
 #////////////////////////////////////////////////////////////////////////////
@@ -71,6 +75,8 @@ while [ $# -gt 0 ]; do
 		--method=*)       methodOverride="${1#*=}";   shift ;;
 		--methodOrder)    methodOrderOverride="$2";   shift 2 ;;
 		--methodOrder=*)  methodOrderOverride="${1#*=}"; shift ;;
+		--inputExtension) inputExtensionOverride="$2";  shift 2 ;;
+		--inputExtension=*) inputExtensionOverride="${1#*=}"; shift ;;
 		--)               shift; while [ $# -gt 0 ]; do positionals+=("$1"); shift; done ;;
 		-*)               echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
 		*)                positionals+=("$1");        shift ;;
@@ -115,8 +121,15 @@ print_header "$session - Detecting/extracting spikes [method=$method]"
 # Check required programs
 check_commands_installed xpathReader process_medianthreshold $binary
 
+# Input data extension.  Extraction reads $session.$inputExtension (default fil),
+# so it can run on an alternative, externally-processed source (e.g. a re-referenced
+# or differently-filtered file) without renaming it to .fil.  CLI > YAML > default.
+inputExtension=$inputExtensionOverride
+[ -z "$inputExtension" ] && inputExtension=$(read_script_parameter $session inputExtension)
+inputExtension=${inputExtension:-fil}
+
 # Check required files
-inputs_missing "$session.$param_ext" $session.fil && exit $INPUTS_MISSING
+inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
 
 secondsToBytes()
 {
@@ -229,7 +242,7 @@ echo_info "   (= byte offset $startInBytes, length $durationInBytes)"
 # Use a temporary symlink so output files from incomplete runs cannot
 # accidentally overwrite good existing files.
 tmp=$session-extract-tmp
-ln -s $session.fil $tmp.fil
+ln -s "$session.$inputExtension" $tmp.fil
 # Set waveform memory cap (default 2 GB if not in parameter file).
 export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 
@@ -268,7 +281,7 @@ case "$method" in
 		thresholdArg=
 		if [ "$reExtract" -ne 1 ]; then
 			echo_info " 1. Computing thresholds (process_medianthreshold)"
-			baseline=$(tail -c +$(($startInBytes+1)) $session.fil | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
+			baseline=$(tail -c +$(($startInBytes+1)) "$session.$inputExtension" | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
 			check_command_status process_medianthreshold
 			baseline=$(unset LANG && echo $baseline | awk 'BEGIN{RS=":";FS=","};{for (i=1;i<=NF;i++){printf "%f,",$i*'$thresholdFactor'};printf ":"}' | sed 's/,:/:/g;s/:$//')
 			echo_info "    threshold $baseline"
