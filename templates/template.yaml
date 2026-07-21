@@ -110,7 +110,7 @@ anatomicalDescription:
 # ─────────────────────────────────────────────────────────────────────────────
 # Spike detection groups
 # Typically one entry per shank, or as updated by ndm_spikegrouper.
-# Read by: ndm_extractspikes, ndm_extractspikes_sdiff, ndm_extractspikes_stderiv,
+# Read by: ndm_detectspikes, ndm_extractspikes, ndm_extractspikes_sdiff, ndm_extractspikes_stderiv,
 #          ndm_pca, ndm_pca_stderiv, ndm_klustakwik,
 #          ndm_estimatedrift, ndm_decomposecollisions
 #
@@ -183,37 +183,45 @@ programs:
 # ─────────────────────────────────────────────────────────────────────────────
 # Pipeline variant: spatial+temporal derivative
 # ─────────────────────────────────────────────────────────────────────────────
+# Spike processing is two steps: ndm_detectspikes writes the shared, method-
+# independent spike times (.res); ndm_extractspikes then extracts waveforms (.spk)
+# at those times.  The extraction engine may differ from the detection engine, and
+# ndm_extractspikes may be run several times (different method/methodOrder) over
+# the one .res.  Both take method (standard | sdiff | stderiv) + methodOrder (0-3).
+#
 # Pipeline A — standard:
-#   ndm_extractspikes → ndm_pca → ndm_klustakwik
+#   ndm_detectspikes → ndm_extractspikes → ndm_pca → ndm_klustakwik
 #   .spk = raw ADC waveforms; features = raw-space PCA
 #
-# Pipeline B — spatial derivative detection, raw PCA:
-#   ndm_extractspikes_sdiff → ndm_pca → ndm_klustakwik
-#   .spk = raw ADC waveforms; features = raw-space PCA
+# Pipeline B — spatial-derivative detection, raw PCA:
+#   ndm_detectspikes (method: sdiff) → ndm_extractspikes → ndm_pca → ndm_klustakwik
+#   detection on the spatially differentiated signal; .spk = raw ADC waveforms
 #
 # Pipeline C — raw detection, stderiv PCA features:
-#   ndm_extractspikes → ndm_pca_stderiv → ndm_klustakwik
+#   ndm_detectspikes → ndm_extractspikes → ndm_pca_stderiv → ndm_klustakwik
 #   .spk = raw ADC waveforms; ndm_pca_stderiv transforms before PCA
-#   For sdiffOrder 1 or 3: .fet has (nChannels-1)*nFeatures columns
+#   For methodOrder 1 or 3: .fet has (nChannels-1)*nFeatures columns
 #
 # Pipeline D — stderiv detection + stderiv .spk + stderiv PCA:
-#   ndm_extractspikes_stderiv → ndm_pca → ndm_klustakwik
-#   .spk = stderiv waveforms (detection and storage in same space)
+#   ndm_detectspikes (method: stderiv) → ndm_extractspikes (method: stderiv)
+#     → ndm_pca → ndm_klustakwik
+#   .spk = stderiv waveforms (detection and storage in the same space)
 #   ndm_pca reads .spk directly; no re-transformation needed
-#   For sdiffOrder 1 or 3: nFeatures set for (nChannels-1) channels
+#   For methodOrder 1 or 3: nFeatures set for (nChannels-1) channels
 #
 # Klusters refeaturize for Pipelines C/D:
 #   process_refeaturize_stderiv -p session.pca.N -n nEffChan -w wLen spk
 #   (nEffChan = nChannels-1 for orders 1 or 3, else nChannels)
 #
 # Chain-of-custody method parameter:
-#   ndm_extractspikes / ndm_pca / ndm_alignspikes / ndm_klustakwik /
-#   ndm_decomposecollisions take a `method` parameter (standard | sdiff |
-#   stderiv).  It stamps every per-group artifact as
-#   <session>.<type>.<method>.<group> and must agree across the stages of one
-#   pipeline (the unified ndm_extractspikes/ndm_pca with method: stderiv replace
-#   the standalone _stderiv variants).  ndm_extractspikes/ndm_pca also take
-#   `methodOrder` (0-3; the modern name for sdiffOrder).
+#   ndm_detectspikes / ndm_extractspikes / ndm_pca / ndm_alignspikes /
+#   ndm_klustakwik / ndm_decomposecollisions take a `method` parameter (standard |
+#   sdiff | stderiv).  It stamps every per-group artifact as
+#   <session>.<type>.<method>.<group>: detection stamps the shared .res (its
+#   variant is the detection method), extraction stamps the .spk (its variant the
+#   extraction method).  The unified method: stderiv replaces the standalone
+#   _stderiv variants.  Stages also take `methodOrder` (0-3; modern name for
+#   sdiffOrder).
 # ─────────────────────────────────────────────────────────────────────────────
 
 # == Master orchestrator ======================================================
@@ -794,7 +802,7 @@ programs:
     Discover optimal spikeDetection channel groups from the high-pass filtered
     .fil file and write them back to the YAML parameter file.
 
-    Run AFTER ndm_hipass, BEFORE ndm_extractspikes.
+    Run AFTER ndm_hipass, BEFORE ndm_detectspikes.
     Rewrites only spikeDetection.channelGroups; anatomicalDescription is unchanged.
 
     PARAMETERS
@@ -802,7 +810,7 @@ programs:
     # thresholdFactor
 
     Spike detection threshold multiplier: threshold = factor * median(|x|)/0.6745.
-    Should match or be slightly lower than ndm_extractspikes > thresholdFactor.
+    Should match or be slightly lower than ndm_detectspikes > thresholdFactor.
 
     # refractoryMs
 
@@ -957,7 +965,7 @@ programs:
     Report which spikes would be removed without modifying files. Useful for
     tuning uniformityThreshold (default 0).
 
-- name: ndm_extractspikes
+- name: ndm_detectspikes
   parameters:
     - name: thresholdFactor
       value: 1.5
@@ -974,8 +982,8 @@ programs:
     - name: duration
       value: 60
       status: Mandatory
-  # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
-  # <session>.<type>.<method>.<group> and selects the detection/feature space.
+  # Chain-of-custody method: standard | sdiff | stderiv.  Stamps the shared spike
+  # times as <session>.res.<method>.<group> and selects the detection space.
     - name: method
       value: standard
       status: Optional
@@ -984,11 +992,14 @@ programs:
     - name: methodOrder
       value: 3
       status: Optional
-    # - name: memCapGB
-    #   value: 2
+    # - name: inputExtension
+    #   value: fil
     #   status: Optional
   help: |-
-    Extract spikes from high-pass filtered .fil file (creates .res and .spk files).
+    Detect spikes on the high-pass filtered .fil file and write the shared
+    spike-time .res files.  The engine also emits a .spk in passing (there is no
+    detect-only engine mode); it is discarded, so detection contributes only the
+    .res.  ndm_extractspikes then extracts waveforms at those times.
 
     PARAMETERS
 
@@ -1013,6 +1024,51 @@ programs:
     Duration (seconds) for baseline noise computation
 
     OPTIONAL PARAMETERS
+
+    # method / methodOrder
+
+    Detection engine (standard | sdiff | stderiv) and spatial-derivative order.
+
+    # inputExtension
+
+    Data file extension to read, without the leading dot (default fil).
+
+- name: ndm_extractspikes
+  parameters:
+  # Chain-of-custody method: standard | sdiff | stderiv.  Selects the waveform
+  # feature space and stamps outputs as <session>.spk.<method>.<group>.  May
+  # differ from the detection engine; the .res from ndm_detectspikes is reused.
+    - name: method
+      value: standard
+      status: Optional
+  # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
+  # name for the deprecated sdiffOrder alias.
+    - name: methodOrder
+      value: 3
+      status: Optional
+    # - name: inputExtension
+    #   value: fil
+    #   status: Optional
+    # - name: memCapGB
+    #   value: 2
+    #   status: Optional
+  help: |-
+    Extract spike waveforms (creates .spk files) at previously-detected spike
+    times.  Requires the shared .res written by ndm_detectspikes; it never detects
+    and errors if no .res exists.  Because spike times are method-independent, the
+    extraction engine (method) may differ from the detection engine, and this step
+    may be run several times with different methods/orders, each reusing the same
+    .res.  Extraction needs no threshold/window parameters.
+
+    OPTIONAL PARAMETERS
+
+    # method / methodOrder
+
+    Waveform engine (standard | sdiff | stderiv) and spatial-derivative order.
+
+    # inputExtension
+
+    Data file extension to read, without the leading dot (default fil).
 
     # memCapGB
 

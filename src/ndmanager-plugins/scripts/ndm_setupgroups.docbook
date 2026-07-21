@@ -54,7 +54,9 @@
   <para>
     <command>ndm_setupgroups</command> must be run <emphasis>before</emphasis>
     any spike-detection step
-    (<citerefentry><refentrytitle>ndm_extractspikes</refentrytitle>
+    (<citerefentry><refentrytitle>ndm_detectspikes</refentrytitle>
+    <manvolnum>1</manvolnum></citerefentry>,
+    <citerefentry><refentrytitle>ndm_extractspikes</refentrytitle>
     <manvolnum>1</manvolnum></citerefentry>,
     <citerefentry><refentrytitle>ndm_pca</refentrytitle>
     <manvolnum>1</manvolnum></citerefentry>,
@@ -229,6 +231,10 @@ spikeDetection:
 <refsect1>
   <title>See Also</title>
   <para>
+    <citerefentry>
+      <refentrytitle>ndm_detectspikes</refentrytitle>
+      <manvolnum>1</manvolnum>
+    </citerefentry>,
     <citerefentry>
       <refentrytitle>ndm_extractspikes</refentrytitle>
       <manvolnum>1</manvolnum>

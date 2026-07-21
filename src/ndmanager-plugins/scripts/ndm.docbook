@@ -206,10 +206,18 @@
 								</listitem>
 							</varlistentry>
 							<varlistentry>
+								<term><command moreinfo="refentry">ndm_detectspikes</command></term>
+								<listitem>
+									<para>
+										detect spikes and write the shared timestamps (<replaceable>.res</replaceable>) from a high-pass filtered multiplexed binary (<replaceable>.fil</replaceable>) data file.
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
 								<term><command moreinfo="refentry">ndm_extractspikes</command></term>
 								<listitem>
 									<para>
-										extract spike waveforms (<replaceable>.spk</replaceable>) and timestamps (<replaceable>.res</replaceable>) from a high-pass filtered multiplexed binary (<replaceable>.fil</replaceable>) data file.
+										extract spike waveforms (<replaceable>.spk</replaceable>) at the timestamps (<replaceable>.res</replaceable>) written by ndm_detectspikes; the extraction engine may differ from the detection engine.
 									</para>
 								</listitem>
 							</varlistentry>
