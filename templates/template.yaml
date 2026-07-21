@@ -860,6 +860,9 @@ programs:
     - name: chunkSize
       value: 134217728
       status: Mandatory
+    # - name: inputExtension
+    #   value: dat
+    #   status: Optional
   help: |-
     High-pass filter a .dat file (required for spike extraction).
 
@@ -877,6 +880,14 @@ programs:
     Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
     Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
 
+    OPTIONAL PARAMETERS
+
+    # inputExtension
+
+    Data file read for filtering, without the leading dot (default dat). Point it
+    at an alternative, externally-processed source (e.g. car.dat) to filter that
+    file instead of the raw recording.
+
 - name: ndm_bandpass
   parameters:
     - name: windowHalfLength
@@ -891,6 +902,9 @@ programs:
     - name: chunkSize
       value: 134217728
       status: Mandatory
+    # - name: inputExtension
+    #   value: dat
+    #   status: Optional
   help: |-
     Band-pass filter a .dat file (alternative to ndm_hipass for spike extraction).
 
@@ -921,6 +935,12 @@ programs:
 
     Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
     Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
+
+    # inputExtension
+
+    Data file read for filtering, without the leading dot (default dat). Point it
+    at an alternative, externally-processed source (e.g. car.dat) to filter that
+    file instead of the raw recording.
 
 - name: ndm_denoiseuniform
   parameters:
