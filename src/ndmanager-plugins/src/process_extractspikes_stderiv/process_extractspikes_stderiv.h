@@ -50,12 +50,18 @@
 //                      positions.  Lets a geometry-matched, physically local
 //                      difference pattern be extracted directly.  A group whose
 //                      size does not match the pattern falls back to order 3.
+//  5  SDIFF_CUSTOM_CAR per-channel reference SET (see -P "a-b+c...").  Output
+//                      channel i is x[i] - mean(x over set[i]): order 4 with a
+//                      set of partners instead of one, keeping the local geometry
+//                      of a custom pattern while rejecting the common mode over
+//                      the set (full set == order 3; singleton set == order 4).
 enum SdiffOrder {
     SDIFF_NONE      = 0,
     SDIFF_FIRST     = 1,
     SDIFF_LAPLACIAN = 2,
     SDIFF_ALLPAIRS  = 3,  // default
-    SDIFF_CUSTOM    = 4   // per-channel partner map supplied via -P sdiffPairs
+    SDIFF_CUSTOM     = 4, // per-channel partner map supplied via -P sdiffPairs
+    SDIFF_CUSTOM_CAR = 5  // per-channel reference SET; s[i]=x[i]-mean(set) (-P "a-b+c...")
 };
 
 struct arguments {
