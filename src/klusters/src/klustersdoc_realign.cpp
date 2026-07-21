@@ -2605,6 +2605,28 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                << " (from basis method=" << static_cast<int>(pca.method)
                << "; 0=none 1=first 2=laplacian 3=allpairs 4=custom)";
 
+    // Dump the channel gather order and (custom) partner map actually in use so
+    // a suspected channel reversal / wrong operator can be checked against how
+    // this group was extracted: the gather must match ndm_extractspikes' -c list
+    // and the partner map must match ndm_extractspikes_stderiv's -P pattern (the
+    // operator the .spk/.pcaD the nudge reprojects onto were built with).  A basis
+    // extracted with a custom pattern reports all-pairs, so the session is the
+    // sole authority; a mismatch here diverges every nudged spike.
+    {
+        QString chStr, pStr;
+        for (int gi = 0; gi < groupChannels.size(); ++gi)
+            chStr += QString::number(groupChannels[gi])
+                   + (gi + 1 < groupChannels.size() ? QStringLiteral(" ") : QString());
+        for (size_t gi = 0; gi < nudgePartner.size(); ++gi)
+            pStr += QString::number(nudgePartner[gi])
+                  + (gi + 1 < nudgePartner.size() ? QStringLiteral(" ") : QString());
+        NS3_DIAG() << "[nudge] gather channels (extraction order, global 0-based): ["
+                   << chStr << "]";
+        if (!nudgePartner.empty())
+            NS3_DIAG() << "[nudge] custom partner map (within-group 0-based; ci -> ci minus "
+                          "partner[ci]; last position = dropped root): [" << pStr << "]";
+    }
+
     auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
                                      const std::vector<int16_t>& prevRaw,
                                      std::vector<int16_t>& out) {
