@@ -191,6 +191,21 @@ once()
 	check_optional_variable $extra || extra=false
 	$extra && options="$options -x"
 
+	# patch60 — Varimax rotation of the kept PCA basis, forwarded to process_pca.
+	# process_pca bakes the rotation into the saved .pca.N basis, so every
+	# downstream consumer (Klusters reprojection included) follows it with no
+	# further change.  Applies to all methods; for stderiv the rotation acts on
+	# the channel-reduced stderiv features that process_pca receives.
+	varimax=$(read_script_parameter $session varimax)
+	check_optional_variable $varimax || varimax=false
+	if $varimax; then
+		options="$options --varimax"
+		varimaxMaxIter=$(read_script_parameter $session varimaxMaxIter)
+		check_optional_variable $varimaxMaxIter && options="$options --varimax-max-iter $varimaxMaxIter"
+		varimaxTol=$(read_script_parameter $session varimaxTol)
+		check_optional_variable $varimaxTol && options="$options --varimax-tol $varimaxTol"
+	fi
+
 	# ── Subset PCA: drop high-rate clusters from the fit ────────────────────
 	#
 	# When an initial clustering pass has identified fast-spiking interneurons
