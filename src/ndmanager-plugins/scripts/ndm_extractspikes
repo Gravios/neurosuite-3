@@ -2,7 +2,7 @@
 
 #////////////////////////////////////////////////////////////////////////////
 #//
-#//   Detect and extract spikes (unified, method-dispatching)
+#//   Extract spike waveforms at previously-detected spike times
 #//
 #//   copyright       (C) 2007-2010 by Michaël Zugaro
 #//                   (C) 2025-2026 Gravios / NeuroSuite-3 contributors
@@ -17,311 +17,30 @@
 #
 #  DESCRIPTION
 #  -----------
-#  Single entry point for spike detection + waveform extraction.  The detection
-#  method is selected by the `method` field and dispatched to the appropriate
-#  engine binary:
+#  Re-extracts waveforms (-R) for every spike in the shared .res (written by
+#  ndm_detectspikes) and writes .spk.<method>.N.  It never detects: if no .res
+#  exists yet it errors, pointing you to ndm_detectspikes.  Spike times are
+#  method-independent, so the extraction engine (standard | sdiff | stderiv) may
+#  differ from the one used for detection — one engine may detect better, another
+#  may yield better waveform features — and it may be run several times with
+#  different methods/orders, each reusing the same .res.
 #
-#    standard  process_extractspikes          raw threshold detection,
-#                                              raw-amplitude waveforms
-#    sdiff     process_extractspikes_sdiff     spatial-derivative detection,
-#                                              raw-amplitude waveforms
-#    stderiv   process_extractspikes_stderiv   spatial+temporal derivative
-#                                              detection, stderiv-domain waveforms
+#  PARAMETERS (session file, ndm_extractspikes node)
+#    method          standard | sdiff | stderiv        (default standard)
+#    methodOrder     spatial-derivative order 0-3       (sdiff/stderiv; default 3)
+#    inputExtension  input data extension               (default fil)
+#  Extraction needs no threshold/window parameters; under -R the engines take
+#  only channel geometry and, for sdiff/stderiv, the spatial-derivative transform.
 #
-#  Chain-of-custody naming: the method is stamped onto every artifact this tool
-#  writes, so outputs are <session>.res.<method>.<group> and
-#  <session>.spk.<method>.<group> (e.g. .res.stderiv.5 / .spk.stderiv.5).  The
-#  engine binaries write untagged temp files; this wrapper owns the final
-#  tagging via ndm_method_path.
-#
-#  Shared .res: spike times are method-independent, so the first extraction run
-#  in a session owns the .res.  A later run with a different method (e.g.
-#  stderiv -> standard) reuses that existing .res to re-extract waveforms in the
-#  new domain (writing only .spk.<method>.<group>); it does not re-detect or
-#  create a second .res.  Detection runs only when no .res exists yet.
-#
-#  PARAMETERS  (YAML, under program node ndm_extractspikes)
-#  ----------
-#    method       standard | sdiff | stderiv          (default standard)
-#    methodOrder  spatial derivative order, 0-3        (default 3; sdiff/stderiv
-#                 only — ignored for standard).  Accepts the deprecated alias
-#                 `sdiffOrder`.
-#  plus the usual thresholdFactor / refractoryPeriod / peakSearchLength /
-#  start / duration / memCapGB.
-#    inputExtension  data file extension read for extraction (default fil).  Point
-#                 it at an alternative processed source, e.g. car.fil or
-#                 filtered.dat, to extract from that instead of <session>.fil.
-#
-#  CLI OVERRIDES
-#  -------------
+#  USAGE
 #    ndm_extractspikes [parameter-file] [--method M] [--methodOrder N]
-#                      [--inputExtension EXT]
-#  CLI flags take precedence over the YAML fields.
-#
+#                      [--inputExtension EXT] [--force]
+#    CLI flags override the YAML fields; --force re-extracts even when a .spk
+#    already exists (overwriting it).
 #////////////////////////////////////////////////////////////////////////////
 
 # Source helper functions
 source ndm_functions
 
 program=$(basename $0)
-
-# ── Parse command-line: <=1 positional (parameter file) + override flags ─────
-methodOverride=
-methodOrderOverride=
-positionals=()
-while [ $# -gt 0 ]; do
-	case "$1" in
-		--method)         methodOverride="$2";       shift 2 ;;
-		--method=*)       methodOverride="${1#*=}";   shift ;;
-		--methodOrder)    methodOrderOverride="$2";   shift 2 ;;
-		--methodOrder=*)  methodOrderOverride="${1#*=}"; shift ;;
-		--inputExtension) inputExtensionOverride="$2";  shift 2 ;;
-		--inputExtension=*) inputExtensionOverride="${1#*=}"; shift ;;
-		--)               shift; while [ $# -gt 0 ]; do positionals+=("$1"); shift; done ;;
-		-*)               echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
-		*)                positionals+=("$1");        shift ;;
-	esac
-done
-if [ ${#positionals[@]} -gt 1 ]; then
-	echo_error "usage: $program [parameter-file] [--method standard|sdiff|stderiv] [--methodOrder 0-3]"
-	exit $GENERAL_ERROR
-fi
-ndm_resolve_session "${positionals[@]}"
-[ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
-param_ext=$(param_file_ext "$session")
-
-# ── Resolve method + methodOrder ─────────────────────────────────────────────
-# Precedence: CLI override > YAML methodOrder/method > deprecated sdiffOrder
-# alias (current node) > legacy per-method program node > built-in default.
-method=$methodOverride
-[ -z "$method" ] && method=$(read_script_parameter $session method)
-method=${method:-standard}
-case "$method" in
-	standard|sdiff|stderiv) : ;;
-	*) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
-esac
-
-methodOrder=$methodOrderOverride
-[ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
-if [ -z "$methodOrder" ] && [ "$method" != standard ]; then
-	# Back-compat: order historically lived under the per-method program node.
-	methodOrder=$(read_script_parameter -s ndm_extractspikes_$method $session sdiffOrder)
-fi
-methodOrder=${methodOrder:-3}
-
-case "$method" in
-	standard) binary=process_extractspikes ;;
-	sdiff)    binary=process_extractspikes_sdiff ;;
-	stderiv)  binary=process_extractspikes_stderiv ;;
-esac
-
-# Print a header to indicate current processing step
-print_header "$session - Detecting/extracting spikes [method=$method]"
-
-# Check required programs
-check_commands_installed xpathReader process_medianthreshold $binary
-
-# Input data extension.  Extraction reads $session.$inputExtension (default fil),
-# so it can run on an alternative, externally-processed source (e.g. a re-referenced
-# or differently-filtered file) without renaming it to .fil.  CLI > YAML > default.
-inputExtension=$inputExtensionOverride
-[ -z "$inputExtension" ] && inputExtension=$(read_script_parameter $session inputExtension)
-inputExtension=${inputExtension:-fil}
-
-# Check required files
-inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
-
-secondsToBytes()
-{
-	unset LANG && echo $1 $samplingRate $nChannels $resolution | awk '{printf "%f",int($1*$2)/8*$3*$4}' | sed 's/[.].*//'
-}
-
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Read Parameters
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-
-nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
-resolution=$(yaml_read $session "//acquisitionSystem/nBits")
-samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
-nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
-
-check_mandatory_variable $nChannels "missing number of channels"
-check_mandatory_variable $resolution "missing resolution (in bits)"
-check_mandatory_variable $samplingRate "missing sampling rate"
-if [ $nElectrodeGroups -eq 0 ]
-then
-  echo_error "missing spike groups"
-  exit $GENERAL_ERROR
-fi
-
-# Check output files (process only new ones).  Outputs are method-tagged.
-for group in $(seq 1 $nElectrodeGroups)
-do
-	output=$(ndm_method_path "$session" spk "$group" "$method")
-	if ! outputs_exist "$output"
-	then
-		electrodeGroups="$electrodeGroups $group"
-	fi
-done
-
-# If all output files already exist there is nothing to do
-if [ -z "$electrodeGroups" ]
-then
-	echo_info "All output files already exist, nothing to do."
-	exit $NO_ERROR
-fi
-
-# Build per-group waveform parameters.  All engines use a single -w/-p for every
-# group; capture the first group's values and warn if a later group differs.
-for electrodeGroup in $electrodeGroups
-do
-	electrodes=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel")
-	check_mandatory_variable $electrodes "missing electrode list for group $electrodeGroup"
-	electrodes=$(echo $electrodes | sed 's/ /,/g') # replace spaces with commas
-	electrodeList="$electrodeList:$electrodes"
-	# Collect this group's optional custom difference pattern, aligned 1:1
-	# with electrodeList; empty when the group defines none.
-	_pairs=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/sdiffPairs")
-	sdiffPairsList="$sdiffPairsList:$_pairs"
-
-	_ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
-	_ps=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
-	check_mandatory_variable $_ns "missing number of samples in waveform for electrode group $electrodeGroup"
-	check_mandatory_variable $_ps "missing peak sample for electrode group $electrodeGroup"
-	if [ -z "$samplesInWaveform" ]; then
-		samplesInWaveform=$_ns
-		peakSample=$_ps
-	elif [ "$_ns" != "$samplesInWaveform" ] || [ "$_ps" != "$peakSample" ]; then
-		echo_warning "Group $electrodeGroup has nSamples=$_ns peakSampleIndex=$_ps"
-		echo_warning "  which differs from first group ($samplesInWaveform/$peakSample)."
-		echo_warning "  $binary uses uniform params; using first group values."
-	fi
-done
-n=$((${#electrodeList}-1))
-electrodeList=${electrodeList:1:$n} # remove leading ':'
-
-# Per-group custom difference patterns come straight from the spike groups in
-# the session file (the 'Diff pairs' column), colon-separated and aligned with
-# -c.  -P is passed only for stderiv, and only when at least one group defines a
-# pattern; otherwise every group uses the base spatial-derivative order (-d).
-sdiffPairsList=${sdiffPairsList#:}
-sdiffPairsArg=
-if [ "$method" = stderiv ]; then
-	case "$sdiffPairsList" in
-		*[!:]*) sdiffPairsArg="-P $sdiffPairsList" ;;
-	esac
-fi
-
-thresholdFactor=$(read_script_parameter $session thresholdFactor)
-refractoryPeriod=$(read_script_parameter $session refractoryPeriod)
-peakSearchLength=$(read_script_parameter $session peakSearchLength)
-start=$(read_script_parameter $session start)
-duration=$(read_script_parameter $session duration)
-memCapGB=$(read_script_parameter $session memCapGB)
-
-check_mandatory_variable $thresholdFactor "missing threshold factor"
-check_mandatory_variable $refractoryPeriod "missing refractory period"
-check_mandatory_variable $peakSearchLength "missing peak search window length"
-check_mandatory_variable $start "missing starting point for threshold computation"
-check_mandatory_variable $duration "missing duration for threshold computation"
-
-startInBytes=$(secondsToBytes $start)
-durationInBytes=$(secondsToBytes $duration)
-
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Detect spikes (create .res.<method>.# file) and extract waveforms (.spk.<method>.#)
-# ////////////////////////////////////////////////////////////////////////////////////////////////
-
-echo_info "Processing channels $electrodeList"
-[ "$method" != standard ] && echo_info " Spatial derivative order : $methodOrder"
-[ -n "$sdiffPairsArg" ] && echo_info " Custom difference patterns : $sdiffPairsList"
-echo_info " Threshold factor         : $thresholdFactor"
-echo_info " Noise window             : ${start}s – $((start + duration))s"
-echo_info "   (= byte offset $startInBytes, length $durationInBytes)"
-
-# Use a temporary symlink so output files from incomplete runs cannot
-# accidentally overwrite good existing files.
-tmp=$session-extract-tmp
-ln -s "$session.$inputExtension" $tmp.fil
-# Set waveform memory cap (default 2 GB if not in parameter file).
-export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
-
-# Re-extract mode: spike times are method-independent, so .res is a SHARED
-# artifact — the first extraction run in a session owns it and later runs (e.g.
-# switching method=stderiv -> standard) reuse it to extract waveforms in the new
-# domain rather than re-detecting.  ndm_resolve_any (ndm_custody) locates that
-# shared .res for a group: the current method first (idempotent re-run), then any
-# other method, then untagged.  If every group has one, skip detection and extract
-# at those exact int64 timestamps (-R).  The .res is copied into the temp slot
-# (never the live file) and is left untouched on write-back; only the
-# .spk.<method>.N is produced.  If no .res exists yet, detection runs and creates it.
-reExtract=1
-declare -A srcRes=()
-for group in $electrodeGroups; do
-	r=$(ndm_resolve_any "$session" res "$group" "$method")
-	if [ -z "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then reExtract=0; break; fi
-	srcRes[$group]="$r"
-done
-reExtractFlag=
-if [ "$reExtract" -eq 1 ]; then
-	echo_info "    existing shared .res for all groups — re-extracting at those timestamps (-R; no detection, .res reused)"
-	reExtractFlag=-R
-	declare -i i=0
-	for group in $electrodeGroups; do
-		i=$i+1
-		cp "${srcRes[$group]}" $tmp.res.$i
-	done
-fi
-
-# Dispatch to the method's engine.  standard computes the detection threshold
-# externally (process_medianthreshold -> -t baseline); sdiff/stderiv compute it
-# internally from the noise window (-f/-B/-Z) and take the derivative order -d.
-case "$method" in
-	standard)
-		thresholdArg=
-		if [ "$reExtract" -ne 1 ]; then
-			echo_info " 1. Computing thresholds (process_medianthreshold)"
-			baseline=$(tail -c +$(($startInBytes+1)) "$session.$inputExtension" | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
-			check_command_status process_medianthreshold
-			baseline=$(unset LANG && echo $baseline | awk 'BEGIN{RS=":";FS=","};{for (i=1;i<=NF;i++){printf "%f,",$i*'$thresholdFactor'};printf ":"}' | sed 's/,:/:/g;s/:$//')
-			echo_info "    threshold $baseline"
-			thresholdArg="-t $baseline"
-		fi
-		echo_info " 2. Extracting spike waveforms"
-		process_extractspikes \
-			-n $nChannels -c $electrodeList \
-			-w $samplesInWaveform -p $peakSample \
-			$thresholdArg \
-			-l $peakSearchLength -r $refractoryPeriod \
-			$reExtractFlag $tmp
-		;;
-	sdiff|stderiv)
-		echo_info " Detecting + extracting spike waveforms"
-		$binary \
-			-n $nChannels -c $electrodeList \
-			-w $samplesInWaveform -p $peakSample \
-			-r $refractoryPeriod -l $peakSearchLength \
-			-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
-			-d $methodOrder \
-			$sdiffPairsArg \
-			$reExtractFlag $tmp
-		;;
-esac
-check_command_status $binary
-
-# Rename temporary (untagged) output files to final method-tagged names.
-rm $tmp.fil
-declare -i i=0
-for group in $electrodeGroups
-do
-	i=$i+1
-	if [ "$reExtract" -eq 1 ]; then
-		# Reused an existing shared .res — it is unchanged on disk; discard the
-		# temp copy and do NOT fork a method-tagged .res for this run.
-		rm -f $tmp.res.$i
-	else
-		# Detection ran: this .res becomes the session's shared spike times.
-		mv $tmp.res.$i "$(ndm_method_path "$session" res "$group" "$method")"
-	fi
-	mv $tmp.spk.$i "$(ndm_method_path "$session" spk "$group" "$method")"
-done
+ndm_process_spikes extract "$@"

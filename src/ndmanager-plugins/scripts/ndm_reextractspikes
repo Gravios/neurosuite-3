@@ -67,11 +67,11 @@ if [ -z "$nElectrodeGroups" ] || [ "$nElectrodeGroups" -eq 0 ]; then
 fi
 
 # Detection parameters — inherited from ndm_extractspikes.
-thresholdFactor=$(read_script_parameter -a ndm_extractspikes $session thresholdFactor)
-refractoryPeriod=$(read_script_parameter -a ndm_extractspikes $session refractoryPeriod)
-peakSearchLength=$(read_script_parameter -a ndm_extractspikes $session peakSearchLength)
-start=$(read_script_parameter -a ndm_extractspikes $session start)
-duration=$(read_script_parameter -a ndm_extractspikes $session duration)
+thresholdFactor=$(read_script_parameter -a ndm_detectspikes $session thresholdFactor)
+refractoryPeriod=$(read_script_parameter -a ndm_detectspikes $session refractoryPeriod)
+peakSearchLength=$(read_script_parameter -a ndm_detectspikes $session peakSearchLength)
+start=$(read_script_parameter -a ndm_detectspikes $session start)
+duration=$(read_script_parameter -a ndm_detectspikes $session duration)
 
 # Re-extraction-specific parameters, set in the YAML under
 # `program: ndm_reextractspikes` by ndmanager.

@@ -1,0 +1,46 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Detect spikes and write the shared spike-time (.res) file
+#//
+#//   copyright       (C) 2007-2010 by Michaël Zugaro
+#//                   (C) 2025-2026 Gravios / NeuroSuite-3 contributors
+#//   email           michael.zugaro@college-de-france.fr
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+#
+#  DESCRIPTION
+#  -----------
+#  Runs the selected engine (standard | sdiff | stderiv) in detection mode over
+#  $session.$inputExtension and writes .res.<method>.N — the method-independent
+#  spike times that ndm_extractspikes then re-extracts waveforms from.  The engine
+#  also emits a .spk in passing (there is no detect-only engine mode); it is
+#  discarded, so this step contributes only the .res.
+#
+#  PARAMETERS (session file, ndm_detectspikes node)
+#    method           standard | sdiff | stderiv       (default standard)
+#    methodOrder      spatial-derivative order 0-3      (sdiff/stderiv; default 3)
+#    thresholdFactor  detection threshold multiplier
+#    refractoryPeriod refractory period (samples)
+#    peakSearchLength peak-search window length (samples)
+#    start / duration noise window for threshold estimation (seconds)
+#    inputExtension   input data extension              (default fil)
+#
+#  USAGE
+#    ndm_detectspikes [parameter-file] [--method M] [--methodOrder N]
+#                     [--inputExtension EXT] [--force]
+#    CLI flags override the YAML fields; --force re-detects even when a .res
+#    already exists (overwriting it).
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+program=$(basename $0)
+ndm_process_spikes detect "$@"

@@ -1,12 +1,15 @@
 #!/bin/bash
 #////////////////////////////////////////////////////////////////////////////
-#//   DEPRECATED: folded into ndm_extractspikes.
-#//   `ndm_extractspikes_stderiv [args]` == `ndm_extractspikes --method stderiv [args]`.
+#//   DEPRECATED: spike processing is now split into detection and extraction.
+#//   `ndm_extractspikes_stderiv [args]` was a single detect+extract pass; it now runs
+#//     ndm_detectspikes  --method stderiv [args]   (writes the shared .res)
+#//     ndm_extractspikes --method stderiv [args]   (extracts .spk.stderiv.N at that .res)
 #//   Kept as a thin shim so existing pipelines / session-YAML program entries
-#//   keep running.  Prefer setting `method: stderiv` under ndm_extractspikes.
+#//   keep running.  Prefer separate ndm_detectspikes / ndm_extractspikes steps
+#//   with `method: stderiv`.
 #////////////////////////////////////////////////////////////////////////////
 # Legacy sessions keep their parameters under the old program node; export
 # alt_program so read_script_parameter falls back to it.
 export alt_program=ndm_extractspikes_stderiv
-echo "ndm_extractspikes_stderiv is deprecated; use 'ndm_extractspikes --method stderiv'." >&2
-exec ndm_extractspikes --method stderiv "$@"
+echo "ndm_extractspikes_stderiv is deprecated; use separate 'ndm_detectspikes --method stderiv' and 'ndm_extractspikes --method stderiv'." >&2
+ndm_detectspikes --method stderiv "$@" && exec ndm_extractspikes --method stderiv "$@"
