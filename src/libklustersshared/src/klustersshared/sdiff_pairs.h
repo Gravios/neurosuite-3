@@ -1,8 +1,9 @@
 // sdiff_pairs.h — shared parser for SDIFF_CUSTOM custom difference patterns.
 //
 // A custom spatial-derivative pattern is given as "a-b,c-d,..." where each token
-// is a pair of 1-based within-group channel positions.  It is parsed into a
-// per-channel partner map: partner[a-1] = b-1, so output channel a becomes
+// is a pair of 0-based within-group channel positions (matching the 0-based
+// channel indexing of the .dat frame and .fet columns).  It is parsed into a
+// per-channel partner map: partner[a] = b, so output channel a becomes
 // x[a] - x[b].  The pattern must form a spanning tree with exactly one root (a
 // position that is never a source), and the root must be the last position so
 // that its (redundant) output is the last channel — the one process_pca_stderiv
@@ -47,15 +48,15 @@ inline std::vector<int> parseSdiffPairs(const char *spec, bool *ok = nullptr)
             }
             int a = atoi(tok.substr(0, dash).c_str());
             int b = atoi(tok.substr(dash + 1).c_str());
-            if(a < 1 || b < 1 || a == b) {
+            if(a < 0 || b < 0 || a == b) {
                 if(ok) { *ok = false; return std::vector<int>(); }
                 std::cerr << "error: bad sdiffPairs token '" << tok << "'.\n";
                 exit(1);
             }
-            src.push_back(a - 1);
-            dst.push_back(b - 1);
-            if(a > maxPos) maxPos = a;
-            if(b > maxPos) maxPos = b;
+            src.push_back(a);
+            dst.push_back(b);
+            if(a + 1 > maxPos) maxPos = a + 1;
+            if(b + 1 > maxPos) maxPos = b + 1;
         }
         if(c == std::string::npos) break;
         p = c + 1;
@@ -69,7 +70,7 @@ inline std::vector<int> parseSdiffPairs(const char *spec, bool *ok = nullptr)
     for(size_t k = 0; k < src.size(); k++) {
         if(partner[src[k]] != -1) {
             if(ok) { *ok = false; return std::vector<int>(); }
-            std::cerr << "error: sdiffPairs channel " << src[k] + 1
+            std::cerr << "error: sdiffPairs channel " << src[k]
                       << " has two difference targets.\n";
             exit(1);
         }
@@ -88,8 +89,8 @@ inline std::vector<int> parseSdiffPairs(const char *spec, bool *ok = nullptr)
     }
     if(roots[0] != maxPos - 1) {
         if(ok) { *ok = false; return std::vector<int>(); }
-        std::cerr << "error: sdiffPairs root channel " << roots[0] + 1
-                  << " must be the last position (" << maxPos << ").\n";
+        std::cerr << "error: sdiffPairs root channel " << roots[0]
+                  << " must be the last position (" << maxPos - 1 << ").\n";
         exit(1);
     }
     int pred = -1;                                   // wire the root to a predecessor
