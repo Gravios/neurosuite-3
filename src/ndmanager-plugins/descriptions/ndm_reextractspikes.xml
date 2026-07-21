@@ -166,7 +166,6 @@ NEXT STEPS
 
 SEE ALSO
 
-  ndm_reextractspikes_stderiv — spatial+temporal derivative variant.
-  ndm_subcluster_unmatched    — re-cluster the unmatched bin.</help>
+  ndm_subcluster_unmatched — re-cluster the unmatched bin.</help>
  </program>
 </parameter>

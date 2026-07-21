@@ -3,23 +3,32 @@
 #////////////////////////////////////////////////////////////////////////////
 #//
 #//   Second-pass spike detection with mask exclusion and in-place shadow
-#//   clustering.
+#//   clustering (unified, method-dispatching)
 #//
 #//   PIPELINE
 #//   --------
-#//   1. process_reextractspikes scans $session.fil using per-group
-#//      thresholds derived from process_medianthreshold's baseline scaled
-#//      by reextractThresholdFactor.  Any candidate peak within
-#//      ± reextractMaskHalfWidth samples of an existing $session.res.N
-#//      entry is rejected.  Output lands at $session-reextr-tmp.*.
+#//   1. The detection engine scans $session.fil with reduced thresholds and
+#//      rejects any candidate peak within +/- reextractMaskHalfWidth samples of
+#//      an existing spike time, so only spikes MISSED by the first pass survive.
+#//      Output lands at $session-reextr-tmp.{res,spk}.N.
+#//         standard / sdiff : process_reextractspikes        (external -t threshold)
+#//         stderiv          : process_reextractspikes_stderiv (-f/-B/-Z/-d order)
 #//
-#//   2. Originals are copied to $session.<ext>.<N>.bak for crash recovery.
+#//   2. Originals are copied to <dotted-name>.bak for crash recovery.
 #//
-#//   3. process_shadowcluster merges the new spikes directly into the
-#//      primary $session.{res,spk,fet,clu}.N files, with shadow cluster
-#//      IDs assigned to every new spike.  The merge is crash-safe: each
-#//      output is written to a .tmp file first and renamed atomically on
-#//      completion.
+#//   3. process_shadowcluster merges the new spikes directly into the primary
+#//      .{res,spk,fet,clu}.<method>.N files, with shadow cluster IDs assigned to
+#//      every new spike.  The merge is crash-safe: each output is written to a
+#//      sandbox first and renamed atomically on completion.
+#//
+#//   FILE NAMES (chain-of-custody, like ndm_extractspikes / ndm_pca)
+#//   ---------------------------------------------------------------
+#//   The `method` (standard | sdiff | stderiv) selects the detection engine and
+#//   the dotted artifact names: .spk.<method>.N / .fet.<method>.N / .clu.<method>.N
+#//   / .pca.<method>.N.  Spike times (.res) are method-independent and resolved
+#//   across methods.  process_reextractspikes / process_shadowcluster take a stem
+#//   and hard-code the raw extensions, so the dotted files are marshaled through
+#//   temporary raw-named links on the read side and renamed back on commit.
 #//
 #//   CLUSTER ID CONVENTION
 #//   ---------------------
@@ -34,18 +43,53 @@
 source ndm_functions
 
 program=$(basename $0)
-if [ $# -gt 1 ]; then
-    echo_error "usage: $program [parameter-file]"
+
+# ── Parse command-line: <=1 positional (parameter file) + method overrides ───
+positionals=()
+methodOverride=
+methodOrderOverride=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --method)         methodOverride="$2";          shift 2 ;;
+        --method=*)       methodOverride="${1#*=}";      shift ;;
+        --methodOrder)    methodOrderOverride="$2";      shift 2 ;;
+        --methodOrder=*)  methodOrderOverride="${1#*=}"; shift ;;
+        -*)               echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
+        *)                positionals+=("$1");           shift ;;
+    esac
+done
+if [ ${#positionals[@]} -gt 1 ]; then
+    echo_error "usage: $program [parameter-file] [--method M] [--methodOrder N]"
     exit $GENERAL_ERROR
 fi
-ndm_resolve_session "$@"
-[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+ndm_resolve_session "${positionals[@]}"
+[ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
 param_ext=$(param_file_ext "$session")
 
-print_header "$session - Second-pass spike re-extraction with in-place shadow clustering"
+# ── Resolve method + methodOrder (CLI override > YAML > default) ──────────────
+method=$methodOverride
+[ -z "$method" ] && method=$(read_script_parameter $session method)
+method=${method:-standard}
+case "$method" in
+    standard|sdiff|stderiv) : ;;
+    *) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
+esac
+methodOrder=$methodOrderOverride
+[ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
+methodOrder=${methodOrder:-3}
+if [ "$method" != standard ]; then
+    if [ "$methodOrder" -lt 1 ] || [ "$methodOrder" -gt 3 ]; then
+        echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-3)"
+        exit $GENERAL_ERROR
+    fi
+fi
+# standard and sdiff share the raw engine (sdiff waveforms are raw, exactly as in
+# ndm_pca); only stderiv has a derivative-space detection binary.
+if [ "$method" = stderiv ]; then reBinary=process_reextractspikes_stderiv; else reBinary=process_reextractspikes; fi
 
-check_commands_installed process_reextractspikes process_shadowcluster \
-    process_medianthreshold
+print_header "$session - Second-pass spike re-extraction [method=$method] with in-place shadow clustering"
+
+check_commands_installed $reBinary process_shadowcluster process_medianthreshold
 
 inputs_missing "$session.$param_ext" "$session.fil" && exit $INPUTS_MISSING
 
@@ -66,15 +110,14 @@ if [ -z "$nElectrodeGroups" ] || [ "$nElectrodeGroups" -eq 0 ]; then
     exit $GENERAL_ERROR
 fi
 
-# Detection parameters — inherited from ndm_extractspikes.
+# Detection parameters — shared with the detection engine (ndm_detectspikes node).
 thresholdFactor=$(read_script_parameter -a ndm_detectspikes $session thresholdFactor)
 refractoryPeriod=$(read_script_parameter -a ndm_detectspikes $session refractoryPeriod)
 peakSearchLength=$(read_script_parameter -a ndm_detectspikes $session peakSearchLength)
 start=$(read_script_parameter -a ndm_detectspikes $session start)
 duration=$(read_script_parameter -a ndm_detectspikes $session duration)
 
-# Re-extraction-specific parameters, set in the YAML under
-# `program: ndm_reextractspikes` by ndmanager.
+# Re-extraction-specific parameters (ndm_reextractspikes node).
 reextractThresholdFactor=$(read_script_parameter $session reextractThresholdFactor)
 reextractMaskHalfWidth=$(read_script_parameter   $session reextractMaskHalfWidth)
 reextractMinClusterSize=$(read_script_parameter  $session reextractMinClusterSize)
@@ -90,28 +133,19 @@ check_mandatory_variable $peakSearchLength "missing peakSearchLength"
 check_mandatory_variable $start            "missing start"
 check_mandatory_variable $duration         "missing duration"
 
-# Fallback defaults — normally supplied by the XML descriptor's <value/>
-# tags (and therefore present in session YAML after ndmanager generation)
-# but retained here in case a session was created before this plugin
-# shipped.  Keep these in sync with descriptions/ndm_reextractspikes.xml.
+# Fallback defaults — normally supplied by the XML descriptor.
 reextractThresholdFactor=${reextractThresholdFactor:-$(unset LANG && echo "$thresholdFactor 0.75" \
     | awk '{printf "%g", $1 * $2}')}
-# reextractMaskHalfWidth default is per-group (= that group's nSamples),
-# resolved after the group scan below.  An explicit YAML value overrides.
 reextractMinClusterSize=${reextractMinClusterSize:-50}
-# NB: default lowered from 0.9999 (d²=54.234 on df=21) to 0.999 (d²≈46.80).
-# The tighter gate combined with the inflation guard below is what finally
-# prevents runaway absorption into a single over-dispersed parent cluster.
 reextractChi2=${reextractChi2:-0.999}
 reextractExtraFeat=${reextractExtraFeat:-auto}
-# Inflation guard defaults (process_shadowcluster v1.1+).  See the stderiv
-# wrapper for the full rationale; identical semantics here.
 reextractInflationRatio=${reextractInflationRatio:-5.0}
 reextractInflationCap=${reextractInflationCap:-500}
 reextractAutoSubcluster=${reextractAutoSubcluster:-0}
 
 echo_info "Re-extraction parameters:"
 echo_info "  reextractThresholdFactor = $reextractThresholdFactor  (main thresholdFactor=$thresholdFactor)"
+[ "$method" != standard ] && echo_info "  spatial derivative order = $methodOrder"
 if [ -n "$reextractMaskHalfWidth" ]; then
     echo_info "  reextractMaskHalfWidth   = $reextractMaskHalfWidth samples (explicit)"
 else
@@ -125,7 +159,7 @@ echo_info "  reextractInflationCap    = $reextractInflationCap"
 echo_info "  reextractAutoSubcluster  = $reextractAutoSubcluster"
 
 # ////////////////////////////////////////////////////////////////////////////
-# //  Build per-group channel list, verify pre-requisites
+# //  Build per-group channel list, verify pre-requisites (dotted names)
 # ////////////////////////////////////////////////////////////////////////////
 
 secondsToBytes()
@@ -137,16 +171,12 @@ secondsToBytes()
 electrodeList=""
 samplesInWaveform=""
 peakSample=""
-# Per-group arrays — same pattern as ndm_reextractspikes_stderiv.
-#   groupSpkExt[g]:       "spk" | "spkD"
-#   groupFetExt[g]:       "fet" | "fetD"
-#   groupPcaExt[g]:       "pca" | "pcaD" | ""  (optional)
-#
-# Note: .res and .clu are always written under the canonical extensions
-# regardless of which detection pipeline was used.
-declare -A groupSpkExt
-declare -A groupFetExt
-declare -A groupPcaExt
+# Per-group resolved dotted paths (method-tagged; .res is Shared).
+declare -A groupResFile
+declare -A groupSpkFile
+declare -A groupFetFile
+declare -A groupCluFile
+declare -A groupPcaFile
 declare -A groupNSamples
 declare -A groupActive
 activeCount=0
@@ -169,58 +199,42 @@ for group in $(seq 1 $nElectrodeGroups); do
         peakSample=$_ps
     elif [ "$_ns" != "$samplesInWaveform" ] || [ "$_ps" != "$peakSample" ]; then
         echo_warning "Group $group has nSamples=$_ns peakSampleIndex=$_ps differs from group 1"
-        echo_warning "  process_reextractspikes uses uniform values; using group 1's."
+        echo_warning "  the detection engine uses uniform values; using group 1's."
     fi
 
-    # .res is required regardless.
-    if [ ! -f "$session.res.$group" ]; then
-        echo_warning "  group $group: $session.res.$group missing — skipping"
+    # .res holds method-independent spike times — resolve it across methods.
+    resFile=$(ndm_resolve_any "$session" res "$group" "$method")
+    if [ -z "$resFile" ] || [ ! -f "$resFile" ]; then
+        echo_warning "  group $group: no .res (any method) — skipping"
         groupActive[$group]=n
         skippedCount=$((skippedCount + 1))
         continue
     fi
+    groupResFile[$group]=$resFile
 
-    # Feature file: prefer raw (.fet) then stderiv (.fetD).
-    if   [ -f "$session.fet.$group"  ]; then
-        groupFetExt[$group]=fet
-    elif [ -f "$session.fetD.$group" ]; then
-        groupFetExt[$group]=fetD
-    else
-        echo_warning "  group $group: no .fet or .fetD — skipping"
-        groupActive[$group]=n
-        skippedCount=$((skippedCount + 1))
-        continue
+    # Waveform / feature / cluster files are method-tagged.
+    spkFile=$(ndm_method_path "$session" spk "$group" "$method")
+    fetFile=$(ndm_method_path "$session" fet "$group" "$method")
+    cluFile=$(ndm_method_path "$session" clu "$group" "$method")
+    if [ ! -f "$spkFile" ]; then
+        echo_warning "  group $group: no $spkFile — skipping"
+        groupActive[$group]=n; skippedCount=$((skippedCount + 1)); continue
     fi
+    if [ ! -f "$fetFile" ]; then
+        echo_warning "  group $group: no $fetFile — skipping"
+        groupActive[$group]=n; skippedCount=$((skippedCount + 1)); continue
+    fi
+    if [ ! -f "$cluFile" ]; then
+        echo_warning "  group $group: no $cluFile — skipping (sort first)"
+        groupActive[$group]=n; skippedCount=$((skippedCount + 1)); continue
+    fi
+    groupSpkFile[$group]=$spkFile
+    groupFetFile[$group]=$fetFile
+    groupCluFile[$group]=$cluFile
 
-    # Waveform file: prefer .spk (raw pipeline) then .spkD (stderiv).
-    if   [ -f "$session.spk.$group"  ]; then
-        groupSpkExt[$group]=spk
-    elif [ -f "$session.spkD.$group" ]; then
-        groupSpkExt[$group]=spkD
-    else
-        echo_warning "  group $group: no .spk or .spkD — skipping"
-        groupActive[$group]=n
-        skippedCount=$((skippedCount + 1))
-        continue
-    fi
-
-    # Cluster file: always .clu (no D variant); skip groups that haven't
-    # been sorted yet rather than aborting the whole run.
-    if [ ! -f "$session.clu.$group" ]; then
-        echo_warning "  group $group: no .clu — skipping (sort first)"
-        groupActive[$group]=n
-        skippedCount=$((skippedCount + 1))
-        continue
-    fi
-
-    # PCA basis (optional — record variant for symlink shim).
-    if   [ -f "$session.pca.$group"  ]; then
-        groupPcaExt[$group]=pca
-    elif [ -f "$session.pcaD.$group" ]; then
-        groupPcaExt[$group]=pcaD
-    else
-        groupPcaExt[$group]=""
-    fi
+    # PCA basis (optional; process_shadowcluster reads it if present).
+    pcaFile=$(ndm_method_path "$session" pca "$group" "$method")
+    [ -f "$pcaFile" ] && groupPcaFile[$group]=$pcaFile || groupPcaFile[$group]=""
 
     groupActive[$group]=y
     activeCount=$((activeCount + 1))
@@ -229,22 +243,18 @@ electrodeList=${electrodeList#:}
 
 if [ "$activeCount" -eq 0 ]; then
     echo_error "No groups have the full set of inputs — nothing to re-extract."
-    echo_error "Run the primary detect/sort pipeline on at least one group first."
+    echo_error "Run the primary detect/sort pipeline (method=$method) on at least one group first."
     exit $INPUTS_MISSING
 fi
 echo_info "Active groups: $activeCount  (skipped: $skippedCount)"
 
-# Resolve mask half-width: explicit YAML value wins; otherwise default
-# to the maximum per-active-group nSamples.  See ndm_reextractspikes_stderiv
-# for rationale.
+# Resolve mask half-width: explicit YAML value wins; else max per-active nSamples.
 if [ -z "$reextractMaskHalfWidth" ]; then
     maxNs=0
     for group in $(seq 1 $nElectrodeGroups); do
         [ "${groupActive[$group]}" != "y" ] && continue
         ns=${groupNSamples[$group]}
-        if [ "$ns" -gt "$maxNs" ]; then
-            maxNs=$ns
-        fi
+        [ "$ns" -gt "$maxNs" ] && maxNs=$ns
     done
     reextractMaskHalfWidth=$maxNs
     echo_info "Resolved reextractMaskHalfWidth = $reextractMaskHalfWidth samples (max group nSamples)"
@@ -254,75 +264,107 @@ startInBytes=$(secondsToBytes $start)
 durationInBytes=$(secondsToBytes $duration)
 
 # ////////////////////////////////////////////////////////////////////////////
-# //  Compute reduced thresholds
+# //  Compute reduced thresholds (standard / sdiff only; stderiv is internal)
 # ////////////////////////////////////////////////////////////////////////////
 
-echo_info "Computing baseline (median-threshold) and scaling by reextractThresholdFactor"
-
-baseline=$(tail -c +$(( startInBytes + 1 )) $session.fil \
-    | head -c $durationInBytes \
-    | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
-check_command_status process_medianthreshold
-
-thresholds=$(unset LANG && echo "$baseline" \
-    | awk -v f="$reextractThresholdFactor" \
-      'BEGIN{RS=":";FS=","} {for(i=1;i<=NF;i++) printf "%f,", $i*f; printf ":"}' \
-    | sed 's/,:/:/g;s/:$//')
-
-echo_info "  reduced thresholds: $thresholds"
+if [ "$method" != stderiv ]; then
+    echo_info "Computing baseline (median-threshold) and scaling by reextractThresholdFactor"
+    baseline=$(tail -c +$(( startInBytes + 1 )) $session.fil \
+        | head -c $durationInBytes \
+        | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
+    check_command_status process_medianthreshold
+    thresholds=$(unset LANG && echo "$baseline" \
+        | awk -v f="$reextractThresholdFactor" \
+          'BEGIN{RS=":";FS=","} {for(i=1;i<=NF;i++) printf "%f,", $i*f; printf ":"}' \
+        | sed 's/,:/:/g;s/:$//')
+    echo_info "  reduced thresholds: $thresholds"
+fi
 
 # ////////////////////////////////////////////////////////////////////////////
 # //  Pass 1 — re-detection with mask exclusion
+# //
+# //  The engine reads the existing spike times from <maskBase>.res.N; the .res
+# //  is method-independent and lives under a dotted/shared name, so link the
+# //  resolved file into a raw-named mask base for the (stem-based) binary.
 # ////////////////////////////////////////////////////////////////////////////
 
 tmpStem=$session-reextr-tmp
+maskBase=$session-reextr-mask
 rm -f $tmpStem.fil
 ln -s $session.fil $tmpStem.fil
+for group in $(seq 1 $nElectrodeGroups); do
+    [ "${groupActive[$group]}" != "y" ] && continue
+    rm -f "$maskBase.res.$group"
+    ln -sf "$(basename "${groupResFile[$group]}")" "$maskBase.res.$group"
+done
 
-process_reextractspikes \
-    -n $nChannels \
-    -c $electrodeList \
-    -t $thresholds \
-    -w $samplesInWaveform \
-    -p $peakSample \
-    -l $peakSearchLength \
-    -r $refractoryPeriod \
-    -m $session \
-    -M $reextractMaskHalfWidth \
-    -v \
-    $tmpStem
-check_command_status process_reextractspikes
+if [ "$method" = stderiv ]; then
+    process_reextractspikes_stderiv \
+        -n $nChannels \
+        -c $electrodeList \
+        -w $samplesInWaveform \
+        -p $peakSample \
+        -l $peakSearchLength \
+        -r $refractoryPeriod \
+        -f $reextractThresholdFactor \
+        -B $startInBytes \
+        -Z $durationInBytes \
+        -d $methodOrder \
+        -m $maskBase \
+        -M $reextractMaskHalfWidth \
+        -v \
+        $tmpStem
+    check_command_status process_reextractspikes_stderiv
+    # The stderiv engine writes .spkD (stderiv-transformed waveforms); rename to
+    # .spk so shadowcluster's hard-coded reader sees them (values unchanged).
+    for group in $(seq 1 $nElectrodeGroups); do
+        [ "${groupActive[$group]}" != "y" ] && continue
+        [ -f "$tmpStem.spkD.$group" ] && mv "$tmpStem.spkD.$group" "$tmpStem.spk.$group"
+    done
+else
+    process_reextractspikes \
+        -n $nChannels \
+        -c $electrodeList \
+        -t $thresholds \
+        -w $samplesInWaveform \
+        -p $peakSample \
+        -l $peakSearchLength \
+        -r $refractoryPeriod \
+        -m $maskBase \
+        -M $reextractMaskHalfWidth \
+        -v \
+        $tmpStem
+    check_command_status $reBinary
+fi
 
 rm -f $tmpStem.fil
+for group in $(seq 1 $nElectrodeGroups); do
+    [ "${groupActive[$group]}" != "y" ] && continue
+    rm -f "$maskBase.res.$group"
+done
 
 # ////////////////////////////////////////////////////////////////////////////
 # //  Pass 2 — in-place shadow-cluster merge per group
 # ////////////////////////////////////////////////////////////////////////////
 
 mergeStem=$session-reextr-merge
+refBase=$session-reextr-ref
 
-# Clean any stale merge outputs from a previous aborted run.
+# Clean any stale sandbox outputs from a previous aborted run.
 rm -f "$mergeStem".{res,spk,fet,clu,pca,shadowmark}.[0-9]*
 rm -f "$mergeStem".{res,spk,fet,clu,pca,shadowmark}.[0-9]*.tmp
+rm -f "$refBase".{spk,fet,clu,pca}.[0-9]*
 
 committedCount=0
 noSpikesCount=0
 
 for group in $(seq 1 $nElectrodeGroups); do
-    if [ "${groupActive[$group]}" != "y" ]; then
-        continue
-    fi
+    [ "${groupActive[$group]}" != "y" ] && continue
 
-    spkExt=${groupSpkExt[$group]}
-    fetExt=${groupFetExt[$group]}
-    pcaExt=${groupPcaExt[$group]}
     _ns=${groupNSamples[$group]}
     nChInGroup=$(yaml_read $session \
         "//spikeDetection/channelGroups/group[$group]/channels/channel" | wc -w)
 
-    # Report what Pass 1 left behind for this group.  Pass 1 always
-    # creates $tmpStem.res.$group (possibly 0 bytes if no new spikes
-    # were accepted); missing file means something went wrong upstream.
     if [ ! -e "$tmpStem.res.$group" ]; then
         echo_warning "  group $group: Pass 1 produced no $tmpStem.res.$group — skipping"
         noSpikesCount=$((noSpikesCount + 1))
@@ -336,48 +378,34 @@ for group in $(seq 1 $nElectrodeGroups); do
         continue
     fi
 
-    echo_info "Shadow-clustering group $group  ($_ns samples × $nChInGroup channels, $newSpkCount new spikes)"
-    echo_info "  reading .$spkExt / .$fetExt / .clu${pcaExt:+ / .$pcaExt}"
+    echo_info "Shadow-clustering group $group  ($_ns samples x $nChInGroup channels, $newSpkCount new spikes)"
 
-    # Create .bak backups of the originals the first time we touch them.
-    # If .bak already exists (e.g. from a prior run), don't clobber it —
-    # the earlier backup is the operator's safety net.  .pca is read-only
-    # for shadowcluster, so no backup needed.  .clu is always canonical.
-    backupExts="res clu $spkExt $fetExt"
-    for ext in $backupExts; do
-        if [ ! -f "$session.$ext.$group.bak" ]; then
-            cp "$session.$ext.$group" "$session.$ext.$group.bak"
+    # Create .bak backups of the dotted originals the first time we touch them.
+    for f in "${groupResFile[$group]}" "${groupSpkFile[$group]}" "${groupFetFile[$group]}" "${groupCluFile[$group]}"; do
+        if [ ! -f "$f.bak" ]; then
+            cp "$f" "$f.bak"
         else
-            echo_info "  keeping existing $session.$ext.$group.bak"
+            echo_info "  keeping existing $f.bak"
         fi
     done
 
     # process_shadowcluster reads <refBase>.{spk,fet,clu,pca}.N and writes
-    # <outBase>.{spk,fet,clu,res}.N.  It hard-codes the raw extensions on
-    # the read side.  We split ref and out so the live session files are
-    # not touched until after shadowcluster succeeds and all four output
-    # files verify present and non-empty.  See ndm_reextractspikes_stderiv
-    # for the full rationale.
-    linked_spk=0
-    linked_fet=0
-    linked_pca=0
-
-    make_shim() {
-        local src="$session.$1.$group"
-        local dst="$session.$2.$group"
-        if [ -e "$dst" ] && [ ! -L "$dst" ]; then
-            echo_error "  group $group: $dst exists and is not a symlink; refusing to clobber"
-            exit $GENERAL_ERROR
-        fi
-        ln -sf "$(basename "$src")" "$dst"
-    }
-
-    if [ "$spkExt" = "spkD" ]; then make_shim spkD spk; linked_spk=1; fi
-    if [ "$fetExt" = "fetD" ]; then make_shim fetD fet; linked_fet=1; fi
-    if [ "$pcaExt" = "pcaD" ]; then make_shim pcaD pca; linked_pca=1; fi
+    # <outBase>.{spk,fet,clu,res}.N, hard-coding the raw extensions on the read
+    # side.  Link the dotted files to raw-named entries under a dedicated refBase
+    # (never the live files), so a failure leaves the session untouched and the
+    # commit is a set of atomic renames onto the dotted names.
+    for pair in "spk ${groupSpkFile[$group]}" "fet ${groupFetFile[$group]}" "clu ${groupCluFile[$group]}"; do
+        ext=${pair%% *}; src=${pair#* }
+        rm -f "$refBase.$ext.$group"
+        ln -sf "$(realpath "$src")" "$refBase.$ext.$group"
+    done
+    if [ -n "${groupPcaFile[$group]}" ]; then
+        rm -f "$refBase.pca.$group"
+        ln -sf "$(realpath "${groupPcaFile[$group]}")" "$refBase.pca.$group"
+    fi
 
     process_shadowcluster \
-        --ref   "$session" \
+        --ref   "$refBase" \
         --new   "$tmpStem" \
         --out   "$mergeStem" \
         --grp   "$group" \
@@ -391,11 +419,8 @@ for group in $(seq 1 $nElectrodeGroups); do
         -v
     sc_status=$?
 
-    # Tear down symlinks on the read path; live files are either
-    # unchanged (failure) or about to be overwritten by the commit.
-    [ "$linked_spk" = "1" ] && [ -L "$session.spk.$group" ] && rm -f "$session.spk.$group"
-    [ "$linked_fet" = "1" ] && [ -L "$session.fet.$group" ] && rm -f "$session.fet.$group"
-    [ "$linked_pca" = "1" ] && [ -L "$session.pca.$group" ] && rm -f "$session.pca.$group"
+    # Tear down the read-side links (live dotted files were never touched).
+    rm -f "$refBase".{spk,fet,clu,pca}."$group"
 
     if [ $sc_status -ne 0 ]; then
         echo_error "  group $group: process_shadowcluster failed; live files untouched"
@@ -405,9 +430,7 @@ for group in $(seq 1 $nElectrodeGroups); do
 
     missing=""
     for ext in res clu spk fet; do
-        if [ ! -s "$mergeStem.$ext.$group" ]; then
-            missing="$missing .$ext"
-        fi
+        [ ! -s "$mergeStem.$ext.$group" ] && missing="$missing .$ext"
     done
     if [ -n "$missing" ]; then
         echo_error "  group $group: sandbox missing outputs:$missing; live files untouched"
@@ -415,17 +438,14 @@ for group in $(seq 1 $nElectrodeGroups); do
         exit $GENERAL_ERROR
     fi
 
-    # Commit: atomic per-file renames.  .clu last so an interrupted
-    # commit leaves the session indexable by old cluster labels.  The
-    # .shadowmark sidecar (written by process_shadowcluster) is committed
-    # together with them; ndm_subcluster_unmatched uses its presence as
-    # the authoritative marker that this group was shadow-merged.
-    mv -f "$mergeStem.res.$group" "$session.res.$group"
-    mv -f "$mergeStem.spk.$group" "$session.$spkExt.$group"
-    mv -f "$mergeStem.fet.$group" "$session.$fetExt.$group"
-    mv -f "$mergeStem.clu.$group" "$session.clu.$group"
+    # Commit: atomic per-file renames onto the dotted names.  .clu last so an
+    # interrupted commit leaves the session indexable by old cluster labels.
+    mv -f "$mergeStem.res.$group" "${groupResFile[$group]}"
+    mv -f "$mergeStem.spk.$group" "${groupSpkFile[$group]}"
+    mv -f "$mergeStem.fet.$group" "${groupFetFile[$group]}"
+    mv -f "$mergeStem.clu.$group" "${groupCluFile[$group]}"
     if [ -f "$mergeStem.shadowmark.$group" ]; then
-        mv -f "$mergeStem.shadowmark.$group" "$session.shadowmark.$group"
+        mv -f "$mergeStem.shadowmark.$group" "$session.shadowmark.$method.$group"
     else
         echo_warning "  group $group: process_shadowcluster did not produce a shadowmark sidecar"
         echo_warning "  ndm_subcluster_unmatched will skip this group; rebuild process_shadowcluster"
@@ -438,18 +458,16 @@ done
 # Sweep any leftover sandbox files.
 rm -f "$mergeStem".{res,spk,fet,clu,pca,shadowmark}.[0-9]*
 rm -f "$mergeStem".{res,spk,fet,clu,pca,shadowmark}.[0-9]*.tmp
+rm -f "$refBase".{spk,fet,clu,pca}.[0-9]*
 
 echo_info ""
 echo_info "Done — $committedCount/$activeCount eligible group(s) had new spikes merged in-place"
 echo_info "       ($noSpikesCount had no new spikes, $skippedCount pre-filtered in pre-scan)"
-echo_info "Originals preserved at $session.<ext>.<N>.bak (for merged groups only)"
+echo_info "Originals preserved at <dotted-name>.bak (for merged groups only)"
 echo_info "To revert, rename the .bak files back over the primary files."
 
 # ////////////////////////////////////////////////////////////////////////////
 # //  Optional auto-subcluster pass
-# //
-# //  See ndm_reextractspikes_stderiv for the rationale; behaviour is
-# //  identical in the raw pipeline.
 # ////////////////////////////////////////////////////////////////////////////
 
 if [ "$reextractAutoSubcluster" = "1" ] && [ "$committedCount" -gt 0 ]; then
