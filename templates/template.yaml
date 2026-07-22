@@ -42,8 +42,8 @@ fieldPotentials:
 # Extra files produced during pre-processing
 # ─────────────────────────────────────────────────────────────────────────────
 files:
-- samplingRate: 1250
-  extension: lfp
+  - samplingRate: 1250
+    extension: lfp
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Probe library entries
@@ -59,11 +59,11 @@ files:
 #                    that belong to this probe
 # ─────────────────────────────────────────────────────────────────────────────
 probes:
-- id: 0
-  probeFile: ~             # e.g. neuronexus/Buzsaki64.probe
-  label: ~                 # e.g. left CA1
-  channelOffset: 0
-  anatomicalGroups: [1, 2] # extend to match actual number of groups
+  - id: 0
+    probeFile: ~             # e.g. neuronexus/Buzsaki64.probe
+    label: ~                 # e.g. left CA1
+    channelOffset: 0
+    anatomicalGroups: [1, 2] # extend to match actual number of groups
 
 # Uncomment and repeat for additional probes:
 # - id: 1
@@ -83,28 +83,28 @@ probes:
 # ─────────────────────────────────────────────────────────────────────────────
 anatomicalDescription:
   channelGroups:
-  - channels:
-    - {id: 0,  skip: 0}
-    - {id: 1,  skip: 0}
-    - {id: 2,  skip: 0}
-    - {id: 3,  skip: 0}
-    - {id: 4,  skip: 0}
-    - {id: 5,  skip: 0}
-    - {id: 6,  skip: 0}
-    - {id: 7,  skip: 0}
-    probeId: 0
-    shankIndex: 0
-  - channels:
-    - {id: 8,  skip: 0}
-    - {id: 9,  skip: 0}
-    - {id: 10, skip: 0}
-    - {id: 11, skip: 0}
-    - {id: 12, skip: 0}
-    - {id: 13, skip: 0}
-    - {id: 14, skip: 0}
-    - {id: 15, skip: 0}
-    probeId: 0
-    shankIndex: 1
+    - channels:
+      - {id: 0,  skip: 0}
+      - {id: 1,  skip: 0}
+      - {id: 2,  skip: 0}
+      - {id: 3,  skip: 0}
+      - {id: 4,  skip: 0}
+      - {id: 5,  skip: 0}
+      - {id: 6,  skip: 0}
+      - {id: 7,  skip: 0}
+      probeId: 0
+      shankIndex: 0
+    - channels:
+      - {id: 8,  skip: 0}
+      - {id: 9,  skip: 0}
+      - {id: 10, skip: 0}
+      - {id: 11, skip: 0}
+      - {id: 12, skip: 0}
+      - {id: 13, skip: 0}
+      - {id: 14, skip: 0}
+      - {id: 15, skip: 0}
+      probeId: 0
+      shankIndex: 1
   # Add further groups for additional shanks / probes
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -127,14 +127,14 @@ anatomicalDescription:
 # ─────────────────────────────────────────────────────────────────────────────
 spikeDetection:
   channelGroups:
-  - channels:        [0, 1, 2, 3, 4, 5, 6, 7]
-    nSamples:        52
-    peakSampleIndex: 26
-    nFeatures:       3
-  - channels:        [8, 9, 10, 11, 12, 13, 14, 15]
-    nSamples:        52
-    peakSampleIndex: 26
-    nFeatures:       3
+    - channels:        [0, 1, 2, 3, 4, 5, 6, 7]
+      nSamples:        52
+      peakSampleIndex: 26
+      nFeatures:       3
+    - channels:        [8, 9, 10, 11, 12, 13, 14, 15]
+      nSamples:        52
+      peakSampleIndex: 26
+      nFeatures:       3
   # Add further groups to match anatomicalDescription
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,13 +144,13 @@ spikeDetection:
 #         structure, type, isolationDistance, quality, notes -- all free-text.
 # ─────────────────────────────────────────────────────────────────────────────
 units:
-- group: 1
-  cluster: 2
-  structure: ~
-  type: ~
-  isolationDistance: ~
-  quality: ~
-  notes: ~
+  - group: 1
+    cluster: 2
+    structure: ~
+    type: ~
+    isolationDistance: ~
+    quality: ~
+    notes: ~
 
 # ─────────────────────────────────────────────────────────────────────────────
 # NeuroScope display settings
@@ -223,2598 +223,2598 @@ programs:
 #   sdiffOrder).
 # ─────────────────────────────────────────────────────────────────────────────
 
-# == Master orchestrator ======================================================
-- name: ndm_start
-  parameters:
-    - name: suffixes
-      value: nlx
-      status: Mandatory
-    - name: log
-      value: 'false'
-      status: Mandatory
-  # Optional flags -- all default true except clean.
-  # Uncomment to override:
-    # - name: wideband
-    #   value: 'true'
-    #   status: Optional
-    # - name: video
-    #   value: 'true'
-    #   status: Optional
-    # - name: events
-    #   value: 'true'
-    #   status: Optional
-    # - name: concatenation
-    #   value: 'true'
-    #   status: Optional
-    # - name: spikes
-    #   value: 'true'
-    #   status: Optional
-    # - name: lfp
-    #   value: 'true'
-    #   status: Optional
-    # - name: clean
-    #   value: 'false'
-    #   status: Optional
-  help: |-
-    Perform all processing steps for a multiple sets of multiple-session
-    recordings: format conversion, channel extraction and reordering, video
-    transcoding and tracking, data concatenation, spike detection and
-    extraction, etc.
-
-    PARAMETERS
-
-    # suffixes
-
-    List of suffixes for the individual files to convert
+  # == Master orchestrator ======================================================
+  - name: ndm_start
+    parameters:
+      - name: suffixes
+        value: nlx
+        status: Mandatory
+      - name: log
+        value: 'false'
+        status: Mandatory
+    # Optional flags -- all default true except clean.
+    # Uncomment to override:
+      # - name: wideband
+      #   value: 'true'
+      #   status: Optional
+      # - name: video
+      #   value: 'true'
+      #   status: Optional
+      # - name: events
+      #   value: 'true'
+      #   status: Optional
+      # - name: concatenation
+      #   value: 'true'
+      #   status: Optional
+      # - name: spikes
+      #   value: 'true'
+      #   status: Optional
+      # - name: lfp
+      #   value: 'true'
+      #   status: Optional
+      # - name: clean
+      #   value: 'false'
+      #   status: Optional
+    help: |-
+      Perform all processing steps for a multiple sets of multiple-session
+      recordings: format conversion, channel extraction and reordering, video
+      transcoding and tracking, data concatenation, spike detection and
+      extraction, etc.
+
+      PARAMETERS
+
+      # suffixes
+
+      List of suffixes for the individual files to convert
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # wideband
+      # wideband
 
-    Process the wideband data files: convert to .dat, resample, merge, extract
-    and reorder channels (default = true)
+      Process the wideband data files: convert to .dat, resample, merge, extract
+      and reorder channels (default = true)
 
-    # video
+      # video
 
-    Process video files: transcode and extract LEDs (default = true)
+      Process video files: transcode and extract LEDs (default = true)
 
-    # events
+      # events
 
-    Process event files: convert to .evt and rename events (default = true)
+      Process event files: convert to .evt and rename events (default = true)
 
-    # concatenation
+      # concatenation
 
-    Concatenate sessions from the same day (default = true)
+      Concatenate sessions from the same day (default = true)
 
-    # spikes
+      # spikes
 
-    Detect and extract spike waveforms, perform PCA (default = true)
-
-    # lfp
+      Detect and extract spike waveforms, perform PCA (default = true)
+
+      # lfp
 
-    Downsample wideband signals to produce LFP files (default = true)
+      Downsample wideband signals to produce LFP files (default = true)
 
-    # clean
+      # clean
 
-    Remove intermediate files after pre-processing is complete (default = false)
+      Remove intermediate files after pre-processing is complete (default = false)
 
-    # log
+      # log
 
-    Save progress information to log files for later review
-    (use 'cat' or 'less -R' for correct formatting, default = false)
+      Save progress information to log files for later review
+      (use 'cat' or 'less -R' for correct formatting, default = false)
 
-# == Acquisition format converters ============================================
-- name: ndm_aom2dat
-  parameters:
-    - name: matFile
-      value: ~
-      status: Mandatory
-    - name: chunkSamples
-      value: 10000000
-      status: Optional
-  help: |-
-    Convert an AlphaOmega .mat recording (HDF5 v7.3 format) to SESSION.dat.
+  # == Acquisition format converters ============================================
+  - name: ndm_aom2dat
+    parameters:
+      - name: matFile
+        value: ~
+        status: Mandatory
+      - name: chunkSamples
+        value: 10000000
+        status: Optional
+    help: |-
+      Convert an AlphaOmega .mat recording (HDF5 v7.3 format) to SESSION.dat.
 
-    Only the binary .dat file is written.  Anatomical groups and spike
-    detection groups are NOT set — use the Probes tab in ndmanager or
-    ndm_setupgroups after conversion to configure channel groupings.
+      Only the binary .dat file is written.  Anatomical groups and spike
+      detection groups are NOT set — use the Probes tab in ndmanager or
+      ndm_setupgroups after conversion to configure channel groupings.
 
-    After conversion the session YAML is patched conservatively:
-      - nChannels is updated only if it disagrees with the .dat file size
-      - samplingRate is written only if not already set in the YAML
+      After conversion the session YAML is patched conservatively:
+        - nChannels is updated only if it disagrees with the .dat file size
+        - samplingRate is written only if not already set in the YAML
 
-    PARAMETERS
+      PARAMETERS
 
-    # matFile
+      # matFile
 
-    Path to the AlphaOmega .mat file, absolute or relative to the session
-    directory (e.g. recording.mat).
+      Path to the AlphaOmega .mat file, absolute or relative to the session
+      directory (e.g. recording.mat).
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # chunkSamples
+      # chunkSamples
 
-    Samples per streaming read chunk (default = 10000000 ≈ 610 MB for
-    32 channels).  Reduce on systems with less than 32 GB RAM.
+      Samples per streaming read chunk (default = 10000000 ≈ 610 MB for
+      32 channels).  Reduce on systems with less than 32 GB RAM.
 
-- name: ndm_ncs2dat
-  parameters:
-    - name: reverse
-      value: 'false'
-      status: Mandatory
-    - name: suffixes
-      value: nlx
-      status: Mandatory
-    # - name: gap
-    #   value: 1
-    #   status: Optional
-    # - name: ignoreEvents
-    #   value: 'false'
-    #   status: Optional
-  help: |-
-    Convert from .ncs (Neuralynx files) to .dat format.
+  - name: ndm_ncs2dat
+    parameters:
+      - name: reverse
+        value: 'false'
+        status: Mandatory
+      - name: suffixes
+        value: nlx
+        status: Mandatory
+      # - name: gap
+      #   value: 1
+      #   status: Optional
+      # - name: ignoreEvents
+      #   value: 'false'
+      #   status: Optional
+    help: |-
+      Convert from .ncs (Neuralynx files) to .dat format.
 
-    PARAMETERS
+      PARAMETERS
 
-    # reverse
+      # reverse
 
-    Whether the signals should be reversed (by default, NeuraLynx reverses all
-    signals -- this sets them back to normal)
+      Whether the signals should be reversed (by default, NeuraLynx reverses all
+      signals -- this sets them back to normal)
 
-    # suffixes
+      # suffixes
 
-    List of suffixes of the directories where the NCS files are located
+      List of suffixes of the directories where the NCS files are located
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # gap
+      # gap
 
-    Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
+      Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
 
-    # ignoreEvents
+      # ignoreEvents
 
-    Set to 'true' if NEV files incorrectly list acquisition start/stop events
-    (default = false).
+      Set to 'true' if NEV files incorrectly list acquisition start/stop events
+      (default = false).
 
-- name: ndm_smr2dat
-  parameters:
-    - name: reverse
-      value: 'true'
-      status: Mandatory
-    - name: suffixes
-      value: ~
-      status: Mandatory
-    - name: channelsExcluded
-      value: ~
-      status: Mandatory
-  help: |-
-    Convert from .smr (CED files) to .dat format.
+  - name: ndm_smr2dat
+    parameters:
+      - name: reverse
+        value: 'true'
+        status: Mandatory
+      - name: suffixes
+        value: ~
+        status: Mandatory
+      - name: channelsExcluded
+        value: ~
+        status: Mandatory
+    help: |-
+      Convert from .smr (CED files) to .dat format.
 
-    PARAMETERS
+      PARAMETERS
 
-    # reverse
+      # reverse
 
-    Whether the signals should be reversed
+      Whether the signals should be reversed
 
-    # suffixes
+      # suffixes
 
-    List of suffixes for the individual files to convert
+      List of suffixes for the individual files to convert
 
-    # channelsExcluded
+      # channelsExcluded
 
-    List of channels to exclude for each individual file (type - for none)
+      List of channels to exclude for each individual file (type - for none)
 
-- name: ndm_nev2evt
-  parameters:
-    - name: suffixes
-      value: nlx
-      status: Mandatory
-    # - name: gap
-    #   value: 1
-    #   status: Optional
-  help: |-
-    Convert from .nev (Neuralynx files) to .evt format.
+  - name: ndm_nev2evt
+    parameters:
+      - name: suffixes
+        value: nlx
+        status: Mandatory
+      # - name: gap
+      #   value: 1
+      #   status: Optional
+    help: |-
+      Convert from .nev (Neuralynx files) to .evt format.
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffixes
+      # suffixes
 
-    List of suffixes of the directories where the NEV files are located
+      List of suffixes of the directories where the NEV files are located
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # gap
+      # gap
 
-    Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
+      Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
 
-- name: ndm_smr2evt
-  parameters:
-    - name: suffixes
-      value: ~
-      status: Optional
-    - name: rename
-      value: ~
-      status: Optional
-  help: |-
-    Convert from .smr (CED files) to .evt format.
+  - name: ndm_smr2evt
+    parameters:
+      - name: suffixes
+        value: ~
+        status: Optional
+      - name: rename
+        value: ~
+        status: Optional
+    help: |-
+      Convert from .smr (CED files) to .evt format.
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffixes
+      # suffixes
 
-    List of suffixes for the individual files to convert
+      List of suffixes for the individual files to convert
 
-    # rename
+      # rename
 
-    Optional name of a script used to automatically rename events and event files
+      Optional name of a script used to automatically rename events and event files
 
-- name: ndm_nvt2spots
-  parameters:
-    - name: suffix
-      value: ~
-      status: Mandatory
-    # - name: gap
-    #   value: 1
-    #   status: Optional
-  help: |-
-    Extract spots from .nvt (Neuralynx files).
+  - name: ndm_nvt2spots
+    parameters:
+      - name: suffix
+        value: ~
+        status: Mandatory
+      # - name: gap
+      #   value: 1
+      #   status: Optional
+    help: |-
+      Extract spots from .nvt (Neuralynx files).
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffix
+      # suffix
 
-    Suffix of the directory where the NVT file is located
+      Suffix of the directory where the NVT file is located
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # gap
+      # gap
 
-    Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
+      Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
 
-- name: ndm_tsp2sts
-  parameters:
-    - name: suffix
-      value: ~
-      status: Mandatory
-  help: |-
-    Extract spots timestamps from .tsp and .meta (Amplipex files).
+  - name: ndm_tsp2sts
+    parameters:
+      - name: suffix
+        value: ~
+        status: Mandatory
+    help: |-
+      Extract spots timestamps from .tsp and .meta (Amplipex files).
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffix
+      # suffix
 
-    Suffix of the directory where the TSP and META files are located
+      Suffix of the directory where the TSP and META files are located
 
-- name: ndm_smi2sts
-  parameters:
-    - name: suffix
-      value: ~
-      status: Mandatory
-    # - name: gap
-    #   value: 1
-    #   status: Optional
-  help: |-
-    Extract spots timestamps from .smi (Neuralynx files).
+  - name: ndm_smi2sts
+    parameters:
+      - name: suffix
+        value: ~
+        status: Mandatory
+      # - name: gap
+      #   value: 1
+      #   status: Optional
+    help: |-
+      Extract spots timestamps from .smi (Neuralynx files).
 
-    WARNING: Neuralynx systems do not control MPEG video streams; video timing
-    accuracy may be poor (up to hundreds of milliseconds of offset). Use only
-    when no useable NVT file is available.
+      WARNING: Neuralynx systems do not control MPEG video streams; video timing
+      accuracy may be poor (up to hundreds of milliseconds of offset). Use only
+      when no useable NVT file is available.
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffix
+      # suffix
 
-    Suffix of the directory where the SMI file is located
+      Suffix of the directory where the SMI file is located
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # gap
+      # gap
 
-    Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
+      Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
 
-# == Video ====================================================================
-- name: ndm_extractleds
-  parameters:
-    - name: suffix
-      value: ~
-      status: Mandatory
-    - name: useTrackerData
-      value: 'true'
-      status: Mandatory
-    - name: threshold
-      value: 90
-      status: Mandatory
-    - name: extension
-      value: avi
-      status: Mandatory
-    - name: show
-      value: 'false'
-      status: Mandatory
-  help: |-
-    Extract LEDs (= bright spots) from a video file.
+  # == Video ====================================================================
+  - name: ndm_extractleds
+    parameters:
+      - name: suffix
+        value: ~
+        status: Mandatory
+      - name: useTrackerData
+        value: 'true'
+        status: Mandatory
+      - name: threshold
+        value: 90
+        status: Mandatory
+      - name: extension
+        value: avi
+        status: Mandatory
+      - name: show
+        value: 'false'
+        status: Mandatory
+    help: |-
+      Extract LEDs (= bright spots) from a video file.
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffix
+      # suffix
 
-    Suffix of the directory where the video file is located
+      Suffix of the directory where the video file is located
 
-    # useTrackerData
+      # useTrackerData
 
-    Extract positions from the online tracking file (true, Neuralynx NVT) or
-    from the video file (false)
+      Extract positions from the online tracking file (true, Neuralynx NVT) or
+      from the video file (false)
 
-    # threshold
+      # threshold
 
-    Bright spots consist of pixels brighter than this threshold (0-255)
+      Bright spots consist of pixels brighter than this threshold (0-255)
 
-    # extension
+      # extension
 
-    Extension of the video file (e.g. avi, mpg)
+      Extension of the video file (e.g. avi, mpg)
 
-    # show
+      # show
 
-    Display the video during LED extraction (false = faster, default)
+      Display the video during LED extraction (false = faster, default)
 
-- name: ndm_transcodevideo
-  parameters:
-    - name: suffix
-      value: ~
-      status: Mandatory
-    - name: extension
-      value: avi
-      status: Mandatory
-    - name: codec
-      value: ~
-      status: Mandatory
-    # - name: frequency
-    #   value: 30
-    #   status: Optional
-  help: |-
-    Transcode video file (convert to a different codec).
+  - name: ndm_transcodevideo
+    parameters:
+      - name: suffix
+        value: ~
+        status: Mandatory
+      - name: extension
+        value: avi
+        status: Mandatory
+      - name: codec
+        value: ~
+        status: Mandatory
+      # - name: frequency
+      #   value: 30
+      #   status: Optional
+    help: |-
+      Transcode video file (convert to a different codec).
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffix
+      # suffix
 
-    Suffix of the directory where the video files to transcode are located
+      Suffix of the directory where the video files to transcode are located
 
-    # extension
+      # extension
 
-    Extension of the original video file (e.g. avi, mpg)
+      Extension of the original video file (e.g. avi, mpg)
 
-    # codec
+      # codec
 
-    Output file codec: x264 (MPEG-4 AVC) or m1v (video-only MPEG-1).
-    Leave empty if no transcoding is required.
+      Output file codec: x264 (MPEG-4 AVC) or m1v (video-only MPEG-1).
+      Leave empty if no transcoding is required.
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # frequency
+      # frequency
 
-    Output frame rate in frames per second (default = 30)
+      Output frame rate in frames per second (default = 30)
 
-# == Data preparation =========================================================
-- name: ndm_concatenate
-  parameters:
-    - name: spotsSamplingRate
-      value: 50
-      status: Mandatory
-    # - name: maxShift
-    #   value: 3
-    #   status: Optional
-  help: |-
-    Concatenate all session files (.dat, .pos and .evt) recorded on the same day.
+  # == Data preparation =========================================================
+  - name: ndm_concatenate
+    parameters:
+      - name: spotsSamplingRate
+        value: 50
+        status: Mandatory
+      # - name: maxShift
+      #   value: 3
+      #   status: Optional
+    help: |-
+      Concatenate all session files (.dat, .pos and .evt) recorded on the same day.
 
-    PARAMETERS
+      PARAMETERS
 
-    # spotsSamplingRate
+      # spotsSamplingRate
 
-    Sampling rate for .spots files, i.e. original sampling rate for video or
-    tracker data (if absent, time shifts between wideband and video are not
-    reported, but concatenation proceeds normally).
+      Sampling rate for .spots files, i.e. original sampling rate for video or
+      tracker data (if absent, time shifts between wideband and video are not
+      reported, but concatenation proceeds normally).
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # maxShift
+      # maxShift
 
-    If wideband and position sample durations differ by more than this threshold
-    (in seconds, default = 3), a warning is emitted.
+      If wideband and position sample durations differ by more than this threshold
+      (in seconds, default = 3), a warning is emitted.
 
-- name: ndm_extractchannels
-  parameters:
-    - name: nChannels
-      value: ~
-      status: Mandatory
-    - name: channels
-      value: ~
-      status: Mandatory
-  help: |-
-    Extract channels from .dat file (remove those not listed).
+  - name: ndm_extractchannels
+    parameters:
+      - name: nChannels
+        value: ~
+        status: Mandatory
+      - name: channels
+        value: ~
+        status: Mandatory
+    help: |-
+      Extract channels from .dat file (remove those not listed).
 
-    PARAMETERS
+      PARAMETERS
 
-    # nChannels
+      # nChannels
 
-    Number of channels in the initial .dat file (before extraction)
+      Number of channels in the initial .dat file (before extraction)
 
-    # channels
+      # channels
 
-    Space-separated list of channels to extract, numbered from 0
+      Space-separated list of channels to extract, numbered from 0
 
-- name: ndm_mergedat
-  parameters:
-    - name: suffixes
-      value: ~
-      status: Mandatory
-    - name: nChannels
-      value: ~
-      status: Mandatory
-  help: |-
-    Merge multiple .dat files recorded simultaneously.
+  - name: ndm_mergedat
+    parameters:
+      - name: suffixes
+        value: ~
+        status: Mandatory
+      - name: nChannels
+        value: ~
+        status: Mandatory
+    help: |-
+      Merge multiple .dat files recorded simultaneously.
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffixes
+      # suffixes
 
-    List of suffixes for the individual files to merge
+      List of suffixes for the individual files to merge
 
-    # nChannels
+      # nChannels
 
-    Space-separated list of channel counts in individual files (one per suffix)
+      Space-separated list of channel counts in individual files (one per suffix)
 
-- name: ndm_resample
-  parameters:
-    - name: suffixes
-      value: ~
-      status: Mandatory
-    - name: samplingRates
-      value: ~
-      status: Mandatory
-    - name: nChannels
-      value: ~
-      status: Mandatory
-  help: |-
-    Resample individual .dat files from their original sampling rates to the
-    common sampling rate of the final .dat file.
+  - name: ndm_resample
+    parameters:
+      - name: suffixes
+        value: ~
+        status: Mandatory
+      - name: samplingRates
+        value: ~
+        status: Mandatory
+      - name: nChannels
+        value: ~
+        status: Mandatory
+    help: |-
+      Resample individual .dat files from their original sampling rates to the
+      common sampling rate of the final .dat file.
 
-    PARAMETERS
+      PARAMETERS
 
-    # suffixes
+      # suffixes
 
-    List of suffixes for the individual files to resample
+      List of suffixes for the individual files to resample
 
-    # samplingRates
+      # samplingRates
 
-    Space-separated list of original sampling rates (one per suffix)
+      Space-separated list of original sampling rates (one per suffix)
 
-    # nChannels
+      # nChannels
 
-    Space-separated list of channel counts in the individual files (one per suffix)
+      Space-separated list of channel counts in the individual files (one per suffix)
 
-- name: ndm_rescale
-  parameters:
-    - name: suffixes
-      value: ~
-      status: Mandatory
-    - name: scalingFactors
-      value: ~
-      status: Mandatory
-  help: |-
-    Rescale individual .dat files from their original input ranges to the
-    common range (smallest).
-
-    PARAMETERS
-
-    # suffixes
+  - name: ndm_rescale
+    parameters:
+      - name: suffixes
+        value: ~
+        status: Mandatory
+      - name: scalingFactors
+        value: ~
+        status: Mandatory
+    help: |-
+      Rescale individual .dat files from their original input ranges to the
+      common range (smallest).
+
+      PARAMETERS
+
+      # suffixes
 
-    List of suffixes for the individual files to rescale
+      List of suffixes for the individual files to rescale
 
-    # scalingFactors
+      # scalingFactors
 
-    Comma-separated list of scaling factors (< 1.0, one per suffix)
+      Comma-separated list of scaling factors (< 1.0, one per suffix)
 
-- name: ndm_reorderchannels
-  parameters:
-    - name: channels
-      value: ~
-      status: Mandatory
-  help: |-
-    Reorder channels in .dat file.
+  - name: ndm_reorderchannels
+    parameters:
+      - name: channels
+        value: ~
+        status: Mandatory
+    help: |-
+      Reorder channels in .dat file.
 
-    PARAMETERS
+      PARAMETERS
 
-    # channels
+      # channels
 
-    Space-separated list of reordered channel indices (0-based)
+      Space-separated list of reordered channel indices (0-based)
 
-# == Group setup ==============================================================
-- name: ndm_setupgroups
-  parameters:
-    - name: nSamples
-      value: 52
-      status: Optional
-    - name: peakSampleIndex
-      value: 26
-      status: Optional
-    - name: nFeatures
-      value: 3
-      status: Optional
-    - name: probeLibrary
-      value: ''
-      status: Optional
-    - name: overwrite
-      value: false
-      status: Optional
-  help: "Build anatomicalDescription and spikeDetection channel groups from the probe\
-    \ library entries declared in probes:.\n\nMust be run BEFORE ndm_extractspikes.\
-    \ Reads each .probe file listed in the probes: section, creates one anatomical\
-    \ group and one spikeDetection group per shank, and writes both into the session\
-    \ YAML in-place.  The spikeDetection groups mirror the anatomical groups exactly\
-    \ (same channel order) and are annotated with nSamples / peakSampleIndex /\
-    \ nFeatures.\n\nprobeId and shankIndex metadata are written into each anatomical\
-    \ group entry so that ndm_estimatedrift can reconstruct probe geometry without\
-    \ re-reading the probe library.\n\nChannel assignment: if channelMap.map is null\
-    \ (all NeuroNexus files), channels are assigned sequentially:\n  shank i →\
-    \ [offset + i*n_per_shank, …, offset + (i+1)*n_per_shank − 1]\nwhere offset\
-    \ = probes[].channelOffset.\n\nOPTIONAL PARAMETERS\n\n# nSamples\nTotal waveform\
-    \ window width in samples (default = 52; use 32 at 20 kHz).\n\n# peakSampleIndex\n\
-    0-based index of the expected spike peak within the window (default = 26,\
-    \ i.e. midpoint of a 52-sample window).\n\n# nFeatures\nPCA components per\
-    \ channel for ndm_pca / ndm_klustakwik (default = 3).\n\n# probeLibrary\n\
-    Override probe library search path.  Default search order:\n  /usr/share/neurosuite/probes/,\
-    \ /usr/local/share/neurosuite/probes/,\n  ~/.local/share/neurosuite/probes/,\
-    \ $NEUROSUITE_PROBE_PATH, SESSION_DIR/probes/\n\n# overwrite\nIf false (default),\
-    \ abort if groups already exist.  Set to true to replace them."
+  # == Group setup ==============================================================
+  - name: ndm_setupgroups
+    parameters:
+      - name: nSamples
+        value: 52
+        status: Optional
+      - name: peakSampleIndex
+        value: 26
+        status: Optional
+      - name: nFeatures
+        value: 3
+        status: Optional
+      - name: probeLibrary
+        value: ''
+        status: Optional
+      - name: overwrite
+        value: false
+        status: Optional
+    help: "Build anatomicalDescription and spikeDetection channel groups from the probe\
+      \ library entries declared in probes:.\n\nMust be run BEFORE ndm_extractspikes.\
+      \ Reads each .probe file listed in the probes: section, creates one anatomical\
+      \ group and one spikeDetection group per shank, and writes both into the session\
+      \ YAML in-place.  The spikeDetection groups mirror the anatomical groups exactly\
+      \ (same channel order) and are annotated with nSamples / peakSampleIndex /\
+      \ nFeatures.\n\nprobeId and shankIndex metadata are written into each anatomical\
+      \ group entry so that ndm_estimatedrift can reconstruct probe geometry without\
+      \ re-reading the probe library.\n\nChannel assignment: if channelMap.map is null\
+      \ (all NeuroNexus files), channels are assigned sequentially:\n  shank i →\
+      \ [offset + i*n_per_shank, …, offset + (i+1)*n_per_shank − 1]\nwhere offset\
+      \ = probes[].channelOffset.\n\nOPTIONAL PARAMETERS\n\n# nSamples\nTotal waveform\
+      \ window width in samples (default = 52; use 32 at 20 kHz).\n\n# peakSampleIndex\n\
+      0-based index of the expected spike peak within the window (default = 26,\
+      \ i.e. midpoint of a 52-sample window).\n\n# nFeatures\nPCA components per\
+      \ channel for ndm_pca / ndm_klustakwik (default = 3).\n\n# probeLibrary\n\
+      Override probe library search path.  Default search order:\n  /usr/share/neurosuite/probes/,\
+      \ /usr/local/share/neurosuite/probes/,\n  ~/.local/share/neurosuite/probes/,\
+      \ $NEUROSUITE_PROBE_PATH, SESSION_DIR/probes/\n\n# overwrite\nIf false (default),\
+      \ abort if groups already exist.  Set to true to replace them."
 
-# == Spike detection pipeline =================================================
-- name: ndm_spikegrouper
-  parameters:
-    - name: thresholdFactor
-      value: 3.0
-      status: Mandatory
-    - name: refractoryMs
-      value: 1.0
-      status: Mandatory
-    - name: coincidenceMs
-      value: 0.4
-      status: Mandatory
-    - name: windowSec
-      value: 60
-      status: Mandatory
-    - name: maxSubGroups
-      value: 16
-      status: Mandatory
-    - name: minChannels
-      value: 4
-      status: Mandatory
-    - name: maxMergedSize
-      value: 12
-      status: Mandatory
-    - name: channelOverlap
-      value: 0
-      status: Mandatory
-    # - name: excludeChannels
-    #   value: ''
-    #   status: Optional
-  help: |-
-    Discover optimal spikeDetection channel groups from the high-pass filtered
-    .fil file and write them back to the YAML parameter file.
+  # == Spike detection pipeline =================================================
+  - name: ndm_spikegrouper
+    parameters:
+      - name: thresholdFactor
+        value: 3.0
+        status: Mandatory
+      - name: refractoryMs
+        value: 1.0
+        status: Mandatory
+      - name: coincidenceMs
+        value: 0.4
+        status: Mandatory
+      - name: windowSec
+        value: 60
+        status: Mandatory
+      - name: maxSubGroups
+        value: 16
+        status: Mandatory
+      - name: minChannels
+        value: 4
+        status: Mandatory
+      - name: maxMergedSize
+        value: 12
+        status: Mandatory
+      - name: channelOverlap
+        value: 0
+        status: Mandatory
+      # - name: excludeChannels
+      #   value: ''
+      #   status: Optional
+    help: |-
+      Discover optimal spikeDetection channel groups from the high-pass filtered
+      .fil file and write them back to the YAML parameter file.
 
-    Run AFTER ndm_hipass, BEFORE ndm_detectspikes.
-    Rewrites only spikeDetection.channelGroups; anatomicalDescription is unchanged.
+      Run AFTER ndm_hipass, BEFORE ndm_detectspikes.
+      Rewrites only spikeDetection.channelGroups; anatomicalDescription is unchanged.
 
-    PARAMETERS
+      PARAMETERS
 
-    # thresholdFactor
+      # thresholdFactor
 
-    Spike detection threshold multiplier: threshold = factor * median(|x|)/0.6745.
-    Should match or be slightly lower than ndm_detectspikes > thresholdFactor.
+      Spike detection threshold multiplier: threshold = factor * median(|x|)/0.6745.
+      Should match or be slightly lower than ndm_detectspikes > thresholdFactor.
 
-    # refractoryMs
+      # refractoryMs
 
-    Minimum time (ms) between two consecutive detections on one channel (default 1.0).
+      Minimum time (ms) between two consecutive detections on one channel (default 1.0).
 
-    # coincidenceMs
+      # coincidenceMs
 
-    Half-width (ms) of the coincidence window for estimating channel co-activation.
-    0.4 ms suits 30 kHz recordings (default 0.4).
+      Half-width (ms) of the coincidence window for estimating channel co-activation.
+      0.4 ms suits 30 kHz recordings (default 0.4).
 
-    # windowSec
+      # windowSec
 
-    Seconds of .fil data used for coincidence estimation (default 60).
+      Seconds of .fil data used for coincidence estimation (default 60).
 
-    # maxSubGroups
+      # maxSubGroups
 
-    Upper bound on cluster count tested per shank. The silhouette score selects
-    the best k in [1, maxSubGroups]. For high-density probes (64-128 ch/shank)
-    use 16-24; the default of 16 is sufficient for tetrodes.
+      Upper bound on cluster count tested per shank. The silhouette score selects
+      the best k in [1, maxSubGroups]. For high-density probes (64-128 ch/shank)
+      use 16-24; the default of 16 is sufficient for tetrodes.
 
-    # minChannels
+      # minChannels
 
-    Minimum channels per group after clustering and merging (default 4).
+      Minimum channels per group after clustering and merging (default 4).
 
-    # maxMergedSize
+      # maxMergedSize
 
-    Hard upper limit on a merged group's channel count (default 12).
-    Must be >= 2 * minChannels.
+      Hard upper limit on a merged group's channel count (default 12).
+      Must be >= 2 * minChannels.
 
-    # channelOverlap
+      # channelOverlap
 
-    Channels borrowed from each neighbouring group's boundary (default 0 = disabled).
-    For high-density probes an overlap of 2-4 reduces boundary split artefacts.
+      Channels borrowed from each neighbouring group's boundary (default 0 = disabled).
+      For high-density probes an overlap of 2-4 reduces boundary split artefacts.
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # excludeChannels
+      # excludeChannels
 
-    Comma-separated list of channel indices to exclude from all groups before
-    processing (e.g. broken contacts or reference channels). Default: empty.
+      Comma-separated list of channel indices to exclude from all groups before
+      processing (e.g. broken contacts or reference channels). Default: empty.
 
-- name: ndm_hipass
-  parameters:
-    - name: windowHalfLength
-      value: 16
-      status: Mandatory
-    - name: chunkSize
-      value: 134217728
-      status: Mandatory
-    # - name: inputExtension
-    #   value: dat
-    #   status: Optional
-  help: |-
-    High-pass filter a .dat file (required for spike extraction).
+  - name: ndm_hipass
+    parameters:
+      - name: windowHalfLength
+        value: 16
+        status: Mandatory
+      - name: chunkSize
+        value: 134217728
+        status: Mandatory
+      # - name: inputExtension
+      #   value: dat
+      #   status: Optional
+    help: |-
+      High-pass filter a .dat file (required for spike extraction).
 
-    Uses a median-based (non-linear) filter to minimise spike waveform distortion.
+      Uses a median-based (non-linear) filter to minimise spike waveform distortion.
 
-    PARAMETERS
+      PARAMETERS
 
-    # windowHalfLength
+      # windowHalfLength
 
-    Half-length (samples) of the median filter window; determines the cutoff
-    frequency. At 32 kHz, 16 samples gives approximately a 600 Hz cutoff.
+      Half-length (samples) of the median filter window; determines the cutoff
+      frequency. At 32 kHz, 16 samples gives approximately a 600 Hz cutoff.
 
-    # chunkSize
+      # chunkSize
 
-    Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
-    Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
+      Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
+      Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # inputExtension
+      # inputExtension
 
-    Data file read for filtering, without the leading dot (default dat). Point it
-    at an alternative, externally-processed source (e.g. car.dat) to filter that
-    file instead of the raw recording.
+      Data file read for filtering, without the leading dot (default dat). Point it
+      at an alternative, externally-processed source (e.g. car.dat) to filter that
+      file instead of the raw recording.
 
-- name: ndm_bandpass
-  parameters:
-    - name: windowHalfLength
-      value: 16
-      status: Mandatory
-    - name: lowpassCutoff
-      value: 6000
-      status: Mandatory
-    - name: lowpassHalfLength
-      value: 32
-      status: Optional
-    - name: chunkSize
-      value: 134217728
-      status: Mandatory
-    # - name: inputExtension
-    #   value: dat
-    #   status: Optional
-  help: |-
-    Band-pass filter a .dat file (alternative to ndm_hipass for spike extraction).
+  - name: ndm_bandpass
+    parameters:
+      - name: windowHalfLength
+        value: 16
+        status: Mandatory
+      - name: lowpassCutoff
+        value: 6000
+        status: Mandatory
+      - name: lowpassHalfLength
+        value: 32
+        status: Optional
+      - name: chunkSize
+        value: 134217728
+        status: Mandatory
+      # - name: inputExtension
+      #   value: dat
+      #   status: Optional
+    help: |-
+      Band-pass filter a .dat file (alternative to ndm_hipass for spike extraction).
 
-    Combines the median-based (non-linear) high-pass, which minimises spike
-    waveform distortion, with a linear-phase FIR low-pass that removes noise
-    above the spike band. Writes .fil exactly like ndm_hipass, so downstream
-    spike extraction is unchanged. Run EITHER ndm_hipass OR ndm_bandpass, not
-    both (both write .fil).
+      Combines the median-based (non-linear) high-pass, which minimises spike
+      waveform distortion, with a linear-phase FIR low-pass that removes noise
+      above the spike band. Writes .fil exactly like ndm_hipass, so downstream
+      spike extraction is unchanged. Run EITHER ndm_hipass OR ndm_bandpass, not
+      both (both write .fil).
 
-    PARAMETERS
+      PARAMETERS
 
-    # windowHalfLength
+      # windowHalfLength
 
-    Half-length (samples) of the median high-pass window; sets the lower cutoff
-    (identical to ndm_hipass). At 32 kHz, 16 samples gives approximately 600 Hz.
+      Half-length (samples) of the median high-pass window; sets the lower cutoff
+      (identical to ndm_hipass). At 32 kHz, 16 samples gives approximately 600 Hz.
 
-    # lowpassCutoff
+      # lowpassCutoff
 
-    Upper cutoff frequency (Hz) of the FIR low-pass; attenuates noise above the
-    spike band. Must be below the Nyquist frequency. ~6000 suits a 32 kHz octrode.
+      Upper cutoff frequency (Hz) of the FIR low-pass; attenuates noise above the
+      spike band. Must be below the Nyquist frequency. ~6000 suits a 32 kHz octrode.
 
-    # lowpassHalfLength
+      # lowpassHalfLength
 
-    FIR half-length (samples); the filter has 2*n+1 taps, and a larger value
-    gives a sharper transition (default 32).
+      FIR half-length (samples); the filter has 2*n+1 taps, and a larger value
+      gives a sharper transition (default 32).
 
-    # chunkSize
+      # chunkSize
 
-    Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
-    Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
+      Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
+      Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
 
-    # inputExtension
+      # inputExtension
 
-    Data file read for filtering, without the leading dot (default dat). Point it
-    at an alternative, externally-processed source (e.g. car.dat) to filter that
-    file instead of the raw recording.
+      Data file read for filtering, without the leading dot (default dat). Point it
+      at an alternative, externally-processed source (e.g. car.dat) to filter that
+      file instead of the raw recording.
 
-- name: ndm_denoiseuniform
-  parameters:
-    - name: uniformityThreshold
-      value: 0.30
-      status: Optional
-    - name: minAmplitude
-      value: 0
-      status: Optional
-    - name: removeFlat
-      value: 1
-      status: Optional
-    - name: dryRun
-      value: 0
-      status: Optional
-  help: |-
-    Remove electrically uniform noise events from spike data.
+  - name: ndm_denoiseuniform
+    parameters:
+      - name: uniformityThreshold
+        value: 0.30
+        status: Optional
+      - name: minAmplitude
+        value: 0
+        status: Optional
+      - name: removeFlat
+        value: 1
+        status: Optional
+      - name: dryRun
+        value: 0
+        status: Optional
+    help: |-
+      Remove electrically uniform noise events from spike data.
 
-    Run AFTER ndm_extractspikes, BEFORE ndm_pca.
-    Backs up original .res and .spk files to SESSION_denoise_backup/ before
-    modifying them.
+      Run AFTER ndm_extractspikes, BEFORE ndm_pca.
+      Backs up original .res and .spk files to SESSION_denoise_backup/ before
+      modifying them.
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # uniformityThreshold
+      # uniformityThreshold
 
-    Spatial uniformity score below which a waveform is classified as uniform noise
-    and removed. Score near 0 = all channels identical (noise); near 1 = maximally
-    diverse (genuine spike). Increase to remove more events (default 0.30).
+      Spatial uniformity score below which a waveform is classified as uniform noise
+      and removed. Score near 0 = all channels identical (noise); near 1 = maximally
+      diverse (genuine spike). Increase to remove more events (default 0.30).
 
-    # minAmplitude
+      # minAmplitude
 
-    Minimum peak ADC count required before attempting scoring. Spikes quieter than
-    this are never removed. Set to 0 to score all spikes (default 0 -- disabled).
+      Minimum peak ADC count required before attempting scoring. Spikes quieter than
+      this are never removed. Set to 0 to score all spikes (default 0 -- disabled).
 
-    # removeFlat
+      # removeFlat
 
-    Also remove near-zero AC energy waveforms (flat-line artefacts) (default 1).
+      Also remove near-zero AC energy waveforms (flat-line artefacts) (default 1).
 
-    # dryRun
+      # dryRun
 
-    Report which spikes would be removed without modifying files. Useful for
-    tuning uniformityThreshold (default 0).
+      Report which spikes would be removed without modifying files. Useful for
+      tuning uniformityThreshold (default 0).
 
-- name: ndm_detectspikes
-  parameters:
-    - name: thresholdFactor
-      value: 1.5
-      status: Mandatory
-    - name: refractoryPeriod
-      value: 25
-      status: Mandatory
-    - name: peakSearchLength
-      value: 50
-      status: Mandatory
-    - name: start
-      value: 0
-      status: Mandatory
-    - name: duration
-      value: 60
-      status: Mandatory
-  # Chain-of-custody method: standard | sdiff | stderiv.  Stamps the shared spike
-  # times as <session>.res.<method>.<group> and selects the detection space.
-    - name: method
-      value: standard
-      status: Optional
-  # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
-  # name for the deprecated sdiffOrder alias.
-    - name: methodOrder
-      value: 3
-      status: Optional
-    # - name: inputExtension
-    #   value: fil
-    #   status: Optional
-  help: |-
-    Detect spikes on the high-pass filtered .fil file and write the shared
-    spike-time .res files.  The engine also emits a .spk in passing (there is no
-    detect-only engine mode); it is discarded, so detection contributes only the
-    .res.  ndm_extractspikes then extracts waveforms at those times.
+  - name: ndm_detectspikes
+    parameters:
+      - name: thresholdFactor
+        value: 1.5
+        status: Mandatory
+      - name: refractoryPeriod
+        value: 25
+        status: Mandatory
+      - name: peakSearchLength
+        value: 50
+        status: Mandatory
+      - name: start
+        value: 0
+        status: Mandatory
+      - name: duration
+        value: 60
+        status: Mandatory
+    # Chain-of-custody method: standard | sdiff | stderiv.  Stamps the shared spike
+    # times as <session>.res.<method>.<group> and selects the detection space.
+      - name: method
+        value: standard
+        status: Optional
+    # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
+    # name for the deprecated sdiffOrder alias.
+      - name: methodOrder
+        value: 3
+        status: Optional
+      # - name: inputExtension
+      #   value: fil
+      #   status: Optional
+    help: |-
+      Detect spikes on the high-pass filtered .fil file and write the shared
+      spike-time .res files.  The engine also emits a .spk in passing (there is no
+      detect-only engine mode); it is discarded, so detection contributes only the
+      .res.  ndm_extractspikes then extracts waveforms at those times.
 
-    PARAMETERS
+      PARAMETERS
 
-    # thresholdFactor
+      # thresholdFactor
 
-    Threshold = thresholdFactor * baseline noise level (computed from a data subset)
+      Threshold = thresholdFactor * baseline noise level (computed from a data subset)
 
-    # refractoryPeriod
+      # refractoryPeriod
 
-    Number of samples to skip after each detected spike
+      Number of samples to skip after each detected spike
 
-    # peakSearchLength
+      # peakSearchLength
 
-    Length of the peak search window (samples)
+      Length of the peak search window (samples)
 
-    # start
+      # start
 
-    Starting point in the file (seconds) for baseline noise computation
+      Starting point in the file (seconds) for baseline noise computation
 
-    # duration
+      # duration
 
-    Duration (seconds) for baseline noise computation
+      Duration (seconds) for baseline noise computation
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # method / methodOrder
+      # method / methodOrder
 
-    Detection engine (standard | sdiff | stderiv) and spatial-derivative order.
+      Detection engine (standard | sdiff | stderiv) and spatial-derivative order.
 
-    # inputExtension
+      # inputExtension
 
-    Data file extension to read, without the leading dot (default fil).
+      Data file extension to read, without the leading dot (default fil).
 
-- name: ndm_extractspikes
-  parameters:
-  # Chain-of-custody method: standard | sdiff | stderiv.  Selects the waveform
-  # feature space and stamps outputs as <session>.spk.<method>.<group>.  May
-  # differ from the detection engine; the .res from ndm_detectspikes is reused.
-    - name: method
-      value: standard
-      status: Optional
-  # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
-  # name for the deprecated sdiffOrder alias.
-    - name: methodOrder
-      value: 3
-      status: Optional
-    # - name: inputExtension
-    #   value: fil
-    #   status: Optional
-    # - name: memCapGB
-    #   value: 2
-    #   status: Optional
-  help: |-
-    Extract spike waveforms (creates .spk files) at previously-detected spike
-    times.  Requires the shared .res written by ndm_detectspikes; it never detects
-    and errors if no .res exists.  Because spike times are method-independent, the
-    extraction engine (method) may differ from the detection engine, and this step
-    may be run several times with different methods/orders, each reusing the same
-    .res.  Extraction needs no threshold/window parameters.
+  - name: ndm_extractspikes
+    parameters:
+      # Chain-of-custody method: standard | sdiff | stderiv.  Selects the waveform
+      # feature space and stamps outputs as <session>.spk.<method>.<group>.  May
+      # differ from the detection engine; the .res from ndm_detectspikes is reused.
+      - name: method
+        value: standard
+        status: Optional
+    # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
+    # name for the deprecated sdiffOrder alias.
+      - name: methodOrder
+        value: 3
+        status: Optional
+      # - name: inputExtension
+      #   value: fil
+      #   status: Optional
+      # - name: memCapGB
+      #   value: 2
+      #   status: Optional
+    help: |-
+      Extract spike waveforms (creates .spk files) at previously-detected spike
+      times.  Requires the shared .res written by ndm_detectspikes; it never detects
+      and errors if no .res exists.  Because spike times are method-independent, the
+      extraction engine (method) may differ from the detection engine, and this step
+      may be run several times with different methods/orders, each reusing the same
+      .res.  Extraction needs no threshold/window parameters.
 
-    OPTIONAL PARAMETERS
+      OPTIONAL PARAMETERS
 
-    # method / methodOrder
+      # method / methodOrder
 
-    Waveform engine (standard | sdiff | stderiv) and spatial-derivative order.
+      Waveform engine (standard | sdiff | stderiv) and spatial-derivative order.
 
-    # inputExtension
+      # inputExtension
 
-    Data file extension to read, without the leading dot (default fil).
+      Data file extension to read, without the leading dot (default fil).
 
-    # memCapGB
+      # memCapGB
 
-    Memory cap in GB for the extraction process (default = 2)
+      Memory cap in GB for the extraction process (default = 2)
 
-- name: ndm_alignspikes
-  parameters:
-    - name: maxShift
-      value: 3
-      status: Optional
-    - name: minScore
-      value: 0.0
-      status: Optional
-  # Chain-of-custody method (must match the detection/PCA pipeline that produced
-  # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
-    - name: method
-      value: standard
-      status: Optional
-  help: |-
-    Align spike waveform snippets to their true energy peak before PCA.
-
-    Run AFTER ndm_extractspikes (any method), BEFORE ndm_pca.
-
-    The spike detector fires a threshold crossing at sample T.  The
-    extracted snippet is centred at T, but the true waveform peak may sit
-    at T ± δ samples due to threshold noise and waveform variability.  When
-    δ varies across spikes of the same neuron the PCA sees multiple shifted
-    copies as distinct clouds, inflating feature-space bimodality and causing
-    KlustaKwik to split one unit into 2–3 clusters.
-
-    This script detects δ per spike via cross-channel energy
-      E(t) = Σ_c |W[t,c]|
-    with parabolic sub-sample refinement, then re-extracts each shifted spike
-    window from the raw .fil at extTs = originalTs + δ.  No circular rolling
-    is performed — re-extraction is the only artifact-free method.
+  - name: ndm_alignspikes
+    parameters:
+      - name: maxShift
+        value: 3
+        status: Optional
+      - name: minScore
+        value: 0.0
+        status: Optional
+    # Chain-of-custody method (must match the detection/PCA pipeline that produced
+    # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
+      - name: method
+        value: standard
+        status: Optional
+    help: |-
+      Align spike waveform snippets to their true energy peak before PCA.
+
+      Run AFTER ndm_extractspikes (any method), BEFORE ndm_pca.
+
+      The spike detector fires a threshold crossing at sample T.  The
+      extracted snippet is centred at T, but the true waveform peak may sit
+      at T ± δ samples due to threshold noise and waveform variability.  When
+      δ varies across spikes of the same neuron the PCA sees multiple shifted
+      copies as distinct clouds, inflating feature-space bimodality and causing
+      KlustaKwik to split one unit into 2–3 clusters.
+
+      This script detects δ per spike via cross-channel energy
+        E(t) = Σ_c |W[t,c]|
+      with parabolic sub-sample refinement, then re-extracts each shifted spike
+      window from the raw .fil at extTs = originalTs + δ.  No circular rolling
+      is performed — re-extraction is the only artifact-free method.
 
-    .res.N is NOT modified (detection timestamps are physical spike times).
-    .fet.N and .pca.N are renamed to .prealign and must be regenerated by
-    ndm_pca (or ndm_refeaturize) after this script completes.
-
-    Both .spk.N (raw pipeline) and .spkD.N (stderiv pipeline) are handled
-    automatically; stderiv re-extraction applies SDIFF_ALLPAIRS on the fly.
-
-    OPTIONAL PARAMETERS
-
-    # maxShift
-
-    Maximum shift in samples in either direction (default 3).  Corresponds
-    to MaxTimeShift in KiloKlustaKwik.  Values larger than 5 risk pulling
-    spikes from neighbouring units.  At 32 kHz, 3 samples = 92 µs.
-
-    # minScore
-
-    Minimum relative energy score ∈ [0,1] to accept a shift.  Score = peak
-    energy / total window energy.  Spikes where the peak is too diffuse
-    (score < minScore) are left unshifted.  Default 0.0 (accept all shifts).
-
-- name: ndm_spikecleaner
-  parameters:
-    - name: removeFlatChannels
-      value: 1
-      status: Optional
-    - name: dryRun
-      value: 0
-      status: Optional
-  help: |-
-    Remove spike waveforms where one or more channels have dropped out.
-
-    Run AFTER ndm_extractspikes (any method),
-    BEFORE ndm_pca / ndm_klustakwik.
-    Backs up original .res, .spk, .fet, .clu files to
-    SESSION_spikecleaner_backup/ before modifying them.
-
-    Two conditions are detected and removed:
-
-    CUTOUT — any channel where every sample is exactly zero. Signature
-    of an ADC dropout, broken wire, or amplifier rail clamp.
-
-    FLAT — any channel with zero variance after DC removal (constant
-    value, possibly non-zero). Catches amplifiers stuck at a constant
-    output rather than dropping to zero. Controlled by removeFlatChannels.
-
-    OPTIONAL PARAMETERS
-
-    # removeFlatChannels
-
-    Also remove waveforms where any channel has zero variance
-    (constant, possibly non-zero) after DC removal (default 1).
-    Set to 0 to detect only all-zero channels.
-
-    # dryRun
-
-    Report counts without modifying files (default 0).
-    Useful to assess how many spikes are affected before committing.
-
-- name: ndm_stripdat
-  parameters:
-    - name: redetectSpikes
-      value: 'no'
-      status: Optional
-    - name: stripClusters
-      value: 'default'
-      status: Optional
-    - name: overwrite
-      value: 'false'
-      status: Optional
-    - name: subtractionMode
-      value: 'raw'
-      status: Optional
-    - name: botmRidge
-      value: '1e-3'
-      status: Optional
-    - name: autoStrip
-      value: 'true'
-      status: Optional
-    - name: qualityTags
-      value: 'good,great,excellent'
-      status: Optional
-  help: |-
-    Strip spike waveforms from the raw .dat file to produce a spike-cleaned
-    recording: <session>-spkclean.dat
-
-    The original .dat is never modified.  Unlike most pipeline outputs,
-    session-spkclean.dat is regenerated every run by default (opt in to
-    the overwrite guard to protect a hand-curated result).
-
-    Run AFTER spike sorting (.clu.N files must be present for any mode
-    except pure Layer 0 on groups without .clu).  ndm_lfp will
-    automatically use session-spkclean.dat when it is present.
-
-    SUBTRACTION MODE
-
-    Three strategies, selected by subtractionMode:
-
-      raw     (default)  Subtract the raw .spk.N waveform directly.
-                         Near-exact cancellation at spike windows; skips
-                         all template modelling; fast.  Best for the
-                         iterative strip → re-detect workflow because
-                         residuals fall far below detection threshold.
-
-      model              Layer 1 (mean template + ISI burst compensation)
-                         or Layer 2 (exponential PC1 shape model) with
-                         contamination-aware neighbour cleaning and
-                         drift compensation.  Preserves the noise baseline
-                         at spike windows.  Suitable for LFP extraction.
-
-      botm               Bayes-Optimal Template Matching (Proepper 2015,
-                         §3.4).  Estimates noise covariance C from
-                         between-spike periods, builds per-cluster
-                         matched filter f = C^(-1)·ξ, subtracts with
-                         Bayes-optimal amplitude a = (obs^T·f)/(ξ^T·f).
-                         ~100× better residual than model on clean
-                         synthetic data while preserving baseline.
-                         Slower than model due to one-time covariance
-                         estimation and inversion per group.
-
-    STRIP LIST RESOLUTION
-
-    For each electrode group g, the list of clusters to strip is resolved
-    in this order (first match wins):
-
-      1. <session>.strip.<g>      # hand-written operator override
-      2. <session>.autostrip.<g>  # auto-generated from YAML units:
-                                  # (only when autoStrip=true)
-      3. stripClusters parameter  # global default
-
-    # redetectSpikes
-
-    Whether to immediately run a second round of spike detection on the
-    cleaned dat after writing it.
-
-      no   Write session-spkclean.dat and stop (default).
-      yes  Call ndm_redetectspikes: high-pass filters cleaned dat, detects
-           missed spikes, merges into .res.N/.spk.N/.clu.N (new spikes get
-           cluster ID 0), deletes stale .fet.N, removes the cleaned dat.
-           After this, re-run ndm_pca and ndm_klustakwik.
-
-    # stripClusters
-
-    Default cluster list used when no per-group sidecar or autostrip file
-    is found.  Accepts:
-
-      default           Strip every cluster except 0 (artefact) and 1 (MUA).
-      all               Strip every cluster including 0 and 1.
-      2,3,5             Comma-separated explicit ID list.
-      -  or  (empty)    Same as default.
-      @/path/to/file    Read the list from the file (one ID per line).
-
-    # overwrite
-
-    If false (default), ndm_stripdat checks whether
-    <session>-spkclean.dat already exists and skips re-running.  Stripping
-    a multi-hour recording can take tens of minutes; this guards against
-    accidental re-runs that would clobber a hand-verified result.  Set to
-    true to force regeneration.
-
-    # subtractionMode
-
-    raw | model | botm — see SUBTRACTION MODE above.  Default is raw.
-
-    # botmRidge
-
-    Covariance-matrix ridge regularisation used in BOTM mode.  Fraction
-    of trace(C)/dim added to the diagonal before inversion.  Only read
-    when subtractionMode = botm.  Default 1e-3; raise if inversion fails
-    on short recordings or if BOTM residuals look unstable.
-
-    # autoStrip
-
-    Master switch for auto-generation of the per-group
-    <session>.autostrip.<g> sidecar from the session YAML's top-level
-    units: block.  When true (default), ndm_stripdat reads every unit's
-    quality: field and emits the cluster IDs whose labels match
-    qualityTags.  Auto-generated files are regenerated every run so they
-    stay in sync with the current YAML curation.  When false, only
-    explicit <session>.strip.<g> sidecars and the global stripClusters
-    parameter are consulted.
-
-    # qualityTags
-
-    Comma-separated list of quality labels that count as "strip-worthy"
-    for autoStrip.  Matching is case-insensitive and whitespace-tolerant.
-    Default: good,great,excellent.  Labs using a different vocabulary
-    (e.g. SU,single-unit,accepted) configure it here.
-
-    TYPICAL ITERATIVE WORKFLOW
-
-      ndm_extractspikes   → ndm_pca → ndm_klustakwik → (klusters)
-      ndm_stripdat                     # first strip with initial .clu files
-      ndm_redetectspikes               # find missed spikes
-      ndm_pca → ndm_klustakwik → (klusters)
-      ndm_stripdat                     # re-strip with improved .clu files
-      ndm_lfp                          # LFP from the final cleaned dat
-
-- name: ndm_redetectspikes
-  parameters: []
-  help: |-
-    Second-round spike detection on the spike-cleaned dat produced by
-    ndm_stripdat.
-
-    Run AFTER ndm_stripdat.  Reads session-spkclean.dat, high-pass filters it
-    using windowHalfLength (from ndm_hipass parameters), detects spikes using
-    the existing thresholdFactor / refractoryPeriod / peakSearchLength, then
-    merges the new spikes into the existing .res.N/.spk.N/.clu.N files.  New
-    spikes receive cluster ID 0 (unclassified).  Stale .fet.N files are deleted.
-    The cleaned dat and its filtered version are removed when done.
-
-    All parameters are inherited from the session parameter file; no additional
-    parameters are needed beyond what ndm_hipass and ndm_extractspikes already
-    require.
-
-    NEXT STEPS
-
-    Re-run ndm_pca and ndm_klustakwik (or use klusters) to sort the merged
-    spike set.
-
-- name: ndm_reextractspikes
-  parameters:
-    - name: reextractThresholdFactor
-      value: 0.75
-      status: Optional
-    - name: reextractMaskHalfWidth
-      value: ''
-      status: Optional
-    - name: reextractMinClusterSize
-      value: 50
-      status: Optional
-    - name: reextractChi2
-      value: 0.999
-      status: Optional
-    - name: reextractExtraFeat
-      value: 'auto'
-      status: Optional
-    - name: reextractInflationRatio
-      value: 5.0
-      status: Optional
-    - name: reextractInflationCap
-      value: 500
-      status: Optional
-    - name: reextractAutoSubcluster
-      value: 0
-      status: Optional
-  help: |-
-    Second-pass spike detection with mask exclusion and IN-PLACE shadow
-    clustering.
-
-    Detects additional low-amplitude spikes missed by the primary
-    detection pass, then classifies each new spike into the "shadow" of
-    its nearest existing cluster (by robust Mahalanobis distance in
-    feature space) or into a single unmatched bin.
-
-    Unlike ndm_redetectspikes, which requires a spike-cleaned residual
-    .dat from ndm_stripdat, this script works directly on the original
-    $session.fil by masking out ± reextractMaskHalfWidth samples around
-    every existing $session.res.N timestamp, then re-running detection
-    with a reduced threshold.  The new spikes are merged directly into
-    the primary session files (.res / .spk / .fet / .clu), with shadow
-    cluster IDs assigned in the existing .clu.N file — no parallel stem.
-
-    PIPELINE POSITION
-
-      ndm_extractspikes → ndm_pca → ndm_klustakwik → (inspect in klusters)
-      ndm_reextractspikes                               # find missed spikes
-      ndm_subcluster_unmatched                           # cluster the unmatched bin
-      (inspect shadow clusters in klusters, merge / accept / reject)
-
-    CLUSTER ID CONVENTION
-
-        shadow(k) = maxExistingId + 1 + k     (paired with cluster k)
-        unmatched = maxExistingId + 1 + maxExistingId + 1
-
-    Shadow IDs never collide with existing IDs; the operator sees the
-    new units in Klusters alongside the existing ones and can merge
-    shadow(k) into k, keep them separate (e.g. if the shadow captures
-    a genuinely distinct low-amplitude unit), or reject them.
-
-    PREREQUISITES
-
-      $session.res.N, .spk.N, .fet.N, .clu.N, .pca.N must all exist.
-      Inherited parameters (from ndm_extractspikes):
-        thresholdFactor, refractoryPeriod, peakSearchLength,
-        start, duration.
-
-    SAFETY
-
-      Originals are copied to $session.<ext>.<N>.bak on first run; the
-      shadow-cluster merge writes to .tmp files and renames atomically.
-      A crash between process_reextractspikes and process_shadowcluster
-      leaves the originals intact; a crash during the merge leaves a
-      .tmp alongside the untouched original.
-
-    OUTPUT
-
-      In-place merge into $session.{res,spk,fet,clu}.N for every group
-      that had at least one new spike accepted by Pass 1.  Additionally,
-      a small text sidecar $session.shadowmark.<N> is written per
-      merged group recording unmatched_id, shadow_offset, n_unmatched,
-      and n_new.  The sidecar is the authoritative marker that
-      ndm_subcluster_unmatched uses to (a) decide which groups to
-      process and (b) recover the unmatched bin id without guessing.
-      Don't delete the sidecar between re-extract and sub-cluster — it
-      is regenerated only by re-running this script (or _stderiv).
-
-    PARAMETERS
-
-    # reextractThresholdFactor
-
-    Scale factor applied to the per-group median-threshold baseline to
-    obtain the re-extraction threshold.  Lower values recover more
-    low-amplitude events but also admit more noise crossings.  Typical
-    range: 0.5 .. 0.9.  Default 0.75.
-
-    # reextractMaskHalfWidth
-
-    Minimum sample distance a new candidate peak must maintain from
-    every original spike timestamp.  Defaults to refractoryPeriod if
-    left blank.
-
-    # reextractMinClusterSize
-
-    Existing clusters with fewer members are not eligible as parents
-    for shadow assignment (median / MAD statistics unreliable below
-    this).  Default 50.
-
-    # reextractChi2
-
-    χ² quantile for the squared-Mahalanobis admission threshold.  Lower
-    is stricter (more spikes fall into unmatched); higher is permissive.
-    Default 0.999 (down from 0.9999 in 2026-04): 0.9999 on ~20D
-    features proved over-permissive in practice and produced runaway
-    absorption into a single over-dispersed parent cluster.
-
-    # reextractExtraFeat
-
-    Whether the reference .fet.N includes the per-channel peak features
-    appended by process_pca -x:  auto (inferred from dimensionality), 0,
-    or 1.  Leave on auto.
-
-    # reextractInflationRatio
-
-    Upper bound on per-parent absorption as a multiple of |parent|.  A
-    parent with 1868 reference spikes may absorb at most
-    max(reextractInflationCap, 5.0 × 1868) = 9340 new spikes.  Excess
-    spikes (largest d²) are demoted to the unmatched bin.  Introduced
-    in 2026-04 to fix runaway per-parent shadow inflation.  Set to 0 to
-    disable.  Default 5.0.
-
-    # reextractInflationCap
-
-    Absolute minimum cap on per-parent absorption.  Small reference
-    clusters still get at least this many new spikes regardless of
-    reextractInflationRatio.  Default 500.  Set to 0 to disable the
-    guard.
-
-    # reextractAutoSubcluster
-
-    When 1, ndm_subcluster_unmatched is invoked on the merged session
-    after re-extraction.  The unmatched bin (typically 80-95 % of new
-    spikes) receives KlustaKwik with its own parameter section — see
-    programs[ndm_subcluster_unmatched] — so the operator sees real
-    cluster labels in Klusters, not one amorphous pile.  When 0
-    (default), the operator runs ndm_subcluster_unmatched manually.
-
-    SEE ALSO
-
-      ndm_redetectspikes          — residual-dat re-detection pipeline
-      ndm_subcluster_unmatched    — re-cluster the unmatched bin
-
-- name: ndm_subcluster_unmatched
-  parameters:
-  # ── Cluster count (tuned for the outlier bin) ──────────────────────────────
-    - name: minClusters
-      value: 2
-      status: Optional
-    - name: maxClusters
-      value: 100
-      status: Optional
-    - name: maxPossibleClusters
-      value: 1000
-      status: Optional
-  # ── Initialisation ─────────────────────────────────────────────────────────
-    - name: nStarts
-      value: 5
-      status: Optional
-    - name: nRuns
-      value: 0
-      status: Optional
-    - name: phase15Iters
-      value: 2
-      status: Optional
-    - name: subspaceDims
-      value: 3
-      status: Optional
-    - name: subspaceRecluster
-      value: 1
-      status: Optional
-    - name: subspaceReclusterDepth
-      value: 2
-      status: Optional
-    - name: splitRecurseDepth
-      value: 1
-      status: Optional
-    - name: templateMatchScore
-      value: 0.85
-      status: Optional
-    - name: templateMatchIters
-      value: 10
-      status: Optional
-    - name: crossChunkTemplateScore
-      value: 0.0
-      status: Optional
-    - name: initMethod
-      value: farthest
-      status: Optional
-    - name: penaltyMix
-      value: 0.25
-      status: Optional
-  # ── Chunked CEM ────────────────────────────────────────────────────────────
-    - name: chunkMinutes
-      value: 10
-      status: Optional
-    - name: chunkOverlapMinutes
-      value: 2
-      status: Optional
-    - name: chunkPreseedFraction
-      value: 0.05
-      status: Optional
-  # ── Merge / split ──────────────────────────────────────────────────────────
-    - name: mergeThresh
-      value: 30.0
-      status: Optional
-    - name: globalMergeIter
-      value: 50
-      status: Optional
-    - name: timeMergeIter
-      value: 50
-      status: Optional
-    - name: splitEvery
-      value: 25
-      status: Optional
-  # ── CEM convergence ────────────────────────────────────────────────────────
-    - name: maxIter
-      value: 500
-      status: Optional
-    - name: distThresh
-      value: 6.9
-      status: Optional
-    - name: fullStepEvery
-      value: 10
-      status: Optional
-    - name: changedThresh
-      value: 0.05
-      status: Optional
-  # ── Parallelism ─────────────────────────────────────────────────────────────
-    - name: nThreads
-      value: 0
-      status: Optional
-  help: |-
-    Re-cluster the "unmatched" bin produced by process_shadowcluster
-    (via ndm_reextractspikes with method: stderiv).
-
-    After a re-extraction pass, each group's .clu.N contains the
-    original cluster IDs plus:
-      - shadow(k) = maxExistingId + 1 + k      (new spikes gated into
-                    cluster k by robust Mahalanobis distance)
-      - unmatched = 2 * maxExistingId + 2      (single bin holding all
-                    new spikes that exceeded the χ² threshold OR were
-                    demoted by the inflation guard in v1.1+)
-
-    The unmatched bin is often large (≥80 % of re-extracted spikes with
-    default thresholds, and even larger when the inflation guard is
-    active) and heterogeneous — it mixes genuinely novel low-amplitude
-    units, collision artefacts, mis-masked existing spikes, and noise.
-    Running KlustaKwik on this bin alone recovers the sub-structure so
-    the operator can triage in Klusters with actual cluster labels
-    instead of one amorphous pile.
-
-    ACTIVATION GATE
-
-    Per-group activation is gated on the .shadowmark.<g> sidecar
-    written by process_shadowcluster (and committed by the re-extract
-    wrappers).  When the sidecar is absent, the group was not
-    shadow-merged — for example, because re-extract Pass 1 accepted 0
-    new spikes — and there is no unmatched bin to re-cluster: the
-    group is skipped with an info message.  This replaces the
-    pre-2026-05 max(clu_ids) heuristic, which silently destroyed
-    pre-existing noise / MUA bins on groups that bypassed
-    shadowcluster entirely.
-
-    The sidecar is plain text, key=value, one per line:
-      unmatched_id   <int>
-      shadow_offset  <int>
-      n_unmatched    <int>
-      n_new          <int>
-
-    FLOW
-
-      0. Read $session.shadowmark.$g for the authoritative unmatched
-         bin id.  Skip the group if absent (or n_unmatched == 0).
-      1. Read $session.clu.$g; locate rows where clu == unmatched_id.
-      2. Extract those rows from $session.fet.$g (or .fetD.$g) into a
-         sandbox .fet file next to the real session.
-      3. Symlink session yaml → $session-unmatched-$g.<ext> so KK's
-         kkReadYamlSpikeParams sees session SamplingRate / channelIds /
-         probe geometry (without this, KK falls back to SR=20000 and
-         all probe fields unset).  Run KlustaKwik on the sandbox stem
-         → sandbox .clu.$g.  Tear down the symlink regardless of KK
-         exit status.
-      4. Remap sandbox IDs k=1..K to (unmatched_id + 1)..(unmatched_id + K)
-         and merge back into $session.clu.$g over the unmatched rows.
-      5. On success: rotate $session.shadowmark.$g to .shadowmark.$g.done
-         and back $session.clu.$g up to .clu.$g.bak-sub.  Either marker
-         (the .done sidecar or the .bak-sub backup) gates a re-run;
-         remove the .bak-sub to force a re-sub-cluster on the same
-         residual.
-
-    Waveforms are not touched.  Re-clustering only affects .clu; the
-    Mahalanobis subspace that defined "unmatched" is the reference .fet
-    space, so re-clustering happens in that same space — no waveform
-    reprocessing required.
-
-    PARAMETER RESOLUTION
-
-    Uses the extended four-tier resolution from ndm_functions's
-    read_kk_param:
-
-      1. spikeDetection.channelGroups[g].klustakwik.<param>
-         Per-group probe-calibrated value (highest priority).
-      2. programs[ndm_subcluster_unmatched].parameters.<param>
-         THIS BLOCK — caller-specific override.  Lets you tune the
-         outlier-bin KK independently of the main sort's.
-      3. programs[ndm_klustakwik].parameters.<param>
-         Fallback to the main-sort config — set parameters here only
-         when you want to override; unset keys fall through.
-      4. Built-in default (in ndm_subcluster_unmatched).
-
-    OUTLIER-BIN-TUNED DEFAULTS
-
-    The defaults in THIS block differ from programs[ndm_klustakwik]
-    because the outlier bin is a structurally different population:
-
-    # maxPossibleClusters: 1000 (vs 500 in ndm_klustakwik)
-
-    The outlier bin can contain dozens of low-SNR units in a single
-    group.  Raising the ceiling prevents KlustaKwik from prematurely
-    capping the cluster table.
-
-    # mergeThresh: 30.0 (vs 42.0 in ndm_klustakwik)
-
-    Tighter Mahalanobis merge threshold: χ²(21, 0.99) ≈ 38.9 for
-    typical 21-dim features; 30.0 sits below this comfortably and
-    prevents two genuinely distinct low-amplitude units from being
-    collapsed by a loose merge.  Main-sort uses 42 to avoid fragmenting
-    dense clusters — the outlier bin has no dense clusters to worry
-    about.
-
-    # nStarts: 5 (vs 3 in ndm_klustakwik)
-
-    Outlier bins have more local minima in the CEM objective; extra
-    starts are cheap here because the bin is smaller than the main
-    spike population.
-
-    # phase15Iters: 2 (vs 1 in ndm_klustakwik)
-
-    Extra xcorr-realignment iterations sharpen within-cluster structure
-    in the low-SNR regime where PCA features are blurred by the
-    sample-wise noise.
-
-    # subspaceDims: 3, subspaceRecluster: 1, subspaceReclusterDepth: 2
-
-    Enables the per-cluster subspace CEM splits described in
-    programs[ndm_klustakwik] help.  Main-sort defaults to off
-    (subspaceRecluster: 0) because dense clusters rarely benefit.
-    Outlier bins routinely contain clusters that coalesce in the full
-    21-D space but separate cleanly in a 3-D subspace, so we turn it
-    on by default with a moderate recursion depth.
-
-    # splitRecurseDepth: 1
-
-    One extra recursive split pass — outlier bins benefit from
-    aggressive splitting that would be too disruptive on the main
-    sort.
-
-    # templateMatchScore: 0.85 (vs 0.0 in ndm_klustakwik)
-
-    Enables within-chunk template matching with a relatively permissive
-    score threshold; helps pull together scattered low-SNR members of
-    the same underlying unit that PCA-Mahalanobis alone can't match.
-    0.0 (= disabled) is the main-sort default because template matching
-    on dense clusters risks over-merging; the outlier bin is sparse
-    enough for this to be a net win.
-
-    # penaltyMix: 0.25 (vs 0 in ndm_klustakwik)
-
-    Slight mix toward AIC over pure BIC.  The outlier bin has low
-    per-cluster evidence, so BIC's logN penalty is disproportionately
-    aggressive there; a small AIC mix admits more clusters without
-    drowning in spurious singletons.
-
-    INVOCATION
-
-    Manually:
-      ndm_subcluster_unmatched [session] [group]
-
-    If electrodeGroup is omitted, every group whose .shadowmark.<g>
-    sidecar is present is processed; groups without one are skipped.
-    Re-run ndm_reextractspikes / _stderiv to (re)populate the sidecars
-    for groups you want to sub-cluster.
-
-    Automatically:
-      Set reextractAutoSubcluster=1 in programs[ndm_reextractspikes]
-      (or the _stderiv variant) and the re-extract script will invoke
-      this script at the end of its merge pass.
-
-    SEE ALSO
-
-      ndm_reextractspikes          — raw-signal re-extraction
-      ndm_reextractspikes (method: stderiv)  — stderiv re-extraction
-      ndm_klustakwik               — primary sort + parameter reference
-
-- name: ndm_lfp
-  parameters:
-    - name: samplingRate
-      value: 1250
-      status: Mandatory
-    - name: subtractSpikes
-      value: 'auto'
-      status: Optional
-  help: |-
-    Downsample a .dat file to create the LFP file.
-
-    If session-spkclean.dat already exists (produced by ndm_stripdat), it is
-    used as the resampling source instead of the raw .dat.  No additional
-    configuration is needed; just run ndm_stripdat before ndm_lfp.
-
-    The subtractSpikes parameter controls what happens when no cleaned dat is
-    present:
-
-      auto  Run ndm_stripdat first if .spk.N files exist (default).
-      yes   Always run ndm_stripdat; error if .spk.N files are missing.
-      no    Resample from the raw .dat unconditionally.
-
-    When ndm_lfp invokes ndm_stripdat internally (auto/yes), the cleaned dat
-    is removed once the LFP file has been written.  If ndm_stripdat was run
-    separately beforehand, the file is left in place for ndm_redetectspikes
-    or further use.
-
-    PARAMETERS
-
-    # samplingRate
-
-    Target sampling rate in Hz (default = 1250 Hz).
-    Should match fieldPotentials.lfpSamplingRate.
-
-    OPTIONAL PARAMETERS
-
-    # subtractSpikes
-
-    Whether to strip spikes before resampling (see above).
-
-- name: ndm_pca
-  parameters:
-    - name: before
-      value: 12
-      status: Mandatory
-    - name: after
-      value: 12
-      status: Mandatory
-    - name: extra
-      value: 'false'
-      status: Mandatory
-    - name: excludeClusters
-      value: ''
-      status: Optional
-  # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
-  # <session>.<type>.<method>.<group> and selects the detection/feature space.
-    - name: method
-      value: standard
-      status: Optional
-  # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
-  # name for the deprecated sdiffOrder alias.
-    - name: methodOrder
-      value: 3
-      status: Optional
-  # threadsPerGroup: number of OMP threads per group when running all groups in
-  # parallel. Default = floor(nCores / nGroups). Set explicitly to limit CPU use.
-    # - name: threadsPerGroup
-    #   value: 2
-    #   status: Optional
-  help: |-
-    Compute principal component analysis (PCA) to produce .fet files for sorting.
-
-    Reads .spk.N (raw waveforms) and writes:
-      .fet.N   binary feature file consumed by KlustaKwik / Klusters
-      .pca.N   eigenvector basis used by Klusters refeaturize and by
-               KlustaKwik's Phase 1.5 / Phase 4 re-projection (PCAE / legacy
-               5-int header — both layouts are supported by readers).
-
-    Use after ndm_extractspikes:
-      ndm_extractspikes                   → ndm_pca → ndm_klustakwik
-      ndm_extractspikes (method: sdiff)   → ndm_pca → ndm_klustakwik
-      ndm_extractspikes (method: stderiv) → ndm_pca → ndm_klustakwik
-        (.spk already holds derivative waveforms; basis is derivative-space)
-
-    To take a raw .spk into stderiv feature space instead, run ndm_pca
-    with method: stderiv — it transforms each spike before fitting PCA.
-
-    PARAMETERS
-
-    # before
-
-    Samples before the waveform peak to include in PCA.  Either a single
-    value for all groups or a space-separated list (one per group).
-    Default = 12.
-
-    # after
-
-    Samples after the waveform peak.  Same format as before. Default = 12.
-
-    # extra
-
-    If true, include the spike peak value as an extra feature in the .fet
-    file.
-
-    OPTIONAL PARAMETERS
-
-    # excludeClusters
-
-    Comma-separated list of cluster ids whose spikes are dropped from the
-    PCA fit (e.g. "5,12").  All spikes are still projected through the
-    resulting basis — the .fet has one row per spike — only the basis
-    direction changes.  Useful for second-pass PCA after an initial
-    clustering identifies high-rate units (interneurons, artefact
-    clusters) that would otherwise dominate the eigenvector solution.
-
-    Auto-resolves the .clu path as session.clu.electrodeGroup; this file
-    must exist before ndm_pca starts (run an initial PCA + clustering
-    pass first, then re-run with excludeClusters set).  Leave empty (or
-    omit) on the first PCA pass.
-
-    # threadsPerGroup
-
-    OpenMP threads per group when running all groups in parallel
-    (`ndm_pca` with no explicit group argument launches one process per
-    group).  Default = floor(nCores / nGroups), minimum 1.  Set
-    explicitly to cap total CPU use:
-      threadsPerGroup * nGroups <= nAvailableCores
-
-- name: ndm_klustakwik
-  parameters:
-  # ── Cluster count ──────────────────────────────────────────────────────────
-    - name: minClusters
-      value: 2
-      status: Optional
-    - name: maxClusters
-      value: 100
-      status: Optional
-    - name: maxPossibleClusters
-      value: 500
-      status: Optional
-  # ── Initialisation ─────────────────────────────────────────────────────────
-    - name: nStarts
-      value: 3
-      status: Optional
-    - name: nRuns
-      value: 0
-      status: Optional
-    - name: phase15Iters
-      value: 1
-      status: Optional
-    - name: subspaceDims
-      value: 0
-      status: Optional
-    - name: subspaceRecluster
-      value: 0
-      status: Optional
-    - name: templateMatchScore
-      value: 0.0
-      status: Optional
-    - name: templateMatchIters
-      value: 10
-      status: Optional
-    - name: splitRecurseDepth
-      value: 1
-      status: Optional
-    - name: subspaceReclusterDepth
-      value: 0
-      status: Optional
-    - name: crossChunkTemplateScore
-      value: 0.0
-      status: Optional
-    - name: initMethod
-      value: farthest
-      status: Optional
-    - name: penaltyMix
-      value: 0
-      status: Optional
-  # Chain-of-custody method (must match the detection/PCA pipeline that produced
-  # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
-    - name: method
-      value: standard
-      status: Optional
-  # ── Chunked CEM ────────────────────────────────────────────────────────────
-    - name: chunkMinutes
-      value: 10
-      status: Optional
-    - name: chunkOverlapMinutes
-      value: 2
-      status: Optional
-    - name: chunkPreseedFraction
-      value: 0.05
-      status: Optional
-  # ── Merge / split ──────────────────────────────────────────────────────────
-    - name: mergeThresh
-      value: 42.0
-      status: Optional
-    - name: globalMergeIter
-      value: 50
-      status: Optional
-    - name: timeMergeIter
-      value: 50
-      status: Optional
-    - name: splitEvery
-      value: 25
-      status: Optional
-  # ── CEM convergence ────────────────────────────────────────────────────────
-    - name: maxIter
-      value: 500
-      status: Optional
-    - name: distThresh
-      value: 6.9
-      status: Optional
-    - name: fullStepEvery
-      value: 10
-      status: Optional
-    - name: changedThresh
-      value: 0.05
-      status: Optional
-  # ── Output / logging ───────────────────────────────────────────────────────
-    - name: log
-      value: 1
-      status: Optional
-    - name: screen
-      value: 0
-      status: Optional
-    - name: fSaveModel
-      value: 1
-      status: Optional
-    - name: saveIntermediates
-      value: 0
-      status: Optional
-  # ── Re-run control ─────────────────────────────────────────────────────────
-    - name: overwrite
-      value: 0
-      status: Optional
-  # ── Parallelism ─────────────────────────────────────────────────────────────
-    - name: nThreads
-      value: 0
-      status: Optional
-    - name: parallelK
-      value: 0
-      status: Optional
-  help: |-
-    Run KlustaKwik automatic spike sorting for each spikeDetection group.
-
-    Reads .fet.N files from ndm_pca and writes .clu.N cluster assignment files.
-    Groups for which a .clu.N already exists are skipped unless overwrite: 1.
-
-    All parameters are Optional and use the three-tier resolution:
-      spikeDetection.channelGroups[g].klustakwik.<param>  (per-group, highest)
-      programs[ndm_klustakwik].parameters.<param>          (global session)
-      built-in default shown below                         (lowest)
-
-    CLUSTER COUNT
-
-    # minClusters
-
-    Minimum clusters passed to KlustaKwik -MinClusters (default 2).
-
-    # maxClusters
-
-    Maximum clusters to fit. Tetrodes: 12-20; high-density probes: 50-100
-    (default 100).
-
-    # maxPossibleClusters
-
-    Hard upper bound on the internal cluster table; must be >= maxClusters.
-    Increase for very large recordings (default 500).
-
-    INITIALISATION
-
-    # nStarts
-
-    Number of random restarts in non-chunked (two-phase) mode (default 3).
-    In chunked mode, prefer nRuns.
-
-    # nRuns
-
-    Per-chunk CEM restarts when using chunked mode (default 0 = single start per chunk).
-    When nRuns > 0 and chunkMinutes > 0, each chunk independently runs CEMTwoPhase nRuns
-    times with different random seeds and keeps its best-scoring result before handing
-    it to Phase 2 cross-chunk matching. Phase 0 preseed, Phase 1.5 realignment, and
-    Phase 2 each still run only once. This is the per-chunk analogue of nStarts in
-    non-chunked mode. Recommended: 3.
-
-    # initMethod
-
-    Cluster centre initialisation: "farthest" (default) or "random".
-
-    # penaltyMix
-
-    Penalty mix for the CEM objective; 0 = BIC penalty (default 0).
-
-    CHUNKED CEM
-
-    # chunkMinutes
-
-    Duration (minutes) of each temporal chunk. 0 disables chunking and uses
-    standard two-phase CEM on the full recording (default 10).
-
-    # chunkOverlapMinutes
-
-    Overlap (minutes) added at each chunk boundary to smooth transitions
-    (default 2).
-
-    # chunkPreseedFraction
-
-    Fraction of spikes used in a fast Phase-0 preseed pass to initialise cluster
-    centres before per-chunk CEM; 0 disables preseeding (default 0.05).
-
-    MERGE / SPLIT
-
-    # mergeThresh
-
-    Maximum Mahalanobis distance for merging cluster pairs across chunks.
-    Must be calibrated to chi²(nDims, p): for 25 dims, chi²(25, 0.99) ≈ 44.3.
-    A warning is emitted when this exceeds 1.5× chi²(nDims, 0.9999) (default 42.0).
-
-    # globalMergeIter
-
-    EM iterations run on the globally merged model after all chunks are combined
-    (default 50).
-
-    # timeMergeIter
-
-    Phase-2 temporal merge iterations in two-phase CEM mode; 0 disables
-    (default 50).
-
-    # splitEvery
-
-    CEM iterations between split attempts (default 25).
-
-    CEM CONVERGENCE
-
-    # maxIter
-
-    Maximum CEM iterations per chunk (default 500).
-
-    # distThresh
-
-    Mahalanobis distance threshold for assigning spikes to clusters (default 6.9).
-
-    # fullStepEvery
-
-    Full E-step recomputed every N iterations; partial steps used otherwise
-    (default 10).
-
-    # changedThresh
-
-    Fractional change in cluster assignments below which CEM is considered
-    converged (default 0.05).
-
-    OUTPUT / LOGGING
-
-    # log
-
-    Write KlustaKwik log file (1 = yes, 0 = no, default 1).
-
-    # screen
-
-    Print progress to stdout (1 = yes, 0 = no, default 0).
-
-    # fSaveModel
-
-    Save the fitted mixture model to disk (1 = yes, 0 = no, default 1).
-
-    # saveIntermediates
-
-    Write .clu.N each time a new best score is found during CEM
-    (1 = yes, 0 = no, default 0).
-
-    PHASE 1.5 WAVEFORM REALIGNMENT
-
-    Phase 1.5 runs after all per-chunk CEMTwoPhase jobs and before Phase 2.
-
-    Step 1 — xcorr alignment: per-cluster mean waveform from .spk, xcorr each
-    spike against its mean to find the shift. Home-chunk first-write-wins for
-    overlap spikes. Needs NbChannels + nbSamplesPerSpike (auto from YAML).
-
-    Step 2 — .fil re-extraction: re-reads the aligned waveform from the .fil
-    broadband file at (rawTs - shift - PeakSampleIndex), projects through PCA,
-    updates Data[] before Phase 2 matching. Falls back to circular shift from
-    .spk when .fil is absent. Needs NbTotalChannels + GroupChannelIds
-    (auto-detected from acquisitionSystem.nChannels and group channels).
-
-    RE-RUN CONTROL
-
-    # overwrite
-
-    If 1, delete an existing .clu.N and re-sort. If 0 (default), skip groups
-    whose .clu.N already exists. Can be set per-group in
-    spikeDetection.channelGroups[g].klustakwik.overwrite.
-
-    PARALLELISM
-
-    # nThreads
-
-    Number of OpenMP threads passed to KlustaKwik via OMP_NUM_THREADS.
-    KlustaKwik has no -nThreads flag; the value is exported into its environment
-    before launch and unset afterwards so it does not leak to other tools.
-    0 (default) = use all available cores (nproc). Set explicitly only when you
-    need to leave cores free for other concurrent work.
-
-    # parallelK
-
-    Number of (K-value, start) jobs to run concurrently. Each job is an
-    independent KlustaKwik run with its own cluster count K and random seed.
-    KlustaKwik distributes nCores evenly: threadsPerJob = nCores / parallelK.
-    GPU is disabled on all workers; Phase-3 GPU contribution is <1% of runtime.
-    0 (default) = serial. Recommended for many-core chunked sessions:
-      parallelK = nCores / max(1, nChunks / 2)
-    Example: 128 cores, 9 chunks → parallelK=32, 4 OMP threads/job, ~20x speedup.
-
-
-- name: ndm_autoklusta
-  parameters:
-    - name: mode
-      value: apply
-      status: Optional
-    - name: group
-      value: ~
-      status: Optional
-    - name: rawCluExt
-      value: ~
-      status: Optional
-    - name: curatedCluExt
-      value: ~
-      status: Optional
-    - name: outCluExt
-      value: autocur
-      status: Optional
-    - name: modelKey
-      value: default
-      status: Optional
-    - name: modelPath
-      value: ~
-      status: Optional
-    - name: noiseClusters
-      value: '0,1'
-      status: Optional
-    - name: keepThreshold
-      value: -1
-      status: Optional
-    - name: mergeThreshold
-      value: -1
-      status: Optional
-    - name: splitPurity
-      value: 0.8
-      status: Optional
-    - name: useWaveforms
-      value: 'true'
-      status: Optional
-    - name: refractoryMs
-      value: 2.0
-      status: Optional
-    - name: reset
-      value: 'false'
-      status: Optional
-    - name: force
-      value: 'false'
-      status: Optional
-    - name: probeLibrary
-      value: ~
-      status: Optional
-  help: |-
-    Learn manual spike-sorting curation from (auto, curated) .clu pairs and
-    replay it on fresh KlustaKwik output.
-
-    Both the raw KlustaKwik output and the final, manually curated .clu index
-    the same spikes, so together they encode every curation decision you made.
-    ndm_autoklusta recovers those decisions, fits two classifiers, and applies
-    the fitted policy to un-curated output.
-
-    WORKFLOW
-      ndm_extractspikes(_stderiv) -> .spk(D)
-      ndm_pca(_stderiv)           -> .fet(D)
-      ndm_klustakwik              -> .clu.N   (in Klusters, Save As .clu.N.K)
-      Klusters manual curation    -> .clu.N.final
-      ndm_autoklusta mode=train   -> updates the curation model
-      ... repeat on more sessions / shanks; the model accumulates ...
-      ndm_autoklusta mode=apply   -> .clu.N.autocur on a new session
-
-    DECISIONS RECOVERED (from the raw x curated overlap)
-      DISCARD  raw cluster whose spikes mostly went to a noise cluster
-      KEEP     raw cluster whose spikes mostly went to a real curated unit
-      MERGE    two kept raw clusters pointing at the SAME curated unit
-    Splits (one raw cluster fanned across several curated units) are detected
-    and reported but NOT replayed -- manual splits are spike-level and cannot
-    be reconstructed from cluster-level features.
-
-    CROSS-SHANK / CROSS-SESSION GENERALISATION
-    The model never sees raw feature coordinates (which differ in count and
-    scale between, e.g., a Buzsaki64L shank and an A32 probe). It sees only
-    scale-invariant descriptors of each cluster's geometry and spread in
-    feature space: covariance eigenvalue spectrum (anisotropy, participation
-    ratio, top-1 variance fraction), Mahalanobis radius, shank-normalised
-    spread ratio, Mahalanobis nearest-neighbour gap and crowding, and -- for
-    pairs -- shank-whitened separation, Bhattacharyya overlap, split-axis
-    alignment (whether two clusters separate ALONG one's elongation, as
-    over-split fragments do, or across it, as distinct units do), gap ratio,
-    temporal span overlap and refractory / ISI contamination of the candidate
-    merged train. Because every descriptor is a scalar regardless of
-    feature-space dimension, one model transfers across groups, shanks and
-    probes.
-
-    CONTINUED TRAINING
-    mode=train accumulates each (session x group) into the model store at
-    modelPath and refits on the full accumulation. Re-running train on more
-    sessions appends to the SAME model (groups already in the store are
-    skipped unless force=true), so the curator keeps improving without
-    re-reading old data. reset=true starts a fresh model. Use modelKey to
-    keep separate models per probe type (e.g. modelKey=buzsaki64L vs a32).
-
-    ONE GROUP AT A TIME
-    By default every group in the session is processed in one run. To act on
-    a single group, pass it as a positional argument (CLI wins over YAML):
-        ndm_autoklusta sirotaA-jg-000005-20120312 5
-    or set the group parameter in this block. In train mode this ingests just
-    that one (session:group) into the model, so you can curate and train shank
-    by shank. The store is keyed by session:group, so groups already ingested
-    are skipped on a later full-session train (unless force=true).
-
-    CLUSTER-FILE NAMING (Klusters convention)
-    Klusters orders cluster files SESSION.clu.N.<label>, with the per-group
-    number N BEFORE the trailing label (e.g.
-    sirotaA-jg-000005-20120312.clu.5.K for the raw KlustaKwik output and
-    .clu.5.final for the curated version). The three *CluExt parameters are
-    that trailing label:
-        rawCluExt: K          -> reads SESSION.clu.N.K   as the raw input
-        curatedCluExt: final  -> reads SESSION.clu.N.final as the curated ref
-        outCluExt: autocur    -> apply writes SESSION.clu.N.autocur (default)
-    An empty *CluExt means the plain SESSION.clu.N (no label). raw and curated
-    must differ in train mode, or there is nothing to learn.
-
-    OUTPUT
-      mode=train : model file at modelPath
-      mode=apply : the curated .clu per group, SESSION.clu.N.<outCluExt>
-                   (default label autocur, so the original .clu.N is never
-                   overwritten); canonical binary .clu — load it in Klusters,
-                   or rename to adopt it
-      mode=eval  : per-group keep precision/recall and spike-level adjusted
-                   Rand index versus the human curation
-
-    OPTIONAL PARAMETERS
-
-    # mode
-
-    train | apply | eval (default apply).
-
-    # group
-
-    Restrict the run to a single 1-based spike group (empty = all groups).
-    A positional CLI argument (ndm_autoklusta session N) overrides this.
-
-    # rawCluExt / curatedCluExt / outCluExt
-
-    Klusters labels in SESSION.clu.N.<label> (see above). raw and curated
-    select the inputs for train/eval; out is where apply writes. Empty raw or
-    curated means the plain SESSION.clu.N; outCluExt defaults to autocur.
-
-    # modelKey / modelPath
-
-    modelKey namespaces the default model file so different probe types can
-    keep separate models. modelPath overrides the location entirely. When
-    both are empty the model lives at
-    $XDG_DATA_HOME/neurosuite/autoklusta/<modelKey>.curatemodel.joblib
-    (overridable via $NEUROSUITE_AUTOKLUSTA_MODEL).
-
-    # noiseClusters
-
-    Comma-separated curated cluster ids treated as noise/artifact
-    (default 0,1).
-
-    # keepThreshold / mergeThreshold
-
-    Probability cutoffs for keeping a cluster and for merging a pair. -1 (the
-    default) uses the value stored in the model at train time (0.5).
-
-    # splitPurity
-
-    During train, a kept raw cluster whose top curated-unit share is below
-    this is reported as a likely human split (default 0.8).
-
-    # useWaveforms
-
-    If true (default) and .spk/.spkD is present, adds waveform SNR / channel
-    concentration / template-cosine features. Waveform-free sessions still
-    train and apply (those features become NaN, which the model tolerates).
-
-    # refractoryMs
-
-    Refractory window in ms for ISI-violation features (default 2.0).
-
-    # reset / force
-
-    reset=true starts a fresh model; force=true re-ingests a (session:group)
-    already present in the store.
-
-    # probeLibrary
-
-    Override the probe library search path (accepted for parity; geometry is
-    read from this YAML).
-
-- name: ndm_estimatedrift
-  parameters:
-    - name: windowSec
-      value: 60
-      status: Optional
-    - name: minUnits
-      value: 3
-      status: Optional
-    - name: minSpikes
-      value: 20
-      status: Optional
-    - name: excludeNoise
-      value: 'true'
-      status: Optional
-    - name: probeLibrary
-      value: ~
-      status: Optional
-  help: |-
-    Estimate in-vivo spatial probe drift from curated spike-sorting results.
-
-    Must be run AFTER spike sorting (ndm_klustakwik) and manual curation in Klusters.
-    Requires .res.N, .clu.N, and (for full accuracy) .spk.N files for each spike group.
-
-    The plugin reads the curated cluster files and, using the electrode site geometry
-    from the .probe configuration files declared under the probes: section of this YAML,
-    computes the waveform amplitude fingerprint for each well-isolated unit on each shank.
-    By tracking how those fingerprints shift over successive time windows, the algorithm
-    estimates the in-vivo drift of each probe shank in micrometres.
-
-    The result is written to SESSION.drift (YAML format) and can be used to flag sessions
-    with excessive drift (>10-15 um/h) or to provide correction parameters for post-hoc
-    spike re-assignment.
-
-    OPTIONAL PARAMETERS
-
-    # windowSec
-
-    Time window length in seconds for drift computation (default = 60).
-
-    # minUnits
-
-    Minimum number of well-isolated units per shank to compute drift (default = 3).
-
-    # minSpikes
-
-    Minimum spikes a unit must fire in a given window to be included (default = 20).
-
-    # excludeNoise
-
-    Exclude cluster 0 (artifact) and cluster 1 (MUA) from drift computation
-    (default = true).
-
-    # probeLibrary
-
-    Override the probe library search path. Searches NEUROSUITE_PROBE_PATH,
-    ~/.local/share/neurosuite/probes/, /usr/share/neurosuite/probes/, and
-    ./probes/ by default.
-
-- name: ndm_applydrift
-  parameters:
-    - name: sourceGroup
-      value: 1
-      status: Optional
-    - name: threshUm
-      value: 5.0
-      status: Optional
-    - name: minChunkSec
-      value: 30.0
-      status: Optional
-    - name: runKlustaKwik
-      value: 'false'
-      status: Optional
-  # Chain-of-custody method (must match how the session was sorted): the
-  # drift-adaptive re-clustering reads .fet.<method>.N and runs KlustaKwik
-  # -Method <method>.  standard | sdiff | stderiv.
-    - name: method
-      value: standard
-      status: Optional
-    - name: minClusters
-      value: 2
-      status: Optional
-    - name: maxClusters
-      value: 100
-      status: Optional
-    - name: mergeThresh
-      value: 35
-      status: Optional
-    - name: globalMergeIter
-      value: 30
-      status: Optional
-    - name: timeMergeIter
-      value: 35
-      status: Optional
-  help: |-
-    Apply the drift timeseries estimated for a curated shank to its sibling
-    groups on the same probe.
-
-    Must be run AFTER ndm_estimatedrift.  Reads SESSION.drift and writes
-    adaptive chunk boundary files (SESSION.chunks.N) for each target spike
-    group.  KlustaKwik can then use these chunk files to align cluster
-    boundaries with drift events, improving sorting quality on drifting shanks.
-
-    Usage:
-      ndm_applydrift [parameter-file] [source-group] [target-groups...]
-
-    source-group and target-groups can also be supplied as positional
-    command-line arguments; values in this parameters block are used as
-    defaults when the arguments are omitted.
-
-    OPTIONAL PARAMETERS
-
-    # sourceGroup
-
-    1-based index of the spike group whose curated .clu was used to generate
-    SESSION.drift (default = 1).
-
-    # threshUm
-
-    Maximum drift per chunk in µm before a new chunk boundary is inserted
-    (default = 5.0).
-
-    # minChunkSec
-
-    Minimum chunk duration in seconds; prevents excessively short chunks in
-    periods of rapid drift (default = 30.0).
-
-    # runKlustaKwik
-
-    Re-run KlustaKwik for each target group immediately after writing chunk
-    files (default = false).  When true, the parameters below are forwarded
-    to KlustaKwik.
-
-    # minClusters / maxClusters
-
-    KlustaKwik -MinClusters / -MaxClusters (defaults 2 / 100).
-
-    # mergeThresh / globalMergeIter / timeMergeIter
-
-    KlustaKwik merge parameters (defaults 35 / 30 / 35).
-
-- name: ndm_decomposecollisions
-  parameters:
-    - name: maxShiftSamp
-      value: 10
-      status: Optional
-    - name: corrThreshold
-      value: 0.85
-      status: Optional
-    - name: residualThreshold
-      value: 0.25
-      status: Optional
-    - name: minSnrRms
-      value: 4.0
-      status: Optional
-    - name: minSpikesTemplate
-      value: 30
-      status: Optional
-    - name: corrWindow
-      value: 0
-      status: Optional
-    - name: excludeNoise
-      value: 'true'
-      status: Optional
-    - name: overwrite
-      value: 'false'
-      status: Optional
-    - name: nWorkers
-      value: 0
-      status: Optional
-    - name: useGpu
-      value: 'false'
-      status: Optional
-  # Chain-of-custody method (must match the detection/PCA pipeline that produced
-  # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
-    - name: method
-      value: standard
-      status: Optional
-  help: |-
-    Detect and decompose spike collision waveforms into single-unit components.
-
-    Must be run AFTER spike sorting (ndm_klustakwik) and manual curation in Klusters.
-    Requires .clu.N, .res.N, and .spk.N files for each spike group.
-
-    When two neurons fire within approximately one spike-width (~1 ms), their waveforms
-    sum linearly. The composite waveform lands between parent clusters in feature space
-    and is typically misassigned. This plugin identifies and decomposes such collisions
-    post-curation without modifying the original spike-sorting files.
-
-    All template matching is restricted to spikes within a single spikeDetection group
-    (same shank). Cross-shank collisions are not attempted.
-
-    Results are written to SESSION.col.N (one per spikeDetection group, YAML sidecar).
-
-    OPTIONAL PARAMETERS
-
-    # maxShiftSamp
-
-    Maximum temporal shift (+-samples) explored when matching templates (default = 10).
-    At 32 kHz, 10 samples covers +-0.31 ms.
-
-    # corrThreshold
-
-    Pearson r below which a spike is flagged as a collision candidate (default = 0.85).
-    Increase to 0.92 to flag only obvious collisions; decrease to 0.75 for a wider net.
-
-    # residualThreshold
-
-    Maximum fractional residual ||R||/||W|| for an accepted decomposition (default = 0.25).
-    A value of 0.25 means the two-template model must explain >=75% of waveform energy.
-
-    # minSnrRms
-
-    Minimum spike amplitude in units of estimated RMS noise (default = 4.0).
-    Spikes below this level are too weak to decompose reliably.
-
-    # minSpikesTemplate
-
-    Minimum spikes a unit must have to contribute a template (default = 30).
-
-    # corrWindow
-
-    Number of samples around the peak used for correlation scoring (default = 0 = auto,
-    which uses the full waveform width).  A narrower window (e.g. 16 at 32 kHz) focuses
-    the score on the spike peak and reduces sensitivity to baseline drift in the tails.
-
-    # excludeNoise
-
-    Exclude clusters 0 and 1 from template building (default = true).
-
-    # overwrite
-
-    Overwrite existing .col.N files (default = false).
-
-    # nWorkers
-
-    Number of parallel worker processes for template matching (default = 0 = auto,
-    which uses all available CPU cores).  Set to a positive integer to cap at that
-    number (useful on shared machines).  Set to 1 to disable parallelism entirely.
-
-    # useGpu
-
-    Use GPU-accelerated correlation kernels when available (default = false).
-    Requires CuPy or equivalent.  Falls back to CPU if no compatible GPU is detected.
-    For typical session sizes the CPU path is fast enough; GPU mainly helps with
-    very large sessions (>10M spikes) and dense probes.
-
-# == Post-sorting analysis (continued) ========================================
-- name: ndm_localise
-  parameters:
-    - name: method
-      value: monopole
-      status: Optional
-    - name: clusterFilter
-      value: good
-      status: Optional
-    - name: maxDistUm
-      value: 200
-      status: Optional
-    - name: nBootstrap
-      value: 0
-      status: Optional
-    - name: overwrite
-      value: 0
-      status: Optional
-    - name: probeLibrary
-      value: ~
-      status: Optional
-  help: |-
-    Inverse model of spike positions relative to the probe shank.
-
-    For each spike group reads the .spk.N waveform file and the probe electrode
-    site geometry (from the probes: section of the session YAML), then fits an
-    extracellular potential model per spike to estimate where each neuron was
-    relative to the probe face.
-
-    MODEL (monopole)
-
-      V_i = A / sqrt((x_i - x_s)^2 + (y_i - y_s)^2 + z_s^2)
-
-      (x_i, y_i)  electrode site positions (µm) from probe geometry
-      (x_s, y_s)  source position in the shank plane (µm)
-      z_s         perpendicular distance from shank face (µm)
-      A           amplitude ∝ source current × tissue resistivity
-
-    The observation vector is the per-channel peak-to-peak amplitude of each
-    spike.  The fit minimises sum-of-squared residuals in log-amplitude space.
-
-    Run AFTER ndm_pca (needs .spk.N).  Probe geometry must be configured via
-    the probes: section of the session YAML and ndm_setupgroups must have been
-    run so that probeId and shankIndex are populated in spikeDetection groups.
-
-    OUTPUT FILES
-
-    SESSION.loc.N   binary float32, little-endian, no header.
-                    5 values per spike: x_um  y_um  z_um  amplitude  residual_rms
-                    noise spikes (clu ≤ 1) are localised but get residual_rms = NaN.
-
-    SESSION.loc.yaml  YAML sidecar with per-group metadata, site positions used,
-                      and per-axis summary statistics (mean ± std).
-
-    OPTIONAL PARAMETERS
-
-    # method
-
-    Inverse model (default = monopole).
-      monopole   Point-source model; recovers x, y, z and amplitude per spike.
-      com        Amplitude-weighted centre-of-mass — fast but no z estimate.
-
-    # clusterFilter
-
-    Which spikes to fully localise (default = good).
-      all     Every spike regardless of cluster assignment.
-      good    Clusters ≥ 2 (noise/MUA spikes are localised but flagged
-              with residual_rms = NaN so downstream tools can filter them).
-
-    # maxDistUm
-
-    Reject a fit and output NaN if the estimated source is further than this
-    distance from the nearest electrode site (µm, default = 200).
-
-    # nBootstrap
-
-    Bootstrap replicates per spike for position uncertainty (default = 0 =
-    disabled).  When > 0, writes SESSION.loc.std.N with per-spike standard
-    deviations across replicates.  Values of 50–200 are typical.
-
-    # overwrite
-
-    If 1, delete existing .loc.N and re-localise (default = 0 = skip).
-
-    # probeLibrary
-
-    Override probe library search path.  Default search order:
-      $NEUROSUITE_PROBE_PATH, ~/.local/share/neurosuite/probes/,
-      /usr/local/share/neurosuite/probes/, /usr/share/neurosuite/probes/,
-      probes/ (session-local directory).
-
-# == Housekeeping =============================================================
-- name: ndm_recolorchannels
-  parameters: []
-  help: |-
-    Change channel display colors in a parameter file.
-
-    This script takes its arguments on the command line rather than from the
-    programs section; it is run standalone rather than via ndm_start.
-
-    USAGE
-
-      ndm_recolorchannels -c ch1-ch2,RRGGBB [...] SESSION.xml
-
-      -c ch1-ch2,color   range of channel IDs (0-based) and hex color (no #)
-
-    EXAMPLES
-
-      # Color tetrode 1 red, tetrode 2 green
-      ndm_recolorchannels -c 0-3,ff0000 -c 4-7,00ff00 session.xml
-
-    NOTE: Only XML parameter files are supported.  For YAML sessions, edit
-    the neuroscope/channels/colors section directly or use the ndmanager GUI.
-
-- name: ndm_xml2yaml
-  parameters: []
-  help: |-
-    Convert a legacy ndManager XML parameter file to the YAML format used by
-    neurosuite-3.
-
-    This is a one-shot migration utility; it is not part of the regular
-    processing pipeline and does not read from the programs section.
-
-    USAGE
-
-      ndm_xml2yaml SESSION.xml [OUTPUT.yaml]
-
-    All sections are preserved: generalInfo, acquisitionSystem,
-    fieldPotentials, files, anatomicalDescription, spikeDetection, units,
-    neuroscope (channel colors and offsets), and programs.  The original XML
-    file is not modified.
-
-- name: ndm_clean
-  # Optional flags -- uncomment to override defaults:
-    # - name: wideband
-    #   value: 'true'
-    #   status: Optional
-    # - name: xml
-    #   value: 'true'
-    #   status: Optional
-    # - name: hipass
-    #   value: 'true'
-    #   status: Optional
-    # - name: spots
-    #   value: 'false'
-    #   status: Optional
-    # - name: pos
-    #   value: 'false'
-    #   status: Optional
-  help: |-
-    Clean intermediate files after pre-processing is complete.
-
-    OPTIONAL PARAMETERS
-
-    # wideband
-
-    Delete single-session wideband data files (default = true).
-
-    # xml
-
-    Delete single-session xml files (default = true).
-
-    # hipass
-
-    Delete the high-pass filtered data file (default = true).
-
-    # spots
-
-    Delete single-session spots files (default = false).
-
-    # pos
-
-    Delete single-session pos files (default = false).
-
-# == fiber-kit pipeline (external ndmanager plugin; ndm plugin protocol v1) ==================
-# Discovered at runtime via `ndm_fiber-kit --ndm-describe`.  Knobs flatten as <stage>.<knob>;
-# values are the recommended tuned baseline.  Edit here or in the Programs tab.
-- name: ndm_fiber-kit
-  parameters:
-    - name: intrachunk.gate
-      value: cfiber
-      status: Optional
-    - name: intrachunk.cos_thr
-      value: 0.85
-      status: Optional
-    - name: intrachunk.off_thr
-      value: 1.0
-      status: Optional
-    - name: intrachunk.depth_gate
-      value: 35.0
-      status: Optional
-    - name: intrachunk.amp_gate
-      value: 1.1
-      status: Optional
-    - name: intrachunk.refrac_ceiling
-      value: 1.0
-      status: Optional
-    - name: intrachunk.pre_merge_cos
-      value: 0.97
-      status: Optional
-    - name: intrachunk.linkage
-      value: complete
-      status: Optional
-    - name: intrachunk.align_lag
-      value: 6
-      status: Optional
-    - name: intrachunk.align_upsample
-      value: 1
-      status: Optional
-    - name: intrachunk.cfiber_q
-      value: 0.9
-      status: Optional
-    - name: intrachunk.cfiber_null
-      value: order
-      status: Optional
-    - name: intrachunk.cfiber_thr_floor
-      value: 0.0
-      status: Optional
-    - name: intrachunk.sig_cap
-      value: 8000
-      status: Optional
+      .res.N is NOT modified (detection timestamps are physical spike times).
+      .fet.N and .pca.N are renamed to .prealign and must be regenerated by
+      ndm_pca (or ndm_refeaturize) after this script completes.
+
+      Both .spk.N (raw pipeline) and .spkD.N (stderiv pipeline) are handled
+      automatically; stderiv re-extraction applies SDIFF_ALLPAIRS on the fly.
+
+      OPTIONAL PARAMETERS
+
+      # maxShift
+
+      Maximum shift in samples in either direction (default 3).  Corresponds
+      to MaxTimeShift in KiloKlustaKwik.  Values larger than 5 risk pulling
+      spikes from neighbouring units.  At 32 kHz, 3 samples = 92 µs.
+
+      # minScore
+
+      Minimum relative energy score ∈ [0,1] to accept a shift.  Score = peak
+      energy / total window energy.  Spikes where the peak is too diffuse
+      (score < minScore) are left unshifted.  Default 0.0 (accept all shifts).
+
+  - name: ndm_spikecleaner
+    parameters:
+      - name: removeFlatChannels
+        value: 1
+        status: Optional
+      - name: dryRun
+        value: 0
+        status: Optional
+    help: |-
+      Remove spike waveforms where one or more channels have dropped out.
+
+      Run AFTER ndm_extractspikes (any method),
+      BEFORE ndm_pca / ndm_klustakwik.
+      Backs up original .res, .spk, .fet, .clu files to
+      SESSION_spikecleaner_backup/ before modifying them.
+
+      Two conditions are detected and removed:
+
+      CUTOUT — any channel where every sample is exactly zero. Signature
+      of an ADC dropout, broken wire, or amplifier rail clamp.
+
+      FLAT — any channel with zero variance after DC removal (constant
+      value, possibly non-zero). Catches amplifiers stuck at a constant
+      output rather than dropping to zero. Controlled by removeFlatChannels.
+
+      OPTIONAL PARAMETERS
+
+      # removeFlatChannels
+
+      Also remove waveforms where any channel has zero variance
+      (constant, possibly non-zero) after DC removal (default 1).
+      Set to 0 to detect only all-zero channels.
+
+      # dryRun
+
+      Report counts without modifying files (default 0).
+      Useful to assess how many spikes are affected before committing.
+
+  - name: ndm_stripdat
+    parameters:
+      - name: redetectSpikes
+        value: 'no'
+        status: Optional
+      - name: stripClusters
+        value: 'default'
+        status: Optional
+      - name: overwrite
+        value: 'false'
+        status: Optional
+      - name: subtractionMode
+        value: 'raw'
+        status: Optional
+      - name: botmRidge
+        value: '1e-3'
+        status: Optional
+      - name: autoStrip
+        value: 'true'
+        status: Optional
+      - name: qualityTags
+        value: 'good,great,excellent'
+        status: Optional
+    help: |-
+      Strip spike waveforms from the raw .dat file to produce a spike-cleaned
+      recording: <session>-spkclean.dat
+
+      The original .dat is never modified.  Unlike most pipeline outputs,
+      session-spkclean.dat is regenerated every run by default (opt in to
+      the overwrite guard to protect a hand-curated result).
+
+      Run AFTER spike sorting (.clu.N files must be present for any mode
+      except pure Layer 0 on groups without .clu).  ndm_lfp will
+      automatically use session-spkclean.dat when it is present.
+
+      SUBTRACTION MODE
+
+      Three strategies, selected by subtractionMode:
+
+        raw     (default)  Subtract the raw .spk.N waveform directly.
+                           Near-exact cancellation at spike windows; skips
+                           all template modelling; fast.  Best for the
+                           iterative strip → re-detect workflow because
+                           residuals fall far below detection threshold.
+
+        model              Layer 1 (mean template + ISI burst compensation)
+                           or Layer 2 (exponential PC1 shape model) with
+                           contamination-aware neighbour cleaning and
+                           drift compensation.  Preserves the noise baseline
+                           at spike windows.  Suitable for LFP extraction.
+
+        botm               Bayes-Optimal Template Matching (Proepper 2015,
+                           §3.4).  Estimates noise covariance C from
+                           between-spike periods, builds per-cluster
+                           matched filter f = C^(-1)·ξ, subtracts with
+                           Bayes-optimal amplitude a = (obs^T·f)/(ξ^T·f).
+                           ~100× better residual than model on clean
+                           synthetic data while preserving baseline.
+                           Slower than model due to one-time covariance
+                           estimation and inversion per group.
+
+      STRIP LIST RESOLUTION
+
+      For each electrode group g, the list of clusters to strip is resolved
+      in this order (first match wins):
+
+        1. <session>.strip.<g>      # hand-written operator override
+        2. <session>.autostrip.<g>  # auto-generated from YAML units:
+                                    # (only when autoStrip=true)
+        3. stripClusters parameter  # global default
+
+      # redetectSpikes
+
+      Whether to immediately run a second round of spike detection on the
+      cleaned dat after writing it.
+
+        no   Write session-spkclean.dat and stop (default).
+        yes  Call ndm_redetectspikes: high-pass filters cleaned dat, detects
+             missed spikes, merges into .res.N/.spk.N/.clu.N (new spikes get
+             cluster ID 0), deletes stale .fet.N, removes the cleaned dat.
+             After this, re-run ndm_pca and ndm_klustakwik.
+
+      # stripClusters
+
+      Default cluster list used when no per-group sidecar or autostrip file
+      is found.  Accepts:
+
+        default           Strip every cluster except 0 (artefact) and 1 (MUA).
+        all               Strip every cluster including 0 and 1.
+        2,3,5             Comma-separated explicit ID list.
+        -  or  (empty)    Same as default.
+        @/path/to/file    Read the list from the file (one ID per line).
+
+      # overwrite
+
+      If false (default), ndm_stripdat checks whether
+      <session>-spkclean.dat already exists and skips re-running.  Stripping
+      a multi-hour recording can take tens of minutes; this guards against
+      accidental re-runs that would clobber a hand-verified result.  Set to
+      true to force regeneration.
+
+      # subtractionMode
+
+      raw | model | botm — see SUBTRACTION MODE above.  Default is raw.
+
+      # botmRidge
+
+      Covariance-matrix ridge regularisation used in BOTM mode.  Fraction
+      of trace(C)/dim added to the diagonal before inversion.  Only read
+      when subtractionMode = botm.  Default 1e-3; raise if inversion fails
+      on short recordings or if BOTM residuals look unstable.
+
+      # autoStrip
+
+      Master switch for auto-generation of the per-group
+      <session>.autostrip.<g> sidecar from the session YAML's top-level
+      units: block.  When true (default), ndm_stripdat reads every unit's
+      quality: field and emits the cluster IDs whose labels match
+      qualityTags.  Auto-generated files are regenerated every run so they
+      stay in sync with the current YAML curation.  When false, only
+      explicit <session>.strip.<g> sidecars and the global stripClusters
+      parameter are consulted.
+
+      # qualityTags
+
+      Comma-separated list of quality labels that count as "strip-worthy"
+      for autoStrip.  Matching is case-insensitive and whitespace-tolerant.
+      Default: good,great,excellent.  Labs using a different vocabulary
+      (e.g. SU,single-unit,accepted) configure it here.
+
+      TYPICAL ITERATIVE WORKFLOW
+
+        ndm_extractspikes   → ndm_pca → ndm_klustakwik → (klusters)
+        ndm_stripdat                     # first strip with initial .clu files
+        ndm_redetectspikes               # find missed spikes
+        ndm_pca → ndm_klustakwik → (klusters)
+        ndm_stripdat                     # re-strip with improved .clu files
+        ndm_lfp                          # LFP from the final cleaned dat
+
+  - name: ndm_redetectspikes
+    parameters: []
+    help: |-
+      Second-round spike detection on the spike-cleaned dat produced by
+      ndm_stripdat.
+
+      Run AFTER ndm_stripdat.  Reads session-spkclean.dat, high-pass filters it
+      using windowHalfLength (from ndm_hipass parameters), detects spikes using
+      the existing thresholdFactor / refractoryPeriod / peakSearchLength, then
+      merges the new spikes into the existing .res.N/.spk.N/.clu.N files.  New
+      spikes receive cluster ID 0 (unclassified).  Stale .fet.N files are deleted.
+      The cleaned dat and its filtered version are removed when done.
+
+      All parameters are inherited from the session parameter file; no additional
+      parameters are needed beyond what ndm_hipass and ndm_extractspikes already
+      require.
+
+      NEXT STEPS
+
+      Re-run ndm_pca and ndm_klustakwik (or use klusters) to sort the merged
+      spike set.
+
+  - name: ndm_reextractspikes
+    parameters:
+      - name: reextractThresholdFactor
+        value: 0.75
+        status: Optional
+      - name: reextractMaskHalfWidth
+        value: ''
+        status: Optional
+      - name: reextractMinClusterSize
+        value: 50
+        status: Optional
+      - name: reextractChi2
+        value: 0.999
+        status: Optional
+      - name: reextractExtraFeat
+        value: 'auto'
+        status: Optional
+      - name: reextractInflationRatio
+        value: 5.0
+        status: Optional
+      - name: reextractInflationCap
+        value: 500
+        status: Optional
+      - name: reextractAutoSubcluster
+        value: 0
+        status: Optional
+    help: |-
+      Second-pass spike detection with mask exclusion and IN-PLACE shadow
+      clustering.
+
+      Detects additional low-amplitude spikes missed by the primary
+      detection pass, then classifies each new spike into the "shadow" of
+      its nearest existing cluster (by robust Mahalanobis distance in
+      feature space) or into a single unmatched bin.
+
+      Unlike ndm_redetectspikes, which requires a spike-cleaned residual
+      .dat from ndm_stripdat, this script works directly on the original
+      $session.fil by masking out ± reextractMaskHalfWidth samples around
+      every existing $session.res.N timestamp, then re-running detection
+      with a reduced threshold.  The new spikes are merged directly into
+      the primary session files (.res / .spk / .fet / .clu), with shadow
+      cluster IDs assigned in the existing .clu.N file — no parallel stem.
+
+      PIPELINE POSITION
+
+        ndm_extractspikes → ndm_pca → ndm_klustakwik → (inspect in klusters)
+        ndm_reextractspikes                               # find missed spikes
+        ndm_subcluster_unmatched                           # cluster the unmatched bin
+        (inspect shadow clusters in klusters, merge / accept / reject)
+
+      CLUSTER ID CONVENTION
+
+          shadow(k) = maxExistingId + 1 + k     (paired with cluster k)
+          unmatched = maxExistingId + 1 + maxExistingId + 1
+
+      Shadow IDs never collide with existing IDs; the operator sees the
+      new units in Klusters alongside the existing ones and can merge
+      shadow(k) into k, keep them separate (e.g. if the shadow captures
+      a genuinely distinct low-amplitude unit), or reject them.
+
+      PREREQUISITES
+
+        $session.res.N, .spk.N, .fet.N, .clu.N, .pca.N must all exist.
+        Inherited parameters (from ndm_extractspikes):
+          thresholdFactor, refractoryPeriod, peakSearchLength,
+          start, duration.
+
+      SAFETY
+
+        Originals are copied to $session.<ext>.<N>.bak on first run; the
+        shadow-cluster merge writes to .tmp files and renames atomically.
+        A crash between process_reextractspikes and process_shadowcluster
+        leaves the originals intact; a crash during the merge leaves a
+        .tmp alongside the untouched original.
+
+      OUTPUT
+
+        In-place merge into $session.{res,spk,fet,clu}.N for every group
+        that had at least one new spike accepted by Pass 1.  Additionally,
+        a small text sidecar $session.shadowmark.<N> is written per
+        merged group recording unmatched_id, shadow_offset, n_unmatched,
+        and n_new.  The sidecar is the authoritative marker that
+        ndm_subcluster_unmatched uses to (a) decide which groups to
+        process and (b) recover the unmatched bin id without guessing.
+        Don't delete the sidecar between re-extract and sub-cluster — it
+        is regenerated only by re-running this script (or _stderiv).
+
+      PARAMETERS
+
+      # reextractThresholdFactor
+
+      Scale factor applied to the per-group median-threshold baseline to
+      obtain the re-extraction threshold.  Lower values recover more
+      low-amplitude events but also admit more noise crossings.  Typical
+      range: 0.5 .. 0.9.  Default 0.75.
+
+      # reextractMaskHalfWidth
+
+      Minimum sample distance a new candidate peak must maintain from
+      every original spike timestamp.  Defaults to refractoryPeriod if
+      left blank.
+
+      # reextractMinClusterSize
+
+      Existing clusters with fewer members are not eligible as parents
+      for shadow assignment (median / MAD statistics unreliable below
+      this).  Default 50.
+
+      # reextractChi2
+
+      χ² quantile for the squared-Mahalanobis admission threshold.  Lower
+      is stricter (more spikes fall into unmatched); higher is permissive.
+      Default 0.999 (down from 0.9999 in 2026-04): 0.9999 on ~20D
+      features proved over-permissive in practice and produced runaway
+      absorption into a single over-dispersed parent cluster.
+
+      # reextractExtraFeat
+
+      Whether the reference .fet.N includes the per-channel peak features
+      appended by process_pca -x:  auto (inferred from dimensionality), 0,
+      or 1.  Leave on auto.
+
+      # reextractInflationRatio
+
+      Upper bound on per-parent absorption as a multiple of |parent|.  A
+      parent with 1868 reference spikes may absorb at most
+      max(reextractInflationCap, 5.0 × 1868) = 9340 new spikes.  Excess
+      spikes (largest d²) are demoted to the unmatched bin.  Introduced
+      in 2026-04 to fix runaway per-parent shadow inflation.  Set to 0 to
+      disable.  Default 5.0.
+
+      # reextractInflationCap
+
+      Absolute minimum cap on per-parent absorption.  Small reference
+      clusters still get at least this many new spikes regardless of
+      reextractInflationRatio.  Default 500.  Set to 0 to disable the
+      guard.
+
+      # reextractAutoSubcluster
+
+      When 1, ndm_subcluster_unmatched is invoked on the merged session
+      after re-extraction.  The unmatched bin (typically 80-95 % of new
+      spikes) receives KlustaKwik with its own parameter section — see
+      programs[ndm_subcluster_unmatched] — so the operator sees real
+      cluster labels in Klusters, not one amorphous pile.  When 0
+      (default), the operator runs ndm_subcluster_unmatched manually.
+
+      SEE ALSO
+
+        ndm_redetectspikes          — residual-dat re-detection pipeline
+        ndm_subcluster_unmatched    — re-cluster the unmatched bin
+
+  - name: ndm_subcluster_unmatched
+    parameters:
+      # ── Cluster count (tuned for the outlier bin) ──────────────────────────────
+      - name: minClusters
+        value: 2
+        status: Optional
+      - name: maxClusters
+        value: 100
+        status: Optional
+      - name: maxPossibleClusters
+        value: 1000
+        status: Optional
+    # ── Initialisation ─────────────────────────────────────────────────────────
+      - name: nStarts
+        value: 5
+        status: Optional
+      - name: nRuns
+        value: 0
+        status: Optional
+      - name: phase15Iters
+        value: 2
+        status: Optional
+      - name: subspaceDims
+        value: 3
+        status: Optional
+      - name: subspaceRecluster
+        value: 1
+        status: Optional
+      - name: subspaceReclusterDepth
+        value: 2
+        status: Optional
+      - name: splitRecurseDepth
+        value: 1
+        status: Optional
+      - name: templateMatchScore
+        value: 0.85
+        status: Optional
+      - name: templateMatchIters
+        value: 10
+        status: Optional
+      - name: crossChunkTemplateScore
+        value: 0.0
+        status: Optional
+      - name: initMethod
+        value: farthest
+        status: Optional
+      - name: penaltyMix
+        value: 0.25
+        status: Optional
+    # ── Chunked CEM ────────────────────────────────────────────────────────────
+      - name: chunkMinutes
+        value: 10
+        status: Optional
+      - name: chunkOverlapMinutes
+        value: 2
+        status: Optional
+      - name: chunkPreseedFraction
+        value: 0.05
+        status: Optional
+    # ── Merge / split ──────────────────────────────────────────────────────────
+      - name: mergeThresh
+        value: 30.0
+        status: Optional
+      - name: globalMergeIter
+        value: 50
+        status: Optional
+      - name: timeMergeIter
+        value: 50
+        status: Optional
+      - name: splitEvery
+        value: 25
+        status: Optional
+    # ── CEM convergence ────────────────────────────────────────────────────────
+      - name: maxIter
+        value: 500
+        status: Optional
+      - name: distThresh
+        value: 6.9
+        status: Optional
+      - name: fullStepEvery
+        value: 10
+        status: Optional
+      - name: changedThresh
+        value: 0.05
+        status: Optional
+    # ── Parallelism ─────────────────────────────────────────────────────────────
+      - name: nThreads
+        value: 0
+        status: Optional
+    help: |-
+      Re-cluster the "unmatched" bin produced by process_shadowcluster
+      (via ndm_reextractspikes with method: stderiv).
+
+      After a re-extraction pass, each group's .clu.N contains the
+      original cluster IDs plus:
+        - shadow(k) = maxExistingId + 1 + k      (new spikes gated into
+                      cluster k by robust Mahalanobis distance)
+        - unmatched = 2 * maxExistingId + 2      (single bin holding all
+                      new spikes that exceeded the χ² threshold OR were
+                      demoted by the inflation guard in v1.1+)
+
+      The unmatched bin is often large (≥80 % of re-extracted spikes with
+      default thresholds, and even larger when the inflation guard is
+      active) and heterogeneous — it mixes genuinely novel low-amplitude
+      units, collision artefacts, mis-masked existing spikes, and noise.
+      Running KlustaKwik on this bin alone recovers the sub-structure so
+      the operator can triage in Klusters with actual cluster labels
+      instead of one amorphous pile.
+
+      ACTIVATION GATE
+
+      Per-group activation is gated on the .shadowmark.<g> sidecar
+      written by process_shadowcluster (and committed by the re-extract
+      wrappers).  When the sidecar is absent, the group was not
+      shadow-merged — for example, because re-extract Pass 1 accepted 0
+      new spikes — and there is no unmatched bin to re-cluster: the
+      group is skipped with an info message.  This replaces the
+      pre-2026-05 max(clu_ids) heuristic, which silently destroyed
+      pre-existing noise / MUA bins on groups that bypassed
+      shadowcluster entirely.
+
+      The sidecar is plain text, key=value, one per line:
+        unmatched_id   <int>
+        shadow_offset  <int>
+        n_unmatched    <int>
+        n_new          <int>
+
+      FLOW
+
+        0. Read $session.shadowmark.$g for the authoritative unmatched
+           bin id.  Skip the group if absent (or n_unmatched == 0).
+        1. Read $session.clu.$g; locate rows where clu == unmatched_id.
+        2. Extract those rows from $session.fet.$g (or .fetD.$g) into a
+           sandbox .fet file next to the real session.
+        3. Symlink session yaml → $session-unmatched-$g.<ext> so KK's
+           kkReadYamlSpikeParams sees session SamplingRate / channelIds /
+           probe geometry (without this, KK falls back to SR=20000 and
+           all probe fields unset).  Run KlustaKwik on the sandbox stem
+           → sandbox .clu.$g.  Tear down the symlink regardless of KK
+           exit status.
+        4. Remap sandbox IDs k=1..K to (unmatched_id + 1)..(unmatched_id + K)
+           and merge back into $session.clu.$g over the unmatched rows.
+        5. On success: rotate $session.shadowmark.$g to .shadowmark.$g.done
+           and back $session.clu.$g up to .clu.$g.bak-sub.  Either marker
+           (the .done sidecar or the .bak-sub backup) gates a re-run;
+           remove the .bak-sub to force a re-sub-cluster on the same
+           residual.
+
+      Waveforms are not touched.  Re-clustering only affects .clu; the
+      Mahalanobis subspace that defined "unmatched" is the reference .fet
+      space, so re-clustering happens in that same space — no waveform
+      reprocessing required.
+
+      PARAMETER RESOLUTION
+
+      Uses the extended four-tier resolution from ndm_functions's
+      read_kk_param:
+
+        1. spikeDetection.channelGroups[g].klustakwik.<param>
+           Per-group probe-calibrated value (highest priority).
+        2. programs[ndm_subcluster_unmatched].parameters.<param>
+           THIS BLOCK — caller-specific override.  Lets you tune the
+           outlier-bin KK independently of the main sort's.
+        3. programs[ndm_klustakwik].parameters.<param>
+           Fallback to the main-sort config — set parameters here only
+           when you want to override; unset keys fall through.
+        4. Built-in default (in ndm_subcluster_unmatched).
+
+      OUTLIER-BIN-TUNED DEFAULTS
+
+      The defaults in THIS block differ from programs[ndm_klustakwik]
+      because the outlier bin is a structurally different population:
+
+      # maxPossibleClusters: 1000 (vs 500 in ndm_klustakwik)
+
+      The outlier bin can contain dozens of low-SNR units in a single
+      group.  Raising the ceiling prevents KlustaKwik from prematurely
+      capping the cluster table.
+
+      # mergeThresh: 30.0 (vs 42.0 in ndm_klustakwik)
+
+      Tighter Mahalanobis merge threshold: χ²(21, 0.99) ≈ 38.9 for
+      typical 21-dim features; 30.0 sits below this comfortably and
+      prevents two genuinely distinct low-amplitude units from being
+      collapsed by a loose merge.  Main-sort uses 42 to avoid fragmenting
+      dense clusters — the outlier bin has no dense clusters to worry
+      about.
+
+      # nStarts: 5 (vs 3 in ndm_klustakwik)
+
+      Outlier bins have more local minima in the CEM objective; extra
+      starts are cheap here because the bin is smaller than the main
+      spike population.
+
+      # phase15Iters: 2 (vs 1 in ndm_klustakwik)
+
+      Extra xcorr-realignment iterations sharpen within-cluster structure
+      in the low-SNR regime where PCA features are blurred by the
+      sample-wise noise.
+
+      # subspaceDims: 3, subspaceRecluster: 1, subspaceReclusterDepth: 2
+
+      Enables the per-cluster subspace CEM splits described in
+      programs[ndm_klustakwik] help.  Main-sort defaults to off
+      (subspaceRecluster: 0) because dense clusters rarely benefit.
+      Outlier bins routinely contain clusters that coalesce in the full
+      21-D space but separate cleanly in a 3-D subspace, so we turn it
+      on by default with a moderate recursion depth.
+
+      # splitRecurseDepth: 1
+
+      One extra recursive split pass — outlier bins benefit from
+      aggressive splitting that would be too disruptive on the main
+      sort.
+
+      # templateMatchScore: 0.85 (vs 0.0 in ndm_klustakwik)
+
+      Enables within-chunk template matching with a relatively permissive
+      score threshold; helps pull together scattered low-SNR members of
+      the same underlying unit that PCA-Mahalanobis alone can't match.
+      0.0 (= disabled) is the main-sort default because template matching
+      on dense clusters risks over-merging; the outlier bin is sparse
+      enough for this to be a net win.
+
+      # penaltyMix: 0.25 (vs 0 in ndm_klustakwik)
+
+      Slight mix toward AIC over pure BIC.  The outlier bin has low
+      per-cluster evidence, so BIC's logN penalty is disproportionately
+      aggressive there; a small AIC mix admits more clusters without
+      drowning in spurious singletons.
+
+      INVOCATION
+
+      Manually:
+        ndm_subcluster_unmatched [session] [group]
+
+      If electrodeGroup is omitted, every group whose .shadowmark.<g>
+      sidecar is present is processed; groups without one are skipped.
+      Re-run ndm_reextractspikes / _stderiv to (re)populate the sidecars
+      for groups you want to sub-cluster.
+
+      Automatically:
+        Set reextractAutoSubcluster=1 in programs[ndm_reextractspikes]
+        (or the _stderiv variant) and the re-extract script will invoke
+        this script at the end of its merge pass.
+
+      SEE ALSO
+
+        ndm_reextractspikes          — raw-signal re-extraction
+        ndm_reextractspikes (method: stderiv)  — stderiv re-extraction
+        ndm_klustakwik               — primary sort + parameter reference
+
+  - name: ndm_lfp
+    parameters:
+      - name: samplingRate
+        value: 1250
+        status: Mandatory
+      - name: subtractSpikes
+        value: 'auto'
+        status: Optional
+    help: |-
+      Downsample a .dat file to create the LFP file.
+
+      If session-spkclean.dat already exists (produced by ndm_stripdat), it is
+      used as the resampling source instead of the raw .dat.  No additional
+      configuration is needed; just run ndm_stripdat before ndm_lfp.
+
+      The subtractSpikes parameter controls what happens when no cleaned dat is
+      present:
+
+        auto  Run ndm_stripdat first if .spk.N files exist (default).
+        yes   Always run ndm_stripdat; error if .spk.N files are missing.
+        no    Resample from the raw .dat unconditionally.
+
+      When ndm_lfp invokes ndm_stripdat internally (auto/yes), the cleaned dat
+      is removed once the LFP file has been written.  If ndm_stripdat was run
+      separately beforehand, the file is left in place for ndm_redetectspikes
+      or further use.
+
+      PARAMETERS
+
+      # samplingRate
+
+      Target sampling rate in Hz (default = 1250 Hz).
+      Should match fieldPotentials.lfpSamplingRate.
+
+      OPTIONAL PARAMETERS
+
+      # subtractSpikes
+
+      Whether to strip spikes before resampling (see above).
+
+  - name: ndm_pca
+    parameters:
+      - name: before
+        value: 12
+        status: Mandatory
+      - name: after
+        value: 12
+        status: Mandatory
+      - name: extra
+        value: 'false'
+        status: Mandatory
+      - name: excludeClusters
+        value: ''
+        status: Optional
+    # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
+    # <session>.<type>.<method>.<group> and selects the detection/feature space.
+      - name: method
+        value: standard
+        status: Optional
+    # methodOrder: spatial-derivative order 0-3 (sdiff/stderiv only); the modern
+    # name for the deprecated sdiffOrder alias.
+      - name: methodOrder
+        value: 3
+        status: Optional
+    # threadsPerGroup: number of OMP threads per group when running all groups in
+    # parallel. Default = floor(nCores / nGroups). Set explicitly to limit CPU use.
+      # - name: threadsPerGroup
+      #   value: 2
+      #   status: Optional
+    help: |-
+      Compute principal component analysis (PCA) to produce .fet files for sorting.
+
+      Reads .spk.N (raw waveforms) and writes:
+        .fet.N   binary feature file consumed by KlustaKwik / Klusters
+        .pca.N   eigenvector basis used by Klusters refeaturize and by
+                 KlustaKwik's Phase 1.5 / Phase 4 re-projection (PCAE / legacy
+                 5-int header — both layouts are supported by readers).
+
+      Use after ndm_extractspikes:
+        ndm_extractspikes                   → ndm_pca → ndm_klustakwik
+        ndm_extractspikes (method: sdiff)   → ndm_pca → ndm_klustakwik
+        ndm_extractspikes (method: stderiv) → ndm_pca → ndm_klustakwik
+          (.spk already holds derivative waveforms; basis is derivative-space)
+
+      To take a raw .spk into stderiv feature space instead, run ndm_pca
+      with method: stderiv — it transforms each spike before fitting PCA.
+
+      PARAMETERS
+
+      # before
+
+      Samples before the waveform peak to include in PCA.  Either a single
+      value for all groups or a space-separated list (one per group).
+      Default = 12.
+
+      # after
+
+      Samples after the waveform peak.  Same format as before. Default = 12.
+
+      # extra
+
+      If true, include the spike peak value as an extra feature in the .fet
+      file.
+
+      OPTIONAL PARAMETERS
+
+      # excludeClusters
+
+      Comma-separated list of cluster ids whose spikes are dropped from the
+      PCA fit (e.g. "5,12").  All spikes are still projected through the
+      resulting basis — the .fet has one row per spike — only the basis
+      direction changes.  Useful for second-pass PCA after an initial
+      clustering identifies high-rate units (interneurons, artefact
+      clusters) that would otherwise dominate the eigenvector solution.
+
+      Auto-resolves the .clu path as session.clu.electrodeGroup; this file
+      must exist before ndm_pca starts (run an initial PCA + clustering
+      pass first, then re-run with excludeClusters set).  Leave empty (or
+      omit) on the first PCA pass.
+
+      # threadsPerGroup
+
+      OpenMP threads per group when running all groups in parallel
+      (`ndm_pca` with no explicit group argument launches one process per
+      group).  Default = floor(nCores / nGroups), minimum 1.  Set
+      explicitly to cap total CPU use:
+        threadsPerGroup * nGroups <= nAvailableCores
+
+  - name: ndm_klustakwik
+    parameters:
+      # ── Cluster count ──────────────────────────────────────────────────────────
+      - name: minClusters
+        value: 2
+        status: Optional
+      - name: maxClusters
+        value: 100
+        status: Optional
+      - name: maxPossibleClusters
+        value: 500
+        status: Optional
+    # ── Initialisation ─────────────────────────────────────────────────────────
+      - name: nStarts
+        value: 3
+        status: Optional
+      - name: nRuns
+        value: 0
+        status: Optional
+      - name: phase15Iters
+        value: 1
+        status: Optional
+      - name: subspaceDims
+        value: 0
+        status: Optional
+      - name: subspaceRecluster
+        value: 0
+        status: Optional
+      - name: templateMatchScore
+        value: 0.0
+        status: Optional
+      - name: templateMatchIters
+        value: 10
+        status: Optional
+      - name: splitRecurseDepth
+        value: 1
+        status: Optional
+      - name: subspaceReclusterDepth
+        value: 0
+        status: Optional
+      - name: crossChunkTemplateScore
+        value: 0.0
+        status: Optional
+      - name: initMethod
+        value: farthest
+        status: Optional
+      - name: penaltyMix
+        value: 0
+        status: Optional
+    # Chain-of-custody method (must match the detection/PCA pipeline that produced
+    # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
+      - name: method
+        value: standard
+        status: Optional
+    # ── Chunked CEM ────────────────────────────────────────────────────────────
+      - name: chunkMinutes
+        value: 10
+        status: Optional
+      - name: chunkOverlapMinutes
+        value: 2
+        status: Optional
+      - name: chunkPreseedFraction
+        value: 0.05
+        status: Optional
+    # ── Merge / split ──────────────────────────────────────────────────────────
+      - name: mergeThresh
+        value: 42.0
+        status: Optional
+      - name: globalMergeIter
+        value: 50
+        status: Optional
+      - name: timeMergeIter
+        value: 50
+        status: Optional
+      - name: splitEvery
+        value: 25
+        status: Optional
+    # ── CEM convergence ────────────────────────────────────────────────────────
+      - name: maxIter
+        value: 500
+        status: Optional
+      - name: distThresh
+        value: 6.9
+        status: Optional
+      - name: fullStepEvery
+        value: 10
+        status: Optional
+      - name: changedThresh
+        value: 0.05
+        status: Optional
+    # ── Output / logging ───────────────────────────────────────────────────────
+      - name: log
+        value: 1
+        status: Optional
+      - name: screen
+        value: 0
+        status: Optional
+      - name: fSaveModel
+        value: 1
+        status: Optional
+      - name: saveIntermediates
+        value: 0
+        status: Optional
+    # ── Re-run control ─────────────────────────────────────────────────────────
+      - name: overwrite
+        value: 0
+        status: Optional
+    # ── Parallelism ─────────────────────────────────────────────────────────────
+      - name: nThreads
+        value: 0
+        status: Optional
+      - name: parallelK
+        value: 0
+        status: Optional
+    help: |-
+      Run KlustaKwik automatic spike sorting for each spikeDetection group.
+
+      Reads .fet.N files from ndm_pca and writes .clu.N cluster assignment files.
+      Groups for which a .clu.N already exists are skipped unless overwrite: 1.
+
+      All parameters are Optional and use the three-tier resolution:
+        spikeDetection.channelGroups[g].klustakwik.<param>  (per-group, highest)
+        programs[ndm_klustakwik].parameters.<param>          (global session)
+        built-in default shown below                         (lowest)
+
+      CLUSTER COUNT
+
+      # minClusters
+
+      Minimum clusters passed to KlustaKwik -MinClusters (default 2).
+
+      # maxClusters
+
+      Maximum clusters to fit. Tetrodes: 12-20; high-density probes: 50-100
+      (default 100).
+
+      # maxPossibleClusters
+
+      Hard upper bound on the internal cluster table; must be >= maxClusters.
+      Increase for very large recordings (default 500).
+
+      INITIALISATION
+
+      # nStarts
+
+      Number of random restarts in non-chunked (two-phase) mode (default 3).
+      In chunked mode, prefer nRuns.
+
+      # nRuns
+
+      Per-chunk CEM restarts when using chunked mode (default 0 = single start per chunk).
+      When nRuns > 0 and chunkMinutes > 0, each chunk independently runs CEMTwoPhase nRuns
+      times with different random seeds and keeps its best-scoring result before handing
+      it to Phase 2 cross-chunk matching. Phase 0 preseed, Phase 1.5 realignment, and
+      Phase 2 each still run only once. This is the per-chunk analogue of nStarts in
+      non-chunked mode. Recommended: 3.
+
+      # initMethod
+
+      Cluster centre initialisation: "farthest" (default) or "random".
+
+      # penaltyMix
+
+      Penalty mix for the CEM objective; 0 = BIC penalty (default 0).
+
+      CHUNKED CEM
+
+      # chunkMinutes
+
+      Duration (minutes) of each temporal chunk. 0 disables chunking and uses
+      standard two-phase CEM on the full recording (default 10).
+
+      # chunkOverlapMinutes
+
+      Overlap (minutes) added at each chunk boundary to smooth transitions
+      (default 2).
+
+      # chunkPreseedFraction
+
+      Fraction of spikes used in a fast Phase-0 preseed pass to initialise cluster
+      centres before per-chunk CEM; 0 disables preseeding (default 0.05).
+
+      MERGE / SPLIT
+
+      # mergeThresh
+
+      Maximum Mahalanobis distance for merging cluster pairs across chunks.
+      Must be calibrated to chi²(nDims, p): for 25 dims, chi²(25, 0.99) ≈ 44.3.
+      A warning is emitted when this exceeds 1.5× chi²(nDims, 0.9999) (default 42.0).
+
+      # globalMergeIter
+
+      EM iterations run on the globally merged model after all chunks are combined
+      (default 50).
+
+      # timeMergeIter
+
+      Phase-2 temporal merge iterations in two-phase CEM mode; 0 disables
+      (default 50).
+
+      # splitEvery
+
+      CEM iterations between split attempts (default 25).
+
+      CEM CONVERGENCE
+
+      # maxIter
+
+      Maximum CEM iterations per chunk (default 500).
+
+      # distThresh
+
+      Mahalanobis distance threshold for assigning spikes to clusters (default 6.9).
+
+      # fullStepEvery
+
+      Full E-step recomputed every N iterations; partial steps used otherwise
+      (default 10).
+
+      # changedThresh
+
+      Fractional change in cluster assignments below which CEM is considered
+      converged (default 0.05).
+
+      OUTPUT / LOGGING
+
+      # log
+
+      Write KlustaKwik log file (1 = yes, 0 = no, default 1).
+
+      # screen
+
+      Print progress to stdout (1 = yes, 0 = no, default 0).
+
+      # fSaveModel
+
+      Save the fitted mixture model to disk (1 = yes, 0 = no, default 1).
+
+      # saveIntermediates
+
+      Write .clu.N each time a new best score is found during CEM
+      (1 = yes, 0 = no, default 0).
+
+      PHASE 1.5 WAVEFORM REALIGNMENT
+
+      Phase 1.5 runs after all per-chunk CEMTwoPhase jobs and before Phase 2.
+
+      Step 1 — xcorr alignment: per-cluster mean waveform from .spk, xcorr each
+      spike against its mean to find the shift. Home-chunk first-write-wins for
+      overlap spikes. Needs NbChannels + nbSamplesPerSpike (auto from YAML).
+
+      Step 2 — .fil re-extraction: re-reads the aligned waveform from the .fil
+      broadband file at (rawTs - shift - PeakSampleIndex), projects through PCA,
+      updates Data[] before Phase 2 matching. Falls back to circular shift from
+      .spk when .fil is absent. Needs NbTotalChannels + GroupChannelIds
+      (auto-detected from acquisitionSystem.nChannels and group channels).
+
+      RE-RUN CONTROL
+
+      # overwrite
+
+      If 1, delete an existing .clu.N and re-sort. If 0 (default), skip groups
+      whose .clu.N already exists. Can be set per-group in
+      spikeDetection.channelGroups[g].klustakwik.overwrite.
+
+      PARALLELISM
+
+      # nThreads
+
+      Number of OpenMP threads passed to KlustaKwik via OMP_NUM_THREADS.
+      KlustaKwik has no -nThreads flag; the value is exported into its environment
+      before launch and unset afterwards so it does not leak to other tools.
+      0 (default) = use all available cores (nproc). Set explicitly only when you
+      need to leave cores free for other concurrent work.
+
+      # parallelK
+
+      Number of (K-value, start) jobs to run concurrently. Each job is an
+      independent KlustaKwik run with its own cluster count K and random seed.
+      KlustaKwik distributes nCores evenly: threadsPerJob = nCores / parallelK.
+      GPU is disabled on all workers; Phase-3 GPU contribution is <1% of runtime.
+      0 (default) = serial. Recommended for many-core chunked sessions:
+        parallelK = nCores / max(1, nChunks / 2)
+      Example: 128 cores, 9 chunks → parallelK=32, 4 OMP threads/job, ~20x speedup.
+
+
+  - name: ndm_autoklusta
+    parameters:
+      - name: mode
+        value: apply
+        status: Optional
+      - name: group
+        value: ~
+        status: Optional
+      - name: rawCluExt
+        value: ~
+        status: Optional
+      - name: curatedCluExt
+        value: ~
+        status: Optional
+      - name: outCluExt
+        value: autocur
+        status: Optional
+      - name: modelKey
+        value: default
+        status: Optional
+      - name: modelPath
+        value: ~
+        status: Optional
+      - name: noiseClusters
+        value: '0,1'
+        status: Optional
+      - name: keepThreshold
+        value: -1
+        status: Optional
+      - name: mergeThreshold
+        value: -1
+        status: Optional
+      - name: splitPurity
+        value: 0.8
+        status: Optional
+      - name: useWaveforms
+        value: 'true'
+        status: Optional
+      - name: refractoryMs
+        value: 2.0
+        status: Optional
+      - name: reset
+        value: 'false'
+        status: Optional
+      - name: force
+        value: 'false'
+        status: Optional
+      - name: probeLibrary
+        value: ~
+        status: Optional
+    help: |-
+      Learn manual spike-sorting curation from (auto, curated) .clu pairs and
+      replay it on fresh KlustaKwik output.
+
+      Both the raw KlustaKwik output and the final, manually curated .clu index
+      the same spikes, so together they encode every curation decision you made.
+      ndm_autoklusta recovers those decisions, fits two classifiers, and applies
+      the fitted policy to un-curated output.
+
+      WORKFLOW
+        ndm_extractspikes(_stderiv) -> .spk(D)
+        ndm_pca(_stderiv)           -> .fet(D)
+        ndm_klustakwik              -> .clu.N   (in Klusters, Save As .clu.N.K)
+        Klusters manual curation    -> .clu.N.final
+        ndm_autoklusta mode=train   -> updates the curation model
+        ... repeat on more sessions / shanks; the model accumulates ...
+        ndm_autoklusta mode=apply   -> .clu.N.autocur on a new session
+
+      DECISIONS RECOVERED (from the raw x curated overlap)
+        DISCARD  raw cluster whose spikes mostly went to a noise cluster
+        KEEP     raw cluster whose spikes mostly went to a real curated unit
+        MERGE    two kept raw clusters pointing at the SAME curated unit
+      Splits (one raw cluster fanned across several curated units) are detected
+      and reported but NOT replayed -- manual splits are spike-level and cannot
+      be reconstructed from cluster-level features.
+
+      CROSS-SHANK / CROSS-SESSION GENERALISATION
+      The model never sees raw feature coordinates (which differ in count and
+      scale between, e.g., a Buzsaki64L shank and an A32 probe). It sees only
+      scale-invariant descriptors of each cluster's geometry and spread in
+      feature space: covariance eigenvalue spectrum (anisotropy, participation
+      ratio, top-1 variance fraction), Mahalanobis radius, shank-normalised
+      spread ratio, Mahalanobis nearest-neighbour gap and crowding, and -- for
+      pairs -- shank-whitened separation, Bhattacharyya overlap, split-axis
+      alignment (whether two clusters separate ALONG one's elongation, as
+      over-split fragments do, or across it, as distinct units do), gap ratio,
+      temporal span overlap and refractory / ISI contamination of the candidate
+      merged train. Because every descriptor is a scalar regardless of
+      feature-space dimension, one model transfers across groups, shanks and
+      probes.
+
+      CONTINUED TRAINING
+      mode=train accumulates each (session x group) into the model store at
+      modelPath and refits on the full accumulation. Re-running train on more
+      sessions appends to the SAME model (groups already in the store are
+      skipped unless force=true), so the curator keeps improving without
+      re-reading old data. reset=true starts a fresh model. Use modelKey to
+      keep separate models per probe type (e.g. modelKey=buzsaki64L vs a32).
+
+      ONE GROUP AT A TIME
+      By default every group in the session is processed in one run. To act on
+      a single group, pass it as a positional argument (CLI wins over YAML):
+          ndm_autoklusta sirotaA-jg-000005-20120312 5
+      or set the group parameter in this block. In train mode this ingests just
+      that one (session:group) into the model, so you can curate and train shank
+      by shank. The store is keyed by session:group, so groups already ingested
+      are skipped on a later full-session train (unless force=true).
+
+      CLUSTER-FILE NAMING (Klusters convention)
+      Klusters orders cluster files SESSION.clu.N.<label>, with the per-group
+      number N BEFORE the trailing label (e.g.
+      sirotaA-jg-000005-20120312.clu.5.K for the raw KlustaKwik output and
+      .clu.5.final for the curated version). The three *CluExt parameters are
+      that trailing label:
+          rawCluExt: K          -> reads SESSION.clu.N.K   as the raw input
+          curatedCluExt: final  -> reads SESSION.clu.N.final as the curated ref
+          outCluExt: autocur    -> apply writes SESSION.clu.N.autocur (default)
+      An empty *CluExt means the plain SESSION.clu.N (no label). raw and curated
+      must differ in train mode, or there is nothing to learn.
+
+      OUTPUT
+        mode=train : model file at modelPath
+        mode=apply : the curated .clu per group, SESSION.clu.N.<outCluExt>
+                     (default label autocur, so the original .clu.N is never
+                     overwritten); canonical binary .clu — load it in Klusters,
+                     or rename to adopt it
+        mode=eval  : per-group keep precision/recall and spike-level adjusted
+                     Rand index versus the human curation
+
+      OPTIONAL PARAMETERS
+
+      # mode
+
+      train | apply | eval (default apply).
+
+      # group
+
+      Restrict the run to a single 1-based spike group (empty = all groups).
+      A positional CLI argument (ndm_autoklusta session N) overrides this.
+
+      # rawCluExt / curatedCluExt / outCluExt
+
+      Klusters labels in SESSION.clu.N.<label> (see above). raw and curated
+      select the inputs for train/eval; out is where apply writes. Empty raw or
+      curated means the plain SESSION.clu.N; outCluExt defaults to autocur.
+
+      # modelKey / modelPath
+
+      modelKey namespaces the default model file so different probe types can
+      keep separate models. modelPath overrides the location entirely. When
+      both are empty the model lives at
+      $XDG_DATA_HOME/neurosuite/autoklusta/<modelKey>.curatemodel.joblib
+      (overridable via $NEUROSUITE_AUTOKLUSTA_MODEL).
+
+      # noiseClusters
+
+      Comma-separated curated cluster ids treated as noise/artifact
+      (default 0,1).
+
+      # keepThreshold / mergeThreshold
+
+      Probability cutoffs for keeping a cluster and for merging a pair. -1 (the
+      default) uses the value stored in the model at train time (0.5).
+
+      # splitPurity
+
+      During train, a kept raw cluster whose top curated-unit share is below
+      this is reported as a likely human split (default 0.8).
+
+      # useWaveforms
+
+      If true (default) and .spk/.spkD is present, adds waveform SNR / channel
+      concentration / template-cosine features. Waveform-free sessions still
+      train and apply (those features become NaN, which the model tolerates).
+
+      # refractoryMs
+
+      Refractory window in ms for ISI-violation features (default 2.0).
+
+      # reset / force
+
+      reset=true starts a fresh model; force=true re-ingests a (session:group)
+      already present in the store.
+
+      # probeLibrary
+
+      Override the probe library search path (accepted for parity; geometry is
+      read from this YAML).
+
+  - name: ndm_estimatedrift
+    parameters:
+      - name: windowSec
+        value: 60
+        status: Optional
+      - name: minUnits
+        value: 3
+        status: Optional
+      - name: minSpikes
+        value: 20
+        status: Optional
+      - name: excludeNoise
+        value: 'true'
+        status: Optional
+      - name: probeLibrary
+        value: ~
+        status: Optional
+    help: |-
+      Estimate in-vivo spatial probe drift from curated spike-sorting results.
+
+      Must be run AFTER spike sorting (ndm_klustakwik) and manual curation in Klusters.
+      Requires .res.N, .clu.N, and (for full accuracy) .spk.N files for each spike group.
+
+      The plugin reads the curated cluster files and, using the electrode site geometry
+      from the .probe configuration files declared under the probes: section of this YAML,
+      computes the waveform amplitude fingerprint for each well-isolated unit on each shank.
+      By tracking how those fingerprints shift over successive time windows, the algorithm
+      estimates the in-vivo drift of each probe shank in micrometres.
+
+      The result is written to SESSION.drift (YAML format) and can be used to flag sessions
+      with excessive drift (>10-15 um/h) or to provide correction parameters for post-hoc
+      spike re-assignment.
+
+      OPTIONAL PARAMETERS
+
+      # windowSec
+
+      Time window length in seconds for drift computation (default = 60).
+
+      # minUnits
+
+      Minimum number of well-isolated units per shank to compute drift (default = 3).
+
+      # minSpikes
+
+      Minimum spikes a unit must fire in a given window to be included (default = 20).
+
+      # excludeNoise
+
+      Exclude cluster 0 (artifact) and cluster 1 (MUA) from drift computation
+      (default = true).
+
+      # probeLibrary
+
+      Override the probe library search path. Searches NEUROSUITE_PROBE_PATH,
+      ~/.local/share/neurosuite/probes/, /usr/share/neurosuite/probes/, and
+      ./probes/ by default.
+
+  - name: ndm_applydrift
+    parameters:
+      - name: sourceGroup
+        value: 1
+        status: Optional
+      - name: threshUm
+        value: 5.0
+        status: Optional
+      - name: minChunkSec
+        value: 30.0
+        status: Optional
+      - name: runKlustaKwik
+        value: 'false'
+        status: Optional
+    # Chain-of-custody method (must match how the session was sorted): the
+    # drift-adaptive re-clustering reads .fet.<method>.N and runs KlustaKwik
+    # -Method <method>.  standard | sdiff | stderiv.
+      - name: method
+        value: standard
+        status: Optional
+      - name: minClusters
+        value: 2
+        status: Optional
+      - name: maxClusters
+        value: 100
+        status: Optional
+      - name: mergeThresh
+        value: 35
+        status: Optional
+      - name: globalMergeIter
+        value: 30
+        status: Optional
+      - name: timeMergeIter
+        value: 35
+        status: Optional
+    help: |-
+      Apply the drift timeseries estimated for a curated shank to its sibling
+      groups on the same probe.
+
+      Must be run AFTER ndm_estimatedrift.  Reads SESSION.drift and writes
+      adaptive chunk boundary files (SESSION.chunks.N) for each target spike
+      group.  KlustaKwik can then use these chunk files to align cluster
+      boundaries with drift events, improving sorting quality on drifting shanks.
+
+      Usage:
+        ndm_applydrift [parameter-file] [source-group] [target-groups...]
+
+      source-group and target-groups can also be supplied as positional
+      command-line arguments; values in this parameters block are used as
+      defaults when the arguments are omitted.
+
+      OPTIONAL PARAMETERS
+
+      # sourceGroup
+
+      1-based index of the spike group whose curated .clu was used to generate
+      SESSION.drift (default = 1).
+
+      # threshUm
+
+      Maximum drift per chunk in µm before a new chunk boundary is inserted
+      (default = 5.0).
+
+      # minChunkSec
+
+      Minimum chunk duration in seconds; prevents excessively short chunks in
+      periods of rapid drift (default = 30.0).
+
+      # runKlustaKwik
+
+      Re-run KlustaKwik for each target group immediately after writing chunk
+      files (default = false).  When true, the parameters below are forwarded
+      to KlustaKwik.
+
+      # minClusters / maxClusters
+
+      KlustaKwik -MinClusters / -MaxClusters (defaults 2 / 100).
+
+      # mergeThresh / globalMergeIter / timeMergeIter
+
+      KlustaKwik merge parameters (defaults 35 / 30 / 35).
+
+  - name: ndm_decomposecollisions
+    parameters:
+      - name: maxShiftSamp
+        value: 10
+        status: Optional
+      - name: corrThreshold
+        value: 0.85
+        status: Optional
+      - name: residualThreshold
+        value: 0.25
+        status: Optional
+      - name: minSnrRms
+        value: 4.0
+        status: Optional
+      - name: minSpikesTemplate
+        value: 30
+        status: Optional
+      - name: corrWindow
+        value: 0
+        status: Optional
+      - name: excludeNoise
+        value: 'true'
+        status: Optional
+      - name: overwrite
+        value: 'false'
+        status: Optional
+      - name: nWorkers
+        value: 0
+        status: Optional
+      - name: useGpu
+        value: 'false'
+        status: Optional
+    # Chain-of-custody method (must match the detection/PCA pipeline that produced
+    # the inputs): standard | sdiff | stderiv.  Resolves .<type>.<method>.<group>.
+      - name: method
+        value: standard
+        status: Optional
+    help: |-
+      Detect and decompose spike collision waveforms into single-unit components.
+
+      Must be run AFTER spike sorting (ndm_klustakwik) and manual curation in Klusters.
+      Requires .clu.N, .res.N, and .spk.N files for each spike group.
+
+      When two neurons fire within approximately one spike-width (~1 ms), their waveforms
+      sum linearly. The composite waveform lands between parent clusters in feature space
+      and is typically misassigned. This plugin identifies and decomposes such collisions
+      post-curation without modifying the original spike-sorting files.
+
+      All template matching is restricted to spikes within a single spikeDetection group
+      (same shank). Cross-shank collisions are not attempted.
+
+      Results are written to SESSION.col.N (one per spikeDetection group, YAML sidecar).
+
+      OPTIONAL PARAMETERS
+
+      # maxShiftSamp
+
+      Maximum temporal shift (+-samples) explored when matching templates (default = 10).
+      At 32 kHz, 10 samples covers +-0.31 ms.
+
+      # corrThreshold
+
+      Pearson r below which a spike is flagged as a collision candidate (default = 0.85).
+      Increase to 0.92 to flag only obvious collisions; decrease to 0.75 for a wider net.
+
+      # residualThreshold
+
+      Maximum fractional residual ||R||/||W|| for an accepted decomposition (default = 0.25).
+      A value of 0.25 means the two-template model must explain >=75% of waveform energy.
+
+      # minSnrRms
+
+      Minimum spike amplitude in units of estimated RMS noise (default = 4.0).
+      Spikes below this level are too weak to decompose reliably.
+
+      # minSpikesTemplate
+
+      Minimum spikes a unit must have to contribute a template (default = 30).
+
+      # corrWindow
+
+      Number of samples around the peak used for correlation scoring (default = 0 = auto,
+      which uses the full waveform width).  A narrower window (e.g. 16 at 32 kHz) focuses
+      the score on the spike peak and reduces sensitivity to baseline drift in the tails.
+
+      # excludeNoise
+
+      Exclude clusters 0 and 1 from template building (default = true).
+
+      # overwrite
+
+      Overwrite existing .col.N files (default = false).
+
+      # nWorkers
+
+      Number of parallel worker processes for template matching (default = 0 = auto,
+      which uses all available CPU cores).  Set to a positive integer to cap at that
+      number (useful on shared machines).  Set to 1 to disable parallelism entirely.
+
+      # useGpu
+
+      Use GPU-accelerated correlation kernels when available (default = false).
+      Requires CuPy or equivalent.  Falls back to CPU if no compatible GPU is detected.
+      For typical session sizes the CPU path is fast enough; GPU mainly helps with
+      very large sessions (>10M spikes) and dense probes.
+
+  # == Post-sorting analysis (continued) ========================================
+  - name: ndm_localise
+    parameters:
+      - name: method
+        value: monopole
+        status: Optional
+      - name: clusterFilter
+        value: good
+        status: Optional
+      - name: maxDistUm
+        value: 200
+        status: Optional
+      - name: nBootstrap
+        value: 0
+        status: Optional
+      - name: overwrite
+        value: 0
+        status: Optional
+      - name: probeLibrary
+        value: ~
+        status: Optional
+    help: |-
+      Inverse model of spike positions relative to the probe shank.
+
+      For each spike group reads the .spk.N waveform file and the probe electrode
+      site geometry (from the probes: section of the session YAML), then fits an
+      extracellular potential model per spike to estimate where each neuron was
+      relative to the probe face.
+
+      MODEL (monopole)
+
+        V_i = A / sqrt((x_i - x_s)^2 + (y_i - y_s)^2 + z_s^2)
+
+        (x_i, y_i)  electrode site positions (µm) from probe geometry
+        (x_s, y_s)  source position in the shank plane (µm)
+        z_s         perpendicular distance from shank face (µm)
+        A           amplitude ∝ source current × tissue resistivity
+
+      The observation vector is the per-channel peak-to-peak amplitude of each
+      spike.  The fit minimises sum-of-squared residuals in log-amplitude space.
+
+      Run AFTER ndm_pca (needs .spk.N).  Probe geometry must be configured via
+      the probes: section of the session YAML and ndm_setupgroups must have been
+      run so that probeId and shankIndex are populated in spikeDetection groups.
+
+      OUTPUT FILES
+
+      SESSION.loc.N   binary float32, little-endian, no header.
+                      5 values per spike: x_um  y_um  z_um  amplitude  residual_rms
+                      noise spikes (clu ≤ 1) are localised but get residual_rms = NaN.
+
+      SESSION.loc.yaml  YAML sidecar with per-group metadata, site positions used,
+                        and per-axis summary statistics (mean ± std).
+
+      OPTIONAL PARAMETERS
+
+      # method
+
+      Inverse model (default = monopole).
+        monopole   Point-source model; recovers x, y, z and amplitude per spike.
+        com        Amplitude-weighted centre-of-mass — fast but no z estimate.
+
+      # clusterFilter
+
+      Which spikes to fully localise (default = good).
+        all     Every spike regardless of cluster assignment.
+        good    Clusters ≥ 2 (noise/MUA spikes are localised but flagged
+                with residual_rms = NaN so downstream tools can filter them).
+
+      # maxDistUm
+
+      Reject a fit and output NaN if the estimated source is further than this
+      distance from the nearest electrode site (µm, default = 200).
+
+      # nBootstrap
+
+      Bootstrap replicates per spike for position uncertainty (default = 0 =
+      disabled).  When > 0, writes SESSION.loc.std.N with per-spike standard
+      deviations across replicates.  Values of 50–200 are typical.
+
+      # overwrite
+
+      If 1, delete existing .loc.N and re-localise (default = 0 = skip).
+
+      # probeLibrary
+
+      Override probe library search path.  Default search order:
+        $NEUROSUITE_PROBE_PATH, ~/.local/share/neurosuite/probes/,
+        /usr/local/share/neurosuite/probes/, /usr/share/neurosuite/probes/,
+        probes/ (session-local directory).
+
+  # == Housekeeping =============================================================
+  - name: ndm_recolorchannels
+    parameters: []
+    help: |-
+      Change channel display colors in a parameter file.
+
+      This script takes its arguments on the command line rather than from the
+      programs section; it is run standalone rather than via ndm_start.
+
+      USAGE
+
+        ndm_recolorchannels -c ch1-ch2,RRGGBB [...] SESSION.xml
+
+        -c ch1-ch2,color   range of channel IDs (0-based) and hex color (no #)
+
+      EXAMPLES
+
+        # Color tetrode 1 red, tetrode 2 green
+        ndm_recolorchannels -c 0-3,ff0000 -c 4-7,00ff00 session.xml
+
+      NOTE: Only XML parameter files are supported.  For YAML sessions, edit
+      the neuroscope/channels/colors section directly or use the ndmanager GUI.
+
+  - name: ndm_xml2yaml
+    parameters: []
+    help: |-
+      Convert a legacy ndManager XML parameter file to the YAML format used by
+      neurosuite-3.
+
+      This is a one-shot migration utility; it is not part of the regular
+      processing pipeline and does not read from the programs section.
+
+      USAGE
+
+        ndm_xml2yaml SESSION.xml [OUTPUT.yaml]
+
+      All sections are preserved: generalInfo, acquisitionSystem,
+      fieldPotentials, files, anatomicalDescription, spikeDetection, units,
+      neuroscope (channel colors and offsets), and programs.  The original XML
+      file is not modified.
+
+  - name: ndm_clean
+    # Optional flags -- uncomment to override defaults:
+      # - name: wideband
+      #   value: 'true'
+      #   status: Optional
+      # - name: xml
+      #   value: 'true'
+      #   status: Optional
+      # - name: hipass
+      #   value: 'true'
+      #   status: Optional
+      # - name: spots
+      #   value: 'false'
+      #   status: Optional
+      # - name: pos
+      #   value: 'false'
+      #   status: Optional
+    help: |-
+      Clean intermediate files after pre-processing is complete.
+
+      OPTIONAL PARAMETERS
+
+      # wideband
+
+      Delete single-session wideband data files (default = true).
+
+      # xml
+
+      Delete single-session xml files (default = true).
+
+      # hipass
+
+      Delete the high-pass filtered data file (default = true).
+
+      # spots
+
+      Delete single-session spots files (default = false).
+
+      # pos
+
+      Delete single-session pos files (default = false).
+
+  # == fiber-kit pipeline (external ndmanager plugin; ndm plugin protocol v1) ==================
+  # Discovered at runtime via `ndm_fiber-kit --ndm-describe`.  Knobs flatten as <stage>.<knob>;
+  # values are the recommended tuned baseline.  Edit here or in the Programs tab.
+  - name: ndm_fiber-kit
+    parameters:
+      - name: intrachunk.gate
+        value: cfiber
+        status: Optional
+      - name: intrachunk.cos_thr
+        value: 0.85
+        status: Optional
+      - name: intrachunk.off_thr
+        value: 1.0
+        status: Optional
+      - name: intrachunk.depth_gate
+        value: 35.0
+        status: Optional
+      - name: intrachunk.amp_gate
+        value: 1.1
+        status: Optional
+      - name: intrachunk.refrac_ceiling
+        value: 1.0
+        status: Optional
+      - name: intrachunk.pre_merge_cos
+        value: 0.97
+        status: Optional
+      - name: intrachunk.linkage
+        value: complete
+        status: Optional
+      - name: intrachunk.align_lag
+        value: 6
+        status: Optional
+      - name: intrachunk.align_upsample
+        value: 1
+        status: Optional
+      - name: intrachunk.cfiber_q
+        value: 0.9
+        status: Optional
+      - name: intrachunk.cfiber_null
+        value: order
+        status: Optional
+      - name: intrachunk.cfiber_thr_floor
+        value: 0.0
+        status: Optional
+      - name: intrachunk.sig_cap
+        value: 8000
+        status: Optional
