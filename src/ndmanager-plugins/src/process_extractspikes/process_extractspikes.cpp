@@ -384,7 +384,12 @@ int main(int argc,char *argv[]) {
 		cout << endl;
 	} // if verbose
 
-	if(!checkInputs(arguments, buffer_size, inputFile)) // check arguments value
+	// patch86: -R re-extracts at existing .res times, so the detection-only values
+	// (refractory period, peak-search length, thresholds) are never consulted and
+	// keep their -1 defaults.  checkInputs range-checks them, so running it in -R
+	// mode rejected every extraction with "negative refractory period (-1)".
+	// process_extractspikes_sdiff and _stderiv already gate the call this way.
+	if(!arguments.useExistingRes && !checkInputs(arguments, buffer_size, inputFile)) // check arguments value
 		exit(1);
 
 	// init arrays
