@@ -215,7 +215,9 @@ once()
 	# further change.  Applies to all methods; for stderiv the rotation acts on
 	# the channel-reduced stderiv features that process_pca receives.
 	varimax=$(read_script_parameter $session varimax)
-	check_optional_variable $varimax || varimax=false
+	# Default ON: the rotation aligns feature axes with spike-shape sources, which is
+	# what makes the .fet legible for hand-sorting.  Set varimax: false to opt out.
+	check_optional_variable $varimax || varimax=true
 	if $varimax; then
 		options="$options --varimax"
 		varimaxMaxIter=$(read_script_parameter $session varimaxMaxIter)

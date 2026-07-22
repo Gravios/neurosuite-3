@@ -1824,6 +1824,19 @@ programs:
       - name: dropLastChannel
         value: true
         status: Optional
+    # varimax: rotate the retained components so each aligns with a spike-shape
+    # source rather than a variance-ordered mixture.  Makes the feature axes legible
+    # for hand-sorting in Klusters.  On by default; set false for the unrotated
+    # variance-ordered basis.  varimaxMaxIter / varimaxTol tune the rotation.
+      - name: varimax
+        value: true
+        status: Optional
+      # - name: varimaxMaxIter
+      #   value: 30
+      #   status: Optional
+      # - name: varimaxTol
+      #   value: 1e-6
+      #   status: Optional
     # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
     # <session>.<type>.<method>.<group> and selects the detection/feature space.
     # Qualified stderiv forms state the transform in the NAME, so a consumer never
