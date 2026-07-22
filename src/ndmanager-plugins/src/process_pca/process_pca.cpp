@@ -227,7 +227,8 @@ void help(const char* name)
 	cout << " --varimax-max-iter N  max rotation iterations (default 30)" << endl;
 	cout << " --varimax-tol T      relative change in criterion to call convergence (default 1e-6)" << endl;
 	cout << " --pca-method M       transform tag baked into the PCAE basis header: 0=standard," << endl;
-	cout << "                      1-3=sdiff{first,laplacian,allpairs}, 4-6=stderiv{...}." << endl;
+	cout << "                      1-3=sdiff{first,laplacian,allpairs}, 4-6=stderiv{...}," << endl;
+	cout << "                      7=stderiv custom pattern, 8=stderiv custom reference-set." << endl;
 	cout << "                      Default: inferred from the output name (.pcaD=>stderiv-allpairs)" << endl;
 	cout << " -v              verbose mode" << endl;
 	cout << " -h              display help" << endl;
@@ -967,8 +968,11 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 			// (.pcaD => stderiv-allpairs, else standard).
 			if ( i+1 >= nOptions ) error(argv[0]);
 			arguments.pcaMethod = atoi(argv[++i]);
-			if ( arguments.pcaMethod < 0 || arguments.pcaMethod > 6 ) {
-				cerr << "error: --pca-method must be in 0..6" << endl;
+			// Ask the shared enum rather than repeating its range here: this check was a
+			// hand-written copy and went stale the moment Method gained values 7 and 8.
+			if ( !neurosuite::core::methodValid(arguments.pcaMethod) ) {
+				cerr << "error: --pca-method " << arguments.pcaMethod
+				     << " is not a known neurosuite::core::Method" << endl;
 				exit(1);
 			}
 			arguments.isPcaMethodProvided = true;
