@@ -1648,9 +1648,9 @@ ndm_process_spikes()
 					exit $GENERAL_ERROR
 				fi
 				sdiffPairsArg="-P $sdiffPairsList"
-				# The engine takes the order from the pattern syntax and ignores -d: a
-				# reference-set spec (a-b+c+d) is order 5, a single-partner spec order 4.
-				# Refuse a token whose digit disagrees rather than let the name lie.
+				# The engine takes the order from the pattern syntax: a reference-set spec
+				# (a-b+c+d) is order 5, a single-partner spec order 4.  Refuse a token whose
+				# digit disagrees rather than let the name lie.
 				case "$sdiffPairsList" in
 					*+*) impliedOrder=5 ;;
 					*)   impliedOrder=4 ;;
@@ -1667,8 +1667,42 @@ ndm_process_spikes()
 			;;
 			*)
 				# Bare legacy token: historical behaviour, apply the pattern when present.
-				[ "$havePairs" = 1 ] && sdiffPairsArg="-P $sdiffPairsList"
+				if [ "$havePairs" = 1 ]; then
+					sdiffPairsArg="-P $sdiffPairsList"
+					# The pattern decides the order, so a methodOrder asking for something
+					# else is not honoured.  Say so rather than quietly running a different
+					# transform than the node requests.
+					case "$sdiffPairsList" in
+						*+*) impliedOrder=5 ;;
+						*)   impliedOrder=4 ;;
+					esac
+					if [ "$methodOrder" != "$impliedOrder" ]; then
+						echo_warning "methodOrder=$methodOrder ignored: the sdiffPairs pattern determines the order (=$impliedOrder)"
+						echo_warning "  use method stderiv_C$impliedOrder to state it, or stderiv_S<order> to skip the pattern"
+					fi
+					methodOrder=$impliedOrder
+				fi
 			;;
+		esac
+	fi
+
+	# ── Spatial-derivative order argument ───────────────────────────────────
+	# The engines' -d accepts 0-3 ONLY; orders 4 and 5 are not selectable by number,
+	# they are derived from the sdiffPairs pattern handed to -P.  So when -P is in
+	# play, -d must be omitted entirely: -d is parsed (and range-checked) first, so
+	# passing -d 4 alongside -P exits with "-d must be 0, 1, 2, or 3" before -P is
+	# ever seen.
+	sdiffOrderArg="-d $methodOrder"
+	if [ -n "$sdiffPairsArg" ]; then
+		sdiffOrderArg=
+	elif [ "$methodFamily" != standard ]; then
+		case "$methodOrder" in
+			0|1|2|3) : ;;
+			*) echo_error "methodOrder '$methodOrder' cannot be requested by number for method '$method' (-d accepts 0-3)"
+			   echo_error "  orders 4 and 5 ARE the custom-pattern forms and come from the pattern itself:"
+			   echo_error "  define sdiffPairs on the spike groups, then use method stderiv_C4 (single-partner)"
+			   echo_error "  or stderiv_C5 (reference-set, written with '+')"
+			   exit $GENERAL_ERROR ;;
 		esac
 	fi
 
@@ -1755,13 +1789,13 @@ ndm_process_spikes()
 					-w $samplesInWaveform -p $peakSample \
 					-r $refractoryPeriod -l $peakSearchLength \
 					-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
-					-d $methodOrder $sdiffPairsArg \
+					$sdiffOrderArg $sdiffPairsArg \
 					$tmp
 			else
 				$binary \
 					-n $nChannels -c $electrodeList \
 					-w $samplesInWaveform -p $peakSample \
-					-d $methodOrder $sdiffPairsArg \
+					$sdiffOrderArg $sdiffPairsArg \
 					-R $tmp
 			fi
 			;;
