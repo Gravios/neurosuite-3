@@ -36,6 +36,7 @@
 #include <QPoint>
 #include <QFileInfo>
 #include <functional>
+#include <neurosuite/core/custody.hpp>        // header-only method-token policy
 #include <neurosuite/core/pca_projection.hpp>  // header-only PcaBasis/loadPca/pcaProjectionEnergy
 #include <neurosuite/core/stderiv_transform.hpp> // header-only spatialOrder/applyStderivTransform
 
@@ -184,7 +185,8 @@ public:
     QList<KlustersView*> viewListCopy() const
     { return viewList ? *viewList : QList<KlustersView*>(); }
     bool isStderivSession() const
-        { return origSpkPath.contains(QStringLiteral(".spk.stderiv."))
+        { return neurosuite::custody::isStderivMethod(
+                     neurosuite::custody::methodOf(origSpkPath.toStdString()))
               || origSpkPath.contains(QStringLiteral(".spkD.")); }
 
     /**Returns the reference on the list of ClusterColor objects.

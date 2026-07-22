@@ -454,8 +454,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     //     feature space the sort was done in), which selects the stderiv .pca
     //     basis and transforms the raw waveform before projecting.
     const QString fetMethod = featureMethod(origFetPath);
-    const bool spkIsTransformed = (featureMethod(origSpkPath) == QLatin1String("stderiv"));
-    const bool fetIsStderiv     = (fetMethod == QLatin1String("stderiv"));
+    const bool spkIsTransformed = methodIsStderiv(featureMethod(origSpkPath));
+    const bool fetIsStderiv     = methodIsStderiv(fetMethod);
     // Kept as alias for existing legacy-named uses in this function that
     // really want the feature-space flag, not the .spk storage flag.
     const bool isStderivRealign = fetIsStderiv;
@@ -2387,8 +2387,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //                      waveform onto the eigenvectors.
     // Independent flags (Pipeline-C), read off the resolved artifacts:
     const QString nudgeMethod = featureMethod(origFetPath);
-    const bool spkIsTransformed = (featureMethod(origSpkPath) == QLatin1String("stderiv"));
-    const bool fetIsStderiv     = (nudgeMethod == QLatin1String("stderiv"));
+    const bool spkIsTransformed = methodIsStderiv(featureMethod(origSpkPath));
+    const bool fetIsStderiv     = methodIsStderiv(nudgeMethod);
     // Legacy name retained for any downstream use that really means the
     // feature-space flag; nothing in nudge uses this directly after the
     // refactor below, but keep it for grep compatibility during review.
@@ -3417,7 +3417,7 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
 
     // Only the two waveform storages we can reproduce byte-for-byte.
     const QString spkMethod = featureMethod(targetSpkPath);
-    const bool spkIsStderiv  = (spkMethod == QLatin1String("stderiv"));
+    const bool spkIsStderiv  = methodIsStderiv(spkMethod);
     const bool spkIsStandard = (spkMethod == QLatin1String("standard"));
     if (!spkIsStderiv && !spkIsStandard) {
         log << "re-extract: unsupported .spk method '" << spkMethod
@@ -3443,9 +3443,11 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
     neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
     std::vector<int> partner;
     if (spkIsStderiv) {
+        // Resolve the basis at the .spk's OWN token (stderiv_C4, ...), not a
+        // hardcoded "stderiv" which would miss a suffixed basis entirely.
         const QString pcaPath = resolveFeature(dir + QLatin1Char('/') + base,
                                                QStringLiteral("pca"), grpId,
-                                               QStringLiteral("stderiv"));
+                                               spkMethod);
         neurosuite::core::PcaBasis pca;
         if (QFileInfo::exists(pcaPath)
             && neurosuite::core::loadPca(pcaPath.toStdString(), pca)

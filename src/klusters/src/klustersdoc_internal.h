@@ -28,6 +28,13 @@ inline QString featureMethod(const QString& path) {
     return m.empty() ? QStringLiteral("standard") : QString::fromStdString(m);
 }
 
+// True for the stderiv family, INCLUDING suffixed tokens (stderiv_S3, stderiv_C4).
+// A literal == "stderiv" test silently reports a suffixed session as standard, so
+// every method check goes through here.
+inline bool methodIsStderiv(const QString& m) {
+    return neurosuite::custody::isStderivMethod(m.toStdString());
+}
+
 // Resolve a per-group artifact through the shared custody policy: method-specific
 // types (.clu/.fet/.pca) resolve strictly to <base>.<type>.<method>.<group>;
 // shared types (.res, raw .spk) fall back method -> standard -> untagged; the
