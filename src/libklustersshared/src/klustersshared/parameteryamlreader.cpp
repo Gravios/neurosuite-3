@@ -5,6 +5,7 @@
 #include "parameteryamlreader.h"
 
 #include <QDebug>
+#include <QObject>
 #include <QStringList>
 
 // ---------------------------------------------------------------------------
@@ -21,13 +22,26 @@ ParameterYamlReader::~ParameterYamlReader() = default;
 bool ParameterYamlReader::parseFile(const QString& path)
 {
     valid = false;
+    lastErrorMsg.clear();
     try {
         root = YAML::LoadFile(path.toStdString());
         valid = root.IsDefined() && root.IsMap();
+        // A syntactically valid document that is not a mapping is not a
+        // parameter file (an empty file, a list, a scalar).  This used to fail
+        // silently, with no reason reported anywhere.
+        if (!valid) {
+            lastErrorMsg = QObject::tr("the document is not a YAML mapping, "
+                                       "so it is not a parameter file");
+        }
     } catch (const YAML::Exception& e) {
+        lastErrorMsg = QString::fromStdString(e.what());
         qWarning() << "ParameterYamlReader: failed to parse" << path
-                   << ":" << QString::fromStdString(e.what());
+                   << ":" << lastErrorMsg;
         return false;
+    }
+    if (!valid) {
+        qWarning() << "ParameterYamlReader: failed to parse" << path
+                   << ":" << lastErrorMsg;
     }
     return valid;
 }

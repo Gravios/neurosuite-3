@@ -136,6 +136,13 @@ public:
     bool isValid() const { return valid; }
 
     /**
+     * Human-readable reason the last parseFile() failed (yaml-cpp message with
+     * line/column, or an explanation that the document is not a parameter file).
+     * Empty when the last parse succeeded.
+     */
+    QString lastError() const { return lastErrorMsg; }
+
+    /**
      * Returns the raw parsed YAML document root.
      * Intended for callers that need to pass it to free-function extensions
      * such as readProbesSection() without adding new member functions here.
@@ -345,6 +352,7 @@ public:
 
 private:
     bool        valid = false;
+    QString     lastErrorMsg;
     YAML::Node  root;
 
     // Helpers

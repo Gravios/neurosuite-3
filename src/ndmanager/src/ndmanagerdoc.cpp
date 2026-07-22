@@ -61,7 +61,11 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::openDocument(const QStri
     docUrl = url;
 
     NdManagerYamlReader reader;
-    if (!reader.parseFile(url)) return PARSE_ERROR;
+    if (!reader.parseFile(url)) {
+        lastParseError = reader.lastError();
+        return PARSE_ERROR;
+    }
+    lastParseError.clear();
     return loadFromReader(reader);
 }
 
