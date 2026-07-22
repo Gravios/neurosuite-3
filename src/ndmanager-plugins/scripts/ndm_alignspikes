@@ -149,6 +149,19 @@ for group in $(seq 1 $nElectrodeGroups); do
         continue
     fi
 
+    # A custom-pattern method must re-extract with the SAME spatial operator the
+    # .spk was built with, so hand the group's own sdiffPairs to the aligner.
+    sdiffArg=
+    if [ "$NDM_M_KIND" = C ]; then
+        pat=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/sdiffPairs")
+        if [ -z "$pat" ]; then
+            echo_warning "  group $group: method $method needs sdiffPairs, none defined — skipping"
+            nSkipped=$((nSkipped + 1))
+            continue
+        fi
+        sdiffArg="-P $pat"
+    fi
+
     echo_info "  aligning group $group  (${nSamples}s × $(echo $electrodes | wc -w)ch" \
         "peak=$peakIdx maxShift=$maxShift)"
 
@@ -162,6 +175,7 @@ for group in $(seq 1 $nElectrodeGroups); do
         --top-channels "$topChannels" \
         --align-sigma "$alignSigma" \
         --method "$method" \
+        $sdiffArg \
         -v \
         "$session" "$group"
 

@@ -101,7 +101,8 @@
 
 // ─── Small helpers ─────────────────────────────────────────────────────────
 
-#include <neurosuite/core/custody.hpp>       // shared chain-of-custody resolver
+#include <neurosuite/core/custody.hpp>
+#include "sdiff_pairs.h"      // shared SDIFF_CUSTOM / _CAR pattern parser       // shared chain-of-custody resolver
 #include <neurosuite/core/pca_projection.hpp> // shared PcaBasis/loadPca/pcaProjectionEnergy
 
 static void die(const std::string& msg) {
@@ -185,6 +186,13 @@ static bool writeSpkSampleMajor(std::FILE* f, int64_t spikeIdx, int nChan,
 
 // Read raw .fil window for a single spike.  Extracts only the group's
 // channels and stores channel-major.  Applies stderiv transform if requested.
+// Custom spatial pattern (-P), empty unless supplied.  Realignment reconstructs
+// waveforms from .fil, so it must apply the SAME spatial operator the .spk was
+// built with; all-pairs against a custom-pattern session misaligns in exactly the
+// space the spikes are clustered in.
+static std::vector<int>              g_customPartner;   // order 4
+static std::vector<std::vector<int>> g_customSets;      // order 5
+
 static bool readFilWindow(std::FILE* fil, int64_t startSample,
                             int nTotalChan, int nSamp,
                             const std::vector<int>& groupChannels,
@@ -204,13 +212,32 @@ static bool readFilWindow(std::FILE* fil, int64_t startSample,
                 frame[t * nTotalChan + groupChannels[c]];
     if (stderivTransform) {
         std::vector<int16_t> sdPrev(static_cast<size_t>(nChan), 0);
+        // Snapshot each sample's raw channel values before transforming: the loop
+        // below writes back into outChannelMajor, and a custom pattern reads OTHER
+        // channels at the same sample -- any already-rewritten one would feed a
+        // transformed value into the next channel's operator.  All-pairs escaped
+        // this only because it needs nothing but the pre-computed sum.
+        std::vector<int> raw(static_cast<size_t>(nChan), 0);
         for (int t = 0; t < nSamp; ++t) {
             int64_t sum = 0;
-            for (int c = 0; c < nChan; ++c)
-                sum += outChannelMajor[c * nSamp + t];
             for (int c = 0; c < nChan; ++c) {
-                const int v = outChannelMajor[c * nSamp + t];
-                const int sd = nChan * v - static_cast<int>(sum);
+                raw[c] = outChannelMajor[c * nSamp + t];
+                sum   += raw[c];
+            }
+            for (int c = 0; c < nChan; ++c) {
+                const int v = raw[c];
+                int sd;
+                if (nChan > 1 && (int)g_customSets.size() == nChan
+                    && !g_customSets[c].empty()) {
+                    double acc = 0.0;
+                    for (size_t k = 0; k < g_customSets[c].size(); ++k)
+                        acc += raw[g_customSets[c][k]];
+                    sd = static_cast<int>(v - acc / (double)g_customSets[c].size());
+                } else if (nChan > 1 && (int)g_customPartner.size() == nChan) {
+                    sd = v - raw[g_customPartner[c]];
+                } else {
+                    sd = nChan * v - static_cast<int>(sum);
+                }
                 const int16_t sdCl = static_cast<int16_t>(
                     std::max(-32768, std::min(32767, sd)));
                 const int diff = static_cast<int>(sdCl)
@@ -352,6 +379,13 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "-i") a.iterations = std::atoi(next("-i"));
         else if (s == "-t") a.minScore = static_cast<float>(std::atof(next("-t")));
         else if (s == "--method") a.method = next("--method");
+        else if (s == "-P") {
+            // Custom spatial pattern for this group; same grammar as the
+            // extractor's -P ("a-b,..." order 4, "a-b+c,..." order 5).
+            const std::string pat = next("-P");
+            if (sdiffSpecUsesSets(pat.c_str())) g_customSets    = parseSdiffSets(pat.c_str());
+            else                                g_customPartner = parseSdiffPairs(pat.c_str());
+        }
         else if (s == "--stderiv") a.method = "stderiv";  // deprecated alias
         else if (s == "--skip-pca") a.skipPca = true;
         else if (s == "--dry-run") a.dryRun = true;
@@ -376,9 +410,17 @@ static Args parseArgs(int argc, char** argv) {
         const neurosuite::custody::MethodSpec ms =
             neurosuite::custody::parseMethodToken(a.method);
         a.stderivMode = (ms.family == "stderiv");
-        if (a.stderivMode && ms.kind == 'C')
-            die("method " + a.method + " applies a custom sdiffPairs pattern; this "
-                "aligner reads .fil with SDIFF_ALLPAIRS only and cannot reproduce it");
+        if (a.stderivMode && ms.kind == 'C'
+            && g_customPartner.empty() && g_customSets.empty())
+            die("method " + a.method + " applies a custom sdiffPairs pattern but no -P "
+                "was given; .fil would be read with SDIFF_ALLPAIRS and the waveforms "
+                "would be misaligned in the space they are clustered in");
+        if (a.stderivMode && ms.kind == 'C') {
+            const int impliedOrder = g_customSets.empty() ? 4 : 5;
+            if (ms.order != impliedOrder)
+                die("method " + a.method + " states order " + std::to_string(ms.order)
+                    + " but the -P pattern implies order " + std::to_string(impliedOrder));
+        }
         if (a.stderivMode && ms.kind == 'S' && ms.order != 3)
             die("method " + a.method + " is spatial order " + std::to_string(ms.order)
                 + "; this aligner reads .fil with SDIFF_ALLPAIRS (order 3) only");
