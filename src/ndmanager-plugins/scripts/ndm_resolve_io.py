@@ -28,7 +28,7 @@ from collections import namedtuple
 __all__ = [
     "classify", "is_per_group_type", "is_session_wide_type", "is_known_type",
     "method_path", "untagged_path", "session_path", "file_exists",
-    "method_of", "parse_anchor", "resolve", "resolved_is_stderiv",
+    "method_of", "parse_anchor", "resolve", "resolve_any", "resolved_is_stderiv",
     "parse_method_token", "is_stderiv_method",
     "stale_after_realign",
     # backward-compatible Stage-1 names
@@ -178,6 +178,40 @@ def is_stderiv_method(method):
     Not a prefix test - "stderivfoo" is a different family.
     """
     return parse_method_token(method).family == "stderiv"
+
+
+def resolve_any(base, type_, group, preferred=""):
+    """Resolve a SHARED artifact across EVERY method.
+
+    Spike times (.res) and the raw .spk are one physical copy whatever produced
+    them, so the writing token need not match the caller's method.  resolve() only
+    walks method -> standard -> untagged; this also finds any other method-tagged
+    copy, including suffixed tokens no fixed list can enumerate.  Mirrors
+    ndm_resolve_any (bash) and custody::resolveAny (C++).
+    """
+    order = ([preferred] if preferred else []) + \
+            [m for m in ("standard", "stderiv", "sdiff") if m != preferred]
+    for m in order:
+        cand = method_path(base, type_, group, m)
+        if file_exists(cand):
+            return Resolved(cand, m, True)
+    directory = os.path.dirname(base) or "."
+    stem, suffix = os.path.basename(base) + f".{type_}.", f".{group}"
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        names = []
+    for name in names:
+        if not (name.startswith(stem) and name.endswith(suffix)):
+            continue
+        m = name[len(stem):len(name) - len(suffix)]
+        if not m or "." in m:
+            continue
+        return Resolved(os.path.join(directory, name), m, True)
+    untagged = untagged_path(base, type_, group)
+    if file_exists(untagged):
+        return Resolved(untagged, "", True)
+    return Resolved(method_path(base, type_, group, preferred or DEFAULT_METHOD), preferred, False)
 
 
 def resolved_is_stderiv(resolved):

@@ -29,6 +29,7 @@
 #ifndef NEUROSUITE_CUSTODY_HPP
 #define NEUROSUITE_CUSTODY_HPP
 
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -297,6 +298,58 @@ inline Resolved resolve(const std::string& base, const std::string& type,
 // Convenience: true if the resolved file is in the stderiv (transformed) domain.
 // Reads the method off the file actually resolved — so a Shared .spk that fell
 // back to the raw copy is NOT stderiv even on a stderiv session.
+// Resolve a SHARED artifact across EVERY method.  Spike times (.res) and the raw
+// .spk are one physical copy whatever produced them, so which token wrote the file
+// is not knowable from the caller's own method: detection may run at stderiv while
+// extraction and alignment run at stderiv_C5.  resolve() only walks
+// method -> standard -> untagged and therefore misses another method's copy --
+// including any suffixed token, which no fixed list can enumerate.
+//
+// Order: preferred method, then standard / stderiv / sdiff, then any other
+// method-tagged copy present in the directory, then the untagged legacy name.
+// Mirrors ndm_resolve_any in ndm_custody; keep the two in step.
+inline Resolved resolveAny(const std::string& base, const std::string& type,
+                           int group, const std::string& preferred = std::string())
+{
+    Resolved r;
+    std::vector<std::string> order;
+    if (!preferred.empty()) order.push_back(preferred);
+    for (const char* m : { "standard", "stderiv", "sdiff" })
+        if (preferred != m) order.push_back(m);
+    for (const std::string& m : order) {
+        const std::string cand = methodPath(base, type, m, group);
+        if (fileExists(cand)) { r.path = cand; r.method = m; r.found = true; return r; }
+    }
+
+    // Any other method-tagged copy: <base>.<type>.<anything>.<group>.  Scanning the
+    // directory is what makes suffixed tokens work without hard-coding them.
+    namespace fs = std::filesystem;
+    const fs::path bp(base);
+    const std::string stem   = bp.filename().string() + "." + type + ".";
+    const std::string suffix = "." + std::to_string(group);
+    const fs::path dir = bp.has_parent_path() ? bp.parent_path() : fs::path(".");
+    std::error_code ec;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (name.size() <= stem.size() + suffix.size())               continue;
+        if (name.compare(0, stem.size(), stem) != 0)                  continue;
+        if (name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) continue;
+        const std::string m = name.substr(stem.size(),
+                                          name.size() - stem.size() - suffix.size());
+        if (m.empty() || m.find('.') != std::string::npos) continue;  // not a bare token
+        r.path = it->path().string(); r.method = m; r.found = true;
+        return r;
+    }
+
+    const std::string untagged = untaggedPath(base, type, group);
+    if (fileExists(untagged)) { r.path = untagged; r.found = true; return r; }
+
+    r.path = methodPath(base, type, preferred.empty() ? kDefaultMethod() : preferred.c_str(), group);
+    r.method = preferred;
+    r.found = false;
+    return r;
+}
+
 inline bool resolvedIsStderiv(const Resolved& r) { return isStderivMethod(r.method); }
 
 // ── derivation relationships ────────────────────────────────────────────────
