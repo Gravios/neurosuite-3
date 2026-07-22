@@ -66,7 +66,7 @@ while IFS= read -r line; do
             for s in "${sufs[@]}"; do [ -n "$s" ] && rm -f "$B.$s"; done
             ;;
         method_token)
-            ndm_parse_method "${F[1]}"
+            ndm_parse_method_token "${F[1]}"
             { [ "$NDM_M_FAMILY" = "${F[2]:-}" ] && [ "$NDM_M_KIND" = "${F[3]:-}" ] && \
               [ "$NDM_M_ORDER" = "${F[4]:-}" ]; } || \
                 { echo "FAIL method_token ${F[1]} -> ${F[2]:-}/${F[3]:-}/${F[4]:-} (got $NDM_M_FAMILY/$NDM_M_KIND/$NDM_M_ORDER)"; fail=$((fail+1)); }

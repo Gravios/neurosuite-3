@@ -64,13 +64,16 @@ source ndm_functions
 program=$(basename $0)
 ndm_parse_method "$@"; set -- "${NDM_ARGS[@]}"
 if [ $# -gt 1 ]; then
-    echo_error "usage: $program [parameter-file] [--method standard|sdiff|stderiv]"
+    echo_error "usage: $program [parameter-file] [--method standard|sdiff|stderiv|stderiv_S<order>|stderiv_C<order>]"
     exit $GENERAL_ERROR
 fi
 ndm_resolve_session "$@"
 [ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
 param_ext=$(param_file_ext "$session")
 method=${NDM_METHOD:-$(read_script_parameter $session method)}; method=${method:-standard}
+# Vet the token so a typo is reported as such instead of surfacing later as a
+# missing artifact for a method that was never valid.
+ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
 
 print_header "$session - Spike waveform alignment (pre-PCA)"
 

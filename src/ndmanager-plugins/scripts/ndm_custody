@@ -118,12 +118,15 @@ ndm_resolve()
 }
 
 # Decompose a method token <family>[_<kind><order>] (e.g. stderiv_C4) into
+# NOTE: named _token to stay clear of ndm_parse_method in ndm_functions, which
+# parses a --method FLAG out of an argument list.  ndm_functions sources this file
+# afterwards, so a clashing name here silently replaces that one.
 # NDM_M_FAMILY / NDM_M_KIND / NDM_M_ORDER.  Kind is S (plain methodOrder
 # derivative) or C (the session's custom sdiffPairs pattern); order is the
 # spatial-derivative order actually applied.  A token that does not match the
 # suffix grammar is opaque: the whole string becomes the family, so an unknown
 # token never masquerades as a known one.
-ndm_parse_method() {
+ndm_parse_method_token() {
     local m="$1" suf
     NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""
     case "$m" in
@@ -139,7 +142,7 @@ ndm_parse_method() {
 # True for the stderiv family: bare legacy "stderiv" and any stderiv_<kind><order>.
 # Not a prefix test - "stderivfoo" is a different family.
 # NOTE: clobbers NDM_M_* as a side effect.
-ndm_is_stderiv_method() { ndm_parse_method "$1"; [ "$NDM_M_FAMILY" = stderiv ]; }
+ndm_is_stderiv_method() { ndm_parse_method_token "$1"; [ "$NDM_M_FAMILY" = stderiv ]; }
 
 ndm_resolved_is_stderiv() { ndm_is_stderiv_method "$NDM_R_METHOD"; }
 
@@ -155,12 +158,12 @@ ndm_sdiff_drops_last() { case "$1" in 1|3|4|5) return 0 ;; *) return 1 ;; esac; 
 
 # Validate a method token for internal coherence, so every wrapper rejects the same
 # things with the same words.  On success returns 0 with NDM_M_* set by
-# ndm_parse_method; on failure returns 1 with the reason in NDM_M_ERROR (set rather
+# ndm_parse_method_token; on failure returns 1 with the reason in NDM_M_ERROR (set rather
 # than echoed, so callers keep NDM_M_* instead of losing them to a subshell).
 ndm_check_method_token() {
     local m="$1"
     NDM_M_ERROR=""
-    ndm_parse_method "$m"
+    ndm_parse_method_token "$m"
     case "$NDM_M_FAMILY" in
         standard|sdiff|stderiv) : ;;
         *) NDM_M_ERROR="unknown method '$m' (expected standard, sdiff or stderiv, optionally suffixed _S<order> or _C<order>)"; return 1 ;;
