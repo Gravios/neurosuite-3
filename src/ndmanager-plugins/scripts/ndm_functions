@@ -1555,18 +1555,10 @@ ndm_process_spikes()
 	# (C) or deliberately not (S), and the order is the derivative order actually run.
 	# Recording all three in the name means a consumer never has to infer how a file
 	# was produced from parameters that may have changed since.
-	ndm_parse_method "$method"
+	ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
 	methodFamily=$NDM_M_FAMILY
 	methodKind=$NDM_M_KIND
 	methodTokenOrder=$NDM_M_ORDER
-	case "$methodFamily" in
-		standard|sdiff|stderiv) : ;;
-		*) echo_error "unknown method '$method' (expected standard, sdiff or stderiv, optionally suffixed _S<order> or _C<order>)"; exit $GENERAL_ERROR ;;
-	esac
-	if [ -n "$methodKind" ] && [ "$methodFamily" != stderiv ]; then
-		echo_error "method '$method': the _S/_C suffix only applies to stderiv"
-		exit $GENERAL_ERROR
-	fi
 	methodOrder=$methodOrderOverride
 	[ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
 	methodOrder=${methodOrder:-3}
