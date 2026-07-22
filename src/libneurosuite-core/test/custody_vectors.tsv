@@ -12,6 +12,8 @@
 #   parse_anchor  <path>  <base>  <type>  <method>  <group>  <suffix>  <ok 0|1>
 #   resolve       <existing-csv>  <type>  <group>  <method>  <expect-basename>  <found 0|1>
 #                 (existing-csv = comma-separated suffixes touched under "<tmp>/sess.")
+#   method_token  <token>  <family>  <kind>  <order>   (kind/order empty when absent)
+#   is_stderiv    <method>  <0|1>
 #
 # ── classify ────────────────────────────────────────────────────────────────
 classify	clu	MethodSpecific
@@ -58,3 +60,32 @@ resolve	spk.stderiv.7	spk	7	stderiv	sess.spk.stderiv.7	1
 resolve	res.5	res	5	stderiv	sess.res.5	1
 resolve		clu	9	stderiv	sess.clu.stderiv.9	0
 resolve		spk	3	stderiv	sess.spk.stderiv.3	0
+
+# -- method tokens: <family>[_<kind><order>], e.g. stderiv_C4 -----------------
+method_token	stderiv	stderiv		
+method_token	standard	standard		
+method_token	sdiff	sdiff		
+method_token	stderiv_S3	stderiv	S	3
+method_token	stderiv_C4	stderiv	C	4
+method_token	stderiv_C5	stderiv	C	5
+method_token	stderiv_C12	stderiv	C	12
+method_token	sdiff_S2	sdiff	S	2
+# malformed suffixes stay opaque - the whole token is the family
+method_token	stderivfoo	stderivfoo		
+method_token	stderiv_C	stderiv_C		
+method_token	stderiv_X3	stderiv_X3		
+# -- stderiv domain: family test, NOT a "stderiv" prefix test -----------------
+is_stderiv	stderiv	1
+is_stderiv	stderiv_S3	1
+is_stderiv	stderiv_C4	1
+is_stderiv	stderiv_C12	1
+is_stderiv	standard	0
+is_stderiv	sdiff	0
+is_stderiv	sdiff_S2	0
+is_stderiv	stderivfoo	0
+is_stderiv	stderiv_C	0
+is_stderiv	stderiv_X3	0
+# -- the new tokens parse through the existing naming paths -------------------
+method_of	sess.spk.stderiv_C4.5	stderiv_C4
+method_of	sess.fet.stderiv_S3.5	stderiv_S3
+parse_anchor	sess.spk.stderiv_C4.5	sess	spk	stderiv_C4	5		1

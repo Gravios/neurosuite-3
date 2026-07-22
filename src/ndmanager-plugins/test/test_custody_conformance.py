@@ -66,6 +66,17 @@ def run_vectors(vpath):
                             p = base + "." + suf
                             if os.path.exists(p):
                                 os.remove(p)
+                elif kind == "method_token":
+                    ms = cst.parse_method_token(f[1])
+                    kind_str = ms.kind or ""
+                    order_str = "" if ms.order is None else str(ms.order)
+                    ok = (ms.family == f[2] and kind_str == f[3]
+                          and order_str == f[4])
+                    desc = "method_token {} -> {}".format(f[1], ms)
+                elif kind == "is_stderiv":
+                    got = cst.is_stderiv_method(f[1])
+                    ok = got == (f[2] == "1")
+                    desc = "is_stderiv {} -> {} (got {})".format(f[1], f[2], got)
                 else:
                     ok = False
                     desc = "unknown vector kind '{}'".format(kind)

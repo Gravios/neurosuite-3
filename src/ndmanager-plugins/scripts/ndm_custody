@@ -117,7 +117,31 @@ ndm_resolve()
     esac
 }
 
-ndm_resolved_is_stderiv() { [ "$NDM_R_METHOD" = stderiv ]; }
+# Decompose a method token <family>[_<kind><order>] (e.g. stderiv_C4) into
+# NDM_M_FAMILY / NDM_M_KIND / NDM_M_ORDER.  Kind is S (plain methodOrder
+# derivative) or C (the session's custom sdiffPairs pattern); order is the
+# spatial-derivative order actually applied.  A token that does not match the
+# suffix grammar is opaque: the whole string becomes the family, so an unknown
+# token never masquerades as a known one.
+ndm_parse_method() {
+    local m="$1" suf
+    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""
+    case "$m" in
+        *_[SC][0-9]|*_[SC][0-9][0-9]) : ;;
+        *) return 0 ;;
+    esac
+    suf="${m##*_}"
+    NDM_M_FAMILY="${m%_*}"
+    NDM_M_KIND="${suf:0:1}"
+    NDM_M_ORDER="${suf:1}"
+}
+
+# True for the stderiv family: bare legacy "stderiv" and any stderiv_<kind><order>.
+# Not a prefix test - "stderivfoo" is a different family.
+# NOTE: clobbers NDM_M_* as a side effect.
+ndm_is_stderiv_method() { ndm_parse_method "$1"; [ "$NDM_M_FAMILY" = stderiv ]; }
+
+ndm_resolved_is_stderiv() { ndm_is_stderiv_method "$NDM_R_METHOD"; }
 
 # Resolve an existing SHARED artifact across ALL methods — the single physical
 # copy that exists regardless of which method created it.  Unlike ndm_resolve
