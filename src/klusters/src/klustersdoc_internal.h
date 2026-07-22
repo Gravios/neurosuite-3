@@ -47,6 +47,20 @@ inline QString resolveFeature(const QString& fullBase, const QString& type,
     return QString::fromStdString(r.path);
 }
 
+// Resolve a SHARED artifact across EVERY method.  Spike times are method-independent:
+// there is one .res per group whatever token wrote it, and detection may have run
+// under a different method than the .clu being opened (detect at stderiv, sort at
+// stderiv_C5).  resolveFeature above walks only method -> standard -> untagged and
+// returns a non-existent path in that case.  Use this for .res; .spk and .fet stay
+// strict, since falling back across methods there would mix waveform domains.
+inline QString resolveFeatureAny(const QString& fullBase, const QString& type,
+                                 const QString& group, const QString& method) {
+    const neurosuite::custody::Resolved r =
+        neurosuite::custody::resolveAny(fullBase.toStdString(), type.toStdString(),
+                                        group.toInt(), method.toStdString());
+    return QString::fromStdString(r.path);
+}
+
 // <base>.<type>.<method>.<group>  ->  <base>  (also handles legacy untagged).
 inline QString stripFeatureSuffix(const QString& path, const QString& type) {
     QString b = path.left(path.lastIndexOf(QLatin1Char('.')));   // strip .<group>
