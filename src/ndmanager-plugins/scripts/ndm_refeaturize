@@ -145,7 +145,7 @@ once()
 			nProj=$(( nElectrodes - 1 ))
 		fi
 		tmpspk=$(mktemp /tmp/refeat_stderiv_${session##*/}_${electrodeGroup}_XXXXXX)
-		process_pca_stderiv -n $nElectrodes -w $waveformLength -d 4 "$spkfile" > $tmpspk
+		process_pca_stderiv -n $nElectrodes -w $waveformLength -d 4 -D $methodOrder "$spkfile" > $tmpspk
 		check_command_status process_pca_stderiv
 		projInput=$tmpspk
 	fi

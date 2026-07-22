@@ -47,9 +47,21 @@ static const char *VERSION = "process_pca_stderiv 1.0";
 // For PCA, the "group" is all nChan channels.
 enum SdiffOrder { SDIFF_NONE=0, SDIFF_FIRST=1, SDIFF_LAPLACIAN=2,
                   SDIFF_ALLPAIRS=3, SDIFF_PASS=4 };
-// SDIFF_PASS: no transform — just read nChan and write nOutChan
-// (drops dependent channel if order was 1 or 3 at extraction time).
-// Use when input already contains the transformed waveform (.spkD).
+// SDIFF_PASS: no transform — just read nChan and write nOutChan, dropping the
+// dependent channel when the order applied AT EXTRACTION left one.  Use when the
+// input already holds the transformed waveform.  That order is not recoverable
+// from the data, so pass it with -D.
+
+// True when a spatial derivative of this order leaves one linearly dependent
+// channel for the reduction to drop:
+//   1, 3  rank deficient by construction
+//   4     custom pattern — its root is pinned last and that output is redundant
+//   5     custom reference-set — generally full rank, but the last channel is
+//         dropped by convention (place the least informative one there)
+//   2     Laplacian — full rank, every channel kept
+// Mirrors ndm_sdiff_drops_last in ndm_custody; keep the two in step.
+static inline bool dropsLastChannel(int o)
+{ return o == 1 || o == 3 || o == 4 || o == 5; }
 
 static double computeSDiff(const short *record, int idx, int nChan, SdiffOrder order)
 {
@@ -77,11 +89,15 @@ static void usage(const char *name)
 {
     std::cerr << VERSION << "\n"
               << "usage: " << name
-              << " -n nChannels -w waveformSamples [-d order] [input.spk]\n"
+              << " -n nChannels -w waveformSamples [-d order] [-D origOrder] [input.spk]\n"
               << "  -n   channels per spike (mandatory)\n"
               << "  -w   time-samples per channel per spike (mandatory)\n"
               << "  -d   spatial derivative order: 0=none 1=first-diff\n"
-              << "       2=Laplacian 3=all-pairwise (default 3)\n"
+              << "       2=Laplacian 3=all-pairwise 4=pass-through (default 3)\n"
+              << "  -D   with -d 4, the order applied at extraction: 1=first-diff\n"
+              << "       2=Laplacian 3=all-pairwise 4=custom pattern\n"
+              << "       5=custom reference-set (default 3).  Decides whether the\n"
+              << "       linearly dependent channel is dropped.\n"
               << "  Reads from stdin if no input file given.\n"
               << "  Writes transformed waveforms to stdout.\n";
     std::exit(1);
@@ -92,12 +108,14 @@ int main(int argc, char *argv[])
     int nChan      = 0;
     int wLen       = 0;
     int orderArg   = 3;
+    int origOrder  = -1;   // -D: extraction order, only meaningful with -d 4
     std::string inFile;
 
     for(int i = 1; i < argc; i++) {
         if     (!strcmp(argv[i],"-n") && i+1<argc) nChan    = atoi(argv[++i]);
         else if(!strcmp(argv[i],"-w") && i+1<argc) wLen     = atoi(argv[++i]);
         else if(!strcmp(argv[i],"-d") && i+1<argc) orderArg = atoi(argv[++i]);
+        else if(!strcmp(argv[i],"-D") && i+1<argc) origOrder = atoi(argv[++i]);
         else if(argv[i][0] != '-') inFile = argv[i];
         else { std::cerr << "unknown option: " << argv[i] << "\n"; usage(argv[0]); }
     }
@@ -128,14 +146,12 @@ int main(int argc, char *argv[])
     // process_pca sees only the independent dimensions.
     //   order 1 (first-diff):   s[n-1] = -s[n-2]
     //   order 3 (all-pairwise): sum(s) = 0  →  s[n-1] = -sum(s[0..n-2])
-    // For SDIFF_PASS, drop last channel if the original extraction used
-// an order that produces a linearly dependent channel (1 or 3).
-// For other modes, drop based on current order.
-const SdiffOrder dropCheckOrder = (order == SDIFF_PASS)
-    ? static_cast<SdiffOrder>((orderArg == 4) ? 3 : 3)  // spkD default: allpairs
-    : order;
-const bool dropLast = (dropCheckOrder == SDIFF_FIRST ||
-                       dropCheckOrder == SDIFF_ALLPAIRS);
+    // Input already transformed (SDIFF_PASS): the decision belongs to the order
+    // used at EXTRACTION, supplied by -D.  Without it, assume all-pairs — the
+    // historical default, so existing callers keep their behaviour.
+    const bool dropLast = (order == SDIFF_PASS)
+        ? dropsLastChannel(origOrder >= 0 ? origOrder : 3)
+        : dropsLastChannel(static_cast<int>(order));
     const int  nOutChan = dropLast ? nChan - 1 : nChan;
     if(nOutChan < 1) {
         std::cerr << VERSION << " error: need >= 2 channels for spatial derivative\n";
