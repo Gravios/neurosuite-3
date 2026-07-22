@@ -1338,6 +1338,20 @@ int pickInputPath(char *out, size_t outSize,
     return (std::strcmp(Method, "standard") == 0) ? 0 : 1;
 }
 
+void resolveAnyC(char *out, size_t outSize,
+                 const char *base, const char *ext, int elec) {
+    const neurosuite::custody::Resolved r =
+        neurosuite::custody::resolveAny(base, ext, elec, Method);
+    if (outSize > 0) {
+        std::strncpy(out, r.path.c_str(), outSize);
+        out[outSize - 1] = '\0';
+    }
+}
+
+bool methodFamilyIs(const char *family) {
+    return neurosuite::custody::parseMethodToken(Method).family == family;
+}
+
 void methodPathC(char *out, size_t outSize,
                  const char *base, const char *ext, int elec) {
     const std::string p = neurofileio::methodPath(base, ext, Method, elec);
