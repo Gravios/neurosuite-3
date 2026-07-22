@@ -2612,9 +2612,12 @@ static void AutoReextractAfterFinalize(int nChan,
     const char *tool = getenv("KKEXP_REEXTRACT_TOOL");
     const char *spkExt = "spk";
     if (!tool || !*tool) {
-        tool = (std::strcmp(Method, "stderiv") == 0) ? "process_extractspikes_stderiv"
-             : (std::strcmp(Method, "sdiff")   == 0) ? "process_extractspikes_sdiff"
-             :                                          "process_extractspikes";
+        // Family test, not equality: a suffixed token (stderiv_C5) is still the
+        // stderiv family, and strcmp would fall through to the RAW extractor and
+        // silently re-extract untransformed waveforms into a stderiv session.
+        tool = methodFamilyIs("stderiv") ? "process_extractspikes_stderiv"
+             : methodFamilyIs("sdiff")   ? "process_extractspikes_sdiff"
+             :                             "process_extractspikes";
     }
 
     // ── 3. session-level inputs we need from the runtime ─────────────────
@@ -2651,7 +2654,7 @@ static void AutoReextractAfterFinalize(int nChan,
 
     char filReal[1024], resReal[1024], spkReal[1024];
     snprintf(filReal, sizeof(filReal), "%s.fil",            FileBase);
-    methodPathC(resReal, sizeof(resReal), FileBase, "res", ElecNo);
+    resolveAnyC(resReal, sizeof(resReal), FileBase, "res", ElecNo);
     methodPathC(spkReal, sizeof(spkReal), FileBase, "spk", ElecNo);
 
     // Resolve to absolute paths for the symlinks (in case FileBase is

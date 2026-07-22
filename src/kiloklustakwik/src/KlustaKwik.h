@@ -66,6 +66,18 @@ int pickInputPath(char *out, size_t outSize,
 // into `out`.  Used for outputs and for the per-group artifacts that were
 // historically built with a hardcoded snprintf("%s.<ext>.%d", ...).  The
 // active method comes from the global `Method` parameter.
+// Resolve a SHARED artifact (.res, raw .spk) across EVERY method.  Spike times are
+// method-independent -- one .res per group, whatever token wrote it -- so detection
+// may have run under a different method than this KK run.  methodPathC() composes a
+// strict <base>.<type>.<Method>.<elec> and finds nothing in that case.
+void resolveAnyC(char *out, size_t outSize,
+                 const char *base, const char *ext, int elec);
+
+// True when Method belongs to the given family, e.g. familyIs("stderiv") for
+// "stderiv", "stderiv_S3" or "stderiv_C5".  A literal strcmp against "stderiv"
+// silently misses every suffixed token.
+bool methodFamilyIs(const char *family);
+
 void methodPathC(char *out, size_t outSize,
                  const char *base, const char *ext, int elec);
 void MatPrint(FILE *fp, const float *Mat, int nRows, int nCols);
