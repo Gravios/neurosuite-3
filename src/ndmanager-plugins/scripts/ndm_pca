@@ -106,6 +106,14 @@ methodOrder=${methodOrder:-3}
 # the node value, so the basis tag cannot disagree with the waveforms it was fit on.
 [ -n "$NDM_M_ORDER" ] && methodOrder=$NDM_M_ORDER
 
+# The spatial derivative leaves one channel that SDIFF_PASS drops before PCA.  For
+# orders 1 and 3 it is a genuine linear combination of the others, so the drop costs
+# nothing.  For a custom pattern (4/5) it may be full rank, and PCA here is fit PER
+# CHANNEL and truncated to nFeatures -- so the dropped channel's features are not
+# exactly reproducible from the kept ones.  dropLastChannel=false keeps it.
+dropLastChannel=$(read_script_parameter $session dropLastChannel)
+check_optional_variable $dropLastChannel || dropLastChannel=true
+
 # ── Flatten (method, methodOrder) into the neurosuite::core::Method enum int ──
 # baked into the PCAE basis header by process_pca (--pca-method), so every
 # downstream consumer reads the transform off the self-describing basis instead
@@ -254,11 +262,16 @@ once()
 	local nPca=$nElectrodes
 	local tmpspk=
 	if [ "$methodFamily" = stderiv ]; then
-		if ndm_sdiff_drops_last "$methodOrder"; then
+		keepArg=
+		if $dropLastChannel && ndm_sdiff_drops_last "$methodOrder"; then
 			nPca=$(( nElectrodes - 1 ))
+		else
+			# -k keeps every channel; width stays nElectrodes so basis and
+			# projection agree.
+			keepArg=-k
 		fi
 		tmpspk=$(mktemp /tmp/spk_stderiv_${session##*/}_${electrodeGroup}_XXXXXX)
-		process_pca_stderiv -n $nElectrodes -w $waveformLength -d 4 -D $methodOrder "$spkfile" > $tmpspk
+		process_pca_stderiv -n $nElectrodes -w $waveformLength -d 4 -D $methodOrder $keepArg "$spkfile" > $tmpspk
 		check_command_status process_pca_stderiv
 		pcaInput=$tmpspk
 	fi
