@@ -487,7 +487,13 @@ int main(int argc, char* argv[])
     // File paths (chain-of-custody: <base>.<type>.<method>.<grp>).
     // `stderiv` gates the SDIFF_ALLPAIRS re-extraction on transformed waveforms.
     const bool stderiv          = (method == "stderiv");
-    const std::string resPath   = neurosuite::custody::resolve(basename, "res", electrodeGroup, method).path;
+    // Spike times are method-independent: ONE .res per group serves every method,
+    // and detection may have run under a different token than this alignment
+    // (detect at stderiv, extract+align at stderiv_C5).  resolve() only walks
+    // method -> standard -> untagged and would miss it; resolveAny scans every
+    // method-tagged copy.  The .spk stays on resolve() deliberately -- falling back
+    // across methods there would align raw waveforms for a stderiv request.
+    const std::string resPath   = neurosuite::custody::resolveAny(basename, "res", electrodeGroup, method).path;
     const std::string spkPath   = neurosuite::custody::resolve(basename, "spk", electrodeGroup, method).path;
     const std::string filPath   = neurosuite::custody::sessionPath(basename, "fil");
 
