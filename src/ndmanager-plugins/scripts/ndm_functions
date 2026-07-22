@@ -1737,8 +1737,16 @@ ndm_process_spikes()
 	fi
 
 	# Temporary symlink so partial-run outputs cannot clobber good files.
+	# Clear any leftover first: the link is only removed on the success path, so a
+	# run that died leaves it behind and the next ln fails.  That failure was not
+	# checked, so a stale link from a run with a DIFFERENT inputExtension would
+	# silently feed the engine the wrong file.
 	tmp=$session-$mode-tmp
-	ln -s "$session.$inputExtension" $tmp.fil
+	rm -f "$tmp.fil"
+	if ! ln -s "$session.$inputExtension" "$tmp.fil"; then
+		echo_error "cannot create the temporary input link $tmp.fil"
+		exit $GENERAL_ERROR
+	fi
 	export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 
 	# ── extract: require an existing shared .res (never detect) ──────────────
@@ -1808,7 +1816,7 @@ ndm_process_spikes()
 	check_command_status $binary
 
 	# ── Write back temp (untagged) outputs to final method-tagged names ──────
-	rm $tmp.fil
+	rm -f "$tmp.fil"
 	declare -i i=0
 	for group in $electrodeGroups; do
 		i=$i+1
