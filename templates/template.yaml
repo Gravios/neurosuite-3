@@ -1003,6 +1003,12 @@ programs:
         status: Mandatory
     # Chain-of-custody method: standard | sdiff | stderiv.  Stamps the shared spike
     # times as <session>.res.<method>.<group> and selects the detection space.
+    # Qualified stderiv forms state the transform in the NAME, so a consumer never
+    # has to infer it: stderiv_S<order> runs the plain spatial derivative (1-3) and
+    # leaves any sdiffPairs unused; stderiv_C<order> applies the group's sdiffPairs
+    # pattern, order 4 for a single-partner pattern, 5 for a reference-set one
+    # (written with '+').  Orders 4 and 5 come from the pattern and cannot be
+    # requested through methodOrder.
       - name: method
         value: standard
         status: Optional
@@ -1057,6 +1063,12 @@ programs:
       # Chain-of-custody method: standard | sdiff | stderiv.  Selects the waveform
       # feature space and stamps outputs as <session>.spk.<method>.<group>.  May
       # differ from the detection engine; the .res from ndm_detectspikes is reused.
+      # Qualified stderiv forms state the transform in the NAME, so a consumer never
+      # has to infer it: stderiv_S<order> runs the plain spatial derivative (1-3) and
+      # leaves any sdiffPairs unused; stderiv_C<order> applies the group's sdiffPairs
+      # pattern, order 4 for a single-partner pattern, 5 for a reference-set one
+      # (written with '+').  Orders 4 and 5 come from the pattern and cannot be
+      # requested through methodOrder.
       - name: method
         value: standard
         status: Optional
@@ -1804,6 +1816,12 @@ programs:
         status: Optional
     # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
     # <session>.<type>.<method>.<group> and selects the detection/feature space.
+    # Qualified stderiv forms state the transform in the NAME, so a consumer never
+    # has to infer it: stderiv_S<order> runs the plain spatial derivative (1-3) and
+    # leaves any sdiffPairs unused; stderiv_C<order> applies the group's sdiffPairs
+    # pattern, order 4 for a single-partner pattern, 5 for a reference-set one
+    # (written with '+').  Orders 4 and 5 come from the pattern and cannot be
+    # requested through methodOrder.
       - name: method
         value: standard
         status: Optional

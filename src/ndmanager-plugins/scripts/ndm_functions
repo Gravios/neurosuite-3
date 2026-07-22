@@ -1536,7 +1536,12 @@ ndm_process_spikes()
 		esac
 	done
 	if [ ${#positionals[@]} -gt 1 ]; then
-		echo_error "usage: $program [parameter-file] [--method standard|sdiff|stderiv] [--methodOrder 0-3] [--inputExtension EXT] [--force]"
+		echo_error "usage: $program [parameter-file] [--method M] [--methodOrder 0-3] [--inputExtension EXT] [--force]"
+		echo_error "  M = standard | sdiff | stderiv | stderiv_S<order> | stderiv_C<order>"
+		echo_error "      stderiv_S<order>  plain spatial derivative (1-3); any sdiffPairs left unused"
+		echo_error "      stderiv_C<order>  session sdiffPairs applied; order 4 single-partner,"
+		echo_error "                        order 5 reference-set (a pattern written with '+')"
+		echo_error "  Orders 4 and 5 come from the pattern itself and cannot be set via methodOrder."
 		exit $GENERAL_ERROR
 	fi
 	ndm_resolve_session "${positionals[@]}"
