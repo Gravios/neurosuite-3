@@ -1814,6 +1814,16 @@ programs:
       - name: excludeClusters
         value: ''
         status: Optional
+    # dropLastChannel: the spatial derivative leaves one channel that the reduction
+    # drops before PCA (N channels -> N-1 feature groups).  Free for orders 1 and 3,
+    # where it is an exact combination of the others; for a custom pattern
+    # (stderiv_C4 / stderiv_C5) the transform may be full rank, and PCA here is fit
+    # per channel and truncated to nFeatures, so the dropped channel's features are
+    # not exactly reproducible.  false keeps it.  ndm_refeaturize follows THIS node's
+    # value.  Changing it invalidates existing .fet/.pca -- refit.
+      - name: dropLastChannel
+        value: true
+        status: Optional
     # Chain-of-custody method: standard | sdiff | stderiv.  Stamps every output as
     # <session>.<type>.<method>.<group> and selects the detection/feature space.
     # Qualified stderiv forms state the transform in the NAME, so a consumer never

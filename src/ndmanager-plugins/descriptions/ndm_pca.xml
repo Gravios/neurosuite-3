@@ -33,6 +33,11 @@
     <value></value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>dropLastChannel</name>
+    <value>true</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Compute principal component analysis (PCA).
 
@@ -77,6 +82,20 @@ token, e.g. &lt;session&gt;.spk.stderiv_C4.&lt;group&gt;.
 Orders 4 and 5 are derived from the pattern itself and cannot be requested through
 methodOrder; a plain "stderiv" keeps the historical behaviour of applying whatever
 sdiffPairs the groups define.
+
+# dropLastChannel
+
+The spatial derivative leaves one channel that the reduction drops before PCA, so a
+group of N channels normally yields N-1. For orders 1 and 3 that channel is an exact
+linear combination of the others and the drop costs nothing. For a custom sdiffPairs
+pattern (methods stderiv_C4 / stderiv_C5) the transform may be full rank, and because
+PCA is fit PER CHANNEL and truncated to nFeatures, the dropped channel&apos;s features are
+not exactly reproducible from the kept ones.
+
+Set false to keep every channel (N features groups instead of N-1). The basis records
+the width it was fit at, so ndm_refeaturize reads THIS node&apos;s value rather than its
+own and downstream readers follow the basis. Changing it invalidates existing
+.fet/.pca for the session -- refit rather than mixing widths. Default true.
 </help>
  </program>
 </parameter>

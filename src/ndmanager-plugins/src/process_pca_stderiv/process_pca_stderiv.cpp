@@ -94,6 +94,8 @@ static void usage(const char *name)
               << "  -w   time-samples per channel per spike (mandatory)\n"
               << "  -d   spatial derivative order: 0=none 1=first-diff\n"
               << "       2=Laplacian 3=all-pairwise 4=pass-through (default 3)\n"
+              << "  -k   keep the dependent channel instead of dropping it (the drop\n"
+              << "       is free for orders 1 and 3, a convention for 4 and 5)\n"
               << "  -D   with -d 4, the order applied at extraction: 1=first-diff\n"
               << "       2=Laplacian 3=all-pairwise 4=custom pattern\n"
               << "       5=custom reference-set (default 3).  Decides whether the\n"
@@ -109,6 +111,7 @@ int main(int argc, char *argv[])
     int wLen       = 0;
     int orderArg   = 3;
     int origOrder  = -1;   // -D: extraction order, only meaningful with -d 4
+    bool keepLast  = false; // -k: keep the dependent channel instead of dropping it
     std::string inFile;
 
     for(int i = 1; i < argc; i++) {
@@ -116,6 +119,7 @@ int main(int argc, char *argv[])
         else if(!strcmp(argv[i],"-w") && i+1<argc) wLen     = atoi(argv[++i]);
         else if(!strcmp(argv[i],"-d") && i+1<argc) orderArg = atoi(argv[++i]);
         else if(!strcmp(argv[i],"-D") && i+1<argc) origOrder = atoi(argv[++i]);
+        else if(!strcmp(argv[i],"-k"))             keepLast = true;
         else if(argv[i][0] != '-') inFile = argv[i];
         else { std::cerr << "unknown option: " << argv[i] << "\n"; usage(argv[0]); }
     }
@@ -149,7 +153,13 @@ int main(int argc, char *argv[])
     // Input already transformed (SDIFF_PASS): the decision belongs to the order
     // used at EXTRACTION, supplied by -D.  Without it, assume all-pairs — the
     // historical default, so existing callers keep their behaviour.
-    const bool dropLast = (order == SDIFF_PASS)
+    // -k suppresses the drop.  For orders 1 and 3 the last channel is a genuine
+    // linear combination of the others, so keeping it adds a redundant column; for
+    // orders 4 and 5 the pattern may well be full rank and the drop is a convention,
+    // so -k is how a caller keeps that information.  The basis records the real
+    // width, so downstream consumers follow whichever was used.
+    const bool dropLast = keepLast ? false
+        : (order == SDIFF_PASS)
         ? dropsLastChannel(origOrder >= 0 ? origOrder : 3)
         : dropsLastChannel(static_cast<int>(order));
     const int  nOutChan = dropLast ? nChan - 1 : nChan;
