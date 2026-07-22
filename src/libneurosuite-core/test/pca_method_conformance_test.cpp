@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
             ++g_fail;
         }
     }
-    // The enum has exactly the canonical values: anything outside 0..6 is invalid.
+    // The enum has exactly the canonical values: anything outside 0..8 is invalid.
     check(!methodValid(-1) && !methodValid(9), "methodValid rejects out-of-range");
 
     std::printf("pca method conformance: %d checks, %d failed\n", g_ran, g_fail);
