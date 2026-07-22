@@ -90,9 +90,15 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
           {{ "thresholdFactor","3.0","Mandatory" }, { "refractoryMs","1.0","Mandatory" },
            { "windowSec","60","Mandatory" }, { "maxSubGroups","16","Mandatory" }} },
         // ── Detection ─────────────────────────────────────────────────────
-        { "ndm_extractspikes", "Extract Spikes", ".fil → .spk (raw threshold)", "detection", "spikes",
-          {{ "thresholdFactor","1.5","Mandatory" }, { "refractoryPeriod","25","Mandatory" },
-           { "peakSearchLength","50","Mandatory" }, { "start","0","Mandatory" }, { "duration","60","Mandatory" },
+        { "ndm_detectspikes", "Detect Spikes", ".fil → .res (threshold detection)", "detection", "spikes",
+          {{ "thresholdFactor","1.5","Mandatory" }, { "refractoryPeriod","16","Mandatory" },
+           { "peakSearchLength","32","Mandatory" }, { "start","0","Mandatory" }, { "duration","60","Mandatory" },
+           { "inputExtension","fil","Optional" },
+           { "method","standard","Optional" }, { "methodOrder","3","Optional" }} },
+        // Extraction is a second pass: it reads the .res written by
+        // ndm_detectspikes, so it carries no threshold/window parameters.
+        { "ndm_extractspikes", "Extract Spikes", ".res + .fil → .spk (after Detect Spikes)", "detection", "spikes",
+          {{ "inputExtension","fil","Optional" },
            { "method","standard","Optional" }, { "methodOrder","3","Optional" }} },
         { "ndm_extractspikes_sdiff", "Extract Spikes (SDiff)", ".fil → .spk (spatial diff detection)", "detection", "spikes",
           {{ "thresholdFactor","1.5","Mandatory" }, { "refractoryPeriod","16","Mandatory" },
@@ -106,6 +112,9 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         // ── Features ──────────────────────────────────────────────────────
         { "ndm_pca", "PCA", ".spk → .fet", "features", "spikes",
           {{ "before","12","Mandatory" }, { "after","12","Mandatory" }, { "extra","false","Mandatory" },
+           { "method","standard","Optional" }, { "methodOrder","3","Optional" }} },
+        { "ndm_refeaturize", "Re-featurize", ".spk + .pca → .fet (no PCA refit)", "features", "spikes",
+          {{ "extra","false","Optional" },
            { "method","standard","Optional" }, { "methodOrder","3","Optional" }} },
         { "ndm_pca_stderiv", "PCA (StDeriv)", ".spk + stderiv transform → .fet", "features", "spikes",
           {{ "before","12","Mandatory" }, { "after","12","Mandatory" },
@@ -829,9 +838,9 @@ PipelineDesignerPage::PipelineDesignerPage(QWidget* parent) : QWidget(parent)
         "QComboBox QAbstractItemView{background:#131e2d;color:#8899aa;border:1px solid #2a3650;}");
     presetCombo->addItem(tr("— select preset —"), QVariant());
     presetCombo->addItem(tr("Pipeline A  (raw → align → PCA → KK)"),
-        QVariant(QStringList{"ndm_hipass","ndm_extractspikes","ndm_alignspikes","ndm_pca","ndm_klustakwik"}));
+        QVariant(QStringList{"ndm_hipass","ndm_detectspikes","ndm_extractspikes","ndm_alignspikes","ndm_pca","ndm_klustakwik"}));
     presetCombo->addItem(tr("Pipeline C  (raw → align → StDeriv PCA → KK)"),
-        QVariant(QStringList{"ndm_hipass","ndm_extractspikes","ndm_alignspikes","ndm_pca_stderiv","ndm_klustakwik"}));
+        QVariant(QStringList{"ndm_hipass","ndm_detectspikes","ndm_extractspikes","ndm_alignspikes","ndm_pca_stderiv","ndm_klustakwik"}));
     presetCombo->addItem(tr("Pipeline D  (StDeriv detect → align → PCA → KK)"),
         QVariant(QStringList{"ndm_hipass","ndm_extractspikes_stderiv","ndm_alignspikes","ndm_pca","ndm_klustakwik"}));
     presetCombo->addItem(tr("Full pipeline (D + reextract + drift + LFP)"),
