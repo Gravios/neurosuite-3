@@ -99,7 +99,8 @@
 #include <climits>
 #include <stdexcept>
 #include <unistd.h>     // access(F_OK) for prealign archive
-#include <neurosuite/core/custody.hpp>   // shared chain-of-custody resolver
+#include <neurosuite/core/custody.hpp>
+#include "sdiff_pairs.h"      // shared SDIFF_CUSTOM / _CAR pattern parser   // shared chain-of-custody resolver
 
 // ── SDIFF_ALLPAIRS kernel (same as process_extractspikes_stderiv) ─────────
 
@@ -112,6 +113,35 @@ static double sdiff_allpairs(const short* frame,
     double sum = 0.0;
     for (int j = 0; j < nChanGrp; ++j) sum += frame[chanList[j]];
     return (double)nChanGrp * frame[chanList[idx]] - sum;
+}
+
+// ── Custom spatial pattern (-P), empty unless supplied ────────────────────
+// Realignment re-extracts from .fil, so it must reproduce EXACTLY the spatial
+// transform the .spk was built with.  With a custom sdiffPairs pattern that is
+// not all-pairs, and aligning with the wrong operator leaves the waveforms
+// misaligned in the very space they are clustered in.
+static std::vector<int>              g_customPartner;   // order 4: one partner per channel
+static std::vector<std::vector<int>> g_customSets;      // order 5: reference set per channel
+
+// Spatial kernel matching process_extractspikes_stderiv's applySdiff: custom
+// reference-set, then custom partner, then all-pairs.
+static double sdiff_kernel(const short* frame,
+                           const int*   chanList,
+                           int          idx,
+                           int          nChanGrp)
+{
+    if (nChanGrp > 1 && (int)g_customSets.size() == nChanGrp
+        && !g_customSets[idx].empty()) {
+        double sum = 0.0;
+        for (size_t k = 0; k < g_customSets[idx].size(); ++k)
+            sum += frame[chanList[g_customSets[idx][k]]];
+        return (double)frame[chanList[idx]]
+             - sum / (double)g_customSets[idx].size();
+    }
+    if (nChanGrp > 1 && (int)g_customPartner.size() == nChanGrp)
+        return (double)frame[chanList[idx]]
+             - (double)frame[chanList[g_customPartner[idx]]];
+    return sdiff_allpairs(frame, chanList, idx, nChanGrp);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -400,6 +430,10 @@ static void usage(const char* prog)
         "  -p peakSampleIndex  Target peak position (1-based)\n"
         "  -m maxShift         Maximum shift in samples [default: 3]\n"
         "  --stderiv           Process .spkD.N with SDIFF_ALLPAIRS re-extraction\n"
+        "  -P PATTERN          Custom spatial pattern for this group, matching the\n"
+        "                      session's sdiffPairs: 'a-b,...' (order 4) or\n"
+        "                      'a-b+c,...' (order 5).  Required for a _C method so\n"
+        "                      re-extraction reproduces the .spk's own transform.\n"
         "  --min-score f       Minimum energy score to accept shift [default: 0.0]\n"
         "  --top-channels N    Use only the N highest-amplitude channels per spike\n"
         "                      for alignment energy (excludes collision/noise on\n"
@@ -451,6 +485,13 @@ int main(int argc, char* argv[])
             method = argv[++i];
         else if (strcmp(a, "--stderiv") == 0)
             method = "stderiv";          // deprecated alias for --method stderiv
+        else if (strcmp(a, "-P") == 0 && i + 1 < argc) {
+            // Custom spatial pattern for THIS group, same grammar as the
+            // extractor's -P (a-b,... partner map, or a-b+c,... reference sets).
+            const char* pat = argv[++i];
+            if (sdiffSpecUsesSets(pat)) g_customSets    = parseSdiffSets(pat);
+            else                        g_customPartner = parseSdiffPairs(pat);
+        }
         else if (strcmp(a, "--min-score") == 0 && i+1 < argc)
             minScore = atof(argv[++i]);
         else if (strcmp(a, "--top-channels") == 0 && i+1 < argc)
@@ -496,11 +537,23 @@ int main(int argc, char* argv[])
     // reproduce a custom sdiffPairs pattern, and it cannot apply first-difference or
     // Laplacian either.  Aligning anyway would re-extract with a transform the .spk
     // was never built with, silently.  Refuse instead.
-    if (stderiv && ms.kind == 'C') {
+    if (stderiv && ms.kind == 'C'
+        && g_customPartner.empty() && g_customSets.empty()) {
         fprintf(stderr, "process_alignspikes: method %s applies a custom sdiffPairs "
-                        "pattern; this aligner re-extracts with SDIFF_ALLPAIRS only "
-                        "and cannot reproduce it.\n", method.c_str());
-        die("unsupported method for re-extraction alignment");
+                        "pattern, but no -P was given; re-extraction would use "
+                        "SDIFF_ALLPAIRS and misalign the waveforms.\n", method.c_str());
+        die("missing -P for a custom-pattern method");
+    }
+    // A pattern's own grammar fixes the order (sets => 5, partners => 4); refuse a
+    // token that claims the other one rather than transform against the wrong rule.
+    if (stderiv && ms.kind == 'C') {
+        const int impliedOrder = g_customSets.empty() ? 4 : 5;
+        if (ms.order != impliedOrder) {
+            fprintf(stderr, "process_alignspikes: method %s states order %d but the "
+                            "-P pattern implies order %d.\n",
+                    method.c_str(), ms.order, impliedOrder);
+            die("method order disagrees with the -P pattern");
+        }
     }
     if (stderiv && ms.kind == 'S' && ms.order != 3) {
         fprintf(stderr, "process_alignspikes: method %s is spatial order %d; this "
@@ -695,7 +748,7 @@ int main(int argc, char* argv[])
             for (int s = 0; s < nSamples; ++s) {
                 const short* frame = rawWin.data() + s * nTotalChannels;
                 for (int ci = 0; ci < nChanGrp; ++ci) {
-                    double sd = sdiff_allpairs(frame, chanList.data(), ci, nChanGrp);
+                    double sd = sdiff_kernel(frame, chanList.data(), ci, nChanGrp);
                     if      (sd >  32767.0) sd =  32767.0;
                     else if (sd < -32768.0) sd = -32768.0;
                     sdiffWin[(size_t)s * nChanGrp + ci] = (short)sd;
@@ -810,7 +863,7 @@ int main(int argc, char* argv[])
                 for (int s = 0; s < nSamples; ++s) {
                     const short* frame = rawFrame.data() + s * nTotalChannels;
                     for (int ci = 0; ci < nChanGrp; ++ci) {
-                        const double sd = sdiff_allpairs(frame, chanList.data(), ci, nChanGrp);
+                        const double sd = sdiff_kernel(frame, chanList.data(), ci, nChanGrp);
                         double stderiv  = sd - prevSdiff[ci];
                         prevSdiff[ci]   = sd;
                         if      (stderiv >  32767.0) stderiv =  32767.0;
