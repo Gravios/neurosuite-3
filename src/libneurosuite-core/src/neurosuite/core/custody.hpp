@@ -40,6 +40,50 @@ enum class Klass { MethodSpecific, Shared, SessionWide };
 
 inline const char* kDefaultMethod() { return "standard"; }
 
+// ── method tokens ───────────────────────────────────────────────────────────
+// A method token is <family>[_<kind><order>], e.g. "stderiv_C4":
+//   family  the engine — standard | sdiff | stderiv
+//   kind    'S' the plain methodOrder spatial derivative, 'C' the session's
+//           custom difference pattern (sdiffPairs); absent on a bare token
+//   order   the spatial-derivative order actually applied; -1 when absent
+// Recording kind+order in the NAME is what lets a consumer know how a file was
+// produced without re-reading session parameters that may have been edited
+// since.  A token that does not match the suffix grammar is opaque: the whole
+// string is the family, so unknown tokens never masquerade as a known one.
+struct MethodSpec {
+    std::string family;
+    char        kind;    // 'S', 'C', or '\0' when absent
+    int         order;   // -1 when absent
+};
+
+inline MethodSpec parseMethodToken(const std::string& m)
+{
+    MethodSpec spec;
+    spec.family = m;
+    spec.kind   = '\0';
+    spec.order  = -1;
+    const std::string::size_type u = m.rfind('_');
+    if (u == std::string::npos) return spec;
+    const std::string suffix = m.substr(u + 1);
+    if (suffix.size() < 2) return spec;
+    if (suffix[0] != 'S' && suffix[0] != 'C') return spec;
+    int val = 0;
+    for (std::string::size_type i = 1; i < suffix.size(); ++i) {
+        if (suffix[i] < '0' || suffix[i] > '9') return spec;
+        val = val * 10 + (suffix[i] - '0');
+    }
+    spec.family = m.substr(0, u);
+    spec.kind   = suffix[0];
+    spec.order  = val;
+    return spec;
+}
+
+// True for the stderiv family: the bare legacy token and any stderiv_<kind><order>.
+// Deliberately not a plain "stderiv" prefix test — "stderivfoo" is a different
+// family and must not be treated as the transformed domain.
+inline bool isStderivMethod(const std::string& m)
+{ return parseMethodToken(m).family == "stderiv"; }
+
 // ── type classification ─────────────────────────────────────────────────────
 
 // Per-group types that participate in chain-of-custody naming.
@@ -253,7 +297,7 @@ inline Resolved resolve(const std::string& base, const std::string& type,
 // Convenience: true if the resolved file is in the stderiv (transformed) domain.
 // Reads the method off the file actually resolved — so a Shared .spk that fell
 // back to the raw copy is NOT stderiv even on a stderiv session.
-inline bool resolvedIsStderiv(const Resolved& r) { return r.method == "stderiv"; }
+inline bool resolvedIsStderiv(const Resolved& r) { return isStderivMethod(r.method); }
 
 // ── derivation relationships ────────────────────────────────────────────────
 

@@ -103,6 +103,16 @@ int main(int argc, char** argv) {
                       + " -> " + f[5] + " (found=" + f[6] + ")");
             for (const std::string& suf : csv(f[1]))
                 std::remove((base + "." + suf).c_str());
+        } else if (kind == "method_token") {
+            const MethodSpec ms = parseMethodToken(f[1]);
+            const std::string kindStr = ms.kind ? std::string(1, ms.kind) : std::string();
+            const std::string orderStr = (ms.order < 0) ? std::string()
+                                                        : std::to_string(ms.order);
+            check(ms.family == f[2] && kindStr == f[3] && orderStr == f[4],
+                  "method_token " + f[1]);
+        } else if (kind == "is_stderiv") {
+            check(isStderivMethod(f[1]) == (f[2] == "1"),
+                  "is_stderiv " + f[1] + " -> " + f[2]);
         } else {
             std::printf("FAIL: unknown vector kind '%s'\n", kind.c_str());
             ++g_fail;

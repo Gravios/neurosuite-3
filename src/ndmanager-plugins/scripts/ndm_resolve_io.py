@@ -29,6 +29,7 @@ __all__ = [
     "classify", "is_per_group_type", "is_session_wide_type", "is_known_type",
     "method_path", "untagged_path", "session_path", "file_exists",
     "method_of", "parse_anchor", "resolve", "resolved_is_stderiv",
+    "parse_method_token", "is_stderiv_method",
     "stale_after_realign",
     # backward-compatible Stage-1 names
     "resolve_input", "method_from_path",
@@ -152,9 +153,36 @@ def resolve(base, type_, group, method):
     return Resolved(cands[0], method, False)
 
 
+MethodSpec = namedtuple("MethodSpec", "family kind order")
+
+
+def parse_method_token(method):
+    """Decompose a method token <family>[_<kind><order>], e.g. "stderiv_C4".
+
+    kind is "S" (plain methodOrder derivative) or "C" (the session's custom
+    sdiffPairs pattern); order is the spatial-derivative order actually applied.
+    A token that does not match the suffix grammar is opaque: the whole string
+    becomes the family, so an unknown token never masquerades as a known one.
+    """
+    cut = method.rfind("_")
+    if cut != -1:
+        suffix = method[cut + 1:]
+        if len(suffix) >= 2 and suffix[0] in ("S", "C") and suffix[1:].isdigit():
+            return MethodSpec(method[:cut], suffix[0], int(suffix[1:]))
+    return MethodSpec(method, None, None)
+
+
+def is_stderiv_method(method):
+    """True for the stderiv family: bare "stderiv" and any stderiv_<kind><order>.
+
+    Not a prefix test - "stderivfoo" is a different family.
+    """
+    return parse_method_token(method).family == "stderiv"
+
+
 def resolved_is_stderiv(resolved):
     """True iff the file actually resolved is in the stderiv domain."""
-    return resolved.method == "stderiv"
+    return is_stderiv_method(resolved.method)
 
 
 def stale_after_realign():

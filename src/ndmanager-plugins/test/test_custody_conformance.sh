@@ -65,6 +65,16 @@ while IFS= read -r line; do
                 { echo "FAIL resolve ${F[2]}/${F[3]}/${F[4]} -> ${F[5]} found=$want_found (got ${path##*/} found=$found)"; fail=$((fail+1)); }
             for s in "${sufs[@]}"; do [ -n "$s" ] && rm -f "$B.$s"; done
             ;;
+        method_token)
+            ndm_parse_method "${F[1]}"
+            { [ "$NDM_M_FAMILY" = "${F[2]:-}" ] && [ "$NDM_M_KIND" = "${F[3]:-}" ] && \
+              [ "$NDM_M_ORDER" = "${F[4]:-}" ]; } || \
+                { echo "FAIL method_token ${F[1]} -> ${F[2]:-}/${F[3]:-}/${F[4]:-} (got $NDM_M_FAMILY/$NDM_M_KIND/$NDM_M_ORDER)"; fail=$((fail+1)); }
+            ;;
+        is_stderiv)
+            if ndm_is_stderiv_method "${F[1]}"; then got=1; else got=0; fi
+            [ "$got" = "${F[2]:-0}" ] || { echo "FAIL is_stderiv ${F[1]} -> ${F[2]:-0} (got $got)"; fail=$((fail+1)); }
+            ;;
         *)
             echo "FAIL unknown vector kind '$kind'"; fail=$((fail+1)) ;;
     esac
