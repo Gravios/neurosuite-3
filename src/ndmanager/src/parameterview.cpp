@@ -973,9 +973,12 @@ void ParameterView::applyProbeLayout(QList<ProbeEntry>     /*probes*/,
     QMap<int, QMap<QString,QString>> spikeInfo;
     for (int gid : newSpike.keys()) {
         QMap<QString,QString> info;
-        info[QStringLiteral("nbSamples")]       = QStringLiteral("52");
-        info[QStringLiteral("peakSampleIndex")] = QStringLiteral("26");
-        info[QStringLiteral("nbFeatures")]      = QStringLiteral("3");
+        // Use the tag constants, not hand-typed strings: SpikePage::setGroups
+        // matches on these exact keys, and "nbSamples"/"nbFeatures" silently
+        // matched nothing, leaving those cells blank to be saved as 0.
+        info[NB_SAMPLES]        = QStringLiteral("52");
+        info[PEAK_SAMPLE_INDEX] = QStringLiteral("26");
+        info[NB_FEATURES]       = QStringLiteral("3");
         spikeInfo[gid] = info;
     }
     spike->setGroups(newSpike, spikeInfo);
