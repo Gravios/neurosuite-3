@@ -22,6 +22,7 @@
 #include "config-ndmanager.h"
 // include files for QT
 #include <QDir>
+#include <QFileInfo>
 
 #include <QString>
 
@@ -34,6 +35,23 @@
 #include <klustersshared/theme.h>
 
 QString version;
+
+// Resolve a session directory to its parameter file.  A session directory holds
+// its parameter file under the directory's own name (<dir>/<dir>.yaml), so build
+// that name directly rather than globbing *.yaml: session directories routinely
+// hold unrelated YAML (KlustaKwik priors, tuning files) and opening one of those
+// as a parameter file fails with a parse error instead of doing nothing.
+// Returns an empty string when the file is not there.
+static QString sessionParameterFile(const QDir& dir)
+{
+    const QString stem = dir.dirName();
+    const QStringList exts = { QStringLiteral(".yaml"), QStringLiteral(".yml") };
+    for (const QString& ext : exts) {
+        const QString candidate = dir.absoluteFilePath(stem + ext);
+        if (QFileInfo::exists(candidate)) return candidate;
+    }
+    return QString();
+}
 
 int main(int argc, char **argv)
 {
@@ -82,52 +100,39 @@ int main(int argc, char **argv)
         QFileInfo fInfo(file);
         if (file.startsWith(QLatin1String("-")) ) {
             qWarning() << "it's not a filename :"<<file;
-        } else if(fInfo.isRelative()) {
-            QString url;
-            url = QDir::currentPath()+ QDir::separator() + file;
-            manager->openDocumentFile(url);
         } else {
-            manager->openDocumentFile(file);
+            QString url = fInfo.isRelative()
+                        ? QDir::currentPath() + QDir::separator() + file
+                        : file;
+            // Accept a session directory as well as a parameter file: resolve it
+            // to <dir>/<dir>.yaml, the same rule used when no argument is given.
+            if (QFileInfo(url).isDir()) {
+                const QString resolved = sessionParameterFile(QDir(url));
+                if (resolved.isEmpty()) {
+                    qWarning() << "ndmanager:" << url
+                               << "is a directory with no"
+                               << (QDir(url).dirName() + QLatin1String(".yaml"))
+                               << "- opening empty.";
+                }
+                url = resolved;   // empty => open empty, as with no argument
+            }
+            if (!url.isEmpty())
+                manager->openDocumentFile(url);
         }
     } else {
-        // No argument given: auto-discover a single *.yaml parameter file
-        // in the current working directory.  This covers the common case
-        // where the user cd's into a session directory and types plain
-        // `ndmanager`.  Behaviour:
-        //   0 yaml files : open the empty ndmanager as before
-        //   1 yaml file  : open it
-        //   N yaml files : open empty, print the candidate list so the
-        //                  user can pick one explicitly
-        QStringList yamls = QDir::current().entryList(
-            QStringList() << QLatin1String("*.yaml") << QLatin1String("*.yml"),
-            QDir::Files, QDir::Name);
-        if (yamls.size() == 1) {
-            const QString url = QDir::currentPath() + QDir::separator() + yamls.first();
+        // No argument given: open the parameter file belonging to the current
+        // directory, i.e. exactly <dir>/<dir>.yaml (or .yml).  Any other YAML in
+        // the directory is not a parameter file and is never opened.
+        const QString url = sessionParameterFile(QDir::current());
+        if (!url.isEmpty()) {
             qInfo() << "ndmanager: no argument given, opening" << url;
             manager->openDocumentFile(url);
-        } else if (yamls.size() > 1) {
-            // Multiple candidates: prefer the file whose base name matches the
-            // session directory (foo/foo.yaml), the canonical parameter file.
-            const QString stem = QDir::current().dirName();
-            QString match;
-            for (const QString& y : yamls) {
-                if (QFileInfo(y).completeBaseName() == stem) { match = y; break; }
-            }
-            if (!match.isEmpty()) {
-                const QString url = QDir::currentPath() + QDir::separator() + match;
-                qInfo() << "ndmanager: no argument given," << yamls.size()
-                        << "candidates; opening the one matching the directory:" << url;
-                manager->openDocumentFile(url);
-            } else {
-                qWarning() << "ndmanager: no argument given and"
-                           << yamls.size()
-                           << "candidate .yaml files in" << QDir::currentPath()
-                           << "(none match the directory name" << stem << ")";
-                qWarning() << "  pass one explicitly:";
-                for (const QString& y : yamls) {
-                    qWarning().noquote() << "    ndmanager " << y;
-                }
-            }
+        } else {
+            const QString expected = QDir::current().dirName() + QLatin1String(".yaml");
+            qWarning() << "ndmanager: no argument given and no" << expected
+                       << "in" << QDir::currentPath() << "- opening empty.";
+            qWarning().noquote() << "  a session directory holds its parameter file as <dir>/<dir>.yaml;";
+            qWarning().noquote() << "  pass a path explicitly to open anything else.";
         }
     }
 
