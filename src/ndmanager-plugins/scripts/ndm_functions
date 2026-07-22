@@ -1550,14 +1550,30 @@ ndm_process_spikes()
 	method=$methodOverride
 	[ -z "$method" ] && method=$(read_script_parameter $session method)
 	method=${method:-standard}
-	case "$method" in
+	# A method token is <family>[_<kind><order>] (stderiv_C4): the family picks the
+	# engine, the kind says whether the session's custom sdiffPairs pattern is applied
+	# (C) or deliberately not (S), and the order is the derivative order actually run.
+	# Recording all three in the name means a consumer never has to infer how a file
+	# was produced from parameters that may have changed since.
+	ndm_parse_method "$method"
+	methodFamily=$NDM_M_FAMILY
+	methodKind=$NDM_M_KIND
+	methodTokenOrder=$NDM_M_ORDER
+	case "$methodFamily" in
 		standard|sdiff|stderiv) : ;;
-		*) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
+		*) echo_error "unknown method '$method' (expected standard, sdiff or stderiv, optionally suffixed _S<order> or _C<order>)"; exit $GENERAL_ERROR ;;
 	esac
+	if [ -n "$methodKind" ] && [ "$methodFamily" != stderiv ]; then
+		echo_error "method '$method': the _S/_C suffix only applies to stderiv"
+		exit $GENERAL_ERROR
+	fi
 	methodOrder=$methodOrderOverride
 	[ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
 	methodOrder=${methodOrder:-3}
-	case "$method" in
+	# A suffixed token states the order outright, so it wins over the node value:
+	# stderiv_S3 IS order 3, and the filename can never disagree with the run.
+	[ -n "$methodTokenOrder" ] && methodOrder=$methodTokenOrder
+	case "$methodFamily" in
 		standard) binary=process_extractspikes ;;
 		sdiff)    binary=process_extractspikes_sdiff ;;
 		stderiv)  binary=process_extractspikes_stderiv ;;
@@ -1630,8 +1646,38 @@ ndm_process_spikes()
 	n=$((${#electrodeList}-1)); electrodeList=${electrodeList:1:$n}
 	sdiffPairsList=${sdiffPairsList#:}
 	sdiffPairsArg=
-	if [ "$method" = stderiv ]; then
-		case "$sdiffPairsList" in *[!:]*) sdiffPairsArg="-P $sdiffPairsList" ;; esac
+	if [ "$methodFamily" = stderiv ]; then
+		havePairs=0
+		case "$sdiffPairsList" in *[!:]*) havePairs=1 ;; esac
+		case "$methodKind" in
+			C)
+				if [ "$havePairs" = 0 ]; then
+					echo_error "method '$method' asks for the custom difference pattern, but no spike group defines sdiffPairs."
+					exit $GENERAL_ERROR
+				fi
+				sdiffPairsArg="-P $sdiffPairsList"
+				# The engine takes the order from the pattern syntax and ignores -d: a
+				# reference-set spec (a-b+c+d) is order 5, a single-partner spec order 4.
+				# Refuse a token whose digit disagrees rather than let the name lie.
+				case "$sdiffPairsList" in
+					*+*) impliedOrder=5 ;;
+					*)   impliedOrder=4 ;;
+				esac
+				if [ -n "$methodTokenOrder" ] && [ "$methodTokenOrder" != "$impliedOrder" ]; then
+					echo_error "method '$method' states order $methodTokenOrder but the session's sdiffPairs imply order $impliedOrder"
+					echo_error "  (single-partner pattern = order 4; reference-set pattern using '+' = order 5)"
+					exit $GENERAL_ERROR
+				fi
+				methodOrder=$impliedOrder
+			;;
+			S)
+				# Explicit: run the plain derivative and leave any sdiffPairs unused.
+			;;
+			*)
+				# Bare legacy token: historical behaviour, apply the pattern when present.
+				[ "$havePairs" = 1 ] && sdiffPairsArg="-P $sdiffPairsList"
+			;;
+		esac
 	fi
 
 	# ── Detection-only parameters: threshold factor + noise window ───────────
@@ -1653,8 +1699,11 @@ ndm_process_spikes()
 	memCapGB=$(read_script_parameter $session memCapGB)
 
 	echo_info "Processing channels $electrodeList"
-	[ "$method" != standard ] && echo_info " Spatial derivative order   : $methodOrder"
+	[ "$methodFamily" != standard ] && echo_info " Spatial derivative order   : $methodOrder"
 	[ -n "$sdiffPairsArg" ] && echo_info " Custom difference patterns : $sdiffPairsList"
+	if [ "$methodKind" = S ] && [ "$havePairs" = 1 ]; then
+		echo_info " Custom difference patterns : not applied (method $method)"
+	fi
 
 	# Temporary symlink so partial-run outputs cannot clobber good files.
 	tmp=$session-$mode-tmp
@@ -1683,7 +1732,7 @@ ndm_process_spikes()
 	# (process_medianthreshold -> -t); sdiff/stderiv compute it internally from
 	# the noise window (-f/-B/-Z) and take the derivative order -d.  In extract
 	# mode only geometry (+ transform) is passed and -R selects re-extraction.
-	case "$method" in
+	case "$methodFamily" in
 		standard)
 			if [ "$mode" = detect ]; then
 				echo_info " Threshold factor           : $thresholdFactor"
