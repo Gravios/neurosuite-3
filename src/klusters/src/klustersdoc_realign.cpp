@@ -103,6 +103,7 @@ extern int nbUndo;
 // klustersdoc_*.cpp translation units share one definition instead of each
 // carrying a private anonymous-namespace copy.  Pull the three names into this TU.
 using klustersdoc_internal::featureMethod;
+using klustersdoc_internal::methodIsStderiv;
 using klustersdoc_internal::resolveFeature;
 using klustersdoc_internal::stripFeatureSuffix;
 
