@@ -486,7 +486,28 @@ int main(int argc, char* argv[])
 
     // File paths (chain-of-custody: <base>.<type>.<method>.<grp>).
     // `stderiv` gates the SDIFF_ALLPAIRS re-extraction on transformed waveforms.
-    const bool stderiv          = (method == "stderiv");
+    // Family test, not equality: a suffixed token (stderiv_S3) is still stderiv, and
+    // == "stderiv" reported it as raw -- the .spk would then be treated as
+    // untransformed and re-extracted without the derivative.
+    const neurosuite::custody::MethodSpec ms =
+        neurosuite::custody::parseMethodToken(method);
+    const bool stderiv          = (ms.family == "stderiv");
+    // ...but this binary only knows SDIFF_ALLPAIRS.  It has no -P, so it cannot
+    // reproduce a custom sdiffPairs pattern, and it cannot apply first-difference or
+    // Laplacian either.  Aligning anyway would re-extract with a transform the .spk
+    // was never built with, silently.  Refuse instead.
+    if (stderiv && ms.kind == 'C') {
+        fprintf(stderr, "process_alignspikes: method %s applies a custom sdiffPairs "
+                        "pattern; this aligner re-extracts with SDIFF_ALLPAIRS only "
+                        "and cannot reproduce it.\n", method.c_str());
+        die("unsupported method for re-extraction alignment");
+    }
+    if (stderiv && ms.kind == 'S' && ms.order != 3) {
+        fprintf(stderr, "process_alignspikes: method %s is spatial order %d; this "
+                        "aligner re-extracts with SDIFF_ALLPAIRS (order 3) only.\n",
+                method.c_str(), ms.order);
+        die("unsupported spatial order for re-extraction alignment");
+    }
     // Spike times are method-independent: ONE .res per group serves every method,
     // and detection may have run under a different token than this alignment
     // (detect at stderiv, extract+align at stderiv_C5).  resolve() only walks

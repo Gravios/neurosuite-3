@@ -368,7 +368,21 @@ static Args parseArgs(int argc, char** argv) {
     if (a.groupChannels.empty())         die("-c channelList required");
     if (a.peakSamp < 1 || a.peakSamp > a.nSamp)
         die("peakSampleIndex out of range");
-    a.stderivMode = (a.method == "stderiv");
+    // Family test, not equality -- stderiv_S3 is still the stderiv family, and the
+    // literal comparison reported it as raw.  readFilWindow applies SDIFF_ALLPAIRS,
+    // so a custom pattern or a non-allpairs order cannot be reproduced here; refuse
+    // rather than realign against a transform the waveforms never had.
+    {
+        const neurosuite::custody::MethodSpec ms =
+            neurosuite::custody::parseMethodToken(a.method);
+        a.stderivMode = (ms.family == "stderiv");
+        if (a.stderivMode && ms.kind == 'C')
+            die("method " + a.method + " applies a custom sdiffPairs pattern; this "
+                "aligner reads .fil with SDIFF_ALLPAIRS only and cannot reproduce it");
+        if (a.stderivMode && ms.kind == 'S' && ms.order != 3)
+            die("method " + a.method + " is spatial order " + std::to_string(ms.order)
+                + "; this aligner reads .fil with SDIFF_ALLPAIRS (order 3) only");
+    }
     return a;
 }
 
