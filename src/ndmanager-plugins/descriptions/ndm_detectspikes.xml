@@ -68,6 +68,19 @@ Extension of the data file read for detection, without the leading dot (default
 fil, i.e. &lt;session&gt;.fil). Set it to an alternative, externally-processed source
 (e.g. car.fil or filtered.dat) to detect from that file instead. The source
 must be high-pass filtered like the usual .fil; ndm_detectspikes does not filter it.
+
+METHOD TOKENS
+
+The method may be qualified so the transform is stated in the artifact name rather
+than inferred: stderiv_S&lt;order&gt; runs the plain spatial derivative (orders 1-3) and
+leaves any per-group sdiffPairs unused, while stderiv_C&lt;order&gt; applies the session's
+sdiffPairs pattern -- order 4 for a single-partner pattern, order 5 for a
+reference-set pattern (one written with '+'). Outputs are stamped with the full
+token, e.g. &lt;session&gt;.spk.stderiv_C4.&lt;group&gt;.
+
+Orders 4 and 5 are derived from the pattern itself and cannot be requested through
+methodOrder; a plain "stderiv" keeps the historical behaviour of applying whatever
+sdiffPairs the groups define.
 </help>
  </program>
 </parameter>

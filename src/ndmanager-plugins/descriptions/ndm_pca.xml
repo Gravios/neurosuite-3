@@ -64,6 +64,19 @@ Maximum number of Varimax rotation sweeps (default 30). Only used when varimax i
 
 # varimaxTol
 
-Relative change in the Varimax criterion at which the rotation is considered converged (default 1e-6). Only used when varimax is enabled.</help>
+Relative change in the Varimax criterion at which the rotation is considered converged (default 1e-6). Only used when varimax is enabled.
+METHOD TOKENS
+
+The method may be qualified so the transform is stated in the artifact name rather
+than inferred: stderiv_S&lt;order&gt; runs the plain spatial derivative (orders 1-3) and
+leaves any per-group sdiffPairs unused, while stderiv_C&lt;order&gt; applies the session's
+sdiffPairs pattern -- order 4 for a single-partner pattern, order 5 for a
+reference-set pattern (one written with '+'). Outputs are stamped with the full
+token, e.g. &lt;session&gt;.spk.stderiv_C4.&lt;group&gt;.
+
+Orders 4 and 5 are derived from the pattern itself and cannot be requested through
+methodOrder; a plain "stderiv" keeps the historical behaviour of applying whatever
+sdiffPairs the groups define.
+</help>
  </program>
 </parameter>
