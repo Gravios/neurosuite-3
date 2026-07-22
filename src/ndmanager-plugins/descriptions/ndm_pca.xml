@@ -20,7 +20,7 @@
    </parameter>
    <parameter>
     <name>varimax</name>
-    <value>false</value>
+    <value>true</value>
     <status>Optional</status>
    </parameter>
    <parameter>
