@@ -98,6 +98,7 @@ extern int nbUndo;
 // carrying a private anonymous-namespace copy.  Pull the three names into this TU.
 using klustersdoc_internal::featureMethod;
 using klustersdoc_internal::resolveFeature;
+using klustersdoc_internal::resolveFeatureAny;
 using klustersdoc_internal::stripFeatureSuffix;
 
 
@@ -525,7 +526,9 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     // touched during a session.  spkFileName and tmpCluFile are redirected
     // to the pending paths; they stay there for the whole document lifetime.
     origSpkPath = spkFileUrl;
-    origResPath = resolveFeature(
+    // .res is shared across methods -- resolve it across all of them, or opening a
+    // session whose detection ran under a different token fails at the pending copy.
+    origResPath = resolveFeatureAny(
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
         "res", electrodeGroupID, sessionMethod);
     origFetPath = fetFileUrl;
@@ -833,7 +836,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         // SaveAs target (chain-of-custody).
         const QString newBase = newInfo.absolutePath() + QDir::separator() + baseName;
         origSpkPath = resolveFeature(newBase, "spk", electrodeGroupID, saMethod);
-        origResPath = resolveFeature(newBase, "res", electrodeGroupID, saMethod);
+        origResPath = resolveFeatureAny(newBase, "res", electrodeGroupID, saMethod);
         origFetPath = resolveFeature(newBase, "fet", electrodeGroupID, saMethod);
     }
     // patch63 — commitAndRenewPending now reports failure.  When the
