@@ -23,9 +23,8 @@ site decides strict-vs-fallback resolution by hand.
 - **`base`** — the session base name. May itself contain dots; the parser
   finds the *last* known `type` token rather than the first dot.
 - **`type`** — the artifact type (`spk`, `fet`, `clu`, …).
-- **`method`** — the variant. `standard` is the default; `stderiv` is the
-  spatial-derivative / temporal-difference domain. Absent in untagged
-  legacy names.
+- **`method`** — the variant token, `<family>[_<kind><order>]`; see
+  [Method tokens](#method-tokens). Absent in untagged legacy names.
 - **`group`** — the electrode-group index (`1`, `2`, …). All-digits; this
   is how the parser tells a `method` token from the `group`.
 - **`suffix`** *(optional)* — trailing post-group tokens after the group,
@@ -39,7 +38,7 @@ Example, group 5 of session `rat01`:
 | `rat01.fetD.5` | `rat01.fet.stderiv.5` |
 | `rat01.pcaD.5` | `rat01.pca.stderiv.5` |
 | `rat01.clu.5` | `rat01.clu.standard.5` |
-| `rat01.spkD.5` | *(no separate file — see Shared below)* |
+| `rat01.spkD.5` | `rat01.spk.stderiv.5` |
 
 ## Artifact classes
 
@@ -51,13 +50,20 @@ Each type belongs to exactly one class, which fixes how it is resolved:
 | **Shared** | `res`, `spk` | one physical copy across methods | Prefer `<method>`, then `standard`, then the untagged legacy path; first that exists. |
 | **SessionWide** | `fil`, `dat`, `xml`, `yaml`, `nrs`, `par`, `eeg`, `lfp` | `<base>.<type>` | No method, no group. |
 
-**Why `res`/`spk` are Shared.** Spike *times* are method-independent, and
-the raw waveform snippets are shared too: the stderiv transform is applied
-**downstream at PCA time** (producing `fet.stderiv`), not stored as a
-second `.spk`. So a stderiv session reads the same raw `.spk` as a standard
-one. A resolved file reports the `method` of the copy actually found, so a
-`.spk` that fell back to the raw/untagged path is **not** treated as
-stderiv even in a stderiv session.
+**Why `res` is Shared.** Spike *times* are method-independent: detection may
+run under one token while extraction, alignment and sorting run under another,
+and there is exactly **one `.res` per group** whatever wrote it. Resolve it
+with `resolveAny` (below), not `resolve` — the latter walks only
+method → standard → untagged and misses another token's copy.
+
+**`spk` is Shared but domain-carrying.** `process_extractspikes_stderiv` writes
+the **transformed** waveform to `.spk.<method>.<group>` at full group width;
+the transform is *not* deferred to PCA time. A stderiv session therefore has
+its own `.spk`, distinct from a standard one, and the `SDIFF_PASS` reduction at
+PCA time operates on that already-transformed file. Because `spk` is classed
+Shared, a request that misses can fall back to `standard` — handing back **raw**
+waveforms for a stderiv request. Callers needing a specific domain should check
+the resolved method (`resolvedIsStderiv`) rather than trust the fallback.
 
 **Why `clu`/`fet`/… are strict.** A method-specific file that does not
 exist should be an error, not a silent fall-back to a different variant's
@@ -77,7 +83,45 @@ Given a `base`, `type`, `group`, and requested `method`:
   2. `<base>.<type>.standard.<group>` *(only if `method` ≠ `standard`)*
   3. `<base>.<type>.<group>` *(untagged legacy)*
 
-`resolvedIsStderiv()` is true iff the resolved file's method is `stderiv`.
+**`resolveAny()` — shared artifacts whose writing token is unknown.**
+`resolve()` cannot find a copy written under a *third* method, and no fixed
+list can enumerate suffixed tokens. `resolveAny()` tries the preferred method,
+then `standard`/`stderiv`/`sdiff`, then **any** other method-tagged copy in the
+directory, then the untagged legacy name. Use it for `.res`. Available as
+`custody::resolveAny` (C++), `ndm_resolve_any` (bash), `resolve_any` (Python).
+
+`resolvedIsStderiv()` is true for the whole stderiv **family** — `stderiv` and
+any `stderiv_*` token. Deliberately not a `"stderiv"` prefix test, so
+`stderivfoo` is a different family.
+
+## Method tokens
+
+A method is `<family>[_<kind><order>]`:
+
+| Part | Values | Meaning |
+|---|---|---|
+| family | `standard`, `sdiff`, `stderiv` | the engine |
+| kind | `S`, `C` | `S` = plain `methodOrder` spatial derivative; `C` = the session's custom `sdiffPairs` pattern |
+| order | integer | the spatial-derivative order actually applied |
+
+Examples: `stderiv_S3` (plain all-pairs, any `sdiffPairs` deliberately unused),
+`stderiv_C4` (custom single-partner pattern), `stderiv_C5` (custom
+reference-set pattern).
+
+Rules, enforced by `ndm_check_method_token` and its C++/Python mirrors:
+
+- The suffix applies to `stderiv` only.
+- `_S` takes order 1–3; `_C` takes order 4 (single-partner) or 5
+  (reference-set). `stderiv_S4` and `stderiv_C3` are refused as incoherent.
+- Orders 4 and 5 are **derived from the pattern's own grammar** (`+` present ⇒
+  5, else 4) and cannot be requested through `methodOrder`.
+- A token not matching the grammar is **opaque**: the whole string becomes the
+  family, so an unknown token never masquerades as a known one.
+
+Recording kind and order in the *name* is the point — a consumer knows how a
+file was produced without re-reading session parameters that may have changed
+since. A bare `stderiv` carries no order, so nothing beyond the family can be
+inferred from it.
 
 ## Derivation and staleness
 

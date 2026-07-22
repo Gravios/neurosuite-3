@@ -153,9 +153,10 @@ The method is an explicit tag in every per-group filename —
 | `.fet.standard.N` — PCA on raw waveforms | `.fet.stderiv.N` — PCA on the stderiv transform |
 | `.pca.standard.N` — raw eigenvectors | `.pca.stderiv.N` — stderiv eigenvectors |
 
-The raw `.spk` and `.res` are **shared** across methods (one physical copy;
-the stderiv transform is applied downstream at PCA time), so there is no
-separate stderiv waveform file. `.clu` / `.clc` cluster files are
+`.res` is **shared** across methods (one physical copy per group, whatever
+token wrote it). `.spk` is shared in class but domain-carrying: the stderiv
+transform is applied at extraction, so a stderiv session has its own
+`.spk.stderiv.N` distinct from `.spk.standard.N`. `.clu` / `.clc` cluster files are
 method-specific (`.clu.standard.N`, `.clu.stderiv.N`). The old
 `.spkD` / `.fetD` / `.pcaD` "D-suffix" scheme is retired.
 

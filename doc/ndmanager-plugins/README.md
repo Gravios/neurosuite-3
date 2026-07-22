@@ -122,10 +122,12 @@ per-group filename under the shared
 | `.pca` | `.pca.standard.N` | `.pca.stderiv.N` | **MethodSpecific**; `ndm_pca` / `ndm_pca_stderiv` |
 | `.clu` | `.clu.standard.N` | `.clu.stderiv.N` | **MethodSpecific**; `ndm_klustakwik`, klusters |
 
-`.res` / `.spk` are **shared** across methods — one physical copy, since the
-stderiv transform is applied downstream at PCA time rather than stored as a
-separate waveform file, so a stderiv session reads the same raw `.spk`. The
-old `.spkD` / `.fetD` / `.pcaD` naming is retired.
+`.res` is **shared** across methods — spike times are method-independent, so
+one physical copy per group whatever token wrote it (resolve it with
+`ndm_resolve_any`, not `ndm_resolve`). `.spk` is classed shared too, but it is
+**domain-carrying**: the stderiv transform is applied at EXTRACTION, so
+`.spk.standard.N` and `.spk.stderiv.N` hold different data. The old `.spkD` /
+`.fetD` / `.pcaD` naming is retired in favour of the dotted form.
 
 Within a single session, groups can freely mix methods. Every
 downstream tool that reads waveforms or features auto-detects both

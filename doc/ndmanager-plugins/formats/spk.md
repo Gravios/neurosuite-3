@@ -12,13 +12,20 @@ resolves by preferring `<base>.spk.<method>.N`, then `.spk.standard.N`,
 then the untagged legacy `.spk.N` (first that exists). Written by
 `ndm_extractspikes` / `ndm_reextractspikes` from `.fil`.
 
-**There is no separate stderiv `.spk`.** The old `.spkD.N` is retired: the
-stderiv transform (spatial derivative across group channels + temporal
-first-difference) is applied **downstream at PCA time**
-(`process_pca_stderiv`) to produce `.fet.stderiv.N`, rather than being
-stored as a second waveform file. A `.spk` that resolves to the raw/
-untagged copy is therefore *not* in the stderiv domain even in a stderiv
-session.
+**A stderiv session has its own `.spk`.** The old flat `.spkD.N` is retired,
+but only the *name* changed: `process_extractspikes_stderiv` writes the
+**transformed** waveform (spatial derivative across group channels +
+temporal first-difference) to `.spk.<method>.N` at **full group width**.
+The transform is applied at extraction, not deferred to PCA time; what
+`process_pca_stderiv` does downstream is the `SDIFF_PASS` channel
+*reduction* on that already-transformed file, not the transform itself.
+
+So `.spk.standard.N` and `.spk.stderiv.N` hold different data and are not
+interchangeable. Because `spk` is classed Shared, a request that misses can
+fall back to `standard` and hand back raw waveforms for a stderiv request —
+check the resolved method (`resolvedIsStderiv`) rather than trusting the
+fallback. A `.spk` that resolved to the raw/untagged copy is *not* in the
+stderiv domain even in a stderiv session.
 
 
 ---

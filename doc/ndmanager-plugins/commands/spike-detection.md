@@ -36,8 +36,10 @@ compatibility with earlier sessions.
 
 Detection runs on `stderiv[t, ch] = sdiff[t, ch] − sdiff[t−1, ch]`,
 where `sdiff` is the spatial derivative across the group's channels.
-In the stderiv method the transform is applied downstream at PCA time (`ndm_pca --method stderiv`), not stored as a separate waveform file; the `.fet.stderiv.N` it produces contains
-the stderiv-space waveform directly, not the raw signal. This is the
+In the stderiv method the transform is applied at EXTRACTION: the `.spk.<method>.N`
+holds the transformed waveform at full group width, and `.fet.<method>.N` is its
+projection. What `ndm_pca` does downstream is the `SDIFF_PASS` channel reduction
+on that already-transformed file, not the transform itself. This is the
 recommended pipeline for high-density probes: common-mode noise is
 rejected twice (spatial, then temporal) and downstream PCA sees a
 dramatically cleaner signal.
@@ -87,6 +89,30 @@ common-mode events, so this step is usually not needed.
 ```
 
 
+
+
+## Custom difference patterns and alignment
+
+A spike group may carry an `sdiffPairs` pattern (group-local, 0-based) that
+replaces the plain spatial derivative. Its grammar fixes the order: `a-b,c-d,…`
+is a single-partner map (order 4), `a-b+c+d,…` is a per-channel reference set
+(order 5). Select it with a `_C` method token — `stderiv_C4` or `stderiv_C5` —
+which is refused if it disagrees with what the pattern implies.
+
+Orders 4 and 5 are **not** selectable through `methodOrder`: the engines'
+`-d` accepts 0–3 only, and `-d` must never be passed alongside `-P` (it is
+range-checked first and exits before `-P` is read). `stderiv_S<order>` runs the
+plain derivative and leaves any `sdiffPairs` deliberately unused.
+
+`ndm_alignspikes` re-extracts from `.fil`, so it must apply the *same* spatial
+operator the `.spk` was built with; it passes the group's pattern through `-P`.
+A `_C` method with no pattern available is refused rather than silently aligned
+with all-pairs. `_S1`/`_S2` are also refused — first-difference and Laplacian
+are not implemented in the aligners.
+
+Alignment rewrites `.res` so `.res[i]` marks the true peak, archiving the
+original as `.res.<g>.prealign`. Because `.res` is method-independent, the
+corrected times serve every later extraction.
 
 ---
 
