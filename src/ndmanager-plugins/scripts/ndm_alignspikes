@@ -134,9 +134,14 @@ for group in $(seq 1 $nElectrodeGroups); do
         continue
     fi
 
-    resFile=$(ndm_resolve_shared "$session" res "$group" "$method")
-    if [ ! -f "$resFile" ]; then
-        echo_warning "  group $group: no .res for group $group (method $method) — skipping"
+    # Spike times are METHOD-INDEPENDENT: one physical .res serves every method, so
+    # resolve it across all of them (ndm_resolve_any), exactly as ndm_extractspikes
+    # does.  ndm_resolve_shared only tries method -> standard -> untagged, so a .res
+    # written under a different token (detection at stderiv, alignment asked for
+    # stderiv_C5) was reported missing when it was right there.
+    resFile=$(ndm_resolve_any "$session" res "$group" "$method")
+    if [ -z "$resFile" ] || [ ! -f "$resFile" ]; then
+        echo_warning "  group $group: no .res for group $group (any method) — skipping"
         nSkipped=$((nSkipped + 1))
         continue
     fi
