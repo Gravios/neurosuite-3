@@ -37,6 +37,8 @@ class ndManagerDoc{
 private:
     /**The url of the document .*/
     QString docUrl;
+    /**Reason the last openDocument() failed to parse; empty on success.*/
+    QString lastParseError;
     
 public:
     /**Constructor.
@@ -57,6 +59,12 @@ public:
   * @return an opensavecreatereturnmessage enum giving the open status.
   */
     OpenSaveCreateReturnMessage openDocument(const QString& url);
+
+    /**
+     * Reason the last openDocument() returned PARSE_ERROR (yaml-cpp message with
+     * line/column, or why the document is not a parameter file).  Empty otherwise.
+     */
+    QString parseError() const { return lastParseError; }
 
     template<typename Reader>
     OpenSaveCreateReturnMessage loadFromReader(Reader& reader);

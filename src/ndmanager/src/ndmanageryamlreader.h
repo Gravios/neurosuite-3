@@ -42,6 +42,9 @@ public:
     bool parseFile(const QString& path) { return reader.parseFile(path); }
     void closeFile()                    { reader.closeFile(); }
 
+    /** Reason the last parseFile() failed; empty on success. */
+    QString lastError() const           { return reader.lastError(); }
+
     // ---- Acquisition system ----
     void getAcquisitionSystemInfo(QMap<QString,double>& info) const;
 

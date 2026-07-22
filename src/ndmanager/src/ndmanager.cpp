@@ -328,7 +328,9 @@ void ndManager::slotNewFile(){
         int returnStatus = doc->newDocument();
         if(returnStatus == ndManagerDoc::PARSE_ERROR){
             QApplication::restoreOverrideCursor();
-            QMessageBox::critical (this, tr("Error!"),tr("The new parameter file could not be initialize due to parsing error."));
+            QMessageBox::critical (this, tr("Error!"),
+                               tr("The new parameter file could not be initialized:\n\n%1")
+                               .arg(doc->parseError()));
             resetState();
             return;
         }
@@ -381,7 +383,9 @@ void ndManager::openDocumentFile(const QString& url)
         int returnStatus = doc->openDocument(url);
         if(returnStatus == ndManagerDoc::PARSE_ERROR){
             QApplication::restoreOverrideCursor();
-            QMessageBox::critical (this, tr("Error!"),tr("The selected parameter file could not be initialize due to parsing error."));
+            QMessageBox::critical (this, tr("Error!"),
+                                   tr("The selected parameter file could not be initialized:\n\n%1\n\n%2")
+                                   .arg(url, doc->parseError()));
             //close the document
             doc->closeDocument();
             resetState();
@@ -730,7 +734,9 @@ void ndManager::slotReload(){
     const int returnStatus = doc->openDocument(filePath);
     if(returnStatus == ndManagerDoc::PARSE_ERROR){
         QApplication::restoreOverrideCursor();
-        QMessageBox::critical (this, tr("IO Error!"),tr("The selected parameter file could not be initialize due to parsing error."));
+        QMessageBox::critical (this, tr("IO Error!"),
+                               tr("The selected parameter file could not be initialized:\n\n%1\n\n%2")
+                               .arg(filePath, doc->parseError()));
         //close the document
         doc->closeDocument();
         resetState();
