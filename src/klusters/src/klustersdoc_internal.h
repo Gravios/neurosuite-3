@@ -17,7 +17,13 @@
 
 #include <string>
 #include <QString>
+#include <QMap>
+#include <QList>
+#include <vector>
 #include <neurosuite/core/custody.hpp>
+#include <neurosuite/core/stderiv_transform.hpp>
+#include "parameteryamlreader.h"
+#include "sdiff_pairs.h"
 
 namespace klustersdoc_internal {
 
@@ -45,6 +51,68 @@ inline QString resolveFeature(const QString& fullBase, const QString& type,
         neurosuite::custody::resolve(fullBase.toStdString(), type.toStdString(),
                                      group.toInt(), method.toStdString());
     return QString::fromStdString(r.path);
+}
+
+// Custom spatial pattern for a group, read from the session's sdiffPairs.
+//
+// The three re-extraction paths (realign, nudge, re-extract-on-save) each had their
+// own copy of this block, and all three called parseSdiffPairs ONLY -- the order-4
+// single-partner parser.  A reference-set pattern (order 5, written with '+') does
+// not parse as pairs, so `ok` came back false, the override was skipped, and the
+// waveforms were rebuilt with all-pairs: silently the wrong spatial operator for a
+// stderiv_C5 session.  One place now decides it for all three.
+//
+// setOff/setMem are the flattened per-channel reference sets (setOff has nChan+1
+// entries) in the form neurosuite::core::spatialDeriv takes.
+struct SdiffPattern {
+    neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
+    std::vector<int> partner;                 // order 4
+    std::vector<int> setOff, setMem;          // order 5
+    bool applied = false;                     // a pattern was found AND fitted nChan
+    QString spec;                             // the raw sdiffPairs text, for logging
+    QString problem;                          // non-empty if a spec was present but unusable
+};
+
+inline SdiffPattern readSdiffPattern(const QString& parameterFile, const QString& group,
+                                     int nChan, int totalNbChannels) {
+    SdiffPattern out;
+    if (parameterFile.isEmpty()) return out;
+    ParameterYamlReader rdr;
+    if (!rdr.parseFile(parameterFile)) return out;
+    QMap<int, QList<int> >             sgChans;
+    QMap<int, QMap<QString, QString> > sgInfo;
+    rdr.getSpikeDescription(totalNbChannels, sgChans, sgInfo);
+    const QString spec = sgInfo.value(group.toInt()).value(QStringLiteral("sdiffPairs"));
+    if (spec.isEmpty()) return out;
+    out.spec = spec;
+
+    const QByteArray raw = spec.toUtf8();
+    bool ok = false;
+    if (sdiffSpecUsesSets(raw.constData())) {          // '+' present => order 5
+        const std::vector<std::vector<int> > sets = parseSdiffSets(raw.constData(), &ok);
+        if (ok && static_cast<int>(sets.size()) == nChan) {
+            out.setOff.reserve(nChan + 1);
+            out.setOff.push_back(0);
+            for (int c = 0; c < nChan; ++c) {
+                for (size_t k = 0; k < sets[c].size(); ++k) out.setMem.push_back(sets[c][k]);
+                out.setOff.push_back(static_cast<int>(out.setMem.size()));
+            }
+            out.order = neurosuite::core::SdiffOrder::CustomCar;
+            out.applied = true;
+        } else {
+            out.problem = QStringLiteral("reference-set pattern did not parse to %1 channels").arg(nChan);
+        }
+    } else {
+        std::vector<int> pm = parseSdiffPairs(raw.constData(), &ok);
+        if (ok && static_cast<int>(pm.size()) == nChan) {
+            out.partner = std::move(pm);
+            out.order = neurosuite::core::SdiffOrder::Custom;
+            out.applied = true;
+        } else {
+            out.problem = QStringLiteral("partner pattern did not parse to %1 channels").arg(nChan);
+        }
+    }
+    return out;
 }
 
 // Resolve a SHARED artifact across EVERY method.  Spike times are method-independent:
