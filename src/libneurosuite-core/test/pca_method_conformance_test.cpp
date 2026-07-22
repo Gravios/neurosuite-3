@@ -45,6 +45,8 @@ static bool methodByName(const std::string& n, Method& m) {
     if (n == "StderivFirst")     { m = Method::StderivFirst;     return true; }
     if (n == "StderivLaplacian") { m = Method::StderivLaplacian; return true; }
     if (n == "StderivAllPairs")  { m = Method::StderivAllPairs;  return true; }
+    if (n == "StderivCustom")    { m = Method::StderivCustom;    return true; }
+    if (n == "StderivCustomCar") { m = Method::StderivCustomCar; return true; }
     return false;
 }
 
@@ -93,7 +95,7 @@ int main(int argc, char** argv) {
         }
     }
     // The enum has exactly the canonical values: anything outside 0..6 is invalid.
-    check(!methodValid(-1) && !methodValid(7), "methodValid rejects out-of-range");
+    check(!methodValid(-1) && !methodValid(9), "methodValid rejects out-of-range");
 
     std::printf("pca method conformance: %d checks, %d failed\n", g_ran, g_fail);
     if (g_fail == 0) std::printf("ALL PCA METHOD CONFORMANCE TESTS PASS\n");

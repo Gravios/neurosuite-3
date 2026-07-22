@@ -97,30 +97,40 @@ electrodeGroup=${positionals[1]:-}
 method=$methodOverride
 [ -z "$method" ] && method=$(read_script_parameter $session method)
 method=${method:-standard}
-case "$method" in
-	standard|sdiff|stderiv) : ;;
-	*) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
-esac
+ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
+methodFamily=$NDM_M_FAMILY
 methodOrder=$methodOrderOverride
 [ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
 methodOrder=${methodOrder:-3}
+# A suffixed token states the order outright (stderiv_C4 IS order 4) and wins over
+# the node value, so the basis tag cannot disagree with the waveforms it was fit on.
+[ -n "$NDM_M_ORDER" ] && methodOrder=$NDM_M_ORDER
 
 # ── Flatten (method, methodOrder) into the neurosuite::core::Method enum int ──
 # baked into the PCAE basis header by process_pca (--pca-method), so every
 # downstream consumer reads the transform off the self-describing basis instead
 # of re-reading methodOrder from the YAML.  Enum: 0=standard,
 # 1-3=sdiff{first,laplacian,allpairs}, 4-6=stderiv{first,laplacian,allpairs}.
-case "$method" in
+case "$methodFamily" in
 	standard)
 		pcaMethod=0 ;;
-	sdiff|stderiv)
+	sdiff)
 		if [ "$methodOrder" -lt 1 ] || [ "$methodOrder" -gt 3 ]; then
 			echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-3)"
 			exit $GENERAL_ERROR
 		fi
-		if [ "$method" = sdiff ]; then pcaMethod=$methodOrder      # 1/2/3
-		else                           pcaMethod=$((methodOrder + 3)); fi  # 4/5/6
-		;;
+		pcaMethod=$methodOrder ;;                    # 1/2/3
+	stderiv)
+		# 1/2/3 -> StderivFirst/Laplacian/AllPairs (4/5/6).  The custom-pattern
+		# orders get their own enum values so the PCAE header records which
+		# transform trained the basis instead of it passing as all-pairs.
+		case "$methodOrder" in
+			1|2|3) pcaMethod=$((methodOrder + 3)) ;;     # 4/5/6
+			4)     pcaMethod=7 ;;                        # StderivCustom
+			5)     pcaMethod=8 ;;                        # StderivCustomCar
+			*) echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-5)"
+			   exit $GENERAL_ERROR ;;
+		esac ;;
 esac
 
 # Print a header to indicate current processing step
@@ -128,7 +138,7 @@ print_header "$session - Computing PCA for spike sorting [method=$method]"
 
 # Check required programs
 check_commands_installed xpathReader process_pca process_mergefeatures
-[ "$method" = stderiv ] && check_commands_installed process_pca_stderiv
+[ "$methodFamily" = stderiv ] && check_commands_installed process_pca_stderiv
 
 once()
 {
@@ -243,8 +253,8 @@ once()
 	local pcaInput=$spkfile
 	local nPca=$nElectrodes
 	local tmpspk=
-	if [ "$method" = stderiv ]; then
-		if [ "$methodOrder" = "1" ] || [ "$methodOrder" = "3" ]; then
+	if [ "$methodFamily" = stderiv ]; then
+		if ndm_sdiff_drops_last "$methodOrder"; then
 			nPca=$(( nElectrodes - 1 ))
 		fi
 		tmpspk=$(mktemp /tmp/spk_stderiv_${session##*/}_${electrodeGroup}_XXXXXX)
