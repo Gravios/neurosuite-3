@@ -95,6 +95,7 @@
 
 #include <neurosuite/core/neurofileio.h>  // variant-aware input resolution
 #include <neurosuite/core/custody.hpp>     // shared chain-of-custody policy
+#include <neurosuite/core/spike_extract.hpp>
 #include "klustersdoc_internal.h"  // shared custody path helpers (split TUs)
 
 extern int nbUndo;
@@ -3481,49 +3482,42 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
     }
 
     const int spkElems = nChan * nSamp;
-    std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp) * totalNbChan);
-    std::vector<int16_t> wavCM(static_cast<size_t>(nChan) * nSamp);
-    std::vector<int16_t> spkRow(static_cast<size_t>(spkElems));
     int64_t written = 0, outOfRange = 0;
     bool writeErr = false;
 
-    for (int64_t i = 1; i <= nSpikes && !writeErr; ++i) {
-        const int64_t ts          = static_cast<int64_t>(clusteringData->featureValue(i, timeDim));
-        const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
-        bool got = false;
-        if (startSample >= 0 && startSample + nSamp <= totalSamples) {
-            const off_t rawOff = static_cast<off_t>(startSample)
-                               * static_cast<off_t>(totalNbChan)
-                               * static_cast<off_t>(sizeof(short));
-            if (fseeko(filF, rawOff, SEEK_SET) == 0
-                && std::fread(rawFrame.data(), sizeof(short),
-                              rawFrame.size(), filF) == rawFrame.size())
-                got = true;
-        }
-        if (got) {
-            for (int s = 0; s < nSamp; ++s)
-                for (int ci = 0; ci < nChan; ++ci)
-                    wavCM[static_cast<size_t>(ci) * nSamp + s] =
-                        rawFrame[static_cast<size_t>(s) * totalNbChan
-                                 + groupChannels[ci]];
-            if (spkIsStderiv)
-                neurosuite::core::applyStderivTransform(
-                    order, wavCM.data(), nChan, nSamp, wavCM.data(), partnerPtr,
-                    nullptr, setOffPtr, setMemPtr);
-            for (int s = 0; s < nSamp; ++s)
-                for (int ch = 0; ch < nChan; ++ch)
-                    spkRow[static_cast<size_t>(s) * nChan + ch] =
-                        wavCM[static_cast<size_t>(ch) * nSamp + s];
-        } else {
-            std::fill(spkRow.begin(), spkRow.end(), static_cast<int16_t>(0));
-            ++outOfRange;
-        }
-        if (std::fwrite(spkRow.data(), sizeof(int16_t),
-                        static_cast<size_t>(spkElems), out)
-            != static_cast<size_t>(spkElems))
-            writeErr = true;
-        ++written;
-    }
+    // Cutting windows out of the .fil is shared with the extractor engines
+    // (spike_extract.hpp): one implementation, so a session re-extracted here is
+    // byte-identical to what ndm_extractspikes wrote.  It also streams the file with
+    // a forward cursor instead of a seek+read per spike -- spike times are ordered,
+    // so the scattered reads were never necessary.
+    neurosuite::core::SpikeWindowSpec wspec;
+    wspec.nSamp           = nSamp;
+    wspec.peakSample      = static_cast<int>(peakSamp0);
+    wspec.totalNbChannels = totalNbChan;
+    wspec.groupChannels   = groupChannels.data();
+    wspec.nChan           = nChan;
+    wspec.applyTransform  = spkIsStderiv;
+    wspec.order           = order;
+    wspec.partner         = partnerPtr;
+    wspec.setOff          = setOffPtr;
+    wspec.setMem          = setMemPtr;
+
+    neurosuite::core::extractSpikeWindows(
+        filF, nSpikes, wspec,
+        // featureValue is 1-based over spikes; the primitive indexes from 0.
+        [&](int64_t i) {
+            return static_cast<int64_t>(clusteringData->featureValue(i + 1, timeDim));
+        },
+        [&](int64_t, const int16_t* rowData) {
+            if (writeErr) return;
+            if (std::fwrite(rowData, sizeof(int16_t),
+                            static_cast<size_t>(spkElems), out)
+                != static_cast<size_t>(spkElems))
+                writeErr = true;
+            else
+                ++written;
+        },
+        &outOfRange);
 
     std::fclose(filF);
     if (std::fclose(out) != 0) writeErr = true;
