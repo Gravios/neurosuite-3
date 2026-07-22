@@ -77,14 +77,14 @@ electrodeGroup=${positionals[1]:-}
 method=$methodOverride
 [ -z "$method" ] && method=$(read_script_parameter $session method)
 method=${method:-standard}
-case "$method" in
-	standard|sdiff|stderiv) : ;;
-	*) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
-esac
+ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
+methodFamily=$NDM_M_FAMILY
 methodOrder=$methodOrderOverride
 [ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
 methodOrder=${methodOrder:-3}
-if [ "$method" != standard ]; then
+# A suffixed token states the order outright and wins over the node value.
+[ -n "$NDM_M_ORDER" ] && methodOrder=$NDM_M_ORDER
+if [ "$methodFamily" != standard ] && [ -z "$NDM_M_ORDER" ]; then
 	if [ "$methodOrder" -lt 1 ] || [ "$methodOrder" -gt 3 ]; then
 		echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-3)"
 		exit $GENERAL_ERROR
@@ -94,7 +94,7 @@ fi
 print_header "$session - Re-featurizing spikes [method=$method]"
 
 check_commands_installed xpathReader process_refeaturize process_mergefeatures
-[ "$method" = stderiv ] && check_commands_installed process_pca_stderiv
+[ "$methodFamily" = stderiv ] && check_commands_installed process_pca_stderiv
 
 once()
 {
@@ -140,8 +140,8 @@ once()
 	local projInput=$spkfile
 	local nProj=$nElectrodes
 	local tmpspk=
-	if [ "$method" = stderiv ]; then
-		if [ "$methodOrder" = "1" ] || [ "$methodOrder" = "3" ]; then
+	if [ "$methodFamily" = stderiv ]; then
+		if ndm_sdiff_drops_last "$methodOrder"; then
 			nProj=$(( nElectrodes - 1 ))
 		fi
 		tmpspk=$(mktemp /tmp/refeat_stderiv_${session##*/}_${electrodeGroup}_XXXXXX)

@@ -108,10 +108,7 @@ electrodeGroup=${positionals[1]:-}
 method=$methodOverride
 [ -z "$method" ] && method=$(read_script_parameter $session method)
 method=${method:-standard}
-case "$method" in
-    standard|sdiff|stderiv) : ;;
-    *) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
-esac
+ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
 
 print_header "$session - Re-cluster unmatched bin from shadow-cluster merge"
 

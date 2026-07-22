@@ -70,14 +70,15 @@ param_ext=$(param_file_ext "$session")
 method=$methodOverride
 [ -z "$method" ] && method=$(read_script_parameter $session method)
 method=${method:-standard}
-case "$method" in
-    standard|sdiff|stderiv) : ;;
-    *) echo_error "unknown method '$method' (expected standard, sdiff, or stderiv)"; exit $GENERAL_ERROR ;;
-esac
+ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
+methodFamily=$NDM_M_FAMILY
 methodOrder=$methodOrderOverride
 [ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
 methodOrder=${methodOrder:-3}
-if [ "$method" != standard ]; then
+# A suffixed token states the order outright (stderiv_C4 IS order 4) and wins over
+# the node value; the checker has already vetted the combination.
+[ -n "$NDM_M_ORDER" ] && methodOrder=$NDM_M_ORDER
+if [ "$methodFamily" != standard ] && [ -z "$NDM_M_ORDER" ]; then
     if [ "$methodOrder" -lt 1 ] || [ "$methodOrder" -gt 3 ]; then
         echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-3)"
         exit $GENERAL_ERROR
@@ -85,7 +86,7 @@ if [ "$method" != standard ]; then
 fi
 # standard and sdiff share the raw engine (sdiff waveforms are raw, exactly as in
 # ndm_pca); only stderiv has a derivative-space detection binary.
-if [ "$method" = stderiv ]; then reBinary=process_reextractspikes_stderiv; else reBinary=process_reextractspikes; fi
+if [ "$methodFamily" = stderiv ]; then reBinary=process_reextractspikes_stderiv; else reBinary=process_reextractspikes; fi
 
 print_header "$session - Second-pass spike re-extraction [method=$method] with in-place shadow clustering"
 
@@ -145,7 +146,7 @@ reextractAutoSubcluster=${reextractAutoSubcluster:-0}
 
 echo_info "Re-extraction parameters:"
 echo_info "  reextractThresholdFactor = $reextractThresholdFactor  (main thresholdFactor=$thresholdFactor)"
-[ "$method" != standard ] && echo_info "  spatial derivative order = $methodOrder"
+[ "$methodFamily" != standard ] && echo_info "  spatial derivative order = $methodOrder"
 if [ -n "$reextractMaskHalfWidth" ]; then
     echo_info "  reextractMaskHalfWidth   = $reextractMaskHalfWidth samples (explicit)"
 else
@@ -267,7 +268,7 @@ durationInBytes=$(secondsToBytes $duration)
 # //  Compute reduced thresholds (standard / sdiff only; stderiv is internal)
 # ////////////////////////////////////////////////////////////////////////////
 
-if [ "$method" != stderiv ]; then
+if [ "$methodFamily" != stderiv ]; then
     echo_info "Computing baseline (median-threshold) and scaling by reextractThresholdFactor"
     baseline=$(tail -c +$(( startInBytes + 1 )) $session.fil \
         | head -c $durationInBytes \
@@ -298,7 +299,7 @@ for group in $(seq 1 $nElectrodeGroups); do
     ln -sf "$(basename "${groupResFile[$group]}")" "$maskBase.res.$group"
 done
 
-if [ "$method" = stderiv ]; then
+if [ "$methodFamily" = stderiv ]; then
     process_reextractspikes_stderiv \
         -n $nChannels \
         -c $electrodeList \
