@@ -1177,7 +1177,7 @@ void KlustersApp::createMenus()
     // recommendations become wrong -- the merged pair no longer exists, and the
     // survivor's affinities have moved.  Refresh on it.
     connect(doc, &KlustersDoc::hierarchyChanged, this,
-        [this]() { slotRefreshMergeRecommendations(); });
+        [this]() { scheduleRefreshMergeRecommendations(); });
 }
 
 
@@ -1491,7 +1491,7 @@ void KlustersApp::applyPreferences() {
         const bool want = configuration().getShowMergeRecommendPanel();
         if(want != recommendPanel->isVisible()){
             recommendPanel->setVisible(want);
-            if(want) slotRefreshMergeRecommendations();
+            if(want) scheduleRefreshMergeRecommendations();
         }
     }
 
@@ -3693,7 +3693,7 @@ void KlustersApp::slotSingleColorUpdate(int clusterId){
 }
 
 void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
-    slotRefreshMergeRecommendations();   // recommendations follow the selection
+    scheduleRefreshMergeRecommendations();   // recommendations follow the selection
     //Trigger ths action only if the active display does not contain a ProcessWidget
     if(!activeView())
         return;
@@ -3985,6 +3985,16 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
     // atom-only ops the pending set is empty and selection was handled at op time
     // via hierarchyChildrenCreated.
     applyPendingFiberSelection();
+}
+
+void KlustersApp::scheduleRefreshMergeRecommendations()
+{
+    if (refreshRecommendPending) return;          // already scheduled this turn
+    refreshRecommendPending = true;
+    QTimer::singleShot(0, this, [this]() {
+        refreshRecommendPending = false;
+        slotRefreshMergeRecommendations();
+    });
 }
 
 void KlustersApp::scheduleAutoPostClusterEdit(bool clusterSetChanged)
@@ -4315,11 +4325,11 @@ void KlustersApp::slotRefreshMergeRecommendations()
     if (KlustersView* v = activeView()) {
         if (ErrorMatrixView* emv = v->findChild<ErrorMatrixView*>())
             connect(emv, &ErrorMatrixView::matrixUpdated,
-                    this, &KlustersApp::slotRefreshMergeRecommendations,
+                    this, &KlustersApp::scheduleRefreshMergeRecommendations,
                     static_cast<Qt::ConnectionType>(Qt::AutoConnection | Qt::UniqueConnection));
         if (ResidualMatrixView* rmv = v->findChild<ResidualMatrixView*>())
             connect(rmv, &ResidualMatrixView::matrixUpdated,
-                    this, &KlustersApp::slotRefreshMergeRecommendations,
+                    this, &KlustersApp::scheduleRefreshMergeRecommendations,
                     static_cast<Qt::ConnectionType>(Qt::AutoConnection | Qt::UniqueConnection));
     }
 
@@ -4533,7 +4543,7 @@ void KlustersApp::slotTabChange(int index){
 
     // Each display has its own matrices, so the recommendations belong to the
     // display being switched to, not the one left behind.
-    slotRefreshMergeRecommendations();
+    scheduleRefreshMergeRecommendations();
 }
 
 void KlustersApp::slotUpdateDimensionX(int dimensionXValue){
@@ -5046,7 +5056,7 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
     // error or residual matrix afterwards left it reporting them missing
     // forever, because its matrixUpdated() hookup is made during a refresh and
     // so was never armed for a view that did not yet exist.
-    slotRefreshMergeRecommendations();
+    scheduleRefreshMergeRecommendations();
 }
 
 void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType){
