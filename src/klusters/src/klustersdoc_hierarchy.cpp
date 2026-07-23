@@ -315,14 +315,38 @@ void KlustersDoc::rebuildHierarchyFromData(){
     const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
     const QVector<dataType> childByRow = childData->labelByFeatureRow();
     const int n = qMin(cluByRow.size(), childByRow.size());
+    // The nesting invariant (hierarchical-clustering.md): every atom is owned by
+    // exactly one fiber -- all spikes carrying a given .clc id carry the same .clu
+    // id.  buildHierarchyMaps() already checks this on the LOAD path, but this
+    // post-edit rebuild did not: it inserted on first-seen and dropped every later
+    // (child,parent) pair on the floor, so an atom left straddling two fibers by an
+    // edit (a collapseToSelfChildren that did not fully collapse, or an edit path
+    // that never called it) was filed under its first-seen fiber with no trace.
+    // That silent absorption is exactly what produced the g5 "5 children span two
+    // parents" file.  First-seen still wins -- the maps are a derived cache and the
+    // behaviour is unchanged -- but a violation is now reported, with the offending
+    // atoms, so the edit that introduced it can be found instead of vanishing.
+    QSet<int> offenders;                           // distinct atoms seen under >1 fiber
     for (int r = 1; r < n; ++r){                  // feature rows are 1-based
         const int c = static_cast<int>(childByRow[r]);
         if (c <= 0) continue;
-        if (!childToParent.contains(c)){
-            const int f = static_cast<int>(cluByRow[r]);
+        const int f = static_cast<int>(cluByRow[r]);
+        const auto existing = childToParent.constFind(c);
+        if (existing != childToParent.constEnd()){
+            if (existing.value() != f) offenders.insert(c);   // straddler: keep first-seen, flag it
+        } else {
             childToParent.insert(c, f);
             parentToChildren[f].append(c);
         }
+    }
+    if (!offenders.isEmpty()){
+        QList<int> sample(offenders.constBegin(), offenders.constEnd());
+        std::sort(sample.begin(), sample.end());
+        if (sample.size() > 16) sample = sample.mid(0, 16);
+        qWarning() << "[hierarchy] nesting invariant broken after edit:" << offenders.size()
+                   << "atom(s) span more than one fiber; kept each atom's first-seen owner. "
+                      "Offending atom id(s) (up to 16):" << sample
+                   << "-- an edit left straddling atoms uncollapsed; refiberize to re-cut them.";
     }
     for (auto it = parentToChildren.begin(); it != parentToChildren.end(); ++it){
         QList<int>& kids = it.value();
