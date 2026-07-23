@@ -265,6 +265,46 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     // deselected; applyPendingFiberSelection() translates it through any renumber.
     if (!childScopeActive) setPendingFiberSelection(clustersToShow);
     logAfter(clustersToShow);
+
+    // ── Hierarchical sessions: re-cut atoms this move left straddling ──────────
+    // This is the one parent-layer edit that moves an ARBITRARY SUBSET of a
+    // fiber's spikes to another fiber, and the .clc atom layer is not touched by
+    // it.  So an atom wholly inside `fromCluster` whose spikes were only PARTLY
+    // selected now spans two real fibers, breaking the nesting invariant (every
+    // atom owned by exactly one fiber -- hierarchical-clustering.md).  The polygon
+    // split (createNewCluster/createNewClusters) and the parent recluster already
+    // call refiberize() for exactly this reason; this path was the gap, and it is
+    // how a curated g5 triple ended up with atoms spanning two fibers on disk:
+    // TemplateMatrixView::onApplyClicked() moves every spike scoring above the
+    // similarity threshold into the target fiber and leaves the sub-threshold
+    // remainder -- a handful of spikes -- behind in the source.
+    //
+    // Guarded by an actual straddle rather than applied unconditionally, because
+    // the hierarchy operations (promoteChild / moveChild / groupChildrenIntoFiber
+    // / dropChildToNoise) reach this same function to move WHOLE atoms: they break
+    // nothing, they do their own rebuildHierarchyFromData(), and refiberize() would
+    // additionally clear the atom undo/redo history out from under them.  Moving a
+    // whole atom leaves no remainder, so the check below is false for them and this
+    // block is a no-op -- their behaviour is unchanged.
+    if (childData && fromCluster > 1 && toCluster > 1) {
+        const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+        const QVector<dataType> childByRow = childData->labelByFeatureRow();
+        const int n = qMin(cluByRow.size(), childByRow.size());
+        // Atoms that contributed spikes to the move.  Reserve atoms (0 = noise,
+        // 1 = artifact) are excluded: they legitimately span fibers as placeholder
+        // coverage and collapseToSelfChildren treats them separately.
+        QSet<int> movedAtoms;
+        for (dataType r : featureRowSet)
+            if (r >= 1 && static_cast<int>(r) < n && childByRow[static_cast<int>(r)] > 1)
+                movedAtoms.insert(static_cast<int>(childByRow[static_cast<int>(r)]));
+        bool straddles = false;
+        for (int r = 1; r < n && !straddles; ++r)
+            if (static_cast<int>(cluByRow[r]) == fromCluster
+                    && movedAtoms.contains(static_cast<int>(childByRow[r])))
+                straddles = true;      // a contributing atom still has spikes in the source
+        if (straddles)
+            refiberize();              // plurality-home re-cut + maps + hierarchyChanged
+    }
 }
 
 
