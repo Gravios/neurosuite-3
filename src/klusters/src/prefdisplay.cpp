@@ -29,3 +29,6 @@ void   PrefDisplay::setTemplateThresholdMax(double v)   { templateThresholdMaxSp
 double PrefDisplay::getTemplateThresholdMax() const     { return templateThresholdMaxSpinBox->value(); }
 void PrefDisplay::setTemplateXcorrMetric(int i)        { templateXcorrMetricComboBox->setCurrentIndex(i); }
 int  PrefDisplay::getTemplateXcorrMetric() const       { return templateXcorrMetricComboBox->currentIndex(); }
+
+void PrefDisplay::setDriftSliderMaxClusters(int n) { driftSliderMaxClustersSpinBox->setValue(n); }
+int  PrefDisplay::getDriftSliderMaxClusters() const { return driftSliderMaxClustersSpinBox->value(); }

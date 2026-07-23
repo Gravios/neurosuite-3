@@ -99,6 +99,11 @@ Q_SIGNALS:
     /// reset).  Keeps every matrix view's zoom/pan synchronised.
     void viewChanged(double zoom, double panX, double panY);
 
+    /**Re-evaluate the slider's enabled state from geometry AND the current
+     * cluster-count preference.  Public so applyPreferences() can call it when
+     * the limit changes, rather than the change waiting for the next recompute.*/
+    void refreshSliderEnabled();
+
 public Q_SLOTS:
     /// Set the full zoom + pan state from another (cross-connected) matrix
     /// view.  Does not emit viewChanged, so the views can be cross-connected
@@ -160,16 +165,16 @@ private:
      * matrix is only usable together with the means it was computed from —
      * caching the Array alone would leave the slider recomputing a
      * differently-masked matrix.*/
-    /**Above this many clusters the drift slider is disabled.
+    /**Cluster count above which the drift slider is disabled, read fresh from
+     * Preferences > Display > Drift Matrix on each check so a change applies
+     * without reopening the session.  0 means always disabled.
      *
      * A slider step is a full O(clusters^2) pass, so the control degrades from
      * interactive to unusable well before the matrix itself becomes unreadable.
-     * The slider is also only meaningful once the sort has been consolidated --
-     * its job is linking a unit to itself across a period of drift, which is a
-     * question about a few hundred real units, not about thousands of unmerged
-     * fragments.  So this is a guard on a control that has no use yet at that
-     * count, not an arbitrary performance cap.*/
-    static constexpr int MAX_CLUSTERS_FOR_DRIFT_SLIDER = 1000;
+     * It is also only meaningful once the sort has been consolidated -- its job
+     * is linking a unit to itself across a period of drift, a question about a
+     * few hundred real units rather than thousands of unmerged fragments.*/
+    int driftSliderClusterCap() const;
 
     struct Cache {
         Array<double>*                  scores = nullptr;   // owned
@@ -195,8 +200,6 @@ private:
     bool                     sliderCappedByClusterCount = false;
     /**Cancel and reap every slider worker.*/
     void stopShiftThreads();
-    /**Enable/disable the slider from geometry AND cluster count together.*/
-    void refreshSliderEnabled();
     /**A recompute is in flight: the view keeps painting whatever it has and
      * overlays a small badge instead of blanking the frame.*/
     bool       computing = false;

@@ -76,6 +76,7 @@ void Configuration::read() {
     // pair in the session.  The setters clamp.
     setMergeRecommendMax(settings.value("mergeRecommendMax",                 20).toInt());
     setShowMergeRecommendPanel(settings.value("showMergeRecommendPanel",     true).toBool());
+    setDriftSliderMaxClusters(settings.value("driftSliderMaxClusters",      1000).toInt());
     setMergeRecommendMaxShift(settings.value("mergeRecommendMaxShift",        2).toInt());
     setMergeRecommendErrorFloor(settings.value("mergeRecommendErrorFloor",   0.05).toDouble());
     setMergeRecommendQualityFloor(settings.value("mergeRecommendQualityFloor", 0.90).toDouble());
@@ -167,6 +168,7 @@ void Configuration::write() const {
     settings.setValue("reorderMethod",     reorderMethod);
     settings.setValue("mergeRecommendMax",          mergeRecommendMax);
     settings.setValue("showMergeRecommendPanel",    showMergeRecommendPanel);
+    settings.setValue("driftSliderMaxClusters",     driftSliderMaxClusters);
     settings.setValue("mergeRecommendMaxShift",     mergeRecommendMaxShift);
     settings.setValue("mergeRecommendErrorFloor",   mergeRecommendErrorFloor);
     settings.setValue("mergeRecommendQualityFloor", mergeRecommendQualityFloor);

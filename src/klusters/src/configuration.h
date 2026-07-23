@@ -96,6 +96,10 @@ public:
      * lengthen a list nobody reads to the end of.*/
     void setMergeRecommendMax(int n)      {mergeRecommendMax = (n < 1) ? 1 : ((n > 200) ? 200 : n);}
     void setShowMergeRecommendPanel(bool b) {showMergeRecommendPanel = b;}
+    /**0 = always disabled; clamped so a stored value can never make the slider
+     * usable at a count that would freeze it.*/
+    void setDriftSliderMaxClusters(int n)
+        {driftSliderMaxClusters = (n < 0) ? 0 : ((n > 1000000) ? 1000000 : n);}
     /**Lags searched when scoring a pair's envelope overlap, in samples.  Clamped to
      * [0,8]: 0 restores the strict sample-for-sample comparison, and the window is
      * trimmed by maxShift at BOTH ends so every lag is scored on the same samples,
@@ -221,6 +225,7 @@ public:
     int    getMergeRecommendMaxShift()     const {return mergeRecommendMaxShift;}
     int    getMergeRecommendMax()          const {return mergeRecommendMax;}
     bool   getShowMergeRecommendPanel()    const {return showMergeRecommendPanel;}
+    int    getDriftSliderMaxClusters()     const {return driftSliderMaxClusters;}
     double getMergeRecommendErrorFloor()   const {return mergeRecommendErrorFloor;}
     double getMergeRecommendQualityFloor() const {return mergeRecommendQualityFloor;}
     bool   getCurationLogging()   const {return curationLogging;}
@@ -316,6 +321,7 @@ public:
     // own top decile before it is called a recommendation.
     int    getMergeRecommendMaxDefault()          const {return 20;}
     bool   getShowMergeRecommendPanelDefault()    const {return true;}
+    int    getDriftSliderMaxClustersDefault()     const {return 1000;}
     int    getMergeRecommendMaxShiftDefault()     const {return 2;}
     double getMergeRecommendErrorFloorDefault()   const {return 0.05;}
     double getMergeRecommendQualityFloorDefault() const {return 0.90;}
@@ -473,6 +479,8 @@ private:
      * Its ranking sweep is O(clusters^2); at high cluster counts a curator who is
      * not using it should be able to switch it off entirely.*/
     bool   showMergeRecommendPanel;
+    /**Cluster count above which the drift-matrix slider is disabled.*/
+    int    driftSliderMaxClusters;
     int     mergeRecommendMaxShift;           // merge recommendations: lags searched, samples
     double  mergeRecommendErrorFloor;     // absolute floor on the error probability
     double  mergeRecommendQualityFloor;   // min combined percentile rank
