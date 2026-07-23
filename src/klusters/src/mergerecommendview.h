@@ -12,13 +12,19 @@
 #ifndef MERGERECOMMENDVIEW_H
 #define MERGERECOMMENDVIEW_H
 
+#include <QEvent>
 #include <QLabel>
 #include <QList>
 #include <QTreeWidget>
 #include <QWidget>
 
+#include <vector>
+
+#include "mergerecommend.h"
+
 class Data;
 class KlustersView;
+class MergeRecommendThread;
 
 /**Lists the top parent-merge candidates, best first (cap and thresholds come
  * from Preferences -> Sorting -> Recommended Merges).
@@ -32,6 +38,8 @@ class MergeRecommendView : public QWidget {
 
 public:
     explicit MergeRecommendView(QWidget* parent = nullptr);
+    /**Cancels and reaps the ranking worker before the widget goes away.*/
+    ~MergeRecommendView() override;
 
     // The three knobs live in Preferences -> Sorting -> Recommended Merges and
     // are read from Configuration at each refresh, so a change applies to the
@@ -52,14 +60,32 @@ Q_SIGNALS:
     /**A row was activated: select these clusters in the main palette.*/
     void recommendationActivated(const QList<int>& clusters);
 
+protected:
+    /**Receives MergeRecommendEvent (User+604) from the worker.*/
+    void customEvent(QEvent* event) override;
+
 private Q_SLOTS:
     void onItemActivated(QTreeWidgetItem* item, int column);
 
 private:
     void setNotice(const QString& text);
+    /**Fill the tree from a finished ranking.*/
+    void populate(const std::vector<MergeCandidate>& recs);
+    /**Cancel and reap every worker still in flight.*/
+    void stopThreads();
 
     QTreeWidget* tree   = nullptr;
     QLabel*      notice = nullptr;
+
+    // Only the newest generation's result is accepted; anything older is a
+    // refresh that a later edit already superseded.  Mirrors the guard the other
+    // matrix views use.
+    int                                generation = 0;
+    bool                               goingToDie = false;
+    bool                               computing  = false;
+    QList<MergeRecommendThread*>       threadsToBeKill;
+    /**Remembered so an accepted result can report what it was ranked over.*/
+    bool                               lastRestricted = false;
 };
 
 #endif // MERGERECOMMENDVIEW_H

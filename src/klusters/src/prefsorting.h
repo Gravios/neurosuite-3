@@ -24,6 +24,8 @@ public:
     double getMergeRecommendErrorFloor()   const;
     void   setMergeRecommendQualityFloor(double v);
     double getMergeRecommendQualityFloor() const;
+    void   setShowMergeRecommendPanel(bool b);
+    bool   getShowMergeRecommendPanel()    const;
 };
 
 #endif

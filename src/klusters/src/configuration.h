@@ -95,6 +95,7 @@ public:
      * panel ranks every pair before capping, so an unbounded value would only
      * lengthen a list nobody reads to the end of.*/
     void setMergeRecommendMax(int n)      {mergeRecommendMax = (n < 1) ? 1 : ((n > 200) ? 200 : n);}
+    void setShowMergeRecommendPanel(bool b) {showMergeRecommendPanel = b;}
     /**Lags searched when scoring a pair's envelope overlap, in samples.  Clamped to
      * [0,8]: 0 restores the strict sample-for-sample comparison, and the window is
      * trimmed by maxShift at BOTH ends so every lag is scored on the same samples,
@@ -219,6 +220,7 @@ public:
     int    getReorderMethod()     const {return reorderMethod;}
     int    getMergeRecommendMaxShift()     const {return mergeRecommendMaxShift;}
     int    getMergeRecommendMax()          const {return mergeRecommendMax;}
+    bool   getShowMergeRecommendPanel()    const {return showMergeRecommendPanel;}
     double getMergeRecommendErrorFloor()   const {return mergeRecommendErrorFloor;}
     double getMergeRecommendQualityFloor() const {return mergeRecommendQualityFloor;}
     bool   getCurationLogging()   const {return curationLogging;}
@@ -313,6 +315,7 @@ public:
     // actively disbelieve, and 0.90 asks both matrices to rank a pair in their
     // own top decile before it is called a recommendation.
     int    getMergeRecommendMaxDefault()          const {return 20;}
+    bool   getShowMergeRecommendPanelDefault()    const {return true;}
     int    getMergeRecommendMaxShiftDefault()     const {return 2;}
     double getMergeRecommendErrorFloorDefault()   const {return 0.05;}
     double getMergeRecommendQualityFloorDefault() const {return 0.90;}
@@ -466,6 +469,10 @@ private:
     int     realignMode;
     int     reorderMethod;   // reorder-by-similarity: 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
     int     mergeRecommendMax;                // merge recommendations: max pairs listed
+    /**Whether the Recommended-merges dock is shown in hierarchical sessions.
+     * Its ranking sweep is O(clusters^2); at high cluster counts a curator who is
+     * not using it should be able to switch it off entirely.*/
+    bool   showMergeRecommendPanel;
     int     mergeRecommendMaxShift;           // merge recommendations: lags searched, samples
     double  mergeRecommendErrorFloor;     // absolute floor on the error probability
     double  mergeRecommendQualityFloor;   // min combined percentile rank

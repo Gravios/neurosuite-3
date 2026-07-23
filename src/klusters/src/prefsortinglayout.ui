@@ -77,6 +77,15 @@
      </property>
      <layout class="QVBoxLayout" name="mergeRecommendGroupLayout">
       <item>
+       <widget class="QCheckBox" name="showMergeRecommendPanelCheckBox">
+        <property name="text">
+         <string>Show the recommended-merges panel</string>
+        </property>
+        <property name="toolTip"><string>Show the Recommended merges dock in hierarchical sessions. Ranking compares every pair of clusters, so at high cluster counts the scan is substantial; turn this off to skip it entirely when you are not using the recommendations. The scan itself runs on a background thread and does not block editing. Default: on.</string></property>
+        <property name="checked"><bool>true</bool></property>
+       </widget>
+      </item>
+      <item>
        <layout class="QHBoxLayout" name="mergeRecommendMaxRow">
         <item>
          <widget class="QLabel" name="mergeRecommendMaxLabel">

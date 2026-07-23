@@ -110,23 +110,85 @@ inline std::vector<double> mrPercentileRanks(const std::vector<double>& v,
  * comparable absolute reading — its spread is data-dependent — so it is left to
  * speak by rank only.
  */
-inline std::vector<MergeCandidate> mrRecommendMerges(
+/**A pair that has cleared the absolute error gate, carrying its symmetrised
+ * error score.  This is the boundary between the two halves of the ranking: the
+ * O(clusters^2) sweep that produces these, and the expensive per-pair overlap
+ * scoring that consumes them.*/
+struct MergePair {
+    int    a = -1;
+    int    b = -1;
+    double errorScore = 0.0;
+};
+
+/**First half: sweep every unordered pair and keep those clearing @p errorMin.
+ *
+ * Split out of mrRecommendMerges so the caller can run this cheap arithmetic
+ * sweep and the expensive ranking half on DIFFERENT THREADS -- the sweep needs
+ * live access to the error matrix, which is owned by the GUI thread and freed
+ * wholesale when a new one lands, while the ranking half needs only the values
+ * gathered here.  Splitting is what lets the ranking be handed to a worker
+ * without copying the whole clusters x clusters matrix (610 MB at 8736
+ * clusters) or risking a use-after-free on it.
+ *
+ * The gate is absolute and applied BEFORE ranking so a disbelieved pair cannot
+ * be ranked in by being merely less bad than the rest, and so it does not
+ * occupy a rank slot and depress the real ones.*/
+inline std::vector<MergePair> mrGatePairsByError(
     const std::vector<int>& errIds,
     const std::function<double(int,int)>& errAt,
-    const std::function<bool(int,int,double&)>& overlapOf,
-    std::size_t maxCount,
-    double errorMin,
-    double qualityFloor,
-    const std::vector<int>& restrictTo = std::vector<int>())
+    double errorMin)
 {
-    std::vector<MergeCandidate> out;
+    std::vector<MergePair> gated;
 
     std::map<int,int> errRow;
     for (std::size_t i = 0; i < errIds.size(); ++i) errRow[errIds[i]] = static_cast<int>(i);
 
     std::vector<int> shared(errIds);
     std::sort(shared.begin(), shared.end());
-    if (shared.size() < 2) return out;
+    if (shared.size() < 2) return gated;
+
+    // Resolve each cluster's matrix row ONCE, up front.  Doing the two
+    // errRow[] lookups inside the inner loop costs a std::map probe per pair --
+    // 76 M cache-missing probes at 8736 clusters, which measured 3.5 s and
+    // dominated the sweep.  Hoisted, the inner loop is two vector reads.
+    std::vector<int> rowOf(shared.size());
+    for (std::size_t i = 0; i < shared.size(); ++i) rowOf[i] = errRow[shared[i]];
+
+    for (std::size_t i = 0; i < shared.size(); ++i) {
+        const int a  = shared[i];
+        const int ea = rowOf[i];
+        for (std::size_t j = i + 1; j < shared.size(); ++j) {
+            const int b  = shared[j];
+            const int eb = rowOf[j];
+
+            // The error matrix is asymmetric: mean of the two directions, matching
+            // slotSortClustersByErrorPval.  The overlap needs no such choice.
+            const double e = 0.5 * (errAt(ea, eb) + errAt(eb, ea));
+            if (e < errorMin) continue;
+
+            MergePair p; p.a = a; p.b = b; p.errorScore = e;
+            gated.push_back(p);
+        }
+    }
+    return gated;
+}
+
+/**Second half: score each gated pair's envelope overlap, rank both witnesses by
+ * percentile, and return the best @p maxCount.
+ *
+ * @p cancelled, if set, is polled during the overlap loop; returning true
+ * abandons the run and yields an empty result.  This is the expensive half --
+ * one envelope IOU with a lag search per surviving pair -- so it must be
+ * interruptible when it runs on a worker.*/
+inline std::vector<MergeCandidate> mrRankGatedPairs(
+    const std::vector<MergePair>& gated,
+    const std::function<bool(int,int,double&)>& overlapOf,
+    std::size_t maxCount,
+    double qualityFloor,
+    const std::vector<int>& restrictTo = std::vector<int>(),
+    const std::function<bool()>& cancelled = std::function<bool()>())
+{
+    std::vector<MergeCandidate> out;
 
     std::vector<int> sel(restrictTo);
     std::sort(sel.begin(), sel.end());
@@ -135,39 +197,29 @@ inline std::vector<MergeCandidate> mrRecommendMerges(
         return std::binary_search(sel.begin(), sel.end(), id);
     };
 
-    // NB the restriction is applied AFTER ranking, not here.  Ranking only the
-    // selected cluster's own pairs would make "top decile" mean "top decile among
-    // this cluster's partners", so a cluster with nothing worth merging would
-    // still present its least-bad partner as a 0.9+ recommendation.  Quality has
-    // to mean the same thing whatever is selected, so the percentiles are always
-    // taken over every pair in the session and the selection only filters what is
-    // shown.
+    // NB the restriction is applied AFTER ranking, not during the sweep.  Ranking
+    // only the selected cluster's own pairs would make "top decile" mean "top
+    // decile among this cluster's partners", so a cluster with nothing worth
+    // merging would still present its least-bad partner as a 0.9+
+    // recommendation.  Quality has to mean the same thing whatever is selected,
+    // so the percentiles are always taken over every pair in the session and the
+    // selection only filters what is shown.
     std::vector<MergeCandidate> pairs;
     std::vector<double> errVals, resVals;
-    for (std::size_t i = 0; i < shared.size(); ++i) {
-        for (std::size_t j = i + 1; j < shared.size(); ++j) {
-            const int a = shared[i], b = shared[j];
+    for (std::size_t k = 0; k < gated.size(); ++k) {
+        if (cancelled && (k % 4096u) == 0u && cancelled()) return out;
 
-            const int ea = errRow[a], eb = errRow[b];
+        const int a = gated[k].a, b = gated[k].b;
+        const double e = gated[k].errorScore;
 
-            // The error matrix is asymmetric: mean of the two directions, matching
-            // slotSortClustersByErrorPval.  The overlap needs no such choice.
-            const double e = 0.5 * (errAt(ea, eb) + errAt(eb, ea));
+        double ov = 0.0;
+        if (!overlapOf(a, b, ov)) continue;   // no waveform -> no opinion
 
-            // Absolute gate before ranking, so a disbelieved pair cannot be
-            // ranked into the list by being merely less bad than the rest — and
-            // so it does not occupy a rank slot and depress the real ones.
-            if (e < errorMin) continue;
-
-            double ov = 0.0;
-            if (!overlapOf(a, b, ov)) continue;   // no waveform -> no opinion
-
-            MergeCandidate c;
-            c.a = a; c.b = b; c.errorScore = e; c.overlapScore = ov;
-            pairs.push_back(c);
-            errVals.push_back(e);
-            resVals.push_back(ov);
-        }
+        MergeCandidate c;
+        c.a = a; c.b = b; c.errorScore = e; c.overlapScore = ov;
+        pairs.push_back(c);
+        errVals.push_back(e);
+        resVals.push_back(ov);
     }
     if (pairs.empty()) return out;
 
@@ -188,6 +240,21 @@ inline std::vector<MergeCandidate> mrRecommendMerges(
         out.push_back(c);
     }
     return out;
+}
+
+/**Both halves, in sequence, on the calling thread.  Behaviour is exactly what it
+ * was before the split, so existing callers and tests are unaffected.*/
+inline std::vector<MergeCandidate> mrRecommendMerges(
+    const std::vector<int>& errIds,
+    const std::function<double(int,int)>& errAt,
+    const std::function<bool(int,int,double&)>& overlapOf,
+    std::size_t maxCount,
+    double errorMin,
+    double qualityFloor,
+    const std::vector<int>& restrictTo = std::vector<int>())
+{
+    return mrRankGatedPairs(mrGatePairsByError(errIds, errAt, errorMin),
+                            overlapOf, maxCount, qualityFloor, restrictTo);
 }
 
 #endif // MERGERECOMMEND_H

@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "mergerecommendview.h"
+#include "mergerecommendthread.h"
 
 #include "configuration.h"
 #include "errormatrixview.h"
@@ -12,9 +13,11 @@
 #include "klustersview.h"
 #include "mergerecommend.h"
 
+#include <QApplication>
 #include <QHeaderView>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <functional>
 #include <vector>
 
@@ -106,20 +109,14 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
     std::function<double(int,int)> errAt = [E](int i, int j){
         return (*E)(i + 1, j + 1);
     };
-    std::function<bool(int,int,double&)> overlapOf = [data](int a, int b, double& iou){
-        // Search a lag rather than demanding the two templates line up exactly.
-        // Spikes are extracted at a detected peak and that alignment is not exact,
-        // so a pair split by one sample (30 us at sr=32552) used to score like an
-        // unrelated pair and was never listed -- which is the pair most worth
-        // listing.
-        // The winning lag is discarded here: mrRecommendMerges' overlap callback is
-        // bool(int,int,double&) and has nowhere to put it.  It is worth showing --
-        // a pair that only matches at +/-1 is a different finding from one that
-        // matches at 0 -- but that means widening Recommendation and the panel's
-        // columns, which is a separate change from fixing the score.
-        return data->clusterEnvelopeOverlap(
-            a, b, iou, configuration().getMergeRecommendMaxShift(), nullptr);
-    };
+    // The envelope overlap itself now runs on the worker (mergerecommendthread),
+    // scored against a snapshot of the templates rather than the live cache.  It
+    // still searches a lag rather than demanding the two templates line up
+    // exactly: spikes are extracted at a detected peak and that alignment is not
+    // exact, so a pair split by one sample (30 us at sr=32552) would otherwise
+    // score like an unrelated pair -- and that is the pair most worth listing.
+    // The winning lag is still discarded: the overlap callback is
+    // bool(int,int,double&) and has nowhere to put it.
 
     // Read the knobs fresh each refresh so a Preferences change lands on the
     // next refresh rather than at the next restart.  Configuration clamps them,
@@ -132,16 +129,113 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
     restrict.reserve(static_cast<size_t>(selected.size()));
     for (const int id : selected) restrict.push_back(id);
 
-    const std::vector<MergeCandidate> recs =
-        mrRecommendMerges(eIds, errAt, overlapOf,
-                          static_cast<size_t>(maxRecs), eFloor, qFloor, restrict);
+    // ── half 1, here: the O(clusters^2) arithmetic sweep ────────────────────
+    // It has to run on this thread because it reads the error matrix live, and
+    // ErrorMatrixView frees that matrix wholesale when a new one lands.  It is
+    // cheap per pair -- two array reads, an average and a compare -- and it is
+    // what lets half 2 be handed off without copying the matrix (610 MB at 8736
+    // clusters) or risking a use-after-free on it.
+    const std::vector<MergePair> gated = mrGatePairsByError(eIds, errAt, eFloor);
 
-    if (recs.empty()) {
+    if (gated.empty()) {
         setNotice(selected.isEmpty()
             ? tr("No pair clears both witnesses right now.\n"
                  "(Waveforms must be computed for the overlap.)")
             : tr("Nothing worth merging with the selected cluster(s).\n"
                  "Clear the selection to see the whole session."));
+        return;
+    }
+
+    // Snapshot only the templates the surviving pairs actually reference, so the
+    // worker never touches Data.  A cluster with no current template is simply
+    // absent, which the worker reads as "no opinion" -- the same contract
+    // clusterEnvelopeOverlap has when it returns false.
+    std::vector<int> tplId;
+    std::vector<std::vector<double>> tplMean, tplSd;
+    {
+        std::vector<int> need;
+        need.reserve(gated.size() * 2);
+        for (const MergePair& p : gated) { need.push_back(p.a); need.push_back(p.b); }
+        std::sort(need.begin(), need.end());
+        need.erase(std::unique(need.begin(), need.end()), need.end());
+        tplId.reserve(need.size());
+        tplMean.reserve(need.size());
+        tplSd.reserve(need.size());
+        std::vector<double> m, sd;
+        for (const int id : need)
+            if (data->clusterTemplateFor(id, m, sd)) {
+                tplId.push_back(id);
+                tplMean.push_back(m);
+                tplSd.push_back(sd);
+            }
+    }
+
+    // ── half 2, on a worker: one envelope IOU with a lag search per pair ─────
+    // This is the part that took minutes on the GUI thread at 8736 fibers.
+    ++generation;
+    computing = true;
+    lastRestricted = !selected.isEmpty();
+    for (MergeRecommendThread* t : threadsToBeKill) t->stopProcessing();
+
+    setNotice(tr("Ranking %1 candidate pair(s)\u2026").arg(static_cast<qulonglong>(gated.size())));
+
+    threadsToBeKill.append(new MergeRecommendThread(
+        *this, generation, gated, tplId, tplMean, tplSd,
+        data->nbSamplesPerWaveform(), data->nbOfChannels(),
+        configuration().getMergeRecommendMaxShift(),
+        static_cast<std::size_t>(maxRecs), qFloor, restrict));
+}
+
+MergeRecommendView::~MergeRecommendView()
+{
+    goingToDie = true;
+    stopThreads();
+}
+
+void MergeRecommendView::stopThreads()
+{
+    for (MergeRecommendThread* t : threadsToBeKill) t->stopProcessing();
+    for (MergeRecommendThread* t : threadsToBeKill) while (!t->wait()) {}
+    qDeleteAll(threadsToBeKill);
+    threadsToBeKill.clear();
+    QApplication::removePostedEvents(this);
+}
+
+void MergeRecommendView::customEvent(QEvent* event)
+{
+    if (event->type() != QEvent::Type(QEvent::User + 604)) return;
+
+    auto* ev     = static_cast<MergeRecommendThread::MergeRecommendEvent*>(event);
+    auto* thread = ev->parentThread();
+
+    // Only the generation we are waiting on may paint, and only it clears the
+    // badge: a superseded result arriving must not cancel the newer compute that
+    // replaced it.
+    const bool accepted = (thread->getGeneration() == generation
+                           && thread->completed());
+    if (thread->getGeneration() == generation) computing = false;
+
+    std::vector<MergeCandidate> recs;
+    if (accepted) recs = thread->getResults();
+
+    while (!thread->wait()) {}
+    threadsToBeKill.removeAll(thread);
+    delete thread;
+
+    if (goingToDie || !accepted) return;
+    populate(recs);
+}
+
+void MergeRecommendView::populate(const std::vector<MergeCandidate>& recs)
+{
+    tree->clear();
+
+    if (recs.empty()) {
+        setNotice(lastRestricted
+            ? tr("Nothing worth merging with the selected cluster(s).\n"
+                 "Clear the selection to see the whole session.")
+            : tr("No pair clears both witnesses right now.\n"
+                 "(Waveforms must be computed for the overlap.)"));
         return;
     }
     setNotice(QString());

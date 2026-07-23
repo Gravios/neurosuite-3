@@ -131,7 +131,11 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
             return;
         }
         childPanel->show();
-        if(recommendPanel) recommendPanel->show();
+        // The recommend panel is opt-out: its ranking sweep compares every pair of
+        // clusters, so a curator who is not using it should not pay for it at all.
+        // (Preferences > Sorting > Recommended Merges.)
+        if(recommendPanel && configuration().getShowMergeRecommendPanel())
+            recommendPanel->show();
         repopulateChildPalette(clusterPalette->selectedClusters());
         slotRefreshMergeRecommendations();
     } else {

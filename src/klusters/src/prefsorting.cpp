@@ -16,3 +16,5 @@ void   PrefSorting::setMergeRecommendErrorFloor(double v) { mergeRecommendErrorF
 double PrefSorting::getMergeRecommendErrorFloor() const { return mergeRecommendErrorFloorSpinBox->value(); }
 void   PrefSorting::setMergeRecommendQualityFloor(double v) { mergeRecommendQualityFloorSpinBox->setValue(v); }
 double PrefSorting::getMergeRecommendQualityFloor() const { return mergeRecommendQualityFloorSpinBox->value(); }
+void   PrefSorting::setShowMergeRecommendPanel(bool b) { showMergeRecommendPanelCheckBox->setChecked(b); }
+bool   PrefSorting::getShowMergeRecommendPanel() const { return showMergeRecommendPanelCheckBox->isChecked(); }
