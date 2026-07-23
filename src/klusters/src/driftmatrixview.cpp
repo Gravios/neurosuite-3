@@ -9,6 +9,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "driftmatrixview.h"
+
+#include <QShowEvent>
 #include "matrixgrid.h"
 #include "matrixbadge.h"
 #include "driftmatrixthread.h"
@@ -214,7 +216,31 @@ void DriftMatrixView::updateMatrixContents()
     // Only this path invalidates: a mere selection change must keep the other
     // slot, or swapping back would cost a recompute.
     invalidateCaches();
+
+    // Do not compute a matrix nobody is looking at.  KlustersApp emits
+    // computeDriftMatrix() on EVERY edit, and the matrix docks are tabified, so
+    // a drift matrix sitting behind the error matrix tab -- or on a display the
+    // user has switched away from -- was doing a full O(clusters^2) pass per
+    // edit for a widget with no pixels on screen.  isVisible() is false for a
+    // dock that is closed, minimised, on a hidden display, or tabbed behind
+    // another; showEvent() below picks the work up again the moment it is
+    // actually shown, so nothing is silently left out of date.
+    if (!isVisible()) {
+        isStale = true;
+        return;
+    }
+
     launchCompute();
+}
+
+void DriftMatrixView::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    // Revealed (tab selected, dock reopened, display switched back).  Recompute
+    // only if an edit happened while it was hidden -- otherwise selecting the
+    // tab would relaunch a matrix that is already current.
+    if (!goingToDie && isStale)
+        launchCompute();
 }
 
 void DriftMatrixView::customEvent(QEvent* event)
