@@ -1429,6 +1429,24 @@ private:
     bool autoPostEditPending    = false;
     bool autoPostEditSetChanged = false;
 
+    /// Coalesced, deferred entry point for slotRefreshMergeRecommendations().
+    ///
+    /// The refresh is reachable several times over for ONE user action: an edit
+    /// emits hierarchyChanged, and then the error and residual matrices each land
+    /// their recomputed result and emit matrixUpdated -- three refreshes for one
+    /// merge.  Selection is worse: slotUpdateShownClusters() refreshes on every
+    /// change, so holding an arrow key down in the palette fires one per
+    /// keystroke.  Each refresh costs an O(clusters^2) error-gate sweep on this
+    /// thread (~0.5 s at 8736 clusters), so the duplicates are the difference
+    /// between a hitch and a stall.
+    ///
+    /// Collapsing them to one run per event-loop turn is safe because the refresh
+    /// is a pure READER -- it recomputes the panel from whatever the current state
+    /// is -- so a coalesced run produces exactly what the last of the collapsed
+    /// runs would have.  Mirrors scheduleAutoPostClusterEdit above.
+    void scheduleRefreshMergeRecommendations();
+    bool refreshRecommendPending = false;
+
     /**Start ONE worker that processes the whole @p clusterIds list back-to-back
      * in a single thread (RealignWorker batch mode), wired to
      * slotRealignClusterDone (progress) and slotRealignBatchFinished (finalise).

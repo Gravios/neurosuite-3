@@ -137,7 +137,7 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
         if(recommendPanel && configuration().getShowMergeRecommendPanel())
             recommendPanel->show();
         repopulateChildPalette(clusterPalette->selectedClusters());
-        slotRefreshMergeRecommendations();
+        scheduleRefreshMergeRecommendations();
     } else {
         childPanel->hide();
         if(recommendPanel) recommendPanel->hide();
