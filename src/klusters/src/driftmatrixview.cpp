@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "driftmatrixview.h"
+#include "driftshiftthread.h"
 
 #include <QShowEvent>
 #include "matrixgrid.h"
@@ -126,6 +127,9 @@ DriftMatrixView::DriftMatrixView(KlustersDoc& doc_, KlustersView& view_,
 DriftMatrixView::~DriftMatrixView()
 {
     willBeKilled();
+    // Reap the slider workers too: each holds a DriftMatrixView& and posts to it
+    // on exit, so letting one outlive this object posts to freed memory.
+    stopShiftThreads();
     for (DriftMatrixThread* t : threadsToBeKill)
         while (!t->wait()) {}
     qDeleteAll(threadsToBeKill);
@@ -141,6 +145,8 @@ void DriftMatrixView::willBeKilled()
         goingToDie = true;
         for (DriftMatrixThread* t : threadsToBeKill)
             t->stopProcessing();
+        for (DriftShiftThread* t : shiftThreads)
+            t->stopProcessing();
     }
 }
 
@@ -151,6 +157,7 @@ bool DriftMatrixView::isThreadsRunning() const
 
 void DriftMatrixView::stopRunningThreadsSync()
 {
+    stopShiftThreads();
     for (DriftMatrixThread* t : threadsToBeKill)
         t->stopProcessing();
     for (DriftMatrixThread* t : threadsToBeKill)
@@ -245,6 +252,42 @@ void DriftMatrixView::showEvent(QShowEvent* event)
 
 void DriftMatrixView::customEvent(QEvent* event)
 {
+    // ── slider recompute (User+606) ─────────────────────────────────────────
+    if (event->type() == QEvent::Type(QEvent::User + 606)) {
+        auto* sev = static_cast<DriftShiftThread::DriftShiftEvent*>(event);
+        auto* st  = sev->parentThread();
+
+        Array<double>* fresh = st->getScores();
+        // Only the newest drag position may paint; every earlier one was
+        // cancelled by it and returns nullptr anyway.
+        const bool ok = (fresh != nullptr && st->getGeneration() == shiftGeneration);
+        if (st->getGeneration() == shiftGeneration) computing = false;
+
+        if (ok) {
+            // Install into the cache slot this run was computed for, so the
+            // matrix being painted and the cached one never diverge -- the old
+            // in-place write kept them identical by construction and the swap
+            // has to preserve that.
+            Cache& slot = st->wasForSelection() ? cacheSel : cacheAll;
+            delete slot.scores;
+            slot.scores = fresh;
+            slot.valid  = true;
+            scores      = fresh;
+        } else {
+            delete fresh;
+        }
+
+        while (!st->wait()) {}
+        shiftThreads.removeAll(st);
+        delete st;
+
+        if (!goingToDie) {
+            if (ok) { updateWindow(); setCursor(Qt::ArrowCursor); }
+            update();
+        }
+        return;
+    }
+
     if (event->type() != QEvent::Type(QEvent::User + 604)) return;
 
     auto* ev     = static_cast<DriftMatrixThread::DriftMatrixEvent*>(event);
@@ -290,8 +333,7 @@ void DriftMatrixView::customEvent(QEvent* event)
             // Without geometry the shift is meaningless: keep the (unshifted)
             // matrix visible but say why the slider is dead rather than leaving
             // the user to guess.
-            driftSlider->setEnabled(geometryOk);
-            maxUmSpin->setEnabled(geometryOk);
+            refreshSliderEnabled();
             if (!geometryOk) {
                 driftLabel->setText(tr("Drift: n/a"));
                 const QString why = geometryError.isEmpty()
@@ -316,14 +358,54 @@ void DriftMatrixView::customEvent(QEvent* event)
 
 void DriftMatrixView::recomputeAtCurrentDrift()
 {
+    if (goingToDie) return;
     if (!dataReady || !geometryOk || scores == nullptr) return;
     if (meanWav.empty() || static_cast<int>(meanWav.size()) != clusterList.size())
         return;
+    // Belt and braces: the slider is disabled above the cap, but activateCache()
+    // and the range spin box can also reach here.
+    if (static_cast<int>(meanWav.size()) > MAX_CLUSTERS_FOR_DRIFT_SLIDER) return;
 
-    dmComputeDriftMatrix(meanWav, depths, nChanCached, nSampCached,
-                         maxShiftCached, static_cast<float>(currentDriftUm),
-                         *scores);
+    // Off-thread, into a NEW matrix.  This used to run inline and write straight
+    // into *scores -- safe only because it held the GUI thread throughout.  A
+    // drag issues one of these per valueChanged, so each new position cancels
+    // the one before it and only the last to survive is painted.
+    ++shiftGeneration;
+    for (DriftShiftThread* t : shiftThreads) t->stopProcessing();
+
+    computing = true;                       // badge over the current matrix
+    shiftThreads.append(new DriftShiftThread(
+        *this, shiftGeneration, meanWav, depths,
+        nChanCached, nSampCached, maxShiftCached, currentDriftUm,
+        !cachedSelection.isEmpty()));
     update();
+}
+
+void DriftMatrixView::stopShiftThreads()
+{
+    for (DriftShiftThread* t : shiftThreads) t->stopProcessing();
+    for (DriftShiftThread* t : shiftThreads) while (!t->wait()) {}
+    qDeleteAll(shiftThreads);
+    shiftThreads.clear();
+}
+
+void DriftMatrixView::refreshSliderEnabled()
+{
+    const int nCl = static_cast<int>(meanWav.size());
+    sliderCappedByClusterCount = (nCl > MAX_CLUSTERS_FOR_DRIFT_SLIDER);
+    const bool on = geometryOk && !sliderCappedByClusterCount;
+    driftSlider->setEnabled(on);
+    maxUmSpin->setEnabled(on);
+
+    if (sliderCappedByClusterCount) {
+        driftLabel->setText(tr("Drift: n/a"));
+        driftSlider->setToolTip(
+            tr("The drift slider is disabled above %1 clusters (this group has %2).\n"
+               "Each step recomputes every cluster pair, and drift linking is only\n"
+               "meaningful once the sort has been consolidated. Merge down and it\n"
+               "re-enables itself.")
+                .arg(MAX_CLUSTERS_FOR_DRIFT_SLIDER).arg(nCl));
+    }
 }
 
 void DriftMatrixView::activateCache(const Cache& c)
@@ -336,8 +418,7 @@ void DriftMatrixView::activateCache(const Cache& c)
     depths      = c.depths;
     nChanCached = c.nChan;
     geometryOk  = c.geometryOk;
-    driftSlider->setEnabled(geometryOk);
-    maxUmSpin->setEnabled(geometryOk);
+    refreshSliderEnabled();
     dataReady = true;
     updateWindow();
     setCursor(Qt::ArrowCursor);
