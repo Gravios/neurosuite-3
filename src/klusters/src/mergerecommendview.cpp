@@ -203,7 +203,7 @@ void MergeRecommendView::stopThreads()
 
 void MergeRecommendView::customEvent(QEvent* event)
 {
-    if (event->type() != QEvent::Type(QEvent::User + 604)) return;
+    if (event->type() != QEvent::Type(QEvent::User + 605)) return;
 
     auto* ev     = static_cast<MergeRecommendThread::MergeRecommendEvent*>(event);
     auto* thread = ev->parentThread();

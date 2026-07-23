@@ -42,7 +42,7 @@ class MergeRecommendView;
 // panel is outside of, since it lives in a dock rather than under a
 // KlustersView.
 //
-// Posts MergeRecommendEvent (User+604) when done.
+// Posts MergeRecommendEvent (User+605) when done.
 // ---------------------------------------------------------------------------
 class MergeRecommendThread : public QThread {
 public:
@@ -67,7 +67,7 @@ public:
         ~MergeRecommendEvent() override {}
     private:
         explicit MergeRecommendEvent(MergeRecommendThread& t)
-            : QEvent(QEvent::Type(QEvent::User + 604)), thread(t) {}
+            : QEvent(QEvent::Type(QEvent::User + 605)), thread(t) {}
         MergeRecommendThread& thread;
     };
 

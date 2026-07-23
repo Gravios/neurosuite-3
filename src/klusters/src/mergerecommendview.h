@@ -61,7 +61,7 @@ Q_SIGNALS:
     void recommendationActivated(const QList<int>& clusters);
 
 protected:
-    /**Receives MergeRecommendEvent (User+604) from the worker.*/
+    /**Receives MergeRecommendEvent (User+605) from the worker.*/
     void customEvent(QEvent* event) override;
 
 private Q_SLOTS:
