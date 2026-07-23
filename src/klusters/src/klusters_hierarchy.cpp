@@ -153,6 +153,7 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
     if(mDropChildNoise) mDropChildNoise->setEnabled(editable);
     if(mRefiberize)     mRefiberize->setEnabled(editable);
     if(mMergeChildren)  mMergeChildren->setEnabled(editable);
+    if(mMergeAllChildren) mMergeAllChildren->setEnabled(editable);
     if(mUndoChildEdit)  mUndoChildEdit->setEnabled(editable && doc->childUndoCount() > 0);
     if(mRedoChildEdit)  mRedoChildEdit->setEnabled(editable && doc->childRedoCount() > 0);
 }
@@ -166,6 +167,36 @@ void KlustersApp::slotMergeChildren(){
     }
     if(doc->mergeChildren(kids, *activeView()) < 0)
         statusBar()->showMessage(tr("Children must belong to the same fiber to merge."), 4000);
+    if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
+    if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
+}
+
+void KlustersApp::slotMergeAllChildrenToSelf(){
+    if(!activeView() || !doc->hasChildClustering()) return;
+    // Destructive across the whole session -- the entire sub-mode layer goes away
+    // -- so confirm before doing it rather than after.  Undo exists (one step),
+    // but a mis-click on 8000+ fibers is not something to discover by surprise.
+    const QMessageBox::StandardButton go = QMessageBox::question(this,
+        tr("Merge all children"),
+        tr("Merge every fiber's child atoms into a single self child\n"
+           "(atom id == fiber id)?\n\n"
+           "This discards all sub-mode structure in the atom layer for the\n"
+           "whole session.  It can be undone in one step with Ctrl+Shift+Z,\n"
+           "and is written to disk only when you save."),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if(go != QMessageBox::Yes) return;
+
+    const int removed = doc->mergeAllChildrenToSelf(*activeView());
+    if(removed < 0)
+        statusBar()->showMessage(tr("Could not flatten: the fiber and atom layers "
+                                    "disagree in length."), 6000);
+    else if(removed == 0)
+        statusBar()->showMessage(tr("Nothing to do: every fiber already has a single "
+                                    "self child."), 4000);
+    else
+        statusBar()->showMessage(tr("Merged all children: %1 atom(s) removed; each fiber "
+                                    "is now its own self child.").arg(removed), 6000);
+    repopulateChildPalette(clusterPalette->selectedClusters());
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
 }

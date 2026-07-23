@@ -3777,6 +3777,73 @@ void Data::restoreClusterLabels(const QVector<dataType>& labels)
     }
 }
 
+void Data::setClusterLabels(const QVector<dataType>& labels)
+{
+    if (labels.size() < static_cast<int>(nbSpikes) + 1) return;   // size guard
+
+    // Bucket rows by target id.  QMap iterates ascending, so writing in this
+    // order leaves the spike table physically sorted by cluster id -- the
+    // invariant highestClusterId() / nextFreeClusterId() depend on (they read
+    // row 2 at the last physical position).  Row order within a cluster stays
+    // ascending == time order, since we walk rows ascending.
+    QMap<dataType, QList<dataType>> rowsByCluster;
+    for (dataType r = 1; r <= nbSpikes; ++r)
+        rowsByCluster[labels[static_cast<int>(r)]].append(r);
+
+    SortableTable*  spikesByClusterTemp = new SortableTable();
+    ClusterInfoMap* clusterInfoMapTemp  = new ClusterInfoMap();
+    spikesByClusterTemp->setSize(nbSpikes);
+
+    dataType pos = 1;
+    for (auto it = rowsByCluster.constBegin(); it != rowsByCluster.constEnd(); ++it) {
+        const dataType cid = it.key();
+        const QList<dataType>& rows = it.value();
+        const dataType clStart = pos;
+        for (dataType row1 : rows) {
+            (*spikesByClusterTemp)(1, pos) = row1;
+            (*spikesByClusterTemp)(2, pos) = cid;
+            ++pos;
+        }
+        // Carry the surviving cluster's user information (structure / type / id /
+        // quality / notes) across the rebuild; a target id that did not exist
+        // before starts with the default payload.
+        if (clusterInfoMap->contains(cid)) {
+            const ClusterInfo old = clusterInfoMap->value(cid);
+            clusterInfoMapTemp->insert(cid,
+                ClusterInfo(clStart, static_cast<dataType>(rows.size()),
+                            old.getStructure(), old.getType(),
+                            old.getId(), old.getQuality(), old.getNotes()));
+        } else {
+            clusterInfoMapTemp->insert(cid,
+                ClusterInfo(clStart, static_cast<dataType>(rows.size())));
+        }
+    }
+
+    // Every cluster that existed before or exists now may have changed
+    // membership, so its cached waveforms / correlograms are stale.
+    {
+        QList<dataType> before = clusterIds();
+        QSet<dataType> touched(before.begin(), before.end());
+        for (auto it = clusterInfoMapTemp->constBegin(); it != clusterInfoMapTemp->constEnd(); ++it)
+            touched.insert(it.key());
+        for (dataType cid : touched) {
+            invalidateWaveformCache(static_cast<int>(cid));
+            invalidateCorrelogramCache(static_cast<int>(cid));
+        }
+    }
+
+    // Cluster 0's membership can change here, and the dimension min/max are
+    // derived from it -- mirrors the criterion used in moveSpikeSubset /
+    // createNewCluster.
+    const bool dimChanged =
+        clusterInfoMap->contains(0) != clusterInfoMapTemp->contains(0)
+        || (clusterInfoMap->contains(0) && clusterInfoMapTemp->contains(0)
+            && clusterInfoMap->value(0).nbSpikes() != clusterInfoMapTemp->value(0).nbSpikes());
+
+    // Pushes the previous tables onto the undo stack and swaps in the new ones.
+    prepareUndo(spikesByClusterTemp, clusterInfoMapTemp, dimChanged);
+}
+
 
 // ---------------------------------------------------------------------------
 // Data::splitClusterTwoWays

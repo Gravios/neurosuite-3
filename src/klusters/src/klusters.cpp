@@ -891,6 +891,11 @@ void KlustersApp::createMenus()
                                "parent map.  Run after reassigning / consolidating the fibers."));
     hierarchyMenu->addSeparator();
     mMergeChildren = hierarchyMenu->addAction(tr("Merge Selected &Children (atom)"));
+    mMergeAllChildren = hierarchyMenu->addAction(tr("Merge &All Children into Self (flatten)"));
+    mMergeAllChildren->setToolTip(tr("Walk every fiber and merge its child atoms into one self child\n"
+                                     "(atom id == fiber id), so the atom layer becomes a copy of the\n"
+                                     "fiber layer.  Discards all sub-mode structure -- undo with\n"
+                                     "Ctrl+Shift+Z."));
     mUndoChildEdit = hierarchyMenu->addAction(tr("&Undo Child-Layer Edit"));
     mUndoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z));
     mRedoChildEdit = hierarchyMenu->addAction(tr("&Redo Child-Layer Edit"));
@@ -903,6 +908,7 @@ void KlustersApp::createMenus()
     mDropChildNoise->setEnabled(false);
     mRefiberize->setEnabled(false);
     mMergeChildren->setEnabled(false);
+    mMergeAllChildren->setEnabled(false);
     mUndoChildEdit->setEnabled(false);
     mRedoChildEdit->setEnabled(false);
     connect(mMergeFibers, &QAction::triggered, this, &KlustersApp::slotMergeFibers);
@@ -913,6 +919,7 @@ void KlustersApp::createMenus()
     connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
     connect(mRefiberize, &QAction::triggered, this, &KlustersApp::slotRefiberize);
     connect(mMergeChildren, &QAction::triggered, this, &KlustersApp::slotMergeChildren);
+    connect(mMergeAllChildren, &QAction::triggered, this, &KlustersApp::slotMergeAllChildrenToSelf);
     connect(mUndoChildEdit, &QAction::triggered, this, &KlustersApp::slotUndoChildEdit);
     connect(mRedoChildEdit, &QAction::triggered, this, &KlustersApp::slotRedoChildEdit);
     //viewMenu = new QActionMenu(tr("&Window"), actionCollection(), "window_menu");

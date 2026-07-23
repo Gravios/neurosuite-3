@@ -317,6 +317,10 @@ private Q_SLOTS:
     void slotRefiberize();
     void slotDropChildToNoise();
     void slotMergeChildren();
+    /** Hierarchy > Merge All Children into Self: flatten every fiber to a single
+     *  self atom (atom id == fiber id).  Confirms first -- it discards the whole
+     *  sub-mode layer. */
+    void slotMergeAllChildrenToSelf();
     void slotUndoChildEdit();
     void slotRedoChildEdit();
     /**Groups the clusters contain in @p selectedClusters list and trigger the update of the displays.
@@ -899,6 +903,7 @@ private:
     QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise
     QAction* mRefiberize = nullptr;         // Hierarchy: re-cut atoms onto the current fibers
     QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)
+    QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every fiber to one self atom
     QAction* mUndoChildEdit = nullptr;      // Hierarchy: undo last atom-layer edit
     QAction* mRedoChildEdit = nullptr;      // Hierarchy: redo last atom-layer edit
     QAction* mChunkMode;

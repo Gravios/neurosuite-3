@@ -377,6 +377,23 @@ public:
      *  caches for every cluster whose membership may have changed. */
     void restoreClusterLabels(const QVector<dataType>& labels);
 
+    /** Same relabelling as restoreClusterLabels(), but pushed through prepareUndo
+     *  so it costs exactly ONE Data undo level and undo()/redo() reverse it.
+     *
+     *  restoreClusterLabels() deliberately bypasses the undo stack because it IS
+     *  the replay half of a parent-layer undo.  A user-initiated bulk relabel
+     *  needs the opposite: one snapshot, so a single Ctrl+Z (or one ChildEdit on
+     *  the atom layer) puts the whole thing back.  Used by
+     *  KlustersDoc::mergeAllChildrenToSelf().
+     *
+     *  Clusters are written in ascending id order, which keeps
+     *  highestClusterId() / nextFreeClusterId() honest -- both read the last
+     *  physical row, so an unsorted table makes every later id allocation lie.
+     *
+     *  @param labels 1-based per-feature-row target ids; must hold at least
+     *                nbSpikes + 1 entries or the call is a no-op. */
+    void setClusterLabels(const QVector<dataType>& labels);
+
     /** Atomic two-way split of a single cluster.
      *
      *  Partitions every spike of @p sourceCluster into TWO new clusters

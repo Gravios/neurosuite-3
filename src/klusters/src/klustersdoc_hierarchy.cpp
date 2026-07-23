@@ -621,6 +621,65 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     return newId;
 }
 
+int KlustersDoc::mergeAllChildrenToSelf(KlustersView& activeView){
+    // Session-wide flatten: every fiber ends up covered by exactly ONE atom whose
+    // id is the fiber's own id.  This is the "self child" identity the .clc == .clu
+    // lift establishes at load, re-applied to the whole layer -- the bulk form of
+    // the single-fiber collapse, for a session whose sub-mode structure is no
+    // longer wanted (e.g. fiber_stochastic's ~2.5 atoms per fiber after the
+    // fibers themselves have been curated).
+    //
+    // Deliberately DESTRUCTIVE and distinct from collapseToSelfChildren(), which
+    // is a repair: that one preserves any atom lying wholly inside one fiber as
+    // deliberate sub-structure and only re-cuts what straddles.  This one removes
+    // the sub-structure outright, which is the point.
+    if (!childData || !clusteringData) return -1;
+
+    const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+    const QVector<dataType> childByRow = childData->labelByFeatureRow();
+    // Both layers are built over the same .fet/.res, so the row vectors must be
+    // the same length.  If they are not, something is wrong with the pairing and
+    // a partial relabel would corrupt the atom layer -- refuse instead of guessing.
+    if (cluByRow.size() != childByRow.size() || cluByRow.size() < 2) return -1;
+
+    // The lift is applied to EVERY fiber including the reserve bins (0 artifact /
+    // 1 noise).  Skipping them, as collapseToSelfChildren does, would leave their
+    // atoms carrying arbitrary ids -- and an atom left in a reserve bin whose id
+    // happens to equal a real fiber id would immediately span two fibers, i.e.
+    // this button would itself create the nesting violation it is meant to tidy
+    // away.  Mapping atom := fiber everywhere makes the result trivially sound:
+    // .clc is exactly .clu, so no atom can span two fibers by construction.
+    QVector<dataType> newLabels(childByRow.size(), 0);
+    QSet<int> collapsedFibers;                    // fibers that actually lost an atom
+    for (int r = 1; r < childByRow.size(); ++r){
+        const dataType F = cluByRow[r];
+        newLabels[r] = F;
+        if (childByRow[r] != F) collapsedFibers.insert(static_cast<int>(F));
+    }
+    if (collapsedFibers.isEmpty()) return 0;      // already one self atom per fiber
+
+    const int atomsBefore = static_cast<int>(childData->clusterIds().size());
+
+    // setClusterLabels pushes exactly one Data undo level, so the matching single
+    // ChildEdit below makes Ctrl+Shift+Z revert the entire flatten in one step.
+    // (restoreClusterLabels would have been wrong here: it pushes none, and the
+    // ChildEdit would then pop an unrelated older snapshot.)
+    childData->setClusterLabels(newLabels);
+
+    const QList<dataType> after = childData->clusterIds();
+    QList<int> survivors;
+    for (dataType id : after) survivors.append(static_cast<int>(id));
+    ChildEdit e; e.modified = survivors;
+    recordChildEdit(e);
+
+    syncChildColors();
+    rebuildHierarchyFromData();
+    if (childScopeActive) activeView.showAllWidgets();
+    emit hierarchyChanged();
+    modified = true;
+    return atomsBefore - static_cast<int>(after.size());   // atoms removed
+}
+
 bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     if (!childData || childUndoStack.isEmpty()) return false;
     ChildEdit e = childUndoStack.takeFirst();

@@ -371,6 +371,15 @@ public:
      *  Mutates childData, pushes a child-undo entry.  Returns the new child id,
      *  or -1 (e.g. on a cross-fiber selection, which is refused). */
     int mergeChildren(const QList<int>& children, KlustersView& activeView);
+    /** Session-wide flatten: merge every fiber's atoms into a single self child
+     *  (atom id == fiber id), applied to all fibers including the reserve bins so
+     *  the resulting .clc is exactly .clu and no atom can span two fibers.
+     *  Destructive -- it discards deliberate sub-structure, unlike the repair-only
+     *  collapseToSelfChildren().  Costs one Data undo level plus one ChildEdit, so
+     *  Ctrl+Shift+Z reverts the whole thing in one step.
+     *  @return the number of atoms removed, 0 if the layer was already flat, or
+     *          -1 if there is no child layer / the two layers disagree in size. */
+    int mergeAllChildrenToSelf(KlustersView& activeView);
     /** Undo / redo the most recent atom-layer edit (childData), independent of
      *  the parent Ctrl+Z timeline. */
     bool undoChildEdit(KlustersView& activeView);
