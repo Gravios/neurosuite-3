@@ -1495,6 +1495,15 @@ void KlustersApp::applyPreferences() {
         }
     }
 
+    // The drift-slider cluster cap can change here.  Each DriftMatrixView reads
+    // it fresh, but nothing would re-ask until its next recompute, so a raised
+    // limit would appear not to work.  Re-evaluate the open ones now.
+    if(KlustersView* v = activeView()){
+        const QList<DriftMatrixView*> dmvs = v->findChildren<DriftMatrixView*>();
+        for(DriftMatrixView* dmv : dmvs)
+            if(dmv) dmv->refreshSliderEnabled();
+    }
+
     if(waveformsGain != configuration().getGain()){
         waveformsGain = configuration().getGain();
         if(mainDock)doc->setGain(waveformsGain);

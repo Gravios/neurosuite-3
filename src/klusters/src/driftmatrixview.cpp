@@ -10,6 +10,7 @@
  ***************************************************************************/
 #include "driftmatrixview.h"
 #include "driftshiftthread.h"
+#include "configuration.h"
 
 #include <QShowEvent>
 #include "matrixgrid.h"
@@ -364,7 +365,7 @@ void DriftMatrixView::recomputeAtCurrentDrift()
         return;
     // Belt and braces: the slider is disabled above the cap, but activateCache()
     // and the range spin box can also reach here.
-    if (static_cast<int>(meanWav.size()) > MAX_CLUSTERS_FOR_DRIFT_SLIDER) return;
+    if (static_cast<int>(meanWav.size()) > driftSliderClusterCap()) return;
 
     // Off-thread, into a NEW matrix.  This used to run inline and write straight
     // into *scores -- safe only because it held the GUI thread throughout.  A
@@ -389,10 +390,16 @@ void DriftMatrixView::stopShiftThreads()
     shiftThreads.clear();
 }
 
+int DriftMatrixView::driftSliderClusterCap() const
+{
+    return configuration().getDriftSliderMaxClusters();
+}
+
 void DriftMatrixView::refreshSliderEnabled()
 {
     const int nCl = static_cast<int>(meanWav.size());
-    sliderCappedByClusterCount = (nCl > MAX_CLUSTERS_FOR_DRIFT_SLIDER);
+    const int cap = driftSliderClusterCap();
+    sliderCappedByClusterCount = (nCl > cap);
     const bool on = geometryOk && !sliderCappedByClusterCount;
     driftSlider->setEnabled(on);
     maxUmSpin->setEnabled(on);
@@ -402,9 +409,10 @@ void DriftMatrixView::refreshSliderEnabled()
         driftSlider->setToolTip(
             tr("The drift slider is disabled above %1 clusters (this group has %2).\n"
                "Each step recomputes every cluster pair, and drift linking is only\n"
-               "meaningful once the sort has been consolidated. Merge down and it\n"
-               "re-enables itself.")
-                .arg(MAX_CLUSTERS_FOR_DRIFT_SLIDER).arg(nCl));
+               "meaningful once the sort has been consolidated. Merge down, or raise\n"
+               "the limit in Preferences > Display > Drift Matrix, and it re-enables\n"
+               "itself.")
+                .arg(cap).arg(nCl));
     }
 }
 

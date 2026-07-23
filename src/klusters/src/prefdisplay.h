@@ -36,6 +36,9 @@ public:
 
     void setTemplateXcorrMetric(int i);
     int  getTemplateXcorrMetric() const;
+
+    void setDriftSliderMaxClusters(int n);
+    int  getDriftSliderMaxClusters() const;
 };
 
 #endif
