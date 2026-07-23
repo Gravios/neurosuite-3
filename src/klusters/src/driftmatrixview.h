@@ -91,6 +91,11 @@ public:
     /// Current drift magnitude in µm (upper triangle +, lower −).
     int driftUm() const { return currentDriftUm; }
 
+    /**Re-evaluate the slider's enabled state from geometry AND the current
+     * cluster-count preference.  Public so applyPreferences() can call it when
+     * the limit changes, rather than the change waiting for the next recompute.*/
+    void refreshSliderEnabled();
+
 Q_SIGNALS:
     void viewInteracted();
     void matrixUpdated();
@@ -98,11 +103,6 @@ Q_SIGNALS:
     /// Emitted when the user changes this view's zoom or pan (wheel, drag,
     /// reset).  Keeps every matrix view's zoom/pan synchronised.
     void viewChanged(double zoom, double panX, double panY);
-
-    /**Re-evaluate the slider's enabled state from geometry AND the current
-     * cluster-count preference.  Public so applyPreferences() can call it when
-     * the limit changes, rather than the change waiting for the next recompute.*/
-    void refreshSliderEnabled();
 
 public Q_SLOTS:
     /// Set the full zoom + pan state from another (cross-connected) matrix
