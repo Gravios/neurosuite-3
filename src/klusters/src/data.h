@@ -934,6 +934,27 @@ public:
     /**How many clusters currently have a template, and how many exist.*/
     int clusterTemplateCount() const { return clusterTemplates.size(); }
 
+    /**Copy out one cluster's cached waveform template (mean and SD, each of
+     * length nbSamplesPerWaveform() * nbOfChannels(), laid out
+     * index = sample * nChan + channel).
+     *
+     * Exists so a worker thread can SNAPSHOT the templates it needs on the GUI
+     * thread and then score without touching Data at all.  clusterEnvelopeOverlap
+     * reads clusterTemplates live, which is safe only on the thread that owns
+     * the edits; the merge-recommendation scan runs off-thread and cannot.
+     *
+     * @return false if the cluster has no current template, matching
+     *         clusterEnvelopeOverlap's "no waveform -> no opinion" contract.*/
+    bool clusterTemplateFor(int cluster,
+                            std::vector<double>& meanOut,
+                            std::vector<double>& sdOut) const {
+        const auto it = clusterTemplates.constFind(cluster);
+        if (it == clusterTemplates.constEnd()) return false;
+        meanOut = it.value().mean;
+        sdOut   = it.value().sd;
+        return true;
+    }
+
 private:
     /**Peak-to-trough amplitude of cluster @p clusterId's mean waveform and the
      * channel it occurs on.  Returns false when that cluster has no mean

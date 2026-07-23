@@ -1483,6 +1483,18 @@ void KlustersApp::applyPreferences() {
         clusterPalette->changeBackgroundColor(backgroundColor);
     }
 
+    // Show/hide the recommend dock live, so the toggle takes effect on Apply
+    // rather than at the next restart.  Only meaningful while a hierarchical
+    // session is up -- that is the only place it is shown at all -- and showing
+    // it triggers a refresh through the normal selection path.
+    if(recommendPanel && mHierarchicalView && mHierarchicalView->isChecked()){
+        const bool want = configuration().getShowMergeRecommendPanel();
+        if(want != recommendPanel->isVisible()){
+            recommendPanel->setVisible(want);
+            if(want) slotRefreshMergeRecommendations();
+        }
+    }
+
     if(waveformsGain != configuration().getGain()){
         waveformsGain = configuration().getGain();
         if(mainDock)doc->setGain(waveformsGain);

@@ -170,6 +170,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefSorting->mergeRecommendMaxSpinBox,          &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefSorting->mergeRecommendErrorFloorSpinBox,   &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefSorting->mergeRecommendQualityFloorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefSorting->showMergeRecommendPanelCheckBox,   &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitMinSizeSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitBloatFactorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefRefinement->dipSplitValleyThreshSpinBox,&QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -252,6 +253,7 @@ void PrefDialog::updateDialog()
     prefSorting->setMergeRecommendMax(configuration().getMergeRecommendMax());
     prefSorting->setMergeRecommendErrorFloor(configuration().getMergeRecommendErrorFloor());
     prefSorting->setMergeRecommendQualityFloor(configuration().getMergeRecommendQualityFloor());
+    prefSorting->setShowMergeRecommendPanel(configuration().getShowMergeRecommendPanel());
     prefRefinement->setCurationLogging(configuration().getCurationLogging());
     prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnly());
     prefRefinement->setRealignVerbose(configuration().getRealignVerbose());
@@ -332,6 +334,7 @@ void PrefDialog::updateConfiguration()
     configuration().setMergeRecommendMax(prefSorting->getMergeRecommendMax());
     configuration().setMergeRecommendErrorFloor(prefSorting->getMergeRecommendErrorFloor());
     configuration().setMergeRecommendQualityFloor(prefSorting->getMergeRecommendQualityFloor());
+    configuration().setShowMergeRecommendPanel(prefSorting->getShowMergeRecommendPanel());
     configuration().setCurationLogging(prefRefinement->getCurationLogging());
     configuration().setReorderDisplayOnly(prefSorting->getReorderDisplayOnly());
     configuration().setRealignVerbose(prefRefinement->getRealignVerbose());
@@ -417,6 +420,7 @@ void PrefDialog::slotDefault()
     prefSorting->setMergeRecommendMax(configuration().getMergeRecommendMaxDefault());
     prefSorting->setMergeRecommendErrorFloor(configuration().getMergeRecommendErrorFloorDefault());
     prefSorting->setMergeRecommendQualityFloor(configuration().getMergeRecommendQualityFloorDefault());
+    prefSorting->setShowMergeRecommendPanel(configuration().getShowMergeRecommendPanelDefault());
     prefRefinement->setCurationLogging(configuration().getCurationLoggingDefault());
     prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnlyDefault());
     prefRefinement->setRealignVerbose(configuration().getRealignVerboseDefault());
