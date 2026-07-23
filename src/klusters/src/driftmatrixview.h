@@ -105,6 +105,9 @@ public Q_SLOTS:
     void setViewState(double zoom, double px, double py);
 
 protected:
+    /**Recompute on reveal if an edit landed while this view was hidden.*/
+    void showEvent(QShowEvent* event) override;
+
     void paintEvent(QPaintEvent*) override;
     void customEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
