@@ -9,6 +9,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "driftmatrixthread.h"
+
+#include <functional>
 #include "driftmatrixkernel.h"
 #include "channelmask.h"
 #include "templatematrixthread.h"   // tmReadSpikeFloat (shared .spk reader)
@@ -144,13 +146,32 @@ void DriftMatrixThread::run()
     scores = new Array<double>();
     scores->setSize(nClusters, nClusters);
 
+    // Both branches poll the stop flag per ROW.  Neither used to, so
+    // stopProcessing() set a flag nothing read and the whole O(clusters^2) ran to
+    // completion regardless -- which is what made the next edit's
+    // stopAllViewThreads() block the GUI thread in wait() for minutes.
+    const std::function<bool()> cancelled = [this]{
+        return haveToStopProcessing.load(std::memory_order_relaxed);
+    };
+
     if (depthsValid) {
         dmComputeDriftMatrix(meanWav, depths, effChan, nSamp, maxShift,
-                             initialDeltaUm, *scores);
+                             initialDeltaUm, *scores, cancelled);
     } else {
         // No usable geometry: plain unshifted mean xcorr so the view still
         // shows something (the slider will be disabled by the view).
+        //
+        // Parallelised to match the geometry branch above.  Row i writes only
+        // row i+1 and its mirror column, and dmNormXcorr is a pure read of two
+        // mean waveforms, so the rows are independent and the result is
+        // order-independent.  This branch is the one a session without probe
+        // geometry always takes, and it was the ONLY serial O(clusters^2) left
+        // in the matrix code -- one core, minutes, at 8736 clusters.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
         for (int i = 0; i < nClusters; ++i) {
+            if (cancelled()) continue;            // OpenMP: skip, cannot break
             (*scores)(i + 1, i + 1) = 1.0;
             for (int j = i + 1; j < nClusters; ++j) {
                 const float s = dmNormXcorr(meanWav[static_cast<size_t>(i)],
@@ -159,6 +180,15 @@ void DriftMatrixThread::run()
                 (*scores)(j + 1, i + 1) = s;
             }
         }
+    }
+
+    // A cancelled run leaves the matrix partially filled.  Publishing it would
+    // paint rows of zeros as though they were real correlations, so drop it and
+    // let the view reject the result on scores == nullptr -- the same contract
+    // the early-outs above already rely on.
+    if (haveToStopProcessing) {
+        delete scores;
+        scores = nullptr;
     }
 
     post();

@@ -15,6 +15,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <functional>
 
 // Peak normalised (cosine) cross-correlation over temporal lags
 // [-maxShift, maxShift].  Same maths as tmNormXcorr's cosine path; kept local
@@ -93,17 +94,32 @@ inline void dmDriftShift(const std::vector<float>& in, int nChan, int nSamp,
 // the same cell and the result is bit-identical to the serial order.  The view
 // calls this on every drift-slider step, so this is what keeps the drag
 // interactive on sessions with many clusters.
+/**Build the pairwise drift-shifted correlation matrix.
+ *
+ * @p cancelled, if set, is polled once per ROW.  Returning true makes the
+ * remaining rows no-ops so the loop drains promptly instead of running to
+ * completion -- @p scores is then PARTIAL and the caller must discard it.
+ * It is polled from every OpenMP thread concurrently, so the predicate must be
+ * thread-safe (reading a std::atomic is).  A row is skipped rather than broken
+ * out of because OpenMP forbids breaking a parallel for.
+ *
+ * Without this the matrix was uninterruptible: DriftMatrixThread::stopProcessing()
+ * set a flag that nothing in here read, so the next edit's stopAllViewThreads()
+ * blocked the GUI thread in wait() until the whole n^2 finished.*/
 template <class Matrix>
 void dmComputeDriftMatrix(const std::vector<std::vector<float>>& meanWav,
                           const std::vector<float>& depths,
                           int nChan, int nSamp, int maxShift, float deltaUm,
-                          Matrix& scores)
+                          Matrix& scores,
+                          const std::function<bool()>& cancelled =
+                              std::function<bool()>())
 {
     const int n = static_cast<int>(meanWav.size());
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic)
 #endif
     for (int i = 0; i < n; ++i) {
+        if (cancelled && cancelled()) continue;   // OpenMP: skip, cannot break
         std::vector<float> shPlus, shMinus;   // per-thread scratch
         scores(i + 1, i + 1) = 1.0;
         dmDriftShift(meanWav[static_cast<size_t>(i)], nChan, nSamp, depths, +deltaUm, shPlus);
