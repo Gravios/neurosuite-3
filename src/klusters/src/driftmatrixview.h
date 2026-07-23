@@ -41,6 +41,7 @@
 class KlustersDoc;
 class KlustersView;
 class DriftMatrixThread;
+class DriftShiftThread;
 class QSlider;
 class QSpinBox;
 
@@ -159,6 +160,17 @@ private:
      * matrix is only usable together with the means it was computed from —
      * caching the Array alone would leave the slider recomputing a
      * differently-masked matrix.*/
+    /**Above this many clusters the drift slider is disabled.
+     *
+     * A slider step is a full O(clusters^2) pass, so the control degrades from
+     * interactive to unusable well before the matrix itself becomes unreadable.
+     * The slider is also only meaningful once the sort has been consolidated --
+     * its job is linking a unit to itself across a period of drift, which is a
+     * question about a few hundred real units, not about thousands of unmerged
+     * fragments.  So this is a guard on a control that has no use yet at that
+     * count, not an arbitrary performance cap.*/
+    static constexpr int MAX_CLUSTERS_FOR_DRIFT_SLIDER = 1000;
+
     struct Cache {
         Array<double>*                  scores = nullptr;   // owned
         std::vector<std::vector<float>> meanWav;
@@ -172,6 +184,19 @@ private:
      * instead of a recompute.*/
     Cache      cacheAll;
     Cache      cacheSel;
+
+    /**Workers rebuilding the matrix at a new slider position.  Separate from
+     * threadsToBeKill (full recomputes) because the two are cancelled
+     * independently: a drag supersedes only other drags.*/
+    QList<DriftShiftThread*> shiftThreads;
+    int                      shiftGeneration = 0;
+    /**True when the slider is disabled purely because of the cluster count, so
+     * the tooltip can say so rather than blaming missing geometry.*/
+    bool                     sliderCappedByClusterCount = false;
+    /**Cancel and reap every slider worker.*/
+    void stopShiftThreads();
+    /**Enable/disable the slider from geometry AND cluster count together.*/
+    void refreshSliderEnabled();
     /**A recompute is in flight: the view keeps painting whatever it has and
      * overlays a small badge instead of blanking the frame.*/
     bool       computing = false;

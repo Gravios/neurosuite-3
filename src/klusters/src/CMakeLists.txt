@@ -35,6 +35,7 @@ set(klusters_SRCS
     pairxcorrthread.cpp
     driftgeometry.cpp
     driftmatrixthread.cpp
+    driftshiftthread.cpp
     driftmatrixview.cpp
     rangeslider.cpp
     mergerecommendview.cpp
