@@ -192,7 +192,7 @@ def resolve_any(base, type_, group, preferred=""):
     order = ([preferred] if preferred else []) + \
             [m for m in ("standard", "stderiv", "sdiff") if m != preferred]
     for m in order:
-        cand = method_path(base, type_, group, m)
+        cand = method_path(base, type_, m, group)
         if file_exists(cand):
             return Resolved(cand, m, True)
     directory = os.path.dirname(base) or "."
@@ -211,7 +211,7 @@ def resolve_any(base, type_, group, preferred=""):
     untagged = untagged_path(base, type_, group)
     if file_exists(untagged):
         return Resolved(untagged, "", True)
-    return Resolved(method_path(base, type_, group, preferred or DEFAULT_METHOD), preferred, False)
+    return Resolved(method_path(base, type_, preferred or DEFAULT_METHOD, group), preferred, False)
 
 
 def resolved_is_stderiv(resolved):

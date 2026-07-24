@@ -210,6 +210,12 @@ ndm_resolve_any() {
     done
     cand="$(ndm_untagged_path "$base" "$type" "$group")"
     if [ -f "$cand" ]; then echo "$cand"; NDM_R_FOUND=1; NDM_R_METHOD=""; return 0; fi
+    # Not found: echo where the PREFERRED copy would be, matching
+    # custody::resolveAny and ndm_resolve_io.resolve_any, so a caller can name
+    # the expected path in its error instead of reporting an empty string.
+    # Returning nothing here was a silent divergence between the three mirrors.
+    echo "$(ndm_method_path "$base" "$type" "$group" "${pref:-standard}")"
+    NDM_R_FOUND=0; NDM_R_METHOD="$pref"
     return 1
 }
 

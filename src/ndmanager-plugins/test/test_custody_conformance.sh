@@ -65,6 +65,18 @@ while IFS= read -r line; do
                 { echo "FAIL resolve ${F[2]}/${F[3]}/${F[4]} -> ${F[5]} found=$want_found (got ${path##*/} found=$found)"; fail=$((fail+1)); }
             for s in "${sufs[@]}"; do [ -n "$s" ] && rm -f "$B.$s"; done
             ;;
+        resolve_any)
+            # Shared artifacts: one physical copy whatever token it carries.
+            # Same columns as resolve; F[4] is the PREFERRED method.
+            IFS=',' read -r -a sufs <<< "${F[1]}"
+            for s in "${sufs[@]}"; do [ -n "$s" ] && : > "$B.$s"; done
+            path="$(ndm_resolve_any "$B" "${F[2]}" "${F[3]}" "${F[4]}")"
+            if [ -f "$path" ]; then found=1; else found=0; fi
+            want_found="${F[6]:-0}"
+            { [ "${path##*/}" = "${F[5]}" ] && [ "$found" = "$want_found" ]; } || \
+                { echo "FAIL resolve_any [${F[1]}] ${F[2]}/${F[3]}/'${F[4]}' -> ${F[5]} found=$want_found (got ${path##*/} found=$found)"; fail=$((fail+1)); }
+            for s in "${sufs[@]}"; do [ -n "$s" ] && rm -f "$B.$s"; done
+            ;;
         method_token)
             ndm_parse_method_token "${F[1]}"
             { [ "$NDM_M_FAMILY" = "${F[2]:-}" ] && [ "$NDM_M_KIND" = "${F[3]:-}" ] && \
