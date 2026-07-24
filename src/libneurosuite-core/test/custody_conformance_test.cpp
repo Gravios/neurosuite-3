@@ -103,6 +103,19 @@ int main(int argc, char** argv) {
                       + " -> " + f[5] + " (found=" + f[6] + ")");
             for (const std::string& suf : csv(f[1]))
                 std::remove((base + "." + suf).c_str());
+        } else if (kind == "resolve_any") {
+            // Shared artifacts (.res, .spk): one physical copy whatever token it
+            // carries.  Same columns as resolve; f[4] is the PREFERRED method.
+            for (const std::string& suf : csv(f[1]))
+                std::ofstream(base + "." + suf).put('x');
+            const int group = std::atoi(f[3].c_str());
+            const Resolved r = resolveAny(base, f[2], group, f[4]);
+            const bool wantFound = (f[6] == "1");
+            check(baseNameOf(r.path) == f[5] && r.found == wantFound,
+                  "resolve_any [" + f[1] + "] " + f[2] + "/" + f[3] + "/'" + f[4]
+                      + "' -> " + f[5] + " (found=" + f[6] + ")");
+            for (const std::string& suf : csv(f[1]))
+                std::remove((base + "." + suf).c_str());
         } else if (kind == "method_token") {
             const MethodSpec ms = parseMethodToken(f[1]);
             const std::string kindStr = ms.kind ? std::string(1, ms.kind) : std::string();

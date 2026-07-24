@@ -50,6 +50,21 @@ def run_vectors(vpath):
                               and a.method == f[4] and str(a.group) == f[5]
                               and a.suffix == f[6])
                     desc = "parse_anchor {}".format(f[1])
+                elif kind == "resolve_any":
+                    existing = [x for x in f[1].split(",") if x]
+                    for suf in existing:
+                        open(base + "." + suf, "w").close()
+                    try:
+                        r = cst.resolve_any(base, f[2], int(f[3]), f[4])
+                        ok = (os.path.basename(r.path) == f[5]
+                              and r.found == (f[6] == "1"))
+                        desc = "resolve_any [{}] {}/{}/'{}' -> {} (found={})".format(
+                            f[1], f[2], f[3], f[4], f[5], f[6])
+                    finally:
+                        for suf in existing:
+                            p2 = base + "." + suf
+                            if os.path.exists(p2):
+                                os.remove(p2)
                 elif kind == "resolve":
                     existing = [s for s in f[1].split(",") if s]
                     for suf in existing:
