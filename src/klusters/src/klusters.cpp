@@ -4597,6 +4597,7 @@ QString KlustersApp::buildRealignArgs(){
         switch (configuration().getRealignMode()) {
         case 1:  a += QStringLiteral(" --pca-refine");   break;
         case 2:  a += QStringLiteral(" --recenter-rms"); break;
+        case 3:  a += QStringLiteral(" --align-centroid"); break;
         default: break;
         }
     }

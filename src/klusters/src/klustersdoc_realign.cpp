@@ -222,7 +222,7 @@ static bool swapSpkEntries(const QString& spkPath, long idxA0, long idxB0,
 static void parseRealignArgs(const QString& args,
                              int& maxShift, float& minScore, int& nIter,
                              int& nTopChan, bool& pcaRefine, bool& rmsRecenter,
-                             float& rMin)
+                             float& rMin, bool& alignCentroid)
 {
     const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
     for (qsizetype ti = 0; ti < tokens.size(); ++ti) {
@@ -250,6 +250,9 @@ static void parseRealignArgs(const QString& args,
         } else if (tok == QStringLiteral("--recenter-rms")) {
             // RMS circular group-recenter — no value, boolean flag.
             rmsRecenter = true;
+        } else if (tok == QStringLiteral("--align-centroid")) {
+            // Per-spike reference-free centroid alignment — no value, boolean flag.
+            alignCentroid = true;
         } else if (tok == QStringLiteral("--rmin")
                 && ti + 1 < tokens.size()) {
             bool ok2; float v = tokens[++ti].toFloat(&ok2);
@@ -412,8 +415,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     bool  pcaRefine = false;   // patch82: second-pass PCA-energy-max alignment
     bool  rmsRecenter = false; // post-alignment RMS circular group-recenter
     float rMin        = 0.4f;  // min mean-resultant-length to trust the centroid
+    bool  alignCentroid = false; // realignMode 3: per-spike reference-free centroid de-jitter (no xcorr)
     parseRealignArgs(args, maxShift, minScore, nIter, nTopChan,
-                     pcaRefine, rmsRecenter, rMin);
+                     pcaRefine, rmsRecenter, rMin, alignCentroid);
 
     const QString dir   = documentDirectory();
     const QString base  = documentBaseName();
@@ -776,6 +780,45 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // -----------------------------------------------------------------------
     std::vector<int>   cumShift(static_cast<size_t>(N), 0);
     std::vector<float> bestScore(static_cast<size_t>(N), 0.0f);
+
+    // realignMode 3 (--align-centroid): reference-free per-spike centroid de-jitter -- the fiber-kit
+    // fiber_realign method='centroid'.  No template, no xcorr: each spike is shifted so its OWN circular
+    // energy centroid lands on the POPULATION's circular-mean centroid (perSpikeCentroidShifts, the shared
+    // realign_center math).  Fill cumShift and roll wavBuf exactly as the xcorr loop would, then set
+    // nIter=0 so the loop below is skipped.  This is the aligner for clusters whose mean is too noisy to
+    // anchor the normalised xcorr -- the case the xcorr path leaves jittered.
+    if (alignCentroid) {
+        std::vector<double> energy(static_cast<size_t>(N) * nSamp, 0.0);
+        for (int64_t i = 0; i < N; ++i) {
+            const int16_t* w = wavBuf.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+            double* e = energy.data() + static_cast<size_t>(i) * nSamp;
+            for (int ch = 0; ch < nChan; ++ch)
+                for (int s = 0; s < nSamp; ++s) {
+                    const double v = w[static_cast<size_t>(ch * nSamp + s)];
+                    e[static_cast<size_t>(s)] += v * v;          // channel-summed per-sample energy
+                }
+        }
+        std::vector<int> csh;
+        realign_center::perSpikeCentroidShifts(energy.data(), static_cast<int>(N), nSamp, csh);
+        for (int64_t i = 0; i < N; ++i) {
+            const int s = csh[static_cast<size_t>(i)];
+            cumShift[static_cast<size_t>(i)] = s;                // newTs = clusterTs + cumShift downstream
+            if (s == 0) continue;
+            int16_t* w = wavBuf.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+            std::vector<int16_t> tmp(static_cast<size_t>(spkElems));
+            for (int t = 0; t < nSamp; ++t) {
+                const int src = (t + s + nSamp) % nSamp;         // same roll convention as the xcorr loop
+                for (int ch = 0; ch < nChan; ++ch)
+                    tmp[static_cast<size_t>(ch * nSamp + t)] =
+                        w[static_cast<size_t>(ch * nSamp + src)];
+            }
+            std::copy(tmp.begin(), tmp.end(), w);
+        }
+        nIter = 0;   // centroid alignment complete; skip the xcorr iteration loop
+        log << "  centroid: per-spike reference-free centroid de-jitter (no template)\n";
+    }
 
     for (int iter = 0; iter < nIter; ++iter) {
         // Build mean template from current wavBuf

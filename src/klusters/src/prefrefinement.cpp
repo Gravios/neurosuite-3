@@ -16,12 +16,14 @@ void   PrefRefinement::setRealignMode(int m) {
     switch (m) {
     case 1:  realignModePcaRadio->setChecked(true); break;
     case 2:  realignModeRmsRadio->setChecked(true); break;
+    case 3:  realignModeCentroidRadio->setChecked(true); break;
     default: realignModeOffRadio->setChecked(true); break;
     }
 }
 int    PrefRefinement::getRealignMode() const {
     if (realignModePcaRadio->isChecked()) return 1;
     if (realignModeRmsRadio->isChecked()) return 2;
+    if (realignModeCentroidRadio->isChecked()) return 3;
     return 0;
 }
 

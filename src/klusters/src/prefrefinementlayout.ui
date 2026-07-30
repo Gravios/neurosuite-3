@@ -188,6 +188,16 @@
            </widget>
           </item>
           <item>
+           <widget class="QRadioButton" name="realignModeCentroidRadio">
+            <property name="text">
+             <string>Per-spike centroid</string>
+            </property>
+            <property name="toolTip">
+             <string>Reference-free per-spike de-jitter: shift each spike so its own circular energy centroid lands on the population's circular-mean centroid; needs no template (--align-centroid).</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <spacer name="spacer_ra_mode">
             <property name="orientation">
              <enum>Qt::Horizontal</enum>

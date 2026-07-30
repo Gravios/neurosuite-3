@@ -88,8 +88,8 @@ public:
     void setRealignThreshold(double v)  {realignThreshold = qBound(0.0, v, 1.0);}
     void setRealignIterations(int n)     {realignIterations = qMax(1, n);}
     void setRealignMaxShift(int n)        {realignMaxShift = qMax(0, n);}
-    /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
-    void setRealignMode(int m)            {realignMode = (m < 0 || m > 2) ? 0 : m;}
+    /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter, 3=per-spike centroid).*/
+    void setRealignMode(int m)            {realignMode = (m < 0 || m > 3) ? 0 : m;}
     void setReorderMethod(int m)          {reorderMethod = (m < 0 || m > 2) ? 0 : m;}
     /**Merge recommendations: cap on the listed pairs.  Clamped to 1..200 -- the
      * panel ranks every pair before capping, so an unbounded value would only
