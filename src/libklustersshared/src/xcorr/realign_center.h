@@ -26,6 +26,8 @@
  ***************************************************************************/
 #pragma once
 
+#include <vector>
+
 namespace realign_center {
 
 struct RecenterResult {
@@ -49,5 +51,21 @@ struct RecenterResult {
  * shift is suppressed. */
 RecenterResult circularRecenterShift(const double* energy, int nSamp,
                                      int peakPos, double rMin);
+
+/* Per-spike reference-free centroid de-jitter -- the fiber-kit fiber_realign method='centroid'.
+ *   energy    per-spike channel-summed per-sample energy, nSpikes*nSamp row-major (>= 0)
+ *   nSpikes   number of spikes
+ *   nSamp     samples per waveform (the periodic axis length)
+ *   shiftOut  filled (size nSpikes) with each spike's signed circular shift, same roll convention
+ *             as circularRecenterShift: new[t]=old[(t+shift)%N].
+ *
+ * Where circularRecenterShift moves a WHOLE cluster onto a FIXED peakPos, this moves EACH spike so its
+ * own circular energy centroid lands on the POPULATION's circular-mean centroid -- a template-free
+ * per-spike alignment that works when a cluster's mean is too noisy to anchor an xcorr.  Both the
+ * per-spike centroid and the population target are first-DFT-bin phasors (the same circular statistics
+ * this module already owns), so it stays in lockstep with the group recenter and with fiber-kit's
+ * fiber_lib._centroid_pos / centroid_shift. */
+void perSpikeCentroidShifts(const double* energy, int nSpikes, int nSamp,
+                            std::vector<int>& shiftOut);
 
 }  // namespace realign_center
