@@ -45,4 +45,47 @@ RecenterResult circularRecenterShift(const double* energy, int nSamp,
     return out;
 }
 
-}  // namespace realign_center
+
+void perSpikeCentroidShifts(const double* energy, int nSpikes, int nSamp,
+                            std::vector<int>& shiftOut) {
+    const double TWO_PI = 2.0 * M_PI;
+    shiftOut.assign(nSpikes < 0 ? 0 : nSpikes, 0);
+    if (nSpikes <= 0 || nSamp <= 0 || !energy) return;
+
+    // 1. each spike's circular energy centroid (first-DFT-bin phasor of its per-sample energy).
+    std::vector<double> pos(nSpikes, 0.0);
+    for (int i = 0; i < nSpikes; ++i) {
+        const double* e = energy + static_cast<size_t>(i) * nSamp;
+        double C = 0.0, S = 0.0;
+        for (int s = 0; s < nSamp; ++s) {
+            const double th = TWO_PI * s / nSamp;
+            C += e[s] * std::cos(th);
+            S += e[s] * std::sin(th);
+        }
+        double a = std::atan2(S, C);
+        if (a < 0.0) a += TWO_PI;
+        pos[i] = a * static_cast<double>(nSamp) / TWO_PI;
+    }
+
+    // 2. population circular-mean centroid (unit phasors so every spike weighs equally -- a pure
+    //    RELATIVE de-jitter with no fixed peak, matching fiber_realign's target=mean(exp(i*pos))).
+    double MC = 0.0, MS = 0.0;
+    for (int i = 0; i < nSpikes; ++i) {
+        const double th = TWO_PI * pos[i] / nSamp;
+        MC += std::cos(th);
+        MS += std::sin(th);
+    }
+    double at = std::atan2(MS, MC);
+    if (at < 0.0) at += TWO_PI;
+    const double target = at * static_cast<double>(nSamp) / TWO_PI;
+
+    // 3. per-spike minimal signed circular shift onto the target.
+    for (int i = 0; i < nSpikes; ++i) {
+        double sh = std::fmod((target - pos[i]) + nSamp / 2.0, static_cast<double>(nSamp));
+        if (sh < 0.0) sh += nSamp;          // C fmod is signed; the circular reduction wants [0,N)
+        sh -= nSamp / 2.0;                  // -> (-N/2, N/2], the signed distance
+        shiftOut[i] = static_cast<int>(std::lround(-sh));
+    }
+}
+
+}
