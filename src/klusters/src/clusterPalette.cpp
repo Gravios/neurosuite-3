@@ -29,6 +29,7 @@
 #include <QLayout>
 #include <QToolTip>
 #include <QMouseEvent>
+#include <QFocusEvent>     // focusInEvent() reads event->reason()
 #include <QDebug>
 #include <climits>
 
@@ -79,14 +80,42 @@ void ClusterPaletteWidget::mouseMoveEvent ( QMouseEvent * event )
 void ClusterPaletteWidget::focusInEvent(QFocusEvent *event)
 {
     QListWidget::focusInEvent(event);
-    // Ensure a current item exists so arrow keys have a starting point.
-    QListWidgetItem* cur = currentItem();
-    if (!cur && count() > 0) {
-        setCurrentRow(0);
-        cur = currentItem();
+
+    // Do NOT move the viewport when focus arrived by pointer.
+    //
+    // Qt gives a widget focus on mouse PRESS, before delivering the press to it,
+    // so anything that scrolls here runs first and the press then lands on
+    // whichever item slid into place.  After an operation the palette's current
+    // item is the one the operation selected; scroll away from it, click a
+    // different cluster, and the viewport jumps back to the old current item --
+    // and the click selects whatever is now under the cursor rather than the
+    // cluster that was aimed at.  Both halves of that are the same line.
+    //
+    // A click is its own answer to "what should be visible": the user is looking
+    // at the item under the cursor.  Same for re-activating the window, where the
+    // scroll position is the one the user left.  Keyboard and programmatic focus
+    // (Tab, Backtab, Shortcut, and the setFocus() calls after nudge/recluster/
+    // realign) still land on the current item, which is the point of the scroll.
+    //
+    // The `setCurrentRow(0)` fallback is suppressed for the same reasons and by
+    // the same argument: setCurrentIndex() scrolls too, so on a click it would
+    // yank the viewport to the top before the press is seen.  It is not needed
+    // there either -- the press sets the current item itself, and keyPressEvent
+    // already handles a null current item for both Left/Right and Up/Down, which
+    // is the case this fallback was guarding.
+    const bool pointerDriven = (event->reason() == Qt::MouseFocusReason
+                             || event->reason() == Qt::ActiveWindowFocusReason);
+
+    if (!pointerDriven) {
+        // Ensure a current item exists so arrow keys have a starting point.
+        QListWidgetItem* cur = currentItem();
+        if (!cur && count() > 0) {
+            setCurrentRow(0);
+            cur = currentItem();
+        }
+        if (cur)
+            scrollToItem(cur, QAbstractItemView::EnsureVisible);
     }
-    if (cur)
-        scrollToItem(cur, QAbstractItemView::EnsureVisible);
 
     // Ask klusters to show the Overview Display tab (it returns focus to us
     // after switching, so we emit after the scroll above is done).
