@@ -418,6 +418,47 @@ void KlustersDoc::collapseToSelfChildren(){
     // nesting violation waiting to happen.  An atom lying WHOLLY inside a reserve bin
     // is still `intact` and is preserved untouched, so a sub-cluster deliberately
     // dropped to noise as a unit keeps its identity.
+    // Every atom's post-re-cut owner is already determined by the two rules above:
+    // an intact atom stays under its sole fiber, a straddler stays under its home
+    // fiber.  Reserve atoms 0 and 1 are the self children of the reserve fibers, so
+    // they end up owned by fiber 0 and fiber 1 respectively -- any of their rows
+    // lying elsewhere is loose and is re-cut below.  Knowing the owners UP FRONT is
+    // what lets a fiber's self-child target be chosen so it cannot collide.
+    QHash<int,int> survivingOwner;                           // atom -> the one fiber it will belong to
+    for (auto it = atomFiberCount.constBegin(); it != atomFiberCount.constEnd(); ++it){
+        const int a = it.key();
+        survivingOwner.insert(a, intact.contains(a) ? it.value().constBegin().key()
+                                                    : homeFiber.value(a, a));
+    }
+    survivingOwner.insert(0, 0);
+    survivingOwner.insert(1, 1);
+
+    // Fresh atom ids start above every id either layer currently uses, so they can
+    // collide neither with a surviving atom nor with a self-child target of the form
+    // T(F) == F.
+    int nextFreeAtom = 1;
+    for (int r = 1; r < n; ++r){
+        nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(childByRow[r]));
+        nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(cluByRow[r]));
+    }
+
+    // Fiber -> the atom its loose rows collapse into.  Normally that is the fiber's
+    // own id (the self-child convention).  But when an atom ALREADY carrying that id
+    // will survive under a DIFFERENT fiber, writing it here hands that atom rows in
+    // two fibers -- the repair minting a straddler of its own.  That is exactly why a
+    // single re-cut pass was not a fixed point.  Give those fibers a fresh id
+    // instead: the nesting invariant is what must hold, "atom id == fiber id" is a
+    // naming convention, and the normalisation pass below restores it wherever it
+    // safely can.  Chains of such collisions resolve here in one step.
+    QHash<int,int> selfChild;
+    auto targetFor = [&](int F) -> int {
+        const auto cached = selfChild.constFind(F);
+        if (cached != selfChild.constEnd()) return cached.value();
+        const int t = (survivingOwner.value(F, F) == F) ? F : ++nextFreeAtom;
+        selfChild.insert(F, t);
+        return t;
+    };
+
     QHash<int, QHash<int, QSet<dataType>>> moves;
     for (int r = 1; r < n; ++r){
         const int F = static_cast<int>(cluByRow[r]);
@@ -425,11 +466,11 @@ void KlustersDoc::collapseToSelfChildren(){
         if (a > 1 && intact.contains(a)) continue;           // wholly-inside atom: deliberate, preserved
         if (a == F) continue;                                // already its own self child
         if (a > 1 && homeFiber.value(a, -1) == F) continue;  // straddler kept whole on its home fiber
-        moves[a][F].insert(static_cast<dataType>(r));         // collapse only the clipped-off remainder
+        moves[a][targetFor(F)].insert(static_cast<dataType>(r));   // collapse the clipped-off remainder
     }
     for (auto s = moves.constBegin(); s != moves.constEnd(); ++s)
         for (auto t = s.value().constBegin(); t != s.value().constEnd(); ++t){
-            QList<int> fromC, emptied;                       // move loose rows of src atom into self child
+            QList<int> fromC, emptied;                       // move loose rows of src atom into the target atom
             childData->moveSpikeSubset(s.key(), t.value(), t.key(), fromC, emptied);
         }
 
