@@ -497,6 +497,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     if (childColorList){ delete childColorList; childColorList = nullptr; }
     activeData = clusteringData; activeColorList = clusterColorList;
     parentToChildren.clear(); childToParent.clear(); childScopeVisible.clear();
+    hierarchyScanFoundViolation = false;   // no scan has run for the next document yet
     childScopeActive = false;
     siblingFetPath       = fetFileUrl;
     siblingSpkPath       = spikeFilePath;
