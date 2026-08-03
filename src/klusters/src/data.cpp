@@ -4746,6 +4746,34 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
         const int newId = oldToNew.contains(oldId)
                             ? oldToNew.value(oldId)
                             : oldId;
+        // Two old ids landing on the same new id is not a renumber, it is a
+        // merge — and this loop cannot express one.  QMap::insert is
+        // last-writer-wins, so the losing bucket is dropped: its spikes are
+        // never written in pass 2, writePos stops short of nbSpikes+1, and the
+        // tail of the rebuilt table reads as feature-row 0.  That table then
+        // reached prepareUndo(), where candidateSpikeTableValid() refused it —
+        // so the damage was contained, but the diagnosis pointed at
+        // "the committer" with no way to tell which one, and a caller that
+        // builds a colliding map had no signal at all that its map was wrong.
+        //
+        // Refuse here instead, before building anything, and name the
+        // collision.  Refusing is the same outcome the safety net produces
+        // (edit dropped, previous state kept) minus the wasted rebuild, and it
+        // makes renumberPartial's contract explicit: the map must be injective
+        // over the live cluster ids.  A caller that wants a merge has
+        // groupClusters() for it.
+        if (bucketsByNewId.contains(newId)) {
+            qWarning().nospace()
+                << "Data::renumberPartial: REFUSING — clusters "
+                << static_cast<int>(bucketsByNewId.value(newId).oldId) << " and " << oldId
+                << " both map to " << newId << ".  The map is not injective over the live "
+                   "cluster ids, so one cluster's spikes would be dropped from the rebuilt "
+                   "row table (this is the short/zeroed-tail class prepareUndo refuses).  "
+                   "No renumber performed; use groupClusters() to merge.";
+            delete spikesByClusterTemp;        // allocated above, never handed to prepareUndo
+            delete clusterInfoMapTemp;
+            return;
+        }
         Bucket b{ it.value().firstSpikePosition(),
                   it.value().nbSpikes(),
                   static_cast<dataType>(oldId),
