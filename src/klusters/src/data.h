@@ -392,7 +392,7 @@ public:
      *
      *  @param labels 1-based per-feature-row target ids; must hold at least
      *                nbSpikes + 1 entries or the call is a no-op. */
-    void setClusterLabels(const QVector<dataType>& labels);
+    bool setClusterLabels(const QVector<dataType>& labels);
 
     /** Atomic two-way split of a single cluster.
      *
