@@ -418,43 +418,71 @@ void KlustersDoc::collapseToSelfChildren(){
     // nesting violation waiting to happen.  An atom lying WHOLLY inside a reserve bin
     // is still `intact` and is preserved untouched, so a sub-cluster deliberately
     // dropped to noise as a unit keeps its identity.
-    // Every atom's post-re-cut owner is already determined by the two rules above:
-    // an intact atom stays under its sole fiber, a straddler stays under its home
-    // fiber.  Reserve atoms 0 and 1 are the self children of the reserve fibers, so
-    // they end up owned by fiber 0 and fiber 1 respectively -- any of their rows
-    // lying elsewhere is loose and is re-cut below.  Knowing the owners UP FRONT is
-    // what lets a fiber's self-child target be chosen so it cannot collide.
-    QHash<int,int> survivingOwner;                           // atom -> the one fiber it will belong to
-    for (auto it = atomFiberCount.constBegin(); it != atomFiberCount.constEnd(); ++it){
-        const int a = it.key();
-        survivingOwner.insert(a, intact.contains(a) ? it.value().constBegin().key()
-                                                    : homeFiber.value(a, a));
-    }
-    survivingOwner.insert(0, 0);
-    survivingOwner.insert(1, 1);
+    // Decide, per row, whether it is loose and which atom it collapses into.
+    //
+    // The reserve fibers (0 artifact / 1 noise) are NOT skipped.  They used to be --
+    // "noise/artifact fibers keep their atoms" -- and that is what made a whole class
+    // of straddler permanently unrepairable: an atom whose plurality sits in a real
+    // fiber but which has a few spikes in noise has its noise-side rows skipped here
+    // (reserve fiber) and its real-side rows skipped below (home fiber), so NOTHING
+    // moves and the atom still spans two fibers.  refiberize() is then a no-op on it,
+    // which is why the same offender list is re-reported verbatim after every edit
+    // while the warning keeps advising a refiberize that cannot help.  The reserve
+    // bins get the same self-child treatment as any other fiber -- atom id == fiber
+    // id, i.e. spikes dropped to noise are covered by atom 1 and spikes dropped to
+    // artifact by atom 0 -- which is exactly the lift mergeAllChildrenToSelf() already
+    // applies to every fiber including the reserve bins, and for the same reason it
+    // states there: an atom left in a reserve bin carrying an arbitrary id is a
+    // nesting violation waiting to happen.  An atom lying WHOLLY inside a reserve bin
+    // is still `intact` and is preserved untouched, so a sub-cluster deliberately
+    // dropped to noise as a unit keeps its identity.
 
-    // Fresh atom ids start above every id either layer currently uses, so they can
-    // collide neither with a surviving atom nor with a self-child target of the form
-    // T(F) == F.
+    // An atom is KEPT if at least one of its rows survives the three skip rules
+    // below -- it is intact, it is already its fiber's self child, or it is a
+    // straddler sitting on its home fiber.  Looseness does not depend on the
+    // targets, so this can be settled first, and it is what makes the target
+    // choice safe in one pass.
+    QSet<int> keptAtom;
+    for (int r = 1; r < n; ++r){
+        const int F = static_cast<int>(cluByRow[r]);
+        const int a = static_cast<int>(childByRow[r]);
+        if ((a > 1 && intact.contains(a)) || a == F
+                || (a > 1 && homeFiber.value(a, -1) == F))
+            keptAtom.insert(a);
+    }
+
+    // Fresh atom ids start above every id either layer currently uses, so they
+    // cannot collide with a surviving atom or with another fiber's target.
     int nextFreeAtom = 1;
     for (int r = 1; r < n; ++r){
         nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(childByRow[r]));
         nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(cluByRow[r]));
     }
 
-    // Fiber -> the atom its loose rows collapse into.  Normally that is the fiber's
-    // own id (the self-child convention).  But when an atom ALREADY carrying that id
-    // will survive under a DIFFERENT fiber, writing it here hands that atom rows in
-    // two fibers -- the repair minting a straddler of its own.  That is exactly why a
-    // single re-cut pass was not a fixed point.  Give those fibers a fresh id
-    // instead: the nesting invariant is what must hold, "atom id == fiber id" is a
-    // naming convention, and the normalisation pass below restores it wherever it
-    // safely can.  Chains of such collisions resolve here in one step.
+    // Fiber -> the atom its loose rows collapse into.  The self-child convention
+    // says that is the fiber's own id, and for a fiber that has no surviving atom
+    // of that id -- a fiber freshly minted by a split, say -- it is.
+    //
+    // When an atom carrying id F DOES survive, writing F here would fold the loose
+    // rows into it, and that is wrong in both of the ways it can happen.  If the
+    // survivor sits under another fiber, the atom ends up spanning two fibers: the
+    // repair minting a straddler, which is why one pass was not a fixed point.  If
+    // it sits under fiber F itself, the atom silently absorbs spikes that were
+    // never part of it -- a deliberate sub-cluster grows behind the user's back,
+    // which is the same silent-substitution failure in the atom layer.  Give those
+    // fibers a fresh id: existing sub-structure is left exactly as it was, and the
+    // newly loose spikes arrive as their own visible atom the user can inspect and
+    // merge deliberately.  The fiber then has two atoms, which the normalisation
+    // pass below already treats as genuine sub-structure and leaves alone.
+    //
+    // The reserve bins are excluded: atom 0 and atom 1 ARE the artifact and noise
+    // self children, membership inside them is not curated structure, and minting
+    // fresh atoms there would scatter noise across ever more ids for no gain.
     QHash<int,int> selfChild;
     auto targetFor = [&](int F) -> int {
         const auto cached = selfChild.constFind(F);
         if (cached != selfChild.constEnd()) return cached.value();
-        const int t = (survivingOwner.value(F, F) == F) ? F : ++nextFreeAtom;
+        const int t = (F <= 1 || !keptAtom.contains(F)) ? F : ++nextFreeAtom;
         selfChild.insert(F, t);
         return t;
     };
