@@ -109,6 +109,7 @@ void KlustersDoc::setActiveClustering(bool child){
 void KlustersDoc::buildHierarchyMaps(){
     parentToChildren.clear();
     childToParent.clear();
+    hierarchyScanFoundViolation = false;
     if (!clusteringData) return;
 
     // The per-spike arrays are the TRUTH: .clu (== docUrl) is what curation edits and what the user
@@ -149,9 +150,11 @@ void KlustersDoc::buildHierarchyMaps(){
                     parentToChildren[p].append(c);
                 }
             }
-            if (nestingViolation)
+            if (nestingViolation){
+                hierarchyScanFoundViolation = true;
                 qWarning() << "[hierarchy] .clc is not nested in .clu (a child id spans "
                               "multiple parents); kept first-seen parent for each child.";
+            }
         } else {
             qWarning() << "[hierarchy] could not read aligned .clu/.clc; falling back to the .clp cache";
         }
@@ -356,7 +359,12 @@ void KlustersDoc::rebuildHierarchyFromData(){
 }
 
 bool KlustersDoc::validateHierarchyMaps(const char* where) const {
-    // Nothing to check before the child layer exists, or in a flat session.
+    // Nothing to compare against before the child layer exists, or in a flat
+    // session.  This is a genuine blind spot rather than a safe case: a session
+    // curated without ever opening the hierarchical view has no childData, so no
+    // repair has run and the .clu may well have drifted from the on-disk .clc.
+    // That fault is file-level and is caught by buildHierarchyMaps()'s scan, whose
+    // verdict saveHierarchySiblings() consults via hierarchyScanFoundViolation.
     if (!childData || !clusteringData) return true;
     if (childToParent.isEmpty()) return true;
 
@@ -1023,6 +1031,37 @@ bool KlustersDoc::saveHierarchySiblings(){
     }
 
     if (!clpSiblingPath.isEmpty()){
+        // Do not write a .clp that is known to contradict the triple it ships with.
+        //
+        // Every hierarchy repair in this file is guarded by `if (childData)`, and
+        // childData is built lazily by loadChildClustering() -- only once the
+        // hierarchical view has actually been opened.  So a session curated WITHOUT
+        // ever opening that view gets no re-cut at all: the .clu moves, the on-disk
+        // .clc does not, and atoms end up under more than one fiber at the file
+        // level.  buildHierarchyMaps() sees exactly that on its scan, warns, and
+        // keeps the first-seen parent for each child -- which is a reasonable way to
+        // finish BUILDING a map, and a bad thing to then SAVE, because the arbitrary
+        // half of each straddle becomes the recorded answer.
+        //
+        // The .clc is not rewritten in this situation either (its write is
+        // childData-guarded above), so persisting the .clp would leave a triple whose
+        // three files disagree, with the .clp the only one asserting a nesting that
+        // is false.  Keep the previous .clp instead and say what to do: opening the
+        // hierarchical view loads the atom layer and refiberize() re-cuts the
+        // straddlers, after which a save writes a consistent triple.
+        //
+        // validateHierarchyMaps() does not cover this: it compares the in-memory map
+        // against the loaded layers, and there is no loaded child layer here.
+        if (hierarchyScanFoundViolation && !childData){
+            qWarning() << "[hierarchy] REFUSING to write" << clpSiblingPath
+                       << "-- the per-spike .clu/.clc disagree about which fiber owns at"
+                       << "least one atom, and with no child layer loaded nothing has"
+                       << "re-cut them, so the map would record an arbitrary owner for"
+                       << "each straddle.  The previous .clp is left in place.  Open the"
+                       << "hierarchical view (which loads the atom layer and re-cuts on"
+                       << "the next edit, or use Refiberize) and save again.";
+            return ok;
+        }
         int nChildren = 0;
         for (auto it = childToParent.constBegin(); it != childToParent.constEnd(); ++it)
             nChildren = qMax(nChildren, it.key());

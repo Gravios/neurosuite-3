@@ -1546,6 +1546,18 @@ private:
     QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 
+    /** Set by buildHierarchyMaps() when the per-spike .clu/.clc scan finds a child
+     *  id under more than one parent.  Only the file-level scan can see this: it
+     *  happens when a session is curated WITHOUT ever opening the hierarchical
+     *  view, so childData is null, every `if (childData) refiberize()` is skipped,
+     *  and the .clu drifts away from the untouched on-disk .clc.  Consulted by
+     *  saveHierarchySiblings() so a .clp contradicting its own triple is not
+     *  written.  Not the same fault as validateHierarchyMaps(), which compares an
+     *  in-memory map against loaded layers and cannot run at all when there is no
+     *  child layer to compare with.
+     */
+    bool hierarchyScanFoundViolation = false;
+
     /**Pointer on the parent widget (main window).*/
     QWidget* parent;
     
