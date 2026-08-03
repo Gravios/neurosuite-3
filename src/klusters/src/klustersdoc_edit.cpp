@@ -435,6 +435,19 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     }
     // Log the resulting state of the destination cluster (noise=1, artefact=0)
     logAfter(QList<int>{ clusterId });
+
+    // Hierarchical mode: deleting WHOLE fibers cannot break the nesting invariant --
+    // every atom inside a deleted fiber moves with it, so each still has exactly one
+    // owner -- and that is why this path needs no refiberize().  But the derived maps
+    // still name the deleted fibers as parents, and saveHierarchySiblings() writes the
+    // .clp straight out of childToParent, rebuilding it only when it is EMPTY.  So a
+    // stale map is not merely a wrong child palette: it is written to disk, mapping
+    // atoms to fibers that no longer exist.  Re-derive them (cheap, no re-cut, and it
+    // leaves the atom undo history alone, which refiberize would not).
+    if (childData) {
+        rebuildHierarchyFromData();
+        emit hierarchyChanged();
+    }
 }
 
 void KlustersDoc::deleteArtifact(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
