@@ -360,8 +360,8 @@ void KlustersDoc::collapseToSelfChildren(){
     // with one child IS that child (the "self child", atom id == fiber id -- the identity the
     // .clc==.clu lift establishes).  Any flat-layer edit -- a parent recluster, an artifact
     // recluster, a manual split, or a child recluster whose new atoms span fibers -- leaves
-    // "loose" spikes: in a real fiber (id > 1) but covered only by a reserve atom (noise 0 /
-    // artifact 1) or by an atom that now straddles several fibers.  Collapse every loose spike
+    // "loose" spikes: in a fiber (real OR reserve) but covered only by an atom belonging to a
+    // different fiber, or by an atom that now straddles several fibers.  Collapse every loose spike
     // into its fiber's self child, so each fiber regains a covering child with no new fiber
     // invented.  Atoms that are real (> 1) AND wholly inside one fiber are deliberate
     // sub-structure and are preserved untouched.
@@ -401,10 +401,26 @@ void KlustersDoc::collapseToSelfChildren(){
     }
 
     // Group loose spikes by (source atom -> self child = fiber id) for moveSpikeSubset.
+    //
+    // The reserve fibers (0 artifact / 1 noise) are NOT skipped.  They used to be --
+    // "noise/artifact fibers keep their atoms" -- and that is what made a whole class
+    // of straddler permanently unrepairable: an atom whose plurality sits in a real
+    // fiber but which has a few spikes in noise has its noise-side rows skipped here
+    // (reserve fiber) and its real-side rows skipped below (home fiber), so NOTHING
+    // moves and the atom still spans two fibers.  refiberize() is then a no-op on it,
+    // which is why the same offender list is re-reported verbatim after every edit
+    // while the warning keeps advising a refiberize that cannot help.  The reserve
+    // bins get the same self-child treatment as any other fiber -- atom id == fiber
+    // id, i.e. spikes dropped to noise are covered by atom 1 and spikes dropped to
+    // artifact by atom 0 -- which is exactly the lift mergeAllChildrenToSelf() already
+    // applies to every fiber including the reserve bins, and for the same reason it
+    // states there: an atom left in a reserve bin carrying an arbitrary id is a
+    // nesting violation waiting to happen.  An atom lying WHOLLY inside a reserve bin
+    // is still `intact` and is preserved untouched, so a sub-cluster deliberately
+    // dropped to noise as a unit keeps its identity.
     QHash<int, QHash<int, QSet<dataType>>> moves;
     for (int r = 1; r < n; ++r){
         const int F = static_cast<int>(cluByRow[r]);
-        if (F <= 1) continue;                                // noise/artifact fibers keep their atoms
         const int a = static_cast<int>(childByRow[r]);
         if (a > 1 && intact.contains(a)) continue;           // wholly-inside atom: deliberate, preserved
         if (a == F) continue;                                // already its own self child
