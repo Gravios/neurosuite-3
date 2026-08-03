@@ -286,13 +286,26 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     // additionally clear the atom undo/redo history out from under them.  Moving a
     // whole atom leaves no remainder, so the check below is false for them and this
     // block is a no-op -- their behaviour is unchanged.
-    if (childData && fromCluster > 1 && toCluster > 1) {
+    //
+    // The guard used to require BOTH ends to be real fibers (`> 1`), which excluded
+    // exactly the moves that produce the straddle class refiberize could not repair
+    // until this series fixed it: sending part of a fiber to noise, or pulling part
+    // of noise back into a fiber.  Those are ordinary curation gestures, they clip
+    // atoms just as a fiber-to-fiber move does, and the reserve bins are fibers like
+    // any other as far as the nesting invariant is concerned (an atom still has to
+    // have exactly one owner, and .clp can only record one).  The straddle probe
+    // below is what keeps the whole-atom hierarchy ops out, so the id test only has
+    // to exclude the degenerate self-move.
+    if (childData && fromCluster != toCluster) {
         const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
         const QVector<dataType> childByRow = childData->labelByFeatureRow();
         const int n = qMin(cluByRow.size(), childByRow.size());
-        // Atoms that contributed spikes to the move.  Reserve atoms (0 = noise,
-        // 1 = artifact) are excluded: they legitimately span fibers as placeholder
-        // coverage and collapseToSelfChildren treats them separately.
+        // Atoms that contributed spikes to the move.  Atom 0 / atom 1 are the
+        // reserve atoms: they are the self children of the artifact and noise
+        // fibers, so a spike carrying one is already correctly covered wherever it
+        // lands in a reserve bin, and collapseToSelfChildren re-cuts them when it
+        // does not.  Excluding them here keeps the probe cheap without missing a
+        // straddle: any atom that can straddle a REAL fiber has id > 1.
         QSet<int> movedAtoms;
         for (dataType r : featureRowSet)
             if (r >= 1 && static_cast<int>(r) < n && childByRow[static_cast<int>(r)] > 1)
