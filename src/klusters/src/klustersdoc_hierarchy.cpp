@@ -500,13 +500,20 @@ void KlustersDoc::collapseToSelfChildren(){
     // straddler sitting on its home fiber.  Looseness does not depend on the
     // targets, so this can be settled first, and it is what makes the target
     // choice safe in one pass.
+    // Same pass also records, per real fiber, WHICH source atoms feed it loose
+    // rows.  A fiber fed by several sources fragments into one descendant per
+    // source (see targetFor), so the count has to be complete before any target
+    // is handed out.
     QSet<int> keptAtom;
+    QHash<int, QSet<int>> looseSources;
     for (int r = 1; r < n; ++r){
         const int F = static_cast<int>(cluByRow[r]);
         const int a = static_cast<int>(childByRow[r]);
         if ((a > 1 && intact.contains(a)) || a == F
                 || (a > 1 && homeFiber.value(a, -1) == F))
             keptAtom.insert(a);
+        else if (F > 1)
+            looseSources[F].insert(a);
     }
 
     // Fresh atom ids start above every id either layer currently uses, so they
@@ -517,31 +524,43 @@ void KlustersDoc::collapseToSelfChildren(){
         nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(cluByRow[r]));
     }
 
-    // Fiber -> the atom its loose rows collapse into.  The self-child convention
-    // says that is the fiber's own id, and for a fiber that has no surviving atom
-    // of that id -- a fiber freshly minted by a split, say -- it is.
+    // (source atom, fiber) -> the atom that pair's loose rows collapse into.
     //
-    // When an atom carrying id F DOES survive, writing F here would fold the loose
-    // rows into it, and that is wrong in both of the ways it can happen.  If the
-    // survivor sits under another fiber, the atom ends up spanning two fibers: the
-    // repair minting a straddler, which is why one pass was not a fixed point.  If
-    // it sits under fiber F itself, the atom silently absorbs spikes that were
-    // never part of it -- a deliberate sub-cluster grows behind the user's back,
-    // which is the same silent-substitution failure in the atom layer.  Give those
-    // fibers a fresh id: existing sub-structure is left exactly as it was, and the
-    // newly loose spikes arrive as their own visible atom the user can inspect and
-    // merge deliberately.  The fiber then has two atoms, which the normalisation
-    // pass below already treats as genuine sub-structure and leaves alone.
+    // Keyed by the SOURCE as well as the fiber, so a cut that crosses several
+    // atoms yields one descendant per crossed atom rather than fusing them all
+    // into one covering child.  A row's atom is its provenance -- which of the
+    // over-split units it came from -- and the fiber it lands in says nothing
+    // about that, so collapsing rows from atoms 7, 12 and 30 into a single new
+    // atom discards information the atom layer exists to carry.  Smaller children
+    // that can be merged deliberately are preferable to a merge performed on the
+    // user's behalf, which is not reversible without knowing what was fused.
     //
-    // The reserve bins are excluded: atom 0 and atom 1 ARE the artifact and noise
-    // self children, membership inside them is not curated structure, and minting
-    // fresh atoms there would scatter noise across ever more ids for no gain.
-    QHash<int,int> selfChild;
-    auto targetFor = [&](int F) -> int {
-        const auto cached = selfChild.constFind(F);
-        if (cached != selfChild.constEnd()) return cached.value();
-        const int t = (F <= 1 || !keptAtom.contains(F)) ? F : ++nextFreeAtom;
-        selfChild.insert(F, t);
+    // The fiber keeps its own id as the self child only when a SINGLE source
+    // feeds it and nothing already carries that id: that is the ordinary split of
+    // one fiber in two, and it behaves exactly as before.  When several sources
+    // feed it, every descendant takes a fresh id -- the fiber then has more than
+    // one atom, so the "a fiber with one child IS that child" convention does not
+    // apply to it anyway and the normalisation pass below leaves it alone.
+    //
+    // Why a fresh id when an atom carrying F survives: if that survivor sits under
+    // another fiber, writing F would make it span two -- the repair minting a
+    // straddler, which is why one pass was not a fixed point.  If it sits under
+    // fiber F itself, the atom would silently absorb spikes that were never part
+    // of it, which is the same silent-substitution failure in the atom layer.
+    //
+    // The reserve bins are excluded from all of this: atom 0 and atom 1 ARE the
+    // artifact and noise self children, membership inside them is not curated
+    // structure, and fragmenting noise per source atom would scatter it across
+    // ever more ids for no gain.
+    QHash<int, QHash<int,int>> splitTarget;
+    auto targetFor = [&](int a, int F) -> int {
+        if (F <= 1) return F;
+        QHash<int,int>& perSource = splitTarget[F];
+        const auto cached = perSource.constFind(a);
+        if (cached != perSource.constEnd()) return cached.value();
+        const bool soleSource = (looseSources.value(F).size() == 1);
+        const int t = (soleSource && !keptAtom.contains(F)) ? F : ++nextFreeAtom;
+        perSource.insert(a, t);
         return t;
     };
 
@@ -569,7 +588,7 @@ void KlustersDoc::collapseToSelfChildren(){
         if (a > 1 && intact.contains(a)) continue;           // wholly-inside atom: deliberate, preserved
         if (a == F) continue;                                // already its own self child
         if (a > 1 && homeFiber.value(a, -1) == F) continue;  // straddler kept whole on its home fiber
-        const int t = targetFor(F);                          // collapse the clipped-off remainder
+        const int t = targetFor(a, F);                       // this source's share of the cut
         if (t != a){ newLabels[r] = static_cast<dataType>(t); changed = true; }
     }
     // Nothing loose: do not commit.  setClusterLabels would push an undo level and
@@ -594,7 +613,7 @@ void KlustersDoc::collapseToSelfChildren(){
             if (a > 1 && intact.contains(a)) continue;
             if (a == F) continue;
             if (a > 1 && homeFiber.value(a, -1) == F) continue;
-            const int t = targetFor(F);
+            const int t = targetFor(a, F);
             if (t != a){ retry[r] = static_cast<dataType>(t); again = true; }
         }
         if (again) childData->setClusterLabels(retry);
