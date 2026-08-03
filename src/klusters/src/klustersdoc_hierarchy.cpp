@@ -355,6 +355,64 @@ void KlustersDoc::rebuildHierarchyFromData(){
     }
 }
 
+bool KlustersDoc::validateHierarchyMaps(const char* where) const {
+    // Nothing to check before the child layer exists, or in a flat session.
+    if (!childData || !clusteringData) return true;
+    if (childToParent.isEmpty()) return true;
+
+    const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+    const QVector<dataType> childByRow = childData->labelByFeatureRow();
+    const int n = qMin(cluByRow.size(), childByRow.size());
+
+    // The relation the per-spike arrays actually encode right now.  Atoms that
+    // span fibers are counted separately: that is a nesting violation, a
+    // different fault from map staleness, and rebuildHierarchyFromData() already
+    // reports it -- conflating the two here would misdirect the diagnosis.
+    QHash<int,int> scanned;
+    scanned.reserve(childToParent.size() * 2 + 16);
+    int spanning = 0;
+    for (int r = 1; r < n; ++r){
+        const int c = static_cast<int>(childByRow[r]);
+        if (c <= 0) continue;
+        const int f = static_cast<int>(cluByRow[r]);
+        const auto it = scanned.constFind(c);
+        if (it == scanned.constEnd()) scanned.insert(c, f);
+        else if (it.value() != f) ++spanning;
+    }
+
+    // Three ways the map can disagree, kept apart because they mean different
+    // things: a wrong owner is an edit that moved spikes, a map-only atom is an
+    // edit that emptied one, a scan-only atom is an edit that created one.
+    QList<int> wrongOwner, mapOnly, scanOnly;
+    for (auto it = childToParent.constBegin(); it != childToParent.constEnd(); ++it){
+        const auto s = scanned.constFind(it.key());
+        if (s == scanned.constEnd())      mapOnly.append(it.key());
+        else if (s.value() != it.value()) wrongOwner.append(it.key());
+    }
+    for (auto it = scanned.constBegin(); it != scanned.constEnd(); ++it)
+        if (!childToParent.contains(it.key())) scanOnly.append(it.key());
+
+    if (wrongOwner.isEmpty() && mapOnly.isEmpty() && scanOnly.isEmpty()) return true;
+
+    // Sort so two runs over the same drift produce the same message.
+    std::sort(wrongOwner.begin(), wrongOwner.end());
+    std::sort(mapOnly.begin(),    mapOnly.end());
+    std::sort(scanOnly.begin(),   scanOnly.end());
+    qWarning() << "[hierarchy] derived maps are STALE at" << where << "--"
+               << wrongOwner.size() << "atom(s) owned by a different fiber than the"
+               << "per-spike arrays say," << mapOnly.size() << "in the map but gone from the"
+               << "arrays," << scanOnly.size() << "in the arrays but missing from the map."
+               << "An edit path mutated a layer without refreshing the maps."
+               << "wrong-owner:" << wrongOwner.mid(0, 8)
+               << "map-only:"    << mapOnly.mid(0, 8)
+               << "scan-only:"   << scanOnly.mid(0, 8);
+    if (spanning)
+        qWarning() << "[hierarchy] (also" << spanning << "spike(s) whose atom spans fibers -- that is a"
+                   << "nesting violation, reported separately by rebuildHierarchyFromData)";
+    return false;
+}
+
+
 void KlustersDoc::collapseToSelfChildren(){
     // The single hierarchy invariant: every fiber is covered by its child atom(s), and a fiber
     // with one child IS that child (the "self child", atom id == fiber id -- the identity the
@@ -907,6 +965,23 @@ bool KlustersDoc::saveHierarchySiblings(){
     // .clp went stale.  Rebuild the map from the freshly-written per-spike arrays in that case.
     if (childToParent.isEmpty()) buildHierarchyMaps();
     if (childToParent.isEmpty()) return true;                  // nothing derivable -> leave siblings alone
+
+    // Last gate before the map reaches disk.  The .clp below is written straight
+    // out of childToParent, so a map left stale by an edit path is not merely a
+    // wrong child palette for the rest of the session -- it is what gets SAVED,
+    // and the next open reports it as drift against the per-spike arrays.
+    //
+    // Rebuild rather than write known-bad data, but report first.  Rebuilding
+    // silently would hide the path that left it stale, and naming that path is
+    // the whole point of the check: four edit paths mutated a layer without
+    // refreshing the maps until recently, and nothing here would have noticed.
+    // If a report ever appears, the gesture that preceded the save is the lead.
+    if (!validateHierarchyMaps("saveHierarchySiblings")) {
+        rebuildHierarchyFromData();
+        if (!validateHierarchyMaps("saveHierarchySiblings/after-rebuild"))
+            qWarning() << "[hierarchy] the rebuild did not settle the maps; the .clp about to be"
+                       << "written may not agree with the .clu/.clc it ships with.";
+    }
     // .clc — the per-spike child layer (unchanged by merge/promote/move, but
     // rewritten so the triple is regenerated together); .clp — the edited
     // child->parent map.  Overwrite in place with a .bak backup of each.
