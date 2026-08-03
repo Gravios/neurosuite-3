@@ -406,6 +406,21 @@ public:
      *  the data, so it keeps the maps correct across edits AND undo/redo with no
      *  separate map-undo stack. */
     void rebuildHierarchyFromData();
+
+    /** Cross-check the derived child<->fiber maps against the per-spike arrays.
+     *
+     *  childToParent IS the atom->fiber relation the .clp records; it is just
+     *  treated as derived rather than as owned state, and nothing verifies that
+     *  it still matches the layers it was derived from.  It stops matching the
+     *  moment an edit path mutates a layer without calling
+     *  rebuildHierarchyFromData() -- which four paths did until recently, and
+     *  which nothing would have caught.
+     *
+     *  Reports drift and returns false; does not repair.  @p where names the
+     *  caller so a report identifies when the staleness was noticed.  Cheap
+     *  enough to call freely: one pass over two label arrays.
+     */
+    bool validateHierarchyMaps(const char* where) const;
     /** After a PARENT edit that moved spikes across fiber boundaries (a manual
      *  polygon split), carve only the child atoms that now straddle two or more
      *  parents so every parent regains whole atoms; atoms wholly inside one
