@@ -494,6 +494,13 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
     }
     logAfter(QList<int>{ leftId, rightId });
 
+    // Hierarchical mode: the split partitions the source fiber's spikes by an
+    // algorithmic criterion that knows nothing about the .clc atom layer, so every
+    // atom the cut crosses is left spanning the two halves.  Same situation as the
+    // manual polygon split, which already refiberizes; this file had no hierarchy
+    // handling at all.  childData-guarded, so flat sessions are untouched.
+    if (childData) refiberize();
+
     // ── Build result ─────────────────────────────────────────────────────
     DipSplitResult R = resultFromDecision(D);
     R.leftId  = leftId;
@@ -648,6 +655,14 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
     }
 
     setModified(true);
+
+    // Hierarchical mode: the N-way split reassigns the source fiber's spikes by
+    // nearest-neighbour vote, which knows nothing about the .clc atom layer, so every
+    // atom the partition crosses is left spanning several of the new fibers.  Same
+    // situation as the manual polygon split, which already refiberizes.  Placed after
+    // setModified so the layer is consistent before the curation-log details below
+    // record the result.  childData-guarded, so flat sessions are untouched.
+    if (childData) refiberize();
 
     // ── Curation-log details ──────────────────────────────────────────────
     if (curationLogger && curationLogger->isOpen()) {
