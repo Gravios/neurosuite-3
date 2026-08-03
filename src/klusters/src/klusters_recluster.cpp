@@ -613,7 +613,16 @@ void KlustersApp::slotRecluster(){
             QString fMed;
             for (int j = 0; j < dimsWritten - 1; ++j)
                 fMed.append(QLatin1Char('1'));
-            fMed.append(QLatin1Char('0'));      // timestamp column off
+            // Timestamp column.  medianWaveformResidualImpl writes K residual
+            // components AND the timestamp (it returns K + 1), so the column is
+            // present in this .fet exactly as it is in the canonical one -- it
+            // was just being masked off unconditionally here, which silently
+            // discarded the "include time" checkbox whenever this path ran.
+            // The auto-select string built above already honours the checkbox;
+            // this override replaced it wholesale, so the setting never reached
+            // KlustaKwik's UseFeatures for any residual recluster.
+            fMed.append(configuration().getIncludeTimeInAutoSelect()
+                            ? QLatin1Char('1') : QLatin1Char('0'));
             features = fMed;
             QStringList cidStrs;
             for (int cid : clustersToRecluster) cidStrs << QString::number(cid);
@@ -650,14 +659,17 @@ void KlustersApp::slotRecluster(){
             // fall through
         } else {
             // Success — override %features.  dimsWritten == K + 1; bit
-            // string is K '1's (residual PCA components) then '0' for
-            // the timestamp column.  The replacement itself is deferred
-            // to the unified site after this block so it can't be
-            // shadowed by an earlier replacement.
+            // string is K '1's (residual PCA components) then the timestamp
+            // column, which follows the "include time" checkbox for the same
+            // reason as the median-residual path above: the column is written,
+            // and hardcoding it off here discarded the setting.  The
+            // replacement itself is deferred to the unified site after this
+            // block so it can't be shadowed by an earlier replacement.
             QString fSubdim;
             for (int j = 0; j < dimsWritten - 1; ++j)
                 fSubdim.append(QLatin1Char('1'));
-            fSubdim.append(QLatin1Char('0'));
+            fSubdim.append(configuration().getIncludeTimeInAutoSelect()
+                               ? QLatin1Char('1') : QLatin1Char('0'));
             features = fSubdim;             // overrides the auto-select string
             // Log the eigenvalues so the user can see how the cluster's
             // residual structure decomposes.
