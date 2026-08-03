@@ -487,19 +487,26 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
     commitTwoClusterCreation(leftId, rightId, fromClusters, emptiedClusters,
                              activeView);
 
+    // Hierarchical mode: this split partitions the source's spikes by an algorithmic
+    // criterion that knows nothing about the .clc atom layer, so every atom the cut
+    // crosses is left spanning the resulting fibers.
+    //
+    // Re-cut HERE, immediately after the parent mutation and before anything is told
+    // about it.  Everything below is an observer -- view notification, the matrix
+    // signal bus, showAllWidgets, the palette rebuild -- and Qt delivers direct
+    // connections synchronously, so repairing afterwards means each of them runs
+    // against a layer whose atoms straddle.  It also means the repair's own childData
+    // mutation invalidates the caches those observers just rebuilt, so the refresh is
+    // done twice and the first one is wrong.
+    // childData-guarded, so flat sessions are untouched.
+    if (childData) refiberize();
+
     // ── Curation-log: details + after-snapshot ───────────────────────────
     if (curationLogger && curationLogger->isOpen()) {
         QMap<QString, QVariant> details = buildLogDetails(D, leftId, rightId);
         curationLogger->recordActionDetails(details);
     }
     logAfter(QList<int>{ leftId, rightId });
-
-    // Hierarchical mode: the split partitions the source fiber's spikes by an
-    // algorithmic criterion that knows nothing about the .clc atom layer, so every
-    // atom the cut crosses is left spanning the two halves.  Same situation as the
-    // manual polygon split, which already refiberizes; this file had no hierarchy
-    // handling at all.  childData-guarded, so flat sessions are untouched.
-    if (childData) refiberize();
 
     // ── Build result ─────────────────────────────────────────────────────
     DipSplitResult R = resultFromDecision(D);
@@ -605,6 +612,20 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
         for (int c : currentlyShown)
             if (!emptiedClusters.contains(c)) clustersToShow.append(c);
     }
+    // Hierarchical mode: this split partitions the source's spikes by an algorithmic
+    // criterion that knows nothing about the .clc atom layer, so every atom the cut
+    // crosses is left spanning the resulting fibers.
+    //
+    // Re-cut HERE, immediately after the parent mutation and before anything is told
+    // about it.  Everything below is an observer -- view notification, the matrix
+    // signal bus, showAllWidgets, the palette rebuild -- and Qt delivers direct
+    // connections synchronously, so repairing afterwards means each of them runs
+    // against a layer whose atoms straddle.  It also means the repair's own childData
+    // mutation invalidates the caches those observers just rebuilt, so the refresh is
+    // done twice and the first one is wrong.
+    // childData-guarded, so flat sessions are untouched.
+    if (childData) refiberize();
+
     QColor color;
     for (int newId : newClusters) {
         // Same HSV scheme used by commitTwoClusterCreation — keeps the
@@ -655,14 +676,6 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
     }
 
     setModified(true);
-
-    // Hierarchical mode: the N-way split reassigns the source fiber's spikes by
-    // nearest-neighbour vote, which knows nothing about the .clc atom layer, so every
-    // atom the partition crosses is left spanning several of the new fibers.  Same
-    // situation as the manual polygon split, which already refiberizes.  Placed after
-    // setModified so the layer is consistent before the curation-log details below
-    // record the result.  childData-guarded, so flat sessions are untouched.
-    if (childData) refiberize();
 
     // ── Curation-log details ──────────────────────────────────────────────
     if (curationLogger && curationLogger->isOpen()) {

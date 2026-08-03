@@ -206,6 +206,22 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     // ── Doc-level undo: same shape as recluster.
     prepareReclusteringUndo(newClusterList, inputs);
 
+    // Hierarchical mode: the watershed relabels every spike of the selected fibers
+    // into basins found in a 2-D projection, a criterion with no knowledge of the
+    // .clc atom layer -- and it is multi-source, so one run can scatter the atoms of
+    // several fibers across several new ones.  Every atom a basin boundary crosses is
+    // left straddling, and no new fiber gets a covering child.
+    //
+    // Re-cut HERE, immediately after the parent mutation and before anything is
+    // told about it.  Everything below -- addNewClustersToView, newClustersAdded,
+    // showAllWidgets, the palette rebuild -- is an observer, and Qt delivers
+    // direct connections synchronously, so repairing afterwards means every one of
+    // them runs against a layer whose atoms straddle.  It also means the repair's
+    // own childData mutation invalidates the caches those observers just rebuilt,
+    // so the refresh is done twice and the first one is wrong.
+    // childData-guarded, so flat sessions are untouched.
+    if (childData) refiberize();
+
     // ── Update colour palette: add new, remove dissolved.  Mirrors
     // ── reclusteringUpdate's main branch.
     KlustersView* mainActiveView = app()->activeView();
@@ -240,15 +256,6 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
 
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(clustersToShow);
-
-    // Hierarchical mode: the watershed relabels every spike of the selected fibers
-    // into basins found in a 2-D projection, a criterion with no knowledge of the
-    // .clc atom layer -- and it is multi-source, so one run can scatter the atoms of
-    // several fibers across several new ones.  Every atom a basin boundary crosses is
-    // left straddling, and no new fiber gets a covering child.  Same situation as the
-    // manual polygon split, which already refiberizes; this file had no hierarchy
-    // handling at all.  childData-guarded, so flat sessions are untouched.
-    if (childData) refiberize();
 
     // ── Curation-log details ─────────────────────────────────────────────
     // One ACTION_DETAIL record covering: source clusters and their sizes,
