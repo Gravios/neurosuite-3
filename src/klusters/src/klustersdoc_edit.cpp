@@ -532,6 +532,16 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
 
         //Notify the application that spikes have been deleted.
         emit spikesDeleted();
+
+        // Hierarchical mode: this moves an ARBITRARY SUBSET out of one or more source
+        // fibers into a reserve bin, and never touches the .clc atom layer -- so any
+        // atom the region only partly covers is left spanning its source fiber and the
+        // reserve bin.  The polygon split (createNewCluster / createNewClusters) and
+        // the subset move already refiberize for exactly this reason; this path had no
+        // hierarchy handling at all, which is how ordinary curation -- lasso the bad
+        // spikes, send them to noise -- accumulated straddlers.  childData-guarded, so
+        // flat sessions are untouched.
+        if (childData) refiberize();
     }
 }
 
