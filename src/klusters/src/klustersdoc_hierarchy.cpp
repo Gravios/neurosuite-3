@@ -466,13 +466,19 @@ void KlustersDoc::collapseToSelfChildren(){
         // are free or are themselves sources -- a plain split satisfies this for all of
         // them (a source fiber and its split-off both hand their sole atom back) -- and
         // leave any rarer case with its naming oddity rather than corrupt the layer.
-        QSet<int> sources;
-        for (auto it = renameToSelf.constBegin(); it != renameToSelf.constEnd(); ++it)
-            sources.insert(it.key());
         QMap<int,int> safe;
-        for (auto it = renameToSelf.constBegin(); it != renameToSelf.constEnd(); ++it)
-            if (!existingAtoms.contains(it.value()) || sources.contains(it.value()))
-                safe.insert(it.key(), it.value());
+        bool admitted = true;
+        while (admitted){
+            admitted = false;
+            for (auto it = renameToSelf.constBegin(); it != renameToSelf.constEnd(); ++it){
+                if (safe.contains(it.key())) continue;              // already admitted
+                if (!existingAtoms.contains(it.value())             // target free
+                        || safe.contains(it.value())){              // target vacated by an accepted rename
+                    safe.insert(it.key(), it.value());
+                    admitted = true;
+                }
+            }
+        }
         if (!safe.isEmpty()) childData->renumberPartial(safe);
     }
 
