@@ -3777,9 +3777,31 @@ void Data::restoreClusterLabels(const QVector<dataType>& labels)
     }
 }
 
-void Data::setClusterLabels(const QVector<dataType>& labels)
+bool Data::setClusterLabels(const QVector<dataType>& labels)
 {
-    if (labels.size() < static_cast<int>(nbSpikes) + 1) return;   // size guard
+    if (labels.size() < static_cast<int>(nbSpikes) + 1) return false;   // size guard
+
+    // Unlike every other tiling committer, this one takes a FULL labelling and
+    // writes every row.  Callers build that labelling from labelByFeatureRow(),
+    // which reports 0 for any row the derived clusterInfoMap fails to account for.
+    // On a desynced map that 0 does not mean "artifact", it means "unknown" — and
+    // committing it would silently move those spikes into cluster 0.
+    //
+    // The subset committers heal on entry and proceed, because a stale read can
+    // only make them skip a row they meant to move (moveSpikeSubset only touches
+    // rows genuinely in the source cluster), which fails safe.  This one cannot
+    // heal-and-proceed: the caller's labels predate the repair, so they would still
+    // carry the zeros.  Repair the map and refuse, so the caller can rebuild its
+    // labelling against a consistent view.  Refusing costs one dropped edit;
+    // proceeding costs spikes silently relabelled to artifact.
+    if (!checkClusterInfoMapInvariant("setClusterLabels-input")) {
+        healClusterInfoMapIfDesynced("setClusterLabels");
+        qWarning() << "Data::setClusterLabels: REFUSING — the clusterInfoMap disagreed"
+                   << "with the row table on entry, so the caller's labelling was derived"
+                   << "from an incomplete view and would relabel unaccounted spikes to"
+                   << "cluster 0.  The map has been repaired; retry the operation.";
+        return false;
+    }
 
     // Bucket rows by target id.  QMap iterates ascending, so writing in this
     // order leaves the spike table physically sorted by cluster id -- the
@@ -3842,6 +3864,8 @@ void Data::setClusterLabels(const QVector<dataType>& labels)
 
     // Pushes the previous tables onto the undo stack and swaps in the new ones.
     prepareUndo(spikesByClusterTemp, clusterInfoMapTemp, dimChanged);
+
+    return true;
 }
 
 

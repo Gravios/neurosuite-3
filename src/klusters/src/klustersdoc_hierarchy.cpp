@@ -727,7 +727,12 @@ int KlustersDoc::mergeAllChildrenToSelf(KlustersView& activeView){
     // ChildEdit below makes Ctrl+Shift+Z revert the entire flatten in one step.
     // (restoreClusterLabels would have been wrong here: it pushes none, and the
     // ChildEdit would then pop an unrelated older snapshot.)
-    childData->setClusterLabels(newLabels);
+    //
+    // It refuses, and pushes no level, when the map was desynced on entry.  Bail out
+    // WITHOUT recording a ChildEdit in that case: an unmatched entry would make the
+    // next atom undo pop an unrelated older snapshot -- exactly the bug the comment
+    // above warns about, arrived at from the other direction.
+    if (!childData->setClusterLabels(newLabels)) return -1;
 
     const QList<dataType> after = childData->clusterIds();
     QList<int> survivors;
