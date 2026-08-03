@@ -241,6 +241,15 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(clustersToShow);
 
+    // Hierarchical mode: the watershed relabels every spike of the selected fibers
+    // into basins found in a 2-D projection, a criterion with no knowledge of the
+    // .clc atom layer -- and it is multi-source, so one run can scatter the atoms of
+    // several fibers across several new ones.  Every atom a basin boundary crosses is
+    // left straddling, and no new fiber gets a covering child.  Same situation as the
+    // manual polygon split, which already refiberizes; this file had no hierarchy
+    // handling at all.  childData-guarded, so flat sessions are untouched.
+    if (childData) refiberize();
+
     // ── Curation-log details ─────────────────────────────────────────────
     // One ACTION_DETAIL record covering: source clusters and their sizes,
     // resolved watershed config (after auto-tune), kernel diagnostics, and
