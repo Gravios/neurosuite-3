@@ -576,9 +576,26 @@ void KlustersDoc::undo(){
     if (curationLogger && curationLogger->isOpen()) {
         curationLogger->notifyUndo();
     }
-    // hierarchical view: an undo of a hierarchy edit reverts clusteringData, so
-    // re-derive the fiber<-child maps and refresh the child palette.
-    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); }
+    // Hierarchical view: this reverts clusteringData only.  The two layers keep
+    // INDEPENDENT undo stacks by design (hierarchical-clustering.md), so the atom
+    // re-cut that ran after the edit being undone is not reverted with it -- and
+    // that re-cut moved rows into atoms chosen for the post-edit fiber layout.
+    // Restoring the old fiber labels underneath them puts those atoms back in a
+    // fiber they no longer belong to.
+    //
+    // Concretely: sending part of a fiber to noise makes its clipped rows atom 1,
+    // the noise self child; undo returns them to their fiber still carrying atom 1,
+    // which also covers the session's actual noise, so atom 1 now spans two fibers.
+    // Re-deriving the maps here only REPORTED that -- rebuildHierarchyFromData
+    // warns and keeps the first-seen owner -- which made undo a silent source of
+    // exactly the offender lists the user was seeing.
+    //
+    // So re-cut rather than merely re-derive.  collapseToSelfChildren() ends by
+    // calling rebuildHierarchyFromData() and emitting hierarchyChanged(), so this
+    // is a strict superset of what was here, and it commits nothing when nothing is
+    // loose -- no undo level, no cache invalidation -- so an undo that leaves the
+    // layers consistent still costs only one scan.
+    if (childData) collapseToSelfChildren();
 }
 
 
@@ -729,7 +746,12 @@ void KlustersDoc::redo(){
     if (curationLogger && curationLogger->isOpen()) {
         curationLogger->notifyRedo();
     }
-    // hierarchical view: a redo re-applies a hierarchy edit; re-derive the maps.
-    if (childData) { rebuildHierarchyFromData(); emit hierarchyChanged(); }
+    // Hierarchical view: same reasoning as undo() -- a redo re-applies the parent
+    // edit without re-applying the atom re-cut that accompanied it, so the layers
+    // can land inconsistent and re-deriving the maps would only report it.  Measured
+    // as harmless in the modelled scenarios, but it is the same asymmetry and the
+    // no-op case is free, so repair symmetrically rather than rely on redo happening
+    // to be safe.
+    if (childData) collapseToSelfChildren();
 }
 
