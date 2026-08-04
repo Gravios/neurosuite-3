@@ -174,14 +174,37 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
         int nbSamples, int peakSampleIndex,
         QMap<int,QList<int>>& spikeGroups)
 {
-    // Preserve per-group nFeatures from any existing groups
-    QMap<int,int> existingNFeatures;
+    // Preserve per-group nFeatures, nSamples AND peakSampleIndex from any existing
+    // groups.
+    //
+    // nSamples/peakSampleIndex are PER GROUP in this format, and klusters reads them
+    // that way (ParameterYamlReader::getNbSamples(electrodeGroupID)).  Neuroscope,
+    // the only caller of this overload, models exactly one of each for the whole
+    // session -- "Neuroscope uses the same values for all the groups" -- so the
+    // values it passes in are not per-group knowledge, they are the single value it
+    // happened to load.  Writing them across every group therefore destroys geometry
+    // the caller never modelled, and it is destroyed on ANY neuroscope save: opening
+    // a session to look at traces and hitting Save is enough.
+    //
+    // The damage is silent and downstream: klusters derives the spike count as
+    // spkFileLength / (nChannels * nSamples * sampleSize), so a wrong nSamples makes
+    // a perfectly good .clu look like it has the wrong number of entries and the
+    // session stops loading, pointing at the cluster files rather than at the .yaml.
+    //
+    // So an existing per-group value always wins.  The caller's value is used only
+    // for groups that do not have one -- a group neuroscope just created, where its
+    // session-wide value is the only information available.
+    QMap<int,int> existingNFeatures, existingNSamples, existingPeak;
     auto existing = root["spikeDetection"]["channelGroups"];
     if (existing && existing.IsSequence()) {
         int idx = 1;
         for (auto grp : existing) {
             if (grp["nFeatures"])
                 existingNFeatures[idx] = grp["nFeatures"].as<int>(3);
+            if (grp["nSamples"])
+                existingNSamples[idx] = grp["nSamples"].as<int>(0);
+            if (grp["peakSampleIndex"])
+                existingPeak[idx] = grp["peakSampleIndex"].as<int>(0);
             ++idx;
         }
     }
@@ -204,8 +227,8 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
         YAML::Node chSeq(YAML::NodeType::Sequence);
         for (int ch : it.value()) chSeq.push_back(ch);
         grp["channels"]        = chSeq;
-        grp["nSamples"]        = nbSamples;
-        grp["peakSampleIndex"] = peakSampleIndex;
+        grp["nSamples"]        = existingNSamples.value(it.key(), nbSamples);
+        grp["peakSampleIndex"] = existingPeak.value(it.key(), peakSampleIndex);
         grp["nFeatures"]       = existingNFeatures.value(it.key(), 3);
         seq.push_back(grp);
     }
@@ -216,14 +239,31 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
 bool ParameterYamlModifier::setSpikeDetectionInformation(
         QMap<int,QList<int>>& spikeGroups)
 {
-    // Preserve existing nSamples/peakSampleIndex
-    int nbSamples       = 32;
-    int peakSampleIndex = 16;
-    if (root["neuroscope"]["spikes"]) {
+    // Fallbacks for groups that have no per-group value of their own.  These are
+    // NOT defaults to invent: 32/16 used to be hardcoded here, and 32/16 is a real
+    // waveform geometry, so inventing it produced a file that reads as valid and
+    // silently mis-sizes every spike.  Prefer the neuroscope tag, then any existing
+    // per-group value, and refuse rather than guess when the file carries neither.
+    int nbSamples = 0, peakSampleIndex = 0;
+    if (root["neuroscope"] && root["neuroscope"]["spikes"]) {
         auto spk = root["neuroscope"]["spikes"];
-        if (spk["nSamples"])       nbSamples       = spk["nSamples"].as<int>(32);
-        if (spk["peakSampleIndex"]) peakSampleIndex = spk["peakSampleIndex"].as<int>(16);
+        if (spk["nSamples"])        nbSamples       = spk["nSamples"].as<int>(0);
+        if (spk["peakSampleIndex"]) peakSampleIndex = spk["peakSampleIndex"].as<int>(0);
     }
+    if (nbSamples <= 0 || peakSampleIndex <= 0) {
+        auto groups = root["spikeDetection"]["channelGroups"];
+        if (groups && groups.IsSequence()) {
+            for (auto grp : groups) {
+                if (nbSamples <= 0 && grp["nSamples"])
+                    nbSamples = grp["nSamples"].as<int>(0);
+                if (peakSampleIndex <= 0 && grp["peakSampleIndex"])
+                    peakSampleIndex = grp["peakSampleIndex"].as<int>(0);
+                if (nbSamples > 0 && peakSampleIndex > 0) break;
+            }
+        }
+    }
+    if (nbSamples <= 0 || peakSampleIndex <= 0)
+        return false;      // nothing to preserve and nothing safe to invent
     return setSpikeDetectionInformation(nbSamples, peakSampleIndex, spikeGroups);
 }
 
