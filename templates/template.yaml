@@ -1841,10 +1841,11 @@ programs:
 
       nChannels and nBits come from acquisitionSystem, so a slice cannot
       disagree with the recording. A plain-text <output>.info sidecar records the
-      four numbers needed to read the result: source nChannels, slicedChannels,
-      inputExtension and the sampling rate of the stream that was cut. Anything
-      derivable from slicedChannels against this session -- grouping, anatomy,
-      spike geometry -- is deliberately not copied there.
+      five numbers needed to read the result: source nChannels, nBits,
+      slicedChannels, inputExtension and the sampling rate of the stream that was
+      cut. nChannels and nBits together fix the byte layout. Anything derivable
+      from slicedChannels against this session -- grouping, anatomy, spike
+      geometry -- is deliberately not copied there.
 
       PARAMETERS
 
