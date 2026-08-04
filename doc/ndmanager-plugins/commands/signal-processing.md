@@ -176,7 +176,7 @@ binary. The source is opened read-only and never modified, so slicing is always
 safe to re-run.
 
 **Input:** `SESSION.<inputExtension>` (default `lfp`)
-**Output:** `SESSION.<inputExtension>.slice.<tag>` plus a four-field `.info` sidecar
+**Output:** `SESSION.<inputExtension>.slice.<tag>` plus a five-field `.info` sidecar
 
 Use it to pull one shank, one anatomical group, or a handful of reference
 channels out of a 96-channel `.lfp` so downstream analysis loads megabytes
@@ -199,16 +199,21 @@ rate, and nothing about a headerless binary could contradict it.
 
 ### The `.info` sidecar
 
-A sliced binary is headerless, so four numbers are written next to it — enough to
+A sliced binary is headerless, so five numbers are written next to it — enough to
 parse the file and map every column back to the recording:
 
 ```
 nChannels: 96
+nBits: 16
 slicedChannels: 0,1,4,5
 inputExtension: lfp
 samplingRate: 1250
 ```
 
+- `nChannels` and `nBits` together fix the byte layout. Without both, the file
+  cannot be indexed at all, and a wrong guess yields a file of the right length
+  full of wrong numbers — the record-divisibility check only catches a mismatch
+  that leaves a remainder.
 - `nChannels` is the **source** width, which is what makes `slicedChannels`
   readable. The slice's own width is the length of that list.
 - `samplingRate` follows the stream that was cut, not `acquisitionSystem`:

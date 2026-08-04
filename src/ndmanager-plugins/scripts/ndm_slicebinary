@@ -111,22 +111,26 @@ check_command_status process_slicebinary
 # // Sidecar
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-# A sliced binary is headerless, so these four numbers are what a reader needs to
+# A sliced binary is headerless, so these five numbers are what a reader needs to
 # parse it and map it back to the recording.  Nothing else is recorded: channel
 # grouping, anatomy and spike geometry are all functions of slicedChannels
 # against the parent session, and a copy written here would be the same policy
 # expressed twice -- with the copy the one that goes stale when the parent is
 # regrouped.
 #
-# nChannels is the SOURCE width, which is what makes slicedChannels readable;
-# the slice's own width is the length of that list.  samplingRate follows the
-# stream that was cut, not the acquisition rate: a slice of the .lfp is at the
-# LFP rate, and recording 32552 for it would misdate every sample in the file.
+# nChannels and nBits together fix the byte layout: without both, the file
+# cannot be indexed at all, and guessing wrong yields a file of the right length
+# full of wrong numbers.  nChannels is the SOURCE width, which is what makes
+# slicedChannels readable; the slice's own width is the length of that list.
+# samplingRate follows the stream that was cut, not the acquisition rate: a
+# slice of the .lfp is at the LFP rate, and recording 32552 for it would misdate
+# every sample in the file.
 sliceSamplingRate=$(yaml_read $session "//fieldPotentials/lfpSamplingRate")
 [ "$inputExtension" != lfp ] && sliceSamplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
 
 {
 	echo "nChannels: $nChannels"
+	echo "nBits: $nBits"
 	echo "slicedChannels: $channelList"
 	echo "inputExtension: $inputExtension"
 	echo "samplingRate: ${sliceSamplingRate:-unknown}"

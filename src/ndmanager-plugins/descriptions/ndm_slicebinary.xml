@@ -38,12 +38,15 @@ The engine refuses a file whose length is not a whole number of records, which
 catches a wrong channel count or sample width -- but only when the mismatch
 leaves a remainder, so it is a safety net and not a guarantee.
 
-Alongside the binary, a plain-text &lt;output&gt;.info records the four numbers a
+Alongside the binary, a plain-text &lt;output&gt;.info records the five numbers a
 reader needs to parse the file and map it back: the SOURCE channel count, the
-channel list, the input extension and the sampling rate of the stream that was
-cut. Nothing derivable is duplicated there -- channel grouping, anatomy and spike
-geometry are all functions of slicedChannels against the parent session, and a
-copy would be the one that goes stale when the parent is regrouped.
+sample width, the channel list, the input extension and the sampling rate of the
+stream that was cut. nChannels and nBits together fix the byte layout -- without
+both, the file cannot be indexed, and a wrong guess yields a file of the right
+length full of wrong numbers. Nothing derivable is duplicated there: channel
+grouping, anatomy and spike geometry are all functions of slicedChannels against
+the parent session, and a copy would be the one that goes stale when the parent
+is regrouped.
 
 Running again with the same tag is refused because the output already exists; pick
 a different tag or remove the file.
