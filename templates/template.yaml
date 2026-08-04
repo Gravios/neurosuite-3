@@ -1768,6 +1768,9 @@ programs:
       - name: subtractSpikes
         value: 'auto'
         status: Optional
+      # - name: inputExtension
+      #   value: dat
+      #   status: Optional
     help: |-
       Downsample a .dat file to create the LFP file.
 
@@ -1799,6 +1802,18 @@ programs:
       # subtractSpikes
 
       Whether to strip spikes before resampling (see above).
+
+      # inputExtension
+
+      Data file read for resampling, without the leading dot (default dat). Point it
+      at an alternative, externally-processed source (e.g. car.dat) to downsample
+      that file instead of the raw recording.
+
+      Any value but dat selects the source outright: the spike-cleaned dat is not
+      used even when present, because ndm_stripdat cleans session.dat and cannot
+      produce a spike-free version of another file. Combining it with
+      subtractSpikes=yes is refused rather than silently resolved one way or the
+      other.
 
   - name: ndm_pca
     parameters:
