@@ -77,7 +77,7 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         { "ndm_concatenate", "Concatenate", "Concatenate sessions", "preparation", "concatenation",
           {{ "spotsSamplingRate","50","Mandatory" }} },
         { "ndm_hipass", "High-pass Filter", "Median filter → .fil", "preparation", "spikes",
-          {{ "windowHalfLength","16","Mandatory" }, { "chunkSize","134217728","Mandatory" },
+          {{ "windowHalfLength","16","Mandatory" }, { "chunkSize","134217728","Optional" },
            { "inputExtension","dat","Optional" }} },
         // Alternative to ndm_hipass, not an addition to it: both write .fil, and
         // the second to run refuses because the output already exists.  Placed

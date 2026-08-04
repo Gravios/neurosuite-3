@@ -858,7 +858,7 @@ programs:
         status: Mandatory
       - name: chunkSize
         value: 134217728
-        status: Mandatory
+        status: Optional
       # - name: inputExtension
       #   value: dat
       #   status: Optional
@@ -900,7 +900,7 @@ programs:
         status: Optional
       - name: chunkSize
         value: 134217728
-        status: Mandatory
+        status: Optional
       # - name: inputExtension
       #   value: dat
       #   status: Optional
