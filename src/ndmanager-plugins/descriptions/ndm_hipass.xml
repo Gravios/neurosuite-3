@@ -9,6 +9,11 @@
     <status>Mandatory</status>
    </parameter>
    <parameter>
+    <name>chunkSize</name>
+    <value>134217728</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
     <name>inputExtension</name>
     <value>dat</value>
     <status>Optional</status>
@@ -23,6 +28,12 @@ PARAMETERS
 # windowHalfWidth
 
 Determines the cutoff frequency
+
+# chunkSize
+
+Number of bytes of input processed per pass (default 134217728 = 128 MiB).
+Reduce it if memory is tight. Capped internally at 512 MiB, so a larger value
+is clamped rather than honoured.
 
 # inputExtension
 
