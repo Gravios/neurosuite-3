@@ -162,7 +162,7 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         // and the output extension follows the input.
         { "ndm_slicebinary", "Slice Binary", ".lfp/.dat → .<ext>.slice.<tag> (channel subset)", "lfp", "lfp",
           {{ "slicedChannels","","Mandatory" }, { "tag","","Mandatory" },
-           { "inputExtension","lfp","Optional" }} },
+           { "timeRange","","Optional" }, { "inputExtension","lfp","Optional" }} },
         // ── Output ────────────────────────────────────────────────────────
         { "ndm_clean", "Clean", "Remove intermediate files", "output", "",
           {{ "hipass","true","Optional" }, { "wideband","true","Optional" }} },

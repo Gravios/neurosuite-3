@@ -14,6 +14,11 @@
     <status>Mandatory</status>
    </parameter>
    <parameter>
+    <name>timeRange</name>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
     <name>inputExtension</name>
     <value>lfp</value>
     <status>Optional</status>
@@ -71,6 +76,19 @@ derived signal is invisible downstream.
 Names the output: &lt;session&gt;.&lt;inputExtension&gt;.slice.&lt;tag&gt;.
 Letters, digits, - and _ only; a tag containing a dot, a slash or whitespace is
 refused, since it is a filename component rather than a path.
+
+# timeRange
+
+Temporal window to copy, as start,end in SECONDS (e.g. 0,600 for the first ten
+minutes). Empty means the whole recording. The window is half-open -- [start,
+end) -- so adjacent ranges tile without overlapping or dropping a sample, and
+each bound is rounded to the nearest sample.
+
+Seconds are converted using the sampling rate of the STREAM being cut, not the
+acquisition rate: the same 2,4 window is 2500 records of a 1250 Hz .lfp and
+65104 records of a 32552 Hz .dat. A window that runs past the end of the file is
+refused rather than clamped, because a short file that reads as success gives no
+sign the window was not the one asked for.
 
 # inputExtension
 

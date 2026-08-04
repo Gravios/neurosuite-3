@@ -176,7 +176,7 @@ binary. The source is opened read-only and never modified, so slicing is always
 safe to re-run.
 
 **Input:** `SESSION.<inputExtension>` (default `lfp`)
-**Output:** `SESSION.<inputExtension>.slice.<tag>` plus a five-field `.info` sidecar
+**Output:** `SESSION.<inputExtension>.slice.<tag>` plus a six-field `.info` sidecar
 
 Use it to pull one shank, one anatomical group, or a handful of reference
 channels out of a 96-channel `.lfp` so downstream analysis loads megabytes
@@ -208,6 +208,7 @@ nBits: 16
 slicedChannels: 0,1,4,5
 inputExtension: lfp
 samplingRate: 1250
+timeRange: 0,600
 ```
 
 - `nChannels` and `nBits` together fix the byte layout. Without both, the file
@@ -220,6 +221,9 @@ samplingRate: 1250
   slicing the `.lfp` records 1250, slicing the `.dat` or `.fil` records the
   acquisition rate. Recording 32552 for an LFP slice would misdate every sample
   in it.
+- `timeRange` is the window as configured, in seconds, or `whole` when none was
+  set. With `samplingRate` it gives the absolute position of the excerpt in the
+  parent recording, which is otherwise unrecoverable from the bytes.
 
 Nothing derivable is duplicated here. Channel grouping, anatomy and spike
 geometry are all functions of `slicedChannels` against the parent session, so the
@@ -252,6 +256,18 @@ let neuroscope find a per-tag `SESSION.slice.<tag>.yaml` unaided.
   a path. Re-running with the same tag is refused because the output exists —
   pick another tag or remove the file.
 
+- **`timeRange`** *(optional)* — temporal window to copy, as `start,end` in
+  **seconds** (e.g. `0,600` for the first ten minutes). Empty means the whole
+  recording. The window is half-open — `[start, end)` — so adjacent ranges tile
+  without overlapping or dropping a sample, and each bound is rounded to the
+  nearest sample.
+
+  Seconds are converted with the sampling rate of the **stream being cut**, not
+  the acquisition rate: the same `2,4` is 2500 records of a 1250 Hz `.lfp` and
+  65104 records of a 32552 Hz `.dat`. A window running past the end of the file
+  is refused rather than clamped — a short file that reads as success gives no
+  sign the window was not the one asked for.
+
 - **`inputExtension`** *(optional, default `lfp`)* — the file to slice, without
   the leading dot, as on `ndm_hipass` / `ndm_lfp`.
 
@@ -276,6 +292,9 @@ comes from the session rather than being guessed.
     - name: tag
       value: shank0
       status: Mandatory
+    - name: timeRange
+      value: '0,600'
+      status: Optional
     - name: inputExtension
       value: lfp
       status: Optional

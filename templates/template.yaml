@@ -1823,6 +1823,9 @@ programs:
       - name: tag
         value: ''
         status: Mandatory
+      # - name: timeRange
+      #   value: '0,600'
+      #   status: Optional
       # - name: inputExtension
       #   value: lfp
       #   status: Optional
@@ -1865,6 +1868,14 @@ programs:
       with the same tag is refused because the output exists.
 
       OPTIONAL PARAMETERS
+
+      # timeRange
+
+      Temporal window as start,end in seconds (e.g. 0,600); empty means the whole
+      recording. Half-open [start, end) so adjacent ranges tile exactly, rounded
+      to the nearest sample. Converted with the rate of the STREAM being cut, not
+      the acquisition rate: 2,4 is 2500 records of a 1250 Hz .lfp and 65104 of a
+      32552 Hz .dat. A window past the end of the file is refused, not clamped.
 
       # inputExtension
 
