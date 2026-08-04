@@ -79,6 +79,14 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         { "ndm_hipass", "High-pass Filter", "Median filter → .fil", "preparation", "spikes",
           {{ "windowHalfLength","16","Mandatory" }, { "chunkSize","134217728","Mandatory" },
            { "inputExtension","dat","Optional" }} },
+        // Alternative to ndm_hipass, not an addition to it: both write .fil, and
+        // the second to run refuses because the output already exists.  Placed
+        // next to it in the palette so the choice is visible at the point where
+        // one of the two gets dragged in.
+        { "ndm_bandpass", "Band-pass Filter", "Median + FIR → .fil (instead of High-pass)", "preparation", "spikes",
+          {{ "windowHalfLength","16","Mandatory" }, { "lowpassCutoff","6000","Mandatory" },
+           { "lowpassHalfLength","32","Optional" }, { "chunkSize","134217728","Optional" },
+           { "inputExtension","dat","Optional" }} },
         { "ndm_denoiseuniform", "Denoise Uniform", "Remove uniform-noise events", "preparation", "spikes",
           {{ "uniformityThreshold","0.30","Optional" }, { "removeFlat","1","Optional" } , { "dryRun","0","Optional" }} },
         { "ndm_spikecleaner", "Spike Cleaner", "Remove dropout/flat waveforms", "preparation", "spikes",
