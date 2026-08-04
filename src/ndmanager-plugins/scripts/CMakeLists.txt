@@ -6,6 +6,7 @@ install(PROGRAMS
     ndm_aom2dat ndm_ncs2dat ndm_nev2evt ndm_nvt2spots ndm_pca ndm_pca_stderiv ndm_pca_multichannel ndm_refeaturize ndm_recolorchannels
     ndm_reorderchannels ndm_resample ndm_smi2sts ndm_smr2dat ndm_smr2evt
     ndm_denoiseuniform ndm_klustakwik ndm_spikegrouper
+    ndm_slicebinary
     ndm_spikecleaner
     ndm_start ndm_transcodevideo ndm_tsp2sts
     ndm_estimatedrift

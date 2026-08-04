@@ -36,7 +36,7 @@ For task-oriented walkthroughs that span multiple programs, see
 | [Format conversion](commands/format-conversion.md) | Neuralynx, CED/Spike2, Amplipex converters |
 | [Channel manipulation](commands/channel-manipulation.md) | `ndm_resample`, `ndm_mergedat`, `ndm_extractchannels`, `ndm_reorderchannels`, `ndm_recolorchannels`, `ndm_concatenate` |
 | [`ndm_setupgroups`](commands/ndm_setupgroups.md) | Build channel groups from probe library |
-| [Signal processing](commands/signal-processing.md) | `ndm_hipass`, `ndm_bandpass`, `ndm_lfp` |
+| [Signal processing](commands/signal-processing.md) | `ndm_hipass`, `ndm_bandpass`, `ndm_lfp`, `ndm_slicebinary` |
 | [Spike detection](commands/spike-detection.md) | `ndm_extractspikes`, `ndm_extractspikes_sdiff`, `ndm_extractspikes_stderiv`, `ndm_spikecleaner`, `ndm_denoiseuniform` |
 | [`ndm_spikegrouper`](commands/ndm_spikegrouper.md) | Automatic spike-group refinement |
 | [PCA feature extraction](commands/pca.md) | `ndm_pca`, `ndm_pca_stderiv` |

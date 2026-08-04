@@ -157,6 +157,12 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         { "ndm_lfp", "LFP", ".dat → .lfp (downsampled)", "lfp", "lfp",
           {{ "samplingRate","1250","Mandatory" }, { "subtractSpikes","auto","Optional" },
            { "inputExtension","dat","Optional" }} },
+        // Channel-subset excerpt of an existing binary.  Filed under lfp because
+        // that is the usual source, but inputExtension points it at any of them
+        // and the output extension follows the input.
+        { "ndm_slicebinary", "Slice Binary", ".lfp/.dat → .<ext>.slice.<tag> (channel subset)", "lfp", "lfp",
+          {{ "slicedChannels","","Mandatory" }, { "tag","","Mandatory" },
+           { "inputExtension","lfp","Optional" }} },
         // ── Output ────────────────────────────────────────────────────────
         { "ndm_clean", "Clean", "Remove intermediate files", "output", "",
           {{ "hipass","true","Optional" }, { "wideband","true","Optional" }} },

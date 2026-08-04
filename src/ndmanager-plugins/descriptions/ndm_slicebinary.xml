@@ -1,0 +1,79 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <name>ndm_slicebinary</name>
+  <parameters>
+   <parameter>
+    <name>slicedChannels</name>
+    <value></value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <name>tag</name>
+    <value></value>
+    <status>Mandatory</status>
+   </parameter>
+   <parameter>
+    <name>inputExtension</name>
+    <value>lfp</value>
+    <status>Optional</status>
+   </parameter>
+  </parameters>
+  <help>Copy a subset of channels out of a session binary into its own smaller binary.
+
+Reads &lt;session&gt;.&lt;inputExtension&gt; and writes
+&lt;session&gt;.&lt;inputExtension&gt;.slice.&lt;tag&gt; containing only the listed
+channels, in the order listed. The source file is opened read-only and is never
+modified, so slicing is always safe to re-run.
+
+The output extension mirrors the input rather than being fixed to lfp. A slice of
+the wide-band .dat is still wide-band data, and calling it .lfp.slice.&lt;tag&gt;
+would tell every downstream consumer it had been decimated when it had not. So
+slicing the lfp gives .lfp.slice.&lt;tag&gt; and slicing the dat gives
+.dat.slice.&lt;tag&gt;.
+
+Channel count and sample width come from the session's acquisitionSystem block
+(nChannels, nBits), so the slice cannot disagree with the recording it came from.
+The engine refuses a file whose length is not a whole number of records, which
+catches a wrong channel count or sample width -- but only when the mismatch
+leaves a remainder, so it is a safety net and not a guarantee.
+
+Alongside the binary, a plain-text &lt;output&gt;.info records the four numbers a
+reader needs to parse the file and map it back: the SOURCE channel count, the
+channel list, the input extension and the sampling rate of the stream that was
+cut. Nothing derivable is duplicated there -- channel grouping, anatomy and spike
+geometry are all functions of slicedChannels against the parent session, and a
+copy would be the one that goes stale when the parent is regrouped.
+
+Running again with the same tag is refused because the output already exists; pick
+a different tag or remove the file.
+
+PARAMETERS
+
+# slicedChannels
+
+Channels to copy, 0-based, in the order they should appear in the output. Comma-
+or whitespace-separated (0,1,4 and 0 1 4 are equivalent). Order is preserved, so
+the list can also reorder channels, and a channel may be repeated to duplicate it.
+Leaving this empty means "no slice requested": the stage reports that and succeeds,
+so an unconfigured node does not fail a whole pipeline run.
+
+Only plain integers are accepted. Unlike process_extractchannels, the gain (5*1.5)
+and post-hoc reference (5-2) spellings are refused rather than honoured, because a
+slice is meant to be a byte-exact excerpt and a stray character silently yielding a
+derived signal is invisible downstream.
+
+# tag
+
+Names the output: &lt;session&gt;.&lt;inputExtension&gt;.slice.&lt;tag&gt;.
+Letters, digits, - and _ only; a tag containing a dot, a slash or whitespace is
+refused, since it is a filename component rather than a path.
+
+# inputExtension
+
+Data file to slice, without the leading dot (default lfp). Point it at the
+wide-band recording (dat), the filtered signal (fil), or any other
+externally-processed source to excerpt that instead.
+</help>
+ </program>
+</parameter>

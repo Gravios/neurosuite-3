@@ -1815,6 +1815,61 @@ programs:
       subtractSpikes=yes is refused rather than silently resolved one way or the
       other.
 
+  - name: ndm_slicebinary
+    parameters:
+      - name: slicedChannels
+        value: ''
+        status: Mandatory
+      - name: tag
+        value: ''
+        status: Mandatory
+      # - name: inputExtension
+      #   value: lfp
+      #   status: Optional
+    help: |-
+      Copy a subset of channels out of a session binary into its own binary.
+
+      Reads session.<inputExtension> and writes
+      session.<inputExtension>.slice.<tag> holding only the listed channels, in
+      the order listed. The source is opened read-only and never modified.
+
+      The output extension mirrors the input rather than being fixed to lfp: a
+      slice of the wide-band .dat is still wide-band, and naming it
+      .lfp.slice.<tag> would tell consumers it had been decimated when it had
+      not. Slicing the lfp gives .lfp.slice.<tag>; slicing the dat gives
+      .dat.slice.<tag>.
+
+      nChannels and nBits come from acquisitionSystem, so a slice cannot
+      disagree with the recording. A plain-text <output>.info sidecar records the
+      four numbers needed to read the result: source nChannels, slicedChannels,
+      inputExtension and the sampling rate of the stream that was cut. Anything
+      derivable from slicedChannels against this session -- grouping, anatomy,
+      spike geometry -- is deliberately not copied there.
+
+      PARAMETERS
+
+      # slicedChannels
+
+      Channels to copy, 0-based, in output order. Comma- or whitespace-separated
+      (0,1,4 and 0 1 4 are equivalent). Order is preserved so the list can also
+      reorder, and a channel may be repeated. Only plain integers: the gain
+      (5*1.5) and reference (5-2) spellings process_extractchannels accepts are
+      refused, because a slice must be a byte-exact excerpt. Empty means "no
+      slice requested" -- the stage says so and succeeds.
+
+      # tag
+
+      Names the output. Letters, digits, - and _ only; a dot, slash or
+      whitespace is refused since the tag is a filename component. Re-running
+      with the same tag is refused because the output exists.
+
+      OPTIONAL PARAMETERS
+
+      # inputExtension
+
+      File to slice, without the leading dot (default lfp). Point it at dat, fil
+      or any externally-processed source to excerpt that instead.
+
   - name: ndm_pca
     parameters:
       - name: before

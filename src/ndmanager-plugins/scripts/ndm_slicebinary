@@ -1,0 +1,135 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Slice a channel subset out of a session binary into its own file.
+#//
+#//   Reads <session>.<inputExtension> (default lfp) and writes
+#//   <session>.<inputExtension>.slice.<tag> holding only the channels
+#//   listed in slicedChannels, in the order given.  The source is opened
+#//   read-only and never modified.
+#//
+#//   The output extension mirrors the input rather than being fixed to
+#//   .lfp: a slice of the wide-band .dat is still wide-band data, and
+#//   naming it .lfp.slice.<tag> would tell every downstream consumer it
+#//   had been decimated when it had not.  So slicing the lfp gives
+#//   <session>.lfp.slice.<tag> and slicing the dat gives
+#//   <session>.dat.slice.<tag>.
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+# Source helper functions
+source ndm_functions
+
+# Parse command-line
+program=$(basename $0)
+if [ $# -gt 1 ]
+then
+	echo_error "usage: $program [parameter-file]"
+	exit $GENERAL_ERROR
+fi
+ndm_resolve_session "$@"
+[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+param_ext=$(param_file_ext "$session")
+
+print_header "$session - Slicing channels"
+
+check_commands_installed xpathReader process_slicebinary
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Read Parameters
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+# Input data extension: the slicer reads $session.$inputExtension (default lfp),
+# so it can excerpt the wide-band .dat, the filtered .fil, or any other
+# externally-processed source instead (YAML field inputExtension).
+inputExtension=$(read_script_parameter $session inputExtension)
+inputExtension=${inputExtension:-lfp}
+
+slicedChannels=$(read_script_parameter $session slicedChannels)
+tag=$(read_script_parameter $session tag)
+
+# No channel list => the node is present but unconfigured.  Same convention as
+# ndm_extractchannels: say so and succeed, rather than failing a whole pipeline
+# run on a stage the user has not filled in yet.
+if [ -z "$slicedChannels" ]
+then
+	echo_info "No slice requested (slicedChannels is empty)"
+	exit $NO_ERROR
+fi
+
+check_mandatory_variable "$tag" "missing tag (names the output: $session.$inputExtension.slice.<tag>)"
+
+# The tag becomes a filename component, so refuse anything that would produce a
+# path instead of a name, or that would collide with the extension grammar.
+case "$tag" in
+	*[/\\]*|*.*|*[[:space:]]*|"")
+		echo_error "invalid tag \"$tag\": use letters, digits, - and _ only"
+		echo_error "(the tag is a filename component of $session.$inputExtension.slice.<tag>)"
+		exit $GENERAL_ERROR
+		;;
+esac
+
+# Normalise the channel list: accept whitespace- or comma-separated in the YAML
+# (both spellings appear across this tree's list-valued fields) and hand
+# process_slicebinary the comma form it requires.  Validation of the values
+# themselves is the engine's job -- doing it here too would be a second copy of
+# the same policy, which is how these scripts drift.
+channelList=$(echo "$slicedChannels" | tr -s ', \t' ',' | sed 's/^,//;s/,$//')
+
+nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+nBits=$(yaml_read $session "//acquisitionSystem/nBits")
+
+check_mandatory_variable "$nChannels" "missing number of channels"
+check_mandatory_variable "$nBits"     "missing resolution (in bits)"
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Check input and output files
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+output=$session.$inputExtension.slice.$tag
+
+outputs_exist "$output" && exit $OUTPUTS_EXIST
+inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Process
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+echo_info "Slicing $session.$inputExtension [$channelList] -> $output"
+
+process_slicebinary -b "$nBits" \
+	"$session.$inputExtension" "$output" "$nChannels" "$channelList"
+check_command_status process_slicebinary
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Sidecar
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+# A sliced binary is headerless, so these four numbers are what a reader needs to
+# parse it and map it back to the recording.  Nothing else is recorded: channel
+# grouping, anatomy and spike geometry are all functions of slicedChannels
+# against the parent session, and a copy written here would be the same policy
+# expressed twice -- with the copy the one that goes stale when the parent is
+# regrouped.
+#
+# nChannels is the SOURCE width, which is what makes slicedChannels readable;
+# the slice's own width is the length of that list.  samplingRate follows the
+# stream that was cut, not the acquisition rate: a slice of the .lfp is at the
+# LFP rate, and recording 32552 for it would misdate every sample in the file.
+sliceSamplingRate=$(yaml_read $session "//fieldPotentials/lfpSamplingRate")
+[ "$inputExtension" != lfp ] && sliceSamplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+
+{
+	echo "nChannels: $nChannels"
+	echo "slicedChannels: $channelList"
+	echo "inputExtension: $inputExtension"
+	echo "samplingRate: ${sliceSamplingRate:-unknown}"
+} > "$output.info"
+
+echo_info "Wrote $output and $output.info"
