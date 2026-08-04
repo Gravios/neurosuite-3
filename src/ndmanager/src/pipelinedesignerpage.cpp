@@ -77,7 +77,8 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         { "ndm_concatenate", "Concatenate", "Concatenate sessions", "preparation", "concatenation",
           {{ "spotsSamplingRate","50","Mandatory" }} },
         { "ndm_hipass", "High-pass Filter", "Median filter → .fil", "preparation", "spikes",
-          {{ "windowHalfLength","16","Mandatory" }, { "chunkSize","134217728","Mandatory" }} },
+          {{ "windowHalfLength","16","Mandatory" }, { "chunkSize","134217728","Mandatory" },
+           { "inputExtension","dat","Optional" }} },
         { "ndm_denoiseuniform", "Denoise Uniform", "Remove uniform-noise events", "preparation", "spikes",
           {{ "uniformityThreshold","0.30","Optional" }, { "removeFlat","1","Optional" } , { "dryRun","0","Optional" }} },
         { "ndm_spikecleaner", "Spike Cleaner", "Remove dropout/flat waveforms", "preparation", "spikes",
@@ -146,7 +147,8 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
            { "residualThreshold","0.25","Optional" }, { "minSnrRms","4.0","Optional" }, { "method","standard","Optional" }} },
         // ── LFP ───────────────────────────────────────────────────────────
         { "ndm_lfp", "LFP", ".dat → .lfp (downsampled)", "lfp", "lfp",
-          {{ "samplingRate","1250","Mandatory" }, { "subtractSpikes","auto","Optional" }} },
+          {{ "samplingRate","1250","Mandatory" }, { "subtractSpikes","auto","Optional" },
+           { "inputExtension","dat","Optional" }} },
         // ── Output ────────────────────────────────────────────────────────
         { "ndm_clean", "Clean", "Remove intermediate files", "output", "",
           {{ "hipass","true","Optional" }, { "wideband","true","Optional" }} },

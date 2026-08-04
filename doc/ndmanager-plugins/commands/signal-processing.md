@@ -9,8 +9,13 @@ Short utilities for signal processing.  Each is invoked with the session YAML or
 Applies a median-subtraction high-pass filter. `windowHalfLength=16` at
 30 kHz ≈ 600 Hz cutoff. Uses CUDA when available, otherwise OpenMP.
 
-**Input:** `SESSION.dat`
+**Input:** `SESSION.dat` (or `SESSION.<inputExtension>`)
 **Output:** `SESSION.fil`
+
+- **`inputExtension`** *(optional, default `dat`)* — the file to filter, without
+  the leading dot. Point it at an alternative, externally-processed wide-band
+  source (e.g. `car.dat`) to filter that instead of the raw recording. It must
+  still be wide-band data; the filter high-passes it as usual.
 
 ```yaml
 - name: ndm_hipass
@@ -20,6 +25,9 @@ Applies a median-subtraction high-pass filter. `windowHalfLength=16` at
       status: Mandatory
     - name: chunkSize
       value: 134217728
+      status: Optional
+    - name: inputExtension
+      value: dat
       status: Optional
 ```
 
@@ -71,13 +79,17 @@ produces the final `.fil`.
   more compute. 32 (65 taps) is a sensible default.
 - **`chunkSize`** *(optional)* — bytes processed per pass (default 128 MiB,
   capped internally at 512 MiB). Reduce if RAM is tight.
+- **`inputExtension`** *(optional, default `dat`)* — the file to filter, without
+  the leading dot; identical in meaning to `ndm_hipass`'s. Point it at an
+  alternative wide-band source (e.g. `car.dat`) to band-pass that instead of the
+  raw recording.
 
 Note that `ndm_bandpass` is slower than `ndm_hipass`: it reads and writes the
 full-size `.fil` an extra time for the low-pass pass. The median stage, which
 dominates the cost, still runs on the GPU; the low-pass itself is a cheap short
 FIR.
 
-**Input:** `SESSION.dat`
+**Input:** `SESSION.dat` (or `SESSION.<inputExtension>`)
 **Output:** `SESSION.fil`
 
 ```yaml
@@ -95,6 +107,9 @@ FIR.
     - name: chunkSize
       value: 134217728
       status: Optional
+    - name: inputExtension
+      value: dat
+      status: Optional
 ```
 
 
@@ -105,6 +120,50 @@ FIR.
 Downsamples the wideband `.dat` to the LFP sampling rate (typically 1250 Hz).
 Automatically uses `SESSION-spkclean.dat` (from `ndm_stripdat`) when it is
 present.
+
+**Input:** `SESSION.dat`, `SESSION-spkclean.dat`, or `SESSION.<inputExtension>`
+**Output:** `SESSION.lfp`
+
+### Parameters
+
+- **`samplingRate`** — target LFP rate in Hz (default 1250). Should match
+  `fieldPotentials.lfpSamplingRate`.
+- **`subtractSpikes`** *(optional, default `auto`)* — whether to strip spikes
+  before resampling. `auto` runs `ndm_stripdat` first if `.spk.N` files exist;
+  `yes` always runs it; `no` resamples the raw source unconditionally. When
+  `ndm_lfp` invokes `ndm_stripdat` itself, the cleaned dat is removed once the
+  `.lfp` is written; a cleaned dat you produced beforehand is left in place.
+- **`inputExtension`** *(optional, default `dat`)* — the file to downsample,
+  without the leading dot, as on `ndm_hipass` / `ndm_bandpass`.
+
+### Source precedence
+
+`inputExtension` → `SESSION-spkclean.dat` → `SESSION.dat`.
+
+Any `inputExtension` other than `dat` selects the source outright: the
+spike-cleaned dat is **not** used even when it exists, because `ndm_stripdat`
+cleans `SESSION.dat` and cannot produce a spike-free version of another file —
+resampling it would silently substitute a different signal. For the same reason
+`inputExtension` ≠ `dat` together with `subtractSpikes=yes` is refused rather
+than resolved one way or the other. `subtractSpikes=auto` resolves to `no`.
+
+Note that a processed source used here should be **wide-band**, not the `.fil` —
+`.fil` has already had everything below the spike band removed, which is exactly
+the content the LFP is made of.
+
+```yaml
+- name: ndm_lfp
+  parameters:
+    - name: samplingRate
+      value: 1250
+      status: Mandatory
+    - name: subtractSpikes
+      value: auto
+      status: Optional
+    - name: inputExtension
+      value: dat
+      status: Optional
+```
 
 
 
