@@ -53,6 +53,7 @@ inputExtension=${inputExtension:-lfp}
 
 slicedChannels=$(read_script_parameter $session slicedChannels)
 tag=$(read_script_parameter $session tag)
+timeRange=$(read_script_parameter $session timeRange)
 
 # No channel list => the node is present but unconfigured.  Same convention as
 # ndm_extractchannels: say so and succeed, rather than failing a whole pipeline
@@ -88,6 +89,47 @@ nBits=$(yaml_read $session "//acquisitionSystem/nBits")
 check_mandatory_variable "$nChannels" "missing number of channels"
 check_mandatory_variable "$nBits"     "missing resolution (in bits)"
 
+# Sampling rate of the stream being cut -- NOT the acquisition rate.  A .lfp is
+# already decimated, so converting a time to a sample offset with 32552 would
+# land the window in the wrong place entirely.
+sliceSamplingRate=$(yaml_read $session "//fieldPotentials/lfpSamplingRate")
+[ "$inputExtension" != lfp ] && sliceSamplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+# // Resolve the time window
+# ////////////////////////////////////////////////////////////////////////////////////////////////
+
+# timeRange is "start,end" in SECONDS; empty means the whole recording.  The
+# conversion to sample offsets happens here and nowhere else: this is the only
+# place that knows the rate of the stream, and process_slicebinary is given
+# records so it never has to guess one.
+recordRange=
+if [ -n "$timeRange" ]
+then
+	check_mandatory_variable "$sliceSamplingRate" \
+		"missing sampling rate: cannot convert timeRange to samples"
+	recordRange=$(echo "$timeRange $sliceSamplingRate" | awk '{
+		n = split($1, a, /,/)
+		if (n != 2 || a[1] == "" || a[2] == "") exit 1
+		if (a[1] !~ /^[0-9]+([.][0-9]+)?$/ || a[2] !~ /^[0-9]+([.][0-9]+)?$/) exit 1
+		if (a[2] <= a[1]) exit 2
+		# Round to the nearest sample; the window is [start, end), so the count
+		# is the difference and a range of exactly one sample period gives one.
+		first = int(a[1] * $2 + 0.5)
+		last  = int(a[2] * $2 + 0.5)
+		if (last <= first) exit 3
+		printf "%d,%d", first, last - first
+	}')
+	case $? in
+		1) echo_error "invalid timeRange \"$timeRange\": expected start,end in seconds (e.g. 0,600)"
+		   exit $GENERAL_ERROR ;;
+		2) echo_error "invalid timeRange \"$timeRange\": end must be greater than start"
+		   exit $GENERAL_ERROR ;;
+		3) echo_error "timeRange \"$timeRange\" is shorter than one sample at $sliceSamplingRate Hz"
+		   exit $GENERAL_ERROR ;;
+	esac
+fi
+
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Check input and output files
 # ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -101,9 +143,9 @@ inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_
 # // Process
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
-echo_info "Slicing $session.$inputExtension [$channelList] -> $output"
+echo_info "Slicing $session.$inputExtension [$channelList]${timeRange:+ over ${timeRange}s} -> $output"
 
-process_slicebinary -b "$nBits" \
+process_slicebinary -b "$nBits" ${recordRange:+-r "$recordRange"} \
 	"$session.$inputExtension" "$output" "$nChannels" "$channelList"
 check_command_status process_slicebinary
 
@@ -125,15 +167,13 @@ check_command_status process_slicebinary
 # samplingRate follows the stream that was cut, not the acquisition rate: a
 # slice of the .lfp is at the LFP rate, and recording 32552 for it would misdate
 # every sample in the file.
-sliceSamplingRate=$(yaml_read $session "//fieldPotentials/lfpSamplingRate")
-[ "$inputExtension" != lfp ] && sliceSamplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
-
 {
 	echo "nChannels: $nChannels"
 	echo "nBits: $nBits"
 	echo "slicedChannels: $channelList"
 	echo "inputExtension: $inputExtension"
 	echo "samplingRate: ${sliceSamplingRate:-unknown}"
+	echo "timeRange: ${timeRange:-whole}"
 } > "$output.info"
 
 echo_info "Wrote $output and $output.info"

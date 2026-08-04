@@ -61,6 +61,9 @@ void usage()
         << "                 order is preserved, so it can also reorder;\n"
         << "                 a channel may be repeated (duplicates it in the output)\n\n"
         << "  -b, --bits N   sample width in bits: 16 (default) or 32\n"
+        << "  -r, --records F,N  copy N records starting at record F (0-based);\n"
+        << "                 default is the whole file.  Records, not seconds:\n"
+        << "                 the caller owns the sampling rate, not this program\n"
         << "  -s, --buffer N records buffered per pass (default 65536)\n"
         << "  -q, --quiet    suppress the summary written to stderr\n"
         << "  -h, --help     this message\n\n";
@@ -160,6 +163,7 @@ int main(int argc, char *argv[])
     int bits = 16;
     long recordsPerPass = 65536;
     bool quiet = false;
+    std::string recordSpec;
 
     int i = 1;
     for (; i < argc; ++i) {
@@ -167,6 +171,7 @@ int main(int argc, char *argv[])
         if (a == "-h" || a == "--help") { usage(); return EXIT_SUCCESS; }
         else if ((a == "-b" || a == "--bits") && i + 1 < argc) bits = std::atoi(argv[++i]);
         else if ((a == "-s" || a == "--buffer") && i + 1 < argc) recordsPerPass = std::atol(argv[++i]);
+        else if ((a == "-r" || a == "--records") && i + 1 < argc) recordSpec = argv[++i];
         else if (a == "-q" || a == "--quiet") quiet = true;
         else if (!a.empty() && a[0] == '-') {
             std::cerr << kProgram << ": error: unknown option " << a
@@ -244,15 +249,59 @@ int main(int argc, char *argv[])
     }
     const std::uintmax_t nRecords = bytes / recordBytes;
 
+    // Record range.  Expressed in records rather than seconds on purpose: this
+    // program never sees a sampling rate, so it cannot be the place where a
+    // time is converted into an offset.  The caller holds the rate and does the
+    // arithmetic, which keeps one conversion in one place.
+    std::uintmax_t firstRecord = 0;
+    std::uintmax_t wantRecords = nRecords;
+    if (!recordSpec.empty()) {
+        const std::size_t comma = recordSpec.find(',');
+        if (comma == std::string::npos) {
+            std::cerr << kProgram
+                      << ": error: --records needs <first>,<count>\n";
+            return EXIT_FAILURE;
+        }
+        const std::string fs = recordSpec.substr(0, comma);
+        const std::string cs = recordSpec.substr(comma + 1);
+        if (fs.empty() || cs.empty() ||
+            fs.find_first_not_of("0123456789") != std::string::npos ||
+            cs.find_first_not_of("0123456789") != std::string::npos) {
+            std::cerr << kProgram
+                      << ": error: --records takes two non-negative integers,"
+                         " got \"" << recordSpec << "\"\n";
+            return EXIT_FAILURE;
+        }
+        firstRecord = std::strtoull(fs.c_str(), nullptr, 10);
+        wantRecords = std::strtoull(cs.c_str(), nullptr, 10);
+        if (wantRecords == 0) {
+            std::cerr << kProgram << ": error: --records count is 0\n";
+            return EXIT_FAILURE;
+        }
+        // Refuse rather than clamp: silently returning a shorter file than was
+        // asked for reads as success, and the caller has no way to notice that
+        // the window it thought it cut is not the window it got.
+        if (firstRecord >= nRecords || wantRecords > nRecords - firstRecord) {
+            std::cerr << kProgram << ": error: records " << firstRecord << ".."
+                      << (firstRecord + wantRecords - 1) << " lie outside "
+                      << inPath << ", which holds " << nRecords << " records\n";
+            return EXIT_FAILURE;
+        }
+    }
+
     std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
     if (!out.good()) {
         std::cerr << kProgram << ": error: could not create " << outPath << '\n';
         return EXIT_FAILURE;
     }
 
+    if (firstRecord != 0)
+        in.seekg(static_cast<std::streamoff>(firstRecord * recordBytes),
+                 std::ios::beg);
+
     const int rc = (bits == 16)
-        ? slice<std::int16_t>(in, out, nChannels, channels, recordsPerPass, nRecords)
-        : slice<std::int32_t>(in, out, nChannels, channels, recordsPerPass, nRecords);
+        ? slice<std::int16_t>(in, out, nChannels, channels, recordsPerPass, wantRecords)
+        : slice<std::int32_t>(in, out, nChannels, channels, recordsPerPass, wantRecords);
 
     out.flush();
     if (rc == EXIT_SUCCESS && !out.good()) {
@@ -267,7 +316,8 @@ int main(int argc, char *argv[])
     }
 
     if (!quiet) {
-        std::cerr << kProgram << ": " << nRecords << " records, " << nChannels
+        std::cerr << kProgram << ": " << wantRecords << " records from "
+                  << firstRecord << ", " << nChannels
                   << " -> " << channels.size() << " channels, " << bits
                   << "-bit -> " << outPath << '\n';
     }
