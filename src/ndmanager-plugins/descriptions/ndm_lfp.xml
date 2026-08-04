@@ -13,6 +13,11 @@
     <value>auto</value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <n>inputExtension</n>
+    <value>dat</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Downsample a .dat file to create the LFP file.
 
@@ -43,6 +48,18 @@ Target LFP sampling rate in Hz (default = 1250 Hz).
 
 Whether to subtract spike waveforms before resampling (see above).
 All subtraction parameters (redetectSpikes etc.) are controlled via
-ndm_stripdat.</help>
+ndm_stripdat.
+
+# inputExtension
+
+Data file read for resampling, without the leading dot (default dat).
+Point it at an alternative, externally-processed source (e.g. car.dat)
+to downsample that file instead of the raw recording.
+
+Any value but dat selects the source outright: the spike-cleaned dat is
+not used even when present, because ndm_stripdat cleans
+&lt;session&gt;.dat and cannot produce a spike-free version of another
+file.  Combining it with subtractSpikes=yes is refused rather than
+silently resolved one way or the other.</help>
  </program>
 </parameter>

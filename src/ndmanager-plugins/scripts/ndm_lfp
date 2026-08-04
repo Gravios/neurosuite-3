@@ -9,6 +9,11 @@
 #//   subtractSpikes parameter can trigger ndm_stripdat automatically when
 #//   the cleaned dat is not yet present.
 #//
+#//   inputExtension (default dat) names the file to downsample:
+#//   <session>.<inputExtension>.  Set to anything but dat and it selects
+#//   the source outright — the spike-cleaned dat is not consulted, because
+#//   ndm_stripdat cleans <session>.dat and nothing else.
+#//
 #//   copyright       (C) 2007-2010 by Michaël Zugaro
 #//   email           michael.zugaro@college-de-france.fr
 #//
@@ -35,8 +40,15 @@ param_ext=$(param_file_ext "$session")
 
 print_header "$session - Creating LFP file"
 
+# Input data extension: the resampler reads $session.$inputExtension (default
+# dat), so it can downsample an alternative, externally-processed source
+# instead of the raw .dat (YAML field inputExtension; defaults to dat when
+# unset).
+inputExtension=$(read_script_parameter $session inputExtension)
+inputExtension=${inputExtension:-dat}
+
 outputs_exist $session.lfp && exit $OUTPUTS_EXIST
-inputs_missing "$session.$param_ext" $session.dat && exit $INPUTS_MISSING
+inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
 
 check_commands_installed xpathReader process_resample
 
@@ -54,13 +66,28 @@ check_mandatory_variable $oldSamplingRate "missing source sampling rate"
 check_mandatory_variable $newSamplingRate "missing target sampling rate"
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
-# // Select input: spike-cleaned dat takes priority over raw dat
+# // Select input: explicit inputExtension > spike-cleaned dat > raw dat
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
 cleanDat=$session-spkclean.dat
 created_clean_dat=false
 
-if [ -f "$cleanDat" ]
+if [ "$inputExtension" != dat ]
+then
+	# inputExtension names the source outright, so it wins over the cleaned-dat
+	# shortcut.  ndm_stripdat only ever reads $session.dat and writes
+	# $session-spkclean.dat, so a cleaned dat is NOT a cleaned version of this
+	# file: silently resampling it would ignore the source that was asked for.
+	if [ "$subtractSpikes" = "yes" ]
+	then
+		echo_error "subtractSpikes=yes conflicts with inputExtension=$inputExtension:"
+		echo_error "ndm_stripdat cleans $session.dat only, so it cannot produce a spike-free"
+		echo_error "$session.$inputExtension. Set subtractSpikes to no, or inputExtension to dat."
+		exit $GENERAL_ERROR
+	fi
+	[ -f "$cleanDat" ] && echo_info "Ignoring $cleanDat: inputExtension selects $session.$inputExtension"
+	dat_source=$session.$inputExtension
+elif [ -f "$cleanDat" ]
 then
 	echo_info "Using existing spike-cleaned dat: $cleanDat"
 	dat_source=$cleanDat
@@ -85,7 +112,7 @@ else
 		created_clean_dat=true
 		dat_source=$cleanDat
 	else
-		dat_source=$session.dat
+		dat_source=$session.$inputExtension
 	fi
 fi
 
