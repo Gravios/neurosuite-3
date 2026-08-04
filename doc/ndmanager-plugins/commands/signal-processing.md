@@ -169,5 +169,114 @@ the content the LFP is made of.
 
 ---
 
+## `ndm_slicebinary` — channel subset (`.<ext>` → `.<ext>.slice.<tag>`)
+
+Copies a set of channels out of an existing session binary into its own smaller
+binary. The source is opened read-only and never modified, so slicing is always
+safe to re-run.
+
+**Input:** `SESSION.<inputExtension>` (default `lfp`)
+**Output:** `SESSION.<inputExtension>.slice.<tag>` plus a four-field `.info` sidecar
+
+Use it to pull one shank, one anatomical group, or a handful of reference
+channels out of a 96-channel `.lfp` so downstream analysis loads megabytes
+instead of gigabytes, without maintaining a second copy of the recording.
+
+### Output naming
+
+The output extension **mirrors the input** rather than being fixed to `lfp`:
+
+| `inputExtension` | output |
+|---|---|
+| `lfp` (default) | `SESSION.lfp.slice.<tag>` |
+| `dat` | `SESSION.dat.slice.<tag>` |
+| `fil` | `SESSION.fil.slice.<tag>` |
+
+A slice of the wide-band `.dat` is still wide-band data. Naming it
+`.lfp.slice.<tag>` would tell every downstream consumer it had been decimated to
+the LFP rate when it had not — the file would be a lie about its own sampling
+rate, and nothing about a headerless binary could contradict it.
+
+### The `.info` sidecar
+
+A sliced binary is headerless, so four numbers are written next to it — enough to
+parse the file and map every column back to the recording:
+
+```
+nChannels: 96
+slicedChannels: 0,1,4,5
+inputExtension: lfp
+samplingRate: 1250
+```
+
+- `nChannels` is the **source** width, which is what makes `slicedChannels`
+  readable. The slice's own width is the length of that list.
+- `samplingRate` follows the stream that was cut, not `acquisitionSystem`:
+  slicing the `.lfp` records 1250, slicing the `.dat` or `.fil` records the
+  acquisition rate. Recording 32552 for an LFP slice would misdate every sample
+  in it.
+
+Nothing derivable is duplicated here. Channel grouping, anatomy and spike
+geometry are all functions of `slicedChannels` against the parent session, so the
+parent answers those questions exactly — whereas a copy written beside the slice
+is the one that goes stale the moment the parent is regrouped.
+
+This is a provenance record, not a session descriptor. Opening a slice in
+neuroscope still needs a parameter file, and note that neuroscope derives one by
+stripping only the **final** dot-component of the data file name: opening
+`SESSION.lfp.slice.shank0` makes it look for `SESSION.lfp.slice.yaml`, which
+every tag would share. Naming the output `SESSION.slice.<tag>.lfp` instead would
+let neuroscope find a per-tag `SESSION.slice.<tag>.yaml` unaided.
+
+### Parameters
+
+- **`slicedChannels`** — channels to copy, 0-based, in the order they should
+  appear in the output. Comma- or whitespace-separated (`0,1,4` and `0 1 4` are
+  equivalent). Order is preserved, so the list can also **reorder** channels, and
+  a channel may be **repeated** to duplicate it. Empty means "no slice
+  requested": the stage says so and succeeds, so an unconfigured node does not
+  fail a whole pipeline run.
+
+  Only plain integers are accepted. Unlike `process_extractchannels`, the gain
+  (`5*1.5`) and post-hoc reference (`5-2`) spellings are **refused** rather than
+  honoured — a slice is meant to be a byte-exact excerpt, and a stray character
+  silently producing a *derived* signal is invisible downstream.
+
+- **`tag`** — names the output. Letters, digits, `-` and `_` only; a tag holding a
+  dot, a slash or whitespace is refused, since it is a filename component and not
+  a path. Re-running with the same tag is refused because the output exists —
+  pick another tag or remove the file.
+
+- **`inputExtension`** *(optional, default `lfp`)* — the file to slice, without
+  the leading dot, as on `ndm_hipass` / `ndm_lfp`.
+
+### Sample width
+
+`nChannels` and `nBits` are read from the session's `acquisitionSystem` block, so
+a slice cannot disagree with the recording it came from. 16- and 32-bit are
+supported and anything else is refused rather than reinterpreted.
+
+The engine also refuses a file whose length is not a whole number of records,
+which catches a wrong channel count or sample width — but **only when the
+mismatch leaves a remainder**. Reading a 32-bit file as 16-bit usually still
+divides evenly, so this is a safety net, not a guarantee. That is why the width
+comes from the session rather than being guessed.
+
+```yaml
+- name: ndm_slicebinary
+  parameters:
+    - name: slicedChannels
+      value: '0,1,4,5'
+      status: Mandatory
+    - name: tag
+      value: shank0
+      status: Mandatory
+    - name: inputExtension
+      value: lfp
+      status: Optional
+```
+
+---
+
 *Part of the [ndmanager-plugins](../README.md) reference.
 See [pipeline overview](../pipeline.md) for how this fits the full workflow.*
