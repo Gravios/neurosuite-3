@@ -559,8 +559,7 @@ void KlustersDoc::undo(){
         activeView->showAllWidgets();
 
         //Update the clusterPalette
-        clusterPalette.updateClusterList();
-        clusterPalette.selectItems(clustersToShow);
+        refreshActivePalette(clustersToShow);
 
         //Signal to klusters the new number of undo and redo
         emit updateUndoNb(clusterColorListUndoList.count());
@@ -724,12 +723,11 @@ void KlustersDoc::redo(){
 
         //Call redraw on the active view
         activeView->showAllWidgets();
-        //Update the clusterPalette
-        clusterPalette.updateClusterList();
-
+        //Update the palette that was actually edited -- undo already routes through
+        //the helper; redo was left raw only because its pair was not adjacent.
         NS3_DIAG() << "in KlustersDoc::redo, 3 b : ";
 
-        clusterPalette.selectItems(clustersToShow);
+        refreshActivePalette(clustersToShow);
 
         NS3_DIAG() << "in KlustersDoc::redo, 4  : ";
 

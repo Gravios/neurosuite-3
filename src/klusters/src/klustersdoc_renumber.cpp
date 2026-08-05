@@ -179,8 +179,7 @@ void KlustersDoc::renumberClusters(){
 
     //Update the palette of cluster
     QList<int> activeClusters = activeView->clusters();
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(activeClusters);
+    refreshActivePalette(activeClusters);
     shownClustersUpdate(activeClusters,*activeView);
     // Hierarchical: the renumber compacts parent ids but leaves child->parent
     // pointing at the old ids, orphaning every renamed parent's atoms.  Re-derive
@@ -296,8 +295,7 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
 
     // Refresh palette.
     QList<int> activeClusters = activeView->clusters();
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(activeClusters);
+    refreshActivePalette(activeClusters);
     // Hierarchical: a parent rename (T-key renumber-to-end, Shift+S reorder,
     // watershed) leaves child->parent pointing at the dead old id, so the renamed
     // parent's atoms orphan and vanish from the child palette.  Re-derive the map

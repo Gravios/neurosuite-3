@@ -337,6 +337,50 @@ void KlustersDoc::singleColorUpdate(int clusterId,KlustersView& activeView){
     activeView.showAllWidgets();
 }
 
+// ---------------------------------------------------------------------------
+// KlustersDoc::refreshActivePalette
+//
+// Refresh the palette the edit actually happened in, and land the selection on
+// @p toSelect.
+//
+// Every post-edit path used to write the pair
+//
+//     clusterPalette.updateClusterList();
+//     clusterPalette.selectItems(...);
+//
+// inline -- about twenty copies, each one deciding for itself which palette to
+// touch, and all but one of them naming the FIBER palette unconditionally.  In
+// child scope that is the wrong palette: it rebuilds the fiber list and moves the
+// selection a level above the atoms the user just edited.  The same shape landed
+// focus on the parent after a child split until it was guarded at the one handler
+// that showed it; the other copies are the same bug waiting for a path that
+// reaches them.
+//
+// The doc does not own the child palette -- the app rebuilds it from
+// hierarchyChanged, which the hierarchy edits already emit -- so in child scope
+// this asks for the landing and leaves the rebuild to that existing signal,
+// rather than emitting hierarchyChanged from a generic helper and risking
+// re-entry into the deferred post-edit flow.
+// ---------------------------------------------------------------------------
+void KlustersDoc::refreshActivePalette(const QList<int>& toSelect)
+{
+    if (childScopeActive) {
+        // Rebuild, THEN land.  The first version of this helper emitted only the
+        // landing and assumed the caller had emitted hierarchyChanged to rebuild.
+        // That holds for the hierarchy edits, which do, and not for the nine other
+        // converted paths, which do not -- so they selected atoms in a list that had
+        // never been repopulated: the merged-away atom still listed, a split's new
+        // atoms missing, the landing pointing at stale rows.  The parent branch below
+        // rebuilds for itself; this one has to as well, and the asymmetry was the bug.
+        emit childPaletteRefreshRequested();
+        if (!toSelect.isEmpty())
+            emit hierarchyChildSelectionRequested(toSelect);
+        return;
+    }
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(toSelect);
+}
+
 void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,KlustersView& activeView){
     // Use the colours of whichever clustering is active (parent or child).
     ItemColors* colors = activeColorList ? activeColorList : clusterColorList;

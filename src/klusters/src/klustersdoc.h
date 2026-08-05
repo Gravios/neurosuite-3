@@ -336,6 +336,12 @@ public:
     /// is treated as the primary (the one the views/palette centre on).
     void setPendingFiberSelection(const QList<int>& fibers);
 
+    /** Refresh whichever palette the edit happened in and land on @p toSelect.
+     *  Replaces the ~20 inline `updateClusterList(); selectItems(...)` pairs, each
+     *  of which named the FIBER palette unconditionally -- wrong in child scope.
+     */
+    void refreshActivePalette(const QList<int>& toSelect);
+
     /** Where a post-delete selection should land: the nearest surviving cluster
      *  above the lowest removed id, or the nearest below when the removal was at
      *  the end of the id-ordered palette.  Never returns a reserve id (0/1) --
@@ -1124,6 +1130,13 @@ Q_SIGNALS:
      *  signal, which is how a shared policy drifts.  Same receiver, different cause.
      */
     void hierarchyChildSelectionRequested(const QList<int>& children);
+
+    /** Repopulate the child palette for the current parent.  Separate from
+     *  hierarchyChanged: that signal also drives the deferred post-edit automation
+     *  and the merge-recommendation refresh, so emitting it from a generic palette
+     *  helper would re-enter flows that have nothing to do with redrawing a list.
+     */
+    void childPaletteRefreshRequested();
     void clustersDeleted(QList<int>& deletedClusters,int destinationCluster);
     void removeSpikesFromClusters(QList<int>& fromClusters, int destinationClusterId,QList<int>& emptiedClusters);
     void newClusterAdded(QList<int>& fromClusters,int clusterId,QList<int>& emptiedClusters);

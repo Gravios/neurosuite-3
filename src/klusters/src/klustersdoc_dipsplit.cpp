@@ -654,8 +654,7 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
 
     if (activeView) activeView->showAllWidgets();
 
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(clustersToShow);
+    refreshActivePalette(clustersToShow);
 
     // The source cluster (if not fully consumed) has stale waveform /
     // correlogram caches — invalidate them.  emptied clusters' caches
