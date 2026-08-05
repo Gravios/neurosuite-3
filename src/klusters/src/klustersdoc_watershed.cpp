@@ -254,8 +254,7 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
 
     mainActiveView->showAllWidgets();
 
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(clustersToShow);
+    refreshActivePalette(clustersToShow);
 
     // ── Curation-log details ─────────────────────────────────────────────
     // One ACTION_DETAIL record covering: source clusters and their sizes,

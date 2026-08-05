@@ -142,10 +142,9 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     activeView.showAllWidgets();
 
     //Update the palette of cluster
-    clusterPalette.updateClusterList();
     QList<int> clustersToShow;
     clustersToShow.append(newClusterIdint);
-    clusterPalette.selectItems(clustersToShow);
+    refreshActivePalette(clustersToShow);
     // Re-select the merge output after the deferred post-op.  autoPostMerge's
     // realign/renumber pass rebuilds the palette and clears this op-time
     // selection, and applyPendingFiberSelection() -- the guaranteed final step
@@ -339,8 +338,7 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
         clusterColorList->resetAllColorStatus();
 
     activeView.showAllWidgets();
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(clustersToShow);
+    refreshActivePalette(clustersToShow);
     // Land the post-op selection on the move's output fibers (surviving source
     // + destination) so the deferred realign/renumber refresh cannot leave them
     // deselected; applyPendingFiberSelection() translates it through any renumber.
@@ -524,11 +522,14 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     //Ask the active view to take the modification into account immediately
     activeView.showAllWidgets();
 
-    //Update the palette of cluster
-    clusterPalette.updateClusterList();
+    //Update the palette of cluster.  Fiber palette only: in child scope the landing
+    //below owns the selection, and refreshing the fiber list here would change which
+    //parent is selected -- which then drives repopulateChildPalette and swaps the
+    //displayed children out from under the user.
+    if (!childScopeActive) clusterPalette.updateClusterList();
 
     //If only one cluster has been deleted, select the following cluster on the list if any.
-    if(existNextCluster){
+    if(existNextCluster && !childScopeActive){
         QList<int> clusters;
         clusters.append(clusterToSelect);
 
@@ -660,8 +661,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
         activeView->showAllWidgets();
 
         //Update the palette of cluster
-        clusterPalette.updateClusterList();
-        clusterPalette.selectItems(clustersToShow);
+        refreshActivePalette(clustersToShow);
         // Land the post-op selection on the surviving source fibers so the
         // deferred realign/renumber refresh cannot leave them deselected.
         if (!childScopeActive) setPendingFiberSelection(clustersToShow);
@@ -743,8 +743,7 @@ void KlustersDoc::commitClusterCreation(int newId,
 
     // Refresh active view widgets + cluster palette.
     if (activeView) activeView->showAllWidgets();
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(clustersToShow);
+    refreshActivePalette(clustersToShow);
 
     // Invalidate waveform + correlogram caches for every source cluster
     // that lost spikes — the cached mean waveform / correlogram histogram
@@ -846,8 +845,7 @@ void KlustersDoc::commitTwoClusterCreation(int leftId,
 
     if (activeView) activeView->showAllWidgets();
 
-    clusterPalette.updateClusterList();
-    clusterPalette.selectItems(clustersToShow);
+    refreshActivePalette(clustersToShow);
 
     // Caches: source clusters' caches are stale (they're gone), but the
     // dissolved-cluster entries vanish with the cluster itself.  No-op
@@ -1099,8 +1097,7 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         activeView->showAllWidgets();
 
         //Update the palette of cluster
-        clusterPalette.updateClusterList();
-        clusterPalette.selectItems(clustersToShow);
+        refreshActivePalette(clustersToShow);
 
         // Log after: surviving sources + all newly created clusters
         {

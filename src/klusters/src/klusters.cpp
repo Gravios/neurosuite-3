@@ -1108,6 +1108,12 @@ void KlustersApp::createMenus()
     // Same landing behaviour as hierarchyChildrenCreated, different cause: a delete
     // asking the palette to land on a surviving sibling.  Kept as its own signal so
     // the two reasons stay separable.
+    // Repopulate the child palette for the current parent, without the side effects
+    // hierarchyChanged carries (post-edit automation, merge-recommendation refresh).
+    connect(doc, &KlustersDoc::childPaletteRefreshRequested, this, [this]{
+        if (childPanel && childPanel->isVisible())
+            repopulateChildPalette(clusterPalette->selectedClusters());
+    });
     connect(doc, &KlustersDoc::hierarchyChildSelectionRequested, this,
             [this](const QList<int>& children){
         if (!childPanel || !childPanel->isVisible() || children.isEmpty()) return;

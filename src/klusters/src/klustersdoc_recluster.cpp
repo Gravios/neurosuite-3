@@ -317,8 +317,7 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         activeView->showAllWidgets();
 
         //Update the palette of cluster
-        clusterPalette.updateClusterList();
-        clusterPalette.selectItems(clustersToShow);
+        refreshActivePalette(clustersToShow);
     }
     else{//processWidget
         //Add the new clusters in clusterColors.
@@ -349,9 +348,8 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         emit newClustersAdded(clustersToRecluster);
 
         //Update the palette of cluster
-        clusterPalette.updateClusterList();
         QList<int> emptyList;
-        clusterPalette.selectItems(emptyList);
+        refreshActivePalette(emptyList);
     }
 
     // Hierarchical mode: a PARENT recluster re-draws the parent's spikes across the new
