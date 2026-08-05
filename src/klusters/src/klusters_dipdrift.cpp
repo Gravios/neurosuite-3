@@ -638,6 +638,28 @@ void KlustersApp::slotNudgeTimestampPlus()  { nudgeSelectedSingleCluster(+1); }
 void KlustersApp::slotMoveSelectedClustersToEnd()
 {
     if (!clusterPalette || !activeView()) return;
+
+    // T follows the palette the user is actually in.  When a child palette holds
+    // focus the selection is ATOM ids, and renumbering them through the fiber path
+    // would rewrite fiber shownClusters through an atom map -- so dispatch to the
+    // atom-layer path instead.  focusedChildPalette() is the same test the child
+    // hierarchy actions use, so T lands in the same place they do.
+    if (ClusterPalette* cp = focusedChildPalette()) {
+        const QList<int> kids = cp->selectedClusters();
+        if (kids.isEmpty()) {
+            statusBar()->showMessage(
+                tr("Select a child cluster in the palette first."), 3000);
+            return;
+        }
+        doc->renumberChildrenToEnd(kids);
+        statusBar()->showMessage(
+            kids.size() == 1
+                ? tr("Child cluster %1 moved to end.").arg(kids.first())
+                : tr("%1 child clusters moved to end.").arg(kids.size()),
+            2500);
+        return;
+    }
+
     QList<int> sel = clusterPalette->selectedClusters();
     if (sel.isEmpty()) {
         statusBar()->showMessage(
