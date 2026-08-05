@@ -448,6 +448,10 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // Parent-scope delete: the destination fiber that absorbed the spikes changed
     // membership (child scope deletes atoms, so guard on the scope).
     if (!childScopeActive) noteModifiedFiber(clusterId);
+    // Computed here but emitted AFTER the hierarchy rebuild below -- see the
+    // deferred emit at the end of this function for why.
+    int childLanding = -1;
+
     // Land the selection on a NEIGHBOUR of what was deleted, not on the
     // destination bin.
     //
@@ -495,7 +499,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
             int land = siblings.last();                 // nothing above: nearest below
             for (int kid : siblings)
                 if (kid > anchorId) { land = kid; break; }
-            emit hierarchyChildSelectionRequested({land});
+            childLanding = land;   // emitted after the rebuild, not here
         } else if (parentOfDeleted > 1) {
             // neighbourAfterRemoval() reads data(), which in child scope is the ATOM
             // layer -- it would answer with an atom id here.  The parent's neighbour
@@ -555,6 +559,21 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         rebuildHierarchyFromData();
         emit hierarchyChanged();
     }
+
+    // Land the child selection LAST.  hierarchyChanged above makes the app
+    // repopulate the child palette, so a landing emitted earlier -- as this one was
+    // when the sibling rule was added, sitting next to the neighbour computation
+    // 58 lines further up -- is applied and then thrown away by the rebuild that
+    // follows it.  Same shape as the fiber palette pulling focus back after a child
+    // split: a later handler undoing an earlier landing.
+    //
+    // refreshActivePalette() gets this right by construction, emitting refresh then
+    // land; this is the one edit path that does not route through it, because its
+    // selection is branch-dependent.  The neighbour has to be COMPUTED where it is,
+    // before rebuildHierarchyFromData() re-derives the maps the sibling list comes
+    // from -- only the emit moves.
+    if (childLanding > 1)
+        emit hierarchyChildSelectionRequested({childLanding});
 }
 
 void KlustersDoc::deleteArtifact(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
