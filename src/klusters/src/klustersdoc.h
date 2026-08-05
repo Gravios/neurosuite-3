@@ -1117,6 +1117,13 @@ Q_SIGNALS:
     /** Emitted after a child (atom) split mints new sibling atoms, carrying their
      *  ids so the child palette can select and focus them. */
     void hierarchyChildrenCreated(const QList<int>& newChildren);
+
+    /** Select these atoms in the child palette and focus the list.  Distinct from
+     *  hierarchyChildrenCreated: that one means "these were just made", and reusing
+     *  it to mean "land here after a delete" would tie two unrelated policies to one
+     *  signal, which is how a shared policy drifts.  Same receiver, different cause.
+     */
+    void hierarchyChildSelectionRequested(const QList<int>& children);
     void clustersDeleted(QList<int>& deletedClusters,int destinationCluster);
     void removeSpikesFromClusters(QList<int>& fromClusters, int destinationClusterId,QList<int>& emptiedClusters);
     void newClusterAdded(QList<int>& fromClusters,int clusterId,QList<int>& emptiedClusters);
