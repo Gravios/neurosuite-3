@@ -1137,8 +1137,16 @@ void KlustersApp::createMenus()
     // signal handler runs.  newClustersAdded is overloaded
     // (QMap-and-QList for createNewClusters; bare QList for recluster);
     // we want only the polygon-completion overload here.
+    //
+    // Not when the operation happened in a CHILD palette.  commitClusterCreation()
+    // is shared by both scopes, so a child split emits newClusterAdded too -- and
+    // this handler then pulled focus to the FIBER palette, undoing the child
+    // palette's own select-and-focus and landing the user on the parent instead of
+    // on the atoms the split had just produced.  When a child palette is live it
+    // owns the post-split landing (hierarchyChildrenCreated), so leave focus alone.
     connect(doc, &KlustersDoc::newClusterAdded, this,
         [this](QList<int>&, int, QList<int>&) {
+            if (focusedChildPalette()) return;
             if (clusterPalette) clusterPalette->setFocusToList();
         });
     connect(doc,
@@ -1146,6 +1154,7 @@ void KlustersApp::createMenus()
             &KlustersDoc::newClustersAdded),
         this,
         [this](QMap<int,int>&, QList<int>&) {
+            if (focusedChildPalette()) return;
             if (clusterPalette) clusterPalette->setFocusToList();
         });
 
