@@ -863,9 +863,24 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
-        emit hierarchyChildrenCreated(QList<int>{newAtom});
+        // Select ALL the atoms the split produced, not just the new one.  A split
+        // yields at least the surviving source and the new sibling, and since the
+        // per-source re-cut a cut crossing several atoms yields a descendant for
+        // each -- so landing on the new atom alone hides most of what just
+        // happened, and the obvious next gesture (compare the halves, merge two
+        // back) starts from an incomplete selection.  fromClusters is the set the
+        // spikes were drawn out of and is exactly the surviving side; emptyClusters
+        // are the sources the split consumed entirely and no longer exist, so they
+        // are excluded.
+        QList<int> resulting;
+        resulting.append(newAtom);
+        for (int src : fromClusters)
+            if (src > 1 && src != newAtom && !emptyClusters.contains(src)
+                    && !resulting.contains(src))
+                resulting.append(src);
+        emit hierarchyChildrenCreated(resulting);
         modified = true;
-        logAfter(QList<int>{newAtom});
+        logAfter(resulting);
     }
     else{
         const int newClusterIdint = static_cast<int>(newClusterId);
