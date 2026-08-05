@@ -335,6 +335,14 @@ public:
     /// realign + renumber, by KlustersApp::applyPendingFiberSelection.  The first id
     /// is treated as the primary (the one the views/palette centre on).
     void setPendingFiberSelection(const QList<int>& fibers);
+
+    /** Where a post-delete selection should land: the nearest surviving cluster
+     *  above the lowest removed id, or the nearest below when the removal was at
+     *  the end of the id-ordered palette.  Never returns a reserve id (0/1) --
+     *  those are where deleted spikes go.  -1 when nothing real survives.
+     *  Reads the ACTIVE layer, so it answers for atoms in child scope.
+     */
+    int neighbourAfterRemoval(const QList<int>& removed) const;
     /// Return and clear the pending fiber selection.
     QList<int> takePendingFiberSelection();
     /// Translate the pending fiber selection through a renumber map (old->new), so a

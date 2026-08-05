@@ -171,6 +171,41 @@ QList<int> KlustersDoc::takeModifiedFibers()
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// KlustersDoc::neighbourAfterRemoval
+//
+// The cluster a post-delete selection should land on: the nearest SURVIVING
+// cluster above the lowest removed id, or the nearest below it when the removal
+// was at the end of the id-ordered palette.  Reserve ids (0 artifact, 1 noise)
+// are never returned -- they are where deleted spikes go, so landing there is
+// the behaviour this exists to avoid.  Returns -1 when nothing real survives.
+//
+// Reads the ACTIVE layer, so it answers for atoms in child scope and fibers
+// otherwise; the caller decides which palette to apply it to.
+// ---------------------------------------------------------------------------
+int KlustersDoc::neighbourAfterRemoval(const QList<int>& removed) const
+{
+    if (removed.isEmpty()) return -1;
+
+    int anchorId = -1;
+    for (int r : removed)
+        if (anchorId < 0 || r < anchorId) anchorId = r;
+
+    QList<int> survivors;
+    for (dataType c : data().clusterIds()) {
+        const int id = static_cast<int>(c);
+        if (id <= 1) continue;                 // reserve bins are never a landing spot
+        if (removed.contains(id)) continue;    // may still be listed mid-edit
+        survivors.append(id);
+    }
+    if (survivors.isEmpty()) return -1;
+    std::sort(survivors.begin(), survivors.end());
+
+    for (int id : survivors)                   // nearest above
+        if (id > anchorId) return id;
+    return survivors.last();                   // nothing above: nearest below
+}
+
 void KlustersDoc::setPendingFiberSelection(const QList<int>& fibers)
 {
     pendingFiberSelection.clear();
@@ -415,8 +450,26 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // Parent-scope delete: the destination fiber that absorbed the spikes changed
     // membership (child scope deletes atoms, so guard on the scope).
     if (!childScopeActive) noteModifiedFiber(clusterId);
-    // Deleted clusters are gone; land the selection on the surviving destination.
-    if (!childScopeActive) setPendingFiberSelection({clusterId});
+    // Land the selection on a NEIGHBOUR of what was deleted, not on the
+    // destination bin.
+    //
+    // The destination is noise or artifact.  Selecting it after a delete drags the
+    // palette to the top of the list and puts the user inside the bin they were
+    // throwing things into -- so the next gesture starts from the wrong place, and
+    // on a long list they have to scroll back to where they were working.  What
+    // they want to look at next is whatever sat beside the cluster that just went
+    // away.
+    //
+    // Neighbour means the nearest survivor ABOVE the lowest deleted id, falling back
+    // to the nearest below when the deletion was at the end of the list, since the
+    // palette is id-ordered.  Reserve ids are never a neighbour: landing on 0 or 1
+    // is the same problem as landing on the destination.
+    if (!childScopeActive) {
+        const int land = neighbourAfterRemoval(clustersToDelete);
+        if (land > 1) setPendingFiberSelection({land});
+        // No survivor above 1 means everything real is gone; leave the selection
+        // alone rather than forcing it into a reserve bin.
+    }
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
     //Reset the color status in clusterColors if need it
