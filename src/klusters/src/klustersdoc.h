@@ -1180,6 +1180,13 @@ public Q_SLOTS:
      *  global-max cluster are filtered by the caller. */
     void renumberClustersToEnd(QList<int> clustersToRenumber);
 
+    /** Child-palette T: move the selected ATOMS to the end of the child palette by
+     *  giving them ids above the current atom maximum.  Separate from
+     *  renumberClustersToEnd because an atom rename shares little with a fiber
+     *  rename -- see the implementation comment.
+     */
+    void renumberChildrenToEnd(QList<int> atomsToRenumber);
+
     /** Single primitive for "rename a set of clusters" doc-level updates.
      *  Drives Data::renumberPartial + colour-list rename + view rewrite +
      *  errormatrix/template-matrix signal in the right order.  Used by
