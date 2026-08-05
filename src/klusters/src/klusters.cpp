@@ -1105,6 +1105,18 @@ void KlustersApp::createMenus()
     });
     // After a child (atom) split, hierarchyChanged has already repopulated the
     // child palette for the unchanged parent; land focus on the new sibling atoms.
+    // Same landing behaviour as hierarchyChildrenCreated, different cause: a delete
+    // asking the palette to land on a surviving sibling.  Kept as its own signal so
+    // the two reasons stay separable.
+    connect(doc, &KlustersDoc::hierarchyChildSelectionRequested, this,
+            [this](const QList<int>& children){
+        if (!childPanel || !childPanel->isVisible() || children.isEmpty()) return;
+        ClusterPalette* cp = focusedChildPalette() ? focusedChildPalette() : childPalette;
+        if (cp) {
+            cp->selectItems(children);
+            cp->setFocusToList();
+        }
+    });
     connect(doc, &KlustersDoc::hierarchyChildrenCreated, this,
             [this](const QList<int>& newChildren){
         if (!childPanel || !childPanel->isVisible() || newChildren.isEmpty()) return;

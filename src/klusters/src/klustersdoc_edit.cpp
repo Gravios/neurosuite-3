@@ -469,6 +469,52 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         if (land > 1) setPendingFiberSelection({land});
         // No survivor above 1 means everything real is gone; leave the selection
         // alone rather than forcing it into a reserve bin.
+    } else {
+        // Child scope: land on a SIBLING of the deleted atom -- a neighbour among
+        // the children of the same parent, not among every atom in the session,
+        // because the child palette only shows that parent's children and landing
+        // outside them would select something the user cannot see.
+        //
+        // When the parent has no children left, the parent itself has just lost
+        // every spike and goes away with them, so there is no sibling to land on
+        // and the right answer is one level up: the parent's neighbour in the
+        // fiber palette, which setPendingFiberSelection delivers.
+        int parentOfDeleted = -1;
+        for (int c : clustersToDelete) {
+            const auto it = childToParent.constFind(c);
+            if (it != childToParent.constEnd()) { parentOfDeleted = it.value(); break; }
+        }
+        QList<int> siblings;
+        if (parentOfDeleted >= 0)
+            for (int kid : parentToChildren.value(parentOfDeleted))
+                if (kid > 1 && !clustersToDelete.contains(kid)) siblings.append(kid);
+
+        if (!siblings.isEmpty()) {
+            int anchorId = -1;
+            for (int r : clustersToDelete)
+                if (anchorId < 0 || r < anchorId) anchorId = r;
+            std::sort(siblings.begin(), siblings.end());
+            int land = siblings.last();                 // nothing above: nearest below
+            for (int kid : siblings)
+                if (kid > anchorId) { land = kid; break; }
+            emit hierarchyChildSelectionRequested({land});
+        } else if (parentOfDeleted > 1) {
+            // neighbourAfterRemoval() reads data(), which in child scope is the ATOM
+            // layer -- it would answer with an atom id here.  The parent's neighbour
+            // is a FIBER, so walk clusteringData directly.
+            QList<int> fibers;
+            for (dataType f : clusteringData->clusterIds()) {
+                const int id = static_cast<int>(f);
+                if (id > 1 && id != parentOfDeleted) fibers.append(id);
+            }
+            if (!fibers.isEmpty()) {
+                std::sort(fibers.begin(), fibers.end());
+                int up = fibers.last();
+                for (int id : fibers)
+                    if (id > parentOfDeleted) { up = id; break; }
+                setPendingFiberSelection({up});
+            }
+        }
     }
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
