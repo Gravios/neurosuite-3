@@ -447,11 +447,32 @@ bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
 
 void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     if(!childPanel || !childPanel->isVisible()) return;
+
+    // Preserve focus across the rebuild.
+    //
+    // createClusterList() tears the palette's widgets down and builds new ones, and
+    // Qt reacts to its focus widget being destroyed by walking the focus chain --
+    // which is why the trace reads "child -> QPushButton -> (none)": focus falls to
+    // whatever button is next, and then that goes too.  Callers that follow the
+    // rebuild with a landing put it back, so the damage only shows on the rebuilds
+    // that do not: the deferred post-edit automation refreshes this palette without
+    // selecting anything afterwards, and that is the one that leaves focus nowhere.
+    //
+    // Restoring here rather than asking every caller to land is the same lesson as
+    // the scope flag above: a function that disturbs shared state should put it
+    // back itself.  Selection is deliberately NOT restored -- after an edit the old
+    // ids may not exist (T renumbers them, a split replaces them), so the caller's
+    // landing owns which clusters end up selected.  This only owns where focus is.
+    const bool hadChildFocus = (focusedChildPalette() != nullptr);
+
     // The first selected parent populates the child palette; further parents are
     // ignored (the child view shows one parent's children at a time).
     parentSlotA = parents.size() >= 1 ? parents[0] : -1;
     assignChildSlot(childPaletteA, parentSlotA);
     if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
+
+    if(hadChildFocus && childPaletteA && parentSlotA >= 0)
+        childPaletteA->setFocusToList();
 }
 
 void KlustersApp::slotChildSelectionChanged(const QList<int>&){
