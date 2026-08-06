@@ -165,9 +165,33 @@ public:
     void setActiveDimensions(const std::vector<int>& dims) { activeDims = dims; }
     const std::vector<int>& activeDimensions() const { return activeDims; }
 
+    /**1-based cluster ids to include; empty — the default — means every cluster,
+     * so existing callers are unaffected.  Mirrors setActiveDimensions above: an
+     * opt-in restriction applied where the model is enumerated, not a filter over
+     * a result that was computed in full.
+     *
+     * Used for the scoped matrices, which compare one parent's children rather
+     * than every atom in the session.  Restricting here rather than afterwards is
+     * the point: the cost of these matrices is quadratic in the cluster count, and
+     * a session has thousands of atoms where a parent has tens.
+     *
+     * Must be set before computeMeanProbabilities* is called.*/
+    void setActiveClusters(const QList<int>& ids) { activeClusters = ids; }
+    const QList<int>& activeClusterIds() const { return activeClusters; }
+
 private:
     /**0-based feature dimensions to use; empty = all.*/
     std::vector<int> activeDims;
+
+    /**Cluster ids to include; empty = all.*/
+    QList<int> activeClusters;
+
+    /**True when @p id is in scope.  Reserve clusters 0 and 1 are always kept: the
+     * model needs cluster 1 (the noise reference the matrix prepends), and
+     * dropping them would change what the remaining probabilities mean.*/
+    inline bool clusterInScope(int id) const {
+        return activeClusters.isEmpty() || id <= 1 || activeClusters.contains(id);
+    }
 
     /**Map a 1-based model dimension to the 1-based .fet column it reads.
      * Identity when unrestricted.*/

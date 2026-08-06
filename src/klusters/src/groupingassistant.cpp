@@ -243,7 +243,8 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             cd.id     = static_cast<int>(it.key());
             cd.first  = it.value().firstSpikePosition();
             cd.nb     = it.value().nbSpikes();
-            cd.ignore = (ignoreClusterIndex.contains(ci) != 0);
+            cd.ignore = (ignoreClusterIndex.contains(ci) != 0)
+                        || !clusterInScope(cd.id);   // out of the scoped-matrix subset
             cd.logTerm = 0.0;
             if (cd.id == 1) existCluster1 = true;
             clusterList.append(cd.id);
@@ -587,7 +588,8 @@ Array<double>* GroupingAssistant::computeProbabilities(
             ClusterData cd;
             cd.clusterId = static_cast<int>(it.key());
             cd.nbSpikes  = it.value().nbSpikes();
-            cd.ignore    = (ignoreClusterIndex.contains(ci) != 0);
+            cd.ignore    = (ignoreClusterIndex.contains(ci) != 0)
+                           || !clusterInScope(cd.clusterId);
 
             if (cd.clusterId == 1) existCluster1 = true;
             clusterList.append(cd.clusterId);
