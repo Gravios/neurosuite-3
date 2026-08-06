@@ -473,7 +473,28 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
 
     // The first selected parent populates the child palette; further parents are
     // ignored (the child view shows one parent's children at a time).
-    parentSlotA = parents.size() >= 1 ? parents[0] : -1;
+    //
+    // An EMPTY list does not mean "no parent" -- it means the caller had nothing to
+    // say.  This is called from several places that pass
+    // clusterPalette->selectedClusters() straight through, including slotTabChange,
+    // and the fiber palette's selection is routinely empty at those moments: during
+    // a tab switch, mid-edit before the landing, or while the automatic
+    // post-mutation steps are rebuilding it.  Collapsing the slot to -1 then runs
+    // clearPaletteScope() + reset(), which tears the child list down and takes the
+    // user's focus and selection with it -- for a parent that has not changed and
+    // still has children.
+    //
+    // The focus trace showed exactly this: slotTabChange, repopulateChildPalette,
+    // assignChildSlot, and then child palette -> (none) with nothing after it.
+    //
+    // So keep the current parent when the caller offers none.  Clearing the child
+    // palette remains possible, but it now takes an explicit act -- turning the
+    // hierarchical view off, or selecting a different parent -- rather than being a
+    // side effect of an unrelated refresh arriving at an unlucky moment.
+    if (parents.size() >= 1)
+        parentSlotA = parents[0];
+    else if (parentSlotA < 0 || doc->childrenOf(QList<int>{parentSlotA}).isEmpty())
+        parentSlotA = -1;   // nothing to keep: no current parent, or it has no children
     assignChildSlot(childPaletteA, parentSlotA);
     if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
 
