@@ -1212,6 +1212,28 @@ void KlustersApp::createMenus()
                 qDebug().noquote() << "[focus]" << describe(from) << "->" << describe(to)
                                    << " activeWindow=" << act
                                    << " appActive=" << QApplication::applicationState();
+
+                // Focus going nowhere means the application lost its active window.
+                // One cause of that was found and removed -- a QProgressDialog whose
+                // destruction left no active window -- and it still happens, so there
+                // is a second transient top-level doing the same thing.  Hunting the
+                // call sites by hand has been slower than asking the toolkit, so list
+                // every top-level that exists at the moment it happens: whatever is up
+                // will be in here, named.
+                if (!to) {
+                    const auto tops = QApplication::topLevelWidgets();
+                    for (QWidget* w : tops) {
+                        if (!w) continue;
+                        qDebug().noquote()
+                            << "   [toplevel]"
+                            << w->metaObject()->className()
+                            << (w->objectName().isEmpty() ? QStringLiteral("(unnamed)")
+                                                          : w->objectName())
+                            << "visible=" << w->isVisible()
+                            << "modal="   << w->isModal()
+                            << "title=\"" << w->windowTitle() << '"';
+                    }
+                }
             });
         }
     }
