@@ -1110,6 +1110,49 @@ void KlustersApp::createMenus()
     // the two reasons stay separable.
     // Repopulate the child palette for the current parent, without the side effects
     // hierarchyChanged carries (post-edit automation, merge-recommendation refresh).
+    // ---- restore focus after the application is deactivated --------------
+    //
+    // The automatic post-mutation steps -- the realignment and the error-matrix
+    // update -- both use the CUDA backend, and CUDA context work can take the OS
+    // foreground for a moment.  Qt clears its focus widget whenever the application
+    // goes inactive, so the palette loses focus with nothing in klusters having
+    // touched it: the trace shows the widget alive, visible, enabled and owned by a
+    // valid parent at the instant focus vanishes, with activeWindow=(null) and
+    // appActive=Qt::ApplicationInactive.
+    //
+    // Qt normally restores focus itself on reactivation.  It does not here, because
+    // the deactivation is transient and the focus widget was already cleared, so
+    // nothing is left to restore from.  Park it on the way out and put it back on
+    // the way in.
+    //
+    // Only into a VACUUM: the restore is skipped unless nothing currently holds
+    // focus.  If the user clicked elsewhere while the app was inactive, that is
+    // where they want to be, and stealing focus back would be a worse bug than the
+    // one being fixed.
+    {
+        static bool focusParkInstalled = false;
+        if (!focusParkInstalled) {
+            focusParkInstalled = true;
+            connect(qApp, &QApplication::applicationStateChanged, this,
+                    [](Qt::ApplicationState st){
+                static QPointer<QWidget> parked;
+                if (st != Qt::ApplicationActive) {
+                    if (QWidget* f = QApplication::focusWidget()) parked = f;
+                    return;
+                }
+                QWidget* w = parked;
+                parked.clear();
+                if (!w) return;                                  // nothing parked, or destroyed since
+                if (QApplication::focusWidget()) return;          // something already has it
+                if (!w->isVisible() || !w->isEnabled()) return;   // no longer focusable
+                w->setFocus(Qt::OtherFocusReason);
+                if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+                    qDebug().noquote() << "[focus] restored after reactivation ->"
+                                       << w->metaObject()->className() << "/" << w->objectName();
+            });
+        }
+    }
+
     // ---- focus tracing (NS3_VERBOSE) --------------------------------------
     // Three attempts at "focus leaves the child palette" have each fixed a real
     // defect and none has been shown to be THE one, because the moment focus
