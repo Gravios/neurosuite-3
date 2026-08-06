@@ -108,16 +108,38 @@ QList<MergeGroup> computeProposalsByErrorMatrix(
     Data& data, const Settings& settings, const QList<int>& candidates,
     QWidget* parent)
 {
+    Q_UNUSED(parent);
     QList<MergeGroup> result;
     const int nClusters = candidates.size();
 
-    QProgressDialog progress(
-        QObject::tr("Auto-Merge: computing error matrix..."),
-        QString(), 0, 0, parent);           // busy indicator; the call below is atomic
-    progress.setWindowModality(Qt::WindowModal);
-    progress.setMinimumDuration(100);
-    progress.setValue(0);
-    QApplication::processEvents();
+    // No progress dialog here.
+    //
+    // This used to raise a QProgressDialog as a busy indicator.  A QProgressDialog
+    // is a top-level window: showing it takes activation, and destroying it at the
+    // end of this function -- while it still holds activation -- leaves the
+    // application with no active window at all.  Qt clears the focus widget when
+    // that happens, so the child palette lost focus and selection every time the
+    // error matrix was recomputed.  The focus trace ends
+    //
+    //     [focus] ...ChildClusterPaletteA... -> (none)  activeWindow=(null)
+    //                                           appActive=Qt::ApplicationInactive
+    //
+    // with no other application involved, on both the CUDA and the CPU-only build.
+    //
+    // It was also not earning its keep.  It carried no cancel button (QString() for
+    // the label) and no progress range (0, 0), because the call it wraps is a single
+    // blocking one that cannot be interrupted or reported on -- so it conveyed
+    // nothing the status bar could not, at the cost of the user's place in the
+    // palette.  The matrix views already show a non-disruptive "Computing..." badge
+    // painted over the stale matrix (mbDrawComputingBadge), which is the right
+    // idiom for exactly this and does not touch activation.
+    //
+    // The QApplication::processEvents() that pumped the dialog's show goes with it.
+    // It has no remaining purpose, and re-entering the event loop in the middle of
+    // an edit is worth not doing by accident.
+    //
+    // The cancellable dialog on the template path below is untouched: it has a real
+    // Cancel button and its wasCanceled() drives the loop, so it does something.
 
     // clusterList (out) gives the cluster id at each 1-based row/column of the
     // returned [nClusters x nClusters] matrix.
