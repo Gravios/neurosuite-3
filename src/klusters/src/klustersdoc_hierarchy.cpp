@@ -358,6 +358,36 @@ void KlustersDoc::rebuildHierarchyFromData(){
     }
 }
 
+// ---------------------------------------------------------------------------
+// Scoped matrices: which clusters the error / template / residual / drift views
+// should compare while the child palette is driving.
+//
+// The views are constructed with a KlustersDoc& and already read doc.data(),
+// which is the ATOM layer whenever a child is the shown clustering -- so they
+// are pointed at the right data already and only need to be told WHICH atoms.
+// That is one parent's children, and the parent is the child palette's, which
+// lives in KlustersApp; hence the mirror here rather than a lookup.
+// ---------------------------------------------------------------------------
+void KlustersDoc::setMatrixScopeParent(int fiberId)
+{
+    if (matrixScopeParentId == fiberId) return;   // no spurious recomputes
+    matrixScopeParentId = fiberId;
+    emit matrixScopeChanged();
+}
+
+bool KlustersDoc::matrixScopeActive() const
+{
+    if (!childData || matrixScopeParentId < 0) return false;
+    return childrenOf(QList<int>{matrixScopeParentId}).size() > matrixScopeMinChildren;
+}
+
+QList<int> KlustersDoc::matrixScopeClusters() const
+{
+    if (!matrixScopeActive()) return QList<int>();
+    return childrenOf(QList<int>{matrixScopeParentId});
+}
+
+
 bool KlustersDoc::validateHierarchyMaps(const char* where) const {
     // Nothing to compare against before the child layer exists, or in a flat
     // session.  This is a genuine blind spot rather than a safe case: a session

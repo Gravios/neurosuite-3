@@ -532,6 +532,13 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     assignChildSlot(childPaletteA, parentSlotA);
     if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
 
+    // Mirror the palette's parent into the doc so the matrix views, which are
+    // constructed with a KlustersDoc& and cannot reach the app, know which
+    // children to compare.  Set unconditionally: setMatrixScopeParent ignores a
+    // repeat, so a rebuild that keeps the same parent emits nothing, and one that
+    // collapses the slot to -1 correctly turns scoping off.
+    if(doc) doc->setMatrixScopeParent(parentSlotA);
+
     if(childPaletteA && parentSlotA >= 0 && !priorSelection.isEmpty()){
         const QList<int> live = doc->childrenOf(QList<int>{parentSlotA});
         QList<int> restore;
