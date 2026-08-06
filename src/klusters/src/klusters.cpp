@@ -1127,11 +1127,20 @@ void KlustersApp::createMenus()
                     if (!w) return QStringLiteral("(none)");
                     QString s = QString::fromLatin1(w->metaObject()->className());
                     if (!w->objectName().isEmpty()) s += QLatin1Char('/') + w->objectName();
+                    // Address: distinguishes "focus walked the chain to a DIFFERENT
+                    // button" from "the same button was destroyed and rebuilt".  The
+                    // trace showed QPushButton -> QPushButton and those two readings
+                    // point at different bugs, so the pointer is what separates them.
+                    s += QStringLiteral("@") + QString::number(reinterpret_cast<quintptr>(w), 16);
+                    // Full ancestry, not just the child panel: a bare QPushButton says
+                    // nothing about which toolbar or dock is being torn down, and that
+                    // is the question the previous trace left open.
+                    QStringList chain;
                     for (QWidget* p = w->parentWidget(); p; p = p->parentWidget())
-                        if (p->objectName().contains(QLatin1String("hild"))) {
-                            s += QStringLiteral(" [under ") + p->objectName() + QLatin1Char(']');
-                            break;
-                        }
+                        chain << (p->objectName().isEmpty()
+                                    ? QString::fromLatin1(p->metaObject()->className())
+                                    : p->objectName());
+                    if (!chain.isEmpty()) s += QStringLiteral(" [") + chain.join(QLatin1String(" < ")) + QLatin1Char(']');
                     return s;
                 };
                 qDebug().noquote() << "[focus]" << describe(from) << "->" << describe(to);
@@ -3171,6 +3180,8 @@ void KlustersApp::slotViewActionBar(){
 }
 
 void KlustersApp::slotViewParameterBar(){
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] slotViewParameterBar";   // focus-trace marker
     slotStatusMsg(tr("Toggle the parameters..."));
     // turn Toolbar on or off
     if(!viewParameterBar->isChecked())
@@ -4438,6 +4449,8 @@ void KlustersApp::slotDelaySelection(){
 }
 
 void KlustersApp::slotTabChange(int index){
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] slotTabChange";   // focus-trace marker
     if (!tabsParent) return;  // guard against call during teardown
     QWidget *widget = tabsParent->widget(index);
     DockArea *area = dynamic_cast<DockArea*>(widget);
@@ -4744,6 +4757,8 @@ void KlustersApp::slotShowOverviewForPalette()
 }
 
 void KlustersApp::resetState(){
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] resetState";   // focus-trace marker
     isInit = true; //prevent the spine boxes or the lineedit and the editline to trigger during initialisation
     timeFrameMode->setChecked(false);
     durationAction->setVisible(false);
@@ -4858,6 +4873,8 @@ void KlustersApp::slotUpdateBinSize(){
 }
 
 void KlustersApp::slotUpdateParameterBar(){  
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] slotUpdateParameterBar";   // focus-trace marker
     durationAction->setVisible(false);
     durationLabelAction->setVisible(false);
     startAction->setVisible(false);
@@ -5012,6 +5029,8 @@ void KlustersApp::updateUndoRedoDisplay(){
 }
 
 void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] widgetAddToDisplay";   // focus-trace marker
     KlustersView* view = activeView();
     bool newWidgetType = view->addView(displayType,backgroundColor,statusBar(),displayTimeInterval,waveformsGain,channelPositions);
 
@@ -5138,6 +5157,8 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
 }
 
 void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType){
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] widgetRemovedFromDisplay";   // focus-trace marker
     switch(displayType){
     case KlustersView::CLUSTERS:
         slotStateChanged("noClusterViewState");
