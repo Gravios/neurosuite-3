@@ -119,9 +119,23 @@ void KlustersApp::slotRealignSpikes()
 
     // Don't allow a second realignment while one is running.
     if (realignRunning) {
-        QMessageBox::information(this, tr("Realignment in progress"),
-            tr("A realignment job is already running.\n"
-               "Use \"Abort Realignment\" to cancel it first."));
+        // Status bar, not a modal.
+        //
+        // This guard fires overwhelmingly from the post-mutation automation, which
+        // schedules a realignment after every edit and can reach here while the
+        // previous one is still running.  A QMessageBox for that is wrong twice
+        // over: the user did not ask for the realignment, so being interrupted to
+        // acknowledge that it was skipped is noise; and the modal takes focus and
+        // does not give it back, which is where the child palette's focus has been
+        // going.  The focus trace showed it directly -- two
+        // QPushButton[qt_msgbox_buttonbox < QMessageBox] hops and then (none),
+        // after which nothing in the palette had focus or selection.
+        //
+        // A user who invokes a realignment manually while one is running gets the
+        // same information without losing their place.
+        statusBar()->showMessage(
+            tr("A realignment is already running — use Abort Realignment to cancel it."),
+            4000);
         return;
     }
 
@@ -486,9 +500,23 @@ void KlustersApp::slotPcaAlignAllClusters()
 {
 
     if (realignRunning) {
-        QMessageBox::information(this, tr("Realignment in progress"),
-            tr("A realignment job is already running.\n"
-               "Use \"Abort Realignment\" to cancel it first."));
+        // Status bar, not a modal.
+        //
+        // This guard fires overwhelmingly from the post-mutation automation, which
+        // schedules a realignment after every edit and can reach here while the
+        // previous one is still running.  A QMessageBox for that is wrong twice
+        // over: the user did not ask for the realignment, so being interrupted to
+        // acknowledge that it was skipped is noise; and the modal takes focus and
+        // does not give it back, which is where the child palette's focus has been
+        // going.  The focus trace showed it directly -- two
+        // QPushButton[qt_msgbox_buttonbox < QMessageBox] hops and then (none),
+        // after which nothing in the palette had focus or selection.
+        //
+        // A user who invokes a realignment manually while one is running gets the
+        // same information without losing their place.
+        statusBar()->showMessage(
+            tr("A realignment is already running — use Abort Realignment to cancel it."),
+            4000);
         return;
     }
 
