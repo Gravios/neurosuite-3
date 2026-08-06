@@ -1259,6 +1259,8 @@ void KlustersApp::createMenus()
     connect(doc, &KlustersDoc::newClusterAdded, this,
         [this](QList<int>&, int, QList<int>&) {
             if (doc && doc->isChildClusteringActive()) return;
+            if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+                qDebug().noquote() << "[grab] createMenus -> fiber palette";
             if (clusterPalette) clusterPalette->setFocusToList();
         });
     connect(doc,
@@ -1267,6 +1269,8 @@ void KlustersApp::createMenus()
         this,
         [this](QMap<int,int>&, QList<int>&) {
             if (doc && doc->isChildClusteringActive()) return;
+            if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+                qDebug().noquote() << "[grab] createMenus -> fiber palette";
             if (clusterPalette) clusterPalette->setFocusToList();
         });
 
@@ -1853,6 +1857,8 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             childPalette = childPaletteA;
             // Not when the edit was in the child palette -- see slotGroupClusters.
             if (!(doc && doc->isChildClusteringActive()))
+                if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+                    qDebug().noquote() << "[grab] eventFilter -> fiber palette";
                 if(clusterPalette) clusterPalette->setFocusToList();
             return true;
         }
@@ -3627,6 +3633,8 @@ void KlustersApp::wsExit(bool commit)
     wsResult = Watershed2D::Result{};
 
     if (!commit) {
+        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+            qDebug().noquote() << "[grab] wsExit -> fiber palette";
         if (clusterPalette) clusterPalette->setFocusToList();
         statusBar()->showMessage(tr("Watershed cancelled."), 3000);
         return;
@@ -3654,6 +3662,8 @@ void KlustersApp::wsExit(bool commit)
                 .arg(nNew).arg(sel.size()).arg(sel.size() == 1 ? "" : "s"),
             4000);
     }
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[grab] wsExit -> fiber palette";
     if (clusterPalette) clusterPalette->setFocusToList();
     slotStatusMsg(tr("Ready."));
 }
@@ -3938,6 +3948,8 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // Qt focus: by the time this runs, focus may already have moved, so a
     // focusedChildPalette() test fails open exactly when it is needed.
     if (!(doc && doc->isChildClusteringActive()))
+        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+            qDebug().noquote() << "[grab] slotGroupClusters -> fiber palette";
         if (clusterPalette) clusterPalette->setFocusToList();
 
     // Post-merge automation, fully serialised (no concurrent Data access).
@@ -4054,6 +4066,8 @@ void KlustersApp::slotAutoMerge()
     // Qt focus: by the time this runs, focus may already have moved, so a
     // focusedChildPalette() test fails open exactly when it is needed.
     if (!(doc && doc->isChildClusteringActive()))
+        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+            qDebug().noquote() << "[grab] slotAutoMerge -> fiber palette";
         if (clusterPalette) clusterPalette->setFocusToList();
 }
 
@@ -4207,6 +4221,8 @@ void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClu
     // on the palette's iconView, not the 2D scatter.  focusClusterView()
     // would steal that focus and silently break arrow-key nav after a
     // delete operation.
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[grab] moveSelectedClustersToReservedId -> fiber palette";
     if (clusterPalette) clusterPalette->setFocusToList();
 }
 
@@ -4821,6 +4837,8 @@ void KlustersApp::slotShowOverviewForPalette()
     // Return focus to the palette widget itself (not the outer ClusterPalette
     // QWidget, which just holds the layout — setFocus() on it does nothing).
     if (clusterPalette)
+        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+            qDebug().noquote() << "[grab] slotShowOverviewForPalette -> fiber palette";
         clusterPalette->setFocusToList();
 }
 
