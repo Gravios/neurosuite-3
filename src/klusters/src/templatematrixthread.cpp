@@ -195,6 +195,19 @@ void TemplateMatrixThread::run()
         std::sort(clusterList.begin(), clusterList.end());
     }
 
+    // Scoped matrices: keep only one parent's children.  Applied after the list is
+    // built rather than inside the enumeration, because the enumeration also
+    // decides what counts as a usable cluster (non-empty, not the artefact bin) and
+    // that judgement is independent of scope.  Cluster 1 is kept regardless: the
+    // noise bin is what makes "move these spikes back to a real unit" possible from
+    // this view, and it is the same carve-out the error path makes.
+    if (!activeClusters.isEmpty()) {
+        QList<int> scoped;
+        for (int id : clusterList)
+            if (id <= 1 || activeClusters.contains(id)) scoped.append(id);
+        clusterList = scoped;
+    }
+
     const int nClusters = clusterList.size();
     if (nClusters < 2) { post(); return; }
 
