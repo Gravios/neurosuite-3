@@ -846,6 +846,20 @@ private:
     void assignChildSlot(ClusterPalette* pal, int parentId);
     /** The child palette if it currently owns keyboard focus, else nullptr. */
     ClusterPalette* focusedChildPalette() const;
+
+    /** True while assignChildSlot() is rebuilding a child palette.  The rebuild
+     *  empties the list on its way to refilling it, and slotChildSelectionChanged()
+     *  must not read that transient emptiness as the user deselecting everything --
+     *  doing so drops the clustering scope in the middle of a child edit.
+     */
+    static bool childPaletteRebuilding;
+
+    /** Sets childPaletteRebuilding for its lifetime.  Scoped so an early return in
+     *  assignChildSlot cannot leave the flag stuck on. */
+    struct ChildRebuildGuard {
+        ChildRebuildGuard()  { KlustersApp::childPaletteRebuilding = true;  }
+        ~ChildRebuildGuard() { KlustersApp::childPaletteRebuilding = false; }
+    };
     /** The children currently selected in the child palette. */
     QList<int> selectedChildrenAB() const;
     /** Route a Ctrl-modified arrow / M key to the matching hierarchy operation
