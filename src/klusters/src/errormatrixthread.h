@@ -116,21 +116,27 @@ private:
                       const Array<double>* prevRaw, const QList<int>& prevRawIds,
                       const QList<int>& prevRawSizes, int prevNbDimensions,
                       const QSet<int>& changedIds, bool seedOnly = false,
-                      std::vector<int> activeDims = std::vector<int>())
+                      std::vector<int> activeDims = std::vector<int>(),
+                      QList<int> activeClusters = QList<int>())
         : errorMatrixView(view),data(d),generation(generation),
           haveToStopProcessing(false),probabilities(nullptr),
           incremental(incremental),verify(verify),
           prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),
           prevNbDimensions(prevNbDimensions),changedIds(changedIds),
           newRaw(nullptr),newRawDims(-1),nbReused(0),usedIncremental(false),
-          seedOnly(seedOnly),activeDims(std::move(activeDims)){
+          seedOnly(seedOnly),activeDims(std::move(activeDims)),
+          activeClusters(std::move(activeClusters)){
         // Restrict the model to the selected channels' feature columns before
         // anything is computed; empty = every dimension, i.e. unchanged.
         assistant.setActiveDimensions(this->activeDims);
+        // And to one parent's children when the child palette is driving; empty =
+        // every cluster, i.e. unchanged.  Both restrictions must be set before the
+        // thread starts, since run() computes immediately.
+        assistant.setActiveClusters(this->activeClusters);
         start();
     }
 
-    ErrorMatrixView& errorMatrixView;
+        ErrorMatrixView& errorMatrixView;
     Data& data;
     int generation;
     Array<double>* probabilities;
@@ -161,6 +167,9 @@ private:
      * empty = every dimension.  Declared last: the ctor initialises it last, and
      * -Wall warns when the init order and the declaration order disagree.*/
     std::vector<int> activeDims;
+    QList<int> activeClusters;   ///< cluster subset; empty = all.  Declared
+                                 ///< after activeDims so member init order
+                                 ///< matches the initialiser list.
 
 };
 

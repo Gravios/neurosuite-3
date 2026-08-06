@@ -443,7 +443,11 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
         useIncremental, incrementalVerify,
         (rawProbCacheValid ? rawProbCache : nullptr),
         rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
-        changedIds, /*seedOnly*/ false, activeFeatureDims());
+        changedIds, /*seedOnly*/ false, activeFeatureDims(),
+        // Scoped matrices: when the child palette is driving and its parent has
+        // enough children to be worth comparing, restrict the model to those
+        // children.  Empty otherwise, which is the unrestricted behaviour.
+        doc.matrixScopeClusters());
 }
 
 std::vector<int> ErrorMatrixView::activeFeatureDims()
@@ -521,7 +525,7 @@ void ErrorMatrixView::launchCacheWarmer(){
         /*incremental*/ true, /*verify*/ false,
         /*prevRaw*/ nullptr, QList<int>(), QList<int>(), -1,
         /*changedIds*/ QSet<int>(),
-        /*seedOnly*/ true, activeFeatureDims());
+        /*seedOnly*/ true, activeFeatureDims(), doc.matrixScopeClusters());
     threadsToBeKill.append(warmer);
 }
 
