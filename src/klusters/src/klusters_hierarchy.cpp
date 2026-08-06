@@ -483,6 +483,28 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     // landing owns which clusters end up selected.  This only owns where focus is.
     const bool hadChildFocus = (focusedChildPalette() != nullptr);
 
+    // Preserve the SELECTION across the rebuild too, not just focus.
+    //
+    // The first version of this deliberately did not, on the grounds that after an
+    // edit the previously selected ids may no longer exist -- T renumbers them, a
+    // split replaces them with descendants -- so the caller's landing should own
+    // which clusters end up selected.  That conflated two different moments.  Ids
+    // change during an EDIT; a REBUILD does not change them, it refills the list
+    // with the ids that exist right now.  Capturing immediately before the refill
+    // and restoring immediately after cannot resurrect a stale id, because nothing
+    // in between renames anything.
+    //
+    // It matters because not every rebuild has a landing behind it.  Pressing T on
+    // a child moves it to the end and it stays selected -- until the error-matrix
+    // update finishes, which refreshes this palette with nothing following it, and
+    // the selection is simply gone.  That deferred completion is the last rebuild to
+    // run, so its state is the state the user is left in.
+    //
+    // Restored by intersection with what the rebuilt list actually holds, so an id
+    // that really has disappeared is dropped rather than re-selected blind.
+    QList<int> priorSelection;
+    if(childPaletteA) priorSelection = childPaletteA->selectedClusters();
+
     // The first selected parent populates the child palette; further parents are
     // ignored (the child view shows one parent's children at a time).
     //
@@ -509,6 +531,14 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
         parentSlotA = -1;   // nothing to keep: no current parent, or it has no children
     assignChildSlot(childPaletteA, parentSlotA);
     if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
+
+    if(childPaletteA && parentSlotA >= 0 && !priorSelection.isEmpty()){
+        const QList<int> live = doc->childrenOf(QList<int>{parentSlotA});
+        QList<int> restore;
+        for(int id : priorSelection)
+            if(live.contains(id)) restore.append(id);
+        if(!restore.isEmpty()) childPaletteA->selectItems(restore);
+    }
 
     if(hadChildFocus && childPaletteA && parentSlotA >= 0){
         // Why the restore can silently do nothing: Qt refuses focus to a widget
