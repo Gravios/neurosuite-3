@@ -305,9 +305,21 @@ void KlustersApp::slotMoveChildrenToFiber(){
         doc->moveChild(c, target.first(), *activeView());
 }
 
+// True while a child palette is being rebuilt.  See slotChildSelectionChanged.
+bool KlustersApp::childPaletteRebuilding = false;
+
 void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
     if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
         qDebug().noquote() << "[rebuild] assignChildSlot";   // focus-trace marker
+    // A rebuild empties the list before refilling it, and an empty child palette
+    // makes slotChildSelectionChanged() drop the clustering scope back to the
+    // parent.  That rule is meant for the user deselecting every child; applied to
+    // the transient emptiness of a rebuild it turns the flag false in the middle of
+    // a child edit, and every reader of it then does the wrong thing -- the
+    // automatic renumber selected ATOM ids in the FIBER palette, and
+    // refreshActivePalette() routed a child edit's landing there for the same
+    // reason.  Both were fixed at the reader; this fixes the flag.
+    ChildRebuildGuard guard;
     if(!pal) return;
     if(parentId < 0){ pal->clearPaletteScope(); pal->reset(); return; }
     const QList<int> kids = doc->childrenOf(QList<int>{parentId});
@@ -520,6 +532,10 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
 
 void KlustersApp::slotChildSelectionChanged(const QList<int>&){
     if(!activeView()) return;
+    // Ignore the empty selection a rebuild passes through on its way to refilling
+    // the list: that is not the user saying "no children", it is the list being
+    // between states.  Acting on it drops the clustering scope mid-edit.
+    if(childPaletteRebuilding) return;
     // The views reflect the children selected in the child palette; with no child
     // selected they fall back to the parent unit(s).
     QList<int> kids;
