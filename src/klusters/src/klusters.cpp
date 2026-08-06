@@ -1110,6 +1110,35 @@ void KlustersApp::createMenus()
     // the two reasons stay separable.
     // Repopulate the child palette for the current parent, without the side effects
     // hierarchyChanged carries (post-edit automation, merge-recommendation refresh).
+    // ---- focus tracing (NS3_VERBOSE) --------------------------------------
+    // Three attempts at "focus leaves the child palette" have each fixed a real
+    // defect and none has been shown to be THE one, because the moment focus
+    // moves has never been observed -- only inferred from which handlers could
+    // plausibly run.  This prints every focus transition with both widgets
+    // identified, so one reproduction names the thief instead of a fourth guess.
+    // One-shot: this function runs per document.
+    {
+        static bool focusTraceInstalled = false;
+        if (!focusTraceInstalled && qEnvironmentVariableIsSet("NS3_VERBOSE")) {
+            focusTraceInstalled = true;
+            connect(qApp, &QApplication::focusChanged, this,
+                    [](QWidget* from, QWidget* to){
+                auto describe = [](QWidget* w) -> QString {
+                    if (!w) return QStringLiteral("(none)");
+                    QString s = QString::fromLatin1(w->metaObject()->className());
+                    if (!w->objectName().isEmpty()) s += QLatin1Char('/') + w->objectName();
+                    for (QWidget* p = w->parentWidget(); p; p = p->parentWidget())
+                        if (p->objectName().contains(QLatin1String("hild"))) {
+                            s += QStringLiteral(" [under ") + p->objectName() + QLatin1Char(']');
+                            break;
+                        }
+                    return s;
+                };
+                qDebug().noquote() << "[focus]" << describe(from) << "->" << describe(to);
+            });
+        }
+    }
+
     connect(doc, &KlustersDoc::childPaletteRefreshRequested, this, [this]{
         if (childPanel && childPanel->isVisible())
             repopulateChildPalette(clusterPalette->selectedClusters());
