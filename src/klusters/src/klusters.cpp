@@ -1152,7 +1152,7 @@ void KlustersApp::createMenus()
     // owns the post-split landing (hierarchyChildrenCreated), so leave focus alone.
     connect(doc, &KlustersDoc::newClusterAdded, this,
         [this](QList<int>&, int, QList<int>&) {
-            if (focusedChildPalette()) return;
+            if (doc && doc->isChildClusteringActive()) return;
             if (clusterPalette) clusterPalette->setFocusToList();
         });
     connect(doc,
@@ -1160,7 +1160,7 @@ void KlustersApp::createMenus()
             &KlustersDoc::newClustersAdded),
         this,
         [this](QMap<int,int>&, QList<int>&) {
-            if (focusedChildPalette()) return;
+            if (doc && doc->isChildClusteringActive()) return;
             if (clusterPalette) clusterPalette->setFocusToList();
         });
 
@@ -1745,7 +1745,9 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         if(ke->key() == Qt::Key_Escape && ke->modifiers() == Qt::NoModifier
            && focusedChildPalette() != nullptr){
             childPalette = childPaletteA;
-            if(clusterPalette) clusterPalette->setFocusToList();
+            // Not when the edit was in the child palette -- see slotGroupClusters.
+            if (!(doc && doc->isChildClusteringActive()))
+                if(clusterPalette) clusterPalette->setFocusToList();
             return true;
         }
 
@@ -3823,7 +3825,12 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // Group is a keyboard-driven palette operation (G key from the palette
     // context); keep focus on the palette so the user can keep
     // arrow-navigating without having to Tab back.
-    if (clusterPalette) clusterPalette->setFocusToList();
+    // An edit made in the child palette keeps its own landing; pulling focus to
+    // the fiber palette here would undo it.  Tested on EDIT SCOPE rather than on
+    // Qt focus: by the time this runs, focus may already have moved, so a
+    // focusedChildPalette() test fails open exactly when it is needed.
+    if (!(doc && doc->isChildClusteringActive()))
+        if (clusterPalette) clusterPalette->setFocusToList();
 
     // Post-merge automation, fully serialised (no concurrent Data access).
     //
@@ -3934,7 +3941,12 @@ void KlustersApp::slotAutoMerge()
 
     slotStatusMsg(tr("Auto-merge: %1 group(s) applied.").arg(applied));
     if (applied > 0) autoPostMerge();
-    if (clusterPalette) clusterPalette->setFocusToList();
+    // An edit made in the child palette keeps its own landing; pulling focus to
+    // the fiber palette here would undo it.  Tested on EDIT SCOPE rather than on
+    // Qt focus: by the time this runs, focus may already have moved, so a
+    // focusedChildPalette() test fails open exactly when it is needed.
+    if (!(doc && doc->isChildClusteringActive()))
+        if (clusterPalette) clusterPalette->setFocusToList();
 }
 
 // ---------------------------------------------------------------------------
