@@ -115,6 +115,8 @@
 extern int nbUndo;
 
 void KlustersApp::slotHierarchicalViewToggled(bool on){
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] slotHierarchicalViewToggled";   // focus-trace marker
     if(on){
         if(!doc->isHierarchicalSession()){
             QMessageBox::information(this,tr("Hierarchical view"),
@@ -304,6 +306,8 @@ void KlustersApp::slotMoveChildrenToFiber(){
 }
 
 void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] assignChildSlot";   // focus-trace marker
     if(!pal) return;
     if(parentId < 0){ pal->clearPaletteScope(); pal->reset(); return; }
     const QList<int> kids = doc->childrenOf(QList<int>{parentId});
@@ -446,6 +450,8 @@ bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
 }
 
 void KlustersApp::repopulateChildPalette(const QList<int>& parents){
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[rebuild] repopulateChildPalette";   // focus-trace marker
     if(!childPanel || !childPanel->isVisible()) return;
 
     // Preserve focus across the rebuild.
