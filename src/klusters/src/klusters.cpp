@@ -1141,6 +1141,19 @@ void KlustersApp::createMenus()
                                     ? QString::fromLatin1(p->metaObject()->className())
                                     : p->objectName());
                     if (!chain.isEmpty()) s += QStringLiteral(" [") + chain.join(QLatin1String(" < ")) + QLatin1Char(']');
+                    // If this is a message box, print what it SAYS.  Two of them are
+                    // taking the child palette's focus and never giving it back, and
+                    // narrowing by call site has now failed twice -- the guard that
+                    // looked responsible was converted and the dialogs still appear.
+                    // The text identifies the caller outright: every QMessageBox in
+                    // the tree has distinct wording.
+                    for (QWidget* p = w; p; p = p->parentWidget())
+                        if (QMessageBox* mb = qobject_cast<QMessageBox*>(p)) {
+                            s += QStringLiteral(" {title=\"") + mb->windowTitle()
+                               + QStringLiteral("\" text=\"") + mb->text().left(160)
+                               + QStringLiteral("\"}");
+                            break;
+                        }
                     return s;
                 };
                 qDebug().noquote() << "[focus]" << describe(from) << "->" << describe(to);
