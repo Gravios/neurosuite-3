@@ -120,10 +120,12 @@ private:
      *             would mismatch a compacted template.
      */
     TemplateMatrixThread(TemplateMatrixView& v, Data& d, int gen,
-                         QList<int> sel = QList<int>())
+                         QList<int> sel = QList<int>(),
+                         QList<int> clusterScope = QList<int>())
         : view(v), data(d), generation(gen),
           haveToStopProcessing(false), scores(nullptr),
-          selection(std::move(sel)) { start(); }
+          selection(std::move(sel)),
+          activeClusters(std::move(clusterScope)) { start(); }
 
     TemplateMatrixView&          view;
     Data&                        data;
@@ -135,6 +137,9 @@ private:
     std::vector<std::vector<float>> meanWav;    // [clusterIdx] → channel-major mean
     std::vector<std::vector<int>>   allFileIdx; // [clusterIdx] → 0-based .spk indices
     QList<int>                      selection;  // empty = all channels
+    QList<int>                      activeClusters; // empty = all clusters.  Declared
+                                                // after selection so member init
+                                                // order matches the initialiser list.
 };
 
 #endif // TEMPLATEMATRIXTHREAD_H
