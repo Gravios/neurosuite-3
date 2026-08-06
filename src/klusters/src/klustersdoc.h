@@ -315,6 +315,31 @@ public:
     bool loadChildClustering(QString& errorInformation);
     /** Child ids whose parent is one of @p parents (sorted, unique). */
     QList<int> childrenOf(const QList<int>& parents) const;
+
+    /** The parent whose children the matrix views should compare, or -1 for none.
+     *  Mirrored from the child palette's current parent by KlustersApp; the doc
+     *  needs its own copy because the matrix views are constructed with a
+     *  KlustersDoc& and have no route to the app.
+     */
+    void setMatrixScopeParent(int fiberId);
+    int  matrixScopeParent() const { return matrixScopeParentId; }
+
+    /** True when the matrices should restrict themselves to one parent's children.
+     *  Requires a loaded child layer, a selected parent, and MORE THAN
+     *  matrixScopeMinChildren children -- a parent with a handful of atoms is not
+     *  worth a matrix, and comparing 2 or 3 of them says nothing that the waveform
+     *  view does not.
+     */
+    bool matrixScopeActive() const;
+
+    /** The children to compare, or empty when matrixScopeActive() is false.  Callers
+     *  must test matrixScopeActive() rather than inferring from emptiness: empty
+     *  means "do not scope", which is a different instruction from "scope to nothing".
+     */
+    QList<int> matrixScopeClusters() const;
+
+    /// Parents at or below this many children are ignored for scoped matrices.
+    static constexpr int matrixScopeMinChildren = 5;
     /** Parent unit id owning @p childId, or -1 if @p childId is not a child. */
     int parentOfChild(int childId) const { return childToParent.value(childId,-1); }
     /** Point the VIEW-facing data()/clusterColors() at the child (true) or the
@@ -1131,6 +1156,10 @@ Q_SIGNALS:
      */
     void hierarchyChildSelectionRequested(const QList<int>& children);
 
+    /** The scoped-matrix parent changed: the matrix views should recompute against
+     *  matrixScopeClusters(), or clear if matrixScopeActive() has become false. */
+    void matrixScopeChanged();
+
     /** Repopulate the child palette for the current parent.  Separate from
      *  hierarchyChanged: that signal also drives the deferred post-edit automation
      *  and the merge-recommendation refresh, so emitting it from a generic palette
@@ -1577,6 +1606,7 @@ private:
     QMap<int,int>        childToParent;      // child id -> parent unit id
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
     bool                 childScopeActive = false;  // true while a child is the shown clustering
+    int                  matrixScopeParentId = -1;  // parent whose children the matrices compare
     QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
     QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
