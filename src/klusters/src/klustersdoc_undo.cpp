@@ -559,7 +559,13 @@ void KlustersDoc::undo(){
         activeView->showAllWidgets();
 
         //Update the clusterPalette
-        refreshActivePalette(clustersToShow);
+        // FIBER palette, unconditionally: clustersToShow comes from
+        // activeView->clusters(), i.e. FIBER ids.  undo()/redo() drive
+        // clusteringData -- the atom layer has its own undoChildEdit() timeline --
+        // so routing by current scope would hand fiber ids to the child palette and
+        // select nothing.
+        clusterPalette.updateClusterList();
+        clusterPalette.selectItems(clustersToShow);
 
         //Signal to klusters the new number of undo and redo
         emit updateUndoNb(clusterColorListUndoList.count());
@@ -727,7 +733,13 @@ void KlustersDoc::redo(){
         //the helper; redo was left raw only because its pair was not adjacent.
         NS3_DIAG() << "in KlustersDoc::redo, 3 b : ";
 
-        refreshActivePalette(clustersToShow);
+        // FIBER palette, unconditionally: clustersToShow comes from
+        // activeView->clusters(), i.e. FIBER ids.  undo()/redo() drive
+        // clusteringData -- the atom layer has its own undoChildEdit() timeline --
+        // so routing by current scope would hand fiber ids to the child palette and
+        // select nothing.
+        clusterPalette.updateClusterList();
+        clusterPalette.selectItems(clustersToShow);
 
         NS3_DIAG() << "in KlustersDoc::redo, 4  : ";
 
