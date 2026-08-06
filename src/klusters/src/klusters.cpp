@@ -4834,12 +4834,24 @@ void KlustersApp::slotShowOverviewForPalette()
         }
     }
 
-    // Return focus to the palette widget itself (not the outer ClusterPalette
-    // QWidget, which just holds the layout — setFocus() on it does nothing).
-    if (clusterPalette)
-        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-            qDebug().noquote() << "[grab] slotShowOverviewForPalette -> fiber palette";
-        clusterPalette->setFocusToList();
+    // No setFocusToList() here.
+    //
+    // This slot is connected to ClusterPalette::paletteGainedFocus, so it runs
+    // BECAUSE the fiber palette just gained focus.  Returning focus to it is
+    // therefore either a no-op or a fight with whatever moved focus in between --
+    // and it closed a loop: setFocusToList() makes the palette's focusInEvent fire,
+    // focusInEvent emits paletteGainedFocus, and that lands back here.  Qt delivers
+    // focusInEvent before QApplication::focusChanged, so the grab ran while focus
+    // was still on the CHILD palette and dragged it to the fiber palette:
+    //
+    //     [grab] slotShowOverviewForPalette -> fiber palette
+    //     [focus] ...ChildClusterPaletteA... -> ...ClusterPalette...
+    //
+    // The fiber palette's selection then drove repopulateChildPalette to another
+    // parent -- parentSlotA 1983 -> 2 -- which is the lost child selection.
+    //
+    // Switching to the Overview tab is what this slot is for; keeping focus where
+    // it already is needs no code.
 }
 
 void KlustersApp::resetState(){
