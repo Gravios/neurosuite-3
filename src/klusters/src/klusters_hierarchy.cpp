@@ -498,8 +498,24 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     assignChildSlot(childPaletteA, parentSlotA);
     if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
 
-    if(hadChildFocus && childPaletteA && parentSlotA >= 0)
+    if(hadChildFocus && childPaletteA && parentSlotA >= 0){
+        // Why the restore can silently do nothing: Qt refuses focus to a widget
+        // that is hidden or disabled, and clears focus when the focused widget
+        // becomes either.  The trace shows focus going to (none) while this widget
+        // is still ALIVE -- iconView->clear() destroys items, not widgets -- so the
+        // remaining explanations are visibility and enablement, and slotTabChange
+        // running immediately before is a plausible cause of both.
+        //
+        // Log the state at the moment of the restore so the next trace says which,
+        // instead of another round of inference.
+        if(qEnvironmentVariableIsSet("NS3_VERBOSE"))
+            qDebug().noquote() << "[focusrestore] childPaletteA visible="
+                               << childPaletteA->isVisible()
+                               << "enabled=" << childPaletteA->isEnabled()
+                               << "panelVisible=" << (childPanel && childPanel->isVisible())
+                               << "parentSlotA=" << parentSlotA;
         childPaletteA->setFocusToList();
+    }
 }
 
 void KlustersApp::slotChildSelectionChanged(const QList<int>&){
