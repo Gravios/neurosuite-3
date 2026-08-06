@@ -178,32 +178,30 @@ void KlustersDoc::renumberClusters(){
     activeView->showAllWidgets();
 
     //Update the palette of cluster
-    // FIBER palette, unconditionally.  activeClusters comes from
-    // activeView->clusters(), which is a list of FIBER ids -- this pipeline renames
-    // fibers and knows nothing about atoms.  refreshActivePalette() routes by the
-    // CURRENT scope, which is only the right question when the caller operates on
-    // the active layer; here it would hand fiber ids to the child palette, match
-    // nothing, and leave the session with no selection at all.  That is the "loses
-    // selection a moment later" symptom: this runs from the deferred post-edit
-    // automation, after the edit's own landing has already been applied.
-    // activeView->clusters() is the FIBER selection only while the views are
-    // showing fibers.  In child scope they show the selected CHILDREN, so it
-    // returns ATOM ids -- and handing those to the fiber palette selects whatever
-    // fibers happen to carry the same numbers.  The child palette is repopulated
-    // from the fiber selection, so it then switches to an unrelated parent and the
-    // user's children vanish: the trace shows parentSlotA going 1983 -> 39 straight
-    // after the automatic renumber, 39 being an atom id that collided with a fiber.
+    // FIBER palette, unconditionally: this pipeline renames fibers and knows nothing
+    // about atoms, so routing it by the current scope would hand fiber ids to the
+    // child palette and match nothing.
+    // NEVER activeView->clusters() here.  That is the FIBER selection only while
+    // the views are showing fibers; in child scope they show the selected CHILDREN,
+    // so it returns ATOM ids, and handing those to the fiber palette selects
+    // whatever fibers carry the same numbers.  The child palette repopulates from
+    // the fiber selection, so it then switches to an unrelated parent and the user's
+    // children vanish -- parentSlotA jumping 1983 -> 39, then 1983 -> 96.
     //
-    // The renumber changes ids, not which clusters are selected, so in child scope
-    // keep the fiber palette's existing selection and map it through the rename.
-    // The list still has to be refreshed either way -- the ids on it have changed.
+    // Conditioning that on childScopeActive was not enough, and the trace shows why:
+    // slotChildSelectionChanged() sets it FALSE whenever the rebuilt child palette
+    // comes up with nothing selected, which is exactly the moment the automatic
+    // renumber runs.  The flag is false while the views are still showing children,
+    // so the guard fell through to the very call it was added to avoid.
+    //
+    // The fiber palette's own selection is the fiber selection in BOTH scopes, by
+    // definition, so take it unconditionally and map it through the rename.  No flag
+    // to be wrong about.
+    // A renumber changes ids, not which clusters are selected.  The list still has
+    // to be refreshed either way -- the ids on it have moved.
     QList<int> activeClusters;
-    if (childScopeActive) {
-        for (int id : clusterPalette.selectedClusters())
-            activeClusters.append(clusterIdsOldNew.value(id, id));
-    } else {
-        activeClusters = activeView->clusters();
-    }
+    for (int id : clusterPalette.selectedClusters())
+        activeClusters.append(clusterIdsOldNew.value(id, id));
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(activeClusters);
     shownClustersUpdate(activeClusters,*activeView);
@@ -320,32 +318,30 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     activeView->showAllWidgets();
 
     // Refresh palette.
-    // FIBER palette, unconditionally.  activeClusters comes from
-    // activeView->clusters(), which is a list of FIBER ids -- this pipeline renames
-    // fibers and knows nothing about atoms.  refreshActivePalette() routes by the
-    // CURRENT scope, which is only the right question when the caller operates on
-    // the active layer; here it would hand fiber ids to the child palette, match
-    // nothing, and leave the session with no selection at all.  That is the "loses
-    // selection a moment later" symptom: this runs from the deferred post-edit
-    // automation, after the edit's own landing has already been applied.
-    // activeView->clusters() is the FIBER selection only while the views are
-    // showing fibers.  In child scope they show the selected CHILDREN, so it
-    // returns ATOM ids -- and handing those to the fiber palette selects whatever
-    // fibers happen to carry the same numbers.  The child palette is repopulated
-    // from the fiber selection, so it then switches to an unrelated parent and the
-    // user's children vanish: the trace shows parentSlotA going 1983 -> 39 straight
-    // after the automatic renumber, 39 being an atom id that collided with a fiber.
+    // FIBER palette, unconditionally: this pipeline renames fibers and knows nothing
+    // about atoms, so routing it by the current scope would hand fiber ids to the
+    // child palette and match nothing.
+    // NEVER activeView->clusters() here.  That is the FIBER selection only while
+    // the views are showing fibers; in child scope they show the selected CHILDREN,
+    // so it returns ATOM ids, and handing those to the fiber palette selects
+    // whatever fibers carry the same numbers.  The child palette repopulates from
+    // the fiber selection, so it then switches to an unrelated parent and the user's
+    // children vanish -- parentSlotA jumping 1983 -> 39, then 1983 -> 96.
     //
-    // The renumber changes ids, not which clusters are selected, so in child scope
-    // keep the fiber palette's existing selection and map it through the rename.
-    // The list still has to be refreshed either way -- the ids on it have changed.
+    // Conditioning that on childScopeActive was not enough, and the trace shows why:
+    // slotChildSelectionChanged() sets it FALSE whenever the rebuilt child palette
+    // comes up with nothing selected, which is exactly the moment the automatic
+    // renumber runs.  The flag is false while the views are still showing children,
+    // so the guard fell through to the very call it was added to avoid.
+    //
+    // The fiber palette's own selection is the fiber selection in BOTH scopes, by
+    // definition, so take it unconditionally and map it through the rename.  No flag
+    // to be wrong about.
+    // A renumber changes ids, not which clusters are selected.  The list still has
+    // to be refreshed either way -- the ids on it have moved.
     QList<int> activeClusters;
-    if (childScopeActive) {
-        for (int id : clusterPalette.selectedClusters())
-            activeClusters.append(full->value(id, id));
-    } else {
-        activeClusters = activeView->clusters();
-    }
+    for (int id : clusterPalette.selectedClusters())
+        activeClusters.append(full->value(id, id));
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(activeClusters);
     // Hierarchical: a parent rename (T-key renumber-to-end, Shift+S reorder,
