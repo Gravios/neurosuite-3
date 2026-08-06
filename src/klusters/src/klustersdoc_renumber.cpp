@@ -200,7 +200,7 @@ void KlustersDoc::renumberClusters(){
     QList<int> activeClusters;
     if (childScopeActive) {
         for (int id : clusterPalette.selectedClusters())
-            activeClusters.append(fullOldToNew.value(id, id));
+            activeClusters.append(clusterIdsOldNew.value(id, id));
     } else {
         activeClusters = activeView->clusters();
     }
