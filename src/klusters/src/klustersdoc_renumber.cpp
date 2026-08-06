@@ -178,8 +178,17 @@ void KlustersDoc::renumberClusters(){
     activeView->showAllWidgets();
 
     //Update the palette of cluster
+    // FIBER palette, unconditionally.  activeClusters comes from
+    // activeView->clusters(), which is a list of FIBER ids -- this pipeline renames
+    // fibers and knows nothing about atoms.  refreshActivePalette() routes by the
+    // CURRENT scope, which is only the right question when the caller operates on
+    // the active layer; here it would hand fiber ids to the child palette, match
+    // nothing, and leave the session with no selection at all.  That is the "loses
+    // selection a moment later" symptom: this runs from the deferred post-edit
+    // automation, after the edit's own landing has already been applied.
     QList<int> activeClusters = activeView->clusters();
-    refreshActivePalette(activeClusters);
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(activeClusters);
     shownClustersUpdate(activeClusters,*activeView);
     // Hierarchical: the renumber compacts parent ids but leaves child->parent
     // pointing at the old ids, orphaning every renamed parent's atoms.  Re-derive
@@ -294,8 +303,17 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     activeView->showAllWidgets();
 
     // Refresh palette.
+    // FIBER palette, unconditionally.  activeClusters comes from
+    // activeView->clusters(), which is a list of FIBER ids -- this pipeline renames
+    // fibers and knows nothing about atoms.  refreshActivePalette() routes by the
+    // CURRENT scope, which is only the right question when the caller operates on
+    // the active layer; here it would hand fiber ids to the child palette, match
+    // nothing, and leave the session with no selection at all.  That is the "loses
+    // selection a moment later" symptom: this runs from the deferred post-edit
+    // automation, after the edit's own landing has already been applied.
     QList<int> activeClusters = activeView->clusters();
-    refreshActivePalette(activeClusters);
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(activeClusters);
     // Hierarchical: a parent rename (T-key renumber-to-end, Shift+S reorder,
     // watershed) leaves child->parent pointing at the dead old id, so the renamed
     // parent's atoms orphan and vanish from the child palette.  Re-derive the map
