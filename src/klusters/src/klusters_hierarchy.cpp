@@ -308,12 +308,26 @@ void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
     if(parentId < 0){ pal->clearPaletteScope(); pal->reset(); return; }
     const QList<int> kids = doc->childrenOf(QList<int>{parentId});
     // Build the palette from the child clustering's colours, scoped to this
-    // parent's children; restore parent-active so the rest of the app keeps
-    // seeing the parent clustering.
+    // parent's children, then RESTORE the scope this was called with.
+    //
+    // It used to end with setActiveClustering(false) unconditionally, described as
+    // "restore parent-active" -- but that hardcodes the value it assumes was there
+    // instead of restoring the one that was.  When the rebuild is driven by a child
+    // edit the scope was TRUE on entry, so the rebuild silently turned child scope
+    // off as a side effect of redrawing a list.
+    //
+    // Everything downstream keys off that flag.  isChildClusteringActive() is what
+    // the fiber-palette focus guards test, so they disarmed and pulled focus to the
+    // parent; refreshActivePalette() routes on it, so later refreshes went to the
+    // wrong palette; and slotChildSelectionChanged() sets it false again when the
+    // rebuilt palette comes up with nothing selected, which closed the loop.  The
+    // focus trace showed the whole thing: child -> (none) as createClusterList tore
+    // the items down, then child -> parent once the guards had gone quiet.
+    const bool wasChildActive = doc->isChildClusteringActive();
     doc->setActiveClustering(true);
     pal->setPaletteScope(kids);
     pal->createClusterList(doc);
-    doc->setActiveClustering(false);
+    doc->setActiveClustering(wasChildActive);
 }
 
 ClusterPalette* KlustersApp::focusedChildPalette() const {
