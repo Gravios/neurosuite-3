@@ -1156,7 +1156,19 @@ void KlustersApp::createMenus()
                         }
                     return s;
                 };
-                qDebug().noquote() << "[focus]" << describe(from) << "->" << describe(to);
+                // When `to` is null the app itself may have lost active-window status --
+                // Qt reports focusChanged(old, nullptr) for that, and it is
+                // indistinguishable from a widget refusing focus unless the active
+                // window is logged too.  Everything else has now been ruled out: the
+                // palette is alive, visible, enabled, not reparented, and nothing in
+                // the tree calls clearFocus().
+                QString act = QStringLiteral("(null)");
+                if (QWidget* aw = QApplication::activeWindow())
+                    act = QString::fromLatin1(aw->metaObject()->className())
+                        + QLatin1Char('/') + aw->objectName();
+                qDebug().noquote() << "[focus]" << describe(from) << "->" << describe(to)
+                                   << " activeWindow=" << act
+                                   << " appActive=" << QApplication::applicationState();
             });
         }
     }
