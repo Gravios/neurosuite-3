@@ -1796,6 +1796,15 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(view, &QObject::destroyed, this, &KlustersView::errorMatrixDockClosed);
         //connection with the document
         connect(&doc, &KlustersDoc::clustersGrouped, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::clustersGrouped);
+        // Scoped matrices: the child palette changed which parent it is showing, so
+        // the comparison set has changed even though no cluster was edited.  Reuse
+        // the clustersGrouped slot -- it means "the cluster set you are showing is no
+        // longer what you computed", which is exactly true here; its arguments are
+        // unused by all four views, which read the set back from the doc.
+        if (ErrorMatrixView* emv = qobject_cast<ErrorMatrixView*>(view))
+            connect(&doc, &KlustersDoc::matrixScopeChanged, emv, [emv]{
+                QList<int> none; emv->clustersGrouped(none, -1);
+            });
         connect(&doc, &KlustersDoc::clustersDeleted, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::clustersDeleted);
         connect(&doc, &KlustersDoc::removeSpikesFromClusters, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::removeSpikesFromClusters);
         connect(&doc, &KlustersDoc::newClusterAdded, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::newClusterAdded);
@@ -1819,6 +1828,14 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(this, &KlustersView::computeTemplateMatrix, tmv, &TemplateMatrixView::updateMatrixContents);
         connect(view, &QObject::destroyed, this, &KlustersView::templateMatrixDockClosed);
         connect(&doc, &KlustersDoc::clustersGrouped,          tmv, &TemplateMatrixView::clustersGrouped);
+        // Scoped matrices: the child palette changed which parent it is showing, so
+        // the comparison set has changed even though no cluster was edited.  Reuse
+        // the clustersGrouped slot -- it means "the cluster set you are showing is no
+        // longer what you computed", which is exactly true here; its arguments are
+        // unused by all four views, which read the set back from the doc.
+        connect(&doc, &KlustersDoc::matrixScopeChanged, tmv, [tmv]{
+            QList<int> none; tmv->clustersGrouped(none, -1);
+        });
         connect(&doc, &KlustersDoc::clustersDeleted,          tmv, &TemplateMatrixView::clustersDeleted);
         connect(&doc, &KlustersDoc::removeSpikesFromClusters, tmv, &TemplateMatrixView::removeSpikesFromClusters);
         connect(&doc, &KlustersDoc::newClusterAdded,          tmv, &TemplateMatrixView::newClusterAdded);
@@ -1836,6 +1853,14 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(this, &KlustersView::computeResidualMatrix, rmv, &ResidualMatrixView::updateMatrixContents);
         connect(view, &QObject::destroyed, this, &KlustersView::residualMatrixDockClosed);
         connect(&doc, &KlustersDoc::clustersGrouped,          rmv, &ResidualMatrixView::clustersGrouped);
+        // Scoped matrices: the child palette changed which parent it is showing, so
+        // the comparison set has changed even though no cluster was edited.  Reuse
+        // the clustersGrouped slot -- it means "the cluster set you are showing is no
+        // longer what you computed", which is exactly true here; its arguments are
+        // unused by all four views, which read the set back from the doc.
+        connect(&doc, &KlustersDoc::matrixScopeChanged, rmv, [rmv]{
+            QList<int> none; rmv->clustersGrouped(none, -1);
+        });
         connect(&doc, &KlustersDoc::clustersDeleted,          rmv, &ResidualMatrixView::clustersDeleted);
         connect(&doc, &KlustersDoc::removeSpikesFromClusters, rmv, &ResidualMatrixView::removeSpikesFromClusters);
         connect(&doc, &KlustersDoc::newClusterAdded,          rmv, &ResidualMatrixView::newClusterAdded);
@@ -1853,6 +1878,14 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(this, &KlustersView::computeDriftMatrix, dmv, &DriftMatrixView::updateMatrixContents);
         connect(view, &QObject::destroyed, this, &KlustersView::driftMatrixDockClosed);
         connect(&doc, &KlustersDoc::clustersGrouped,          dmv, &DriftMatrixView::clustersGrouped);
+        // Scoped matrices: the child palette changed which parent it is showing, so
+        // the comparison set has changed even though no cluster was edited.  Reuse
+        // the clustersGrouped slot -- it means "the cluster set you are showing is no
+        // longer what you computed", which is exactly true here; its arguments are
+        // unused by all four views, which read the set back from the doc.
+        connect(&doc, &KlustersDoc::matrixScopeChanged, dmv, [dmv]{
+            QList<int> none; dmv->clustersGrouped(none, -1);
+        });
         connect(&doc, &KlustersDoc::clustersDeleted,          dmv, &DriftMatrixView::clustersDeleted);
         connect(&doc, &KlustersDoc::removeSpikesFromClusters, dmv, &DriftMatrixView::removeSpikesFromClusters);
         connect(&doc, &KlustersDoc::newClusterAdded,          dmv, &DriftMatrixView::newClusterAdded);
