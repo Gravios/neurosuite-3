@@ -41,6 +41,17 @@ void DriftMatrixThread::run()
                 clusterList.append(static_cast<int>(id));
         std::sort(clusterList.begin(), clusterList.end());
     }
+
+    // Scoped matrices: keep only one parent's children.  Applied after the list is
+    // built, so the enumeration's separate judgement about what counts as a usable
+    // cluster is untouched.  Cluster 1 is kept regardless -- same carve-out as the
+    // error and template paths.
+    if (!activeClusters.isEmpty()) {
+        QList<int> scoped;
+        for (int id : clusterList)
+            if (id <= 1 || activeClusters.contains(id)) scoped.append(id);
+        clusterList = scoped;
+    }
     const int nClusters = clusterList.size();
     if (nClusters < 2) { post(); return; }
 
