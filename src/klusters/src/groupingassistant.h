@@ -165,6 +165,35 @@ public:
     void setActiveDimensions(const std::vector<int>& dims) { activeDims = dims; }
     const std::vector<int>& activeDimensions() const { return activeDims; }
 
+    /**The MODEL INDEX contract.
+     *
+     * Five places in the .cpp walk clusterInfoMap and derive a counter -- always
+     * called `ci` -- by incrementing alongside the iterator.  That counter is not
+     * merely a loop variable; it is simultaneously
+     *
+     *   - the position of the cluster within clusterInfoMap,
+     *   - the row AND column of that cluster in means, cholesky and errorMatrix,
+     *   - the value stored in and tested against ignoreClusterIndex,
+     *   - the index into the entries/cdata vectors handed to the kernels.
+     *
+     * One variable, four meanings, no type or name separating them, and no comment
+     * anywhere previously stating that the five walks must agree.  That agreement is
+     * the invariant the whole file rests on: change the order or the membership of
+     * one walk and the matrices are still produced, still plausible, and wrong.
+     *
+     * The walks are at (as of this commit) the incremental entries build, the
+     * incremental model build, the cluster-1 column search, the full entries build,
+     * and the full model build.  They all start at 1 -- or at initIndex, which is 1
+     * shifted when a synthetic column is prepended -- and none of them skips.
+     *
+     * NOTHING MAY SKIP.  This is the reason setActiveClusters() excludes a cluster by
+     * marking it ignored rather than omitting it: omitting compacts the counter in
+     * one walk and not the others, and the resulting index shift produces a
+     * probability matrix that looks entirely reasonable.  Making the walks skip in
+     * step -- which is what would turn the scoped matrices from O(session) into
+     * O(parent) -- means changing all five together, plus the two places nbClusters
+     * is sized, and is deliberately not attempted piecemeal.
+     */
     /**1-based cluster ids to include; empty — the default — means every cluster,
      * so existing callers are unaffected.  Mirrors setActiveDimensions above: an
      * opt-in restriction applied where the model is enumerated, not a filter over
