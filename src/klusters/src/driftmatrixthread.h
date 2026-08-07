@@ -81,11 +81,13 @@ public:
      *             drift-slider recompute needs no further masking.
      */
     DriftMatrixThread(QObject& view, Data& d, std::vector<float> chanDepths,
-                      float deltaUm, int gen, QList<int> sel = QList<int>())
+                      float deltaUm, int gen, QList<int> sel = QList<int>(),
+                      QList<int> clusterScope = QList<int>())
         : target(view), data(d), depths(std::move(chanDepths)),
           initialDeltaUm(deltaUm), generation(gen),
           haveToStopProcessing(false), scores(nullptr),
-          selection(std::move(sel)) { start(); }
+          selection(std::move(sel)),
+          activeClusters(std::move(clusterScope)) { start(); }
 
 protected:
     void run() override;
@@ -106,6 +108,8 @@ private:
     int                             maxShiftCached = 1;
     bool                            depthsValid   = false;
     QList<int>                      selection;       // empty = all channels
+    QList<int>                      activeClusters;  // empty = all clusters.  After selection so
+                                     // member init order matches the ctor list.
 };
 
 #endif // DRIFTMATRIXTHREAD_H

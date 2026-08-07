@@ -148,8 +148,12 @@ void ResidualMatrixView::updateMatrixContents()
 
 ResidualMatrixThread* ResidualMatrixView::launchComputeThread()
 {
+    // Scoped matrices: restrict to one parent's children when the child palette is
+    // driving and the parent has enough of them to be worth comparing.  Empty
+    // otherwise, which is the unrestricted behaviour.
     return new ResidualMatrixThread(*this, doc.data(), generation,
-                                    doc.selectedChannels());
+                                    doc.selectedChannels(),
+                                    doc.matrixScopeClusters());
 }
 void ResidualMatrixView::invalidateCaches()
 {

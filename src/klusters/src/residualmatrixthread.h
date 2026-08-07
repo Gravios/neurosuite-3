@@ -85,10 +85,12 @@ private:
      *             is built.
      */
     ResidualMatrixThread(ResidualMatrixView& v, Data& d, int gen,
-                         QList<int> sel = QList<int>())
+                         QList<int> sel = QList<int>(),
+                         QList<int> clusterScope = QList<int>())
         : view(v), data(d), generation(gen),
           haveToStopProcessing(false), scores(nullptr),
-          selection(std::move(sel)) { start(); }
+          selection(std::move(sel)),
+          activeClusters(std::move(clusterScope)) { start(); }
 
     ResidualMatrixView&          view;
     Data&                        data;
@@ -99,6 +101,8 @@ private:
     QList<int>                   clusterList;   // matrix row/col -> cluster id
     std::vector<std::vector<int>> allFileIdx;   // [clusterIdx] -> 0-based .spk rows
     QList<int>                   selection;    // empty = all channels
+    QList<int>                   activeClusters;  // empty = all clusters.  After selection so
+                                     // member init order matches the ctor list.
 };
 
 #endif // RESIDUALMATRIXTHREAD_H

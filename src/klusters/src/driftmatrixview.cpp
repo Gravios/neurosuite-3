@@ -194,9 +194,13 @@ DriftMatrixThread* DriftMatrixView::launchComputeThread()
         statusBar->showMessage(tr("Drift matrix: no probe geometry (%1) — "
                                   "showing unshifted correlations.").arg(err), 5000);
 
+    // Scoped matrices: restrict to one parent's children when the child palette is
+    // driving and the parent has enough of them to be worth comparing.  Empty
+    // otherwise, which is the unrestricted behaviour.
     return new DriftMatrixThread(*this, doc.data(), std::move(chanDepths),
                                  static_cast<float>(currentDriftUm), generation,
-                                 doc.selectedChannels());
+                                 doc.selectedChannels(),
+                                 doc.matrixScopeClusters());
 }
 
 void DriftMatrixView::launchCompute()
