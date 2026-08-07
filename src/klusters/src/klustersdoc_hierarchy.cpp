@@ -378,7 +378,7 @@ void KlustersDoc::setMatrixScopeParent(int fiberId)
 bool KlustersDoc::matrixScopeActive() const
 {
     if (!childData || matrixScopeParentId < 0) return false;
-    return childrenOf(QList<int>{matrixScopeParentId}).size() > matrixScopeMinChildren;
+    return !childrenOf(QList<int>{matrixScopeParentId}).isEmpty();
 }
 
 QList<int> KlustersDoc::matrixScopeClusters() const
