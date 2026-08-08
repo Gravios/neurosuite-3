@@ -1153,6 +1153,33 @@ void KlustersApp::createMenus()
         }
     }
 
+    // ---- window activation tracing (NS3_VERBOSE) -------------------------
+    //
+    // focusChanged reports the consequence; these report the event itself, and in
+    // the order Qt delivers it.  WindowDeactivate arriving with no popup and no
+    // modal means the window manager took the foreground away rather than anything
+    // in this application raising something.
+    {
+        static bool actTraceInstalled = false;
+        if (!actTraceInstalled && qEnvironmentVariableIsSet("NS3_VERBOSE")) {
+            actTraceInstalled = true;
+            class ActFilter : public QObject {
+            public:
+                using QObject::QObject;
+                bool eventFilter(QObject* o, QEvent* e) override {
+                    if (e->type() == QEvent::WindowDeactivate)
+                        qDebug().noquote() << "[activation] WindowDeactivate on"
+                                           << o->metaObject()->className();
+                    else if (e->type() == QEvent::WindowActivate)
+                        qDebug().noquote() << "[activation] WindowActivate on"
+                                           << o->metaObject()->className();
+                    return false;
+                }
+            };
+            installEventFilter(new ActFilter(this));
+        }
+    }
+
     // ---- child-palette focus drives the scoped matrices ------------------
     //
     // Always on, not diagnostic: the matrices reflect a parent's children only
@@ -1237,6 +1264,32 @@ void KlustersApp::createMenus()
                 // every top-level that exists at the moment it happens: whatever is up
                 // will be in here, named.
                 if (!to) {
+                    // What Qt thinks is grabbing input at this instant.  The
+                    // top-level sweep below lists what EXISTS; these say what is
+                    // ACTIVE, which is a different question and the one not yet
+                    // asked.  A popup grab in particular makes activeWindow() null
+                    // and the application read as inactive for as long as it is up,
+                    // and a QMenu that opens and closes between two focus events
+                    // would be invisible to the sweep -- there are seventeen QMenus
+                    // in this application and all of them report visible=false by
+                    // the time it runs.
+                    QWidget* pop = QApplication::activePopupWidget();
+                    QWidget* mod = QApplication::activeModalWidget();
+                    qDebug().noquote()
+                        << "   [grabbers] popup="
+                        << (pop ? QString::fromLatin1(pop->metaObject()->className())
+                                  + QLatin1Char('/') + pop->objectName()
+                                : QStringLiteral("(none)"))
+                        << " modal="
+                        << (mod ? QString::fromLatin1(mod->metaObject()->className())
+                                  + QLatin1Char('/') + mod->objectName()
+                                : QStringLiteral("(none)"))
+                        << " mouseGrabber="
+                        << (QWidget::mouseGrabber() ? QWidget::mouseGrabber()->metaObject()->className()
+                                                    : "(none)")
+                        << " keyboardGrabber="
+                        << (QWidget::keyboardGrabber() ? QWidget::keyboardGrabber()->metaObject()->className()
+                                                       : "(none)");
                     const auto tops = QApplication::topLevelWidgets();
                     for (QWidget* w : tops) {
                         if (!w) continue;
