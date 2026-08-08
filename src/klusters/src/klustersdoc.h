@@ -321,8 +321,38 @@ public:
      *  needs its own copy because the matrix views are constructed with a
      *  KlustersDoc& and have no route to the app.
      */
+    /** Whether a child palette currently holds keyboard focus.  Pushed from
+     *  KlustersApp on every focus change; the doc cannot ask, since the palettes
+     *  live in the app.
+     *
+     *  This is the trigger for the scoped matrices: they reflect a parent's
+     *  children only while the child view is the one being worked in.  It is NOT
+     *  childScopeActive -- that flag is raised around an operation and lowered
+     *  again, so it is false at every matrix launch (measured, every [matrixscope]
+     *  line reports childScopeActive=false).  A separate, focus-driven flag is the
+     *  only thing that answers "is the user in the child view right now".
+     */
+    void setChildPaletteFocused(bool focused);
+
     void setMatrixScopeParent(int fiberId);
     int  matrixScopeParent() const { return matrixScopeParentId; }
+
+    /** The layer the matrix views must compute over.
+     *
+     *  NOT data().  data() follows activeData, which follows childScopeActive --
+     *  and that flag is transient by design: it is raised around an operation and
+     *  lowered again, so at the moment a matrix thread is constructed it is false
+     *  and data() is the FIBER layer.  Measured, not assumed: every [matrixscope]
+     *  line in a full session reports childScopeActive=false with
+     *  data()==clusteringData, while the scope subset holds atom ids.  Feeding one
+     *  to the other gave OVERLAP=0 -- and worse, for one parent, a partial overlap
+     *  of 171 coincidental id collisions, which would have produced a matrix over
+     *  an arbitrary set of fibers that looked entirely plausible.
+     *
+     *  So the views ask for the layer the scope is expressed in, rather than
+     *  inheriting whatever the rest of the app is currently showing.
+     */
+    Data& matrixData() const;
 
     /** True when the matrices should restrict themselves to one parent's children:
      *  a loaded child layer, a selected parent, and at least one child.
@@ -1609,6 +1639,7 @@ private:
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
     bool                 childScopeActive = false;  // true while a child is the shown clustering
     int                  matrixScopeParentId = -1;  // parent whose children the matrices compare
+    bool                 childPaletteFocused = false; // a child palette holds focus
     QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
     QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc

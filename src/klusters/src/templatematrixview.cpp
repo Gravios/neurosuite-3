@@ -374,7 +374,7 @@ TemplateMatrixThread* TemplateMatrixView::launchComputeThread()
     // driving and the parent has enough of them to be worth comparing.  Empty
     // otherwise, which is the unrestricted behaviour.
     if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
-        const QList<dataType> ids = doc.data().clusterIds();
+        const QList<dataType> ids = doc.matrixData().clusterIds();
         const QList<int> scope = doc.matrixScopeClusters();
         QStringList head; for (int i = 0; i < ids.size() && i < 6; ++i) head << QString::number(ids[i]);
         QStringList sh;   for (int i = 0; i < scope.size() && i < 6; ++i) sh << QString::number(scope[i]);
@@ -390,7 +390,7 @@ TemplateMatrixThread* TemplateMatrixView::launchComputeThread()
             << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
                                                      : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
     }
-    return new TemplateMatrixThread(*this, doc.data(), generation,
+    return new TemplateMatrixThread(*this, doc.matrixData(), generation,
                                     doc.selectedChannels(),
                                     doc.matrixScopeClusters());
 }

@@ -438,7 +438,7 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     }
 
     if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
-        const QList<dataType> ids = doc.data().clusterIds();
+        const QList<dataType> ids = doc.matrixData().clusterIds();
         const QList<int> scope = doc.matrixScopeClusters();
         QStringList head; for (int i = 0; i < ids.size() && i < 6; ++i) head << QString::number(ids[i]);
         QStringList sh;   for (int i = 0; i < scope.size() && i < 6; ++i) sh << QString::number(scope[i]);
@@ -456,7 +456,7 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     }
     //The creation of a thread automatically start it.
     return new ErrorMatrixThread(
-        *this, doc.data(), generation,
+        *this, doc.matrixData(), generation,
         useIncremental, incrementalVerify,
         (rawProbCacheValid ? rawProbCache : nullptr),
         rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
@@ -538,7 +538,7 @@ void ErrorMatrixView::launchCacheWarmer(){
     // is quiesced with the others before any Data mutation (the stopRunningThreads
     // contract).
     if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
-        const QList<dataType> ids = doc.data().clusterIds();
+        const QList<dataType> ids = doc.matrixData().clusterIds();
         const QList<int> scope = doc.matrixScopeClusters();
         QStringList head; for (int i = 0; i < ids.size() && i < 6; ++i) head << QString::number(ids[i]);
         QStringList sh;   for (int i = 0; i < scope.size() && i < 6; ++i) sh << QString::number(scope[i]);
@@ -555,7 +555,7 @@ void ErrorMatrixView::launchCacheWarmer(){
                                                      : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
     }
     ErrorMatrixThread* warmer = new ErrorMatrixThread(
-        *this, doc.data(), generation,
+        *this, doc.matrixData(), generation,
         /*incremental*/ true, /*verify*/ false,
         /*prevRaw*/ nullptr, QList<int>(), QList<int>(), -1,
         /*changedIds*/ QSet<int>(),

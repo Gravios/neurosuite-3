@@ -368,6 +368,13 @@ void KlustersDoc::rebuildHierarchyFromData(){
 // That is one parent's children, and the parent is the child palette's, which
 // lives in KlustersApp; hence the mirror here rather than a lookup.
 // ---------------------------------------------------------------------------
+void KlustersDoc::setChildPaletteFocused(bool focused)
+{
+    if (childPaletteFocused == focused) return;   // no spurious recomputes
+    childPaletteFocused = focused;
+    emit matrixScopeChanged();                    // scoping just went on or off
+}
+
 void KlustersDoc::setMatrixScopeParent(int fiberId)
 {
     if (matrixScopeParentId == fiberId) return;   // no spurious recomputes
@@ -377,6 +384,11 @@ void KlustersDoc::setMatrixScopeParent(int fiberId)
 
 bool KlustersDoc::matrixScopeActive() const
 {
+    // Only while the child view is the one being worked in.  Without this the
+    // scope would go active the moment a fiber is selected -- the probe shows
+    // scopeActive=true at startup, before any child interaction -- and the
+    // ordinary fiber-level matrices would become unreachable.
+    if (!childPaletteFocused) return false;
     if (!childData || matrixScopeParentId < 0) return false;
     return !childrenOf(QList<int>{matrixScopeParentId}).isEmpty();
 }
@@ -384,21 +396,14 @@ bool KlustersDoc::matrixScopeActive() const
 QList<int> KlustersDoc::matrixScopeClusters() const
 {
     if (!matrixScopeActive()) return QList<int>();
-    const QList<int> kids = childrenOf(QList<int>{matrixScopeParentId});
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
-        // Which layer is doc.data() at this instant?  The whole design assumes it
-        // is the ATOM layer whenever a child is shown, and that assumption was
-        // never tested at the moment a matrix thread is built.  activeData follows
-        // childScopeActive, which the palette work showed is transient -- set
-        // around an operation and restored after -- so a matrix launched from a
-        // repaint may well see the PARENT layer while these are atom ids.
-        qDebug().noquote() << "[matrixscope] doc: parent=" << matrixScopeParentId
-                           << "kids=" << kids.size()
-                           << "childScopeActive=" << childScopeActive
-                           << "data()==childData=" << (activeData == childData)
-                           << "data()==clusteringData=" << (activeData == clusteringData);
-    }
-    return kids;
+    return childrenOf(QList<int>{matrixScopeParentId});
+}
+
+Data& KlustersDoc::matrixData() const
+{
+    // The atom layer when a scope is in force, whatever the rest of the app is
+    // currently showing.  See the header for why data() is the wrong answer here.
+    return matrixScopeActive() ? *childData : data();
 }
 
 
