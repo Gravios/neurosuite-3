@@ -384,7 +384,21 @@ bool KlustersDoc::matrixScopeActive() const
 QList<int> KlustersDoc::matrixScopeClusters() const
 {
     if (!matrixScopeActive()) return QList<int>();
-    return childrenOf(QList<int>{matrixScopeParentId});
+    const QList<int> kids = childrenOf(QList<int>{matrixScopeParentId});
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
+        // Which layer is doc.data() at this instant?  The whole design assumes it
+        // is the ATOM layer whenever a child is shown, and that assumption was
+        // never tested at the moment a matrix thread is built.  activeData follows
+        // childScopeActive, which the palette work showed is transient -- set
+        // around an operation and restored after -- so a matrix launched from a
+        // repaint may well see the PARENT layer while these are atom ids.
+        qDebug().noquote() << "[matrixscope] doc: parent=" << matrixScopeParentId
+                           << "kids=" << kids.size()
+                           << "childScopeActive=" << childScopeActive
+                           << "data()==childData=" << (activeData == childData)
+                           << "data()==clusteringData=" << (activeData == clusteringData);
+    }
+    return kids;
 }
 
 

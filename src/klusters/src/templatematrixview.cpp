@@ -1,4 +1,6 @@
 #include "templatematrixview.h"
+#include <QDebug>
+#include <QStringList>
 #include "matrixgrid.h"
 #include "matrixbadge.h"
 #include "templatematrixthread.h"
@@ -371,6 +373,23 @@ TemplateMatrixThread* TemplateMatrixView::launchComputeThread()
     // Scoped matrices: restrict to one parent's children when the child palette is
     // driving and the parent has enough of them to be worth comparing.  Empty
     // otherwise, which is the unrestricted behaviour.
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
+        const QList<dataType> ids = doc.data().clusterIds();
+        const QList<int> scope = doc.matrixScopeClusters();
+        QStringList head; for (int i = 0; i < ids.size() && i < 6; ++i) head << QString::number(ids[i]);
+        QStringList sh;   for (int i = 0; i < scope.size() && i < 6; ++i) sh << QString::number(scope[i]);
+        int overlap = 0; for (int s : scope) if (ids.contains(static_cast<dataType>(s))) ++overlap;
+        qDebug().noquote()
+            << "[matrixscope] TemplateMatrixView"
+            << " childScopeActive=" << doc.isChildClusteringActive()
+            << " scopeActive="      << doc.matrixScopeActive()
+            << " scopeParent="      << doc.matrixScopeParent()
+            << " | data() clusters=" << ids.size() << "first=[" << head.join(',') << "]"
+            << " | scope n=" << scope.size() << "first=[" << sh.join(',') << "]"
+            << " | OVERLAP=" << overlap
+            << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
+                                                     : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
+    }
     return new TemplateMatrixThread(*this, doc.data(), generation,
                                     doc.selectedChannels(),
                                     doc.matrixScopeClusters());
