@@ -1153,6 +1153,22 @@ void KlustersApp::createMenus()
         }
     }
 
+    // ---- child-palette focus drives the scoped matrices ------------------
+    //
+    // Always on, not diagnostic: the matrices reflect a parent's children only
+    // while the child view is the one being worked in, and this is what tells the
+    // doc.  Installed once, since the enclosing function runs per document.
+    {
+        static bool scopeFocusInstalled = false;
+        if (!scopeFocusInstalled) {
+            scopeFocusInstalled = true;
+            connect(qApp, &QApplication::focusChanged, this,
+                    [this](QWidget*, QWidget*){
+                if (doc) doc->setChildPaletteFocused(focusedChildPalette() != nullptr);
+            });
+        }
+    }
+
     // ---- focus tracing (NS3_VERBOSE) --------------------------------------
     // Three attempts at "focus leaves the child palette" have each fixed a real
     // defect and none has been shown to be THE one, because the moment focus
