@@ -437,6 +437,23 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             :                       "FULL(?)");
     }
 
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
+        const QList<dataType> ids = doc.data().clusterIds();
+        const QList<int> scope = doc.matrixScopeClusters();
+        QStringList head; for (int i = 0; i < ids.size() && i < 6; ++i) head << QString::number(ids[i]);
+        QStringList sh;   for (int i = 0; i < scope.size() && i < 6; ++i) sh << QString::number(scope[i]);
+        int overlap = 0; for (int s : scope) if (ids.contains(static_cast<dataType>(s))) ++overlap;
+        qDebug().noquote()
+            << "[matrixscope] ErrorMatrixView"
+            << " childScopeActive=" << doc.isChildClusteringActive()
+            << " scopeActive="      << doc.matrixScopeActive()
+            << " scopeParent="      << doc.matrixScopeParent()
+            << " | data() clusters=" << ids.size() << "first=[" << head.join(',') << "]"
+            << " | scope n=" << scope.size() << "first=[" << sh.join(',') << "]"
+            << " | OVERLAP=" << overlap
+            << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
+                                                     : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
+    }
     //The creation of a thread automatically start it.
     return new ErrorMatrixThread(
         *this, doc.data(), generation,
@@ -520,6 +537,23 @@ void ErrorMatrixView::launchCacheWarmer(){
     // task that must neither block nor signal the UI.  Added to threadsToBeKill so it
     // is quiesced with the others before any Data mutation (the stopRunningThreads
     // contract).
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
+        const QList<dataType> ids = doc.data().clusterIds();
+        const QList<int> scope = doc.matrixScopeClusters();
+        QStringList head; for (int i = 0; i < ids.size() && i < 6; ++i) head << QString::number(ids[i]);
+        QStringList sh;   for (int i = 0; i < scope.size() && i < 6; ++i) sh << QString::number(scope[i]);
+        int overlap = 0; for (int s : scope) if (ids.contains(static_cast<dataType>(s))) ++overlap;
+        qDebug().noquote()
+            << "[matrixscope] ErrorMatrixView"
+            << " childScopeActive=" << doc.isChildClusteringActive()
+            << " scopeActive="      << doc.matrixScopeActive()
+            << " scopeParent="      << doc.matrixScopeParent()
+            << " | data() clusters=" << ids.size() << "first=[" << head.join(',') << "]"
+            << " | scope n=" << scope.size() << "first=[" << sh.join(',') << "]"
+            << " | OVERLAP=" << overlap
+            << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
+                                                     : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
+    }
     ErrorMatrixThread* warmer = new ErrorMatrixThread(
         *this, doc.data(), generation,
         /*incremental*/ true, /*verify*/ false,

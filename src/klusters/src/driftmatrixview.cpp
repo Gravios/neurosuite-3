@@ -9,6 +9,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "driftmatrixview.h"
+#include <QDebug>
+#include <QStringList>
 #include "driftshiftthread.h"
 #include "configuration.h"
 
@@ -197,6 +199,23 @@ DriftMatrixThread* DriftMatrixView::launchComputeThread()
     // Scoped matrices: restrict to one parent's children when the child palette is
     // driving and the parent has enough of them to be worth comparing.  Empty
     // otherwise, which is the unrestricted behaviour.
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
+        const QList<dataType> ids = doc.data().clusterIds();
+        const QList<int> scope = doc.matrixScopeClusters();
+        QStringList head; for (int i = 0; i < ids.size() && i < 6; ++i) head << QString::number(ids[i]);
+        QStringList sh;   for (int i = 0; i < scope.size() && i < 6; ++i) sh << QString::number(scope[i]);
+        int overlap = 0; for (int s : scope) if (ids.contains(static_cast<dataType>(s))) ++overlap;
+        qDebug().noquote()
+            << "[matrixscope] DriftMatrixView"
+            << " childScopeActive=" << doc.isChildClusteringActive()
+            << " scopeActive="      << doc.matrixScopeActive()
+            << " scopeParent="      << doc.matrixScopeParent()
+            << " | data() clusters=" << ids.size() << "first=[" << head.join(',') << "]"
+            << " | scope n=" << scope.size() << "first=[" << sh.join(',') << "]"
+            << " | OVERLAP=" << overlap
+            << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
+                                                     : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
+    }
     return new DriftMatrixThread(*this, doc.data(), std::move(chanDepths),
                                  static_cast<float>(currentDriftUm), generation,
                                  doc.selectedChannels(),
