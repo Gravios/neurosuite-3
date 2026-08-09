@@ -4023,7 +4023,23 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
     // is adopted; every other path into repopulateChildPalette is a redraw and
     // must not move the user.
     if(childPanel && childPanel->isVisible()){
-        if(doc) doc->setCuratedParent(selectedClusters.isEmpty() ? -1 : selectedClusters.first());
+        // An EMPTY selection is not the user choosing to stop curating.
+        //
+        // The fiber palette emits updateShownClusters whenever its selection
+        // changes for a non-programmatic reason, and that includes the moment it
+        // goes empty -- which happens on its own during the tab change that
+        // follows a merge.  Adopting -1 there threw the curated parent away, and
+        // the log shows exactly that: scopeParent 2 -> -1 immediately after G,
+        // taking the matrices back to the full 1984 clusters and emptying the child
+        // palette (parentSlotA -1 makes assignChildSlot clear the scope and reset
+        // the list), which is where the focus went.  Both reported symptoms, one
+        // cause.
+        //
+        // The parent moves when the user picks a DIFFERENT one, or when it ceases
+        // to exist and the delete cascade points it at the neighbour.  Nothing
+        // else, which is what "the mode should be independent of action" means.
+        if(doc && !selectedClusters.isEmpty())
+            doc->setCuratedParent(selectedClusters.first());
         repopulateChildPalette(selectedClusters);
     }
 }
