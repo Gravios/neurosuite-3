@@ -418,9 +418,9 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     // cold-seed refresh.  Cheap and side-effect-free; only the pending-set recompute
     // on the full branch costs anything, and only when the switch is on.
     if(qEnvironmentVariableIntValue("NS3_ERRORMATRIX_DIAG") != 0){
-        const int launchClusters = doc.data().nbOfClusters();
+        const int launchClusters = doc.matrixData().nbOfClusters();
         const long long launchSpikes =
-            static_cast<long long>(doc.data().totalNbOfSpikes());
+            static_cast<long long>(doc.matrixData().totalNbOfSpikes());
         const int pending = useIncremental
             ? static_cast<int>(changedIds.size())
             : static_cast<int>(changedClusterIdsSinceCache().size());
@@ -472,7 +472,7 @@ std::vector<int> ErrorMatrixView::activeFeatureDims()
     const QList<int> selection = doc.selectedChannels();
     if (selection.isEmpty()) return {};                 // no restriction
 
-    Data& d = doc.data();
+    Data& d = doc.matrixData();
     const int nFeatureDims = d.nbOfDimensionsTotal() - 1;   // timestamp excluded
     const FeatureLayout layout =
         fmResolveLayout(nFeatureDims, d.nbOfchannels(),
@@ -957,7 +957,10 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
     Pair pair(cluster1,cluster2);
     QList<int> clustersToShow;
     QList<int> previousSelectedClusters;
-    QList<dataType> existingClusters = doc.data().clusterIds();
+    // matrixData(), not data(): when the matrix is scoped these are ATOM ids and
+    // data() is the fiber layer, so every cluster would read as "no longer exists"
+    // -- or worse, coincide with an unrelated fiber.
+    QList<dataType> existingClusters = doc.matrixData().clusterIds();
 
     //Check if the clusters still exist.
     if(existingClusters.contains(static_cast<dataType>(cluster1))){
@@ -992,19 +995,20 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
                 previousSelectedClusters.append(secondCluster);
             }
         }
-        doc.shownClustersUpdate(clustersToShow,previousSelectedClusters);
+        doc.selectFromMatrix(clustersToShow, previousSelectedClusters);
     }
     else{
         if(e->modifiers() & Qt::ControlModifier){
             //Store the selected pair
             selectedPairs.append(pair);
-            doc.addClustersToActiveView(clustersToShow);
+            if (doc.matrixScopeActive()) doc.selectFromMatrix(clustersToShow);
+            else                        doc.addClustersToActiveView(clustersToShow);
         }
         else{
             selectedPairs.clear();
             //Store the selected pair
             selectedPairs.append(pair);
-            doc.shownClustersUpdate(clustersToShow);
+            doc.selectFromMatrix(clustersToShow);
         }
     }
 }

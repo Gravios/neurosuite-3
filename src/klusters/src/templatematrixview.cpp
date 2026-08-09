@@ -842,7 +842,7 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
     // selectedA/selectedB continue to track the most-recent pair for the
     // threshold slider / Apply single-pair tool.
     const Pair pair(cB, cA);  // (rowSourceId, colTargetId)
-    const QList<dataType> existing = doc.data().clusterIds();
+    const QList<dataType> existing = doc.matrixData().clusterIds();
     const bool ctrl = (e->modifiers() & Qt::ControlModifier);
 
     QList<int> toShow;
@@ -853,7 +853,7 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
             if (existing.contains(static_cast<dataType>(sp.first)))  toShow.append(sp.first);
             if (existing.contains(static_cast<dataType>(sp.second))) toShow.append(sp.second);
         }
-        doc.shownClustersUpdate(toShow);
+        doc.selectFromMatrix(toShow);
         selectedA = selectedB = -1;
         applyButton->setEnabled(false);
         countLabel->setText("");
@@ -865,7 +865,7 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
         if (existing.contains(static_cast<dataType>(cA))) toShow.append(cA);
         if (existing.contains(static_cast<dataType>(cB))) toShow.append(cB);
         if (ctrl) doc.addClustersToActiveView(toShow);
-        else      doc.shownClustersUpdate(toShow);
+        else      doc.selectFromMatrix(toShow);
         selectedA = cA;
         selectedB = cB;
         // Launch per-spike xcorr for this pair (uses cache if already computed)
