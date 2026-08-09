@@ -283,6 +283,30 @@ private:
      * indices could disagree -- means()/covariances() are addressed by position in
      * this index, so a disagreement puts every cluster's statistics in the wrong
      * row.*/
+    /**Turn each spike's raw Gaussian likelihoods into posteriors that sum to 1,
+     * in place, and resolve the noise column while doing it.
+     *
+     * Before this runs, probabilities(spike, cluster) holds an unnormalised
+     * density; after it, the row reads as "probability this spike belongs to that
+     * cluster", which is what the error-matrix aggregation averages.
+     *
+     * A row that sums to exactly zero -- every density underflowed, routine at 32
+     * dimensions for a spike far from every centre -- has no posterior to compute,
+     * so its whole mass goes to the noise column: the spike belongs to nothing.
+     * Which column that is depends on whether cluster 1 was in the model or a
+     * synthetic one was prepended, and getting it wrong hands every underflowing
+     * spike to an arbitrary cluster.  That bug existed in both copies of this code
+     * and had to be fixed in both; resolving the column here means it can only be
+     * wrong in one place.
+     *
+     * @returns false if haveToStopComputing was set part-way.  The two callers
+     * abort differently -- one breaks and falls into its own cleanup, the other
+     * returns the partially normalised array -- so the decision stays with them.*/
+    bool normaliseRowsToPosteriors(Array<double>* probabilities,
+                                   const QVector<ModelEntry>& model,
+                                   const QList<int>& ignoreClusterIndex,
+                                   int nbClusters);
+
     void meanCovarianceComputation(const QVector<ModelEntry>& model,
                                    int nbClusters,int nbDimensions,dataType nbSpikes,
                                    Data& clusteringData,QList<int>& ignoreClusterIndex);
