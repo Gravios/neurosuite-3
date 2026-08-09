@@ -401,6 +401,20 @@ QList<int> KlustersDoc::matrixScopeClusters() const
     return childrenOf(QList<int>{matrixScopeParentId});
 }
 
+void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& previous)
+{
+    if (ids.isEmpty()) return;
+    if (matrixScopeActive()) {
+        // Atom ids: land them in the child palette, which is where the user is
+        // working and where the merge will be made.
+        emit hierarchyChildSelectionRequested(ids);
+        return;
+    }
+    QList<int> show = ids, prev = previous;
+    if (prev.isEmpty()) shownClustersUpdate(show);
+    else                shownClustersUpdate(show, prev);
+}
+
 Data& KlustersDoc::matrixData() const
 {
     // The atom layer when a scope is in force, whatever the rest of the app is

@@ -761,9 +761,10 @@ void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)
     if (clusterList[col] != clusterList[row])
         clustersToShow.append(clusterList[col]);
     if (e->modifiers() & Qt::ControlModifier)
-        doc.addClustersToActiveView(clustersToShow);
+        if (doc.matrixScopeActive()) doc.selectFromMatrix(clustersToShow);
+        else                        doc.addClustersToActiveView(clustersToShow);
     else
-        doc.shownClustersUpdate(clustersToShow);
+        doc.selectFromMatrix(clustersToShow);
 }
 
 void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)

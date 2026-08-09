@@ -360,6 +360,20 @@ public:
      */
     Data& matrixData() const;
 
+    /** Select @p ids as a result of clicking a matrix cell.
+     *
+     *  A matrix cell names a PAIR, and clicking it is how the user says "these two
+     *  are the ones I mean" before merging them.  When the matrix is scoped, those
+     *  ids are atoms and the selection belongs in the CHILD palette --
+     *  shownClustersUpdate() cannot deliver it, because its palette refresh is
+     *  guarded on !childScopeActive, so a scoped click landed in the fiber palette
+     *  and picked whichever fiber happened to carry the atom's number.
+     *
+     *  @p previous is the prior selection, passed through to shownClustersUpdate in
+     *  the unscoped case only; the child palette has no equivalent notion.
+     */
+    void selectFromMatrix(const QList<int>& ids, const QList<int>& previous = QList<int>());
+
     /** True when the matrices should restrict themselves to one parent's children:
      *  a loaded child layer, a selected parent, and at least one child.
      *
