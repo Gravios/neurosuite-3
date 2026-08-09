@@ -59,6 +59,7 @@
 #include <QCursor>
 #include <QFileInfo> 
 #include <QApplication>
+#include <QTimer>
 #include <QInputDialog>
 #include <QActionGroup>
 #include <QDialog>
@@ -1168,7 +1169,20 @@ void KlustersApp::createMenus()
         if (!scopeRecomputeInstalled) {
             scopeRecomputeInstalled = true;
             connect(doc, &KlustersDoc::matrixScopeChanged, this, [this]{
-                slotUpdateErrorMatrix();
+                // Deferred, and guarded on there being a view.
+                //
+                // matrixScopeChanged fires while the document is still opening --
+                // the first fiber selection sets the curated parent -- and a
+                // recompute issued then races the matrix docks being constructed.
+                // The compute goes out to a view that is not listening yet, and
+                // the open-time compute it displaced never happens, so the matrix
+                // comes up empty and stays empty until something else forces it.
+                //
+                // A zero-timer puts it after the current event-loop turn, by which
+                // point the docks exist and updateErrorMatrix() reaches them.
+                QTimer::singleShot(0, this, [this]{
+                    if (activeView()) slotUpdateErrorMatrix();
+                });
             });
         }
     }

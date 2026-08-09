@@ -447,6 +447,18 @@ public:
     int neighbourAfterRemoval(const QList<int>& removed) const;
     /// Return and clear the pending fiber selection.
     QList<int> takePendingFiberSelection();
+
+    /** Children to select once the child palette has finished rebuilding.
+     *
+     *  The same mechanism the fiber palette already has, for the same reason.  An
+     *  operation emits its landing immediately, but the automation scheduled off
+     *  hierarchyChanged repopulates the palette again afterwards with no landing
+     *  behind it -- so the last rebuild wins and the landing is gone.  Parking the
+     *  request instead means repopulateChildPalette applies it after whichever
+     *  rebuild turns out to be last, however many run.
+     */
+    void setPendingChildSelection(const QList<int>& children);
+    QList<int> takePendingChildSelection();
     /// Translate the pending fiber selection through a renumber map (old->new), so a
     /// selection recorded before renumber still points at the produced fibers after.
     void renumberPendingFiberSelection(const QMap<int,int>& oldNew);
@@ -1693,6 +1705,7 @@ private:
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
     QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
+    QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 
     /** Set by buildHierarchyMaps() when the per-spike .clu/.clc scan finds a child

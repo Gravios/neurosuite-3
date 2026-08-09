@@ -483,10 +483,18 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     // Selection and focus are preserved across the rebuild: the rebuild is a
     // redraw, not an edit, and the deferred refreshes that follow an operation
     // carry no landing of their own.
-    if(childPaletteA && parentSlotA >= 0 && !priorSelection.isEmpty()){
+    if(childPaletteA && parentSlotA >= 0){
         const QList<int> live = doc->childrenOf(QList<int>{parentSlotA});
+
+        // A parked landing wins over the prior selection: an operation asked to
+        // end up on its output, and that outranks whatever was selected before it
+        // ran.  Drained here rather than applied at the operation, so it survives
+        // however many deferred rebuilds follow.
+        QList<int> want = doc->takePendingChildSelection();
+        if(want.isEmpty()) want = priorSelection;
+
         QList<int> restore;
-        for(int id : priorSelection)
+        for(int id : want)
             if(live.contains(id)) restore.append(id);
         if(!restore.isEmpty()) childPaletteA->selectItems(restore);
     }

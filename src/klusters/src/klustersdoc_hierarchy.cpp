@@ -375,6 +375,18 @@ void KlustersDoc::setMatrixScopeEnabled(bool enabled)
     emit matrixScopeChanged();              // scoping just went on or off
 }
 
+void KlustersDoc::setPendingChildSelection(const QList<int>& children)
+{
+    if (!children.isEmpty()) pendingChildSelection = children;
+}
+
+QList<int> KlustersDoc::takePendingChildSelection()
+{
+    QList<int> out = pendingChildSelection;
+    pendingChildSelection.clear();
+    return out;
+}
+
 void KlustersDoc::setCuratedParent(int fiberId)
 {
     if (curatedParentId == fiberId) return;   // no spurious recomputes
@@ -863,6 +875,7 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
         int land = siblings.last();                 // nothing above: nearest below
         for (int kid : siblings)
             if (kid > childCluster) { land = kid; break; }
+        setPendingChildSelection(QList<int>{ land });
         emit hierarchyChildSelectionRequested(QList<int>{ land });
     }
     return true;
@@ -900,7 +913,7 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
 
-    // Land on the merged child.
+    // Park the landing on the merged child.
     //
     // "Operations performed in this mode should return focus to the output
     // clusters or merged clusters within the children palette" -- this is that
@@ -909,8 +922,11 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     // result is what the user then judges.  Leaving the selection on two ids that
     // no longer exist means the next gesture starts from nothing.
     //
-    // After hierarchyChanged, so the palette has been repopulated and newId is in
-    // the list by the time it is asked for.
+    // Parked rather than emitted once: the automation scheduled off
+    // hierarchyChanged repopulates the palette again afterwards with no landing of
+    // its own, so a single emission is applied and then wiped by the next rebuild.
+    // repopulateChildPalette drains this after whichever rebuild is last.
+    setPendingChildSelection(QList<int>{ newId });
     emit hierarchyChildSelectionRequested(QList<int>{ newId });
 
     modified = true;
