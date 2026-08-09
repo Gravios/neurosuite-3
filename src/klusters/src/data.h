@@ -384,7 +384,7 @@ public:
      *  the replay half of a parent-layer undo.  A user-initiated bulk relabel
      *  needs the opposite: one snapshot, so a single Ctrl+Z (or one ChildEdit on
      *  the atom layer) puts the whole thing back.  Used by
-     *  KlustersDoc::mergeAllChildrenToSelf().
+     *  KlustersDoc::flattenHierarchyToClu().
      *
      *  Clusters are written in ascending id order, which keeps
      *  highestClusterId() / nextFreeClusterId() honest -- both read the last

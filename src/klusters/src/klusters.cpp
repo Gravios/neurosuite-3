@@ -879,7 +879,6 @@ void KlustersApp::createMenus()
     QMenu* hierarchyMenu = menuBar()->addMenu(tr("&Hierarchy"));
     mMergeFibers = hierarchyMenu->addAction(tr("&Merge Selected Fibers"));
     mPromoteChild = hierarchyMenu->addAction(tr("&Promote Child to New Fiber"));
-    mMoveChild = hierarchyMenu->addAction(tr("Move Child to Selected &Fiber"));
     hierarchyMenu->addSeparator();
     mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Fiber"));
     mDissolveFiber = hierarchyMenu->addAction(tr("&Dissolve Fiber into Children"));
@@ -891,7 +890,7 @@ void KlustersApp::createMenus()
                                "parent map.  Run after reassigning / consolidating the fibers."));
     hierarchyMenu->addSeparator();
     mMergeChildren = hierarchyMenu->addAction(tr("Merge Selected &Children (atom)"));
-    mMergeAllChildren = hierarchyMenu->addAction(tr("Merge &All Children into Self (flatten)"));
+    mMergeAllChildren = hierarchyMenu->addAction(tr("&Flatten Hierarchy to Flat Clustering"));
     mMergeAllChildren->setToolTip(tr("Walk every fiber and merge its child atoms into one self child\n"
                                      "(atom id == fiber id), so the atom layer becomes a copy of the\n"
                                      "fiber layer.  Discards all sub-mode structure -- undo with\n"
@@ -902,7 +901,6 @@ void KlustersApp::createMenus()
     mRedoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Y));
     mMergeFibers->setEnabled(false);
     mPromoteChild->setEnabled(false);
-    mMoveChild->setEnabled(false);
     mGroupChildren->setEnabled(false);
     mDissolveFiber->setEnabled(false);
     mDropChildNoise->setEnabled(false);
@@ -913,13 +911,12 @@ void KlustersApp::createMenus()
     mRedoChildEdit->setEnabled(false);
     connect(mMergeFibers, &QAction::triggered, this, &KlustersApp::slotMergeFibers);
     connect(mPromoteChild, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
-    connect(mMoveChild, &QAction::triggered, this, &KlustersApp::slotMoveChildrenToFiber);
     connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotGroupChildrenIntoFiber);
     connect(mDissolveFiber, &QAction::triggered, this, &KlustersApp::slotDissolveFiber);
     connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
     connect(mRefiberize, &QAction::triggered, this, &KlustersApp::slotRefiberize);
     connect(mMergeChildren, &QAction::triggered, this, &KlustersApp::slotMergeChildren);
-    connect(mMergeAllChildren, &QAction::triggered, this, &KlustersApp::slotMergeAllChildrenToSelf);
+    connect(mMergeAllChildren, &QAction::triggered, this, &KlustersApp::slotFlattenHierarchyToClu);
     connect(mUndoChildEdit, &QAction::triggered, this, &KlustersApp::slotUndoChildEdit);
     connect(mRedoChildEdit, &QAction::triggered, this, &KlustersApp::slotRedoChildEdit);
     //viewMenu = new QActionMenu(tr("&Window"), actionCollection(), "window_menu");

@@ -543,7 +543,7 @@ void KlustersDoc::collapseToSelfChildren(){
     // while the warning keeps advising a refiberize that cannot help.  The reserve
     // bins get the same self-child treatment as any other fiber -- atom id == fiber
     // id, i.e. spikes dropped to noise are covered by atom 1 and spikes dropped to
-    // artifact by atom 0 -- which is exactly the lift mergeAllChildrenToSelf() already
+    // artifact by atom 0 -- which is exactly the lift flattenHierarchyToClu() already
     // applies to every fiber including the reserve bins, and for the same reason it
     // states there: an atom left in a reserve bin carrying an arbitrary id is a
     // nesting violation waiting to happen.  An atom lying WHOLLY inside a reserve bin
@@ -561,7 +561,7 @@ void KlustersDoc::collapseToSelfChildren(){
     // while the warning keeps advising a refiberize that cannot help.  The reserve
     // bins get the same self-child treatment as any other fiber -- atom id == fiber
     // id, i.e. spikes dropped to noise are covered by atom 1 and spikes dropped to
-    // artifact by atom 0 -- which is exactly the lift mergeAllChildrenToSelf() already
+    // artifact by atom 0 -- which is exactly the lift flattenHierarchyToClu() already
     // applies to every fiber including the reserve bins, and for the same reason it
     // states there: an atom left in a reserve bin carrying an arbitrary id is a
     // nesting violation waiting to happen.  An atom lying WHOLLY inside a reserve bin
@@ -646,7 +646,7 @@ void KlustersDoc::collapseToSelfChildren(){
     // atoms, and the pair count follows.  Measured on a synthetic 574,121-spike
     // session with 1,500 fibers and 22,000 atoms: 2,085 rebuilds, ~1.2e9 row writes,
     // in the GUI thread.  setClusterLabels does one rebuild for the whole re-cut --
-    // the same primitive mergeAllChildrenToSelf() already uses, for the same reason
+    // the same primitive flattenHierarchyToClu() already uses, for the same reason
     // -- taking that session to a single 574,121-row pass.
     //
     // It also improves the undo picture rather than harming it.  This function
@@ -770,47 +770,29 @@ int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activ
     return kept;
 }
 
-int KlustersDoc::promoteChild(int childCluster, KlustersView& activeView){
-    if (!childData || !childToParent.contains(childCluster)) return -1;
-    const int parent = childToParent.value(childCluster);
-    if (parentToChildren.value(parent).size() <= 1)
-        return parent;                            // only child == already its own fiber
-    const QVector<int> spk = childData->clusterSpkIndices(childCluster);
-    if (spk.isEmpty()) return -1;
-    setActiveClustering(false);
-    const int newId = static_cast<int>(clusteringData->nextFreeClusterId());
-    moveSpikeSubsetToCluster(parent, spk, newId, activeView);   // creates newId
-    // moveSpikeSubsetToCluster only colours the noise cluster; give the new fiber
-    // its own colour.  Appended AFTER the call so it is NOT in that op's undo
-    // snapshot -> a subsequent Ctrl+Z removes the colour with the cluster.
-    if (!clusterColorList->contains(newId)){
-        QColor color;
-        color.setHsv(static_cast<int>(fmod(static_cast<double>(newId) * 7, 36)) * 10, 200, 255);
-        clusterColorList->append(newId, color);
-        clusterPalette.updateClusterList();
-    }
-    rebuildHierarchyFromData();
-    setPendingFiberSelection({newId});
-    emit hierarchyChanged();
-    return newId;
-}
-
-bool KlustersDoc::moveChild(int childCluster, int targetFiber, KlustersView& activeView){
-    if (!childData || !childToParent.contains(childCluster)) return false;
-    const int parent = childToParent.value(childCluster);
-    if (parent == targetFiber) return false;      // already there
-    const QVector<int> spk = childData->clusterSpkIndices(childCluster);
-    if (spk.isEmpty()) return false;
-    setActiveClustering(false);
-    moveSpikeSubsetToCluster(parent, spk, targetFiber, activeView);   // targetFiber exists
-    setPendingFiberSelection({targetFiber});   // follow the moved child to its new fiber
-    rebuildHierarchyFromData();
-    emit hierarchyChanged();
-    return true;
-}
-
-int KlustersDoc::groupChildrenIntoFiber(const QList<int>& children, KlustersView& activeView){
+// ---------------------------------------------------------------------------
+// KlustersDoc::promoteChildren
+//
+// Take children out of their parent and make ONE new fiber from them.  With a
+// single child this is the old promoteChild; with several it is the old
+// groupChildrenIntoFiber.  They were the same operation written twice -- one
+// N-ary, one unary with an extra early return -- so they are one function now.
+//
+// The only-child case still short-circuits: a child that is its parent's sole
+// atom already covers exactly that fiber, so promoting it would move every spike
+// to a new id for no change in structure.
+// ---------------------------------------------------------------------------
+int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activeView){
     if (!childData || children.isEmpty()) return -1;
+
+    if (children.size() == 1){
+        const int only = children.first();
+        if (!childToParent.contains(only)) return -1;
+        const int parent = childToParent.value(only);
+        if (parentToChildren.value(parent).size() <= 1)
+            return parent;                        // already its own fiber
+    }
+
     setActiveClustering(false);
     const int newId = static_cast<int>(clusteringData->nextFreeClusterId());
     int target = -1;
@@ -823,8 +805,8 @@ int KlustersDoc::groupChildrenIntoFiber(const QList<int>& children, KlustersView
         moveSpikeSubsetToCluster(parent, spk, (target < 0 ? newId : target), activeView);
         if (target < 0){
             target = newId;
-            // colour the new fiber (appended after the first move so a Ctrl+Z
-            // that reverts that move also drops the colour).
+            // Coloured after the first move so a Ctrl+Z reverting that move also
+            // drops the colour.
             if (!clusterColorList->contains(newId)){
                 QColor color;
                 color.setHsv(static_cast<int>(fmod(static_cast<double>(newId) * 7, 36)) * 10, 200, 255);
@@ -835,7 +817,7 @@ int KlustersDoc::groupChildrenIntoFiber(const QList<int>& children, KlustersView
     if (target < 0) return -1;
     clusterPalette.updateClusterList();
     rebuildHierarchyFromData();
-    setPendingFiberSelection({target});
+    setPendingFiberSelection({target});   // the output is a FIBER; land there
     emit hierarchyChanged();
     return target;
 }
@@ -844,11 +826,12 @@ bool KlustersDoc::dissolveFiber(int fiber, KlustersView& activeView){
     if (!childData) return false;
     const QList<int> kids = parentToChildren.value(fiber);
     if (kids.size() < 2) return false;                // nothing to explode
-    // promoteChild detaches each child into its own fiber; the final child is
-    // the only one left under `fiber` so its promote no-ops and it keeps the id.
+    // Each child becomes its own fiber: promoteChildren with a single-element
+    // list per child, not one call with all of them, which would pool them into
+    // one fiber and be the opposite operation.
     QList<int> produced;
     for (int c : kids)
-        produced.append(promoteChild(c, activeView)); // each re-derives + emits
+        produced.append(promoteChildren(QList<int>{c}, activeView));
     setPendingFiberSelection(produced);               // select all the exploded fibers
     return true;
 }
@@ -934,7 +917,7 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     return newId;
 }
 
-int KlustersDoc::mergeAllChildrenToSelf(KlustersView& activeView){
+int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
     // Session-wide flatten: every fiber ends up covered by exactly ONE atom whose
     // id is the fiber's own id.  This is the "self child" identity the .clc == .clu
     // lift establishes at load, re-applied to the whole layer -- the bulk form of

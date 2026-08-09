@@ -274,7 +274,7 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     // atoms straddle, and the repair's own childData mutation then invalidates the
     // caches they just rebuilt.
     // Guarded by an actual straddle rather than applied unconditionally, because
-    // the hierarchy operations (promoteChild / moveChild / groupChildrenIntoFiber
+    // the hierarchy operations (promoteChildren / mergeChildren
     // / dropChildToNoise) reach this same function to move WHOLE atoms: they break
     // nothing, they do their own rebuildHierarchyFromData(), and refiberize() would
     // additionally clear the atom undo/redo history out from under them.  Moving a

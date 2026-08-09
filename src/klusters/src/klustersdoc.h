@@ -464,12 +464,14 @@ public:
     /** Detach child @p childCluster from its fiber into a new fiber of its own
      *  (the spikes become a new .clu cluster).  Returns the new fiber id, the
      *  existing parent if it was the only child (no-op), or -1. */
-    int promoteChild(int childCluster, KlustersView& activeView);
     /** Move child @p childCluster's spikes onto the existing fiber @p targetFiber. */
-    bool moveChild(int childCluster, int targetFiber, KlustersView& activeView);
     /** Collect @p children (possibly from different fibers) into one new fiber.
      *  Returns the new fiber id, or -1.  Reuses moveSpikeSubsetToCluster. */
-    int groupChildrenIntoFiber(const QList<int>& children, KlustersView& activeView);
+    /** Take @p children out of their parent(s) and make ONE new fiber from them.
+     *  Replaces promoteChild (the single-child case) and groupChildrenIntoFiber,
+     *  which were the same operation written twice.  moveChild is gone: moving a
+     *  child to an existing fiber has no use now that promotion is the way out. */
+    int promoteChildren(const QList<int>& children, KlustersView& activeView);
     /** Explode @p fiber into its constituent children, each becoming its own
      *  fiber (one keeps @p fiber's id).  Inverse of mergeParentFibers. */
     bool dissolveFiber(int fiber, KlustersView& activeView);
@@ -489,7 +491,17 @@ public:
      *  Ctrl+Shift+Z reverts the whole thing in one step.
      *  @return the number of atoms removed, 0 if the layer was already flat, or
      *          -1 if there is no child layer / the two layers disagree in size. */
-    int mergeAllChildrenToSelf(KlustersView& activeView);
+    /** Collapse the hierarchy so .clc IS .clu: every fiber ends up covered by one
+     *  atom carrying the fiber's own id, and no sub-structure survives.
+     *
+     *  This is the FILE-LEVEL conversion from a hierarchical pair to a flat
+     *  clustering -- the counterpart to the .clc == .clu lift at load -- not a
+     *  curation step.  It was called mergeAllChildrenToSelf, which reads like
+     *  "merge this parent's children" and is how it nearly got repurposed into
+     *  one; the per-parent operation is mergeChildren() on a selection, reached
+     *  from the child palette.
+     */
+    int flattenHierarchyToClu(KlustersView& activeView);
     /** Undo / redo the most recent atom-layer edit (childData), independent of
      *  the parent Ctrl+Z timeline. */
     bool undoChildEdit(KlustersView& activeView);
