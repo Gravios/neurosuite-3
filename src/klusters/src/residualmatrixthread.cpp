@@ -21,25 +21,34 @@ void ResidualMatrixThread::run()
 
     if (haveToStopProcessing) { post(); return; }
 
-    // ── 1. Cluster list (skip artefact 0; keep noise 1 so it can be read) ──
+    // ── 1. Cluster list ──────────────────────────────────────────────────
     {
         const QList<dataType> allIds = data.clusterIds();
-        for (dataType id : allIds)
-            if (id >= 1 && data.nbOfSpikes(id) > 0)
-                clusterList.append(static_cast<int>(id));
+        if (!activeClusters.isEmpty()) {
+            // Scoped: build the list DIRECTLY as [artefact, noise, children...]
+            // rather than building every cluster and filtering after.  The matrix
+            // is sized from this list, so what goes in it is the matrix -- a
+            // parent with 7 children gives 9x9.
+            //
+            // Both reserve bins are included even though the unscoped build below
+            // skips artefact.  Skipping it there is a judgement about a
+            // session-wide matrix, where an artefact row carries no waveform and
+            // costs a row out of hundreds.  Here the matrix is nine rows and the
+            // artefact bin is one of the places a child can be sent, so its column
+            // is part of what the view is for.  Included regardless of spike count,
+            // so the shape does not change under the user as bins empty and fill.
+            for (dataType id : allIds)
+                if (id <= 1) clusterList.append(static_cast<int>(id));
+            for (int id : activeClusters)
+                if (id > 1 && data.nbOfSpikes(id) > 0) clusterList.append(id);
+        } else {
+            for (dataType id : allIds)
+                if (id >= 1 && data.nbOfSpikes(id) > 0)
+                    clusterList.append(static_cast<int>(id));
+        }
         std::sort(clusterList.begin(), clusterList.end());
     }
 
-    // Scoped matrices: keep only one parent's children.  Applied after the list is
-    // built, so the enumeration's separate judgement about what counts as a usable
-    // cluster is untouched.  Cluster 1 is kept regardless -- same carve-out as the
-    // error and template paths.
-    if (!activeClusters.isEmpty()) {
-        QList<int> scoped;
-        for (int id : clusterList)
-            if (id <= 1 || activeClusters.contains(id)) scoped.append(id);
-        clusterList = scoped;
-    }
 
     const int nClusters = clusterList.size();
     if (nClusters < 2) { post(); return; }
