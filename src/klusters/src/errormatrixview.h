@@ -356,6 +356,14 @@ private:
      * a parent cluster whose id and spike count happen to match a cached child
      * cluster silently reuses P(spike | child N) as P(spike | parent N).*/
     bool rawProbCacheChildScope = false;
+    /**The MATRIX scope the cached columns were computed under.  Distinct from
+     * rawProbCacheChildScope: that tracks isChildClusteringActive(), which is
+     * raised around an operation and lowered again and so reads false at every
+     * matrix launch -- it can never differ from itself and never invalidated
+     * anything.  What actually determines the model is whether the scoped mode is
+     * on and which parent it is scoped to.*/
+    bool rawProbCacheScopeActive = false;
+    int  rawProbCacheScopeParent = -1;
     /**Set by the forward renumber slot when it has remapped rawProbCacheIds in
      * place through the old->new map, so the compute launch can skip the
      * defensive hasBeenRenumbered invalidate; consumed (reset) each launch.*/

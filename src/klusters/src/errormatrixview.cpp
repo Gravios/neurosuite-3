@@ -194,6 +194,8 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 rawProbCacheDims  = errorMatrixThread->getNewRawDims();
                 rawProbCacheValid = true;
                 rawProbCacheChildScope = doc.isChildClusteringActive();
+                rawProbCacheScopeActive = doc.matrixScopeActive();
+                rawProbCacheScopeParent = doc.curatedParent();
             } else {
                 delete errorMatrixThread->getNewRaw();                // superseded / unusable
             }
@@ -226,6 +228,8 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 rawProbCacheDims  = errorMatrixThread->getNewRawDims();
                 rawProbCacheValid = true;
                 rawProbCacheChildScope = doc.isChildClusteringActive();
+                rawProbCacheScopeActive = doc.matrixScopeActive();
+                rawProbCacheScopeParent = doc.curatedParent();
             } else {
                 invalidateRawProbCache("full recompute / fell-back result (customEvent)");
             }
@@ -401,6 +405,22 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     // their .fet, so every geometry check in cacheUsable passes.
     if(rawProbCacheValid && rawProbCacheChildScope != doc.isChildClusteringActive())
         invalidateRawProbCache("clustering scope changed");
+
+    // And when the MATRIX scope changes.  The check above tests
+    // isChildClusteringActive(), which is raised around an operation and lowered
+    // again -- it reads false at every matrix launch, so it never differs from
+    // itself and has never invalidated anything.  The cached columns belong to the
+    // cluster set the model was built over, and that set is decided by whether the
+    // scoped mode is on and which parent it is scoped to.
+    //
+    // This is why only the error matrix stayed stale while the other three
+    // shrank: they have no cache and rebuild their cluster list every time, so
+    // toggling V is visible in them immediately.  The incremental path here reused
+    // a full-session matrix and no geometry check could catch it, since the two
+    // models share their spikes and their .fet.
+    if(rawProbCacheValid && (rawProbCacheScopeActive != doc.matrixScopeActive()
+                          || rawProbCacheScopeParent != doc.curatedParent()))
+        invalidateRawProbCache("matrix scope changed");
 
     const bool coldSeedRefresh = !rawProbCacheValid && (nbActions == 0);
     const bool useIncremental = incrementalEnabled && singleEdit && !coldSeedRefresh;
