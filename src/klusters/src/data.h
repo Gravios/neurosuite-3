@@ -53,6 +53,26 @@ class CorrelationThread;
 
 class Data;
 
+/**Reserve cluster ids.
+ *
+ * Two ids are reserved across the whole application and mean the same thing in
+ * every layer: 0 is the artefact bin and 1 is noise.  They were written as bare
+ * literals in at least nine places -- `id == 1`, `contains(0)`, `prepend(1)` --
+ * and the reader had to infer from context whether a given 1 meant noise or an
+ * index base, a count, or a metric selector.  One file has `metric == 1` a few
+ * lines from `id == 1`, meaning entirely different things.
+ *
+ * Naming them makes the artefact/noise policy greppable, which matters because
+ * it is not uniform: the error matrix keeps noise as its probability reference,
+ * the template, residual and drift matrices keep it as a merge destination, and
+ * all four exclude artefact because it carries no waveform.  Those are three
+ * separate decisions that currently look like the same literal.
+ */
+namespace ClusterId {
+    constexpr int Artefact = 0;   ///< no meaningful waveform; excluded from the matrices
+    constexpr int Noise     = 1;  ///< the reference column, and a merge destination
+}
+
 /**
   * This class contains and manages the data.
   *@author Lynn Hazan

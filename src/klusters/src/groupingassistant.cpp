@@ -93,8 +93,8 @@ static void prependCluster1Indices(QList<int>& clusterList,
                                    QList<int>& ignoreClusterIndex,
                                    int& initIndex)
 {
-    clusterList.prepend(1);
-    computedClusterList.prepend(1);
+    clusterList.prepend(ClusterId::Noise);
+    computedClusterList.prepend(ClusterId::Noise);
     for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
         ignoreClusterIndex[i] += 1;
     initIndex = 2;
@@ -284,7 +284,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     // removes it by construction rather than by discipline.
     const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
 
-    if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
+    if (clusterInfoMap->contains(ClusterId::Artefact)) clusterInfoMap->remove(ClusterId::Artefact);
     const int nbClustersReal = model.size();
     if (nbClustersReal < 1 || haveToStopComputing) {
         delete spikesByCluster; delete clusterInfoMap;
@@ -323,7 +323,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             // membership: the producer.
             cd.ignore = (ignoreClusterIndex.contains(ci) != 0);
             cd.logTerm = 0.0;
-            if (cd.id == 1) existCluster1 = true;
+            if (cd.id == ClusterId::Noise) existCluster1 = true;
             clusterList.append(cd.id);
             if (!cd.ignore) {
                 Array<double> chol; chol.setSize(nbDimensions, nbDimensions);
@@ -552,7 +552,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     if (existCluster1) {
         int ci = 1;
         for (const ModelEntry& me : model) {
-            if (me.id == 1) { cluster1Col1 = ci; break; }
+            if (me.id == ClusterId::Noise) { cluster1Col1 = ci; break; }
             ++ci;
         }
     }
@@ -654,7 +654,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
     // removes it by construction rather than by discipline.
     const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
 
-    if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
+    if (clusterInfoMap->contains(ClusterId::Artefact)) clusterInfoMap->remove(ClusterId::Artefact);
     int nbClusters = model.size();
     if (pTiming) t_dup = pt.restart();
 
@@ -705,7 +705,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
             // See the incremental path: membership is the producer's job alone.
             cd.ignore    = (ignoreClusterIndex.contains(ci) != 0);
 
-            if (cd.clusterId == 1) existCluster1 = true;
+            if (cd.clusterId == ClusterId::Noise) existCluster1 = true;
             clusterList.append(cd.clusterId);
 
             if (!cd.ignore) {
@@ -795,7 +795,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
         if (existCluster1) {
             int ci = 0;
             for (const ModelEntry& me : model) {
-                if (me.id == 1) { cluster1Col = ci; break; }
+                if (me.id == ClusterId::Noise) { cluster1Col = ci; break; }
                 ++ci;
             }
         }
@@ -1016,7 +1016,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
     if (existCluster1) {
         int ci = 1;
         for (const ModelEntry& me : model) {
-            if (me.id == 1) { cluster1Col1 = ci; break; }
+            if (me.id == ClusterId::Noise) { cluster1Col1 = ci; break; }
             ++ci;
         }
     }
