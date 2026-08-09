@@ -187,20 +187,22 @@ void TemplateMatrixThread::run()
     {
         const QList<dataType> allIds = data.clusterIds();
         if (!activeClusters.isEmpty()) {
-            // Scoped: build the list DIRECTLY as [artefact, noise, children...]
-            // rather than building every cluster and filtering after.  The matrix
-            // is sized from this list, so what goes in it is the matrix -- a
-            // parent with 7 children gives 9x9.
+            // Scoped: build the list DIRECTLY as [noise, children...] rather than
+            // building every cluster and filtering after.  The matrix is sized from
+            // this list, so what goes in it is the matrix -- a parent with 7
+            // children gives 8x8.
             //
-            // Both reserve bins are included even though the unscoped build below
-            // skips artefact.  Skipping it there is a judgement about a
-            // session-wide matrix, where an artefact row carries no waveform and
-            // costs a row out of hundreds.  Here the matrix is nine rows and the
-            // artefact bin is one of the places a child can be sent, so its column
-            // is part of what the view is for.  Included regardless of spike count,
-            // so the shape does not change under the user as bins empty and fill.
+            // Noise is kept and artefact is not, matching the unscoped build below.
+            // Noise earns its row: comparing a child against it is how spikes get
+            // judged and moved back out, so it is a destination the curator uses.
+            // Artefact has no waveform, so its row would be empty in every one of
+            // these three views, which compare templates.
+            //
+            // Noise is included regardless of spike count so the shape does not
+            // change under the user as the bin empties and fills; children still
+            // need spikes, since a child with none has nothing to compare.
             for (dataType id : allIds)
-                if (id <= 1) clusterList.append(static_cast<int>(id));
+                if (id == 1) clusterList.append(static_cast<int>(id));
             for (int id : activeClusters)
                 if (id > 1 && data.nbOfSpikes(id) > 0) clusterList.append(id);
         } else {
