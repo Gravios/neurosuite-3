@@ -278,7 +278,14 @@ private:
   * @param ignoreClusterIndex list of the indexes of the clusters which where not computed, either
   * because they do not have enough spikes or their determinant could not be calculated (their covariance matrix is not positive definite.)
   */
-    void meanCovarianceComputation(int nbClusters,int nbDimensions,dataType nbSpikes,Data& clusteringData,QList<int>& ignoreClusterIndex);
+    /**Fits the per-cluster mean and covariance.  Takes the model index rather than
+     * rebuilding it: its caller has one already, and two independently built
+     * indices could disagree -- means()/covariances() are addressed by position in
+     * this index, so a disagreement puts every cluster's statistics in the wrong
+     * row.*/
+    void meanCovarianceComputation(const QVector<ModelEntry>& model,
+                                   int nbClusters,int nbDimensions,dataType nbSpikes,
+                                   Data& clusteringData,QList<int>& ignoreClusterIndex);
 
 };
 
