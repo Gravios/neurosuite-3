@@ -403,13 +403,33 @@ public:
      *  jump in both content and cost.  A two-cell matrix conveys little, but it
      *  conveys it consistently.
      */
-    bool matrixScopeActive() const;
+    bool matrixScopeActive() const { return scopeResolvedActive; }
 
     /** The children to compare, or empty when matrixScopeActive() is false.  Callers
      *  must test matrixScopeActive() rather than inferring from emptiness: empty
      *  means "do not scope", which is a different instruction from "scope to nothing".
      */
-    QList<int> matrixScopeClusters() const;
+    QList<int> matrixScopeClusters() const { return scopeResolvedClusters; }
+
+    /** Recompute the held scope from current state.  Called when something the
+     *  scope DEPENDS on changes -- the V toggle, the curated parent, or the
+     *  hierarchy maps after a rebuild -- and never from a consumer.
+     *
+     *  The scope used to be derived on every call from childData and
+     *  parentToChildren.  rebuildHierarchyFromData() CLEARS both maps before
+     *  refilling them, so a consumer asking mid-rebuild got "no children" and
+     *  computed unscoped.  With four views each launching more than once per
+     *  operation the answer alternated inside a single edit: the log shows
+     *  scopeActive false, true, false, true at a fixed parent.
+     *
+     *  That is the shape of every bug in this feature.  data(), childScopeActive,
+     *  focusedChildPalette(), the palette's parent slot and this predicate were all
+     *  derived on demand from mutable substrate, so the answer depended on WHEN it
+     *  was asked; each fix corrected one caller's timing while the value went on
+     *  moving for the rest.  Deciding it once and holding it is what makes the
+     *  others unnecessary, rather than adding a sixth guard.
+     */
+    void resolveMatrixScope();
 
     /** Parent unit id owning @p childId, or -1 if @p childId is not a child. */
     int parentOfChild(int childId) const { return childToParent.value(childId,-1); }
@@ -1703,6 +1723,8 @@ private:
     bool                 childScopeActive = false;  // true while a child is the shown clustering
     int                  curatedParentId = -1;      // the parent being curated
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
+    bool                 scopeResolvedActive = false;   // held answer, never derived on demand
+    QList<int>           scopeResolvedClusters;         // held children of the curated parent
     QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
     QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
