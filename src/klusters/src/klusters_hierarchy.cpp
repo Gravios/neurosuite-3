@@ -466,79 +466,33 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
         qDebug().noquote() << "[rebuild] repopulateChildPalette";   // focus-trace marker
     if(!childPanel || !childPanel->isVisible()) return;
 
-    // Preserve focus across the rebuild.
+    // The parent comes from the DOC, not from the caller's list.
     //
-    // createClusterList() tears the palette's widgets down and builds new ones, and
-    // Qt reacts to its focus widget being destroyed by walking the focus chain --
-    // which is why the trace reads "child -> QPushButton -> (none)": focus falls to
-    // whatever button is next, and then that goes too.  Callers that follow the
-    // rebuild with a landing put it back, so the damage only shows on the rebuilds
-    // that do not: the deferred post-edit automation refreshes this palette without
-    // selecting anything afterwards, and that is the one that leaves focus nowhere.
+    // Four call sites reach here as a refresh and pass
+    // clusterPalette->selectedClusters() straight through, so deriving the parent
+    // from that argument made the displayed parent a function of the fiber
+    // selection at whatever instant a rebuild happened to run -- and any
+    // incidental change to that selection moved the user to another parent in the
+    // middle of curating.  Merging two children and landing on a different parent
+    // was this.
     //
-    // Restoring here rather than asking every caller to land is the same lesson as
-    // the scope flag above: a function that disturbs shared state should put it
-    // back itself.  Selection is deliberately NOT restored -- after an edit the old
-    // ids may not exist (T renumbers them, a split replaces them), so the caller's
-    // landing owns which clusters end up selected.  This only owns where focus is.
-    const bool hadChildFocus = (focusedChildPalette() != nullptr);
+    // Now the doc owns it and changes it in exactly two situations: the user
+    // selects a fiber, or the parent ceases to exist.  A caller that merely wants
+    // the list redrawn cannot move it, which is the property that makes the mode
+    // usable -- every operation lands on its own output under the same parent.
+    Q_UNUSED(parents);
+    parentSlotA = doc ? doc->curatedParent() : -1;
 
-    // Preserve the SELECTION across the rebuild too, not just focus.
-    //
-    // The first version of this deliberately did not, on the grounds that after an
-    // edit the previously selected ids may no longer exist -- T renumbers them, a
-    // split replaces them with descendants -- so the caller's landing should own
-    // which clusters end up selected.  That conflated two different moments.  Ids
-    // change during an EDIT; a REBUILD does not change them, it refills the list
-    // with the ids that exist right now.  Capturing immediately before the refill
-    // and restoring immediately after cannot resurrect a stale id, because nothing
-    // in between renames anything.
-    //
-    // It matters because not every rebuild has a landing behind it.  Pressing T on
-    // a child moves it to the end and it stays selected -- until the error-matrix
-    // update finishes, which refreshes this palette with nothing following it, and
-    // the selection is simply gone.  That deferred completion is the last rebuild to
-    // run, so its state is the state the user is left in.
-    //
-    // Restored by intersection with what the rebuilt list actually holds, so an id
-    // that really has disappeared is dropped rather than re-selected blind.
+    const bool hadChildFocus = (focusedChildPalette() != nullptr);
     QList<int> priorSelection;
     if(childPaletteA) priorSelection = childPaletteA->selectedClusters();
 
-    // The first selected parent populates the child palette; further parents are
-    // ignored (the child view shows one parent's children at a time).
-    //
-    // An EMPTY list does not mean "no parent" -- it means the caller had nothing to
-    // say.  This is called from several places that pass
-    // clusterPalette->selectedClusters() straight through, including slotTabChange,
-    // and the fiber palette's selection is routinely empty at those moments: during
-    // a tab switch, mid-edit before the landing, or while the automatic
-    // post-mutation steps are rebuilding it.  Collapsing the slot to -1 then runs
-    // clearPaletteScope() + reset(), which tears the child list down and takes the
-    // user's focus and selection with it -- for a parent that has not changed and
-    // still has children.
-    //
-    // The focus trace showed exactly this: slotTabChange, repopulateChildPalette,
-    // assignChildSlot, and then child palette -> (none) with nothing after it.
-    //
-    // So keep the current parent when the caller offers none.  Clearing the child
-    // palette remains possible, but it now takes an explicit act -- turning the
-    // hierarchical view off, or selecting a different parent -- rather than being a
-    // side effect of an unrelated refresh arriving at an unlucky moment.
-    if (parents.size() >= 1)
-        parentSlotA = parents[0];
-    else if (parentSlotA < 0 || doc->childrenOf(QList<int>{parentSlotA}).isEmpty())
-        parentSlotA = -1;   // nothing to keep: no current parent, or it has no children
     assignChildSlot(childPaletteA, parentSlotA);
     if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
 
-    // Mirror the palette's parent into the doc so the matrix views, which are
-    // constructed with a KlustersDoc& and cannot reach the app, know which
-    // children to compare.  Set unconditionally: setMatrixScopeParent ignores a
-    // repeat, so a rebuild that keeps the same parent emits nothing, and one that
-    // collapses the slot to -1 correctly turns scoping off.
-    if(doc) doc->setMatrixScopeParent(parentSlotA);
-
+    // Selection and focus are preserved across the rebuild: the rebuild is a
+    // redraw, not an edit, and the deferred refreshes that follow an operation
+    // carry no landing of their own.
     if(childPaletteA && parentSlotA >= 0 && !priorSelection.isEmpty()){
         const QList<int> live = doc->childrenOf(QList<int>{parentSlotA});
         QList<int> restore;
@@ -546,25 +500,8 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
             if(live.contains(id)) restore.append(id);
         if(!restore.isEmpty()) childPaletteA->selectItems(restore);
     }
-
-    if(hadChildFocus && childPaletteA && parentSlotA >= 0){
-        // Why the restore can silently do nothing: Qt refuses focus to a widget
-        // that is hidden or disabled, and clears focus when the focused widget
-        // becomes either.  The trace shows focus going to (none) while this widget
-        // is still ALIVE -- iconView->clear() destroys items, not widgets -- so the
-        // remaining explanations are visibility and enablement, and slotTabChange
-        // running immediately before is a plausible cause of both.
-        //
-        // Log the state at the moment of the restore so the next trace says which,
-        // instead of another round of inference.
-        if(qEnvironmentVariableIsSet("NS3_VERBOSE"))
-            qDebug().noquote() << "[focusrestore] childPaletteA visible="
-                               << childPaletteA->isVisible()
-                               << "enabled=" << childPaletteA->isEnabled()
-                               << "panelVisible=" << (childPanel && childPanel->isVisible())
-                               << "parentSlotA=" << parentSlotA;
+    if(hadChildFocus && childPaletteA && parentSlotA >= 0)
         childPaletteA->setFocusToList();
-    }
 }
 
 void KlustersApp::slotChildSelectionChanged(const QList<int>&){

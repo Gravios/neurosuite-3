@@ -375,11 +375,11 @@ void KlustersDoc::setMatrixScopeEnabled(bool enabled)
     emit matrixScopeChanged();              // scoping just went on or off
 }
 
-void KlustersDoc::setMatrixScopeParent(int fiberId)
+void KlustersDoc::setCuratedParent(int fiberId)
 {
-    if (matrixScopeParentId == fiberId) return;   // no spurious recomputes
-    matrixScopeParentId = fiberId;
-    emit matrixScopeChanged();
+    if (curatedParentId == fiberId) return;   // no spurious recomputes
+    curatedParentId = fiberId;
+    emit matrixScopeChanged();                // palette and matrices follow
 }
 
 bool KlustersDoc::matrixScopeActive() const
@@ -391,14 +391,14 @@ bool KlustersDoc::matrixScopeActive() const
     // selected; it simply has no effect until one is, which keeps the state the
     // user set predictable rather than silently reverting.
     if (!matrixScopeOn) return false;
-    if (!childData || matrixScopeParentId < 0) return false;
-    return !childrenOf(QList<int>{matrixScopeParentId}).isEmpty();
+    if (!childData || curatedParentId < 0) return false;
+    return !childrenOf(QList<int>{curatedParentId}).isEmpty();
 }
 
 QList<int> KlustersDoc::matrixScopeClusters() const
 {
     if (!matrixScopeActive()) return QList<int>();
-    return childrenOf(QList<int>{matrixScopeParentId});
+    return childrenOf(QList<int>{curatedParentId});
 }
 
 void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& previous)
