@@ -447,7 +447,7 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             << "[matrixscope] ErrorMatrixView"
             << " childScopeActive=" << doc.isChildClusteringActive()
             << " scopeActive="      << doc.matrixScopeActive()
-            << " scopeParent="      << doc.matrixScopeParent()
+            << " scopeParent="      << doc.curatedParent()
             << " | data() clusters=" << ids.size() << "first=[" << head.join(',') << "]"
             << " | scope n=" << scope.size() << "first=[" << sh.join(',') << "]"
             << " | OVERLAP=" << overlap
@@ -547,7 +547,7 @@ void ErrorMatrixView::launchCacheWarmer(){
             << "[matrixscope] ErrorMatrixView"
             << " childScopeActive=" << doc.isChildClusteringActive()
             << " scopeActive="      << doc.matrixScopeActive()
-            << " scopeParent="      << doc.matrixScopeParent()
+            << " scopeParent="      << doc.curatedParent()
             << " | data() clusters=" << ids.size() << "first=[" << head.join(',') << "]"
             << " | scope n=" << scope.size() << "first=[" << sh.join(',') << "]"
             << " | OVERLAP=" << overlap

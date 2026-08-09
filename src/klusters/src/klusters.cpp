@@ -2177,7 +2177,7 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
                     tr("Matrices: child-scoped — select a parent with children to see it."), 3000);
             else
                 statusBar()->showMessage(
-                    on ? tr("Matrices: children of cluster %1.").arg(doc->matrixScopeParent())
+                    on ? tr("Matrices: children of cluster %1.").arg(doc->curatedParent())
                        : tr("Matrices: all clusters."), 3000);
             return true;
         }
@@ -4003,9 +4003,15 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
         KlustersView* view = activeView();
         doc->shownClustersUpdate(selectedClusters,*view);
     }
-    // hierarchical view: refresh the child palette for the new parent selection
-    if(childPanel && childPanel->isVisible())
+    // Hierarchical view: this is the USER selecting a fiber -- ClusterPalette only
+    // emits updateShownClusters when !isInSelectItems, so a programmatic
+    // selectItems() cannot reach here.  It is therefore the one place a new parent
+    // is adopted; every other path into repopulateChildPalette is a redraw and
+    // must not move the user.
+    if(childPanel && childPanel->isVisible()){
+        if(doc) doc->setCuratedParent(selectedClusters.isEmpty() ? -1 : selectedClusters.first());
         repopulateChildPalette(selectedClusters);
+    }
 }
 
 

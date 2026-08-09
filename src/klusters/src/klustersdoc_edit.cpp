@@ -515,6 +515,11 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
                 for (int id : fibers)
                     if (id > parentOfDeleted) { up = id; break; }
                 setPendingFiberSelection({up});
+                // The curated parent has just ceased to exist -- the one situation
+                // besides a user selection in which it may move.  Follow it to the
+                // neighbour so the child palette and the matrices land there
+                // together, rather than being left pointing at a dead fiber.
+                if (curatedParent() == parentOfDeleted) setCuratedParent(up);
             }
         }
     }

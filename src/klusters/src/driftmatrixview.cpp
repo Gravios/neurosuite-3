@@ -209,7 +209,7 @@ DriftMatrixThread* DriftMatrixView::launchComputeThread()
             << "[matrixscope] DriftMatrixView"
             << " childScopeActive=" << doc.isChildClusteringActive()
             << " scopeActive="      << doc.matrixScopeActive()
-            << " scopeParent="      << doc.matrixScopeParent()
+            << " scopeParent="      << doc.curatedParent()
             << " | data() clusters=" << ids.size() << "first=[" << head.join(',') << "]"
             << " | scope n=" << scope.size() << "first=[" << sh.join(',') << "]"
             << " | OVERLAP=" << overlap

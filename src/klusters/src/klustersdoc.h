@@ -340,8 +340,27 @@ public:
     void setMatrixScopeEnabled(bool enabled);
     bool matrixScopeEnabled() const { return matrixScopeOn; }
 
-    void setMatrixScopeParent(int fiberId);
-    int  matrixScopeParent() const { return matrixScopeParentId; }
+    /** The parent currently being curated: whose children the child palette shows
+     *  and, when the mode is on, whose children the matrices compare.
+     *
+     *  ONE owner for one fact.  This used to be derived on every palette rebuild
+     *  from clusterPalette->selectedClusters(), which made it a function of the
+     *  fiber selection at that instant -- so any incidental change to that
+     *  selection moved the user to another parent mid-curation.  Three
+     *  representations of the same thing (the scope parent, the palette slot, and
+     *  the fiber selection) were kept in step by hand, and every bug in this
+     *  feature has been two of them disagreeing.
+     *
+     *  It changes in exactly two situations:
+     *    - the user selects a fiber (ClusterPalette only emits updateShownClusters
+     *      when !isInSelectItems, so a programmatic selection cannot do it);
+     *    - the parent ceases to exist, in which case the caller sets its neighbour.
+     *
+     *  No operation changes it.  A merge, split or delete lands on its own output
+     *  under the same parent, which is what makes the mode usable for curation.
+     */
+    void setCuratedParent(int fiberId);
+    int  curatedParent() const { return curatedParentId; }
 
     /** The layer the matrix views must compute over.
      *
@@ -1658,7 +1677,7 @@ private:
     QMap<int,int>        childToParent;      // child id -> parent unit id
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
     bool                 childScopeActive = false;  // true while a child is the shown clustering
-    int                  matrixScopeParentId = -1;  // parent whose children the matrices compare
+    int                  curatedParentId = -1;      // the parent being curated
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
     QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
