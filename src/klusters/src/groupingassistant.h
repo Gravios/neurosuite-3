@@ -283,6 +283,26 @@ private:
      * indices could disagree -- means()/covariances() are addressed by position in
      * this index, so a disagreement puts every cluster's statistics in the wrong
      * row.*/
+    /**Average the posteriors down each cluster's spikes into the error matrix.
+     *
+     * cell(row A, col B) is the mean, over A's spikes, of the probability that
+     * the spike belongs to B -- so the matrix is asymmetric, and a high value in
+     * row A says A's spikes look like B rather than the reverse.  The diagonal is
+     * zeroed last because a cluster's agreement with itself carries no
+     * information for the curator.
+     *
+     * Indices are POSITIONS in the model, not cluster ids.  entries[k].idx counts
+     * from initIndex over the model, and the column loop runs the same range, so
+     * the matrix, the ignore list and the posterior columns all share one
+     * numbering.  That is the contract the file rests on, and it held in two
+     * separate copies of this loop until one of them was edited.
+     *
+     * Returns the matrix; the caller owns it.*/
+    Array<double>* aggregateErrorMatrix(const Array<double>* probabilities,
+                                        const QVector<ModelEntry>& model,
+                                        const QList<int>& ignoreClusterIndex,
+                                        int nbClusters);
+
     /**Turn each spike's raw Gaussian likelihoods into posteriors that sum to 1,
      * in place, and resolve the noise column while doing it.
      *
