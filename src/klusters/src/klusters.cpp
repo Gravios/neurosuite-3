@@ -4098,7 +4098,19 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // This is the operation the scoped matrices exist to set up: a cell names the
     // pair, the click selects it in the child palette, and G merges it.  Without
     // this the whole path stops one step short of doing anything.
-    if (ClusterPalette* cp = focusedChildPalette()) {
+    // Which palette is being curated -- NOT which one has Qt focus.
+    //
+    // focusedChildPalette() was the test, and it fails exactly where this feature
+    // is used: clicking a matrix cell to pick a pair puts focus on the MATRIX
+    // widget, so by the time G arrives no child palette holds focus and the merge
+    // fell through to the fiber path, which finds no such fibers and does nothing.
+    // That is the same mistake as guarding the focus grabs on Qt focus, which had
+    // to be changed to edit scope for the same reason.
+    //
+    // The child palette is the one being curated when the scoped mode is on --
+    // the user pressed V to say so -- or when it does hold focus, which covers
+    // working in it directly without the matrices.
+    if (ClusterPalette* cp = curationPalette()) {
         const QList<int> kids = cp->selectedClusters();
         if (kids.size() < 2) {
             slotStatusMsg(tr("Ready."));
