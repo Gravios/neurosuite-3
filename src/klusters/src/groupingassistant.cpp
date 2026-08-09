@@ -67,6 +67,39 @@ GroupingAssistant::~GroupingAssistant()
 // Public entry point
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// prependCluster1Indices
+//
+// Bookkeeping for the synthetic cluster-1 column, shared by the three places
+// that insert one.
+//
+// When the model contains no cluster 1 a zero column is prepended so the matrix
+// always has a noise reference at a known position.  Everything addressed by
+// POSITION then shifts by one: the cluster and computed lists gain a leading 1,
+// every value already in ignoreClusterIndex refers to a column one further
+// right, and the base index for subsequent loops becomes 2.
+//
+// It was written out three times.  The consequence of that was not theoretical:
+// cluster1Col1 -- which the underflow rule uses to decide where a spike's
+// probability mass goes -- was wrong in both of the full copies and had to be
+// fixed in both.  One function means the next correction lands everywhere.
+//
+// The GPU path shares only this part; it has no probabilities array to widen,
+// because the device produced the error matrix directly.  So the array work
+// stays at the call sites and only the indexing lives here.
+// ---------------------------------------------------------------------------
+static void prependCluster1Indices(QList<int>& clusterList,
+                                   QList<int>& computedClusterList,
+                                   QList<int>& ignoreClusterIndex,
+                                   int& initIndex)
+{
+    clusterList.prepend(1);
+    computedClusterList.prepend(1);
+    for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
+        ignoreClusterIndex[i] += 1;
+    initIndex = 2;
+}
+
 Array<double>* GroupingAssistant::computeMeanProbabilities(
         Data& clusteringData,
         QList<int>& clusterList,
@@ -494,12 +527,9 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         tmp->fillWithZeros();
         tmp->copyAndPrependColumn(*probabilities);
         delete probabilities; probabilities = tmp;
-        clusterList.prepend(1);
-        computedClusterList.prepend(1);
-        for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
-            ignoreClusterIndex[i] += 1;
+        prependCluster1Indices(clusterList, computedClusterList,
+                               ignoreClusterIndex, initIndex);
         ++nbClusters;
-        initIndex = 2;
     }
 
     // (b) row-wise normalisation (verbatim from computeProbabilities).
@@ -794,11 +824,8 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 // (initIndex = 2), else mapping directly (initIndex = 1).
                 int initLocal = 1;
                 if (!existCluster1) {
-                    clusterList.prepend(1);
-                    computedClusterList.prepend(1);
-                    for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
-                        ignoreClusterIndex[i] += 1;
-                    initLocal = 2;
+                    prependCluster1Indices(clusterList, computedClusterList,
+                                           ignoreClusterIndex, initLocal);
                 }
                 initIndex = initLocal;
                 const int dim = clusterList.size();
@@ -945,12 +972,9 @@ Array<double>* GroupingAssistant::computeProbabilities(
         tmp->copyAndPrependColumn(*probabilities);
         delete probabilities;
         probabilities = tmp;
-        clusterList.prepend(1);
-        computedClusterList.prepend(1);
-        for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
-            ignoreClusterIndex[i] += 1;
+        prependCluster1Indices(clusterList, computedClusterList,
+                               ignoreClusterIndex, initIndex);
         ++nbClusters;
-        initIndex = 2;
     }
 
     // Row-wise normalization.
