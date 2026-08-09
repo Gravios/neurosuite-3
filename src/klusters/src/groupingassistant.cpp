@@ -104,13 +104,11 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
 
     struct CE { dataType first; dataType nb; int idx; };
     std::vector<CE> entries;
-    entries.reserve(static_cast<size_t>(clusterInfoMap->count()));
+    entries.reserve(static_cast<size_t>(buildModelIndex(clusterInfoMap).size()));
     {
-        Data::ClusterInfoMap::Iterator it;
         int ci = initIndex;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
-            entries.push_back({ it.value().firstSpikePosition(),
-                                it.value().nbSpikes(), ci });
+        for (const ModelEntry& me : buildModelIndex(clusterInfoMap))
+            entries.push_back({ me.first, me.nb, ci++ });
     }
 
 #ifdef _OPENMP
@@ -214,7 +212,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
 
     clusteringData.duplicate(spikesByCluster, clusterInfoMap);
     if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
-    const int nbClustersReal = clusterInfoMap->count();
+    const int nbClustersReal = buildModelIndex(clusterInfoMap).size();
     if (nbClustersReal < 1 || haveToStopComputing) {
         delete spikesByCluster; delete clusterInfoMap;
         spikesByCluster = nullptr; clusterInfoMap = nullptr;
@@ -237,11 +235,12 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     struct Col { int id; dataType first; dataType nb; bool ignore; std::vector<double> L; double logTerm; };
     std::vector<Col> cols; cols.reserve(static_cast<size_t>(nbClustersReal));
     {
-        Data::ClusterInfoMap::Iterator it; int ci = 1;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci) {
+        const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
+        int ci = 1;
+        for (const ModelEntry& me : model) {
             Col cd;
-            cd.id     = static_cast<int>(it.key());
-            cd.first  = it.value().firstSpikePosition();
+            cd.id     = static_cast<int>(me.id);
+            cd.first  = me.first;
             cd.nb     = it.value().nbSpikes();
             cd.ignore = (ignoreClusterIndex.contains(ci) != 0)
                         || !clusterInScope(cd.id);   // out of the scoped-matrix subset
@@ -460,16 +459,19 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     // (b) row-wise normalisation (verbatim from computeProbabilities).
     int cluster1Col1 = initIndex;
     if (existCluster1) {
-        int ci = 1; Data::ClusterInfoMap::Iterator it;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
-            if (it.key() == 1) { cluster1Col1 = ci; break; }
+        int ci = 1;
+        for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+            if (me.id == 1) { cluster1Col1 = ci; break; }
+            ++ci;
+        }
     }
     {
-        int clusterIndex = initIndex; Data::ClusterInfoMap::Iterator it;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++clusterIndex) {
+        int clusterIndex = initIndex;
+        for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+            const int thisIndex = clusterIndex++;
             if (haveToStopComputing) break;
-            if (ignoreClusterIndex.contains(clusterIndex)) continue;
-            dataType first = it.value().firstSpikePosition();
+            if (ignoreClusterIndex.contains(thisIndex)) continue;
+            dataType first = me.first;
             dataType last  = first + it.value().nbSpikes();
             for (dataType si = first; si < last; ++si) {
                 dataType featRow = (*spikesByCluster)(1, si);
@@ -493,11 +495,11 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     Array<double>* errorMatrix = new Array<double>(nbClusters, nbClusters);
     errorMatrix->fillWithZeros();
     struct CE { dataType first; dataType nb; int idx; };
-    std::vector<CE> entries; entries.reserve(static_cast<size_t>(clusterInfoMap->count()));
+    std::vector<CE> entries; entries.reserve(static_cast<size_t>(buildModelIndex(clusterInfoMap).size()));
     {
-        Data::ClusterInfoMap::Iterator it; int ci = initIndex;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
-            entries.push_back({ it.value().firstSpikePosition(), it.value().nbSpikes(), ci });
+        int ci = initIndex;
+        for (const ModelEntry& me : buildModelIndex(clusterInfoMap))
+            entries.push_back({ me.first, me.nb, ci++ });
     }
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
@@ -551,7 +553,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
 
     clusteringData.duplicate(spikesByCluster, clusterInfoMap);
     if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
-    int nbClusters = clusterInfoMap->count();
+    int nbClusters = buildModelIndex(clusterInfoMap).size();
     if (pTiming) t_dup = pt.restart();
 
     if (haveToStopComputing) return new Array<double>(0, 0);
@@ -582,12 +584,12 @@ Array<double>* GroupingAssistant::computeProbabilities(
     cdata.reserve(static_cast<size_t>(nbClusters));
 
     {
-        Data::ClusterInfoMap::Iterator it;
+        const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
         int ci = 1;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci) {
+        for (const ModelEntry& me : model) {
             ClusterData cd;
-            cd.clusterId = static_cast<int>(it.key());
-            cd.nbSpikes  = it.value().nbSpikes();
+            cd.clusterId = static_cast<int>(me.id);
+            cd.nbSpikes  = me.nb;
             cd.ignore    = (ignoreClusterIndex.contains(ci) != 0)
                            || !clusterInScope(cd.clusterId);
 
@@ -659,9 +661,10 @@ Array<double>* GroupingAssistant::computeProbabilities(
         int cluster1Col = 0;
         if (existCluster1) {
             int ci = 0;
-            Data::ClusterInfoMap::Iterator it;
-            for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
-                if (it.key() == 1) { cluster1Col = ci; break; }
+            for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+                if (me.id == 1) { cluster1Col = ci; break; }
+                ++ci;
+            }
         }
 
         // === GPU-side aggregation (fused posteriors + reduction) ==========
@@ -678,10 +681,10 @@ Array<double>* GroupingAssistant::computeProbabilities(
             std::vector<int> h_first(static_cast<size_t>(nbClusters));
             std::vector<int> h_nb   (static_cast<size_t>(nbClusters));
             {
-                Data::ClusterInfoMap::Iterator it; int c0 = 0;
-                for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++c0) {
+                int c0 = 0;
+                for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
                     h_first[static_cast<size_t>(c0)] =
-                        static_cast<int>(it.value().firstSpikePosition()) - 1;  // 0-based
+                        static_cast<int>(me.first) - 1;  // 0-based
                     h_nb[static_cast<size_t>(c0)] =
                         static_cast<int>(it.value().nbSpikes());
                 }
@@ -802,10 +805,8 @@ Array<double>* GroupingAssistant::computeProbabilities(
     std::vector<CSpan> spans;
     spans.reserve(static_cast<size_t>(nbClusters));
     {
-        Data::ClusterInfoMap::Iterator it;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it)
-            spans.push_back({ it.value().firstSpikePosition(),
-                              it.value().firstSpikePosition() + it.value().nbSpikes() });
+        for (const ModelEntry& me : buildModelIndex(clusterInfoMap))
+            spans.push_back({ me.first, me.first + me.nb });
     }
 
     int nbClustersInt = nbClusters;
@@ -874,17 +875,18 @@ Array<double>* GroupingAssistant::computeProbabilities(
     int cluster1Col1 = initIndex;
     if (existCluster1) {
         int ci = 1;
-        Data::ClusterInfoMap::Iterator it;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
-            if (it.key() == 1) { cluster1Col1 = ci; break; }
+        for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+            if (me.id == 1) { cluster1Col1 = ci; break; }
+            ++ci;
+        }
     }
 
     int clusterIndex = initIndex;
-    Data::ClusterInfoMap::Iterator it;
-    for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++clusterIndex) {
+    for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+        const int thisIndex = clusterIndex++;
         if (haveToStopComputing) return probabilities;
-        if (ignoreClusterIndex.contains(clusterIndex)) continue;
-        dataType first = it.value().firstSpikePosition();
+        if (ignoreClusterIndex.contains(thisIndex)) continue;
+        dataType first = me.first;
         dataType last  = first + it.value().nbSpikes();
         for (dataType si = first; si < last; ++si) {
             dataType featRow = (*spikesByCluster)(1, si);
@@ -937,11 +939,9 @@ void GroupingAssistant::meanCovarianceComputation(
     std::vector<CInfo> cinfo;
     cinfo.reserve(static_cast<size_t>(nbClusters));
     {
-        Data::ClusterInfoMap::Iterator it;
         int ci = 1;
-        for (it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it, ++ci)
-            cinfo.push_back({ it.value().firstSpikePosition(),
-                              it.value().nbSpikes(), ci });
+        for (const ModelEntry& me : buildModelIndex(clusterInfoMap))
+            cinfo.push_back({ me.first, me.nb, ci++ });
     }
 
 #ifdef _OPENMP

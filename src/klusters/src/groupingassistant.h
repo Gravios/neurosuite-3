@@ -215,6 +215,35 @@ private:
     /**Cluster ids to include; empty = all.*/
     QList<int> activeClusters;
 
+    /**One entry per cluster the model covers, in clusterInfoMap order.*/
+    struct ModelEntry { dataType id; dataType first; dataType nb; };
+
+    /**THE single producer of the model index.
+     *
+     * Eight loops in the .cpp used to walk clusterInfoMap independently, each
+     * incrementing its own counter -- ci, clusterIndex or c0 -- and those counters
+     * are read at 34 places as matrix row, ignore key and kernel array index.  Six
+     * further loops run 1..nbClusters over the same space without walking the map
+     * at all.  Nothing tied them together; agreement was a property of every one of
+     * them being written the same way, and the moment one skipped they diverged
+     * silently into a plausible, wrong matrix.
+     *
+     * Now they all iterate this, so the order and the membership are decided once.
+     * Sizing comes from its size(), so the 1..nbClusters loops move with it.
+     *
+     * With activeClusters empty -- every existing caller -- this returns every
+     * cluster in map order and each counter takes exactly the values it always
+     * did.  That identity is what makes the change reviewable.*/
+    QVector<ModelEntry> buildModelIndex(const Data::ClusterInfoMap* m) const {
+        QVector<ModelEntry> out;
+        if (!m) return out;
+        out.reserve(m->count());
+        for (Data::ClusterInfoMap::ConstIterator it = m->constBegin(); it != m->constEnd(); ++it)
+            if (clusterInScope(static_cast<int>(it.key())))
+                out.append({ it.key(), it.value().firstSpikePosition(), it.value().nbSpikes() });
+        return out;
+    }
+
     /**True when @p id is in scope.  Reserve clusters 0 and 1 are always kept: the
      * model needs cluster 1 (the noise reference the matrix prepends), and
      * dropping them would change what the remaining probabilities mean.*/
