@@ -242,8 +242,14 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             cd.id     = static_cast<int>(me.id);
             cd.first  = me.first;
             cd.nb     = me.nb;
-            cd.ignore = (ignoreClusterIndex.contains(ci) != 0)
-                        || !clusterInScope(cd.id);   // out of the scoped-matrix subset
+            // Scope is NOT applied here.  buildModelIndex() has already excluded
+            // out-of-scope clusters, so cd.id is in scope by construction and this
+            // test can only ever be false -- but ignoreClusterIndex holds POSITIONAL
+            // indices into the model, and the model is now the compacted one, so
+            // adding a second filter on top of the first is how rows got marked
+            // ignored that the caller never asked to ignore.  One place decides
+            // membership: the producer.
+            cd.ignore = (ignoreClusterIndex.contains(ci) != 0);
             cd.logTerm = 0.0;
             if (cd.id == 1) existCluster1 = true;
             clusterList.append(cd.id);
@@ -590,8 +596,8 @@ Array<double>* GroupingAssistant::computeProbabilities(
             ClusterData cd;
             cd.clusterId = static_cast<int>(me.id);
             cd.nbSpikes  = me.nb;
-            cd.ignore    = (ignoreClusterIndex.contains(ci) != 0)
-                           || !clusterInScope(cd.clusterId);
+            // See the incremental path: membership is the producer's job alone.
+            cd.ignore    = (ignoreClusterIndex.contains(ci) != 0);
 
             if (cd.clusterId == 1) existCluster1 = true;
             clusterList.append(cd.clusterId);
