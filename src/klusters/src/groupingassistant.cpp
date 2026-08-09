@@ -97,6 +97,10 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
         return gpuErrorMatrix;
     }
 
+    // Computed once and shared by every consumer below -- see the note in
+    // computeMeanProbabilitiesIncremental.
+    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
+
     int nbClusters = clusterList.size();
 
     // Why an error matrix can come out all zeros, stated so the log distinguishes
@@ -115,7 +119,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
     //                       the fault upstream in computeProbabilities.
     if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
         qDebug().noquote()
-            << "[emx] incremental: model=" << buildModelIndex(clusterInfoMap).size()
+            << "[emx] incremental: model=" << model.size()
             << " clusterList=" << clusterList.size()
             << " nbClusters="  << nbClusters
             << " initIndex="   << initIndex
@@ -129,10 +133,10 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
 
     struct CE { dataType first; dataType nb; int idx; };
     std::vector<CE> entries;
-    entries.reserve(static_cast<size_t>(buildModelIndex(clusterInfoMap).size()));
+    entries.reserve(static_cast<size_t>(model.size()));
     {
         int ci = initIndex;
-        for (const ModelEntry& me : buildModelIndex(clusterInfoMap))
+        for (const ModelEntry& me : model)
             entries.push_back({ me.first, me.nb, ci++ });
     }
 
@@ -236,8 +240,19 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     }
 
     clusteringData.duplicate(spikesByCluster, clusterInfoMap);
+    // The model index, computed ONCE for this compute and used everywhere below.
+    //
+    // It was previously rebuilt at every use -- eighteen calls across four
+    // functions, each walking clusterInfoMap and allocating a fresh vector.  The
+    // cost was the lesser problem: nothing guaranteed the eighteen results agreed,
+    // so two loops indexing the same model could silently disagree if
+    // clusterInfoMap or activeClusters moved between them.  That is the same class
+    // of fault as the dropped loop counters, and one value shared by every consumer
+    // removes it by construction rather than by discipline.
+    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
+
     if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
-    const int nbClustersReal = buildModelIndex(clusterInfoMap).size();
+    const int nbClustersReal = model.size();
     if (nbClustersReal < 1 || haveToStopComputing) {
         delete spikesByCluster; delete clusterInfoMap;
         spikesByCluster = nullptr; clusterInfoMap = nullptr;
@@ -245,7 +260,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     }
 
     // Models for every cluster (identical to computeProbabilities; cheap).
-    meanCovarianceComputation(nbClustersReal, nbDimensions, nbSpikes,
+    meanCovarianceComputation(model, nbClustersReal, nbDimensions, nbSpikes,
                               clusteringData, ignoreClusterIndex);
     if (haveToStopComputing) {
         delete spikesByCluster; delete clusterInfoMap;
@@ -260,7 +275,6 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     struct Col { int id; dataType first; dataType nb; bool ignore; std::vector<double> L; double logTerm; };
     std::vector<Col> cols; cols.reserve(static_cast<size_t>(nbClustersReal));
     {
-        const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
         int ci = 1;
         for (const ModelEntry& me : model) {
             Col cd;
@@ -507,14 +521,14 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     int cluster1Col1 = existCluster1 ? initIndex : 1;
     if (existCluster1) {
         int ci = 1;
-        for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+        for (const ModelEntry& me : model) {
             if (me.id == 1) { cluster1Col1 = ci; break; }
             ++ci;
         }
     }
     {
         int clusterIndex = initIndex;
-        for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+        for (const ModelEntry& me : model) {
             const int thisIndex = clusterIndex++;
             if (haveToStopComputing) break;
             if (ignoreClusterIndex.contains(thisIndex)) continue;
@@ -542,10 +556,10 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     Array<double>* errorMatrix = new Array<double>(nbClusters, nbClusters);
     errorMatrix->fillWithZeros();
     struct CE { dataType first; dataType nb; int idx; };
-    std::vector<CE> entries; entries.reserve(static_cast<size_t>(buildModelIndex(clusterInfoMap).size()));
+    std::vector<CE> entries; entries.reserve(static_cast<size_t>(model.size()));
     {
         int ci = initIndex;
-        for (const ModelEntry& me : buildModelIndex(clusterInfoMap))
+        for (const ModelEntry& me : model)
             entries.push_back({ me.first, me.nb, ci++ });
     }
 #ifdef _OPENMP
@@ -599,13 +613,24 @@ Array<double>* GroupingAssistant::computeProbabilities(
     if (pTiming) pt.start();
 
     clusteringData.duplicate(spikesByCluster, clusterInfoMap);
+    // The model index, computed ONCE for this compute and used everywhere below.
+    //
+    // It was previously rebuilt at every use -- eighteen calls across four
+    // functions, each walking clusterInfoMap and allocating a fresh vector.  The
+    // cost was the lesser problem: nothing guaranteed the eighteen results agreed,
+    // so two loops indexing the same model could silently disagree if
+    // clusterInfoMap or activeClusters moved between them.  That is the same class
+    // of fault as the dropped loop counters, and one value shared by every consumer
+    // removes it by construction rather than by discipline.
+    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
+
     if (clusterInfoMap->contains(0)) clusterInfoMap->remove(0);
-    int nbClusters = buildModelIndex(clusterInfoMap).size();
+    int nbClusters = model.size();
     if (pTiming) t_dup = pt.restart();
 
     if (haveToStopComputing) return new Array<double>(0, 0);
 
-    meanCovarianceComputation(nbClusters, nbDimensions, nbSpikes,
+    meanCovarianceComputation(model, nbClusters, nbDimensions, nbSpikes,
                               clusteringData, ignoreClusterIndex);
     if (pTiming) t_mean = pt.restart();
 
@@ -631,7 +656,6 @@ Array<double>* GroupingAssistant::computeProbabilities(
     cdata.reserve(static_cast<size_t>(nbClusters));
 
     {
-        const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
         int ci = 1;
         for (const ModelEntry& me : model) {
             ClusterData cd;
@@ -672,7 +696,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
 
     if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
         qDebug().noquote()
-            << "[emx] full: model="  << buildModelIndex(clusterInfoMap).size()
+            << "[emx] full: model="  << model.size()
             << " clusterList="       << clusterList.size()
             << " nbClusters="        << nbClusters
             << " nbDimensions="      << nbDimensions
@@ -718,7 +742,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
         int cluster1Col = 0;
         if (existCluster1) {
             int ci = 0;
-            for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+            for (const ModelEntry& me : model) {
                 if (me.id == 1) { cluster1Col = ci; break; }
                 ++ci;
             }
@@ -739,7 +763,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
             std::vector<int> h_nb   (static_cast<size_t>(nbClusters));
             {
                 int c0 = 0;
-                for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+                for (const ModelEntry& me : model) {
                     h_first[static_cast<size_t>(c0)] =
                         static_cast<int>(me.first) - 1;  // 0-based
                     h_nb[static_cast<size_t>(c0)] =
@@ -863,7 +887,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
     std::vector<CSpan> spans;
     spans.reserve(static_cast<size_t>(nbClusters));
     {
-        for (const ModelEntry& me : buildModelIndex(clusterInfoMap))
+        for (const ModelEntry& me : model)
             spans.push_back({ me.first, me.first + me.nb });
     }
 
@@ -948,14 +972,14 @@ Array<double>* GroupingAssistant::computeProbabilities(
     int cluster1Col1 = existCluster1 ? initIndex : 1;
     if (existCluster1) {
         int ci = 1;
-        for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+        for (const ModelEntry& me : model) {
             if (me.id == 1) { cluster1Col1 = ci; break; }
             ++ci;
         }
     }
 
     int clusterIndex = initIndex;
-    for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
+    for (const ModelEntry& me : model) {
         const int thisIndex = clusterIndex++;
         if (haveToStopComputing) return probabilities;
         if (ignoreClusterIndex.contains(thisIndex)) continue;
@@ -1000,6 +1024,7 @@ int GroupingAssistant::cholesky(Array<double>& out, int nbDimensions, int cluste
 // meanCovarianceComputation — OpenMP parallel over clusters
 // ---------------------------------------------------------------------------
 void GroupingAssistant::meanCovarianceComputation(
+        const QVector<ModelEntry>& model,
         int nbClusters, int nbDimensions, dataType /*nbSpikes*/,
         Data& clusteringData, QList<int>& ignoreClusterIndex)
 {
@@ -1013,7 +1038,7 @@ void GroupingAssistant::meanCovarianceComputation(
     cinfo.reserve(static_cast<size_t>(nbClusters));
     {
         int ci = 1;
-        for (const ModelEntry& me : buildModelIndex(clusterInfoMap))
+        for (const ModelEntry& me : model)
             cinfo.push_back({ me.first, me.nb, ci++ });
     }
 
