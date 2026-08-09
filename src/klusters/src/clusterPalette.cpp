@@ -103,22 +103,6 @@ void ClusterPaletteWidget::focusInEvent(QFocusEvent *event)
     // there either -- the press sets the current item itself, and keyPressEvent
     // already handles a null current item for both Left/Right and Up/Down, which
     // is the case this fallback was guarding.
-    // Which palette, and HOW focus arrived.  The nine setFocusToList() call sites
-    // are all marked and none of them fires before the child -> fiber transition,
-    // so focus is reaching the fiber palette by another route.  The reason code
-    // distinguishes them: TabFocusReason means focus-chain traversal (a tab switch
-    // or a widget being hidden walks it), OtherFocusReason a direct setFocus() call,
-    // PopupFocusReason a menu closing, ActiveWindowFocusReason re-activation.
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
-        static const char* names[] = {"Mouse","Tab","Backtab","ActiveWindow",
-                                      "Popup","Shortcut","MenuBar","Other"};
-        const int r = static_cast<int>(event->reason());
-        QWidget* owner = parentWidget();
-        qDebug().noquote() << "[focusin]"
-                           << (owner ? owner->objectName() : QStringLiteral("(no parent)"))
-                           << "reason=" << (r >= 0 && r < 8 ? names[r] : "?");
-    }
-
     const bool pointerDriven = (event->reason() == Qt::MouseFocusReason
                              || event->reason() == Qt::ActiveWindowFocusReason);
 

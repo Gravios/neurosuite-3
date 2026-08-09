@@ -1144,9 +1144,6 @@ void KlustersApp::createMenus()
                 if (QApplication::focusWidget()) return;          // something already has it
                 if (!w->isVisible() || !w->isEnabled()) return;   // no longer focusable
                 w->setFocus(Qt::OtherFocusReason);
-                if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-                    qDebug().noquote() << "[focus] restored after reactivation ->"
-                                       << w->metaObject()->className() << "/" << w->objectName();
             });
         }
     }
@@ -1183,144 +1180,6 @@ void KlustersApp::createMenus()
                 QTimer::singleShot(0, this, [this]{
                     if (activeView()) slotUpdateErrorMatrix();
                 });
-            });
-        }
-    }
-
-    // ---- window activation tracing (NS3_VERBOSE) -------------------------
-    //
-    // focusChanged reports the consequence; these report the event itself, and in
-    // the order Qt delivers it.  WindowDeactivate arriving with no popup and no
-    // modal means the window manager took the foreground away rather than anything
-    // in this application raising something.
-    {
-        static bool actTraceInstalled = false;
-        if (!actTraceInstalled && qEnvironmentVariableIsSet("NS3_VERBOSE")) {
-            actTraceInstalled = true;
-            class ActFilter : public QObject {
-            public:
-                using QObject::QObject;
-                bool eventFilter(QObject* o, QEvent* e) override {
-                    if (e->type() == QEvent::WindowDeactivate)
-                        qDebug().noquote() << "[activation] WindowDeactivate on"
-                                           << o->metaObject()->className();
-                    else if (e->type() == QEvent::WindowActivate)
-                        qDebug().noquote() << "[activation] WindowActivate on"
-                                           << o->metaObject()->className();
-                    return false;
-                }
-            };
-            installEventFilter(new ActFilter(this));
-        }
-    }
-
-    // ---- focus tracing (NS3_VERBOSE) --------------------------------------
-    // Three attempts at "focus leaves the child palette" have each fixed a real
-    // defect and none has been shown to be THE one, because the moment focus
-    // moves has never been observed -- only inferred from which handlers could
-    // plausibly run.  This prints every focus transition with both widgets
-    // identified, so one reproduction names the thief instead of a fourth guess.
-    // One-shot: this function runs per document.
-    {
-        static bool focusTraceInstalled = false;
-        if (!focusTraceInstalled && qEnvironmentVariableIsSet("NS3_VERBOSE")) {
-            focusTraceInstalled = true;
-            connect(qApp, &QApplication::focusChanged, this,
-                    [](QWidget* from, QWidget* to){
-                auto describe = [](QWidget* w) -> QString {
-                    if (!w) return QStringLiteral("(none)");
-                    QString s = QString::fromLatin1(w->metaObject()->className());
-                    if (!w->objectName().isEmpty()) s += QLatin1Char('/') + w->objectName();
-                    // Address: distinguishes "focus walked the chain to a DIFFERENT
-                    // button" from "the same button was destroyed and rebuilt".  The
-                    // trace showed QPushButton -> QPushButton and those two readings
-                    // point at different bugs, so the pointer is what separates them.
-                    s += QStringLiteral("@") + QString::number(reinterpret_cast<quintptr>(w), 16);
-                    // Full ancestry, not just the child panel: a bare QPushButton says
-                    // nothing about which toolbar or dock is being torn down, and that
-                    // is the question the previous trace left open.
-                    QStringList chain;
-                    for (QWidget* p = w->parentWidget(); p; p = p->parentWidget())
-                        chain << (p->objectName().isEmpty()
-                                    ? QString::fromLatin1(p->metaObject()->className())
-                                    : p->objectName());
-                    if (!chain.isEmpty()) s += QStringLiteral(" [") + chain.join(QLatin1String(" < ")) + QLatin1Char(']');
-                    // If this is a message box, print what it SAYS.  Two of them are
-                    // taking the child palette's focus and never giving it back, and
-                    // narrowing by call site has now failed twice -- the guard that
-                    // looked responsible was converted and the dialogs still appear.
-                    // The text identifies the caller outright: every QMessageBox in
-                    // the tree has distinct wording.
-                    for (QWidget* p = w; p; p = p->parentWidget())
-                        if (QMessageBox* mb = qobject_cast<QMessageBox*>(p)) {
-                            s += QStringLiteral(" {title=\"") + mb->windowTitle()
-                               + QStringLiteral("\" text=\"") + mb->text().left(160)
-                               + QStringLiteral("\"}");
-                            break;
-                        }
-                    return s;
-                };
-                // When `to` is null the app itself may have lost active-window status --
-                // Qt reports focusChanged(old, nullptr) for that, and it is
-                // indistinguishable from a widget refusing focus unless the active
-                // window is logged too.  Everything else has now been ruled out: the
-                // palette is alive, visible, enabled, not reparented, and nothing in
-                // the tree calls clearFocus().
-                QString act = QStringLiteral("(null)");
-                if (QWidget* aw = QApplication::activeWindow())
-                    act = QString::fromLatin1(aw->metaObject()->className())
-                        + QLatin1Char('/') + aw->objectName();
-                qDebug().noquote() << "[focus]" << describe(from) << "->" << describe(to)
-                                   << " activeWindow=" << act
-                                   << " appActive=" << QApplication::applicationState();
-
-                // Focus going nowhere means the application lost its active window.
-                // One cause of that was found and removed -- a QProgressDialog whose
-                // destruction left no active window -- and it still happens, so there
-                // is a second transient top-level doing the same thing.  Hunting the
-                // call sites by hand has been slower than asking the toolkit, so list
-                // every top-level that exists at the moment it happens: whatever is up
-                // will be in here, named.
-                if (!to) {
-                    // What Qt thinks is grabbing input at this instant.  The
-                    // top-level sweep below lists what EXISTS; these say what is
-                    // ACTIVE, which is a different question and the one not yet
-                    // asked.  A popup grab in particular makes activeWindow() null
-                    // and the application read as inactive for as long as it is up,
-                    // and a QMenu that opens and closes between two focus events
-                    // would be invisible to the sweep -- there are seventeen QMenus
-                    // in this application and all of them report visible=false by
-                    // the time it runs.
-                    QWidget* pop = QApplication::activePopupWidget();
-                    QWidget* mod = QApplication::activeModalWidget();
-                    qDebug().noquote()
-                        << "   [grabbers] popup="
-                        << (pop ? QString::fromLatin1(pop->metaObject()->className())
-                                  + QLatin1Char('/') + pop->objectName()
-                                : QStringLiteral("(none)"))
-                        << " modal="
-                        << (mod ? QString::fromLatin1(mod->metaObject()->className())
-                                  + QLatin1Char('/') + mod->objectName()
-                                : QStringLiteral("(none)"))
-                        << " mouseGrabber="
-                        << (QWidget::mouseGrabber() ? QWidget::mouseGrabber()->metaObject()->className()
-                                                    : "(none)")
-                        << " keyboardGrabber="
-                        << (QWidget::keyboardGrabber() ? QWidget::keyboardGrabber()->metaObject()->className()
-                                                       : "(none)");
-                    const auto tops = QApplication::topLevelWidgets();
-                    for (QWidget* w : tops) {
-                        if (!w) continue;
-                        qDebug().noquote()
-                            << "   [toplevel]"
-                            << w->metaObject()->className()
-                            << (w->objectName().isEmpty() ? QStringLiteral("(unnamed)")
-                                                          : w->objectName())
-                            << "visible=" << w->isVisible()
-                            << "modal="   << w->isModal()
-                            << "title=\"" << w->windowTitle() << '"';
-                    }
-                }
             });
         }
     }
@@ -1371,8 +1230,6 @@ void KlustersApp::createMenus()
     connect(doc, &KlustersDoc::newClusterAdded, this,
         [this](QList<int>&, int, QList<int>&) {
             if (doc && doc->isChildClusteringActive()) return;
-            if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-                qDebug().noquote() << "[grab] createMenus -> fiber palette";
             if (clusterPalette) clusterPalette->setFocusToList();
         });
     connect(doc,
@@ -1381,8 +1238,6 @@ void KlustersApp::createMenus()
         this,
         [this](QMap<int,int>&, QList<int>&) {
             if (doc && doc->isChildClusteringActive()) return;
-            if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-                qDebug().noquote() << "[grab] createMenus -> fiber palette";
             if (clusterPalette) clusterPalette->setFocusToList();
         });
 
@@ -1969,8 +1824,6 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             childPalette = childPaletteA;
             // Not when the edit was in the child palette -- see slotGroupClusters.
             if (!(doc && doc->isChildClusteringActive())) {
-                if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-                    qDebug().noquote() << "[grab] eventFilter -> fiber palette";
                 if(clusterPalette) clusterPalette->setFocusToList();
             }
             return true;
@@ -3402,8 +3255,6 @@ void KlustersApp::slotViewActionBar(){
 }
 
 void KlustersApp::slotViewParameterBar(){
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[rebuild] slotViewParameterBar";   // focus-trace marker
     slotStatusMsg(tr("Toggle the parameters..."));
     // turn Toolbar on or off
     if(!viewParameterBar->isChecked())
@@ -3781,8 +3632,6 @@ void KlustersApp::wsExit(bool commit)
     wsResult = Watershed2D::Result{};
 
     if (!commit) {
-        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-            qDebug().noquote() << "[grab] wsExit -> fiber palette";
         if (clusterPalette) clusterPalette->setFocusToList();
         statusBar()->showMessage(tr("Watershed cancelled."), 3000);
         return;
@@ -3810,8 +3659,6 @@ void KlustersApp::wsExit(bool commit)
                 .arg(nNew).arg(sel.size()).arg(sel.size() == 1 ? "" : "s"),
             4000);
     }
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[grab] wsExit -> fiber palette";
     if (clusterPalette) clusterPalette->setFocusToList();
     slotStatusMsg(tr("Ready."));
 }
@@ -4159,8 +4006,6 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // Qt focus: by the time this runs, focus may already have moved, so a
     // focusedChildPalette() test fails open exactly when it is needed.
     if (!(doc && doc->isChildClusteringActive())) {
-        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-            qDebug().noquote() << "[grab] slotGroupClusters -> fiber palette";
         if (clusterPalette) clusterPalette->setFocusToList();
     }
 
@@ -4278,8 +4123,6 @@ void KlustersApp::slotAutoMerge()
     // Qt focus: by the time this runs, focus may already have moved, so a
     // focusedChildPalette() test fails open exactly when it is needed.
     if (!(doc && doc->isChildClusteringActive())) {
-        if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-            qDebug().noquote() << "[grab] slotAutoMerge -> fiber palette";
         if (clusterPalette) clusterPalette->setFocusToList();
     }
 }
@@ -4434,8 +4277,6 @@ void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClu
     // on the palette's iconView, not the 2D scatter.  focusClusterView()
     // would steal that focus and silently break arrow-key nav after a
     // delete operation.
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[grab] moveSelectedClustersToReservedId -> fiber palette";
     if (clusterPalette) clusterPalette->setFocusToList();
 }
 
@@ -4746,8 +4587,6 @@ void KlustersApp::slotDelaySelection(){
 }
 
 void KlustersApp::slotTabChange(int index){
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[rebuild] slotTabChange";   // focus-trace marker
     if (!tabsParent) return;  // guard against call during teardown
     QWidget *widget = tabsParent->widget(index);
     DockArea *area = dynamic_cast<DockArea*>(widget);
@@ -5068,8 +4907,6 @@ void KlustersApp::slotShowOverviewForPalette()
 }
 
 void KlustersApp::resetState(){
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[rebuild] resetState";   // focus-trace marker
     isInit = true; //prevent the spine boxes or the lineedit and the editline to trigger during initialisation
     timeFrameMode->setChecked(false);
     durationAction->setVisible(false);
@@ -5184,8 +5021,6 @@ void KlustersApp::slotUpdateBinSize(){
 }
 
 void KlustersApp::slotUpdateParameterBar(){  
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[rebuild] slotUpdateParameterBar";   // focus-trace marker
     durationAction->setVisible(false);
     durationLabelAction->setVisible(false);
     startAction->setVisible(false);
@@ -5340,8 +5175,6 @@ void KlustersApp::updateUndoRedoDisplay(){
 }
 
 void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[rebuild] widgetAddToDisplay";   // focus-trace marker
     KlustersView* view = activeView();
     bool newWidgetType = view->addView(displayType,backgroundColor,statusBar(),displayTimeInterval,waveformsGain,channelPositions);
 
@@ -5468,8 +5301,6 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
 }
 
 void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType){
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[rebuild] widgetRemovedFromDisplay";   // focus-trace marker
     switch(displayType){
     case KlustersView::CLUSTERS:
         slotStateChanged("noClusterViewState");

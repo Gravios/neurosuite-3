@@ -290,8 +290,6 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
                                            QString /*backupBase*/,
                                            int /*nChan*/, int /*nSamp*/)
 {
-    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
-        qDebug().noquote() << "[rebuild] slotRealignBatchFinished";   // focus-trace marker
     realignRunning = false;
 
     if (realignThread) {
