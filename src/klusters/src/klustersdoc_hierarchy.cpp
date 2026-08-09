@@ -356,6 +356,10 @@ void KlustersDoc::rebuildHierarchyFromData(){
         std::sort(kids.begin(), kids.end());
         kids.erase(std::unique(kids.begin(), kids.end()), kids.end());
     }
+
+    // The maps this scope is derived from have just been refilled; re-resolve so
+    // no consumer can observe the empty window that clear() opens.
+    resolveMatrixScope();
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +376,7 @@ void KlustersDoc::setMatrixScopeEnabled(bool enabled)
 {
     if (matrixScopeOn == enabled) return;   // no spurious recomputes
     matrixScopeOn = enabled;
-    emit matrixScopeChanged();              // scoping just went on or off
+    resolveMatrixScope();                   // emits matrixScopeChanged if it moved
 }
 
 void KlustersDoc::setPendingChildSelection(const QList<int>& children)
@@ -391,40 +395,30 @@ void KlustersDoc::setCuratedParent(int fiberId)
 {
     if (curatedParentId == fiberId) return;   // no spurious recomputes
     curatedParentId = fiberId;
-    emit matrixScopeChanged();                // palette and matrices follow
+    resolveMatrixScope();                     // emits matrixScopeChanged if it moved
 }
 
-bool KlustersDoc::matrixScopeActive() const
+void KlustersDoc::resolveMatrixScope()
 {
-    // Only when explicitly asked for.  Without a trigger the scope would go active
-    // the moment a fiber is selected -- the probe showed scopeActive=true at
-    // startup, before any child interaction -- and the ordinary fiber-level
-    // matrices would become unreachable.  The mode stays on when no parent is
-    // selected; it simply has no effect until one is, which keeps the state the
-    // user set predictable rather than silently reverting.
-    if (!matrixScopeOn) return false;
-    if (!childData || curatedParentId < 0) return false;
-    return !childrenOf(QList<int>{curatedParentId}).isEmpty();
-}
+    const bool was = scopeResolvedActive;
+    const QList<int> before = scopeResolvedClusters;
 
-QList<int> KlustersDoc::matrixScopeClusters() const
-{
-    if (!matrixScopeActive()) return QList<int>();
-    return childrenOf(QList<int>{curatedParentId});
-}
-
-void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& previous)
-{
-    if (ids.isEmpty()) return;
-    if (matrixScopeActive()) {
-        // Atom ids: land them in the child palette, which is where the user is
-        // working and where the merge will be made.
-        emit hierarchyChildSelectionRequested(ids);
-        return;
+    scopeResolvedClusters.clear();
+    scopeResolvedActive = false;
+    if (matrixScopeOn && childData && curatedParentId >= 0) {
+        const QList<int> kids = childrenOf(QList<int>{curatedParentId});
+        if (!kids.isEmpty()) {
+            scopeResolvedClusters = kids;
+            scopeResolvedActive   = true;
+        }
     }
-    QList<int> show = ids, prev = previous;
-    if (prev.isEmpty()) shownClustersUpdate(show);
-    else                shownClustersUpdate(show, prev);
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote() << "[matrixscope] resolved: parent=" << curatedParentId
+                           << " on=" << matrixScopeOn
+                           << " active=" << scopeResolvedActive
+                           << " n=" << scopeResolvedClusters.size();
+    if (was != scopeResolvedActive || before != scopeResolvedClusters)
+        emit matrixScopeChanged();
 }
 
 Data& KlustersDoc::matrixData() const
