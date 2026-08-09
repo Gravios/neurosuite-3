@@ -864,15 +864,24 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
             selectedPairs.append(pair);
         if (existing.contains(static_cast<dataType>(cA))) toShow.append(cA);
         if (existing.contains(static_cast<dataType>(cB))) toShow.append(cB);
-        if (ctrl) doc.addClustersToActiveView(toShow);
-        else      doc.selectFromMatrix(toShow);
+        // Ctrl accumulates, but it must still land in the palette being curated.
+        // addClustersToActiveView only adds to the VIEW, so under a scoped matrix a
+        // Ctrl-click built up a pair the child palette never saw -- and G merges
+        // what the palette has selected, so the second click of the pair went
+        // nowhere.  That is "I cannot group two children in the template matrix".
+        if (ctrl && !doc.matrixScopeActive()) doc.addClustersToActiveView(toShow);
+        else                                  doc.selectFromMatrix(toShow);
         selectedA = cA;
         selectedB = cB;
         // Launch per-spike xcorr for this pair (uses cache if already computed)
         launchPairXcorr(selectedB, selectedA);
     }
 
-    setFocus();
+    // Not setFocus() while a scoped matrix is driving the child palette.  The
+    // click's whole purpose is to put the pair in that palette so G can merge it;
+    // taking focus back here undoes the landing that selectFromMatrix just made,
+    // and it runs after it.  Unscoped, the matrix keeping focus is right.
+    if (!doc.matrixScopeActive()) setFocus();
     update();
 }
 
