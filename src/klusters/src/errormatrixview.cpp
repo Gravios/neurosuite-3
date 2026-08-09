@@ -394,7 +394,7 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     // begins from the second edit on.  Net effect: fast GPU startup, one CPU
     // cold-seed on the first edit, incremental thereafter.
     // The cached columns belong to whichever clustering was active when they were
-    // computed.  A hierarchy op can switch that under us -- groupChildrenIntoFiber
+    // computed.  A hierarchy op can switch that under us -- promoteChildren
     // (promoting children to a new fiber) calls setActiveClustering(false), so a
     // cache seeded in child scope would be reused against the parent clustering.
     // Nothing downstream can catch it: the two clusterings share their spikes and

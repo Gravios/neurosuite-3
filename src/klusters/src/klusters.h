@@ -311,16 +311,15 @@ private Q_SLOTS:
     /** Hierarchy edits driven from the palettes' current selection. */
     void slotMergeFibers();
     void slotPromoteChildren();
-    void slotMoveChildrenToFiber();
     void slotGroupChildrenIntoFiber();
     void slotDissolveFiber();
     void slotRefiberize();
     void slotDropChildToNoise();
     void slotMergeChildren();
-    /** Hierarchy > Merge All Children into Self: flatten every fiber to a single
+    /** Hierarchy > Flatten Hierarchy: collapse .clc to .clu -- every fiber becomes a single
      *  self atom (atom id == fiber id).  Confirms first -- it discards the whole
      *  sub-mode layer. */
-    void slotMergeAllChildrenToSelf();
+    void slotFlattenHierarchyToClu();
     void slotUndoChildEdit();
     void slotRedoChildEdit();
     /**Groups the clusters contain in @p selectedClusters list and trigger the update of the displays.
@@ -911,7 +910,6 @@ private:
     QAction* mHierarchicalView = nullptr;   // View: toggle the child (.clc) palette
     QAction* mMergeFibers = nullptr;        // Hierarchy: merge selected fibers
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)
-    QAction* mMoveChild = nullptr;          // Hierarchy: move child(ren) to the selected fiber
     QAction* mGroupChildren = nullptr;      // Hierarchy: group selected children into a new fiber
     QAction* mDissolveFiber = nullptr;      // Hierarchy: explode a fiber into its children
     QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise

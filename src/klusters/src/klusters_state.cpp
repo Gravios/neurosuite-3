@@ -534,7 +534,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         // otherwise a GUI-thread edit could race the background realign worker.
         if (mMergeFibers)    mMergeFibers->setEnabled(false);
         if (mPromoteChild)   mPromoteChild->setEnabled(false);
-        if (mMoveChild)      mMoveChild->setEnabled(false);
         if (mGroupChildren)  mGroupChildren->setEnabled(false);
         if (mDissolveFiber)  mDissolveFiber->setEnabled(false);
         if (mDropChildNoise) mDropChildNoise->setEnabled(false);
@@ -581,7 +580,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         // Restore the hierarchy-menu mutators locked by realignState.
         if (mMergeFibers)    mMergeFibers->setEnabled(true);
         if (mPromoteChild)   mPromoteChild->setEnabled(true);
-        if (mMoveChild)      mMoveChild->setEnabled(true);
         if (mGroupChildren)  mGroupChildren->setEnabled(true);
         if (mDissolveFiber)  mDissolveFiber->setEnabled(true);
         if (mDropChildNoise) mDropChildNoise->setEnabled(true);
