@@ -202,7 +202,7 @@ void TemplateMatrixThread::run()
             // change under the user as the bin empties and fills; children still
             // need spikes, since a child with none has nothing to compare.
             for (dataType id : allIds)
-                if (id == 1) clusterList.append(static_cast<int>(id));
+                if (id == ClusterId::Noise) clusterList.append(static_cast<int>(id));
             for (int id : activeClusters)
                 if (id > 1 && data.nbOfSpikes(id) > 0) clusterList.append(id);
         } else {
