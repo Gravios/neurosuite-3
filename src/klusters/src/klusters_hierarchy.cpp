@@ -336,6 +336,13 @@ void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
     doc->setActiveClustering(wasChildActive);
 }
 
+ClusterPalette* KlustersApp::curationPalette() const {
+    if (ClusterPalette* cp = focusedChildPalette()) return cp;
+    if (doc && doc->matrixScopeActive() && childPanel && childPanel->isVisible())
+        return childPalette;
+    return nullptr;
+}
+
 ClusterPalette* KlustersApp::focusedChildPalette() const {
     QWidget* f = QApplication::focusWidget();
     while(f){

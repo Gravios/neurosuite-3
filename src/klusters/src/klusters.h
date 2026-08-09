@@ -846,6 +846,17 @@ private:
     /** The child palette if it currently owns keyboard focus, else nullptr. */
     ClusterPalette* focusedChildPalette() const;
 
+    /** The palette the user is curating, or nullptr when that is the fiber palette.
+     *
+     *  NOT the same question as focusedChildPalette().  Picking a pair by clicking
+     *  a matrix cell puts Qt focus on the MATRIX, so a focus test answers "fiber"
+     *  at exactly the moment the child palette is what is being worked in -- which
+     *  is how G and T came to do nothing after a matrix click.  A child palette
+     *  holding focus still counts; so does the scoped mode being on, since V is
+     *  the user saying which layer they are curating.
+     */
+    ClusterPalette* curationPalette() const;
+
     /** True while assignChildSlot() is rebuilding a child palette.  The rebuild
      *  empties the list on its way to refilling it, and slotChildSelectionChanged()
      *  must not read that transient emptiness as the user deselecting everything --
