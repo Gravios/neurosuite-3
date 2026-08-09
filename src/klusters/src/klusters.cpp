@@ -1153,6 +1153,29 @@ void KlustersApp::createMenus()
         }
     }
 
+    // ---- scoped matrices: recompute when the scope changes ---------------
+    //
+    // Through the same path the U key uses, not through the views' cluster-change
+    // slots.  Those were the first attempt and they do not recompute: three of the
+    // four are `isStale = true; update();`, which schedules a REPAINT of the
+    // existing picture, and ErrorMatrixView::clustersGrouped iterates the id list
+    // it is handed and so did nothing at all when passed an empty one -- which the
+    // commit that wired it asserted was harmless because "the arguments are
+    // unused by all four views".  That was true of three of them.
+    //
+    // slotUpdateErrorMatrix() drives all four updateXMatrix() calls and is what
+    // actually relaunches the threads, so the scope toggle reuses it rather than
+    // inventing a second way to say the same thing.
+    {
+        static bool scopeRecomputeInstalled = false;
+        if (!scopeRecomputeInstalled) {
+            scopeRecomputeInstalled = true;
+            connect(doc, &KlustersDoc::matrixScopeChanged, this, [this]{
+                slotUpdateErrorMatrix();
+            });
+        }
+    }
+
     // ---- window activation tracing (NS3_VERBOSE) -------------------------
     //
     // focusChanged reports the consequence; these report the event itself, and in
