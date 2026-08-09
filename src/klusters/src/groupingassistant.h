@@ -244,11 +244,15 @@ private:
         return out;
     }
 
-    /**True when @p id is in scope.  Reserve clusters 0 and 1 are always kept: the
-     * model needs cluster 1 (the noise reference the matrix prepends), and
-     * dropping them would change what the remaining probabilities mean.*/
+    /**True when @p id is in scope.  Cluster 1 is always kept: it is the noise
+     * reference the matrix prepends and the probabilities are relative to it, so
+     * dropping it would change what every remaining cell means -- and it is a
+     * destination the curator uses, which is why the other three matrices keep it
+     * too.  Cluster 0 is NOT carved out: the artefact bin is not a comparison
+     * target, and keeping it would put a row in the scoped matrix that the other
+     * three views do not have.*/
     inline bool clusterInScope(int id) const {
-        return activeClusters.isEmpty() || id <= 1 || activeClusters.contains(id);
+        return activeClusters.isEmpty() || id == 1 || activeClusters.contains(id);
     }
 
     /**Map a 1-based model dimension to the 1-based .fet column it reads.
