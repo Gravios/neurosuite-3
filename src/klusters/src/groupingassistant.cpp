@@ -23,6 +23,7 @@
  */
 
 #include "groupingassistant.h"
+#include <QDebug>
 #include "groupingassistant_gpu.h"
 
 #include <QMap>
@@ -97,6 +98,30 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
     }
 
     int nbClusters = clusterList.size();
+
+    // Why an error matrix can come out all zeros, stated so the log distinguishes
+    // the three cases instead of them looking identical on screen:
+    //
+    //   ignored == model    every cluster was skipped.  ignoreClusterIndex is
+    //                       appended to when c.nb <= nbDimensions in the covariance
+    //                       pass and when cholesky() fails in the model build; an
+    //                       ignored cluster is skipped in BOTH the row loop and the
+    //                       column loop, so if all of them are ignored every cell
+    //                       stays at its fillWithZeros value.  With a scoped model
+    //                       of a handful of children and nbDimensions in the tens,
+    //                       the spike-count test is the one to suspect first.
+    //   model == 0          nothing to compute over; no cell is ever written.
+    //   neither             cells were written and the sums were zero, which puts
+    //                       the fault upstream in computeProbabilities.
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote()
+            << "[emx] incremental: model=" << buildModelIndex(clusterInfoMap).size()
+            << " clusterList=" << clusterList.size()
+            << " nbClusters="  << nbClusters
+            << " initIndex="   << initIndex
+            << " ignored="     << ignoreClusterIndex.size()
+            << " computed="    << computedClusterList.size();
+
     Array<double>* errorMatrix =
         new Array<double>(static_cast<long>(nbClusters),
                           static_cast<long>(nbClusters));
@@ -627,6 +652,15 @@ Array<double>* GroupingAssistant::computeProbabilities(
             cdata.push_back(std::move(cd));
         }
     }
+
+    if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
+        qDebug().noquote()
+            << "[emx] full: model="  << buildModelIndex(clusterInfoMap).size()
+            << " clusterList="       << clusterList.size()
+            << " nbClusters="        << nbClusters
+            << " nbDimensions="      << nbDimensions
+            << " ignored="           << ignoreClusterIndex.size()
+            << " computed="          << computedClusterList.size();
 
     if (haveToStopComputing) return new Array<double>(0, 0);
 
