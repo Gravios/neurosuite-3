@@ -1180,22 +1180,6 @@ void KlustersApp::createMenus()
         }
     }
 
-    // ---- child-palette focus drives the scoped matrices ------------------
-    //
-    // Always on, not diagnostic: the matrices reflect a parent's children only
-    // while the child view is the one being worked in, and this is what tells the
-    // doc.  Installed once, since the enclosing function runs per document.
-    {
-        static bool scopeFocusInstalled = false;
-        if (!scopeFocusInstalled) {
-            scopeFocusInstalled = true;
-            connect(qApp, &QApplication::focusChanged, this,
-                    [this](QWidget*, QWidget*){
-                if (doc) doc->setChildPaletteFocused(focusedChildPalette() != nullptr);
-            });
-        }
-    }
-
     // ---- focus tracing (NS3_VERBOSE) --------------------------------------
     // Three attempts at "focus leaves the child palette" have each fixed a real
     // defect and none has been shown to be THE one, because the moment focus
@@ -2136,6 +2120,41 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         if(ke->key() == Qt::Key_T && ke->modifiers() == Qt::NoModifier
            && doc && !focusIsInTextInput()){
             slotMoveSelectedClustersToEnd();
+            return true;
+        }
+    }
+
+    // ── V — toggle the child-scoped matrices ─────────────────────────────
+    // Bare V is unbound elsewhere; the only Qt::Key_V in the tree is Ctrl+V paste
+    // inside SpinBox, which is modifier-guarded and in a text-entry widget, so
+    // focusIsInTextInput() keeps the two apart.  Intercepted at ShortcutOverride
+    // as well as KeyPress for the same reason T is: otherwise the palette's
+    // QListWidget consumes it for type-ahead search.
+    //
+    // Works from anywhere rather than only while a child palette has focus.  The
+    // mode is a statement of intent, and requiring focus would make it
+    // untoggleable in exactly the situation it exists for.
+    if(event->type() == QEvent::ShortcutOverride){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_V && ke->modifiers() == Qt::NoModifier
+           && !focusIsInTextInput()){
+            ke->accept();
+            return true;
+        }
+    }
+    if(event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_V && ke->modifiers() == Qt::NoModifier
+           && doc && !focusIsInTextInput()){
+            const bool on = !doc->matrixScopeEnabled();
+            doc->setMatrixScopeEnabled(on);
+            if (on && !doc->matrixScopeActive())
+                statusBar()->showMessage(
+                    tr("Matrices: child-scoped — select a parent with children to see it."), 3000);
+            else
+                statusBar()->showMessage(
+                    on ? tr("Matrices: children of cluster %1.").arg(doc->matrixScopeParent())
+                       : tr("Matrices: all clusters."), 3000);
             return true;
         }
     }
@@ -5667,6 +5686,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"Arrow keys",     "Navigate cluster palette"},
             {"S",              "Toggle current selection (palette focus)"},
             {"T",              "Move selected cluster(s) to end of palette (palette focus)"},
+            {"V",              "Toggle matrices between all clusters and the selected parent's children"},
             {"Page Up / Page Down", "Nudge selected cluster timestamps \u00b11 sample"},
             {"H",              "Show this keyboard shortcut reference"},
         }},

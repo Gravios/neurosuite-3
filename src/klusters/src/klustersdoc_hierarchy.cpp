@@ -368,11 +368,11 @@ void KlustersDoc::rebuildHierarchyFromData(){
 // That is one parent's children, and the parent is the child palette's, which
 // lives in KlustersApp; hence the mirror here rather than a lookup.
 // ---------------------------------------------------------------------------
-void KlustersDoc::setChildPaletteFocused(bool focused)
+void KlustersDoc::setMatrixScopeEnabled(bool enabled)
 {
-    if (childPaletteFocused == focused) return;   // no spurious recomputes
-    childPaletteFocused = focused;
-    emit matrixScopeChanged();                    // scoping just went on or off
+    if (matrixScopeOn == enabled) return;   // no spurious recomputes
+    matrixScopeOn = enabled;
+    emit matrixScopeChanged();              // scoping just went on or off
 }
 
 void KlustersDoc::setMatrixScopeParent(int fiberId)
@@ -384,11 +384,13 @@ void KlustersDoc::setMatrixScopeParent(int fiberId)
 
 bool KlustersDoc::matrixScopeActive() const
 {
-    // Only while the child view is the one being worked in.  Without this the
-    // scope would go active the moment a fiber is selected -- the probe shows
-    // scopeActive=true at startup, before any child interaction -- and the
-    // ordinary fiber-level matrices would become unreachable.
-    if (!childPaletteFocused) return false;
+    // Only when explicitly asked for.  Without a trigger the scope would go active
+    // the moment a fiber is selected -- the probe showed scopeActive=true at
+    // startup, before any child interaction -- and the ordinary fiber-level
+    // matrices would become unreachable.  The mode stays on when no parent is
+    // selected; it simply has no effect until one is, which keeps the state the
+    // user set predictable rather than silently reverting.
+    if (!matrixScopeOn) return false;
     if (!childData || matrixScopeParentId < 0) return false;
     return !childrenOf(QList<int>{matrixScopeParentId}).isEmpty();
 }

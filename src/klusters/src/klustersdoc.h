@@ -321,18 +321,24 @@ public:
      *  needs its own copy because the matrix views are constructed with a
      *  KlustersDoc& and have no route to the app.
      */
-    /** Whether a child palette currently holds keyboard focus.  Pushed from
-     *  KlustersApp on every focus change; the doc cannot ask, since the palettes
-     *  live in the app.
+    /** Whether the matrices should compare a parent's children rather than the
+     *  fibers.  Toggled by the V key; off by default.
      *
-     *  This is the trigger for the scoped matrices: they reflect a parent's
-     *  children only while the child view is the one being worked in.  It is NOT
-     *  childScopeActive -- that flag is raised around an operation and lowered
-     *  again, so it is false at every matrix launch (measured, every [matrixscope]
-     *  line reports childScopeActive=false).  A separate, focus-driven flag is the
-     *  only thing that answers "is the user in the child view right now".
+     *  Deliberately an explicit mode rather than something inferred from focus.
+     *  Focus is not intent: clicking a matrix to read a cell moves focus out of the
+     *  child palette, and a focus-derived scope would drop there and recompute all
+     *  four views over the whole session, then recompute again on the way back.  A
+     *  toggle stays where it was last put, is reportable in the status bar, and does
+     *  not depend on a focus signal -- which matters here, since the application is
+     *  observed losing the foreground to the window manager on an ordinary click
+     *  (WindowDeactivate with no popup, no modal and no grabber), and a focus-gated
+     *  mode was being switched off by that before any matrix could launch.
+     *
+     *  It is NOT childScopeActive either: that flag is raised around an operation
+     *  and lowered again, so it reads false at every matrix launch.
      */
-    void setChildPaletteFocused(bool focused);
+    void setMatrixScopeEnabled(bool enabled);
+    bool matrixScopeEnabled() const { return matrixScopeOn; }
 
     void setMatrixScopeParent(int fiberId);
     int  matrixScopeParent() const { return matrixScopeParentId; }
@@ -1639,7 +1645,7 @@ private:
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
     bool                 childScopeActive = false;  // true while a child is the shown clustering
     int                  matrixScopeParentId = -1;  // parent whose children the matrices compare
-    bool                 childPaletteFocused = false; // a child palette holds focus
+    bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
     QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
