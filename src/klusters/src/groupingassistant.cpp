@@ -241,7 +241,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             Col cd;
             cd.id     = static_cast<int>(me.id);
             cd.first  = me.first;
-            cd.nb     = it.value().nbSpikes();
+            cd.nb     = me.nb;
             cd.ignore = (ignoreClusterIndex.contains(ci) != 0)
                         || !clusterInScope(cd.id);   // out of the scoped-matrix subset
             cd.logTerm = 0.0;
@@ -472,7 +472,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             if (haveToStopComputing) break;
             if (ignoreClusterIndex.contains(thisIndex)) continue;
             dataType first = me.first;
-            dataType last  = first + it.value().nbSpikes();
+            dataType last  = first + me.nb;
             for (dataType si = first; si < last; ++si) {
                 dataType featRow = (*spikesByCluster)(1, si);
                 double sum = 0.0;
@@ -686,7 +686,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
                     h_first[static_cast<size_t>(c0)] =
                         static_cast<int>(me.first) - 1;  // 0-based
                     h_nb[static_cast<size_t>(c0)] =
-                        static_cast<int>(it.value().nbSpikes());
+                        static_cast<int>(me.nb);
                 }
             }
             std::vector<double> errGpu(static_cast<size_t>(nbClusters) * nbClusters);
@@ -887,7 +887,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
         if (haveToStopComputing) return probabilities;
         if (ignoreClusterIndex.contains(thisIndex)) continue;
         dataType first = me.first;
-        dataType last  = first + it.value().nbSpikes();
+        dataType last  = first + me.nb;
         for (dataType si = first; si < last; ++si) {
             dataType featRow = (*spikesByCluster)(1, si);
             double sum = 0.0;
