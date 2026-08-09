@@ -658,7 +658,18 @@ Array<double>* GroupingAssistant::computeProbabilities(
     int nbClusters = model.size();
     if (pTiming) t_dup = pt.restart();
 
-    if (haveToStopComputing) return new Array<double>(0, 0);
+    if (haveToStopComputing) {
+        // Free before aborting.  duplicate() has already allocated both, they are
+        // MEMBERS, and the next call overwrites the pointers -- so returning here
+        // without freeing leaks a per-spike array and the cluster map, once per
+        // aborted compute.  Aborts are not rare: haveToStopComputing is set
+        // whenever an edit supersedes a running matrix, which is most of them
+        // during curation.  Every other abort in this function already frees;
+        // these two did not.
+        delete spikesByCluster; delete clusterInfoMap;
+        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        return new Array<double>(0, 0);
+    }
 
     meanCovarianceComputation(model, nbClusters, nbDimensions, nbSpikes,
                               clusteringData, ignoreClusterIndex);
@@ -733,7 +744,18 @@ Array<double>* GroupingAssistant::computeProbabilities(
             << " ignored="           << ignoreClusterIndex.size()
             << " computed="          << computedClusterList.size();
 
-    if (haveToStopComputing) return new Array<double>(0, 0);
+    if (haveToStopComputing) {
+        // Free before aborting.  duplicate() has already allocated both, they are
+        // MEMBERS, and the next call overwrites the pointers -- so returning here
+        // without freeing leaks a per-spike array and the cluster map, once per
+        // aborted compute.  Aborts are not rare: haveToStopComputing is set
+        // whenever an edit supersedes a running matrix, which is most of them
+        // during curation.  Every other abort in this function already frees;
+        // these two did not.
+        delete spikesByCluster; delete clusterInfoMap;
+        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        return new Array<double>(0, 0);
+    }
 
     // ------------------------------------------------------------------
     // GPU path via dispatcher (CUDA / HIP / SYCL — first available).
@@ -886,11 +908,8 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 tmp->copyAndPrependColumn(*probabilities);
                 delete probabilities;
                 probabilities = tmp;
-                clusterList.prepend(1);
-                computedClusterList.prepend(1);
-                for (int i = 0; i < static_cast<int>(ignoreClusterIndex.size()); ++i)
-                    ignoreClusterIndex[i] += 1;
-                initIndex = 2;
+                prependCluster1Indices(clusterList, computedClusterList,
+                                       ignoreClusterIndex, initIndex);
             }
             return probabilities;
         }
