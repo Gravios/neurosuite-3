@@ -859,11 +859,29 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     if (parent == 1) return false;                    // already noise
     const QVector<int> spk = childData->clusterSpkIndices(childCluster);
     if (spk.isEmpty()) return false;
+    // Siblings that will survive, captured before the move: the landing is one of
+    // them, and after the move the atom is gone from the parent's list.
+    QList<int> siblings;
+    for (int kid : parentToChildren.value(parent))
+        if (kid > 1 && kid != childCluster) siblings.append(kid);
+
     setActiveClustering(false);
     moveSpikeSubsetToCluster(parent, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
     setPendingFiberSelection({parent});   // land on the source fiber (noise isn't selectable)
     rebuildHierarchyFromData();
     emit hierarchyChanged();
+
+    // Land where the specification says: on a neighbouring child when others
+    // remain, and one level up when this was the last one -- the parent is then
+    // empty and the delete cascade moves the curated parent to its neighbour.
+    // Emitted after hierarchyChanged so the palette holds the surviving list.
+    if (!siblings.isEmpty()) {
+        std::sort(siblings.begin(), siblings.end());
+        int land = siblings.last();                 // nothing above: nearest below
+        for (int kid : siblings)
+            if (kid > childCluster) { land = kid; break; }
+        emit hierarchyChildSelectionRequested(QList<int>{ land });
+    }
     return true;
 }
 
@@ -898,6 +916,20 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
+
+    // Land on the merged child.
+    //
+    // "Operations performed in this mode should return focus to the output
+    // clusters or merged clusters within the children palette" -- this is that
+    // sentence, for a merge.  The merge is the whole point of the scoped
+    // matrices: the cell names a pair, the click selects it, G merges it, and the
+    // result is what the user then judges.  Leaving the selection on two ids that
+    // no longer exist means the next gesture starts from nothing.
+    //
+    // After hierarchyChanged, so the palette has been repopulated and newId is in
+    // the list by the time it is asked for.
+    emit hierarchyChildSelectionRequested(QList<int>{ newId });
+
     modified = true;
     return newId;
 }
