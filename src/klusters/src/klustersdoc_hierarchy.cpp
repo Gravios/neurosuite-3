@@ -864,20 +864,24 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     moveSpikeSubsetToCluster(parent, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
     setPendingFiberSelection({parent});   // land on the source fiber (noise isn't selectable)
     rebuildHierarchyFromData();
-    emit hierarchyChanged();
 
-    // Land where the specification says: on a neighbouring child when others
-    // remain, and one level up when this was the last one -- the parent is then
-    // empty and the delete cascade moves the curated parent to its neighbour.
-    // Emitted after hierarchyChanged so the palette holds the surviving list.
+    // Parked before the emit, for the reason given in mergeChildren: the palette
+    // is repopulated inside hierarchyChanged and drains the park there.  Siblings
+    // were captured before the move, so this is the surviving list.
+    QList<int> land;
     if (!siblings.isEmpty()) {
         std::sort(siblings.begin(), siblings.end());
-        int land = siblings.last();                 // nothing above: nearest below
+        int pick = siblings.last();                 // nothing above: nearest below
         for (int kid : siblings)
-            if (kid > childCluster) { land = kid; break; }
-        setPendingChildSelection(QList<int>{ land });
-        emit hierarchyChildSelectionRequested(QList<int>{ land });
+            if (kid > childCluster) { pick = kid; break; }
+        land = QList<int>{ pick };
+        setPendingChildSelection(land);
     }
+
+    emit hierarchyChanged();
+
+    // Belt and braces when no rebuild runs.
+    if (!land.isEmpty()) emit hierarchyChildSelectionRequested(land);
     return true;
 }
 
@@ -910,6 +914,18 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
 
     syncChildColors();
     rebuildHierarchyFromData();
+    // Park the landing BEFORE hierarchyChanged is emitted.
+    //
+    // That signal is a DIRECT connection: the app repopulates the child palette
+    // inside the emit, and repopulateChildPalette drains the pending selection
+    // right there.  Parked on the line after -- as it was -- the drain always saw
+    // an empty park and fell back to the prior selection, which is the two
+    // children that no longer exist, so the merge ended with nothing selected.
+    //
+    // Parked first, every rebuild sees it: the synchronous one inside this emit,
+    // and any deferred one the post-edit automation schedules afterwards.
+    setPendingChildSelection(QList<int>{ newId });
+
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
 
@@ -926,7 +942,6 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     // hierarchyChanged repopulates the palette again afterwards with no landing of
     // its own, so a single emission is applied and then wiped by the next rebuild.
     // repopulateChildPalette drains this after whichever rebuild is last.
-    setPendingChildSelection(QList<int>{ newId });
     emit hierarchyChildSelectionRequested(QList<int>{ newId });
 
     modified = true;
