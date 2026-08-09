@@ -1954,10 +1954,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
            && focusedChildPalette() != nullptr){
             childPalette = childPaletteA;
             // Not when the edit was in the child palette -- see slotGroupClusters.
-            if (!(doc && doc->isChildClusteringActive()))
+            if (!(doc && doc->isChildClusteringActive())) {
                 if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
                     qDebug().noquote() << "[grab] eventFilter -> fiber palette";
                 if(clusterPalette) clusterPalette->setFocusToList();
+            }
             return true;
         }
 
@@ -4069,6 +4070,35 @@ void KlustersApp::updateChunkStatus(){
 void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     slotStatusMsg(tr("Grouping clusters..."));
     KlustersView* view = activeView();
+
+    // Merge CHILDREN when the child palette is the one being worked in.
+    //
+    // doc->groupClusters() merges fibers.  Handed a child selection -- atom ids --
+    // it either finds no such fibers and does nothing, which is what G appeared to
+    // do, or merges whichever fibers carry the same numbers.  doc->mergeChildren()
+    // already exists for this and was simply never reached from the G key.
+    //
+    // This is the operation the scoped matrices exist to set up: a cell names the
+    // pair, the click selects it in the child palette, and G merges it.  Without
+    // this the whole path stops one step short of doing anything.
+    if (ClusterPalette* cp = focusedChildPalette()) {
+        const QList<int> kids = cp->selectedClusters();
+        if (kids.size() < 2) {
+            slotStatusMsg(tr("Ready."));
+            statusBar()->showMessage(
+                tr("Select at least two child clusters to merge."), 3000);
+            return;
+        }
+        QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+        const int merged = doc->mergeChildren(kids, *view);
+        QApplication::restoreOverrideCursor();
+        slotStatusMsg(tr("Ready."));
+        if (merged > 0)
+            statusBar()->showMessage(
+                tr("%1 child clusters merged into %2.").arg(kids.size()).arg(merged), 3000);
+        return;
+    }
+
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     const int mergedClusterId = doc->groupClusters(selectedClusters,*view);
     QApplication::restoreOverrideCursor();
@@ -4080,10 +4110,11 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // the fiber palette here would undo it.  Tested on EDIT SCOPE rather than on
     // Qt focus: by the time this runs, focus may already have moved, so a
     // focusedChildPalette() test fails open exactly when it is needed.
-    if (!(doc && doc->isChildClusteringActive()))
+    if (!(doc && doc->isChildClusteringActive())) {
         if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
             qDebug().noquote() << "[grab] slotGroupClusters -> fiber palette";
         if (clusterPalette) clusterPalette->setFocusToList();
+    }
 
     // Post-merge automation, fully serialised (no concurrent Data access).
     //
@@ -4198,10 +4229,11 @@ void KlustersApp::slotAutoMerge()
     // the fiber palette here would undo it.  Tested on EDIT SCOPE rather than on
     // Qt focus: by the time this runs, focus may already have moved, so a
     // focusedChildPalette() test fails open exactly when it is needed.
-    if (!(doc && doc->isChildClusteringActive()))
+    if (!(doc && doc->isChildClusteringActive())) {
         if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
             qDebug().noquote() << "[grab] slotAutoMerge -> fiber palette";
         if (clusterPalette) clusterPalette->setFocusToList();
+    }
 }
 
 // ---------------------------------------------------------------------------
