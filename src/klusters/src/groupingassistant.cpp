@@ -295,6 +295,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
                 }
             }
             cols.push_back(std::move(cd));
+            ++ci;
         }
     }
 
@@ -488,7 +489,22 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     }
 
     // (b) row-wise normalisation (verbatim from computeProbabilities).
-    int cluster1Col1 = initIndex;
+    // The column holding cluster 1.
+    //
+    // When cluster 1 is absent a synthetic all-zero column is PREPENDED, so it
+    // sits at column 1 and initIndex becomes 2.  Initialising this to initIndex
+    // therefore pointed at column 2 -- the first REAL cluster -- and the
+    // underflow rule below assigns a spike's entire probability mass to
+    // cluster1Col1.  Every spike whose posteriors underflow, which at 32
+    // dimensions is routine, was being handed to whichever cluster happened to be
+    // first in the model instead of to noise.
+    //
+    // Unscoped this never fired: the fiber layer always contains cluster 1, so
+    // existCluster1 is true and the search below runs.  A scoped model is the
+    // first case in which the model has no cluster 1, which is why this surfaced
+    // only with the child-scoped matrices and why the same code was correct for
+    // years before them.
+    int cluster1Col1 = existCluster1 ? initIndex : 1;
     if (existCluster1) {
         int ci = 1;
         for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
@@ -650,6 +666,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 }
             }
             cdata.push_back(std::move(cd));
+            ++ci;
         }
     }
 
@@ -727,6 +744,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
                         static_cast<int>(me.first) - 1;  // 0-based
                     h_nb[static_cast<size_t>(c0)] =
                         static_cast<int>(me.nb);
+                    ++c0;
                 }
             }
             std::vector<double> errGpu(static_cast<size_t>(nbClusters) * nbClusters);
@@ -912,7 +930,22 @@ Array<double>* GroupingAssistant::computeProbabilities(
     }
 
     // Row-wise normalization.
-    int cluster1Col1 = initIndex;
+    // The column holding cluster 1.
+    //
+    // When cluster 1 is absent a synthetic all-zero column is PREPENDED, so it
+    // sits at column 1 and initIndex becomes 2.  Initialising this to initIndex
+    // therefore pointed at column 2 -- the first REAL cluster -- and the
+    // underflow rule below assigns a spike's entire probability mass to
+    // cluster1Col1.  Every spike whose posteriors underflow, which at 32
+    // dimensions is routine, was being handed to whichever cluster happened to be
+    // first in the model instead of to noise.
+    //
+    // Unscoped this never fired: the fiber layer always contains cluster 1, so
+    // existCluster1 is true and the search below runs.  A scoped model is the
+    // first case in which the model has no cluster 1, which is why this surfaced
+    // only with the child-scoped matrices and why the same code was correct for
+    // years before them.
+    int cluster1Col1 = existCluster1 ? initIndex : 1;
     if (existCluster1) {
         int ci = 1;
         for (const ModelEntry& me : buildModelIndex(clusterInfoMap)) {
