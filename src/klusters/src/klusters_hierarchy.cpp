@@ -481,6 +481,7 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     parentSlotA = doc ? doc->curatedParent() : -1;
 
     const bool hadChildFocus = (focusedChildPalette() != nullptr);
+    bool landedFromOperation = false;   // a parked landing was applied below
     QList<int> priorSelection;
     if(childPaletteA) priorSelection = childPaletteA->selectedClusters();
 
@@ -498,14 +499,26 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
         // ran.  Drained here rather than applied at the operation, so it survives
         // however many deferred rebuilds follow.
         QList<int> want = doc->takePendingChildSelection();
+        const bool fromLanding = !want.isEmpty();
         if(want.isEmpty()) want = priorSelection;
 
         QList<int> restore;
         for(int id : want)
             if(live.contains(id)) restore.append(id);
-        if(!restore.isEmpty()) childPaletteA->selectItems(restore);
+        if(!restore.isEmpty()){
+            childPaletteA->selectItems(restore);
+            // An operation that parked a landing asked to END UP there -- "return
+            // focus to the output clusters or merged clusters within the children
+            // palette".  Focus follows it unconditionally, NOT gated on
+            // hadChildFocus: that flag asks whether a child palette held Qt focus
+            // when the rebuild started, and after picking a pair from a matrix cell
+            // the answer is no, the matrix does.  Gating on it means the merged
+            // child is selected and nothing has focus, which is the reported
+            // symptom.
+            if(fromLanding) landedFromOperation = true;
+        }
     }
-    if(hadChildFocus && childPaletteA && parentSlotA >= 0)
+    if((hadChildFocus || landedFromOperation) && childPaletteA && parentSlotA >= 0)
         childPaletteA->setFocusToList();
 }
 

@@ -1332,7 +1332,10 @@ void KlustersApp::createMenus()
     connect(doc, &KlustersDoc::hierarchyChildSelectionRequested, this,
             [this](const QList<int>& children){
         if (!childPanel || !childPanel->isVisible() || children.isEmpty()) return;
-        ClusterPalette* cp = focusedChildPalette() ? focusedChildPalette() : childPalette;
+        // curationPalette() rather than a focus test: after picking a pair from a
+        // matrix cell the matrix holds focus, and the landing still belongs in the
+        // child palette.  Falls back to childPalette so a landing is never dropped.
+        ClusterPalette* cp = curationPalette() ? curationPalette() : childPalette;
         if (cp) {
             cp->selectItems(children);
             cp->setFocusToList();
