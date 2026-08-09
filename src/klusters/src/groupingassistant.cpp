@@ -160,40 +160,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
             << " computed="    << computedClusterList.size();
 
     Array<double>* errorMatrix =
-        new Array<double>(static_cast<long>(nbClusters),
-                          static_cast<long>(nbClusters));
-    errorMatrix->fillWithZeros();
-
-    struct CE { dataType first; dataType nb; int idx; };
-    std::vector<CE> entries;
-    entries.reserve(static_cast<size_t>(model.size()));
-    {
-        int ci = initIndex;
-        for (const ModelEntry& me : model)
-            entries.push_back({ me.first, me.nb, ci++ });
-    }
-
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) default(none) \
-    shared(entries, ignoreClusterIndex, probabilities, errorMatrix, nbClusters)
-#endif
-    for (int ei = 0; ei < static_cast<int>(entries.size()); ++ei) {
-        if (haveToStopComputing) continue;
-        const CE& e = entries[static_cast<size_t>(ei)];
-        if (ignoreClusterIndex.contains(e.idx)) continue;
-        dataType last = e.first + e.nb;
-        for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2) {
-            if (ignoreClusterIndex.contains(ci2)) continue;
-            if (haveToStopComputing) break;
-            double sum = 0.0;
-            for (dataType i = e.first; i < last; ++i)
-                sum += (*probabilities)((*spikesByCluster)(1, i), ci2);
-            (*errorMatrix)(e.idx, ci2) = sum / static_cast<double>(e.nb);
-        }
-    }
-
-    for (int ci = 1; ci <= nbClusters; ++ci)
-        (*errorMatrix)(ci, ci) = 0.0;
+        aggregateErrorMatrix(probabilities, model, ignoreClusterIndex, nbClusters);
 
     if (emxTiming)
         fprintf(stderr,
@@ -543,35 +510,8 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     }
 
     // (c) error-matrix aggregation (verbatim from computeMeanProbabilities).
-    Array<double>* errorMatrix = new Array<double>(nbClusters, nbClusters);
-    errorMatrix->fillWithZeros();
-    struct CE { dataType first; dataType nb; int idx; };
-    std::vector<CE> entries; entries.reserve(static_cast<size_t>(model.size()));
-    {
-        int ci = initIndex;
-        for (const ModelEntry& me : model)
-            entries.push_back({ me.first, me.nb, ci++ });
-    }
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) default(none) \
-    shared(entries, ignoreClusterIndex, probabilities, errorMatrix, nbClusters)
-#endif
-    for (int ei = 0; ei < static_cast<int>(entries.size()); ++ei) {
-        if (haveToStopComputing) continue;
-        const CE& e = entries[static_cast<size_t>(ei)];
-        if (ignoreClusterIndex.contains(e.idx)) continue;
-        dataType last = e.first + e.nb;
-        for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2) {
-            if (ignoreClusterIndex.contains(ci2)) continue;
-            if (haveToStopComputing) break;
-            double sum = 0.0;
-            for (dataType i = e.first; i < last; ++i)
-                sum += (*probabilities)((*spikesByCluster)(1, i), ci2);
-            (*errorMatrix)(e.idx, ci2) = sum / static_cast<double>(e.nb);
-        }
-    }
-    for (int ci = 1; ci <= nbClusters; ++ci)
-        (*errorMatrix)(ci, ci) = 0.0;
+    Array<double>* errorMatrix =
+        aggregateErrorMatrix(probabilities, model, ignoreClusterIndex, nbClusters);
 
     delete spikesByCluster; delete clusterInfoMap; delete probabilities;
     spikesByCluster = nullptr; clusterInfoMap = nullptr;
@@ -963,6 +903,55 @@ Array<double>* GroupingAssistant::computeProbabilities(
         return probabilities;
 
     return probabilities;
+}
+
+// ---------------------------------------------------------------------------
+// aggregateErrorMatrix
+// ---------------------------------------------------------------------------
+Array<double>* GroupingAssistant::aggregateErrorMatrix(const Array<double>* probabilities,
+                                                       const QVector<ModelEntry>& model,
+                                                       const QList<int>& ignoreClusterIndex,
+                                                       int nbClusters)
+{
+    Array<double>* errorMatrix =
+        new Array<double>(static_cast<long>(nbClusters), static_cast<long>(nbClusters));
+    errorMatrix->fillWithZeros();
+
+    // idx counts from initIndex over the model, exactly as the column loop below
+    // does, so a row index and a column index mean the same thing.
+    struct CE { dataType first; dataType nb; int idx; };
+    std::vector<CE> entries;
+    entries.reserve(static_cast<size_t>(model.size()));
+    {
+        int ci = initIndex;
+        for (const ModelEntry& me : model)
+            entries.push_back({ me.first, me.nb, ci++ });
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) default(none) \
+    shared(entries, ignoreClusterIndex, probabilities, errorMatrix, nbClusters)
+#endif
+    for (int ei = 0; ei < static_cast<int>(entries.size()); ++ei) {
+        if (haveToStopComputing) continue;
+        const CE& e = entries[static_cast<size_t>(ei)];
+        if (ignoreClusterIndex.contains(e.idx)) continue;
+        dataType last = e.first + e.nb;
+        for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2) {
+            if (ignoreClusterIndex.contains(ci2)) continue;
+            if (haveToStopComputing) break;
+            double sum = 0.0;
+            for (dataType i = e.first; i < last; ++i)
+                sum += (*probabilities)((*spikesByCluster)(1, i), ci2);
+            (*errorMatrix)(e.idx, ci2) = sum / static_cast<double>(e.nb);
+        }
+    }
+
+    // A cluster's agreement with itself tells the curator nothing.
+    for (int ci = 1; ci <= nbClusters; ++ci)
+        (*errorMatrix)(ci, ci) = 0.0;
+
+    return errorMatrix;
 }
 
 // ---------------------------------------------------------------------------
