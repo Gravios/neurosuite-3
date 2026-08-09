@@ -532,50 +532,10 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         ++nbClusters;
     }
 
-    // (b) row-wise normalisation (verbatim from computeProbabilities).
-    // The column holding cluster 1.
-    //
-    // When cluster 1 is absent a synthetic all-zero column is PREPENDED, so it
-    // sits at column 1 and initIndex becomes 2.  Initialising this to initIndex
-    // therefore pointed at column 2 -- the first REAL cluster -- and the
-    // underflow rule below assigns a spike's entire probability mass to
-    // cluster1Col1.  Every spike whose posteriors underflow, which at 32
-    // dimensions is routine, was being handed to whichever cluster happened to be
-    // first in the model instead of to noise.
-    //
-    // Unscoped this never fired: the fiber layer always contains cluster 1, so
-    // existCluster1 is true and the search below runs.  A scoped model is the
-    // first case in which the model has no cluster 1, which is why this surfaced
-    // only with the child-scoped matrices and why the same code was correct for
-    // years before them.
-    int cluster1Col1 = existCluster1 ? initIndex : 1;
-    if (existCluster1) {
-        int ci = 1;
-        for (const ModelEntry& me : model) {
-            if (me.id == ClusterId::Noise) { cluster1Col1 = ci; break; }
-            ++ci;
-        }
-    }
-    {
-        int clusterIndex = initIndex;
-        for (const ModelEntry& me : model) {
-            const int thisIndex = clusterIndex++;
-            if (haveToStopComputing) break;
-            if (ignoreClusterIndex.contains(thisIndex)) continue;
-            dataType first = me.first;
-            dataType last  = first + me.nb;
-            for (dataType si = first; si < last; ++si) {
-                dataType featRow = (*spikesByCluster)(1, si);
-                double sum = 0.0;
-                for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2)
-                    sum += (*probabilities)(featRow, ci2);
-                if (sum == 0.0) { sum = 1.0; (*probabilities)(featRow, cluster1Col1) = 1.0; }
-                double inv = 1.0 / sum;
-                for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2)
-                    (*probabilities)(featRow, ci2) *= inv;
-            }
-        }
-    }
+    // (b) row-wise normalisation.  Aborting is handled by the check below, which
+    // frees and returns nullptr, so the result is simply ignored here.
+    normaliseRowsToPosteriors(probabilities, model, ignoreClusterIndex, nbClusters);
+
     if (haveToStopComputing) {
         delete probabilities; delete spikesByCluster; delete clusterInfoMap;
         spikesByCluster = nullptr; clusterInfoMap = nullptr;
@@ -997,21 +957,26 @@ Array<double>* GroupingAssistant::computeProbabilities(
     }
 
     // Row-wise normalization.
-    // The column holding cluster 1.
-    //
-    // When cluster 1 is absent a synthetic all-zero column is PREPENDED, so it
-    // sits at column 1 and initIndex becomes 2.  Initialising this to initIndex
-    // therefore pointed at column 2 -- the first REAL cluster -- and the
-    // underflow rule below assigns a spike's entire probability mass to
-    // cluster1Col1.  Every spike whose posteriors underflow, which at 32
-    // dimensions is routine, was being handed to whichever cluster happened to be
-    // first in the model instead of to noise.
-    //
-    // Unscoped this never fired: the fiber layer always contains cluster 1, so
-    // existCluster1 is true and the search below runs.  A scoped model is the
-    // first case in which the model has no cluster 1, which is why this surfaced
-    // only with the child-scoped matrices and why the same code was correct for
-    // years before them.
+    // Row-normalise.  On abort this returns the partially normalised array, which
+    // is what it did before: the caller discards it on a generation mismatch.
+    if (!normaliseRowsToPosteriors(probabilities, model, ignoreClusterIndex, nbClusters))
+        return probabilities;
+
+    return probabilities;
+}
+
+// ---------------------------------------------------------------------------
+// normaliseRowsToPosteriors
+// ---------------------------------------------------------------------------
+bool GroupingAssistant::normaliseRowsToPosteriors(Array<double>* probabilities,
+                                                  const QVector<ModelEntry>& model,
+                                                  const QList<int>& ignoreClusterIndex,
+                                                  int nbClusters)
+{
+    // The column holding cluster 1.  When cluster 1 is absent a synthetic all-zero
+    // column is PREPENDED, so it sits at column 1 and initIndex is 2 -- taking
+    // initIndex here would point at the first REAL cluster and send every
+    // underflowing spike there instead of to noise.
     int cluster1Col1 = existCluster1 ? initIndex : 1;
     if (existCluster1) {
         int ci = 1;
@@ -1024,7 +989,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
     int clusterIndex = initIndex;
     for (const ModelEntry& me : model) {
         const int thisIndex = clusterIndex++;
-        if (haveToStopComputing) return probabilities;
+        if (haveToStopComputing) return false;
         if (ignoreClusterIndex.contains(thisIndex)) continue;
         dataType first = me.first;
         dataType last  = first + me.nb;
@@ -1039,8 +1004,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 (*probabilities)(featRow, ci2) *= inv;
         }
     }
-
-    return probabilities;
+    return true;
 }
 
 // ---------------------------------------------------------------------------
