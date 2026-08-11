@@ -70,7 +70,7 @@ GroupingAssistant::~GroupingAssistant()
 // ---------------------------------------------------------------------------
 // prependCluster1Indices
 //
-// Bookkeeping for the synthetic cluster-1 column, shared by the three places
+// Bookkeeping for the synthetic cluster-1 column, shared by the four places
 // that insert one.
 //
 // When the model contains no cluster 1 a zero column is prepended so the matrix
@@ -79,7 +79,7 @@ GroupingAssistant::~GroupingAssistant()
 // every value already in ignoreClusterIndex refers to a column one further
 // right, and the base index for subsequent loops becomes 2.
 //
-// It was written out three times.  The consequence of that was not theoretical:
+// It was written out four times.  The consequence of that was not theoretical:
 // cluster1Col1 -- which the underflow rule uses to decide where a spike's
 // probability mass goes -- was wrong in both of the full copies and had to be
 // fixed in both.  One function means the next correction lands everywhere.
