@@ -93,6 +93,15 @@ KlustersDoc::KlustersDoc(QWidget* parent,ClusterPalette& clusterPalette,bool aut
     addedClustersUndoList(),addedClustersRedoList(),modifiedClustersUndoList(),modifiedClustersRedoList()
   ,autoSave(autoSave),savingInterval(savingInterval),tracesProvider(nullptr),clustersProvider(nullptr),channelColorList(nullptr)
 {
+    // Child-primary backend, chosen per session rather than per build.  Read once
+    // here so it cannot change under a running document -- the two models disagree
+    // about which layer is authoritative, and switching mid-session would leave the
+    // maps describing one model and the arrays the other.
+    childPrimaryOn = qEnvironmentVariableIsSet("NS3_CHILD_PRIMARY");
+    if (childPrimaryOn)
+        qDebug().noquote() << "[childprimary] backend ENABLED: the stored child->parent "
+                              "map is authoritative; .clu is its projection.";
+
     viewList = new QList<KlustersView*>();
     clusterColorList = nullptr;
     addedClusters = nullptr;
