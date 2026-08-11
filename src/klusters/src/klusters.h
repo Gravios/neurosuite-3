@@ -77,10 +77,10 @@ class SerialJobQueue;   // experimental realign-via-queue lane (opt-in)
   * window and reads the config file as well as providing a menubar, toolbar
   * and statusbar. There is only one document open by application.
   * In initClusterPanel(), the palette for the clusters is created.
-  * View windows are created in createView().The MDI child is an instance of KlustersView,
-  * the document an instance of KlustersDoc.
-  * KlustersApp reimplements the methods that DockMainWindow provides for main window handling and supports
-  * full session management as well as keyboard accelerator configuration.
+  * View windows are created by KlustersDoc::addView(); the child is an instance
+  * of KlustersView and the document an instance of KlustersDoc.
+  * KlustersApp derives from QMainWindow.  It previously derived from KDE's
+  * DockMainWindow, which this comment still named.
   * @author Lynn Hazan
   */
 class KlustersApp : public QMainWindow

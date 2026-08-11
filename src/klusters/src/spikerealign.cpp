@@ -422,10 +422,12 @@ bool SpikeRealign::swapSpikes(long long idxA, long long idxB,
     // by swapping features rows idxA and idxB (both 1-based).
     // The Data::features array is features(spikeGlobalIdx, dim) — but it's
     // private. We access it by using the public features() accessor.
-    // We'll perform the swap via the friend-style approach: the caller,
-    // SpikeRealign::run(), holds the spikesByCluster position table and does
-    // the update directly using Data's swapFetRows() which we'll add.
-    // For now return true; run() handles the memory side.
+    // Nothing to do here: SpikeRealign::run() holds the spikesByCluster position
+    // table and performs the update itself.
+    //
+    // This used to describe a planned Data::swapFetRows() that would do it "which
+    // we'll add" -- it was never added, and run() took the work instead.  The
+    // comment outlived the plan.
 
     return true;
 }

@@ -190,7 +190,6 @@ void ClusterView::paintEvent ( QPaintEvent*){
         } else if(drawContentsMode == UPDATE){
 
             //Erase any polygon of selection and reset the associated variables
-            //resetSelectionPolygon();
 
             //Paint the the clusters to update contain in clusterUpdateList
             if(!clusterUpdateList.isEmpty())
