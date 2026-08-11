@@ -672,17 +672,36 @@ void KlustersDoc::collapseToSelfChildren(){
     // records no ChildEdit, so every Data undo level it pushed was unmatched by an
     // entry on the atom stack; N unmatched levels become one.  refiberize() clears
     // both stacks afterwards regardless.
-    QVector<dataType> newLabels = childByRow;
-    bool changed = false;
-    for (int r = 1; r < n; ++r){
-        const int F = static_cast<int>(cluByRow[r]);
-        const int a = static_cast<int>(childByRow[r]);
-        if (a > 1 && intact.contains(a)) continue;           // wholly-inside atom: deliberate, preserved
-        if (a == F) continue;                                // already its own self child
-        if (a > 1 && homeFiber.value(a, -1) == F) continue;  // straddler kept whole on its home fiber
-        const int t = targetFor(a, F);                       // this source's share of the cut
-        if (t != a){ newLabels[r] = static_cast<dataType>(t); changed = true; }
-    }
+    // The re-cut decision, in ONE place.
+    //
+    // It ran twice: once against the labels on entry, and again verbatim against
+    // the healed labels after a refusal.  The three skip rules ARE the policy this
+    // function implements -- preserve a deliberate sub-cluster, leave a self child
+    // alone, keep a straddler whole on its home fiber -- and having them written
+    // out twice means a change to any of them has to be made in both, with nothing
+    // to say so.  That is how the cluster-1 column bug survived in the grouping
+    // assistant, in a file where the stakes are lower than here.
+    //
+    // Source and bound differ between the two calls; nothing else does, which was
+    // confirmed by normalising the two loops and comparing them.
+    const auto buildRecut = [&](const QVector<dataType>& source, int upTo,
+                                QVector<dataType>& out) -> bool {
+        out = source;
+        bool any = false;
+        for (int r = 1; r < upTo; ++r){
+            const int F = static_cast<int>(cluByRow[r]);
+            const int a = static_cast<int>(source[r]);
+            if (a > 1 && intact.contains(a)) continue;           // deliberate sub-cluster, preserved
+            if (a == F) continue;                                // already its own self child
+            if (a > 1 && homeFiber.value(a, -1) == F) continue;  // straddler whole on its home fiber
+            const int t = targetFor(a, F);                       // this source's share of the cut
+            if (t != a){ out[r] = static_cast<dataType>(t); any = true; }
+        }
+        return any;
+    };
+
+    QVector<dataType> newLabels;
+    const bool changed = buildRecut(childByRow, n, newLabels);
     // Nothing loose: do not commit.  setClusterLabels would push an undo level and
     // invalidate every waveform/correlogram cache for a no-op re-cut, and this
     // function runs on paths that call it speculatively.
@@ -697,18 +716,8 @@ void KlustersDoc::collapseToSelfChildren(){
                    << "the repaired view.";
         const QVector<dataType> healed = childData->labelByFeatureRow();
         const int m = qMin(cluByRow.size(), healed.size());
-        QVector<dataType> retry = healed;
-        bool again = false;
-        for (int r = 1; r < m; ++r){
-            const int F = static_cast<int>(cluByRow[r]);
-            const int a = static_cast<int>(healed[r]);
-            if (a > 1 && intact.contains(a)) continue;
-            if (a == F) continue;
-            if (a > 1 && homeFiber.value(a, -1) == F) continue;
-            const int t = targetFor(a, F);
-            if (t != a){ retry[r] = static_cast<dataType>(t); again = true; }
-        }
-        if (again) childData->setClusterLabels(retry);
+        QVector<dataType> retry;
+        if (buildRecut(healed, m, retry)) childData->setClusterLabels(retry);
     }
 
     // ── Normalize the self-child naming ────────────────────────────────────────
