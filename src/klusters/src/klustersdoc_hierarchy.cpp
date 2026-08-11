@@ -872,6 +872,16 @@ int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activ
     if (fibers.size() < 2) return -1;
     setActiveClustering(false);                   // edits always target the parent
     const int kept = groupClusters(fibers, activeView);   // existing: mutate + undo + views
+
+    // Child-primary: every child of a folded fiber is reparented onto the survivor.
+    // No child is split or created -- a fiber merge is a pure map operation, which
+    // is the clearest case of the O(children) versus O(nSpikes) difference.
+    if (childPrimaryOn)
+        for (int f : fibers)
+            if (f != kept)
+                for (int c : parentToChildren.value(f))
+                    shadowChildToParent.insert(c, kept);
+
     noteModifiedFiber(kept);                              // merged fiber needs realign
     setPendingFiberSelection({kept});                    // land on the merged fiber
     rebuildHierarchyFromData();
@@ -911,7 +921,14 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
         if (parent == newId) continue;                // already pooled
         const QVector<int> spk = childData->clusterSpkIndices(c);
         if (spk.isEmpty()) continue;
-        moveSpikeSubsetToCluster(parent, spk, (target < 0 ? newId : target), activeView);
+        const int dest = (target < 0 ? newId : target);
+        moveSpikeSubsetToCluster(parent, spk, dest, activeView);
+
+        // Child-primary: one map entry per promoted child.  Their spikes keep their
+        // child ids -- only the parent changes -- so this is a reparent, matching
+        // what the relabel above does to the .clu of those rows.
+        if (childPrimaryOn) shadowChildToParent.insert(c, dest);
+
         if (target < 0){
             target = newId;
             // Coloured after the first move so a Ctrl+Z reverting that move also
@@ -959,6 +976,17 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
 
     setActiveClustering(false);
     moveSpikeSubsetToCluster(parent, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
+
+    // Child-primary: the child is RECLASSIFIED, not relabelled.
+    //
+    // Noise and artefact are parent-layer classifications -- a child is a
+    // sub-cluster of a unit and has no signal/noise character of its own -- so
+    // dropping a child to noise is exactly "its parent is now 1".  Its spikes keep
+    // their child id, which is what the moveSpikeSubsetToCluster above already
+    // does: it changes the .clu of those rows and leaves the .clc alone.  So the
+    // map edit is one entry, and it says the same thing the relabel does.
+    if (childPrimaryOn) shadowChildToParent.insert(childCluster, 1);
+
     setPendingFiberSelection({parent});   // land on the source fiber (noise isn't selectable)
     rebuildHierarchyFromData();
 
