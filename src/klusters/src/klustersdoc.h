@@ -1719,6 +1719,35 @@ private:
     bool        siblingYamlForm = false;
     QMap<int,QList<int>> parentToChildren;   // parent unit id -> its child ids
     QMap<int,int>        childToParent;      // child id -> parent unit id
+
+    /** SHADOW of the child-primary model, maintained alongside the derived maps.
+     *
+     *  The current design stores two independent per-spike labelings and derives
+     *  childToParent from them, so the nesting invariant is a RELATIONSHIP between
+     *  two vectors that nothing enforces -- any edit can break it and
+     *  collapseToSelfChildren has to repair it afterwards.  Measured on
+     *  sirotaA-jg-000005-20120312 g5 (422,752 spikes, 3712 children, 1984 parents),
+     *  that repair costs 34 ms per edit, 29 ms of which is collapseToSelfChildren
+     *  running all five of its phases to relabel ZERO rows because the session was
+     *  already clean.
+     *
+     *  The alternative is to store {child -> parent} and derive .clu, which is what
+     *  fiber-kit's FiberHierarchy already does and what its .clu/.clc/.clp output
+     *  already satisfies -- verified on the same file: .clu reproduces from
+     *  .clc + .clp for all 422,752 spikes with zero mismatches.
+     *
+     *  This member is NOT yet that model.  It is a shadow copy updated from the same
+     *  rebuild, compared against the derived map, and reported on when they differ.
+     *  It changes no behaviour; its purpose is to establish over real curation --
+     *  rather than by argument -- whether the child-primary map tracks the derived
+     *  one exactly.  If it does, the derived map can be retired; if it does not, the
+     *  divergence names the edit path that would have broken it.
+     *
+     *  Enabled by NS3_SHADOW_HIERARCHY.
+     */
+    QMap<int,int>        shadowChildToParent;
+    void updateHierarchyShadow(const QVector<dataType>& cluByRow,
+                               const QVector<dataType>& childByRow, int n);
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
     bool                 childScopeActive = false;  // true while a child is the shown clustering
     int                  curatedParentId = -1;      // the parent being curated

@@ -311,6 +311,64 @@ bool KlustersDoc::isChildScopeHidden(int clusterId) const{
 // reverts clusteringData) plus the same re-derive on undo/redo keeps everything
 // consistent without a separate map-undo stack.
 
+// ---------------------------------------------------------------------------
+// KlustersDoc::updateHierarchyShadow
+//
+// Maintain the child-primary shadow and compare it against the derived map.
+//
+// Additive and inert unless NS3_SHADOW_HIERARCHY is set.  The point is evidence:
+// the child-primary model is only worth adopting if it tracks the current one
+// exactly across real curation, and that is a measurement rather than an
+// argument.  A divergence names the edit path that produced it.
+//
+// The two differ in one respect BY DESIGN, and it is the whole reason for the
+// change: the derived map keeps an atom's FIRST-SEEN owner when the atom straddles
+// two fibers, silently discarding the rest.  The shadow records the straddle
+// instead.  So a mismatch here means either a genuine straddler -- which the
+// derived map is hiding -- or a real divergence.  Both are worth knowing and the
+// message distinguishes them.
+// ---------------------------------------------------------------------------
+void KlustersDoc::updateHierarchyShadow(const QVector<dataType>& cluByRow,
+                                        const QVector<dataType>& childByRow, int n)
+{
+    if (!qEnvironmentVariableIsSet("NS3_SHADOW_HIERARCHY")) return;
+
+    QElapsedTimer timer; timer.start();
+    shadowChildToParent.clear();
+    QSet<int> straddlers;
+    for (int r = 1; r < n; ++r){
+        const int c = static_cast<int>(childByRow[r]);
+        if (c <= 0) continue;
+        const int f = static_cast<int>(cluByRow[r]);
+        const auto it = shadowChildToParent.constFind(c);
+        if (it == shadowChildToParent.constEnd()) shadowChildToParent.insert(c, f);
+        else if (it.value() != f) straddlers.insert(c);
+    }
+    const qint64 buildUs = timer.nsecsElapsed() / 1000;
+
+    // Compare against the derived map the caller has just built.
+    QList<int> onlyDerived, onlyShadow, disagree;
+    for (auto it = childToParent.constBegin(); it != childToParent.constEnd(); ++it){
+        const auto s = shadowChildToParent.constFind(it.key());
+        if (s == shadowChildToParent.constEnd()) onlyDerived.append(it.key());
+        else if (s.value() != it.value())        disagree.append(it.key());
+    }
+    for (auto it = shadowChildToParent.constBegin(); it != shadowChildToParent.constEnd(); ++it)
+        if (!childToParent.contains(it.key())) onlyShadow.append(it.key());
+
+    const bool agree = onlyDerived.isEmpty() && onlyShadow.isEmpty() && disagree.isEmpty();
+    qDebug().noquote() << "[shadow]" << (agree ? "AGREE" : "DIVERGE")
+                       << " children=" << shadowChildToParent.size()
+                       << " straddlers=" << straddlers.size()
+                       << " build=" << buildUs << "us";
+    if (!agree)
+        qWarning() << "[shadow] derived-only:" << onlyDerived.size()
+                   << " shadow-only:" << onlyShadow.size()
+                   << " disagreeing:" << disagree.size()
+                   << " (a straddler explains a disagreement: the derived map keeps"
+                      " first-seen and hides the rest)";
+}
+
 void KlustersDoc::rebuildHierarchyFromData(){
     if (!childData) return;
     parentToChildren.clear();
@@ -356,6 +414,10 @@ void KlustersDoc::rebuildHierarchyFromData(){
         std::sort(kids.begin(), kids.end());
         kids.erase(std::unique(kids.begin(), kids.end()), kids.end());
     }
+
+    // Shadow comparison, after the derived maps are complete and before any
+    // consumer sees them.  Inert unless NS3_SHADOW_HIERARCHY is set.
+    updateHierarchyShadow(cluByRow, childByRow, n);
 
     // The maps this scope is derived from have just been refilled; re-resolve so
     // no consumer can observe the empty window that clear() opens.
