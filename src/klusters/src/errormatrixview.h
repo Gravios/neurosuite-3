@@ -383,12 +383,6 @@ private:
     /**Minimal abscissa in window coordinate*/
     long abscissaMin;
 
-    /**Maximal abscissa in window coordinate*/
-    long abscissaMax;
-
-    /**Minimal ordinate in window coordinate*/
-    long ordinateMin;
-
     /**Maximal ordinate in window coordinate*/
     long ordinateMax;
 

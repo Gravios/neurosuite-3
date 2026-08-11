@@ -613,12 +613,6 @@ private:
     /**Number of channels used to record the data.*/
     int nbChannels;
 
-    /**Position of the peak among the points decribing waveforms.*/
-    int peakPositionInWaveform;
-
-    /**Number of points used to describe a waveform.*/
-    int nbSamplesInWaveform;
-
     /**This variable keeps track of the current start time of the time window.*/
     long startTime;
 
