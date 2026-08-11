@@ -191,18 +191,26 @@ void KlustersDoc::closeDocument(){
 
 
 bool KlustersDoc::importDocument(const QString &url, const char *format ){
-    bool returnValue = true;
-
-    //1 - Get the base name of the file
-    //2 - load the config information: Parse the YAML config file, initialize clusteringData (loadConfigFromNewFormat())
-    //3 - load the spikes, clusters, time and PCA information (loadDataFromNewFormat())
-    return  returnValue;
+    // STUB.  This does nothing and reports success.
+    //
+    // It used to carry a three-step plan naming loadConfigFromNewFormat() and
+    // loadDataFromNewFormat(), neither of which exists -- so the comment described
+    // an implementation that was never written while the body returned true.  A
+    // reader had no way to tell the difference without checking both names.
+    //
+    // Importing goes through openDocument(); if this is ever needed, it should
+    // start from there rather than from the plan that was here.
+    Q_UNUSED(url); Q_UNUSED(format);
+    return true;
 }
 
 int KlustersDoc::openDocument(const QString &url,QString& errorInformation, const char *format ){
-    //1 - Get the base name of the file
-    //2 - load the config information: read the different files, initialize clusteringData (loadConfigFromNewFormat())
-    //3 - load the spikes, clusters, time and PCA information (loadDataFromNewFormat())
+    // Three steps, all inlined below rather than in the separate
+    // loadConfigFromNewFormat()/loadDataFromNewFormat() the old comment named --
+    // neither has existed for some time:
+    //   1 - derive the base name from the file
+    //   2 - read the session parameters and initialise clusteringData
+    //   3 - load the spikes, clusters, times and PCA
 
     //Initialize the members specific to a document
     clusteringData = new Data();

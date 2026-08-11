@@ -920,7 +920,6 @@ void KlustersApp::createMenus()
     connect(mMergeAllChildren, &QAction::triggered, this, &KlustersApp::slotFlattenHierarchyToClu);
     connect(mUndoChildEdit, &QAction::triggered, this, &KlustersApp::slotUndoChildEdit);
     connect(mRedoChildEdit, &QAction::triggered, this, &KlustersApp::slotRedoChildEdit);
-    //viewMenu = new QActionMenu(tr("&Window"), actionCollection(), "window_menu");
     newClusterDisplay = displayMenu->addAction(tr("New C&luster Display"));
     connect(newClusterDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewClusterDisplay);
 
