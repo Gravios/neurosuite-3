@@ -337,28 +337,42 @@ void KlustersDoc::updateHierarchyShadow(const QVector<dataType>& cluByRow,
                      || qEnvironmentVariableIsSet("NS3_SHADOW_HIERARCHY");
     if (!wanted) return;
 
+    // Derive a FRESH map from the arrays and compare the stored one against it.
+    //
+    // The stored map must not be rebuilt here.  Under the backend it is maintained
+    // incrementally by each operation, and clearing it before comparing would
+    // destroy exactly what is under test -- the comparison would then be the
+    // derivation checked against itself, which is the "comparing something to
+    // itself" error this session has already made once and which passes
+    // vacuously.
+    //
+    // With the backend off the stored map has no other writer, so it is seeded
+    // from the derivation and the comparison is trivially true -- that is the
+    // shadow's original behaviour and it is what makes turning the backend on the
+    // only thing that can produce a divergence.
     QElapsedTimer timer; timer.start();
-    shadowChildToParent.clear();
+    QMap<int,int> fresh;
     QSet<int> straddlers;
     for (int r = 1; r < n; ++r){
         const int c = static_cast<int>(childByRow[r]);
         if (c <= 0) continue;
         const int f = static_cast<int>(cluByRow[r]);
-        const auto it = shadowChildToParent.constFind(c);
-        if (it == shadowChildToParent.constEnd()) shadowChildToParent.insert(c, f);
+        const auto it = fresh.constFind(c);
+        if (it == fresh.constEnd()) fresh.insert(c, f);
         else if (it.value() != f) straddlers.insert(c);
     }
     const qint64 buildUs = timer.nsecsElapsed() / 1000;
+    if (!childPrimaryOn) shadowChildToParent = fresh;   // shadow mode: no other writer
 
     // Compare against the derived map the caller has just built.
     QList<int> onlyDerived, onlyShadow, disagree;
-    for (auto it = childToParent.constBegin(); it != childToParent.constEnd(); ++it){
+    for (auto it = fresh.constBegin(); it != fresh.constEnd(); ++it){
         const auto s = shadowChildToParent.constFind(it.key());
         if (s == shadowChildToParent.constEnd()) onlyDerived.append(it.key());
         else if (s.value() != it.value())        disagree.append(it.key());
     }
     for (auto it = shadowChildToParent.constBegin(); it != shadowChildToParent.constEnd(); ++it)
-        if (!childToParent.contains(it.key())) onlyShadow.append(it.key());
+        if (!fresh.contains(it.key())) onlyShadow.append(it.key());
 
     const bool agree = onlyDerived.isEmpty() && onlyShadow.isEmpty() && disagree.isEmpty();
     qDebug().noquote() << (childPrimaryOn ? "[childprimary]" : "[shadow]")
@@ -994,6 +1008,22 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     const int newId = static_cast<int>(childData->groupClusters(grp));   // mutates childData, self-snapshots
     ChildEdit e; e.added = { newId }; e.deleted = children;
     recordChildEdit(e);
+
+    // Child-primary: maintain the stored map directly.
+    //
+    // A merge does not change any child's PARENT -- the same-fiber guard above
+    // already established that all of them share one -- so the map edit is: the
+    // merged id inherits that parent, the consumed ids leave.  No spike is
+    // reparented, which is why this operation is O(children) under the new model
+    // and a full 422k-row re-derivation under the old one.
+    //
+    // Applied before rebuildHierarchyFromData() so that, with the backend off,
+    // the rebuild overwrites it from the arrays and the shadow comparison that
+    // follows is a genuine check of this edit rather than a copy of it.
+    if (childPrimaryOn) {
+        for (int c : children) shadowChildToParent.remove(c);
+        shadowChildToParent.insert(newId, parent);
+    }
 
     syncChildColors();
     rebuildHierarchyFromData();
