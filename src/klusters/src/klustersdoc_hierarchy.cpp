@@ -331,7 +331,11 @@ bool KlustersDoc::isChildScopeHidden(int clusterId) const{
 void KlustersDoc::updateHierarchyShadow(const QVector<dataType>& cluByRow,
                                         const QVector<dataType>& childByRow, int n)
 {
-    if (!qEnvironmentVariableIsSet("NS3_SHADOW_HIERARCHY")) return;
+    // Built when either shadow mode or the child-primary backend is on: under the
+    // backend this map is the authority, not a comparison copy.
+    const bool wanted = childPrimaryOn
+                     || qEnvironmentVariableIsSet("NS3_SHADOW_HIERARCHY");
+    if (!wanted) return;
 
     QElapsedTimer timer; timer.start();
     shadowChildToParent.clear();
@@ -357,7 +361,8 @@ void KlustersDoc::updateHierarchyShadow(const QVector<dataType>& cluByRow,
         if (!childToParent.contains(it.key())) onlyShadow.append(it.key());
 
     const bool agree = onlyDerived.isEmpty() && onlyShadow.isEmpty() && disagree.isEmpty();
-    qDebug().noquote() << "[shadow]" << (agree ? "AGREE" : "DIVERGE")
+    qDebug().noquote() << (childPrimaryOn ? "[childprimary]" : "[shadow]")
+                       << (agree ? "AGREE" : "DIVERGE")
                        << " children=" << shadowChildToParent.size()
                        << " straddlers=" << straddlers.size()
                        << " build=" << buildUs << "us";

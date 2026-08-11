@@ -1746,6 +1746,30 @@ private:
      *  Enabled by NS3_SHADOW_HIERARCHY.
      */
     QMap<int,int>        shadowChildToParent;
+    bool                 childPrimaryOn = false;   // set at construction from NS3_CHILD_PRIMARY
+
+    /** Child-primary backend: is the stored map the AUTHORITY, or the derived one?
+     *
+     *  Off (default): childToParent is derived from the two per-spike arrays on
+     *  every rebuild, and the stored map is only a shadow to compare against.
+     *  On (NS3_CHILD_PRIMARY): the stored map is authoritative -- edits update it
+     *  directly and the per-spike .clu is a projection of it.
+     *
+     *  The flag exists so the switch is reversible per session rather than per
+     *  build.  It is deliberately NOT a compile-time choice: the two models
+     *  disagree about which layer is authoritative, so the only honest way to
+     *  gain confidence is to run both against the same edits and compare, which
+     *  is what shadow mode already does.
+     *
+     *  Enabling it alone changes nothing yet -- no edit path writes the stored map.
+     *  Wiring those is the next step, one operation at a time, each verifiable by
+     *  the shadow continuing to AGREE.
+     */
+    bool childPrimaryBackend() const { return childPrimaryOn; }
+
+    /** The stored child->parent map: authority under the child-primary backend,
+     *  shadow otherwise.  Named for what it holds, not for its current role. */
+    const QMap<int,int>& storedChildToParent() const { return shadowChildToParent; }
     void updateHierarchyShadow(const QVector<dataType>& cluByRow,
                                const QVector<dataType>& childByRow, int n);
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
