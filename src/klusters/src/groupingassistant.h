@@ -167,32 +167,39 @@ public:
 
     /**The MODEL INDEX contract.
      *
-     * Five places in the .cpp walk clusterInfoMap and derive a counter -- always
-     * called `ci` -- by incrementing alongside the iterator.  That counter is not
-     * merely a loop variable; it is simultaneously
+     * buildModelIndex() below is the only thing IN THIS FILE that walks
+     * clusterInfoMap.  Every
+     * loop that needs a per-cluster counter iterates the vector it returns, and
+     * every array sized per cluster is sized from that vector's size().  A cluster's
+     * POSITION in it is simultaneously
      *
-     *   - the position of the cluster within clusterInfoMap,
      *   - the row AND column of that cluster in means, cholesky and errorMatrix,
      *   - the value stored in and tested against ignoreClusterIndex,
      *   - the index into the entries/cdata vectors handed to the kernels.
      *
-     * One variable, four meanings, no type or name separating them, and no comment
-     * anywhere previously stating that the five walks must agree.  That agreement is
-     * the invariant the whole file rests on: change the order or the membership of
-     * one walk and the matrices are still produced, still plausible, and wrong.
+     * One number, three meanings, no type separating them.  Change the order or the
+     * membership seen by one consumer and not another and the matrices are still
+     * produced, still plausible, and wrong.
      *
-     * The walks are at (as of this commit) the incremental entries build, the
-     * incremental model build, the cluster-1 column search, the full entries build,
-     * and the full model build.  They all start at 1 -- or at initIndex, which is 1
-     * shifted when a synthetic column is prepended -- and none of them skips.
+     * This was previously twelve independent walks, each incrementing its own
+     * counter in its for-header -- eight in the default build and four more inside
+     * the CUDA/HIP/SYCL and OpenMP guards, which no single-configuration parse can
+     * see.  Agreement between them was a property of each happening to be written
+     * the same way, and nothing enforced it.  Converting them to range-for dropped
+     * the increment in three, leaving `ci` frozen so every cluster was modelled from
+     * cluster 1's statistics -- a fully populated, entirely plausible, wrong matrix,
+     * which is the failure mode this contract exists to describe.
      *
-     * NOTHING MAY SKIP.  This is the reason setActiveClusters() excludes a cluster by
-     * marking it ignored rather than omitting it: omitting compacts the counter in
-     * one walk and not the others, and the resulting index shift produces a
-     * probability matrix that looks entirely reasonable.  Making the walks skip in
-     * step -- which is what would turn the scoped matrices from O(session) into
-     * O(parent) -- means changing all five together, plus the two places nbClusters
-     * is sized, and is deliberately not attempted piecemeal.
+     * Two rules follow, and both are load-bearing:
+     *
+     *   - The index is built ONCE per compute and shared.  Rebuilding it per use
+     *     reopens the possibility of two consumers disagreeing.
+     *   - Membership is decided ONLY inside buildModelIndex().  Filtering again at
+     *     a consumer -- for instance by also setting cd.ignore from clusterInScope
+     *     -- marks rows the caller never asked to ignore, because ignoreClusterIndex
+     *     holds positions in the very index being filtered.  That produced an
+     *     all-zero error matrix and is why setActiveClusters is applied here and
+     *     nowhere else.
      */
     /**1-based cluster ids to include; empty — the default — means every cluster,
      * so existing callers are unaffected.  Mirrors setActiveDimensions above: an
@@ -220,16 +227,10 @@ private:
 
     /**THE single producer of the model index.
      *
-     * Eight loops in the .cpp used to walk clusterInfoMap independently, each
-     * incrementing its own counter -- ci, clusterIndex or c0 -- and those counters
-     * are read at 34 places as matrix row, ignore key and kernel array index.  Six
-     * further loops run 1..nbClusters over the same space without walking the map
-     * at all.  Nothing tied them together; agreement was a property of every one of
-     * them being written the same way, and the moment one skipped they diverged
-     * silently into a plausible, wrong matrix.
-     *
-     * Now they all iterate this, so the order and the membership are decided once.
-     * Sizing comes from its size(), so the 1..nbClusters loops move with it.
+     * See the MODEL INDEX contract above for why this is the single producer and
+     * what depends on it.  Sizing comes from its size(), so the loops that run
+     * 1..nbClusters over the same space move with it rather than needing to be
+     * found separately.
      *
      * With activeClusters empty -- every existing caller -- this returns every
      * cluster in map order and each counter takes exactly the values it always
