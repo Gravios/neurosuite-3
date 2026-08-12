@@ -876,6 +876,23 @@ void KlustersDoc::collapseToSelfChildren(){
     syncChildColors();
     rebuildHierarchyFromData();
     emit hierarchyChanged();
+    // Publish what the re-cut decided, so the child-primary map records the SAME
+    // answer rather than reconstructing it.
+    //
+    // splitTarget[F][a] is the target child minted for source atom `a` on fiber F.
+    // That is the complete decision -- which side keeps the original id and which
+    // gets a fresh one -- and it is made here, with the coverage table in hand.
+    // Predicting it from outside means implementing the plurality rule, the
+    // self-child rule and the sole-source rule a second time, which is how a shared
+    // policy starts drifting.  Consuming it means the map cannot disagree with the
+    // split, because it is using the split's own output.
+    if (childPrimaryOn) {
+        noteMapEdit("collapseToSelfChildren");
+        for (auto f = splitTarget.constBegin(); f != splitTarget.constEnd(); ++f)
+            for (auto s = f.value().constBegin(); s != f.value().constEnd(); ++s)
+                shadowChildToParent.insert(s.value(), f.key());
+    }
+
 }
 
 void KlustersDoc::refiberize(){
