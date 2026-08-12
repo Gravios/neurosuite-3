@@ -381,6 +381,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     //
     // Captured before the mutation, since afterwards parentToChildren no longer
     // lists them.
+    noteMapEdit("deleteClusters");
     if (childPrimaryOn && childData) {
         if (childScopeActive)
             for (int c : clustersToDelete) shadowChildToParent.insert(c, clusterId);
@@ -782,6 +783,34 @@ void KlustersDoc::commitClusterCreation(int newId,
     }
 
     // Notify the error-matrix / template-matrix views.
+    // Child-primary: a PARENT-scope split -- the only operation that can straddle
+    // a child, and the only one that has to decide how to divide it.
+    //
+    // The rule is the one the model was tested on: a child whose spikes moved
+    // WHOLLY keeps its id and is simply reparented onto the new fiber; a child
+    // genuinely divided is not resolvable here, because commitClusterCreation sees
+    // only the fiber-level result.  The straddling case is therefore left to
+    // collapseToSelfChildren, and the divergence report names it -- which is the
+    // measurement worth having, since that repair is what the migration removes.
+    noteMapEdit("splitParent");
+    if (childPrimaryOn && childData && !childScopeActive) {
+        // Hoisted: labelByFeatureRow() returns BY VALUE, so calling it inside the
+        // loop would copy a 422k-element vector per child.
+        const QVector<dataType> labels = clusteringData->labelByFeatureRow();
+        for (int f : fromClusters)
+            for (int c : parentToChildren.value(f)) {
+                const QVector<int> spk = childData->clusterSpkIndices(c);
+                if (spk.isEmpty()) continue;
+                bool anyMoved = false, allMoved = true;
+                for (int i : spk) {
+                    const bool moved = (i < labels.size()
+                                        && static_cast<int>(labels[i]) == newId);
+                    anyMoved |= moved; allMoved &= moved;
+                }
+                if (allMoved && anyMoved) shadowChildToParent.insert(c, newId);
+            }
+    }
+
     emit newClusterAdded(fromClusters, newId, emptiedClusters);
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
@@ -951,6 +980,19 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // Ctrl+Shift+Z reverts it: 'added' is removed and the sources restored.
         ChildEdit e; e.added = { newAtom }; e.modified = fromClusters; e.deleted = emptyClusters;
         recordChildEdit(e);
+
+        // Child-primary: a child split.  The new atom is a sibling under the SAME
+        // parent -- a split within the child layer cannot move spikes between
+        // fibers -- so the map gains one entry and loses any source consumed
+        // entirely.  This is the only class of operation that changes child
+        // MEMBERSHIP rather than just parentage.
+        noteMapEdit("splitChild");
+    if (childPrimaryOn) {
+            int parent = -1;
+            for (int src : fromClusters) { parent = shadowChildToParent.value(src, -1); if (parent >= 0) break; }
+            if (parent >= 0) shadowChildToParent.insert(newAtom, parent);
+            for (int c : emptyClusters) shadowChildToParent.remove(c);
+        }
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();

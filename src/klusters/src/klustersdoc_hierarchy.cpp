@@ -397,11 +397,14 @@ void KlustersDoc::updateHierarchyShadow(const QVector<dataType>& cluByRow,
     const bool agree = onlyDerived.isEmpty() && onlyShadow.isEmpty() && disagree.isEmpty();
     qDebug().noquote() << (childPrimaryOn ? "[childprimary]" : "[shadow]")
                        << (agree ? "AGREE" : "DIVERGE")
+                       << " after=" << (lastMapEdit.isEmpty() ? QStringLiteral("(unwired)") : lastMapEdit)
                        << " children=" << shadowChildToParent.size()
                        << " straddlers=" << straddlers.size()
                        << " build=" << buildUs << "us";
+    const QString who = lastMapEdit; lastMapEdit.clear();
     if (!agree)
-        qWarning() << "[shadow] derived-only:" << onlyDerived.size()
+        qWarning() << "[childprimary] after" << (who.isEmpty() ? QStringLiteral("(unwired path)") : who)
+                   << "-- derived-only:" << onlyDerived.size()
                    << " shadow-only:" << onlyShadow.size()
                    << " disagreeing:" << disagree.size()
                    << " (a straddler explains a disagreement: the derived map keeps"
@@ -896,6 +899,7 @@ int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activ
     // Child-primary: every child of a folded fiber is reparented onto the survivor.
     // No child is split or created -- a fiber merge is a pure map operation, which
     // is the clearest case of the O(children) versus O(nSpikes) difference.
+    noteMapEdit("mergeParentFibers");
     if (childPrimaryOn)
         for (int f : fibers)
             if (f != kept)
@@ -947,7 +951,8 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
         // Child-primary: one map entry per promoted child.  Their spikes keep their
         // child ids -- only the parent changes -- so this is a reparent, matching
         // what the relabel above does to the .clu of those rows.
-        if (childPrimaryOn) shadowChildToParent.insert(c, dest);
+        noteMapEdit("promoteChildren");
+    if (childPrimaryOn) shadowChildToParent.insert(c, dest);
 
         if (target < 0){
             target = newId;
@@ -1005,6 +1010,7 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     // their child id, which is what the moveSpikeSubsetToCluster above already
     // does: it changes the .clu of those rows and leaves the .clc alone.  So the
     // map edit is one entry, and it says the same thing the relabel does.
+    noteMapEdit("dropChildToNoise");
     if (childPrimaryOn) shadowChildToParent.insert(childCluster, 1);
 
     setPendingFiberSelection({parent});   // land on the source fiber (noise isn't selectable)
@@ -1068,6 +1074,7 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     // Applied before rebuildHierarchyFromData() so that, with the backend off,
     // the rebuild overwrites it from the arrays and the shadow comparison that
     // follows is a genuine check of this edit rather than a copy of it.
+    noteMapEdit("mergeChildren");
     if (childPrimaryOn) {
         for (int c : children) shadowChildToParent.remove(c);
         shadowChildToParent.insert(newId, parent);
@@ -1166,6 +1173,12 @@ int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
     recordChildEdit(e);
 
     syncChildColors();
+    // Child-primary: a flatten rewrites the whole relation -- every fiber ends up
+    // covered by one atom carrying its own id -- so the map is RESEEDED from the
+    // arrays rather than edited.  Clearing the seed flag makes the next rebuild do
+    // it, which is the same path the load uses and therefore the same code.
+    if (childPrimaryOn) { shadowChildToParent.clear(); storedMapSeeded = false; }
+
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
@@ -1181,6 +1194,14 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     childData->undo(added, mod);                       // reverts childData's tables
     childRedoStack.prepend(e);
     syncChildColors();
+    // Child-primary: an undo restores a previous labelling, and the map that goes
+    // with it is not recoverable from the ChildEdit -- it records id SETS, not the
+    // parentage they had.  So the map is reseeded from the restored arrays.  That
+    // is correct but wasteful: recording the map delta alongside the ChildEdit
+    // would make undo O(edited) like every other operation, and is the one place
+    // this backend still needs a design decision rather than wiring.
+    if (childPrimaryOn) { shadowChildToParent.clear(); storedMapSeeded = false; }
+
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
@@ -1196,6 +1217,14 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     childData->redo(added, mod, deleted);             // re-applies the atom edit
     childUndoStack.prepend(e);
     syncChildColors();
+    // Child-primary: an undo restores a previous labelling, and the map that goes
+    // with it is not recoverable from the ChildEdit -- it records id SETS, not the
+    // parentage they had.  So the map is reseeded from the restored arrays.  That
+    // is correct but wasteful: recording the map delta alongside the ChildEdit
+    // would make undo O(edited) like every other operation, and is the one place
+    // this backend still needs a design decision rather than wiring.
+    if (childPrimaryOn) { shadowChildToParent.clear(); storedMapSeeded = false; }
+
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
