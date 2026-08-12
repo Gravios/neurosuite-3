@@ -1747,6 +1747,7 @@ private:
      */
     QMap<int,int>        shadowChildToParent;
     bool                 childPrimaryOn = false;   // set at construction from NS3_CHILD_PRIMARY
+    bool                 storedMapSeeded = false;  // the stored map has an initial value
 
     /** Child-primary backend: is the stored map the AUTHORITY, or the derived one?
      *
