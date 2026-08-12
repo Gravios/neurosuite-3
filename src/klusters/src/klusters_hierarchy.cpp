@@ -224,7 +224,7 @@ void KlustersApp::slotRedoChildEdit(){
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
 }
 
-void KlustersApp::slotPromoteChildren(){
+void KlustersApp::slotGroupChildrenIntoParent(){
     if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
     if(kids.isEmpty()){

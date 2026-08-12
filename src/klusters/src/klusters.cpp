@@ -912,7 +912,7 @@ void KlustersApp::createMenus()
     mRedoChildEdit->setEnabled(false);
     connect(mMergeParents, &QAction::triggered, this, &KlustersApp::slotMergeParents);
     connect(mPromoteChild, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
-    connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
+    connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotGroupChildrenIntoParent);
     connect(mDissolveParent, &QAction::triggered, this, &KlustersApp::slotDissolveParent);
     connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
     connect(mRepairNesting, &QAction::triggered, this, &KlustersApp::slotRepairNesting);
