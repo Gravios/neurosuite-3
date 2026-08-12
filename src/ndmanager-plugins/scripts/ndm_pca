@@ -189,16 +189,6 @@ once()
 	waveformLength=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
 	nFeatures=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures")
 
-	# featureLag: 0 (or absent) = the classic PC1,PC2,PC3 space.  N>0 selects the
-	# lag feature space fiber-session builds under --feat-lag N -- PC1 sampled at
-	# -N/0/+N samples plus PC2, so FOUR columns per channel instead of three, and
-	# the columns are not orthogonal.  Per group because nFeatures is: a group can
-	# be re-featurised on its own.
-	#
-	# Optional, so an existing session with no such key behaves exactly as before.
-	featureLag=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/featureLag")
-	check_optional_variable $featureLag || featureLag=0
-
 	check_mandatory_variable $waveformLength "missing number of samples per waveform"
 	check_mandatory_variable $nFeatures "missing number of features"
 
@@ -288,14 +278,7 @@ once()
 		pcaInput=$tmpspk
 	fi
 
-	# --feature-lag is passed only when set, so the engine's command line for a
-	# classic session is byte-identical to what it was.
-	lagArg=""
-	if [ "$featureLag" -gt 0 ] 2>/dev/null; then
-		lagArg="--feature-lag $featureLag"
-	fi
-
-	process_pca -g $electrodeGroup -f $fetout.tmp -n $nPca -w $waveformLength -d $nFeatures --pca-method $pcaMethod $lagArg $options ${@:2} $pcaInput
+	process_pca -g $electrodeGroup -f $fetout.tmp -n $nPca -w $waveformLength -d $nFeatures --pca-method $pcaMethod $options ${@:2} $pcaInput
 	check_command_status process_pca
 	[ -n "$tmpspk" ] && rm -f "$tmpspk"
 

@@ -194,7 +194,7 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
     // So an existing per-group value always wins.  The caller's value is used only
     // for groups that do not have one -- a group neuroscope just created, where its
     // session-wide value is the only information available.
-    QMap<int,int> existingNFeatures, existingNSamples, existingPeak, existingFeatureLag;
+    QMap<int,int> existingNFeatures, existingNSamples, existingPeak;
     auto existing = root["spikeDetection"]["channelGroups"];
     if (existing && existing.IsSequence()) {
         int idx = 1;
@@ -205,21 +205,6 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
                 existingNSamples[idx] = grp["nSamples"].as<int>(0);
             if (grp["peakSampleIndex"])
                 existingPeak[idx] = grp["peakSampleIndex"].as<int>(0);
-            // featureLag: 0 = the classic PC1,PC2,PC3 space.  Non-zero selects the
-            // lag feature space fiber-session builds under --feat-lag N: PC1 sampled
-            // at -N/0/+N samples plus PC2, four columns per channel instead of three.
-            //
-            // It is per GROUP because nFeatures already is, and the two describe the
-            // same thing -- the width and the meaning of a channel's feature block.
-            // A group can be re-featurised on its own, so a session-wide value would
-            // be wrong for every group that had not been.
-            //
-            // Absent means 0, and 0 means classic.  Preserved on save like the other
-            // three: this writer turns an absent spike-group field into its default,
-            // so a field it does not know about is silently zeroed -- which is how a
-            // key-name typo once became nSamples: 0.
-            if (grp["featureLag"])
-                existingFeatureLag[idx] = grp["featureLag"].as<int>(0);
             ++idx;
         }
     }
@@ -245,10 +230,6 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
         grp["nSamples"]        = existingNSamples.value(it.key(), nbSamples);
         grp["peakSampleIndex"] = existingPeak.value(it.key(), peakSampleIndex);
         grp["nFeatures"]       = existingNFeatures.value(it.key(), 3);
-        // Written only when non-zero, so a classic session's YAML is unchanged and
-        // an older ndmanager reading it sees exactly what it saw before.
-        if (existingFeatureLag.value(it.key(), 0) != 0)
-            grp["featureLag"]  = existingFeatureLag.value(it.key(), 0);
         seq.push_back(grp);
     }
     sd["channelGroups"] = seq;

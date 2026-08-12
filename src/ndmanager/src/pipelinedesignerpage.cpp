@@ -94,8 +94,7 @@ const QVector<NdmScriptDef>& ndmScriptDefs()
         // ── Grouping ──────────────────────────────────────────────────────
         { "ndm_setupgroups", "Setup Groups", "Build groups from probe file", "grouping", "spikes",
           {{ "nSamples","52","Optional" }, { "peakSampleIndex","26","Optional" },
-           { "nFeatures","3","Optional" }, { "featureLag","0","Optional" },
-             { "probeLibrary","","Optional" }} },
+           { "nFeatures","3","Optional" }, { "probeLibrary","","Optional" }} },
         { "ndm_spikegrouper", "Spike Grouper", "Auto-discover channel groups", "grouping", "spikes",
           {{ "thresholdFactor","3.0","Mandatory" }, { "refractoryMs","1.0","Mandatory" },
            { "windowSec","60","Mandatory" }, { "maxSubGroups","16","Mandatory" }} },
