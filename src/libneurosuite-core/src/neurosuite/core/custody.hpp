@@ -55,27 +55,74 @@ struct MethodSpec {
     std::string family;
     char        kind;    // 'S', 'C', or '\0' when absent
     int         order;   // -1 when absent
+    int         lag;     // feature-space lag from a _D<lag><dims> suffix; 0 when absent
+    int         dims;    // features per channel from that suffix; 0 when absent
 };
 
+// Peel one <letter><digits> suffix off the end of @p m, if the LAST underscore
+// introduces one.  Returns false and leaves @p m alone otherwise.
+inline bool peelSuffix(std::string& m, char& letter, int& value)
+{
+    const std::string::size_type u = m.rfind('_');
+    if (u == std::string::npos) return false;
+    const std::string suffix = m.substr(u + 1);
+    if (suffix.size() < 2) return false;
+    int val = 0;
+    for (std::string::size_type i = 1; i < suffix.size(); ++i) {
+        if (suffix[i] < '0' || suffix[i] > '9') return false;
+        val = val * 10 + (suffix[i] - '0');
+    }
+    letter = suffix[0];
+    value  = val;
+    m      = m.substr(0, u);
+    return true;
+}
+
+// <family>[_<kind><order>][_D<lag><dims>]
+//
+// Suffixes are peeled from the RIGHT, so a token may carry more than one.  This
+// matters because fiber-session emits stderiv_C5_D34: _C5 is the custom spatial
+// difference and _D34 is the lag feature space -- PC1 sampled at -3/0/+3 plus PC2,
+// four columns per channel instead of three.
+//
+// Parsing only the last suffix, as this did, made stderiv_C5_D34 opaque: 'D' is
+// neither 'S' nor 'C', so the whole string became the family and
+// isStderivMethod() returned FALSE for a session that is plainly stderiv.  The
+// nudge then took the non-stderiv extraction and re-featurisation path.  That was
+// the grammar's documented behaviour for a malformed token applied to a token
+// that is not malformed, only newer.
+//
+// An unrecognised suffix still makes the whole string opaque, deliberately: a
+// token nobody understands must not masquerade as a known family.
 inline MethodSpec parseMethodToken(const std::string& m)
 {
     MethodSpec spec;
     spec.family = m;
     spec.kind   = '\0';
     spec.order  = -1;
-    const std::string::size_type u = m.rfind('_');
-    if (u == std::string::npos) return spec;
-    const std::string suffix = m.substr(u + 1);
-    if (suffix.size() < 2) return spec;
-    if (suffix[0] != 'S' && suffix[0] != 'C') return spec;
-    int val = 0;
-    for (std::string::size_type i = 1; i < suffix.size(); ++i) {
-        if (suffix[i] < '0' || suffix[i] > '9') return spec;
-        val = val * 10 + (suffix[i] - '0');
+    spec.lag    = 0;
+    spec.dims   = 0;
+
+    std::string rest = m;
+    char letter = '\0'; int value = 0;
+    bool sawKind = false, sawDims = false;
+
+    while (peelSuffix(rest, letter, value)) {
+        if (letter == 'D' && !sawDims) {
+            // _D<lag><dims>: single digit each, so 34 is lag 3, 4 dims per channel.
+            if (value < 10) return spec;                 // needs both digits
+            spec.lag  = value / 10;
+            spec.dims = value % 10;
+            sawDims = true;
+        } else if ((letter == 'S' || letter == 'C') && !sawKind) {
+            spec.kind  = letter;
+            spec.order = value;
+            sawKind = true;
+        } else {
+            return spec;                                  // unknown or repeated: opaque
+        }
+        spec.family = rest;
     }
-    spec.family = m.substr(0, u);
-    spec.kind   = suffix[0];
-    spec.order  = val;
     return spec;
 }
 
