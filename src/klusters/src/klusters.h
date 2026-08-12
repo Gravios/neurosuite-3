@@ -310,8 +310,8 @@ private Q_SLOTS:
     void repopulateChildPalette(const QList<int>& parents);
     /** Hierarchy edits driven from the palettes' current selection. */
     void slotMergeParents();
-    void slotPromoteChildren();
-    void slotPromoteChildren();
+    void slotGroupChildrenIntoParent();   ///< pool the selection into ONE new parent
+    void slotPromoteChildren();           ///< one new parent per selected child
     void slotDissolveParent();
     void slotRepairNesting();
     void slotDropChildToNoise();

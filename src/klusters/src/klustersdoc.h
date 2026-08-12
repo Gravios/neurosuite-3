@@ -313,6 +313,13 @@ public:
      *  .clc sibling.  No-op returning true if already loaded; false (with
      *  errorInformation) if the sibling is missing or unreadable. */
     bool loadChildClustering(QString& errorInformation);
+
+    /** Re-derive the stored child->parent map.  Public because KlustersApp calls it
+     *  from applyPendingParentSelection(), the point at which the post-edit
+     *  automation -- realign, renumber, matrix update -- has finished and the
+     *  arrays have stopped changing. */
+    void deriveStoredMap();   // public: called from KlustersApp at the settled point
+
     /** Child ids whose parent is one of @p parents (sorted, unique). */
     QList<int> childrenOf(const QList<int>& parents) const;
 
@@ -1767,7 +1774,6 @@ private:
      *  current design already pays on every edit; making it incremental needs the
      *  changed-spike set the mutators already hold, and is a later optimisation.
      */
-    void deriveStoredMap();
 
     /** Child-primary backend: is the stored map the AUTHORITY, or the derived one?
      *
