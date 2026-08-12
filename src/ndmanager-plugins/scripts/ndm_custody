@@ -117,7 +117,7 @@ ndm_resolve()
     esac
 }
 
-# Decompose a method token <family>[_<kind><order>] (e.g. stderiv_C4) into
+# Decompose a method token <family>[_<kind><order>][_D<lag><dims>] into
 # NOTE: named _token to stay clear of ndm_parse_method in ndm_functions, which
 # parses a --method FLAG out of an argument list.  ndm_functions sources this file
 # afterwards, so a clashing name here silently replaces that one.
@@ -127,16 +127,29 @@ ndm_resolve()
 # suffix grammar is opaque: the whole string becomes the family, so an unknown
 # token never masquerades as a known one.
 ndm_parse_method_token() {
-    local m="$1" suf
-    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""
-    case "$m" in
-        *_[SC][0-9]|*_[SC][0-9][0-9]) : ;;
-        *) return 0 ;;
-    esac
-    suf="${m##*_}"
-    NDM_M_FAMILY="${m%_*}"
-    NDM_M_KIND="${suf:0:1}"
-    NDM_M_ORDER="${suf:1}"
+    local m="$1" suf rest
+    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
+    rest="$m"
+    # Peel suffixes from the RIGHT, so a token may carry more than one.  Parsing
+    # only the last one made stderiv_C5_D34 opaque -- 'D' is neither S nor C, so
+    # the whole string became the family and ndm_is_stderiv_method said no for a
+    # session that is plainly stderiv.
+    while : ; do
+        case "$rest" in
+            *_D[0-9][0-9])
+                [ -n "$NDM_M_LAG" ] && return 0        # repeated: opaque
+                suf="${rest##*_}"
+                NDM_M_LAG="${suf:1:1}"; NDM_M_DIMS="${suf:2:1}"
+                rest="${rest%_*}" ;;
+            *_[SC][0-9]|*_[SC][0-9][0-9])
+                [ -n "$NDM_M_KIND" ] && return 0        # repeated: opaque
+                suf="${rest##*_}"
+                NDM_M_KIND="${suf:0:1}"; NDM_M_ORDER="${suf:1}"
+                rest="${rest%_*}" ;;
+            *) break ;;
+        esac
+        NDM_M_FAMILY="$rest"
+    done
 }
 
 # True for the stderiv family: bare legacy "stderiv" and any stderiv_<kind><order>.

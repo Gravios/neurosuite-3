@@ -153,23 +153,44 @@ def resolve(base, type_, group, method):
     return Resolved(cands[0], method, False)
 
 
-MethodSpec = namedtuple("MethodSpec", "family kind order")
+# lag/dims default to 0 so existing unpacking by position keeps working.
+MethodSpec = namedtuple("MethodSpec", "family kind order lag dims",
+                        defaults=(0, 0))
 
 
 def parse_method_token(method):
-    """Decompose a method token <family>[_<kind><order>], e.g. "stderiv_C4".
+    """Decompose a method token <family>[_<kind><order>][_D<lag><dims>].
+
+    Suffixes peel from the RIGHT, so a token may carry more than one:
+    stderiv_C5_D34 is the custom sdiffPairs pattern AND the lag feature space.
 
     kind is "S" (plain methodOrder derivative) or "C" (the session's custom
     sdiffPairs pattern); order is the spatial-derivative order actually applied.
     A token that does not match the suffix grammar is opaque: the whole string
     becomes the family, so an unknown token never masquerades as a known one.
     """
-    cut = method.rfind("_")
-    if cut != -1:
-        suffix = method[cut + 1:]
-        if len(suffix) >= 2 and suffix[0] in ("S", "C") and suffix[1:].isdigit():
-            return MethodSpec(method[:cut], suffix[0], int(suffix[1:]))
-    return MethodSpec(method, None, None)
+    rest, kind, order, lag, dims = method, None, None, 0, 0
+    while True:
+        cut = rest.rfind("_")
+        if cut == -1:
+            break
+        suffix = rest[cut + 1:]
+        if len(suffix) < 2 or not suffix[1:].isdigit():
+            break
+        if suffix[0] == "D":
+            if lag or len(suffix) != 3:      # repeated, or not _D<lag><dims>
+                return MethodSpec(method, None, None, 0, 0)
+            lag, dims = int(suffix[1]), int(suffix[2])
+        elif suffix[0] in ("S", "C"):
+            if kind:
+                return MethodSpec(method, None, None, 0, 0)
+            kind, order = suffix[0], int(suffix[1:])
+        else:
+            return MethodSpec(method, None, None, 0, 0)
+        rest = rest[:cut]
+    if kind is None and not lag:
+        return MethodSpec(method, None, None, 0, 0)
+    return MethodSpec(rest, kind, order, lag, dims)
 
 
 def is_stderiv_method(method):
