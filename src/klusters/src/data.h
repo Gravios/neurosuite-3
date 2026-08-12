@@ -609,7 +609,7 @@ public:
     /** Per-feature-row cluster label: returns a vector of size nbSpikes+1 where
      *  result[r] is the cluster id of the spike at 1-based feature row r (index 0
      *  unused).  Read-only; used by the hierarchical view to re-derive the
-     *  fiber<-child maps from the live clustering after an edit or undo. */
+     *  parent<-child maps from the live clustering after an edit or undo. */
     QVector<dataType> labelByFeatureRow() const {
         QVector<dataType> out(static_cast<int>(nbSpikes) + 1, 0);
         for (auto it = clusterInfoMap->begin(); it != clusterInfoMap->end(); ++it) {

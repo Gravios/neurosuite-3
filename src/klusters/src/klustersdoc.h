@@ -322,7 +322,7 @@ public:
      *  KlustersDoc& and have no route to the app.
      */
     /** Whether the matrices should compare a parent's children rather than the
-     *  fibers.  Toggled by the V key; off by default.
+     *  parents.  Toggled by the V key; off by default.
      *
      *  Deliberately an explicit mode rather than something inferred from focus.
      *  Focus is not intent: clicking a matrix to read a cell moves focus out of the
@@ -345,21 +345,21 @@ public:
      *
      *  ONE owner for one fact.  This used to be derived on every palette rebuild
      *  from clusterPalette->selectedClusters(), which made it a function of the
-     *  fiber selection at that instant -- so any incidental change to that
+     *  parent selection at that instant -- so any incidental change to that
      *  selection moved the user to another parent mid-curation.  Three
      *  representations of the same thing (the scope parent, the palette slot, and
-     *  the fiber selection) were kept in step by hand, and every bug in this
+     *  the parent selection) were kept in step by hand, and every bug in this
      *  feature has been two of them disagreeing.
      *
      *  It changes in exactly two situations:
-     *    - the user selects a fiber (ClusterPalette only emits updateShownClusters
+     *    - the user selects a parent (ClusterPalette only emits updateShownClusters
      *      when !isInSelectItems, so a programmatic selection cannot do it);
      *    - the parent ceases to exist, in which case the caller sets its neighbour.
      *
      *  No operation changes it.  A merge, split or delete lands on its own output
      *  under the same parent, which is what makes the mode usable for curation.
      */
-    void setCuratedParent(int fiberId);
+    void setCuratedParent(int parentId);
     int  curatedParent() const { return curatedParentId; }
 
     /** The layer the matrix views must compute over.
@@ -372,7 +372,7 @@ public:
      *  data()==clusteringData, while the scope subset holds atom ids.  Feeding one
      *  to the other gave OVERLAP=0 -- and worse, for one parent, a partial overlap
      *  of 171 coincidental id collisions, which would have produced a matrix over
-     *  an arbitrary set of fibers that looked entirely plausible.
+     *  an arbitrary set of parents that looked entirely plausible.
      *
      *  So the views ask for the layer the scope is expressed in, rather than
      *  inheriting whatever the rest of the app is currently showing.
@@ -385,8 +385,8 @@ public:
      *  are the ones I mean" before merging them.  When the matrix is scoped, those
      *  ids are atoms and the selection belongs in the CHILD palette --
      *  shownClustersUpdate() cannot deliver it, because its palette refresh is
-     *  guarded on !childScopeActive, so a scoped click landed in the fiber palette
-     *  and picked whichever fiber happened to carry the atom's number.
+     *  guarded on !childScopeActive, so a scoped click landed in the parent palette
+     *  and picked whichever parent happened to carry the atom's number.
      *
      *  @p previous is the prior selection, passed through to shownClustersUpdate in
      *  the unscoped case only; the child palette has no equivalent notion.
@@ -439,18 +439,18 @@ public:
     void setActiveClustering(bool child);
     bool isChildClusteringActive() const { return childScopeActive; }
 
-    /// Record a parent fiber whose spike membership an operation created or changed.
-    /// Drained by takeModifiedFibers() in the coalesced post-edit step to drive the
-    /// per-fiber auto-realign.  Ignores noise/artifact (id <= 1) and de-duplicates.
-    void noteModifiedFiber(int clusterId);
-    /// Return and clear the fibers accumulated since the last drain.
-    QList<int> takeModifiedFibers();
+    /// Record a parent parent whose spike membership an operation created or changed.
+    /// Drained by takeModifiedParents() in the coalesced post-edit step to drive the
+    /// per-parent auto-realign.  Ignores noise/artifact (id <= 1) and de-duplicates.
+    void noteModifiedParent(int clusterId);
+    /// Return and clear the parents accumulated since the last drain.
+    QList<int> takeModifiedParents();
 
-    /// Record the parent fibers an operation produced/kept that the post-edit step
+    /// Record the parent parents an operation produced/kept that the post-edit step
     /// should land the selection on (parent scope).  Applied last, after the async
-    /// realign + renumber, by KlustersApp::applyPendingFiberSelection.  The first id
+    /// realign + renumber, by KlustersApp::applyPendingParentSelection.  The first id
     /// is treated as the primary (the one the views/palette centre on).
-    void setPendingFiberSelection(const QList<int>& fibers);
+    void setPendingParentSelection(const QList<int>& parents);
 
     /** Refresh whichever palette the edit happened in and land on @p toSelect.
      *  Replaces the ~20 inline `updateClusterList(); selectItems(...)` pairs, each
@@ -465,12 +465,12 @@ public:
      *  Reads the ACTIVE layer, so it answers for atoms in child scope.
      */
     int neighbourAfterRemoval(const QList<int>& removed) const;
-    /// Return and clear the pending fiber selection.
-    QList<int> takePendingFiberSelection();
+    /// Return and clear the pending parent selection.
+    QList<int> takePendingParentSelection();
 
     /** Children to select once the child palette has finished rebuilding.
      *
-     *  The same mechanism the fiber palette already has, for the same reason.  An
+     *  The same mechanism the parent palette already has, for the same reason.  An
      *  operation emits its landing immediately, but the automation scheduled off
      *  hierarchyChanged repopulates the palette again afterwards with no landing
      *  behind it -- so the last rebuild wins and the landing is gone.  Parking the
@@ -479,9 +479,9 @@ public:
      */
     void setPendingChildSelection(const QList<int>& children);
     QList<int> takePendingChildSelection();
-    /// Translate the pending fiber selection through a renumber map (old->new), so a
-    /// selection recorded before renumber still points at the produced fibers after.
-    void renumberPendingFiberSelection(const QMap<int,int>& oldNew);
+    /// Translate the pending parent selection through a renumber map (old->new), so a
+    /// selection recorded before renumber still points at the produced parents after.
+    void renumberPendingParentSelection(const QMap<int,int>& oldNew);
     /** Restrict the child palette to @p visibleChildren; the rest are hidden via
      *  isChildScopeHidden(), which ClusterPalette::updateClusterList honours. */
     void setChildScope(const QList<int>& visibleChildren);
@@ -490,41 +490,41 @@ public:
     bool isChildScopeHidden(int clusterId) const;
 
     // ── hierarchy EDITS (operate on the parent .clu; re-derive maps after) ───
-    /** Merge fibers @p fibers into one (reuses groupClusters); their children
-     *  union under the kept id.  Returns the kept fiber id, or -1. */
-    int mergeParentFibers(const QList<int>& fibers, KlustersView& activeView);
-    /** Detach child @p childCluster from its fiber into a new fiber of its own
-     *  (the spikes become a new .clu cluster).  Returns the new fiber id, the
+    /** Merge parents @p parents into one (reuses groupClusters); their children
+     *  union under the kept id.  Returns the kept parent id, or -1. */
+    int mergeParents(const QList<int>& parents, KlustersView& activeView);
+    /** Detach child @p childCluster from its parent into a new parent of its own
+     *  (the spikes become a new .clu cluster).  Returns the new parent id, the
      *  existing parent if it was the only child (no-op), or -1. */
-    /** Move child @p childCluster's spikes onto the existing fiber @p targetFiber. */
-    /** Collect @p children (possibly from different fibers) into one new fiber.
-     *  Returns the new fiber id, or -1.  Reuses moveSpikeSubsetToCluster. */
-    /** Take @p children out of their parent(s) and make ONE new fiber from them.
+    /** Move child @p childCluster's spikes onto the existing parent @p targetFiber. */
+    /** Collect @p children (possibly from different parents) into one new parent.
+     *  Returns the new parent id, or -1.  Reuses moveSpikeSubsetToCluster. */
+    /** Take @p children out of their parent(s) and make ONE new parent from them.
      *  Replaces promoteChild (the single-child case) and groupChildrenIntoFiber,
      *  which were the same operation written twice.  moveChild is gone: moving a
-     *  child to an existing fiber has no use now that promotion is the way out. */
+     *  child to an existing parent has no use now that promotion is the way out. */
     int promoteChildren(const QList<int>& children, KlustersView& activeView);
-    /** Explode @p fiber into its constituent children, each becoming its own
-     *  fiber (one keeps @p fiber's id).  Inverse of mergeParentFibers. */
-    bool dissolveFiber(int fiber, KlustersView& activeView);
-    /** Eject child @p childCluster from its fiber onto the noise cluster (1)
+    /** Explode @p parent into its constituent children, each becoming its own
+     *  parent (one keeps @p parent's id).  Inverse of mergeParents. */
+    bool dissolveParent(int parent, KlustersView& activeView);
+    /** Eject child @p childCluster from its parent onto the noise cluster (1)
      *  without deleting its spikes. */
     bool dropChildToNoise(int childCluster, KlustersView& activeView);
     // ── atom-layer edit (rewrites .clc; separate child-undo timeline) ────────
-    /** Collapse @p children (which MUST share a fiber) into one microfiber.
+    /** Collapse @p children (which MUST share a parent) into one microfiber.
      *  Mutates childData, pushes a child-undo entry.  Returns the new child id,
-     *  or -1 (e.g. on a cross-fiber selection, which is refused). */
+     *  or -1 (e.g. on a cross-parent selection, which is refused). */
     int mergeChildren(const QList<int>& children, KlustersView& activeView);
-    /** Session-wide flatten: merge every fiber's atoms into a single self child
-     *  (atom id == fiber id), applied to all fibers including the reserve bins so
-     *  the resulting .clc is exactly .clu and no atom can span two fibers.
+    /** Session-wide flatten: merge every parent's atoms into a single self child
+     *  (atom id == parent id), applied to all parents including the reserve bins so
+     *  the resulting .clc is exactly .clu and no atom can span two parents.
      *  Destructive -- it discards deliberate sub-structure, unlike the repair-only
      *  collapseToSelfChildren().  Costs one Data undo level plus one ChildEdit, so
      *  Ctrl+Shift+Z reverts the whole thing in one step.
      *  @return the number of atoms removed, 0 if the layer was already flat, or
      *          -1 if there is no child layer / the two layers disagree in size. */
-    /** Collapse the hierarchy so .clc IS .clu: every fiber ends up covered by one
-     *  atom carrying the fiber's own id, and no sub-structure survives.
+    /** Collapse the hierarchy so .clc IS .clu: every parent ends up covered by one
+     *  atom carrying the parent's own id, and no sub-structure survives.
      *
      *  This is the FILE-LEVEL conversion from a hierarchical pair to a flat
      *  clustering -- the counterpart to the .clc == .clu lift at load -- not a
@@ -556,14 +556,14 @@ public:
     bool undoChildEditDispatch();
     bool redoChildEditDispatch();
     /** Re-derive parentToChildren/childToParent from the live .clu + .clc (a
-     *  child's fiber is the .clu label of its spikes).  Cheap pure function of
+     *  child's parent is the .clu label of its spikes).  Cheap pure function of
      *  the data, so it keeps the maps correct across edits AND undo/redo with no
      *  separate map-undo stack. */
     void rebuildHierarchyFromData();
 
-    /** Cross-check the derived child<->fiber maps against the per-spike arrays.
+    /** Cross-check the derived child<->parent maps against the per-spike arrays.
      *
-     *  childToParent IS the atom->fiber relation the .clp records; it is just
+     *  childToParent IS the atom->parent relation the .clp records; it is just
      *  treated as derived rather than as owned state, and nothing verifies that
      *  it still matches the layers it was derived from.  It stops matching the
      *  moment an edit path mutates a layer without calling
@@ -575,21 +575,21 @@ public:
      *  enough to call freely: one pass over two label arrays.
      */
     bool validateHierarchyMaps(const char* where) const;
-    /** After a PARENT edit that moved spikes across fiber boundaries (a manual
+    /** After a PARENT edit that moved spikes across parent boundaries (a manual
      *  polygon split), carve only the child atoms that now straddle two or more
      *  parents so every parent regains whole atoms; atoms wholly inside one
      *  parent are left intact (a split must not collapse untouched children). */
-    /** Explicit fiber/atom resync: re-cut any child atom whose spikes now span more
-     *  than one parent fiber so the nesting invariant holds again, then re-derive
+    /** Explicit parent/atom resync: re-cut any child atom whose spikes now span more
+     *  than one parent parent so the nesting invariant holds again, then re-derive
      *  the child<->parent maps (regenerated as .clp on Save).  Parent edits no
-     *  longer do this implicitly; the user reassigns/consolidates fibers and then
+     *  longer do this implicitly; the user reassigns/consolidates parents and then
      *  refiberizes.  Independent of the parent and atom undo stacks. */
-    void refiberize();
-    /** Shared core of refiberize: collapse "loose" spikes (in a real fiber but covered only
-     *  by a reserve or straddling atom) into their fiber's self child (atom id == fiber id),
+    void repairNesting();
+    /** Shared core of repairNesting: collapse "loose" spikes (in a real parent but covered only
+     *  by a reserve or straddling atom) into their parent's self child (atom id == parent id),
      *  preserving intact sub-structure, then rebuild child->parent and emit hierarchyChanged.
      *  Does NOT touch the atom undo stack, so edit paths that record their own ChildEdit
-     *  (e.g. a child recluster) call this directly; refiberize wraps it with the undo reset. */
+     *  (e.g. a child recluster) call this directly; repairNesting wraps it with the undo reset. */
     void collapseToSelfChildren();
     /** Overwrite the .clc and .clp siblings (with .bak) from the current child
      *  layer + child->parent map.  Called by saveDocument when a child
@@ -607,7 +607,7 @@ public:
 
     // ── time-chunk curation ──────────────────────────────────────────────
     //  Splits the session into uniform chunkMinutes windows (matching
-    //  fiber-session) and, for each chunk, masks every cluster except those
+    //  parent-session) and, for each chunk, masks every cluster except those
     //  present in the chunk and foregrounds the chunk's clusters — so curation
     //  decisions are made on one chunk's clusters at a time.
     /**Enter chunk mode with uniform @p chunkMinutes windows.  @p overlapMinutes
@@ -1254,7 +1254,7 @@ Q_SIGNALS:
     void updateRedoNb(int undoNb);
     void clustersGrouped(QList<int>& groupedClusters, int newClusterId);
     /** Emitted after a hierarchy edit (merge/promote/move) or an undo/redo that
-     *  changed the fiber<-child maps, so the app can repopulate the child palette. */
+     *  changed the parent<-child maps, so the app can repopulate the child palette. */
     void hierarchyChanged();
 
     /**Emitted when the waveform-view channel selection changes.  Empty list =
@@ -1339,7 +1339,7 @@ public Q_SLOTS:
 
     /** Child-palette T: move the selected ATOMS to the end of the child palette by
      *  giving them ids above the current atom maximum.  Separate from
-     *  renumberClustersToEnd because an atom rename shares little with a fiber
+     *  renumberClustersToEnd because an atom rename shares little with a parent
      *  rename -- see the implementation comment.
      */
     void renumberChildrenToEnd(QList<int> atomsToRenumber);
@@ -1698,7 +1698,7 @@ private:
     // main undo() is hardwired to clusteringData.  Each entry records the child
     // clusters that changed, for childData->undo()/redo() (cache invalidation)
     // and for the deterministic colour re-sync.  rebuildHierarchyFromData() then
-    // keeps the fiber maps consistent regardless of which timeline moved.
+    // keeps the parent maps consistent regardless of which timeline moved.
     struct ChildEdit { QList<int> added; QList<int> modified; QList<int> deleted; };
     QList<ChildEdit> childUndoStack;
     QList<ChildEdit> childRedoStack;
@@ -1732,7 +1732,7 @@ private:
      *  already clean.
      *
      *  The alternative is to store {child -> parent} and derive .clu, which is what
-     *  fiber-kit's FiberHierarchy already does and what its .clu/.clc/.clp output
+     *  parent-kit's FiberHierarchy already does and what its .clu/.clc/.clp output
      *  already satisfies -- verified on the same file: .clu reproduces from
      *  .clc + .clp for all 422,752 spikes with zero mismatches.
      *
@@ -1799,15 +1799,15 @@ private:
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     bool                 scopeResolvedActive = false;   // held answer, never derived on demand
     QList<int>           scopeResolvedClusters;         // held children of the curated parent
-    QList<int>           modifiedFibers;            // parent fibers created/modified since the last post-edit drain
-    QList<int>           pendingFiberSelection;     // parent fibers to select after the post-edit realign+renumber (first = primary)
+    QList<int>           modifiedParents;            // parent parents created/modified since the last post-edit drain
+    QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 
     /** Set by buildHierarchyMaps() when the per-spike .clu/.clc scan finds a child
      *  id under more than one parent.  Only the file-level scan can see this: it
      *  happens when a session is curated WITHOUT ever opening the hierarchical
-     *  view, so childData is null, every `if (childData) refiberize()` is skipped,
+     *  view, so childData is null, every `if (childData) repairNesting()` is skipped,
      *  and the .clu drifts away from the untouched on-disk .clc.  Consulted by
      *  saveHierarchySiblings() so a .clp contradicting its own triple is not
      *  written.  Not the same fault as validateHierarchyMaps(), which compares an

@@ -875,47 +875,47 @@ void KlustersApp::createMenus()
     displayMenu->addSeparator();
 
     // Hierarchy edits (enabled only while the child palette is shown): merge the
-    // fibers selected in the main palette; promote / move the children selected
+    // parents selected in the main palette; promote / move the children selected
     // in the child palette.  Each regenerates .clu/.clc/.clp on Save.
     QMenu* hierarchyMenu = menuBar()->addMenu(tr("&Hierarchy"));
-    mMergeFibers = hierarchyMenu->addAction(tr("&Merge Selected Fibers"));
-    mPromoteChild = hierarchyMenu->addAction(tr("&Promote Child to New Fiber"));
+    mMergeParents = hierarchyMenu->addAction(tr("&Merge Selected Parents"));
+    mPromoteChild = hierarchyMenu->addAction(tr("&Promote Child to New Parent"));
     hierarchyMenu->addSeparator();
-    mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Fiber"));
-    mDissolveFiber = hierarchyMenu->addAction(tr("&Dissolve Fiber into Children"));
+    mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Parent"));
+    mDissolveParent = hierarchyMenu->addAction(tr("&Dissolve Parent into Children"));
     mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
-    mRefiberize = hierarchyMenu->addAction(tr("Re&fiberize (re-cut atoms onto fibers)"));
-    mRefiberize->setShortcut(Qt::Key_F);
-    mRefiberize->setToolTip(tr("Re-cut child atoms that now straddle more than one fiber so each\n"
-                               "atom belongs to a single fiber again, and regenerate the .clp\n"
-                               "parent map.  Run after reassigning / consolidating the fibers."));
+    mRepairNesting = hierarchyMenu->addAction(tr("Re&repairNesting (re-cut atoms onto parents)"));
+    mRepairNesting->setShortcut(Qt::Key_F);
+    mRepairNesting->setToolTip(tr("Re-cut child atoms that now straddle more than one parent so each\n"
+                               "atom belongs to a single parent again, and regenerate the .clp\n"
+                               "parent map.  Run after reassigning / consolidating the parents."));
     hierarchyMenu->addSeparator();
     mMergeChildren = hierarchyMenu->addAction(tr("Merge Selected &Children (atom)"));
     mMergeAllChildren = hierarchyMenu->addAction(tr("&Flatten Hierarchy to Flat Clustering"));
-    mMergeAllChildren->setToolTip(tr("Walk every fiber and merge its child atoms into one self child\n"
-                                     "(atom id == fiber id), so the atom layer becomes a copy of the\n"
-                                     "fiber layer.  Discards all sub-mode structure -- undo with\n"
+    mMergeAllChildren->setToolTip(tr("Walk every parent and merge its child atoms into one self child\n"
+                                     "(atom id == parent id), so the atom layer becomes a copy of the\n"
+                                     "parent layer.  Discards all sub-mode structure -- undo with\n"
                                      "Ctrl+Shift+Z."));
     mUndoChildEdit = hierarchyMenu->addAction(tr("&Undo Child-Layer Edit"));
     mUndoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z));
     mRedoChildEdit = hierarchyMenu->addAction(tr("&Redo Child-Layer Edit"));
     mRedoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Y));
-    mMergeFibers->setEnabled(false);
+    mMergeParents->setEnabled(false);
     mPromoteChild->setEnabled(false);
     mGroupChildren->setEnabled(false);
-    mDissolveFiber->setEnabled(false);
+    mDissolveParent->setEnabled(false);
     mDropChildNoise->setEnabled(false);
-    mRefiberize->setEnabled(false);
+    mRepairNesting->setEnabled(false);
     mMergeChildren->setEnabled(false);
     mMergeAllChildren->setEnabled(false);
     mUndoChildEdit->setEnabled(false);
     mRedoChildEdit->setEnabled(false);
-    connect(mMergeFibers, &QAction::triggered, this, &KlustersApp::slotMergeFibers);
+    connect(mMergeParents, &QAction::triggered, this, &KlustersApp::slotMergeParents);
     connect(mPromoteChild, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
-    connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotGroupChildrenIntoFiber);
-    connect(mDissolveFiber, &QAction::triggered, this, &KlustersApp::slotDissolveFiber);
+    connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
+    connect(mDissolveParent, &QAction::triggered, this, &KlustersApp::slotDissolveParent);
     connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
-    connect(mRefiberize, &QAction::triggered, this, &KlustersApp::slotRefiberize);
+    connect(mRepairNesting, &QAction::triggered, this, &KlustersApp::slotRepairNesting);
     connect(mMergeChildren, &QAction::triggered, this, &KlustersApp::slotMergeChildren);
     connect(mMergeAllChildren, &QAction::triggered, this, &KlustersApp::slotFlattenHierarchyToClu);
     connect(mUndoChildEdit, &QAction::triggered, this, &KlustersApp::slotUndoChildEdit);
@@ -1168,7 +1168,7 @@ void KlustersApp::createMenus()
                 // Deferred, and guarded on there being a view.
                 //
                 // matrixScopeChanged fires while the document is still opening --
-                // the first fiber selection sets the curated parent -- and a
+                // the first parent selection sets the curated parent -- and a
                 // recompute issued then races the matrix docks being constructed.
                 // The compute goes out to a view that is not listening yet, and
                 // the open-time compute it displaced never happens, so the matrix
@@ -1267,16 +1267,16 @@ void KlustersApp::createMenus()
         [this](QList<int>&) { scheduleAutoPostClusterEdit(true); });
     connect(doc, &KlustersDoc::spikesDeleted, this,
         [this]() { scheduleAutoPostClusterEdit(false); });
-    // Hierarchy-menu ops (fiber merge, promote/move/group/dissolve/drop, child
+    // Hierarchy-menu ops (parent merge, promote/move/group/dissolve/drop, child
     // recluster) emit hierarchyChanged rather than the flat signals above.  Route
     // them through the same coalesced post-edit step so each one realigns the
-    // fibers it modified (drained from takeModifiedFibers) and refreshes matrices.
-    // Atom-only ops modify no fibers, so the drain is empty and only the matrix
+    // parents it modified (drained from takeModifiedParents) and refreshes matrices.
+    // Atom-only ops modify no parents, so the drain is empty and only the matrix
     // recompute runs.  (false: these never renumber on their own.)
     connect(doc, &KlustersDoc::hierarchyChanged, this,
         [this]() { scheduleAutoPostClusterEdit(false); });
 
-    // Merging fibers emits hierarchyChanged, which is exactly when the
+    // Merging parents emits hierarchyChanged, which is exactly when the
     // recommendations become wrong -- the merged pair no longer exists, and the
     // survivor's affinities have moved.  Refresh on it.
     connect(doc, &KlustersDoc::hierarchyChanged, this,
@@ -3863,7 +3863,7 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
         KlustersView* view = activeView();
         doc->shownClustersUpdate(selectedClusters,*view);
     }
-    // Hierarchical view: this is the USER selecting a fiber -- ClusterPalette only
+    // Hierarchical view: this is the USER selecting a parent -- ClusterPalette only
     // emits updateShownClusters when !isInSelectItems, so a programmatic
     // selectItems() cannot reach here.  It is therefore the one place a new parent
     // is adopted; every other path into repopulateChildPalette is a redraw and
@@ -3871,7 +3871,7 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
     if(childPanel && childPanel->isVisible()){
         // An EMPTY selection is not the user choosing to stop curating.
         //
-        // The fiber palette emits updateShownClusters whenever its selection
+        // The parent palette emits updateShownClusters whenever its selection
         // changes for a non-programmatic reason, and that includes the moment it
         // goes empty -- which happens on its own during the tab change that
         // follows a merge.  Adopting -1 there threw the curated parent away, and
@@ -3955,9 +3955,9 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
 
     // Merge CHILDREN when the child palette is the one being worked in.
     //
-    // doc->groupClusters() merges fibers.  Handed a child selection -- atom ids --
-    // it either finds no such fibers and does nothing, which is what G appeared to
-    // do, or merges whichever fibers carry the same numbers.  doc->mergeChildren()
+    // doc->groupClusters() merges parents.  Handed a child selection -- atom ids --
+    // it either finds no such parents and does nothing, which is what G appeared to
+    // do, or merges whichever parents carry the same numbers.  doc->mergeChildren()
     // already exists for this and was simply never reached from the G key.
     //
     // This is the operation the scoped matrices exist to set up: a cell names the
@@ -3968,7 +3968,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // focusedChildPalette() was the test, and it fails exactly where this feature
     // is used: clicking a matrix cell to pick a pair puts focus on the MATRIX
     // widget, so by the time G arrives no child palette holds focus and the merge
-    // fell through to the fiber path, which finds no such fibers and does nothing.
+    // fell through to the parent path, which finds no such parents and does nothing.
     // That is the same mistake as guarding the focus grabs on Qt focus, which had
     // to be changed to edit scope for the same reason.
     //
@@ -4001,7 +4001,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     // context); keep focus on the palette so the user can keep
     // arrow-navigating without having to Tab back.
     // An edit made in the child palette keeps its own landing; pulling focus to
-    // the fiber palette here would undo it.  Tested on EDIT SCOPE rather than on
+    // the parent palette here would undo it.  Tested on EDIT SCOPE rather than on
     // Qt focus: by the time this runs, focus may already have moved, so a
     // focusedChildPalette() test fails open exactly when it is needed.
     if (!(doc && doc->isChildClusteringActive())) {
@@ -4118,7 +4118,7 @@ void KlustersApp::slotAutoMerge()
     slotStatusMsg(tr("Auto-merge: %1 group(s) applied.").arg(applied));
     if (applied > 0) autoPostMerge();
     // An edit made in the child palette keeps its own landing; pulling focus to
-    // the fiber palette here would undo it.  Tested on EDIT SCOPE rather than on
+    // the parent palette here would undo it.  Tested on EDIT SCOPE rather than on
     // Qt focus: by the time this runs, focus may already have moved, so a
     // focusedChildPalette() test fails open exactly when it is needed.
     if (!(doc && doc->isChildClusteringActive())) {
@@ -4176,21 +4176,21 @@ void KlustersApp::pollConsolidationUnlock(){
 
 void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
 {
-    // Drain the fibers this operation created/modified.  Always clear the set (so it
+    // Drain the parents this operation created/modified.  Always clear the set (so it
     // never leaks across turns); realign only when the option is on and the realign
     // lane is idle.  The realign-state lock means no edit can land while a job runs,
     // so a busy lane here is only a manual realign in flight — fall back to inline.
-    const QList<int> dirty = doc->takeModifiedFibers();
+    const QList<int> dirty = doc->takeModifiedParents();
     if (configuration().getAutoRealignAfterMerge()
             && !realignRunning && !realignBatchActive) {
-        QList<int> fibers;
+        QList<int> parents;
         for (int f : dirty)
             if (f > 1 && doc->clusterHasMembers(f))
-                fibers.append(f);
-        if (!fibers.isEmpty()) {
+                parents.append(f);
+        if (!parents.isEmpty()) {
             // Async: lock change-initiating actions, show progress, realign the
-            // modified fibers as one batch, then renumber + matrix on batch finish.
-            startPostOpRealign(fibers, clusterSetChanged);
+            // modified parents as one batch, then renumber + matrix on batch finish.
+            startPostOpRealign(parents, clusterSetChanged);
             return;
         }
     }
@@ -4206,10 +4206,10 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
         // on the in-flight (un-interruptible) GPU kernel.
         maybeLockEditsForConsolidation();
     }
-    // Last step (mirrors the batch-finish path): land on the produced fibers.  For
+    // Last step (mirrors the batch-finish path): land on the produced parents.  For
     // atom-only ops the pending set is empty and selection was handled at op time
     // via hierarchyChildrenCreated.
-    applyPendingFiberSelection();
+    applyPendingParentSelection();
 }
 
 void KlustersApp::scheduleRefreshMergeRecommendations()
@@ -4888,17 +4888,17 @@ void KlustersApp::slotShowOverviewForPalette()
     // No setFocusToList() here.
     //
     // This slot is connected to ClusterPalette::paletteGainedFocus, so it runs
-    // BECAUSE the fiber palette just gained focus.  Returning focus to it is
+    // BECAUSE the parent palette just gained focus.  Returning focus to it is
     // therefore either a no-op or a fight with whatever moved focus in between --
     // and it closed a loop: setFocusToList() makes the palette's focusInEvent fire,
     // focusInEvent emits paletteGainedFocus, and that lands back here.  Qt delivers
     // focusInEvent before QApplication::focusChanged, so the grab ran while focus
-    // was still on the CHILD palette and dragged it to the fiber palette:
+    // was still on the CHILD palette and dragged it to the parent palette:
     //
-    //     [grab] slotShowOverviewForPalette -> fiber palette
+    //     [grab] slotShowOverviewForPalette -> parent palette
     //     [focus] ...ChildClusterPaletteA... -> ...ClusterPalette...
     //
-    // The fiber palette's selection then drove repopulateChildPalette to another
+    // The parent palette's selection then drove repopulateChildPalette to another
     // parent -- parentSlotA 1983 -> 2 -- which is the lost child selection.
     //
     // Switching to the Overview tab is what this slot is for; keeping focus where
@@ -5681,10 +5681,10 @@ void KlustersApp::slotShowShortcutHelp()
             {"Ctrl+Shift+\u2190 / Ctrl+Shift+\u2192", "Cycle focus (alternative to Tab)"},
             {"S",              "Mark focused palette's item (parent or child)"},
             {"Esc",            "Return focus from the child palette to the parent"},
-            {"G",              "Merge (adaptive): children \u2192 one child; else fold fiber / parents"},
-            {"Ctrl+\u2191",        "New fiber from selected children"},
-            {"Ctrl+\u2193",        "Group selected parent fibers"},
-            {"Ctrl+Shift+\u2193",  "Dissolve selected fiber into its children"},
+            {"G",              "Merge (adaptive): children \u2192 one child; else fold parent / parents"},
+            {"Ctrl+\u2191",        "New parent from selected children"},
+            {"Ctrl+\u2193",        "Group selected parent parents"},
+            {"Ctrl+Shift+\u2193",  "Dissolve selected parent into its children"},
             {"Ctrl+Shift+Z / Ctrl+Shift+Y", "Undo / redo atom (child-layer) edit"},
         }},
     };

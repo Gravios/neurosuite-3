@@ -96,8 +96,8 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     // renumbers/reassigns spikes in clusteringData in place; a WaveformView,
     // CorrelationView or matrix thread reading the old cluster layout at that
     // instant gets a torn read or a stale array index -> the non-deterministic
-    // segfault seen on grouping (including grouping two parent fibers, which
-    // routes here via mergeParentFibers).  This is the same guard the undo
+    // segfault seen on grouping (including grouping two parent parents, which
+    // routes here via mergeParents).  This is the same guard the undo
     // (klustersdoc_undo) and realign (klustersdoc_realign) paths already take
     // before their in-place Data mutations; group was the one mutating primitive
     // that omitted it.
@@ -147,26 +147,26 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     refreshActivePalette(clustersToShow);
     // Re-select the merge output after the deferred post-op.  autoPostMerge's
     // realign/renumber pass rebuilds the palette and clears this op-time
-    // selection, and applyPendingFiberSelection() -- the guaranteed final step
-    // -- no-ops on an empty pending set.  Recording the produced fiber as the
+    // selection, and applyPendingParentSelection() -- the guaranteed final step
+    // -- no-ops on an empty pending set.  Recording the produced parent as the
     // pending selection makes it the landing selection, translated through any
-    // renumber (parent scope only, mirroring the delete / split / merge-fiber ops).
-    if (!childScopeActive) setPendingFiberSelection(clustersToShow);
+    // renumber (parent scope only, mirroring the delete / split / merge-parent ops).
+    if (!childScopeActive) setPendingParentSelection(clustersToShow);
     logAfter(clustersToShow);
     return newClusterIdint;
 }
 
 
-void KlustersDoc::noteModifiedFiber(int clusterId)
+void KlustersDoc::noteModifiedParent(int clusterId)
 {
-    if (clusterId > 1 && !modifiedFibers.contains(clusterId))
-        modifiedFibers.append(clusterId);
+    if (clusterId > 1 && !modifiedParents.contains(clusterId))
+        modifiedParents.append(clusterId);
 }
 
-QList<int> KlustersDoc::takeModifiedFibers()
+QList<int> KlustersDoc::takeModifiedParents()
 {
-    QList<int> out = modifiedFibers;
-    modifiedFibers.clear();
+    QList<int> out = modifiedParents;
+    modifiedParents.clear();
     return out;
 }
 
@@ -179,7 +179,7 @@ QList<int> KlustersDoc::takeModifiedFibers()
 // are never returned -- they are where deleted spikes go, so landing there is
 // the behaviour this exists to avoid.  Returns -1 when nothing real survives.
 //
-// Reads the ACTIVE layer, so it answers for atoms in child scope and fibers
+// Reads the ACTIVE layer, so it answers for atoms in child scope and parents
 // otherwise; the caller decides which palette to apply it to.
 // ---------------------------------------------------------------------------
 int KlustersDoc::neighbourAfterRemoval(const QList<int>& removed) const
@@ -205,24 +205,24 @@ int KlustersDoc::neighbourAfterRemoval(const QList<int>& removed) const
     return survivors.last();                   // nothing above: nearest below
 }
 
-void KlustersDoc::setPendingFiberSelection(const QList<int>& fibers)
+void KlustersDoc::setPendingParentSelection(const QList<int>& parents)
 {
-    pendingFiberSelection.clear();
-    for (int f : fibers)
-        if (f > 1 && !pendingFiberSelection.contains(f))
-            pendingFiberSelection.append(f);   // keep order; first stays primary
+    pendingParentSelection.clear();
+    for (int f : parents)
+        if (f > 1 && !pendingParentSelection.contains(f))
+            pendingParentSelection.append(f);   // keep order; first stays primary
 }
 
-QList<int> KlustersDoc::takePendingFiberSelection()
+QList<int> KlustersDoc::takePendingParentSelection()
 {
-    QList<int> out = pendingFiberSelection;
-    pendingFiberSelection.clear();
+    QList<int> out = pendingParentSelection;
+    pendingParentSelection.clear();
     return out;
 }
 
-void KlustersDoc::renumberPendingFiberSelection(const QMap<int,int>& oldNew)
+void KlustersDoc::renumberPendingParentSelection(const QMap<int,int>& oldNew)
 {
-    for (int& id : pendingFiberSelection)
+    for (int& id : pendingParentSelection)
         if (oldNew.contains(id)) id = oldNew.value(id);
 }
 
@@ -276,16 +276,16 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     // Guarded by an actual straddle rather than applied unconditionally, because
     // the hierarchy operations (promoteChildren / mergeChildren
     // / dropChildToNoise) reach this same function to move WHOLE atoms: they break
-    // nothing, they do their own rebuildHierarchyFromData(), and refiberize() would
+    // nothing, they do their own rebuildHierarchyFromData(), and repairNesting() would
     // additionally clear the atom undo/redo history out from under them.  Moving a
     // whole atom leaves no remainder, so the check below is false for them and this
     // block is a no-op -- their behaviour is unchanged.
     //
-    // The guard used to require BOTH ends to be real fibers (`> 1`), which excluded
-    // exactly the moves that produce the straddle class refiberize could not repair
-    // until this series fixed it: sending part of a fiber to noise, or pulling part
-    // of noise back into a fiber.  Those are ordinary curation gestures, they clip
-    // atoms just as a fiber-to-fiber move does, and the reserve bins are fibers like
+    // The guard used to require BOTH ends to be real parents (`> 1`), which excluded
+    // exactly the moves that produce the straddle class repairNesting could not repair
+    // until this series fixed it: sending part of a parent to noise, or pulling part
+    // of noise back into a parent.  Those are ordinary curation gestures, they clip
+    // atoms just as a parent-to-parent move does, and the reserve bins are parents like
     // any other as far as the nesting invariant is concerned (an atom still has to
     // have exactly one owner, and .clp can only record one).  The straddle probe
     // below is what keeps the whole-atom hierarchy ops out, so the id test only has
@@ -296,10 +296,10 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
         const int n = qMin(cluByRow.size(), childByRow.size());
         // Atoms that contributed spikes to the move.  Atom 0 / atom 1 are the
         // reserve atoms: they are the self children of the artifact and noise
-        // fibers, so a spike carrying one is already correctly covered wherever it
+        // parents, so a spike carrying one is already correctly covered wherever it
         // lands in a reserve bin, and collapseToSelfChildren re-cuts them when it
         // does not.  Excluding them here keeps the probe cheap without missing a
-        // straddle: any atom that can straddle a REAL fiber has id > 1.
+        // straddle: any atom that can straddle a REAL parent has id > 1.
         QSet<int> movedAtoms;
         for (dataType r : featureRowSet)
             if (r >= 1 && static_cast<int>(r) < n && childByRow[static_cast<int>(r)] > 1)
@@ -310,7 +310,7 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
                     && movedAtoms.contains(static_cast<int>(childByRow[r])))
                 straddles = true;      // a contributing atom still has spikes in the source
         if (straddles)
-            refiberize();              // plurality-home re-cut + maps + hierarchyChanged
+            repairNesting();              // plurality-home re-cut + maps + hierarchyChanged
     }
 
     QList<int> clustersToShow = {fromCluster, toCluster};
@@ -327,11 +327,11 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     }
 
     emit removeSpikesFromClusters(fromClusters, toCluster, emptiedClusters);
-    // This always mutates the parent (clusteringData), so from/to are fibers: mark
+    // This always mutates the parent (clusteringData), so from/to are parents: mark
     // them for the post-edit auto-realign (noise/artifact and emptied ids are
     // filtered out downstream by id>1 + clusterHasMembers).
-    noteModifiedFiber(fromCluster);
-    noteModifiedFiber(toCluster);
+    noteModifiedParent(fromCluster);
+    noteModifiedParent(toCluster);
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
     if (clusterColorList->isColorChanged())
@@ -339,23 +339,23 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
 
     activeView.showAllWidgets();
     refreshActivePalette(clustersToShow);
-    // Land the post-op selection on the move's output fibers (surviving source
+    // Land the post-op selection on the move's output parents (surviving source
     // + destination) so the deferred realign/renumber refresh cannot leave them
-    // deselected; applyPendingFiberSelection() translates it through any renumber.
-    if (!childScopeActive) setPendingFiberSelection(clustersToShow);
+    // deselected; applyPendingParentSelection() translates it through any renumber.
+    if (!childScopeActive) setPendingParentSelection(clustersToShow);
     logAfter(clustersToShow);
 
     // ── Hierarchical sessions: re-cut atoms this move left straddling ──────────
     // This is the one parent-layer edit that moves an ARBITRARY SUBSET of a
-    // fiber's spikes to another fiber, and the .clc atom layer is not touched by
+    // parent's spikes to another parent, and the .clc atom layer is not touched by
     // it.  So an atom wholly inside `fromCluster` whose spikes were only PARTLY
-    // selected now spans two real fibers, breaking the nesting invariant (every
-    // atom owned by exactly one fiber -- hierarchical-clustering.md).  The polygon
+    // selected now spans two real parents, breaking the nesting invariant (every
+    // atom owned by exactly one parent -- hierarchical-clustering.md).  The polygon
     // split (createNewCluster/createNewClusters) and the parent recluster already
-    // call refiberize() for exactly this reason; this path was the gap, and it is
-    // how a curated g5 triple ended up with atoms spanning two fibers on disk:
+    // call repairNesting() for exactly this reason; this path was the gap, and it is
+    // how a curated g5 triple ended up with atoms spanning two parents on disk:
     // TemplateMatrixView::onApplyClicked() moves every spike scoring above the
-    // similarity threshold into the target fiber and leaves the sub-threshold
+    // similarity threshold into the target parent and leaves the sub-threshold
     // remainder -- a handful of spikes -- behind in the source.
     //
 }
@@ -377,7 +377,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     //
     //   child scope  the deleted atoms are reparented onto the destination bin;
     //                their spikes keep their child ids.
-    //   parent scope the fiber goes to the bin and every child of it goes with it.
+    //   parent scope the parent goes to the bin and every child of it goes with it.
     //
     // Captured before the mutation, since afterwards parentToChildren no longer
     // lists them.
@@ -406,7 +406,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     //case where the clusters are moved to the cluster 0 (artefact)
     if(clusterId == 0){
         // data(), not clusteringData: this function serves BOTH scopes -- the same
-        // delete runs on fibers from the cluster palette and on atoms from the child
+        // delete runs on parents from the cluster palette and on atoms from the child
         // palette.  Naming clusteringData unconditionally meant a child delete moved
         // the FIBER carrying that number to artefact, which is a different cluster
         // in a different layer, so deleting a child did nothing to the child and
@@ -459,9 +459,9 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 
     //Notify the errorMatrixView of the modification
     emit clustersDeleted(clustersToDelete,clusterId);
-    // Parent-scope delete: the destination fiber that absorbed the spikes changed
+    // Parent-scope delete: the destination parent that absorbed the spikes changed
     // membership (child scope deletes atoms, so guard on the scope).
-    if (!childScopeActive) noteModifiedFiber(clusterId);
+    if (!childScopeActive) noteModifiedParent(clusterId);
     // Computed here but emitted AFTER the hierarchy rebuild below -- see the
     // deferred emit at the end of this function for why.
     int childLanding = -1;
@@ -482,7 +482,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // is the same problem as landing on the destination.
     if (!childScopeActive) {
         const int land = neighbourAfterRemoval(clustersToDelete);
-        if (land > 1) setPendingFiberSelection({land});
+        if (land > 1) setPendingParentSelection({land});
         // No survivor above 1 means everything real is gone; leave the selection
         // alone rather than forcing it into a reserve bin.
     } else {
@@ -494,7 +494,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         // When the parent has no children left, the parent itself has just lost
         // every spike and goes away with them, so there is no sibling to land on
         // and the right answer is one level up: the parent's neighbour in the
-        // fiber palette, which setPendingFiberSelection delivers.
+        // parent palette, which setPendingParentSelection delivers.
         int parentOfDeleted = -1;
         for (int c : clustersToDelete) {
             const auto it = childToParent.constFind(c);
@@ -518,21 +518,21 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
             // neighbourAfterRemoval() reads data(), which in child scope is the ATOM
             // layer -- it would answer with an atom id here.  The parent's neighbour
             // is a FIBER, so walk clusteringData directly.
-            QList<int> fibers;
+            QList<int> parents;
             for (dataType f : clusteringData->clusterIds()) {
                 const int id = static_cast<int>(f);
-                if (id > 1 && id != parentOfDeleted) fibers.append(id);
+                if (id > 1 && id != parentOfDeleted) parents.append(id);
             }
-            if (!fibers.isEmpty()) {
-                std::sort(fibers.begin(), fibers.end());
-                int up = fibers.last();
-                for (int id : fibers)
+            if (!parents.isEmpty()) {
+                std::sort(parents.begin(), parents.end());
+                int up = parents.last();
+                for (int id : parents)
                     if (id > parentOfDeleted) { up = id; break; }
-                setPendingFiberSelection({up});
+                setPendingParentSelection({up});
                 // The curated parent has just ceased to exist -- the one situation
                 // besides a user selection in which it may move.  Follow it to the
                 // neighbour so the child palette and the matrices land there
-                // together, rather than being left pointing at a dead fiber.
+                // together, rather than being left pointing at a dead parent.
                 if (curatedParent() == parentOfDeleted) setCuratedParent(up);
             }
         }
@@ -545,8 +545,8 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     //Ask the active view to take the modification into account immediately
     activeView.showAllWidgets();
 
-    //Update the palette of cluster.  Fiber palette only: in child scope the landing
-    //below owns the selection, and refreshing the fiber list here would change which
+    //Update the palette of cluster.  Parent palette only: in child scope the landing
+    //below owns the selection, and refreshing the parent list here would change which
     //parent is selected -- which then drives repopulateChildPalette and swaps the
     //displayed children out from under the user.
     if (!childScopeActive) clusterPalette.updateClusterList();
@@ -566,14 +566,14 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // Log the resulting state of the destination cluster (noise=1, artefact=0)
     logAfter(QList<int>{ clusterId });
 
-    // Hierarchical mode: deleting WHOLE fibers cannot break the nesting invariant --
-    // every atom inside a deleted fiber moves with it, so each still has exactly one
-    // owner -- and that is why this path needs no refiberize().  But the derived maps
-    // still name the deleted fibers as parents, and saveHierarchySiblings() writes the
+    // Hierarchical mode: deleting WHOLE parents cannot break the nesting invariant --
+    // every atom inside a deleted parent moves with it, so each still has exactly one
+    // owner -- and that is why this path needs no repairNesting().  But the derived maps
+    // still name the deleted parents as parents, and saveHierarchySiblings() writes the
     // .clp straight out of childToParent, rebuilding it only when it is EMPTY.  So a
     // stale map is not merely a wrong child palette: it is written to disk, mapping
-    // atoms to fibers that no longer exist.  Re-derive them (cheap, no re-cut, and it
-    // leaves the atom undo history alone, which refiberize would not).
+    // atoms to parents that no longer exist.  Re-derive them (cheap, no re-cut, and it
+    // leaves the atom undo history alone, which repairNesting would not).
     if (childData) {
         rebuildHierarchyFromData();
         emit hierarchyChanged();
@@ -583,7 +583,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // repopulate the child palette, so a landing emitted earlier -- as this one was
     // when the sibling rule was added, sitting next to the neighbour computation
     // 58 lines further up -- is applied and then thrown away by the rebuild that
-    // follows it.  Same shape as the fiber palette pulling focus back after a child
+    // follows it.  Same shape as the parent palette pulling focus back after a child
     // split: a later handler undoing an earlier landing.
     //
     // refreshActivePalette() gets this right by construction, emitting refresh then
@@ -665,8 +665,8 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
         }
 
         // Hierarchical mode: this moves an ARBITRARY SUBSET out of one or more source
-        // fibers into a reserve bin, and never touches the .clc atom layer -- so any
-        // atom the region only partly covers is left spanning its source fiber and the
+        // parents into a reserve bin, and never touches the .clc atom layer -- so any
+        // atom the region only partly covers is left spanning its source parent and the
         // reserve bin.  This is how ordinary curation -- lasso the bad spikes, send
         // them to noise -- accumulates straddlers.
         //
@@ -679,7 +679,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
         // off matrix recomputes, and the repair's own childData mutation then
         // invalidates the caches they were computed from.
         // childData-guarded, so flat sessions are untouched.
-        if (childData) refiberize();
+        if (childData) repairNesting();
 
         //Notify all the views of the modification
 
@@ -700,9 +700,9 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
 
         //Update the palette of cluster
         refreshActivePalette(clustersToShow);
-        // Land the post-op selection on the surviving source fibers so the
+        // Land the post-op selection on the surviving source parents so the
         // deferred realign/renumber refresh cannot leave them deselected.
-        if (!childScopeActive) setPendingFiberSelection(clustersToShow);
+        if (!childScopeActive) setPendingParentSelection(clustersToShow);
 
         //Notify the application that spikes have been deleted.
         emit spikesDeleted();
@@ -777,9 +777,9 @@ void KlustersDoc::commitClusterCreation(int newId,
     // a child, and the only one that has to decide how to divide it.
     //
     // The rule is the one the model was tested on: a child whose spikes moved
-    // WHOLLY keeps its id and is simply reparented onto the new fiber; a child
+    // WHOLLY keeps its id and is simply reparented onto the new parent; a child
     // genuinely divided is not resolvable here, because commitClusterCreation sees
-    // only the fiber-level result.  The straddling case is therefore left to
+    // only the parent-level result.  The straddling case is therefore left to
     // collapseToSelfChildren, and the divergence report names it -- which is the
     // measurement worth having, since that repair is what the migration removes.
     // Child-primary: nothing is predicted here.
@@ -968,7 +968,7 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
 
         // Child-primary: a child split.  The new atom is a sibling under the SAME
         // parent -- a split within the child layer cannot move spikes between
-        // fibers -- so the map gains one entry and loses any source consumed
+        // parents -- so the map gains one entry and loses any source consumed
         // entirely.  This is the only class of operation that changes child
         // MEMBERSHIP rather than just parentage.
         syncChildColors();
@@ -1000,27 +1000,27 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // palette refresh — is in the shared helper.
         commitClusterCreation(newClusterIdint, fromClusters, emptyClusters,
                               activeView);
-        // Parent-scope split.  Queue only the split-off fiber for the post-op
-        // auto-realign: it carries a genuinely new template.  The source fibers merely
+        // Parent-scope split.  Queue only the split-off parent for the post-op
+        // auto-realign: it carries a genuinely new template.  The source parents merely
         // LOST a subset -- their remaining spikes are unchanged and their template is
         // essentially the same -- so realigning them re-extracts the whole (typically
         // large) source cluster from .fil for negligible gain, which is what made a
-        // manual split lock editing for many seconds.  noteModifiedFiber feeds ONLY
-        // the realign (nothing else drains takeModifiedFibers), so this is scope, not
+        // manual split lock editing for many seconds.  noteModifiedParent feeds ONLY
+        // the realign (nothing else drains takeModifiedParents), so this is scope, not
         // correctness: the matrices/renumber on the batch finish still cover every
         // cluster, and the source keeps its already-aligned spikes.
         // Hierarchical mode: the split leaves the child atoms where they were, so the new
-        // fiber has no covering child and the source fiber's atom now straddles both.
+        // parent has no covering child and the source parent's atom now straddles both.
         // Re-cut HERE, immediately after the parent mutation and before anything is
         // told about it.  Everything below is an observer, and Qt delivers direct
         // connections synchronously, so repairing afterwards means each of them runs
         // against a layer whose atoms straddle -- and the repair's own childData
         // mutation then invalidates the caches they just rebuilt.
         // childData-guarded; flat sessions are untouched.
-        if (childData) refiberize();
+        if (childData) repairNesting();
 
-        noteModifiedFiber(newClusterIdint);
-        setPendingFiberSelection({newClusterIdint});   // land on the split-off fiber
+        noteModifiedParent(newClusterIdint);
+        setPendingParentSelection({newClusterIdint});   // land on the split-off parent
 
         // Log after: surviving source clusters + the new cluster
         QList<int> resultIds;
@@ -1124,14 +1124,14 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         }
 
         // Hierarchical mode: the split leaves the child atoms where they were, so each new
-        // fiber has no covering child and the source fibers' atoms now straddle.
+        // parent has no covering child and the source parents' atoms now straddle.
         // Re-cut HERE, immediately after the parent mutation and before anything is
         // told about it.  Everything below is an observer, and Qt delivers direct
         // connections synchronously, so repairing afterwards means each of them runs
         // against a layer whose atoms straddle -- and the repair's own childData
         // mutation then invalidates the caches they just rebuilt.
         // childData-guarded; flat sessions are untouched.
-        if (childData) refiberize();
+        if (childData) repairNesting();
 
         //Notify all the views of the modification
 
@@ -1143,17 +1143,17 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
 
         //Notify the errorMatrixView of the modification
         emit newClustersAdded(fromToNewClusterIds,emptyClusters);
-        // Parent-scope multi-split.  Queue only the new fibers (values) for the
+        // Parent-scope multi-split.  Queue only the new parents (values) for the
         // post-op auto-realign -- they carry new templates -- and NOT the source
-        // fibers (keys), which only lost a subset and whose template is essentially
+        // parents (keys), which only lost a subset and whose template is essentially
         // unchanged; realigning them would re-extract the whole (typically large)
         // source cluster from .fil for negligible gain, the main cause of a manual
-        // split locking editing for seconds.  noteModifiedFiber feeds only the realign
-        // (nothing else drains takeModifiedFibers), so matrices/renumber on the batch
+        // split locking editing for seconds.  noteModifiedParent feeds only the realign
+        // (nothing else drains takeModifiedParents), so matrices/renumber on the batch
         // finish still cover every cluster.  In child scope these are atoms, so guard.
         if (!childScopeActive) {
-            for (int nf : fromToNewClusterIds.values()) noteModifiedFiber(nf);
-            setPendingFiberSelection(fromToNewClusterIds.values());   // land on the new fibers
+            for (int nf : fromToNewClusterIds.values()) noteModifiedParent(nf);
+            setPendingParentSelection(fromToNewClusterIds.values());   // land on the new parents
         }
         updateSimilarityMatrices();   // recompute open error/template/residual matrices
 

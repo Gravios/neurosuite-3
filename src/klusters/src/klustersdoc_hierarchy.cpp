@@ -1,8 +1,8 @@
 // klustersdoc_hierarchy.cpp — KlustersDoc hierarchical (.clc child) clustering layer.
 //
 // Part of the klustersdoc.cpp decomposition: this translation unit implements the
-// child/fiber-layer methods of KlustersDoc — child clustering load/build, the
-// fiber edit operations (promote/move/group/dissolve/merge/drop), child-edit undo
+// child/parent-layer methods of KlustersDoc — child clustering load/build, the
+// parent edit operations (promote/move/group/dissolve/merge/drop), child-edit undo
 // stack, and the undo/redo dispatch that routes between the parent and child
 // layers.  Declarations remain in klustersdoc.h; mechanical relocation, no logic
 // change.  Carries the same include preamble as klustersdoc.cpp so every symbol
@@ -307,7 +307,7 @@ bool KlustersDoc::isChildScopeHidden(int clusterId) const{
 // All three operate on the parent clustering (clusteringData) through the
 // existing, proven, undoable doc primitives — merge via groupClusters, promote
 // and move via moveSpikeSubsetToCluster (which creates the target if new).  The
-// fiber<-child maps are then re-derived from the data, so a single Ctrl+Z (which
+// parent<-child maps are then re-derived from the data, so a single Ctrl+Z (which
 // reverts clusteringData) plus the same re-derive on undo/redo keeps everything
 // consistent without a separate map-undo stack.
 
@@ -323,7 +323,7 @@ bool KlustersDoc::isChildScopeHidden(int clusterId) const{
 //
 // The two differ in one respect BY DESIGN, and it is the whole reason for the
 // change: the derived map keeps an atom's FIRST-SEEN owner when the atom straddles
-// two fibers, silently discarding the rest.  The shadow records the straddle
+// two parents, silently discarding the rest.  The shadow records the straddle
 // instead.  So a mismatch here means either a genuine straddler -- which the
 // derived map is hiding -- or a real divergence.  Both are worth knowing and the
 // message distinguishes them.
@@ -399,17 +399,17 @@ void KlustersDoc::rebuildHierarchyFromData(){
     const QVector<dataType> childByRow = childData->labelByFeatureRow();
     const int n = qMin(cluByRow.size(), childByRow.size());
     // The nesting invariant (hierarchical-clustering.md): every atom is owned by
-    // exactly one fiber -- all spikes carrying a given .clc id carry the same .clu
+    // exactly one parent -- all spikes carrying a given .clc id carry the same .clu
     // id.  buildHierarchyMaps() already checks this on the LOAD path, but this
     // post-edit rebuild did not: it inserted on first-seen and dropped every later
-    // (child,parent) pair on the floor, so an atom left straddling two fibers by an
+    // (child,parent) pair on the floor, so an atom left straddling two parents by an
     // edit (a collapseToSelfChildren that did not fully collapse, or an edit path
-    // that never called it) was filed under its first-seen fiber with no trace.
+    // that never called it) was filed under its first-seen parent with no trace.
     // That silent absorption is exactly what produced the g5 "5 children span two
     // parents" file.  First-seen still wins -- the maps are a derived cache and the
     // behaviour is unchanged -- but a violation is now reported, with the offending
     // atoms, so the edit that introduced it can be found instead of vanishing.
-    QSet<int> offenders;                           // distinct atoms seen under >1 fiber
+    QSet<int> offenders;                           // distinct atoms seen under >1 parent
     for (int r = 1; r < n; ++r){                  // feature rows are 1-based
         const int c = static_cast<int>(childByRow[r]);
         if (c <= 0) continue;
@@ -427,9 +427,9 @@ void KlustersDoc::rebuildHierarchyFromData(){
         std::sort(sample.begin(), sample.end());
         if (sample.size() > 16) sample = sample.mid(0, 16);
         qWarning() << "[hierarchy] nesting invariant broken after edit:" << offenders.size()
-                   << "atom(s) span more than one fiber; kept each atom's first-seen owner. "
+                   << "atom(s) span more than one parent; kept each atom's first-seen owner. "
                       "Offending atom id(s) (up to 16):" << sample
-                   << "-- an edit left straddling atoms uncollapsed; refiberize to re-cut them.";
+                   << "-- an edit left straddling atoms uncollapsed; repairNesting to re-cut them.";
     }
     for (auto it = parentToChildren.begin(); it != parentToChildren.end(); ++it){
         QList<int>& kids = it.value();
@@ -439,7 +439,6 @@ void KlustersDoc::rebuildHierarchyFromData(){
 
     // Shadow comparison, after the derived maps are complete and before any
     // consumer sees them.  Inert unless NS3_SHADOW_HIERARCHY is set.
-    deriveStoredMap();
     updateHierarchyShadow(cluByRow, childByRow, n);
 
     // The maps this scope is derived from have just been refilled; re-resolve so
@@ -476,10 +475,10 @@ QList<int> KlustersDoc::takePendingChildSelection()
     return out;
 }
 
-void KlustersDoc::setCuratedParent(int fiberId)
+void KlustersDoc::setCuratedParent(int parentId)
 {
-    if (curatedParentId == fiberId) return;   // no spurious recomputes
-    curatedParentId = fiberId;
+    if (curatedParentId == parentId) return;   // no spurious recomputes
+    curatedParentId = parentId;
     resolveMatrixScope();                     // emits matrixScopeChanged if it moved
 }
 
@@ -542,7 +541,7 @@ bool KlustersDoc::validateHierarchyMaps(const char* where) const {
     const int n = qMin(cluByRow.size(), childByRow.size());
 
     // The relation the per-spike arrays actually encode right now.  Atoms that
-    // span fibers are counted separately: that is a nesting violation, a
+    // span parents are counted separately: that is a nesting violation, a
     // different fault from map staleness, and rebuildHierarchyFromData() already
     // reports it -- conflating the two here would misdirect the diagnosis.
     QHash<int,int> scanned;
@@ -576,7 +575,7 @@ bool KlustersDoc::validateHierarchyMaps(const char* where) const {
     std::sort(mapOnly.begin(),    mapOnly.end());
     std::sort(scanOnly.begin(),   scanOnly.end());
     qWarning() << "[hierarchy] derived maps are STALE at" << where << "--"
-               << wrongOwner.size() << "atom(s) owned by a different fiber than the"
+               << wrongOwner.size() << "atom(s) owned by a different parent than the"
                << "per-spike arrays say," << mapOnly.size() << "in the map but gone from the"
                << "arrays," << scanOnly.size() << "in the arrays but missing from the map."
                << "An edit path mutated a layer without refreshing the maps."
@@ -584,101 +583,101 @@ bool KlustersDoc::validateHierarchyMaps(const char* where) const {
                << "map-only:"    << mapOnly.mid(0, 8)
                << "scan-only:"   << scanOnly.mid(0, 8);
     if (spanning)
-        qWarning() << "[hierarchy] (also" << spanning << "spike(s) whose atom spans fibers -- that is a"
+        qWarning() << "[hierarchy] (also" << spanning << "spike(s) whose atom spans parents -- that is a"
                    << "nesting violation, reported separately by rebuildHierarchyFromData)";
     return false;
 }
 
 
 void KlustersDoc::collapseToSelfChildren(){
-    // The single hierarchy invariant: every fiber is covered by its child atom(s), and a fiber
-    // with one child IS that child (the "self child", atom id == fiber id -- the identity the
+    // The single hierarchy invariant: every parent is covered by its child atom(s), and a parent
+    // with one child IS that child (the "self child", atom id == parent id -- the identity the
     // .clc==.clu lift establishes).  Any flat-layer edit -- a parent recluster, an artifact
-    // recluster, a manual split, or a child recluster whose new atoms span fibers -- leaves
-    // "loose" spikes: in a fiber (real OR reserve) but covered only by an atom belonging to a
-    // different fiber, or by an atom that now straddles several fibers.  Collapse every loose spike
-    // into its fiber's self child, so each fiber regains a covering child with no new fiber
-    // invented.  Atoms that are real (> 1) AND wholly inside one fiber are deliberate
+    // recluster, a manual split, or a child recluster whose new atoms span parents -- leaves
+    // "loose" spikes: in a parent (real OR reserve) but covered only by an atom belonging to a
+    // different parent, or by an atom that now straddles several parents.  Collapse every loose spike
+    // into its parent's self child, so each parent regains a covering child with no new parent
+    // invented.  Atoms that are real (> 1) AND wholly inside one parent are deliberate
     // sub-structure and are preserved untouched.
     if (!childData) return;
     const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
     const QVector<dataType> childByRow = childData->labelByFeatureRow();
     const int n = qMin(cluByRow.size(), childByRow.size());
 
-    // Per real atom, count its spikes in each fiber.  This distinguishes a wholly-
-    // inside atom (one fiber) from a straddler, AND picks a straddler's "home" fiber
+    // Per real atom, count its spikes in each parent.  This distinguishes a wholly-
+    // inside atom (one parent) from a straddler, AND picks a straddler's "home" parent
     // -- the one holding the plurality of its spikes.  A manual polygon split clips
-    // some of a fiber's spikes into a new fiber; if that clip crosses a deliberate
+    // some of a parent's spikes into a new parent; if that clip crosses a deliberate
     // sub-cluster atom, the old code dissolved that atom into self children on BOTH
-    // sides, so the source fiber lost the child.  Keeping the straddler whole on its
-    // home fiber -- and collapsing only the clipped-off remainder into the new
-    // fiber's self child -- preserves the sub-cluster where it still mostly lives.
-    QHash<int, QHash<int,int>> atomFiberCount;               // real atom -> fiber -> spike count
+    // sides, so the source parent lost the child.  Keeping the straddler whole on its
+    // home parent -- and collapsing only the clipped-off remainder into the new
+    // parent's self child -- preserves the sub-cluster where it still mostly lives.
+    QHash<int, QHash<int,int>> childParentCount;               // real atom -> parent -> spike count
     for (int r = 1; r < n; ++r){
         const int a = static_cast<int>(childByRow[r]);
         if (a <= 1) continue;
-        atomFiberCount[a][static_cast<int>(cluByRow[r])] += 1;
+        childParentCount[a][static_cast<int>(cluByRow[r])] += 1;
     }
-    QSet<int> intact;                                        // real atoms wholly inside one fiber
-    QHash<int,int> homeFiber;                                // straddler -> fiber to keep it whole on
-    for (auto it = atomFiberCount.constBegin(); it != atomFiberCount.constEnd(); ++it){
-        const QHash<int,int>& perFiber = it.value();
-        if (perFiber.size() == 1){ intact.insert(it.key()); continue; }
+    QSet<int> intact;                                        // real atoms wholly inside one parent
+    QHash<int,int> homeParent;                                // straddler -> parent to keep it whole on
+    for (auto it = childParentCount.constBegin(); it != childParentCount.constEnd(); ++it){
+        const QHash<int,int>& perParent = it.value();
+        if (perParent.size() == 1){ intact.insert(it.key()); continue; }
         const int a = it.key();
-        // A self child (atom id == a fiber id) stays on its own fiber; any other atom
-        // stays on the fiber holding the plurality of its spikes (ties -> lower fiber
-        // id == the pre-existing source, not the freshly minted split-off fiber).
-        if (perFiber.contains(a)){ homeFiber[a] = a; continue; }
+        // A self child (atom id == a parent id) stays on its own parent; any other atom
+        // stays on the parent holding the plurality of its spikes (ties -> lower parent
+        // id == the pre-existing source, not the freshly minted split-off parent).
+        if (perParent.contains(a)){ homeParent[a] = a; continue; }
         int best = -1, bestN = -1;
-        for (auto f = perFiber.constBegin(); f != perFiber.constEnd(); ++f)
+        for (auto f = perParent.constBegin(); f != perParent.constEnd(); ++f)
             if (f.value() > bestN || (f.value() == bestN && f.key() < best)){ bestN = f.value(); best = f.key(); }
-        homeFiber[a] = best;
+        homeParent[a] = best;
     }
 
     // Decide, per row, whether it is loose and which atom it collapses into.
     //
-    // The reserve fibers (0 artifact / 1 noise) are NOT skipped.  They used to be --
-    // "noise/artifact fibers keep their atoms" -- and that is what made a whole class
+    // The reserve parents (0 artifact / 1 noise) are NOT skipped.  They used to be --
+    // "noise/artifact parents keep their atoms" -- and that is what made a whole class
     // of straddler permanently unrepairable: an atom whose plurality sits in a real
-    // fiber but which has a few spikes in noise has its noise-side rows skipped here
-    // (reserve fiber) and its real-side rows skipped below (home fiber), so NOTHING
-    // moves and the atom still spans two fibers.  refiberize() is then a no-op on it,
+    // parent but which has a few spikes in noise has its noise-side rows skipped here
+    // (reserve parent) and its real-side rows skipped below (home parent), so NOTHING
+    // moves and the atom still spans two parents.  repairNesting() is then a no-op on it,
     // which is why the same offender list is re-reported verbatim after every edit
-    // while the warning keeps advising a refiberize that cannot help.  The reserve
-    // bins get the same self-child treatment as any other fiber -- atom id == fiber
+    // while the warning keeps advising a repairNesting that cannot help.  The reserve
+    // bins get the same self-child treatment as any other parent -- atom id == parent
     // id, i.e. spikes dropped to noise are covered by atom 1 and spikes dropped to
     // artifact by atom 0 -- which is exactly the lift flattenHierarchyToClu() already
-    // applies to every fiber including the reserve bins, and for the same reason it
+    // applies to every parent including the reserve bins, and for the same reason it
     // states there: an atom left in a reserve bin carrying an arbitrary id is a
     // nesting violation waiting to happen.  An atom lying WHOLLY inside a reserve bin
     // is still `intact` and is preserved untouched, so a sub-cluster deliberately
     // dropped to noise as a unit keeps its identity.
     // Decide, per row, whether it is loose and which atom it collapses into.
     //
-    // The reserve fibers (0 artifact / 1 noise) are NOT skipped.  They used to be --
-    // "noise/artifact fibers keep their atoms" -- and that is what made a whole class
+    // The reserve parents (0 artifact / 1 noise) are NOT skipped.  They used to be --
+    // "noise/artifact parents keep their atoms" -- and that is what made a whole class
     // of straddler permanently unrepairable: an atom whose plurality sits in a real
-    // fiber but which has a few spikes in noise has its noise-side rows skipped here
-    // (reserve fiber) and its real-side rows skipped below (home fiber), so NOTHING
-    // moves and the atom still spans two fibers.  refiberize() is then a no-op on it,
+    // parent but which has a few spikes in noise has its noise-side rows skipped here
+    // (reserve parent) and its real-side rows skipped below (home parent), so NOTHING
+    // moves and the atom still spans two parents.  repairNesting() is then a no-op on it,
     // which is why the same offender list is re-reported verbatim after every edit
-    // while the warning keeps advising a refiberize that cannot help.  The reserve
-    // bins get the same self-child treatment as any other fiber -- atom id == fiber
+    // while the warning keeps advising a repairNesting that cannot help.  The reserve
+    // bins get the same self-child treatment as any other parent -- atom id == parent
     // id, i.e. spikes dropped to noise are covered by atom 1 and spikes dropped to
     // artifact by atom 0 -- which is exactly the lift flattenHierarchyToClu() already
-    // applies to every fiber including the reserve bins, and for the same reason it
+    // applies to every parent including the reserve bins, and for the same reason it
     // states there: an atom left in a reserve bin carrying an arbitrary id is a
     // nesting violation waiting to happen.  An atom lying WHOLLY inside a reserve bin
     // is still `intact` and is preserved untouched, so a sub-cluster deliberately
     // dropped to noise as a unit keeps its identity.
 
     // An atom is KEPT if at least one of its rows survives the three skip rules
-    // below -- it is intact, it is already its fiber's self child, or it is a
-    // straddler sitting on its home fiber.  Looseness does not depend on the
+    // below -- it is intact, it is already its parent's self child, or it is a
+    // straddler sitting on its home parent.  Looseness does not depend on the
     // targets, so this can be settled first, and it is what makes the target
     // choice safe in one pass.
-    // Same pass also records, per real fiber, WHICH source atoms feed it loose
-    // rows.  A fiber fed by several sources fragments into one descendant per
+    // Same pass also records, per real parent, WHICH source atoms feed it loose
+    // rows.  A parent fed by several sources fragments into one descendant per
     // source (see targetFor), so the count has to be complete before any target
     // is handed out.
     QSet<int> keptAtom;
@@ -687,42 +686,42 @@ void KlustersDoc::collapseToSelfChildren(){
         const int F = static_cast<int>(cluByRow[r]);
         const int a = static_cast<int>(childByRow[r]);
         if ((a > 1 && intact.contains(a)) || a == F
-                || (a > 1 && homeFiber.value(a, -1) == F))
+                || (a > 1 && homeParent.value(a, -1) == F))
             keptAtom.insert(a);
         else if (F > 1)
             looseSources[F].insert(a);
     }
 
     // Fresh atom ids start above every id either layer currently uses, so they
-    // cannot collide with a surviving atom or with another fiber's target.
+    // cannot collide with a surviving atom or with another parent's target.
     int nextFreeAtom = 1;
     for (int r = 1; r < n; ++r){
         nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(childByRow[r]));
         nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(cluByRow[r]));
     }
 
-    // (source atom, fiber) -> the atom that pair's loose rows collapse into.
+    // (source atom, parent) -> the atom that pair's loose rows collapse into.
     //
-    // Keyed by the SOURCE as well as the fiber, so a cut that crosses several
+    // Keyed by the SOURCE as well as the parent, so a cut that crosses several
     // atoms yields one descendant per crossed atom rather than fusing them all
     // into one covering child.  A row's atom is its provenance -- which of the
-    // over-split units it came from -- and the fiber it lands in says nothing
+    // over-split units it came from -- and the parent it lands in says nothing
     // about that, so collapsing rows from atoms 7, 12 and 30 into a single new
     // atom discards information the atom layer exists to carry.  Smaller children
     // that can be merged deliberately are preferable to a merge performed on the
     // user's behalf, which is not reversible without knowing what was fused.
     //
-    // The fiber keeps its own id as the self child only when a SINGLE source
+    // The parent keeps its own id as the self child only when a SINGLE source
     // feeds it and nothing already carries that id: that is the ordinary split of
-    // one fiber in two, and it behaves exactly as before.  When several sources
-    // feed it, every descendant takes a fresh id -- the fiber then has more than
-    // one atom, so the "a fiber with one child IS that child" convention does not
+    // one parent in two, and it behaves exactly as before.  When several sources
+    // feed it, every descendant takes a fresh id -- the parent then has more than
+    // one atom, so the "a parent with one child IS that child" convention does not
     // apply to it anyway and the normalisation pass below leaves it alone.
     //
     // Why a fresh id when an atom carrying F survives: if that survivor sits under
-    // another fiber, writing F would make it span two -- the repair minting a
+    // another parent, writing F would make it span two -- the repair minting a
     // straddler, which is why one pass was not a fixed point.  If it sits under
-    // fiber F itself, the atom would silently absorb spikes that were never part
+    // parent F itself, the atom would silently absorb spikes that were never part
     // of it, which is the same silent-substitution failure in the atom layer.
     //
     // The reserve bins are excluded from all of this: atom 0 and atom 1 ARE the
@@ -746,23 +745,23 @@ void KlustersDoc::collapseToSelfChildren(){
     // those rebuilds the entire row table, revalidates it and pushes its own undo
     // level.  That is fine when a handful of atoms straddle, but the atom layer this
     // view exists for is deliberately over-split -- fiber_stochastic produces tiny
-    // atoms -- so a curation gesture that clips a fiber clips hundreds of distinct
+    // atoms -- so a curation gesture that clips a parent clips hundreds of distinct
     // atoms, and the pair count follows.  Measured on a synthetic 574,121-spike
-    // session with 1,500 fibers and 22,000 atoms: 2,085 rebuilds, ~1.2e9 row writes,
+    // session with 1,500 parents and 22,000 atoms: 2,085 rebuilds, ~1.2e9 row writes,
     // in the GUI thread.  setClusterLabels does one rebuild for the whole re-cut --
     // the same primitive flattenHierarchyToClu() already uses, for the same reason
     // -- taking that session to a single 574,121-row pass.
     //
     // It also improves the undo picture rather than harming it.  This function
     // records no ChildEdit, so every Data undo level it pushed was unmatched by an
-    // entry on the atom stack; N unmatched levels become one.  refiberize() clears
+    // entry on the atom stack; N unmatched levels become one.  repairNesting() clears
     // both stacks afterwards regardless.
     // The re-cut decision, in ONE place.
     //
     // It ran twice: once against the labels on entry, and again verbatim against
     // the healed labels after a refusal.  The three skip rules ARE the policy this
     // function implements -- preserve a deliberate sub-cluster, leave a self child
-    // alone, keep a straddler whole on its home fiber -- and having them written
+    // alone, keep a straddler whole on its home parent -- and having them written
     // out twice means a change to any of them has to be made in both, with nothing
     // to say so.  That is how the cluster-1 column bug survived in the grouping
     // assistant, in a file where the stakes are lower than here.
@@ -778,7 +777,7 @@ void KlustersDoc::collapseToSelfChildren(){
             const int a = static_cast<int>(source[r]);
             if (a > 1 && intact.contains(a)) continue;           // deliberate sub-cluster, preserved
             if (a == F) continue;                                // already its own self child
-            if (a > 1 && homeFiber.value(a, -1) == F) continue;  // straddler whole on its home fiber
+            if (a > 1 && homeParent.value(a, -1) == F) continue;  // straddler whole on its home parent
             const int t = targetFor(a, F);                       // this source's share of the cut
             if (t != a){ out[r] = static_cast<dataType>(t); any = true; }
         }
@@ -806,27 +805,27 @@ void KlustersDoc::collapseToSelfChildren(){
     }
 
     // ── Normalize the self-child naming ────────────────────────────────────────
-    // After the collapse a fiber can be left covered by a single atom whose id is not
-    // the fiber's own -- e.g. a split moved a fiber's entire self child onto a new
-    // fiber, so the source fiber's sole remaining atom is a deliberate sub-cluster
-    // while the new fiber's sole atom still carries the source fiber's id.  The maps
+    // After the collapse a parent can be left covered by a single atom whose id is not
+    // the parent's own -- e.g. a split moved a parent's entire self child onto a new
+    // parent, so the source parent's sole remaining atom is a deliberate sub-cluster
+    // while the new parent's sole atom still carries the source parent's id.  The maps
     // stay correct (a child's parent is derived from its spikes), but the convention
-    // "a fiber with one child IS that child, atom id == fiber id" breaks, and the
-    // stray id can later collide with a freshly minted fiber.  Rename each such sole
-    // child to its fiber's id so the self-child identity holds again.  (A fiber with
+    // "a parent with one child IS that child, atom id == parent id" breaks, and the
+    // stray id can later collide with a freshly minted parent.  Rename each such sole
+    // child to its parent's id so the self-child identity holds again.  (A parent with
     // two or more atoms is genuine sub-structure and is left untouched.)
     const QVector<dataType> childAfter = childData->labelByFeatureRow();
     const int nA = qMin(cluByRow.size(), childAfter.size());
-    QHash<int, QSet<int>> fiberAtoms;                        // fiber -> its covering atoms
+    QHash<int, QSet<int>> parentChildren;                        // parent -> its covering atoms
     QSet<int> existingAtoms;                                 // every atom id currently present
     for (int r = 1; r < nA; ++r){
         const int a = static_cast<int>(childAfter[r]);
         if (a <= 0) continue;
         existingAtoms.insert(a);
-        fiberAtoms[static_cast<int>(cluByRow[r])].insert(a);
+        parentChildren[static_cast<int>(cluByRow[r])].insert(a);
     }
-    QMap<int,int> renameToSelf;                              // sole non-self child -> fiber (self) id
-    for (auto it = fiberAtoms.constBegin(); it != fiberAtoms.constEnd(); ++it){
+    QMap<int,int> renameToSelf;                              // sole non-self child -> parent (self) id
+    for (auto it = parentChildren.constBegin(); it != parentChildren.constEnd(); ++it){
         const int F = it.key();
         if (F <= 1 || it.value().size() != 1) continue;      // noise/artifact or genuine sub-structure
         const int C = *it.value().constBegin();
@@ -836,7 +835,7 @@ void KlustersDoc::collapseToSelfChildren(){
         // renumberPartial buckets by NEW id, so a target still held by an atom that is
         // NOT itself being renamed away would merge two atoms.  Keep only targets that
         // are free or are themselves sources -- a plain split satisfies this for all of
-        // them (a source fiber and its split-off both hand their sole atom back) -- and
+        // them (a source parent and its split-off both hand their sole atom back) -- and
         // leave any rarer case with its naming oddity rather than corrupt the layer.
         QMap<int,int> safe;
         bool admitted = true;
@@ -860,7 +859,7 @@ void KlustersDoc::collapseToSelfChildren(){
     // Publish what the re-cut decided, so the child-primary map records the SAME
     // answer rather than reconstructing it.
     //
-    // splitTarget[F][a] is the target child minted for source atom `a` on fiber F.
+    // splitTarget[F][a] is the target child minted for source atom `a` on parent F.
     // That is the complete decision -- which side keeps the original id and which
     // gets a fresh one -- and it is made here, with the coverage table in hand.
     // Predicting it from outside means implementing the plurality rule, the
@@ -870,8 +869,8 @@ void KlustersDoc::collapseToSelfChildren(){
 
 }
 
-void KlustersDoc::refiberize(){
-    // Deliberate full resync of the atom layer to the fiber layer, independent of the parent
+void KlustersDoc::repairNesting(){
+    // Deliberate full resync of the atom layer to the parent layer, independent of the parent
     // and atom undo timelines: collapse loose spikes to self children (above) and reset the
     // atom-edit history since the atom structure has just been re-cut.  rebuildHierarchyFromData
     // (inside collapseToSelfChildren) re-derives childToParent / parentToChildren, which the
@@ -883,22 +882,22 @@ void KlustersDoc::refiberize(){
     }
 }
 
-int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activeView){
-    if (fibers.size() < 2) return -1;
+int KlustersDoc::mergeParents(const QList<int>& parents, KlustersView& activeView){
+    if (parents.size() < 2) return -1;
     setActiveClustering(false);                   // edits always target the parent
-    const int kept = groupClusters(fibers, activeView);   // existing: mutate + undo + views
+    const int kept = groupClusters(parents, activeView);   // existing: mutate + undo + views
 
-    // Child-primary: every child of a folded fiber is reparented onto the survivor.
-    // No child is split or created -- a fiber merge is a pure map operation, which
+    // Child-primary: every child of a folded parent is reparented onto the survivor.
+    // No child is split or created -- a parent merge is a pure map operation, which
     // is the clearest case of the O(children) versus O(nSpikes) difference.
     if (childPrimaryOn)
-        for (int f : fibers)
+        for (int f : parents)
             if (f != kept)
                 for (int c : parentToChildren.value(f))
                     shadowChildToParent.insert(c, kept);
 
-    noteModifiedFiber(kept);                              // merged fiber needs realign
-    setPendingFiberSelection({kept});                    // land on the merged fiber
+    noteModifiedParent(kept);                              // merged parent needs realign
+    setPendingParentSelection({kept});                    // land on the merged parent
     rebuildHierarchyFromData();
     emit hierarchyChanged();
     return kept;
@@ -907,13 +906,13 @@ int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activ
 // ---------------------------------------------------------------------------
 // KlustersDoc::promoteChildren
 //
-// Take children out of their parent and make ONE new fiber from them.  With a
+// Take children out of their parent and make ONE new parent from them.  With a
 // single child this is the old promoteChild; with several it is the old
 // groupChildrenIntoFiber.  They were the same operation written twice -- one
 // N-ary, one unary with an extra early return -- so they are one function now.
 //
 // The only-child case still short-circuits: a child that is its parent's sole
-// atom already covers exactly that fiber, so promoting it would move every spike
+// atom already covers exactly that parent, so promoting it would move every spike
 // to a new id for no change in structure.
 // ---------------------------------------------------------------------------
 int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activeView){
@@ -924,7 +923,7 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
         if (!childToParent.contains(only)) return -1;
         const int parent = childToParent.value(only);
         if (parentToChildren.value(parent).size() <= 1)
-            return parent;                        // already its own fiber
+            return parent;                        // already its own parent
     }
 
     setActiveClustering(false);
@@ -957,22 +956,22 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
     if (target < 0) return -1;
     clusterPalette.updateClusterList();
     rebuildHierarchyFromData();
-    setPendingFiberSelection({target});   // the output is a FIBER; land there
+    setPendingParentSelection({target});   // the output is a FIBER; land there
     emit hierarchyChanged();
     return target;
 }
 
-bool KlustersDoc::dissolveFiber(int fiber, KlustersView& activeView){
+bool KlustersDoc::dissolveParent(int parent, KlustersView& activeView){
     if (!childData) return false;
-    const QList<int> kids = parentToChildren.value(fiber);
+    const QList<int> kids = parentToChildren.value(parent);
     if (kids.size() < 2) return false;                // nothing to explode
-    // Each child becomes its own fiber: promoteChildren with a single-element
+    // Each child becomes its own parent: promoteChildren with a single-element
     // list per child, not one call with all of them, which would pool them into
-    // one fiber and be the opposite operation.
+    // one parent and be the opposite operation.
     QList<int> produced;
     for (int c : kids)
         produced.append(promoteChildren(QList<int>{c}, activeView));
-    setPendingFiberSelection(produced);               // select all the exploded fibers
+    setPendingParentSelection(produced);               // select all the exploded parents
     return true;
 }
 
@@ -1000,7 +999,7 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     // does: it changes the .clu of those rows and leaves the .clc alone.  So the
     // map edit is one entry, and it says the same thing the relabel does.
 
-    setPendingFiberSelection({parent});   // land on the source fiber (noise isn't selectable)
+    setPendingParentSelection({parent});   // land on the source parent (noise isn't selectable)
     rebuildHierarchyFromData();
 
     // Parked before the emit, for the reason given in mergeChildren: the palette
@@ -1038,8 +1037,8 @@ void KlustersDoc::syncChildColors(){
 
 int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeView){
     if (!childData || children.size() < 2) return -1;
-    // Same-fiber guard: merging atoms from different fibers would create a
-    // microfiber whose spikes straddle two fibers, which the nesting invariant
+    // Same-parent guard: merging atoms from different parents would create a
+    // microfiber whose spikes straddle two parents, which the nesting invariant
     // forbids.  Refuse rather than silently re-parent.
     const int parent = childToParent.value(children.first(), -1);
     for (int c : children)
@@ -1052,7 +1051,7 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
 
     // Child-primary: maintain the stored map directly.
     //
-    // A merge does not change any child's PARENT -- the same-fiber guard above
+    // A merge does not change any child's PARENT -- the same-parent guard above
     // already established that all of them share one -- so the map edit is: the
     // merged id inherits that parent, the consumed ids leave.  No spike is
     // reparented, which is why this operation is O(children) under the new model
@@ -1098,15 +1097,15 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
 }
 
 int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
-    // Session-wide flatten: every fiber ends up covered by exactly ONE atom whose
-    // id is the fiber's own id.  This is the "self child" identity the .clc == .clu
+    // Session-wide flatten: every parent ends up covered by exactly ONE atom whose
+    // id is the parent's own id.  This is the "self child" identity the .clc == .clu
     // lift establishes at load, re-applied to the whole layer -- the bulk form of
-    // the single-fiber collapse, for a session whose sub-mode structure is no
-    // longer wanted (e.g. fiber_stochastic's ~2.5 atoms per fiber after the
-    // fibers themselves have been curated).
+    // the single-parent collapse, for a session whose sub-mode structure is no
+    // longer wanted (e.g. fiber_stochastic's ~2.5 atoms per parent after the
+    // parents themselves have been curated).
     //
     // Deliberately DESTRUCTIVE and distinct from collapseToSelfChildren(), which
-    // is a repair: that one preserves any atom lying wholly inside one fiber as
+    // is a repair: that one preserves any atom lying wholly inside one parent as
     // deliberate sub-structure and only re-cuts what straddles.  This one removes
     // the sub-structure outright, which is the point.
     if (!childData || !clusteringData) return -1;
@@ -1118,21 +1117,21 @@ int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
     // a partial relabel would corrupt the atom layer -- refuse instead of guessing.
     if (cluByRow.size() != childByRow.size() || cluByRow.size() < 2) return -1;
 
-    // The lift is applied to EVERY fiber including the reserve bins (0 artifact /
+    // The lift is applied to EVERY parent including the reserve bins (0 artifact /
     // 1 noise).  Skipping them, as collapseToSelfChildren does, would leave their
     // atoms carrying arbitrary ids -- and an atom left in a reserve bin whose id
-    // happens to equal a real fiber id would immediately span two fibers, i.e.
+    // happens to equal a real parent id would immediately span two parents, i.e.
     // this button would itself create the nesting violation it is meant to tidy
-    // away.  Mapping atom := fiber everywhere makes the result trivially sound:
-    // .clc is exactly .clu, so no atom can span two fibers by construction.
+    // away.  Mapping atom := parent everywhere makes the result trivially sound:
+    // .clc is exactly .clu, so no atom can span two parents by construction.
     QVector<dataType> newLabels(childByRow.size(), 0);
-    QSet<int> collapsedFibers;                    // fibers that actually lost an atom
+    QSet<int> collapsedParents;                    // parents that actually lost an atom
     for (int r = 1; r < childByRow.size(); ++r){
         const dataType F = cluByRow[r];
         newLabels[r] = F;
-        if (childByRow[r] != F) collapsedFibers.insert(static_cast<int>(F));
+        if (childByRow[r] != F) collapsedParents.insert(static_cast<int>(F));
     }
-    if (collapsedFibers.isEmpty()) return 0;      // already one self atom per fiber
+    if (collapsedParents.isEmpty()) return 0;      // already one self atom per parent
 
     const int atomsBefore = static_cast<int>(childData->clusterIds().size());
 
@@ -1154,7 +1153,7 @@ int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
     recordChildEdit(e);
 
     syncChildColors();
-    // Child-primary: a flatten rewrites the whole relation -- every fiber ends up
+    // Child-primary: a flatten rewrites the whole relation -- every parent ends up
     // covered by one atom carrying its own id -- so the map is RESEEDED from the
     // arrays rather than edited.  Clearing the seed flag makes the next rebuild do
     // it, which is the same path the load uses and therefore the same code.
@@ -1213,7 +1212,7 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
 // driven by undo()/redo()) and the atom stack (childData, driven by
 // undoChildEdit()/redoChildEdit()).  There is no unified-order timeline -- a
 // keystroke reverts the most recent edit IN THE ACTIVE LAYER only, so an atom
-// undo can never revert a fiber edit and vice versa; switch scope to undo the
+// undo can never revert a parent edit and vice versa; switch scope to undo the
 // other layer.  The forced atom undo/redo (Ctrl+Shift+Z / Ctrl+Shift+Y) reaches
 // the atom stack regardless of which layer is shown.
 
@@ -1234,7 +1233,7 @@ void KlustersDoc::undoDispatch(){
     if (!v) return;
     if (childScopeActive){                        // atom layer shown -> atom stack only
         if (childUndoCount() > 0) undoChildEdit(*v);
-    } else {                                      // fiber layer shown -> parent stack only
+    } else {                                      // parent layer shown -> parent stack only
         if (parentUndoCount() > 0) undo();
     }
 }
@@ -1313,7 +1312,7 @@ bool KlustersDoc::saveHierarchySiblings(){
         // childData is built lazily by loadChildClustering() -- only once the
         // hierarchical view has actually been opened.  So a session curated WITHOUT
         // ever opening that view gets no re-cut at all: the .clu moves, the on-disk
-        // .clc does not, and atoms end up under more than one fiber at the file
+        // .clc does not, and atoms end up under more than one parent at the file
         // level.  buildHierarchyMaps() sees exactly that on its scan, warns, and
         // keeps the first-seen parent for each child -- which is a reasonable way to
         // finish BUILDING a map, and a bad thing to then SAVE, because the arbitrary
@@ -1323,19 +1322,19 @@ bool KlustersDoc::saveHierarchySiblings(){
         // childData-guarded above), so persisting the .clp would leave a triple whose
         // three files disagree, with the .clp the only one asserting a nesting that
         // is false.  Keep the previous .clp instead and say what to do: opening the
-        // hierarchical view loads the atom layer and refiberize() re-cuts the
+        // hierarchical view loads the atom layer and repairNesting() re-cuts the
         // straddlers, after which a save writes a consistent triple.
         //
         // validateHierarchyMaps() does not cover this: it compares the in-memory map
         // against the loaded layers, and there is no loaded child layer here.
         if (hierarchyScanFoundViolation && !childData){
             qWarning() << "[hierarchy] REFUSING to write" << clpSiblingPath
-                       << "-- the per-spike .clu/.clc disagree about which fiber owns at"
+                       << "-- the per-spike .clu/.clc disagree about which parent owns at"
                        << "least one atom, and with no child layer loaded nothing has"
                        << "re-cut them, so the map would record an arbitrary owner for"
                        << "each straddle.  The previous .clp is left in place.  Open the"
                        << "hierarchical view (which loads the atom layer and re-cuts on"
-                       << "the next edit, or use Refiberize) and save again.";
+                       << "the next edit, or use Repair Nesting) and save again.";
             return ok;
         }
         int nChildren = 0;

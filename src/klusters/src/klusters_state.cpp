@@ -532,12 +532,12 @@ void KlustersApp::slotStateChanged(const QString& state)
         // Hierarchy-menu mutators initiate parent/child membership changes too, so
         // they must be locked for the duration of any realign (manual or post-edit);
         // otherwise a GUI-thread edit could race the background realign worker.
-        if (mMergeFibers)    mMergeFibers->setEnabled(false);
+        if (mMergeParents)    mMergeParents->setEnabled(false);
         if (mPromoteChild)   mPromoteChild->setEnabled(false);
         if (mGroupChildren)  mGroupChildren->setEnabled(false);
-        if (mDissolveFiber)  mDissolveFiber->setEnabled(false);
+        if (mDissolveParent)  mDissolveParent->setEnabled(false);
         if (mDropChildNoise) mDropChildNoise->setEnabled(false);
-        if (mRefiberize)     mRefiberize->setEnabled(false);
+        if (mRepairNesting)     mRepairNesting->setEnabled(false);
         if (mMergeChildren)  mMergeChildren->setEnabled(false);
         if (mUndoChildEdit)  mUndoChildEdit->setEnabled(false);
         if (mRedoChildEdit)  mRedoChildEdit->setEnabled(false);
@@ -578,12 +578,12 @@ void KlustersApp::slotStateChanged(const QString& state)
         mIncreaseAmplitudeCorrelation->setEnabled(true);
         mDecreaseAmplitudeCorrelation->setEnabled(true);
         // Restore the hierarchy-menu mutators locked by realignState.
-        if (mMergeFibers)    mMergeFibers->setEnabled(true);
+        if (mMergeParents)    mMergeParents->setEnabled(true);
         if (mPromoteChild)   mPromoteChild->setEnabled(true);
         if (mGroupChildren)  mGroupChildren->setEnabled(true);
-        if (mDissolveFiber)  mDissolveFiber->setEnabled(true);
+        if (mDissolveParent)  mDissolveParent->setEnabled(true);
         if (mDropChildNoise) mDropChildNoise->setEnabled(true);
-        if (mRefiberize)     mRefiberize->setEnabled(true);
+        if (mRepairNesting)     mRepairNesting->setEnabled(true);
         if (mMergeChildren)  mMergeChildren->setEnabled(true);
         if (mUndoChildEdit)  mUndoChildEdit->setEnabled(true);
         if (mRedoChildEdit)  mRedoChildEdit->setEnabled(true);

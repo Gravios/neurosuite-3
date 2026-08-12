@@ -234,7 +234,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     // implementation of <base>.<type>[.<method>].<grp>[.<suffix>] (handles a
     // dotted base, an optional method tag, and a post-group suffix such as
     // .drift / .merged / .microfiber).  The anchor type may be a cluster-id file
-    // (.clu fibers / .clc microfiber children) or a sibling the user opened to
+    // (.clu parents / .clc microfiber children) or a sibling the user opened to
     // bootstrap clustering (.fet); its method pins resolution of every sibling
     // (.spk/.fet/.pca/.res).  An untagged legacy name yields method="" which is
     // read as "standard".
@@ -256,7 +256,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
         "spk", electrodeGroupID, sessionMethod);
 
-    // cluFileUrl: if a cluster-id file itself was opened (.clu fibers or .clc
+    // cluFileUrl: if a cluster-id file itself was opened (.clu parents or .clc
     // microfiber children -- same writeClu format), use it verbatim (this
     // preserves a post-group suffix such as .merged / .microfiber).  Otherwise
     // the user opened a sibling (e.g. the .fet, to bootstrap clustering before

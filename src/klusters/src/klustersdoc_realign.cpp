@@ -492,7 +492,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // -----------------------------------------------------------------------
     // Cluster spike indices
     // -----------------------------------------------------------------------
-    // Resolve the selected cluster from the ACTIVE layer: the parent fiber normally, or a
+    // Resolve the selected cluster from the ACTIVE layer: the parent parent normally, or a
     // child atom when a child is shown (childScopeActive).  data() == clusteringData unless a
     // child is active, so the parent / Align-All paths are byte-for-byte unchanged; this lets
     // realign target a single microfiber whose spikes scatter relative to its parent's mean.
@@ -781,7 +781,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     std::vector<int>   cumShift(static_cast<size_t>(N), 0);
     std::vector<float> bestScore(static_cast<size_t>(N), 0.0f);
 
-    // realignMode 3 (--align-centroid): reference-free per-spike centroid de-jitter -- the fiber-kit
+    // realignMode 3 (--align-centroid): reference-free per-spike centroid de-jitter -- the parent-kit
     // fiber_realign method='centroid'.  No template, no xcorr: each spike is shifted so its OWN circular
     // energy centroid lands on the POPULATION's circular-mean centroid (perSpikeCentroidShifts, the shared
     // realign_center math).  Fill cumShift and roll wavBuf exactly as the xcorr loop would, then set
@@ -2078,8 +2078,8 @@ void KlustersDoc::invalidateWaveformCache(int clusterId)
 {
     clusteringData->invalidateWaveformCache(clusterId);
     // Keep the child atom layer in step so child views re-read the realigned .spk instead
-    // of serving stale cached waveforms.  A parent-fiber realign touches that fiber's atoms;
-    // a child-atom realign (child scope) touches the atom itself and its parent fiber.
+    // of serving stale cached waveforms.  A parent-parent realign touches that parent's atoms;
+    // a child-atom realign (child scope) touches the atom itself and its parent parent.
     if (childData) {
         childData->invalidateWaveformCache(clusterId);
         for (int kid : childrenOf(QList<int>{ clusterId }))

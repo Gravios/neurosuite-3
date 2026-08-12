@@ -126,7 +126,7 @@ void KlustersDoc::renumberClusters(){
     //no colour entry), so the positional walk ran past the end of itemList.  Because
     //ItemColors::changeItemId does an unchecked QList::at(), that dereferenced a
     //garbage pointer -> the SIGSEGV seen via the deferred autoPostClusterEdit ->
-    //renumberClusters after grouping two parent fibers.
+    //renumberClusters after grouping two parent parents.
     //
     //Resolve every colour entry's position by its OLD id up front, then apply the
     //new ids.  All lookups happen by old id BEFORE any mutation, so a freshly written
@@ -149,9 +149,9 @@ void KlustersDoc::renumberClusters(){
     // Translate S-pinned cluster ids through the rename so any
     // pinning the user established before R survives the renumber.
     clusterPalette.renumberPinnedIds(clusterIdsOldNew);
-    // Translate a pending post-edit fiber selection through the same map so it still
-    // lands on the produced fibers after the ids are compacted.
-    renumberPendingFiberSelection(clusterIdsOldNew);
+    // Translate a pending post-edit parent selection through the same map so it still
+    // lands on the produced parents after the ids are compacted.
+    renumberPendingParentSelection(clusterIdsOldNew);
 
     //Notify all the views of the modification
     const int numberOfView(viewList->count());
@@ -178,14 +178,14 @@ void KlustersDoc::renumberClusters(){
     activeView->showAllWidgets();
 
     //Update the palette of cluster
-    // FIBER palette, unconditionally: this pipeline renames fibers and knows nothing
-    // about atoms, so routing it by the current scope would hand fiber ids to the
+    // FIBER palette, unconditionally: this pipeline renames parents and knows nothing
+    // about atoms, so routing it by the current scope would hand parent ids to the
     // child palette and match nothing.
     // NEVER activeView->clusters() here.  That is the FIBER selection only while
-    // the views are showing fibers; in child scope they show the selected CHILDREN,
-    // so it returns ATOM ids, and handing those to the fiber palette selects
-    // whatever fibers carry the same numbers.  The child palette repopulates from
-    // the fiber selection, so it then switches to an unrelated parent and the user's
+    // the views are showing parents; in child scope they show the selected CHILDREN,
+    // so it returns ATOM ids, and handing those to the parent palette selects
+    // whatever parents carry the same numbers.  The child palette repopulates from
+    // the parent selection, so it then switches to an unrelated parent and the user's
     // children vanish -- parentSlotA jumping 1983 -> 39, then 1983 -> 96.
     //
     // Conditioning that on childScopeActive was not enough, and the trace shows why:
@@ -194,7 +194,7 @@ void KlustersDoc::renumberClusters(){
     // renumber runs.  The flag is false while the views are still showing children,
     // so the guard fell through to the very call it was added to avoid.
     //
-    // The fiber palette's own selection is the fiber selection in BOTH scopes, by
+    // The parent palette's own selection is the parent selection in BOTH scopes, by
     // definition, so take it unconditionally and map it through the rename.  No flag
     // to be wrong about.
     // A renumber changes ids, not which clusters are selected.  The list still has
@@ -211,7 +211,7 @@ void KlustersDoc::renumberClusters(){
     // here: renumberClusters runs inside the deferred post-edit flow and that signal
     // would re-enter it (see scheduleAutoPostClusterEdit, which deliberately hooks
     // only renumber()).  The child palette refreshes on the post-edit parent
-    // selection (applyPendingFiberSelection) or the next user selection.
+    // selection (applyPendingParentSelection) or the next user selection.
     if (childData) rebuildHierarchyFromData();
 }
 
@@ -321,14 +321,14 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     activeView->showAllWidgets();
 
     // Refresh palette.
-    // FIBER palette, unconditionally: this pipeline renames fibers and knows nothing
-    // about atoms, so routing it by the current scope would hand fiber ids to the
+    // FIBER palette, unconditionally: this pipeline renames parents and knows nothing
+    // about atoms, so routing it by the current scope would hand parent ids to the
     // child palette and match nothing.
     // NEVER activeView->clusters() here.  That is the FIBER selection only while
-    // the views are showing fibers; in child scope they show the selected CHILDREN,
-    // so it returns ATOM ids, and handing those to the fiber palette selects
-    // whatever fibers carry the same numbers.  The child palette repopulates from
-    // the fiber selection, so it then switches to an unrelated parent and the user's
+    // the views are showing parents; in child scope they show the selected CHILDREN,
+    // so it returns ATOM ids, and handing those to the parent palette selects
+    // whatever parents carry the same numbers.  The child palette repopulates from
+    // the parent selection, so it then switches to an unrelated parent and the user's
     // children vanish -- parentSlotA jumping 1983 -> 39, then 1983 -> 96.
     //
     // Conditioning that on childScopeActive was not enough, and the trace shows why:
@@ -337,7 +337,7 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     // renumber runs.  The flag is false while the views are still showing children,
     // so the guard fell through to the very call it was added to avoid.
     //
-    // The fiber palette's own selection is the fiber selection in BOTH scopes, by
+    // The parent palette's own selection is the parent selection in BOTH scopes, by
     // definition, so take it unconditionally and map it through the rename.  No flag
     // to be wrong about.
     // A renumber changes ids, not which clusters are selected.  The list still has
@@ -446,7 +446,7 @@ void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
 // re-expressed with exceptions, which is how this codebase's worst bugs start.
 //
 // What an atom rename actually needs is: the atom layer's own renumber, its own
-// colour list kept in step, the fiber<-atom map re-derived because the rename
+// colour list kept in step, the parent<-atom map re-derived because the rename
 // changes childToParent's KEYS, and the child palette told to refresh and land
 // on the moved atoms.
 // ---------------------------------------------------------------------------

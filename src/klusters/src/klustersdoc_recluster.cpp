@@ -244,7 +244,7 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
     // no parent/child collision; childData->prepareUndo captured the edit on its
     // own stack).  Refresh the child layer with the same known-good sequence the
     // other hierarchy edits use and return: rebuildHierarchyFromData re-derives
-    // each new atom's parent (their spikes still belong to the original fiber),
+    // each new atom's parent (their spikes still belong to the original parent),
     // and hierarchyChanged repopulates the child palette.  The parent-oriented
     // body below (undo, parent palette/colours/views) must NOT run for a child
     // recluster.
@@ -258,10 +258,10 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         recordChildEdit(e);
 
         // The recluster pooled the selected atoms' spikes and re-split them, so a new atom can
-        // span several fibers.  Rather than invent a parent for it (which created spurious new
-        // fibers), nest each new atom under the fiber its spikes belong to: collapseToSelfChildren
-        // keeps an atom that lands wholly inside one fiber and collapses any straddling portion
-        // into that fiber's self child.  No new fiber, and every fiber keeps a covering child.
+        // span several parents.  Rather than invent a parent for it (which created spurious new
+        // parents), nest each new atom under the parent its spikes belong to: collapseToSelfChildren
+        // keeps an atom that lands wholly inside one parent and collapses any straddling portion
+        // into that parent's self child.  No new parent, and every parent keeps a covering child.
         collapseToSelfChildren();
         emit hierarchyChildrenCreated(reclusteredClusterList);   // select the new atoms after the rebuild
         modified = true;
@@ -270,10 +270,10 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
 
     //Prepare the undo
     prepareReclusteringUndo(reclusteredClusterList,clustersToRecluster);
-    // Parent-scope recluster: the freshly created fibers need realign.  (The child branch
-    // returned above, nesting its new atoms under the existing fibers via collapseToSelfChildren.)
-    for (int nf : reclusteredClusterList) noteModifiedFiber(nf);
-    setPendingFiberSelection(reclusteredClusterList);   // land on the reclustered fibers
+    // Parent-scope recluster: the freshly created parents need realign.  (The child branch
+    // returned above, nesting its new atoms under the existing parents via collapseToSelfChildren.)
+    for (int nf : reclusteredClusterList) noteModifiedParent(nf);
+    setPendingParentSelection(reclusteredClusterList);   // land on the reclustered parents
 
     //Check if the active view is a ProcessWidget
     bool isProcessWidget = dynamic_cast<KlustersApp*>(parent)->doesActiveDisplayContainProcessWidget();
@@ -353,13 +353,13 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
     }
 
     // Hierarchical mode: a PARENT recluster re-draws the parent's spikes across the new
-    // fibers without touching the atom layer, so the source fiber's atom(s) now straddle them
-    // -- and a recluster of the artifact bin leaves the new fibers carrying only the reserve
-    // atom.  refiberize re-cuts the straddlers AND mints a covering atom per new fiber (incl.
-    // the artifact-derived ones), so each new fiber gets its own microfiber child instead of
-    // several fibers sharing one atom (or none).  It also rebuilds child->parent and emits
+    // parents without touching the atom layer, so the source parent's atom(s) now straddle them
+    // -- and a recluster of the artifact bin leaves the new parents carrying only the reserve
+    // atom.  repairNesting re-cuts the straddlers AND mints a covering atom per new parent (incl.
+    // the artifact-derived ones), so each new parent gets its own microfiber child instead of
+    // several parents sharing one atom (or none).  It also rebuilds child->parent and emits
     // hierarchyChanged to repopulate the child palette.  childData-guarded; flat sessions are
     // untouched.
     if (childData)
-        refiberize();
+        repairNesting();
 }
