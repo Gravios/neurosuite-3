@@ -442,6 +442,23 @@ void KlustersApp::startPostOpRealign(const QList<int>& fibers, bool setChanged)
 // ---------------------------------------------------------------------------
 void KlustersApp::applyPendingFiberSelection()
 {
+    // The settled point.
+    //
+    // Three things run automatically after every edit -- a realign, a renumber and
+    // a matrix update -- and this is the last step of both paths that carry them:
+    // the inline one in autoPostClusterEdit(), and slotRealignBatchFinished() when
+    // the realign goes async.  Deriving the child->parent map inside the edit, as
+    // rebuildHierarchyFromData did, produced a map from a state the automation then
+    // changed: renumberClusters() rewrites every id afterwards, and on the async
+    // path the realign had not even started.  That is the 3714-versus-3710 gap seen
+    // in the logs -- not two builders disagreeing, one deriving before the renumber
+    // and the other after.
+    //
+    // childToParent still rebuilds mid-edit, because the palette and the matrices
+    // read it during the operation.  Only the child-primary derivation moves here,
+    // where the arrays have stopped changing.
+    if (doc) doc->deriveStoredMap();
+
     if (!activeView()) return;
     const QList<int> pending = doc->takePendingFiberSelection();
     if (pending.isEmpty()) return;
