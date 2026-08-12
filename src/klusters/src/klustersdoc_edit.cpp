@@ -792,24 +792,19 @@ void KlustersDoc::commitClusterCreation(int newId,
     // only the fiber-level result.  The straddling case is therefore left to
     // collapseToSelfChildren, and the divergence report names it -- which is the
     // measurement worth having, since that repair is what the migration removes.
-    noteMapEdit("splitParent");
-    if (childPrimaryOn && childData && !childScopeActive) {
-        // Hoisted: labelByFeatureRow() returns BY VALUE, so calling it inside the
-        // loop would copy a 422k-element vector per child.
-        const QVector<dataType> labels = clusteringData->labelByFeatureRow();
-        for (int f : fromClusters)
-            for (int c : parentToChildren.value(f)) {
-                const QVector<int> spk = childData->clusterSpkIndices(c);
-                if (spk.isEmpty()) continue;
-                bool anyMoved = false, allMoved = true;
-                for (int i : spk) {
-                    const bool moved = (i < labels.size()
-                                        && static_cast<int>(labels[i]) == newId);
-                    anyMoved |= moved; allMoved &= moved;
-                }
-                if (allMoved && anyMoved) shadowChildToParent.insert(c, newId);
-            }
-    }
+    // Child-primary: nothing is predicted here.
+    //
+    // A parent-level cut that divides a child produces NEW children, one per side,
+    // and which side keeps the original id is decided by collapseToSelfChildren --
+    // with the coverage table in hand, via the self-child, sole-source and plurality
+    // rules.  Reimplementing that here would be the same policy written twice, and
+    // the first attempt did exactly that: it reparented only the wholly-moved
+    // children and left the divided ones to the repair, which then minted 18 ids the
+    // map knew nothing about (measured on a single manual cut on g5: 18
+    // derived-only, 11 disagreeing).
+    //
+    // The repair now publishes its own decision instead, so the map records the same
+    // answer rather than a second guess at it.
 
     emit newClusterAdded(fromClusters, newId, emptiedClusters);
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
