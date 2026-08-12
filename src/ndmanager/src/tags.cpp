@@ -103,10 +103,6 @@ extern const QString QUALITY = "quality";
 extern const QString NB_SAMPLES = "nSamples";
 extern const QString PEAK_SAMPLE_INDEX = "peakSampleIndex";
 extern const QString NB_FEATURES = "nFeatures";
-// 0 = classic PC1,PC2,PC3.  N>0 = the lag feature space: PC1 at -N/0/+N plus PC2,
-// four columns per channel.  Per group, like nFeatures, because it describes the
-// same thing: the width and meaning of a channel's feature block.
-extern const QString FEATURE_LAG = "featureLag";
 extern const QString SDIFF_PAIRS = "sdiffPairs";
 
 //Tag included in FILES
