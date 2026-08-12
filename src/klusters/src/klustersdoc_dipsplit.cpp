@@ -489,7 +489,7 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
 
     // Hierarchical mode: this split partitions the source's spikes by an algorithmic
     // criterion that knows nothing about the .clc atom layer, so every atom the cut
-    // crosses is left spanning the resulting fibers.
+    // crosses is left spanning the resulting parents.
     //
     // Re-cut HERE, immediately after the parent mutation and before anything is told
     // about it.  Everything below is an observer -- view notification, the matrix
@@ -499,7 +499,7 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
     // mutation invalidates the caches those observers just rebuilt, so the refresh is
     // done twice and the first one is wrong.
     // childData-guarded, so flat sessions are untouched.
-    if (childData) refiberize();
+    if (childData) repairNesting();
 
     // ── Curation-log: details + after-snapshot ───────────────────────────
     if (curationLogger && curationLogger->isOpen()) {
@@ -614,7 +614,7 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
     }
     // Hierarchical mode: this split partitions the source's spikes by an algorithmic
     // criterion that knows nothing about the .clc atom layer, so every atom the cut
-    // crosses is left spanning the resulting fibers.
+    // crosses is left spanning the resulting parents.
     //
     // Re-cut HERE, immediately after the parent mutation and before anything is told
     // about it.  Everything below is an observer -- view notification, the matrix
@@ -624,7 +624,7 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
     // mutation invalidates the caches those observers just rebuilt, so the refresh is
     // done twice and the first one is wrong.
     // childData-guarded, so flat sessions are untouched.
-    if (childData) refiberize();
+    if (childData) repairNesting();
 
     QColor color;
     for (int newId : newClusters) {

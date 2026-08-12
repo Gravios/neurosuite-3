@@ -881,8 +881,8 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // slotTabChange's recluster-output branch deselects the parent palette; for a
     // child recluster restore the owning parent's highlight.  selectItems is silent
     // (no scope switch), so the child scope and the new-atom selection in the child
-    // palette are preserved.  For a case-3 child recluster (spans >= 2 fibers) the
-    // deferred applyPendingFiberSelection later selects the synthesised fiber, which
+    // palette are preserved.  For a case-3 child recluster (spans >= 2 parents) the
+    // deferred applyPendingParentSelection later selects the synthesised parent, which
     // correctly overrides this.
     if (childRecluster && reclusteredParent > 1 && clusterPalette)
         clusterPalette->selectItems({reclusteredParent});

@@ -28,7 +28,7 @@ class MergeRecommendView;
 // present its least-bad partner as a 0.9+ recommendation.  The restriction is
 // therefore applied to the OUTPUT, after ranking.
 //
-// At 8736 fibers that is 38.1 M pairs, each costing an envelope-IOU over
+// At 8736 parents that is 38.1 M pairs, each costing an envelope-IOU over
 // nSamp*nChan samples with a lag search -- minutes of work.  It used to run
 // synchronously inside slotRefreshMergeRecommendations(), on the GUI thread,
 // on every hierarchyChanged: which is why a single parent merge froze the UI

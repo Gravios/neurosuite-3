@@ -171,7 +171,7 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
     }
 
     // ── half 2, on a worker: one envelope IOU with a lag search per pair ─────
-    // This is the part that took minutes on the GUI thread at 8736 fibers.
+    // This is the part that took minutes on the GUI thread at 8736 parents.
     ++generation;
     computing = true;
     lastRestricted = !selected.isEmpty();

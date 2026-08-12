@@ -399,7 +399,7 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     // cold-seed on the first edit, incremental thereafter.
     // The cached columns belong to whichever clustering was active when they were
     // computed.  A hierarchy op can switch that under us -- promoteChildren
-    // (promoting children to a new fiber) calls setActiveClustering(false), so a
+    // (promoting children to a new parent) calls setActiveClustering(false), so a
     // cache seeded in child scope would be reused against the parent clustering.
     // Nothing downstream can catch it: the two clusterings share their spikes and
     // their .fet, so every geometry check in cacheUsable passes.
@@ -978,8 +978,8 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
     QList<int> clustersToShow;
     QList<int> previousSelectedClusters;
     // matrixData(), not data(): when the matrix is scoped these are ATOM ids and
-    // data() is the fiber layer, so every cluster would read as "no longer exists"
-    // -- or worse, coincide with an unrelated fiber.
+    // data() is the parent layer, so every cluster would read as "no longer exists"
+    // -- or worse, coincide with an unrelated parent.
     QList<dataType> existingClusters = doc.matrixData().clusterIds();
 
     //Check if the clusters still exist.

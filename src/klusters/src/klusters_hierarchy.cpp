@@ -151,12 +151,12 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
             doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
     }
     const bool editable = on && doc->hasChildClustering();
-    if(mMergeFibers)    mMergeFibers->setEnabled(editable);
+    if(mMergeParents)    mMergeParents->setEnabled(editable);
     if(mPromoteChild)   mPromoteChild->setEnabled(editable);
     if(mGroupChildren)  mGroupChildren->setEnabled(editable);
-    if(mDissolveFiber)  mDissolveFiber->setEnabled(editable);
+    if(mDissolveParent)  mDissolveParent->setEnabled(editable);
     if(mDropChildNoise) mDropChildNoise->setEnabled(editable);
-    if(mRefiberize)     mRefiberize->setEnabled(editable);
+    if(mRepairNesting)     mRepairNesting->setEnabled(editable);
     if(mMergeChildren)  mMergeChildren->setEnabled(editable);
     if(mMergeAllChildren) mMergeAllChildren->setEnabled(editable);
     if(mUndoChildEdit)  mUndoChildEdit->setEnabled(editable && doc->childUndoCount() > 0);
@@ -167,11 +167,11 @@ void KlustersApp::slotMergeChildren(){
     if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
     if(kids.size() < 2){
-        statusBar()->showMessage(tr("Select two or more children of the same fiber to merge."), 4000);
+        statusBar()->showMessage(tr("Select two or more children of the same parent to merge."), 4000);
         return;
     }
     if(doc->mergeChildren(kids, *activeView()) < 0)
-        statusBar()->showMessage(tr("Children must belong to the same fiber to merge."), 4000);
+        statusBar()->showMessage(tr("Children must belong to the same parent to merge."), 4000);
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
 }
@@ -180,11 +180,11 @@ void KlustersApp::slotFlattenHierarchyToClu(){
     if(!activeView() || !doc->hasChildClustering()) return;
     // Destructive across the whole session -- the entire sub-mode layer goes away
     // -- so confirm before doing it rather than after.  Undo exists (one step),
-    // but a mis-click on 8000+ fibers is not something to discover by surprise.
+    // but a mis-click on 8000+ parents is not something to discover by surprise.
     const QMessageBox::StandardButton go = QMessageBox::question(this,
         tr("Merge all children"),
-        tr("Merge every fiber's child atoms into a single self child\n"
-           "(atom id == fiber id)?\n\n"
+        tr("Merge every parent's child atoms into a single self child\n"
+           "(atom id == parent id)?\n\n"
            "This discards all sub-mode structure in the atom layer for the\n"
            "whole session.  It can be undone in one step with Ctrl+Shift+Z,\n"
            "and is written to disk only when you save."),
@@ -193,13 +193,13 @@ void KlustersApp::slotFlattenHierarchyToClu(){
 
     const int removed = doc->flattenHierarchyToClu(*activeView());
     if(removed < 0)
-        statusBar()->showMessage(tr("Could not flatten: the fiber and atom layers "
+        statusBar()->showMessage(tr("Could not flatten: the parent and atom layers "
                                     "disagree in length."), 6000);
     else if(removed == 0)
-        statusBar()->showMessage(tr("Nothing to do: every fiber already has a single "
+        statusBar()->showMessage(tr("Nothing to do: every parent already has a single "
                                     "self child."), 4000);
     else
-        statusBar()->showMessage(tr("Merged all children: %1 atom(s) removed; each fiber "
+        statusBar()->showMessage(tr("Merged all children: %1 atom(s) removed; each parent "
                                     "is now its own self child.").arg(removed), 6000);
     repopulateChildPalette(clusterPalette->selectedClusters());
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
@@ -224,30 +224,30 @@ void KlustersApp::slotRedoChildEdit(){
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
 }
 
-void KlustersApp::slotGroupChildrenIntoFiber(){
+void KlustersApp::slotPromoteChildren(){
     if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
     if(kids.isEmpty()){
-        statusBar()->showMessage(tr("Select the children to group into a new fiber."), 4000);
+        statusBar()->showMessage(tr("Select the children to group into a new parent."), 4000);
         return;
     }
     doc->promoteChildren(kids, *activeView());
 }
 
-void KlustersApp::slotDissolveFiber(){
+void KlustersApp::slotDissolveParent(){
     if(!activeView()) return;
     const QList<int> sel = clusterPalette->selectedClusters();
     if(sel.size() != 1){
-        statusBar()->showMessage(tr("Select exactly one fiber to dissolve into its children."), 4000);
+        statusBar()->showMessage(tr("Select exactly one parent to dissolve into its children."), 4000);
         return;
     }
-    doc->dissolveFiber(sel.first(), *activeView());
+    doc->dissolveParent(sel.first(), *activeView());
 }
 
-void KlustersApp::slotRefiberize(){
+void KlustersApp::slotRepairNesting(){
     if(!activeView()) return;
-    doc->refiberize();   // re-cut straddling atoms + rebuild the child<->fiber maps (.clp on Save)
-    statusBar()->showMessage(tr("Refiberized: atoms re-cut onto the current fibers."), 4000);
+    doc->repairNesting();   // re-cut straddling atoms + rebuild the child<->parent maps (.clp on Save)
+    statusBar()->showMessage(tr("Nesting repaired: atoms re-cut onto the current parents."), 4000);
 }
 
 void KlustersApp::slotDropChildToNoise(){
@@ -261,14 +261,14 @@ void KlustersApp::slotDropChildToNoise(){
         doc->dropChildToNoise(c, *activeView());
 }
 
-void KlustersApp::slotMergeFibers(){
+void KlustersApp::slotMergeParents(){
     if(!activeView()) return;
     const QList<int> sel = clusterPalette->selectedClusters();
     if(sel.size() < 2){
-        statusBar()->showMessage(tr("Select two or more fibers in the main palette to merge."), 4000);
+        statusBar()->showMessage(tr("Select two or more parents in the main palette to merge."), 4000);
         return;
     }
-    doc->mergeParentFibers(sel, *activeView());
+    doc->mergeParents(sel, *activeView());
 }
 
 void KlustersApp::slotPromoteChildren(){
@@ -278,15 +278,15 @@ void KlustersApp::slotPromoteChildren(){
         statusBar()->showMessage(tr("Select one or more children to promote."), 4000);
         return;
     }
-    // One new fiber PER CHILD -- each promoted child becomes its own parent, and
-    // each call is one undo step.  Pooling them into a single fiber is the other
+    // One new parent PER CHILD -- each promoted child becomes its own parent, and
+    // each call is one undo step.  Pooling them into a single parent is the other
     // operation, reached by passing them together.
     QList<int> newParents;
     for(int c : kids){
         const int p = doc->promoteChildren(QList<int>{c}, *activeView());
         if(p > 0) newParents.append(p);
     }
-    // The new fibers inherit focus: select them in the main palette and give it
+    // The new parents inherit focus: select them in the main palette and give it
     // list focus so the curator continues from the just-promoted parents.
     if(!newParents.isEmpty() && clusterPalette){
         clusterPalette->selectItems(newParents);
@@ -323,7 +323,7 @@ void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
     // off as a side effect of redrawing a list.
     //
     // Everything downstream keys off that flag.  isChildClusteringActive() is what
-    // the fiber-palette focus guards test, so they disarmed and pulled focus to the
+    // the parent-palette focus guards test, so they disarmed and pulled focus to the
     // parent; refreshActivePalette() routes on it, so later refreshes went to the
     // wrong palette; and slotChildSelectionChanged() sets it false again when the
     // rebuilt palette comes up with nothing selected, which closed the loop.  The
@@ -387,7 +387,7 @@ void KlustersApp::cycleHierarchyFocus(bool forward){
 // child view is visible.  All operations reuse the existing doc primitives
 // (the same ones the &Hierarchy menu drives).  Returns true when consumed.
 //   G (no mod) ............ adaptive merge (see below)
-//   Ctrl+Up ............... new fiber from selected children (or all children of 2+ parents)
+//   Ctrl+Up ............... new parent from selected children (or all children of 2+ parents)
 //   Ctrl+Down ............. group selected parents
 //   Ctrl+Shift+Down ....... dissolve the selected parent
 // (The Ctrl+Left/Right A<->B spike-custody transfer was retired with the second
@@ -406,13 +406,13 @@ bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
         if(!paletteHasFocus()) return false;
         if(kidsAB.size() >= 2){
             if(doc->mergeChildren(kidsAB, *activeView()) < 0)
-                statusBar()->showMessage(tr("Children must belong to the same fiber to merge."), 4000);
+                statusBar()->showMessage(tr("Children must belong to the same parent to merge."), 4000);
         } else if(kidsAB.size() == 1){
-            statusBar()->showMessage(tr("Select 2+ children to merge, or none to merge a whole fiber's children."), 4000);
+            statusBar()->showMessage(tr("Select 2+ children to merge, or none to merge a whole parent's children."), 4000);
         } else if(parents.size() == 1){
-            doc->mergeChildren(doc->childrenOf(parents), *activeView());   // collapse one fiber's children
+            doc->mergeChildren(doc->childrenOf(parents), *activeView());   // collapse one parent's children
         } else if(parents.size() >= 2){
-            doc->mergeParentFibers(parents, *activeView());                // fold parents into one
+            doc->mergeParents(parents, *activeView());                // fold parents into one
         } else {
             return false;
         }
@@ -423,11 +423,11 @@ bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
     // Arrow operations require the Ctrl modifier and a palette in focus.
     if(!ctrl || !paletteHasFocus()) return false;
 
-    if(key == Qt::Key_Up && !shift){                       // new fiber from children
+    if(key == Qt::Key_Up && !shift){                       // new parent from children
         QList<int> kids = kidsAB;
         if(kids.isEmpty() && parents.size() >= 2) kids = doc->childrenOf(parents);
         if(kids.isEmpty()){
-            statusBar()->showMessage(tr("Select children (or 2+ parents) to form a new fiber."), 4000);
+            statusBar()->showMessage(tr("Select children (or 2+ parents) to form a new parent."), 4000);
             return true;
         }
         doc->promoteChildren(kids, *activeView());
@@ -435,18 +435,18 @@ bool KlustersApp::dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods){
     }
     if(key == Qt::Key_Down && shift){                      // dissolve parent
         if(parents.size() != 1){
-            statusBar()->showMessage(tr("Select exactly one fiber to dissolve into its children."), 4000);
+            statusBar()->showMessage(tr("Select exactly one parent to dissolve into its children."), 4000);
             return true;
         }
-        doc->dissolveFiber(parents.first(), *activeView());
+        doc->dissolveParent(parents.first(), *activeView());
         return true;
     }
     if(key == Qt::Key_Down && !shift){                     // group parents
         if(parents.size() < 2){
-            statusBar()->showMessage(tr("Select two or more fibers to group."), 4000);
+            statusBar()->showMessage(tr("Select two or more parents to group."), 4000);
             return true;
         }
-        doc->mergeParentFibers(parents, *activeView());
+        doc->mergeParents(parents, *activeView());
         return true;
     }
     if((key == Qt::Key_Left || key == Qt::Key_Right) && !shift){
@@ -467,14 +467,14 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     //
     // Four call sites reach here as a refresh and pass
     // clusterPalette->selectedClusters() straight through, so deriving the parent
-    // from that argument made the displayed parent a function of the fiber
+    // from that argument made the displayed parent a function of the parent
     // selection at whatever instant a rebuild happened to run -- and any
     // incidental change to that selection moved the user to another parent in the
     // middle of curating.  Merging two children and landing on a different parent
     // was this.
     //
     // Now the doc owns it and changes it in exactly two situations: the user
-    // selects a fiber, or the parent ceases to exist.  A caller that merely wants
+    // selects a parent, or the parent ceases to exist.  A caller that merely wants
     // the list redrawn cannot move it, which is the property that makes the mode
     // usable -- every operation lands on its own output under the same parent.
     Q_UNUSED(parents);

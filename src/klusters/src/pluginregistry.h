@@ -24,7 +24,7 @@ struct KlustersPlugin {
     QList<PluginParameter> parameters;  // <parameters><parameter>...
     QString help;                       // <help>
     // <klusters> extension (empty for a plain ndManager descriptor):
-    QString kind;                       // recluster | refiber | analysis | export
+    QString kind;                       // recluster | repair | analysis | export
     QStringList consumes;               // base group variant tag selection children
     QString produces;                   // clu | triple | report | none
     QString integration;                // recluster-integrate | hierarchy-reload | none

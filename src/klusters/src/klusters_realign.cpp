@@ -343,27 +343,27 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
         }
     }
     updateUndoRedoDisplay();
-    // Authoritative final step: land on the fibers the op produced (ids already
+    // Authoritative final step: land on the parents the op produced (ids already
     // translated through the renumber above).  No-op if nothing is pending.
-    applyPendingFiberSelection();
+    applyPendingParentSelection();
 }
 
 // ---------------------------------------------------------------------------
 // startPostOpRealign
 //
-// Launch a batch realign of the parent fibers an edit just created/modified.
+// Launch a batch realign of the parent parents an edit just created/modified.
 // Mirrors the slotPcaAlignAllClusters launch (args derivation, progress widget,
-// batch-state init, realign lock, worker start) but scoped to the given fibers
+// batch-state init, realign lock, worker start) but scoped to the given parents
 // and with no confirm dialog.  Sets realignPostOpRenumberMatrix so the batch
 // finish handler runs the renumber + matrix recompute.
 //
-// Preconditions (checked by the caller, autoPostClusterEdit): doc valid, fibers
+// Preconditions (checked by the caller, autoPostClusterEdit): doc valid, parents
 // non-empty and already filtered to existing members with id>1, and the realign
 // lane idle (!realignRunning && !realignBatchActive).
 // ---------------------------------------------------------------------------
-void KlustersApp::startPostOpRealign(const QList<int>& fibers, bool setChanged)
+void KlustersApp::startPostOpRealign(const QList<int>& parents, bool setChanged)
 {
-    if (fibers.isEmpty()) return;
+    if (parents.isEmpty()) return;
     // Refresh the saved-mode args (top-ch gate + --pca-refine) like the
     // single-cluster and Align-All paths, then derive the batch args: strip any
     // top-ch / pca-refine tokens and re-add for the current top-channel count.
@@ -397,9 +397,9 @@ void KlustersApp::startPostOpRealign(const QList<int>& fibers, bool setChanged)
         realignProgressBar->setMaximumWidth(280);
         statusBar()->addPermanentWidget(realignProgressBar);
     }
-    realignProgressBar->setRange(0, fibers.size());
+    realignProgressBar->setRange(0, parents.size());
     realignProgressBar->setValue(0);
-    realignProgressBar->setFormat(tr("Auto-realign: %v / %m fiber(s)"));
+    realignProgressBar->setFormat(tr("Auto-realign: %v / %m parent(s)"));
     realignProgressBar->show();
     // Clean up any leftover thread / worker from a prior single-cluster run.
     if (realignThread) {
@@ -414,33 +414,33 @@ void KlustersApp::startPostOpRealign(const QList<int>& fibers, bool setChanged)
     }
     // Initialise batch state and launch ONE worker for the whole list.
     realignBatchActive          = true;
-    realignBatchTotal           = fibers.size();
+    realignBatchTotal           = parents.size();
     realignBatchAccepted        = 0;
     realignBatchFailed          = 0;
     realignBatchShiftedTotal    = 0;
     realignBatchTouched.clear();
     realignPostOpRenumberMatrix = true;       // run renumber+matrix on batch finish
     realignPostOpSetChanged     = setChanged;
-    doc->beginRealignBatchLog(fibers);
+    doc->beginRealignBatchLog(parents);
     realignRunning = true;
     slotStateChanged(QStringLiteral("realignState"));
-    slotStatusMsg(tr("Auto-realign: 0 / %1 fiber(s) …").arg(fibers.size()));
-    startRealignBatchWorker(fibers, realignBatchArgs);
+    slotStatusMsg(tr("Auto-realign: 0 / %1 parent(s) …").arg(parents.size()));
+    startRealignBatchWorker(parents, realignBatchArgs);
 }
 
 // ---------------------------------------------------------------------------
-// applyPendingFiberSelection
+// applyPendingParentSelection
 //
-// Last step of the post-edit flow: land the selection on the fibers the
+// Last step of the post-edit flow: land the selection on the parents the
 // operation produced/kept, in parent scope.  Runs after the async realign +
 // renumber, so the doc's pending ids have already been translated through the
-// renumber map and point at the final fibers.  Mirrors the selection path
+// renumber map and point at the final parents.  Mirrors the selection path
 // renumberClusters uses (palette selectItems + shownClustersUpdate).
 //
 // Atom-only ops leave the pending set empty and select their new atoms via the
 // hierarchyChildrenCreated handler at op time instead.
 // ---------------------------------------------------------------------------
-void KlustersApp::applyPendingFiberSelection()
+void KlustersApp::applyPendingParentSelection()
 {
     // The settled point.
     //
@@ -460,19 +460,19 @@ void KlustersApp::applyPendingFiberSelection()
     if (doc) doc->deriveStoredMap();
 
     if (!activeView()) return;
-    const QList<int> pending = doc->takePendingFiberSelection();
+    const QList<int> pending = doc->takePendingParentSelection();
     if (pending.isEmpty()) return;
-    QList<int> fibers;
+    QList<int> parents;
     for (int f : pending)
         if (f > 1 && doc->clusterHasMembers(f))
-            fibers.append(f);
-    if (fibers.isEmpty()) return;
+            parents.append(f);
+    if (parents.isEmpty()) return;
     doc->setActiveClustering(false);                 // parent scope
     if (clusterPalette) {
-        clusterPalette->selectItems(fibers);         // first id is the primary
+        clusterPalette->selectItems(parents);         // first id is the primary
         clusterPalette->setFocusToList();
     }
-    doc->shownClustersUpdate(fibers, *activeView());
+    doc->shownClustersUpdate(parents, *activeView());
 }
 
 // ---------------------------------------------------------------------------

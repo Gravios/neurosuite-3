@@ -194,13 +194,13 @@ void KlustersDoc::forceClusterRefresh(int clusterId)
     for (int i = 0; i < viewList->count(); ++i)
         viewList->at(i)->forceClusterRefresh(clusterId);
 
-    // Hierarchical (.clc child layer): a parent-fiber realign shifts spikes that
-    // also belong to the fiber's child atoms.  A child-scoped view will NOT
+    // Hierarchical (.clc child layer): a parent-parent realign shifts spikes that
+    // also belong to the parent's child atoms.  A child-scoped view will NOT
     // refresh on the parent id -- KlustersView::forceClusterRefresh() only acts
     // when the id is in that view's shownClusters, which for a selected child is
     // the child ids -- so it keeps drawing pre-realign waveforms.  Mirror the
     // child propagation already done in invalidateWaveformCache(): refresh the
-    // fiber's children, plus the parent fiber when clusterId is itself a child.
+    // parent's children, plus the parent parent when clusterId is itself a child.
     // The per-view guard makes this a no-op for any view not showing the id, so
     // it costs nothing outside hierarchical mode.
     if (childData) {
@@ -359,7 +359,7 @@ void KlustersDoc::singleColorUpdate(int clusterId,KlustersView& activeView){
 //
 // inline -- about twenty copies, each one deciding for itself which palette to
 // touch, and all but one of them naming the FIBER palette unconditionally.  In
-// child scope that is the wrong palette: it rebuilds the fiber list and moves the
+// child scope that is the wrong palette: it rebuilds the parent list and moves the
 // selection a level above the atoms the user just edited.  The same shape landed
 // focus on the parent after a child split until it was guarded at the one handler
 // that showed it; the other copies are the same bug waiting for a path that

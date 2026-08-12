@@ -640,8 +640,8 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
     if (!clusterPalette || !activeView()) return;
 
     // T follows the palette the user is actually in.  When a child palette holds
-    // focus the selection is ATOM ids, and renumbering them through the fiber path
-    // would rewrite fiber shownClusters through an atom map -- so dispatch to the
+    // focus the selection is ATOM ids, and renumbering them through the parent path
+    // would rewrite parent shownClusters through an atom map -- so dispatch to the
     // atom-layer path instead.  curationPalette() is the same test the child
     // hierarchy actions use, so T lands in the same place they do.
     if (ClusterPalette* cp = curationPalette()) {

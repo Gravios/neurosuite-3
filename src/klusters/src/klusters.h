@@ -309,15 +309,15 @@ private Q_SLOTS:
      *  hierarchical view is visible). */
     void repopulateChildPalette(const QList<int>& parents);
     /** Hierarchy edits driven from the palettes' current selection. */
-    void slotMergeFibers();
+    void slotMergeParents();
     void slotPromoteChildren();
-    void slotGroupChildrenIntoFiber();
-    void slotDissolveFiber();
-    void slotRefiberize();
+    void slotPromoteChildren();
+    void slotDissolveParent();
+    void slotRepairNesting();
     void slotDropChildToNoise();
     void slotMergeChildren();
-    /** Hierarchy > Flatten Hierarchy: collapse .clc to .clu -- every fiber becomes a single
-     *  self atom (atom id == fiber id).  Confirms first -- it discards the whole
+    /** Hierarchy > Flatten Hierarchy: collapse .clc to .clu -- every parent becomes a single
+     *  self atom (atom id == parent id).  Confirms first -- it discards the whole
      *  sub-mode layer. */
     void slotFlattenHierarchyToClu();
     void slotUndoChildEdit();
@@ -846,10 +846,10 @@ private:
     /** The child palette if it currently owns keyboard focus, else nullptr. */
     ClusterPalette* focusedChildPalette() const;
 
-    /** The palette the user is curating, or nullptr when that is the fiber palette.
+    /** The palette the user is curating, or nullptr when that is the parent palette.
      *
      *  NOT the same question as focusedChildPalette().  Picking a pair by clicking
-     *  a matrix cell puts Qt focus on the MATRIX, so a focus test answers "fiber"
+     *  a matrix cell puts Qt focus on the MATRIX, so a focus test answers "parent"
      *  at exactly the moment the child palette is what is being worked in -- which
      *  is how G and T came to do nothing after a matrix click.  A child palette
      *  holding focus still counts; so does the scoped mode being on, since V is
@@ -919,14 +919,14 @@ private:
     QAction* newGroupingAssistantDisplay;
     //time-chunk curation actions (see slotChunkModeToggled)
     QAction* mHierarchicalView = nullptr;   // View: toggle the child (.clc) palette
-    QAction* mMergeFibers = nullptr;        // Hierarchy: merge selected fibers
+    QAction* mMergeParents = nullptr;        // Hierarchy: merge selected parents
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)
-    QAction* mGroupChildren = nullptr;      // Hierarchy: group selected children into a new fiber
-    QAction* mDissolveFiber = nullptr;      // Hierarchy: explode a fiber into its children
+    QAction* mGroupChildren = nullptr;      // Hierarchy: group selected children into a new parent
+    QAction* mDissolveParent = nullptr;      // Hierarchy: explode a parent into its children
     QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise
-    QAction* mRefiberize = nullptr;         // Hierarchy: re-cut atoms onto the current fibers
+    QAction* mRepairNesting = nullptr;         // Hierarchy: re-cut atoms onto the current parents
     QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)
-    QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every fiber to one self atom
+    QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every parent to one self atom
     QAction* mUndoChildEdit = nullptr;      // Hierarchy: undo last atom-layer edit
     QAction* mRedoChildEdit = nullptr;      // Hierarchy: redo last atom-layer edit
     QAction* mChunkMode;
@@ -1478,20 +1478,20 @@ private:
     void startRealignBatchWorker(const QList<int>& clusterIds,
                                  const QString& launchArgs);
 
-    /**Launch a batch realign of the parent fibers an edit just created/modified
-     * (drained from KlustersDoc::takeModifiedFibers), locking the change-initiating
+    /**Launch a batch realign of the parent parents an edit just created/modified
+     * (drained from KlustersDoc::takeModifiedParents), locking the change-initiating
      * actions and showing the progress bar.  Sets realignPostOpRenumberMatrix so the
      * batch-finish handler runs renumber + matrix.  Mirrors the Align-All launch but
-     * scoped to the given fibers and with no confirm dialog.*/
-    void startPostOpRealign(const QList<int>& fibers, bool setChanged);
+     * scoped to the given parents and with no confirm dialog.*/
+    void startPostOpRealign(const QList<int>& parents, bool setChanged);
 
-    /**Apply the doc's pending post-edit fiber selection (KlustersDoc::
-     * takePendingFiberSelection): switch to parent scope and select/focus the
-     * produced fibers.  Called as the LAST step of the post-edit flow -- after the
+    /**Apply the doc's pending post-edit parent selection (KlustersDoc::
+     * takePendingParentSelection): switch to parent scope and select/focus the
+     * produced parents.  Called as the LAST step of the post-edit flow -- after the
      * async realign + renumber -- so it is authoritative regardless of what the
      * realign/refresh/tab-switch left selected.  No-op when nothing is pending
      * (e.g. atom-only ops, which select via hierarchyChildrenCreated instead).*/
-    void applyPendingFiberSelection();
+    void applyPendingParentSelection();
 
     /**Flush the deferred view refresh accumulated in realignBatchTouched:
      * invalidate the waveform/correlogram caches for every touched cluster,
