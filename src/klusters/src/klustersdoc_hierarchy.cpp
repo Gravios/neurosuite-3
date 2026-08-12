@@ -362,7 +362,27 @@ void KlustersDoc::updateHierarchyShadow(const QVector<dataType>& cluByRow,
         else if (it.value() != f) straddlers.insert(c);
     }
     const qint64 buildUs = timer.nsecsElapsed() / 1000;
-    if (!childPrimaryOn) shadowChildToParent = fresh;   // shadow mode: no other writer
+    // Seeding.
+    //
+    // Shadow mode: the stored map has no other writer, so it is refreshed every
+    // time and the comparison is trivially true -- that is the point, only the
+    // backend can produce a divergence.
+    //
+    // Backend mode: it must be seeded ONCE, from the file, and then never
+    // overwritten -- the operations maintain it from there.  Without this it began
+    // empty and every rebuild reported DIVERGE with derived-only == the entire
+    // session, which is exactly what an authoritative map with no initial value
+    // looks like.  A load is also the one moment the arrays are the authority: the
+    // .clc and .clu have just been read, and the map they imply is by definition
+    // correct.
+    if (!childPrimaryOn) {
+        shadowChildToParent = fresh;
+    } else if (!storedMapSeeded) {
+        shadowChildToParent = fresh;
+        storedMapSeeded = true;
+        qDebug().noquote() << "[childprimary] seeded from the file:"
+                           << shadowChildToParent.size() << "children";
+    }
 
     // Compare against the derived map the caller has just built.
     QList<int> onlyDerived, onlyShadow, disagree;
