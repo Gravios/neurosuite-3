@@ -381,16 +381,6 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     //
     // Captured before the mutation, since afterwards parentToChildren no longer
     // lists them.
-    noteMapEdit("deleteClusters");
-    if (childPrimaryOn && childData) {
-        if (childScopeActive)
-            for (int c : clustersToDelete) shadowChildToParent.insert(c, clusterId);
-        else
-            for (int f : clustersToDelete)
-                for (int c : parentToChildren.value(f))
-                    shadowChildToParent.insert(c, clusterId);
-    }
-
     QList<int> modifiedcluster;
     modifiedcluster.append(clusterId);
 
@@ -981,13 +971,6 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // fibers -- so the map gains one entry and loses any source consumed
         // entirely.  This is the only class of operation that changes child
         // MEMBERSHIP rather than just parentage.
-        noteMapEdit("splitChild");
-    if (childPrimaryOn) {
-            int parent = -1;
-            for (int src : fromClusters) { parent = shadowChildToParent.value(src, -1); if (parent >= 0) break; }
-            if (parent >= 0) shadowChildToParent.insert(newAtom, parent);
-            for (int c : emptyClusters) shadowChildToParent.remove(c);
-        }
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();

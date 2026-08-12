@@ -1747,14 +1747,27 @@ private:
      */
     QMap<int,int>        shadowChildToParent;
     bool                 childPrimaryOn = false;   // set at construction from NS3_CHILD_PRIMARY
-    bool                 storedMapSeeded = false;  // the stored map has an initial value
-    QString              lastMapEdit;              // operation that last touched the stored map
-
-    /** Name the operation about to edit the stored map, so a divergence report
-     *  says WHICH one produced it rather than only that one did.  A DIVERGE with
-     *  an empty name means an unwired path changed the arrays without telling the
-     *  map, which is exactly the list of remaining work. */
-    void noteMapEdit(const char* op) { if (childPrimaryOn) lastMapEdit = QString::fromLatin1(op); }
+    /** Re-derive the stored map from the two per-spike labelings.
+     *
+     *  The map is a FUNCTION of those arrays: parents partition the spikes,
+     *  children partition them more finely, every child inside one parent.  Sets
+     *  and subsets.  It is not something to be maintained -- it is something to be
+     *  derived.
+     *
+     *  Maintaining it per operation was the wrong shape and the logs showed it:
+     *  nine tagged call sites and still an unwired path reassigning 87% of the map
+     *  in one step, because Data has eleven methods that rewrite spikesByCluster
+     *  and clusterInfoMap with no single function they all pass through.  Every
+     *  miss was a divergence and every fix another site -- the same
+     *  distribute-a-fact-and-keep-it-in-step mistake made three times already in
+     *  this work.
+     *
+     *  One derivation, after every edit, from inputs that are always current: no
+     *  path can forget it.  It costs one pass over the spikes, which is what the
+     *  current design already pays on every edit; making it incremental needs the
+     *  changed-spike set the mutators already hold, and is a later optimisation.
+     */
+    void deriveStoredMap();
 
     /** Child-primary backend: is the stored map the AUTHORITY, or the derived one?
      *
