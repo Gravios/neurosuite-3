@@ -38,6 +38,11 @@
     <value>true</value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>featureLag</name>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Compute principal component analysis (PCA).
 
@@ -82,6 +87,21 @@ token, e.g. &lt;session&gt;.spk.stderiv_C4.&lt;group&gt;.
 Orders 4 and 5 are derived from the pattern itself and cannot be requested through
 methodOrder; a plain "stderiv" keeps the historical behaviour of applying whatever
 sdiffPairs the groups define.
+
+# featureLag
+
+0 (or absent) selects the classic per-channel feature space: PC1, PC2, PC3.
+
+A non-zero N selects the lag feature space that fiber-session builds under
+--feat-lag N, and which its artifacts name with a _D&lt;lag&gt;&lt;dims&gt; suffix -- a
+session emitted as stderiv_C5_D34 is _C5 for the custom sdiffPairs pattern and
+_D34 for lag 3, 4 dimensions.  Each channel then contributes PC1 sampled at
+-N/0/+N samples plus PC2: FOUR columns instead of three, and unlike PC1,PC2,PC3
+they are not orthogonal.
+
+Per group, like nFeatures, because a group can be re-featurised on its own and
+the two describe the same thing -- the width and the meaning of a channel's
+feature block.
 
 # dropLastChannel
 
