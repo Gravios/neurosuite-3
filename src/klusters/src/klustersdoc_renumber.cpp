@@ -269,10 +269,6 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
 
     // Child-primary: a parent renumber changes the map's VALUES -- every child
     // keeps its own id and follows its parent to the new number.
-    noteMapEdit("renumberParents");
-    if (childPrimaryOn)
-        for (auto it = shadowChildToParent.begin(); it != shadowChildToParent.end(); ++it)
-            it.value() = full->value(it.value(), it.value());
 
     // 1. Data layer — pushes its own data-side undo entry.
     clusteringData->renumberPartial(partialOldToNew);
@@ -483,14 +479,6 @@ void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
     // refusal here would mean the atom layer's map was already inconsistent.
     // Child-primary: a child renumber changes the map's KEYS, not its values --
     // the parent of each renamed child is unchanged.
-    noteMapEdit("renumberChildren");
-    if (childPrimaryOn) {
-        QMap<int,int> updated;
-        for (auto it = shadowChildToParent.constBegin(); it != shadowChildToParent.constEnd(); ++it)
-            updated.insert(partialOldToNew.value(it.key(), it.key()), it.value());
-        shadowChildToParent = updated;
-    }
-
     childData->renumberPartial(partialOldToNew);
 
     // Colours follow their atom, then re-sort: changeItemId mutates ids in place

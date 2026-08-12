@@ -328,88 +328,68 @@ bool KlustersDoc::isChildScopeHidden(int clusterId) const{
 // derived map is hiding -- or a real divergence.  Both are worth knowing and the
 // message distinguishes them.
 // ---------------------------------------------------------------------------
+void KlustersDoc::deriveStoredMap()
+{
+    if (!childPrimaryOn || !childData || !clusteringData) return;
+    const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+    const QVector<dataType> childByRow = childData->labelByFeatureRow();
+    const int n = qMin(cluByRow.size(), childByRow.size());
+    shadowChildToParent.clear();
+    for (int r = 1; r < n; ++r){
+        const int c = static_cast<int>(childByRow[r]);
+        if (c <= 0) continue;
+        if (!shadowChildToParent.contains(c))
+            shadowChildToParent.insert(c, static_cast<int>(cluByRow[r]));
+    }
+}
+
 void KlustersDoc::updateHierarchyShadow(const QVector<dataType>& cluByRow,
                                         const QVector<dataType>& childByRow, int n)
 {
-    // Built when either shadow mode or the child-primary backend is on: under the
-    // backend this map is the authority, not a comparison copy.
     const bool wanted = childPrimaryOn
                      || qEnvironmentVariableIsSet("NS3_SHADOW_HIERARCHY");
     if (!wanted) return;
 
-    // Derive a FRESH map from the arrays and compare the stored one against it.
+    // What this measures, now that the map is derived rather than maintained.
     //
-    // The stored map must not be rebuilt here.  Under the backend it is maintained
-    // incrementally by each operation, and clearing it before comparing would
-    // destroy exactly what is under test -- the comparison would then be the
-    // derivation checked against itself, which is the "comparing something to
-    // itself" error this session has already made once and which passes
-    // vacuously.
+    // Comparing the map against a re-derivation would compare the derivation with
+    // itself -- both read these same two arrays -- and report agreement
+    // unconditionally.  That mistake has already been made twice in this session;
+    // making it a third time would produce a reassuring log and no information.
     //
-    // With the backend off the stored map has no other writer, so it is seeded
-    // from the derivation and the comparison is trivially true -- that is the
-    // shadow's original behaviour and it is what makes turning the backend on the
-    // only thing that can produce a divergence.
+    // The question worth asking is the one the representation exists for: does
+    // every child sit under exactly one parent?  A straddling child is a state the
+    // child-primary map cannot express, so the straddler count is the distance
+    // between what the arrays hold and what the model can represent -- and driving
+    // it to zero is what the migration has to achieve.
     QElapsedTimer timer; timer.start();
-    QMap<int,int> fresh;
+    QMap<int,int> firstSeen;
     QSet<int> straddlers;
     for (int r = 1; r < n; ++r){
         const int c = static_cast<int>(childByRow[r]);
         if (c <= 0) continue;
         const int f = static_cast<int>(cluByRow[r]);
-        const auto it = fresh.constFind(c);
-        if (it == fresh.constEnd()) fresh.insert(c, f);
-        else if (it.value() != f) straddlers.insert(c);
-    }
-    const qint64 buildUs = timer.nsecsElapsed() / 1000;
-    // Seeding.
-    //
-    // Shadow mode: the stored map has no other writer, so it is refreshed every
-    // time and the comparison is trivially true -- that is the point, only the
-    // backend can produce a divergence.
-    //
-    // Backend mode: it must be seeded ONCE, from the file, and then never
-    // overwritten -- the operations maintain it from there.  Without this it began
-    // empty and every rebuild reported DIVERGE with derived-only == the entire
-    // session, which is exactly what an authoritative map with no initial value
-    // looks like.  A load is also the one moment the arrays are the authority: the
-    // .clc and .clu have just been read, and the map they imply is by definition
-    // correct.
-    if (!childPrimaryOn) {
-        shadowChildToParent = fresh;
-    } else if (!storedMapSeeded) {
-        shadowChildToParent = fresh;
-        storedMapSeeded = true;
-        qDebug().noquote() << "[childprimary] seeded from the file:"
-                           << shadowChildToParent.size() << "children";
+        const auto it = firstSeen.constFind(c);
+        if (it == firstSeen.constEnd()) firstSeen.insert(c, f);
+        else if (it.value() != f)       straddlers.insert(c);
     }
 
-    // Compare against the derived map the caller has just built.
-    QList<int> onlyDerived, onlyShadow, disagree;
-    for (auto it = fresh.constBegin(); it != fresh.constEnd(); ++it){
-        const auto s = shadowChildToParent.constFind(it.key());
-        if (s == shadowChildToParent.constEnd()) onlyDerived.append(it.key());
-        else if (s.value() != it.value())        disagree.append(it.key());
-    }
-    for (auto it = shadowChildToParent.constBegin(); it != shadowChildToParent.constEnd(); ++it)
-        if (!fresh.contains(it.key())) onlyShadow.append(it.key());
-
-    const bool agree = onlyDerived.isEmpty() && onlyShadow.isEmpty() && disagree.isEmpty();
     qDebug().noquote() << (childPrimaryOn ? "[childprimary]" : "[shadow]")
-                       << (agree ? "AGREE" : "DIVERGE")
-                       << " after=" << (lastMapEdit.isEmpty() ? QStringLiteral("(unwired)") : lastMapEdit)
-                       << " children=" << shadowChildToParent.size()
+                       << (straddlers.isEmpty() ? "NESTED" : "STRADDLE")
+                       << " children=" << firstSeen.size()
                        << " straddlers=" << straddlers.size()
-                       << " build=" << buildUs << "us";
-    const QString who = lastMapEdit; lastMapEdit.clear();
-    if (!agree)
-        qWarning() << "[childprimary] after" << (who.isEmpty() ? QStringLiteral("(unwired path)") : who)
-                   << "-- derived-only:" << onlyDerived.size()
-                   << " shadow-only:" << onlyShadow.size()
-                   << " disagreeing:" << disagree.size()
-                   << " (a straddler explains a disagreement: the derived map keeps"
-                      " first-seen and hides the rest)";
+                       << " derive=" << (timer.nsecsElapsed()/1000) << "us";
+    if (!straddlers.isEmpty()){
+        QList<int> sample(straddlers.constBegin(), straddlers.constEnd());
+        std::sort(sample.begin(), sample.end());
+        if (sample.size() > 8) sample = sample.mid(0, 8);
+        qWarning() << "[childprimary] children under more than one parent:"
+                   << straddlers.size() << "e.g." << sample
+                   << "-- not representable by the child-primary map; these are what"
+                      " collapseToSelfChildren re-cuts.";
+    }
 }
+
 
 void KlustersDoc::rebuildHierarchyFromData(){
     if (!childData) return;
@@ -459,6 +439,7 @@ void KlustersDoc::rebuildHierarchyFromData(){
 
     // Shadow comparison, after the derived maps are complete and before any
     // consumer sees them.  Inert unless NS3_SHADOW_HIERARCHY is set.
+    deriveStoredMap();
     updateHierarchyShadow(cluByRow, childByRow, n);
 
     // The maps this scope is derived from have just been refilled; re-resolve so
@@ -886,12 +867,6 @@ void KlustersDoc::collapseToSelfChildren(){
     // self-child rule and the sole-source rule a second time, which is how a shared
     // policy starts drifting.  Consuming it means the map cannot disagree with the
     // split, because it is using the split's own output.
-    if (childPrimaryOn) {
-        noteMapEdit("collapseToSelfChildren");
-        for (auto f = splitTarget.constBegin(); f != splitTarget.constEnd(); ++f)
-            for (auto s = f.value().constBegin(); s != f.value().constEnd(); ++s)
-                shadowChildToParent.insert(s.value(), f.key());
-    }
 
 }
 
@@ -916,7 +891,6 @@ int KlustersDoc::mergeParentFibers(const QList<int>& fibers, KlustersView& activ
     // Child-primary: every child of a folded fiber is reparented onto the survivor.
     // No child is split or created -- a fiber merge is a pure map operation, which
     // is the clearest case of the O(children) versus O(nSpikes) difference.
-    noteMapEdit("mergeParentFibers");
     if (childPrimaryOn)
         for (int f : fibers)
             if (f != kept)
@@ -968,8 +942,6 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
         // Child-primary: one map entry per promoted child.  Their spikes keep their
         // child ids -- only the parent changes -- so this is a reparent, matching
         // what the relabel above does to the .clu of those rows.
-        noteMapEdit("promoteChildren");
-    if (childPrimaryOn) shadowChildToParent.insert(c, dest);
 
         if (target < 0){
             target = newId;
@@ -1027,8 +999,6 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     // their child id, which is what the moveSpikeSubsetToCluster above already
     // does: it changes the .clu of those rows and leaves the .clc alone.  So the
     // map edit is one entry, and it says the same thing the relabel does.
-    noteMapEdit("dropChildToNoise");
-    if (childPrimaryOn) shadowChildToParent.insert(childCluster, 1);
 
     setPendingFiberSelection({parent});   // land on the source fiber (noise isn't selectable)
     rebuildHierarchyFromData();
@@ -1091,12 +1061,6 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     // Applied before rebuildHierarchyFromData() so that, with the backend off,
     // the rebuild overwrites it from the arrays and the shadow comparison that
     // follows is a genuine check of this edit rather than a copy of it.
-    noteMapEdit("mergeChildren");
-    if (childPrimaryOn) {
-        for (int c : children) shadowChildToParent.remove(c);
-        shadowChildToParent.insert(newId, parent);
-    }
-
     syncChildColors();
     rebuildHierarchyFromData();
     // Park the landing BEFORE hierarchyChanged is emitted.
@@ -1194,8 +1158,6 @@ int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
     // covered by one atom carrying its own id -- so the map is RESEEDED from the
     // arrays rather than edited.  Clearing the seed flag makes the next rebuild do
     // it, which is the same path the load uses and therefore the same code.
-    if (childPrimaryOn) { shadowChildToParent.clear(); storedMapSeeded = false; }
-
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
@@ -1217,8 +1179,6 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     // is correct but wasteful: recording the map delta alongside the ChildEdit
     // would make undo O(edited) like every other operation, and is the one place
     // this backend still needs a design decision rather than wiring.
-    if (childPrimaryOn) { shadowChildToParent.clear(); storedMapSeeded = false; }
-
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
@@ -1240,8 +1200,6 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     // is correct but wasteful: recording the map delta alongside the ChildEdit
     // would make undo O(edited) like every other operation, and is the one place
     // this backend still needs a design decision rather than wiring.
-    if (childPrimaryOn) { shadowChildToParent.clear(); storedMapSeeded = false; }
-
     rebuildHierarchyFromData();
     if (childScopeActive) activeView.showAllWidgets();
     emit hierarchyChanged();
