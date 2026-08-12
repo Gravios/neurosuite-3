@@ -1748,6 +1748,13 @@ private:
     QMap<int,int>        shadowChildToParent;
     bool                 childPrimaryOn = false;   // set at construction from NS3_CHILD_PRIMARY
     bool                 storedMapSeeded = false;  // the stored map has an initial value
+    QString              lastMapEdit;              // operation that last touched the stored map
+
+    /** Name the operation about to edit the stored map, so a divergence report
+     *  says WHICH one produced it rather than only that one did.  A DIVERGE with
+     *  an empty name means an unwired path changed the arrays without telling the
+     *  map, which is exactly the list of remaining work. */
+    void noteMapEdit(const char* op) { if (childPrimaryOn) lastMapEdit = QString::fromLatin1(op); }
 
     /** Child-primary backend: is the stored map the AUTHORITY, or the derived one?
      *
