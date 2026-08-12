@@ -373,6 +373,23 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
             view->stopAllViewThreads();
 
 
+    // Child-primary: a delete is a RECLASSIFICATION, in either scope.
+    //
+    //   child scope  the deleted atoms are reparented onto the destination bin;
+    //                their spikes keep their child ids.
+    //   parent scope the fiber goes to the bin and every child of it goes with it.
+    //
+    // Captured before the mutation, since afterwards parentToChildren no longer
+    // lists them.
+    if (childPrimaryOn && childData) {
+        if (childScopeActive)
+            for (int c : clustersToDelete) shadowChildToParent.insert(c, clusterId);
+        else
+            for (int f : clustersToDelete)
+                for (int c : parentToChildren.value(f))
+                    shadowChildToParent.insert(c, clusterId);
+    }
+
     QList<int> modifiedcluster;
     modifiedcluster.append(clusterId);
 
@@ -397,8 +414,14 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 
     //case where the clusters are moved to the cluster 0 (artefact)
     if(clusterId == 0){
-        //Call data to move the clusters
-        clusteringData->moveClustersToArtefact(clustersToDelete);
+        // data(), not clusteringData: this function serves BOTH scopes -- the same
+        // delete runs on fibers from the cluster palette and on atoms from the child
+        // palette.  Naming clusteringData unconditionally meant a child delete moved
+        // the FIBER carrying that number to artefact, which is a different cluster
+        // in a different layer, so deleting a child did nothing to the child and
+        // silently reclassified an unrelated unit.  Everything else in this function
+        // already works on the active layer.
+        data().moveClustersToArtefact(clustersToDelete);
         //Update clusterColors, add cluster 0 if need it
         if(!clusterColorList->contains(0)){
             //Prepare the undo
@@ -412,8 +435,8 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     }
     //case where the clusters are moved to the cluster 1 (noise)
     if(clusterId == 1){
-        //Call data to move the clusters
-        clusteringData->moveClustersToNoise(clustersToDelete);
+        // data(), not clusteringData -- see the artefact branch above.
+        data().moveClustersToNoise(clustersToDelete);
         //Update clusterColors, add cluster 1 if need it
         if(!clusterColorList->contains(1)){
             //Prepare the undo
