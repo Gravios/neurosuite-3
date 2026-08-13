@@ -302,6 +302,11 @@ bool ErrorMatrixView::isComputing() const{
 }
 
 void ErrorMatrixView::updateMatrixContents(){
+    // Swap zoom/pan when the scope changes, before anything is drawn: the parent
+    // matrix and the child-scoped one are different matrices and a position in
+    // one does not mean anything in the other.
+    swapViewStateForScope(doc.matrixScopeActive());
+
     computing = true;      // paint a badge over the old matrix, do not blank
     if(!goingToDie){
         //Bump the generation so that customEvent() can identify — and discard — results
@@ -1051,6 +1056,33 @@ void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){
     // Double-click resets pan & zoom.
     resetPanZoom();
     e->accept();
+}
+
+// ---------------------------------------------------------------------------
+// ErrorMatrixView::swapViewStateForScope
+//
+// Stash the current zoom/pan under the scope we are leaving and restore the one
+// we are entering.  Called from the paint path, which is the one place that runs
+// for every scope change however it was reached -- the V toggle, a curated-parent
+// change, or the parent ceasing to exist.
+// ---------------------------------------------------------------------------
+void ErrorMatrixView::swapViewStateForScope(bool scopeActive)
+{
+    if (scopeActive == lastScopeActive) return;
+
+    ViewState& leaving  = lastScopeActive ? childScopeView : parentScopeView;
+    ViewState& entering = scopeActive     ? childScopeView : parentScopeView;
+
+    leaving.panX = panX; leaving.panY = panY; leaving.zoom = zoom; leaving.valid = true;
+
+    if (entering.valid) {
+        panX = entering.panX; panY = entering.panY; zoom = entering.zoom;
+    } else {
+        // First time in this scope: start from the default framing rather than
+        // inheriting a position computed for a matrix of a different size.
+        panX = 0.0; panY = 0.0; zoom = 1.0;
+    }
+    lastScopeActive = scopeActive;
 }
 
 void ErrorMatrixView::setViewState(double newZoom, double px, double py){
