@@ -142,6 +142,26 @@ private:
     double  panX{0.0};
     double  panY{0.0};
     double  zoom{1.0};
+
+    /** Zoom and pan, remembered PER SCOPE.
+     *
+     *  The parent matrix and the child-scoped matrix are different matrices: one
+     *  is ~1984 clusters, the other the handful of children under the curated
+     *  parent.  A zoom that frames a region of the first is meaningless in the
+     *  second, so carrying one state across the V toggle threw away wherever the
+     *  user had navigated to and replaced it with a position from a matrix of a
+     *  different size.
+     *
+     *  Two states, swapped when the scope changes: leaving the child scope stashes
+     *  its view and restores the parent's, and returning restores the child's.
+     *  Each is remembered until the view is destroyed, so toggling back and forth
+     *  returns to exactly where you were in each.
+     */
+    struct ViewState { double panX{0.0}, panY{0.0}, zoom{1.0}; bool valid{false}; };
+    ViewState parentScopeView;
+    ViewState childScopeView;
+    bool      lastScopeActive{false};
+    void      swapViewStateForScope(bool scopeActive);
     bool    panning{false};
     QPoint  panAnchorPx;
     double  panAnchorX{0.0};

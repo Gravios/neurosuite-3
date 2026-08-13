@@ -240,6 +240,11 @@ void DriftMatrixView::launchCompute()
 
 void DriftMatrixView::updateMatrixContents()
 {
+    // Swap zoom/pan when the scope changes, before anything is drawn: the parent
+    // matrix and the child-scoped one are different matrices and a position in
+    // one does not mean anything in the other.
+    swapViewStateForScope(doc.matrixScopeActive());
+
     if (goingToDie) return;
 
     // The spikes themselves changed, so BOTH cached matrices are stale — drop
@@ -702,6 +707,33 @@ void DriftMatrixView::resetPanZoom()
     zoom = 1.0;
     update();
     emit viewChanged(zoom, panX, panY);
+}
+
+// ---------------------------------------------------------------------------
+// DriftMatrixView::swapViewStateForScope
+//
+// Stash the current zoom/pan under the scope we are leaving and restore the one
+// we are entering.  Called from the paint path, which is the one place that runs
+// for every scope change however it was reached -- the V toggle, a curated-parent
+// change, or the parent ceasing to exist.
+// ---------------------------------------------------------------------------
+void DriftMatrixView::swapViewStateForScope(bool scopeActive)
+{
+    if (scopeActive == lastScopeActive) return;
+
+    ViewState& leaving  = lastScopeActive ? childScopeView : parentScopeView;
+    ViewState& entering = scopeActive     ? childScopeView : parentScopeView;
+
+    leaving.panX = panX; leaving.panY = panY; leaving.zoom = zoom; leaving.valid = true;
+
+    if (entering.valid) {
+        panX = entering.panX; panY = entering.panY; zoom = entering.zoom;
+    } else {
+        // First time in this scope: start from the default framing rather than
+        // inheriting a position computed for a matrix of a different size.
+        panX = 0.0; panY = 0.0; zoom = 1.0;
+    }
+    lastScopeActive = scopeActive;
 }
 
 void DriftMatrixView::setViewState(double newZoom, double px, double py)
