@@ -132,6 +132,22 @@ public:
 
 public Q_SLOTS:
 
+    /** A cluster's features were recomputed: redraw the whole view.
+     *
+     *  NOT addClusterToUpdate().  That queues an INCREMENTAL paint, which draws the
+     *  cluster's points on top of what is already there -- correct when a cluster
+     *  gains or loses spikes, wrong when reprojection moves every point it has,
+     *  because the old positions are never erased.
+     *
+     *  The document already emits clusterFeaturesReprojected after a nudge and a
+     *  realign; only the error matrix was connected, so the feature view kept
+     *  showing pre-shift positions while the data underneath had moved.
+     */
+    void clusterFeaturesReprojected(int /*clusterId*/){
+        drawContentsMode = REDRAW;
+        update();
+    }
+
     /**
   * Takes into  account the update of the dimension used to present the clusters.
   * @param dimensionX
@@ -382,25 +398,6 @@ private:
   */
     void addClusterToUpdate(int clusterId);
 
-public Q_SLOTS:
-    /** A cluster's features were recomputed: redraw the whole view.
-     *
-     *  NOT addClusterToUpdate().  That queues an INCREMENTAL paint, which draws the
-     *  cluster's points on top of what is already there -- correct when a cluster
-     *  gains or loses spikes, wrong when reprojection moves every point it has,
-     *  because the old positions are never erased.  A reprojection changes the
-     *  coordinates of existing points, so the view has to be redrawn rather than
-     *  added to.
-     *
-     *  The document already emits clusterFeaturesReprojected after a nudge and
-     *  after a realign; until now only the error matrix was connected to it, so the
-     *  feature view kept showing the pre-shift positions while the underlying data
-     *  had moved.
-     */
-    void clusterFeaturesReprojected(int /*clusterId*/){
-        drawContentsMode = REDRAW;
-        update();
-    }
 
     /**Draws the axis for the current dimensions
   * @param painter painter on which to draw the axes
