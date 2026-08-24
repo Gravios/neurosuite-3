@@ -1759,6 +1759,12 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         connect(this, &KlustersView::changeTimeInterval, qobject_cast<ClusterView*>(view), static_cast<void(ClusterView::*)(int,bool)>(&ClusterView::setTimeStepInSecond));
         connect(this, &KlustersView::updatedDimensions, qobject_cast<ClusterView*>(view), &ClusterView::updatedDimensions);
         connect(this, &KlustersView::emptySelection, qobject_cast<ClusterView*>(view), &ClusterView::emptySelection);
+        // Reprojection moves every point of a cluster, so the feature view must
+        // REDRAW rather than take the incremental update path its other slots use.
+        // Only the error matrix was connected to this signal; the feature view kept
+        // showing pre-shift positions after a nudge or realign while the data
+        // underneath had already moved.
+        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, qobject_cast<ClusterView*>(view), &ClusterView::clusterFeaturesReprojected);
         connect(view, &QObject::destroyed, this, &KlustersView::clusterDockClosed);
 
         //Connect the clusterView to a possible TraceView
