@@ -1046,6 +1046,25 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
 
     QList<int> grp = children;                         // groupClusters takes a non-const ref
     const int newId = static_cast<int>(childData->groupClusters(grp));   // mutates childData, self-snapshots
+
+    // Refresh the views, exactly as the parent-layer merge does.
+    //
+    // KlustersDoc::groupClusters ends by walking viewList and calling
+    // groupedClustersUpdate on each, which is what makes the feature view redraw
+    // with the merged cluster.  This function calls Data::groupClusters directly --
+    // one layer down, on childData -- so none of that ran, and a child merge left
+    // the feature view showing the two source clusters as they were.  A nudge
+    // refreshed correctly because it goes through clusterFeaturesReprojected
+    // instead, which is why the two behaved differently.
+    {
+        QList<int> merged = grp;   // groupedClustersUpdate takes a non-const ref
+        for (KlustersView* view : *viewList) {
+            const bool isActive = (view == &activeView);
+            view->groupedClustersUpdate(merged, newId, isActive);
+            view->updateTraceView(electrodeGroupID, childColorList ? childColorList
+                                                                   : clusterColorList, isActive);
+        }
+    }
     ChildEdit e; e.added = { newId }; e.deleted = children;
     recordChildEdit(e);
 
