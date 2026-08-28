@@ -619,8 +619,9 @@ void KlustersDoc::deleteArtifact(QRegion& region,const QList <int>& clustersOfOr
         logIds = parents;
     }
     logBefore(CurationLogger::ActionType::DELETE_REGION_ARTEFACT, logIds);
+    // The after-snapshots are taken inside deleteSpikesFromClusters, which
+    // knows the surviving sources (fromClusters) this wrapper never sees.
     deleteSpikesFromClusters(0,region,clustersOfOrigin,dimensionX,dimensionY);
-    logAfter(QList<int>{ 0 });
 }
 
 
@@ -637,8 +638,8 @@ void KlustersDoc::deleteNoise(QRegion& region,const QList <int>& clustersOfOrigi
         logIds = parents;
     }
     logBefore(CurationLogger::ActionType::DELETE_REGION_NOISE, logIds);
+    // After-snapshots inside deleteSpikesFromClusters -- see deleteArtifact.
     deleteSpikesFromClusters(1,region,clustersOfOrigin,dimensionX,dimensionY);
-    logAfter(QList<int>{ 1 });
 }
 
 void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
@@ -738,6 +739,20 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
         //Notify the application that spikes have been deleted.
         emit spikesDeleted();
     }
+
+    // Curation log: the action's results are the destination bin AND every
+    // surviving source the region actually cut spikes from -- mirroring
+    // MOVE_SPIKES, which records both ends of the transfer.  The wrappers
+    // used to log only the bin, so the interesting result -- the cleaned
+    // source -- had no after line to join against.  Emptied sources no
+    // longer exist to snapshot.  Runs on both branches (spikes found or
+    // not); with nothing cut, fromClusters is empty and this reduces to
+    // the bin snapshot the wrappers logged before.
+    QList<int> afterIds{ destination };
+    for (int src : fromClusters)
+        if (!emptyClusters.contains(src) && !afterIds.contains(src))
+            afterIds.append(src);
+    logAfter(afterIds);
 }
 
 
