@@ -1320,6 +1320,12 @@ Q_SIGNALS:
      * merged, split, or renumbered.*/
     void clusterFeaturesReprojected(int clusterId);
 
+    /**Emitted (queued from the worker thread) when the dimension-extrema
+    * recompute finishes.  Membership edits that cross cluster 0 -- and the
+    * undo/redo of them -- run the recompute on Data's MinMaxThread, and the
+    * feature views' world bounds derive from the result.*/
+    void dimensionExtremaChanged();
+
     void undoRenumbering(QMap<int,int>& clusterIdsNewOld);
     void undoAdditionModification(QList<int>& addedClusters,QList<int>& updatedClusters);
     void undoAddition(QList<int>& addedClusters);

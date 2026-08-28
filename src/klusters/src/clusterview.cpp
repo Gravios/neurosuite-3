@@ -466,6 +466,14 @@ bool ClusterView::recomputeWorldBounds(){
     return true;
 }
 
+void ClusterView::dimensionExtremaChanged(){
+    // Common case: the recompute confirmed the old bounds; skip the repaint.
+    if (!recomputeWorldBounds())
+        return;
+    drawContentsMode = REDRAW;
+    update();
+}
+
 void ClusterView::clusterFeaturesReprojected(int /*clusterId*/){
     // The reprojection can WIDEN the dimension extrema (the Data side widens
     // them synchronously on the realign path); redrawing inside the old

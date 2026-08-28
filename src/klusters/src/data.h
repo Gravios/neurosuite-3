@@ -664,6 +664,13 @@ public:
   */
     dataType maxDimension(int dimension) const {return dimensionMaxima(dimension,1);}
 
+    /**Worker thread that recomputes the dimension extrema (see
+    * minMaxDimensionCalculation).  Exposed so the document can connect its
+    * QThread::finished to a view refresh: the thread completes off the GUI
+    * thread, and the extrema it wrote are what the feature views' world
+    * bounds derive from.*/
+    MinMaxThread* dimensionExtremaThread() const {return minMaxThread;}
+
     /**Returns the minimum for the dimension
   * @param dimension for which the minimum is requested. Numbering starts at 1
   * @return minimum of the dimension
