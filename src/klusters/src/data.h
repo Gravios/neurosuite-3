@@ -252,7 +252,13 @@ public:
   * @param modifiedClusters list of the clusters which have been modified implying
   * the modification of the cluster 0, causing the recalculation of the minima and maxima.
   */
-    void minMaxDimensionCalculation(const QList<int>& modifiedClusters);
+    /**Recomputes the per-dimension feature extrema.  @p modifiedClusters is the
+    * membership-edit source list (empty = unconditional full rescan; containing
+    * 0 = full rescan).  Set @p featureValuesChanged when the listed clusters'
+    * FEATURE VALUES were rewritten (realign/nudge reprojection): membership-only
+    * edits cannot grow the bounds, but a value change can, so skipped dimensions
+    * then scan the listed clusters and widen.*/
+    void minMaxDimensionCalculation(const QList<int>& modifiedClusters, bool featureValuesChanged = false);
 
     /**
   * Creates a new cluster out of existing ones.
