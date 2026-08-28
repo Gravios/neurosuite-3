@@ -2818,9 +2818,19 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
     }
 
     // ── Commit via prepareUndo ──────────────────────────────────────────
-    // dimChanged is false: KNN-split never touches cluster 0 (it is
-    // explicitly excluded from both source and reference pool).
-    prepareUndo(newSpk, newInfo, false);
+    // The reference pool excludes the reserve ids, but nothing at this layer
+    // stops cluster 0 arriving as the SOURCE (the doc-side caller only checks
+    // clusterHasMembers).  Splitting 0 admits its spikes into the dimension
+    // extrema, so gate exactly like splitClusterTwoWays instead of assuming.
+    const bool dimChanged = (sourceCluster == 0);
+    prepareUndo(newSpk, newInfo, dimChanged);
+
+    if (dimChanged) {
+        minMaxThread->wait();
+        clusterZeroJustModified = false;
+        minMaxThread->setModifiedClusters(QList<int>{sourceCluster});
+        minMaxThread->start();
+    }
 
     return true;
 }
@@ -3110,8 +3120,13 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
         //of the correlation.
         QList<dataType> currentClusterList = clusterIds();
 
-        //Deal with the undo mechanism
-        bool dimChanged = (destinationCluster == 0);
+        //Deal with the undo mechanism.  Spikes crossing the cluster-0 boundary
+        //in EITHER direction change the dimension extrema: destination 0 removes
+        //spikes from consideration (the sources in the list catch the shrink),
+        //and cluster 0 among the ORIGINS -- a lasso over artefact spikes sent to
+        //noise -- admits spikes, which the list containing 0 turns into the full
+        //rescan they require.  The old gate only looked at the destination.
+        bool dimChanged = (destinationCluster == 0) || fromClusters.contains(0);
         prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,dimChanged);
 
         //If the spikes have been sent to the cluster 0, the max and min
@@ -3736,10 +3751,15 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
         }
     }
 
-    // Determine whether the noise/artefact cluster (id 0) was a source —
-    // if so, the dimension min/max may have changed.  Mirrors the same
-    // criterion used in createNewCluster / deleteSpikesFromClusters.
-    const bool dimChanged = fromClusters.contains(0);
+    // The dimension extrema exclude cluster 0, so they can only change when
+    // spikes cross the 0 boundary -- in EITHER direction.  Out of 0: newly
+    // considered spikes may exceed every stored extremum (the list containing 0
+    // forces the full rescan).  Into 0: a moved spike may have BEEN an extremum
+    // (the source in the list lets the incremental path catch the shrink).  The
+    // old test only looked at the source side, and the computed flag was handed
+    // to prepareUndo alone -- so the UNDO of the move recomputed while the move
+    // itself never did.
+    const bool dimChanged = fromClusters.contains(0) || toCluster == 0;
 
     // Hand off the new tables to Data::prepareUndo, which:
     //   1. pushes the OLD spikesByCluster + clusterInfoMap onto the undo
@@ -3753,6 +3773,14 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
     // Remove emptied clusters from the (now-current) clusterInfoMap.
     for (int cid : emptiedClusters)
         clusterInfoMap->remove(static_cast<dataType>(cid));
+
+    // Same wait/flag/list/start sequence as every sibling committer.
+    if (dimChanged) {
+        minMaxThread->wait();
+        clusterZeroJustModified = false;
+        minMaxThread->setModifiedClusters(fromClusters);
+        minMaxThread->start();
+    }
 }
 
 void Data::restoreClusterLabels(const QVector<dataType>& labels)
@@ -3877,16 +3905,38 @@ bool Data::setClusterLabels(const QVector<dataType>& labels)
         }
     }
 
-    // Cluster 0's membership can change here, and the dimension min/max are
-    // derived from it -- mirrors the criterion used in moveSpikeSubset /
-    // createNewCluster.
-    const bool dimChanged =
-        clusterInfoMap->contains(0) != clusterInfoMapTemp->contains(0)
-        || (clusterInfoMap->contains(0) && clusterInfoMapTemp->contains(0)
-            && clusterInfoMap->value(0).nbSpikes() != clusterInfoMapTemp->value(0).nbSpikes());
+    // Cluster 0's MEMBERSHIP decides the dimension extrema, and this committer
+    // takes an arbitrary relabelling, so compare per-row 0-membership rather
+    // than presence/size: a relabel that swaps one spike into 0 and another out
+    // keeps the count equal while both the admitted and the removed spike can
+    // carry an extremum.  Rows of the old cluster-0 span come from the still-
+    // live pre-swap tables.
+    bool dimChanged = false;
+    {
+        QSet<dataType> oldZeroRows;
+        if (clusterInfoMap->contains(0)) {
+            const ClusterInfo& zi = clusterInfoMap->value(0);
+            for (dataType i = zi.firstSpikePosition();
+                 i < zi.firstSpikePosition() + zi.nbSpikes(); ++i)
+                oldZeroRows.insert((*spikesByCluster)(1, i));
+        }
+        for (dataType r = 1; r <= nbSpikes && !dimChanged; ++r)
+            if ((labels[static_cast<int>(r)] == 0) != oldZeroRows.contains(r))
+                dimChanged = true;
+    }
 
     // Pushes the previous tables onto the undo stack and swaps in the new ones.
     prepareUndo(spikesByClusterTemp, clusterInfoMapTemp, dimChanged);
+
+    // An arbitrary relabelling has no meaningful per-cluster source list; the
+    // EMPTY list is the established request for an unconditional full rescan
+    // (undo/redo use the same convention).
+    if (dimChanged) {
+        minMaxThread->wait();
+        clusterZeroJustModified = false;
+        minMaxThread->setModifiedClusters(QList<int>());
+        minMaxThread->start();
+    }
 
     return true;
 }
@@ -4024,6 +4074,17 @@ void Data::splitClusterTwoWays(int sourceCluster,
     // pre-mutation clusterInfoMap is what gets pushed onto the undo
     // stack as the "before" state — it's intact (we never modified it).
     prepareUndo(newSpk, newInfo, dimChanged);
+
+    // Splitting cluster 0 moves its spikes INTO consideration; the list
+    // containing 0 forces the full rescan the admitted spikes require.  The
+    // flag used to reach only prepareUndo, so undoing the split recomputed
+    // while the split itself never did.
+    if (dimChanged) {
+        minMaxThread->wait();
+        clusterZeroJustModified = false;
+        minMaxThread->setModifiedClusters(QList<int>{sourceCluster});
+        minMaxThread->start();
+    }
 
     // Output bookkeeping for the caller.
     fromClusters.append(sourceCluster);
