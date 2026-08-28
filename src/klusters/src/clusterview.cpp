@@ -403,10 +403,8 @@ void ClusterView::addClusterToUpdate(int clusterId){
 }
 
 
-void ClusterView::updatedDimensions(int dimensionX, int dimensionY){
-    this->dimensionX = dimensionX;
-    this->dimensionY = dimensionY;
-
+void ClusterView::worldBoundsFromExtrema(long& aMin, long& aMax,
+                                          long& oMin, long& oMax) const {
     Data& clusteringData = doc.data();
     long maxForDimensionX = static_cast<long>(clusteringData.maxDimension(dimensionX));
     long minForDimensionX = static_cast<long>(clusteringData.minDimension(dimensionX));
@@ -416,15 +414,21 @@ void ClusterView::updatedDimensions(int dimensionX, int dimensionY){
     //The min and max are chosen in a maner that the axis are always visible and superior
     //to -40000000 (due to a Qt limitation in the big negative values).
     long width = maxForDimensionX - minForDimensionX;
-    abscissaMin = static_cast<long>(qMin(0L,minForDimensionX)-width*0.05);
-    abscissaMin = static_cast<long>(qMax(abscissaMin,-1000000L)); // below this limit, Qt crashes
-    abscissaMax = static_cast<long>(qMax(0L,maxForDimensionX)+width*0.05);
+    aMin = static_cast<long>(qMin(0L,minForDimensionX)-width*0.05);
+    aMin = static_cast<long>(qMax(aMin,-1000000L)); // below this limit, Qt crashes
+    aMax = static_cast<long>(qMax(0L,maxForDimensionX)+width*0.05);
 
     long height = maxForDimensionY - minForDimensionY;
-    ordinateMin = static_cast<long>(-qMax(0L,maxForDimensionY)-height*0.05);
-    ordinateMax = static_cast<long>(-qMin(0L,minForDimensionY)+height*0.05);
-    ordinateMax = static_cast<long>(qMin(ordinateMax,1000000L)); // below -(this limit), Qt crashes
+    oMin = static_cast<long>(-qMax(0L,maxForDimensionY)-height*0.05);
+    oMax = static_cast<long>(-qMin(0L,minForDimensionY)+height*0.05);
+    oMax = static_cast<long>(qMin(oMax,1000000L)); // below -(this limit), Qt crashes
+}
 
+void ClusterView::updatedDimensions(int dimensionX, int dimensionY){
+    this->dimensionX = dimensionX;
+    this->dimensionY = dimensionY;
+
+    worldBoundsFromExtrema(abscissaMin, abscissaMax, ordinateMin, ordinateMax);
 
     //Update the window in a maner to always see the axis
     window = ZoomWindow(QRect(QPoint(abscissaMin,ordinateMin),QPoint(abscissaMax,ordinateMax)));
@@ -433,6 +437,44 @@ void ClusterView::updatedDimensions(int dimensionX, int dimensionY){
 
     //reset the information on the polygon to enable a mousetrack in mousemovEvent
     polygonClosed = false;
+}
+
+bool ClusterView::recomputeWorldBounds(){
+    long aMin = 0, aMax = 0, oMin = 0, oMax = 0;
+    worldBoundsFromExtrema(aMin, aMax, oMin, oMax);
+    if (aMin == abscissaMin && aMax == abscissaMax
+            && oMin == ordinateMin && oMax == ordinateMax)
+        return false;   // extrema recompute left the world where it was
+
+    // Capture the old state BEFORE overwriting: a window that differs from
+    // the old world is the user's deliberate zoom and must survive.
+    const QRect oldWorld(QPoint(abscissaMin, ordinateMin),
+                         QPoint(abscissaMax, ordinateMax));
+    const QRect current = static_cast<QRect>(window);
+    const bool  zoomed  = (current != oldWorld);
+
+    abscissaMin = aMin; abscissaMax = aMax;
+    ordinateMin = oMin; ordinateMax = oMax;
+    window = ZoomWindow(QRect(QPoint(abscissaMin, ordinateMin),
+                              QPoint(abscissaMax, ordinateMax)));
+    if (zoomed)
+        // Re-apply the user's window, clamped into the new world by
+        // ZoomWindow's own correction.  If the zoom is refused (scale
+        // limits), the view falls back to the full new world -- everything
+        // visible, nothing clipped.
+        window.zoom(current.topLeft(), current.bottomRight());
+    return true;
+}
+
+void ClusterView::clusterFeaturesReprojected(int /*clusterId*/){
+    // The reprojection can WIDEN the dimension extrema (the Data side widens
+    // them synchronously on the realign path); redrawing inside the old
+    // world clips the shifted points, so the Data fix is invisible without
+    // this one.  With autoscale enabled paintEvent refits anyway and simply
+    // overwrites this.
+    recomputeWorldBounds();
+    drawContentsMode = REDRAW;
+    update();
 }
 
 void ClusterView::setMode(BaseFrame::Mode selectedMode){

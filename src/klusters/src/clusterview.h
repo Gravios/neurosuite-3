@@ -132,21 +132,19 @@ public:
 
 public Q_SLOTS:
 
-    /** A cluster's features were recomputed: redraw the whole view.
+    /** A cluster's features were recomputed: refresh the world bounds and
+     *  redraw the whole view.
      *
      *  NOT addClusterToUpdate().  That queues an INCREMENTAL paint, which draws the
      *  cluster's points on top of what is already there -- correct when a cluster
      *  gains or loses spikes, wrong when reprojection moves every point it has,
      *  because the old positions are never erased.
      *
-     *  The document already emits clusterFeaturesReprojected after a nudge and a
-     *  realign; only the error matrix was connected, so the feature view kept
-     *  showing pre-shift positions while the data underneath had moved.
-     */
-    void clusterFeaturesReprojected(int /*clusterId*/){
-        drawContentsMode = REDRAW;
-        update();
-    }
+     *  The world refresh matters because the reprojection can WIDEN the
+     *  dimension extrema (Data widens them synchronously on the realign
+     *  path): redrawing inside the old world clips the shifted points.
+     *  Implemented in the .cpp -- it reads the document's Data. */
+    void clusterFeaturesReprojected(int clusterId);
 
     /**
   * Takes into  account the update of the dimension used to present the clusters.
@@ -318,6 +316,20 @@ private:
   * (leaves existing bounds intact — nothing to fit to).
   */
     void autoscaleToVisibleClusters();
+
+    /** Computes the world rectangle for the current (dimensionX, dimensionY)
+     *  projection from Data's dimension extrema -- the arithmetic
+     *  updatedDimensions() has always used, extracted so the world can be
+     *  rebuilt WITHOUT resetting the projection or the zoom. */
+    void worldBoundsFromExtrema(long& aMin, long& aMax,
+                                long& oMin, long& oMax) const;
+
+    /** Rebuilds the world from the (possibly changed) Data extrema for the
+     *  current projection.  Unlike updatedDimensions() it PRESERVES the
+     *  user's zoom: a window that differed from the old world is re-applied,
+     *  clamped into the new world; an unzoomed window follows the world.
+     *  @return true when the world actually changed (callers repaint then). */
+    bool recomputeWorldBounds();
 
     /**
   * When true, autoscaleToVisibleClusters() is called automatically in
