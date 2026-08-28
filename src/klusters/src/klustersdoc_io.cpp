@@ -65,6 +65,7 @@
 #include "processwidget.h"
 #include "klusters.h"
 #include "klustersdoc.h"
+#include "minmaxthread.h"   // complete type for the finished-signal connect
 #include "configuration.h"
 #include "klustersview.h"
 #include "watershed2d.h"
@@ -214,6 +215,15 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
 
     //Initialize the members specific to a document
     clusteringData = new Data();
+    // The dimension-extrema recompute (0-crossing membership edits, undo/redo)
+    // runs on Data's worker thread and used to finish silently -- the views'
+    // world bounds derive from the extrema, so admitted spikes drew clipped
+    // at the stale edge until the next dimension pick.  QThread::finished is
+    // emitted in the worker context; the receiver context makes the lambda
+    // run queued on the GUI thread.  The connection dies with the thread
+    // object when this Data is deleted at document close.
+    connect(clusteringData->dimensionExtremaThread(), &QThread::finished,
+            this, [this]{ emit dimensionExtremaChanged(); });
     clusterColorList = new ItemColors();
     activeData = clusteringData;          // views render the parent until a child is shown
     activeColorList = clusterColorList;

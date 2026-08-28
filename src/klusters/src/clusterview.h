@@ -146,6 +146,11 @@ public Q_SLOTS:
      *  Implemented in the .cpp -- it reads the document's Data. */
     void clusterFeaturesReprojected(int clusterId);
 
+    /** The dimension-extrema recompute finished (membership edits crossing
+     *  cluster 0, and their undo/redo, run it on Data's worker thread).
+     *  Refresh the world bounds; repaint only when they actually moved. */
+    void dimensionExtremaChanged();
+
     /**
   * Takes into  account the update of the dimension used to present the clusters.
   * @param dimensionX

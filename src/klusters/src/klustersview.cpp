@@ -1765,6 +1765,12 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         // showing pre-shift positions after a nudge or realign while the data
         // underneath had already moved.
         connect(&doc, &KlustersDoc::clusterFeaturesReprojected, qobject_cast<ClusterView*>(view), &ClusterView::clusterFeaturesReprojected);
+        // Membership edits that cross cluster 0 (and undo/redo of them)
+        // recompute the extrema on a worker thread; when it lands, refresh
+        // the world so admitted spikes are not clipped at the stale edge and
+        // reset-zoom sees the true extent.  The slot repaints only when the
+        // bounds actually moved.
+        connect(&doc, &KlustersDoc::dimensionExtremaChanged, qobject_cast<ClusterView*>(view), &ClusterView::dimensionExtremaChanged);
         connect(view, &QObject::destroyed, this, &KlustersView::clusterDockClosed);
 
         //Connect the clusterView to a possible TraceView
