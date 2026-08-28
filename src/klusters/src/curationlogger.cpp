@@ -344,6 +344,15 @@ void CurationLogger::writeLine(const QString& phase,
                                 ActionType action,
                                 const QString& status)
 {
+    // JSON has no NaN/Infinity: QTextStream prints "nan"/"inf" for them,
+    // which poisons the whole line for any strict parser (pandas included).
+    // The ACTION_DETAIL writer already guards its doubles; the snapshot
+    // lines get the same treatment -- non-finite values become null.
+    const auto num = [](double d) -> QString {
+        return std::isfinite(d) ? QString::number(d, 'g', 15)
+                                : QStringLiteral("null");
+    };
+
     out << "{"
           // ── context ──────────────────────────────────────────────────────
           << "\"session_id\":\"" << sessionId << "\","
@@ -359,60 +368,60 @@ void CurationLogger::writeLine(const QString& phase,
           << "\"cluster\":" << s.clusterId << ","
           // ── A. count / rate ───────────────────────────────────────────────
           << "\"n_spikes\":" << s.nSpikes << ","
-          << "\"firing_hz\":" << s.firingRateHz << ","
+          << "\"firing_hz\":" << num(s.firingRateHz) << ","
           // ── B. ISI distribution ───────────────────────────────────────────
-          << "\"isi_thresh_ms\":" << s.isiThreshMs << ","
-          << "\"isi_viol_pct\":" << s.isiViolPct << ","
-          << "\"isi_viol_pct_1ms\":" << s.isiViolPct1ms << ","
-          << "\"isi_viol_pct_2ms\":" << s.isiViolPct2ms << ","
-          << "\"isi_burst_pct\":" << s.isiBurstPct << ","
-          << "\"isi_mean_ms\":" << s.isiMeanMs << ","
-          << "\"isi_median_ms\":" << s.isiMedianMs << ","
-          << "\"isi_cv\":" << s.isiCv << ","
+          << "\"isi_thresh_ms\":" << num(s.isiThreshMs) << ","
+          << "\"isi_viol_pct\":" << num(s.isiViolPct) << ","
+          << "\"isi_viol_pct_1ms\":" << num(s.isiViolPct1ms) << ","
+          << "\"isi_viol_pct_2ms\":" << num(s.isiViolPct2ms) << ","
+          << "\"isi_burst_pct\":" << num(s.isiBurstPct) << ","
+          << "\"isi_mean_ms\":" << num(s.isiMeanMs) << ","
+          << "\"isi_median_ms\":" << num(s.isiMedianMs) << ","
+          << "\"isi_cv\":" << num(s.isiCv) << ","
           // ── C. Feature-space spread ───────────────────────────────────────
-          << "\"feat_var_mean\":" << s.featVarMean << ","
-          << "\"feat_var_frobenius\":" << s.featVarFrobenius << ","
-          << "\"feat_var_top3_mean\":" << s.featVarTop3Mean << ","
-          << "\"drift_ratio\":" << s.driftRatio << ","
+          << "\"feat_var_mean\":" << num(s.featVarMean) << ","
+          << "\"feat_var_frobenius\":" << num(s.featVarFrobenius) << ","
+          << "\"feat_var_top3_mean\":" << num(s.featVarTop3Mean) << ","
+          << "\"drift_ratio\":" << num(s.driftRatio) << ","
           // ── D. Higher-order moments ───────────────────────────────────────
-          << "\"feat_skewness_max\":" << s.featSkewnessMax << ","
-          << "\"feat_kurtosis_mean\":" << s.featKurtosisMean << ","
-          << "\"feat_kurtosis_max\":" << s.featKurtosisMax << ","
+          << "\"feat_skewness_max\":" << num(s.featSkewnessMax) << ","
+          << "\"feat_kurtosis_mean\":" << num(s.featKurtosisMean) << ","
+          << "\"feat_kurtosis_max\":" << num(s.featKurtosisMax) << ","
           // ── E. Temporal stability ─────────────────────────────────────────
-          << "\"temporal_drift_index\":" << s.temporalDriftIndex << ","
-          << "\"temporal_rate_cv\":" << s.temporalRateCv << ","
+          << "\"temporal_drift_index\":" << num(s.temporalDriftIndex) << ","
+          << "\"temporal_rate_cv\":" << num(s.temporalRateCv) << ","
           // ── F. Global context ─────────────────────────────────────────────
-          << "\"spike_fraction\":" << s.spikeFraction << ","
+          << "\"spike_fraction\":" << num(s.spikeFraction) << ","
           << "\"n_clusters_in_group\":" << s.nClustersInGroup << ","
           // ── G. Nearest-cluster isolation ──────────────────────────────────
           << "\"nearest_cluster_id\":" << s.nearestClusterId << ","
-          << "\"nearest_centroid_dist\":" << s.nearestCentroidDist << ","
-          << "\"nearest_centroid_dist_norm\":" << s.nearestCentroidDistNorm << ","
+          << "\"nearest_centroid_dist\":" << num(s.nearestCentroidDist) << ","
+          << "\"nearest_centroid_dist_norm\":" << num(s.nearestCentroidDistNorm) << ","
           // ── H. Waveform morphology ────────────────────────────────────────
           << "\"waveform_available\":" << (s.waveformAvailable ? "true" : "false") << ","
-          << "\"waveform_snr\":" << s.waveformSnr << ","
-          << "\"waveform_peak_amp\":" << s.waveformPeakAmp << ","
+          << "\"waveform_snr\":" << num(s.waveformSnr) << ","
+          << "\"waveform_peak_amp\":" << num(s.waveformPeakAmp) << ","
           << "\"waveform_width_samp\":" << s.waveformWidthSamp << ","
-          << "\"waveform_asymmetry\":" << s.waveformAsymmetry << ","
+          << "\"waveform_asymmetry\":" << num(s.waveformAsymmetry) << ","
           << "\"waveform_chan_spread\":" << s.waveformChanSpread << ","
           // ── per-dimension detail ──────────────────────────────────────────
           << "\"n_feat_dims\":" << s.featVarDims.size() << ","
           << "\"feat_var_dims\":[";
     for (int i = 0; i < s.featVarDims.size(); ++i) {
         if (i) out << ",";
-        out << s.featVarDims[i];
+        out << num(s.featVarDims[i]);
     }
     out << "],"
           // ── I. session context ────────────────────────────────────────────
           << "\"n_channels\":" << s.nChannels << ","
           << "\"n_pca_dims\":" << s.nPcaDims << ","
-          << "\"sample_rate\":" << s.samplingRateHz << ","
+          << "\"sample_rate\":" << num(s.samplingRateHz) << ","
           // ── J. Isolation quality ──────────────────────────────────────────
-          << "\"l_ratio\":" << s.lRatio << ","
-          << "\"isolation_dist\":" << s.isolationDist << ","
+          << "\"l_ratio\":" << num(s.lRatio) << ","
+          << "\"isolation_dist\":" << num(s.isolationDist) << ","
           // ── K. Recording-relative temporal position ───────────────────────
-          << "\"t_first_rel\":" << s.tFirstRel << ","
-          << "\"t_last_rel\":" << s.tLastRel << ","
+          << "\"t_first_rel\":" << num(s.tFirstRel) << ","
+          << "\"t_last_rel\":" << num(s.tLastRel) << ","
           // ── L. Session action history ─────────────────────────────────────
           << "\"action_history_depth\":" << s.actionHistoryDepth
           << "}\n";
