@@ -2510,6 +2510,13 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
     if (dimChanged) {
         minMaxThread->wait();
         clusterZeroJustModified = false;
+        // The thread reads its modifiedClusters list; without setting it here it
+        // re-ran with whatever list the PREVIOUS launch left behind.  A stale
+        // list that lacks 0 lets the incremental skip keep old extrema for every
+        // dimension whose giver is not in that list -- while this integration
+        // just moved cluster 0's spikes INTO consideration, which is exactly the
+        // case that demands a full rescan (the list containing 0 forces it).
+        minMaxThread->setModifiedClusters(clustersToRecluster);
         minMaxThread->start();
     }
 
