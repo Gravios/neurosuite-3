@@ -180,7 +180,13 @@ static void patch81_cleanupTempYaml(const QString& reclusteringFetFileName)
 int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList,QString reclusteringFetFileName){
 
     // Capture cluster state before KlustaKwik's output is integrated
-    logBefore(CurationLogger::ActionType::RECLUSTER, clustersToRecluster);
+    // Parent scope only: a hierarchical recluster pins childData as its
+    // target (reclusterTarget), pushes onto CHILDDATA's stack, and its ids
+    // are child ids -- same three reasons the split/delete sites gate.  The
+    // bracket guard turns the error-path and success logAfter calls into
+    // no-ops when this begin is skipped.
+    if (!reclusterTargetIsChild())
+        logBefore(CurationLogger::ActionType::RECLUSTER, clustersToRecluster);
 
     QString cluFileName(reclusteringFetFileName);
     NS3_DIAG()<<"reclusteringFetFileName "<<reclusteringFetFileName;

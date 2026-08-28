@@ -362,10 +362,15 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
 
 
 void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activeView,int clusterId){
-    // Log before the spikes move so we capture the source cluster characteristics
-    logBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
-                              : CurationLogger::ActionType::DELETE_ARTEFACT,
-              clustersToDelete);
+    // Log before the spikes move so we capture the source cluster characteristics.
+    // Parent scope only: in child scope this reclassifies ATOMS (data() ==
+    // childData below) whose undo lives on the atom timeline -- it never
+    // notifies the logger -- and whose ids collide with parent numerals, so
+    // the snapshots would describe unrelated parent clusters.
+    if (!childScopeActive)
+        logBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
+                                  : CurationLogger::ActionType::DELETE_ARTEFACT,
+                  clustersToDelete);
 
         // Quiesce background view threads before mutating Data, so a view/matrix
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
@@ -563,8 +568,11 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         //update the TraceView if any
         activeView.updateTraceView(electrodeGroupID,clusterColorList,true);
     }
-    // Log the resulting state of the destination cluster (noise=1, artefact=0)
-    logAfter(QList<int>{ clusterId });
+    // Log the resulting state of the destination cluster (noise=1, artefact=0).
+    // Gated like the logBefore above; the bracket guard would no-op this in
+    // child scope anyway, but the intent reads better stated.
+    if (!childScopeActive)
+        logAfter(QList<int>{ clusterId });
 
     // Hierarchical mode: deleting WHOLE parents cannot break the nesting invariant --
     // every atom inside a deleted parent moves with it, so each still has exactly one
@@ -596,16 +604,39 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 }
 
 void KlustersDoc::deleteArtifact(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
-    logBefore(CurationLogger::ActionType::DELETE_REGION_ARTEFACT,
-              QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+    QList<int> logIds(clustersOfOrigin.begin(), clustersOfOrigin.end());
+    if (childScopeActive && childData) {
+        // The lasso ran over CHILD clusters, but the mutation below lands on
+        // clusteringData -- the spikes leave their PARENTS -- so snapshot
+        // those.  Reserve/unmapped ids keep their own numeral (the reserve
+        // parents share it).
+        QList<int> parents;
+        for (int c : logIds) {
+            int p = parentOfChild(c);
+            if (p < 0) p = c;
+            if (!parents.contains(p)) parents.append(p);
+        }
+        logIds = parents;
+    }
+    logBefore(CurationLogger::ActionType::DELETE_REGION_ARTEFACT, logIds);
     deleteSpikesFromClusters(0,region,clustersOfOrigin,dimensionX,dimensionY);
     logAfter(QList<int>{ 0 });
 }
 
 
 void KlustersDoc::deleteNoise(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
-    logBefore(CurationLogger::ActionType::DELETE_REGION_NOISE,
-              QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+    QList<int> logIds(clustersOfOrigin.begin(), clustersOfOrigin.end());
+    if (childScopeActive && childData) {
+        // See deleteArtifact: snapshot the parents the child lasso strips.
+        QList<int> parents;
+        for (int c : logIds) {
+            int p = parentOfChild(c);
+            if (p < 0) p = c;
+            if (!parents.contains(p)) parents.append(p);
+        }
+        logIds = parents;
+    }
+    logBefore(CurationLogger::ActionType::DELETE_REGION_NOISE, logIds);
     deleteSpikesFromClusters(1,region,clustersOfOrigin,dimensionX,dimensionY);
     logAfter(QList<int>{ 1 });
 }
@@ -936,18 +967,25 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
     KlustersView* activeView = app()->activeView();
 
     // Snapshot source clusters before the data mutation
-    logBefore(CurationLogger::ActionType::SPLIT,
-              QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
-
     // Route through the ACTIVE clustering: childData when a child is selected (the
     // split becomes a new sibling atom under the same parent), clusteringData
     // otherwise -- data() == clusteringData then, so the parent path is unchanged.
+    Data& targetData = data();
+    const bool onChild = (&targetData == childData);
+
+    // Parent scope only.  A child split mutates childData and reverts on the
+    // ATOM timeline, which never notifies the logger; and child ids collide
+    // with parent numerals, so snapshotClusters (which reads clusteringData)
+    // would describe unrelated parent clusters.  The parent-stage log records
+    // parent mutations; the atom layer is out of its scope by design.
+    if (!onChild)
+        logBefore(CurationLogger::ActionType::SPLIT,
+                  QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+
         // Quiesce background view threads before mutating Data, so a view/matrix
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
         for (KlustersView* view : *viewList)
             view->stopAllViewThreads();
-    Data& targetData = data();
-    const bool onChild = (&targetData == childData);
     float newClusterId = targetData.createNewCluster(region,clustersOfOrigin,dimensionX,dimensionY,fromClusters,emptyClusters);
 
     //Check if a new cluster has been created
@@ -991,7 +1029,6 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
                 resulting.append(src);
         emit hierarchyChildrenCreated(resulting);
         modified = true;
-        logAfter(resulting);
     }
     else{
         const int newClusterIdint = static_cast<int>(newClusterId);
@@ -1063,19 +1100,23 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
     //Get the active view.
     KlustersView* activeView = app()->activeView();
 
-    logBefore(CurationLogger::ActionType::SPLIT_N,
-              QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
-
     QList <int> newClusters;
     // Route through the ACTIVE clustering (childData when a child is selected ->
     // the new clusters are sibling atoms under the same parent; clusteringData
     // otherwise, unchanged parent path).
+    Data& targetData = data();
+    const bool onChild = (&targetData == childData);
+
+    // Parent scope only -- see the SPLIT rationale above: the atom timeline
+    // never notifies the logger, and child ids collide with parent numerals.
+    if (!onChild)
+        logBefore(CurationLogger::ActionType::SPLIT_N,
+                  QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+
         // Quiesce background view threads before mutating Data, so a view/matrix
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
         for (KlustersView* view : *viewList)
             view->stopAllViewThreads();
-    Data& targetData = data();
-    const bool onChild = (&targetData == childData);
     QMap<int,int> fromToNewClusterIds = targetData.createNewClusters(region,clustersOfOrigin,dimensionX,dimensionY,emptyClusters);
     newClusters = fromToNewClusterIds.values();
     fromClusters = fromToNewClusterIds.keys();
@@ -1099,7 +1140,6 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         emit hierarchyChanged();
         emit hierarchyChildrenCreated(newClusters);
         modified = true;
-        logAfter(newClusters);
     }
     else{
         //Prepare the undo
