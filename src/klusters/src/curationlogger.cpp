@@ -40,6 +40,7 @@ void CurationLogger::open(const QString& logPath,
     sessionBaseName = baseName;
     electrodeGroup  = groupId;
     nextActionIdx       = 0;
+    revokeEpochCounter  = 0;
     pending.clear();
 
     // Generate a short session token (first 8 hex chars of a UUID)
@@ -94,8 +95,28 @@ void CurationLogger::close()
 void CurationLogger::setMaxBufferEntries(int n)
 {
     maxBuffer = (n < 1) ? 1 : n;
-    // Shrinking: flush from the front until size <= maxBuffer.
-    while (pending.size() > maxBuffer)
+    // Shrinking: flush from the front until the undo-paired count fits.
+    trimBuffer();
+}
+
+void CurationLogger::trimBuffer()
+{
+    // Capacity pairs 1:1 with the Data undo stack, so only UNDO-PAIRED
+    // entries count against it: a not-undoable entry (nudge, rejected split)
+    // must not push a still-undoable one out early and lock its status.
+    auto undoPaired = [this]{
+        int n = 0;
+        for (const PendingEntry& e : pending)
+            if (e.undoable) ++n;
+        return n;
+    };
+    while (!pending.isEmpty() && undoPaired() > maxBuffer)
+        flushOldest();
+    // Completed not-undoable entries at the front are final the moment a
+    // newer entry exists (their status can never flip); shed them so long
+    // realign/nudge runs do not grow the ring without bound.  The newest
+    // entry is never shed here -- it may still be mid begin/commit.
+    while (pending.size() > 1 && !pending.first().undoable)
         flushOldest();
 }
 
@@ -106,7 +127,19 @@ int CurationLogger::beginAction(ActionType type,
     if (!file.isOpen())
         return nextActionIdx;
 
+    // A new undo-paired action makes Data clear its redo stack, so every
+    // buffered "bad" loses its redo forever -- lock those labels now, or a
+    // later Ctrl+Y (replaying a DIFFERENT action) would flip one of them.
+    // Stamp the revocations with this begin's epoch: if this action turns
+    // out NOT to be a real push (markCurrentActionNotUndoable), exactly
+    // these revocations -- and no earlier begin's -- are restored.
+    const int epoch = ++revokeEpochCounter;
+    for (PendingEntry& b : pending)
+        if (b.undoable && b.status == QLatin1String("bad") && b.revokedEpoch == 0)
+            b.revokedEpoch = epoch;
+
     PendingEntry e;
+    e.beginEpoch = epoch;
     e.actionIdx = nextActionIdx++;
     e.type      = type;
     e.before    = before;
@@ -114,13 +147,44 @@ int CurationLogger::beginAction(ActionType type,
     e.tsBegin   = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
     pending.append(e);
 
-    // Overflow: the oldest entry can no longer be undone (it's beyond
-    // the buffer's capacity = max-undos).  Its current status is now
-    // its final status; write it out and free the slot.
-    while (pending.size() > maxBuffer)
-        flushOldest();
+    // Overflow: an entry pushed beyond the undo-paired capacity can no
+    // longer be undone; its current status is final.
+    trimBuffer();
 
     return e.actionIdx;
+}
+
+void CurationLogger::markCurrentActionNotUndoable()
+{
+    if (PendingEntry* p = currentPending()) {
+        p->undoable = false;
+        // beginAction revoked the buffered bads on the assumption this entry
+        // was a real push; it was not, so Data's redo stack survived intact.
+        // Restore exactly the revocations THIS begin made (its epoch) --
+        // bads revoked by earlier, confirmed pushes stay revoked.
+        for (PendingEntry& b : pending)
+            if (b.undoable && b.revokedEpoch == p->beginEpoch)
+                b.revokedEpoch = 0;
+    }
+}
+
+void CurationLogger::notePlaceholderUndoable()
+{
+    if (!file.isOpen())
+        return;
+    const int epoch = ++revokeEpochCounter;
+    for (PendingEntry& b : pending)
+        if (b.undoable && b.status == QLatin1String("bad") && b.revokedEpoch == 0)
+            b.revokedEpoch = epoch;
+
+    PendingEntry e;
+    e.beginEpoch  = epoch;
+    e.actionIdx   = -1;                       // consumes no action index
+    e.undoable    = true;
+    e.placeholder = true;
+    e.tsBegin     = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
+    pending.append(e);
+    trimBuffer();
 }
 
 int CurationLogger::beginAction(ActionType type, const ClusterSnapshot& before)
@@ -155,9 +219,12 @@ void CurationLogger::recordActionDetails(const QMap<QString, QVariant>& details)
 // ---------------------------------------------------------------------------
 void CurationLogger::notifyUndo()
 {
-    // Walk back from the most recent entry; flip the first one whose
-    // status is still "good".
+    // Walk back from the most recent UNDO-PAIRED entry; flip the first one
+    // whose status is still "good".  Not-undoable entries have no twin on
+    // the stack the pop came from, so they are transparent to the walk.
     for (int i = pending.size() - 1; i >= 0; --i) {
+        if (!pending[i].undoable)
+            continue;
         if (pending[i].status == QLatin1String("good")) {
             pending[i].status = QStringLiteral("bad");
             return;
@@ -171,19 +238,22 @@ void CurationLogger::notifyUndo()
 
 void CurationLogger::notifyRedo()
 {
-    // Walk forward from the oldest; flip the most recent (= largest i)
-    // entry whose status is "bad" back to "good".  Equivalent to the
-    // mirror of notifyUndo: the redo replays the most recently undone
-    // action, which is the topmost "bad" entry.
-    int target = -1;
-    for (int i = pending.size() - 1; i >= 0; --i) {
+    // Data's redo replays the LAST-undone action first.  Undo flips the
+    // ring top-down, so the last-undone is the OLDEST (lowest-index) bad
+    // still eligible for redo.  The previous walk took the NEWEST bad --
+    // that is the FIRST-undone, i.e. the LAST the redo chain will reach --
+    // so with two or more undos buffered every redo relabelled the wrong
+    // action.  Entries whose redo was revoked by a newer push, and
+    // not-undoable entries, are transparent.
+    for (int i = 0; i < pending.size(); ++i) {
+        if (!pending[i].undoable || pending[i].revokedEpoch != 0)
+            continue;
         if (pending[i].status == QLatin1String("bad")) {
-            target = i;
-            break;
+            pending[i].status = QStringLiteral("good");
+            pending[i].revokedEpoch = 0;
+            return;
         }
     }
-    if (target >= 0)
-        pending[target].status = QStringLiteral("good");
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +285,7 @@ void CurationLogger::flushOldest()
 void CurationLogger::flushEntry(const PendingEntry& e)
 {
     if (!file.isOpen()) return;
+    if (e.placeholder) return;   // hidden undo-stack twin: nothing to emit
 
     for (const ClusterSnapshot& s : e.before)
         writeLine("before", "source", s, e.actionIdx, e.type, e.status);

@@ -269,16 +269,34 @@ public:
      *  flush time. */
     void recordActionDetails(const QMap<QString, QVariant>& details);
 
-    /** User pressed Ctrl+Z.  Flips the topmost good entry's status to
-     *  "bad".  No-op if every buffered entry is already bad (the data
-     *  state is being reverted past the buffer; the corresponding disk
+    /** User pressed Ctrl+Z.  Flips the newest undo-paired "good" entry to
+     *  "bad".  Entries marked not-undoable are skipped: they have no twin on
+     *  the Data undo stack, so the pop that triggered this call cannot have
+     *  been theirs.  No-op if every undo-paired entry is already bad (the
+     *  data state is being reverted past the buffer; the corresponding disk
      *  records are already finalised and cannot be retroactively
      *  re-statused). */
     void notifyUndo();
 
-    /** User pressed Ctrl+Y.  Flips the topmost bad entry's status back
-     *  to "good".  No-op if no bad entries exist. */
+    /** User pressed Ctrl+Y.  Data's redo replays the LAST-undone action
+     *  first, which is the OLDEST still-redoable "bad" entry -- undo flips
+     *  top-down, so the bads read oldest == deepest-undone.  Entries whose
+     *  redo was revoked (a newer undo-paired action cleared Data's redo
+     *  stack) and not-undoable entries are skipped. */
     void notifyRedo();
+
+    /** Mark the most recently begun entry as having NO twin on the Data undo
+     *  stack: the op mutated nothing (a rejected or aborted tool run) or its
+     *  mutation is not undoable (realign / nudge rewrite in place).  Such an
+     *  entry keeps its records and details but is exempt from the undo/redo
+     *  status walk and from the undo-paired buffer capacity. */
+    void markCurrentActionNotUndoable();
+
+    /** Append a hidden placeholder for a Data-undo entry that has no logged
+     *  action (the full renumber).  It participates in the undo/redo walk
+     *  exactly like a logged entry -- keeping the ring aligned with the undo
+     *  stack -- but emits nothing when flushed and consumes no action index. */
+    void notePlaceholderUndoable();
 
     static QString actionName(ActionType t);
 
@@ -294,6 +312,21 @@ private:
         QList<QMap<QString, QVariant>>       details;
         QString                              status    = QStringLiteral("good");
         QString                              tsBegin;       // ISO timestamp at beginAction
+        /// Paired with a Data undo-stack entry.  False for rejected/aborted
+        /// tool runs and for in-place realign/nudge: the status walk skips
+        /// them and they do not count against the undo-paired capacity.
+        bool                                 undoable  = true;
+        /// Hidden twin of an unlogged Data undo entry (full renumber):
+        /// participates in the walk, emits nothing at flush.
+        bool                                 placeholder = false;
+        /// Epoch stamped at beginAction (monotonic per logger).  Lets a late
+        /// markCurrentActionNotUndoable() restore exactly the revocations its
+        /// own begin made and no others.
+        int                                  beginEpoch  = 0;
+        /// Non-zero: a newer undo-paired begin (of this epoch) cleared Data's
+        /// redo stack while this entry was "bad" -- its redo can never
+        /// arrive, so notifyRedo must not flip it.  Zero: still redoable.
+        int                                  revokedEpoch = 0;
     };
 
     /** Emit all of the entry's accumulated lines to the file.  Each line
@@ -304,6 +337,12 @@ private:
     /** Pop the front of pending and flush it.  Called during overflow
      *  and during close(). */
     void flushOldest();
+
+    /** Keep the ring paired with the undo stack: flush front entries until
+     *  the count of UNDO-PAIRED entries fits maxBuffer, then shed completed
+     *  not-undoable entries from the front (their status can never flip, so
+     *  they are final the moment a newer entry exists). */
+    void trimBuffer();
 
     /** Mutating reference to the current (back-most) pending entry, or
      *  nullptr if none.  Used by commitAction / recordActionDetails. */
@@ -326,5 +365,6 @@ private:
     QString sessionId;             ///< UUID-like token, unique per open()
     int     nextActionIdx     = 0;     ///< monotonic counter, never reset within a session
     int     maxBuffer     = 50;    ///< capacity of pending; tracks Settings.MaxUndo
+    int     revokeEpochCounter = 0;   ///< monotonic begin counter for redo revocation
     QList<PendingEntry> pending;
 };
