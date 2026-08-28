@@ -190,6 +190,8 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     QString cluFilePath = cluFileUrl;
     if(!QFile::exists(cluFileUrl)) {
         QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+        // Aborted before any mutation: close the log block (no undo twin).
+        logAfterNotUndoable(clustersToRecluster);
         return DOWNLOAD_ERROR;
     }
 
@@ -202,6 +204,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         if(!QFile::remove(cluFileName))
             QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
         patch81_cleanupTempYaml(reclusteringFetFileName);
+        logAfterNotUndoable(clustersToRecluster);   // aborted, nothing mutated
         return OPEN_ERROR;
     }
 
@@ -219,6 +222,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         if(!QFile::remove(cluFileName))
             QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
         patch81_cleanupTempYaml(reclusteringFetFileName);
+        logAfterNotUndoable(clustersToRecluster);   // aborted, nothing mutated
         return INCORRECT_CONTENT;
     }
     cluFile.close();
