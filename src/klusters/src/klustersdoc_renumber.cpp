@@ -114,6 +114,13 @@ void KlustersDoc::renumberClusters(){
 
     prepareUndo(clusterIdsOldNew,clusterIdsNewOld);
 
+    // Curation-log pairing: this push has no logged action (a full renumber
+    // is curation-neutral, and logging every auto-renumber would drown the
+    // decision stream), so hand the ring a hidden undo-stack twin.  Without
+    // it, undoing the renumber flips the PREVIOUS logged action to "bad".
+    if (curationLogger && curationLogger->isOpen())
+        curationLogger->notePlaceholderUndoable();
+
     //Update the clusterColorList: keep each cluster's colour, only relabel its
     //stored id through the old->new map the renumber just produced.
     //

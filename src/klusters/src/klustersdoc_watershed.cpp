@@ -199,9 +199,16 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     QList<int> newClusterList;
     if (!clusteringData->integrateBasinLabeling(inputs, rowToBasin,
                                                  newClusterList)) {
+        // Aborted before any mutation: close the log block with the inputs
+        // unchanged and no undo twin, or the open entry would absorb the
+        // status flip of the NEXT Ctrl-Z.
+        logAfterNotUndoable(inputs);
         return 0;
     }
-    if (newClusterList.isEmpty()) return 0;
+    if (newClusterList.isEmpty()) {
+        logAfterNotUndoable(inputs);   // integration yielded nothing
+        return 0;
+    }
 
     // ── Doc-level undo: same shape as recluster.
     prepareReclusteringUndo(newClusterList, inputs);

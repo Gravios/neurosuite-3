@@ -476,7 +476,7 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
         if (curationLogger && curationLogger->isOpen()) {
             curationLogger->recordActionDetails(buildLogDetails(D, 0, 0));
         }
-        logAfter(QList<int>{ sourceClusterId });
+        logAfterNotUndoable(QList<int>{ sourceClusterId });   // nothing mutated, no undo twin
         DipSplitResult R = resultFromDecision(D);
         R.accepted = false;
         R.reason   = QStringLiteral("small_child");
@@ -583,7 +583,7 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
             details.insert(QStringLiteral("reason"),          err);
             curationLogger->recordActionDetails(details);
         }
-        logAfter(QList<int>{ sourceCluster });
+        logAfterNotUndoable(QList<int>{ sourceCluster });   // nothing mutated, no undo twin
         R.reason = err;
         return R;
     }

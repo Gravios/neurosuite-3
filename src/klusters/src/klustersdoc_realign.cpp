@@ -2035,7 +2035,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 
     // Log the cluster after realignment — features and timestamps have been
     // updated.  Served from the batch centroid cache during Align-All.
-    logAfter(QList<int>{ clusterId });
+    // Not undoable: the realign rewrites features/waveforms in place and
+    // pushes NO Data-undo entry, so the ring must not pair it with one.
+    logAfterNotUndoable(QList<int>{ clusterId });
 
     if (_timing) {
         const qint64 _tot = _rtmr.elapsed();
@@ -3432,7 +3434,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                            v == activeView);
     }
 
-    logAfter(QList<int>{ clusterId });
+    // Not undoable: the nudge rewrites timestamps/waveforms in place and
+    // pushes NO Data-undo entry, so the ring must not pair it with one.
+    logAfterNotUndoable(QList<int>{ clusterId });
 
     return true;
 }
