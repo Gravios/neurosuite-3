@@ -1958,8 +1958,22 @@ private:
     void logBefore(CurationLogger::ActionType action, const QList<int>& clusterIds);
 
     /** Snapshot @p clusterIds and write "after" records for the current block.
-     *  Must follow a matching logBefore() call for the same action. */
+     *  Must follow a matching logBefore() call for the same action; if that
+     *  call never opened a block (logger off, empty id list, or a gated
+     *  scope), this is a no-op instead of attaching the snapshots to some
+     *  PREVIOUS action's entry. */
     void logAfter(const QList<int>& clusterIds);
+
+    /** logAfter() for an action with NO twin on the Data undo stack: a
+     *  rejected/aborted tool run (nothing mutated) or an in-place realign /
+     *  nudge (mutated, not undoable).  Commits the after-snapshots, then
+     *  exempts the entry from the undo/redo status walk so a Ctrl-Z of the
+     *  PREVIOUS action cannot flip this one to "bad". */
+    void logAfterNotUndoable(const QList<int>& clusterIds);
+
+    /// True between a successful logBefore() and its logAfter() -- the guard
+    /// that keeps a lone logAfter() from committing onto a stale entry.
+    bool logActionOpen = false;
 
     /// Per-cluster action-touch count for the current session.
     /// Incremented in logBefore() so every cluster snapshot carries a depth.
