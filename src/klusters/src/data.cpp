@@ -3781,6 +3781,21 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
         minMaxThread->setModifiedClusters(fromClusters);
         minMaxThread->start();
     }
+
+    // Both memberships changed, so the cached mean waveforms and correlograms
+    // of the two clusters are stale.  Every sibling committer cleans these
+    // (createNewCluster and groupClusters via their status-map walks,
+    // setClusterLabels / restoreClusterLabels via their touched sets); this
+    // one did not, so after a child drop/dissolve routed through here the
+    // parent's mean waveform kept showing the pre-move average until an
+    // unrelated edit invalidated it.  An emptied source is invalidated all the
+    // same -- clearing a dead id's cache entry is a no-op-safe removal.
+    invalidateWaveformCache(fromCluster);
+    invalidateCorrelogramCache(fromCluster);
+    if (toCluster != fromCluster) {
+        invalidateWaveformCache(toCluster);
+        invalidateCorrelogramCache(toCluster);
+    }
 }
 
 void Data::restoreClusterLabels(const QVector<dataType>& labels)
