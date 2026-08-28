@@ -1837,11 +1837,33 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
     dataType max,min;
 
     bool init = false;
-    if(clustersGivingMinimum.isEmpty()){
+    if(rowsGivingMinimum.isEmpty()){
         init = true;
         for(int i = 0; i<nbDimensions; ++i){
-            clustersGivingMinimum.append(0);
-            clustersGivingMaximum.append(0);
+            rowsGivingMinimum.append(0);
+            rowsGivingMaximum.append(0);
+        }
+    }
+
+    // The givers are FEATURE ROWS, not cluster ids.  Ids made the skip below
+    // unsound: any relabel without a recompute -- a plain merge, a renumber --
+    // stranded the stored id, and a later edit that removed the renamed
+    // cluster's spikes from consideration matched nothing in its modified
+    // list, skipped the dimension, and kept an extremum no considered spike
+    // attains.  A row survives every relabel; the only question the skip has
+    // to answer is whether the extremal spikes THEMSELVES are still outside
+    // cluster 0, which one pass over the snapshot answers for all dimensions
+    // at once.  Unresolved rows (row 0 placeholders from init) resolve to
+    // cluster 0 and conservatively force the rescan.
+    QHash<dataType,dataType> giverRowCluster;
+    if(!init){
+        for(int d = 0; d < nbDimensions; ++d){
+            giverRowCluster.insert(rowsGivingMinimum[d], 0);
+            giverRowCluster.insert(rowsGivingMaximum[d], 0);
+        }
+        for(dataType i = 1; i <= nbSpikes; ++i){
+            auto it = giverRowCluster.find(spikesByClusterTemp(1,i));
+            if(it != giverRowCluster.end()) it.value() = spikesByClusterTemp(2,i);
         }
     }
 
@@ -1853,11 +1875,18 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
 
         max = min = features(1,dimension);
 
-        dataType clusterIdMin = 0;
-        dataType clusterIdMax = 0;
+        dataType rowMin = 0;
+        dataType rowMax = 0;
 
-        if(!(modifiedClusters.contains(clustersGivingMinimum[dimension - 1]) || modifiedClusters.contains(clustersGivingMaximum[dimension - 1]))
-                && !init && !modifiedClusters.isEmpty() && !modifiedClusters.contains(0)){
+        // Skip iff this is a membership-only recompute (a non-empty, 0-free
+        // list; an empty list is the callers' request for an unconditional
+        // full rescan) AND both extremal spikes are still outside cluster 0 --
+        // then no considered value was added or removed, so the stored bounds
+        // still hold whatever ids the edit shuffled.
+        const dataType gminCluster = init ? 0 : giverRowCluster.value(rowsGivingMinimum[dimension - 1], 0);
+        const dataType gmaxCluster = init ? 0 : giverRowCluster.value(rowsGivingMaximum[dimension - 1], 0);
+        if(!init && !modifiedClusters.isEmpty() && !modifiedClusters.contains(0)
+                && gminCluster != 0 && gmaxCluster != 0){
             dimensionMinimaTemp(dimension,1) = dimensionMinima(dimension,1);
             dimensionMaximaTemp(dimension,1) = dimensionMaxima(dimension,1);
             continue;
@@ -1879,10 +1908,10 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
 
                 if(currentSpike < min){
                     min = currentSpike;
-                    clusterIdMin = clusterId;
+                    rowMin = spikePosition;
                 }
                 if(currentSpike > max){
-                    clusterIdMax = clusterId;
+                    rowMax = spikePosition;
                     max = currentSpike;
                 }
 
@@ -1893,8 +1922,8 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
         }
         dimensionMinimaTemp(dimension,1) = min;
         dimensionMaximaTemp(dimension,1) = max;
-        clustersGivingMinimum[dimension - 1] = clusterIdMin;
-        clustersGivingMaximum[dimension - 1] = clusterIdMax;
+        rowsGivingMinimum[dimension - 1] = rowMin;
+        rowsGivingMaximum[dimension - 1] = rowMax;
     }
 
     // Time dimension: scan all spikes for the true min and max timestamp.

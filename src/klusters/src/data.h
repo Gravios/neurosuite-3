@@ -1292,11 +1292,16 @@ private:
     /**List of the minimum of each dimension*/
     Array<dataType> dimensionMinima;
 
-    /**List of the clusters giving the maximum of each dimension (sorted by dimension)*/
-    QList<int> clustersGivingMaximum;
+    /**Feature row (spike) giving the maximum of each dimension (sorted by dimension).
+    * Rows are stable spike identities: unlike cluster ids they survive renumbering,
+    * merges and every other relabel, so the incremental skip in
+    * minMaxDimensionCalculation stays sound without any committer keeping these
+    * in step.  What the skip needs to know is only whether the extremal spikes
+    * are still outside cluster 0 after the edit.*/
+    QList<dataType> rowsGivingMaximum;
 
-    /**List of the clusters giving the minimum of each dimension (sorted by dimension)*/
-    QList<int> clustersGivingMinimum;
+    /**Feature row (spike) giving the minimum of each dimension (sorted by dimension)*/
+    QList<dataType> rowsGivingMinimum;
 
     /**QT object providing access serialization between threads*/
     mutable QMutex mutex;  // mutable: locked in const methods called from worker threads
