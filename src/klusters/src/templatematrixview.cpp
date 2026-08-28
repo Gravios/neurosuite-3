@@ -869,13 +869,14 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
             selectedPairs.append(pair);
         if (existing.contains(static_cast<dataType>(cA))) toShow.append(cA);
         if (existing.contains(static_cast<dataType>(cB))) toShow.append(cB);
-        // Ctrl accumulates, but it must still land in the palette being curated.
-        // addClustersToActiveView only adds to the VIEW, so under a scoped matrix a
-        // Ctrl-click built up a pair the child palette never saw -- and G merges
-        // what the palette has selected, so the second click of the pair went
-        // nowhere.  That is "I cannot group two children in the template matrix".
-        if (ctrl && !doc.matrixScopeActive()) doc.addClustersToActiveView(toShow);
-        else                                  doc.selectFromMatrix(toShow);
+        // Ctrl accumulates in the palette being curated: addFromMatrix extends
+        // the child palette's selection under a scope and falls back to
+        // addClustersToActiveView unscoped.  Routing the scoped case through
+        // selectFromMatrix instead REPLACED the child selection with the newest
+        // pair -- the boxes accumulated, the palette did not, and G merged only
+        // the last pair clicked.
+        if (ctrl) doc.addFromMatrix(toShow);
+        else      doc.selectFromMatrix(toShow);
         selectedA = cA;
         selectedB = cB;
         // Launch per-spike xcorr for this pair (uses cache if already computed)

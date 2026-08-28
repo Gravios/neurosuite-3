@@ -1199,6 +1199,22 @@ void KlustersApp::createMenus()
             cp->setFocusToList();
         }
     });
+    connect(doc, &KlustersDoc::hierarchyChildSelectionExtendRequested, this,
+            [this](const QList<int>& children){
+        if (!childPanel || !childPanel->isVisible() || children.isEmpty()) return;
+        ClusterPalette* cp = curationPalette() ? curationPalette() : childPalette;
+        if (!cp) return;
+        // The palette's current selection is the accumulator, mirroring
+        // addClustersToActiveView's use of the cluster palette.  Current ids
+        // first, the clicked pair last: selectItems focuses the last resolved
+        // item, so focus lands on the pair just added.  selectItems tolerates
+        // duplicate ids, so no dedup is needed here.
+        QList<int> merged = cp->selectedClusters();
+        for (int c : children)
+            merged.append(c);
+        cp->selectItems(merged);
+        cp->setFocusToList();
+    });
     connect(doc, &KlustersDoc::hierarchyChildrenCreated, this,
             [this](const QList<int>& newChildren){
         if (!childPanel || !childPanel->isVisible() || newChildren.isEmpty()) return;
