@@ -77,6 +77,10 @@ public:
     void newClustersAdded(QMap<int,int>& fromToNewClusterIds, QList<int>& emptiedClusters);
     void newClustersAdded(QList<int>& clustersToRecluster);
     void renumber(QMap<int,int>& clusterIdsOldNew);
+    /** Mark the matrix out of date without naming the edit (undo/redo family,
+     *  clusterFeaturesReprojected).  With the visibility gate this doubles as
+     *  recompute-on-reveal: showEvent() relaunches when isStale. */
+    void markStale();
 
     // ── Read-only accessors ──────────────────────────────────────────────
     // scores is a row-major Array<double> indexed 1..nClusters; the cluster id

@@ -106,6 +106,10 @@ public:
     void newClustersAdded(QMap<int,int>& fromToNewClusterIds, QList<int>& emptiedClusters);
     void newClustersAdded(QList<int>& clustersToRecluster);
     void renumber(QMap<int,int>& clusterIdsOldNew);
+    /** Mark the matrix out of date without naming the edit.  Wired to the
+     *  undo/redo family and clusterFeaturesReprojected, which change the data
+     *  this matrix is built from but never fire the edit signals above. */
+    void markStale();
 
     // ── Read-only accessors used by KlustersApp::slotReorderClustersBySimilarity ──
     // The scores matrix is a row-major Array<double> indexed 1..nClusters

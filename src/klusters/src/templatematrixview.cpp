@@ -1113,6 +1113,7 @@ void TemplateMatrixView::newClusterAdded(QList<int>&,int,QList<int>&){ isStale=t
 void TemplateMatrixView::newClustersAdded(QMap<int,int>&,QList<int>&){ isStale=true; update(); }
 void TemplateMatrixView::newClustersAdded(QList<int>&)               { isStale=true; update(); }
 void TemplateMatrixView::renumber(QMap<int,int>&)                    { isStale=true; update(); }
+void TemplateMatrixView::markStale()                                 { isStale=true; update(); }
 
 void TemplateMatrixView::resizeEvent(QResizeEvent* e)
 {

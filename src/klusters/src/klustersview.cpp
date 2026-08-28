@@ -1834,6 +1834,23 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
                 tmv,  static_cast<void(TemplateMatrixView::*)(QList<int>&)>(&TemplateMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber,                 tmv, &TemplateMatrixView::renumber);
         connect(&doc, &KlustersDoc::selectedChannelsChanged,  tmv, &TemplateMatrixView::selectedChannelsChanged);
+        // Undo/redo restore memberships and a nudge/realign rewrites waveforms,
+        // but neither goes through the edit signals above -- the doc raises the
+        // undo*/redo* family and clusterFeaturesReprojected instead, which only
+        // the ERROR matrix heard.  This view then showed pre-undo / pre-nudge
+        // templates with no stale border.  Mark stale on all of them; the
+        // recompute still comes from U, the next edit, or the preference-gated
+        // post-op path, exactly as for the error matrix.
+        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoRenumbering,            tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoAdditionModification,   tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoAddition,               tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoModification,           tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoRenumbering,            tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoAdditionModification,   tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoAddition,               tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoModification,           tmv, &TemplateMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoDeletion,               tmv, &TemplateMatrixView::markStale);
         connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
             QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
             view->setPalette(pal); view->update(); });
@@ -1851,6 +1868,18 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
                 rmv,  static_cast<void(ResidualMatrixView::*)(QList<int>&)>(&ResidualMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber,                 rmv, &ResidualMatrixView::renumber);
         connect(&doc, &KlustersDoc::selectedChannelsChanged,  rmv, &ResidualMatrixView::selectedChannelsChanged);
+        // Same gap as the template matrix: undo/redo and a nudge/realign change
+        // the waveforms this matrix reads without firing the edit signals above.
+        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoRenumbering,            rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoAdditionModification,   rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoAddition,               rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoModification,           rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoRenumbering,            rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoAdditionModification,   rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoAddition,               rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoModification,           rmv, &ResidualMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoDeletion,               rmv, &ResidualMatrixView::markStale);
         connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
             QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
             view->setPalette(pal); view->update(); });
@@ -1868,6 +1897,19 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
                 dmv,  static_cast<void(DriftMatrixView::*)(QList<int>&)>(&DriftMatrixView::newClustersAdded));
         connect(&doc, &KlustersDoc::renumber,                 dmv, &DriftMatrixView::renumber);
         connect(&doc, &KlustersDoc::selectedChannelsChanged,  dmv, &DriftMatrixView::selectedChannelsChanged);
+        // Same gap as the template matrix.  Here the mark also completes the
+        // visibility gate: a hidden drift matrix records the staleness and
+        // showEvent() relaunches the compute when it is next revealed.
+        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoRenumbering,            dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoAdditionModification,   dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoAddition,               dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::undoModification,           dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoRenumbering,            dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoAdditionModification,   dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoAddition,               dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoModification,           dmv, &DriftMatrixView::markStale);
+        connect(&doc, &KlustersDoc::redoDeletion,               dmv, &DriftMatrixView::markStale);
         connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
             QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
             view->setPalette(pal); view->update(); });
