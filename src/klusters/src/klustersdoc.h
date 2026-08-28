@@ -400,6 +400,17 @@ public:
      */
     void selectFromMatrix(const QList<int>& ids, const QList<int>& previous = QList<int>());
 
+    /** Ctrl-accumulate from a matrix cell: ADD @p ids to the current selection.
+     *
+     *  The accumulator is the palette the matrix is driving.  Unscoped that is the
+     *  cluster palette, via addClustersToActiveView() as always.  Scoped it is the
+     *  child palette, reached through hierarchyChildSelectionExtendRequested --
+     *  NOT selectFromMatrix(), whose landing REPLACES the child selection, so
+     *  feeding it the newest pair from the Ctrl path silently discarded every
+     *  pair Ctrl had already gathered.
+     */
+    void addFromMatrix(const QList<int>& ids);
+
     /** True when the matrices should restrict themselves to one parent's children:
      *  a loaded child layer, a selected parent, and at least one child.
      *
@@ -1277,6 +1288,14 @@ Q_SIGNALS:
      *  signal, which is how a shared policy drifts.  Same receiver, different cause.
      */
     void hierarchyChildSelectionRequested(const QList<int>& children);
+
+    /** Extend the child palette's selection with @p children instead of replacing
+     *  it -- the Ctrl-accumulate landing.  Distinct from
+     *  hierarchyChildSelectionRequested for the same reason that one is distinct
+     *  from hierarchyChildrenCreated: replace and extend are different policies,
+     *  and one signal carrying both would need a flag every receiver must honour.
+     */
+    void hierarchyChildSelectionExtendRequested(const QList<int>& children);
 
     /** The scoped-matrix parent changed: the matrix views should recompute against
      *  matrixScopeClusters(), or clear if matrixScopeActive() has become false. */

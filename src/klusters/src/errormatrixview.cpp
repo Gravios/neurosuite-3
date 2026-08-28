@@ -1026,8 +1026,12 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
         if(e->modifiers() & Qt::ControlModifier){
             //Store the selected pair
             selectedPairs.append(pair);
-            if (doc.matrixScopeActive()) doc.selectFromMatrix(clustersToShow);
-            else                        doc.addClustersToActiveView(clustersToShow);
+            // Extend the selection in whichever palette the matrix is driving.
+            // The scoped case used to route through selectFromMatrix, whose
+            // landing REPLACES the child selection -- the pair boxes
+            // accumulated but the palette only ever held the newest pair, so G
+            // merged that.
+            doc.addFromMatrix(clustersToShow);
         }
         else{
             selectedPairs.clear();

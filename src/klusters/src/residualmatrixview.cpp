@@ -504,8 +504,7 @@ void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
     if (clusterList[col] != clusterList[row])
         clustersToShow.append(clusterList[col]);
     if (e->modifiers() & Qt::ControlModifier)
-        if (doc.matrixScopeActive()) doc.selectFromMatrix(clustersToShow);
-        else                        doc.addClustersToActiveView(clustersToShow);
+        doc.addFromMatrix(clustersToShow);
     else
         doc.selectFromMatrix(clustersToShow);
 }

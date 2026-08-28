@@ -518,6 +518,20 @@ void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& prev
     if (prev.isEmpty()) shownClustersUpdate(show);
     else                shownClustersUpdate(show, prev);
 }
+void KlustersDoc::addFromMatrix(const QList<int>& ids)
+{
+    if (ids.isEmpty()) return;
+    if (matrixScopeActive()) {
+        // The child palette's own selection is the accumulator, exactly as
+        // addClustersToActiveView() uses the cluster palette's.  The doc cannot
+        // read that palette (it lives in KlustersApp), so the union is made
+        // where the landing is made.
+        emit hierarchyChildSelectionExtendRequested(ids);
+        return;
+    }
+    addClustersToActiveView(ids);
+}
+
 Data& KlustersDoc::matrixData() const
 {
     // The atom layer when a scope is in force, whatever the rest of the app is
