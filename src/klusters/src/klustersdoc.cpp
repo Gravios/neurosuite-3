@@ -724,12 +724,23 @@ void KlustersDoc::logBefore(CurationLogger::ActionType action,
     }
 
     lastLoggedActionIdx = curationLogger->beginAction(action, snaps);
+    logActionOpen = true;
 }
 
 void KlustersDoc::logAfter(const QList<int>& clusterIds)
 {
-    if (!curationLogger || !curationLogger->isOpen() || clusterIds.isEmpty())
+    if (!curationLogger || !curationLogger->isOpen())
         return;
+    // Without an open block there is nothing to commit onto: committing
+    // anyway would attach these snapshots to some PREVIOUS action's entry
+    // (commitAction targets the newest entry unconditionally).  This arises
+    // when the matching logBefore was skipped -- logger toggled, empty id
+    // list, or a scope-gated call site.
+    if (!logActionOpen)
+        return;
+    logActionOpen = false;
+    if (clusterIds.isEmpty())
+        return;   // block closed; the entry keeps its before-only records
 
     QList<ClusterSnapshot> snaps = snapshotClusters(clusterIds);
     // Preserve action_history_depth for result clusters (they were just created
@@ -738,6 +749,16 @@ void KlustersDoc::logAfter(const QList<int>& clusterIds)
         s.actionHistoryDepth = clusterActionCount.value(s.clusterId, 0);
 
     curationLogger->commitAction(snaps);
+}
+
+void KlustersDoc::logAfterNotUndoable(const QList<int>& clusterIds)
+{
+    if (!curationLogger || !curationLogger->isOpen() || !logActionOpen)
+        return;
+    logAfter(clusterIds);
+    // The entry just committed has no Data-undo twin; exempt it from the
+    // undo/redo status walk (see CurationLogger::markCurrentActionNotUndoable).
+    curationLogger->markCurrentActionNotUndoable();
 }
 
 void KlustersDoc::beginRealignBatchLog(const QList<int>& /*clusterIds*/)
