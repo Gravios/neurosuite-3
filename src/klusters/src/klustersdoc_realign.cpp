@@ -3387,8 +3387,12 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     }
 
     // Recompute per-dimension min/max so the scatter view world-window
-    // axes are correct after feature values have been updated.
-    clusteringData->minMaxDimensionCalculation(QList<int>{clusterId});
+    // axes are correct after feature values have been updated.  The reprojection
+    // rewrote VALUES, not membership, so pass featureValuesChanged: a skipped
+    // dimension then scans this cluster and widens the bounds its new features
+    // may exceed, and a dimension this cluster's old features gave rescans.
+    clusteringData->minMaxDimensionCalculation(QList<int>{clusterId},
+                                               /*featureValuesChanged=*/ true);
 
     // Invalidate caches so the next thread launch re-reads from disk/memory.
     invalidateWaveformCache(clusterId);

@@ -1801,7 +1801,7 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,const QString& spkFi
     return true;
 }
 
-void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
+void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters, bool featureValuesChanged){
     //If an undo or redo has started or the cluster 0 has been changed again, do not do any calculation, it will be done on the new data.
     if(undoRedoInProcess || clusterZeroJustModified) return;
 
@@ -1886,9 +1886,34 @@ void Data::minMaxDimensionCalculation(const QList<int>& modifiedClusters){
         const dataType gminCluster = init ? 0 : giverRowCluster.value(rowsGivingMinimum[dimension - 1], 0);
         const dataType gmaxCluster = init ? 0 : giverRowCluster.value(rowsGivingMaximum[dimension - 1], 0);
         if(!init && !modifiedClusters.isEmpty() && !modifiedClusters.contains(0)
-                && gminCluster != 0 && gmaxCluster != 0){
-            dimensionMinimaTemp(dimension,1) = dimensionMinima(dimension,1);
-            dimensionMaximaTemp(dimension,1) = dimensionMaxima(dimension,1);
+                && gminCluster != 0 && gmaxCluster != 0
+                && !(featureValuesChanged
+                     && (modifiedClusters.contains(static_cast<int>(gminCluster))
+                         || modifiedClusters.contains(static_cast<int>(gmaxCluster))))){
+            // Membership-only edits cannot grow the bounds; a value-changing
+            // edit (nudge/realign reprojection) can push a NON-giver cluster's
+            // features beyond them.  Scan just the listed clusters and widen.
+            // A giver whose own values changed refuses the skip above and falls
+            // through to the rescan, which covers the shrink direction.
+            dataType keepMin = dimensionMinima(dimension,1);
+            dataType keepMax = dimensionMaxima(dimension,1);
+            if(featureValuesChanged){
+                for(int modified : modifiedClusters){
+                    ClusterInfoMap::ConstIterator mi =
+                            clusterInfoMapTemp.constFind(static_cast<dataType>(modified));
+                    if(mi == clusterInfoMapTemp.constEnd() || mi.key() == 0) continue;
+                    const dataType first = mi.value().firstSpikePosition();
+                    const dataType last  = first + mi.value().nbSpikes();
+                    for(dataType i = first; i < last; ++i){
+                        const dataType spikePosition = spikesByClusterTemp(1,i);
+                        const dataType v = features(spikePosition,dimension);
+                        if(v < keepMin){ keepMin = v; rowsGivingMinimum[dimension - 1] = spikePosition; }
+                        if(v > keepMax){ keepMax = v; rowsGivingMaximum[dimension - 1] = spikePosition; }
+                    }
+                }
+            }
+            dimensionMinimaTemp(dimension,1) = keepMin;
+            dimensionMaximaTemp(dimension,1) = keepMax;
             continue;
         }
 
