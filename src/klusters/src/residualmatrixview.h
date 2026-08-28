@@ -66,6 +66,9 @@ public:
     void newClustersAdded(QMap<int,int>& fromToNewClusterIds, QList<int>& emptiedClusters);
     void newClustersAdded(QList<int>& clustersToRecluster);
     void renumber(QMap<int,int>& clusterIdsOldNew);
+    /** Mark the matrix out of date without naming the edit (undo/redo family,
+     *  clusterFeaturesReprojected). */
+    void markStale();
 
     // ── Read-only accessors (used by KlustersApp residual-gated reorder) ──
     // scores is a row-major Array<double> indexed 1..nClusters; cluster id for

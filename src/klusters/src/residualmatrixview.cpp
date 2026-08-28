@@ -644,6 +644,7 @@ void ResidualMatrixView::newClusterAdded(QList<int>&,int,QList<int>&)           
 void ResidualMatrixView::newClustersAdded(QMap<int,int>&,QList<int>&)            { isStale=true; update(); }
 void ResidualMatrixView::newClustersAdded(QList<int>&)                           { isStale=true; update(); }
 void ResidualMatrixView::renumber(QMap<int,int>&)                               { isStale=true; update(); }
+void ResidualMatrixView::markStale()                                            { isStale=true; update(); }
 
 void ResidualMatrixView::resizeEvent(QResizeEvent* e)
 {

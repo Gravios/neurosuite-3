@@ -513,6 +513,7 @@ void DriftMatrixView::newClusterAdded(QList<int>&,int,QList<int>&)           { i
 void DriftMatrixView::newClustersAdded(QMap<int,int>&,QList<int>&)           { isStale=true; update(); }
 void DriftMatrixView::newClustersAdded(QList<int>&)                          { isStale=true; update(); }
 void DriftMatrixView::renumber(QMap<int,int>&)                               { isStale=true; update(); }
+void DriftMatrixView::markStale()                                            { isStale=true; update(); }
 
 // ── colour / layout ──────────────────────────────────────────────────────────
 
