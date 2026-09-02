@@ -2092,6 +2092,36 @@ void KlustersDoc::invalidateWaveformCache(int clusterId)
     }
 }
 
+void KlustersDoc::refeaturizeRealignedClusters(const QList<int>& parents)
+{
+    if (parents.isEmpty())
+        return;
+    // ONE extrema pass at the END of the mutation cycle, not one per mutating
+    // function: the realign commits ran per cluster on the worker thread and
+    // rewrote feature rows without touching the extrema, so until this runs
+    // the stored bounds predate the batch and the views' world refresh
+    // (clusterFeaturesReprojected -> recomputeWorldBounds) reads yesterday's
+    // envelope -- realigned points beyond it drew clipped.  featureValuesChanged
+    // makes skipped dimensions scan the listed clusters and widen (grow), and
+    // refuses the skip where a listed cluster's row gave the extremum (shrink).
+    clusteringData->minMaxDimensionCalculation(parents,
+                                               /*featureValuesChanged=*/ true);
+
+    if (childData) {
+        // The commit mirrored the rows into the child layer (second Data over
+        // the same spikes), so its extrema are equally stale.  Translate the
+        // parents to their atoms; an empty translation degrades to the empty
+        // list, which is the established unconditional-full-rescan request.
+        QList<int> atoms;
+        for (int p : parents)
+            for (int c : parentToChildren.value(p))
+                if (!atoms.contains(c))
+                    atoms.append(c);
+        childData->minMaxDimensionCalculation(atoms,
+                                              /*featureValuesChanged=*/ true);
+    }
+}
+
 void KlustersDoc::notifyClusterFeaturesReprojected(int clusterId)
 {
     // Thin main-thread emitter for realign.  Nudge emits clusterFeaturesReprojected

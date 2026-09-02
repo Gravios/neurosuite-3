@@ -1060,6 +1060,16 @@ public:
      * race a worker-thread emit would introduce.*/
     void notifyClusterFeaturesReprojected(int clusterId);
 
+    /** End-of-cycle refeaturization for a completed realign batch (or a
+     *  single realign job -- a one-cluster cycle).  The per-cluster commits
+     *  rewrite feature rows on the worker thread and deliberately leave the
+     *  dimension extrema alone; this runs ONE extrema pass over every touched
+     *  cluster on the parent layer, and mirrors it onto the child layer when
+     *  one exists (the commit mirrored the rows there too).  Call on the GUI
+     *  thread after the worker has finished committing, BEFORE the view
+     *  refresh that reads the extrema. */
+    void refeaturizeRealignedClusters(const QList<int>& parents);
+
     // ── Pending realignment ────────────────────────────────────────────────
     /** One modified spike record, held in memory until saveDocument() writes
      *  it to disk.  Original values are stored so rejectLastRealign() can
