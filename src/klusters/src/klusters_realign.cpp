@@ -306,6 +306,12 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
     realignBatchActive = false;
 
     doc->endRealignBatchLog();    // commit the single batch "after" snapshot
+    // End-of-cycle refeaturization: one extrema pass over every touched
+    // cluster (parent + mirrored child layer), BEFORE the flush below whose
+    // reprojected signals make the feature views re-derive their world from
+    // exactly these extrema.  Pre-renumber ids are correct here -- the
+    // extrema are id-independent and the renumber follows.
+    doc->refeaturizeRealignedClusters(realignBatchTouched);
     flushRealignBatchRefresh();   // one deferred view refresh for all clusters
 
     if (realignProgressBar) realignProgressBar->hide();
@@ -679,6 +685,9 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
         // Invalidate both caches so views re-read from the pending .spk
         // and recompute correlograms from the updated in-memory timestamps.
         if (realignClusterId >= 0) {
+            // Single job = a one-cluster mutation cycle: same end-of-cycle
+            // extrema pass, before the notify below reads them.
+            doc->refeaturizeRealignedClusters(QList<int>{ realignClusterId });
             doc->invalidateWaveformCache(realignClusterId);
             doc->invalidateCorrelogramCache(realignClusterId);
             doc->forceClusterRefresh(realignClusterId);
