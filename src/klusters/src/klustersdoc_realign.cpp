@@ -3438,12 +3438,12 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // pre-nudge values).  Membership is unchanged, so no merge/renumber signal
     // would otherwise fire for it.
     emit clusterFeaturesReprojected(clusterId);
-
-    // Force every ClusterView to recalculate its world window.
-    for (int i = 0; i < viewList->count(); ++i) {
-        KlustersView* v = viewList->at(i);
-        v->updateDimensions(v->abscissaDimension(), v->ordinateDimension());
-    }
+    // (The signal is the whole view refresh now: every ClusterView's slot
+    // re-derives its world from the extrema updated above and redraws,
+    // PRESERVING the user's zoom.  The per-view updateDimensions() walk that
+    // used to follow was the pre-signal sledgehammer -- a full world reset
+    // that also threw away the zoom on every nudge, precisely the window the
+    // user is nudging inside.  One refresh per cycle, through one path.)
 
     // For each view showing this cluster: set REDRAW mode on the scatter
     // (ClusterView) to erase ghost points, then relaunch the WaveformThread
