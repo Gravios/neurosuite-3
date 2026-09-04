@@ -576,8 +576,38 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const int nPcaFeats   = pca.valid() ? (pca.nCh * pca.nComp) : 0;
     const int nExtraFeats = (pca.valid() && nPcaFeats < nFeatCols)
                             ? (nFeatCols - nPcaFeats) : 0;
-    if (!pca.valid())
-        log << "WARNING: .pca unavailable — features will not be recomputed.\n";
+
+    // ── Refuse to realign when features cannot be reprojected ────────────
+    // The commit loop below writes rec.fetRow to the pending .fet AND into
+    // the in-memory feature table for every spike, unconditionally.  With no
+    // usable basis, makeFetRow returns fixed-size ZERO-FILLED rows (it cannot
+    // project without eigenvectors), so the old "WARNING: features will not
+    // be recomputed" leaf did something much worse than its words: it shifted
+    // .spk/.res and silently zeroed the cluster's features on disk and on
+    // screen.  And realigning without reprojection is not well-defined anyway
+    // -- the features would keep pointing at the pre-shift positions (the
+    // nudge refuses for exactly this reason).  Refuse loudly on BOTH leaves:
+    // a basis that failed to load, and a basis whose channel count cannot
+    // project this group's waveforms (the makeFetRow canProject test, hoisted
+    // here so it fails the run instead of silently zeroing rows).
+    if (!pca.valid()) {
+        log << "ERROR: PCA basis unavailable (" << pcaPath
+            << ") — refusing to realign cluster " << clusterId
+            << ": features cannot be reprojected, and proceeding would zero"
+               " its .fet rows.  Run ndm_pca for this method first.\n";
+        emitFlush();
+        return false;
+    }
+    if (isStderivRealign ? (pca.nCh != nChan - 1) : (pca.nCh != nChan)) {
+        log << "ERROR: PCA basis channel count mismatch (basis nCh="
+            << pca.nCh << ", group nChan=" << nChan
+            << (isStderivRealign ? ", stderiv expects nChan-1"
+                                 : ", raw expects nChan")
+            << ") — refusing to realign cluster " << clusterId
+            << ": this basis cannot project these waveforms.\n";
+        emitFlush();
+        return false;
+    }
     else
         log << "PCA: " << pca.nCh << "ch x " << pca.nComp
             << "comp  recShift=" << pca.recShift

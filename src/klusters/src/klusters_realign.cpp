@@ -720,6 +720,16 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
         }
 
         realignClusterId = -1;
+    } else {
+        // The realign refused or failed: no feature row was touched (the doc
+        // side now refuses BEFORE writing anything it cannot reproject), but
+        // the cycle around it -- the post-merge renumber, matrices, selection
+        // -- continues, so without this line the only trace was a line in the
+        // realign output panel and the user just saw "features not updating".
+        slotStatusMsg(tr("Realign of cluster %1 FAILED — features unchanged; "
+                         "see the realign output panel for the reason.")
+                      .arg(realignClusterId));
+        realignClusterId = -1;
     }
 
     // Restore undo/redo state correctly.
