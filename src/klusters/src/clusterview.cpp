@@ -43,6 +43,13 @@
 #include <QList>
 #include <QMouseEvent>
 #include <QEvent>
+#include <QThread>
+#include <QPointer>
+#include <QElapsedTimer>
+#include <memory>
+
+#include "tsne_embed.h"
+#include "configuration.h"
 
 
 
@@ -89,6 +96,193 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
 }
 
 ClusterView::~ClusterView(){
+    // A t-SNE worker may still be embedding; it only reads its own copies,
+    // but it must not outlive the widget it reports back to.
+    tsneCancel = true;
+    if (tsneThread) tsneThread->wait();
+}
+
+// ── t-SNE alternate presentation ────────────────────────────────────────────
+
+void ClusterView::tsneDropIfActive(){
+    if (tsneMode || tsneComputing || tsneThread)
+        exitTsne(tr("t-SNE dropped: clusters changed"));
+}
+
+void ClusterView::tsneInvalidate(){
+    tsneDropIfActive();
+}
+
+void ClusterView::exitTsne(const QString& reason){
+    tsneCancel = true;
+    if (tsneThread) {
+        // The worker checks the flag between iterations; the wait is bounded
+        // by one iteration (sub-second even at the spike cap).
+        tsneThread->wait();
+        tsneThread = nullptr;   // deleteLater is already connected to finished
+    }
+    tsneComputing = false;
+    if (tsneMode) {
+        tsneMode = false;
+        drawContentsMode = REDRAW;
+        update();
+    }
+    if (!reason.isEmpty() && statusBar) statusBar->showMessage(reason, 3000);
+}
+
+void ClusterView::startTsne(){
+    if (tsneComputing || tsneThread) {          // second T while computing = cancel
+        exitTsne(tr("t-SNE cancelled"));
+        return;
+    }
+    const QList<int> shown = view.clusters();
+    if (shown.isEmpty()) {
+        if (statusBar) statusBar->showMessage(tr("t-SNE: no clusters selected"), 3000);
+        return;
+    }
+    Data& d = doc.data();                        // ACTIVE layer: parents or children
+    const int D = d.nbOfDimensionsTotal() - 1;   // every feature dim, time excluded
+    if (D < 2) {
+        if (statusBar) statusBar->showMessage(tr("t-SNE: not enough feature dimensions"), 3000);
+        return;
+    }
+    const int cap = configuration().getTsneSpikeCap();
+
+    // Gather rows + labels; refuse past the cap BEFORE copying features.
+    QList<QPair<int, SortableTable*>> tables;   // owned below
+    qint64 total = 0;
+    for (int id : shown) {
+        auto* t = new SortableTable();
+        if (!d.spikePositions(id, *t)) { delete t; continue; }
+        total += t->nbOfColumns();
+        tables.append(qMakePair(id, t));
+        if (total > cap) break;
+    }
+    if (total > cap || tables.isEmpty() || total < 8) {
+        for (auto& pr : tables) delete pr.second;
+        if (statusBar) statusBar->showMessage(
+            total > cap
+              ? tr("t-SNE refused: %1 spikes selected, cap is %2 (Preferences)").arg(total).arg(cap)
+              : tr("t-SNE: too few spikes selected"), 5000);
+        return;
+    }
+
+    const int N = static_cast<int>(total);
+    auto X      = std::make_shared<std::vector<double>>(static_cast<size_t>(N) * D);
+    auto labels = std::make_shared<QList<int>>();
+    labels->reserve(N);
+    int r = 0;
+    for (auto& pr : tables) {
+        SortableTable& t = *pr.second;
+        const dataType n = t.nbOfColumns();
+        for (dataType i = 1; i <= n; ++i, ++r) {
+            const dataType row = t(1, i);
+            for (int dim = 1; dim <= D; ++dim)
+                (*X)[static_cast<size_t>(r) * D + (dim - 1)] =
+                    static_cast<double>(d.featureValue(row, dim));
+            labels->append(pr.first);
+        }
+        delete pr.second;
+    }
+
+    TsneParams params;
+    params.perplexity = qMin(30.0, (N - 1) / 3.0);
+    params.seed       = 42;                      // deterministic per selection
+    const double perp = params.perplexity;
+    const int nClusters = shown.size();
+
+    tsneCancel    = false;
+    tsneComputing = true;
+    if (statusBar) statusBar->showMessage(
+        tr("t-SNE: embedding %1 spikes from %2 cluster(s)…").arg(N).arg(nClusters));
+
+    QPointer<ClusterView> guard(this);
+    std::atomic<bool>* cancel = &tsneCancel;
+    QThread* th = QThread::create([guard, X, labels, N, D, params, perp,
+                                   nClusters, cancel]() {
+        QElapsedTimer timer; timer.start();
+        auto out = std::make_shared<std::vector<double>>();
+        std::string err;
+        int lastPct = -1;
+        const bool ok = tsneEmbed2D(*X, N, D, *out, params,
+            [&](int done, int totalIt) {
+                const int pct = done * 100 / totalIt;
+                if (pct / 5 != lastPct / 5) {           // ~every 5%
+                    lastPct = pct;
+                    QMetaObject::invokeMethod(guard, [guard, pct]() {
+                        if (guard && guard->statusBar)
+                            guard->statusBar->showMessage(
+                                ClusterView::tr("t-SNE: %1%…").arg(pct));
+                    }, Qt::QueuedConnection);
+                }
+            }, cancel, &err);
+        const qint64 ms = timer.elapsed();
+        QMetaObject::invokeMethod(guard,
+            [guard, ok, err = QString::fromStdString(err), out, labels, N,
+             nClusters, perp, ms]() {
+                if (guard)
+                    guard->onTsneFinished(ok, err, std::move(*out), *labels,
+                                          N, nClusters, perp, ms);
+            }, Qt::QueuedConnection);
+    });
+    QObject::connect(th, &QThread::finished, th, &QObject::deleteLater);
+    tsneThread = th;
+    th->start();
+}
+
+void ClusterView::onTsneFinished(bool ok, const QString& err,
+                                 std::vector<double> xy, QList<int> labels,
+                                 int nSpikes, int nClusters, double perp,
+                                 qint64 ms){
+    tsneThread    = nullptr;    // finished; deleteLater will reap it
+    tsneComputing = false;
+    if (!ok) {
+        if (statusBar) statusBar->showMessage(
+            err == QLatin1String("cancelled")
+                ? tr("t-SNE cancelled")
+                : tr("t-SNE failed: %1").arg(err), 5000);
+        return;
+    }
+    tsneXY          = std::move(xy);
+    tsneRowCluster  = std::move(labels);
+    tsneSpikeCount  = nSpikes;
+    tsneClusterCount= nClusters;
+    tsnePerplexity  = perp;
+    tsneMode        = true;
+    drawContentsMode = REDRAW;
+    update();
+    if (statusBar) statusBar->showMessage(
+        tr("t-SNE: %1 spikes, %2 cluster(s), %3 s — display only, press T to return")
+            .arg(nSpikes).arg(nClusters).arg(ms / 1000.0, 0, 'f', 1), 8000);
+}
+
+void ClusterView::paintTsne(QPainter& painter){
+    const QRect vp = contentsRect();
+    painter.fillRect(vp, palette().color(QPalette::Window));
+    const int N = static_cast<int>(tsneXY.size() / 2);
+    if (N == 0) return;
+    double minX = tsneXY[0], maxX = tsneXY[0], minY = tsneXY[1], maxY = tsneXY[1];
+    for (int i = 1; i < N; ++i) {
+        minX = qMin(minX, tsneXY[2 * i]);     maxX = qMax(maxX, tsneXY[2 * i]);
+        minY = qMin(minY, tsneXY[2 * i + 1]); maxY = qMax(maxY, tsneXY[2 * i + 1]);
+    }
+    const double mx = (maxX - minX) * 0.05 + 1e-9, my = (maxY - minY) * 0.05 + 1e-9;
+    minX -= mx; maxX += mx; minY -= my; maxY += my;
+    const double sx = vp.width()  / (maxX - minX);
+    const double sy = vp.height() / (maxY - minY);
+    ItemColors& colors = doc.clusterColors();
+    painter.setPen(Qt::NoPen);
+    const int r = qMax(1, pointSize);
+    for (int i = 0; i < N; ++i) {
+        painter.setBrush(colors.color(tsneRowCluster.at(i)));
+        const int px = vp.left() + static_cast<int>((tsneXY[2 * i]     - minX) * sx);
+        const int py = vp.top()  + static_cast<int>((tsneXY[2 * i + 1] - minY) * sy);
+        painter.drawEllipse(px - r, py - r, 2 * r, 2 * r);
+    }
+    painter.setPen(palette().color(QPalette::WindowText));
+    painter.drawText(vp.left() + 8, vp.top() + 18,
+        tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   (display only — T returns to features)")
+            .arg(tsneSpikeCount).arg(tsneClusterCount).arg(tsnePerplexity, 0, 'f', 0));
 }
 
 void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,bool drawCircles){
@@ -137,6 +331,14 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
 
 void ClusterView::paintEvent ( QPaintEvent*){
     QPainter p(this);
+
+    // Alternate presentation: the 2-D embedding replaces the scatter wholesale
+    // (no world window, no axes, no time HUD -- embedding space is its own).
+    if (tsneMode) {
+        paintTsne(p);
+        drawContentsMode = REFRESH;
+        return;
+    }
 
     // If autoscale is enabled, refit bounds to the current shownClusters
     // projection before sampling `window` below.  Done only for the
@@ -467,6 +669,7 @@ bool ClusterView::recomputeWorldBounds(){
 }
 
 void ClusterView::dimensionExtremaChanged(){
+    tsneDropIfActive();   // extrema moved => features moved => embedding stale
     // Common case: the recompute confirmed the old bounds; skip the repaint.
     if (!recomputeWorldBounds())
         return;
@@ -475,6 +678,7 @@ void ClusterView::dimensionExtremaChanged(){
 }
 
 void ClusterView::clusterFeaturesReprojected(int /*clusterId*/){
+    tsneDropIfActive();   // features rewrote under the embedding
     // The reprojection can WIDEN the dimension extrema (the Data side widens
     // them synchronously on the realign path); redrawing inside the old
     // world clips the shifted points, so the Data fix is invisible without
@@ -518,6 +722,11 @@ void ClusterView::setMode(BaseFrame::Mode selectedMode){
 
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
+    if (tsneMode) {           // display only: selection/zoom live in feature
+        if (statusBar) statusBar->showMessage(   // world coordinates, which the
+            tr("t-SNE view is display only — press T to return"), 2000);  // embedding does not share
+        return;
+    }
     // Ctrl+Left arms a pan and takes precedence over every selection / zoom mode
     // (it is a navigation gesture).  Don't forward to the base, so no rubber-band
     // is started.
@@ -600,6 +809,7 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
 }
 
 void ClusterView::mouseReleaseEvent(QMouseEvent* event){
+    if (tsneMode) return;
     // End a Ctrl+drag pan.  Ctrl+Left is fully owned by the pan gesture (its
     // press was intercepted, so the base never started a rubber-band / click-zoom)
     // — consume the release whether or not a drag actually occurred.
@@ -622,6 +832,7 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
 // middle.  Without Ctrl the event is handed to the base so existing wheel
 // behaviour is unchanged.
 void ClusterView::wheelEvent(QWheelEvent* e){
+    if (tsneMode) return;
     if(!(e->modifiers() & Qt::ControlModifier)){
         ViewWidget::wheelEvent(e);
         return;
@@ -664,6 +875,19 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
         drawContentsMode = REFRESH;
         update();
         statusBar->clearMessage();
+        return;
+    }
+
+    // 'T' toggles the t-SNE alternate presentation of the selected clusters;
+    // while a computation is running it cancels instead.
+    if (e->key() == Qt::Key_T && e->modifiers() == Qt::NoModifier) {
+        if (tsneMode) exitTsne(tr("t-SNE off"));
+        else          startTsne();
+        return;
+    }
+    if (tsneMode) {                       // display-only: swallow other keys
+        if (statusBar) statusBar->showMessage(
+            tr("t-SNE view is display only — press T to return"), 2000);
         return;
     }
 
@@ -753,6 +977,7 @@ void ClusterView::autoscaleToVisibleClusters()
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){
+    if (tsneMode) return;
     // Ctrl+drag pan: keep the world point grabbed at press under the cursor.
     // Re-centre the window each move (size unchanged) — zoom(1.0, c) recentres
     // and clamps to the full extent.  Computed against the current window so it
