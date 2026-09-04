@@ -26,6 +26,8 @@
 #include <QTimer>
 #include <QRegion>
 #include <QList>
+#include <atomic>
+#include <vector>
 #include <QImage>
 
 
@@ -151,6 +153,11 @@ public Q_SLOTS:
      *  Refresh the world bounds; repaint only when they actually moved. */
     void dimensionExtremaChanged();
 
+    /** Drop a live or in-flight t-SNE presentation (renumber and the other
+     *  relabels connect here): the embedding's cached cluster ids and rows no
+     *  longer describe the data.  No-op outside t-SNE. */
+    void tsneInvalidate();
+
     /**
   * Takes into  account the update of the dimension used to present the clusters.
   * @param dimensionX
@@ -173,6 +180,7 @@ public Q_SLOTS:
   * @param active true if the view is the active one, false otherwise.
   */
     void addClusterToView(int clusterId,bool active) override {
+        tsneDropIfActive();
         addClusterToUpdate(clusterId);
     }
 
@@ -181,7 +189,7 @@ public Q_SLOTS:
   * @param clusterId cluster Id to remove.
   * @param active true if the view is the active one, false otherwise.
   */
-    void removeClusterFromView(int clusterId,bool active) override {redraw();}
+    void removeClusterFromView(int clusterId,bool active) override {tsneDropIfActive(); redraw();}
 
     /**
   * Adds a newly created cluster to those already shown.
@@ -191,6 +199,7 @@ public Q_SLOTS:
   * @param active true if the view is the active one, false otherwise.
   */
     void addNewClusterToView(QList<int>& fromClusters,int clusterId,bool active) override {
+        tsneDropIfActive();
         addClusterToUpdate(clusterId);
     }
 
@@ -201,6 +210,7 @@ public Q_SLOTS:
   * @param active true if the view is the active one, false otherwise.
   */
     void addNewClusterToView(int clusterId,bool active) override {
+        tsneDropIfActive();
         addClusterToUpdate(clusterId);
     }
 
@@ -210,7 +220,7 @@ public Q_SLOTS:
   * @param fromClusters list of clusters from which the spikes have been taken.
   * @param active true if the view is the active one, false otherwise.
   */
-    void spikesRemovedFromClusters(QList<int>& fromClusters,bool active) override {redraw();}
+    void spikesRemovedFromClusters(QList<int>& fromClusters,bool active) override {tsneDropIfActive(); redraw();}
 
     /**
   * Update the content of the widget due to the addition of spikes in a cluster.
@@ -219,6 +229,7 @@ public Q_SLOTS:
   * @param active true if the view is the active one, false otherwise.
   */
     void spikesAddedToCluster(int clusterId,bool active) override {
+        tsneDropIfActive();
         addClusterToUpdate(clusterId);
     }
 
@@ -242,6 +253,7 @@ public Q_SLOTS:
   * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
   */
     void updateClusters(QList<int>& modifiedClusters,bool active,bool isModifiedByDeletion) override {
+        tsneDropIfActive();
         if(isModifiedByDeletion) redraw();
     }
 
@@ -253,7 +265,7 @@ public Q_SLOTS:
   * @param modifiedClusters list of clusters from which spikes were taken from.
   * @param active true if the view is the active one, false otherwise.
   */
-    void undoUpdateClusters(QList<int>& modifiedClusters,bool active) override {redraw();}
+    void undoUpdateClusters(QList<int>& modifiedClusters,bool active) override {tsneDropIfActive(); redraw();}
 
     /**Updates the time interval in second and in recording unit using @p step given in second.
   * @param step the interval to use in second.
@@ -343,6 +355,31 @@ private:
   * set manually (via zoom or updatedDimensions).
   */
     bool autoscaleEnabled = false;
+
+    // ── t-SNE alternate presentation (T key) ────────────────────────────────
+    // The embedding is computed on a worker thread from a COPY of the selected
+    // clusters' feature rows (all dimensions except time), so mutations can
+    // proceed while it runs -- any membership/feature change simply drops the
+    // presentation (tsneDropIfActive).  Interactions are display-only in this
+    // state: the selection/zoom machinery works in feature-world coordinates,
+    // which the embedding does not share.
+    bool                 tsneMode      = false;   ///< drawing the embedding
+    bool                 tsneComputing = false;   ///< worker in flight
+    std::atomic<bool>    tsneCancel{false};
+    QThread*             tsneThread    = nullptr;
+    std::vector<double>  tsneXY;                  ///< N*2 embedding
+    QList<int>           tsneRowCluster;          ///< per-point cluster id
+    int                  tsneSpikeCount = 0;
+    int                  tsneClusterCount = 0;
+    double               tsnePerplexity = 30.0;
+
+    void startTsne();
+    void exitTsne(const QString& reason = QString());
+    void tsneDropIfActive();
+    void onTsneFinished(bool ok, const QString& err,
+                        std::vector<double> xy, QList<int> labels,
+                        int nSpikes, int nClusters, double perp, qint64 ms);
+    void paintTsne(QPainter& painter);
 
     // ── Ctrl+wheel zoom / Ctrl+drag pan (drives the inherited BaseFrame
     //    ZoomWindow directly, like the rubber-band zoom).  Ctrl distinguishes

@@ -1771,6 +1771,11 @@ void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWi
         // reset-zoom sees the true extent.  The slot repaints only when the
         // bounds actually moved.
         connect(&doc, &KlustersDoc::dimensionExtremaChanged, qobject_cast<ClusterView*>(view), &ClusterView::dimensionExtremaChanged);
+        // Relabels invalidate the t-SNE presentation's cached cluster ids;
+        // membership and feature edits are dropped inside the view's own slots.
+        connect(&doc, &KlustersDoc::renumber, qobject_cast<ClusterView*>(view), &ClusterView::tsneInvalidate);
+        connect(&doc, &KlustersDoc::undoRenumbering, qobject_cast<ClusterView*>(view), &ClusterView::tsneInvalidate);
+        connect(&doc, &KlustersDoc::redoRenumbering, qobject_cast<ClusterView*>(view), &ClusterView::tsneInvalidate);
         connect(view, &QObject::destroyed, this, &KlustersView::clusterDockClosed);
 
         //Connect the clusterView to a possible TraceView
