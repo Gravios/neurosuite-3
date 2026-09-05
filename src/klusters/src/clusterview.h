@@ -175,9 +175,10 @@ public Q_SLOTS:
      *  Refresh the world bounds; repaint only when they actually moved. */
     void dimensionExtremaChanged();
 
-    /** Drop a live or in-flight t-SNE presentation (renumber and the other
-     *  relabels connect here): the embedding's cached cluster ids and rows no
-     *  longer describe the data.  No-op outside t-SNE. */
+    /** A renumber renamed the clusters.  It moves no spike, so the embedding
+     *  stays valid: re-read the ids and recolour instead of discarding it.
+     *  (Dropping here also left the cached labels stale for the next lasso.)
+     *  No-op outside t-SNE. */
     void tsneInvalidate();
 
     /**

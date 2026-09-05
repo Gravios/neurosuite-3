@@ -657,12 +657,6 @@ public:
 
     /** Moves spikes from @p fromCluster whose 0-based .spk indices are in
      * @p spkFileIndices into @p toCluster. Updates undo/redo and all views. */
-    /** Next cluster id guaranteed not to collide, on the PARENT clustering --
-     *  the destination a create-cluster gesture should use.  Exposed for the
-     *  t-SNE lasso, which builds new clusters through
-     *  moveSpikeSubsetToCluster rather than through a feature-space region. */
-    int nextFreeParentClusterId() const;
-
     void moveSpikeSubsetToCluster(int fromCluster,
                                    const QVector<int>& spkFileIndices,
                                    int toCluster,

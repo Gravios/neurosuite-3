@@ -114,7 +114,10 @@ void ClusterView::tsneDropIfActive(){
 }
 
 void ClusterView::tsneInvalidate(){
-    tsneDropIfActive();
+    if (!tsneMode) { tsneDropIfActive(); return; }   // in-flight run: drop
+    tsneRelabelFromDoc();
+    drawContentsMode = REDRAW;
+    update();
 }
 
 void ClusterView::exitTsne(const QString& reason){
@@ -339,28 +342,27 @@ void ClusterView::tsneRelabelFromDoc(){
 void ClusterView::applyTsneLasso(){
     if (tsneSelectionPolygon.size() < 3) { tsneSelectionPolygon.clear(); return; }
 
-    // Parent scope only.  moveSpikeSubsetToCluster edits clusteringData by
-    // design (it is how the hierarchy ops move whole atoms), while a child
-    // embedding names ATOM ids from a different namespace -- applying it there
-    // would move unrelated parent spikes.  Refuse rather than guess.
+    // Parent scope only.  The builders below run on data(), but the child
+    // layer's atom ids are a different namespace from the parent ids the
+    // palette and the reserve bins speak; refuse rather than guess.
     if (doc.isChildClusteringActive()) {
         if (statusBar) statusBar->showMessage(
-            tr("t-SNE lasso: not available in child scope — the selection would "
-               "be applied to the parent layer"), 5000);
+            tr("t-SNE lasso: not available in child scope"), 5000);
         tsneSelectionPolygon.clear();
         drawContentsMode = REFRESH;
         update();
         return;
     }
 
+    // Hit-test in viewport pixels through the SAME mapping paintTsne uses.
     const QRegion area(tsneSelectionPolygon);
-    QMap<int, QVector<int>> bySource;       // current cluster -> .spk indices
+    QSet<dataType> rows;                    // 1-based feature rows
     const int n = qMin(static_cast<int>(tsneXY.size() / 2), tsneRowSpike.size());
     for (int i = 0; i < n; ++i)
         if (area.contains(tsneViewportPos(i)))
-            bySource[tsneRowCluster.at(i)].append(tsneRowSpike.at(i));
+            rows.insert(static_cast<dataType>(tsneRowSpike.at(i)) + 1);
 
-    if (bySource.isEmpty()) {
+    if (rows.isEmpty()) {
         if (statusBar) statusBar->showMessage(tr("t-SNE lasso: no spikes inside"), 3000);
         tsneSelectionPolygon.clear();
         drawContentsMode = REFRESH;
@@ -368,47 +370,58 @@ void ClusterView::applyTsneLasso(){
         return;
     }
 
-    int total = 0;
-    for (auto it = bySource.constBegin(); it != bySource.constEnd(); ++it)
-        total += it.value().size();
-
-    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    // One destination for the whole lasso (NEW_CLUSTER / the reserve bins), or
-    // one per source (NEW_CLUSTERS, which splits each contributing cluster).
-    int sharedDest = -1;
-    switch (mode) {
-    case DELETE_ARTEFACT: sharedDest = 0; break;
-    case DELETE_NOISE:    sharedDest = 1; break;
-    case NEW_CLUSTER:     sharedDest = doc.nextFreeParentClusterId(); break;
-    default:              sharedDest = -1; break;    // NEW_CLUSTERS
+    // Sources come from the LIVE clustering, never from the embedding's cached
+    // labels.  A renumber or any edit since the embedding was computed shifts
+    // ids, and the builders only touch spikes that are actually in the clusters
+    // they are given -- a stale id silently drops those spikes from the cut,
+    // which is exactly how a lasso produced a cluster missing half its points.
+    const QVector<dataType> labelByRow = doc.data().labelByFeatureRow();
+    QList<int> sources;
+    for (dataType r : rows) {
+        if (r <= 0 || r >= labelByRow.size()) continue;
+        const int cid = static_cast<int>(labelByRow.at(static_cast<int>(r)));
+        if (!sources.contains(cid)) sources.append(cid);
+    }
+    if (sources.isEmpty()) {
+        if (statusBar) statusBar->showMessage(
+            tr("t-SNE lasso: the selected spikes are no longer in the embedded "
+               "clusters — press F twice to re-embed"), 5000);
+        tsneSelectionPolygon.clear();
+        drawContentsMode = REFRESH;
+        update();
+        return;
     }
 
-    tsneApplyingLasso = true;                // our own edit: do not self-drop
-    QList<int> destinations;
-    for (auto it = bySource.constBegin(); it != bySource.constEnd(); ++it) {
-        const int src = it.key();
-        // Re-read the free id per source: the previous move already created one.
-        const int dest = (sharedDest >= 0) ? sharedDest : doc.nextFreeParentClusterId();
-        if (src == dest) continue;           // degenerate self-move
-        doc.moveSpikeSubsetToCluster(src, it.value(), dest, view);
-        if (!destinations.contains(dest)) destinations.append(dest);
+    const int nSelected = rows.size();
+    tsneSelectionPolygon.clear();
+
+    // Apply through the SAME builders the scatter's polygon uses, with the
+    // selection named by row instead of by region: colour registration, the
+    // creation notice every view and the palette need, the create-flavoured
+    // undo entry and the curation-log detail all come with them.  Driving this
+    // through the move primitive instead -- as the first version did -- moved
+    // the right spikes into an id that no view had been told about and no
+    // colour existed for, which is what made the new cluster come out
+    // malformed.
+    const SpikeSelection selection(rows);
+    tsneApplyingLasso = true;               // our own edit: do not self-drop
+    switch (mode) {
+    case DELETE_ARTEFACT: doc.deleteArtifact(selection, sources);    break;
+    case DELETE_NOISE:    doc.deleteNoise(selection, sources);       break;
+    case NEW_CLUSTER:     doc.createNewCluster(selection, sources);  break;
+    case NEW_CLUSTERS:    doc.createNewClusters(selection, sources); break;
+    default:              break;
     }
     tsneApplyingLasso = false;
-    QApplication::restoreOverrideCursor();
 
+    // Positions are untouched by a membership edit, so recolour in place.
     tsneRelabelFromDoc();
-    tsneSelectionPolygon.clear();
     drawContentsMode = REDRAW;
     update();
 
-    if (statusBar) {
-        QStringList d;
-        for (int id : destinations) d << QString::number(id);
-        statusBar->showMessage(
-            tr("t-SNE lasso: %1 spikes from %2 cluster(s) → %3")
-                .arg(total).arg(bySource.size()).arg(d.join(QStringLiteral(", "))),
-            6000);
-    }
+    if (statusBar) statusBar->showMessage(
+        tr("t-SNE lasso: %1 spikes from %2 cluster(s) applied")
+            .arg(nSelected).arg(sources.size()), 6000);
 }
 
 void ClusterView::paintTsne(QPainter& painter){
