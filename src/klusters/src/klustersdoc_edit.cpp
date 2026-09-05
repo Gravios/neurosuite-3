@@ -608,7 +608,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         emit hierarchyChildSelectionRequested({childLanding});
 }
 
-void KlustersDoc::deleteArtifact(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+void KlustersDoc::deleteArtifact(const SpikeSelection& selection,const QList <int>& clustersOfOrigin){
     QList<int> logIds(clustersOfOrigin.begin(), clustersOfOrigin.end());
     if (childScopeActive && childData) {
         // The lasso ran over CHILD clusters, but the mutation below lands on
@@ -626,11 +626,11 @@ void KlustersDoc::deleteArtifact(QRegion& region,const QList <int>& clustersOfOr
     logBefore(CurationLogger::ActionType::DELETE_REGION_ARTEFACT, logIds);
     // The after-snapshots are taken inside deleteSpikesFromClusters, which
     // knows the surviving sources (fromClusters) this wrapper never sees.
-    deleteSpikesFromClusters(0,region,clustersOfOrigin,dimensionX,dimensionY);
+    deleteSpikesFromClusters(0,selection,clustersOfOrigin);
 }
 
 
-void KlustersDoc::deleteNoise(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+void KlustersDoc::deleteNoise(const SpikeSelection& selection,const QList <int>& clustersOfOrigin){
     QList<int> logIds(clustersOfOrigin.begin(), clustersOfOrigin.end());
     if (childScopeActive && childData) {
         // See deleteArtifact: snapshot the parents the child lasso strips.
@@ -644,10 +644,10 @@ void KlustersDoc::deleteNoise(QRegion& region,const QList <int>& clustersOfOrigi
     }
     logBefore(CurationLogger::ActionType::DELETE_REGION_NOISE, logIds);
     // After-snapshots inside deleteSpikesFromClusters -- see deleteArtifact.
-    deleteSpikesFromClusters(1,region,clustersOfOrigin,dimensionX,dimensionY);
+    deleteSpikesFromClusters(1,selection,clustersOfOrigin);
 }
 
-void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection& selection,const QList <int>& clustersOfOrigin){
     //list which will contain the clusters really having spikes in the region of selection.
     QList <int> fromClusters;
     //list which will contain the clusters which became empty because all their spikes were in the region of selection.
@@ -658,7 +658,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, QRegion& region,cons
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
         for (KlustersView* view : *viewList)
             view->stopAllViewThreads();
-    clusteringData->deleteSpikesFromClusters(region,clustersOfOrigin,destination,dimensionX,dimensionY,fromClusters,emptyClusters);
+    clusteringData->deleteSpikesFromClusters(selection,clustersOfOrigin,destination,fromClusters,emptyClusters);
 
     //Get the active view.
     KlustersView* activeView = app()->activeView();
@@ -978,7 +978,7 @@ void KlustersDoc::commitTwoClusterCreation(int leftId,
 }
 
 
-void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
     //list which will contain the clusters really having spikes in the region of selection.
     QList <int> fromClusters;
     //list which will contain the clusters which became empty because all their spikes were in the region of selection.
@@ -1006,7 +1006,7 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
         for (KlustersView* view : *viewList)
             view->stopAllViewThreads();
-    float newClusterId = targetData.createNewCluster(region,clustersOfOrigin,dimensionX,dimensionY,fromClusters,emptyClusters);
+    float newClusterId = targetData.createNewCluster(selection,clustersOfOrigin,fromClusters,emptyClusters);
 
     //Check if a new cluster has been created
     if(newClusterId == 0){
@@ -1094,7 +1094,13 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
             QStringList srcList;
             for (int id : fromClusters) srcList << QString::number(id);
             QMap<QString, QVariant> details;
-            details.insert(QStringLiteral("algorithm"),     QStringLiteral("manual_polygon"));
+            // Provenance: a cut drawn in the t-SNE embedding is NOT a
+            // feature-space polygon, and a reader of the log must be able to
+            // tell them apart.  The projection fields carry -1 there because
+            // the embedding's axes are not feature dimensions.
+            details.insert(QStringLiteral("algorithm"),
+                           selection.byRows() ? QStringLiteral("manual_lasso_tsne")
+                                              : QStringLiteral("manual_polygon"));
             details.insert(QStringLiteral("status"),        QStringLiteral("accepted"));
             details.insert(QStringLiteral("source_cluster"),
                            fromClusters.size() == 1 ? fromClusters.first() : -1);
@@ -1102,8 +1108,10 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
             details.insert(QStringLiteral("n_source_clusters"), static_cast<int>(fromClusters.size()));
             details.insert(QStringLiteral("new_cluster"),    newClusterIdint);
             details.insert(QStringLiteral("n_new_clusters"),  1);
-            details.insert(QStringLiteral("dimension_x"),     dimensionX);
-            details.insert(QStringLiteral("dimension_y"),     dimensionY);
+            details.insert(QStringLiteral("dimension_x"),
+                           selection.byRows() ? -1 : selection.dimensionX());
+            details.insert(QStringLiteral("dimension_y"),
+                           selection.byRows() ? -1 : selection.dimensionY());
             details.insert(QStringLiteral("n_emptied_sources"), static_cast<int>(emptyClusters.size()));
             curationLogger->recordActionDetails(details);
         }
@@ -1111,7 +1119,7 @@ void KlustersDoc::createNewCluster(QRegion& region, const QList <int>& clustersO
     }
 }
 
-void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+void KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
     //list which will contain the clusters really having spikes in the region of selection.
     QList <int> fromClusters;
     //list which will contain the clusters which became empty because all their spikes were in the region of selection.
@@ -1137,7 +1145,7 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
         for (KlustersView* view : *viewList)
             view->stopAllViewThreads();
-    QMap<int,int> fromToNewClusterIds = targetData.createNewClusters(region,clustersOfOrigin,dimensionX,dimensionY,emptyClusters);
+    QMap<int,int> fromToNewClusterIds = targetData.createNewClusters(selection,clustersOfOrigin,emptyClusters);
     newClusters = fromToNewClusterIds.values();
     fromClusters = fromToNewClusterIds.keys();
 
@@ -1246,15 +1254,19 @@ void KlustersDoc::createNewClusters(QRegion& region, const QList <int>& clusters
                     pairList << (QString::number(it.key()) + QLatin1Char(':')
                                  + QString::number(it.value()));
                 QMap<QString, QVariant> details;
-                details.insert(QStringLiteral("algorithm"),       QStringLiteral("manual_polygon_n"));
+                details.insert(QStringLiteral("algorithm"),
+                               selection.byRows() ? QStringLiteral("manual_lasso_tsne_n")
+                                                  : QStringLiteral("manual_polygon_n"));
                 details.insert(QStringLiteral("status"),          QStringLiteral("accepted"));
                 details.insert(QStringLiteral("source_clusters"), srcList.join(QLatin1Char(',')));
                 details.insert(QStringLiteral("n_source_clusters"), static_cast<int>(fromClusters.size()));
                 details.insert(QStringLiteral("new_clusters"),    newList.join(QLatin1Char(',')));
                 details.insert(QStringLiteral("n_new_clusters"),  static_cast<int>(newClusters.size()));
                 details.insert(QStringLiteral("from_to"),         pairList.join(QLatin1Char(',')));
-                details.insert(QStringLiteral("dimension_x"),     dimensionX);
-                details.insert(QStringLiteral("dimension_y"),     dimensionY);
+                details.insert(QStringLiteral("dimension_x"),
+                               selection.byRows() ? -1 : selection.dimensionX());
+                details.insert(QStringLiteral("dimension_y"),
+                               selection.byRows() ? -1 : selection.dimensionY());
                 details.insert(QStringLiteral("n_emptied_sources"), static_cast<int>(emptyClusters.size()));
                 curationLogger->recordActionDetails(details);
             }

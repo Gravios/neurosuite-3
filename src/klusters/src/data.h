@@ -47,6 +47,37 @@ using namespace std;
 
 // forward declaration
 class MinMaxThread;
+
+/**Which spikes a selection gesture picked out.  Two sources, ONE membership
+* policy: a polygon in the current feature projection (the scatter views), or
+* an explicit set of 1-based feature rows (the t-SNE embedding, whose axes are
+* not features and whose points therefore cannot be tested against a
+* feature-space region).  The cluster builders take this instead of a QRegion
+* so both gestures go through exactly the same table rebuild, undo and
+* notification path -- the alternative, driving the embedding's lasso through
+* the move primitive, silently skipped the colour registration and creation
+* notice that only the create path performs.*/
+class SpikeSelection {
+public:
+    SpikeSelection(const QRegion& region,int dimensionX,int dimensionY)
+        : region_(region),dimX_(dimensionX),dimY_(dimensionY),byRows_(false){}
+    explicit SpikeSelection(const QSet<dataType>& featureRows)
+        : rows_(featureRows),byRows_(true){}
+
+    bool byRows() const {return byRows_;}
+    bool isEmpty() const {return byRows_ ? rows_.isEmpty() : region_.isEmpty();}
+    const QRegion& region() const {return region_;}
+    const QSet<dataType>& rows() const {return rows_;}
+    int dimensionX() const {return dimX_;}
+    int dimensionY() const {return dimY_;}
+
+private:
+    QRegion region_;
+    QSet<dataType> rows_;
+    int dimX_ = 0;
+    int dimY_ = 0;
+    bool byRows_;
+};
 class WaveformThread;
 class CorrelationThread;
 
@@ -216,6 +247,17 @@ public:
     /**Swaps all in-memory data (features, spikesByCluster) for two 1-based spike indices.*/
     void swapSpikes(dataType idxA, dataType idxB);
 
+    /**The ONE membership test the cluster builders use.  A polygon selection
+  * is tested against the spike's position in the current projection exactly as
+  * before; a row-named selection is a set lookup.*/
+    bool selectionContains(const SpikeSelection& selection, dataType featuresRowIndex) const {
+        if(selection.byRows())
+            return selection.rows().contains(featuresRowIndex);
+        return selection.region().contains(
+                    QPoint(static_cast<dataType>(features(featuresRowIndex,selection.dimensionX())),
+                           static_cast<dataType>(features(featuresRowIndex,selection.dimensionY()))));
+    }
+
     /**Returns the feature value at (spikeIndex, dimension) — both 1-based.*/
     dataType featureValue(dataType spikeIndex, int dimension) const {
         return features(spikeIndex, dimension);
@@ -274,7 +316,14 @@ public:
   * @return the number of the newly created cluster or 0 if no cluster have been created (no spikes selected).
   * This is safe as cluster 0 (artifact) can never be created that way.
   */
-    dataType createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters);
+    dataType createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
+        return createNewCluster(SpikeSelection(region,dimensionX,dimensionY),
+                                clustersOfOrigin,fromClusters,emptyClusters);
+    }
+
+    /**Same, for a selection made outside the feature projection (the t-SNE
+  * embedding names spikes by row because its axes are not features).*/
+    dataType createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin, QList <int>& fromClusters,QList <int>& emptyClusters);
 
     /**
   * Creates a new clusters out of existing ones. If the polygon of selection contains x clusters
@@ -289,7 +338,13 @@ public:
   * @return a map where the keys are ids of the clusters which really contained spikes in the region
   * and the values are the ids of the newly created clusters.
   */
-    QMap<int,int> createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY,QList <int>& emptyClusters);
+    QMap<int,int> createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY,QList <int>& emptyClusters){
+        return createNewClusters(SpikeSelection(region,dimensionX,dimensionY),
+                                 clustersOfOrigin,emptyClusters);
+    }
+
+    /**Same, for a row-named selection (see createNewCluster).*/
+    QMap<int,int> createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin,QList <int>& emptyClusters);
 
     /** Apply a per-spike basin labeling using the existing recluster
      *  pipeline, so new clusters are renumbered to start strictly after
@@ -385,7 +440,13 @@ public:
   * @param emptyClusters an empty list used as a return value, which will be filled
   * with the cluster numbers which became empty because all their spikes were put in the new one.
   */
-    void deleteSpikesFromClusters(QRegion& region, const QList <int>& clustersOfOrigin, int destinationCluster, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters);
+    void deleteSpikesFromClusters(QRegion& region, const QList <int>& clustersOfOrigin, int destinationCluster, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
+        deleteSpikesFromClusters(SpikeSelection(region,dimensionX,dimensionY),
+                                 clustersOfOrigin,destinationCluster,fromClusters,emptyClusters);
+    }
+
+    /**Same, for a row-named selection (see createNewCluster).*/
+    void deleteSpikesFromClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin, int destinationCluster, QList <int>& fromClusters,QList <int>& emptyClusters);
 
     /**Moves a subset of spikes from @p fromCluster to @p toCluster.
      * @p featureRowSet contains the 1-based feature-file row indices of the spikes to move.
