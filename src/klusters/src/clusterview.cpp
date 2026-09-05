@@ -95,21 +95,6 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     setMouseTracking(true) ;
 }
 
-bool ClusterView::event(QEvent* ev){
-    // The repair-nesting QAction binds plain F application-wide.  Accepting
-    // the ShortcutOverride while a feature view has focus routes F to
-    // keyPressEvent (the t-SNE toggle) instead of the action; everywhere
-    // else -- palette focus included -- the action keeps its key.
-    if (ev->type() == QEvent::ShortcutOverride) {
-        QKeyEvent* ke = static_cast<QKeyEvent*>(ev);
-        if (ke->key() == Qt::Key_F && ke->modifiers() == Qt::NoModifier) {
-            ke->accept();
-            return true;
-        }
-    }
-    return ViewWidget::event(ev);
-}
-
 ClusterView::~ClusterView(){
     // A t-SNE worker may still be embedding; it only reads its own copies,
     // but it must not outlive the widget it reports back to.
@@ -893,45 +878,39 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
         return;
     }
 
-    // 'F' toggles the t-SNE alternate presentation of the selected clusters;
-    // while a computation is running it cancels instead.  Bare T cannot work
-    // here -- the application-wide event filter consumes it for palette
-    // move-to-end at ShortcutOverride AND KeyPress before any widget sees it.
-    // F is freed by moving autoscale to A, and event() accepts F's
-    // ShortcutOverride so the repair-nesting QAction's plain-F shortcut
-    // cannot steal the key while a feature view has focus.
-    if (e->key() == Qt::Key_F && e->modifiers() == Qt::NoModifier) {
-        if (tsneMode) exitTsne(tr("t-SNE off"));
-        else          startTsne();
-        return;
-    }
+    // F (t-SNE) and A (autoscale) are NOT handled here: the application-wide
+    // filter dispatches them to this widget through toggleTsnePresentation()
+    // / toggleAutoscale(), so they work from palette focus too.  A local copy
+    // of that policy would be unreachable code that drifts.
     if (tsneMode) {                       // display-only: swallow other keys
         if (statusBar) statusBar->showMessage(
             tr("t-SNE view is display only — press F to return"), 2000);
         return;
     }
 
-    // 'A' toggles autoscale-to-visible-clusters mode (moved off F, which is
-    // now the t-SNE toggle above).  When enabled, the
-    // view refits bounds to the current shownClusters projection each
-    // time paintEvent redraws the double buffer — so moving dimensions,
-    // adding/removing clusters, or running ops automatically rescales.
-    // Press A again to return to manual zoom (bounds stay at whatever
-    // the last autoscale produced, then persist under normal zoom ops).
-    if (e->key() == Qt::Key_A && e->modifiers() == Qt::NoModifier) {
-        autoscaleEnabled = !autoscaleEnabled;
-        if (autoscaleEnabled) {
-            autoscaleToVisibleClusters();
-            drawContentsMode = REDRAW;
-            update();
-            statusBar->showMessage(tr("Autoscale: on (press A to disable)"), 3000);
-        } else {
-            statusBar->showMessage(tr("Autoscale: off"), 3000);
-        }
-        return;
-    }
-
     ViewWidget::keyPressEvent(e);
+}
+
+void ClusterView::toggleTsnePresentation(){
+    if (tsneMode) exitTsne(tr("t-SNE off"));
+    else          startTsne();
+}
+
+void ClusterView::toggleAutoscale(){
+    // When enabled, the view refits bounds to the current shownClusters
+    // projection each time paintEvent redraws the double buffer — so moving
+    // dimensions, adding/removing clusters, or running ops automatically
+    // rescales.  Toggling off returns to manual zoom (bounds stay at whatever
+    // the last autoscale produced, then persist under normal zoom ops).
+    autoscaleEnabled = !autoscaleEnabled;
+    if (autoscaleEnabled) {
+        autoscaleToVisibleClusters();
+        drawContentsMode = REDRAW;
+        update();
+        if (statusBar) statusBar->showMessage(tr("Autoscale: on (press A to disable)"), 3000);
+    } else {
+        if (statusBar) statusBar->showMessage(tr("Autoscale: off"), 3000);
+    }
 }
 
 void ClusterView::autoscaleToVisibleClusters()

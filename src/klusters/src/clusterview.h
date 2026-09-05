@@ -62,6 +62,17 @@ public:
                 int windowTopLeft = -500, int windowBottomRight = 1001, int border = 0);
     ~ClusterView();
 
+    /** Toggles the t-SNE alternate presentation of the selected clusters
+     *  (cancels instead while a computation is in flight).  Public because
+     *  the application-wide key filter owns the F key: view-local handlers
+     *  are unreachable from palette focus, which is where focus lives after
+     *  almost every operation. */
+    void toggleTsnePresentation();
+
+    /** Toggles autoscale-to-visible-clusters.  Public for the same reason:
+     *  the A key is dispatched by the application filter. */
+    void toggleAutoscale();
+
     /**Informs if the user is currently making a selection.
   * @return true if a selection is in process, false othewise.
   */
@@ -311,10 +322,6 @@ protected:
      * event defers to the base ViewWidget/BaseFrame handling.*/
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
-
-    /** Accepts the plain-F ShortcutOverride so the t-SNE toggle wins the key
-     *  over the repair-nesting QAction while a feature view has focus. */
-    bool event(QEvent* event) override;
     virtual  void mouseDoubleClickEvent(QMouseEvent* event) override {
         //Trigger parent event
         ViewWidget::mouseDoubleClickEvent(event);
