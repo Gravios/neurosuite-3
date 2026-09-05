@@ -88,6 +88,8 @@ void Configuration::read() {
     autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", true).toBool();
     tsneSpikeCap = settings.value("tsneSpikeCap", 32000).toInt();
     if (tsneSpikeCap < 1000) tsneSpikeCap = 1000;
+    tsnePerplexityStep = settings.value("tsnePerplexityStep", 5).toInt();
+    if (tsnePerplexityStep < 1) tsnePerplexityStep = 1;
     autoUpdateMatricesAfterMerge = settings.value("autoUpdateMatricesAfterMerge", true).toBool();
     errorMatrixIncremental  = settings.value("errorMatrixIncremental",  false).toBool();
     errorMatrixLowPrecision = settings.value("errorMatrixLowPrecision", true).toBool();
@@ -180,6 +182,7 @@ void Configuration::write() const {
     settings.setValue("reextractSpikesOnSave", reextractSpikesOnSave);
     settings.setValue("autoRealignAfterMerge", autoRealignAfterMerge);
     settings.setValue("tsneSpikeCap", tsneSpikeCap);
+    settings.setValue("tsnePerplexityStep", tsnePerplexityStep);
     settings.setValue("autoRenumberAfterMerge", autoRenumberAfterMerge);
     settings.setValue("autoUpdateMatricesAfterMerge", autoUpdateMatricesAfterMerge);
     settings.setValue("errorMatrixIncremental",  errorMatrixIncremental);

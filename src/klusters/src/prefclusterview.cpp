@@ -25,6 +25,11 @@ PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent
     // Configuration::setTsneSpikeCap, which clamps again on apply.
     tsneCapLineEdit->setValidator(
         new QIntValidator(1000, 100000000, tsneCapLineEdit));
+    tsneStepLineEdit->setValidator(
+        new QIntValidator(1, 1000, tsneStepLineEdit));
+    tsneStepLineEdit->setToolTip(
+        tr("How much one up/down arrow press changes the perplexity while the\n"
+           "t-SNE view is showing.  Each press recomputes the embedding."));
     tsneCapLineEdit->setToolTip(
         tr("Selections with more spikes than this refuse the t-SNE toggle.\n"
            "Latency budget: ~30k spikes take on the order of a minute."));
@@ -48,4 +53,14 @@ int PrefClusterView::getTsneSpikeCap() const{
     bool ok = false;
     const int v = tsneCapLineEdit->text().toInt(&ok);
     return ok ? v : 32000;   // Configuration clamps the floor on apply
+}
+
+void PrefClusterView::setTsnePerplexityStep(int step){
+    tsneStepLineEdit->setText(QString::number(step));
+}
+
+int PrefClusterView::getTsnePerplexityStep() const{
+    bool ok = false;
+    const int v = tsneStepLineEdit->text().toInt(&ok);
+    return ok ? v : 5;       // Configuration clamps the floor on apply
 }
