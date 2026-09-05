@@ -121,6 +121,7 @@ public:
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
     void setTsneSpikeCap(int n) {tsneSpikeCap = (n < 1000) ? 1000 : n;}
+    void setTsnePerplexityStep(int n) {tsnePerplexityStep = (n < 1) ? 1 : n;}
     void setAutoUpdateMatricesAfterMerge(bool b) {autoUpdateMatricesAfterMerge = b;}
     void setErrorMatrixIncremental(bool b)  {errorMatrixIncremental  = b;}
     void setErrorMatrixLowPrecision(bool b) {errorMatrixLowPrecision = b;}
@@ -236,6 +237,7 @@ public:
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
     int    getTsneSpikeCap() const {return tsneSpikeCap;}
+    int    getTsnePerplexityStep() const {return tsnePerplexityStep;}
     bool   getAutoUpdateMatricesAfterMerge() const {return autoUpdateMatricesAfterMerge;}
     /**Error matrix: reuse cached raw columns on a single edit (incremental) vs. full recompute.*/
     bool   getErrorMatrixIncremental()  const {return errorMatrixIncremental;}
@@ -334,6 +336,7 @@ public:
     bool   getAutoRealignAfterMergeDefault() const {return true;}
     bool   getAutoRenumberAfterMergeDefault() const {return true;}
     int    getTsneSpikeCapDefault() const {return 32000;}
+    int    getTsnePerplexityStepDefault() const {return 5;}
     bool   getAutoUpdateMatricesAfterMergeDefault() const {return true;}
     bool   getErrorMatrixIncrementalDefault()  const {return false;}
     bool   getErrorMatrixLowPrecisionDefault() const {return true;}
@@ -494,6 +497,7 @@ private:
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
     int     tsneSpikeCap;                  // feature-view t-SNE: max spikes embedded (latency budget)
+    int     tsnePerplexityStep;            // feature-view t-SNE: up/down arrow perplexity increment
     bool    autoUpdateMatricesAfterMerge;  // recompute error/template/residual matrices after each merge
     bool    errorMatrixIncremental;   // error matrix: incremental reuse on single edits (else full recompute)
     bool    errorMatrixLowPrecision;  // error matrix: FP32 GPU compute (fast) vs FP64 (exact)

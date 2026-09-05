@@ -53,6 +53,14 @@ public:
   * to the shipped default; Configuration clamps the floor on apply.*/
     int getTsneSpikeCap() const;
 
+    /**Sets the perplexity increment the up/down arrows apply in the t-SNE
+  * view.  Each press recomputes the embedding at the new value.*/
+    void setTsnePerplexityStep(int step);
+
+    /**Returns the perplexity step as typed; a non-numeric entry falls back to
+  * the shipped default and Configuration clamps the floor on apply.*/
+    int getTsnePerplexityStep() const;
+
 };
 
 #endif

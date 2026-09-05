@@ -2070,6 +2070,25 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
+    // ── Up / Down — t-SNE perplexity, ONLY while the embedding is showing ─
+    // Gated on isTsneActive() so the arrows keep their normal meaning
+    // (palette navigation) everywhere else: a modal binding, live exactly as
+    // long as the alternate presentation is.  Each press recomputes at the
+    // new value using the step from Preferences > Cluster view; the previous
+    // embedding stays on screen meanwhile.
+    if(event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if((ke->key() == Qt::Key_Up || ke->key() == Qt::Key_Down)
+           && ke->modifiers() == Qt::NoModifier
+           && doc && !focusIsInTextInput()){
+            ClusterView* cv = activeClusterView();
+            if(cv && cv->isTsneActive()){
+                cv->adjustTsnePerplexity(ke->key() == Qt::Key_Up ? +1 : -1);
+                return true;
+            }
+        }
+    }
+
     // ── V — toggle the child-scoped matrices ─────────────────────────────
     // Bare V is unbound elsewhere; the only Qt::Key_V in the tree is Ctrl+V paste
     // inside SpinBox, which is modifier-guarded and in a text-entry widget, so
@@ -5716,6 +5735,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"U",              "Update error matrix (+ template matrix if open)"},
             {"A",              "Toggle autoscale in cluster view (works from any focus)"},
             {"F",              "Toggle t-SNE embedding of the selected clusters (works from any focus; F again returns, cancels while computing)"},
+            {"\u2191 / \u2193",           "While the t-SNE view is showing: raise / lower perplexity by the Preferences step and recompute"},
             {"Enter / Return", "Close selection polygon (New / Split modes)"},
             {"Shift+P",        "PCA-center align all clusters (top-N channels)"},
             {"Shift+F",        "Apply drift to sibling sessions"},

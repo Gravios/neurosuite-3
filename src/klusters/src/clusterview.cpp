@@ -130,8 +130,33 @@ void ClusterView::exitTsne(const QString& reason){
     if (!reason.isEmpty() && statusBar) statusBar->showMessage(reason, 3000);
 }
 
-void ClusterView::startTsne(){
-    if (tsneComputing || tsneThread) {          // second T while computing = cancel
+void ClusterView::adjustTsnePerplexity(int direction){
+    if (!tsneMode) return;                       // arrows are normal keys otherwise
+    if (tsneComputing) {                         // one embedding at a time
+        if (statusBar) statusBar->showMessage(
+            tr("t-SNE: still computing — wait, or press F to cancel"), 3000);
+        return;
+    }
+    const int step = qMax(1, configuration().getTsnePerplexityStep());
+    // Upper bound is the engine's own clamp: the perplexity must stay below
+    // (N-1)/3, since that is the neighbour count its bandwidth search uses.
+    const double hi = qMax(2.0, (tsneSpikeCount - 1) / 3.0);
+    const double want = qBound(2.0, tsnePerplexity + direction * step, hi);
+    if (qFuzzyCompare(want, tsnePerplexity)) {
+        if (statusBar) statusBar->showMessage(
+            direction > 0
+              ? tr("t-SNE: perplexity already at the maximum for %1 spikes (%2)")
+                    .arg(tsneSpikeCount).arg(hi, 0, 'f', 0)
+              : tr("t-SNE: perplexity already at the minimum (2)"), 3000);
+        return;
+    }
+    // Recompute on the same selection; the current embedding stays visible
+    // until the new one lands, so the arrows read as a continuous control.
+    startTsne(want);
+}
+
+void ClusterView::startTsne(double perplexityOverride){
+    if (tsneComputing || tsneThread) {          // second F while computing = cancel
         exitTsne(tr("t-SNE cancelled"));
         return;
     }
@@ -186,7 +211,9 @@ void ClusterView::startTsne(){
     }
 
     TsneParams params;
-    params.perplexity = qMin(30.0, (N - 1) / 3.0);
+    params.perplexity = (perplexityOverride > 0.0)
+        ? qBound(2.0, perplexityOverride, qMax(2.0, (N - 1) / 3.0))
+        : qMin(30.0, (N - 1) / 3.0);
     params.seed       = 42;                      // deterministic per selection
     const double perp = params.perplexity;
     const int nClusters = shown.size();
@@ -194,7 +221,8 @@ void ClusterView::startTsne(){
     tsneCancel    = false;
     tsneComputing = true;
     if (statusBar) statusBar->showMessage(
-        tr("t-SNE: embedding %1 spikes from %2 cluster(s)…").arg(N).arg(nClusters));
+        tr("t-SNE: embedding %1 spikes from %2 cluster(s), perplexity %3…")
+            .arg(N).arg(nClusters).arg(params.perplexity, 0, 'f', 0));
 
     QPointer<ClusterView> guard(this);
     std::atomic<bool>* cancel = &tsneCancel;
@@ -252,8 +280,10 @@ void ClusterView::onTsneFinished(bool ok, const QString& err,
     drawContentsMode = REDRAW;
     update();
     if (statusBar) statusBar->showMessage(
-        tr("t-SNE: %1 spikes, %2 cluster(s), %3 s — display only, press F to return")
-            .arg(nSpikes).arg(nClusters).arg(ms / 1000.0, 0, 'f', 1), 8000);
+        tr("t-SNE: %1 spikes, %2 cluster(s), perplexity %3, %4 s — "
+           "↑/↓ change perplexity, F returns")
+            .arg(nSpikes).arg(nClusters).arg(perp, 0, 'f', 0)
+            .arg(ms / 1000.0, 0, 'f', 1), 8000);
 }
 
 void ClusterView::paintTsne(QPainter& painter){
@@ -281,7 +311,7 @@ void ClusterView::paintTsne(QPainter& painter){
     }
     painter.setPen(palette().color(QPalette::WindowText));
     painter.drawText(vp.left() + 8, vp.top() + 18,
-        tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   (display only — F returns to features)")
+        tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   (↑/↓ perplexity — F returns to features)")
             .arg(tsneSpikeCount).arg(tsneClusterCount).arg(tsnePerplexity, 0, 'f', 0));
 }
 

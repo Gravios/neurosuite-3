@@ -208,6 +208,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     // Cluster + Waveform views (unchanged)
     connect(prefclusterView->intervalSpinBox,  &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->tsneCapLineEdit,  &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneStepLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView, &PrefWaveformView::positionsChanged,      this, &PrefDialog::enableApply);
 
@@ -300,6 +301,7 @@ void PrefDialog::updateDialog()
     // Cluster + Waveform views
     prefclusterView->setTimeInterval(configuration().getTimeInterval());
     prefclusterView->setTsneSpikeCap(configuration().getTsneSpikeCap());
+    prefclusterView->setTsnePerplexityStep(configuration().getTsnePerplexityStep());
     prefWaveformView->setGain(configuration().getGain());
 
     // Appearance: reflect the current suite-wide theme preference.
@@ -383,6 +385,7 @@ void PrefDialog::updateConfiguration()
     // Cluster + Waveform views
     configuration().setTimeInterval(prefclusterView->getTimeInterval());
     configuration().setTsneSpikeCap(prefclusterView->getTsneSpikeCap());
+    configuration().setTsnePerplexityStep(prefclusterView->getTsnePerplexityStep());
     configuration().setGain(prefWaveformView->getGain());
     configuration().setNbChannels(prefWaveformView->getNbChannels());
     configuration().setChannelPositions(prefWaveformView->getChannelPositions());
@@ -466,6 +469,7 @@ void PrefDialog::slotDefault()
 
     prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
     prefclusterView->setTsneSpikeCap(configuration().getTsneSpikeCapDefault());
+    prefclusterView->setTsnePerplexityStep(configuration().getTsnePerplexityStepDefault());
     prefWaveformView->setGain(configuration().getGainDefault());
     prefWaveformView->resetChannelList(configuration().getNbChannels());
 

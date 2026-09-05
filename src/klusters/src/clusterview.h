@@ -73,6 +73,17 @@ public:
      *  the A key is dispatched by the application filter. */
     void toggleAutoscale();
 
+    /** True while the t-SNE presentation is showing or being computed.  The
+     *  application filter gates the arrow keys on this so palette navigation
+     *  is untouched everywhere else. */
+    bool isTsneActive() const {return tsneMode || tsneComputing;}
+
+    /** Steps the perplexity by the configured increment (@p direction is +1
+     *  for up, -1 for down) and recomputes the embedding on the same
+     *  selection.  The current embedding stays on screen until the new one
+     *  lands.  Refuses while a computation is already in flight. */
+    void adjustTsnePerplexity(int direction);
+
     /**Informs if the user is currently making a selection.
   * @return true if a selection is in process, false othewise.
   */
@@ -384,7 +395,9 @@ private:
     int                  tsneClusterCount = 0;
     double               tsnePerplexity = 30.0;
 
-    void startTsne();
+    /** @p perplexityOverride > 0 pins the perplexity (the arrow-key path);
+     *  0 means "pick the default for this N". */
+    void startTsne(double perplexityOverride = 0.0);
     void exitTsne(const QString& reason = QString());
     void tsneDropIfActive();
     void onTsneFinished(bool ok, const QString& err,
