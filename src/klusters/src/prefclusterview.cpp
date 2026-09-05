@@ -17,8 +17,17 @@
 
 #include "prefclusterview.h"
 
+#include <QIntValidator>
+
 
 PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent) {
+    // Text box by request; the validator keeps it numeric.  Floor mirrors
+    // Configuration::setTsneSpikeCap, which clamps again on apply.
+    tsneCapLineEdit->setValidator(
+        new QIntValidator(1000, 100000000, tsneCapLineEdit));
+    tsneCapLineEdit->setToolTip(
+        tr("Selections with more spikes than this refuse the t-SNE toggle.\n"
+           "Latency budget: ~30k spikes take on the order of a minute."));
 }
 PrefClusterView::~PrefClusterView(){
 }
@@ -29,4 +38,14 @@ void PrefClusterView::setTimeInterval(int time){
 
 int PrefClusterView::getTimeInterval() const{
     return intervalSpinBox->value();
+}
+
+void PrefClusterView::setTsneSpikeCap(int cap){
+    tsneCapLineEdit->setText(QString::number(cap));
+}
+
+int PrefClusterView::getTsneSpikeCap() const{
+    bool ok = false;
+    const int v = tsneCapLineEdit->text().toInt(&ok);
+    return ok ? v : 32000;   // Configuration clamps the floor on apply
 }

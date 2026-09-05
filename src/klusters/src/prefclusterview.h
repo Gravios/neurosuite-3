@@ -45,6 +45,14 @@ public:
   * when the time dimension in selected. The time is in second.*/
     int getTimeInterval() const;
 
+    /**Sets the maximum number of spikes the feature view will embed with
+  * t-SNE (the F toggle).  A latency budget, not an OOM guard.*/
+    void setTsneSpikeCap(int cap);
+
+    /**Returns the t-SNE spike cap as typed.  A non-numeric entry falls back
+  * to the shipped default; Configuration clamps the floor on apply.*/
+    int getTsneSpikeCap() const;
+
 };
 
 #endif
