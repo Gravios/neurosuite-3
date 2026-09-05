@@ -2036,6 +2036,40 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
+    // ── F / A — feature-view toggles (t-SNE, autoscale) ──────────────────
+    // Both used to live only in ClusterView::keyPressEvent, which made them
+    // unreachable in the normal workflow: ShortcutOverride and KeyPress go to
+    // the FOCUS widget, and this app parks focus in the cluster palette after
+    // essentially every operation, so the scatter never saw the key.  (F was
+    // doubly dead: the repair-nesting QAction held it in the default
+    // WindowShortcut context and fired from any focus; that binding moved to
+    // Shift+N in the previous commit.)  Dispatch both here, like T and V, so
+    // they work from any focus outside a text input — and gate on an actual
+    // cluster view existing, so displays without one leave the keys alone.
+    // Accepted trade-off, same as T and V: the palette's type-ahead search
+    // loses the letters f and a, which only ever matched numeric labels.
+    if(event->type() == QEvent::ShortcutOverride){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if((ke->key() == Qt::Key_F || ke->key() == Qt::Key_A)
+           && ke->modifiers() == Qt::NoModifier
+           && doc && !focusIsInTextInput() && activeClusterView()){
+            ke->accept();
+            return true;
+        }
+    }
+    if(event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if((ke->key() == Qt::Key_F || ke->key() == Qt::Key_A)
+           && ke->modifiers() == Qt::NoModifier
+           && doc && !focusIsInTextInput()){
+            if(ClusterView* cv = activeClusterView()){
+                if(ke->key() == Qt::Key_F) cv->toggleTsnePresentation();
+                else                       cv->toggleAutoscale();
+                return true;
+            }
+        }
+    }
+
     // ── V — toggle the child-scoped matrices ─────────────────────────────
     // Bare V is unbound elsewhere; the only Qt::Key_V in the tree is Ctrl+V paste
     // inside SpinBox, which is modifier-guarded and in a text-entry widget, so
@@ -2179,6 +2213,22 @@ bool KlustersApp::paletteHasFocus() const
     for (QWidget* w = QApplication::focusWidget(); w; w = w->parentWidget())
         if (w == clusterPalette || w == childPaletteA) return true;
     return false;
+}
+
+ClusterView* KlustersApp::activeClusterView() const
+{
+    // Prefer a scatter that actually holds focus (walking up covers a child
+    // widget of it); otherwise the first one in the active display, the same
+    // lookup the watershed and dip-split drivers use.
+    for (QWidget* w = QApplication::focusWidget(); w; w = w->parentWidget())
+        if (ClusterView* cv = qobject_cast<ClusterView*>(w))
+            return cv;
+    KlustersView* aview = const_cast<KlustersApp*>(this)->activeView();
+    if (!aview) return nullptr;
+    for (ViewWidget* vw : aview->getViewList())
+        if (ClusterView* cv = qobject_cast<ClusterView*>(vw))
+            return cv;
+    return nullptr;
 }
 
 bool KlustersApp::focusIsInTextInput() const
@@ -5664,8 +5714,8 @@ void KlustersApp::slotShowShortcutHelp()
             {"Shift+Delete",   "Delete artefact cluster (move whole cluster to 0)"},
             {"Z",              "Zoom mode"},
             {"U",              "Update error matrix (+ template matrix if open)"},
-            {"A",              "Toggle autoscale in cluster view"},
-            {"F",              "Toggle t-SNE embedding of the selected clusters (feature view focus; F again returns, cancels while computing)"},
+            {"A",              "Toggle autoscale in cluster view (works from any focus)"},
+            {"F",              "Toggle t-SNE embedding of the selected clusters (works from any focus; F again returns, cancels while computing)"},
             {"Enter / Return", "Close selection polygon (New / Split modes)"},
             {"Shift+P",        "PCA-center align all clusters (top-N channels)"},
             {"Shift+F",        "Apply drift to sibling sessions"},

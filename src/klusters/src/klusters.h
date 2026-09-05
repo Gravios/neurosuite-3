@@ -699,6 +699,11 @@ private:
      *  the parameter toolbar without triggering palette actions. */
     bool focusIsInTextInput() const;
 
+    /**Returns the cluster (feature) view the single-letter feature-view keys
+  * should act on: the focused one if any, else the first in the active
+  * display.  Null when the active display has no cluster view.*/
+    ClusterView* activeClusterView() const;
+
     /** Shared implementation of slotNudgeTimestampMinus / Plus.  Both
      *  slots only differ in the sign of @p deltaSamples; everything else
      *  (selection guard, busy flag, status messages, palette refocus) is
