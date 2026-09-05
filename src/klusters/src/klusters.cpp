@@ -885,7 +885,13 @@ void KlustersApp::createMenus()
     mDissolveParent = hierarchyMenu->addAction(tr("&Dissolve Parent into Children"));
     mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
     mRepairNesting = hierarchyMenu->addAction(tr("Re&repairNesting (re-cut atoms onto parents)"));
-    mRepairNesting->setShortcut(Qt::Key_F);
+    // Shift+N, not bare F.  QAction shortcuts here use Qt's default
+    // WindowShortcut context -- they fire whenever the main window is active,
+    // whatever has focus -- so a bare-F action silently outranked the feature
+    // view's own F handler from every focus position.  One key, one owner:
+    // F belongs to the feature view (see the F/A intercept in eventFilter),
+    // and repair-nesting takes a free Shift combination.
+    mRepairNesting->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_N));
     mRepairNesting->setToolTip(tr("Re-cut child atoms that now straddle more than one parent so each\n"
                                "atom belongs to a single parent again, and regenerate the .clp\n"
                                "parent map.  Run after reassigning / consolidating the parents."));
@@ -5702,6 +5708,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"Ctrl+\u2191",        "New parent from selected children"},
             {"Ctrl+\u2193",        "Group selected parent parents"},
             {"Ctrl+Shift+\u2193",  "Dissolve selected parent into its children"},
+            {"Shift+N",        "Repair nesting (re-cut atoms onto parents)"},
             {"Ctrl+Shift+Z / Ctrl+Shift+Y", "Undo / redo atom (child-layer) edit"},
         }},
     };
