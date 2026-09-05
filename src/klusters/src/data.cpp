@@ -1999,7 +1999,7 @@ QList<int> Data::clustersInTimeWindow(long t0, long t1, int minSpikes) const {
     return out;
 }
 
-dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
+dataType Data::createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin, QList <int>& fromClusters,QList <int>& emptyClusters){
     // Entry self-heal: this builder tiles spikesByClusterTemp straight from the
     // current clusterInfoMap ranges, so a map that already disagrees with the row
     // table on entry would propagate a gap and get the edit dropped by prepareUndo.
@@ -2061,9 +2061,7 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
 
             for(dataType i = firstSpikePosition; i < lastPosition;++i){
                 dataType featuresRowIndex = static_cast<dataType>((*spikesByCluster)(1,i));
-                if(region.contains(
-                            QPoint(static_cast<dataType>(features(featuresRowIndex,dimensionX)),
-                                   static_cast<dataType>(features(featuresRowIndex,dimensionY))))){
+                if(selectionContains(selection,featuresRowIndex)){
                     //Add the spike to the new cluster <=> add the row index at the end of spikesByCluster at the lowerInsertionIndex
                     (*spikesByClusterTemp)(1,lowerInsertionIndex) = featuresRowIndex;
                     --lowerInsertionIndex;
@@ -2175,7 +2173,7 @@ dataType Data::createNewCluster(QRegion& region, const QList <int>& clustersOfOr
     else return 0;
 }
 
-QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY,QList <int>& emptyClusters){
+QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin,QList <int>& emptyClusters){
     // Entry self-heal (see createNewCluster): repair a pre-existing map/row-table
     // desync before the multi-cluster split tiles its table, so the edit proceeds.
     healClusterInfoMapIfDesynced("createNewClusters");
@@ -2244,9 +2242,7 @@ QMap<int,int> Data::createNewClusters(QRegion& region, const QList <int>& cluste
 
             for(dataType i = firstSpikePosition; i < lastPosition;++i){
                 dataType featuresRowIndex = (*spikesByCluster)(1,i);
-                if(region.contains(
-                            QPoint(features(featuresRowIndex,dimensionX),
-                                   features(featuresRowIndex,dimensionY)))){
+                if(selectionContains(selection,featuresRowIndex)){
                     //Add the spike to the new cluster <=> add the row index at the end of spikesByCluster at the lowerInsertionIndex
                     (*spikesByClusterTemp)(1,lowerInsertionIndex) = featuresRowIndex;
 
@@ -2908,7 +2904,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
   Cluster 0 or cluster 1 does not exist.
   Cluster one is the destination and cluster 0 can contain spikes to be deleted.
  */
-void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clustersOfOrigin, int destinationCluster, int dimensionX, int dimensionY, QList <int>& fromClusters,QList <int>& emptyClusters){
+void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin, int destinationCluster, QList <int>& fromClusters,QList <int>& emptyClusters){
     // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
     // row-table desync before this builder tiles its table, so the edit proceeds
     // rather than being dropped by prepareUndo's net.
@@ -2998,9 +2994,7 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
 
                 for(dataType i = firstSpikePosition; i < lastPosition;++i){
                     dataType featuresRowIndex = (*spikesByCluster)(1,i);
-                    if(region.contains(
-                                QPoint(features(featuresRowIndex,dimensionX),
-                                       features(featuresRowIndex,dimensionY)))){
+                    if(selectionContains(selection,featuresRowIndex)){
                         //Add the spike to the new cluster <=> add the row index at the end of spikesByCluster at the lowerInsertionIndex
                         (*spikesByClusterTemp)(1,zeroLowerInsertionIndex) = featuresRowIndex;
                         --zeroLowerInsertionIndex;
@@ -3114,9 +3108,7 @@ void Data::deleteSpikesFromClusters(QRegion& region, const QList <int>& clusters
 
             for(dataType i = firstSpikePosition + nbSpikesOfCluster - 1; i > lastPosition;--i){
                 dataType featuresRowIndex = (*spikesByCluster)(1,i);
-                if(region.contains(
-                            QPoint(features(featuresRowIndex,dimensionX),
-                                   features(featuresRowIndex,dimensionY)))){
+                if(selectionContains(selection,featuresRowIndex)){
                     //Add the spike to the new cluster <=> add the row index at the end of spikesByCluster at the lowerInsertionIndex
                     (*spikesByClusterTemp)(1,upperInsertionIndex) = featuresRowIndex;
                     ++upperInsertionIndex;

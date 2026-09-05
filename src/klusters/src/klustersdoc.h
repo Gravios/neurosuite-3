@@ -684,7 +684,12 @@ public:
     * @param dimensionX the dimension used as abscissa to display the clusters.
     * @param dimensionY the dimension used as ordinate to display the clusters.
     */
-    void deleteNoise(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
+    void deleteNoise(const SpikeSelection& selection,const QList <int>& clustersOfOrigin);
+
+    /**Polygon form: the scatter views' gesture, unchanged.*/
+    void deleteNoise(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+        deleteNoise(SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
+    }
 
     /**
     * Removes spikes from some clusters and assign them to the cluster 0, the cluster for the artefact.
@@ -694,7 +699,12 @@ public:
     * @param dimensionX the dimension used as abscissa to display the clusters.
     * @param dimensionY the dimension used as ordinate to display the clusters.
     */
-    void deleteArtifact(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
+    void deleteArtifact(const SpikeSelection& selection,const QList <int>& clustersOfOrigin);
+
+    /**Polygon form: the scatter views' gesture, unchanged.*/
+    void deleteArtifact(QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+        deleteArtifact(SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
+    }
 
     /**
     * Creates a new cluster out of existing ones.
@@ -705,7 +715,12 @@ public:
     * @param dimensionY the dimension used as ordinate to display the clusters.
     * @return the number of the newly created cluster.
     */
-    void createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
+    void createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin);
+
+    /**Polygon form: the scatter views' gesture, unchanged.*/
+    void createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+        createNewCluster(SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
+    }
 
     /**
     * Creates a new clusters out of existing ones. If the polygon of selection contains x clusters
@@ -717,7 +732,12 @@ public:
     * @param dimensionY the dimension used as ordinate to display the clusters.
     * @return a list of the numbers of the newly created clusters.
     */
-    void createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
+    void createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin);
+
+    /**Polygon form: the scatter views' gesture, unchanged.*/
+    void createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+        createNewClusters(SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
+    }
 
     /** DipSplit result summary — returned by dipSplitApply().
      *
@@ -1565,7 +1585,12 @@ private:
     * @param dimensionX the dimension used as abscissa to display the clusters.
     * @param dimensionY the dimension used as ordinate to display the clusters.
     */
-    void deleteSpikesFromClusters(int destination, QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY);
+    void deleteSpikesFromClusters(int destination, const SpikeSelection& selection,const QList <int>& clustersOfOrigin);
+
+    /**Polygon form: the scatter views' gesture, unchanged.*/
+    void deleteSpikesFromClusters(int destination, QRegion& region,const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+        deleteSpikesFromClusters(destination,SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
+    }
 
     /**
     * Fills the undo list (clusterColorListUndoList) and clear the redo list
