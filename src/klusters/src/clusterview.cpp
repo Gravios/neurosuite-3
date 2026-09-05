@@ -95,6 +95,21 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     setMouseTracking(true) ;
 }
 
+bool ClusterView::event(QEvent* ev){
+    // The repair-nesting QAction binds plain F application-wide.  Accepting
+    // the ShortcutOverride while a feature view has focus routes F to
+    // keyPressEvent (the t-SNE toggle) instead of the action; everywhere
+    // else -- palette focus included -- the action keeps its key.
+    if (ev->type() == QEvent::ShortcutOverride) {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(ev);
+        if (ke->key() == Qt::Key_F && ke->modifiers() == Qt::NoModifier) {
+            ke->accept();
+            return true;
+        }
+    }
+    return ViewWidget::event(ev);
+}
+
 ClusterView::~ClusterView(){
     // A t-SNE worker may still be embedding; it only reads its own copies,
     // but it must not outlive the widget it reports back to.
@@ -252,7 +267,7 @@ void ClusterView::onTsneFinished(bool ok, const QString& err,
     drawContentsMode = REDRAW;
     update();
     if (statusBar) statusBar->showMessage(
-        tr("t-SNE: %1 spikes, %2 cluster(s), %3 s — display only, press T to return")
+        tr("t-SNE: %1 spikes, %2 cluster(s), %3 s — display only, press F to return")
             .arg(nSpikes).arg(nClusters).arg(ms / 1000.0, 0, 'f', 1), 8000);
 }
 
@@ -281,7 +296,7 @@ void ClusterView::paintTsne(QPainter& painter){
     }
     painter.setPen(palette().color(QPalette::WindowText));
     painter.drawText(vp.left() + 8, vp.top() + 18,
-        tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   (display only — T returns to features)")
+        tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   (display only — F returns to features)")
             .arg(tsneSpikeCount).arg(tsneClusterCount).arg(tsnePerplexity, 0, 'f', 0));
 }
 
@@ -724,7 +739,7 @@ void ClusterView::setMode(BaseFrame::Mode selectedMode){
 void ClusterView::mousePressEvent(QMouseEvent* e){
     if (tsneMode) {           // display only: selection/zoom live in feature
         if (statusBar) statusBar->showMessage(   // world coordinates, which the
-            tr("t-SNE view is display only — press T to return"), 2000);  // embedding does not share
+            tr("t-SNE view is display only — press F to return"), 2000);  // embedding does not share
         return;
     }
     // Ctrl+Left arms a pan and takes precedence over every selection / zoom mode
@@ -878,32 +893,38 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
         return;
     }
 
-    // 'T' toggles the t-SNE alternate presentation of the selected clusters;
-    // while a computation is running it cancels instead.
-    if (e->key() == Qt::Key_T && e->modifiers() == Qt::NoModifier) {
+    // 'F' toggles the t-SNE alternate presentation of the selected clusters;
+    // while a computation is running it cancels instead.  Bare T cannot work
+    // here -- the application-wide event filter consumes it for palette
+    // move-to-end at ShortcutOverride AND KeyPress before any widget sees it.
+    // F is freed by moving autoscale to A, and event() accepts F's
+    // ShortcutOverride so the repair-nesting QAction's plain-F shortcut
+    // cannot steal the key while a feature view has focus.
+    if (e->key() == Qt::Key_F && e->modifiers() == Qt::NoModifier) {
         if (tsneMode) exitTsne(tr("t-SNE off"));
         else          startTsne();
         return;
     }
     if (tsneMode) {                       // display-only: swallow other keys
         if (statusBar) statusBar->showMessage(
-            tr("t-SNE view is display only — press T to return"), 2000);
+            tr("t-SNE view is display only — press F to return"), 2000);
         return;
     }
 
-    // 'F' toggles autoscale-to-visible-clusters mode.  When enabled, the
+    // 'A' toggles autoscale-to-visible-clusters mode (moved off F, which is
+    // now the t-SNE toggle above).  When enabled, the
     // view refits bounds to the current shownClusters projection each
     // time paintEvent redraws the double buffer — so moving dimensions,
     // adding/removing clusters, or running ops automatically rescales.
-    // Press F again to return to manual zoom (bounds stay at whatever
+    // Press A again to return to manual zoom (bounds stay at whatever
     // the last autoscale produced, then persist under normal zoom ops).
-    if (e->key() == Qt::Key_F && e->modifiers() == Qt::NoModifier) {
+    if (e->key() == Qt::Key_A && e->modifiers() == Qt::NoModifier) {
         autoscaleEnabled = !autoscaleEnabled;
         if (autoscaleEnabled) {
             autoscaleToVisibleClusters();
             drawContentsMode = REDRAW;
             update();
-            statusBar->showMessage(tr("Autoscale: on (press F to disable)"), 3000);
+            statusBar->showMessage(tr("Autoscale: on (press A to disable)"), 3000);
         } else {
             statusBar->showMessage(tr("Autoscale: off"), 3000);
         }
