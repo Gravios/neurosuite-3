@@ -5736,6 +5736,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"A",              "Toggle autoscale in cluster view (works from any focus)"},
             {"F",              "Toggle t-SNE embedding of the selected clusters (works from any focus; F again returns, cancels while computing)"},
             {"\u2191 / \u2193",           "While the t-SNE view is showing: raise / lower perplexity by the Preferences step and recompute"},
+            {"Left / Right / Middle click", "In the t-SNE view: add lasso vertex / undo vertex / close and apply the active mode (Enter also closes, Esc discards)"},
             {"Enter / Return", "Close selection polygon (New / Split modes)"},
             {"Shift+P",        "PCA-center align all clusters (top-N channels)"},
             {"Shift+F",        "Apply drift to sibling sessions"},

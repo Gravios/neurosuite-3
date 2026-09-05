@@ -226,6 +226,11 @@ void KlustersDoc::renumberPendingParentSelection(const QMap<int,int>& oldNew)
         if (oldNew.contains(id)) id = oldNew.value(id);
 }
 
+int KlustersDoc::nextFreeParentClusterId() const
+{
+    return static_cast<int>(clusteringData->nextFreeClusterId());
+}
+
 void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
                                             const QVector<int>& spkFileIndices,
                                             int toCluster,

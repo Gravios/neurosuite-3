@@ -391,6 +391,14 @@ private:
     QThread*             tsneThread    = nullptr;
     std::vector<double>  tsneXY;                  ///< N*2 embedding
     QList<int>           tsneRowCluster;          ///< per-point cluster id
+    QVector<int>         tsneRowSpike;            ///< per-point 0-based .spk index
+    // Embedding bounding box captured once when the run lands, so painting and
+    // lasso hit-testing share ONE mapping.  Recomputing it per paint would be
+    // equivalent today and would silently diverge the day either side changes.
+    double               tsneMinX = 0, tsneMaxX = 0, tsneMinY = 0, tsneMaxY = 0;
+    QPolygon             tsneSelectionPolygon;    ///< lasso, VIEWPORT pixels
+    QPoint               tsneCursorPos;           ///< rubber-line end point
+    bool                 tsneApplyingLasso = false; ///< suppress our own drop
     int                  tsneSpikeCount = 0;
     int                  tsneClusterCount = 0;
     double               tsnePerplexity = 30.0;
@@ -402,8 +410,24 @@ private:
     void tsneDropIfActive();
     void onTsneFinished(bool ok, const QString& err,
                         std::vector<double> xy, QList<int> labels,
+                        QVector<int> spikeRows,
                         int nSpikes, int nClusters, double perp, qint64 ms);
     void paintTsne(QPainter& painter);
+
+    /** Viewport position of embedded point @p i under the captured bounding
+     *  box.  The single mapping used by both paintTsne and the lasso. */
+    QPoint tsneViewportPos(int i) const;
+
+    /** Closes the lasso: hit-tests every embedded point, groups the hits by
+     *  their CURRENT cluster and applies the active selection mode through
+     *  the document's explicit-spike-list primitive. */
+    void applyTsneLasso();
+
+    /** Re-reads the embedded spikes' cluster ids from the document after an
+     *  edit.  The positions are still valid -- features did not change, only
+     *  membership -- so the embedding is recoloured in place instead of being
+     *  thrown away, which is what makes iterative curation possible here. */
+    void tsneRelabelFromDoc();
 
     // ── Ctrl+wheel zoom / Ctrl+drag pan (drives the inherited BaseFrame
     //    ZoomWindow directly, like the rubber-band zoom).  Ctrl distinguishes

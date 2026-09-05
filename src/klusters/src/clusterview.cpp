@@ -105,6 +105,10 @@ ClusterView::~ClusterView(){
 // ── t-SNE alternate presentation ────────────────────────────────────────────
 
 void ClusterView::tsneDropIfActive(){
+    // Our own lasso edit is not an invalidation: it changes membership, not
+    // positions, and applyTsneLasso() recolours in place afterwards.
+    if (tsneApplyingLasso)
+        return;
     if (tsneMode || tsneComputing || tsneThread)
         exitTsne(tr("t-SNE dropped: clusters changed"));
 }
@@ -122,6 +126,7 @@ void ClusterView::exitTsne(const QString& reason){
         tsneThread = nullptr;   // deleteLater is already connected to finished
     }
     tsneComputing = false;
+    tsneSelectionPolygon.clear();
     if (tsneMode) {
         tsneMode = false;
         drawContentsMode = REDRAW;
@@ -196,6 +201,11 @@ void ClusterView::startTsne(double perplexityOverride){
     auto X      = std::make_shared<std::vector<double>>(static_cast<size_t>(N) * D);
     auto labels = std::make_shared<QList<int>>();
     labels->reserve(N);
+    // The lasso needs to name spikes, not just colour them: keep each embedded
+    // point's 0-based .spk index (feature row - 1), the form the document's
+    // explicit-spike-list primitive takes.
+    auto rows = std::make_shared<QVector<int>>();
+    rows->reserve(N);
     int r = 0;
     for (auto& pr : tables) {
         SortableTable& t = *pr.second;
@@ -206,6 +216,7 @@ void ClusterView::startTsne(double perplexityOverride){
                 (*X)[static_cast<size_t>(r) * D + (dim - 1)] =
                     static_cast<double>(d.featureValue(row, dim));
             labels->append(pr.first);
+            rows->append(static_cast<int>(row) - 1);
         }
         delete pr.second;
     }
@@ -226,7 +237,7 @@ void ClusterView::startTsne(double perplexityOverride){
 
     QPointer<ClusterView> guard(this);
     std::atomic<bool>* cancel = &tsneCancel;
-    QThread* th = QThread::create([guard, X, labels, N, D, params, perp,
+    QThread* th = QThread::create([guard, X, labels, rows, N, D, params, perp,
                                    nClusters, cancel]() {
         QElapsedTimer timer; timer.start();
         auto out = std::make_shared<std::vector<double>>();
@@ -246,11 +257,11 @@ void ClusterView::startTsne(double perplexityOverride){
             }, cancel, &err);
         const qint64 ms = timer.elapsed();
         QMetaObject::invokeMethod(guard,
-            [guard, ok, err = QString::fromStdString(err), out, labels, N,
+            [guard, ok, err = QString::fromStdString(err), out, labels, rows, N,
              nClusters, perp, ms]() {
                 if (guard)
                     guard->onTsneFinished(ok, err, std::move(*out), *labels,
-                                          N, nClusters, perp, ms);
+                                          *rows, N, nClusters, perp, ms);
             }, Qt::QueuedConnection);
     });
     QObject::connect(th, &QThread::finished, th, &QObject::deleteLater);
@@ -260,6 +271,7 @@ void ClusterView::startTsne(double perplexityOverride){
 
 void ClusterView::onTsneFinished(bool ok, const QString& err,
                                  std::vector<double> xy, QList<int> labels,
+                                 QVector<int> spikeRows,
                                  int nSpikes, int nClusters, double perp,
                                  qint64 ms){
     tsneThread    = nullptr;    // finished; deleteLater will reap it
@@ -273,6 +285,25 @@ void ClusterView::onTsneFinished(bool ok, const QString& err,
     }
     tsneXY          = std::move(xy);
     tsneRowCluster  = std::move(labels);
+    tsneRowSpike    = std::move(spikeRows);
+    tsneSelectionPolygon.clear();
+    {   // capture the bounding box once: paint and hit-test must agree
+        const int n = static_cast<int>(tsneXY.size() / 2);
+        tsneMinX = tsneMaxX = tsneMinY = tsneMaxY = 0.0;
+        if (n > 0) {
+            tsneMinX = tsneMaxX = tsneXY[0];
+            tsneMinY = tsneMaxY = tsneXY[1];
+            for (int i = 1; i < n; ++i) {
+                tsneMinX = qMin(tsneMinX, tsneXY[2 * i]);
+                tsneMaxX = qMax(tsneMaxX, tsneXY[2 * i]);
+                tsneMinY = qMin(tsneMinY, tsneXY[2 * i + 1]);
+                tsneMaxY = qMax(tsneMaxY, tsneXY[2 * i + 1]);
+            }
+            const double mx = (tsneMaxX - tsneMinX) * 0.05 + 1e-9;
+            const double my = (tsneMaxY - tsneMinY) * 0.05 + 1e-9;
+            tsneMinX -= mx; tsneMaxX += mx; tsneMinY -= my; tsneMaxY += my;
+        }
+    }
     tsneSpikeCount  = nSpikes;
     tsneClusterCount= nClusters;
     tsnePerplexity  = perp;
@@ -286,28 +317,123 @@ void ClusterView::onTsneFinished(bool ok, const QString& err,
             .arg(ms / 1000.0, 0, 'f', 1), 8000);
 }
 
+QPoint ClusterView::tsneViewportPos(int i) const {
+    const QRect vp = contentsRect();
+    const double sx = vp.width()  / qMax(1e-12, tsneMaxX - tsneMinX);
+    const double sy = vp.height() / qMax(1e-12, tsneMaxY - tsneMinY);
+    return QPoint(vp.left() + static_cast<int>((tsneXY[2 * i]     - tsneMinX) * sx),
+                  vp.top()  + static_cast<int>((tsneXY[2 * i + 1] - tsneMinY) * sy));
+}
+
+void ClusterView::tsneRelabelFromDoc(){
+    // Positions are untouched by a membership edit, so re-read the ids and
+    // recolour rather than discarding a minute of computation.
+    const QVector<dataType> labelByRow = doc.data().labelByFeatureRow();
+    for (int i = 0; i < tsneRowSpike.size() && i < tsneRowCluster.size(); ++i) {
+        const int row1 = tsneRowSpike.at(i) + 1;      // .spk index -> feature row
+        if (row1 > 0 && row1 < labelByRow.size())
+            tsneRowCluster[i] = static_cast<int>(labelByRow.at(row1));
+    }
+}
+
+void ClusterView::applyTsneLasso(){
+    if (tsneSelectionPolygon.size() < 3) { tsneSelectionPolygon.clear(); return; }
+
+    // Parent scope only.  moveSpikeSubsetToCluster edits clusteringData by
+    // design (it is how the hierarchy ops move whole atoms), while a child
+    // embedding names ATOM ids from a different namespace -- applying it there
+    // would move unrelated parent spikes.  Refuse rather than guess.
+    if (doc.isChildClusteringActive()) {
+        if (statusBar) statusBar->showMessage(
+            tr("t-SNE lasso: not available in child scope — the selection would "
+               "be applied to the parent layer"), 5000);
+        tsneSelectionPolygon.clear();
+        drawContentsMode = REFRESH;
+        update();
+        return;
+    }
+
+    const QRegion area(tsneSelectionPolygon);
+    QMap<int, QVector<int>> bySource;       // current cluster -> .spk indices
+    const int n = qMin(static_cast<int>(tsneXY.size() / 2), tsneRowSpike.size());
+    for (int i = 0; i < n; ++i)
+        if (area.contains(tsneViewportPos(i)))
+            bySource[tsneRowCluster.at(i)].append(tsneRowSpike.at(i));
+
+    if (bySource.isEmpty()) {
+        if (statusBar) statusBar->showMessage(tr("t-SNE lasso: no spikes inside"), 3000);
+        tsneSelectionPolygon.clear();
+        drawContentsMode = REFRESH;
+        update();
+        return;
+    }
+
+    int total = 0;
+    for (auto it = bySource.constBegin(); it != bySource.constEnd(); ++it)
+        total += it.value().size();
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    // One destination for the whole lasso (NEW_CLUSTER / the reserve bins), or
+    // one per source (NEW_CLUSTERS, which splits each contributing cluster).
+    int sharedDest = -1;
+    switch (mode) {
+    case DELETE_ARTEFACT: sharedDest = 0; break;
+    case DELETE_NOISE:    sharedDest = 1; break;
+    case NEW_CLUSTER:     sharedDest = doc.nextFreeParentClusterId(); break;
+    default:              sharedDest = -1; break;    // NEW_CLUSTERS
+    }
+
+    tsneApplyingLasso = true;                // our own edit: do not self-drop
+    QList<int> destinations;
+    for (auto it = bySource.constBegin(); it != bySource.constEnd(); ++it) {
+        const int src = it.key();
+        // Re-read the free id per source: the previous move already created one.
+        const int dest = (sharedDest >= 0) ? sharedDest : doc.nextFreeParentClusterId();
+        if (src == dest) continue;           // degenerate self-move
+        doc.moveSpikeSubsetToCluster(src, it.value(), dest, view);
+        if (!destinations.contains(dest)) destinations.append(dest);
+    }
+    tsneApplyingLasso = false;
+    QApplication::restoreOverrideCursor();
+
+    tsneRelabelFromDoc();
+    tsneSelectionPolygon.clear();
+    drawContentsMode = REDRAW;
+    update();
+
+    if (statusBar) {
+        QStringList d;
+        for (int id : destinations) d << QString::number(id);
+        statusBar->showMessage(
+            tr("t-SNE lasso: %1 spikes from %2 cluster(s) → %3")
+                .arg(total).arg(bySource.size()).arg(d.join(QStringLiteral(", "))),
+            6000);
+    }
+}
+
 void ClusterView::paintTsne(QPainter& painter){
     const QRect vp = contentsRect();
     painter.fillRect(vp, palette().color(QPalette::Window));
     const int N = static_cast<int>(tsneXY.size() / 2);
     if (N == 0) return;
-    double minX = tsneXY[0], maxX = tsneXY[0], minY = tsneXY[1], maxY = tsneXY[1];
-    for (int i = 1; i < N; ++i) {
-        minX = qMin(minX, tsneXY[2 * i]);     maxX = qMax(maxX, tsneXY[2 * i]);
-        minY = qMin(minY, tsneXY[2 * i + 1]); maxY = qMax(maxY, tsneXY[2 * i + 1]);
-    }
-    const double mx = (maxX - minX) * 0.05 + 1e-9, my = (maxY - minY) * 0.05 + 1e-9;
-    minX -= mx; maxX += mx; minY -= my; maxY += my;
-    const double sx = vp.width()  / (maxX - minX);
-    const double sy = vp.height() / (maxY - minY);
     ItemColors& colors = doc.clusterColors();
     painter.setPen(Qt::NoPen);
     const int r = qMax(1, pointSize);
+    const QColor unknown(160, 160, 160);
     for (int i = 0; i < N; ++i) {
-        painter.setBrush(colors.color(tsneRowCluster.at(i)));
-        const int px = vp.left() + static_cast<int>((tsneXY[2 * i]     - minX) * sx);
-        const int py = vp.top()  + static_cast<int>((tsneXY[2 * i + 1] - minY) * sy);
-        painter.drawEllipse(px - r, py - r, 2 * r, 2 * r);
+        const int id = tsneRowCluster.at(i);
+        // A lasso can send spikes to a cluster the palette has not coloured
+        // yet; fall back rather than asking ItemColors for a missing id.
+        painter.setBrush(colors.contains(id) ? colors.color(id) : unknown);
+        const QPoint p = tsneViewportPos(i);
+        painter.drawEllipse(p.x() - r, p.y() - r, 2 * r, 2 * r);
+    }
+    if (!tsneSelectionPolygon.isEmpty()) {
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(QColor(255, 255, 255), 1, Qt::DashLine));
+        painter.drawPolyline(tsneSelectionPolygon);
+        if (!tsneCursorPos.isNull())     // rubber line to the cursor
+            painter.drawLine(tsneSelectionPolygon.last(), tsneCursorPos);
     }
     painter.setPen(palette().color(QPalette::WindowText));
     painter.drawText(vp.left() + 8, vp.top() + 18,
@@ -752,9 +878,34 @@ void ClusterView::setMode(BaseFrame::Mode selectedMode){
 
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
-    if (tsneMode) {           // display only: selection/zoom live in feature
-        if (statusBar) statusBar->showMessage(   // world coordinates, which the
-            tr("t-SNE view is display only — press F to return"), 2000);  // embedding does not share
+    if (tsneMode) {
+        // Lasso in EMBEDDING space: same gesture as the scatter (left adds a
+        // vertex, right undoes one, middle closes and applies), but the hit
+        // test runs on viewport positions -- embedding coordinates have no
+        // feature-world meaning, so the normal polygon path cannot be reused.
+        if (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
+            mode == NEW_CLUSTER  || mode == NEW_CLUSTERS) {
+            if (e->button() == Qt::LeftButton) {
+                setFocus(Qt::MouseFocusReason);
+                tsneSelectionPolygon << e->position().toPoint();
+                tsneCursorPos = e->position().toPoint();
+                drawContentsMode = REFRESH;
+                update();
+            } else if (e->button() == Qt::RightButton) {
+                if (!tsneSelectionPolygon.isEmpty()) {
+                    tsneSelectionPolygon.remove(tsneSelectionPolygon.size() - 1);
+                    drawContentsMode = REFRESH;
+                    update();
+                }
+            } else if (e->button() == Qt::MiddleButton) {
+                applyTsneLasso();
+            }
+            return;
+        }
+        // Zoom / time modes have no meaning here: the axes are not features.
+        if (statusBar) statusBar->showMessage(
+            tr("t-SNE view: use Ctrl+1 / Ctrl+2 / Delete / Shift+Delete to lasso, "
+               "F to return"), 3000);
         return;
     }
     // Ctrl+Left arms a pan and takes precedence over every selection / zoom mode
@@ -912,9 +1063,24 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
     // filter dispatches them to this widget through toggleTsnePresentation()
     // / toggleAutoscale(), so they work from palette focus too.  A local copy
     // of that policy would be unreachable code that drifts.
-    if (tsneMode) {                       // display-only: swallow other keys
+    if (tsneMode) {
+        // Enter closes an open lasso, exactly as it does in the scatter.
+        if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
+                && tsneSelectionPolygon.size() > 2) {
+            applyTsneLasso();
+            return;
+        }
+        if (e->key() == Qt::Key_Escape && !tsneSelectionPolygon.isEmpty()) {
+            tsneSelectionPolygon.clear();
+            drawContentsMode = REFRESH;
+            update();
+            return;
+        }
+        // Everything else stays inert: zoom, dimension picking and the
+        // scatter's own keys all speak feature-world coordinates.
         if (statusBar) statusBar->showMessage(
-            tr("t-SNE view is display only — press F to return"), 2000);
+            tr("t-SNE view: lasso with Ctrl+1 / Ctrl+2 / Delete / Shift+Delete, "
+               "↑/↓ perplexity, F returns"), 2000);
         return;
     }
 
@@ -1007,7 +1173,14 @@ void ClusterView::autoscaleToVisibleClusters()
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){
-    if (tsneMode) return;
+    if (tsneMode) {
+        if (!tsneSelectionPolygon.isEmpty()) {   // rubber line to the cursor
+            tsneCursorPos = e->position().toPoint();
+            drawContentsMode = REFRESH;
+            update();
+        }
+        return;
+    }
     // Ctrl+drag pan: keep the world point grabbed at press under the cursor.
     // Re-centre the window each move (size unchanged) — zoom(1.0, c) recentres
     // and clamps to the full extent.  Computed against the current window so it
