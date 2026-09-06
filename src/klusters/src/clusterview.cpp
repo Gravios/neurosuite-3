@@ -368,24 +368,12 @@ void ClusterView::applyTsneLasso(){
         return;
     }
 
-    // On the child layer only the CREATE modes are safe.  createNewCluster /
-    // createNewClusters route through data() and carry a full child branch
-    // (the atom-undo ChildEdit, colour sync, hierarchy rebuild and the
-    // children-created notice), which is the same path the scatter's polygon
-    // split already uses on atoms.  deleteSpikesFromClusters -- what
-    // deleteNoise and deleteArtifact call -- names clusteringData
-    // unconditionally, so on the child layer it would scan PARENT clusters
-    // that happen to carry the atoms' numbers.  That is a pre-existing defect
-    // of the polygon path too; refuse here rather than reproduce it.
-    if (tsneChildLayer && (mode == DELETE_NOISE || mode == DELETE_ARTEFACT)) {
-        if (statusBar) statusBar->showMessage(
-            tr("t-SNE lasso: sending atoms to noise/artefact is not supported in "
-               "child scope — split them out (Ctrl+1) or work on the parents"), 6000);
-        tsneSelectionPolygon.clear();
-        drawContentsMode = REFRESH;
-        update();
-        return;
-    }
+    // All four modes work on both layers now: the create modes route through
+    // data() and carry their child branch, and the delete modes' child-scope
+    // translation (shown atoms -> the exact rows -> the parents those rows are
+    // in) lands the spikes in the parent reserve bins with the atom layer
+    // re-cut behind them, which is what sending an atom's spikes to noise has
+    // to mean.
 
     // Hit-test in viewport pixels through the SAME mapping paintTsne uses.
     const QRegion area(tsneSelectionPolygon);
