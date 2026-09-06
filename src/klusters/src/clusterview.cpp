@@ -173,7 +173,12 @@ void ClusterView::startTsne(double perplexityOverride){
         if (statusBar) statusBar->showMessage(tr("t-SNE: no clusters selected"), 3000);
         return;
     }
-    Data& d = doc.data();                        // ACTIVE layer: parents or children
+    // ACTIVE layer.  With children selected in the child palette the document
+    // points data()/clusterColors() at the child clustering and the view's
+    // cluster list holds ATOM ids, so the embedding follows the user's scope
+    // without asking: the same call embeds parents or children.
+    Data& d = doc.data();
+    tsneChildLayer = doc.isChildClusteringActive();
     const int D = d.nbOfDimensionsTotal() - 1;   // every feature dim, time excluded
     if (D < 2) {
         if (statusBar) statusBar->showMessage(tr("t-SNE: not enough feature dimensions"), 3000);
@@ -235,8 +240,11 @@ void ClusterView::startTsne(double perplexityOverride){
     tsneCancel    = false;
     tsneComputing = true;
     if (statusBar) statusBar->showMessage(
-        tr("t-SNE: embedding %1 spikes from %2 cluster(s), perplexity %3…")
-            .arg(N).arg(nClusters).arg(params.perplexity, 0, 'f', 0));
+        tsneChildLayer
+          ? tr("t-SNE: embedding %1 spikes from %2 atom(s), perplexity %3…")
+                .arg(N).arg(nClusters).arg(params.perplexity, 0, 'f', 0)
+          : tr("t-SNE: embedding %1 spikes from %2 cluster(s), perplexity %3…")
+                .arg(N).arg(nClusters).arg(params.perplexity, 0, 'f', 0));
 
     QPointer<ClusterView> guard(this);
     std::atomic<bool>* cancel = &tsneCancel;
@@ -314,8 +322,11 @@ void ClusterView::onTsneFinished(bool ok, const QString& err,
     drawContentsMode = REDRAW;
     update();
     if (statusBar) statusBar->showMessage(
-        tr("t-SNE: %1 spikes, %2 cluster(s), perplexity %3, %4 s — "
-           "↑/↓ change perplexity, F returns")
+        (tsneChildLayer
+           ? tr("t-SNE: %1 spikes, %2 atom(s), perplexity %3, %4 s — "
+                "↑/↓ change perplexity, F returns")
+           : tr("t-SNE: %1 spikes, %2 cluster(s), perplexity %3, %4 s — "
+                "↑/↓ change perplexity, F returns"))
             .arg(nSpikes).arg(nClusters).arg(perp, 0, 'f', 0)
             .arg(ms / 1000.0, 0, 'f', 1), 8000);
 }
@@ -329,6 +340,13 @@ QPoint ClusterView::tsneViewportPos(int i) const {
 }
 
 void ClusterView::tsneRelabelFromDoc(){
+    // Only ever from the layer the embedding was computed on: parent ids and
+    // atom ids are different namespaces, and reading the wrong one would
+    // recolour every point with an unrelated cluster's colour.
+    if (doc.isChildClusteringActive() != tsneChildLayer) {
+        exitTsne(tr("t-SNE dropped: clustering scope changed"));
+        return;
+    }
     // Positions are untouched by a membership edit, so re-read the ids and
     // recolour rather than discarding a minute of computation.
     const QVector<dataType> labelByRow = doc.data().labelByFeatureRow();
@@ -342,12 +360,27 @@ void ClusterView::tsneRelabelFromDoc(){
 void ClusterView::applyTsneLasso(){
     if (tsneSelectionPolygon.size() < 3) { tsneSelectionPolygon.clear(); return; }
 
-    // Parent scope only.  The builders below run on data(), but the child
-    // layer's atom ids are a different namespace from the parent ids the
-    // palette and the reserve bins speak; refuse rather than guess.
-    if (doc.isChildClusteringActive()) {
+    // The scope must still be the one the embedding was computed in: a switch
+    // between the parent and child palettes swaps the id namespace under it.
+    if (doc.isChildClusteringActive() != tsneChildLayer) {
+        tsneSelectionPolygon.clear();
+        exitTsne(tr("t-SNE dropped: clustering scope changed — press F to re-embed"));
+        return;
+    }
+
+    // On the child layer only the CREATE modes are safe.  createNewCluster /
+    // createNewClusters route through data() and carry a full child branch
+    // (the atom-undo ChildEdit, colour sync, hierarchy rebuild and the
+    // children-created notice), which is the same path the scatter's polygon
+    // split already uses on atoms.  deleteSpikesFromClusters -- what
+    // deleteNoise and deleteArtifact call -- names clusteringData
+    // unconditionally, so on the child layer it would scan PARENT clusters
+    // that happen to carry the atoms' numbers.  That is a pre-existing defect
+    // of the polygon path too; refuse here rather than reproduce it.
+    if (tsneChildLayer && (mode == DELETE_NOISE || mode == DELETE_ARTEFACT)) {
         if (statusBar) statusBar->showMessage(
-            tr("t-SNE lasso: not available in child scope"), 5000);
+            tr("t-SNE lasso: sending atoms to noise/artefact is not supported in "
+               "child scope — split them out (Ctrl+1) or work on the parents"), 6000);
         tsneSelectionPolygon.clear();
         drawContentsMode = REFRESH;
         update();
@@ -384,8 +417,11 @@ void ClusterView::applyTsneLasso(){
     }
     if (sources.isEmpty()) {
         if (statusBar) statusBar->showMessage(
-            tr("t-SNE lasso: the selected spikes are no longer in the embedded "
-               "clusters — press F twice to re-embed"), 5000);
+            tsneChildLayer
+              ? tr("t-SNE lasso: the selected spikes are no longer in the embedded "
+                   "atoms — press F twice to re-embed")
+              : tr("t-SNE lasso: the selected spikes are no longer in the embedded "
+                   "clusters — press F twice to re-embed"), 5000);
         tsneSelectionPolygon.clear();
         drawContentsMode = REFRESH;
         update();
@@ -420,8 +456,11 @@ void ClusterView::applyTsneLasso(){
     update();
 
     if (statusBar) statusBar->showMessage(
-        tr("t-SNE lasso: %1 spikes from %2 cluster(s) applied")
-            .arg(nSelected).arg(sources.size()), 6000);
+        tsneChildLayer
+          ? tr("t-SNE lasso: %1 spikes from %2 atom(s) applied")
+                .arg(nSelected).arg(sources.size())
+          : tr("t-SNE lasso: %1 spikes from %2 cluster(s) applied")
+                .arg(nSelected).arg(sources.size()), 6000);
 }
 
 void ClusterView::paintTsne(QPainter& painter){
@@ -450,7 +489,11 @@ void ClusterView::paintTsne(QPainter& painter){
     }
     painter.setPen(palette().color(QPalette::WindowText));
     painter.drawText(vp.left() + 8, vp.top() + 18,
-        tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   (↑/↓ perplexity — F returns to features)")
+        (tsneChildLayer
+           ? tr("t-SNE  —  %1 spikes, %2 atom(s) of the child layer, perplexity %3   "
+                "(↑/↓ perplexity — F returns to features)")
+           : tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   "
+                "(↑/↓ perplexity — F returns to features)"))
             .arg(tsneSpikeCount).arg(tsneClusterCount).arg(tsnePerplexity, 0, 'f', 0));
 }
 

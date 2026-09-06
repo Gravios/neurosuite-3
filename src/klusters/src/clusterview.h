@@ -400,6 +400,11 @@ private:
     QPolygon             tsneSelectionPolygon;    ///< lasso, VIEWPORT pixels
     QPoint               tsneCursorPos;           ///< rubber-line end point
     bool                 tsneApplyingLasso = false; ///< suppress our own drop
+    /// Which layer the embedding names: false = parent clusters, true = child
+    /// atoms.  Recorded at gather time because the two id spaces are disjoint
+    /// in meaning -- relabelling or cutting with the other layer's ids would
+    /// silently address unrelated spikes.
+    bool                 tsneChildLayer = false;
     int                  tsneSpikeCount = 0;
     int                  tsneClusterCount = 0;
     double               tsnePerplexity = 30.0;
