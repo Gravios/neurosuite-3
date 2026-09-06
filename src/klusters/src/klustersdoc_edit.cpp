@@ -649,11 +649,62 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
     QList <int> emptyClusters;
     QList<int> clustersToShow(clustersOfOrigin);
 
+    // ── Child scope: translate the request into the parent layer ──────────
+    // This is a PARENT-layer edit by design -- the reserve bins, the colours,
+    // the palette and the undo below are all the parent clustering's, and the
+    // atom layer follows through repairNesting().  But clustersOfOrigin holds
+    // ATOM ids while the child palette is driving, and they were handed
+    // straight to a scan of clusteringData: the scan then walked whichever
+    // PARENT clusters happened to carry those numbers.  Two id spaces, one
+    // call, no error -- the user's spikes mostly went untouched while
+    // unrelated parents were cut.  (createNewCluster, three functions away,
+    // routes through data() and has a child branch; this one never did.)
+    //
+    // Resolve the request into the exact spikes instead: rows that are in the
+    // shown atoms AND in the selection, named by row so the parent scan
+    // cannot over-capture.  Translating the atoms to their parents and
+    // scanning those would ALSO cut spikes of the same parent that belong to
+    // atoms the user cannot see, which is not what was drawn.
+    QList<int> originClusters(clustersOfOrigin);
+    SpikeSelection effectiveSelection(selection);
+    if (childScopeActive && childData) {
+        const QVector<dataType> atomByRow   = childData->labelByFeatureRow();
+        const QVector<dataType> parentByRow = clusteringData->labelByFeatureRow();
+        const QSet<int> shownAtoms(clustersOfOrigin.begin(), clustersOfOrigin.end());
+        const int n = qMin(atomByRow.size(), parentByRow.size());
+        QSet<dataType> rows;
+        QList<int> parents;
+        for (dataType r = 1; r < n; ++r) {
+            if (!shownAtoms.contains(static_cast<int>(atomByRow.at(static_cast<int>(r)))))
+                continue;
+            // Features are the same table in both layers; ask the parent
+            // layer so the test matches the scan that follows.
+            if (!clusteringData->selectionContains(selection, r))
+                continue;
+            rows.insert(r);
+            const int p = static_cast<int>(parentByRow.at(static_cast<int>(r)));
+            if (!parents.contains(p))
+                parents.append(p);
+        }
+        if (rows.isEmpty()) {
+            // Nothing of the shown atoms was inside the selection.  Report it
+            // exactly as the parent path does, and still close the log action.
+            if (KlustersView* av = app()->activeView()) {
+                av->selectionIsEmpty();
+                av->showAllWidgets();
+            }
+            logAfter(QList<int>{ destination });
+            return;
+        }
+        effectiveSelection = SpikeSelection(rows);
+        originClusters     = parents;
+    }
+
         // Quiesce background view threads before mutating Data, so a view/matrix
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
         for (KlustersView* view : *viewList)
             view->stopAllViewThreads();
-    clusteringData->deleteSpikesFromClusters(selection,clustersOfOrigin,destination,fromClusters,emptyClusters);
+    clusteringData->deleteSpikesFromClusters(effectiveSelection,originClusters,destination,fromClusters,emptyClusters);
 
     //Get the active view.
     KlustersView* activeView = app()->activeView();
@@ -692,7 +743,11 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
             QList<int>::iterator clustersToRemove;
             for (clustersToRemove = emptyClusters.begin(); clustersToRemove != emptyClusters.end(); ++clustersToRemove ){
                 clusterColorList->remove(*clustersToRemove);
-                clustersToShow.removeAll(*clustersToRemove);
+                // emptyClusters are PARENT ids.  In child scope clustersToShow
+                // holds atom ids, so removing by value there would drop
+                // whichever atom happens to share an emptied parent's number.
+                if (!childScopeActive)
+                    clustersToShow.removeAll(*clustersToRemove);
             }
         }
 
