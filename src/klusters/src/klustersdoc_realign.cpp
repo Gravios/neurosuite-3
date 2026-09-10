@@ -577,7 +577,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     const int nExtraFeats = (pca.valid() && nPcaFeats < nFeatCols)
                             ? (nFeatCols - nPcaFeats) : 0;
 
-    // ── Refuse to realign when features cannot be reprojected ────────────
+    // ── Refuse to realign only when features CANNOT be reprojected ───────
     // The commit loop below writes rec.fetRow to the pending .fet AND into
     // the in-memory feature table for every spike, unconditionally.  With no
     // usable basis, makeFetRow returns fixed-size ZERO-FILLED rows (it cannot
@@ -586,10 +586,25 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // .spk/.res and silently zeroed the cluster's features on disk and on
     // screen.  And realigning without reprojection is not well-defined anyway
     // -- the features would keep pointing at the pre-shift positions (the
-    // nudge refuses for exactly this reason).  Refuse loudly on BOTH leaves:
-    // a basis that failed to load, and a basis whose channel count cannot
-    // project this group's waveforms (the makeFetRow canProject test, hoisted
-    // here so it fails the run instead of silently zeroing rows).
+    // nudge refuses for exactly this reason).
+    //
+    // WIDTH RULE, corrected: the projectable condition is that the basis is no
+    // WIDER than the group, not that it has some exact width.  The earlier
+    // version of this guard demanded nCh == nChan-1 for every stderiv feature
+    // space and nCh == nChan otherwise -- a local re-derivation of the
+    // pipeline's channel-drop rule, and a wrong one.  SDIFF_PASS drops the
+    // last channel for orders 1, 3, 4 and 5 but NOT for order 2, and ndm_pca's
+    // dropLastChannel (-k) suppresses the drop entirely, so a perfectly good
+    // stderiv basis can be nChan wide; a standard basis fitted with a drop can
+    // be nChan-1.  Both project fine: wavBuf is allocated at full nChan width
+    // and makeFetRow reads channel rows below pca.nCh, which is exactly what
+    // the refine path already assumes with chForPca = min(pca.nCh, nChan).
+    // Demanding the exact width turned working sessions into hard refusals --
+    // the reported break of both manual and automatic realign -- so the guard
+    // now refuses only a basis that is missing, empty, or wider than the group
+    // (which really cannot be projected), and records a narrower one instead
+    // of rejecting it.  The drop is the pipeline's decision, recorded in the
+    // artifacts; Klusters reads it off them rather than re-deriving it.
     if (!pca.valid()) {
         log << "ERROR: PCA basis unavailable (" << pcaPath
             << ") — refusing to realign cluster " << clusterId
@@ -598,16 +613,23 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         emitFlush();
         return false;
     }
-    if (isStderivRealign ? (pca.nCh != nChan - 1) : (pca.nCh != nChan)) {
-        log << "ERROR: PCA basis channel count mismatch (basis nCh="
-            << pca.nCh << ", group nChan=" << nChan
-            << (isStderivRealign ? ", stderiv expects nChan-1"
-                                 : ", raw expects nChan")
-            << ") — refusing to realign cluster " << clusterId
-            << ": this basis cannot project these waveforms.\n";
+    if (pca.nCh <= 0 || pca.nCh > nChan) {
+        log << "ERROR: PCA basis is " << pca.nCh << " channels wide but group "
+            << grpId << " has only " << nChan
+            << " — refusing to realign cluster " << clusterId
+            << ": this basis cannot project these waveforms (wrong group's"
+               " basis, or a truncated .pca).\n";
         emitFlush();
         return false;
     }
+    else if (pca.nCh < nChan)
+        log << "PCA: " << pca.nCh << "ch x " << pca.nComp
+            << "comp  recShift=" << pca.recShift
+            << (pca.centered ? " centered" : "")
+            << "  extraFeats=" << nExtraFeats
+            << "   (basis is " << (nChan - pca.nCh)
+            << " channel(s) narrower than the group — the pipeline's channel"
+               " drop; remaining .fet columns are carried through verbatim)\n";
     else
         log << "PCA: " << pca.nCh << "ch x " << pca.nComp
             << "comp  recShift=" << pca.recShift
@@ -1702,8 +1724,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         // dependent and excluded); for raw sessions pca.nCh = nChan.
         // Either way, project wav[ch * nSamp + recShift + j2] directly —
         // no second stderiv transform needed.
-        const bool canProject = pca.valid() &&
-            (isStderivRealign ? (pca.nCh == nChan - 1) : (pca.nCh == nChan));
+        // Same width rule as the refusal above: any basis no wider than the
+        // group projects.  These two tests MUST agree -- a stricter test here
+        // silently zero-fills rows the guard has already admitted, which is
+        // the failure mode the guard exists to prevent.
+        const bool canProject = pca.valid() && pca.nCh > 0 && pca.nCh <= nChan;
 
         if (canProject) {
             int outCol = 0;
