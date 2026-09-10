@@ -1183,6 +1183,10 @@ void KlustersApp::createMenus()
                 // A zero-timer puts it after the current event-loop turn, by which
                 // point the docks exist and updateErrorMatrix() reaches them.
                 QTimer::singleShot(0, this, [this]{
+                    // slotUpdateErrorMatrix refreshes the whole curation group
+                    // -- error, template, residual and drift -- so all four
+                    // switch views together; each is a no-op with its dock
+                    // closed.
                     if (activeView()) slotUpdateErrorMatrix();
                 });
             });
@@ -2111,6 +2115,8 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_V && ke->modifiers() == Qt::NoModifier
            && doc && !focusIsInTextInput()){
+            // V is the only way INTO child view; every automatic exit below
+            // clears the flag, so this always re-arms deliberately.
             const bool on = !doc->matrixScopeEnabled();
             doc->setMatrixScopeEnabled(on);
             if (on && !doc->matrixScopeActive())
@@ -3975,8 +3981,32 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
         // The parent moves when the user picks a DIFFERENT one, or when it ceases
         // to exist and the delete cascade points it at the neighbour.  Nothing
         // else, which is what "the mode should be independent of action" means.
-        if(doc && !selectedClusters.isEmpty())
-            doc->setCuratedParent(selectedClusters.first());
+        if(doc && !selectedClusters.isEmpty()){
+            // Child view is ONE parent's children being compared with each
+            // other.  Two selections make that meaningless, and so does moving
+            // to a different parent mid-curation: in both cases the curation
+            // matrices fall back to the parent view (all parent clusters), and
+            // V has to be pressed again to re-enter child view.  Leaving the
+            // mode armed would silently re-scope to whatever parent happened
+            // to be first, which is how a comparison of the wrong unit's atoms
+            // reaches the screen looking entirely plausible.
+            const bool multipleParents = (selectedClusters.size() > 1);
+            const bool parentMoved     = (doc->curatedParent() >= 0 &&
+                                          doc->curatedParent() != selectedClusters.first());
+            if(doc->matrixScopeEnabled() && (multipleParents || parentMoved)){
+                doc->setMatrixScopeEnabled(false);
+                statusBar()->showMessage(
+                    multipleParents
+                      ? tr("Curation matrices: parent view (more than one parent selected) — V for child view.")
+                      : tr("Curation matrices: parent view (curated parent changed) — V for child view."),
+                    4000);
+            }
+            // With several parents selected there is no single curated parent;
+            // keep the previous one rather than adopting the first, so pressing
+            // V after narrowing back to one selection is unambiguous.
+            if(!multipleParents)
+                doc->setCuratedParent(selectedClusters.first());
+        }
         repopulateChildPalette(selectedClusters);
     }
 }

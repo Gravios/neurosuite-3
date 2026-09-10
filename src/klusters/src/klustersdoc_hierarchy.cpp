@@ -534,9 +534,15 @@ void KlustersDoc::addFromMatrix(const QList<int>& ids)
 
 Data& KlustersDoc::matrixData() const
 {
-    // The atom layer when a scope is in force, whatever the rest of the app is
-    // currently showing.  See the header for why data() is the wrong answer here.
-    return matrixScopeActive() ? *childData : data();
+    // The atom layer when a scope is in force; otherwise the PARENT layer --
+    // never data().  See the header for why data() is the wrong answer when a
+    // scope IS active; it is equally wrong when one is not.  data() follows the
+    // child palette's selection, so leaving child view with children still
+    // selected returned childData with no scope, and an unscoped matrix over
+    // the child layer compares EVERY ATOM in the session.  That is the reported
+    // "switching back computes all clusters": parent view means the parent
+    // clusters, so it must name clusteringData explicitly.
+    return matrixScopeActive() ? *childData : *clusteringData;
 }
 
 
