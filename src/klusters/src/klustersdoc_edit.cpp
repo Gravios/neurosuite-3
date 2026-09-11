@@ -1028,6 +1028,68 @@ void KlustersDoc::commitTwoClusterCreation(int leftId,
 }
 
 
+int KlustersDoc::partitionClusterByTime(int clusterId, double blockSeconds)
+{
+    Data& d = data();                       // active layer: a parent or an atom
+    const double fs = d.getSamplingRate();  // Hz
+    if (blockSeconds <= 0.0 || fs <= 0.0)
+        return 0;
+
+    // Blocks are anchored at the session ORIGIN, not at the cluster's first
+    // spike: block k spans k*L up to but excluding k+1 times L in recording
+    // units, so the same
+    // boundaries fall on every cluster and the pieces of two clusters line up
+    // in time.  Anchoring on the first spike would make each cluster's grid
+    // its own and the pieces incomparable, which is the opposite of what a
+    // drift-tracking partition is for.
+    const long blockSamples = static_cast<long>(llround(blockSeconds * fs));
+    if (blockSamples < 1)
+        return 0;
+
+    SortableTable spikes;
+    if (!d.spikePositions(clusterId, spikes))
+        return 0;
+    const int timeDim = d.timeDimension();
+
+    // Collect every occupied block first.  The edits below can renumber
+    // clusters (the post-edit cycle) but never move a spike to a different
+    // FEATURE ROW, so a row set computed here stays valid across them while a
+    // cluster id would not.
+    QMap<long, QSet<dataType>> blocks;       // block index -> feature rows
+    const dataType n = spikes.nbOfColumns();
+    for (dataType i = 1; i <= n; ++i) {
+        const dataType row = spikes(1, i);
+        const long t = static_cast<long>(d.featureValue(row, timeDim));
+        blocks[t / blockSamples].insert(row);
+    }
+    if (blocks.size() < 2)
+        return 0;                            // one block or none: nothing to cut
+
+    // The earliest occupied block stays in the original cluster; every later
+    // one is carved off in chronological order, so the original keeps the
+    // identity a curator has already been working with.
+    int created = 0;
+    QMap<long, QSet<dataType>>::const_iterator it = blocks.constBegin();
+    ++it;                                    // skip the earliest block
+    for (; it != blocks.constEnd(); ++it) {
+        if (it.value().isEmpty())
+            continue;
+        // Re-read the source id from the layer for each block rather than
+        // trusting clusterId: an auto-renumber between blocks renames
+        // clusters, and a stale id makes the builder scan the wrong cluster
+        // and silently drop the whole block.
+        const QVector<dataType> labelByRow = d.labelByFeatureRow();
+        const dataType probe = *it.value().constBegin();
+        if (probe <= 0 || probe >= labelByRow.size())
+            continue;
+        const int source = static_cast<int>(labelByRow.at(static_cast<int>(probe)));
+        createNewCluster(SpikeSelection(it.value(), QStringLiteral("time_partition")),
+                         QList<int>{ source });
+        ++created;
+    }
+    return created;
+}
+
 void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
     //list which will contain the clusters really having spikes in the region of selection.
     QList <int> fromClusters;
@@ -1148,9 +1210,7 @@ void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList 
             // feature-space polygon, and a reader of the log must be able to
             // tell them apart.  The projection fields carry -1 there because
             // the embedding's axes are not feature dimensions.
-            details.insert(QStringLiteral("algorithm"),
-                           selection.byRows() ? QStringLiteral("manual_lasso_tsne")
-                                              : QStringLiteral("manual_polygon"));
+            details.insert(QStringLiteral("algorithm"), selection.algorithm());
             details.insert(QStringLiteral("status"),        QStringLiteral("accepted"));
             details.insert(QStringLiteral("source_cluster"),
                            fromClusters.size() == 1 ? fromClusters.first() : -1);
@@ -1305,8 +1365,7 @@ void KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList
                                  + QString::number(it.value()));
                 QMap<QString, QVariant> details;
                 details.insert(QStringLiteral("algorithm"),
-                               selection.byRows() ? QStringLiteral("manual_lasso_tsne_n")
-                                                  : QStringLiteral("manual_polygon_n"));
+                               selection.algorithm() + QStringLiteral("_n"));
                 details.insert(QStringLiteral("status"),          QStringLiteral("accepted"));
                 details.insert(QStringLiteral("source_clusters"), srcList.join(QLatin1Char(',')));
                 details.insert(QStringLiteral("n_source_clusters"), static_cast<int>(fromClusters.size()));

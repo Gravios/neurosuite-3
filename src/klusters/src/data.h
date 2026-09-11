@@ -61,8 +61,13 @@ class SpikeSelection {
 public:
     SpikeSelection(const QRegion& region,int dimensionX,int dimensionY)
         : region_(region),dimX_(dimensionX),dimY_(dimensionY),byRows_(false){}
-    explicit SpikeSelection(const QSet<dataType>& featureRows)
-        : rows_(featureRows),byRows_(true){}
+    /**Row-named selection.  @p algorithm is what the curation log will record;
+  * the default names the gesture that introduced row-naming (the embedding's
+  * lasso), and other row-named gestures pass their own so a reader can tell a
+  * hand-drawn cut from a mechanical one.*/
+    explicit SpikeSelection(const QSet<dataType>& featureRows,
+                            const QString& algorithm = QStringLiteral("manual_lasso_tsne"))
+        : rows_(featureRows),algorithm_(algorithm),byRows_(true){}
 
     bool byRows() const {return byRows_;}
     bool isEmpty() const {return byRows_ ? rows_.isEmpty() : region_.isEmpty();}
@@ -71,9 +76,15 @@ public:
     int dimensionX() const {return dimX_;}
     int dimensionY() const {return dimY_;}
 
+    /**What produced this selection, for the curation log.*/
+    QString algorithm() const {
+        return byRows_ ? algorithm_ : QStringLiteral("manual_polygon");
+    }
+
 private:
     QRegion region_;
     QSet<dataType> rows_;
+    QString algorithm_;
     int dimX_ = 0;
     int dimY_ = 0;
     bool byRows_;

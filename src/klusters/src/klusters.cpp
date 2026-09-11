@@ -662,6 +662,15 @@ void KlustersApp::createMenus()
                                    "update .res/.spk/.fet files, and swap ordering if needed."));
     connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
 
+    mPartitionByTime = actionMenu->addAction(tr("Partition Cluster by &Time…"));
+    mPartitionByTime->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_T));
+    mPartitionByTime->setToolTip(tr(
+        "Cut the selected cluster into consecutive blocks of recording time.\n"
+        "Blocks start at the origin of the session, so the boundaries are the "
+        "same for every cluster and the pieces line up in time.\n"
+        "Works on a parent or, in child view, on an atom."));
+    connect(mPartitionByTime, &QAction::triggered, this, &KlustersApp::slotPartitionClusterByTime);
+
     mPcaAlignAllClusters = actionMenu->addAction(tr("&PCA-Center Align All Clusters (top-N ch)"));
     mPcaAlignAllClusters->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
     mPcaAlignAllClusters->setToolTip(tr(
@@ -4012,6 +4021,58 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
 }
 
 
+void KlustersApp::slotPartitionClusterByTime(){
+    if(!doc || !activeView())
+        return;
+
+    // The cluster the user is on, in whichever layer is driving: in child view
+    // the shown list holds atom ids and doc.data() is the child clustering, so
+    // the same call partitions an atom.  Reserve bins are excluded -- cutting
+    // noise or artefact into time blocks has no curation meaning.
+    const QList<int>& shown = activeView()->clusters();
+    int clusterId = -1;
+    for(int c : shown){
+        if(c > 1){ clusterId = c; break; }
+    }
+    if(clusterId < 0){
+        statusBar()->showMessage(
+            tr("Partition by time: select a cluster (> 1) in the active display first."), 4000);
+        return;
+    }
+
+    const double fs = doc->data().getSamplingRate();
+    if(fs <= 0.0){
+        statusBar()->showMessage(
+            tr("Partition by time: the session has no sampling rate, so block lengths "
+               "cannot be converted to samples."), 5000);
+        return;
+    }
+    const double sessionMinutes =
+        static_cast<double>(doc->data().maxTimeInRecordingUnits()) / (fs * 60.0);
+
+    bool ok = false;
+    const double minutes = QInputDialog::getDouble(
+        this, tr("Partition Cluster by Time"),
+        tr("Block length (minutes).  Blocks start at the origin of the session;\n"
+           "the recording is %1 minutes long.").arg(sessionMinutes, 0, 'f', 1),
+        10.0, 0.01, 100000.0, 2, &ok);
+    if(!ok)
+        return;
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    const int created = doc->partitionClusterByTime(clusterId, minutes * 60.0);
+    QApplication::restoreOverrideCursor();
+
+    if(created == 0)
+        statusBar()->showMessage(
+            tr("Partition by time: cluster %1 lies within a single %2-minute block — nothing to cut.")
+                .arg(clusterId).arg(minutes), 5000);
+    else
+        statusBar()->showMessage(
+            tr("Partition by time: cluster %1 cut into %2 blocks of %3 minutes (%4 new clusters).")
+                .arg(clusterId).arg(created + 1).arg(minutes).arg(created), 6000);
+}
+
 void KlustersApp::slotChunkModeToggled(bool on){
     // No `if (!doc)` guard here: doc is created in the constructor and destroyed
     // in the destructor, never nulled, so that test can never be true.  It read
@@ -5809,6 +5870,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"Ctrl+\u2191",        "New parent from selected children"},
             {"Ctrl+\u2193",        "Group selected parent parents"},
             {"Ctrl+Shift+\u2193",  "Dissolve selected parent into its children"},
+            {"Shift+T",        "Partition the selected cluster into time blocks from the session origin"},
             {"Shift+N",        "Repair nesting (re-cut atoms onto parents)"},
             {"Ctrl+Shift+Z / Ctrl+Shift+Y", "Undo / redo atom (child-layer) edit"},
         }},
