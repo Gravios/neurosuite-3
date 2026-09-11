@@ -1039,6 +1039,13 @@ public:
     /**How many clusters currently have a template, and how many exist.*/
     int clusterTemplateCount() const { return clusterTemplates.size(); }
 
+    /**Whether this clustering contains @p clusterId at all.  Distinct from a
+     * zero spike count: the reserve bins legitimately sit empty.*/
+    bool hasCluster(int clusterId) const {
+        return clusterInfoMap
+            && clusterInfoMap->contains(static_cast<dataType>(clusterId));
+    }
+
     /**Spike count of one cluster, 0 when it does not exist.  Exposed so callers
      * that only need a size do not have to reach into clusterInfoMap, which is
      * a different thing from being allowed to walk the cluster tables.*/

@@ -227,6 +227,27 @@ public:
      *  the reference is always valid; the child palette is empty in that state. */
     Data& childClusterData() const {return *(childData ? childData : clusteringData);}
 
+    /**Diagnostic: do @p ids name clusters that exist in @p layer?
+     *
+     * Parent ids and child (atom) ids are different NAMESPACES, not different
+     * values of one.  An operation handed ids from one and pointed at the
+     * other edits unrelated spikes and reports success -- there is no error
+     * to catch, which is why the child-scope region delete went unnoticed for
+     * so long, and why matrixData()'s fallback silently compared every atom in
+     * the session.  Reading the code cannot distinguish the two cases; asking
+     * the layer can.
+     *
+     * Diagnostic ONLY: it warns on qWarning and returns false, and no caller
+     * changes behaviour on the result.  Refusing would be the stronger
+     * guarantee, but the flows have not been exercised against real sessions
+     * yet, and a guard that turns a suspicion into a refused edit is worse
+     * than one that leaves a trail.  Promote to a refusal once the log stays
+     * silent through a curation session.
+     *
+     * @param where  caller name, so the warning names the operation.*/
+    bool idsBelongTo(const Data& layer, const QList<int>& ids,
+                     const char* where) const;
+
     /**Manages the color change of a single cluster.
     * Called when the palette is in immediate-update mode (no need to press
     * the Update button to trigger the change).

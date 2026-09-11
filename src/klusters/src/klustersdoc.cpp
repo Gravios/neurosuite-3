@@ -156,6 +156,35 @@ KlustersDoc::~KlustersDoc(){
     }
 }
 
+bool KlustersDoc::idsBelongTo(const Data& layer, const QList<int>& ids,
+                              const char* where) const
+{
+    QList<int> strangers;
+    for (int id : ids)
+        if (!layer.hasCluster(id))
+            strangers.append(id);
+    if (strangers.isEmpty())
+        return true;
+
+    // Name which layer was asked: "does not exist" reads very differently
+    // depending on whether the caller meant parents or atoms.
+    const char* layerName = (&layer == clusteringData) ? "parent"
+                          : (childData && &layer == childData) ? "child"
+                          : "unknown";
+    QStringList shown;
+    for (int i = 0; i < strangers.size() && i < 8; ++i)
+        shown << QString::number(strangers.at(i));
+    // qsizetype, not int: %d against a 64-bit size is undefined and prints
+    // whatever happens to sit in the register.
+    qWarning("%s: %d of %d cluster id(s) do not exist in the %s clustering (%s%s)"
+             " - check the layer this operation names",
+             where, static_cast<int>(strangers.size()),
+             static_cast<int>(ids.size()), layerName,
+             qPrintable(shown.join(QStringLiteral(", "))),
+             strangers.size() > shown.size() ? ", ..." : "");
+    return false;
+}
+
 void KlustersDoc::addView(KlustersView *view)
 {
     viewList->append(view);
