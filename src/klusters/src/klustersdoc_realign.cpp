@@ -330,6 +330,145 @@ static void realignRmsRecenter(std::vector<int16_t>& wavBuf,
     }
 }
 
+namespace {
+// Nothing here is shared-library surface: loadPca and the PcaBasis type keep
+// their contracts untouched.  This is the same code, lifted out of a
+// 1800-line function so that the ONE rule it exists to state -- which bases
+// can project this group's waveforms -- has a single home.  It had two, and
+// they disagreed: the guard demanded an exact channel width while makeFetRow
+// tested something else, which is how valid sessions came to be refused.
+}   // namespace
+
+KlustersDoc::RealignBasis KlustersDoc::resolveRealignBasis(
+        const QString& pcaPath, const QString& pcaDPath, bool isStderivRealign,
+        const QString& grpId, int clusterId, int nChan, int nSamp, int nFeatCols,
+        QTextStream& log, const std::function<void()>& emitFlush)
+{
+    RealignBasis out;
+    PcaBasis& pca = out.basis;
+    const int& nFeatColsRef = nFeatCols;   // named to keep the lines below verbatim
+    (void)nFeatColsRef;
+
+    // -----------------------------------------------------------------------
+
+    const QFileInfo _pcaFi(pcaPath);
+    const bool      _pcaExists = _pcaFi.exists();
+    const qint64    _pcaMtime  = _pcaExists
+        ? _pcaFi.lastModified().toMSecsSinceEpoch() : -1;
+
+    if (isStderivRealign && !QFileInfo::exists(pcaDPath))
+        log << "WARNING: stderiv PCA basis (.pca.stderiv/.pcaD) for group "
+            << grpId << " not found — run ndm_pca_stderiv to generate it.\n";
+
+    if (_pcaExists && realignPcaCache.valid()
+        && realignPcaCachePath == pcaPath
+        && realignPcaCacheMtime == _pcaMtime) {
+        // Cache hit — reuse the basis loaded for an earlier cluster in the batch.
+        pca = realignPcaCache;
+        log << "PCA file: " << pcaPath << " [cached]\n";
+        emitFlush();
+    } else {
+        log << "PCA file: " << pcaPath
+            << (_pcaExists ? " [found]" : " [NOT FOUND]") << "\n";
+        emitFlush();
+        if (_pcaExists) {
+            // PCAE loader (libneurosuite-core): validates magic/version, reads the
+            // block-wise body, and populates pca.method/nInputChannels.  core
+            // already rejects bad magic / version / short reads and guarantees
+            // nCh,data2use,nComp > 0; klusters keeps its upper-bound sanity checks
+            // (and the original log lines) against an absurd-but-valid header.  The
+            // channel bound is the group's own channel count (nChan) rather than a
+            // fixed cap, so high-density probes (Neuropixels-class, nChan > 64) are
+            // not spuriously rejected; a valid per-group basis has nCh == nChan
+            // (raw) or nChan-1 (stderiv), never more.
+            if (!neurosuite::core::loadPca(pcaPath.toStdString(), pca)) {
+                pca = PcaBasis{};
+            } else if (pca.nCh > nChan || pca.data2use > 4096 || pca.nComp > 64 ||
+                       pca.recShift < 0 || pca.recShift + pca.data2use > nSamp) {
+                log << "WARNING: .pca header out of range (nCh="
+                    << pca.nCh << " nChan=" << nChan
+                    << " data2use=" << pca.data2use
+                    << " nComp=" << pca.nComp << " recShift="
+                    << pca.recShift << ") — ignoring .pca file\n";
+                pca = PcaBasis{};
+            }
+        }
+        if (pca.valid()) {
+            // Loaded fresh from disk — cache for the rest of the batch so the
+            // next cluster reuses it instead of re-reading the basis file.
+            realignPcaCache      = pca;
+            realignPcaCachePath  = pcaPath;
+            realignPcaCacheMtime = _pcaMtime;
+        }
+    }
+
+    out.nPcaFeats   = pca.valid() ? (pca.nCh * pca.nComp) : 0;
+    out.nExtraFeats = (pca.valid() && out.nPcaFeats < nFeatCols)
+                            ? (nFeatCols - out.nPcaFeats) : 0;
+
+    // ── Refuse to realign only when features CANNOT be reprojected ───────
+    // The commit loop below writes rec.fetRow to the pending .fet AND into
+    // the in-memory feature table for every spike, unconditionally.  With no
+    // usable basis, makeFetRow returns fixed-size ZERO-FILLED rows (it cannot
+    // project without eigenvectors), so the old "WARNING: features will not
+    // be recomputed" leaf did something much worse than its words: it shifted
+    // .spk/.res and silently zeroed the cluster's features on disk and on
+    // screen.  And realigning without reprojection is not well-defined anyway
+    // -- the features would keep pointing at the pre-shift positions (the
+    // nudge refuses for exactly this reason).
+    //
+    // WIDTH RULE, corrected: the projectable condition is that the basis is no
+    // WIDER than the group, not that it has some exact width.  The earlier
+    // version of this guard demanded nCh == nChan-1 for every stderiv feature
+    // space and nCh == nChan otherwise -- a local re-derivation of the
+    // pipeline's channel-drop rule, and a wrong one.  SDIFF_PASS drops the
+    // last channel for orders 1, 3, 4 and 5 but NOT for order 2, and ndm_pca's
+    // dropLastChannel (-k) suppresses the drop entirely, so a perfectly good
+    // stderiv basis can be nChan wide; a standard basis fitted with a drop can
+    // be nChan-1.  Both project fine: wavBuf is allocated at full nChan width
+    // and makeFetRow reads channel rows below pca.nCh, which is exactly what
+    // the refine path already assumes with chForPca = min(pca.nCh, nChan).
+    // Demanding the exact width turned working sessions into hard refusals --
+    // the reported break of both manual and automatic realign -- so the guard
+    // now refuses only a basis that is missing, empty, or wider than the group
+    // (which really cannot be projected), and records a narrower one instead
+    // of rejecting it.  The drop is the pipeline's decision, recorded in the
+    // artifacts; Klusters reads it off them rather than re-deriving it.
+    if (!pca.valid()) {
+        log << "ERROR: PCA basis unavailable (" << pcaPath
+            << ") — refusing to realign cluster " << clusterId
+            << ": features cannot be reprojected, and proceeding would zero"
+               " its .fet rows.  Run ndm_pca for this method first.\n";
+        emitFlush();
+        return out;
+    }
+    if (pca.nCh <= 0 || pca.nCh > nChan) {
+        log << "ERROR: PCA basis is " << pca.nCh << " channels wide but group "
+            << grpId << " has only " << nChan
+            << " — refusing to realign cluster " << clusterId
+            << ": this basis cannot project these waveforms (wrong group's"
+               " basis, or a truncated .pca).\n";
+        emitFlush();
+        return out;
+    }
+    else if (pca.nCh < nChan)
+        log << "PCA: " << pca.nCh << "ch x " << pca.nComp
+            << "comp  recShift=" << pca.recShift
+            << (pca.centered ? " centered" : "")
+            << "  extraFeats=" << out.nExtraFeats
+            << "   (basis is " << (nChan - pca.nCh)
+            << " channel(s) narrower than the group — the pipeline's channel"
+               " drop; remaining .fet columns are carried through verbatim)\n";
+    else
+        log << "PCA: " << pca.nCh << "ch x " << pca.nComp
+            << "comp  recShift=" << pca.recShift
+            << (pca.centered ? " centered" : "")
+            << "  extraFeats=" << out.nExtraFeats << "\n";
+    emitFlush();
+    out.usable = true;
+    return out;
+}
+
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
@@ -520,122 +659,22 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // -----------------------------------------------------------------------
     // Load PCA eigenvectors (per-channel basis)
     // -----------------------------------------------------------------------
-    PcaBasis pca;   // type defined in klustersdoc.h (member-cached below)
-
-    const QFileInfo _pcaFi(pcaPath);
-    const bool      _pcaExists = _pcaFi.exists();
-    const qint64    _pcaMtime  = _pcaExists
-        ? _pcaFi.lastModified().toMSecsSinceEpoch() : -1;
-
-    if (isStderivRealign && !QFileInfo::exists(pcaDPath_ra))
-        log << "WARNING: stderiv PCA basis (.pca.stderiv/.pcaD) for group "
-            << grpId << " not found — run ndm_pca_stderiv to generate it.\n";
-
-    if (_pcaExists && realignPcaCache.valid()
-        && realignPcaCachePath == pcaPath
-        && realignPcaCacheMtime == _pcaMtime) {
-        // Cache hit — reuse the basis loaded for an earlier cluster in the batch.
-        pca = realignPcaCache;
-        log << "PCA file: " << pcaPath << " [cached]\n";
-        emitFlush();
-    } else {
-        log << "PCA file: " << pcaPath
-            << (_pcaExists ? " [found]" : " [NOT FOUND]") << "\n";
-        emitFlush();
-        if (_pcaExists) {
-            // PCAE loader (libneurosuite-core): validates magic/version, reads the
-            // block-wise body, and populates pca.method/nInputChannels.  core
-            // already rejects bad magic / version / short reads and guarantees
-            // nCh,data2use,nComp > 0; klusters keeps its upper-bound sanity checks
-            // (and the original log lines) against an absurd-but-valid header.  The
-            // channel bound is the group's own channel count (nChan) rather than a
-            // fixed cap, so high-density probes (Neuropixels-class, nChan > 64) are
-            // not spuriously rejected; a valid per-group basis has nCh == nChan
-            // (raw) or nChan-1 (stderiv), never more.
-            if (!neurosuite::core::loadPca(pcaPath.toStdString(), pca)) {
-                pca = PcaBasis{};
-            } else if (pca.nCh > nChan || pca.data2use > 4096 || pca.nComp > 64 ||
-                       pca.recShift < 0 || pca.recShift + pca.data2use > nSamp) {
-                log << "WARNING: .pca header out of range (nCh="
-                    << pca.nCh << " nChan=" << nChan
-                    << " data2use=" << pca.data2use
-                    << " nComp=" << pca.nComp << " recShift="
-                    << pca.recShift << ") — ignoring .pca file\n";
-                pca = PcaBasis{};
-            }
-        }
-        if (pca.valid()) {
-            // Loaded fresh from disk — cache for the rest of the batch so the
-            // next cluster reuses it instead of re-reading the basis file.
-            realignPcaCache      = pca;
-            realignPcaCachePath  = pcaPath;
-            realignPcaCacheMtime = _pcaMtime;
-        }
-    }
-
-    const int nPcaFeats   = pca.valid() ? (pca.nCh * pca.nComp) : 0;
-    const int nExtraFeats = (pca.valid() && nPcaFeats < nFeatCols)
-                            ? (nFeatCols - nPcaFeats) : 0;
-
-    // ── Refuse to realign only when features CANNOT be reprojected ───────
-    // The commit loop below writes rec.fetRow to the pending .fet AND into
-    // the in-memory feature table for every spike, unconditionally.  With no
-    // usable basis, makeFetRow returns fixed-size ZERO-FILLED rows (it cannot
-    // project without eigenvectors), so the old "WARNING: features will not
-    // be recomputed" leaf did something much worse than its words: it shifted
-    // .spk/.res and silently zeroed the cluster's features on disk and on
-    // screen.  And realigning without reprojection is not well-defined anyway
-    // -- the features would keep pointing at the pre-shift positions (the
-    // nudge refuses for exactly this reason).
-    //
-    // WIDTH RULE, corrected: the projectable condition is that the basis is no
-    // WIDER than the group, not that it has some exact width.  The earlier
-    // version of this guard demanded nCh == nChan-1 for every stderiv feature
-    // space and nCh == nChan otherwise -- a local re-derivation of the
-    // pipeline's channel-drop rule, and a wrong one.  SDIFF_PASS drops the
-    // last channel for orders 1, 3, 4 and 5 but NOT for order 2, and ndm_pca's
-    // dropLastChannel (-k) suppresses the drop entirely, so a perfectly good
-    // stderiv basis can be nChan wide; a standard basis fitted with a drop can
-    // be nChan-1.  Both project fine: wavBuf is allocated at full nChan width
-    // and makeFetRow reads channel rows below pca.nCh, which is exactly what
-    // the refine path already assumes with chForPca = min(pca.nCh, nChan).
-    // Demanding the exact width turned working sessions into hard refusals --
-    // the reported break of both manual and automatic realign -- so the guard
-    // now refuses only a basis that is missing, empty, or wider than the group
-    // (which really cannot be projected), and records a narrower one instead
-    // of rejecting it.  The drop is the pipeline's decision, recorded in the
-    // artifacts; Klusters reads it off them rather than re-deriving it.
-    if (!pca.valid()) {
-        log << "ERROR: PCA basis unavailable (" << pcaPath
-            << ") — refusing to realign cluster " << clusterId
-            << ": features cannot be reprojected, and proceeding would zero"
-               " its .fet rows.  Run ndm_pca for this method first.\n";
+    // Load PCA eigenvectors (per-channel basis)
+    // -----------------------------------------------------------------------
+    // Resolution, validation, caching, the channel-width rule and its logging
+    // all live in resolveRealignBasis() now; see it for why the width rule is
+    // "no wider than the group" rather than an exact count.
+    const RealignBasis _basis = resolveRealignBasis(
+        pcaPath, pcaDPath_ra, isStderivRealign, grpId, clusterId,
+        nChan, nSamp, nFeatCols, log, emitFlush);
+    PcaBasis  pca         = _basis.basis;
+    const int nPcaFeats   = _basis.nPcaFeats;
+    const int nExtraFeats = _basis.nExtraFeats;
+    if (!_basis.usable) {
         emitFlush();
         return false;
     }
-    if (pca.nCh <= 0 || pca.nCh > nChan) {
-        log << "ERROR: PCA basis is " << pca.nCh << " channels wide but group "
-            << grpId << " has only " << nChan
-            << " — refusing to realign cluster " << clusterId
-            << ": this basis cannot project these waveforms (wrong group's"
-               " basis, or a truncated .pca).\n";
-        emitFlush();
-        return false;
-    }
-    else if (pca.nCh < nChan)
-        log << "PCA: " << pca.nCh << "ch x " << pca.nComp
-            << "comp  recShift=" << pca.recShift
-            << (pca.centered ? " centered" : "")
-            << "  extraFeats=" << nExtraFeats
-            << "   (basis is " << (nChan - pca.nCh)
-            << " channel(s) narrower than the group — the pipeline's channel"
-               " drop; remaining .fet columns are carried through verbatim)\n";
-    else
-        log << "PCA: " << pca.nCh << "ch x " << pca.nComp
-            << "comp  recShift=" << pca.recShift
-            << (pca.centered ? " centered" : "")
-            << "  extraFeats=" << nExtraFeats << "\n";
-    emitFlush();
+
 
     // Spatial-derivative order for the stderiv reprojection below, taken from the
     // basis (PCAE Method) rather than hardcoded.  The three transform sites
