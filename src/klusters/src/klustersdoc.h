@@ -709,6 +709,16 @@ public:
     * @param dimensionY the dimension used as ordinate to display the clusters.
     * @return the number of the newly created cluster.
     */
+    /**Partitions @p clusterId into consecutive blocks of @p blockSeconds of
+  * recording time, the blocks starting at the ORIGIN of the session (t=0) so
+  * the same boundaries fall on every cluster and on every session recorded at
+  * this sampling rate.  The cluster keeps its earliest occupied block and each
+  * later occupied block becomes a new cluster; empty blocks produce nothing.
+  * Runs on the active layer, so it partitions a parent or an atom.
+  * @return the number of clusters created (0 when the cluster occupies one
+  * block or fewer, which is not an error).*/
+    int partitionClusterByTime(int clusterId, double blockSeconds);
+
     void createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin);
 
     /**Polygon form: the scatter views' gesture, unchanged.*/

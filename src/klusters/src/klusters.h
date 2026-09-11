@@ -565,6 +565,10 @@ private Q_SLOTS:
      * launches realignment on a background thread with output in a tab.*/
     void slotRealignSpikes();
 
+    /**Asks for a block length and partitions the selected cluster into
+  * session-origin-anchored blocks of that length.*/
+    void slotPartitionClusterByTime();
+
     /**Run PCA-centered spike realignment over every cluster (skipping
      * noise=0 and artifact=1) using the top 2 channels per cluster.
      * Reuses the same RealignWorker as slotRealignSpikes() but iterates
@@ -987,6 +991,7 @@ private:
 
     QAction *mSplitByKnn;
     QAction *mRealignSpikes;
+    QAction *mPartitionByTime = nullptr;   // Actions: cut a cluster into time blocks
     /** PCA-centered batch realignment across every cluster (skipping
      *  noise=0 and artifact=1), using the top 2 channels per cluster.
      *  Runs sequentially in the background and auto-accepts each result
