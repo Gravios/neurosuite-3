@@ -533,6 +533,22 @@ public:
      *  Mutates childData, pushes a child-undo entry.  Returns the new child id,
      *  or -1 (e.g. on a cross-parent selection, which is refused). */
     int mergeChildren(const QList<int>& children, KlustersView& activeView);
+
+    /**Gathers a parent's ORPHAN children -- those holding fewer than
+  * @p minSpikes spikes, the single-spike debris that accumulates after
+  * repeated splitting -- and merges them in two groups, judged against the
+  * parent's median waveform: those whose own mean waveform correlates with
+  * the reference at least @p minCorrelation merge into one child, the rest
+  * into another.  Nothing is deleted and nothing is promoted; the two
+  * results are ordinary atoms of the same parent, so a bad call is one undo
+  * away.
+  * @param matchedOut  spikes recovered into the matching child
+  * @param strayOut    spikes gathered into the non-matching child
+  * @return the number of orphans consumed, or -1 when the parent has no
+  *         usable reference (fewer than one above-threshold child).*/
+    int mergeOrphanChildren(int parent, int minSpikes, double minCorrelation,
+                            KlustersView& activeView,
+                            int* matchedOut = nullptr, int* strayOut = nullptr);
     /** Session-wide flatten: merge every parent's atoms into a single self child
      *  (atom id == parent id), applied to all parents including the reserve bins so
      *  the resulting .clc is exactly .clu and no atom can span two parents.

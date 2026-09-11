@@ -569,6 +569,10 @@ private Q_SLOTS:
   * session-origin-anchored blocks of that length.*/
     void slotPartitionClusterByTime();
 
+    /**Asks for a size threshold and a shape cutoff, then gathers the selected
+  * parent's orphan children into a matching and a non-matching child.*/
+    void slotMergeOrphanChildren();
+
     /**Run PCA-centered spike realignment over every cluster (skipping
      * noise=0 and artifact=1) using the top 2 channels per cluster.
      * Reuses the same RealignWorker as slotRealignSpikes() but iterates
@@ -934,6 +938,7 @@ private:
     QAction* mDissolveParent = nullptr;      // Hierarchy: explode a parent into its children
     QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise
     QAction* mRepairNesting = nullptr;         // Hierarchy: re-cut atoms onto the current parents
+    QAction* mMergeOrphanChildren = nullptr;   // Hierarchy: gather a parent's tiny children
     QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)
     QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every parent to one self atom
     QAction* mUndoChildEdit = nullptr;      // Hierarchy: undo last atom-layer edit
