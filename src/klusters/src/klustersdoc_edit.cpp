@@ -104,7 +104,10 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     for (KlustersView* view : *viewList)
         view->stopAllViewThreads();
 
-    float newClusterId = clusteringData->groupClusters(clustersToGroup);
+    // PARENT-layer edit: group() merges parent clusters; the atom layer follows
+    // through the hierarchy refresh below, it is not the thing being merged.
+    idsBelongTo(parentData(), clustersToGroup, "groupClusters");
+    float newClusterId = parentData().groupClusters(clustersToGroup);
     int newClusterIdint = static_cast<int>(newClusterId);
 
     //Prepare the undo
@@ -247,7 +250,10 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
         for (KlustersView* view : *viewList)
             view->stopAllViewThreads();
-    clusteringData->moveSpikeSubset(fromCluster, featureRowSet,
+    // PARENT-layer edit by design -- see the header: atoms are moved by
+    // re-cutting the child layer afterwards, never by naming atom ids here.
+    idsBelongTo(parentData(), QList<int>{ fromCluster }, "moveSpikeSubsetToCluster");
+    parentData().moveSpikeSubset(fromCluster, featureRowSet,
                                      toCluster, fromClusters, emptiedClusters);
 
     if (fromClusters.isEmpty()) {
@@ -396,7 +402,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     if(clustersToDelete.size() == 1){
         int clusterToDelete =  clustersToDelete[0];
         bool previous = false;
-        QList<dataType> clusters = clusteringData->clusterIds();
+        QList<dataType> clusters = parentData().clusterIds();
         QList<dataType>::iterator clustersIterator;
         for(clustersIterator = clusters.begin(); clustersIterator != clusters.end(); ++clustersIterator){
             if(previous){
@@ -668,8 +674,8 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
     QList<int> originClusters(clustersOfOrigin);
     SpikeSelection effectiveSelection(selection);
     if (childScopeActive && childData) {
-        const QVector<dataType> atomByRow   = childData->labelByFeatureRow();
-        const QVector<dataType> parentByRow = clusteringData->labelByFeatureRow();
+        const QVector<dataType> atomByRow   = childClusterData().labelByFeatureRow();
+        const QVector<dataType> parentByRow = parentData().labelByFeatureRow();
         const QSet<int> shownAtoms(clustersOfOrigin.begin(), clustersOfOrigin.end());
         const int n = qMin(atomByRow.size(), parentByRow.size());
         QSet<dataType> rows;
@@ -679,7 +685,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
                 continue;
             // Features are the same table in both layers; ask the parent
             // layer so the test matches the scan that follows.
-            if (!clusteringData->selectionContains(selection, r))
+            if (!parentData().selectionContains(selection, r))
                 continue;
             rows.insert(r);
             const int p = static_cast<int>(parentByRow.at(static_cast<int>(r)));
@@ -704,7 +710,10 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
         // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
         for (KlustersView* view : *viewList)
             view->stopAllViewThreads();
-    clusteringData->deleteSpikesFromClusters(effectiveSelection,originClusters,destination,fromClusters,emptyClusters);
+    // PARENT-layer edit; in child scope originClusters was translated above
+    // from the shown atoms to the parents those spikes are actually in.
+    idsBelongTo(parentData(), originClusters, "deleteSpikesFromClusters");
+    parentData().deleteSpikesFromClusters(effectiveSelection,originClusters,destination,fromClusters,emptyClusters);
 
     //Get the active view.
     KlustersView* activeView = app()->activeView();
@@ -1091,6 +1100,10 @@ int KlustersDoc::partitionClusterByTime(int clusterId, double blockSeconds)
 }
 
 void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
+    // ACTIVE-layer edit: this is the one builder that legitimately runs on
+    // either clustering -- on atoms it carries a full child branch below.  The
+    // ids must therefore name the layer that is active right now.
+    idsBelongTo(data(), clustersOfOrigin, "createNewCluster");
     //list which will contain the clusters really having spikes in the region of selection.
     QList <int> fromClusters;
     //list which will contain the clusters which became empty because all their spikes were in the region of selection.
@@ -1230,6 +1243,7 @@ void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList 
 }
 
 void KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
+    idsBelongTo(data(), clustersOfOrigin, "createNewClusters");   // ACTIVE layer, as above
     //list which will contain the clusters really having spikes in the region of selection.
     QList <int> fromClusters;
     //list which will contain the clusters which became empty because all their spikes were in the region of selection.
