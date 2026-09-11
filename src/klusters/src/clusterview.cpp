@@ -129,7 +129,7 @@ void ClusterView::exitTsne(const QString& reason){
         tsneThread = nullptr;   // deleteLater is already connected to finished
     }
     tsneComputing = false;
-    tsneSelectionPolygon.clear();
+    resetSelectionPolygon();
     if (tsneMode) {
         tsneMode = false;
         drawContentsMode = REDRAW;
@@ -297,7 +297,7 @@ void ClusterView::onTsneFinished(bool ok, const QString& err,
     tsneXY          = std::move(xy);
     tsneRowCluster  = std::move(labels);
     tsneRowSpike    = std::move(spikeRows);
-    tsneSelectionPolygon.clear();
+    resetSelectionPolygon();
     {   // capture the bounding box once: paint and hit-test must agree
         const int n = static_cast<int>(tsneXY.size() / 2);
         tsneMinX = tsneMaxX = tsneMinY = tsneMaxY = 0.0;
@@ -357,13 +357,53 @@ void ClusterView::tsneRelabelFromDoc(){
     }
 }
 
+void ClusterView::resetSelectionPolygon(){
+    // The scatter clears these on its REDRAW path in paintEvent; the embedding
+    // paints without that double buffer, so it clears them here.  One place,
+    // so a half-drawn lasso can never survive into the next gesture.
+    selectionPolygon.resize(0);
+    nbSelectionPoints = 0;
+    polygonClosed = false;
+}
+
+void ClusterView::closeSelectionPolygon(){
+    if (selectionPolygon.size() <= 2) {
+        // Fewer than three vertices is not a polygon; the scatter refreshes and
+        // leaves what was drawn, so do exactly that.
+        drawContentsMode = REFRESH;
+        update();
+        if (statusBar) statusBar->clearMessage();
+        return;
+    }
+    //erase the last line drawn if the user moved since the last click
+    eraseTheLastMovingLine();
+    polygonClosed = true;
+
+    // Queue the work rather than doing it here, so the closed polygon is on
+    // screen before the document is asked to compute -- the scatter achieves
+    // this by posting a ComputeEvent, and the embedding by queueing its own
+    // apply.  The only difference between the two lassos.
+    if (tsneMode)
+        QMetaObject::invokeMethod(this, [this]{ applyTsneLasso(); },
+                                  Qt::QueuedConnection);
+    else
+        QApplication::postEvent(this, getComputeEvent(selectionPolygon));
+
+    drawContentsMode = REFRESH;
+    update();
+    if (statusBar) statusBar->clearMessage();
+}
+
 void ClusterView::applyTsneLasso(){
-    if (tsneSelectionPolygon.size() < 3) { tsneSelectionPolygon.clear(); return; }
+    if (selectionPolygon.size() < 3) {
+        resetSelectionPolygon();
+        return;
+    }
 
     // The scope must still be the one the embedding was computed in: a switch
     // between the parent and child palettes swaps the id namespace under it.
     if (doc.isChildClusteringActive() != tsneChildLayer) {
-        tsneSelectionPolygon.clear();
+        resetSelectionPolygon();
         exitTsne(tr("t-SNE dropped: clustering scope changed — press F to re-embed"));
         return;
     }
@@ -376,7 +416,7 @@ void ClusterView::applyTsneLasso(){
     // to mean.
 
     // Hit-test in viewport pixels through the SAME mapping paintTsne uses.
-    const QRegion area(tsneSelectionPolygon);
+    const QRegion area(selectionPolygon);   // viewport pixels in this view
     QSet<dataType> rows;                    // 1-based feature rows
     const int n = qMin(static_cast<int>(tsneXY.size() / 2), tsneRowSpike.size());
     for (int i = 0; i < n; ++i)
@@ -385,7 +425,7 @@ void ClusterView::applyTsneLasso(){
 
     if (rows.isEmpty()) {
         if (statusBar) statusBar->showMessage(tr("t-SNE lasso: no spikes inside"), 3000);
-        tsneSelectionPolygon.clear();
+        resetSelectionPolygon();
         drawContentsMode = REFRESH;
         update();
         return;
@@ -410,14 +450,14 @@ void ClusterView::applyTsneLasso(){
                    "atoms — press F twice to re-embed")
               : tr("t-SNE lasso: the selected spikes are no longer in the embedded "
                    "clusters — press F twice to re-embed"), 5000);
-        tsneSelectionPolygon.clear();
+        resetSelectionPolygon();
         drawContentsMode = REFRESH;
         update();
         return;
     }
 
     const int nSelected = rows.size();
-    tsneSelectionPolygon.clear();
+    resetSelectionPolygon();
 
     // Apply through the SAME builders the scatter's polygon uses, with the
     // selection named by row instead of by region: colour registration, the
@@ -468,12 +508,16 @@ void ClusterView::paintTsne(QPainter& painter){
         const QPoint p = tsneViewportPos(i);
         painter.drawEllipse(p.x() - r, p.y() - r, 2 * r, 2 * r);
     }
-    if (!tsneSelectionPolygon.isEmpty()) {
+    if (!selectionPolygon.isEmpty()) {
+        // Same overlay as the scatter: the mode's colour and the configured
+        // line width, so the polygon tells the curator which action is armed.
+        // The tracking vertex is already the polygon's last point, exactly as
+        // in the scatter, so no separate rubber line is drawn.
         painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(255, 255, 255), 1, Qt::DashLine));
-        painter.drawPolyline(tsneSelectionPolygon);
-        if (!tsneCursorPos.isNull())     // rubber line to the cursor
-            painter.drawLine(tsneSelectionPolygon.last(), tsneCursorPos);
+        QPen selPen(selectPolygonColor(mode));
+        selPen.setWidth(selectionLineWidth);
+        painter.setPen(selPen);
+        painter.drawPolyline(selectionPolygon);
     }
     painter.setPen(palette().color(QPalette::WindowText));
     painter.drawText(vp.left() + 8, vp.top() + 18,
@@ -923,35 +967,28 @@ void ClusterView::setMode(BaseFrame::Mode selectedMode){
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
     if (tsneMode) {
-        // Lasso in EMBEDDING space: same gesture as the scatter (left adds a
-        // vertex, right undoes one, middle closes and applies), but the hit
-        // test runs on viewport positions -- embedding coordinates have no
-        // feature-world meaning, so the normal polygon path cannot be reused.
-        if (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
-            mode == NEW_CLUSTER  || mode == NEW_CLUSTERS) {
-            if (e->button() == Qt::LeftButton) {
-                setFocus(Qt::MouseFocusReason);
-                tsneSelectionPolygon << e->position().toPoint();
-                tsneCursorPos = e->position().toPoint();
-                drawContentsMode = REFRESH;
-                update();
-            } else if (e->button() == Qt::RightButton) {
-                if (!tsneSelectionPolygon.isEmpty()) {
-                    tsneSelectionPolygon.remove(tsneSelectionPolygon.size() - 1);
-                    drawContentsMode = REFRESH;
-                    update();
-                }
-            } else if (e->button() == Qt::MiddleButton) {
-                applyTsneLasso();
-            }
+        // The embedding's lasso is the SCATTER's lasso: the selection-mode
+        // block at the end of this handler runs for both, and the two differ
+        // only in selectionPoint()'s coordinate space and in what
+        // closeSelectionPolygon() does with the result.  A second gesture
+        // implementation here is what made the two feel different -- and it
+        // drifted immediately (no tracking vertex, its own undo arithmetic,
+        // its own pen).
+        if (mode != DELETE_NOISE && mode != DELETE_ARTEFACT &&
+            mode != NEW_CLUSTER  && mode != NEW_CLUSTERS) {
+            // Zoom / time modes have no meaning here: the axes are not features.
+            if (statusBar) statusBar->showMessage(
+                tr("t-SNE view: use Ctrl+1 / Ctrl+2 / Delete / Shift+Delete to lasso, "
+                   "F to return"), 3000);
             return;
         }
-        // Zoom / time modes have no meaning here: the axes are not features.
-        if (statusBar) statusBar->showMessage(
-            tr("t-SNE view: use Ctrl+1 / Ctrl+2 / Delete / Shift+Delete to lasso, "
-               "F to return"), 3000);
-        return;
+        // fall through to the shared polygon block below
     }
+
+    // ── Scatter-only preamble: pan, time picking, rubber-band zoom ────────
+    // All three speak feature-world coordinates, so none of them applies to
+    // the embedding.
+    if (!tsneMode) {
     // Ctrl+Left arms a pan and takes precedence over every selection / zoom mode
     // (it is a navigation gesture).  Don't forward to the base, so no rubber-band
     // is started.
@@ -983,6 +1020,7 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
     //The parent implementation takes care of the mode ZOOM
     //(rubber band and calculation of the firstClick)
     ViewWidget::mousePressEvent(e);
+    }   // end scatter-only preamble
 
     //If there is a polygon to draw (one of the selection modes)
     if(mode == DELETE_NOISE || mode == DELETE_ARTEFACT || mode == NEW_CLUSTER || mode == NEW_CLUSTERS){
@@ -999,29 +1037,14 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
 
         //Close the polygon of selection and trigger the right action depending on the mode
         if(e->button() == Qt::MiddleButton && !selectionPolygon.isEmpty()){
-            //If, once the last moving line erase, the polygon exists and has at least 3 points, draw it
-            if(selectionPolygon.size()>2){
-                //erase the last line drawn if the user moved since the last click
-                eraseTheLastMovingLine();
-                polygonClosed = true;
-
-                //Send an event to inform that the data have to be recompute accordingly to the selection polygon.
-                //This asynchronous event will allow the widget to close the polygon
-                //before asking the document to compute the data.
-                ComputeEvent* event = getComputeEvent(selectionPolygon);
-                QApplication::postEvent(this,event);
-
-            }
-            drawContentsMode = REFRESH;
-            update();
-            statusBar->clearMessage();
+            closeSelectionPolygon();
         }
 
         if (e->button() == Qt::LeftButton){
             // Ensure this widget has keyboard focus so Enter/Return keyPressEvent
             // is delivered here and not consumed by a parent widget or dialog.
             setFocus(Qt::MouseFocusReason);
-            QPoint selectedPoint = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
+            QPoint selectedPoint = selectionPoint(e->position().toPoint());
 
             if(nbSelectionPoints == 0)
                 selectionPolygon.putPoints(0, 1, selectedPoint.x(),selectedPoint.y());
@@ -1093,13 +1116,7 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
         mode == NEW_CLUSTER  || mode == NEW_CLUSTERS) &&
        selectionPolygon.size() > 2)
     {
-        eraseTheLastMovingLine();
-        polygonClosed = true;
-        ComputeEvent* event = getComputeEvent(selectionPolygon);
-        QApplication::postEvent(this, event);
-        drawContentsMode = REFRESH;
-        update();
-        statusBar->clearMessage();
+        closeSelectionPolygon();   // same in the scatter and the embedding
         return;
     }
 
@@ -1108,18 +1125,7 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
     // / toggleAutoscale(), so they work from palette focus too.  A local copy
     // of that policy would be unreachable code that drifts.
     if (tsneMode) {
-        // Enter closes an open lasso, exactly as it does in the scatter.
-        if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
-                && tsneSelectionPolygon.size() > 2) {
-            applyTsneLasso();
-            return;
-        }
-        if (e->key() == Qt::Key_Escape && !tsneSelectionPolygon.isEmpty()) {
-            tsneSelectionPolygon.clear();
-            drawContentsMode = REFRESH;
-            update();
-            return;
-        }
+        // Enter is handled above, by the same branch the scatter uses.
         // Everything else stays inert: zoom, dimension picking and the
         // scatter's own keys all speak feature-world coordinates.
         if (statusBar) statusBar->showMessage(
@@ -1218,8 +1224,19 @@ void ClusterView::autoscaleToVisibleClusters()
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){
     if (tsneMode) {
-        if (!tsneSelectionPolygon.isEmpty()) {   // rubber line to the cursor
-            tsneCursorPos = e->position().toPoint();
+        // Same tracking-vertex behaviour as the scatter, in embedding pixels:
+        // the polygon carries the point under the cursor and it is committed
+        // by the next click.  No coordinate read-out -- embedding axes have no
+        // units to report.
+        if(!polygonClosed &&
+           (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
+            mode == NEW_CLUSTER  || mode == NEW_CLUSTERS) &&
+           !selectionPolygon.isEmpty()){
+            const QPoint current = selectionPoint(e->position().toPoint());
+            if(nbSelectionPoints == selectionPolygon.size())
+                selectionPolygon.putPoints(selectionPolygon.size(), 1, current.x(), current.y());
+            else
+                selectionPolygon.setPoint(selectionPolygon.size()-1, current);
             drawContentsMode = REFRESH;
             update();
         }
