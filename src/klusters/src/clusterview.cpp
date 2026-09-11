@@ -366,6 +366,17 @@ void ClusterView::resetSelectionPolygon(){
     polygonClosed = false;
 }
 
+void ClusterView::cancelSelectionPolygon(){
+    if (selectionPolygon.isEmpty())
+        return;
+    resetSelectionPolygon();
+    // REFRESH re-blits the double buffer without the overlay in the scatter,
+    // and repaints the embedding wholesale; neither needs the clusters redrawn.
+    drawContentsMode = REFRESH;
+    update();
+    if (statusBar) statusBar->showMessage(tr("Selection discarded"), 2000);
+}
+
 void ClusterView::closeSelectionPolygon(){
     if (selectionPolygon.size() <= 2) {
         // Fewer than three vertices is not a polygon; the scatter refreshes and

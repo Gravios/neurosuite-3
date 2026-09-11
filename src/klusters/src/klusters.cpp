@@ -1850,6 +1850,24 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
 
+        // Esc discards a part-drawn selection polygon, in the scatter and in
+        // the embedding alike -- the one key that was missing from the shared
+        // gesture.  Dispatched here rather than in the view for the reason F
+        // and A are: focus lives in the palette while the mouse draws, so a
+        // view-local handler would never see the key.  Checked BEFORE the
+        // child-palette focus rule below: an open polygon is the more recent
+        // and more specific intent, and it is abandoned the same way wherever
+        // focus happens to be.  With no polygon open, Escape keeps every
+        // meaning it already had.
+        if(ke->key() == Qt::Key_Escape && ke->modifiers() == Qt::NoModifier
+           && doc && !focusIsInTextInput()){
+            ClusterView* cv = activeClusterView();
+            if(cv && cv->hasOpenSelectionPolygon()){
+                cv->cancelSelectionPolygon();
+                return true;
+            }
+        }
+
         // Esc from the child palette returns focus to the parent palette.
         // (When the temporary child error/template matrices exist, Esc will
         // also dismiss them first -- added with that feature.)
@@ -5870,6 +5888,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"Ctrl+\u2191",        "New parent from selected children"},
             {"Ctrl+\u2193",        "Group selected parent parents"},
             {"Ctrl+Shift+\u2193",  "Dissolve selected parent into its children"},
+            {"Esc",            "Discard the selection polygon being drawn (feature or t-SNE view)"},
             {"Shift+T",        "Partition the selected cluster into time blocks from the session origin"},
             {"Shift+N",        "Repair nesting (re-cut atoms onto parents)"},
             {"Ctrl+Shift+Z / Ctrl+Shift+Y", "Undo / redo atom (child-layer) edit"},

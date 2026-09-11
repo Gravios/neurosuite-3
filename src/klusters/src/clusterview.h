@@ -73,6 +73,14 @@ public:
      *  the A key is dispatched by the application filter. */
     void toggleAutoscale();
 
+    /** True while a selection polygon is part-drawn, in either view.  The
+     *  application filter asks before deciding what Escape means. */
+    bool hasOpenSelectionPolygon() const {return !selectionPolygon.isEmpty();}
+
+    /** Discards a part-drawn selection polygon and repaints.  The armed mode
+     *  is left alone: Escape cancels the shape, not the intent to cut. */
+    void cancelSelectionPolygon();
+
     /** True while the t-SNE presentation is showing or being computed.  The
      *  application filter gates the arrow keys on this so palette navigation
      *  is untouched everywhere else. */
