@@ -282,6 +282,9 @@ void KlustersApp::initView()
     // App-level event filter so Tab/Shift+Tab cycle display tabs regardless
     // of which child widget (DockArea, ClusterView, ProcessWidget, …) holds focus.
     qApp->installEventFilter(this);
+    // Menus and shortcuts are built by now, so an unreachable binding can be
+    // reported at startup instead of being found by pressing the key.
+    auditKeyBindings();
     QList<int> size;
     size <<150<<1000;
     splitter->setSizes(size);
@@ -5875,6 +5878,76 @@ void KlustersApp::slotSplitClusterByKnn()
 
 
 // ---------------------------------------------------------------------------
+// Key bindings: what the application filter owns
+//
+// Three mechanisms dispatch keys in this app -- QAction shortcuts, this
+// filter, and the views' own keyPressEvent -- and they are checked in that
+// order of surprise rather than of intent.  The filter sees a key BEFORE the
+// shortcut map and before any widget, so anything listed here wins outright,
+// and a QAction or a view handler that also claims the key is simply dead.
+// That is not hypothetical: the t-SNE toggle was bound to T for one release
+// and could never fire, because this filter takes bare T for palette
+// move-to-end; and autoscale sat on F, which the repair-nesting QAction held
+// in Qt's default window context, so it worked only with the scatter focused.
+//
+// The table is the single statement of that ownership.  It feeds the audit
+// below, which says at startup when an action is unreachable, and the help
+// dialog, which can no longer drift from the bindings because it is built
+// from the same rows.  Adding a filter key means adding a row here.
+// ---------------------------------------------------------------------------
+const KlustersApp::FilterKey KlustersApp::kFilterKeys[] = {
+    {Qt::Key_T,      Qt::NoModifier, "T",      "Move selected cluster(s) to end of palette"},
+    {Qt::Key_V,      Qt::NoModifier, "V",      "Curation matrices: parent view / child view of the selected parent"},
+    {Qt::Key_E,      Qt::NoModifier, "E",      "Cycle the matrix tabs (Error, Template, Residual, Drift)"},
+    {Qt::Key_F,      Qt::NoModifier, "F",      "Toggle the t-SNE embedding of the selected clusters"},
+    {Qt::Key_A,      Qt::NoModifier, "A",      "Toggle autoscale in the feature view"},
+    {Qt::Key_Up,     Qt::NoModifier, "Up",     "While the t-SNE view is showing: raise the perplexity and recompute"},
+    {Qt::Key_Down,   Qt::NoModifier, "Down",   "While the t-SNE view is showing: lower the perplexity and recompute"},
+    {Qt::Key_Escape, Qt::NoModifier, "Esc",    "Discard the selection polygon being drawn; otherwise leave the child palette"},
+    {Qt::Key_H,      Qt::NoModifier, "H",      "Show the keyboard shortcut reference"},
+};
+const int KlustersApp::kFilterKeyCount =
+    static_cast<int>(sizeof(kFilterKeys) / sizeof(kFilterKeys[0]));
+
+void KlustersApp::auditKeyBindings() const
+{
+    // Every action whose shortcut this filter would swallow first.  Reported
+    // once at startup rather than discovered when a menu item quietly does
+    // nothing.  Warn only: which of the two should win is a design decision,
+    // not something to resolve by silently unbinding one of them.
+    for (int i = 0; i < kFilterKeyCount; ++i) {
+        const QKeySequence owned(kFilterKeys[i].modifiers | kFilterKeys[i].key);
+        const QList<QAction*> actions = findChildren<QAction*>();
+        for (QAction* a : actions) {
+            if (a->shortcut().isEmpty() || a->shortcut() != owned)
+                continue;
+            qWarning("key binding: \"%s\" is consumed by the application filter "
+                     "(%s), so the menu action \"%s\" can never fire from the "
+                     "keyboard",
+                     kFilterKeys[i].label, kFilterKeys[i].description,
+                     qPrintable(a->text().remove(QLatin1Char('&'))));
+        }
+    }
+
+    // Two actions on one sequence: the second is unreachable and Qt says
+    // nothing about it.
+    QHash<QString, QString> seen;
+    const QList<QAction*> actions = findChildren<QAction*>();
+    for (QAction* a : actions) {
+        if (a->shortcut().isEmpty())
+            continue;
+        const QString seq = a->shortcut().toString();
+        const QString name = a->text().remove(QLatin1Char('&'));
+        const auto it = seen.constFind(seq);
+        if (it != seen.constEnd())
+            qWarning("key binding: \"%s\" is claimed by both \"%s\" and \"%s\"",
+                     qPrintable(seq), qPrintable(it.value()), qPrintable(name));
+        else
+            seen.insert(seq, name);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Keyboard shortcut help dialog
 // ---------------------------------------------------------------------------
 void KlustersApp::slotShowShortcutHelp()
@@ -5885,10 +5958,7 @@ void KlustersApp::slotShowShortcutHelp()
         {"Cluster palette", {
             {"Arrow keys",     "Navigate cluster palette"},
             {"S",              "Toggle current selection (palette focus)"},
-            {"T",              "Move selected cluster(s) to end of palette (palette focus)"},
-            {"V",              "Toggle matrices between all clusters and the selected parent's children"},
             {"Page Up / Page Down", "Nudge selected cluster timestamps \u00b11 sample"},
-            {"H",              "Show this keyboard shortcut reference"},
         }},
         {"Display tabs", {
             {"\u2190 / \u2192",           "Cycle display tabs \u2014 only while the tab bar itself has focus (click a tab handle); inside a view the arrows stay cluster navigation"},
@@ -5972,6 +6042,18 @@ void KlustersApp::slotShowShortcutHelp()
             "td{padding:3px 12px;border-bottom:1px solid #3a3a3a}"
             "td:first-child{font-family:monospace;font-weight:bold;white-space:nowrap;min-width:140px}"
             "</style>");
+    // The application filter's keys come from the binding table, not from a
+    // second hand-written list: a reference that is edited separately from the
+    // bindings is wrong the first time someone forgets, and this one had
+    // already drifted twice.  These work from any focus outside a text field.
+    html += QStringLiteral("<h3>%1</h3><table>")
+            .arg(tr("Single keys (work from any focus outside a text field)"));
+    for (int i = 0; i < kFilterKeyCount; ++i)
+        html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
+                .arg(QString::fromUtf8(kFilterKeys[i].label))
+                .arg(QString::fromUtf8(kFilterKeys[i].description));
+    html += QStringLiteral("</table>");
+
     for (const auto& sec : kSections) {
         html += QStringLiteral("<h3>%1</h3><table>")
                 .arg(QString::fromUtf8(sec.title));

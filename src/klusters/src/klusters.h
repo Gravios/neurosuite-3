@@ -707,6 +707,25 @@ private:
      *  the parameter toolbar without triggering palette actions. */
     bool focusIsInTextInput() const;
 
+    /**One row per key the application-wide event filter consumes.  The filter
+  * runs before the shortcut map and before any widget, so these win outright
+  * and anything else claiming the same key is dead.  The table feeds both the
+  * startup audit and the shortcut reference, so neither can drift from the
+  * other.*/
+    struct FilterKey {
+        int                     key;
+        Qt::KeyboardModifiers   modifiers;
+        const char*             label;
+        const char*             description;
+    };
+    static const FilterKey kFilterKeys[];
+    static const int       kFilterKeyCount;
+
+    /**Warns about bindings that cannot fire: a menu action whose shortcut the
+  * filter swallows first, and two actions sharing one sequence.  Diagnostic
+  * only -- which of two claimants should win is a design decision.*/
+    void auditKeyBindings() const;
+
     /**Returns the cluster (feature) view the single-letter feature-view keys
   * should act on: the focused one if any, else the first in the active
   * display.  Null when the active display has no cluster view.*/
