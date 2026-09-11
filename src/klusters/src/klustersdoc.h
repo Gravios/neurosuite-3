@@ -227,6 +227,31 @@ public:
      *  the reference is always valid; the child palette is empty in that state. */
     Data& childClusterData() const {return *(childData ? childData : clusteringData);}
 
+    /**What a realign will reproject through: the per-channel PCA basis, the
+  * feature-column split it implies, and whether the run may proceed at all.
+  * @c usable false means the caller must refuse -- there is no basis, or the
+  * one on disk cannot project this group's waveforms.*/
+    struct RealignBasis {
+        neurosuite::core::PcaBasis basis;
+        int      nPcaFeats   = 0;
+        int      nExtraFeats = 0;
+        bool     usable      = false;
+    };
+
+    /**Resolves, validates, caches and reports the PCA basis for one realign.
+  * Extracted from realignSpikes so the channel-width rule -- a basis projects
+  * when it is no WIDER than the group, whatever the method family -- has one
+  * home; it previously had two that disagreed, and valid sessions were
+  * refused.  Writes its reasoning into @p log and flushes through
+  * @p emitFlush, exactly as the inline code did.*/
+    RealignBasis resolveRealignBasis(const QString& pcaPath,
+                                     const QString& pcaDPath,
+                                     bool isStderivRealign,
+                                     const QString& grpId, int clusterId,
+                                     int nChan, int nSamp, int nFeatCols,
+                                     QTextStream& log,
+                                     const std::function<void()>& emitFlush);
+
     /**Diagnostic: do @p ids name clusters that exist in @p layer?
      *
      * Parent ids and child (atom) ids are different NAMESPACES, not different
