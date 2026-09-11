@@ -209,6 +209,15 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefclusterView->intervalSpinBox,  &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->tsneCapLineEdit,  &QLineEdit::textChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->tsneStepLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneStartPerpLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneItersLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneThetaLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneDimsLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneEtaLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneExagLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneExagItersLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneSubsampleCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
+    connect(prefclusterView->tsneRandomSeedCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
     connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView, &PrefWaveformView::positionsChanged,      this, &PrefDialog::enableApply);
 
@@ -302,6 +311,15 @@ void PrefDialog::updateDialog()
     prefclusterView->setTimeInterval(configuration().getTimeInterval());
     prefclusterView->setTsneSpikeCap(configuration().getTsneSpikeCap());
     prefclusterView->setTsnePerplexityStep(configuration().getTsnePerplexityStep());
+    prefclusterView->setTsneStartPerplexity(configuration().getTsneStartPerplexity());
+    prefclusterView->setTsneIterations(configuration().getTsneIterations());
+    prefclusterView->setTsneTheta(configuration().getTsneTheta());
+    prefclusterView->setTsneMaxDimensions(configuration().getTsneMaxDimensions());
+    prefclusterView->setTsneLearningRate(configuration().getTsneLearningRate());
+    prefclusterView->setTsneExaggeration(configuration().getTsneExaggeration());
+    prefclusterView->setTsneExaggerationIterations(configuration().getTsneExaggerationIterations());
+    prefclusterView->setTsneSubsampleOverCap(configuration().getTsneSubsampleOverCap());
+    prefclusterView->setTsneRandomSeed(configuration().getTsneRandomSeed());
     prefWaveformView->setGain(configuration().getGain());
 
     // Appearance: reflect the current suite-wide theme preference.
@@ -386,6 +404,15 @@ void PrefDialog::updateConfiguration()
     configuration().setTimeInterval(prefclusterView->getTimeInterval());
     configuration().setTsneSpikeCap(prefclusterView->getTsneSpikeCap());
     configuration().setTsnePerplexityStep(prefclusterView->getTsnePerplexityStep());
+    configuration().setTsneStartPerplexity(prefclusterView->getTsneStartPerplexity());
+    configuration().setTsneIterations(prefclusterView->getTsneIterations());
+    configuration().setTsneTheta(prefclusterView->getTsneTheta());
+    configuration().setTsneMaxDimensions(prefclusterView->getTsneMaxDimensions());
+    configuration().setTsneLearningRate(prefclusterView->getTsneLearningRate());
+    configuration().setTsneExaggeration(prefclusterView->getTsneExaggeration());
+    configuration().setTsneExaggerationIterations(prefclusterView->getTsneExaggerationIterations());
+    configuration().setTsneSubsampleOverCap(prefclusterView->getTsneSubsampleOverCap());
+    configuration().setTsneRandomSeed(prefclusterView->getTsneRandomSeed());
     configuration().setGain(prefWaveformView->getGain());
     configuration().setNbChannels(prefWaveformView->getNbChannels());
     configuration().setChannelPositions(prefWaveformView->getChannelPositions());
@@ -470,6 +497,15 @@ void PrefDialog::slotDefault()
     prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
     prefclusterView->setTsneSpikeCap(configuration().getTsneSpikeCapDefault());
     prefclusterView->setTsnePerplexityStep(configuration().getTsnePerplexityStepDefault());
+    prefclusterView->setTsneStartPerplexity(configuration().getTsneStartPerplexityDefault());
+    prefclusterView->setTsneIterations(configuration().getTsneIterationsDefault());
+    prefclusterView->setTsneTheta(configuration().getTsneThetaDefault());
+    prefclusterView->setTsneMaxDimensions(configuration().getTsneMaxDimensionsDefault());
+    prefclusterView->setTsneLearningRate(configuration().getTsneLearningRateDefault());
+    prefclusterView->setTsneExaggeration(configuration().getTsneExaggerationDefault());
+    prefclusterView->setTsneExaggerationIterations(configuration().getTsneExaggerationIterationsDefault());
+    prefclusterView->setTsneSubsampleOverCap(configuration().getTsneSubsampleOverCapDefault());
+    prefclusterView->setTsneRandomSeed(configuration().getTsneRandomSeedDefault());
     prefWaveformView->setGain(configuration().getGainDefault());
     prefWaveformView->resetChannelList(configuration().getNbChannels());
 

@@ -148,6 +148,103 @@
         <string>t-SNE</string>
        </property>
        <layout class="QGridLayout" name="gridLayout_2">
+        <item row="1" column="0">
+         <widget class="QLabel" name="tsneStartPerpLabel">
+          <property name="text"><string>Starting perplexity</string></property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QLineEdit" name="tsneStartPerpLineEdit">
+          <property name="minimumSize"><size><width>90</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+         </widget>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="tsneItersLabel">
+          <property name="text"><string>Iterations</string></property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QLineEdit" name="tsneItersLineEdit">
+          <property name="minimumSize"><size><width>90</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="tsneThetaLabel">
+          <property name="text"><string>Barnes-Hut theta (0.1–0.8)</string></property>
+         </widget>
+        </item>
+        <item row="3" column="1">
+         <widget class="QLineEdit" name="tsneThetaLineEdit">
+          <property name="minimumSize"><size><width>90</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+         </widget>
+        </item>
+        <item row="4" column="0">
+         <widget class="QLabel" name="tsneDimsLabel">
+          <property name="text"><string>Feature dimensions (0 = all)</string></property>
+         </widget>
+        </item>
+        <item row="4" column="1">
+         <widget class="QLineEdit" name="tsneDimsLineEdit">
+          <property name="minimumSize"><size><width>90</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+         </widget>
+        </item>
+        <item row="5" column="0" colspan="2">
+         <widget class="QCheckBox" name="tsneSubsampleCheckBox">
+          <property name="text"><string>Over the cap, embed a random subsample instead of refusing</string></property>
+         </widget>
+        </item>
+        <item row="6" column="0" colspan="2">
+         <widget class="QCheckBox" name="tsneRandomSeedCheckBox">
+          <property name="text"><string>New random seed each run (off = repeatable embeddings)</string></property>
+         </widget>
+        </item>
+        <item row="7" column="0" colspan="2">
+         <widget class="QGroupBox" name="tsneAdvancedGroupBox">
+          <property name="title"><string>Advanced (wrong values fail quietly — leave these alone unless you know the effect)</string></property>
+          <layout class="QGridLayout" name="gridLayout_tsne_adv">
+        <item row="0" column="0">
+         <widget class="QLabel" name="tsneEtaLabel">
+          <property name="text"><string>Learning rate</string></property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QLineEdit" name="tsneEtaLineEdit">
+          <property name="minimumSize"><size><width>90</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+         </widget>
+        </item>
+
+        <item row="1" column="0">
+         <widget class="QLabel" name="tsneExagLabel">
+          <property name="text"><string>Early exaggeration</string></property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QLineEdit" name="tsneExagLineEdit">
+          <property name="minimumSize"><size><width>90</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+         </widget>
+        </item>
+
+        <item row="2" column="0">
+         <widget class="QLabel" name="tsneExagItersLabel">
+          <property name="text"><string>Early-exaggeration iterations</string></property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QLineEdit" name="tsneExagItersLineEdit">
+          <property name="minimumSize"><size><width>90</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+         </widget>
+        </item>
+
+          </layout>
+         </widget>
+        </item>
         <item row="0" column="0">
          <layout class="QHBoxLayout">
           <property name="margin">
