@@ -122,6 +122,15 @@ public:
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
     void setTsneSpikeCap(int n) {tsneSpikeCap = (n < 1000) ? 1000 : n;}
     void setTsnePerplexityStep(int n) {tsnePerplexityStep = (n < 1) ? 1 : n;}
+    void setTsneStartPerplexity(double v) {tsneStartPerplexity = (v < 2.0) ? 2.0 : v;}
+    void setTsneIterations(int n) {tsneIterations = (n < 50) ? 50 : n;}
+    void setTsneTheta(double v) {tsneTheta = (v < 0.0) ? 0.0 : ((v > 0.8) ? 0.8 : v);}
+    void setTsneMaxDimensions(int n) {tsneMaxDimensions = (n < 0) ? 0 : n;}
+    void setTsneSubsampleOverCap(bool b) {tsneSubsampleOverCap = b;}
+    void setTsneRandomSeed(bool b) {tsneRandomSeed = b;}
+    void setTsneLearningRate(double v) {tsneLearningRate = (v <= 0.0) ? 1.0 : v;}
+    void setTsneExaggeration(double v) {tsneExaggeration = (v < 1.0) ? 1.0 : v;}
+    void setTsneExaggerationIterations(int n) {tsneExaggerationIterations = (n < 0) ? 0 : n;}
     void setAutoUpdateMatricesAfterMerge(bool b) {autoUpdateMatricesAfterMerge = b;}
     void setErrorMatrixIncremental(bool b)  {errorMatrixIncremental  = b;}
     void setErrorMatrixLowPrecision(bool b) {errorMatrixLowPrecision = b;}
@@ -238,6 +247,15 @@ public:
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
     int    getTsneSpikeCap() const {return tsneSpikeCap;}
     int    getTsnePerplexityStep() const {return tsnePerplexityStep;}
+    double getTsneStartPerplexity() const {return tsneStartPerplexity;}
+    int    getTsneIterations() const {return tsneIterations;}
+    double getTsneTheta() const {return tsneTheta;}
+    int    getTsneMaxDimensions() const {return tsneMaxDimensions;}
+    bool   getTsneSubsampleOverCap() const {return tsneSubsampleOverCap;}
+    bool   getTsneRandomSeed() const {return tsneRandomSeed;}
+    double getTsneLearningRate() const {return tsneLearningRate;}
+    double getTsneExaggeration() const {return tsneExaggeration;}
+    int    getTsneExaggerationIterations() const {return tsneExaggerationIterations;}
     bool   getAutoUpdateMatricesAfterMerge() const {return autoUpdateMatricesAfterMerge;}
     /**Error matrix: reuse cached raw columns on a single edit (incremental) vs. full recompute.*/
     bool   getErrorMatrixIncremental()  const {return errorMatrixIncremental;}
@@ -337,6 +355,15 @@ public:
     bool   getAutoRenumberAfterMergeDefault() const {return true;}
     int    getTsneSpikeCapDefault() const {return 32000;}
     int    getTsnePerplexityStepDefault() const {return 5;}
+    double getTsneStartPerplexityDefault() const {return 30.0;}
+    int    getTsneIterationsDefault() const {return 500;}
+    double getTsneThetaDefault() const {return 0.5;}
+    int    getTsneMaxDimensionsDefault() const {return 0;}
+    bool   getTsneSubsampleOverCapDefault() const {return false;}
+    bool   getTsneRandomSeedDefault() const {return false;}
+    double getTsneLearningRateDefault() const {return 200.0;}
+    double getTsneExaggerationDefault() const {return 12.0;}
+    int    getTsneExaggerationIterationsDefault() const {return 250;}
     bool   getAutoUpdateMatricesAfterMergeDefault() const {return true;}
     bool   getErrorMatrixIncrementalDefault()  const {return false;}
     bool   getErrorMatrixLowPrecisionDefault() const {return true;}
@@ -498,6 +525,17 @@ private:
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
     int     tsneSpikeCap;                  // feature-view t-SNE: max spikes embedded (latency budget)
     int     tsnePerplexityStep;            // feature-view t-SNE: up/down arrow perplexity increment
+    // The rest of the engine's parameters, all defaulting to what the code used
+    // before they were settable, so an existing session behaves identically.
+    double  tsneStartPerplexity;           // perplexity a fresh embedding starts at
+    int     tsneIterations;                // gradient iterations
+    double  tsneTheta;                     // Barnes-Hut accuracy/speed (0 = exact)
+    int     tsneMaxDimensions;             // feature dims to embed, 0 = every one but time
+    bool    tsneSubsampleOverCap;          // over the cap: subsample rather than refuse
+    bool    tsneRandomSeed;                // new seed per run (off = repeatable)
+    double  tsneLearningRate;              // advanced
+    double  tsneExaggeration;              // advanced
+    int     tsneExaggerationIterations;    // advanced
     bool    autoUpdateMatricesAfterMerge;  // recompute error/template/residual matrices after each merge
     bool    errorMatrixIncremental;   // error matrix: incremental reuse on single edits (else full recompute)
     bool    errorMatrixLowPrecision;  // error matrix: FP32 GPU compute (fast) vs FP64 (exact)

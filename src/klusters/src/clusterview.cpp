@@ -43,6 +43,11 @@
 #include <QList>
 #include <QMouseEvent>
 #include <QEvent>
+#include <QRandomGenerator>
+#include <random>
+#include <numeric>
+#include <algorithm>
+#include <QSet>
 #include <QThread>
 #include <QPointer>
 #include <QElapsedTimer>
@@ -179,7 +184,12 @@ void ClusterView::startTsne(double perplexityOverride){
     // without asking: the same call embeds parents or children.
     Data& d = doc.data();
     tsneChildLayer = doc.isChildClusteringActive();
-    const int D = d.nbOfDimensionsTotal() - 1;   // every feature dim, time excluded
+    // Every feature dimension except time, or the first N of them when the
+    // preference caps it.  Embedding fewer, cleaner dimensions is often a
+    // better answer than tuning the optimiser.
+    const int allDims = d.nbOfDimensionsTotal() - 1;
+    const int dimCap  = configuration().getTsneMaxDimensions();
+    const int D = (dimCap > 0) ? qMin(dimCap, allDims) : allDims;
     if (D < 2) {
         if (statusBar) statusBar->showMessage(tr("t-SNE: not enough feature dimensions"), 3000);
         return;
@@ -196,16 +206,39 @@ void ClusterView::startTsne(double perplexityOverride){
         tables.append(qMakePair(id, t));
         if (total > cap) break;
     }
-    if (total > cap || tables.isEmpty() || total < 8) {
+    // Over the cap: refuse, or draw a random subsample of cap size across the
+    // whole selection.  Refusing is the safe default -- an embedding of a
+    // sample is a picture of the sample -- but on a big cluster it blocks you
+    // exactly when the structure is worth seeing, so the choice is the user's.
+    const bool subsample = configuration().getTsneSubsampleOverCap();
+    if ((total > cap && !subsample) || tables.isEmpty() || total < 8) {
         for (auto& pr : tables) delete pr.second;
         if (statusBar) statusBar->showMessage(
             total > cap
-              ? tr("t-SNE refused: %1 spikes selected, cap is %2 (Preferences)").arg(total).arg(cap)
+              ? tr("t-SNE refused: %1 spikes selected, cap is %2 "
+                   "(raise it, or enable subsampling, in Preferences)").arg(total).arg(cap)
               : tr("t-SNE: too few spikes selected"), 5000);
         return;
     }
 
-    const int N = static_cast<int>(total);
+    // Seed first: it drives the subsample as well as the embedding, so a
+    // repeatable run is repeatable end to end.
+    const unsigned seed = configuration().getTsneRandomSeed()
+        ? QRandomGenerator::global()->generate()
+        : 42u;
+
+    // When subsampling, decide WHICH spikes before copying any features.
+    QSet<qint64> keep;
+    const bool sampled = (total > cap);
+    if (sampled) {
+        std::vector<qint64> idx(static_cast<size_t>(total));
+        std::iota(idx.begin(), idx.end(), 0);
+        std::shuffle(idx.begin(), idx.end(), std::mt19937(seed));
+        idx.resize(static_cast<size_t>(cap));
+        for (qint64 v : idx) keep.insert(v);
+    }
+
+    const int N = sampled ? cap : static_cast<int>(total);
     auto X      = std::make_shared<std::vector<double>>(static_cast<size_t>(N) * D);
     auto labels = std::make_shared<QList<int>>();
     labels->reserve(N);
@@ -215,16 +248,20 @@ void ClusterView::startTsne(double perplexityOverride){
     auto rows = std::make_shared<QVector<int>>();
     rows->reserve(N);
     int r = 0;
+    qint64 seen = 0;
     for (auto& pr : tables) {
         SortableTable& t = *pr.second;
         const dataType n = t.nbOfColumns();
-        for (dataType i = 1; i <= n; ++i, ++r) {
+        for (dataType i = 1; i <= n; ++i, ++seen) {
+            if (sampled && !keep.contains(seen))
+                continue;
             const dataType row = t(1, i);
             for (int dim = 1; dim <= D; ++dim)
                 (*X)[static_cast<size_t>(r) * D + (dim - 1)] =
                     static_cast<double>(d.featureValue(row, dim));
             labels->append(pr.first);
             rows->append(static_cast<int>(row) - 1);
+            ++r;
         }
         delete pr.second;
     }
@@ -232,14 +269,23 @@ void ClusterView::startTsne(double perplexityOverride){
     TsneParams params;
     params.perplexity = (perplexityOverride > 0.0)
         ? qBound(2.0, perplexityOverride, qMax(2.0, (N - 1) / 3.0))
-        : qMin(30.0, (N - 1) / 3.0);
-    params.seed       = 42;                      // deterministic per selection
+        : qMin(configuration().getTsneStartPerplexity(), qMax(2.0, (N - 1) / 3.0));
+    params.nIter    = configuration().getTsneIterations();
+    params.theta    = configuration().getTsneTheta();
+    params.eta      = configuration().getTsneLearningRate();
+    params.exag     = configuration().getTsneExaggeration();
+    params.exagIter = qMin(configuration().getTsneExaggerationIterations(), params.nIter);
+    params.seed       = seed;                    // fixed unless the user asked otherwise
     const double perp = params.perplexity;
     const int nClusters = shown.size();
 
     tsneCancel    = false;
     tsneComputing = true;
-    if (statusBar) statusBar->showMessage(
+    if (sampled && statusBar)
+        statusBar->showMessage(
+            tr("t-SNE: %1 spikes selected, embedding a random sample of %2 (cap)…")
+                .arg(total).arg(N), 6000);
+    else if (statusBar) statusBar->showMessage(
         tsneChildLayer
           ? tr("t-SNE: embedding %1 spikes from %2 atom(s), perplexity %3…")
                 .arg(N).arg(nClusters).arg(params.perplexity, 0, 'f', 0)

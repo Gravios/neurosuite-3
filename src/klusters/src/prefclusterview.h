@@ -61,6 +61,37 @@ public:
   * the shipped default and Configuration clamps the floor on apply.*/
     int getTsnePerplexityStep() const;
 
+    // The rest of the engine's parameters.  Each reads back what was typed; a
+    // non-numeric field falls back to the shipped default and Configuration
+    // clamps the range on apply, so the panel cannot put the engine into a
+    // state it would refuse.
+    void setTsneStartPerplexity(double v);
+    double getTsneStartPerplexity() const;
+
+    void setTsneIterations(int v);
+    int getTsneIterations() const;
+
+    void setTsneTheta(double v);
+    double getTsneTheta() const;
+
+    void setTsneMaxDimensions(int v);
+    int getTsneMaxDimensions() const;
+
+    void setTsneLearningRate(double v);
+    double getTsneLearningRate() const;
+
+    void setTsneExaggeration(double v);
+    double getTsneExaggeration() const;
+
+    void setTsneExaggerationIterations(int v);
+    int getTsneExaggerationIterations() const;
+
+    void setTsneSubsampleOverCap(bool b);
+    bool getTsneSubsampleOverCap() const;
+
+    void setTsneRandomSeed(bool b);
+    bool getTsneRandomSeed() const;
+
 };
 
 #endif
