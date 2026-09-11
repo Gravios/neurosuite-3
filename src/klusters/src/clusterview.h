@@ -397,8 +397,6 @@ private:
     // lasso hit-testing share ONE mapping.  Recomputing it per paint would be
     // equivalent today and would silently diverge the day either side changes.
     double               tsneMinX = 0, tsneMaxX = 0, tsneMinY = 0, tsneMaxY = 0;
-    QPolygon             tsneSelectionPolygon;    ///< lasso, VIEWPORT pixels
-    QPoint               tsneCursorPos;           ///< rubber-line end point
     bool                 tsneApplyingLasso = false; ///< suppress our own drop
     /// Which layer the embedding names: false = parent clusters, true = child
     /// atoms.  Recorded at gather time because the two id spaces are disjoint
@@ -423,6 +421,24 @@ private:
     /** Viewport position of embedded point @p i under the captured bounding
      *  box.  The single mapping used by both paintTsne and the lasso. */
     QPoint tsneViewportPos(int i) const;
+
+    /** The coordinate space selection vertices are recorded in: feature-world
+     *  for the scatter, viewport pixels for the embedding (whose axes are not
+     *  features).  The ONLY thing the two lassos do differently while the
+     *  polygon is being drawn -- everything else is the same code. */
+    QPoint selectionPoint(const QPoint& viewportPx) {
+        return tsneMode ? viewportPx
+                        : viewportToWorld(viewportPx.x(), viewportPx.y());
+    }
+
+    /** Closes the polygon and triggers the mode's action, in whichever view is
+     *  showing.  Mirrors the scatter: the moving line is dropped, the polygon
+     *  is marked closed and painted, and the work is queued so the closed
+     *  shape is on screen before the document is asked to compute. */
+    void closeSelectionPolygon();
+
+    /** Clears the selection polygon and its tracking state. */
+    void resetSelectionPolygon();
 
     /** Closes the lasso: hit-tests every embedded point, groups the hits by
      *  their CURRENT cluster and applies the active selection mode through
