@@ -1055,6 +1055,121 @@ void KlustersDoc::syncChildColors(){
     }
 }
 
+namespace {
+
+/**Pearson correlation between two equal-length waveform vectors.  Pearson, not
+* a distance: an orphan is the SAME unit as its parent if its shape matches,
+* whatever its amplitude -- a spike caught on the edge of a drifting cluster is
+* smaller, not different.  Returns -2 when either side is flat (no opinion).*/
+double waveformCorrelation(const std::vector<double>& a,
+                           const std::vector<double>& b)
+{
+    if (a.size() != b.size() || a.size() < 2) return -2.0;
+    const size_t n = a.size();
+    double ma = 0.0, mb = 0.0;
+    for (size_t i = 0; i < n; ++i) { ma += a[i]; mb += b[i]; }
+    ma /= static_cast<double>(n);
+    mb /= static_cast<double>(n);
+    double num = 0.0, da = 0.0, db = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        const double x = a[i] - ma, y = b[i] - mb;
+        num += x * y; da += x * x; db += y * y;
+    }
+    if (da <= 0.0 || db <= 0.0) return -2.0;
+    return num / std::sqrt(da * db);
+}
+
+}   // namespace
+
+int KlustersDoc::mergeOrphanChildren(int parent, int minSpikes,
+                                     double minCorrelation,
+                                     KlustersView& activeView,
+                                     int* matchedOut, int* strayOut)
+{
+    if (matchedOut) *matchedOut = 0;
+    if (strayOut)   *strayOut   = 0;
+    if (!childData || parent < 0 || minSpikes < 1)
+        return -1;
+
+    const QList<int> kids = childrenOf(QList<int>{ parent });
+    if (kids.size() < 2)
+        return -1;
+
+    // Templates are the mean waveform per cluster, built in one sequential pass
+    // and kept incrementally; this is the same cache the merge-recommendation
+    // scan reads, so an orphan sweep costs nothing extra after the first call.
+    childData->buildMissingClusterTemplates();
+
+    QList<int> orphans, established;
+    for (int c : kids) {
+        const dataType n = childData->nbSpikesInCluster(c);
+        if (n > 0 && n < minSpikes) orphans.append(c);
+        else if (n > 0)             established.append(c);
+    }
+    if (orphans.isEmpty() || established.isEmpty())
+        return -1;      // nothing to gather, or nothing to judge against
+
+    // The reference: a per-point MEDIAN across the established children's mean
+    // waveforms.  Median across siblings, not a mean over all the parent's
+    // spikes -- one sibling that is actually a different unit (the usual reason
+    // a parent was split in the first place) would drag a mean toward itself,
+    // and the orphans are then judged against a shape that belongs to nobody.
+    // With a single established child its own mean IS the median.
+    std::vector<std::vector<double>> refs;
+    std::vector<double> sd;
+    for (int c : established) {
+        std::vector<double> mean;
+        if (childData->clusterTemplateFor(c, mean, sd) && !mean.empty())
+            refs.push_back(std::move(mean));
+    }
+    if (refs.empty())
+        return -1;
+    const size_t len = refs.front().size();
+    for (const auto& r : refs)
+        if (r.size() != len) return -1;
+    std::vector<double> reference(len, 0.0);
+    std::vector<double> column(refs.size(), 0.0);
+    for (size_t i = 0; i < len; ++i) {
+        for (size_t j = 0; j < refs.size(); ++j) column[j] = refs[j][i];
+        std::sort(column.begin(), column.end());
+        const size_t m = column.size() / 2;
+        reference[i] = (column.size() % 2) ? column[m]
+                                           : 0.5 * (column[m - 1] + column[m]);
+    }
+
+    // Score each orphan against the reference.  An orphan with no template --
+    // it can happen if its spikes were not readable -- is left alone rather
+    // than pushed into either group: no waveform, no opinion.
+    QList<int> matched, stray;
+    for (int c : orphans) {
+        std::vector<double> mean;
+        if (!childData->clusterTemplateFor(c, mean, sd) || mean.size() != len)
+            continue;
+        const double r = waveformCorrelation(mean, reference);
+        if (r <= -2.0) continue;
+        (r >= minCorrelation ? matched : stray).append(c);
+    }
+
+    // Merge each group into ONE atom.  mergeChildren merges into an existing id
+    // rather than minting a new one, which is the right thing: the recovered
+    // spikes keep an identity the curator has already seen, and a group of one
+    // is already its own child, so merging it would be a no-op edit.
+    int consumed = 0;
+    if (matched.size() > 1) {
+        if (mergeChildren(matched, activeView) >= 0) {
+            consumed += matched.size();
+            if (matchedOut) *matchedOut = matched.size();
+        }
+    }
+    if (stray.size() > 1) {
+        if (mergeChildren(stray, activeView) >= 0) {
+            consumed += stray.size();
+            if (strayOut) *strayOut = stray.size();
+        }
+    }
+    return consumed;
+}
+
 int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeView){
     if (!childData || children.size() < 2) return -1;
     // Same-parent guard: merging atoms from different parents would create a

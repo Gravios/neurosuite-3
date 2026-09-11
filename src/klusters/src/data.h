@@ -1039,6 +1039,15 @@ public:
     /**How many clusters currently have a template, and how many exist.*/
     int clusterTemplateCount() const { return clusterTemplates.size(); }
 
+    /**Spike count of one cluster, 0 when it does not exist.  Exposed so callers
+     * that only need a size do not have to reach into clusterInfoMap, which is
+     * a different thing from being allowed to walk the cluster tables.*/
+    dataType nbSpikesInCluster(int clusterId) const {
+        if (!clusterInfoMap) return 0;
+        const auto it = clusterInfoMap->constFind(static_cast<dataType>(clusterId));
+        return (it == clusterInfoMap->constEnd()) ? 0 : it.value().nbSpikes();
+    }
+
     /**Copy out one cluster's cached waveform template (mean and SD, each of
      * length nbSamplesPerWaveform() * nbOfChannels(), laid out
      * index = sample * nChan + channel).

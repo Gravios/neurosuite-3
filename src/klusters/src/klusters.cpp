@@ -893,6 +893,16 @@ void KlustersApp::createMenus()
     mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Parent"));
     mDissolveParent = hierarchyMenu->addAction(tr("&Dissolve Parent into Children"));
     mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
+    mMergeOrphanChildren = hierarchyMenu->addAction(tr("Merge &Orphan Children (by median waveform)…"));
+    mMergeOrphanChildren->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_B));
+    mMergeOrphanChildren->setToolTip(tr(
+        "Gather the selected parent's tiny children — the single-spike debris that\n"
+        "accumulates after repeated splitting — and merge them in two groups,\n"
+        "judged against the median waveform of the parent's established children:\n"
+        "those whose shape matches into one child, the rest into another.\n"
+        "Nothing is deleted; both results are ordinary atoms of the same parent."));
+    connect(mMergeOrphanChildren, &QAction::triggered, this, &KlustersApp::slotMergeOrphanChildren);
+
     mRepairNesting = hierarchyMenu->addAction(tr("Re&repairNesting (re-cut atoms onto parents)"));
     // Shift+N, not bare F.  QAction shortcuts here use Qt's default
     // WindowShortcut context -- they fire whenever the main window is active,
@@ -921,6 +931,7 @@ void KlustersApp::createMenus()
     mDissolveParent->setEnabled(false);
     mDropChildNoise->setEnabled(false);
     mRepairNesting->setEnabled(false);
+    mMergeOrphanChildren->setEnabled(false);
     mMergeChildren->setEnabled(false);
     mMergeAllChildren->setEnabled(false);
     mUndoChildEdit->setEnabled(false);
@@ -4039,6 +4050,62 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
 }
 
 
+void KlustersApp::slotMergeOrphanChildren(){
+    if(!doc || !activeView())
+        return;
+
+    // The parent whose children are being curated.  curatedParent() is the one
+    // the child palette is showing, which is exactly the set this acts on; with
+    // no parent adopted yet, fall back to the first real cluster shown.
+    int parent = doc->curatedParent();
+    if(parent < 0){
+        for(int c : activeView()->clusters())
+            if(c > 1){ parent = c; break; }
+    }
+    if(parent < 0){
+        statusBar()->showMessage(
+            tr("Merge orphan children: select a parent cluster first."), 4000);
+        return;
+    }
+    if(doc->childrenOf(QList<int>{parent}).size() < 2){
+        statusBar()->showMessage(
+            tr("Merge orphan children: cluster %1 has no children to gather.").arg(parent), 4000);
+        return;
+    }
+
+    bool ok = false;
+    const int minSpikes = QInputDialog::getInt(
+        this, tr("Merge Orphan Children"),
+        tr("Treat a child as an orphan below this spike count:"),
+        5, 2, 1000000, 1, &ok);
+    if(!ok) return;
+    const double minCorr = QInputDialog::getDouble(
+        this, tr("Merge Orphan Children"),
+        tr("Minimum waveform correlation with the parent's median to count as a match:"),
+        0.90, -1.0, 1.0, 2, &ok);
+    if(!ok) return;
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    int matched = 0, stray = 0;
+    const int consumed = doc->mergeOrphanChildren(parent, minSpikes, minCorr,
+                                                  *activeView(), &matched, &stray);
+    QApplication::restoreOverrideCursor();
+
+    if(consumed < 0)
+        statusBar()->showMessage(
+            tr("Merge orphan children: cluster %1 has no orphans, or no established "
+               "child to take the reference from.").arg(parent), 6000);
+    else if(consumed == 0)
+        statusBar()->showMessage(
+            tr("Merge orphan children: nothing to merge — each group held at most one child."), 5000);
+    else
+        statusBar()->showMessage(
+            tr("Merge orphan children: %1 matched the median waveform, %2 did not "
+               "(cluster %3, threshold %4 spikes, r ≥ %5).")
+                .arg(matched).arg(stray).arg(parent).arg(minSpikes)
+                .arg(minCorr, 0, 'f', 2), 8000);
+}
+
 void KlustersApp::slotPartitionClusterByTime(){
     if(!doc || !activeView())
         return;
@@ -5890,6 +5957,7 @@ void KlustersApp::slotShowShortcutHelp()
             {"Ctrl+Shift+\u2193",  "Dissolve selected parent into its children"},
             {"Esc",            "Discard the selection polygon being drawn (feature or t-SNE view)"},
             {"Shift+T",        "Partition the selected cluster into time blocks from the session origin"},
+            {"Shift+B",        "Merge a parent's orphan children by median-waveform match"},
             {"Shift+N",        "Repair nesting (re-cut atoms onto parents)"},
             {"Ctrl+Shift+Z / Ctrl+Shift+Y", "Undo / redo atom (child-layer) edit"},
         }},
