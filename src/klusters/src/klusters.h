@@ -769,6 +769,10 @@ private:
     // doesn't accidentally trigger another action mid-tune.
     bool                wsPreviewActive   = false;
     QList<int>          wsSel;
+    /// Per-point 0-based .spk index, filled only when the preview runs on the
+    /// embedding; it is what lets the commit apply the basins the preview drew.
+    QVector<int>        wsRows;
+    bool                wsOnEmbedding = false;
     QVector<double>     wsXs;
     QVector<double>     wsYs;
     int                 wsDimX     = 0;
