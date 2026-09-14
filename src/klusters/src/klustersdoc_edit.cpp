@@ -1172,6 +1172,13 @@ void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList 
             if (src > 1 && src != newAtom && !emptyClusters.contains(src)
                     && !resulting.contains(src))
                 resulting.append(src);
+        // PARK the landing as well as emitting it.  The emit selects these atoms
+        // now, but the automation scheduled off hierarchyChanged repopulates the
+        // child palette again afterwards and the last rebuild wins -- which is
+        // why the n-way branch below already parks its landing, and why this one
+        // lost its selection on every split.  repopulateChildPalette drains the
+        // parked request after whichever rebuild turns out to be last.
+        setPendingChildSelection(resulting);
         emit hierarchyChildrenCreated(resulting);
         modified = true;
     }
@@ -1202,15 +1209,21 @@ void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList 
         if (childData) repairNesting();
 
         noteModifiedParent(newClusterIdint);
-        setPendingParentSelection({newClusterIdint});   // land on the split-off parent
 
-        // Log after: surviving source clusters + the new cluster
+        // The clusters this split produced: the new one first, so it stays the
+        // primary selection, then every source that still holds spikes.  The
+        // curator's next judgement is whether the cut was right, and that is a
+        // comparison between the pieces -- landing on the split-off half alone
+        // hid the other half of the evidence and had to be re-selected by hand.
         QList<int> resultIds;
-        for (int id : fromClusters)
-            if (!emptyClusters.contains(id))
-                resultIds.append(id);
         resultIds.append(newClusterIdint);
+        for (int id : fromClusters)
+            if (id > 1 && id != newClusterIdint && !emptyClusters.contains(id)
+                    && !resultIds.contains(id))
+                resultIds.append(id);
+        setPendingParentSelection(resultIds);
 
+        // (resultIds is also the log's "after" set below: same clusters.)
         // Manual-split detail: label this polygon split like the algorithmic
         // ones (KNN/watershed) and, crucially, preserve the projection
         // (dimensionX, dimensionY) the curator drew it in — the discriminating
@@ -1290,6 +1303,8 @@ void KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
+        // Same settled-point landing as the single child split above.
+        setPendingChildSelection(newClusters);
         emit hierarchyChildrenCreated(newClusters);
         modified = true;
     }
@@ -1345,7 +1360,14 @@ void KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList
         // finish still cover every cluster.  In child scope these are atoms, so guard.
         if (!childScopeActive) {
             for (int nf : fromToNewClusterIds.values()) noteModifiedParent(nf);
-            setPendingParentSelection(fromToNewClusterIds.values());   // land on the new parents
+            // Every piece of the split: the new clusters, then the sources that
+            // survived it.  Same reasoning as the single split -- the pieces are
+            // only judgeable against each other.
+            QList<int> landing = fromToNewClusterIds.values();
+            for (int src : fromToNewClusterIds.keys())
+                if (src > 1 && !emptyClusters.contains(src) && !landing.contains(src))
+                    landing.append(src);
+            setPendingParentSelection(landing);
         }
         updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
