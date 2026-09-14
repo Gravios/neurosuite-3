@@ -411,6 +411,13 @@ private:
     /// in meaning -- relabelling or cutting with the other layer's ids would
     /// silently address unrelated spikes.
     bool                 tsneChildLayer = false;
+    /// Bumped on every start.  A worker carries the id it was started with and
+    /// its result is dropped if it no longer matches, which is what lets
+    /// exitTsne() stop waiting for the thread on the GUI thread: a late result
+    /// from an abandoned run identifies itself and is ignored.
+    int                  tsneRunId = 0;
+    /// What the worker last reported, painted over the scatter while it runs.
+    QString              tsneProgressText;
     int                  tsneSpikeCount = 0;
     int                  tsneClusterCount = 0;
     double               tsnePerplexity = 30.0;
@@ -420,10 +427,15 @@ private:
     void startTsne(double perplexityOverride = 0.0);
     void exitTsne(const QString& reason = QString());
     void tsneDropIfActive();
-    void onTsneFinished(bool ok, const QString& err,
+    void onTsneFinished(int runId, bool ok, const QString& err,
                         std::vector<double> xy, QList<int> labels,
                         QVector<int> spikeRows,
                         int nSpikes, int nClusters, double perp, qint64 ms);
+
+    /** Draws the "computing" banner over the scatter.  A status-bar line is
+     *  easy to miss, and missing it makes a working key look dead -- which is
+     *  exactly how this feature has been experienced on a large selection. */
+    void paintTsneProgress(QPainter& painter);
     void paintTsne(QPainter& painter);
 
     /** Viewport position of embedded point @p i under the captured bounding

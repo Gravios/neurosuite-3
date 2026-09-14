@@ -32,13 +32,23 @@ struct TsneParams {
 };
 
 /** Embed N points of dimension D (row-major data, size N*D) into outXY
- *  (size N*2).  progress(done, total) is called once per iteration from the
- *  calling thread; a set *cancel aborts between iterations and returns
+ *  (size N*2).
+ *
+ *  progress(phase, done, total) is called from the worker thread through every
+ *  phase, not just the gradient loop.  That matters more than it sounds: at the
+ *  spike cap the setup -- neighbour search and bandwidth fitting -- is well over
+ *  half the wall time, and while it ran the engine said nothing at all, so a
+ *  perfectly healthy run looked like a key that did nothing.  @p phase is a
+ *  short stable tag ("neighbours", "bandwidths", "embedding") the caller can
+ *  show verbatim.
+ *
+ *  *cancel is polled inside those phases too, not only between iterations, so
+ *  aborting no longer waits for the neighbour search to finish; it returns
  *  false with *err = "cancelled".  Returns false on invalid input. */
 bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
                  std::vector<double>& outXY,
                  const TsneParams& params = TsneParams(),
-                 const std::function<void(int, int)>& progress = {},
+                 const std::function<void(const char*, int, int)>& progress = {},
                  const std::atomic<bool>* cancel = nullptr,
                  std::string* err = nullptr);
 
