@@ -96,7 +96,8 @@
 #include <neurosuite/core/neurofileio.h>  // variant-aware input resolution
 #include <neurosuite/core/custody.hpp>     // shared chain-of-custody policy
 #include <neurosuite/core/spike_extract.hpp>
-#include "klustersdoc_internal.h"  // shared custody path helpers (split TUs)
+#include "klustersdoc_internal.h"
+#include "pca_row_projection.h"   // the single PCA projection kernel  // shared custody path helpers (split TUs)
 
 extern int nbUndo;
 
@@ -1770,23 +1771,15 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
         const bool canProject = pca.valid() && pca.nCh > 0 && pca.nCh <= nChan;
 
         if (canProject) {
-            int outCol = 0;
-            for (int ch = 0; ch < pca.nCh; ++ch) {
-                const double* E    = pca.evec[static_cast<size_t>(ch)].data();
-                const double* mean = pca.means[static_cast<size_t>(ch)].data();
-                for (int c = 0; c < pca.nComp; ++c) {
-                    double dot = 0.0;
-                    for (int j2 = 0; j2 < pca.data2use; ++j2) {
-                        double x = static_cast<double>(
-                            wav[static_cast<size_t>(
-                                ch * nSamp + pca.recShift + j2)]);
-                        if (pca.centered) x -= mean[j2];
-                        dot += E[j2 + c * pca.data2use] * x;
-                    }
-                    row[static_cast<size_t>(outCol++)] =
-                        static_cast<int64_t>(std::llround(dot));
-                }
-            }
+            // Raw waveform, channel-major.  Centring and rounding belong to the
+            // kernel, so this side only says where its samples live.
+            klusters::projectSpikeOntoPca(
+                pca,
+                [&](int ch, int j) {
+                    return static_cast<double>(
+                        wav[static_cast<size_t>(ch * nSamp + pca.recShift + j)]);
+                },
+                row.data());
             // Extra (non-PCA) feature columns copied verbatim
             for (int k = 0; k < nExtraFeats; ++k)
                 row[static_cast<size_t>(nPcaFeats + k)] =
@@ -2942,28 +2935,17 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                         static_cast<double>(sdWav[static_cast<size_t>(s*nChan+ci)]);
         }
 
-        int outCol = 0;
-        for (int ch = 0; ch < pca.nCh; ++ch) {
-            const double* E    = pca.evec[static_cast<size_t>(ch)].data();
-            const double* mean = pca.means[static_cast<size_t>(ch)].data();
-            for (int c = 0; c < pca.nComp; ++c) {
-                double dot = 0.0;
-                for (int j2 = 0; j2 < pca.data2use; ++j2) {
-                    double x;
-                    if (isStderivFet) {
-                        x = xform[static_cast<size_t>(
-                            (pca.recShift + j2) * pca.nCh + ch)];
-                    } else {
-                        x = static_cast<double>(
-                            wavRaw[static_cast<size_t>(
-                                ch * nSamp + pca.recShift + j2)]);
-                    }
-                    if (pca.centered) x -= mean[j2];
-                    dot += E[j2 + c * pca.data2use] * x;
-                }
-                row[static_cast<size_t>(outCol++)] = std::llround(dot);
-            }
-        }
+        // Same kernel as the realign row builder; only the sample source
+        // differs -- the spatially differentiated buffer is sample-major.
+        klusters::projectSpikeOntoPca(
+            pca,
+            [&](int ch, int j) {
+                return isStderivFet
+                    ? xform[static_cast<size_t>((pca.recShift + j) * pca.nCh + ch)]
+                    : static_cast<double>(
+                          wavRaw[static_cast<size_t>(ch * nSamp + pca.recShift + j)]);
+            },
+            row.data());
 
         // Extra feature columns (non-PCA, e.g. peak amplitude): preserve
         // the existing in-memory values rather than writing zeros.
