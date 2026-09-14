@@ -222,10 +222,12 @@ struct QuadTree {
 
 bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
                  std::vector<double>& outXY, const TsneParams& params,
-                 const std::function<void(int, int)>& progress,
+                 const std::function<void(const char*, int, int)>& progress,
                  const std::atomic<bool>* cancel, std::string* err)
 {
     auto fail = [&](const char* m) { if (err) *err = m; return false; };
+    // Set from inside the parallel phases, which cannot return early.
+    std::atomic<bool> cancelled{false};
     if (N < 8)  return fail("need at least 8 points");
     if (D < 1)  return fail("need at least 1 dimension");
     if (data.size() != static_cast<size_t>(N) * D) return fail("data size mismatch");
@@ -264,6 +266,21 @@ bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
 #pragma omp parallel for schedule(dynamic, 64)
 #endif
     for (int i = 0; i < N; ++i) {
+        // An OpenMP loop cannot break, so a cancelled run coasts through the
+        // remaining iterations doing nothing instead of running the search.
+        // That is what makes the abort bounded by a chunk rather than by the
+        // whole neighbour phase, which at the cap was most of a minute.
+        if (cancelled.load(std::memory_order_relaxed)) continue;
+        if (cancel && cancel->load(std::memory_order_relaxed)) {
+            cancelled.store(true, std::memory_order_relaxed);
+            continue;
+        }
+        if (progress && (i % 512) == 0) {
+#ifdef _OPENMP
+            if (omp_get_thread_num() == 0)
+#endif
+            progress("neighbours", i, N);
+        }
         VpTree::Heap heap(static_cast<size_t>(k));
         tree.search(0, i, heap);
         std::sort(heap.v.begin(), heap.v.end());
@@ -273,7 +290,8 @@ bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
             nnD2[static_cast<size_t>(i) * k + j] = dd * dd;
         }
     }
-    if (cancel && cancel->load()) return fail("cancelled");
+    if (cancelled.load() || (cancel && cancel->load())) return fail("cancelled");
+    if (progress) progress("neighbours", N, N);
 
     // ── per-point bandwidth by bisection on entropy = log(perplexity) ──────
     const double logPerp = std::log(perp);
@@ -282,6 +300,17 @@ bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
 #pragma omp parallel for schedule(static)
 #endif
     for (int i = 0; i < N; ++i) {
+        if (cancelled.load(std::memory_order_relaxed)) continue;
+        if (cancel && cancel->load(std::memory_order_relaxed)) {
+            cancelled.store(true, std::memory_order_relaxed);
+            continue;
+        }
+        if (progress && (i % 512) == 0) {
+#ifdef _OPENMP
+            if (omp_get_thread_num() == 0)
+#endif
+            progress("bandwidths", i, N);
+        }
         const double* d2 = &nnD2[static_cast<size_t>(i) * k];
         double beta = 1.0, betaMin = -1, betaMax = -1;
         double* row = &Pcond[static_cast<size_t>(i) * k];
@@ -304,6 +333,9 @@ bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
         const double inv = 1.0 / std::max(sum, 1e-300);
         for (int j = 0; j < k; ++j) row[j] *= inv;
     }
+
+    if (cancelled.load() || (cancel && cancel->load())) return fail("cancelled");
+    if (progress) progress("bandwidths", N, N);
 
     // ── symmetrise into CSR (p_ij = (p_j|i + p_i|j) / 2N over the kNN union) ─
     std::vector<int> rowCnt(static_cast<size_t>(N) + 1, 0);
@@ -409,7 +441,7 @@ bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
         cx /= N; cy /= N;
         for (int i = 0; i < N; ++i) { Y[static_cast<size_t>(2 * i)] -= cx; Y[static_cast<size_t>(2 * i) + 1] -= cy; }
 
-        if (progress) progress(iter + 1, params.nIter);
+        if (progress) progress("embedding", iter + 1, params.nIter);
     }
     return true;
 }

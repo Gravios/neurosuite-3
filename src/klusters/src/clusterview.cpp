@@ -127,13 +127,16 @@ void ClusterView::tsneInvalidate(){
 
 void ClusterView::exitTsne(const QString& reason){
     tsneCancel = true;
-    if (tsneThread) {
-        // The worker checks the flag between iterations; the wait is bounded
-        // by one iteration (sub-second even at the spike cap).
-        tsneThread->wait();
-        tsneThread = nullptr;   // deleteLater is already connected to finished
-    }
+    // Do NOT wait here.  The flag is polled inside the neighbour and bandwidth
+    // phases now, so the worker stops promptly -- but promptly is not
+    // instantly, and this runs on the GUI thread, where waiting froze the
+    // application for as long as the abandoned phase took.  Abandon the thread
+    // instead: it deletes itself on finished(), and the run-id below makes its
+    // result identify itself as stale when it arrives.
+    ++tsneRunId;
+    tsneThread = nullptr;
     tsneComputing = false;
+    tsneProgressText.clear();
     resetSelectionPolygon();
     if (tsneMode) {
         tsneMode = false;
@@ -281,6 +284,10 @@ void ClusterView::startTsne(double perplexityOverride){
 
     tsneCancel    = false;
     tsneComputing = true;
+    const int runId = ++tsneRunId;
+    tsneProgressText = tr("t-SNE: starting…");
+    drawContentsMode = REFRESH;
+    update();
     if (sampled && statusBar)
         statusBar->showMessage(
             tr("t-SNE: %1 spikes selected, embedding a random sample of %2 (cap)…")
@@ -295,29 +302,37 @@ void ClusterView::startTsne(double perplexityOverride){
     QPointer<ClusterView> guard(this);
     std::atomic<bool>* cancel = &tsneCancel;
     QThread* th = QThread::create([guard, X, labels, rows, N, D, params, perp,
-                                   nClusters, cancel]() {
+                                   nClusters, cancel, runId]() {
         QElapsedTimer timer; timer.start();
         auto out = std::make_shared<std::vector<double>>();
         std::string err;
         int lastPct = -1;
+        QString lastPhase;
         const bool ok = tsneEmbed2D(*X, N, D, *out, params,
-            [&](int done, int totalIt) {
-                const int pct = done * 100 / totalIt;
-                if (pct / 5 != lastPct / 5) {           // ~every 5%
-                    lastPct = pct;
-                    QMetaObject::invokeMethod(guard, [guard, pct]() {
-                        if (guard && guard->statusBar)
-                            guard->statusBar->showMessage(
-                                ClusterView::tr("t-SNE: %1%…").arg(pct));
+            [&](const char* phase, int done, int totalIt) {
+                const int pct = totalIt > 0 ? done * 100 / totalIt : 0;
+                // Phase changes always report; within a phase, every ~5%.
+                const QString ph = QString::fromLatin1(phase);
+                if (ph != lastPhase || pct / 5 != lastPct / 5) {
+                    lastPhase = ph;
+                    lastPct   = pct;
+                    QMetaObject::invokeMethod(guard, [guard, ph, pct, runId]() {
+                        if (!guard || guard->tsneRunId != runId) return;
+                        guard->tsneProgressText =
+                            ClusterView::tr("t-SNE: %1 %2%…").arg(ph).arg(pct);
+                        if (guard->statusBar)
+                            guard->statusBar->showMessage(guard->tsneProgressText);
+                        guard->drawContentsMode = REFRESH;
+                        guard->update();
                     }, Qt::QueuedConnection);
                 }
             }, cancel, &err);
         const qint64 ms = timer.elapsed();
         QMetaObject::invokeMethod(guard,
             [guard, ok, err = QString::fromStdString(err), out, labels, rows, N,
-             nClusters, perp, ms]() {
+             nClusters, perp, ms, runId]() {
                 if (guard)
-                    guard->onTsneFinished(ok, err, std::move(*out), *labels,
+                    guard->onTsneFinished(runId, ok, err, std::move(*out), *labels,
                                           *rows, N, nClusters, perp, ms);
             }, Qt::QueuedConnection);
     });
@@ -326,13 +341,19 @@ void ClusterView::startTsne(double perplexityOverride){
     th->start();
 }
 
-void ClusterView::onTsneFinished(bool ok, const QString& err,
+void ClusterView::onTsneFinished(int runId, bool ok, const QString& err,
                                  std::vector<double> xy, QList<int> labels,
                                  QVector<int> spikeRows,
                                  int nSpikes, int nClusters, double perp,
                                  qint64 ms){
+    // A run abandoned by exitTsne (or superseded by a perplexity step) still
+    // lands here when its thread notices the cancel; it is not this view's
+    // current run and must not touch its state.
+    if (runId != tsneRunId)
+        return;
     tsneThread    = nullptr;    // finished; deleteLater will reap it
     tsneComputing = false;
+    tsneProgressText.clear();
     if (!ok) {
         if (statusBar) statusBar->showMessage(
             err == QLatin1String("cancelled")
@@ -548,6 +569,22 @@ void ClusterView::applyTsneLasso(){
                 .arg(nSelected).arg(sources.size()), 6000);
 }
 
+void ClusterView::paintTsneProgress(QPainter& painter){
+    if (tsneProgressText.isEmpty())
+        return;
+    const QRect vp = contentsRect();
+    QFontMetrics fm(painter.font());
+    const QString text = tsneProgressText + tr("   (F cancels)");
+    const int w = fm.horizontalAdvance(text) + 24;
+    const int h = fm.height() + 12;
+    const QRect box(vp.left() + (vp.width() - w) / 2, vp.top() + 12, w, h);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0, 0, 0, 180));
+    painter.drawRect(box);
+    painter.setPen(QColor(255, 255, 255));
+    painter.drawText(box, Qt::AlignCenter, text);
+}
+
 void ClusterView::paintTsne(QPainter& painter){
     const QRect vp = contentsRect();
     painter.fillRect(vp, palette().color(QPalette::Window));
@@ -637,6 +674,8 @@ void ClusterView::paintEvent ( QPaintEvent*){
     // (no world window, no axes, no time HUD -- embedding space is its own).
     if (tsneMode) {
         paintTsne(p);
+        if (tsneComputing)          // a re-embed at a new perplexity
+            paintTsneProgress(p);
         drawContentsMode = REFRESH;
         return;
     }
@@ -721,6 +760,12 @@ void ClusterView::paintEvent ( QPaintEvent*){
     p.drawPixmap(0, 0, doublebuffer);
 
 
+
+    // Computing over the scatter: the first embedding of a selection runs with
+    // the feature view still showing, and without this the only sign that F did
+    // anything is a status line that scrolls away.
+    if (tsneComputing)
+        paintTsneProgress(p);
 
     if(!selectionPolygon.isEmpty()) {
         const QColor color = selectPolygonColor(mode);
