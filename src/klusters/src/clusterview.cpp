@@ -1251,6 +1251,14 @@ void ClusterView::toggleAutoscale(){
     // rescales.  Toggling off returns to manual zoom (bounds stay at whatever
     // the last autoscale produced, then persist under normal zoom ops).
     autoscaleEnabled = !autoscaleEnabled;
+    if (!autoscaleEnabled) {
+        // Self-heal a session that already collapsed its world under the old
+        // behaviour: rebuilding from the extrema restores the room to pan and
+        // zoom out, and keeps whatever the user is currently looking at.
+        recomputeWorldBounds();
+        drawContentsMode = REDRAW;
+        update();
+    }
     if (autoscaleEnabled) {
         autoscaleToVisibleClusters();
         drawContentsMode = REDRAW;
@@ -1312,16 +1320,31 @@ void ClusterView::autoscaleToVisibleClusters()
     const long width  = xMax - xMin;
     const long height = yMax - yMin;
 
-    abscissaMin = static_cast<long>(qMin(0L, xMin) - width  * marginFrac);
-    abscissaMin = qMax(abscissaMin, -1000000L);
-    abscissaMax = static_cast<long>(qMax(0L, xMax) + width  * marginFrac);
+    // LOCALS, not the abscissa/ordinate members: those are the WORLD, and
+    // recomputeWorldBounds() below rewrites them from the extrema.  Writing the
+    // fit into them was the same mistake in miniature -- it made the fit the
+    // world, which is exactly what this function must stop doing.
+    long fitLeft  = static_cast<long>(qMin(0L, xMin) - width  * marginFrac);
+    fitLeft       = qMax(fitLeft, -1000000L);
+    long fitRight = static_cast<long>(qMax(0L, xMax) + width  * marginFrac);
 
-    ordinateMin = static_cast<long>(qMin(0L, yMin) - height * marginFrac);
-    ordinateMax = static_cast<long>(qMax(0L, yMax) + height * marginFrac);
-    ordinateMax = qMin(ordinateMax,  1000000L);
+    long fitTop    = static_cast<long>(qMin(0L, yMin) - height * marginFrac);
+    long fitBottom = static_cast<long>(qMax(0L, yMax) + height * marginFrac);
+    fitBottom      = qMin(fitBottom,  1000000L);
 
-    window = ZoomWindow(QRect(QPoint(abscissaMin, ordinateMin),
-                              QPoint(abscissaMax, ordinateMax)));
+    // Apply the fit as a ZOOM inside the world, never as a new world.
+    //
+    // Constructing a ZoomWindow sets its INITIAL bounds, and correctWindow()
+    // keeps every later window inside those: so assigning the fitted rect here
+    // made the fit the world.  From then on the window already WAS the full
+    // extent, which leaves panning nothing to shift into and zooming out
+    // nothing to expand into -- both simply stop responding, and toggling
+    // autoscale off does not undo it because the flag only stops the refitting.
+    // One press of A therefore disabled drag and wheel for the rest of the
+    // session.  The world belongs to the dimension extrema; a fit is a view of
+    // it.
+    recomputeWorldBounds();          // world from the extrema, zoom preserved
+    window.zoom(QPoint(fitLeft, fitTop), QPoint(fitRight, fitBottom));
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){
