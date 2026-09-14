@@ -166,6 +166,9 @@ void KlustersApp::slotRealignSpikes()
 // slotGroupClusters.  Callers must ensure doc != nullptr and
 // realignRunning == false.
 // ---------------------------------------------------------------------------
+// Traced: the realign is a PARENT-layer operation and its completion selects its
+// cluster in the parent palette, so an atom id reaching it is the shortest route
+// from a child-layer edit to a parent-view flip.
 void KlustersApp::startRealignForCluster(int clusterId)
 {
     realignArgs = buildRealignArgs();   // saved mode + top-ch gate
@@ -467,6 +470,9 @@ void KlustersApp::applyPendingParentSelection()
 
     if (!activeView()) return;
     const QList<int> pending = doc->takePendingParentSelection();
+    if (KlustersDoc::scopeTraceEnabled() && !pending.isEmpty())
+        qDebug().noquote() << QStringLiteral("[scope] applyPendingParentSelection pending=%1")
+                              .arg(doc->layerTagsFor(pending));
     if (pending.isEmpty()) return;
     QList<int> parents;
     for (int f : pending)

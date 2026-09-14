@@ -3990,6 +3990,12 @@ void KlustersApp::slotSingleColorUpdate(int clusterId){
 }
 
 void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
+    // This forces the parent clustering unconditionally two lines down, so it is
+    // the other candidate for the flip: if it runs during the automation after a
+    // child-layer edit, the view leaves child scope whatever the palette holds.
+    if (doc && KlustersDoc::scopeTraceEnabled())
+        qDebug().noquote() << QStringLiteral("[scope] slotUpdateShownClusters sel=%1")
+                              .arg(doc->layerTagsFor(selectedClusters));
     scheduleRefreshMergeRecommendations();   // recommendations follow the selection
     //Trigger ths action only if the active display does not contain a ProcessWidget
     if(!activeView())
@@ -4502,6 +4508,9 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
     // lane is idle.  The realign-state lock means no edit can land while a job runs,
     // so a busy lane here is only a manual realign in flight — fall back to inline.
     const QList<int> dirty = doc->takeModifiedParents();
+    if (KlustersDoc::scopeTraceEnabled() && !dirty.isEmpty())
+        qDebug().noquote() << QStringLiteral("[scope] autoPostClusterEdit dirty=%1")
+                              .arg(doc->layerTagsFor(dirty));
     if (configuration().getAutoRealignAfterMerge()
             && !realignRunning && !realignBatchActive) {
         QList<int> parents;

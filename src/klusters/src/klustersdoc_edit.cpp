@@ -160,14 +160,49 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
 }
 
 
+bool KlustersDoc::scopeTraceEnabled()
+{
+    static const bool on = qEnvironmentVariableIsSet("NS3_TRACE_SCOPE");
+    return on;
+}
+
+QString KlustersDoc::layerTagsFor(const QList<int>& ids) const
+{
+    QStringList out;
+    for (int id : ids) {
+        const bool p = clusteringData && clusteringData->hasCluster(id);
+        const bool c = childData && childData->hasCluster(id);
+        out << QStringLiteral("%1=%2").arg(id).arg(
+                   p && c ? QStringLiteral("PC")
+                 : p      ? QStringLiteral("P")
+                 : c      ? QStringLiteral("C")
+                          : QStringLiteral("-"));
+    }
+    return out.join(QLatin1Char(' '));
+}
+
 void KlustersDoc::noteModifiedParent(int clusterId)
 {
+    // The suspect line.  This set feeds the post-edit realign, which is a
+    // PARENT-layer operation whose completion lands the selection in the parent
+    // palette -- so an atom id arriving here is how a child-layer edit could end
+    // up flipping the view to parent scope.  childScopeActive is logged beside
+    // it because the guards on the callers test that flag, while the builders
+    // branch on which layer they actually edited: if those two ever disagree,
+    // this is where it shows.
+    if (scopeTraceEnabled())
+        qDebug().noquote() << QStringLiteral("[scope] noteModifiedParent %1  childScopeActive=%2")
+                              .arg(layerTagsFor(QList<int>{clusterId}))
+                              .arg(childScopeActive ? "true" : "false");
     if (clusterId > 1 && !modifiedParents.contains(clusterId))
         modifiedParents.append(clusterId);
 }
 
 QList<int> KlustersDoc::takeModifiedParents()
 {
+    if (scopeTraceEnabled() && !modifiedParents.isEmpty())
+        qDebug().noquote() << QStringLiteral("[scope] takeModifiedParents -> %1")
+                              .arg(layerTagsFor(modifiedParents));
     QList<int> out = modifiedParents;
     modifiedParents.clear();
     return out;

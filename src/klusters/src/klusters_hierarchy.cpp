@@ -502,6 +502,12 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
         // ran.  Drained here rather than applied at the operation, so it survives
         // however many deferred rebuilds follow.
         QList<int> want = doc->takePendingChildSelection();
+        if (KlustersDoc::scopeTraceEnabled())
+            qDebug().noquote() << QStringLiteral("[scope] repopulateChildPalette parent=%1 live=%2 landing=%3 prior=%4")
+                                  .arg(parentSlotA)
+                                  .arg(doc->childrenOf(QList<int>{parentSlotA}).size())
+                                  .arg(doc->layerTagsFor(want))
+                                  .arg(doc->layerTagsFor(priorSelection));
         const bool fromLanding = !want.isEmpty();
         if(want.isEmpty()) want = priorSelection;
 

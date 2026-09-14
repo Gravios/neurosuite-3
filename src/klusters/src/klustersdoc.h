@@ -506,6 +506,22 @@ public:
     /// Record a parent parent whose spike membership an operation created or changed.
     /// Drained by takeModifiedParents() in the coalesced post-edit step to drive the
     /// per-parent auto-realign.  Ignores noise/artifact (id <= 1) and de-duplicates.
+    /**Layer trace, enabled by setting NS3_TRACE_SCOPE in the environment.
+     *
+     * Exists to settle one question: does an id from the CHILD layer ever reach
+     * a parent-layer code path?  With the two numberings overlapping -- atom 7
+     * and parent 7 are unrelated units that happen to share a number, and the
+     * self-child identity makes the overlap deliberate -- a wrong-layer id is
+     * accepted silently by any test that only asks "does this exist?".  Every
+     * line tags each id with where it actually lives: P = a parent only,
+     * C = an atom only, PC = BOTH (the case that hides the mistake), - = neither.
+     *
+     * Off unless the variable is set; the check is read once into a static.*/
+    static bool scopeTraceEnabled();
+
+    /**"7=PC 12=C" -- each id with the layer(s) that actually contain it.*/
+    QString layerTagsFor(const QList<int>& ids) const;
+
     void noteModifiedParent(int clusterId);
     /// Return and clear the parents accumulated since the last drain.
     QList<int> takeModifiedParents();

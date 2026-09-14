@@ -92,6 +92,11 @@
 // ── hierarchical (.clc child) clustering ─────────────────────────────────────
 
 void KlustersDoc::setActiveClustering(bool child){
+    // Every layer flip, in order, so the log shows which step moved the view.
+    if (scopeTraceEnabled() && child != childScopeActive)
+        qDebug().noquote() << QStringLiteral("[scope] setActiveClustering %1 -> %2")
+                              .arg(childScopeActive ? "child" : "parent")
+                              .arg(child ? "child" : "parent");
     if (child && childData){
         activeData       = childData;
         activeColorList  = childColorList;
@@ -549,6 +554,10 @@ QList<int> KlustersDoc::takePendingChildSelection()
 
 void KlustersDoc::setCuratedParent(int parentId)
 {
+    if (scopeTraceEnabled() && parentId != curatedParentId)
+        qDebug().noquote() << QStringLiteral("[scope] curatedParent %1 -> %2  matrixScope=%3")
+                              .arg(curatedParentId).arg(parentId)
+                              .arg(matrixScopeOn ? "on" : "off");
     if (curatedParentId == parentId) return;   // no spurious recomputes
     curatedParentId = parentId;
     resolveMatrixScope();                     // emits matrixScopeChanged if it moved
