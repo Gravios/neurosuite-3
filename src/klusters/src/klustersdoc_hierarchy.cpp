@@ -428,13 +428,22 @@ bool KlustersDoc::compactAllClusterIds(){
         // numbering.
         rebuildHierarchyFromData();
 
-        // Atom colours are keyed by id, so they must be relabelled or every
-        // atom changes colour under the user.  syncChildColors() fills any id
-        // left without an entry; the relabel below keeps the ones that exist.
+        // Atom colours are keyed by id, so they must be relabelled or every atom
+        // changes colour under the user.  changeItemId takes the entry's INDEX,
+        // not its old id -- passing the id renames whichever entry happens to sit
+        // at that position, which leaves TWO entries carrying the same id (with
+        // different colours) and the palette then draws that atom twice.  The
+        // atom-renumber path a few hundred lines down has always done this
+        // correctly; this one did not, and the doubled children in the child
+        // palette were the result.  Same shape as that path, including the
+        // re-sort: changeItemId does not reorder, and the palette renders in
+        // storage order, so without it a renamed atom draws where its old id sat.
         if (childColorList) {
-            for (auto it = atomOldNew.constBegin(); it != atomOldNew.constEnd(); ++it)
-                if (childColorList->contains(it.key()))
-                    childColorList->changeItemId(it.key(), it.value());
+            for (auto it = atomOldNew.constBegin(); it != atomOldNew.constEnd(); ++it) {
+                const int idx = childColorList->itemIndex(it.key());
+                if (idx >= 0) childColorList->changeItemId(idx, it.value());
+            }
+            childColorList->sortByItemId();
         }
         syncChildColors();
 
