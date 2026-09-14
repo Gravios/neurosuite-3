@@ -3668,6 +3668,31 @@ bool KlustersApp::wsEnter()
         return false;
     }
 
+    // Refuse while the feature view is showing the t-SNE embedding.
+    //
+    // Watershed reads the scatter's two FEATURE dimensions, and both its
+    // preview and its commit are computed there -- neither knows the embedding
+    // exists.  Left ungated the combination is quietly dangerous rather than
+    // merely useless: paintEvent returns early in embedding mode, so the
+    // preview image and its HUD are never drawn, while the preview's key block
+    // still owns Up/Down and Enter -- and sits earlier in the filter than the
+    // perplexity intercept, so it takes them.  The user sees nothing, presses
+    // Enter, and commits a split computed from a projection they are not
+    // looking at.  Watershed ON the embedding is a real and attractive feature
+    // -- t-SNE produces exactly the separated density basins it wants -- but it
+    // needs the commit to use the basin labels the preview already computed,
+    // which today it does not: wsExit throws the preview away and calls
+    // watershedSelectedClusters(), a second computation from the feature
+    // dimensions.  Until that is addressed, refuse and say why.
+    if (ClusterView* cv = activeClusterView()) {
+        if (cv->isTsneShowing()) {
+            statusBar()->showMessage(
+                tr("Watershed works on the feature projection, not the t-SNE embedding — "
+                   "press F to return to the features first."), 6000);
+            return false;
+        }
+    }
+
     // Locate the ClusterView widget.  It is the active KlustersView's
     // currentViewWidget when containsClusterView() is true; cast through
     // the ViewWidget base.
