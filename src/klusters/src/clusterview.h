@@ -86,6 +86,11 @@ public:
      *  is untouched everywhere else. */
     bool isTsneActive() const {return tsneMode || tsneComputing;}
 
+    /** True only while the embedding is actually ON SCREEN.  Distinct from
+     *  isTsneActive(), which also covers a run in flight over the scatter: an
+     *  operation that needs the feature projection visible must ask this. */
+    bool isTsneShowing() const {return tsneMode;}
+
     /** Steps the perplexity by the configured increment (@p direction is +1
      *  for up, -1 for down) and recomputes the embedding on the same
      *  selection.  The current embedding stays on screen until the new one
