@@ -892,6 +892,36 @@ public:
      * after spike realignment) to ensure the waveform view shows fresh data.
      * Thread-safe: uses the internal mutex.
      */
+    /**Restarts the dimension-extrema worker for @p modifiedClusters.
+     *
+     * Fourteen edit paths performed this same four-step dance inline -- wait for
+     * the running thread, clear the cluster-0 flag, hand over the list, start --
+     * and the series of fixes that corrected the 0-boundary rule had to visit
+     * five of them separately because each held its own copy.  One statement of
+     * the launch sequence; the callers still decide WHETHER to recompute and
+     * WHICH clusters changed, which is the part that legitimately differs.*/
+    void restartDimensionExtrema(const QList<int>& modifiedClusters);
+
+    /**Drops one cluster's cached waveforms AND correlograms, respecting threads
+     * that are mid-flight in either: a loaded cache is deleted outright, an
+     * in-process one is flagged so the thread discards its own result.
+     *
+     * NOT the same as invalidateWaveformCache + invalidateCorrelogramCache.
+     * The latter calls cleanCorrelation unconditionally, while every inline
+     * copy of this block checks correlationsInProcess first and only flags a
+     * running correlation.  The two have been in the file together for a long
+     * time; this helper preserves the in-flight-aware behaviour the edit paths
+     * actually use rather than quietly adopting the other one.
+     *
+     * @p clusterListForCorrelations is the caller's cluster list -- every edit
+     * path passes the snapshot it took BEFORE mutating, which is the point:
+     * that list still contains the clusters the edit removed, so their cached
+     * pairs get evicted.  Passing the live clusterIds() instead would leave
+     * correlograms keyed on clusters that no longer exist.  The difference is
+     * invisible until a deleted cluster's id is reused.*/
+    void invalidateClusterCaches(int clusterId,
+                                 const QList<dataType>& clusterListForCorrelations);
+
     void invalidateWaveformCache(int clusterId);
 
     /** Invalidates the cached auto/cross-correlogram data for @p clusterId
