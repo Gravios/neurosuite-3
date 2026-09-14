@@ -609,6 +609,10 @@ void ClusterView::paintTsne(QPainter& painter){
         // in the scatter, so no separate rubber line is drawn.
         painter.setBrush(Qt::NoBrush);
         QPen selPen(selectPolygonColor(mode));
+        // The embedding draws in viewport pixels, so this pen is already in
+        // device units -- cosmetic anyway, stated so the two overlays read the
+        // same and neither drifts if its transform changes.
+        selPen.setCosmetic(true);
         selPen.setWidth(selectionLineWidth);
         painter.setPen(selPen);
         painter.drawPolyline(selectionPolygon);
@@ -771,6 +775,14 @@ void ClusterView::paintEvent ( QPaintEvent*){
         const QColor color = selectPolygonColor(mode);
         p.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
         QPen selPen(color);
+        // COSMETIC: setWindow above makes the painter's units WORLD units, so a
+        // plain pen width is a width in feature space -- it scales with the zoom
+        // instead of staying the thickness the preference asks for.  Zoomed out
+        // over a session-wide window that is a small fraction of a pixel and the
+        // lasso all but disappears; zoomed into a cluster the same pen draws a
+        // fat band.  A cosmetic pen is measured in device pixels whatever the
+        // transform, which is what a UI overlay wants.
+        selPen.setCosmetic(true);
         selPen.setWidth(selectionLineWidth);
         p.setPen(selPen);
         p.drawPolyline(selectionPolygon);
