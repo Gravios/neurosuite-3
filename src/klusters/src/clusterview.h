@@ -145,6 +145,13 @@ public:
     void clearWatershedOverlay();
     bool hasWatershedOverlay() const { return !wsImage.isNull(); }
 
+    /** The embedding's points, for an operation that wants to work on what the
+     *  curator is actually looking at.  @p spikeRows carries each point's
+     *  0-based .spk index so a result computed here can name spikes without
+     *  going back through feature space.  False when no embedding is showing.*/
+    bool tsneEmbeddingPoints(QVector<double>& xs, QVector<double>& ys,
+                             QVector<int>& spikeRows) const;
+
     // ── DipSplit post-commit HUD ─────────────────────────────────────────
     // Used by KlustersApp after a Shift+D dipsplit commits.  Draws a
     // short multi-line status block at top-left in viewport pixels
@@ -446,6 +453,15 @@ private:
     /** Viewport position of embedded point @p i under the captured bounding
      *  box.  The single mapping used by both paintTsne and the lasso. */
     QPoint tsneViewportPos(int i) const;
+
+    /** Same mapping for an arbitrary embedding coordinate, so an overlay
+     *  computed in embedding space lands on the points it describes. */
+    QPoint tsneViewportPosFor(double x, double y) const;
+
+    /** Draws the watershed preview over the embedding.  Separate from the
+     *  scatter's version because that one works in world coordinates with a
+     *  negated Y, neither of which the embedding has. */
+    void paintWatershedOverlayEmbedded(QPainter& p);
 
     /** The coordinate space selection vertices are recorded in: feature-world
      *  for the scatter, viewport pixels for the embedding (whose axes are not

@@ -585,6 +585,61 @@ void ClusterView::paintTsneProgress(QPainter& painter){
     painter.drawText(box, Qt::AlignCenter, text);
 }
 
+bool ClusterView::tsneEmbeddingPoints(QVector<double>& xs, QVector<double>& ys,
+                                      QVector<int>& spikeRows) const
+{
+    if (!tsneMode) return false;
+    const int n = qMin(static_cast<int>(tsneXY.size() / 2), tsneRowSpike.size());
+    if (n <= 0) return false;
+    xs.resize(n); ys.resize(n); spikeRows.resize(n);
+    for (int i = 0; i < n; ++i) {
+        xs[i]        = tsneXY[2 * i];
+        ys[i]        = tsneXY[2 * i + 1];
+        spikeRows[i] = tsneRowSpike.at(i);
+    }
+    return true;
+}
+
+QPoint ClusterView::tsneViewportPosFor(double x, double y) const
+{
+    const QRect vp = contentsRect();
+    const double sx = vp.width()  / qMax(1e-12, tsneMaxX - tsneMinX);
+    const double sy = vp.height() / qMax(1e-12, tsneMaxY - tsneMinY);
+    return QPoint(vp.left() + static_cast<int>((x - tsneMinX) * sx),
+                  vp.top()  + static_cast<int>((y - tsneMinY) * sy));
+}
+
+void ClusterView::paintWatershedOverlayEmbedded(QPainter& p)
+{
+    if (wsImage.isNull()) return;
+    // The scatter's version stretches the image into a WORLD rect and relies on
+    // that window's negated Y.  The embedding has no world and no negation: its
+    // points go through tsneViewportPos, so the overlay goes through the same
+    // mapping, which is the only way the basins can land on the blobs they were
+    // computed from.
+    const QPoint tl = tsneViewportPosFor(wsXMin, wsYMin);
+    const QPoint br = tsneViewportPosFor(wsXMax, wsYMax);
+    const QRectF tgt(QPointF(qMin(tl.x(), br.x()), qMin(tl.y(), br.y())),
+                     QPointF(qMax(tl.x(), br.x()), qMax(tl.y(), br.y())));
+    const bool prevSmooth = p.testRenderHint(QPainter::SmoothPixmapTransform);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, false);
+    p.drawImage(tgt, wsImage.mirrored(false, true));   // image row 0 is max-Y
+    p.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
+
+    if (!wsHud.isEmpty()) {
+        const QRect vp = contentsRect();
+        QFontMetrics fm(p.font());
+        const int w = fm.horizontalAdvance(wsHud) + 20;
+        const QRect box(vp.left() + 8, vp.bottom() - fm.height() - 20,
+                        w, fm.height() + 10);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0, 0, 0, 180));
+        p.drawRect(box);
+        p.setPen(QColor(255, 255, 255));
+        p.drawText(box, Qt::AlignCenter, wsHud);
+    }
+}
+
 void ClusterView::paintTsne(QPainter& painter){
     const QRect vp = contentsRect();
     painter.fillRect(vp, palette().color(QPalette::Window));
@@ -678,6 +733,8 @@ void ClusterView::paintEvent ( QPaintEvent*){
     // (no world window, no axes, no time HUD -- embedding space is its own).
     if (tsneMode) {
         paintTsne(p);
+        if (!wsImage.isNull())      // watershed preview, in embedding space
+            paintWatershedOverlayEmbedded(p);
         if (tsneComputing)          // a re-embed at a new perplexity
             paintTsneProgress(p);
         drawContentsMode = REFRESH;

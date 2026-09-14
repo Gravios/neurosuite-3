@@ -3668,6 +3668,14 @@ bool KlustersApp::wsEnter()
         return false;
     }
 
+    // Watershed ON the embedding, when that is what is showing.  See the
+    // seeding branch below and wsExit's commit: the basins are computed from
+    // the embedding's own coordinates and committed from the labels the
+    // preview produced, so what is applied is what was approved.
+    ClusterView* const tsneView =
+        (activeClusterView() && activeClusterView()->isTsneShowing())
+            ? activeClusterView() : nullptr;
+
     // Refuse while the feature view is showing the t-SNE embedding.
     //
     // Watershed reads the scatter's two FEATURE dimensions, and both its
@@ -3684,14 +3692,7 @@ bool KlustersApp::wsEnter()
     // which today it does not: wsExit throws the preview away and calls
     // watershedSelectedClusters(), a second computation from the feature
     // dimensions.  Until that is addressed, refuse and say why.
-    if (ClusterView* cv = activeClusterView()) {
-        if (cv->isTsneShowing()) {
-            statusBar()->showMessage(
-                tr("Watershed works on the feature projection, not the t-SNE embedding — "
-                   "press F to return to the features first."), 6000);
-            return false;
-        }
-    }
+
 
     // Locate the ClusterView widget.  It is the active KlustersView's
     // currentViewWidget when containsClusterView() is true; cast through
@@ -3721,14 +3722,27 @@ bool KlustersApp::wsEnter()
         xs.reserve(static_cast<int>(totalEst));
         ys.reserve(static_cast<int>(totalEst));
     }
-    for (int cid : sel) {
-        SortableTable subset;
-        if (!doc->data().spikePositions(cid, subset)) continue;
-        const int n = static_cast<int>(subset.nbOfColumns());
-        for (int i = 1; i <= n; ++i) {
-            const auto row = subset(1, i);
-            xs.append(static_cast<double>(doc->data().featureValue(row, dimX)));
-            ys.append(static_cast<double>(doc->data().featureValue(row, dimY)));
+    QVector<int> rows;                      // 0-based .spk index per point
+    if (tsneView) {
+        // The embedding's points, in the order it holds them.  Every point
+        // carries its spike row, which is what lets the commit name spikes
+        // without going back through a feature projection that had nothing to
+        // do with the basins.
+        if (!tsneView->tsneEmbeddingPoints(xs, ys, rows)) {
+            statusBar()->showMessage(
+                tr("Watershed: the embedding is not ready yet."), 4000);
+            return false;
+        }
+    } else {
+        for (int cid : sel) {
+            SortableTable subset;
+            if (!doc->data().spikePositions(cid, subset)) continue;
+            const int n = static_cast<int>(subset.nbOfColumns());
+            for (int i = 1; i <= n; ++i) {
+                const auto row = subset(1, i);
+                xs.append(static_cast<double>(doc->data().featureValue(row, dimX)));
+                ys.append(static_cast<double>(doc->data().featureValue(row, dimY)));
+            }
         }
     }
     if (xs.size() < 50) {
@@ -3743,6 +3757,8 @@ bool KlustersApp::wsEnter()
     wsSel       = sel;
     wsXs        = std::move(xs);
     wsYs        = std::move(ys);
+    wsRows      = std::move(rows);          // empty on the feature path
+    wsOnEmbedding = (tsneView != nullptr);
     wsDimX      = dimX;
     wsDimY      = dimY;
     wsScatter   = scatter;
@@ -3787,6 +3803,9 @@ void KlustersApp::wsExit(bool commit)
 
     // Snapshot the bits we still need before clearing state.
     const QList<int>          sel    = wsSel;
+    const Watershed2D::Result result = wsResult;      // the basins as PREVIEWED
+    const QVector<int>        rows   = wsRows;
+    const bool                onEmbedding = wsOnEmbedding;
     const int                 sigma  = wsSigmaCells;
     const int                 thresh = wsThreshPct;
     const double              gridMax = wsGridMax;
@@ -3800,6 +3819,8 @@ void KlustersApp::wsExit(bool commit)
     wsSel.clear();
     wsXs.clear();
     wsYs.clear();
+    wsRows.clear();
+    wsOnEmbedding = false;
     wsResult = Watershed2D::Result{};
 
     if (!commit) {
@@ -3818,7 +3839,47 @@ void KlustersApp::wsExit(bool commit)
 
     slotStatusMsg(tr("Applying watershed split..."));
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    const int nNew = doc->watershedSelectedClusters(sel, cfg);
+    int nNew = 0;
+    if (onEmbedding) {
+        // Apply exactly the basins that were on screen.  The feature-space path
+        // below re-runs the watershed inside the document, which is fine there
+        // because it re-derives from the same projection the preview used --
+        // but an embedding cannot be re-derived, and re-running from features
+        // would commit a split the curator never saw.  So the labels the
+        // preview produced ARE the split: group the points by basin, keep the
+        // largest where it is, and carve each of the others off through the
+        // row-named builder the embedding's lasso already uses.
+        QMap<int, QSet<dataType>> byBasin;
+        const int n = qMin(static_cast<int>(result.pointLabels.size()), rows.size());
+        for (int i = 0; i < n; ++i) {
+            const int lab = result.pointLabels[static_cast<size_t>(i)];
+            if (lab >= 1)                       // 0 = unassigned: leave it put
+                byBasin[lab].insert(static_cast<dataType>(rows.at(i)) + 1);
+        }
+        int keep = -1, keepSize = -1;
+        for (auto it = byBasin.constBegin(); it != byBasin.constEnd(); ++it)
+            if (it.value().size() > keepSize) { keepSize = it.value().size(); keep = it.key(); }
+        for (auto it = byBasin.constBegin(); it != byBasin.constEnd(); ++it) {
+            if (it.key() == keep || it.value().isEmpty()) continue;
+            // Sources read live, per basin: the previous carve renumbered
+            // nothing, but the id a row sits in is still the layer's business
+            // and not this function's to assume.
+            const QVector<dataType> labelByRow = doc->data().labelByFeatureRow();
+            QList<int> sources;
+            for (dataType r : it.value()) {
+                if (r <= 0 || r >= labelByRow.size()) continue;
+                const int cid = static_cast<int>(labelByRow.at(static_cast<int>(r)));
+                if (!sources.contains(cid)) sources.append(cid);
+            }
+            if (sources.isEmpty()) continue;
+            doc->createNewCluster(SpikeSelection(it.value(),
+                                                 QStringLiteral("watershed_tsne")),
+                                  sources);
+            ++nNew;
+        }
+    } else {
+        nNew = doc->watershedSelectedClusters(sel, cfg);
+    }
     QApplication::restoreOverrideCursor();
 
     if (nNew == 0) {
