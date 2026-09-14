@@ -159,6 +159,7 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
     if(mRepairNesting)     mRepairNesting->setEnabled(editable);
     // Same gate: gathering orphans is a child-layer edit like the rest.
     if(mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(editable);
+    if(mCompactIds)          mCompactIds->setEnabled(editable);
     if(mMergeChildren)  mMergeChildren->setEnabled(editable);
     if(mMergeAllChildren) mMergeAllChildren->setEnabled(editable);
     if(mUndoChildEdit)  mUndoChildEdit->setEnabled(editable && doc->childUndoCount() > 0);

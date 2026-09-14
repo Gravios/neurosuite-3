@@ -573,6 +573,9 @@ private Q_SLOTS:
   * parent's orphan children into a matching and a non-matching child.*/
     void slotMergeOrphanChildren();
 
+    /**Compacts both layers' cluster ids into the low integers without gaps.*/
+    void slotCompactClusterIds();
+
     /**Run PCA-centered spike realignment over every cluster (skipping
      * noise=0 and artifact=1) using the top 2 channels per cluster.
      * Reuses the same RealignWorker as slotRealignSpikes() but iterates
@@ -958,6 +961,7 @@ private:
     QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise
     QAction* mRepairNesting = nullptr;         // Hierarchy: re-cut atoms onto the current parents
     QAction* mMergeOrphanChildren = nullptr;   // Hierarchy: gather a parent's tiny children
+    QAction* mCompactIds = nullptr;            // Hierarchy: compact both layers' ids
     QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)
     QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every parent to one self atom
     QAction* mUndoChildEdit = nullptr;      // Hierarchy: undo last atom-layer edit

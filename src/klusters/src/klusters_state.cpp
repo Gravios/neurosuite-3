@@ -539,6 +539,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         if (mDropChildNoise) mDropChildNoise->setEnabled(false);
         if (mRepairNesting)     mRepairNesting->setEnabled(false);
         if (mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(false);
+        if (mCompactIds)          mCompactIds->setEnabled(false);
         if (mMergeChildren)  mMergeChildren->setEnabled(false);
         if (mUndoChildEdit)  mUndoChildEdit->setEnabled(false);
         if (mRedoChildEdit)  mRedoChildEdit->setEnabled(false);
@@ -586,6 +587,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         if (mDropChildNoise) mDropChildNoise->setEnabled(true);
         if (mRepairNesting)     mRepairNesting->setEnabled(true);
         if (mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(true);
+        if (mCompactIds)          mCompactIds->setEnabled(true);
         if (mMergeChildren)  mMergeChildren->setEnabled(true);
         if (mUndoChildEdit)  mUndoChildEdit->setEnabled(true);
         if (mRedoChildEdit)  mRedoChildEdit->setEnabled(true);

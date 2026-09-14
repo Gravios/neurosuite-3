@@ -391,6 +391,69 @@ void KlustersDoc::updateHierarchyShadow(const QVector<dataType>& cluByRow,
 }
 
 
+bool KlustersDoc::compactAllClusterIds(){
+    KlustersView* activeView = app()->activeView();
+
+    // ── Parents ──────────────────────────────────────────────────────────
+    // Whole-cloth reuse: renumberClusters() carries the colour relabelling,
+    // the undo entry, the curation-log placeholder, the per-view relabel and
+    // the palette rebuild, and it no-ops when the parents are already compact.
+    const QList<dataType> parentsBefore = clusteringData->clusterIds();
+    renumberClusters();
+    const bool parentsMoved = (clusteringData->clusterIds() != parentsBefore);
+
+    if (!childData) {
+        if (parentsMoved && activeView) activeView->showAllWidgets();
+        return parentsMoved;
+    }
+
+    // ── Atoms ────────────────────────────────────────────────────────────
+    // Same Data::renumber, so the two layers cannot drift into different
+    // notions of "compact".  Threads are quiesced for the same reason the
+    // parent path quiesces them: renumber rebuilds the row table underneath
+    // any reader.
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
+    QMap<int,int> atomOldNew, atomNewOld;
+    childData->renumber(atomOldNew, atomNewOld);
+    const bool atomsMoved = !atomOldNew.isEmpty();
+
+    if (atomsMoved) {
+        // The parent<->child maps are a DERIVED cache: re-deriving them from
+        // the spike labels is both simpler and safer than translating every
+        // entry through the map, and it is the same call every child edit
+        // already makes.  It also re-reports a straddling atom if one exists,
+        // which a hand translation would have carried silently into the new
+        // numbering.
+        rebuildHierarchyFromData();
+
+        // Atom colours are keyed by id, so they must be relabelled or every
+        // atom changes colour under the user.  syncChildColors() fills any id
+        // left without an entry; the relabel below keeps the ones that exist.
+        if (childColorList) {
+            for (auto it = atomOldNew.constBegin(); it != atomOldNew.constEnd(); ++it)
+                if (childColorList->contains(it.key()))
+                    childColorList->changeItemId(it.key(), it.value());
+        }
+        syncChildColors();
+
+        // The atom undo stack records edits by ATOM ID, and those ids have
+        // just moved.  Replaying one now would name the wrong atoms, so the
+        // stack is dropped rather than silently misapplied -- the caller says
+        // so in the status bar.  (The parent undo entry that renumberClusters
+        // pushed is unaffected: it carries its own old<->new maps.)
+        childUndoStack.clear();
+
+        emit hierarchyChanged();
+        setModified(true);
+    }
+
+    if ((parentsMoved || atomsMoved) && activeView)
+        activeView->showAllWidgets();
+    return parentsMoved || atomsMoved;
+}
+
 void KlustersDoc::rebuildHierarchyFromData(){
     if (!childData) return;
     parentToChildren.clear();

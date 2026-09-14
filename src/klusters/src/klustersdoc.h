@@ -641,6 +641,22 @@ public:
      *  separate map-undo stack. */
     void rebuildHierarchyFromData();
 
+    /**Compacts the ids of BOTH clusterings into the low integers with no gaps:
+  * parents become 2,3,4,... and atoms likewise, with the reserve bins 0 and 1
+  * left where they are.  After a long session of splitting and merging, both
+  * layers carry holes and ids far above the number of units that actually
+  * exist; this is the occasional tidy-up.
+  *
+  * The compaction RULE is not reimplemented here -- both passes call
+  * Data::renumber(), which already renumbers to 2.. in ascending order and
+  * early-returns when a layer is already compact.  The parent pass reuses
+  * renumberClusters() whole, so colours, undo, the curation-log placeholder,
+  * the view relabelling and the palette rebuild are exactly the parent
+  * renumber's; the child pass adds the atom layer and then re-derives the
+  * parent<->child maps from the data rather than trying to translate them.
+  * @return true when either layer actually moved.*/
+    bool compactAllClusterIds();
+
     /** Cross-check the derived child<->parent maps against the per-spike arrays.
      *
      *  childToParent IS the atom->parent relation the .clp records; it is just

@@ -896,6 +896,14 @@ void KlustersApp::createMenus()
     mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Parent"));
     mDissolveParent = hierarchyMenu->addAction(tr("&Dissolve Parent into Children"));
     mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
+    mCompactIds = hierarchyMenu->addAction(tr("Compact Cluster &IDs (parents and children)"));
+    mCompactIds->setToolTip(tr(
+        "Renumber both layers into the low integers with no gaps: parents become\n"
+        "2, 3, 4 … and atoms likewise, with the noise and artefact bins left in\n"
+        "place.  Occasional housekeeping after a long session of splitting.\n"
+        "The atom undo history is dropped, because it names ids that move."));
+    connect(mCompactIds, &QAction::triggered, this, &KlustersApp::slotCompactClusterIds);
+
     mMergeOrphanChildren = hierarchyMenu->addAction(tr("Merge &Orphan Children (by median waveform)…"));
     mMergeOrphanChildren->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_B));
     mMergeOrphanChildren->setToolTip(tr(
@@ -935,6 +943,7 @@ void KlustersApp::createMenus()
     mDropChildNoise->setEnabled(false);
     mRepairNesting->setEnabled(false);
     mMergeOrphanChildren->setEnabled(false);
+    mCompactIds->setEnabled(false);
     mMergeChildren->setEnabled(false);
     mMergeAllChildren->setEnabled(false);
     mUndoChildEdit->setEnabled(false);
@@ -4052,6 +4061,48 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
     }
 }
 
+
+void KlustersApp::slotCompactClusterIds(){
+    if(!doc || !activeView())
+        return;
+
+    const int parentsBefore = doc->parentData().clusterIds().size();
+    const int atomsBefore   = doc->hasChildClustering()
+                            ? doc->childClusterData().clusterIds().size() : 0;
+
+    // Dropping the atom undo history is the one irreversible part, so say so
+    // before doing it rather than in the status bar afterwards.
+    if(atomsBefore > 0 && doc->childUndoCount() > 0){
+        const QMessageBox::StandardButton go = QMessageBox::question(
+            this, tr("Compact Cluster IDs"),
+            tr("Renumbering the atoms invalidates the %1 step(s) of atom undo "
+               "history, which name ids that are about to move.  The parent "
+               "undo entry is unaffected.\n\nCompact anyway?")
+                .arg(doc->childUndoCount()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if(go != QMessageBox::Yes)
+            return;
+    }
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    const bool moved = doc->compactAllClusterIds();
+    QApplication::restoreOverrideCursor();
+
+    if(!moved){
+        statusBar()->showMessage(
+            tr("Compact cluster IDs: both layers were already compact — nothing to do."), 5000);
+        return;
+    }
+    const int parentsAfter = doc->parentData().clusterIds().size();
+    const int atomsAfter   = doc->hasChildClustering()
+                           ? doc->childClusterData().clusterIds().size() : 0;
+    statusBar()->showMessage(
+        tr("Compact cluster IDs: %1 parent(s) and %2 atom(s) renumbered into 2.. "
+           "(counts unchanged: %3 → %4 parents, %5 → %6 atoms).")
+            .arg(parentsAfter).arg(atomsAfter)
+            .arg(parentsBefore).arg(parentsAfter)
+            .arg(atomsBefore).arg(atomsAfter), 8000);
+}
 
 void KlustersApp::slotMergeOrphanChildren(){
     if(!doc || !activeView())
