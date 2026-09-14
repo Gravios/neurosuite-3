@@ -2129,42 +2129,14 @@ dataType Data::createNewCluster(const SpikeSelection& selection, const QList <in
         // dimensions have to be recalculated. If minMaxThread is running, the call
         //will wait until it finishes before starting the thread again.
         if(dimChanged){
-            //If the minMaxThread has not finish, wait until it is done
-            minMaxThread->wait();
-            //Reset the flag to false so the minMaxThread can do the computation
-            clusterZeroJustModified = false;
-            minMaxThread->setModifiedClusters(fromClusters);
-            minMaxThread->start();
+            restartDimensionExtrema(fromClusters);
         }
 
         //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
         //if there is not a thread working with them,otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
         // and the thread will remove it.
         QList<int>::iterator iterator;
-        for(iterator = fromClusters.begin(); iterator != fromClusters.end(); ++iterator){
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(*iterator)){
-                if(!waveformStatusMap[*iterator].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
-                    waveformStatusMap.remove(*iterator);
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[*iterator];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(*iterator,waveformStatusCopy);
-                }
-            }
-            }
-            if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-                }
-            }
-        }
+        for(int cid : fromClusters) invalidateClusterCaches(cid, currentClusterList);
 
         return newClusterId;
     }
@@ -2355,11 +2327,9 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
             //If the minMaxThread has not finish, wait until it is done
             minMaxThread->wait();
             //Reset the flag to false so the minMaxThread can do the computation
-            clusterZeroJustModified = false;
-            // setModifiedClusters MUST be called before start() so the thread
-            // sees the correct cluster list from the moment it begins running.
-            minMaxThread->setModifiedClusters(fromToNewClusterIds.keys());
-            minMaxThread->start();
+            // (restartDimensionExtrema keeps setModifiedClusters before start(),
+            // which this site's comment was there to guarantee.)
+            restartDimensionExtrema(fromToNewClusterIds.keys());
         }
 
         //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
@@ -2566,8 +2536,7 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
         // dimension whose giver is not in that list -- while this integration
         // just moved cluster 0's spikes INTO consideration, which is exactly the
         // case that demands a full rescan (the list containing 0 forces it).
-        minMaxThread->setModifiedClusters(clustersToRecluster);
-        minMaxThread->start();
+        restartDimensionExtrema(clustersToRecluster);
     }
 
     return true;
@@ -2876,10 +2845,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
     prepareUndo(newSpk, newInfo, dimChanged);
 
     if (dimChanged) {
-        minMaxThread->wait();
-        clusterZeroJustModified = false;
-        minMaxThread->setModifiedClusters(QList<int>{sourceCluster});
-        minMaxThread->start();
+        restartDimensionExtrema(QList<int>{sourceCluster});
     }
 
     return true;
@@ -3179,42 +3145,14 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
         // dimensions have to be recalculated. If minMaxThread is running, the call
         //will wait until it finishes before starting the thread again.
         if(dimChanged){
-            //If the minMaxThread has not finish, wait until it is done
-            minMaxThread->wait();
-            //Reset the flag to false so the minMaxThread can do the computation
-            clusterZeroJustModified = false;
-            minMaxThread->setModifiedClusters(fromClusters);
-            minMaxThread->start();
+            restartDimensionExtrema(fromClusters);
         }
 
         //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
         //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
         // and the thread will remove it.
         QList<int>::iterator iterator;
-        for(iterator = fromClusters.begin(); iterator != fromClusters.end(); ++iterator){
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(*iterator)){
-                if(!waveformStatusMap[*iterator].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
-                    waveformStatusMap.remove(*iterator);
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[*iterator];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(*iterator,waveformStatusCopy);
-                }
-            }
-            }
-            if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-                }
-            }
-        }
+        for(int cid : fromClusters) invalidateClusterCaches(cid, currentClusterList);
     }
 }
 
@@ -3299,41 +3237,13 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,true);
 
     //The max and min dimensions have to be recalculated.
-    //If the minMaxThread has not finish, wait until it is done
-    minMaxThread->wait();
-    //Reset the flag to false so the minMaxThread can do the computation
-    clusterZeroJustModified = false;
-    minMaxThread->setModifiedClusters(clustersToDelete);
-    minMaxThread->start();
+    restartDimensionExtrema(clustersToDelete);
 
     //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster 0.
     //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
     // and the thread will remove it.
     QList<int>::iterator iterator;
-    for(iterator = clustersToDelete.begin(); iterator != clustersToDelete.end(); ++iterator){
-        {
-            QMutexLocker lk(&mutex);
-        if(waveformStatusMap.contains(*iterator)){
-            if(!waveformStatusMap[*iterator].isInProcess()){
-                delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
-                waveformStatusMap.remove(*iterator);
-            }
-            else{
-                WaveformStatus waveformStatus = waveformStatusMap[*iterator];
-                WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                waveformStatusCopy.setClusterModified(true);
-                waveformStatusMap.insert(*iterator,waveformStatusCopy);
-            }
-        }
-        }
-        if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
-        else{
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-            }
-        }
-    }
+    for(int cid : clustersToDelete) invalidateClusterCaches(cid, currentClusterList);
 
     //remove the waveform and correlation data for the cluster 0 if clustersToDelete is not empty <=> cluster 0 will change
     //and if there is not a thread working with it, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
@@ -3467,12 +3377,8 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     //The max and min dimensions have to be recalculated.
     //If the minMaxThread has not finish, wait until it is done
     if(dimChanged){
-        minMaxThread->wait();
-        //Reset the flag to false so the minMaxThread can do the computation
-        clusterZeroJustModified = false;
-        QList<int> modifiedClusters;
-        minMaxThread->setModifiedClusters(modifiedClusters);
-        minMaxThread->start();
+        // Empty list: the established request for an unconditional full rescan.
+        restartDimensionExtrema(QList<int>());
     }
 
 
@@ -3480,30 +3386,7 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
     // and the thread will remove it.
     QList<int>::iterator iterator;
-    for(iterator = clustersToDelete.begin(); iterator != clustersToDelete.end(); ++iterator){
-        {
-            QMutexLocker lk(&mutex);
-        if(waveformStatusMap.contains(*iterator)){
-            if(!waveformStatusMap[*iterator].isInProcess()){
-                delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
-                waveformStatusMap.remove(*iterator);
-            }
-            else{
-                WaveformStatus waveformStatus = waveformStatusMap[*iterator];
-                WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                waveformStatusCopy.setClusterModified(true);
-                waveformStatusMap.insert(*iterator,waveformStatusCopy);
-            }
-        }
-        }
-        if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
-        else{
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-            }
-        }
-    }
+    for(int cid : clustersToDelete) invalidateClusterCaches(cid, currentClusterList);
 
     //remove the waveform and correlation data for the cluster 1 if clustersToDelete is not empty <=> cluster 1 will change
     //and if there is not a thread working with it, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
@@ -3650,44 +3533,14 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     //If the clusters to group contain the cluster 0, the max and min
     // dimensions have to be recalculated.
     if(dimChanged){
-        //If the minMaxThread has not finish, wait until it is done
-        minMaxThread->wait();
-        //Reset the flag to false so the minMaxThread can do the computation
-        clusterZeroJustModified = false;
-        minMaxThread->setModifiedClusters(clustersToGroup);
-        minMaxThread->start();
+        restartDimensionExtrema(clustersToGroup);
     }
 
     //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
     //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
     // and the thread will remove it.
     QList<int>::iterator clustersToGroupIterator;
-    for(clustersToGroupIterator = clustersToGroup.begin(); clustersToGroupIterator != clustersToGroup.end(); ++clustersToGroupIterator){
-
-        {
-            QMutexLocker lk(&mutex);
-        if(waveformStatusMap.contains(*clustersToGroupIterator)){
-            if(!waveformStatusMap[*clustersToGroupIterator].isInProcess()){
-                delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToGroupIterator));
-                waveformStatusMap.remove(*clustersToGroupIterator);
-            }
-            else{
-                WaveformStatus waveformStatus = waveformStatusMap[*clustersToGroupIterator];
-                WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                waveformStatusCopy.setClusterModified(true);
-                waveformStatusMap.insert(*clustersToGroupIterator,waveformStatusCopy);
-            }
-        }
-        }
-
-        if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToGroupIterator))) cleanCorrelation(static_cast<dataType>(*clustersToGroupIterator),currentClusterList);
-        else{
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToGroupIterator),true);
-            }
-        }
-    }
+    for(int cid : clustersToGroup) invalidateClusterCaches(cid, currentClusterList);
 
     return newClusterId;
 }
@@ -3822,10 +3675,7 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
 
     // Same wait/flag/list/start sequence as every sibling committer.
     if (dimChanged) {
-        minMaxThread->wait();
-        clusterZeroJustModified = false;
-        minMaxThread->setModifiedClusters(fromClusters);
-        minMaxThread->start();
+        restartDimensionExtrema(fromClusters);
     }
 
     // Both memberships changed, so the cached mean waveforms and correlograms
@@ -3993,10 +3843,7 @@ bool Data::setClusterLabels(const QVector<dataType>& labels)
     // EMPTY list is the established request for an unconditional full rescan
     // (undo/redo use the same convention).
     if (dimChanged) {
-        minMaxThread->wait();
-        clusterZeroJustModified = false;
-        minMaxThread->setModifiedClusters(QList<int>());
-        minMaxThread->start();
+        restartDimensionExtrema(QList<int>());
     }
 
     return true;
@@ -4141,10 +3988,7 @@ void Data::splitClusterTwoWays(int sourceCluster,
     // flag used to reach only prepareUndo, so undoing the split recomputed
     // while the split itself never did.
     if (dimChanged) {
-        minMaxThread->wait();
-        clusterZeroJustModified = false;
-        minMaxThread->setModifiedClusters(QList<int>{sourceCluster});
-        minMaxThread->start();
+        restartDimensionExtrema(QList<int>{sourceCluster});
     }
 
     // Output bookkeeping for the caller.
@@ -4380,63 +4224,11 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
     // and the thread will remove it.
     if(!addedClusters.isEmpty() ){
         QList<int>::iterator clustersToRemoveIterator;
-        for(clustersToRemoveIterator = addedClusters.begin(); clustersToRemoveIterator != addedClusters.end(); ++clustersToRemoveIterator){
-
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(*clustersToRemoveIterator)){
-                if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
-                    waveformStatusMap.remove(*clustersToRemoveIterator);
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[*clustersToRemoveIterator];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
-                }
-            }
-            }
-
-
-
-            if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                }
-            }
-        }
+        for(int cid : addedClusters) invalidateClusterCaches(cid, currentClusterList);
     }
     if(!updatedClusters.isEmpty()){
         QList<int>::iterator clustersToRemoveIterator;
-        for(clustersToRemoveIterator = updatedClusters.begin(); clustersToRemoveIterator != updatedClusters.end(); ++clustersToRemoveIterator){
-
-
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(*clustersToRemoveIterator)){
-                if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
-                    waveformStatusMap.remove(*clustersToRemoveIterator);
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[*clustersToRemoveIterator];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
-                }
-            }
-            }
-            if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                }
-            }
-        }
+        for(int cid : updatedClusters) invalidateClusterCaches(cid, currentClusterList);
     }
 
     //if addedClusters and updatedClusters are both empty, the undo concern the renumbering
@@ -4533,86 +4325,17 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
     //(the data will have to be uploaded again).
     if(!addedClusters.isEmpty() ){
         QList<int>::iterator clustersToRemoveIterator;
-        for(clustersToRemoveIterator = addedClusters.begin(); clustersToRemoveIterator != addedClusters.end(); ++clustersToRemoveIterator){
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(*clustersToRemoveIterator)){
-                if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
-                    waveformStatusMap.remove(*clustersToRemoveIterator);
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[*clustersToRemoveIterator];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
-                }
-            }
-            }
-            if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                }
-            }
-        }
+        for(int cid : addedClusters) invalidateClusterCaches(cid, currentClusterList);
     }
 
     if(updatedClusters.size() > 0){
         QList<int>::iterator clustersToRemoveIterator;
-        for(clustersToRemoveIterator = updatedClusters.begin(); clustersToRemoveIterator != updatedClusters.end(); ++clustersToRemoveIterator){
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(*clustersToRemoveIterator)){
-                if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
-                    waveformStatusMap.remove(*clustersToRemoveIterator);
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[*clustersToRemoveIterator];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
-                }
-            }
-            }
-            if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                }
-            }
-        }
+        for(int cid : updatedClusters) invalidateClusterCaches(cid, currentClusterList);
     }
 
     if(!deletedClusters.isEmpty()){
         QList<int>::iterator clustersToRemoveIterator;
-        for(clustersToRemoveIterator = deletedClusters.begin(); clustersToRemoveIterator != deletedClusters.end(); ++clustersToRemoveIterator){
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(*clustersToRemoveIterator)){
-                if(!waveformStatusMap[*clustersToRemoveIterator].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*clustersToRemoveIterator));
-                    waveformStatusMap.remove(*clustersToRemoveIterator);
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[*clustersToRemoveIterator];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(*clustersToRemoveIterator,waveformStatusCopy);
-                }
-            }
-            }
-            if(!correlationsInProcess.contains(static_cast<dataType>(*clustersToRemoveIterator))) cleanCorrelation(static_cast<dataType>(*clustersToRemoveIterator),currentClusterList);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(static_cast<dataType>(*clustersToRemoveIterator),true);
-                }
-            }
-        }
+        for(int cid : deletedClusters) invalidateClusterCaches(cid, currentClusterList);
     }
 
 
@@ -6970,42 +6693,14 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
     // dimensions have to be recalculated. If minMaxThread is running, the call
     //will wait until it finishes before starting the thread again.
     if(dimChanged){
-        //If the minMaxThread has not finish, wait until it is done
-        minMaxThread->wait();
-        //Reset the flag to false so the minMaxThread can do the computation
-        clusterZeroJustModified = false;
-        minMaxThread->setModifiedClusters(clustersToRecluster);
-        minMaxThread->start();
+        restartDimensionExtrema(clustersToRecluster);
     }
 
     //Remove the waveform and correlation data for the reclustered clusters.
     //If there is not a thread working with them,otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
     // and the thread will remove it.
     QList<int>::iterator iterator;
-    for(iterator = clustersToRecluster.begin(); iterator != clustersToRecluster.end(); ++iterator){
-        {
-            QMutexLocker lk(&mutex);
-        if(waveformStatusMap.contains(*iterator)){
-            if(!waveformStatusMap[*iterator].isInProcess()){
-                delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
-                waveformStatusMap.remove(*iterator);
-            }
-            else{
-                WaveformStatus waveformStatus = waveformStatusMap[*iterator];
-                WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                waveformStatusCopy.setClusterModified(true);
-                waveformStatusMap.insert(*iterator,waveformStatusCopy);
-            }
-        }
-        }
-        if(!correlationsInProcess.contains(static_cast<dataType>(*iterator))) cleanCorrelation(static_cast<dataType>(*iterator),currentClusterList);
-        else{
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.setClusterModified(static_cast<dataType>(*iterator),true);
-            }
-        }
-    }
+    for(int cid : clustersToRecluster) invalidateClusterCaches(cid, currentClusterList);
 
     // Localisation probe: the reclustered table was just installed (prepareUndo).
     // If the recluster integration left spikesByCluster referencing a feature row
@@ -7134,6 +6829,41 @@ void Data::swapSpikes(dataType idxA, dataType idxB)
         dataType ref = (*spikesByCluster)(1, k);
         if (ref == idxA)       (*spikesByCluster)(1, k) = idxB;
         else if (ref == idxB)  (*spikesByCluster)(1, k) = idxA;
+    }
+}
+
+void Data::restartDimensionExtrema(const QList<int>& modifiedClusters)
+{
+    restartDimensionExtrema(modifiedClusters);
+}
+
+void Data::invalidateClusterCaches(int clusterId,
+                                   const QList<dataType>& clusterListForCorrelations)
+{
+    //Remove the waveform and correlation data for the cluster if there is no
+    //thread working with them, otherwise advise the thread of the change by
+    //raising the modified flag and the thread will remove it.
+    {
+        QMutexLocker lk(&mutex);
+    if(waveformStatusMap.contains(clusterId)){
+        if(!waveformStatusMap[clusterId].isInProcess()){
+            delete waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
+            waveformStatusMap.remove(clusterId);
+        }
+        else{
+            WaveformStatus waveformStatus = waveformStatusMap[clusterId];
+            WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
+            waveformStatusCopy.setClusterModified(true);
+            waveformStatusMap.insert(clusterId,waveformStatusCopy);
+        }
+    }
+    }
+    if(!correlationsInProcess.contains(static_cast<dataType>(clusterId))) cleanCorrelation(static_cast<dataType>(clusterId),clusterListForCorrelations);
+    else{
+        {
+            QMutexLocker lk(&mutex);
+        correlationsInProcess.setClusterModified(static_cast<dataType>(clusterId),true);
+        }
     }
 }
 
