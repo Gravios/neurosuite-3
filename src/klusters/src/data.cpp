@@ -6834,7 +6834,15 @@ void Data::swapSpikes(dataType idxA, dataType idxB)
 
 void Data::restartDimensionExtrema(const QList<int>& modifiedClusters)
 {
-    restartDimensionExtrema(modifiedClusters);
+    //If the minMaxThread has not finished, wait until it is done
+    minMaxThread->wait();
+    //Reset the flag to false so the minMaxThread can do the computation
+    clusterZeroJustModified = false;
+    // setModifiedClusters MUST be called before start(), so the thread sees the
+    // correct cluster list from the moment it begins running rather than
+    // whatever list the PREVIOUS launch left behind.
+    minMaxThread->setModifiedClusters(modifiedClusters);
+    minMaxThread->start();
 }
 
 void Data::invalidateClusterCaches(int clusterId,
