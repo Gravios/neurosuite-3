@@ -2169,12 +2169,24 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             // clears the flag, so this always re-arms deliberately.
             const bool on = !doc->matrixScopeEnabled();
             doc->setMatrixScopeEnabled(on);
+            // Under a HELD joint selection the child palette's content follows
+            // this toggle -- V on shows the matrix-built working set (empty at
+            // first), V off falls back to the curated parent's roster -- so the
+            // toggle must repopulate.  In single-parent mode it changes nothing
+            // in the palette, and the rebuild is skipped.
+            if(childPanel && childPanel->isVisible()
+               && doc->curatedParentsList().size() >= 2)
+                repopulateChildPalette(clusterPalette->selectedClusters());
             if (on && !doc->matrixScopeActive())
                 statusBar()->showMessage(
                     tr("Matrices: child-scoped — select a parent with children to see it."), 3000);
             else
                 statusBar()->showMessage(
-                    on ? tr("Matrices: children of cluster %1.").arg(doc->curatedParent())
+                    on ? (doc->matrixScopeParents().size() >= 2
+                            ? tr("Matrices: joint — children of %1 parents; "
+                                 "click matrix cells to pick children.")
+                                  .arg(doc->matrixScopeParents().size())
+                            : tr("Matrices: children of cluster %1.").arg(doc->curatedParent()))
                        : tr("Matrices: all clusters."), 3000);
             return true;
         }
@@ -4135,19 +4147,31 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
             const bool multipleParents = (selectedClusters.size() > 1);
             const bool parentMoved     = (doc->curatedParent() >= 0 &&
                                           doc->curatedParent() != selectedClusters.first());
-            if(doc->matrixScopeEnabled() && (multipleParents || parentMoved)){
+            if(doc->matrixScopeEnabled() && !multipleParents && parentMoved){
                 doc->setMatrixScopeEnabled(false);
                 statusBar()->showMessage(
-                    multipleParents
-                      ? tr("Curation matrices: parent view (more than one parent selected) — V for child view.")
-                      : tr("Curation matrices: parent view (curated parent changed) — V for child view."),
+                    tr("Curation matrices: parent view (curated parent changed) — V for child view."),
                     4000);
             }
-            // With several parents selected there is no single curated parent;
-            // keep the previous one rather than adopting the first, so pressing
-            // V after narrowing back to one selection is unambiguous.
+            // Several parents selected = the JOINT child view: children of every
+            // selected parent compared in one parent-banded matrix (this used to
+            // drop the scope; the joint matrix is what a multi-parent selection
+            // means now).  The child palette starts EMPTY under a joint scope --
+            // picking children is the matrices' job (repopulateChildPalette's
+            // joint branch) -- and the single curated parent (the palette's
+            // slot) keeps its previous value rather than adopting the first,
+            // so narrowing back to one selection is unambiguous.
+            //
+            // Order matters: update the single parent BEFORE the joint list, so
+            // narrowing from joint to single resolves the scope exactly once.
             if(!multipleParents)
                 doc->setCuratedParent(selectedClusters.first());
+            doc->setCuratedParents(multipleParents ? selectedClusters : QList<int>());
+            if(multipleParents && doc->matrixScopeEnabled() && doc->matrixScopeActive())
+                statusBar()->showMessage(
+                    tr("Curation matrices: joint child view — children of %1 parents; "
+                       "click matrix cells to pick children.")
+                        .arg(doc->matrixScopeParents().size()), 4000);
         }
         repopulateChildPalette(selectedClusters);
     }
