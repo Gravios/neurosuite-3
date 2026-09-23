@@ -415,6 +415,44 @@ public:
     void setCuratedParent(int parentId);
     int  curatedParent() const { return curatedParentId; }
 
+    /** The parents a JOINT scope compares: the cluster palette's multi-selection,
+     *  held here so the scope outlives incidental palette rebuilds exactly as the
+     *  single curated parent does.  Fewer than two parents means "no joint scope"
+     *  and resolution falls back to curatedParent(); an empty list is the
+     *  single-parent mode, not "scope to nothing".  Set from the one selection
+     *  site in KlustersApp, nowhere else.
+     *
+     *  This inverts the earlier decision that a multi-parent selection drops the
+     *  child scope ("two selections make that meaningless"): the joint matrix is
+     *  the meaning -- children of every selected parent compared in ONE matrix,
+     *  parent-banded, so cross-parent fragment identity is visible before any
+     *  merge is committed rather than only after. */
+    void setCuratedParents(const QList<int>& parents);
+    QList<int> curatedParentsList() const { return curatedParents; }
+
+    /** The JOINT working set: the atoms the curation matrices have brought into
+     *  the child palette while a joint selection is held.
+     *
+     *  Under a joint scope the child palette deliberately starts EMPTY -- the
+     *  full rosters of several parents interleaved in one list is not a
+     *  browsable thing -- and the matrices are the only way atoms enter it: a
+     *  cell click REPLACES the set with that cell's atoms, a Ctrl-click ADDS,
+     *  and a drained operation landing is adopted so the output is listable.
+     *  The palette's own selection stays the one selection authority over
+     *  whatever is listed; this set only decides what CAN be listed.
+     *
+     *  Held, not derived: cleared whenever the joint selection itself changes
+     *  (setCuratedParents -- an identical re-selection early-returns there, so
+     *  an incidental re-click cannot empty the palette mid-inspection), and
+     *  empty in single-parent mode, where the palette lists the curated
+     *  parent's children as always. */
+    QList<int> jointChildrenList() const { return jointChildren; }
+    /** Adopt @p ids into the joint working set (no-op unless a joint selection
+     *  is held): the app calls this with a drained landing so an operation's
+     *  output survives the deferred palette rebuilds that follow, which drain
+     *  no landing of their own. */
+    void adoptJointChildren(const QList<int>& ids);
+
     /** The layer the matrix views must compute over.
      *
      *  NOT data().  data() follows activeData, which follows childScopeActive --
@@ -474,6 +512,15 @@ public:
      *  means "do not scope", which is a different instruction from "scope to nothing".
      */
     QList<int> matrixScopeClusters() const { return scopeResolvedClusters; }
+
+    /** The parents contributing children to the resolved scope, in block order.
+     *  Each contributes one contiguous run in matrixScopeClusters(), but the
+     *  matrix VIEWS re-sort ids for display, so consumers map cluster->parent
+     *  via parentOfChild() rather than assuming the runs survive.  Size >= 2 is
+     *  what makes a scope JOINT (and is what gates the parent bands the views
+     *  draw); exactly one is the classic single-parent scope.  Empty when
+     *  matrixScopeActive() is false. */
+    QList<int> matrixScopeParents() const { return scopeResolvedParents; }
 
     /** Recompute the held scope from current state.  Called when something the
      *  scope DEPENDS on changes -- the V toggle, the curated parent, or the
@@ -1966,9 +2013,12 @@ private:
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
     bool                 childScopeActive = false;  // true while a child is the shown clustering
     int                  curatedParentId = -1;      // the parent being curated
+    QList<int>           curatedParents;            // >=2 parents => joint matrix scope; else empty
+    QList<int>           jointChildren;             // atoms the matrices brought into the joint palette
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     bool                 scopeResolvedActive = false;   // held answer, never derived on demand
-    QList<int>           scopeResolvedClusters;         // held children of the curated parent
+    QList<int>           scopeResolvedClusters;         // held children of the scoped parent(s)
+    QList<int>           scopeResolvedParents;          // held contributing parents, block order
     QList<int>           modifiedParents;            // parent parents created/modified since the last post-edit drain
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild

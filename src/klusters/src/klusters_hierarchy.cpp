@@ -302,6 +302,19 @@ void KlustersApp::slotPromoteChildren(){
 bool KlustersApp::childPaletteRebuilding = false;
 
 void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
+    if(!pal) return;
+    if(parentId < 0){
+        // Guarded like the list form below: the reset empties the list, and that
+        // transient emptiness must not read as the user deselecting everything.
+        ChildRebuildGuard guard;
+        pal->clearPaletteScope();
+        pal->reset();
+        return;
+    }
+    assignChildSlot(pal, doc->childrenOf(QList<int>{parentId}));
+}
+
+void KlustersApp::assignChildSlot(ClusterPalette* pal, const QList<int>& kids){
     if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
         qDebug().noquote() << "[rebuild] assignChildSlot";   // focus-trace marker
     // A rebuild empties the list before refilling it, and an empty child palette
@@ -314,10 +327,9 @@ void KlustersApp::assignChildSlot(ClusterPalette* pal, int parentId){
     // reason.  Both were fixed at the reader; this fixes the flag.
     ChildRebuildGuard guard;
     if(!pal) return;
-    if(parentId < 0){ pal->clearPaletteScope(); pal->reset(); return; }
-    const QList<int> kids = doc->childrenOf(QList<int>{parentId});
-    // Build the palette from the child clustering's colours, scoped to this
-    // parent's children, then RESTORE the scope this was called with.
+    // Build the palette from the child clustering's colours, scoped to exactly
+    // the given children (empty = a deliberately empty palette: the JOINT scope
+    // starts that way), then RESTORE the scope this was called with.
     //
     // It used to end with setActiveClustering(false) unconditionally, described as
     // "restore parent-active" -- but that hardcodes the value it assumes was there
@@ -487,6 +499,45 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     bool landedFromOperation = false;   // a parked landing was applied below
     QList<int> priorSelection;
     if(childPaletteA) priorSelection = childPaletteA->selectedClusters();
+
+    // JOINT scope: the palette deliberately starts EMPTY and lists only the
+    // working set the curation matrices have built (doc->jointChildrenList()).
+    // Picking children is the matrices' job under a joint scope -- several
+    // parents' full rosters interleaved in one list is not a browsable thing --
+    // so the roster populate below is skipped entirely.  The single-parent
+    // slot (parentSlotA) keeps its value but populates nothing: narrowing
+    // back to one selection must stay unambiguous.
+    if(doc && doc->matrixScopeEnabled() && doc->curatedParentsList().size() >= 2){
+        // Adopt a parked landing into the HELD set before the list is built:
+        // an operation's output must be listable to be selectable, and the
+        // deferred rebuilds that follow drain nothing further, so gluing it
+        // onto this one redraw would lose it on the next.
+        QList<int> want = doc->takePendingChildSelection();
+        if(!want.isEmpty()) doc->adoptJointChildren(want);
+        const QList<int> shown = doc->jointChildrenList();
+        assignChildSlot(childPaletteA, shown);
+        if(focusedChildPalette() == nullptr) childPalette = childPaletteA;
+        if (KlustersDoc::scopeTraceEnabled())
+            qDebug().noquote() << QStringLiteral("[scope] repopulateChildPalette joint parents=%1 shown=%2 landing=%3 prior=%4")
+                                  .arg(doc->curatedParentsList().size())
+                                  .arg(shown.size())
+                                  .arg(doc->layerTagsFor(want))
+                                  .arg(doc->layerTagsFor(priorSelection));
+        if(childPaletteA && !shown.isEmpty()){
+            const bool fromLanding = !want.isEmpty();
+            if(want.isEmpty()) want = priorSelection;
+            QList<int> restore;
+            for(int id : want)
+                if(shown.contains(id)) restore.append(id);
+            if(!restore.isEmpty()){
+                childPaletteA->selectItems(restore);
+                if(fromLanding) landedFromOperation = true;
+            }
+        }
+        if((hadChildFocus || landedFromOperation) && childPaletteA)
+            childPaletteA->setFocusToList();
+        return;
+    }
 
     assignChildSlot(childPaletteA, parentSlotA);
     if(focusedChildPalette() == nullptr) childPalette = childPaletteA;

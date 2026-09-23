@@ -882,6 +882,11 @@ private:
     /** Build palette @p pal scoped to the children of @p parentId (or clear it
      *  when parentId < 0).  Used to (re)assign a parent to the child palette. */
     void assignChildSlot(ClusterPalette* pal, int parentId);
+    /** Scope-list form: build @p pal over exactly @p kids.  The int form above
+     *  delegates here; the JOINT branch of repopulateChildPalette() calls it
+     *  directly with the matrix-built working set, where an EMPTY list is a
+     *  deliberate empty palette (setPaletteScope({}) scopes to nothing). */
+    void assignChildSlot(ClusterPalette* pal, const QList<int>& kids);
     /** The child palette if it currently owns keyboard focus, else nullptr. */
     ClusterPalette* focusedChildPalette() const;
 

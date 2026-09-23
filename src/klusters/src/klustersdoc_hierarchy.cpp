@@ -563,22 +563,69 @@ void KlustersDoc::setCuratedParent(int parentId)
     resolveMatrixScope();                     // emits matrixScopeChanged if it moved
 }
 
+void KlustersDoc::setCuratedParents(const QList<int>& parents)
+{
+    // Fewer than two parents is the single-parent mode; hold an empty list so
+    // resolveMatrixScope() has exactly one fact to test.  The list is the
+    // palette's multi-selection verbatim: selection order is block order.
+    const QList<int> held = (parents.size() >= 2) ? parents : QList<int>();
+    if (curatedParents == held) return;        // no spurious recomputes
+    if (scopeTraceEnabled())
+        qDebug().noquote() << QStringLiteral("[scope] curatedParents %1 -> %2  matrixScope=%3")
+                              .arg(curatedParents.size()).arg(held.size())
+                              .arg(matrixScopeOn ? "on" : "off");
+    curatedParents = held;
+    // A changed joint selection invalidates the working set the matrices built
+    // for the OLD selection: the next joint palette starts empty again.  (An
+    // identical re-selection early-returns above, so an incidental re-click
+    // cannot empty the palette mid-inspection.)
+    jointChildren.clear();
+    resolveMatrixScope();                      // emits matrixScopeChanged if it moved
+}
+
+void KlustersDoc::adoptJointChildren(const QList<int>& ids)
+{
+    // The working set learns a drained landing so an operation's output is
+    // LISTABLE in the joint palette -- and stays listed across the deferred
+    // rebuilds that follow, which drain no landing of their own.  Appended,
+    // not replaced: adopting extends what the user built, in the order it was
+    // built.  Meaningless outside a joint selection.
+    if (curatedParents.size() < 2) return;
+    for (int id : ids)
+        if (!jointChildren.contains(id)) jointChildren.append(id);
+}
+
 void KlustersDoc::resolveMatrixScope()
 {
     const bool was = scopeResolvedActive;
     const QList<int> before = scopeResolvedClusters;
 
     scopeResolvedClusters.clear();
+    scopeResolvedParents.clear();
     scopeResolvedActive = false;
-    if (matrixScopeOn && childData && curatedParentId >= 0) {
-        const QList<int> kids = childrenOf(QList<int>{curatedParentId});
-        if (!kids.isEmpty()) {
-            scopeResolvedClusters = kids;
-            scopeResolvedActive   = true;
+    if (matrixScopeOn && childData) {
+        // Joint scope first: every selected parent contributes its children,
+        // gathered per parent so the resolved list is grouped in block order
+        // (the matrix threads re-sort ids for display; parentOfChild() is the
+        // authoritative cluster->parent map for any consumer that needs the
+        // grouping back).  A parent without children contributes nothing and is
+        // left out of scopeResolvedParents, so the parent bands drawn from it
+        // never name a parent with no rows.
+        QList<int> parents;
+        if (curatedParents.size() >= 2)   parents = curatedParents;
+        else if (curatedParentId >= 0)    parents << curatedParentId;
+        for (int p : parents) {
+            const QList<int> kids = childrenOf(QList<int>{p});
+            if (kids.isEmpty()) continue;
+            scopeResolvedClusters += kids;
+            scopeResolvedParents  << p;
         }
+        scopeResolvedActive = !scopeResolvedClusters.isEmpty();
+        if (!scopeResolvedActive) scopeResolvedParents.clear();
     }
     if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
         qDebug().noquote() << "[matrixscope] resolved: parent=" << curatedParentId
+                           << " joint=" << curatedParents.size()
                            << " on=" << matrixScopeOn
                            << " active=" << scopeResolvedActive
                            << " n=" << scopeResolvedClusters.size();
@@ -592,6 +639,21 @@ void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& prev
     if (matrixScopeActive()) {
         // Atom ids: land them in the child palette, which is where the user is
         // working and where the merge will be made.
+        //
+        // Under a JOINT scope the palette starts EMPTY and the matrices are the
+        // only way atoms enter it (jointChildrenList()): a cell click REPLACES
+        // the working set with that cell's atoms, and the parked landing +
+        // refresh below is the same path every operation's output uses.  No
+        // curated-parent retarget: the palette slot keeps its meaning and its
+        // value, so the "exactly two situations" contract on curatedParentId
+        // stays whole -- and since the scope resolves from curatedParents, a
+        // click cannot recompute the matrices either.
+        if (scopeResolvedParents.size() >= 2) {
+            jointChildren = ids;
+            setPendingChildSelection(ids);
+            emit childPaletteRefreshRequested();
+            return;
+        }
         emit hierarchyChildSelectionRequested(ids);
         return;
     }
@@ -607,6 +669,22 @@ void KlustersDoc::addFromMatrix(const QList<int>& ids)
         // addClustersToActiveView() uses the cluster palette's.  The doc cannot
         // read that palette (it lives in KlustersApp), so the union is made
         // where the landing is made.
+        //
+        // Under a JOINT scope a Ctrl-click EXTENDS the working set (a plain
+        // click replaces it -- selectFromMatrix above).  Refresh first, so the
+        // palette gains the new atoms while its prior selection survives the
+        // redraw (repopulateChildPalette's priorSelection path), then
+        // extend-select the added atoms through the same signal the
+        // single-parent branch uses: the palette's own selection stays the
+        // accumulator either way.  Both emissions are direct connections, so
+        // the refresh has completed before the extension selects.
+        if (scopeResolvedParents.size() >= 2) {
+            for (int id : ids)
+                if (!jointChildren.contains(id)) jointChildren.append(id);
+            emit childPaletteRefreshRequested();
+            emit hierarchyChildSelectionExtendRequested(ids);
+            return;
+        }
         emit hierarchyChildSelectionExtendRequested(ids);
         return;
     }
