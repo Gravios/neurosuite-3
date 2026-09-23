@@ -1074,8 +1074,31 @@ int EventsProvider::save(QFile* eventFile){
 
 void EventsProvider::removeEvent(int selectedEventId,double time){
     modified = true;
+
+    // Removing the session's LAST event empties the tables outright; every other
+    // removal splices around the removed row, which needs that row's index.
+    // Both the resolve just below and the splice further down are the same
+    // question, so ask it once and name it: the index is now resolved on exactly
+    // the branch that reads it, instead of on a second reading of nbEvents that
+    // could disagree with the first.  It could: removeEventDescription() sits
+    // between them and ends in an emit, so a slot connected to that signal runs
+    // -- synchronously, on a direct connection -- before the splice test.
+    // Nothing connects to it today, which is the only reason the old form was
+    // not already reading an unset index.
+    const bool removingLastRemainingEvent = (nbEvents == 1);
+
+    // Resolved HERE rather than inside the splice branch -- unlike addEvent's
+    // findIndex(time), this one passes an event id, and findIndex resolves it
+    // through eventIds.  removeEventDescription() below clears and RENUMBERS
+    // that map, so a call made after it would match the renumbered ids against
+    // a selectedEventId from before the renumbering.
+    // Deliberately left uninitialised: the branch structure above is what
+    // guarantees it is set before it is read, and an initialiser here would
+    // suppress -Wmaybe-uninitialized -- the one diagnostic that would catch
+    // anyone re-splitting these two tests later.  A dead initialiser buys
+    // nothing and disarms the tripwire.
     long timeIndex;
-    if(nbEvents != 1)
+    if(!removingLastRemainingEvent)
         timeIndex = findIndex(time,selectedEventId);
 
     //Clear the redo variables
@@ -1096,7 +1119,7 @@ void EventsProvider::removeEvent(int selectedEventId,double time){
         eventDescriptionCounter.remove(description);
     }
 
-    if(nbEvents != 1){
+    if(!removingLastRemainingEvent){
         events.setSize(1,nbEvents - 1);
         timeStamps.setSize(1,nbEvents - 1);
 
