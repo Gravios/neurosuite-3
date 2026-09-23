@@ -653,8 +653,9 @@ void KlustersApp::createMenus()
     mWatershed = actionMenu->addAction(tr("&Watershed Split"));
     mWatershed->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_W));
     mWatershed->setStatusTip(tr(
-        "Split the currently-shown clusters into one new cluster per "
-        "density basin in the active scatter view."));
+        "Split the selection into one new cluster per density basin in the "
+        "active scatter view — selected atoms (one parent) in children view, "
+        "selected parents otherwise."));
     connect(mWatershed, &QAction::triggered, this, &KlustersApp::slotWatershedSplit);
 
     actionMenu->addSeparator();
@@ -3664,13 +3665,51 @@ bool KlustersApp::wsEnter()
     if (!activeView() || !clusterPalette) return false;
     if (doesActiveDisplayContainProcessWidget()) return false;
 
-    QList<int> sel = clusterPalette->selectedClusters();
+    // Layer routing is EXPLICIT at this site.  The selection used to come from
+    // the parent palette while the spike lookup went through doc->data() --
+    // the ACTIVE layer -- so in children view parent numerals were looked up
+    // in the ATOM id space.  That coincidence held only while each parent
+    // kept a same-numeral core atom; on a curated session it collapses
+    // (jg05-20120316 g6: 1 of 411 parents), and Shift+W either refused
+    // ("not enough spikes") or previewed ANOTHER parent's atom, entirely
+    // plausibly.  Children view now watersheds the SELECTED ATOMS from the
+    // child palette against childClusterData(), and the parent path names
+    // parentData() outright -- data() appears nowhere in this function.
+    //
+    // Routing mirrors slotChildSelectionChanged: a non-empty child selection
+    // IS the shown clustering, so it is also what the watershed runs on; with
+    // no child selected the parent selection and layer apply as before.
+    QList<int> sel = (childPanel && childPanel->isVisible())
+                         ? selectedChildrenAB() : QList<int>();
     sel.removeAll(0);
     sel.removeAll(1);
+    const bool onChild = !sel.isEmpty();
+    if (!onChild) {
+        sel = clusterPalette->selectedClusters();
+        sel.removeAll(0);
+        sel.removeAll(1);
+    }
     if (sel.isEmpty()) {
         statusBar()->showMessage(
             tr("Watershed: select one or more clusters in the palette first."), 4000);
         return false;
+    }
+    if (onChild) {
+        // Same-parent guard, mergeChildren's reason turned around: basins know
+        // nothing of parent boundaries, so a cross-parent input would come
+        // back as atoms straddling both parents.  Refused at preview entry so
+        // the user is not tuning a partition that cannot commit (the doc
+        // guards its commit independently).
+        const int owner = doc->parentOfChild(sel.first());
+        bool sameParent = (owner >= 0);
+        for (int a : sel)
+            if (doc->parentOfChild(a) != owner) { sameParent = false; break; }
+        if (!sameParent) {
+            statusBar()->showMessage(
+                tr("Watershed: select atoms of a single parent — basins of a "
+                   "cross-parent selection would straddle parents."), 5000);
+            return false;
+        }
     }
 
     KlustersView* aview = activeView();
@@ -3687,6 +3726,18 @@ bool KlustersApp::wsEnter()
     ClusterView* const tsneView =
         (activeClusterView() && activeClusterView()->isTsneShowing())
             ? activeClusterView() : nullptr;
+
+    // Embedding + atoms is refused for now: the embedding commit carves
+    // through createNewCluster with sources read from data(), a path this
+    // change deliberately does not touch.  Its rows are spike rows and would
+    // likely survive the atom layer, but "likely" is not a verified commit
+    // path -- refuse and say why rather than commit a split nobody checked.
+    if (onChild && tsneView) {
+        statusBar()->showMessage(
+            tr("Watershed: the embedding path does not support atoms yet — "
+               "leave the embedding (or the children view) first."), 5000);
+        return false;
+    }
 
     // Refuse while the feature view is showing the t-SNE embedding.
     //
@@ -3725,12 +3776,14 @@ bool KlustersApp::wsEnter()
     const int dimX = aview->abscissaDimension();
     const int dimY = aview->ordinateDimension();
 
-    // Extract (X, Y) coordinates for every spike of every selected cluster.
+    // Extract (X, Y) coordinates for every spike of every selected cluster,
+    // from the layer the ids actually name (see the routing comment above).
+    Data& src = onChild ? doc->childClusterData() : doc->parentData();
     QVector<double> xs;
     QVector<double> ys;
     {
         size_t totalEst = 0;
-        for (int cid : sel) totalEst += doc->data().nbOfSpikes(cid);
+        for (int cid : sel) totalEst += src.nbOfSpikes(cid);
         xs.reserve(static_cast<int>(totalEst));
         ys.reserve(static_cast<int>(totalEst));
     }
@@ -3748,12 +3801,12 @@ bool KlustersApp::wsEnter()
     } else {
         for (int cid : sel) {
             SortableTable subset;
-            if (!doc->data().spikePositions(cid, subset)) continue;
+            if (!src.spikePositions(cid, subset)) continue;
             const int n = static_cast<int>(subset.nbOfColumns());
             for (int i = 1; i <= n; ++i) {
                 const auto row = subset(1, i);
-                xs.append(static_cast<double>(doc->data().featureValue(row, dimX)));
-                ys.append(static_cast<double>(doc->data().featureValue(row, dimY)));
+                xs.append(static_cast<double>(src.featureValue(row, dimX)));
+                ys.append(static_cast<double>(src.featureValue(row, dimY)));
             }
         }
     }
@@ -3771,6 +3824,7 @@ bool KlustersApp::wsEnter()
     wsYs        = std::move(ys);
     wsRows      = std::move(rows);          // empty on the feature path
     wsOnEmbedding = (tsneView != nullptr);
+    wsOnChild   = onChild;
     wsDimX      = dimX;
     wsDimY      = dimY;
     wsScatter   = scatter;
@@ -3818,6 +3872,7 @@ void KlustersApp::wsExit(bool commit)
     const Watershed2D::Result result = wsResult;      // the basins as PREVIEWED
     const QVector<int>        rows   = wsRows;
     const bool                onEmbedding = wsOnEmbedding;
+    const bool                onChild = wsOnChild;
     const int                 sigma  = wsSigmaCells;
     const int                 thresh = wsThreshPct;
     const double              gridMax = wsGridMax;
@@ -3833,10 +3888,14 @@ void KlustersApp::wsExit(bool commit)
     wsYs.clear();
     wsRows.clear();
     wsOnEmbedding = false;
+    wsOnChild = false;
     wsResult = Watershed2D::Result{};
 
     if (!commit) {
-        if (clusterPalette) clusterPalette->setFocusToList();
+        // Focus returns to the palette the selection came from.
+        ClusterPalette* fp = (onChild && childPalette) ? childPalette
+                                                       : clusterPalette;
+        if (fp) fp->setFocusToList();
         statusBar()->showMessage(tr("Watershed cancelled."), 3000);
         return;
     }
@@ -3889,21 +3948,40 @@ void KlustersApp::wsExit(bool commit)
                                   sources);
             ++nNew;
         }
+    } else if (onChild) {
+        // Atom layer, explicitly: wsEnter collected these ids from the child
+        // palette and this call names childData end to end.
+        nNew = doc->watershedSelectedChildren(sel, cfg);
     } else {
         nNew = doc->watershedSelectedClusters(sel, cfg);
     }
     QApplication::restoreOverrideCursor();
 
-    if (nNew == 0) {
+    if (nNew < 0) {
+        // The doc's own same-parent guard.  wsEnter refuses this before the
+        // preview, so reaching it means the hierarchy moved mid-preview.
+        statusBar()->showMessage(tr(
+            "Watershed: not applied — the selected atoms no longer share one parent."), 5000);
+    } else if (nNew == 0) {
         statusBar()->showMessage(tr(
             "Watershed: no split — only one density basin found at the chosen settings."), 5000);
     } else {
         statusBar()->showMessage(
-            tr("Watershed: %1 new clusters created from %2 source%3.")
-                .arg(nNew).arg(sel.size()).arg(sel.size() == 1 ? "" : "s"),
+            onChild ? tr("Watershed: %1 new atoms created from %2 source atom%3.")
+                          .arg(nNew).arg(sel.size()).arg(sel.size() == 1 ? "" : "s")
+                    : tr("Watershed: %1 new clusters created from %2 source%3.")
+                          .arg(nNew).arg(sel.size()).arg(sel.size() == 1 ? "" : "s"),
             4000);
     }
-    if (clusterPalette) clusterPalette->setFocusToList();
+    // A committed atom split parks its landing and the child palette takes
+    // focus with it (hierarchyChildrenCreated now, the drained park after the
+    // deferred rebuilds); stealing focus back to the parent palette here would
+    // undo that landing.  Parent commits keep their focus return unchanged.
+    if (clusterPalette && !(onChild && nNew > 0)) {
+        ClusterPalette* fp = (onChild && childPalette) ? childPalette
+                                                       : clusterPalette;
+        fp->setFocusToList();
+    }
     slotStatusMsg(tr("Ready."));
 }
 

@@ -773,6 +773,11 @@ private:
     /// embedding; it is what lets the commit apply the basins the preview drew.
     QVector<int>        wsRows;
     bool                wsOnEmbedding = false;
+    /// True when the preview runs on the ATOM layer (children view: wsSel
+    /// holds atom ids from the child palette and the commit goes through
+    /// watershedSelectedChildren).  Held at entry, like wsOnEmbedding, so the
+    /// commit cannot re-derive the layer from state that moved meanwhile.
+    bool                wsOnChild = false;
     QVector<double>     wsXs;
     QVector<double>     wsYs;
     int                 wsDimX     = 0;
