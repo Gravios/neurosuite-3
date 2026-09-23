@@ -11,6 +11,9 @@
 #include <QPainter>
 #include <QPointF>
 #include <QPen>
+#include <QColor>
+#include <QList>
+#include <QRectF>
 
 /**Draw gridlines over an n x n matrix whose top-left cell corner is @p topLeft and
  * whose cells are @p cellSize on a side (both already in device coordinates, i.e.
@@ -67,6 +70,70 @@ inline void drawMatrixGrid(QPainter& p, const QPointF& topLeft, double cellSize,
     for (int i = 0; i <= n; ++i) {
         const double y = y0 + i * cellSize;
         p.drawLine(QPointF(x0, y), QPointF(x0 + span, y));
+    }
+    p.restore();
+}
+
+/**Parent identity bands + block boundaries for a JOINT-scoped matrix.
+ *
+ * When the scope spans several parents, each row/col belongs to one parent and
+ * the matrix is only readable if that ownership is visible.  Two marks, both
+ * driven by the same per-display-cell parent list:
+ *   - a colour band along the top and left edges, one strip per CELL, in the
+ *     owning PARENT's palette colour.  Per cell, not per run: the views' display
+ *     order (id-sorted by the threads, Shift+S reordered, or permuted) owes the
+ *     parents no contiguity, and a per-cell strip is correct under every
+ *     ordering while still reading as solid blocks wherever runs are contiguous.
+ *   - a solid full-span boundary line wherever two ADJACENT cells belong to
+ *     different parents, so contiguous blocks get the separator the dashed cell
+ *     grid cannot provide.  Under a permuted order the boundaries multiply,
+ *     which is itself legible: it shows the order is not parent-grouped.
+ *
+ * ONE DEFINITION FOR THE FOUR VIEWS, for the same reason as drawMatrixGrid
+ * above.  Geometry is the views' shared (effMatrixTopLeft, effCellSize) pair.
+ * parentPerCell[i] is the parent owning display cell i (-1 = none: noise, or an
+ * unparented id -- no band, and a parent<->none adjacency still draws a
+ * boundary); colourPerCell[i] is its band colour (invalid = skip).  Bands sit
+ * OUTSIDE the matrix rect, in the label margin, so no matrix pixel is covered
+ * -- but the margin is where drawClusterIds paints the ids, and in all four
+ * views it paints AFTER this, on top.  The strips are therefore drawn
+ * translucent (alpha, not full colour): the ids stay legible over a per-parent
+ * tint instead of fighting a saturated palette colour at full strength.
+ */
+inline void drawMatrixParentBands(QPainter& p, const QPointF& topLeft, double cellSize,
+                                  const QList<int>& parentPerCell,
+                                  const QList<QColor>& colourPerCell,
+                                  double thickness = 5.0,
+                                  const QColor& boundary = QColor(32, 32, 32))
+{
+    const int n = parentPerCell.size();
+    if (n <= 0 || cellSize <= 0.0 || colourPerCell.size() != n) return;
+
+    p.save();
+    p.setPen(Qt::NoPen);
+    const double x0 = topLeft.x();
+    const double y0 = topLeft.y();
+    const double span = n * cellSize;
+    for (int i = 0; i < n; ++i) {
+        const QColor& c = colourPerCell[i];
+        if (!c.isValid()) continue;
+        QColor band = c;
+        band.setAlpha(170);     // ids paint on top of the strip; keep them legible
+        p.setBrush(band);
+        p.drawRect(QRectF(x0 + i * cellSize, y0 - thickness - 1.0, cellSize, thickness));
+        p.drawRect(QRectF(x0 - thickness - 1.0, y0 + i * cellSize, thickness, cellSize));
+    }
+    QPen pen(boundary);
+    pen.setWidth(0);
+    pen.setCosmetic(true);      // one device pixel, exactly as the grid above
+    p.setPen(pen);
+    p.setBrush(Qt::NoBrush);
+    for (int i = 1; i < n; ++i) {
+        if (parentPerCell[i] == parentPerCell[i - 1]) continue;
+        const double x = x0 + i * cellSize;
+        const double y = y0 + i * cellSize;
+        p.drawLine(QPointF(x, y0 - thickness - 1.0), QPointF(x, y0 + span));
+        p.drawLine(QPointF(x0 - thickness - 1.0, y), QPointF(x0 + span, y));
     }
     p.restore();
 }

@@ -862,6 +862,22 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         // twice for the same picture.
         drawMatrixGrid(painter, oriF, eff, nbClusters);
         painter.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
+
+        // Parent identity bands under a JOINT scope; see templatematrixview.cpp.
+        // This view alone carries a display permutation, so the per-cell parent
+        // is looked up through it -- the bands follow a Shift+S reorder.
+        const QList<int> scopeParents = doc.matrixScopeParents();
+        if (scopeParents.size() >= 2) {
+            ItemColors& parentColours = doc.parentClusterColors();
+            QList<int> parentPerCell;      parentPerCell.reserve(nbClusters);
+            QList<QColor> colourPerCell;   colourPerCell.reserve(nbClusters);
+            for (int d = 0; d < nbClusters; ++d) {
+                const int par = doc.parentOfChild(clusterList[displayToMatrix(d)]);
+                parentPerCell.append(par);
+                colourPerCell.append(par >= 0 ? parentColours.color(par) : QColor());
+            }
+            drawMatrixParentBands(painter, oriF, eff, parentPerCell, colourPerCell);
+        }
     }
 
     // Edge-highlight every selected pair (not just the most recent one).  The
