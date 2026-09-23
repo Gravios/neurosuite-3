@@ -628,6 +628,20 @@ void DriftMatrixView::drawMatrix(QPainter& p)
         // Full-span lines only; boxing each cell would draw every interior edge
         // twice for the same picture.
         drawMatrixGrid(p, oriF, eff, n);
+
+        // Parent identity bands under a JOINT scope; see templatematrixview.cpp.
+        const QList<int> scopeParents = doc.matrixScopeParents();
+        if (scopeParents.size() >= 2) {
+            ItemColors& parentColours = doc.parentClusterColors();
+            QList<int> parentPerCell;      parentPerCell.reserve(n);
+            QList<QColor> colourPerCell;   colourPerCell.reserve(n);
+            for (int d = 0; d < n; ++d) {
+                const int par = doc.parentOfChild(clusterList[d]);
+                parentPerCell.append(par);
+                colourPerCell.append(par >= 0 ? parentColours.color(par) : QColor());
+            }
+            drawMatrixParentBands(p, oriF, eff, parentPerCell, colourPerCell);
+        }
     }
 }
 

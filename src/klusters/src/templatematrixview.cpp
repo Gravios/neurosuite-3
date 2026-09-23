@@ -662,6 +662,22 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
         drawMatrixGrid(p, oriF, eff, n);
         p.setRenderHint(QPainter::SmoothPixmapTransform, prevSmooth);
 
+        // Parent identity bands: a JOINT scope compares children of several
+        // parents in one matrix, and a row/col only reads correctly with its
+        // owner visible.  Single-parent scope and unscoped matrices draw none.
+        const QList<int> scopeParents = doc.matrixScopeParents();
+        if (scopeParents.size() >= 2) {
+            ItemColors& parentColours = doc.parentClusterColors();
+            QList<int> parentPerCell;      parentPerCell.reserve(n);
+            QList<QColor> colourPerCell;   colourPerCell.reserve(n);
+            for (int d = 0; d < n; ++d) {
+                const int par = doc.parentOfChild(clusterList[d]);
+                parentPerCell.append(par);
+                colourPerCell.append(par >= 0 ? parentColours.color(par) : QColor());
+            }
+            drawMatrixParentBands(p, oriF, eff, parentPerCell, colourPerCell);
+        }
+
         // Threshold outlines drawn over the image — the n*n scan is cheap (score
         // read + compare); only cells at/above threshold issue a drawRect.
         QPen wp(Qt::white); wp.setWidth(2);
