@@ -609,6 +609,17 @@ public:
     /// Translate the pending parent selection through a renumber map (old->new), so a
     /// selection recorded before renumber still points at the produced parents after.
     void renumberPendingParentSelection(const QMap<int,int>& oldNew);
+    /// Translate the HELD matrix-scope parents (curatedParentId + the joint
+    /// curatedParents list) through a renumber map.  Translate only: both call
+    /// sites run before rebuildHierarchyFromData(), whose resolve is the
+    /// authoritative one -- resolving here would read pre-rebuild maps.
+    /// Without this a renumber leaves the held ids naming whatever parents
+    /// INHERITED their numbers, and the child-scoped matrices would compare an
+    /// arbitrary family that looks entirely plausible.  Deliberately does NOT
+    /// touch jointChildren: those are ATOM ids and this map speaks the parent
+    /// layer -- the working set is translated at the two atom-layer renumber
+    /// sites (renumberChildrenToEnd, compactAllClusterIds), with their maps.
+    void renumberHeldScopeParents(const QMap<int,int>& oldNew);
     /** Restrict the child palette to @p visibleChildren; the rest are hidden via
      *  isChildScopeHidden(), which ClusterPalette::updateClusterList honours. */
     void setChildScope(const QList<int>& visibleChildren);

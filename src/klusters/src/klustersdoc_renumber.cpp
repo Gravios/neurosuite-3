@@ -159,6 +159,7 @@ void KlustersDoc::renumberClusters(){
     // Translate a pending post-edit parent selection through the same map so it still
     // lands on the produced parents after the ids are compacted.
     renumberPendingParentSelection(clusterIdsOldNew);
+    renumberHeldScopeParents(clusterIdsOldNew);
 
     //Notify all the views of the modification
     const int numberOfView(viewList->count());
@@ -309,6 +310,11 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     // (updateClusterList prunes pinned ids whose cluster no longer
     // exists, and after a rename the OLD id is gone).
     clusterPalette.renumberPinnedIds(partialOldToNew);
+
+    // 2c. The held matrix-scope parents ride the same rename: a scope left on
+    // the OLD ids after a partial rename (renumber-to-end, Shift+S reorder)
+    // would compare whichever parents inherited those numbers.
+    renumberHeldScopeParents(partialOldToNew);
 
     // 3. Each view — rewrites shownClusters; emits its own clustersRenumbered.
     for (KlustersView* v : *viewList) {
@@ -487,6 +493,14 @@ void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
     // Child-primary: a child renumber changes the map's KEYS, not its values --
     // the parent of each renamed child is unchanged.
     childData->renumberPartial(partialOldToNew);
+
+    // The joint working set names ATOMS, and this is the atom layer's own
+    // rename, so its map is the right one to translate the held set through
+    // (the parent-layer maps in renumberHeldScopeParents are the wrong id
+    // space for it).  Without this the moved atoms drop out of the joint
+    // palette at the landing below, which selects them at their NEW ids.
+    for (int& c : jointChildren)
+        if (partialOldToNew.contains(c)) c = partialOldToNew.value(c);
 
     // Colours follow their atom, then re-sort: changeItemId mutates ids in place
     // without reordering, and the palette renders in storage order, so without the

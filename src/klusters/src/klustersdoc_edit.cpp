@@ -264,6 +264,21 @@ void KlustersDoc::renumberPendingParentSelection(const QMap<int,int>& oldNew)
         if (oldNew.contains(id)) id = oldNew.value(id);
 }
 
+void KlustersDoc::renumberHeldScopeParents(const QMap<int,int>& oldNew)
+{
+    // Same translation as the pending selection above, for the held scope: ids
+    // absent from a partial map keep their value.  Translate ONLY -- deliberately
+    // no resolveMatrixScope() here.  Both call sites run BEFORE
+    // rebuildHierarchyFromData() re-derives the hierarchy maps; resolving
+    // against the pre-rebuild maps would hold a transiently wrong answer and
+    // emit a second deferred recompute of all four matrices.  The rebuild that
+    // follows at each site is the one resolve, from consistent maps.
+    if (curatedParentId >= 0 && oldNew.contains(curatedParentId))
+        curatedParentId = oldNew.value(curatedParentId);
+    for (int& p : curatedParents)
+        if (oldNew.contains(p)) p = oldNew.value(p);
+}
+
 void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
                                             const QVector<int>& spkFileIndices,
                                             int toCluster,
@@ -580,6 +595,15 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
                 // neighbour so the child palette and the matrices land there
                 // together, rather than being left pointing at a dead parent.
                 if (curatedParent() == parentOfDeleted) setCuratedParent(up);
+                // A JOINT scope drops the dead parent rather than following it:
+                // the surviving parents are still the comparison the user chose,
+                // and nextFreeClusterId() can hand the dead NUMBER to a future
+                // parent, which a held stale entry would silently adopt.
+                if (curatedParents.contains(parentOfDeleted)) {
+                    QList<int> held = curatedParents;
+                    held.removeAll(parentOfDeleted);
+                    setCuratedParents(held);
+                }
             }
         }
     }

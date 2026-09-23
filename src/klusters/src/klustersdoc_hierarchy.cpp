@@ -459,6 +459,14 @@ bool KlustersDoc::compactAllClusterIds(){
         // pushed is unaffected: it carries its own old<->new maps.)
         childUndoStack.clear();
 
+        // The joint working set also names atoms, but unlike the undo stack it
+        // is only ids, so it translates instead of dropping: atomOldNew is the
+        // very map its ids just moved through.  Left untranslated, a held old
+        // id would name whichever atom INHERITED the number after compaction
+        // -- the wrong-family failure shape this patch exists to close.
+        for (int& c : jointChildren)
+            if (atomOldNew.contains(c)) c = atomOldNew.value(c);
+
         emit hierarchyChanged();
         setModified(true);
     }
