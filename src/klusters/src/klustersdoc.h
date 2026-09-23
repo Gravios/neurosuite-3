@@ -1613,6 +1613,26 @@ public Q_SLOTS:
     int watershedSelectedClusters(const QList<int>& selectedClusters,
                                   const Watershed2D::Config& cfg);
 
+    /** The ATOM-layer watershed: split the selected atoms (children) of ONE
+     *  parent into one new sibling atom per density basin, in the active
+     *  scatter's X/Y feature dimensions.  The atom layer is named outright --
+     *  childData end to end, never data() -- because this tool's children-view
+     *  failure was exactly a parent-palette id looked up through data() in the
+     *  atom id space (right only while a parent kept a same-numeral core atom;
+     *  1 of 411 parents on the reference session's curated g6).
+     *
+     *  Same-parent guard, for mergeChildren's reason turned around: the basins
+     *  relabel the pooled spikes with no knowledge of parent boundaries, so a
+     *  cross-parent input would come back as basin atoms straddling both
+     *  parents -- a nesting violation manufactured by the tool.  Returns -1 on
+     *  that guard, else the number of new atoms (0: no split -- too few
+     *  spikes, one basin, or an integration refusal).  One self-snapshotting
+     *  childData edit + one ChildEdit, so Ctrl+Shift+Z reverts it whole.  The
+     *  parent-stage curation log stays out of the atom layer by design (its
+     *  ids collide with atom numerals -- see createNewCluster's child branch). */
+    int watershedSelectedChildren(const QList<int>& selectedChildren,
+                                  const Watershed2D::Config& cfg);
+
     /**Launchs an autoSave by starting the autoSaveThread.*/
     void launchAutoSave();
 

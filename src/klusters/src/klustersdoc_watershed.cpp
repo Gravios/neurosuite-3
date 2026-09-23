@@ -350,3 +350,126 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
 
     return newClusterList.size();
 }
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::watershedSelectedChildren
+//
+// The atom-layer counterpart of watershedSelectedClusters: split the selected
+// atoms of ONE parent into one new sibling atom per density basin.  See the
+// header for the layer-naming and same-parent rationale.  The commit shape is
+// createNewClusters' child branch, not the parent tail above: the hierarchy
+// refresh + parked landing do the palette and view work, and the spikes keep
+// their .clu labels, so every basin atom lands under the same parent when the
+// maps re-derive -- nothing straddles and repairNesting has nothing to do.
+// ---------------------------------------------------------------------------
+int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
+                                           const Watershed2D::Config& cfg)
+{
+    if (!childData) return 0;
+    KlustersView* activeView = app()->activeView();
+    if (!activeView) return 0;
+
+    const int dimX = activeView->abscissaDimension();
+    const int dimY = activeView->ordinateDimension();
+    QList<int> inputs = selectedChildren;
+    if (inputs.isEmpty()) return 0;
+
+    // 0 / 1 are the artefact / noise self atoms -- never reassigned, exactly
+    // as the parent path never reassigns the reserved parents.
+    inputs.removeAll(0);
+    inputs.removeAll(1);
+    if (inputs.isEmpty()) return 0;
+
+    // Same-parent guard (see header).  Guarded here as well as at the preview
+    // entry, because the doc cannot assume its caller.
+    const int owner = parentOfChild(inputs.first());
+    if (owner < 0) return -1;
+    for (int a : inputs)
+        if (parentOfChild(a) != owner) return -1;
+
+    // ── (x, y) and feature rows from the ATOM layer, named outright.
+    std::vector<double> xs;
+    std::vector<double> ys;
+    std::vector<dataType> rowIdxs;
+    {
+        size_t totalEst = 0;
+        for (int cid : inputs) totalEst += childData->nbOfSpikes(cid);
+        xs.reserve(totalEst);
+        ys.reserve(totalEst);
+        rowIdxs.reserve(totalEst);
+    }
+    for (int cid : inputs) {
+        SortableTable subset;
+        if (!childData->spikePositions(cid, subset)) continue;
+        const dataType n = subset.nbOfColumns();
+        for (dataType i = 1; i <= n; ++i) {
+            const dataType row = subset(1, i);
+            xs.push_back(static_cast<double>(childData->featureValue(row, dimX)));
+            ys.push_back(static_cast<double>(childData->featureValue(row, dimY)));
+            rowIdxs.push_back(row);
+        }
+    }
+    if (xs.size() < 50) return 0;     // not enough points to cluster
+
+    // ── Run watershed, with the same auto-tune the parent path uses.
+    Watershed2D::Config c = cfg;
+    if (c.minPeakHeight <= 0)
+        c.minPeakHeight = std::max(3, static_cast<int>(xs.size() / 2000));
+    if (c.minBasinSize <= 0)
+        c.minBasinSize  = std::max(20, static_cast<int>(xs.size() / 500));
+
+    Watershed2D::Result res = Watershed2D::run(xs, ys, c);
+    if (!res.ok || res.numBasins == 0) return 0;
+    if (res.numBasins == 1) return 0;             // one basin: nothing to split
+
+    // ── Feature-row -> basin, unlabeled spikes to the residual basin, exactly
+    // as the parent path: integrateBasinLabeling's contract is that every
+    // source spike carries a basin.
+    QHash<dataType, int> rowToBasin;
+    rowToBasin.reserve(static_cast<int>(rowIdxs.size()));
+    const int residualBasin = res.numBasins + 1;
+    for (size_t i = 0; i < rowIdxs.size(); ++i) {
+        int lab = res.pointLabels[i];
+        if (lab <= 0) lab = residualBasin;
+        rowToBasin.insert(rowIdxs[i], lab);
+    }
+
+    // Quiesce background view threads before mutating childData: the scoped
+    // matrix threads read the atom layer, and integrateBasinLabeling swaps the
+    // row table underneath any reader (same reason as createNewCluster; the
+    // parent watershed above predates the quiesce convention and still runs
+    // unquiesced -- observed, not changed here).
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
+    // NO curation log: the parent-stage logger's ids collide with atom
+    // numerals -- the atom layer is out of its scope by design (see
+    // createNewCluster's child branch).
+    QList<int> newAtomList;
+    if (!childData->integrateBasinLabeling(inputs, rowToBasin, newAtomList)
+            || newAtomList.isEmpty()) {
+        // Nothing was mutated, but the threads are quiesced: relaunch them,
+        // as createNewCluster's empty-selection path does.
+        activeView->showAllWidgets();
+        return 0;
+    }
+
+    // One self-snapshotting childData edit (integrateBasinLabeling calls
+    // prepareUndo internally) -> one ChildEdit on the atom-undo timeline, so
+    // Ctrl+Shift+Z reverts the whole split: the basin atoms are removed and
+    // the source atoms restored.  All sources dissolve, so they are the
+    // deleted set; there is no surviving side to list as modified.
+    ChildEdit e; e.added = newAtomList; e.deleted = inputs;
+    recordChildEdit(e);
+
+    // Child-primary refresh + settled-point landing, mirroring
+    // createNewClusters' child branch.
+    syncChildColors();
+    rebuildHierarchyFromData();
+    emit hierarchyChanged();
+    setPendingChildSelection(newAtomList);
+    emit hierarchyChildrenCreated(newAtomList);
+    modified = true;
+
+    return newAtomList.size();
+}
