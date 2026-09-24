@@ -169,7 +169,7 @@ public:
 
     void setTemplateThresholdMin(double v) {templateThresholdMin = qBound(0.0, v, 1.0);}
     void setTemplateThresholdMax(double v) {templateThresholdMax = qBound(0.0, v, 1.0);}
-    void setTemplateXcorrMetric(int v)     {templateXcorrMetric = qBound(0, v, 4);}
+    void setTemplateXcorrMetric(int v)     {templateXcorrMetric = qBound(0, v, 5);}
     
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const{return crashRecovery;}

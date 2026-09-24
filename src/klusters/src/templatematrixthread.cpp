@@ -174,6 +174,81 @@ float tmFastWinXcorr(const std::vector<float>& a,
     return tmNormXcorr(aw, bw, std::max(1, std::min(maxShift, win / 4)), false);
 }
 
+float tmProfileSim(const std::vector<float>& a,
+                   const std::vector<float>& b,
+                   int nSamp)
+{
+    // See the header for what the three components are and why zero-lag.
+    if (nSamp < 6) return 0.0f;
+    const int nChan = static_cast<int>(std::min(a.size(), b.size()))
+                      / std::max(nSamp, 1);
+    if (nChan < 2) return 0.0f;
+    // Excursion-ratio floor: keeps a silent channel's log ratio finite and
+    // near zero instead of amplifying baseline noise.  File units; ~1/6 of
+    // the typical baseline noise SD on the reference session.
+    const double eps = 30.0;
+
+    std::vector<double> ampA(static_cast<size_t>(nChan)), ampB(static_cast<size_t>(nChan));
+    std::vector<double> polA(static_cast<size_t>(nChan)), polB(static_cast<size_t>(nChan));
+    double shapeSum = 0.0; int shapeCnt = 0;
+    for (int c = 0; c < nChan; ++c) {
+        const float* pa = &a[static_cast<size_t>(c) * nSamp];
+        const float* pb = &b[static_cast<size_t>(c) * nSamp];
+        double baseA = 0.0, baseB = 0.0;
+        for (int s = 0; s < 4; ++s) { baseA += pa[s]; baseB += pb[s]; }
+        baseA /= 4.0; baseB /= 4.0;
+        double maxA = pa[0], minA = pa[0], maxB = pb[0], minB = pb[0];
+        double mA = 0.0, mB = 0.0;
+        for (int s = 0; s < nSamp; ++s) {
+            const double va = pa[s], vb = pb[s];
+            maxA = std::max(maxA, va); minA = std::min(minA, va); mA += va;
+            maxB = std::max(maxB, vb); minB = std::min(minB, vb); mB += vb;
+        }
+        mA /= nSamp; mB /= nSamp;
+        ampA[static_cast<size_t>(c)] = maxA - minA;
+        ampB[static_cast<size_t>(c)] = maxB - minB;
+        polA[static_cast<size_t>(c)] =
+            std::log((std::max(maxA - baseA, 0.0) + eps) / (std::max(baseA - minA, 0.0) + eps));
+        polB[static_cast<size_t>(c)] =
+            std::log((std::max(maxB - baseB, 0.0) + eps) / (std::max(baseB - minB, 0.0) + eps));
+        double dot = 0.0, na = 0.0, nb = 0.0;
+        for (int s = 0; s < nSamp; ++s) {
+            const double da = pa[s] - mA, db = pb[s] - mB;
+            dot += da * db; na += da * da; nb += db * db;
+        }
+        if (na > 1e-9 && nb > 1e-9) {                 // both carry signal here
+            shapeSum += dot / std::sqrt(na * nb);
+            ++shapeCnt;
+        }
+    }
+
+    double sum = 0.0; int cnt = 0;
+    {   // 1. amplitude-profile cosine (raw, not centred: co-location itself)
+        double dot = 0.0, na = 0.0, nb = 0.0;
+        for (int c = 0; c < nChan; ++c) {
+            dot += ampA[static_cast<size_t>(c)] * ampB[static_cast<size_t>(c)];
+            na  += ampA[static_cast<size_t>(c)] * ampA[static_cast<size_t>(c)];
+            nb  += ampB[static_cast<size_t>(c)] * ampB[static_cast<size_t>(c)];
+        }
+        if (na > 1e-9 && nb > 1e-9) { sum += dot / std::sqrt(na * nb); ++cnt; }
+    }
+    {   // 2. polarity-profile Pearson (centred: the SHAPE of the source/sink
+        //    profile, not its overall sign, which is negative everywhere)
+        double mA = 0.0, mB = 0.0;
+        for (int c = 0; c < nChan; ++c) { mA += polA[static_cast<size_t>(c)]; mB += polB[static_cast<size_t>(c)]; }
+        mA /= nChan; mB /= nChan;
+        double dot = 0.0, na = 0.0, nb = 0.0;
+        for (int c = 0; c < nChan; ++c) {
+            const double da = polA[static_cast<size_t>(c)] - mA;
+            const double db = polB[static_cast<size_t>(c)] - mB;
+            dot += da * db; na += da * da; nb += db * db;
+        }
+        if (na > 1e-9 && nb > 1e-9) { sum += dot / std::sqrt(na * nb); ++cnt; }
+    }
+    if (shapeCnt > 0) { sum += shapeSum / shapeCnt; ++cnt; }   // 3. shape
+    return (cnt > 0) ? static_cast<float>(sum / cnt) : 0.0f;
+}
+
 // ---------------------------------------------------------------------------
 void TemplateMatrixThread::run()
 {
@@ -356,10 +431,11 @@ void TemplateMatrixThread::run()
     const bool raw      = (metric == 2);
     const bool disatten = (metric == 3);
     const bool fastap   = (metric == 4);
+    const bool profile  = (metric == 5);
 
 #pragma omp parallel for schedule(dynamic,4) default(none) \
     shared(mMean, mNoise, pairs, scores) \
-    firstprivate(nPairs, maxShift, pearson, raw, disatten, fastap, nChan, nSamp, peak)
+    firstprivate(nPairs, maxShift, pearson, raw, disatten, fastap, profile, nChan, nSamp, peak)
     for (int pi = 0; pi < nPairs; ++pi) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
         const int ci = pairs[static_cast<size_t>(pi)].first;
@@ -377,6 +453,11 @@ void TemplateMatrixThread::run()
             s = tmFastWinXcorr(mMean[static_cast<size_t>(ci)],
                                mMean[static_cast<size_t>(cj)],
                                nChan, nSamp, peak, maxShift);
+        else if (profile)
+            // Channel count derived inside from the vector size, so this is
+            // correct under a channel mask (the compacted copies).
+            s = tmProfileSim(mMean[static_cast<size_t>(ci)],
+                             mMean[static_cast<size_t>(cj)], nSamp);
         else
             s = tmNormXcorr(mMean[static_cast<size_t>(ci)],
                             mMean[static_cast<size_t>(cj)], maxShift, pearson);

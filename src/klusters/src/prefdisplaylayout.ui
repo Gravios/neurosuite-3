@@ -222,7 +222,7 @@
         <item>
          <widget class="QComboBox" name="templateXcorrMetricComboBox">
           <property name="toolTip">
-           <string>Similarity metric for the Template Matrix cells.  Cosine: peak normalised cross-correlation between cluster mean waveforms.  Pearson: removes each waveform's overlap-window mean first (shape correlation, insensitive to a shared DC offset).  Raw: non-normalised cross-correlation, amplitude-weighted, globally scaled so the strongest pair reads 1.0.  The per-spike pair xcorr and auto-merge always use cosine/Pearson (never raw), since their thresholds need a bounded [0,1] score.</string>
+           <string>Similarity metric for the Template Matrix cells.  Cosine: peak normalised cross-correlation between cluster mean waveforms.  Pearson: removes each waveform's overlap-window mean first (shape correlation, insensitive to a shared DC offset).  Raw: non-normalised cross-correlation, amplitude-weighted, globally scaled so the strongest pair reads 1.0.  Profile: inter-channel structure (amplitude profile, polarity profile, per-channel-normalised shape), amplitude-blind. The per-spike pair xcorr and auto-merge always use cosine/Pearson (never raw), since their thresholds need a bounded [0,1] score.</string>
           </property>
           <item>
            <property name="text">
@@ -247,6 +247,11 @@
           <item>
            <property name="text">
             <string>Fast-AP window (energy-corrected)</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Profile (inter-channel)</string>
            </property>
           </item>
          </widget>

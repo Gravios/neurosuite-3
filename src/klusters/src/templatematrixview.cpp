@@ -100,14 +100,16 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     metricCombo->addItem("Raw");         // index 2
     metricCombo->addItem("Disatten.");   // index 3
     metricCombo->addItem("Fast-AP");     // index 4
+    metricCombo->addItem("Profile");     // index 5
     metricCombo->setItemData(0, "Peak normalised cross-correlation (cosine similarity) between cluster mean waveforms.", Qt::ToolTipRole);
     metricCombo->setItemData(1, "Pearson correlation: removes the overlap-window mean of each waveform before normalising.", Qt::ToolTipRole);
     metricCombo->setItemData(2, "Raw (non-normalised) peak cross-correlation, amplitude-weighted; the matrix is globally normalised so the strongest pair reads 1.0.", Qt::ToolTipRole);
     metricCombo->setItemData(3, "Energy-corrected cosine: subtracts each mean waveform's noise energy (within-cluster sample variance / N) from the norms, so a same-neuron pair reads ~1.0 regardless of spike count or amplitude. Capped at 1.0.", Qt::ToolTipRole);
     metricCombo->setItemData(4, "Energy-corrected (fast-AP) cosine: correlates only the peak +/- 8 sample window, dropping the energy-scaling post-peak after-potential that depresses high-amplitude same-neuron pairs.", Qt::ToolTipRole);
+    metricCombo->setItemData(5, "Inter-channel profile similarity: amplitude profile, polarity (above/below baseline) profile, and per-channel-normalised shape, averaged. Amplitude-blind -- for separating co-located units whose difference lives off the dominant channel.", Qt::ToolTipRole);
     {
         const int metric = configuration().getTemplateXcorrMetric();
-        metricCombo->setCurrentIndex((metric >= 0 && metric <= 4) ? metric : 0);
+        metricCombo->setCurrentIndex((metric >= 0 && metric <= 5) ? metric : 0);
     }
 
     // The control bar sits on the painted backgroundColor (which can be pure
@@ -305,7 +307,7 @@ void TemplateMatrixView::launchCompute()
     {
         const int metric = configuration().getTemplateXcorrMetric();
         const QSignalBlocker block(metricCombo);
-        metricCombo->setCurrentIndex((metric >= 0 && metric <= 4) ? metric : 0);
+        metricCombo->setCurrentIndex((metric >= 0 && metric <= 5) ? metric : 0);
     }
 
     for (TemplateMatrixThread* t : threadsToBeKill)
@@ -823,6 +825,9 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
                 .arg([]{ switch (configuration().getTemplateXcorrMetric()) {
                              case 1:  return QStringLiteral("Pearson");
                              case 2:  return QStringLiteral("raw");
+                             case 3:  return QStringLiteral("disatten.");
+                             case 4:  return QStringLiteral("fast-AP");
+                             case 5:  return QStringLiteral("profile");
                              default: return QStringLiteral("cosine"); } }())
                 .arg((*scores)(row+1, col+1), 0, 'f', 5));
 }
