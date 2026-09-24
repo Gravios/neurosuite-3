@@ -212,7 +212,13 @@ void ErrorMatrixView::customEvent(QEvent* event){
             clusterList = errorMatrixThread->getClusterList();
             computedClusterList = errorMatrixThread->getComputedClusterList();
             ignoreClusterIndex = errorMatrixThread->getIgnoreClusterIndex();
-            displayOrder.clear();   // a fresh compute invalidates any display reorder
+            // A fresh compute moves the rows, so the display permutation is
+            // re-derived rather than kept: from the doc's held child-scope
+            // sort order when one is held (the scoped sort survives
+            // recomputes until the scope is left), else cleared -- the
+            // unscoped display reorder is invalidated by a fresh compute,
+            // exactly as before.
+            applyScopeSortOrder();
 
             // Refresh the incremental raw cache from this compute.  If the thread
             // used the incremental path it hands us a fresh raw array (ownership
@@ -790,6 +796,40 @@ void ErrorMatrixView::resetDisplayOrder()
     if(displayOrder.isEmpty()) return;
     displayOrder.clear();
     update();
+}
+
+void ErrorMatrixView::applyScopeSortOrder()
+{
+    // Derive the display permutation from the doc's HELD child-scope sort
+    // order: specials keep the front, held atom ids follow at their row
+    // indices, and rows the order does not name append in natural order, so
+    // the permutation is always complete (setDisplayOrder treats a
+    // wrong-sized one as identity -- completeness is correctness here).
+    // Held atom ids absent from the rows (an atom that died since the sort)
+    // simply do not place; a scope edit therefore keeps the survivors'
+    // order.  With no scope or nothing held, any leftover permutation
+    // clears: the held order is the ONLY thing allowed to survive a
+    // recompute -- the unscoped display reorder stays invalidated by a
+    // fresh compute, exactly as before.
+    const QList<int> held = doc.matrixScopeActive() ? doc.scopeSortOrderList()
+                                                    : QList<int>();
+    if(held.isEmpty()){
+        displayOrder.clear();
+        update();
+        return;
+    }
+    QList<int> perm;
+    perm.reserve(clusterList.size());
+    QSet<int> placed;
+    for(int i = 0; i < clusterList.size(); ++i)
+        if(clusterList[i] <= 1){ perm.append(i); placed.insert(i); }
+    for(int cid : held){
+        const int i = clusterList.indexOf(cid);
+        if(i >= 0 && !placed.contains(i)){ perm.append(i); placed.insert(i); }
+    }
+    for(int i = 0; i < clusterList.size(); ++i)
+        if(!placed.contains(i)) perm.append(i);
+    setDisplayOrder(perm);
 }
 
 void ErrorMatrixView::drawMatrix(QPainter& painter){

@@ -108,6 +108,13 @@ public:
     /// position d.  Clusters are NOT renumbered -- this is view-local and cheap
     /// (a repaint), unlike the Shift+S renumber.  Empty/wrong-sized => identity.
     void setDisplayOrder(const QList<int>& order);
+    /// Re-derive the display permutation from the doc's HELD child-scope sort
+    /// order (KlustersDoc::scopeSortOrderList), or clear it when nothing is
+    /// held.  Called after every accepted compute -- rows moved, so the
+    /// permutation must be rebuilt from the ids the sort meant -- and by the
+    /// scoped Sort Clusters application.  This is what makes a child-scope
+    /// sort survive recomputes until the scope itself is left.
+    void applyScopeSortOrder();
     /// Drop any display permutation (back to matrix/computed order).
     void resetDisplayOrder();
     /// Pointer to the [N x N] probability matrix (1-based; may be null).

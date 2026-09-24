@@ -501,6 +501,8 @@ void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
     // palette at the landing below, which selects them at their NEW ids.
     for (int& c : jointChildren)
         if (partialOldToNew.contains(c)) c = partialOldToNew.value(c);
+    for (int& c : scopeSortOrder)                     // same id space, same map
+        if (partialOldToNew.contains(c)) c = partialOldToNew.value(c);
 
     // Colours follow their atom, then re-sort: changeItemId mutates ids in place
     // without reordering, and the palette renders in storage order, so without the
@@ -546,6 +548,19 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
 {
     if (newOrder.isEmpty()) return 0;
     if (!app()->activeView()) return -1;
+
+    // Backstop, the doc cannot assume its caller: this is the PARENT renumber,
+    // and under a child scope every sort's order names ATOMS.  The existence
+    // check below cannot catch that -- after a compaction most atom numerals
+    // exist as parents too -- so an atom-derived permutation would rename
+    // unrelated parents, entirely plausibly.  Every scoped caller routes to
+    // the display-only path before reaching here; refusing is for the one
+    // that forgets.
+    if (matrixScopeActive()) {
+        qWarning("reorderClustersByPermutation: refused under a child scope "
+                 "-- the order would name atoms, not parents.");
+        return -1;
+    }
 
     const QList<dataType> existing = clusteringData->clusterIds();
     if (existing.isEmpty()) return -1;
