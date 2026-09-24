@@ -4580,27 +4580,52 @@ void KlustersApp::slotAutoMerge()
     s.scope              = configuration().getAutoMergeScope();
     s.previewBeforeApply = configuration().getAutoMergePreviewBeforeApply();
 
-    // Resolve scope into a candidate list.  ScopeSelected (0): palette
-    // selection.  ScopeAllActive (1): every cluster id from Data
-    // (computeProposals strips 0 and 1 internally).
+    // Layer routing is EXPLICIT here, like the watershed and the sorts.  The
+    // candidates and the metric layer used to be data() -- the ACTIVE layer
+    // -- while the application below was groupClusters, the PARENT merge.
+    // With a child selected, "All active" therefore proposed over every ATOM
+    // in the session and fed atom ids to the parent merge, ids that mostly
+    // exist as parent numerals after a compaction: the id-collision family
+    // again, at the auto-merge funnel.  Under a CHILD scope the auto-merge
+    // now works ON the scope; otherwise it is the parent-layer tool it
+    // always claimed to be, with the layer named outright.
+    const bool scoped = doc->matrixScopeActive();
+    Data& layer = scoped ? doc->childClusterData() : doc->parentData();
+
+    // Resolve scope into a candidate list.  ScopeSelected (0): the selection
+    // in the palette being curated -- the child palette's atoms under a
+    // scope (the roster, or the joint working set the matrices built), the
+    // parent palette's clusters otherwise.  ScopeAllActive (1): the whole
+    // CHILD SCOPE under a scope -- never the session's full atom list; the
+    // scope is what bounds the tool to the curated parent or group of
+    // parents -- else every parent id (computeProposals strips 0 and 1
+    // internally).
     QList<int> candidates;
     if (s.scope == 0) {
-        if (clusterPalette) candidates = clusterPalette->selectedClusters();
+        if (scoped)                  candidates = selectedChildrenAB();
+        else if (clusterPalette)     candidates = clusterPalette->selectedClusters();
         if (candidates.size() < 2) {
             QMessageBox::information(this, tr("Auto-Merge"),
-                tr("Select at least 2 clusters in the palette, or switch "
-                   "the Auto-Merge scope to 'All active clusters' in "
-                   "preferences."));
+                scoped
+                    ? tr("Select at least 2 children in the child palette "
+                         "(under a joint scope, click matrix cells to bring "
+                         "them in), or switch the Auto-Merge scope to 'All "
+                         "active clusters' in preferences.")
+                    : tr("Select at least 2 clusters in the palette, or switch "
+                         "the Auto-Merge scope to 'All active clusters' in "
+                         "preferences."));
             slotStatusMsg(tr("Ready."));
             return;
         }
+    } else if (scoped) {
+        candidates = doc->matrixScopeClusters();
     } else {
-        const QList<dataType> allIds = doc->data().clusterIds();
+        const QList<dataType> allIds = doc->parentData().clusterIds();
         for (dataType id : allIds) candidates.append(static_cast<int>(id));
     }
 
     QList<AutoMerge::MergeGroup> proposals =
-        AutoMerge::computeProposals(doc, doc->data(), s, candidates, this);
+        AutoMerge::computeProposals(doc, layer, s, candidates, this);
 
     if (proposals.isEmpty()) {
         QMessageBox::information(this, tr("Auto-Merge"),
@@ -4622,15 +4647,45 @@ void KlustersApp::slotAutoMerge()
     if (!view) { slotStatusMsg(tr("Ready.")); return; }
 
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    int applied = 0;
+    int applied = 0;         // parent-layer groups (unscoped)
+    int appliedWithin = 0;   // scoped: same-parent groups merged under their parent
+    int appliedAcross = 0;   // scoped: cross-parent groups pooled into a new parent
     for (const AutoMerge::MergeGroup& g : proposals) {
         if (g.clusters.size() < 2) continue;
-        doc->groupClusters(g.clusters, *view);
-        ++applied;
+        if (!scoped) {
+            doc->groupClusters(g.clusters, *view);
+            ++applied;
+            continue;
+        }
+        // Scoped application, decided PER GROUP: a group whose atoms all
+        // belong to one parent merges under that parent (mergeChildren, whose
+        // own guard re-checks); a group spanning parents pools into a NEW
+        // parent (promoteChildren) -- the cross-parent repair the joint scope
+        // exists to expose, and the only nesting-legal way to unite atoms of
+        // two parents.  parentOfChild is read per group, against the maps the
+        // previous group's edit just rebuilt.
+        const int owner = doc->parentOfChild(g.clusters.first());
+        bool sameParent = (owner >= 0);
+        for (int c : g.clusters)
+            if (doc->parentOfChild(c) != owner) { sameParent = false; break; }
+        if (sameParent) {
+            if (doc->mergeChildren(g.clusters, *view) >= 0) ++appliedWithin;
+        } else {
+            if (doc->promoteChildren(g.clusters, *view) > 0) ++appliedAcross;
+        }
     }
     QApplication::restoreOverrideCursor();
 
-    slotStatusMsg(tr("Auto-merge: %1 group(s) applied.").arg(applied));
+    if (scoped)
+        slotStatusMsg(tr("Auto-merge (child scope): %1 within-parent merge(s), "
+                         "%2 new parent(s) from cross-parent groups.")
+                          .arg(appliedWithin).arg(appliedAcross));
+    else
+        slotStatusMsg(tr("Auto-merge: %1 group(s) applied.").arg(applied));
+    // Post-merge automation only for the parent-layer path: the child ops
+    // above each emitted hierarchyChanged, whose coalesced automation already
+    // recomputes the scoped matrices -- and the auto-renumber it would add is
+    // the PARENT compaction, the wrong layer's medicine after atom merges.
     if (applied > 0) autoPostMerge();
     // An edit made in the child palette keeps its own landing; pulling focus to
     // the parent palette here would undo it.  Tested on EDIT SCOPE rather than on
