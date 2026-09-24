@@ -196,17 +196,29 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     // ── dissolves source clusters and emits new ones at IDs strictly
     // ── greater than the previous max — exactly the renumber-after-
     // ── last-cluster behaviour the user expects.
+    // Quiesce background view threads before mutating clusteringData:
+    // integrateBasinLabeling swaps the row table underneath any reader, and
+    // the matrix threads read this layer (unscoped, or via matrixData() in
+    // parent view).  Every other membership mutation quiesces first
+    // (createNewCluster, groupClusters, the atom watershed); this path
+    // predated the convention.
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
     QList<int> newClusterList;
     if (!clusteringData->integrateBasinLabeling(inputs, rowToBasin,
                                                  newClusterList)) {
         // Aborted before any mutation: close the log block with the inputs
         // unchanged and no undo twin, or the open entry would absorb the
-        // status flip of the NEXT Ctrl-Z.
+        // status flip of the NEXT Ctrl-Z.  The threads are quiesced, so
+        // relaunch them, as createNewCluster's empty-selection path does.
         logAfterNotUndoable(inputs);
+        if (activeView) activeView->showAllWidgets();
         return 0;
     }
     if (newClusterList.isEmpty()) {
         logAfterNotUndoable(inputs);   // integration yielded nothing
+        if (activeView) activeView->showAllWidgets();
         return 0;
     }
 
