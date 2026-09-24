@@ -423,6 +423,11 @@ QList<MergeGroup> computeProposals(
                 s = tmFastWinXcorr(templates[static_cast<size_t>(i)],
                                    templates[static_cast<size_t>(j)],
                                    nChan, nSamp, peak, maxShift);
+            else if (metric == 5)
+                // Same profile similarity the template matrix shows -- the
+                // auto-merge must threshold the scores the user sees.
+                s = tmProfileSim(templates[static_cast<size_t>(i)],
+                                 templates[static_cast<size_t>(j)], nSamp);
             else
                 s = tmNormXcorr(templates[static_cast<size_t>(i)],
                                 templates[static_cast<size_t>(j)], maxShift, metric == 1);

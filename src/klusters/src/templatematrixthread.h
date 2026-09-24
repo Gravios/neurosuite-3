@@ -71,6 +71,30 @@ float tmFastWinXcorr(const std::vector<float>& a,
                      int nChan, int nSamp, int peak,
                      int maxShift);
 
+// Profile (inter-channel) similarity: the average of three template
+// comparisons that deliberately IGNORE overall amplitude, for separating
+// co-located units whose difference lives OFF the dominant channel (measured
+// on the reference session's curated fast-spiking pool: dominant-channel-only
+// discrimination is chance there, while these carry the signal):
+//   1. amplitude-profile cosine — the per-channel peak-to-trough vectors,
+//      unit-normalised: WHERE the energy sits across the shank;
+//   2. polarity-profile correlation — per-channel log(above/below baseline
+//      excursion) vectors, Pearson across channels: the source/sink geometry
+//      (baseline = each channel's first-4-sample mean);
+//   3. per-channel-normalised shape correlation — each channel mean-removed
+//      and unit-normalised, correlations averaged over channels where both
+//      templates carry signal, so every channel counts equally.
+// Zero-lag by design: all three compare STRUCTURE, not alignment — the
+// detection centring that the other metrics compensate for with a shift
+// search is shared by both templates here, and the components are either
+// lag-invariant (1, 2) or tolerant at template SNR (3).  Channel count is
+// derived from the vectors (a.size()/nSamp), so a channel-masked matrix
+// build compares whatever channels survived the mask.  Returns the mean of
+// the components that were computable (~[-1,1]); with none, 0.
+float tmProfileSim(const std::vector<float>& a,
+                   const std::vector<float>& b,
+                   int nSamp);
+
 // ---------------------------------------------------------------------------
 // Main background thread: reads all cluster waveforms, computes means, and
 // builds the pairwise mean-vs-mean xcorr matrix.
