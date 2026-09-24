@@ -188,7 +188,7 @@ void KlustersApp::slotSortClustersBySpikeCount()
     QList<int> clusters = clustersToSort(mSortClustersBySpikeCount, tr("spike count"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    auto& d = doc->data();
+    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
 
     // Snapshot the counts once (avoids re-locking Data in the comparator).
     QHash<int, qint64> spikeCount;
@@ -215,7 +215,7 @@ void KlustersApp::slotSortClustersByTime()
     QList<int> clusters = clustersToSort(mSortClustersByTime, tr("time"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    auto& d = doc->data();
+    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
 
     // Snapshot each cluster's earliest spike time once (one pass over all spikes).
     const QHash<int,double> firstTs = d.firstSpikeTimes();
@@ -243,7 +243,7 @@ void KlustersApp::slotSortClustersByContamination()
     QList<int> clusters = clustersToSort(mSortClustersByContamination, tr("contamination"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    auto& d = doc->data();
+    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
 
     // Refractory contamination at a 2 ms window, one pass over all spikes.
     const QHash<int,double> contam = d.refractoryViolationFractions(2.0);
@@ -272,7 +272,7 @@ void KlustersApp::slotSortClustersBySnr()
     QList<int> clusters = clustersToSort(mSortClustersBySnr, tr("SNR"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    auto& d = doc->data();
+    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
 
     // Build templates for every cluster first.  Without this the metric only
     // covers clusters the waveform view happens to be showing, and the rest fall
@@ -309,7 +309,7 @@ void KlustersApp::slotSortClustersByAmplitude()
     QList<int> clusters = clustersToSort(mSortClustersByAmplitude, tr("amplitude"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    auto& d = doc->data();
+    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
 
     // Build templates for every cluster first; see slotSortClustersBySnr.
     ensureClusterTemplates();
@@ -342,7 +342,7 @@ void KlustersApp::slotSortClustersByAmplitudeByChannel()
     QList<int> clusters = clustersToSort(mSortClustersByAmplitudeByChannel, tr("amplitude by channel"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    auto& d = doc->data();
+    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
 
     // Build templates for every cluster first.  This is the sort that showed the
     // problem most plainly: the peak-channel blocks are only meaningful if EVERY
@@ -531,6 +531,17 @@ void KlustersApp::slotSortClustersByErrorPval()
     KlustersView* view = activeView();
     if (!view) return;
 
+    // Renumbering sort, parent layer only: not wired for the child scope
+    // (the display-only scoped sorts are similarity and the metric sorts).
+    // Refused rather than fed atom ids -- reorderClustersByPermutation is the
+    // parent renumber, and after a compaction most atom numerals exist as
+    // parents, so the rename would land on unrelated parents, plausibly.
+    if (doc->matrixScopeActive()) {
+        slotStatusMsg(tr("This sort renumbers parents and is not available "
+                         "under the child scope; leave child view (V) first."));
+        return;
+    }
+
     ErrorMatrixView* emv = view->findChild<ErrorMatrixView*>();
     if (!emv || !emv->hasComputedData()) {
         QMessageBox::information(this, tr("Sort by Error p-value"),
@@ -571,7 +582,7 @@ void KlustersApp::slotSortClustersByErrorPval()
     // Order every non-noise cluster by descending affinity; clusters absent from
     // the matrix's computed list sort last via a -1 sentinel.
     QList<int> clusters;
-    const auto ids = doc->data().clusterIds();
+    const auto ids = doc->parentData().clusterIds();   // parent renumber: parent layer, named outright
     for (const auto id : ids)
         if (id >= 2) clusters.append(static_cast<int>(id));
     if (clusters.size() < 2) {
@@ -606,6 +617,17 @@ void KlustersApp::slotSortByResidualGated()
     if (!mSortByResidualGated->isEnabled()) return;
     KlustersView* view = activeView();
     if (!view) return;
+
+    // Renumbering sort, parent layer only: not wired for the child scope
+    // (the display-only scoped sorts are similarity and the metric sorts).
+    // Refused rather than fed atom ids -- reorderClustersByPermutation is the
+    // parent renumber, and after a compaction most atom numerals exist as
+    // parents, so the rename would land on unrelated parents, plausibly.
+    if (doc->matrixScopeActive()) {
+        slotStatusMsg(tr("This sort renumbers parents and is not available "
+                         "under the child scope; leave child view (V) first."));
+        return;
+    }
 
     ResidualMatrixView* rmv = view->findChild<ResidualMatrixView*>();
     if (!rmv || !rmv->hasComputedData()) {
@@ -646,7 +668,7 @@ void KlustersApp::slotSortByResidualGated()
     spikeCount.reserve(N);
     QList<qint64> counts;
     for (int cid : cids) {
-        const qint64 c = static_cast<qint64>(doc->data().nbOfSpikes(cid));
+        const qint64 c = static_cast<qint64>(doc->parentData().nbOfSpikes(cid));   // parent renumber: parent layer
         spikeCount.insert(cid, c);
         if (cid >= 2) counts.append(c);
     }
@@ -1067,6 +1089,42 @@ void KlustersApp::slotReorderClustersBySimilarity()
     targetOrder.reserve(N);
     for (int leaf : orderIdx) targetOrder.append(nodeCids[leaf]);
 
+    // Child scope: the matrix rows are ATOMS, so the reorder is display-only
+    // REGARDLESS of the preference -- the renumber below is the parent
+    // layer's, and an atom-derived permutation fed to it renames whichever
+    // parents inherited the numerals (after a compaction, most of them).
+    // Only the error matrix carries a display map, so a scoped reorder whose
+    // source is the template matrix has nowhere to land: say so rather than
+    // silently reading one matrix and rearranging another.
+    const bool scopedReorder = doc->matrixScopeActive();
+    if (scopedReorder && chosenMatrixView != emv) {
+        statusBar()->showMessage(
+            tr("Reorder (child scope): display-only, and only the error matrix "
+               "carries a display order — click the error matrix (or press U), "
+               "then Shift+S again."), 5000);
+        return;
+    }
+
+    // Child scope: always display-only, through the HELD order.  The doc holds
+    // the atom ids in similarity order and the view derives its permutation
+    // from them, now and after every recompute, so the sort persists within
+    // this child view and dies only at its exits (V, or another parent).  The
+    // parent palette is never mirrored here: targetOrder is ATOM ids, and
+    // pushing those onto the parent palette reorders whichever parents share
+    // the numerals -- the same cross-layer pollution the renumber guard above
+    // exists for, one layer down.  (The child palette's own similarity order
+    // is a parent-level feature by its own guard.)
+    if (scopedReorder) {
+        doc->setScopeSortOrder(targetOrder);
+        emv->applyScopeSortOrder();
+        statusBar()->showMessage(
+            tr("Reorder (child scope): rearranged the error-matrix display "
+               "(%1 atoms) by similarity — held for this child view; cleared "
+               "on leaving it (V) or curating another parent.")
+                .arg(targetOrder.size()), 4000);
+        return;
+    }
+
     // Display-only fast path (Preferences -> Refinement -> "Reorder matrix
     // display only"): rearrange the error-matrix rows/columns in the view
     // WITHOUT renumbering clusters -- no per-spike label rewrite, no undo
@@ -1150,13 +1208,21 @@ void KlustersApp::slotReorderClustersBySimilarity()
 void KlustersApp::reorderClustersByFeatureSpace()
 {
     if (!activeView()) return;
-    Data& d = doc->data();
+    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
 
     // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).
+    // Under a child scope the set is the SCOPE's atoms, mirroring
+    // clustersToSort -- the centroids must be of the things being ordered.
     QList<int> clusters;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
+    if (doc->matrixScopeActive()) {
+        const QList<int> scope = doc->matrixScopeClusters();
+        for (int id : scope)
+            if (id >= 2 && !clusters.contains(id)) clusters.append(id);
+    } else {
+        const auto ids = d.clusterIds();
+        for (const auto id : ids)
+            if (id >= 2) clusters.append(static_cast<int>(id));
+    }
     const int N = clusters.size();
     if (N < 2) {
         slotStatusMsg(tr("Reorder (feature-space): fewer than 2 non-noise clusters; nothing to do."));
@@ -1259,6 +1325,13 @@ void KlustersApp::reorderClustersByFeatureSpace()
     std::stable_sort(clusters.begin(), clusters.end(),
         [&proj](int a, int b){ return proj.value(a) < proj.value(b); });
 
+    // Child scope: atoms, so display-only -- same reason as applySortedOrder.
+    if (doc->matrixScopeActive()) {
+        applyScopedDisplayOrder(clusters, tr("feature-space similarity"),
+                                tr("PC1 of fet centroids"));
+        return;
+    }
+
     const int nRenamed = doc->reorderClustersByPermutation(clusters);
     if (nRenamed < 0)
         slotStatusMsg(tr("Reorder (feature-space): reorder rejected (cluster set changed?)."));
@@ -1314,9 +1387,22 @@ QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sor
     if (action && !action->isEnabled()) return clusters;
     if (!activeView()) return clusters;
 
-    const auto ids = doc->data().clusterIds();
-    for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));   // 0/1 are noise/artefact
+    // The sortable set is a LAYER fact, named outright (see sortMetricData):
+    // under a child scope it is the scope's atoms; otherwise the parent
+    // clusters.  It used to be data().clusterIds(), which follows the child
+    // SELECTION -- so a sort issued with a child selected fed ATOM ids to the
+    // parent renumber downstream, ids that mostly exist as parent numerals
+    // after a compaction.  The permutation then renamed unrelated parents,
+    // entirely plausibly.
+    if (doc->matrixScopeActive()) {
+        const QList<int> scope = doc->matrixScopeClusters();
+        for (int id : scope)
+            if (id >= 2 && !clusters.contains(id)) clusters.append(id);
+    } else {
+        const auto ids = doc->parentData().clusterIds();
+        for (const auto id : ids)
+            if (id >= 2) clusters.append(static_cast<int>(id));   // 0/1 are noise/artefact
+    }
 
     if (clusters.size() < 2) {
         slotStatusMsg(tr("Sort by %1: fewer than 2 non-noise clusters; nothing to sort.")
@@ -1327,10 +1413,47 @@ QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sor
     return clusters;
 }
 
+Data& KlustersApp::sortMetricData() const
+{
+    // See the header: the scoped atom layer or the parent layer, never data().
+    return doc->matrixScopeActive() ? doc->childClusterData() : doc->parentData();
+}
+
+void KlustersApp::applyScopedDisplayOrder(const QList<int>& orderedIds,
+                                          const QString& sortName,
+                                          const QString& detail)
+{
+    KlustersView* view = activeView();
+    ErrorMatrixView* emv = view ? view->findChild<ErrorMatrixView*>() : nullptr;
+    if (!emv || !emv->hasComputedData()) {
+        slotStatusMsg(tr("Sort by %1 (child scope): needs the error matrix — "
+                         "press U to compute it, then sort again.").arg(sortName));
+        return;
+    }
+    // The doc HOLDS the sorted ids and the view derives its permutation from
+    // them (applyScopeSortOrder) -- the same derivation every accepted
+    // recompute performs, so the sort persists across edits within this
+    // child view and dies only at its exits (V, or another parent).
+    doc->setScopeSortOrder(orderedIds);
+    emv->applyScopeSortOrder();
+    slotStatusMsg(tr("Sorted the error-matrix display by %1 (%2) — held for "
+                     "this child view; cleared on leaving it (V) or curating "
+                     "another parent.").arg(sortName, detail));
+}
+
 void KlustersApp::applySortedOrder(const QList<int>& order, const QString& sortName,
                                    const QString& detail)
 {
     if (order.isEmpty()) return;
+    // Child scope: the order names ATOMS, and reorderClustersByPermutation is
+    // the PARENT renumber -- the wrong layer entirely.  The scoped sort is a
+    // display-only rearrangement instead ("it doesn't have to be persistent"
+    // is the requested behaviour, and a persistent atom renumber would be the
+    // atom layer's own machinery, not this path).
+    if (doc->matrixScopeActive()) {
+        applyScopedDisplayOrder(order, sortName, detail);
+        return;
+    }
     const int nRenamed = doc->reorderClustersByPermutation(order);
     if (nRenamed < 0)
         slotStatusMsg(tr("Sort by %1: reorder rejected (cluster set changed?).")
@@ -1394,7 +1517,14 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
                                                  std::vector<float>& distOut)
 {
     if (!activeView()) return false;
-    Data& d = doc->data();
+    // Feeds the two waveform RENUMBERING sorts, parent layer only: refused
+    // under the child scope for the reason at slotSortClustersByErrorPval.
+    if (doc->matrixScopeActive()) {
+        slotStatusMsg(tr("This sort renumbers parents and is not available "
+                         "under the child scope; leave child view (V) first."));
+        return false;
+    }
+    Data& d = doc->parentData();   // the layer being renumbered, named outright
 
     // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).
     QList<int> clusters;

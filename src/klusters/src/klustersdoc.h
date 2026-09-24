@@ -453,6 +453,19 @@ public:
      *  no landing of their own. */
     void adoptJointChildren(const QList<int>& ids);
 
+    /** The held CHILD-SCOPE sort order: the scope's atoms in the order the
+     *  user last sorted them (Sort Clusters under a child scope).  Held so
+     *  the sort SURVIVES matrix recomputes -- after every accepted compute
+     *  the error matrix re-derives its display permutation from this list
+     *  (ErrorMatrixView::applyScopeSortOrder) -- and cleared at exactly the
+     *  two exits from the child view: the V toggle turning the scope off,
+     *  and the curated parent(s) changing.  Atom ids, not row indices: rows
+     *  move on every recompute, ids are what the sort meant.  The atom
+     *  layer's own renumber paths translate it, beside jointChildren --
+     *  the parent maps are the wrong id space for it. */
+    void setScopeSortOrder(const QList<int>& orderedIds);
+    QList<int> scopeSortOrderList() const { return scopeSortOrder; }
+
     /** The layer the matrix views must compute over.
      *
      *  NOT data().  data() follows activeData, which follows childScopeActive --
@@ -2046,6 +2059,7 @@ private:
     int                  curatedParentId = -1;      // the parent being curated
     QList<int>           curatedParents;            // >=2 parents => joint matrix scope; else empty
     QList<int>           jointChildren;             // atoms the matrices brought into the joint palette
+    QList<int>           scopeSortOrder;            // held child-scope sort order (atom ids)
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     bool                 scopeResolvedActive = false;   // held answer, never derived on demand
     QList<int>           scopeResolvedClusters;         // held children of the scoped parent(s)

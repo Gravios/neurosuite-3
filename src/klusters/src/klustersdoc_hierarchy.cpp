@@ -466,6 +466,8 @@ bool KlustersDoc::compactAllClusterIds(){
         // -- the wrong-family failure shape this patch exists to close.
         for (int& c : jointChildren)
             if (atomOldNew.contains(c)) c = atomOldNew.value(c);
+        for (int& c : scopeSortOrder)                     // same id space, same map
+            if (atomOldNew.contains(c)) c = atomOldNew.value(c);
 
         emit hierarchyChanged();
         setModified(true);
@@ -545,6 +547,9 @@ void KlustersDoc::setMatrixScopeEnabled(bool enabled)
 {
     if (matrixScopeOn == enabled) return;   // no spurious recomputes
     matrixScopeOn = enabled;
+    // Leaving the child view through V is one of the two exits that drop the
+    // held child-scope sort order (the other is a curated-parent change).
+    if (!enabled) scopeSortOrder.clear();
     resolveMatrixScope();                   // emits matrixScopeChanged if it moved
 }
 
@@ -568,6 +573,10 @@ void KlustersDoc::setCuratedParent(int parentId)
                               .arg(matrixScopeOn ? "on" : "off");
     if (curatedParentId == parentId) return;   // no spurious recomputes
     curatedParentId = parentId;
+    // A new curated parent is the other exit that drops the held child-scope
+    // sort order (re-selecting the SAME parent early-returns above, so an
+    // incidental re-click keeps it).
+    scopeSortOrder.clear();
     resolveMatrixScope();                     // emits matrixScopeChanged if it moved
 }
 
@@ -588,6 +597,7 @@ void KlustersDoc::setCuratedParents(const QList<int>& parents)
     // identical re-selection early-returns above, so an incidental re-click
     // cannot empty the palette mid-inspection.)
     jointChildren.clear();
+    scopeSortOrder.clear();   // the sort was of the OLD scope's atoms
     resolveMatrixScope();                      // emits matrixScopeChanged if it moved
 }
 
@@ -601,6 +611,15 @@ void KlustersDoc::adoptJointChildren(const QList<int>& ids)
     if (curatedParents.size() < 2) return;
     for (int id : ids)
         if (!jointChildren.contains(id)) jointChildren.append(id);
+}
+
+void KlustersDoc::setScopeSortOrder(const QList<int>& orderedIds)
+{
+    // Meaningful only while a scope is on: an unscoped sort is a renumber and
+    // needs no held order.  Replaces, not merges -- each sort states the whole
+    // order it wants.
+    if (!matrixScopeActive()) return;
+    scopeSortOrder = orderedIds;
 }
 
 void KlustersDoc::resolveMatrixScope()

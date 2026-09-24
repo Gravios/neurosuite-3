@@ -1455,9 +1455,34 @@ private:
 
     /**Common epilogue: hand @p order to the doc layer, which owns the undo, log,
      * palette and view bookkeeping, and report the outcome.  @p detail is the
-     * parenthetical ("largest first").*/
+     * parenthetical ("largest first").  Under a CHILD scope the order names
+     * atoms and a renumber is the wrong layer entirely, so it becomes a
+     * display-only rearrangement of the error matrix instead
+     * (applyScopedDisplayOrder).*/
     void applySortedOrder(const QList<int>& order, const QString& sortName,
                           const QString& detail);
+
+    /**The layer a sort's metric must read: the scoped ATOM layer while the
+     * curation matrices are child-scoped, else the parent layer outright.
+     * NOT data() -- data() follows the child SELECTION, which is neither of
+     * those facts: with a child selected but the scope off it is the atom
+     * layer under a parent sort, and with the scope on but nothing selected
+     * it is the parent layer under an atom sort.  Both misroutes put one
+     * layer's numerals into the other's tables, the id-collision family. */
+    Data& sortMetricData() const;
+
+    /**Child-scope application of a sort: hold @p orderedIds as the doc's
+     * scope sort order and have the error matrix derive its display
+     * permutation from them (ErrorMatrixView::applyScopeSortOrder), without
+     * renumbering anything.  Because every accepted recompute re-derives
+     * from the held ids, the sort PERSISTS across edits within the child
+     * view and is dropped only at its exits: the V toggle, or a change of
+     * curated parent(s).  The child palette keeps natural id order (its
+     * similarity order is a parent-level feature).  Says so, or says why
+     * not (no error matrix computed).*/
+    void applyScopedDisplayOrder(const QList<int>& orderedIds,
+                                 const QString& sortName,
+                                 const QString& detail);
 
     void beginSortProgress(const QString& format);
     /** Nesting depth for the shared progress bar.  Both long operations that use
