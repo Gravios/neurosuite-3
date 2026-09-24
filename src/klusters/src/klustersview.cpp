@@ -357,6 +357,11 @@ void KlustersView::createGroupingAssistantView(const QColor& backgroundColor,QSt
     templateMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
     templateMatrix->setWidget(new TemplateMatrixView(doc,*this,backgroundColor,statusBar,templateMatrix));
     TemplateMatrixView* tmView = qobject_cast<TemplateMatrixView*>(templateMatrix->widget());
+    // Right-click popup (Sort Clusters), same as the error matrix: the menu
+    // fires for any NON-dock object this filter is installed on, so the VIEW
+    // widget is the one that needs it -- the dock install alone never pops it.
+    tmView->installEventFilter(this);
+    templateMatrix->installEventFilter(this);
     isThereTemplateMatrixView = true;
     addDockWidget(Qt::BottomDockWidgetArea,templateMatrix);
     overviewTemplateMatrixDock = templateMatrix;
@@ -817,6 +822,13 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                 }
             }
         }
+        // WHO GETS THE MENU: any non-dock object this filter is installed on
+        // takes the first (empty) branch and falls through to the right-click
+        // popup below -- installEventFilter at the creation site is the real
+        // gate, not the cast chain here.  All four curation matrices install
+        // it on their VIEW widgets (the docks take the final else: no menu).
+        // The else-if casts below are only reachable for docks, where they all
+        // fail; they are kept as the historical roster, not as the gate.
         //QWidget* widget;
         if(!qobject_cast<QDockWidget*>(object)) {
             //widget = dynamic_cast<QDockWidget*>(object)->widget();
@@ -1020,6 +1032,10 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         templateMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
         templateMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         templateMatrix->setWidget(new TemplateMatrixView(doc,*this,backgroundColor,statusBar,templateMatrix));
+        // The VIEW widget carries the right-click Sort Clusters popup (the
+        // menu fires for any non-dock object this filter is installed on);
+        // the dock install alone never pops it.
+        templateMatrix->widget()->installEventFilter(this);
         templateMatrix->installEventFilter(this);
         addDockWidget(Qt::RightDockWidgetArea,templateMatrix);
         overviewTemplateMatrixDock = templateMatrix;
@@ -1040,6 +1056,9 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         residualMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
         residualMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         residualMatrix->setWidget(new ResidualMatrixView(doc,*this,backgroundColor,statusBar,residualMatrix));
+        // The VIEW widget carries the right-click Sort Clusters popup (see the
+        // template-matrix site); the dock install alone never pops it.
+        residualMatrix->widget()->installEventFilter(this);
         residualMatrix->installEventFilter(this);
         addDockWidget(Qt::RightDockWidgetArea,residualMatrix);
         overviewResidualMatrixDock = residualMatrix;
@@ -1062,6 +1081,9 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         driftMatrix->setAttribute(Qt::WA_DeleteOnClose, true);
         driftMatrix->setFeatures(QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetMovable|QDockWidget::DockWidgetFloatable);
         driftMatrix->setWidget(new DriftMatrixView(doc,*this,backgroundColor,statusBar,driftMatrix));
+        // The VIEW widget carries the right-click Sort Clusters popup (see the
+        // template-matrix site); the dock install alone never pops it.
+        driftMatrix->widget()->installEventFilter(this);
         driftMatrix->installEventFilter(this);
         addDockWidget(Qt::RightDockWidgetArea,driftMatrix);
         overviewDriftMatrixDock = driftMatrix;
