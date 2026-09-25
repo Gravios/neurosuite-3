@@ -6253,14 +6253,44 @@ void KlustersApp::slotStripByTemplate()
         selected.removeAll(0);
         selected.removeAll(1);
     }
-    if (selected.size() < 2) {
+    if (selected.isEmpty()) {
         QMessageBox::information(this, tr("Strip by Template"),
-            onChild ? tr("Select the template atom plus at least one source "
-                         "atom (currently %1 selected).").arg(selected.size())
-                    : tr("Select the template cluster plus at least one "
-                         "source cluster (currently %1 selected).")
-                          .arg(selected.size()));
+            onChild ? tr("Select the template atom (alone, to strip from the "
+                         "whole scope) or the template plus its sources.")
+                    : tr("Select the template cluster (alone, to strip from "
+                         "all other clusters) or the template plus its "
+                         "sources."));
         return;
+    }
+    // Single selection = whole-scope donors: the lone selection is the
+    // template and every other cluster of the same scope donates -- the
+    // child scope's atoms (or the template's siblings with no matrix scope)
+    // in child view, every parent cluster otherwise.  The donor pool is the
+    // KNN split's reference-pool rule with the roles reversed: there the
+    // scope classifies the source, here it donates to the template.  An
+    // explicit multi-selection keeps its meaning: template from the combo,
+    // the rest donate.
+    const bool wholeScope = (selected.size() == 1);
+    QList<int> donorPool;
+    if (wholeScope) {
+        const int tpl = selected.first();
+        if (onChild) {
+            donorPool = doc->matrixScopeActive()
+                            ? doc->matrixScopeClusters()
+                            : doc->childrenOf(QList<int>{ doc->parentOfChild(tpl) });
+        } else {
+            const QList<dataType> all = doc->parentData().clusterIds();
+            for (dataType c : all) donorPool.append(static_cast<int>(c));
+        }
+        donorPool.removeAll(tpl);
+        donorPool.removeAll(0);
+        donorPool.removeAll(1);
+        if (donorPool.isEmpty()) {
+            QMessageBox::information(this, tr("Strip by Template"),
+                tr("No other %1 in scope to strip from.")
+                    .arg(onChild ? tr("atoms") : tr("clusters")));
+            return;
+        }
     }
 
     // ── Parameter dialog ─────────────────────────────────────────────────
@@ -6287,6 +6317,7 @@ void KlustersApp::slotStripByTemplate()
     for (int id : selected)
         tplBox->addItem(QString::number(id), id);
     tplBox->setCurrentIndex(0);                    // first-selected designates
+    tplBox->setEnabled(!wholeScope);               // single selection: fixed
     static double lastStripThr  = 0.5;             // session-remembered knobs
     static double lastStripGMin = 0.0;
     static double lastStripGMax = 10.0;
@@ -6332,6 +6363,13 @@ void KlustersApp::slotStripByTemplate()
                      .arg(parts.join(QStringLiteral(", ")));
     }
     form->addRow(tr("Template (from the selection):"),        tplBox);
+    form->addRow(tr("Donors:"), new QLabel(
+        wholeScope ? tr("all %1 other %2 in scope")
+                         .arg(donorPool.size())
+                         .arg(onChild ? tr("atoms") : tr("clusters"))
+                   : tr("the %1 other selected %2")
+                         .arg(selected.size() - 1)
+                         .arg(onChild ? tr("atoms") : tr("clusters")), &dlg));
     form->addRow(tr("Max normalized distance:"),               distBox);
     form->addRow(tr("Min amplitude ratio g (0 = off):"),       gMinBox);
     form->addRow(tr("Max amplitude ratio g (10 = off):"),      gMaxBox);
@@ -6355,7 +6393,7 @@ void KlustersApp::slotStripByTemplate()
     lastStripGMin = gMin;
     lastStripGMax = gMax;
     lastStripChan = maxChanDist;
-    QList<int> sources = selected;
+    QList<int> sources = wholeScope ? donorPool : selected;
     sources.removeAll(templateCluster);
 
     // ── Run the strip ────────────────────────────────────────────────────
