@@ -1020,6 +1020,25 @@ public:
                                                  double majorityThreshold,
                                                  int    minNewClusterSize,
                                                  int    minRefClusterSize);
+
+    /** The ATOM-layer KNN split: partition @p sourceChild's spikes by KNN
+     *  vote against reference ATOMS, each vote group becoming a new sibling
+     *  atom.  The atom layer is named outright -- childData end to end,
+     *  never data() -- the same layer-costume family as the watershed and
+     *  the sorts.  The reference pool is the CHILD SCOPE's atoms when the
+     *  curation matrices are child-scoped (joint scopes vote across their
+     *  parents' atoms: references only classify, no spike moves into them),
+     *  else the source's siblings.  Every new atom lands under the source's
+     *  parent -- the spikes keep their .clu labels -- so nothing straddles
+     *  and repairNesting has nothing to do.  One self-snapshotting childData
+     *  edit + one ChildEdit; Ctrl+Shift+Z reverts it whole.  The parent-stage
+     *  curation logger stays out of the atom layer for its own stated reason
+     *  (its ids collide with atom numerals). */
+    KnnSplitResult splitChildByKnnVsReferences(int    sourceChild,
+                                               int    K,
+                                               double majorityThreshold,
+                                               int    minNewClusterSize,
+                                               int    minRefClusterSize);
  
     /**Returns the number of dimensions of the data.*/
     int nbDimensions(){return clusteringData->nbOfDimensions();}
