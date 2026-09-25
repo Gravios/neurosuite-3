@@ -560,6 +560,14 @@ private Q_SLOTS:
      *  minRefClusterSize spikes, excluding artifact / MUA / source).
      *  See KlustersDoc::splitClusterByKnnVsReferences for the algorithm. */
     void slotSplitClusterByKnn();
+
+    /** Designate one selected cluster (parent scope) or atom (child scope) as
+     *  a waveform template, then strip spikes from the other selected
+     *  clusters of the same scope whose normalized kernel-weighted residual
+     *  against the template's median waveform — on the current channel
+     *  selection — is at or below a threshold.  One new cluster per source.
+     *  See KlustersDoc::stripByTemplate for the metric. */
+    void slotStripByTemplate();
   
     /**Opens the spike realignment pre-flight dialog and, if confirmed,
      * launches realignment on a background thread with output in a tab.*/
@@ -1032,6 +1040,7 @@ private:
     ReclusterOnce reclusterOnce = ReclusterOnce::None;
 
     QAction *mSplitByKnn;
+    QAction *mStripByTemplate = nullptr;   // Recluster: template strip (both scopes)
     QAction *mRealignSpikes;
     QAction *mPartitionByTime = nullptr;   // Actions: cut a cluster into time blocks
     /** PCA-centered batch realignment across every cluster (skipping

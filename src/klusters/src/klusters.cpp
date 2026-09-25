@@ -644,6 +644,16 @@ void KlustersApp::createMenus()
     connect(mSplitByKnn, &QAction::triggered,
             this, &KlustersApp::slotSplitClusterByKnn);
 
+    mStripByTemplate = reclusterMenu->addAction(tr("Strip by &Template…"));
+    mStripByTemplate->setToolTip(
+        tr("Designate one selected cluster as a waveform template and pull "
+           "matching spikes out of the other selected clusters — normalized "
+           "kernel-weighted median-waveform residual, restricted to the "
+           "current channel selection.  Works in both scopes."));
+    mStripByTemplate->setEnabled(false);
+    connect(mStripByTemplate, &QAction::triggered,
+            this, &KlustersApp::slotStripByTemplate);
+
     
     // Watershed lives on the Actions menu proper, not in the Recluster submenu.
     // Its construction used to sit in the middle of the Tools menu block -- it was
@@ -6205,6 +6215,123 @@ void KlustersApp::slotSplitClusterByKnn()
         ? QStringLiteral("\nUndo with Ctrl+Shift+Z if the partition isn't useful.")
         : QStringLiteral("\nUndo with Ctrl+Z if the partition isn't useful.");
     QMessageBox::information(this, tr("Split by KNN voting — done"), summary);
+}
+
+// ---------------------------------------------------------------------------
+// KlustersApp::slotStripByTemplate
+// ---------------------------------------------------------------------------
+// Action handler for "Strip by Template…".  Both scopes: the child scope when
+// the child panel shows a non-empty selection (atom ids from selectedChildrenAB,
+// never view->clusters() — the id-collision family), the parent scope
+// otherwise.  The FIRST selected cluster is offered as the default template;
+// the dialog's combo lets the user re-designate among the selection.  The
+// remaining selected clusters are the sources.  The channel restriction is the
+// document's channel selection, shown in the dialog, not chosen there — select
+// channels first, the way the masked matrix builds do.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotStripByTemplate()
+{
+    KlustersView* view = activeView();
+    if (!view) {
+        QMessageBox::information(this, tr("No view"),
+                                 tr("Open a cluster view first."));
+        return;
+    }
+    QList<int> selected = (childPanel && childPanel->isVisible())
+                              ? selectedChildrenAB() : QList<int>();
+    selected.removeAll(0);
+    selected.removeAll(1);
+    const bool onChild = !selected.isEmpty();
+    if (!onChild) {
+        selected = view->clusters();
+        selected.removeAll(0);
+        selected.removeAll(1);
+    }
+    if (selected.size() < 2) {
+        QMessageBox::information(this, tr("Strip by Template"),
+            onChild ? tr("Select the template atom plus at least one source "
+                         "atom (currently %1 selected).").arg(selected.size())
+                    : tr("Select the template cluster plus at least one "
+                         "source cluster (currently %1 selected).")
+                          .arg(selected.size()));
+        return;
+    }
+
+    // ── Parameter dialog ─────────────────────────────────────────────────
+    QDialog dlg(this);
+    dlg.setWindowTitle(onChild ? tr("Strip by Template (child scope)")
+                               : tr("Strip by Template"));
+    QVBoxLayout* outer = new QVBoxLayout(&dlg);
+    QLabel* intro = new QLabel(tr(
+        "<p>The template's <b>median waveform</b> is compared against every "
+        "spike of the other selected %1.  Distance is the kernel-weighted "
+        "RMS residual — weighted by the template's own magnitude, so "
+        "baseline samples count for little — normalized by the template's "
+        "scale: 0 = identical, 1 = residual as large as the template.  "
+        "Spikes at or below the threshold are pulled into <b>one new %2 per "
+        "source</b> (nothing joins the template), so each strip can be "
+        "judged, merged or undone on its own.</p>")
+            .arg(onChild ? tr("atoms") : tr("clusters"),
+                 onChild ? tr("sibling atom") : tr("cluster")), &dlg);
+    intro->setWordWrap(true);
+    outer->addWidget(intro);
+
+    QFormLayout* form = new QFormLayout();
+    QComboBox* tplBox = new QComboBox(&dlg);
+    for (int id : selected)
+        tplBox->addItem(QString::number(id), id);
+    tplBox->setCurrentIndex(0);                    // first-selected designates
+    static double lastStripThr = 0.5;              // session-remembered knob
+    QDoubleSpinBox* distBox = new QDoubleSpinBox(&dlg);
+    distBox->setRange(0.05, 3.0);
+    distBox->setSingleStep(0.05);
+    distBox->setDecimals(2);
+    distBox->setValue(lastStripThr);
+    const QList<int>& chSel = doc->selectedChannels();
+    QString chText;
+    if (chSel.isEmpty()) {
+        chText = tr("all %1 channels (no channel selection)")
+                     .arg(doc->parentData().nbOfChannels());
+    } else {
+        QStringList parts;
+        for (int c : chSel) parts.append(QString::number(c));
+        chText = tr("channels %1 (current selection)")
+                     .arg(parts.join(QStringLiteral(", ")));
+    }
+    form->addRow(tr("Template (from the selection):"), tplBox);
+    form->addRow(tr("Max normalized distance:"),       distBox);
+    form->addRow(tr("Restricted to:"), new QLabel(chText, &dlg));
+    outer->addLayout(form);
+
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    outer->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const int    templateCluster = tplBox->currentData().toInt();
+    const double maxDistance     = distBox->value();
+    lastStripThr = maxDistance;
+    QList<int> sources = selected;
+    sources.removeAll(templateCluster);
+
+    // ── Run the strip ────────────────────────────────────────────────────
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    KlustersDoc::TemplateStripResult R =
+        doc->stripByTemplate(templateCluster, sources, maxDistance, onChild);
+    QApplication::restoreOverrideCursor();
+
+    if (!R.accepted) {
+        QMessageBox::warning(this, tr("Strip by Template"),
+            tr("No strip was committed.\n\n%1").arg(R.reason));
+        return;
+    }
+    QString summary = R.reason;
+    summary += onChild
+        ? tr("\n\nUndo with Ctrl+Shift+Z if the strip isn't useful.")
+        : tr("\n\nUndo with Ctrl+Z if the strip isn't useful.");
+    QMessageBox::information(this, tr("Strip by Template — done"), summary);
 }
 
 
