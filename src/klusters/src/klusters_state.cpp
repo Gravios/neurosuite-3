@@ -174,6 +174,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mReclusterMedian->setEnabled(false);
         mReclusterChannelVar->setEnabled(false);
         mSplitByKnn->setEnabled(false);	
+        mStripByTemplate->setEnabled(false);
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
@@ -244,6 +245,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mReclusterMedian->setEnabled(true);
         mReclusterChannelVar->setEnabled(true);
         mSplitByKnn->setEnabled(true);	
+        mStripByTemplate->setEnabled(true);
         mRealignSpikes->setEnabled(true);
         mPcaAlignAllClusters->setEnabled(true);
         nudgeMinusAction->setEnabled(true);

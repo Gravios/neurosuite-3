@@ -1039,7 +1039,46 @@ public:
                                                double majorityThreshold,
                                                int    minNewClusterSize,
                                                int    minRefClusterSize);
- 
+
+    /** Result of stripByTemplate (status-bar payload). */
+    struct TemplateStripResult {
+        bool       accepted    = false; ///< true iff a cut was committed
+        int        templateId  = 0;     ///< the designated template cluster
+        int        nMatched    = 0;     ///< spikes at or below the distance threshold
+        int        nCandidates = 0;     ///< spikes examined across all sources
+        QList<int> sources;             ///< sources that contributed >= 1 matched spike
+        QString    reason;              ///< user-facing summary or error
+    };
+
+    /** Template strip: designate @p templateCluster (of the ACTIVE layer) as a
+     *  waveform template and pull, from each cluster in @p sourceClusters of
+     *  the same layer, every spike whose normalized kernel-weighted residual
+     *  against the template's MEDIAN waveform is <= @p maxDistance.  The
+     *  comparison is restricted to the document's channel selection
+     *  (selectedChannels(); all channels when none is selected).
+     *
+     *  Metric, per spike x over the selected channels' points p:
+     *    w[p] = |T[p]|                                     (template magnitude)
+     *    D(x) = sqrt(sum w (x-T)^2 / sum w) / sqrt(sum w T^2 / sum w)
+     *  Dimensionless: 0 = identical, 1 = residual as large as the template.
+     *  No per-spike gain and no lag search -- amplitude and alignment
+     *  differences count as distance, matching how median-waveform overlap
+     *  reads in the waveform view.
+     *
+     *  The cut itself is the row-named createNewClusters path -- the lasso's
+     *  machinery -- so quiesce, undo (parent snapshot / one ChildEdit), the
+     *  parent-scope curation log (algorithm "template_strip"), hierarchy
+     *  refresh and the parked landing all behave exactly like a hand cut:
+     *  ONE NEW CLUSTER PER SOURCE, each product under its source's parent,
+     *  so a joint child scope stays invariant-safe (nothing straddles).
+     *  @p onChild names the layer outright and is cross-checked against the
+     *  active clustering; a mismatch refuses rather than cutting the wrong
+     *  layer (the id-collision family). */
+    TemplateStripResult stripByTemplate(int              templateCluster,
+                                        const QList<int>& sourceClusters,
+                                        double           maxDistance,
+                                        bool             onChild);
+
     /**Returns the number of dimensions of the data.*/
     int nbDimensions(){return clusteringData->nbOfDimensions();}
 
