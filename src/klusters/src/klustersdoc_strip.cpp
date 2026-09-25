@@ -30,6 +30,9 @@ KlustersDoc::TemplateStripResult
 KlustersDoc::stripByTemplate(int               templateCluster,
                              const QList<int>& sourceClusters,
                              double            maxDistance,
+                             double            minAmplitudeRatio,
+                             double            maxAmplitudeRatio,
+                             double            maxChannelDistance,
                              bool              onChild)
 {
     TemplateStripResult R;
@@ -145,6 +148,35 @@ KlustersDoc::stripByTemplate(int               templateCluster,
     }
     const double denom = std::sqrt(E / W);
 
+    // Per-channel normalization for the uniformity gate: the same
+    // construction restricted to one channel.  Channels carrying < 5% of the
+    // template's kernel energy cannot be normalized meaningfully (a flank
+    // with no template signal would gate on noise), so they take part in the
+    // pooled D only.
+    std::vector<double> Wc(static_cast<size_t>(nSel), 0.0);
+    std::vector<double> Ec(static_cast<size_t>(nSel), 0.0);
+    std::vector<double> denomC(static_cast<size_t>(nSel), 0.0);
+    double maxEc = 0.0;
+    for (int ci = 0; ci < nSel; ++ci) {
+        for (int t = 0; t < nSamp; ++t) {
+            const size_t p = static_cast<size_t>(ci) * nSamp + t;
+            Wc[static_cast<size_t>(ci)] += w[p];
+            Ec[static_cast<size_t>(ci)] += static_cast<double>(w[p]) * T[p] * T[p];
+        }
+        maxEc = std::max(maxEc, Ec[static_cast<size_t>(ci)]);
+    }
+    std::vector<bool> gateCh(static_cast<size_t>(nSel), false);
+    for (int ci = 0; ci < nSel; ++ci) {
+        const bool carries = Ec[static_cast<size_t>(ci)] >= 0.05 * maxEc
+                             && Wc[static_cast<size_t>(ci)] > 0.0;
+        gateCh[static_cast<size_t>(ci)] = carries;
+        if (carries)
+            denomC[static_cast<size_t>(ci)] =
+                std::sqrt(Ec[static_cast<size_t>(ci)] / Wc[static_cast<size_t>(ci)]);
+    }
+    const bool ampGate  = minAmplitudeRatio > 0.0 || maxAmplitudeRatio < 9.99;
+    const bool chanGate = maxChannelDistance > 0.0;
+
     // ── Score every source spike, collect rows at or below threshold ────
     QSet<dataType> rows;
     long nCand = 0;
@@ -158,21 +190,38 @@ KlustersDoc::stripByTemplate(int               templateCluster,
             const long row = static_cast<long>(pos(1, s + 1));
             if (!tmReadSpikeFloat(spk, row - 1, nCh, nSamp, raw, wav)) continue;
             ++nCand;
-            double q = 0.0;
+            double q = 0.0, xtw = 0.0, worstChan = 0.0;
             for (int ci = 0; ci < nSel; ++ci) {
                 const float* xw = &wav[static_cast<size_t>(chans[ci]) * nSamp];
                 const float* tp = &T[static_cast<size_t>(ci) * nSamp];
                 const float* wp = &w[static_cast<size_t>(ci) * nSamp];
+                double qc = 0.0;
                 for (int t = 0; t < nSamp; ++t) {
                     const double d = static_cast<double>(xw[t]) - tp[t];
-                    q += wp[t] * d * d;
+                    qc  += wp[t] * d * d;
+                    xtw += static_cast<double>(wp[t]) * xw[t] * tp[t];
                 }
+                q += qc;
+                if (chanGate && gateCh[static_cast<size_t>(ci)])
+                    worstChan = std::max(worstChan,
+                        std::sqrt(qc / Wc[static_cast<size_t>(ci)])
+                            / denomC[static_cast<size_t>(ci)]);
             }
             const double D = std::sqrt(q / W) / denom;
-            if (D <= maxDistance) {
-                rows.insert(static_cast<dataType>(row));
-                ++matched;
+            if (D > maxDistance) continue;
+            if (ampGate) {
+                const double g = xtw / E;      // kernel-weighted matched gain
+                if (g < minAmplitudeRatio || g > maxAmplitudeRatio) {
+                    ++R.nRejectedAmplitude;
+                    continue;
+                }
             }
+            if (chanGate && worstChan > maxChannelDistance) {
+                ++R.nRejectedChannel;
+                continue;
+            }
+            rows.insert(static_cast<dataType>(row));
+            ++matched;
         }
         if (matched > 0) R.sources.append(src);
     }
@@ -181,10 +230,14 @@ KlustersDoc::stripByTemplate(int               templateCluster,
     R.nCandidates = static_cast<int>(nCand);
     R.nMatched    = static_cast<int>(rows.size());
     if (rows.isEmpty()) {
-        R.reason = tr("No spikes within distance %1 of template %2 on the "
-                      "selected channels (%3 examined).  Raise the threshold "
-                      "or check the channel selection.")
-                       .arg(maxDistance).arg(templateCluster).arg(nCand);
+        R.reason = tr("No spikes accepted for template %1 on the selected "
+                      "channels (%2 examined; %3 within distance %4 but "
+                      "rejected by the amplitude window, %5 by channel "
+                      "uniformity).  Raise the threshold, widen the gates, or "
+                      "check the channel selection.")
+                       .arg(templateCluster).arg(nCand)
+                       .arg(R.nRejectedAmplitude).arg(maxDistance)
+                       .arg(R.nRejectedChannel);
         return R;
     }
 
@@ -197,5 +250,10 @@ KlustersDoc::stripByTemplate(int               templateCluster,
                   "cluster(s), one new cluster per source.")
                    .arg(R.nMatched).arg(R.nCandidates).arg(templateCluster)
                    .arg(maxDistance).arg(nSel).arg(R.sources.size());
+    if (R.nRejectedAmplitude > 0 || R.nRejectedChannel > 0)
+        R.reason += tr("  Gates rejected %1 within-distance spike(s): %2 by "
+                       "the amplitude window, %3 by channel uniformity.")
+                        .arg(R.nRejectedAmplitude + R.nRejectedChannel)
+                        .arg(R.nRejectedAmplitude).arg(R.nRejectedChannel);
     return R;
 }

@@ -6287,12 +6287,39 @@ void KlustersApp::slotStripByTemplate()
     for (int id : selected)
         tplBox->addItem(QString::number(id), id);
     tplBox->setCurrentIndex(0);                    // first-selected designates
-    static double lastStripThr = 0.5;              // session-remembered knob
+    static double lastStripThr  = 0.5;             // session-remembered knobs
+    static double lastStripGMin = 0.0;
+    static double lastStripGMax = 10.0;
+    static double lastStripChan = 0.0;
     QDoubleSpinBox* distBox = new QDoubleSpinBox(&dlg);
     distBox->setRange(0.05, 3.0);
     distBox->setSingleStep(0.05);
     distBox->setDecimals(2);
     distBox->setValue(lastStripThr);
+    QDoubleSpinBox* gMinBox = new QDoubleSpinBox(&dlg);
+    gMinBox->setRange(0.0, 2.0);
+    gMinBox->setSingleStep(0.05);
+    gMinBox->setDecimals(2);
+    gMinBox->setValue(lastStripGMin);
+    gMinBox->setToolTip(tr("Reject spikes whose kernel-weighted matched gain "
+        "g (projection onto the template; 1 = template-sized, 0 = no "
+        "template-shaped signal) falls below this.  0 disables."));
+    QDoubleSpinBox* gMaxBox = new QDoubleSpinBox(&dlg);
+    gMaxBox->setRange(0.5, 10.0);
+    gMaxBox->setSingleStep(0.05);
+    gMaxBox->setDecimals(2);
+    gMaxBox->setValue(lastStripGMax);
+    gMaxBox->setToolTip(tr("Reject spikes whose matched gain g exceeds this "
+        "(much larger than the template).  10 effectively disables."));
+    QDoubleSpinBox* chanBox = new QDoubleSpinBox(&dlg);
+    chanBox->setRange(0.0, 5.0);
+    chanBox->setSingleStep(0.05);
+    chanBox->setDecimals(2);
+    chanBox->setValue(lastStripChan);
+    chanBox->setToolTip(tr("Channel uniformity: every channel carrying at "
+        "least 5% of the template's kernel energy must individually stay at "
+        "or below this normalized distance, so a strong dominant-channel "
+        "match cannot hide a flank mismatch.  0 disables."));
     const QList<int>& chSel = doc->selectedChannels();
     QString chText;
     if (chSel.isEmpty()) {
@@ -6304,8 +6331,11 @@ void KlustersApp::slotStripByTemplate()
         chText = tr("channels %1 (current selection)")
                      .arg(parts.join(QStringLiteral(", ")));
     }
-    form->addRow(tr("Template (from the selection):"), tplBox);
-    form->addRow(tr("Max normalized distance:"),       distBox);
+    form->addRow(tr("Template (from the selection):"),        tplBox);
+    form->addRow(tr("Max normalized distance:"),               distBox);
+    form->addRow(tr("Min amplitude ratio g (0 = off):"),       gMinBox);
+    form->addRow(tr("Max amplitude ratio g (10 = off):"),      gMaxBox);
+    form->addRow(tr("Max per-channel distance (0 = off):"),    chanBox);
     form->addRow(tr("Restricted to:"), new QLabel(chText, &dlg));
     outer->addLayout(form);
 
@@ -6318,14 +6348,21 @@ void KlustersApp::slotStripByTemplate()
 
     const int    templateCluster = tplBox->currentData().toInt();
     const double maxDistance     = distBox->value();
-    lastStripThr = maxDistance;
+    const double gMin            = gMinBox->value();
+    const double gMax            = gMaxBox->value();
+    const double maxChanDist     = chanBox->value();
+    lastStripThr  = maxDistance;
+    lastStripGMin = gMin;
+    lastStripGMax = gMax;
+    lastStripChan = maxChanDist;
     QList<int> sources = selected;
     sources.removeAll(templateCluster);
 
     // ── Run the strip ────────────────────────────────────────────────────
     QApplication::setOverrideCursor(Qt::WaitCursor);
     KlustersDoc::TemplateStripResult R =
-        doc->stripByTemplate(templateCluster, sources, maxDistance, onChild);
+        doc->stripByTemplate(templateCluster, sources, maxDistance,
+                             gMin, gMax, maxChanDist, onChild);
     QApplication::restoreOverrideCursor();
 
     if (!R.accepted) {
