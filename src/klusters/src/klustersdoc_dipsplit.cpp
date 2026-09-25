@@ -704,3 +704,101 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
                      ? tr(" (source consumed)") : tr(""));
     return R;
 }
+
+// ---------------------------------------------------------------------------
+// KlustersDoc::splitChildByKnnVsReferences
+//
+// The atom-layer counterpart of splitClusterByKnnVsReferences.  See the
+// header for the layer-naming and reference-pool rationale.  The commit
+// shape is createNewClusters' child branch, exactly as the atom watershed:
+// the hierarchy refresh + parked landing do the palette and view work, and
+// the spikes keep their .clu labels, so every new atom re-derives under the
+// source's parent.
+// ---------------------------------------------------------------------------
+KlustersDoc::KnnSplitResult
+KlustersDoc::splitChildByKnnVsReferences(int    sourceChild,
+                                         int    K,
+                                         double majorityThreshold,
+                                         int    minNewClusterSize,
+                                         int    minRefClusterSize)
+{
+    KnnSplitResult R;
+    R.sourceId = sourceChild;
+    if (!childData) {
+        R.reason = tr("No child (atom) clustering is loaded.");
+        return R;
+    }
+
+    // Reference pool: the scope's atoms under a child scope (the joint scope
+    // votes across all its parents' atoms -- classifiers only, no spike moves
+    // into a reference), else the source's siblings.  The source itself is
+    // skipped inside the algorithm.
+    QList<int> refs = matrixScopeActive()
+                          ? matrixScopeClusters()
+                          : childrenOf(QList<int>{ parentOfChild(sourceChild) });
+    refs.removeAll(sourceChild);
+    if (refs.isEmpty()) {
+        R.reason = tr("No reference atoms: the source has no siblings and no "
+                      "child scope is active.");
+        return R;
+    }
+
+    // Quiesce background view threads before mutating childData: the scoped
+    // matrix threads read the atom layer, and the split swaps the row table
+    // underneath any reader (same as the atom watershed).
+    for (KlustersView* view : *viewList)
+        view->stopAllViewThreads();
+
+    // NO curation log: the parent-stage logger's ids collide with atom
+    // numerals -- the atom layer is out of its scope by design (see
+    // createNewCluster's child branch).
+    QList<int> newClusters, matchedReferences, emptiedClusters;
+    QString err;
+    const bool ok = childData->splitClusterByKnnVsReferences(
+        sourceChild, K, majorityThreshold, minNewClusterSize,
+        minRefClusterSize, newClusters, matchedReferences, emptiedClusters,
+        err, &refs);
+    if (!ok || newClusters.isEmpty()) {
+        // Nothing was mutated, but the threads are quiesced: relaunch them,
+        // as the atom watershed's failure paths do.
+        if (KlustersView* activeView = app()->activeView())
+            activeView->showAllWidgets();
+        R.reason = ok ? tr("The vote produced no new atoms.") : err;
+        return R;
+    }
+
+    R.accepted          = true;
+    R.newClusters       = newClusters;
+    R.matchedReferences = matchedReferences;
+    R.emptiedClusters   = emptiedClusters;
+    R.nResidual         = 0;
+    for (int i = 0; i < newClusters.size(); ++i)
+        if (matchedReferences.value(i, 0) == -1)
+            R.nResidual = static_cast<int>(childData->nbOfSpikes(
+                static_cast<dataType>(newClusters[i])));
+
+    // One self-snapshotting childData edit (the algorithm calls prepareUndo
+    // on success) -> one ChildEdit on the atom-undo timeline, so Ctrl+Shift+Z
+    // reverts the whole split.  The surviving source is modified, a consumed
+    // source is deleted.
+    ChildEdit e;
+    e.added   = newClusters;
+    e.deleted = emptiedClusters;
+    if (!emptiedClusters.contains(sourceChild)) e.modified = QList<int>{ sourceChild };
+    recordChildEdit(e);
+
+    // Child-primary refresh + settled-point landing, mirroring the atom
+    // watershed: land on everything the split produced, including the
+    // surviving source, so the obvious next gesture (compare, merge back)
+    // starts from a complete selection.
+    syncChildColors();
+    rebuildHierarchyFromData();
+    emit hierarchyChanged();
+    QList<int> resulting = newClusters;
+    if (!emptiedClusters.contains(sourceChild)) resulting.append(sourceChild);
+    setPendingChildSelection(resulting);
+    emit hierarchyChildrenCreated(resulting);
+    modified = true;
+
+    return R;
+}

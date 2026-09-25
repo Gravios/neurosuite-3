@@ -2570,7 +2570,8 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
                                           QList<int>& newClusters,
                                           QList<int>& matchedReferences,
                                           QList<int>& emptiedClusters,
-                                          QString& errorMessage)
+                                          QString& errorMessage,
+                                          const QList<int>* allowedReferences)
 {
     // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
     // row-table desync before this builder tiles its table, so the edit proceeds
@@ -2617,6 +2618,11 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
         const int cid = static_cast<int>(it.key());
         if (cid == sourceCluster) continue;
         if (cid <= 1) continue;                       // skip artifact + MUA
+        // Caller-restricted pool: a null list means every cluster of this
+        // layer is eligible (the historical behaviour); a list restricts the
+        // classifiers to its members -- the child scope passes its atoms so
+        // an atom split votes against the scope, not the whole session.
+        if (allowedReferences && !allowedReferences->contains(cid)) continue;
         const dataType nSpk = it.value().nbSpikes();
         if (nSpk < minRefClusterSize) continue;
         refClusterIds.append(cid);

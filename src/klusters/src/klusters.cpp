@@ -6061,11 +6061,24 @@ void KlustersApp::slotSplitClusterByKnn()
                                  tr("Open a cluster view first."));
         return;
     }
-    const QList<int> selected = view->clusters();
+    // Layer routing is EXPLICIT, mirroring the watershed: a non-empty child
+    // selection IS the shown clustering, so it is what the split runs on --
+    // the ATOM layer, against the child scope's atoms as references.  The
+    // parent path is unchanged.  (view->clusters() in child view already
+    // held atom ids; feeding those to the parent-layer split looked up atom
+    // numerals in the parent table -- the id-collision family again.)
+    QList<int> selected = (childPanel && childPanel->isVisible())
+                              ? selectedChildrenAB() : QList<int>();
+    selected.removeAll(0);
+    selected.removeAll(1);
+    const bool onChild = !selected.isEmpty();
+    if (!onChild) selected = view->clusters();
     if (selected.size() != 1) {
         QMessageBox::information(this, tr("Split by KNN voting"),
-            tr("Select exactly one cluster to split (currently %1 "
-               "selected).").arg(selected.size()));
+            onChild ? tr("Select exactly one atom to split (currently %1 "
+                         "selected).").arg(selected.size())
+                    : tr("Select exactly one cluster to split (currently %1 "
+                         "selected).").arg(selected.size()));
         return;
     }
     const int sourceCluster = selected.first();
@@ -6080,7 +6093,9 @@ void KlustersApp::slotSplitClusterByKnn()
 
     // ── Parameter dialog ─────────────────────────────────────────────────
     QDialog dlg(this);
-    dlg.setWindowTitle(tr("Split cluster %1 by KNN voting").arg(sourceCluster));
+    dlg.setWindowTitle(onChild
+        ? tr("Split atom %1 by KNN voting (child scope)").arg(sourceCluster)
+        : tr("Split cluster %1 by KNN voting").arg(sourceCluster));
     QVBoxLayout* outer = new QVBoxLayout(&dlg);
     QLabel* intro = new QLabel(tr(
         "<p>For each spike in cluster <b>%1</b>, find its K nearest "
@@ -6090,6 +6105,16 @@ void KlustersApp::slotSplitClusterByKnn()
         "most resemble.  Each group becomes a <b>new</b> cluster (no "
         "spike is moved into an existing cluster).</p>")
             .arg(sourceCluster), &dlg);
+    if (onChild)
+        intro->setText(tr(
+            "<p>For each spike in atom <b>%1</b>, find its K nearest "
+            "neighbours in feature space — restricted to the child scope's "
+            "atoms (or the source's siblings with no scope active), each with "
+            "≥ <i>min reference size</i> spikes.  Group spikes by which "
+            "reference atom they most resemble.  Each group becomes a "
+            "<b>new sibling atom</b> under the source's parent (no spike is "
+            "moved into a reference).  Atoms are small: lower the reference "
+            "minimum accordingly.</p>").arg(sourceCluster));
     intro->setWordWrap(true);
     outer->addWidget(intro);
 
@@ -6140,8 +6165,9 @@ void KlustersApp::slotSplitClusterByKnn()
 
     // ── Run the split ────────────────────────────────────────────────────
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    KlustersDoc::KnnSplitResult R = doc->splitClusterByKnnVsReferences(
-        sourceCluster, K, thr, minNew, minRef);
+    KlustersDoc::KnnSplitResult R = onChild
+        ? doc->splitChildByKnnVsReferences(sourceCluster, K, thr, minNew, minRef)
+        : doc->splitClusterByKnnVsReferences(sourceCluster, K, thr, minNew, minRef);
     QApplication::restoreOverrideCursor();
 
     // ── Report result ────────────────────────────────────────────────────
@@ -6163,8 +6189,11 @@ void KlustersApp::slotSplitClusterByKnn()
     for (int i = 0; i < R.newClusters.size(); ++i) {
         const int newId  = R.newClusters[i];
         const int refId  = R.matchedReferences.value(i, 0);
+        // The layer that was split, named outright -- data() follows the
+        // child SELECTION, which the landing has just changed.
         const long nSpk  = static_cast<long>(
-            doc->data().nbOfSpikes(static_cast<dataType>(newId)));
+            (onChild ? doc->childClusterData() : doc->parentData())
+                .nbOfSpikes(static_cast<dataType>(newId)));
         if (refId == -1)
             summary += tr("  cluster %1 (%2 spikes) — residual / ambiguous\n")
                             .arg(newId).arg(nSpk);
@@ -6172,7 +6201,9 @@ void KlustersApp::slotSplitClusterByKnn()
             summary += tr("  cluster %1 (%2 spikes) — matches reference %3\n")
                             .arg(newId).arg(nSpk).arg(refId);
     }
-    summary += QStringLiteral("\nUndo with Ctrl+Z if the partition isn't useful.");
+    summary += onChild
+        ? QStringLiteral("\nUndo with Ctrl+Shift+Z if the partition isn't useful.")
+        : QStringLiteral("\nUndo with Ctrl+Z if the partition isn't useful.");
     QMessageBox::information(this, tr("Split by KNN voting — done"), summary);
 }
 

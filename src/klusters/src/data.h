@@ -434,7 +434,8 @@ public:
                                         QList<int>& newClusters,
                                         QList<int>& matchedReferences,
                                         QList<int>& emptiedClusters,
-                                        QString& errorMessage);
+                                        QString& errorMessage,
+                                        const QList<int>* allowedReferences = nullptr);
 
   
     /**
