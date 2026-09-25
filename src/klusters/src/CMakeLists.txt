@@ -68,6 +68,7 @@ set(klusters_SRCS
     klustersdoc_io.cpp          # KlustersDoc document lifecycle / file I/O (split from klustersdoc.cpp)
     klustersdoc_realign.cpp     # KlustersDoc spike realignment / nudge (split from klustersdoc.cpp)
     klustersdoc_dipsplit.cpp    # KlustersDoc bimodality / KNN splitting (split from klustersdoc.cpp)
+    klustersdoc_strip.cpp       # KlustersDoc template strip (kernel-weighted residual)
     klustersdoc_watershed.cpp   # KlustersDoc 2D density-watershed split (split from klustersdoc.cpp)
     klustersview.cpp
     klustersyamlreader.cpp
