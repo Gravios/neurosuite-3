@@ -645,6 +645,12 @@ void KlustersApp::createMenus()
             this, &KlustersApp::slotSplitClusterByKnn);
 
     mStripByTemplate = reclusterMenu->addAction(tr("Strip by &Template…"));
+    // Shift+J: J was unclaimed everywhere -- actions, the application key
+    // filter, and the views' own handlers -- so nothing is shadowed either
+    // way (Shift+T and Shift+S, the mnemonic choices, are taken by
+    // partition-by-time and the similarity sort).  auditKeyBindings()
+    // re-checks this at startup.
+    mStripByTemplate->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_J));
     mStripByTemplate->setToolTip(
         tr("Designate one selected cluster as a waveform template and pull "
            "matching spikes out of the other selected clusters — normalized "
