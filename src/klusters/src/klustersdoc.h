@@ -1044,8 +1044,10 @@ public:
     struct TemplateStripResult {
         bool       accepted    = false; ///< true iff a cut was committed
         int        templateId  = 0;     ///< the designated template cluster
-        int        nMatched    = 0;     ///< spikes at or below the distance threshold
+        int        nMatched    = 0;     ///< spikes accepted by every gate
         int        nCandidates = 0;     ///< spikes examined across all sources
+        int        nRejectedAmplitude = 0; ///< passed distance, failed the amplitude window
+        int        nRejectedChannel   = 0; ///< passed distance + amplitude, failed per-channel uniformity
         QList<int> sources;             ///< sources that contributed >= 1 matched spike
         QString    reason;              ///< user-facing summary or error
     };
@@ -1060,10 +1062,22 @@ public:
      *  Metric, per spike x over the selected channels' points p:
      *    w[p] = |T[p]|                                     (template magnitude)
      *    D(x) = sqrt(sum w (x-T)^2 / sum w) / sqrt(sum w T^2 / sum w)
-     *  Dimensionless: 0 = identical, 1 = residual as large as the template.
-     *  No per-spike gain and no lag search -- amplitude and alignment
-     *  differences count as distance, matching how median-waveform overlap
-     *  reads in the waveform view.
+     *  Dimensionless: 0 = identical, 1 = residual as large as the template
+     *  (a flat spike scores exactly 1, so thresholds below 1 exclude the
+     *  near-zero ones by construction).  No per-spike gain and no lag search
+     *  -- amplitude and alignment differences count as distance, matching how
+     *  median-waveform overlap reads in the waveform view.
+     *
+     *  Two optional acceptance gates tighten the pooled distance:
+     *    amplitude window  g in [minAmplitudeRatio, maxAmplitudeRatio], with
+     *      g = sum w x T / sum w T^2, the kernel-weighted matched gain
+     *      (1 = template-sized, 0 = no template-shaped signal); pass 0 / a
+     *      large value to disable either side;
+     *    channel uniformity  every channel carrying >= 5% of the template's
+     *      kernel energy must individually satisfy D_c <= maxChannelDistance
+     *      (same construction per channel); 0 disables.  This stops a strong
+     *      dominant-channel match from hiding a flank mismatch, since the
+     *      kernel concentrates the pooled D where |T| is largest.
      *
      *  The cut itself is the row-named createNewClusters path -- the lasso's
      *  machinery -- so quiesce, undo (parent snapshot / one ChildEdit), the
@@ -1077,6 +1091,9 @@ public:
     TemplateStripResult stripByTemplate(int              templateCluster,
                                         const QList<int>& sourceClusters,
                                         double           maxDistance,
+                                        double           minAmplitudeRatio,
+                                        double           maxAmplitudeRatio,
+                                        double           maxChannelDistance,
                                         bool             onChild);
 
     /**Returns the number of dimensions of the data.*/
