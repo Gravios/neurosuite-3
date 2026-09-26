@@ -23,6 +23,7 @@
 #include "data.h"
 #include "itemcolors.h"
 #include "waveformview.h"
+#include <QThread>   // idealThreadCount for the loader cap
 #include "waveformthread.h"
 #include "types.h"
 
@@ -106,6 +107,11 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
 
     //Set the cursor shap to a magnifier as the only action allowed on the widget is to zoom.
     setCursor(zoomCursor);
+
+    // Cap for concurrent single-cluster loader threads (see the member doc):
+    // twice the core count keeps the disk busy while bounding the descriptor
+    // cost; the floor keeps tiny machines from serialising to one loader.
+    maxConcurrentWaveformLoads = qMax(4, 2 * QThread::idealThreadCount());
 }
 
 WaveformView::~WaveformView(){
@@ -161,8 +167,33 @@ void WaveformView::singleColorUpdate(int clusterId,bool active){
 void WaveformView::askForWaveformInformation(int clusterId){
     //If the widget is not about to be deleted, request the data.
     if(!goingToDie){
+        // Cap-queue: at the cap the request parks and customEvent() launches
+        // it when a loader retires -- same result, bounded descriptors.
+        if(threadsToBeKill.count() >= maxConcurrentWaveformLoads){
+            if(!waveformRequestQueue.contains(clusterId))
+                waveformRequestQueue.enqueue(clusterId);
+            return;
+        }
         dataReady = false;
         //Create a thread to get the waveform data for that cluster.
+        WaveformThread* waveformThread = getWaveforms();
+        threadsToBeKill.append(waveformThread);
+        waveformThread->getWaveformInformation(clusterId,presentationMode);
+    }
+}
+
+void WaveformView::launchQueuedWaveformRequests(){
+    if(goingToDie){
+        waveformRequestQueue.clear();
+        return;
+    }
+    while(!waveformRequestQueue.isEmpty()
+          && threadsToBeKill.count() < maxConcurrentWaveformLoads){
+        const int clusterId = waveformRequestQueue.dequeue();
+        // A parked request can outlive its cluster (removed or renumbered
+        // while waiting): the view's shown list is the arbiter.
+        if(!view.clusters().contains(clusterId)) continue;
+        dataReady = false;
         WaveformThread* waveformThread = getWaveforms();
         threadsToBeKill.append(waveformThread);
         waveformThread->getWaveformInformation(clusterId,presentationMode);
@@ -415,6 +446,9 @@ void WaveformView::customEvent(QEvent *event){
         waveformThread = nullptr;
         //setCursor(zoomCursor);
     }
+
+    // A loader retired (or was reused): launch parked requests up to the cap.
+    launchQueuedWaveformRequests();
 }
 
 void WaveformView::paintEvent ( QPaintEvent *){
@@ -975,6 +1009,10 @@ void WaveformView::stopAndClearThreads(){
         while(!threadsToBeKill.at(i)->wait()){};
     qDeleteAll(threadsToBeKill);
     threadsToBeKill.clear();
+    // Parked requests are part of the superseded generation too: every caller
+    // of this function is about to issue a full-view request (or none), so a
+    // parked single would draw over it out of order.
+    waveformRequestQueue.clear();
     // Remove any completion events those threads posted before we waited for them.
     // Without this, customEvent() would fire with a dangling thread pointer.
     QApplication::removePostedEvents(this);

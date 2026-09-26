@@ -23,6 +23,7 @@
 #include <QStyle>
 #include <QPixmap>
 #include <QList>
+#include <QQueue>
 
 
 #include <QResizeEvent>
@@ -403,6 +404,19 @@ private:
     /**List of pointers on the threads which have to be suppress when this object is destroy.*/
     QList<WaveformThread*> threadsToBeKill;
 
+    /**Cap-queue for the single-cluster loader launches.  The overlay path
+    * launches one WaveformThread per added cluster and deliberately keeps
+    * earlier ones alive, so a select-all on a big session used to burst
+    * hundreds of live QThreads at once -- each thread's event dispatcher
+    * costs a GWakeup pipe (two file descriptors) and each loader an open
+    * .spk handle, which is what exhausted the descriptor budget.  Beyond
+    * maxConcurrentWaveformLoads live threads a request parks here in FIFO
+    * order; customEvent() drains the queue as loaders retire, so the burst
+    * becomes a rolling window with identical results and ordering, and the
+    * descriptor cost is bounded by the cap instead of the cluster count.*/
+    QQueue<int> waveformRequestQueue;
+    int maxConcurrentWaveformLoads = 16;   // reset from the core count in the ctor
+
     /**True if the waveform information needed to draw the waveforms are available.*/
     bool dataReady;
 
@@ -446,6 +460,11 @@ private:
   * @param clusterId id of the cluster to ask waveform information for.
   */
     void askForWaveformInformation(int clusterId);
+
+    /**Launches parked single-cluster requests while live loader threads sit
+    * below maxConcurrentWaveformLoads.  Requests whose cluster has left the
+    * view while parked are dropped (launching them would draw a ghost).*/
+    void launchQueuedWaveformRequests();
 
     /**
   * Asks the waveform information for the clusters listed in @p clusterIds by launching a WaveformThread.
