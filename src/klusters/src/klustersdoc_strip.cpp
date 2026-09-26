@@ -33,6 +33,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
                              double            minAmplitudeRatio,
                              double            maxAmplitudeRatio,
                              double            maxChannelDistance,
+                             bool              onePerSource,
                              bool              onChild)
 {
     TemplateStripResult R;
@@ -179,6 +180,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
 
     // ── Score every source spike, collect rows at or below threshold ────
     QSet<dataType> rows;
+    QHash<int, QSet<dataType>> rowsBySource;
     long nCand = 0;
     for (int src : sources) {
         SortableTable pos;
@@ -221,6 +223,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
                 continue;
             }
             rows.insert(static_cast<dataType>(row));
+            rowsBySource[src].insert(static_cast<dataType>(row));
             ++matched;
         }
         if (matched > 0) R.sources.append(src);
@@ -241,15 +244,40 @@ KlustersDoc::stripByTemplate(int               templateCluster,
         return R;
     }
 
-    // ── The cut: the lasso's row-named path, one product per source ─────
-    createNewClusters(SpikeSelection(rows, QStringLiteral("template_strip")),
-                      R.sources);
+    // ── The cut: the lasso's row-named path ─────────────────────────────
+    int nProducts = 0;
+    if (onePerSource) {
+        createNewClusters(SpikeSelection(rows,
+                              QStringLiteral("template_strip")), R.sources);
+        nProducts = R.sources.size();
+    } else {
+        // Combined product(s): one per parent in scope, so a joint child
+        // scope cannot mint a parent-straddling atom; the parent scope is a
+        // single group.  Each group is one singular createNewCluster -- the
+        // lasso's own path -- so undo, log and landing stay per-product.
+        QMap<int, QPair<QSet<dataType>, QList<int>>> groups;
+        for (int src : R.sources) {
+            const int grp = onChild ? parentOfChild(src) : 0;
+            auto& g = groups[grp];
+            g.first.unite(rowsBySource.value(src));
+            g.second.append(src);
+        }
+        for (auto it = groups.begin(); it != groups.end(); ++it) {
+            createNewCluster(SpikeSelection(it.value().first,
+                                 QStringLiteral("template_strip")),
+                             it.value().second);
+            ++nProducts;
+        }
+    }
     R.accepted = true;
     R.reason = tr("Stripped %1 of %2 examined spikes matching template %3 "
                   "(distance <= %4, %5 channel(s)) out of %6 source "
-                  "cluster(s), one new cluster per source.")
+                  "cluster(s) into %7 new cluster(s)%8.")
                    .arg(R.nMatched).arg(R.nCandidates).arg(templateCluster)
-                   .arg(maxDistance).arg(nSel).arg(R.sources.size());
+                   .arg(maxDistance).arg(nSel).arg(R.sources.size())
+                   .arg(nProducts)
+                   .arg(onePerSource ? tr(" (one per source)")
+                                     : tr(" (combined per parent)"));
     if (R.nRejectedAmplitude > 0 || R.nRejectedChannel > 0)
         R.reason += tr("  Gates rejected %1 within-distance spike(s): %2 by "
                        "the amplitude window, %3 by channel uniformity.")

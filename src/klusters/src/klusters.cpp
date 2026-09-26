@@ -6374,6 +6374,14 @@ void KlustersApp::slotStripByTemplate()
     form->addRow(tr("Min amplitude ratio g (0 = off):"),       gMinBox);
     form->addRow(tr("Max amplitude ratio g (10 = off):"),      gMaxBox);
     form->addRow(tr("Max per-channel distance (0 = off):"),    chanBox);
+    QCheckBox* perSrcBox = new QCheckBox(&dlg);
+    perSrcBox->setChecked(!wholeScope);            // whole scope: combine
+    perSrcBox->setToolTip(tr("Checked: one new cluster per donor, for "
+        "per-source review.  Unchecked: matches combine into one product "
+        "per parent in scope -- use this for whole-scope strips, where "
+        "per-donor products would create hundreds of clusters in one "
+        "gesture."));
+    form->addRow(tr("One product per donor:"), perSrcBox);
     form->addRow(tr("Restricted to:"), new QLabel(chText, &dlg));
     outer->addLayout(form);
 
@@ -6400,7 +6408,8 @@ void KlustersApp::slotStripByTemplate()
     QApplication::setOverrideCursor(Qt::WaitCursor);
     KlustersDoc::TemplateStripResult R =
         doc->stripByTemplate(templateCluster, sources, maxDistance,
-                             gMin, gMax, maxChanDist, onChild);
+                             gMin, gMax, maxChanDist,
+                             perSrcBox->isChecked(), onChild);
     QApplication::restoreOverrideCursor();
 
     if (!R.accepted) {
