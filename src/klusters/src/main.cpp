@@ -24,6 +24,10 @@
 
 #include "klusters.h"
 
+#ifdef Q_OS_UNIX
+#include <sys/resource.h>   // RLIMIT_NOFILE headroom for over-clustered sessions
+#endif
+
 #include <klustersshared/theme.h>
 #include "timer.h"
 #include "config-klusters.h"
@@ -32,6 +36,24 @@ int nbUndo;
 
 int main(int argc, char* argv[])
 {
+#ifdef Q_OS_UNIX
+    // Raise the soft file-descriptor limit to the hard limit before any Qt or
+    // GLib machinery starts.  Every thread's event dispatcher costs a GWakeup
+    // pipe (two descriptors), and a heavily over-clustered session (10k+
+    // atoms) drives enough per-cluster machinery that the default soft limit
+    // of 1024 is exhausted mid-load -- GLib then hard-aborts ("Creating pipes
+    // for GWakeup: Too many open files") instead of failing an open.  The
+    // hard limit on a systemd desktop is 2^19 or more, so this is free
+    // headroom; raising soft to hard is the standard move for
+    // many-descriptor applications.
+    struct rlimit nofile;
+    if (getrlimit(RLIMIT_NOFILE, &nofile) == 0
+            && (nofile.rlim_max == RLIM_INFINITY
+                || nofile.rlim_cur < nofile.rlim_max)) {
+        nofile.rlim_cur = nofile.rlim_max;
+        setrlimit(RLIMIT_NOFILE, &nofile);
+    }
+#endif
     QApplication::setOrganizationName("sourceforge");
     QApplication::setOrganizationDomain("sourceforge.net");
     QApplication::setApplicationName("klusters");
