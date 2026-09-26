@@ -1083,8 +1083,13 @@ public:
      *  machinery -- so quiesce, undo (parent snapshot / one ChildEdit), the
      *  parent-scope curation log (algorithm "template_strip"), hierarchy
      *  refresh and the parked landing all behave exactly like a hand cut:
-     *  ONE NEW CLUSTER PER SOURCE, each product under its source's parent,
-     *  so a joint child scope stays invariant-safe (nothing straddles).
+     *  With @p onePerSource, ONE NEW CLUSTER PER SOURCE, each product under
+     *  its source's parent, so a joint child scope stays invariant-safe
+     *  (nothing straddles).  Without it, the matches COMBINE into one product
+     *  per parent in scope (one product total in parent scope) -- the sane
+     *  shape for whole-scope strips, where per-source products would mint
+     *  hundreds of clusters in one gesture and grind every per-cluster
+     *  subsystem (and the descriptor budget) after a few passes.
      *  @p onChild names the layer outright and is cross-checked against the
      *  active clustering; a mismatch refuses rather than cutting the wrong
      *  layer (the id-collision family). */
@@ -1094,6 +1099,7 @@ public:
                                         double           minAmplitudeRatio,
                                         double           maxAmplitudeRatio,
                                         double           maxChannelDistance,
+                                        bool             onePerSource,
                                         bool             onChild);
 
     /**Returns the number of dimensions of the data.*/
