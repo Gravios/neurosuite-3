@@ -23,7 +23,7 @@
 #include "data.h"
 #include "itemcolors.h"
 #include "waveformview.h"
-#include <QThread>   // idealThreadCount for the loader cap
+#include <QThread>   // msleep for the synchronous job quiesce
 #include "waveformthread.h"
 #include "types.h"
 
@@ -54,7 +54,8 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
                            bool overLay,bool mean, const char* name,int minSize, int maxSize, int windowTopLeft ,int windowBottomRight,
                            int border) :
     ViewWidget(doc,view,backgroundColor,statusBar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border,XMARGIN,YMARGIN)
-  ,meanPresentation(mean),overLayPresentation(overLay),acquisitionGain(acquisitionGain),dataReady(true),
+  ,meanPresentation(mean),overLayPresentation(overLay),acquisitionGain(acquisitionGain),
+    jobToken(std::make_shared<WaveformJobToken>()),dataReady(true),
     nbSpkToDisplay(nbSpkToDisplay),isZoomed(false),goingToDie(false){
 
     //Set the default modes
@@ -107,43 +108,40 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
 
     //Set the cursor shap to a magnifier as the only action allowed on the widget is to zoom.
     setCursor(zoomCursor);
-
-    // Cap for concurrent single-cluster loader threads (see the member doc):
-    // twice the core count keeps the disk busy while bounding the descriptor
-    // cost; the floor keeps tiny machines from serialising to one loader.
-    maxConcurrentWaveformLoads = qMax(4, 2 * QThread::idealThreadCount());
 }
 
 WaveformView::~WaveformView(){
-    //Ask the threads to stop as soon as possible.
+    //Supersede the in-flight jobs (and set goingToDie so nothing new launches).
     //Qualified (non-virtual) call: in its own destructor the object is already
     //this dynamic type, so this is the intended teardown; the explicit scope
     //documents that and silences the virtual-call-in-destructor warning.
     WaveformView::willBeKilled();
 
-    //Wait until all the threads have finish before quiting otherwise
-    // it may endup in a crash of the application.
-    for(int i = 0; i<threadsToBeKill.count();i++) {
-        WaveformThread* waveformThread = threadsToBeKill.at(i);
-        while(!waveformThread->wait()){};
+    //Fence the completion posts: once viewDead is set under the lock, no job
+    //will post to this view again (jobs check it under the same lock before
+    //posting).  The jobs themselves are not waited for: they were superseded
+    //above (so they retire within one poll interval), the pool owns and
+    //deletes them, and the only state they share with us beyond the token is
+    //Data, which the document keeps alive until it drains the pool.  This
+    //removes the old per-thread wait() that stalled tab close for a second
+    //per sleeping loader -- and, on heavily over-clustered sessions, for
+    //minutes.
+    {
+        QMutexLocker lock(&jobToken->postMutex);
+        jobToken->viewDead = true;
     }
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
 
-    // Remove any events that threads posted to us while we were waiting for them.
+    // Remove any events that jobs posted to us before the fence.
     // Without this, Qt may dispatch those events after our destruction → crash.
     QApplication::removePostedEvents(this);
 }
 
 WaveformThread* WaveformView::getWaveforms(){
-    return new WaveformThread(*this,doc.data());
+    return new WaveformThread(*this,doc.data(),jobToken);
 }
 
 bool WaveformView::isThreadsRunning() const{
-    if(threadsToBeKill.count() == 0)
-        return false;
-    else
-        return true;
+    return jobToken->active.load(std::memory_order_acquire) > 0;
 }
 
 void WaveformView::singleColorUpdate(int clusterId,bool active){
@@ -167,35 +165,13 @@ void WaveformView::singleColorUpdate(int clusterId,bool active){
 void WaveformView::askForWaveformInformation(int clusterId){
     //If the widget is not about to be deleted, request the data.
     if(!goingToDie){
-        // Cap-queue: at the cap the request parks and customEvent() launches
-        // it when a loader retires -- same result, bounded descriptors.
-        if(threadsToBeKill.count() >= maxConcurrentWaveformLoads){
-            if(!waveformRequestQueue.contains(clusterId))
-                waveformRequestQueue.enqueue(clusterId);
-            return;
-        }
         dataReady = false;
-        //Create a thread to get the waveform data for that cluster.
+        //Enqueue a job to get the waveform data for that cluster.  Requests
+        //beyond the pool's worker count wait in the pool as inert job objects
+        //(no thread, no descriptors), which is what the view-local cap-queue
+        //used to approximate; a request superseded while waiting early-outs
+        //when its turn comes.
         WaveformThread* waveformThread = getWaveforms();
-        threadsToBeKill.append(waveformThread);
-        waveformThread->getWaveformInformation(clusterId,presentationMode);
-    }
-}
-
-void WaveformView::launchQueuedWaveformRequests(){
-    if(goingToDie){
-        waveformRequestQueue.clear();
-        return;
-    }
-    while(!waveformRequestQueue.isEmpty()
-          && threadsToBeKill.count() < maxConcurrentWaveformLoads){
-        const int clusterId = waveformRequestQueue.dequeue();
-        // A parked request can outlive its cluster (removed or renumbered
-        // while waiting): the view's shown list is the arbiter.
-        if(!view.clusters().contains(clusterId)) continue;
-        dataReady = false;
-        WaveformThread* waveformThread = getWaveforms();
-        threadsToBeKill.append(waveformThread);
         waveformThread->getWaveformInformation(clusterId,presentationMode);
     }
 }
@@ -203,18 +179,17 @@ void WaveformView::launchQueuedWaveformRequests(){
 void WaveformView::askForWaveformInformation(const QList<int> &clusterIds){
     //If the widget is not about to be deleted, request the data.
     if(!goingToDie){
-        // Stop any in-flight threads before launching a new full-redraw
+        // Supersede any in-flight jobs before launching a new full-redraw
         // request.  Every existing call site (removeClusterFromView,
         // spikesAddedToCluster, navigation, etc.) that reaches this
-        // overload is replacing the entire waveform display, so keeping
-        // old threads alive only causes racing on waveformStatusMap and
-        // waveformDict.  The single-cluster overload (overlay mode) is
-        // intentionally left alone.
+        // overload is replacing the entire waveform display, so a stale
+        // completion arriving afterwards would draw over it out of order.
+        // The single-cluster overload (overlay mode) is intentionally left
+        // alone.
         stopAndClearThreads();
         dataReady = false;
-        //Create a thread to get the waveform data for that clusters.
+        //Enqueue a job to get the waveform data for those clusters.
         WaveformThread* waveformThread = getWaveforms();
-        threadsToBeKill.append(waveformThread);
         waveformThread->getWaveformInformation(clusterIds,presentationMode);
     }
 }
@@ -319,136 +294,63 @@ void WaveformView::spikesAddedToCluster(int clusterId,bool active){
 }
 
 void WaveformView::customEvent(QEvent *event){
-    //Event sent by a WaveformThread to inform that the data are available.
+    //Event sent by a waveform job to inform that the data are available.
     if(event->type() == QEvent::User + 200){
-        WaveformThread::GetWaveformsEvent* waveformsEvent = (WaveformThread::GetWaveformsEvent*) event;
-        //Get the event information
-        WaveformThread* waveformThread = waveformsEvent->parentThread();
+        WaveformThread::GetWaveformsEvent* waveformsEvent = static_cast<WaveformThread::GetWaveformsEvent*>(event);
 
-        // Guard: if this thread was already deleted by stopAndClearThreads(), ignore the event.
-        // threadsToBeKill is our canonical ownership list.
-        if(!threadsToBeKill.contains(waveformThread))
+        // Guard: results of a superseded request generation are stale — a
+        // stopAndClearThreads() (or willBeKilled()) ran after the job was
+        // enqueued, and whoever bumped the generation launched requests for
+        // the current view state.  The job retired itself, so there is
+        // nothing to clean up.  This replaces the old threadsToBeKill
+        // membership check.
+        if(waveformsEvent->generation() != jobToken->generation.load(std::memory_order_acquire))
             return;
 
-        bool meanRequested = waveformThread->isMeanRequested();
-        // Use the snapshotted value from when the thread was launched, not the current
-        // live view field (which may have changed while the thread was running).
-        bool launchedWithMean = waveformThread->wasLaunchedWithMeanPresentation();
+        if(goingToDie)
+            return;
 
-        //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
-        //action of the run method it seems that the event loop can be pretty fast and the run has not
-        //return when the event is received here.
-        while(!waveformThread->wait()){};
+        const bool meanRequested = waveformsEvent->isMeanRequested();
+        // Use the value snapshotted when the job was enqueued, not the current
+        // live view field (which may have changed while the job was running).
+        const bool launchedWithMean = waveformsEvent->wasLaunchedWithMeanPresentation();
 
-        //Only one cluster was concern by the thread
-        if(waveformThread->isSingleTriggeringCluster()){
-            //the data have be retrieved and the mean and standard deviation calculated
-            if(launchedWithMean || (!launchedWithMean && meanRequested)){
-                //Delete the waveformThread.
-                threadsToBeKill.removeAll(waveformThread);
-                delete waveformThread;
-                waveformThread = nullptr;
-            }
-            if(launchedWithMean && !goingToDie){
-                //Each time a cluster is added to the view or modified, the size of the window is recalculated.
-                if(!isZoomed) updateWindow();
-                else drawContentsMode = REDRAW;
-
-                dataReady = true;
-                //setCursor(zoomCursor);
-                //Update the widget
-                update();
-            }
-            //the data have be retrieved but the mean and standard deviation have not be calculated.
-            if(!launchedWithMean && !meanRequested){
-                //If the widget is not about to be deleted, launch as thread to do calculate the mean and standard deviation.
-                //And draw the waveforms.
-                //Calculating it now will speed up the next call to a mean presentation.
-                if(!goingToDie){
-                    waveformThread->getMean(waveformThread->getSnapshotMode());
-                    //Each time a cluster is added to the view or modified, the size of the window is recalculated.
-                    if(!isZoomed) updateWindow();
-                    else drawContentsMode = REDRAW;
-
-                    dataReady = true;
-                    //setCursor(zoomCursor);
-                    //Update the widget
-                    update();
-                }
-                else{
-                    //Delete the waveformThread.
-                    threadsToBeKill.removeAll(waveformThread);
-                    delete waveformThread;
-                    waveformThread = nullptr;
-                }
-            }
+        //The data have been retrieved but the means and standard deviations
+        //have not been calculated (a plain fetch while the view showed the
+        //waveforms themselves): enqueue a follow-up job to calculate them now,
+        //which will speed up the next call to a mean presentation.
+        if(!launchedWithMean && !meanRequested){
+            WaveformThread* meanJob = getWaveforms();
+            if(waveformsEvent->isSingleTriggeringCluster())
+                meanJob->getMean(waveformsEvent->triggeringCluster(),waveformsEvent->snapshotMode());
+            else
+                meanJob->getMean(waveformsEvent->triggeringClusters(),waveformsEvent->snapshotMode());
         }
-        //Several clusters were concern by the thread
-        else{
-            //the data have be retrieved and the mean and standard deviation calculated
-            if(launchedWithMean || (!launchedWithMean && meanRequested)){
-                //Delete the waveformThread.
-                threadsToBeKill.removeAll(waveformThread);
-                delete waveformThread;
-                waveformThread = nullptr;
-                // setCursor(zoomCursor);
-            }
-            if(launchedWithMean && !goingToDie){
-                //Each time a cluster is added to the view or modified, the size of the window is recalculated.
-                if(!isZoomed) updateWindow();
-                else drawContentsMode = REDRAW;
 
-                dataReady = true;
-                //setCursor(zoomCursor);
-                //Update the widget
-                update();
-            }
-            //the data have be retrieved but the mean and standard deviation have not be calculated.
-            if(!launchedWithMean && !meanRequested){
-                if(!goingToDie){
-                    waveformThread->getMean(waveformThread->getSnapshotMode());
-                    //Each time a cluster is added to the view or modified, the size of the window is recalculated.
-                    if(!isZoomed) updateWindow();
-                    else drawContentsMode = REDRAW;
+        //Redraw, except when this completion is the silent mean precomputation
+        //launched above: its waveforms were already drawn when the fetch that
+        //spawned it completed, and its means are only cached for later.
+        if(launchedWithMean || !meanRequested){
+            //Each time a cluster is added to the view or modified, the size of the window is recalculated.
+            if(!isZoomed) updateWindow();
+            else drawContentsMode = REDRAW;
 
-                    dataReady = true;
-                    //setCursor(zoomCursor);
-                    //Update the widget
-                    update();
-                }
-                else {
-                    threadsToBeKill.removeAll(waveformThread);
-                    delete waveformThread;
-                    waveformThread = nullptr;
-                }
-            }
+            dataReady = true;
+            //setCursor(zoomCursor);
+            //Update the widget
+            update();
         }
     }
-    //Event sent by a WaveformThread to inform that the data are not available for the cluster requested.
-    //Disregard the cluster.
+    //Event sent by a waveform job to inform that the data are not available
+    //for the cluster requested (e.g. it was suppressed after the job was
+    //enqueued).  The job retired itself; nothing to clean up.
     if(event->type() == QEvent::User + 250){
-        WaveformThread::NoWaveformDataEvent* waveformsEvent = (WaveformThread::NoWaveformDataEvent*) event;
-        //Get the parent thread
-        WaveformThread* waveformThread = waveformsEvent->parentThread();
-
-        // Guard: if already deleted by stopAndClearThreads(), ignore.
-        if(!threadsToBeKill.contains(waveformThread))
+        WaveformThread::NoWaveformDataEvent* noDataEvent = static_cast<WaveformThread::NoWaveformDataEvent*>(event);
+        // Stale or not makes no difference today, but keep the guard so any
+        // future handling inherits it.
+        if(noDataEvent->generation() != jobToken->generation.load(std::memory_order_acquire))
             return;
-
-        //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
-        //action of the run method it seems that the event loop can be pretty fast and the run has not
-        //return when the event is received here.
-        while(!waveformThread->wait()){};
-
-        //Delete the waveformThread.
-        threadsToBeKill.removeAll(waveformThread);
-        delete waveformThread;
-        waveformThread = nullptr;
-        //setCursor(zoomCursor);
     }
-
-    // A loader retired (or was reused): launch parked requests up to the cap.
-    launchQueuedWaveformRequests();
 }
 
 void WaveformView::paintEvent ( QPaintEvent *){
@@ -683,9 +585,8 @@ void WaveformView::setMeanPresentation(){
 
     dataReady = false;
     if(!view.clusters().isEmpty()){
-        //Create a thread to get the waveform data for the clusters.
+        //Enqueue a job to get the waveform data for the clusters.
         WaveformThread* waveformThread = getWaveforms();
-        threadsToBeKill.append(waveformThread);
         setCursor(Qt::WaitCursor);
         waveformThread->getMean(view.clusters(),presentationMode);
     }
@@ -989,33 +890,37 @@ void WaveformView::resizeEvent(QResizeEvent* e){
     }
 }
 
-void WaveformView::willBeKilled(){  
+void WaveformView::willBeKilled(){
     if(!goingToDie){
         goingToDie = true;
-        //inform the running threads to stop processing as soon as possible.
-        for(int i = 0; i<threadsToBeKill.count();i++) {
-            WaveformThread* waveformThread = threadsToBeKill.at(i);
-            waveformThread->stopProcessing();
-        }
+        //Supersede the in-flight jobs: each stops at its next cancellation
+        //check (where it used to read its per-thread stop flag), and its
+        //completion event fails the generation guard in customEvent().
+        jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
     }
 }
 
 void WaveformView::stopAndClearThreads(){
-    // Signal all threads to stop, then wait for them and delete them.
-    // Does NOT set goingToDie, so new threads can still be launched afterwards.
-    for(int i = 0; i < threadsToBeKill.count(); i++)
-        threadsToBeKill.at(i)->stopProcessing();
-    for(int i = 0; i < threadsToBeKill.count(); i++)
-        while(!threadsToBeKill.at(i)->wait()){};
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
-    // Parked requests are part of the superseded generation too: every caller
-    // of this function is about to issue a full-view request (or none), so a
-    // parked single would draw over it out of order.
-    waveformRequestQueue.clear();
-    // Remove any completion events those threads posted before we waited for them.
-    // Without this, customEvent() would fire with a dangling thread pointer.
-    QApplication::removePostedEvents(this);
+    // Supersede every in-flight job of this view by bumping the request
+    // generation.  Does NOT set goingToDie, so new requests can still be
+    // enqueued afterwards.
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    // Synchronous quiesce: callers — every cluster-mutating edit path, via
+    // KlustersView::stopAllViewThreads() — rely on no waveform job being
+    // inside a Data call once this returns (the realign paths rewrite the
+    // .spk the jobs read).  Superseded jobs notice the bump within one poll
+    // interval and queued-not-yet-started ones early-out as workers free up,
+    // so this is bounded by the same ~1 s the old per-thread wait() was —
+    // but by the pool's worker count instead of the request count.
+    while(jobToken->active.load(std::memory_order_acquire) > 0)
+        QThread::msleep(1);
+    // Drop completion events the superseded jobs posted before retiring.
+    // They carry values, not thread pointers, and would fail the generation
+    // guard anyway; removing them just saves the no-op dispatches.  Only our
+    // two event types are removed — unlike the old blanket removal, queued
+    // signal deliveries to this widget survive.
+    QApplication::removePostedEvents(this, QEvent::User + 200);
+    QApplication::removePostedEvents(this, QEvent::User + 250);
 }
 
 void WaveformView::print(QPainter& printPainter,int width,int height, bool whiteBackground){

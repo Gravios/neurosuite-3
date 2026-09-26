@@ -18,119 +18,135 @@
 #ifndef WAVEFORMTHREAD_H
 #define WAVEFORMTHREAD_H
 
-#include <atomic>
+#include <memory>
 
 //include files for the application
 #include "waveformview.h"
 #include "data.h"
 
 //include files for QT
-#include <QThread>
-
+#include <QRunnable>
 
 #include <QEvent>
 #include <QList>
 
-/**Thread used to retrieve the waveforms and compute the means and standard deviations
+/**Job used to retrieve the waveforms and compute the means and standard deviations
  * which will be displayed in the WaveformView.
- * No heavy computation is done is this class, the thread calls the Data object which
+ * No heavy computation is done in this class, the job calls the Data object which
  * will do the work.
+ *
+ * Formerly one QThread per request; now a QRunnable executed by the shared
+ * worker pool (KlustersJobPool — worker-pool conversion, step 2).  Each live
+ * QThread cost two file descriptors (its event-dispatcher wakeup pipe), so
+ * the number of loadable clusters was bounded by the descriptor budget; pool
+ * workers are reused and run no event loop.  The class name and the launch
+ * protocol (view.getWaveforms(), then one of the get* methods) are kept so
+ * Data's friendship and the call sites stay unchanged.
+ *
+ * The request lifecycle runs through the view's WaveformJobToken:
+ * - enqueueing captures the current request generation and increments the
+ *   active count; the pool deletes the job after run() (autoDelete);
+ * - the view supersedes in-flight jobs by bumping the generation: each job
+ *   polls it where it used to poll its per-thread stop flag, and the
+ *   completion events carry the captured generation so the view's
+ *   customEvent() can drop stale results;
+ * - completion events carry copies of the request parameters instead of a
+ *   pointer to the job, which retires itself (decrementing the active count
+ *   as its last act — the synchronous quiesce in stopAndClearThreads() and
+ *   the document-close pool drain rely on that ordering).
  *@author Lynn Hazan
  */
 
-class WaveformThread : public QThread {
+class WaveformThread : public QRunnable {
 
-public: 
+public:
     //Only the method getWaveforms of WaveformView has access to the private part of WaveformThread,
-    //the constructor of WaveformThread being private, only this method con create a new WaveformThread
+    //the constructor of WaveformThread being private, only this method can create a new WaveformThread
     friend WaveformThread* WaveformView::getWaveforms();
 
-    ~WaveformThread(){}
+    ~WaveformThread() override {}
 
     void getWaveformInformation(int clusterId,WaveformView::PresentationMode mode);
     void getWaveformInformation(const QList<int> &clusterIds, WaveformView::PresentationMode mode);
+    /**Gets the mean and standard deviation for the given cluster or clusters.*/
+    void getMean(int clusterId,WaveformView::PresentationMode mode);
     void getMean(const QList<int> &clusterIds, WaveformView::PresentationMode mode);
-    /**Gets the mean and standard deviation for the cluster or the clusters set previously.
-  * @param
-  */
-    void getMean(WaveformView::PresentationMode mode);
-
-    bool isSingleTriggeringCluster() const {return treatSingleCluster;}
-    int triggeringCluster() const {return clusterId;}
-    QList<int> triggeringClusters() const {return clusterIds;}
-    bool isMeanRequested() const {return  meanRequested;}
-    /** Returns the meanPresentation value snapshotted when the thread started.
-     *  Use this in customEvent instead of the live view field. */
-    bool wasLaunchedWithMeanPresentation() const { return snapMeanPresentation; }
-    /** Returns the PresentationMode snapshotted at thread launch. Use in getMean() calls
-     *  from customEvent instead of the live presentationMode field. */
-    WaveformView::PresentationMode getSnapshotMode() const { return snapPresentationMode; }
-
-    /**Asks the thread to stop his work as soon as possible.*/
-    void stopProcessing(){haveToStopProcessing.store(true, std::memory_order_release);}
-
-    class GetWaveformsEvent;
-    friend class GetWaveformsEvent;
-
-    GetWaveformsEvent* getWaveformsEvent(){
-        return new GetWaveformsEvent(*this);
-    }
 
     /**
   * Internal class use to send information to the WaveformView to inform it that
-  * the data requested have been collected.
+  * the data requested have been collected.  Carries copies of the request
+  * parameters (the job that posted it retires itself) plus the request
+  * generation the job was enqueued under, so the view can drop results of a
+  * superseded request.
   */
     class GetWaveformsEvent : public QEvent{
-        //Only the method getWaveformsEvent of WaveformThread has access to the private part of GetWaveformsEvent,
-        //the constructor of GetWaveformsEvent being private, only this method con create a new GetWaveformsEvent
-        friend GetWaveformsEvent* WaveformThread::getWaveformsEvent();
+        friend class WaveformThread;
 
     public:
-        WaveformThread* parentThread(){return &waveformThread;}
         ~GetWaveformsEvent(){}
 
+        int generation() const {return eventGeneration;}
+        bool isSingleTriggeringCluster() const {return single;}
+        int triggeringCluster() const {return clusterId;}
+        QList<int> triggeringClusters() const {return clusterIds;}
+        bool isMeanRequested() const {return meanRequested;}
+        /** Returns the meanPresentation value snapshotted when the job was enqueued.
+     *  Use this in customEvent instead of the live view field. */
+        bool wasLaunchedWithMeanPresentation() const {return launchedWithMean;}
+        /** Returns the PresentationMode snapshotted at enqueue time. Use in getMean()
+     *  calls from customEvent instead of the live presentationMode field. */
+        WaveformView::PresentationMode snapshotMode() const {return snapMode;}
+
     private:
-        explicit GetWaveformsEvent(WaveformThread& thread):QEvent(QEvent::Type(QEvent::User + 200)),waveformThread(thread){}
+        explicit GetWaveformsEvent(const WaveformThread& job):QEvent(QEvent::Type(QEvent::User + 200)),
+            eventGeneration(job.jobGeneration),single(job.treatSingleCluster),clusterId(job.clusterId),
+            clusterIds(job.clusterIds),meanRequested(job.meanRequested),
+            launchedWithMean(job.snapMeanPresentation),snapMode(job.snapPresentationMode){}
 
-        WaveformThread& waveformThread;
+        int eventGeneration;
+        bool single;
+        int clusterId;
+        QList<int> clusterIds;
+        bool meanRequested;
+        bool launchedWithMean;
+        WaveformView::PresentationMode snapMode;
     };
-
-    class NoWaveformDataEvent;
-    friend class NoWaveformDataEvent;
-
-    NoWaveformDataEvent* noWaveformDataEvent(){
-        return new NoWaveformDataEvent(*this);
-    }
 
     /**
   * Internal class use to send information to the WaveformView to inform it that
-  * there is not data available for the requested cluster. A reason being that the cluster has been suppress
-  * after the thread has been launched.
+  * there is no data available for the requested cluster. A reason being that the cluster
+  * has been suppressed after the job has been enqueued.  The job retires itself,
+  * so the event only carries the request generation.
   */
     class NoWaveformDataEvent : public QEvent{
-        //Only the method getWaveformsEvent of WaveformThread has access to the private part of GetWaveformsEvent,
-        //the constructor of GetWaveformsEvent being private, only this method con create a new GetWaveformsEvent
-        friend NoWaveformDataEvent* WaveformThread::noWaveformDataEvent();
+        friend class WaveformThread;
 
     public:
-        WaveformThread* parentThread(){return &waveformThread;}
         ~NoWaveformDataEvent(){}
 
-    private:
-        explicit NoWaveformDataEvent(WaveformThread& thread):QEvent(QEvent::Type(QEvent::User + 250)),waveformThread(thread){}
+        int generation() const {return eventGeneration;}
 
-        WaveformThread& waveformThread;
+    private:
+        explicit NoWaveformDataEvent(const WaveformThread& job):QEvent(QEvent::Type(QEvent::User + 250)),
+            eventGeneration(job.jobGeneration){}
+
+        int eventGeneration;
     };
 
-protected:
-    void run();
+    /**Executed by a pool worker; fetches the waveforms (and computes the means
+    * if requested), posts the completion event and retires the job.*/
+    void run() override;
 
 private:
-    WaveformThread(WaveformView& view,Data& d):waveformView(view),meanRequested(false),data(d),haveToStopProcessing(false),
-        snapPresentationMode(WaveformView::SAMPLE),snapNbSpkToDisplay(0),snapStartTime(0),snapEndTime(0),snapMeanPresentation(false){}
+    WaveformThread(WaveformView& view,Data& d,const std::shared_ptr<WaveformJobToken>& viewToken)
+        :waveformView(view),meanRequested(false),data(d),token(viewToken),
+        snapPresentationMode(WaveformView::SAMPLE),snapNbSpkToDisplay(0),snapStartTime(0),snapEndTime(0),snapMeanPresentation(false){
+        setAutoDelete(true);
+    }
 
-    // Snapshot view parameters captured at start()-time so run() never reads
-    // waveformView fields directly (they can be modified by the main thread mid-flight).
+    // Snapshot view parameters captured at enqueue time (on the GUI thread) so
+    // run() never reads waveformView fields directly (they can be modified by
+    // the main thread mid-flight).
     void snapshotViewParams(){
         snapPresentationMode  = waveformView.presentationMode;
         snapNbSpkToDisplay    = waveformView.nbSpkToDisplay;
@@ -139,17 +155,39 @@ private:
         snapMeanPresentation  = waveformView.meanPresentation;
     }
 
+    /**Captures the current request generation, counts this job as active and
+    * hands it to the shared pool.  Called on the GUI thread only, as the last
+    * step of each get* method.*/
+    void enqueue();
+
+    /**True once the view has superseded this job's request generation
+    * (stopAndClearThreads()/willBeKilled() bump it): the job stops at its next
+    * check, exactly where the per-thread stop flag used to be read.*/
+    bool cancelled() const {
+        return token->generation.load(std::memory_order_acquire) != jobGeneration;
+    }
+
+    /**Posts @p event to the view, unless the view is being destroyed
+    * (fenced by the token's postMutex/viewDead, see ~WaveformView()).*/
+    void post(QEvent* event);
+
+    /**The old run() body: the fetch and mean state machines, posting
+    * NoWaveformDataEvent on the early-out paths and GetWaveformsEvent at the
+    * end.  Split out so run() can retire the job on every path.*/
+    void process();
+
     WaveformView& waveformView;
     int clusterId = 0;
     QList<int> clusterIds;
     bool treatSingleCluster = false;
     bool meanRequested;
     Data& data;
-    WaveformView::PresentationMode mode = WaveformView::SAMPLE;
-    /**True if the thread has to stop processing, false otherwise.*/
-    std::atomic_bool haveToStopProcessing;
+    /**Shared cancellation/completion state owned by the view.*/
+    std::shared_ptr<WaveformJobToken> token;
+    /**The view's request generation this job was enqueued under.*/
+    int jobGeneration = 0;
 
-    // Snapshots of WaveformView fields captured before the thread starts.
+    // Snapshots of WaveformView fields captured before the job is enqueued.
     WaveformView::PresentationMode snapPresentationMode;
     long snapNbSpkToDisplay;
     long snapStartTime;
