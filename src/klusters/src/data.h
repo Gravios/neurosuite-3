@@ -1546,17 +1546,21 @@ private:
          *  Used for "all spikes" mode where the caller wants every member
          *  of the cluster up to a display cap.  @p nbSpikesOfCluster is
          *  the total cluster size (a hint for buffer sizing).
+         *  Reads through the document's shared SpkReader (positioned reads,
+         *  no seek state), so any number of loaders run concurrently on one
+         *  descriptor.
          */
-        virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType nbSpkToDisplay) = 0;
+        virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType nbSpkToDisplay) = 0;
 
         /** Read the contiguous range [@p currentSpikeIndex .. @p end] of
          *  spike records from @p spikeFile into the implementation's
          *  time-frame buffer.  Used for time-frame display where only
          *  spikes within a time window are shown; @p currentSpikeIndex
          *  is updated on return to point past the last record read so
-         *  the caller can resume scanning.
+         *  the caller can resume scanning.  Shared-SpkReader access, as
+         *  above.
          */
-        virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType& currentSpikeIndex,dataType end) = 0;
+        virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType& currentSpikeIndex,dataType end) = 0;
 
         virtual void calculateMean(WaveformMode waveformMode) = 0;
 
@@ -1623,8 +1627,8 @@ private:
         dataType getTimeFrameStDeviation(dataType index) const override {
             return static_cast<dataType>(timeFrameStDeviationTable[index]);
         }
-        void read(SortableTable& positionOfSpikes,dataType currentSpikeIndex,FILE* spikeFile,dataType nbSpkToDisplay) override;
-        void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType& currentSpikeIndex,dataType end) override;
+        void read(SortableTable& positionOfSpikes,dataType currentSpikeIndex,SpkReader& spikeFile,dataType nbSpkToDisplay) override;
+        void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType& currentSpikeIndex,dataType end) override;
         void calculateMean(WaveformMode waveformMode = SAMPLE);
     private:
         std::vector<T> sampleSpikesTable;

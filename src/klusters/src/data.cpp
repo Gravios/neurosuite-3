@@ -4929,15 +4929,8 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
         }
     }
 
-    FILE* spikeFile = fopen(qPrintable(spkFileName),"rb");
-    if(spikeFile == nullptr){
-        qCritical() << "getSampleWaveformPoints: cannot open spike file:" << spkFileName;
-        return NOT_AVAILABLE;
-    }
-
-    //read and store the data
-    waveforms->read(positionOfSpikes,nbSpikesOfCluster,spikeFile,nbSpkToDisplay);
-    fclose(spikeFile);
+    //read and store the data through the shared positioned-read descriptor
+    waveforms->read(positionOfSpikes,nbSpikesOfCluster,spkReaderInstance,nbSpkToDisplay);
 
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available and remove the collected data.
@@ -5082,16 +5075,8 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
         }
     }
 
-    FILE* spikeFile = fopen(qPrintable(spkFileName),"rb");
-    if(spikeFile == nullptr){
-        qCritical() << "getTimeFrameWaveformPoints: cannot open spike file:" << spkFileName;
-        return NOT_AVAILABLE;
-    }
-
-    //read and store the data
-    waveforms->read(positionOfSpikes,nbSpikesOfCluster,spikeFile,currentSpikeIndex,endInRecordingUnits);
-
-    fclose(spikeFile);
+    //read and store the data through the shared positioned-read descriptor
+    waveforms->read(positionOfSpikes,nbSpikesOfCluster,spkReaderInstance,currentSpikeIndex,endInRecordingUnits);
 
     // Store timing info before taking the mutex (pure local work on the Waveforms object).
     waveforms->setStartTime(start);
@@ -5139,7 +5124,7 @@ void Data::WaveformData<T>::setSize(dataType size,WaveformMode waveformMode){
 
 
 template <class T>
-void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType nbSpkToDisplay){
+void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType nbSpkToDisplay){
     // Capacity of sampleSpikesTable in elements (set by setSize() before this call).
     const dataType bufCap = static_cast<dataType>(sampleSpikesTable.size());
 
@@ -5158,11 +5143,12 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
                          static_cast<int>(bufCap));
                 break;
             }
-            fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
-            // copy the spikes into spikePoints.
-            if (            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
-                qWarning("WaveformData::read: short fread — spike data may be truncated");
-
+            if (!spikeFile.read(&(sampleSpikesTable[position]),
+                                static_cast<qint64>(nbPtsBySpike) * sizeof(T),
+                                static_cast<qint64>(currentSpikePosition) * sizeof(T))) {
+                qWarning("WaveformData::read: short read — spike data may be truncated");
+                break;
+            }
             position += nbPtsBySpike;
             ++nbSampleSpikes;
         }
@@ -5171,12 +5157,12 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
     else if(nbSpkToDisplay == 1){
         //go to the spike position
         dataType currentSpikePosition = (positionOfSpikes(1,1) - 1) * nbPtsBySpike ;
-        fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
-        // copy the spikes into spikePoints.
-        if (        fread(&(sampleSpikesTable[0]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
-            qWarning("WaveformData::read: short fread — spike data may be truncated");
-
-        nbSampleSpikes = 1;
+        if (spikeFile.read(&(sampleSpikesTable[0]),
+                           static_cast<qint64>(nbPtsBySpike) * sizeof(T),
+                           static_cast<qint64>(currentSpikePosition) * sizeof(T)))
+            nbSampleSpikes = 1;
+        else
+            qWarning("WaveformData::read: short read — spike data may be truncated");
     }
     else{
         float factor = static_cast<float>(static_cast<float>(nbSpikesOfCluster - 1) / static_cast<float>(nbSpkToDisplay - 1));
@@ -5193,11 +5179,12 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
                          static_cast<int>(i));
                 break;
             }
-            fseeko64(spikeFile,currentSpikePosition * sizeof(T),SEEK_SET);
-            // copy the spikes into spikePoints.
-            if (            fread(&(sampleSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
-                qWarning("WaveformData::read: short fread — spike data may be truncated");
-
+            if (!spikeFile.read(&(sampleSpikesTable[position]),
+                                static_cast<qint64>(nbPtsBySpike) * sizeof(T),
+                                static_cast<qint64>(currentSpikePosition) * sizeof(T))) {
+                qWarning("WaveformData::read: short read — spike data may be truncated");
+                break;
+            }
             position += nbPtsBySpike;
             ++nbSampleSpikes;
             floatSpkIndice += factor;
@@ -5206,7 +5193,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
 }
 
 template <class T>
-void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,FILE* spikeFile,dataType& currentSpikeIndex,dataType end){
+void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType& currentSpikeIndex,dataType end){
     dataType max = nbSpikesOfCluster +1;
     dataType position = 0;
     dataType startPositionInSpk;
@@ -5219,12 +5206,12 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         //positionOfSpikes and features take indices starting at 1, so currentPositionInFeatures
         //is already correct regarding the presence of an additional first line (nb of features) in the fet file.
         startPositionInSpk = (currentPositionInFeatures - 1) * nbPtsBySpike * sizeof(T);
-        //go to the spike position
-        fseeko64(spikeFile,startPositionInSpk,SEEK_SET);
-        // copy the spikes into timeFrameSpikesTable.
-        if (        fread(&(timeFrameSpikesTable[position]),sizeof(T),nbPtsBySpike,spikeFile) != static_cast<std::size_t>(nbPtsBySpike))
-            qWarning("WaveformData::read: short fread — spike data may be truncated");
-
+        if (!spikeFile.read(&(timeFrameSpikesTable[position]),
+                            static_cast<qint64>(nbPtsBySpike) * sizeof(T),
+                            static_cast<qint64>(startPositionInSpk))) {
+            qWarning("WaveformData::read: short read — spike data may be truncated");
+            break;
+        }
         position += nbPtsBySpike;
         ++nbTimeFrameSpikes;
     }
