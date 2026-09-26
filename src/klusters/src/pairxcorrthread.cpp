@@ -18,8 +18,9 @@ void PairXcorrThread::run()
 
     scores.reserve(static_cast<size_t>(nSpk));
 
-    FILE* spk = fopen(spkPath.toLocal8Bit().constData(), "rb");
-    if (!spk) { post(); return; }
+    spkReaderOwn.setPath(spkPath);
+    SpkReader& spk = spkReaderOwn;
+    if (spkPath.isEmpty()) { post(); return; }
 
     std::vector<int16_t> raw;
     std::vector<float>   sp;
@@ -34,6 +35,5 @@ void PairXcorrThread::run()
         scores.emplace_back(fileIdx0, sc);
     }
 
-    fclose(spk);
     post();
 }

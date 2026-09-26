@@ -20,6 +20,7 @@
 
 //Include files of the application
 #include "array.h"
+#include "spkreader.h"
 #include "sortabletable.h"
 #include "pair.h"
 #include "types.h"
@@ -940,6 +941,15 @@ public:
     void setSpkFileName(const QString& path) { spkFileName = path; }
     QString getSpkFileName() const { return spkFileName; }
 
+    /**Shared positioned-read access to the .spk file (worker-pool step 1):
+    * ONE descriptor serves every concurrent reader via pread — matrix
+    * threads, OMP teams, the strip — replacing the fopen-per-consumer
+    * pattern whose descriptor cost scaled with the number of live readers.
+    * Const: reading waveforms does not mutate the clustering.  Writers that
+    * REPLACE the file behind spkFileName (new inode: the re-extract rename)
+    * must call spkReader().invalidate() afterwards.*/
+    SpkReader& spkReader() const { return spkReaderInstance; }
+
     /**Returns the number of points corresponding to a spike. This equals to:
   * nbChannels * nbSamplesInWaveform
   */
@@ -1299,6 +1309,8 @@ private:
     int nbTotalElectrodes = 0;
     int nbBits = 0;
     QString spkFileName;
+    /**Shared .spk reader; mutable so const readers can lazily open.*/
+    mutable SpkReader spkReaderInstance;
     int voltageRange = 0;
     int amplification = 0;
     int initialOffset = 0;

@@ -16,7 +16,7 @@
 // Shared .spk reader — see templatematrixthread.h.  int16 on disk, channel-major
 // float out.  No 2-vs-4-byte branch: the toolchain's extractor writes int16.
 // ---------------------------------------------------------------------------
-bool tmReadSpikeFloat(FILE* spk, long fileIdx0, int nChan, int nSamp,
+bool tmReadSpikeFloat(SpkReader& spk, long fileIdx0, int nChan, int nSamp,
                       std::vector<int16_t>& rawScratch,
                       std::vector<float>& out)
 {
@@ -25,11 +25,11 @@ bool tmReadSpikeFloat(FILE* spk, long fileIdx0, int nChan, int nSamp,
     if (rawScratch.size() < nPts) rawScratch.resize(nPts);
     if (out.size() < nPts) out.resize(nPts);
 
-    const off_t off = static_cast<off_t>(fileIdx0)
-                    * static_cast<off_t>(nPts)
-                    * static_cast<off_t>(sizeof(int16_t));
-    if (fseeko(spk, off, SEEK_SET) != 0) return false;
-    if (std::fread(rawScratch.data(), sizeof(int16_t), nPts, spk) != nPts)
+    const qint64 off = static_cast<qint64>(fileIdx0)
+                     * static_cast<qint64>(nPts)
+                     * static_cast<qint64>(sizeof(int16_t));
+    if (!spk.read(rawScratch.data(),
+                  static_cast<qint64>(nPts * sizeof(int16_t)), off))
         return false;
 
     for (int ch = 0; ch < nChan; ++ch)
@@ -333,21 +333,17 @@ void TemplateMatrixThread::run()
         noiseWav.assign(static_cast<size_t>(nClusters),
                         std::vector<float>(static_cast<size_t>(nPts), 0.0f));
 
-    const QByteArray spkBytes = spkPath.toLocal8Bit();
-    const char*      spkCStr  = spkBytes.constData();
+    SpkReader& spk = data.spkReader();   // one shared pread descriptor
 
 #pragma omp parallel for schedule(dynamic,1) default(none) \
-    shared(meanWav, noiseWav, allFileIdx) \
-    firstprivate(nClusters, nPts, nChan, nSamp, spkCStr, needNoise)
+    shared(meanWav, noiseWav, allFileIdx, spk) \
+    firstprivate(nClusters, nPts, nChan, nSamp, needNoise)
     for (int ci = 0; ci < nClusters; ++ci) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
 
         const auto& fidx = allFileIdx[static_cast<size_t>(ci)];
         const long  nSpk = static_cast<long>(fidx.size());
         if (nSpk == 0) continue;
-
-        FILE* spk = fopen(spkCStr, "rb");
-        if (!spk) continue;
 
         std::vector<double>  acc(static_cast<size_t>(nPts), 0.0);
         std::vector<double>  accsq;
@@ -368,7 +364,6 @@ void TemplateMatrixThread::run()
             }
             ++valid;
         }
-        fclose(spk);
 
         if (valid > 0)
             for (int p = 0; p < nPts; ++p) {

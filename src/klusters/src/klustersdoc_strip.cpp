@@ -84,17 +84,13 @@ KlustersDoc::stripByTemplate(int               templateCluster,
     if (chans.isEmpty())
         for (int c = 0; c < nCh; ++c) chans.append(c);
 
-    FILE* spk = fopen(clusteringData->getSpkFileName().toLocal8Bit().constData(),
-                      "rb");
-    if (!spk) {
-        R.reason = tr("Could not open the spike waveform file.");
-        return R;
-    }
+    // One shared pread descriptor serves the whole strip (see spkreader.h);
+    // a missing file surfaces as zero readable template waveforms below.
+    SpkReader& spk = clusteringData->spkReader();
 
     // ── Template: per-point median over up to 1024 evenly-strided spikes ─
     SortableTable tplPos;
     if (!layer.spikePositions(templateCluster, tplPos)) {
-        fclose(spk);
         R.reason = tr("Template cluster %1 has no spike-position table.")
                        .arg(templateCluster);
         return R;
@@ -117,7 +113,6 @@ KlustersDoc::stripByTemplate(int               templateCluster,
         ++used;
     }
     if (used < 8) {
-        fclose(spk);
         R.reason = tr("Could only read %1 template waveforms from the spike "
                       "file.").arg(used);
         return R;
@@ -142,7 +137,6 @@ KlustersDoc::stripByTemplate(int               templateCluster,
              * T[static_cast<size_t>(p)] * T[static_cast<size_t>(p)];
     }
     if (W <= 0.0 || E <= 0.0) {
-        fclose(spk);
         R.reason = tr("The template is flat on the selected channels; select "
                       "channels that carry its waveform.");
         return R;
@@ -228,7 +222,6 @@ KlustersDoc::stripByTemplate(int               templateCluster,
         }
         if (matched > 0) R.sources.append(src);
     }
-    fclose(spk);
 
     R.nCandidates = static_cast<int>(nCand);
     R.nMatched    = static_cast<int>(rows.size());
