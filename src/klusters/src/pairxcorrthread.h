@@ -7,6 +7,8 @@
 #include <vector>
 #include <utility>
 
+#include "spkreader.h"
+
 class TemplateMatrixView;
 
 /**
@@ -73,6 +75,8 @@ private:
     std::vector<int>          sourceFileIdx;
     std::vector<float>        targetMean;
     QString                   spkPath;
+    /**Positioned-read access for this job (see spkreader.h).*/
+    SpkReader spkReaderOwn;
     int                       nChan, nSamp;
     bool                      twoBytes;
     std::atomic_bool          haveToStopProcessing;

@@ -1710,6 +1710,7 @@ void Data::resyncClusterInfoMapFromRowTable()
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
     this->spkFileName = spkFileName;
+    spkReaderInstance.setPath(spkFileName);
     if(!configure(parXFile, parFile,errorInformation))
         return false;
 
@@ -1721,6 +1722,7 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,c
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
     this->spkFileName = spkFileName;
+    spkReaderInstance.setPath(spkFileName);
 
     if(!configure(parFile,electrodeGroupID,errorInformation))
         return false;
@@ -1781,6 +1783,7 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,QString& errorInform
 
 bool Data::initialize(QFile& featureFile,long spkFileLength,const QString &spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
     this->spkFileName = spkFileName;
+    spkReaderInstance.setPath(spkFileName);
     if(!configure(parXFile, parFile,errorInformation))
         return false;
     if(!initialize(featureFile,spkFileLength,errorInformation)){
@@ -1792,6 +1795,7 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,const QString &spkFi
 
 bool Data::initialize(QFile& featureFile,long spkFileLength,const QString& spkFileName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
     this->spkFileName = spkFileName;
+    spkReaderInstance.setPath(spkFileName);
 
     if(!configure(parFile,electrodeGroupID,errorInformation))
         return false;

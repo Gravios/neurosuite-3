@@ -24,6 +24,7 @@ set(klusters_SRCS
     correlationview.cpp
     curationlogger.cpp
     data.cpp
+    spkreader.cpp               # shared positioned-read .spk access (worker-pool step 1)
     dataprovider.cpp
     dipsplit.cpp
     errormatrixthread.cpp

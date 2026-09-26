@@ -680,6 +680,11 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         QString reLog;
         const bool reOk =
             reextractAllSpikesFromFil(clusteringData->getSpkFileName(), reLog);
+        // The re-extract installs the rebuilt .spk with rename(): a NEW inode.
+        // Drop the shared read descriptor so the next read reopens the new
+        // file instead of serving the replaced one forever.
+        clusteringData->spkReader().invalidate();
+        if (childData) childData->spkReader().invalidate();
         qWarning().noquote()
             << "[saveDocument]" << (reOk ? "re-extract:" : "re-extract FAILED:")
             << reLog;

@@ -278,8 +278,7 @@ QList<MergeGroup> computeProposals(
     if (needNoise)
         noiseWav.assign(static_cast<size_t>(nClusters), std::vector<float>());
 
-    const QByteArray spkBytes = spkPath.toLocal8Bit();
-    const char*      spkCStr  = spkBytes.constData();
+    SpkReader& spk = data.spkReader();   // one shared pread descriptor
 
     // Stable RNG seed → reproducible previews across runs of the same data.
     std::mt19937 rng(0x4d525142u);  // 'MRQB'
@@ -307,9 +306,6 @@ QList<MergeGroup> computeProposals(
         }
         const int M = static_cast<int>(readSpikes.size());
         if (M < 1) continue;
-
-        FILE* spk = std::fopen(spkCStr, "rb");
-        if (!spk) continue;
 
         // Median mode keeps every spike's wave; mean mode keeps only a
         // running sum.  Channel-major output ([ch*nSamp+sm]) matches the
@@ -353,7 +349,6 @@ QList<MergeGroup> computeProposals(
             }
             ++valid;
         }
-        std::fclose(spk);
         if (valid < 1) continue;
 
         std::vector<float> tmpl(static_cast<size_t>(nPts), 0.0f);

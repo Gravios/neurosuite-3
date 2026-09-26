@@ -84,21 +84,17 @@ void ResidualMatrixThread::run()
         static_cast<size_t>(nClusters),
         std::vector<float>(static_cast<size_t>(nPts), 0.0f));
 
-    const QByteArray spkBytes = spkPath.toLocal8Bit();
-    const char*      spkCStr  = spkBytes.constData();
+    SpkReader& spk = data.spkReader();   // one shared pread descriptor
 
 #pragma omp parallel for schedule(dynamic,1) default(none) \
-    shared(meanWav, varWav, allFileIdx) \
-    firstprivate(nClusters, nPts, nChan, nSamp, spkCStr)
+    shared(meanWav, varWav, allFileIdx, spk) \
+    firstprivate(nClusters, nPts, nChan, nSamp)
     for (int ci = 0; ci < nClusters; ++ci) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
 
         const auto& fidx = allFileIdx[static_cast<size_t>(ci)];
         const long  nSpk = static_cast<long>(fidx.size());
         if (nSpk == 0) continue;
-
-        FILE* spk = fopen(spkCStr, "rb");
-        if (!spk) continue;
 
         std::vector<double>  acc (static_cast<size_t>(nPts), 0.0);
         std::vector<double>  acc2(static_cast<size_t>(nPts), 0.0);
@@ -118,7 +114,6 @@ void ResidualMatrixThread::run()
             }
             ++valid;
         }
-        fclose(spk);
 
         if (valid > 0) {
             const double inv = 1.0 / static_cast<double>(valid);

@@ -95,21 +95,17 @@ void DriftMatrixThread::run()
     meanWav.assign(static_cast<size_t>(nClusters),
                    std::vector<float>(static_cast<size_t>(nPts), 0.0f));
 
-    const QByteArray spkBytes = spkPath.toLocal8Bit();
-    const char*      spkCStr  = spkBytes.constData();
+    SpkReader& spk = data.spkReader();   // one shared pread descriptor
 
 #pragma omp parallel for schedule(dynamic,1) default(none) \
-    shared(meanWav, allFileIdx) \
-    firstprivate(nClusters, nPts, nChan, nSamp, spkCStr)
+    shared(meanWav, allFileIdx, spk) \
+    firstprivate(nClusters, nPts, nChan, nSamp)
     for (int ci = 0; ci < nClusters; ++ci) {
         if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
 
         const auto& fidx = allFileIdx[static_cast<size_t>(ci)];
         const long  nSpk = static_cast<long>(fidx.size());
         if (nSpk == 0) continue;
-
-        FILE* spk = fopen(spkCStr, "rb");
-        if (!spk) continue;
 
         std::vector<double>  acc(static_cast<size_t>(nPts), 0.0);
         std::vector<int16_t> raw;
@@ -125,7 +121,6 @@ void DriftMatrixThread::run()
                 acc[static_cast<size_t>(p)] += sp[static_cast<size_t>(p)];
             ++valid;
         }
-        fclose(spk);
 
         if (valid > 0)
             for (int p = 0; p < nPts; ++p)
