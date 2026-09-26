@@ -23,11 +23,13 @@
 #include <QStyle>
 #include <QPixmap>
 #include <QList>
-#include <QQueue>
-
+#include <QMutex>
 
 #include <QResizeEvent>
 #include <QMouseEvent>
+
+#include <atomic>
+#include <memory>
 
 //include files for the application
 #include "zoomwindow.h"
@@ -39,6 +41,31 @@
 class KlustersDoc;
 class KlustersView;
 class WaveformThread;
+
+/**Cancellation and completion state shared between a WaveformView and the
+ * waveform jobs it enqueues on the shared worker pool (KlustersJobPool).
+ * The view owns it through a shared_ptr and hands each job a copy, so the
+ * state outlives whichever side dies first (worker-pool conversion, step 2).
+ */
+struct WaveformJobToken {
+    /**Fences completion posts against view destruction: ~WaveformView sets
+    * viewDead under this mutex, and a job posts its completion event only
+    * while it is false (under the same mutex).*/
+    QMutex postMutex;
+    bool viewDead = false;
+    /**Request generation.  The view bumps it to supersede every in-flight
+    * job at once: a job whose captured generation no longer matches stops at
+    * its next cancellation check, and customEvent() drops its completion
+    * event.  This replaces both the per-thread stop flags and the
+    * threadsToBeKill ownership list.*/
+    std::atomic_int generation{0};
+    /**Number of jobs enqueued and not yet retired.  A job decrements it as
+    * the very last act of run(), so active == 0 means no job of this view is
+    * inside a Data call anymore — the synchronous quiesce contract that
+    * stopAndClearThreads() offers its callers, and what isThreadsRunning()
+    * reports.*/
+    std::atomic_int active{0};
+};
 
 /**
   * View displaying the waveforms of a subset of the spikes evenly
@@ -70,9 +97,12 @@ public:
 
     /**Signals that the widget is about to be deleted.*/
     void willBeKilled() override;
-    /**Stops and deletes all running threads without setting goingToDie.
-     * Call this before modifying any view state field that threads read,
-     * and before launching replacement threads. */
+    /**Supersedes all in-flight waveform jobs and waits for them to retire,
+     * without setting goingToDie.  Synchronous quiesce: callers (every
+     * cluster-mutating edit path, via KlustersView::stopAllViewThreads)
+     * rely on no job of this view being inside a Data call once this
+     * returns.  Call it before modifying document data that jobs read, and
+     * before launching replacement requests. */
     void stopAndClearThreads();
 
 public Q_SLOTS:
@@ -401,21 +431,13 @@ private:
   * and then the data are coded on 4 bytes.*/
     bool isTwoBytesRecording;
     
-    /**List of pointers on the threads which have to be suppress when this object is destroy.*/
-    QList<WaveformThread*> threadsToBeKill;
-
-    /**Cap-queue for the single-cluster loader launches.  The overlay path
-    * launches one WaveformThread per added cluster and deliberately keeps
-    * earlier ones alive, so a select-all on a big session used to burst
-    * hundreds of live QThreads at once -- each thread's event dispatcher
-    * costs a GWakeup pipe (two file descriptors) and each loader an open
-    * .spk handle, which is what exhausted the descriptor budget.  Beyond
-    * maxConcurrentWaveformLoads live threads a request parks here in FIFO
-    * order; customEvent() drains the queue as loaders retire, so the burst
-    * becomes a rolling window with identical results and ordering, and the
-    * descriptor cost is bounded by the cap instead of the cluster count.*/
-    QQueue<int> waveformRequestQueue;
-    int maxConcurrentWaveformLoads = 16;   // reset from the core count in the ctor
+    /**Cancellation/completion state shared with the waveform jobs this view
+    * enqueues on the worker pool.  Replaces the threadsToBeKill ownership
+    * list (jobs are owned and deleted by the pool) and the view-local
+    * cap-queue that bounded live loader threads: requests beyond the pool's
+    * worker count now wait in the pool as inert job objects, costing no
+    * thread and no file descriptors.*/
+    std::shared_ptr<WaveformJobToken> jobToken;
 
     /**True if the waveform information needed to draw the waveforms are available.*/
     bool dataReady;
@@ -452,22 +474,19 @@ private:
     /**Updates the dimension of the window.*/
     void updateWindow();
 
-    /**Creates a thread which will get the waveform information.*/
+    /**Creates a job which will get the waveform information (the caller
+    * launches it through one of its get* methods, which enqueue it on the
+    * shared worker pool; the pool owns and deletes it after it runs).*/
     WaveformThread* getWaveforms();
 
     /**
-  * Asks the waveform information for the cluster @p clusterId by launching a WaveformThread.
+  * Asks the waveform information for the cluster @p clusterId by enqueueing a waveform job.
   * @param clusterId id of the cluster to ask waveform information for.
   */
     void askForWaveformInformation(int clusterId);
 
-    /**Launches parked single-cluster requests while live loader threads sit
-    * below maxConcurrentWaveformLoads.  Requests whose cluster has left the
-    * view while parked are dropped (launching them would draw a ghost).*/
-    void launchQueuedWaveformRequests();
-
     /**
-  * Asks the waveform information for the clusters listed in @p clusterIds by launching a WaveformThread.
+  * Asks the waveform information for the clusters listed in @p clusterIds by enqueueing a waveform job.
   * @param clusterIds ids of the clusters to ask waveform information for.
   */
     void askForWaveformInformation(const QList<int>& clusterIds);

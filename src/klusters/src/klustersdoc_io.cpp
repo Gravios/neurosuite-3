@@ -65,6 +65,7 @@
 #include "processwidget.h"
 #include "klusters.h"
 #include "klustersdoc.h"
+#include "klustersjobpool.h"
 #include "minmaxthread.h"   // complete type for the finished-signal connect
 #include "configuration.h"
 #include "klustersview.h"
@@ -148,6 +149,13 @@ void KlustersDoc::closeDocument(){
     clusterIdsNewOldMap.clear();
     clusterIdsOldNewMap.clear();
 
+
+    // Pool jobs hold references to the Data objects: let every queued and
+    // running job retire before Data is destroyed.  canCloseDocument()
+    // already refused the close while any view had active jobs, so this
+    // normally returns at once; it is the backstop for jobs orphaned by a
+    // view that died just before the close.
+    KlustersJobPool::drain();
 
     if(clusterColorList != nullptr){
         delete clusteringData;

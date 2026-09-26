@@ -54,6 +54,7 @@
 #include "processwidget.h"
 #include "klusters.h"
 #include "klustersdoc.h"
+#include "klustersjobpool.h"
 #include "configuration.h"
 #include "klustersview.h"
 #include "clusterview.h"
@@ -126,6 +127,14 @@ KlustersDoc::~KlustersDoc(){
         }
     }
     delete viewList;
+
+    // Pool jobs hold references to the Data objects: let every queued and
+    // running job retire before Data is destroyed.  The views superseded
+    // their jobs when they were torn down (and canCloseDocument() refused to
+    // get here while any were active), so this normally returns at once; it
+    // is the backstop for jobs orphaned by a view that died just before the
+    // close.
+    KlustersJobPool::drain();
 
     if(clusterColorList != nullptr){
         delete clusteringData;
