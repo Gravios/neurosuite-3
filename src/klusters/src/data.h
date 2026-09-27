@@ -960,17 +960,31 @@ public:
      *  the original has been overwritten.  Call invalidateWaveformCache()
      *  for the affected cluster afterwards.
      */
-    void setSpkFileName(const QString& path) { spkFileName = path; }
+    /**Redirects the spike file this layer reads (the pending-copy redirect
+    * at document open, a SaveAs move): installs a FRESH reader bound to the
+    * inode currently behind @p path and republishes the snapshot, so jobs
+    * holding an older epoch keep their older file version through its
+    * pinned descriptor (epoch-snapshot step 2).*/
+    void setSpkFileName(const QString& path);
     QString getSpkFileName() const { return spkFileName; }
 
-    /**Shared positioned-read access to the .spk file (worker-pool step 1):
-    * ONE descriptor serves every concurrent reader via pread — matrix
-    * threads, OMP teams, the strip — replacing the fopen-per-consumer
-    * pattern whose descriptor cost scaled with the number of live readers.
-    * Const: reading waveforms does not mutate the clustering.  Writers that
-    * REPLACE the file behind spkFileName (new inode: the re-extract rename)
-    * must call spkReader().invalidate() afterwards.*/
-    SpkReader& spkReader() const { return spkReaderInstance; }
+    /**Rebinds the reader to whatever inode now sits behind the CURRENT
+    * spkFileName and republishes.  For writers that replace the file in
+    * place by rename (the re-extract): the old epochs keep the old inode,
+    * the new epoch reads the new one.*/
+    void reopenSpkReader();
+
+    /**Shared positioned-read access to the CURRENT .spk file version
+    * (worker-pool step 1): ONE descriptor serves every concurrent reader
+    * via pread.  Const: reading waveforms does not mutate the clustering.
+    * This is the live, current-epoch reader for serial current-state
+    * consumers (the strip, autoMerge, the sort CLI) and for the Data-owned
+    * caches until they move into the snapshot; a pool job reads through
+    * its captured snapshot's `spk` instead.  Never setPath/invalidate this
+    * reader — file replacement goes through setSpkFileName() /
+    * reopenSpkReader(), which install a fresh one (epoch-snapshot
+    * step 2).*/
+    SpkReader& spkReader() const { return *spkReaderInstance; }
 
     /**Returns the number of points corresponding to a spike. This equals to:
   * nbChannels * nbSamplesInWaveform
@@ -1331,8 +1345,10 @@ private:
     int nbTotalElectrodes = 0;
     int nbBits = 0;
     QString spkFileName;
-    /**Shared .spk reader; mutable so const readers can lazily open.*/
-    mutable SpkReader spkReaderInstance;
+    /**The CURRENT file version's reader (epoch-snapshot step 2): shared
+    * into every published snapshot, replaced — never mutated — when the
+    * file behind spkFileName changes (see installSpkReader).*/
+    std::shared_ptr<SpkReader> spkReaderInstance;
     int voltageRange = 0;
     int amplification = 0;
     int initialOffset = 0;
@@ -1470,6 +1486,12 @@ private:
     * moveSpikeSubset's trailing cleanup).  Must be called with the mutex
     * NOT held.*/
     void publishSnapshot();
+
+    /**Installs a fresh, eagerly-opened reader for @p path as the current
+    * one.  Callers that changed which FILE the layer reads republish
+    * afterwards (setSpkFileName / reopenSpkReader); initialize() relies on
+    * its own later publication.*/
+    void installSpkReader(const QString& path);
 
     /**The published snapshot (guarded by mutex; read via currentSnapshot()).*/
     std::shared_ptr<const ClusteringSnapshot> snapshot;
@@ -2361,6 +2383,12 @@ struct Data::ClusteringSnapshot {
     * shared with Data's live members until the next publication).*/
     std::shared_ptr<SortableTable> spikesByCluster;
     std::shared_ptr<ClusterInfoMap> clusterInfoMap;
+    /**The spike-file reader current at this epoch (epoch-snapshot step 2).
+    * Holding it pins the file VERSION: the descriptor was opened at
+    * install, so a later rename that replaces the file behind the path
+    * leaves this epoch reading its own inode.  In-place writes (the nudge)
+    * still show through — their epoch story is plan step 7.*/
+    std::shared_ptr<SpkReader> spk;
 
     /**Mirror of Data::clusterIds().*/
     QList<dataType> clusterIds() const { return clusterInfoMap->keys(); }

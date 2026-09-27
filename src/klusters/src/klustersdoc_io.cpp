@@ -689,10 +689,12 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         const bool reOk =
             reextractAllSpikesFromFil(clusteringData->getSpkFileName(), reLog);
         // The re-extract installs the rebuilt .spk with rename(): a NEW inode.
-        // Drop the shared read descriptor so the next read reopens the new
-        // file instead of serving the replaced one forever.
-        clusteringData->spkReader().invalidate();
-        if (childData) childData->spkReader().invalidate();
+        // Rebind each layer to it by installing a FRESH reader and
+        // republishing (epoch-snapshot step 2) — invalidating the shared
+        // reader would also redirect any older epoch a job still holds,
+        // which must keep reading its own pinned file version instead.
+        clusteringData->reopenSpkReader();
+        if (childData) childData->reopenSpkReader();
         qWarning().noquote()
             << "[saveDocument]" << (reOk ? "re-extract:" : "re-extract FAILED:")
             << reLog;
