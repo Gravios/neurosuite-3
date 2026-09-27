@@ -142,11 +142,14 @@ QList<MergeGroup> computeProposalsByErrorMatrix(
     // Cancel button and its wasCanceled() drives the loop, so it does something.
 
     // clusterList (out) gives the cluster id at each 1-based row/column of the
-    // returned [nClusters x nClusters] matrix.
+    // returned [nClusters x nClusters] matrix.  This runs synchronously on the
+    // GUI thread inside an edit flow, so the current snapshot IS the live
+    // clustering (epoch-snapshot step 5: the assistant reads the snapshot's
+    // tables).
     GroupingAssistant assistant;
     QList<int> clusterList, computedClusterList, ignoreClusterIndex;
     Array<double>* err = assistant.computeMeanProbabilities(
-        data, clusterList, computedClusterList, ignoreClusterIndex);
+        data, data.currentSnapshot(), clusterList, computedClusterList, ignoreClusterIndex);
     if (err == nullptr) return result;
 
     // Map each cluster id to its 1-based index in the matrix.

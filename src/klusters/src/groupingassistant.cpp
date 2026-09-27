@@ -102,6 +102,7 @@ static void prependCluster1Indices(QList<int>& clusterList,
 
 Array<double>* GroupingAssistant::computeMeanProbabilities(
         Data& clusteringData,
+        const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
         QList<int>& clusterList,
         QList<int>& computedClusterList,
         QList<int>& ignoreClusterIndex)
@@ -113,7 +114,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
     if (emxTiming) emxTmg.start();
     Array<double>* gpuErrorMatrix = nullptr;
     Array<double>* probabilities =
-        computeProbabilities(clusteringData, clusterList,
+        computeProbabilities(clusteringData, snap, clusterList,
                              computedClusterList, ignoreClusterIndex,
                              &gpuErrorMatrix);
     const qint64 emxMsProb = emxTiming ? emxTmg.restart() : 0;
@@ -125,14 +126,13 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
             fprintf(stderr,
                 "[errormatrix-timing] host: probabilities=%lld ms aggregate=0 ms (gpu-agg)\n",
                 static_cast<long long>(emxMsProb));
-        delete spikesByCluster; delete clusterInfoMap;
-        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        spikesByCluster.reset(); clusterInfoMap.reset();
         return gpuErrorMatrix;
     }
 
     // Computed once and shared by every consumer below -- see the note in
     // computeMeanProbabilitiesIncremental.
-    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
+    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap.get());
 
     int nbClusters = clusterList.size();
 
@@ -168,8 +168,8 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
             static_cast<long long>(emxMsProb),
             static_cast<long long>(emxTmg.elapsed()));
 
-    delete spikesByCluster;
-    delete clusterInfoMap;
+    spikesByCluster.reset();
+    clusterInfoMap.reset();
     delete probabilities;
     return errorMatrix;
 }
@@ -196,6 +196,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
 // ---------------------------------------------------------------------------
 Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         Data& clusteringData,
+        const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
         QList<int>& clusterList, QList<int>& computedClusterList,
         QList<int>& ignoreClusterIndex,
         const Array<double>* prevRaw, const QList<int>& prevRawIds,
@@ -239,7 +240,11 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         }
     }
 
-    clusteringData.duplicate(spikesByCluster, clusterInfoMap);
+    //Alias the epoch's tables instead of deep-copying them under the Data
+    //mutex (epoch-snapshot step 5): the snapshot already pins a consistent,
+    //immutable pair for exactly as long as this compute holds it.
+    spikesByCluster = snap->spikesByCluster;
+    clusterInfoMap  = snap->clusterInfoMap;
     // The model index, computed ONCE for this compute and used everywhere below.
     //
     // It was previously rebuilt at every use -- eighteen calls across four
@@ -249,13 +254,16 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     // clusterInfoMap or activeClusters moved between them.  That is the same class
     // of fault as the dropped loop counters, and one value shared by every consumer
     // removes it by construction rather than by discipline.
-    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
+    //
+    // (The clusterInfoMap->remove(Artefact) that historically sat below the
+    // index build was a dead mutation — buildModelIndex is the map's only
+    // reader, and it has already run — and the map is now the published
+    // epoch's own table, which must never be mutated.)
+    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap.get());
 
-    if (clusterInfoMap->contains(ClusterId::Artefact)) clusterInfoMap->remove(ClusterId::Artefact);
     const int nbClustersReal = model.size();
     if (nbClustersReal < 1 || stopRequested()) {
-        delete spikesByCluster; delete clusterInfoMap;
-        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        spikesByCluster.reset(); clusterInfoMap.reset();
         return nullptr;
     }
 
@@ -263,8 +271,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     meanCovarianceComputation(model, nbClustersReal, nbDimensions, nbSpikes,
                               clusteringData, ignoreClusterIndex);
     if (stopRequested()) {
-        delete spikesByCluster; delete clusterInfoMap;
-        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        spikesByCluster.reset(); clusterInfoMap.reset();
         return nullptr;
     }
 
@@ -459,8 +466,8 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         }
     }
     if (stopRequested()) {
-        delete raw; delete spikesByCluster; delete clusterInfoMap;
-        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        delete raw;
+        spikesByCluster.reset(); clusterInfoMap.reset();
         return nullptr;
     }
     if (outNbReused) *outNbReused = nbReused;
@@ -504,8 +511,8 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     normaliseRowsToPosteriors(probabilities, model, ignoreClusterIndex, nbClusters);
 
     if (stopRequested()) {
-        delete probabilities; delete spikesByCluster; delete clusterInfoMap;
-        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        delete probabilities;
+        spikesByCluster.reset(); clusterInfoMap.reset();
         return nullptr;
     }
 
@@ -513,8 +520,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     Array<double>* errorMatrix =
         aggregateErrorMatrix(probabilities, model, ignoreClusterIndex, nbClusters);
 
-    delete spikesByCluster; delete clusterInfoMap; delete probabilities;
-    spikesByCluster = nullptr; clusterInfoMap = nullptr;
+    spikesByCluster.reset(); clusterInfoMap.reset(); delete probabilities;
     return errorMatrix;
 }
 
@@ -524,6 +530,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
 
 Array<double>* GroupingAssistant::computeProbabilities(
         Data& clusteringData,
+        const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
         QList<int>& clusterList,
         QList<int>& computedClusterList,
         QList<int>& ignoreClusterIndex,
@@ -542,32 +549,23 @@ Array<double>* GroupingAssistant::computeProbabilities(
     qint64 t_dup=0, t_mean=0, t_alloc=0, t_chol=0, t_feat=0, t_gpu=0;
     if (pTiming) pt.start();
 
-    clusteringData.duplicate(spikesByCluster, clusterInfoMap);
-    // The model index, computed ONCE for this compute and used everywhere below.
-    //
-    // It was previously rebuilt at every use -- eighteen calls across four
-    // functions, each walking clusterInfoMap and allocating a fresh vector.  The
-    // cost was the lesser problem: nothing guaranteed the eighteen results agreed,
-    // so two loops indexing the same model could silently disagree if
-    // clusterInfoMap or activeClusters moved between them.  That is the same class
-    // of fault as the dropped loop counters, and one value shared by every consumer
-    // removes it by construction rather than by discipline.
-    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap);
+    //Alias the epoch's tables (see computeMeanProbabilitiesIncremental).
+    spikesByCluster = snap->spikesByCluster;
+    clusterInfoMap  = snap->clusterInfoMap;
+    // The model index, computed ONCE for this compute and used everywhere
+    // below — see the note in computeMeanProbabilitiesIncremental, including
+    // why the historical remove(Artefact) below it is gone.
+    const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap.get());
 
-    if (clusterInfoMap->contains(ClusterId::Artefact)) clusterInfoMap->remove(ClusterId::Artefact);
     int nbClusters = model.size();
     if (pTiming) t_dup = pt.restart();
 
     if (stopRequested()) {
-        // Free before aborting.  duplicate() has already allocated both, they are
-        // MEMBERS, and the next call overwrites the pointers -- so returning here
-        // without freeing leaks a per-spike array and the cluster map, once per
-        // aborted compute.  Aborts are not rare: stopRequested() is set
-        // whenever an edit supersedes a running matrix, which is most of them
-        // during curation.  Every other abort in this function already frees;
-        // these two did not.
-        delete spikesByCluster; delete clusterInfoMap;
-        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        // Release the epoch pin before aborting (the shared tables replaced
+        // the per-compute copies this comment used to guard against leaking).
+        // Aborts are not rare: stopRequested() is set whenever an edit
+        // supersedes a running matrix, which is most of them during curation.
+        spikesByCluster.reset(); clusterInfoMap.reset();
         return new Array<double>(0, 0);
     }
 
@@ -645,15 +643,11 @@ Array<double>* GroupingAssistant::computeProbabilities(
             << " computed="          << computedClusterList.size();
 
     if (stopRequested()) {
-        // Free before aborting.  duplicate() has already allocated both, they are
-        // MEMBERS, and the next call overwrites the pointers -- so returning here
-        // without freeing leaks a per-spike array and the cluster map, once per
-        // aborted compute.  Aborts are not rare: stopRequested() is set
-        // whenever an edit supersedes a running matrix, which is most of them
-        // during curation.  Every other abort in this function already frees;
-        // these two did not.
-        delete spikesByCluster; delete clusterInfoMap;
-        spikesByCluster = nullptr; clusterInfoMap = nullptr;
+        // Release the epoch pin before aborting (the shared tables replaced
+        // the per-compute copies this comment used to guard against leaking).
+        // Aborts are not rare: stopRequested() is set whenever an edit
+        // supersedes a running matrix, which is most of them during curation.
+        spikesByCluster.reset(); clusterInfoMap.reset();
         return new Array<double>(0, 0);
     }
 

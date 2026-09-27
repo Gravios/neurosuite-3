@@ -58,7 +58,9 @@ public:
  * @return nbSpikes x nbClusters array giving the posterior
  * probabilities of belonging to each cluster of Fet2, for each point of Fet1.
  */
-    Array<double>* computeMeanProbabilities(Data& clusteringData,QList<int>& clusterList,QList<int>& computedClusterList,
+    Array<double>* computeMeanProbabilities(Data& clusteringData,
+                                            const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
+                                            QList<int>& clusterList,QList<int>& computedClusterList,
                                             QList<int>& ignoreClusterIndex);
 
     /**Opt-in incremental variant of computeMeanProbabilities.  Reuses the RAW
@@ -74,7 +76,9 @@ public:
      * Returns nullptr (caller should fall back to computeMeanProbabilities) on any
      * precondition miss.  CPU-only: the GPU path yields no raw columns to cache.*/
     Array<double>* computeMeanProbabilitiesIncremental(
-        Data& clusteringData, QList<int>& clusterList, QList<int>& computedClusterList,
+        Data& clusteringData,
+        const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
+        QList<int>& clusterList, QList<int>& computedClusterList,
         QList<int>& ignoreClusterIndex,
         const Array<double>* prevRaw, const QList<int>& prevRawIds,
         const QList<int>& prevRawSizes, int prevNbDimensions,
@@ -105,19 +109,21 @@ private:
     /**Array containing the means of the clusters computed.*/
     Array<double> means;
 
-    /**
-  * Copy of the @ref Data::spikesByCluster, a two line array which contains sorted by cluster numbers:
-  * the row index of the spike in features array.
-  * the id of the cluster.
-  */
-    SortableTable* spikesByCluster = nullptr;
+    /**The epoch's spikesByCluster table, shared from the snapshot the
+  * compute was handed (epoch-snapshot step 5): a two line array which
+  * contains, sorted by cluster numbers, the row index of the spike in the
+  * features array and the id of the cluster.  Read-only by contract and
+  * pinned for the duration of the compute — it replaces the per-compute
+  * deep copy (Data::duplicate) that cost O(nbSpikes) per matrix update
+  * and needed the Data mutex.*/
+    std::shared_ptr<SortableTable> spikesByCluster;
 
-    /**Copy of the @ref Data::clusterInfoMap, contains ClusterInfo(s)
-  * key: cluster number
-  * value: a ClusterInfo (which gives:
-  * the index of the first spike in spikesByCluster and the number of spikes for a given cluster).
-  */
-    Data::ClusterInfoMap* clusterInfoMap = nullptr;
+    /**The epoch's clusterInfoMap, shared from the same snapshot (read-only
+  * by contract, like spikesByCluster above); key: cluster number, value: a
+  * ClusterInfo (the index of the first spike in spikesByCluster and the
+  * number of spikes for that cluster).  buildModelIndex() is its only
+  * reader — see the MODEL INDEX contract.*/
+    std::shared_ptr<Data::ClusterInfoMap> clusterInfoMap;
 
     /**True if cluster 1 (noise/unsorted) is present in the clusterInfoMap being computed.
      * When false, a synthetic all-zero column is prepended to the probabilities array
@@ -149,7 +155,9 @@ private:
  * @return nbSpikes x nbClusters array giving the posterior
  * probabilities of belonging to each cluster of Fet2, for each point of Fet1.
  */
-    Array<double>* computeProbabilities(Data& clusteringData,QList<int>& clusterList,QList<int>& computedClusterList,
+    Array<double>* computeProbabilities(Data& clusteringData,
+                                        const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
+                                        QList<int>& clusterList,QList<int>& computedClusterList,
                                         QList<int>& ignoreClusterIndex,
                                         Array<double>** errorMatrixOut = nullptr);
 

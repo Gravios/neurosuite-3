@@ -92,8 +92,12 @@ void ErrorMatrixThread::process(){
         QElapsedTimer diagTimer; diagTimer.start();
 
         if(incremental){
+            //Against the snapshot captured at enqueue: the assistant reads
+            //its membership tables directly (epoch-snapshot step 5); the
+            //features themselves are still the shared Data table, protected
+            //by the edit-path quiesce.
             result = assistant.computeMeanProbabilitiesIncremental(
-                data, clusterList, computedClusterList, ignoreClusterIndex,
+                data, snapshot, clusterList, computedClusterList, ignoreClusterIndex,
                 prevRaw, prevRawIds, prevRawSizes, prevNbDimensions, changedIds,
                 &newRaw, &newRawIds, &newRawSizes, &nbReused, verify);
 
@@ -111,7 +115,7 @@ void ErrorMatrixThread::process(){
                     GroupingAssistant fullAssistant;
                     QList<int> cl, ccl, ici;
                     Array<double>* full =
-                        fullAssistant.computeMeanProbabilities(data, cl, ccl, ici);
+                        fullAssistant.computeMeanProbabilities(data, snapshot, cl, ccl, ici);
                     if(full != nullptr){
                         double maxAbs = 0.0;
                         const long rr = std::min(result->nbOfRows(),    full->nbOfRows());
@@ -143,7 +147,7 @@ void ErrorMatrixThread::process(){
         if(result == nullptr && !cancelled()){
             // Full recompute — the default path and the incremental fallback.
             result = assistant.computeMeanProbabilities(
-                data, clusterList, computedClusterList, ignoreClusterIndex);
+                data, snapshot, clusterList, computedClusterList, ignoreClusterIndex);
         }
 
         probabilities = result;
