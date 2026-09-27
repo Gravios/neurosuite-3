@@ -4844,7 +4844,7 @@ Data::Status Data::calculateTimeFrameMean(const std::shared_ptr<const Data::Clus
 Data::WaveformSubscribe Data::subscribeWaveform(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
                                                 int clusterId, WaveformMode mode,
                                                 bool wantsMean, dataType p1, dataType p2,
-                                                const std::shared_ptr<WaveformRequestTicket>& ticket,
+                                                const std::shared_ptr<RequestTicket>& ticket,
                                                 bool failMarksTicket){
     WaveformCacheStore& store = *snap->waveforms;
     QMutexLocker lk(&store.m);
@@ -5656,12 +5656,16 @@ Data::Status Data::getCorrelograms(const std::shared_ptr<const Data::ClusteringS
     SortableTable spikesOfCluster2 = SortableTable();
     if(!snap->spikePositions(cluster1,spikesOfCluster1) ||
        (!autoCorrelogram && !snap->spikePositions(cluster2,spikesOfCluster2))){
-        QMutexLocker lk(&store.m);
-        auto pairIt = store.byPair.find(pair);
-        if(pairIt != store.byPair.end() && pairIt.value().value(params) == correlation){
-            pairIt.value().remove(params);
-            if(pairIt.value().isEmpty()) store.byPair.erase(pairIt);
+        {
+            QMutexLocker lk(&store.m);
+            auto pairIt = store.byPair.find(pair);
+            if(pairIt != store.byPair.end() && pairIt.value().value(params) == correlation){
+                pairIt.value().remove(params);
+                if(pairIt.value().isEmpty()) store.byPair.erase(pairIt);
+            }
         }
+        //The unclaim ends this computation: complete whoever parked on it.
+        flushCorrelationWaiters(store, correlation.get());
         return NOT_AVAILABLE;
     }
 
@@ -5681,7 +5685,41 @@ Data::Status Data::getCorrelograms(const std::shared_ptr<const Data::ClusteringS
         if(pairIt != store.byPair.constEnd() && pairIt.value().value(params) == correlation)
             correlation->setStatus(READY);
     }
+    //Complete whoever parked on this computation (epoch-snapshot step 4).
+    //After a mid-compute drop the list is already empty — the drop took and
+    //completed it, and nothing re-parks on a slot that is gone.
+    flushCorrelationWaiters(store, correlation.get());
     return READY;
+}
+
+Data::CorrelationSubscribe Data::subscribeCorrelogram(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
+                                                      const Pair& pair, int binSize, int timeWindow,
+                                                      const std::shared_ptr<RequestTicket>& ticket){
+    CorrelationCacheStore& store = *snap->correlations;
+    QMutexLocker lk(&store.m);
+    const auto pairIt = store.byPair.constFind(pair);
+    if(pairIt == store.byPair.constEnd()) return CorrelationSubscribe::Retry;
+    const std::shared_ptr<Correlation> slot = pairIt.value().value(pairKey(binSize,timeWindow));
+    if(!slot) return CorrelationSubscribe::Retry;
+    const Status status = slot->getStatus(binSize,timeWindow);
+    if(status == READY) return CorrelationSubscribe::DoneOk;
+    if(status != IN_PROCESS) return CorrelationSubscribe::Retry;   // slots are IN_PROCESS or READY; defensive
+    CorrelationWaiter waiter;
+    waiter.ticket = ticket;
+    //The share is added under the same mutex that parks the waiter, so the
+    //owner's flush can only complete it after both are in place.
+    ticket->remaining.fetch_add(1, std::memory_order_acq_rel);
+    store.waiters[slot.get()].append(waiter);
+    return CorrelationSubscribe::Parked;
+}
+
+void Data::flushCorrelationWaiters(CorrelationCacheStore& store, Correlation* owner){
+    QList<CorrelationWaiter> taken;
+    {
+        QMutexLocker lk(&store.m);
+        taken = store.waiters.take(owner);
+    }
+    for(const CorrelationWaiter& w : taken) w.ticket->completeOne();
 }
 
 void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,SortableTable& spikesOfCluster2,double binSizeInRU,double timeWindowInRU,int halfBins,bool autoCorrelogram){
@@ -5844,13 +5882,23 @@ void Data::dropCorrelationEntries(int clusterId){
     //identity-guarded terminal discards the result.
     std::shared_ptr<const ClusteringSnapshot> snap = currentSnapshot();
     CorrelationCacheStore& store = *snap->correlations;
-    QMutexLocker lk(&store.m);
-    for(auto it = store.byPair.begin(); it != store.byPair.end();){
-        if(it.key().first == clusterId || it.key().second == clusterId)
-            it = store.byPair.erase(it);
-        else
-            ++it;
+    QList<CorrelationWaiter> orphans;
+    {
+        QMutexLocker lk(&store.m);
+        for(auto it = store.byPair.begin(); it != store.byPair.end();){
+            if(it.key().first == clusterId || it.key().second == clusterId){
+                //Complete the waiters parked on every computation this drop
+                //orphans: the owner's terminal takes an empty list from now
+                //on, and nothing re-parks on a slot that is gone.
+                for(auto slotIt = it.value().constBegin(); slotIt != it.value().constEnd(); ++slotIt)
+                    orphans += store.waiters.take(slotIt.value().get());
+                it = store.byPair.erase(it);
+            }
+            else
+                ++it;
+        }
     }
+    for(const CorrelationWaiter& w : orphans) w.ticket->completeOne();
 }
 
 long Data::findSpikePosition(double time,SortableTable& spikesOfCluster){

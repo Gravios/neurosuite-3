@@ -46,6 +46,12 @@
  * run()'s last act).  The pair list is now held by value, and the bin size /
  * time window are snapshotted at enqueue time on the GUI thread — the old
  * thread read the live view fields mid-run.
+ *
+ * Since the subscribe-don't-wait conversion (epoch-snapshot step 4) the job
+ * never sleeps: a pair another job is already computing is subscribed to
+ * through a RequestTicket instead of sleep(1)-polled, and the completion
+ * event fires when the last outstanding share — this sweep, or a parked
+ * waiter — completes, from whichever thread completes it.
  *@author Lynn Hazan
  */
 
@@ -78,11 +84,18 @@ public:
         explicit CorrelationsEvent(const CorrelationThread& job)
             :QEvent(QEvent::Type(QEvent::User + 300)),eventGeneration(job.jobGeneration){}
 
+        /**Field form, for the ticket closure: the completion may fire from
+        * a waiter flush on another worker long after the job object is
+        * gone (epoch-snapshot step 4).*/
+        explicit CorrelationsEvent(int gen)
+            :QEvent(QEvent::Type(QEvent::User + 300)),eventGeneration(gen){}
+
         int eventGeneration;
     };
 
-    /**Executed by a pool worker; computes the correlograms, posts the
-    * completion event and retires the job.*/
+    /**Executed by a pool worker; runs the correlogram sweep and retires
+    * the job (the completion event fires when the request's last share
+    * completes — right here when nothing was parked).*/
     void run() override;
 
 private:
@@ -100,12 +113,12 @@ private:
         return token->generation.load(std::memory_order_acquire) != jobGeneration;
     }
 
-    /**Posts @p event to the view, unless the view is being destroyed
-    * (fenced by the token's postMutex/viewDead, see ~CorrelationView()).*/
-    void post(QEvent* event);
-
-    /**The old run() body: the correlogram loop, posting CorrelationsEvent at
-    * the end.  Split out so run() can retire the job on every path.*/
+    /**The correlogram sweep.  Since the subscribe-don't-wait conversion
+    * (epoch-snapshot step 4) it never sleeps: a computation another job
+    * owns is subscribed to through the request ticket instead of polled,
+    * and the completion event fires when the last outstanding share —
+    * this sweep, or a parked waiter — completes.  Split out so run() can
+    * retire the job on every path.*/
     void process();
 
     CorrelationView& correlationView;
@@ -117,9 +130,9 @@ private:
     /**The view's request generation this job was enqueued under.*/
     int jobGeneration = 0;
     /**The membership epoch captured at creation (epoch-snapshot step 1):
-    * pins the epoch's tables for the duration of the job.  The correlogram
-    * reads themselves still go through Data until the cache moves into the
-    * snapshot (plan step 4).*/
+    * pins the epoch's tables and its correlogram store for the duration of
+    * the job — every Data correlogram call in process() runs against this
+    * snapshot (step 4).*/
     std::shared_ptr<const Data::ClusteringSnapshot> snapshot;
 
     // Snapshots of CorrelationView fields captured before the job is enqueued.

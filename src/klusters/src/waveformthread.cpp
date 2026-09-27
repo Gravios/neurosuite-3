@@ -83,7 +83,7 @@ void WaveformThread::process(){
     //installed before any share can complete and carries everything the
     //event needs, because it may run from a waiter flush on another worker
     //long after this job object is deleted.
-    auto ticket = std::make_shared<WaveformRequestTicket>();
+    auto ticket = std::make_shared<RequestTicket>();
     {
         auto tok  = token;
         auto* viewPtr = &waveformView;
