@@ -139,7 +139,7 @@ void DriftMatrixThread::process()
     meanWav.assign(static_cast<size_t>(nClusters),
                    std::vector<float>(static_cast<size_t>(nPts), 0.0f));
 
-    SpkReader& spk = data.spkReader();   // one shared pread descriptor
+    SpkReader& spk = *snapshot->spk;   // this epoch's pinned descriptor
 
 #pragma omp parallel for schedule(dynamic,1) default(none) \
     shared(meanWav, allFileIdx, spk) \

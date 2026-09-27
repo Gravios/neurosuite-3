@@ -65,7 +65,30 @@ Data::Data()
     minMaxThread = minMaxCalculator();
     spikesByCluster = std::make_shared<SortableTable>();
     clusterInfoMap = std::make_shared<ClusterInfoMap>();
+    spkReaderInstance = std::make_shared<SpkReader>();
     //Publish the (empty) epoch 1 so currentSnapshot() is never null.
+    publishSnapshot();
+}
+
+void Data::installSpkReader(const QString& path){
+    auto reader = std::make_shared<SpkReader>();
+    reader->setPath(path);
+    //Eager open binds the reader to the inode behind the path NOW; snapshots
+    //that pin this reader keep this file version across later renames.
+    reader->prime();
+    spkReaderInstance = std::move(reader);
+}
+
+void Data::setSpkFileName(const QString& path){
+    spkFileName = path;
+    installSpkReader(path);
+    //The layer reads a different FILE now: that is an epoch change even
+    //though the membership is unchanged.
+    publishSnapshot();
+}
+
+void Data::reopenSpkReader(){
+    installSpkReader(spkFileName);
     publishSnapshot();
 }
 
@@ -75,6 +98,7 @@ void Data::publishSnapshot(){
     snap->epoch = ++snapshotEpochCounter;
     snap->spikesByCluster = spikesByCluster;
     snap->clusterInfoMap  = clusterInfoMap;
+    snap->spk             = spkReaderInstance;
     snapshot = std::move(snap);
 }
 
@@ -1726,7 +1750,7 @@ void Data::resyncClusterInfoMapFromRowTable()
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
     this->spkFileName = spkFileName;
-    spkReaderInstance.setPath(spkFileName);
+    installSpkReader(spkFileName);
     if(!configure(parXFile, parFile,errorInformation))
         return false;
 
@@ -1738,7 +1762,7 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,c
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
     this->spkFileName = spkFileName;
-    spkReaderInstance.setPath(spkFileName);
+    installSpkReader(spkFileName);
 
     if(!configure(parFile,electrodeGroupID,errorInformation))
         return false;
@@ -1800,7 +1824,7 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,QString& errorInform
 
 bool Data::initialize(QFile& featureFile,long spkFileLength,const QString &spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
     this->spkFileName = spkFileName;
-    spkReaderInstance.setPath(spkFileName);
+    installSpkReader(spkFileName);
     if(!configure(parXFile, parFile,errorInformation))
         return false;
     if(!initialize(featureFile,spkFileLength,errorInformation)){
@@ -1812,7 +1836,7 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,const QString &spkFi
 
 bool Data::initialize(QFile& featureFile,long spkFileLength,const QString& spkFileName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
     this->spkFileName = spkFileName;
-    spkReaderInstance.setPath(spkFileName);
+    installSpkReader(spkFileName);
 
     if(!configure(parFile,electrodeGroupID,errorInformation))
         return false;
@@ -4961,7 +4985,7 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
     }
 
     //read and store the data through the shared positioned-read descriptor
-    waveforms->read(positionOfSpikes,nbSpikesOfCluster,spkReaderInstance,nbSpkToDisplay);
+    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*spkReaderInstance,nbSpkToDisplay);
 
     //If the cluster has been suppress or modified after the thread calling this function has been launched
     //return this information that the data are not available and remove the collected data.
@@ -5107,7 +5131,7 @@ Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataT
     }
 
     //read and store the data through the shared positioned-read descriptor
-    waveforms->read(positionOfSpikes,nbSpikesOfCluster,spkReaderInstance,currentSpikeIndex,endInRecordingUnits);
+    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*spkReaderInstance,currentSpikeIndex,endInRecordingUnits);
 
     // Store timing info before taking the mutex (pure local work on the Waveforms object).
     waveforms->setStartTime(start);
