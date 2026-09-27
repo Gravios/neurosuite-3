@@ -199,9 +199,9 @@ private:
     /**The view's request generation this job was enqueued under.*/
     int jobGeneration = 0;
     /**The membership epoch captured at creation (epoch-snapshot step 1):
-    * pins the epoch's tables for the duration of the job.  The waveform
-    * reads themselves still go through Data until the cache moves into the
-    * snapshot (plan step 3).*/
+    * pins the epoch's tables, its .spk reader, and its waveform store for
+    * the duration of the job — every Data waveform call in process() runs
+    * against this snapshot (step 3b).*/
     std::shared_ptr<const Data::ClusteringSnapshot> snapshot;
 
     // Snapshots of WaveformView fields captured before the job is enqueued.

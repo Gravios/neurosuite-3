@@ -93,7 +93,69 @@ void Data::reopenSpkReader(){
 }
 
 void Data::publishSnapshot(){
-    auto snap = std::make_shared<ClusteringSnapshot>();
+    auto snap  = std::make_shared<ClusteringSnapshot>();
+    auto store = std::make_shared<WaveformCacheStore>();
+
+    //Carry the previous epoch's waveform entries whose backing is unchanged
+    //(epoch-snapshot step 3b).  Two guards: the READER — a fresh reader means
+    //the FILE changed (pending-copy redirect, re-extract), so every cached
+    //waveform is suspect; and the MEMBERSHIP — per cluster, the spike rows
+    //must be identical on both sides of the edit (compared by content, so a
+    //renumber that repacks positions still carries the clusters whose spike
+    //sets are untouched).  This one equality test replaces the old cache's
+    //whole invalidation vocabulary: the delete-or-flag walks in the edit
+    //committers, the clusterModified flag, the renumber re-keying.  What it
+    //cannot see is a byte-writer behind an unchanged membership — the
+    //realign nudge — which is what dropWaveformEntry() is for.
+    //
+    //In-flight entries stay behind: their owner is still filling the
+    //Waveforms object, in the epoch it captured.  Waiters are never carried:
+    //they belong to computations running in the previous epoch, whose owners
+    //complete them there.
+    std::shared_ptr<const ClusteringSnapshot> prev;
+    {
+        QMutexLocker lk(&mutex);
+        prev = snapshot;
+    }
+    if(prev && prev->waveforms && prev->spk == spkReaderInstance){
+        WaveformCacheStore& prevStore = *prev->waveforms;
+        QMutexLocker prevLk(&prevStore.m);
+        //Fast path: the tables themselves are unchanged (a republish after a
+        //metadata-only change), so every settled entry carries.
+        //CAVEAT (SNAPSHOT-ALIASING, plan step 6 blocker): a committer that
+        //mutates the published maps IN PLACE (moveSpikeSubset) makes both
+        //paths compare new-against-new for the clusters it touched, so they
+        //compare equal and carry; such committers must drop the touched
+        //clusters explicitly after publishing (moveSpikeSubset does, through
+        //invalidateWaveformCache).
+        const bool sameTables = (prev->spikesByCluster == spikesByCluster) &&
+                                (prev->clusterInfoMap  == clusterInfoMap);
+        for(auto it = prevStore.status.constBegin(); it != prevStore.status.constEnd(); ++it){
+            const int cid = it.key();
+            if(it.value().isInProcess()) continue;
+            if(!sameTables){
+                SortableTable oldPositions;
+                if(!prev->spikePositions(cid, oldPositions)) continue;
+                if(!clusterInfoMap->contains(static_cast<dataType>(cid))) continue;
+                //The new epoch's positions, from the tables about to publish
+                //(const, non-detaching reads — see Data::nbOfSpikes).
+                ClusterInfo info = clusterInfoMap->value(static_cast<dataType>(cid));
+                SortableTable newPositions;
+                spikesByCluster->subset(newPositions,1,info.firstSpikePosition(),
+                                        info.firstSpikePosition() + info.nbSpikes() - 1);
+                const dataType n = oldPositions.nbOfColumns();
+                if(newPositions.nbOfColumns() != n) continue;
+                bool same = true;
+                for(dataType i = 1; i <= n; ++i)
+                    if(oldPositions(1,i) != newPositions(1,i)){ same = false; break; }
+                if(!same) continue;
+            }
+            store->status.insert(cid, it.value());
+            store->byCluster.insert(cid, prevStore.byCluster.value(cid));
+        }
+    }
+    snap->waveforms = store;
+
     QMutexLocker lk(&mutex);
     snap->epoch = ++snapshotEpochCounter;
     snap->spikesByCluster = spikesByCluster;
@@ -123,11 +185,9 @@ Data::~Data(){
     spikesByClusterUndoList.clear();
     spikesByClusterRedoList.clear();
 
-    qDeleteAll(waveformDict);
-    waveformDict.clear();
-    //Parked waveform waiters die with their tickets; their views are gone
-    //too, so the unposted completions are moot.
-    waveformWaiters.clear();
+    //The waveform stores die with their snapshots (the Waveforms objects are
+    //shared_ptr-held); parked waiters die with their tickets, and their views
+    //are gone too, so the unposted completions are moot.
     qDeleteAll(correlationDict);
     correlationDict.clear();
 
@@ -585,8 +645,8 @@ bool Data::clusterBestChannelAmplitude(int clusterId, double& amplitude,
     const int nChan = nbChannels;
     if (nSamp < 1 || nChan < 1) return false;
 
-    // Read the template cache, NOT waveformDict.  waveformDict only holds the
-    // clusters the waveform view is currently drawing, so reading it here made
+    // Read the template cache, NOT the waveform display cache, which only holds
+    // the clusters the waveform view is currently drawing, so reading it here made
     // every amplitude/SNR/peak-channel answer depend on what happened to be
     // selected -- the sorts silently ranked a handful of clusters and skipped the
     // rest.  The template cache covers every cluster.
@@ -632,8 +692,8 @@ bool Data::clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou,
     const int nChan = nbChannels;
     if (nSamp < 1 || nChan < 1) return false;
 
-    // Read the template cache, NOT waveformDict.  waveformDict only holds the
-    // clusters the waveform view is currently showing, which is why the overlap
+    // Read the template cache, NOT the waveform display cache, which only holds
+    // the clusters the waveform view is currently showing, which is why the overlap
     // used to demand that every cluster be selected before a pair could be
     // scored.  The template cache covers every cluster and does not care what is
     // selected.
@@ -1356,14 +1416,24 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
 
     // ── H. Waveform morphology (conditional — only if mean is cached) ──────
     {
-        const int     clusterIdInt    = clusterId;
-        const QString clusterIdString = QString::number(clusterId);
+        const int clusterIdInt = clusterId;
 
-        if (waveformStatusMap.contains(clusterIdInt) &&
-            waveformStatusMap.value(clusterIdInt).sampleMeanStatus() == READY &&
-            waveformDict.contains(clusterIdString))
+        //Read through the current epoch's store (epoch-snapshot step 3b): the
+        //status check under the store mutex, the object pinned by shared_ptr
+        //across the reads below.  (The pre-store version read the live maps
+        //with no lock at all.)
+        const std::shared_ptr<const ClusteringSnapshot> epochSnap = currentSnapshot();
+        std::shared_ptr<Waveforms> wfShared;
         {
-            const Waveforms* wf    = waveformDict.value(clusterIdString);
+            QMutexLocker storeLk(&epochSnap->waveforms->m);
+            if (epochSnap->waveforms->status.contains(clusterIdInt) &&
+                epochSnap->waveforms->status.value(clusterIdInt).sampleMeanStatus() == READY)
+                wfShared = epochSnap->waveforms->byCluster.value(clusterIdInt);
+        }
+
+        if (wfShared)
+        {
+            const Waveforms* wf    = wfShared.get();
             const int        nSamp = nbSamplesInWaveform;
             const int        nChan = nbChannels;
             const int        peak0 = peakPositionInWaveform - 1;  // 0-based
@@ -2380,27 +2450,14 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
             restartDimensionExtrema(fromToNewClusterIds.keys());
         }
 
-        //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
-        //if there is not a thread working with them,otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-        // and the thread will remove it.
+        //Remove the correlation data for the clusters which gave the spikes for the new cluster,
+        //if there is not a thread working with them, otherwise advise the thread of the change
+        //through correlationsInProcess and the thread will remove it.  (The waveform half of this
+        //walk is gone: these clusters' spike rows changed, so publishSnapshot's carry-forward
+        //already left their entries behind in the previous epoch — epoch-snapshot step 3b.)
         QMap<int,int>::Iterator fromToNewClusterIdsIterator;
         for(fromToNewClusterIdsIterator = fromToNewClusterIds.begin(); fromToNewClusterIdsIterator != fromToNewClusterIds.end(); ++fromToNewClusterIdsIterator){
             int clusterId = fromToNewClusterIdsIterator.key();
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(clusterId)){
-                if(!waveformStatusMap[clusterId].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
-                    waveformStatusMap.remove(clusterId);
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[clusterId];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(clusterId,waveformStatusCopy);
-                }
-            }
-            }
             if(!correlationsInProcess.contains(static_cast<dataType>(clusterId))) cleanCorrelation(static_cast<dataType>(clusterId),currentClusterList);
             else{
                 {
@@ -3299,23 +3356,11 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     QList<int>::iterator iterator;
     for(int cid : clustersToDelete) invalidateClusterCaches(cid, currentClusterList);
 
-    //remove the waveform and correlation data for the cluster 0 if clustersToDelete is not empty <=> cluster 0 will change
-    //and if there is not a thread working with it, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-    // and the thread will remove it.
+    //remove the correlation data for the cluster 0 if clustersToDelete is not empty <=> cluster 0 will change
+    //and if there is not a thread working with it, otherwise advise the thread of the change through
+    //correlationsInProcess and the thread will remove it.  (No waveform half anymore: cluster 0's
+    //spike rows changed, so carry-forward left its entry behind — epoch-snapshot step 3b.)
     if(!clustersToDelete.empty()){
-        {
-            QMutexLocker lk(&mutex);
-        if(!waveformStatusMap[0].isInProcess()){
-            delete waveformDict.take("0");
-            waveformStatusMap.remove(0);
-        }
-        else{
-            WaveformStatus waveformStatus = waveformStatusMap[0];
-            WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-            waveformStatusCopy.setClusterModified(true);
-            waveformStatusMap.insert(0,waveformStatusCopy);
-        }
-        }
         if(!correlationsInProcess.contains(0)) cleanCorrelation(0,currentClusterList);
         else{
             {
@@ -3442,23 +3487,11 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     QList<int>::iterator iterator;
     for(int cid : clustersToDelete) invalidateClusterCaches(cid, currentClusterList);
 
-    //remove the waveform and correlation data for the cluster 1 if clustersToDelete is not empty <=> cluster 1 will change
-    //and if there is not a thread working with it, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-    // and the thread will remove it.
+    //remove the correlation data for the cluster 1 if clustersToDelete is not empty <=> cluster 1 will change
+    //and if there is not a thread working with it, otherwise advise the thread of the change through
+    //correlationsInProcess and the thread will remove it.  (No waveform half anymore: cluster 1's
+    //spike rows changed, so carry-forward left its entry behind — epoch-snapshot step 3b.)
     if(!clustersToDelete.empty()){
-        {
-            QMutexLocker lk(&mutex);
-        if(!waveformStatusMap[1].isInProcess()){
-            delete waveformDict.take("1");
-            waveformStatusMap.remove(1);
-        }
-        else{
-            WaveformStatus waveformStatus = waveformStatusMap[1];
-            WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-            waveformStatusCopy.setClusterModified(true);
-            waveformStatusMap.insert(1,waveformStatusCopy);
-        }
-        }
         if(!correlationsInProcess.contains(1)) cleanCorrelation(1,currentClusterList);
         else{
             {
@@ -4282,9 +4315,9 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
     //of the correlation.
     QList<dataType> currentClusterList = clusterIds();
 
-    //If addedClusters or updatedClusters contain any cluster, remove the corresponding entry in waveformDict and correlationDict
-    //(the data will have to be uploaded again) if there is not a thread working with it,
-    //otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
+    //If addedClusters or updatedClusters contain any cluster, drop its cached waveforms and correlograms
+    //(the data will have to be uploaded again) — for the correlations, if there is not a thread working
+    //with it, otherwise advise the thread of the change through correlationsInProcess
     // and the thread will remove it.
     if(!addedClusters.isEmpty() ){
         QList<int>::iterator clustersToRemoveIterator;
@@ -4301,28 +4334,13 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         //Gets all the clustersId currently available
         QList<dataType> clusters = clusterIds();
 
-        //Loop on all the clusters and delete the linked information if possible (if a thread is not
-        //working with it), otherwise modify the status so the thread will delete the information.
+        //Loop on all the clusters and delete the linked correlation information if possible (if a
+        //thread is not working with it), otherwise modify the status so the thread will delete it.
+        //(The waveform half of this walk is gone: the publish below carries each cluster's entry
+        //only if its spike rows are identical across the undo, so the ids the renumbering moved
+        //recompute and the untouched ones keep their cache — epoch-snapshot step 3b.)
         QList<dataType>::iterator iterator;
         for(iterator = clusters.begin(); iterator != clusters.end(); ++iterator){
-
-
-
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(static_cast<int>(*iterator))){
-                if(!waveformStatusMap[static_cast<int>(*iterator)].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
-                    waveformStatusMap.remove(static_cast<int>(*iterator));
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[static_cast<int>(*iterator)];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(static_cast<int>(*iterator),waveformStatusCopy);
-                }
-            }
-            }
             if(!correlationsInProcess.contains(*iterator)) cleanCorrelation(*iterator,clusters);
             else{
                 {
@@ -4387,7 +4405,7 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
     //of the correlation.
     QList<dataType> currentClusterList = clusterIds();
 
-    //If addedClusters or updatedClusters contain any cluster, remove the corresponding entry in waveformDict and correlationDict
+    //If addedClusters or updatedClusters contain any cluster, drop its cached waveforms and correlograms
     //(the data will have to be uploaded again).
     if(!addedClusters.isEmpty() ){
         QList<int>::iterator clustersToRemoveIterator;
@@ -4411,25 +4429,11 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
         //Gets all the clustersId currently available
         QList<dataType> clusters = clusterIds();
 
-        //Loop on all the clusters and delete the linked information if possible (if a thread is not
-        //working with it), otherwise modify the status so the thread will delete the information.
+        //Loop on all the clusters and delete the linked correlation information if possible (if a
+        //thread is not working with it), otherwise modify the status so the thread will delete it.
+        //(No waveform half anymore — see the twin walk in undo().)
         QList<dataType>::iterator iterator;
         for(iterator = clusters.begin(); iterator != clusters.end(); ++iterator){
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(static_cast<int>(*iterator))){
-                if(!waveformStatusMap[static_cast<int>(*iterator)].isInProcess()){
-                    delete waveformDict.take(QString::fromLatin1("%1").arg(*iterator));
-                    waveformStatusMap.remove(static_cast<int>(*iterator));
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[static_cast<int>(*iterator)];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(static_cast<int>(*iterator),waveformStatusCopy);
-                }
-            }
-            }
             if(!correlationsInProcess.contains(*iterator)) cleanCorrelation(*iterator,clusters);
             else{
                 {
@@ -4584,25 +4588,14 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
         else{
             //Insert the new cluster id in the second row.
             for(long i = 0; i<nbSpikesOfCluster;++i) (*spikesByClusterTemp)(2,firstSpikePosition + i) = clusterNumber;
-            //If waveformDict or correlationDict contain that cluster, change the key for it.
-            {
-                QMutexLocker lk(&mutex);
-            if(waveformStatusMap.contains(static_cast<int>(clusterId))){
-                if(!waveformStatusMap[static_cast<int>(clusterId)].isInProcess()){
-                    Waveforms* waveforms = waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
-                    waveformDict.insert(QString::fromLatin1("%1").arg(clusterNumber),waveforms);
-                    WaveformStatus waveformStatus = waveformStatusMap[static_cast<int>(clusterId)];
-                    waveformStatusMap.insert(clusterNumber,waveformStatus);
-                    waveformStatusMap.remove(static_cast<int>(clusterId));
-                }
-                else{
-                    WaveformStatus waveformStatus = waveformStatusMap[static_cast<int>(clusterId)];
-                    WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                    waveformStatusCopy.setClusterModified(true);
-                    waveformStatusMap.insert(static_cast<int>(clusterId),waveformStatusCopy);
-                }
-            }
-            }
+            //The waveform cache is no longer re-keyed here (epoch-snapshot
+            //step 3b): the store is keyed per epoch, and prepareUndo's publish
+            //carries an id's entry only if that id holds the same spikes on
+            //both sides — an id the renumbering moved fails the test and its
+            //waveforms recompute in the background (accepted cost; the ids the
+            //renumbering left in place keep their cache).  The correlations,
+            //still a live Data-owned cache, are re-keyed below through
+            //renumberCorrelation once the complete mapping is known.
         }
         //Construct the new clusterInfoMap
         clusterInfoMapTemp->insert(clusterNumber,ClusterInfo(firstSpikePosition,nbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
@@ -4634,7 +4627,8 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
 //   - Spike-table layout (column 1 = original .fet row index, column 2 =
 //     cluster ID) is preserved exactly; only column 2 entries belonging to
 //     renamed clusters are rewritten.
-//   - The mutex guard around dict / cache moves matches Data::renumber.
+//   - The correlation cache is re-keyed via renumberCorrelation, matching
+//     Data::renumber; the waveform cache needs nothing (see pass 2).
 //   - Caller (KlustersDoc) is responsible for matching prepareClusterColorUndo
 //     and view-side renumberClusters() calls.
 // ---------------------------------------------------------------------------
@@ -4720,7 +4714,7 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
     // ── Pass 2: write spikes into the temp table in ascending-new-id
     // order, packing them contiguously starting at position 1.  Build
     // clusterInfoMapTemp with the NEW firstSpikePosition for each
-    // cluster.  Move waveform-cache entries for renamed clusters.
+    // cluster.
     dataType writePos = 1;
     for (auto it = bucketsByNewId.constBegin();
          it != bucketsByNewId.constEnd(); ++it)
@@ -4749,27 +4743,12 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
             for (long i = 0; i < nbSp; ++i)
                 (*spikesByClusterTemp)(2, writePos + i) = newId;
 
-            // Move waveform cache entry from old key to new key.  Mirrors
-            // the corresponding block in Data::renumber.
-            {
-                QMutexLocker lk(&mutex);
-                if (waveformStatusMap.contains(oldId)) {
-                    if (!waveformStatusMap[oldId].isInProcess()) {
-                        Waveforms* waveforms = waveformDict.take(QString::fromLatin1("%1").arg(oldId));
-                        waveformDict.insert(QString::fromLatin1("%1").arg(newId), waveforms);
-                        WaveformStatus waveformStatus = waveformStatusMap[oldId];
-                        waveformStatusMap.insert(newId, waveformStatus);
-                        waveformStatusMap.remove(oldId);
-                    } else {
-                        // A WaveformThread is in flight for oldId; flag
-                        // it as modified so it'll re-key on completion.
-                        WaveformStatus waveformStatus     = waveformStatusMap[oldId];
-                        WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-                        waveformStatusCopy.setClusterModified(true);
-                        waveformStatusMap.insert(oldId, waveformStatusCopy);
-                    }
-                }
-            }
+            // No waveform-cache re-keying anymore — same story as in
+            // Data::renumber: prepareUndo's publish carries an id's entry
+            // only if that id holds the same spikes on both sides, so a
+            // renamed id recomputes and the identity ids keep their cache
+            // (epoch-snapshot step 3b; the repacked firstSpikePosition does
+            // not matter — the carry-forward compares spike-row CONTENT).
         }
 
         // Insert into clusterInfoMapTemp under the NEW id, with the
@@ -4847,29 +4826,32 @@ bool Data::spikePositions(int clusterId,SortableTable& subsetTable){
     return true;
 }
 
-bool Data::spikePositionsNotModified(int clusterId,SortableTable& subsetTable){
-    // Like spikePositions() but atomically also checks isClusterModified().
-    // Returns false if the cluster is gone OR has been flagged as modified.
-    QMutexLocker lk(&mutex);
-
-    if(!clusterInfoMap->contains(static_cast<dataType>(clusterId))){
-        return false;
+void Data::dropWaveformEntry(int clusterId){
+    //The one in-epoch removal (epoch-snapshot step 3b): for writers that
+    //change the waveform BYTES behind an unchanged membership (the realign
+    //nudge), which publishSnapshot's carry-forward equality cannot see.
+    //Removes the cluster's entry from the CURRENT store and fails the
+    //waiters parked on it: their computation's owner may be filling an
+    //entry this drop just orphaned, and its contains-guarded terminals no
+    //longer complete them (a waiter arriving after the drop is turned away
+    //at subscribeWaveform's contains check instead).  The owner's own
+    //Waveforms object survives through its shared_ptr; only the store's
+    //reference goes.
+    std::shared_ptr<const ClusteringSnapshot> snap = currentSnapshot();
+    QList<WaveformWaiter> orphans;
+    {
+        WaveformCacheStore& store = *snap->waveforms;
+        QMutexLocker lk(&store.m);
+        store.status.remove(clusterId);
+        store.byCluster.remove(clusterId);
+        orphans  = store.waiters.take(qMakePair(clusterId, static_cast<int>(SAMPLE)));
+        orphans += store.waiters.take(qMakePair(clusterId, static_cast<int>(TIME_FRAME)));
     }
-    if(waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified()){
-        return false;
+    for(const WaveformWaiter& w : orphans){
+        if(w.failMarksTicket) w.ticket->failed.store(true, std::memory_order_release);
+        w.ticket->completeOne();
     }
-
-    // Const, non-detaching read (see Data::nbOfSpikes).
-    ClusterInfo clusterInfo  = clusterInfoMap->value(clusterId);
-    dataType firstSpikePosition = clusterInfo.firstSpikePosition();
-    dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
-
-    spikesByCluster->subset(subsetTable,1,firstSpikePosition,firstSpikePosition + nbSpikesOfCluster - 1);
-
-    return true;
 }
-
-
 
 // ───────────────────────────────────────────────────────────────────────────
 // Subscribe-don't-wait plumbing (epoch-snapshot step 3a).  The four public
@@ -4881,74 +4863,76 @@ bool Data::spikePositionsNotModified(int clusterId,SortableTable& subsetTable){
 // flushes nothing, mirroring what the old pollers saw.
 // ───────────────────────────────────────────────────────────────────────────
 
-Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay){
-    const Status st = getSampleWaveformPointsInner(clusterId,nbSpkToDisplay);
+Data::Status Data::getSampleWaveformPoints(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,int clusterId,dataType nbSpkToDisplay){
+    const Status st = getSampleWaveformPointsInner(snap,clusterId,nbSpkToDisplay);
     if(st == READY)
-        flushWaveformWaiters(clusterId, SAMPLE, /*meanEvent*/false, /*ok*/true);
+        flushWaveformWaiters(snap, clusterId, SAMPLE, /*meanEvent*/false, /*ok*/true);
     else if(st == NOT_AVAILABLE){
         bool entryGone;
         {
-            QMutexLocker lk(&mutex);
-            entryGone = !waveformStatusMap.contains(clusterId);
+            QMutexLocker lk(&snap->waveforms->m);
+            entryGone = !snap->waveforms->status.contains(clusterId);
         }
-        if(entryGone) flushWaveformWaiters(clusterId, SAMPLE, false, false);
+        if(entryGone) flushWaveformWaiters(snap, clusterId, SAMPLE, false, false);
     }
     return st;
 }
 
-Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataType end){
-    const Status st = getTimeFrameWaveformPointsInner(clusterId,start,end);
+Data::Status Data::getTimeFrameWaveformPoints(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,int clusterId,dataType start,dataType end){
+    const Status st = getTimeFrameWaveformPointsInner(snap,clusterId,start,end);
     if(st == READY)
-        flushWaveformWaiters(clusterId, TIME_FRAME, false, true);
+        flushWaveformWaiters(snap, clusterId, TIME_FRAME, false, true);
     else if(st == NOT_AVAILABLE){
         bool entryGone;
         {
-            QMutexLocker lk(&mutex);
-            entryGone = !waveformStatusMap.contains(clusterId);
+            QMutexLocker lk(&snap->waveforms->m);
+            entryGone = !snap->waveforms->status.contains(clusterId);
         }
-        if(entryGone) flushWaveformWaiters(clusterId, TIME_FRAME, false, false);
+        if(entryGone) flushWaveformWaiters(snap, clusterId, TIME_FRAME, false, false);
     }
     return st;
 }
 
-Data::Status Data::calculateSampleMean(int clusterId,dataType nbSpkToDisplay){
-    const Status st = calculateSampleMeanInner(clusterId,nbSpkToDisplay);
+Data::Status Data::calculateSampleMean(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,int clusterId,dataType nbSpkToDisplay){
+    const Status st = calculateSampleMeanInner(snap,clusterId,nbSpkToDisplay);
     if(st == READY)
-        flushWaveformWaiters(clusterId, SAMPLE, /*meanEvent*/true, /*ok*/true);
+        flushWaveformWaiters(snap, clusterId, SAMPLE, /*meanEvent*/true, /*ok*/true);
     else if(st == NOT_AVAILABLE){
         bool entryGone;
         {
-            QMutexLocker lk(&mutex);
-            entryGone = !waveformStatusMap.contains(clusterId);
+            QMutexLocker lk(&snap->waveforms->m);
+            entryGone = !snap->waveforms->status.contains(clusterId);
         }
-        if(entryGone) flushWaveformWaiters(clusterId, SAMPLE, true, false);
+        if(entryGone) flushWaveformWaiters(snap, clusterId, SAMPLE, true, false);
     }
     return st;
 }
 
-Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType end){
-    const Status st = calculateTimeFrameMeanInner(clusterId,start,end);
+Data::Status Data::calculateTimeFrameMean(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,int clusterId,dataType start,dataType end){
+    const Status st = calculateTimeFrameMeanInner(snap,clusterId,start,end);
     if(st == READY)
-        flushWaveformWaiters(clusterId, TIME_FRAME, true, true);
+        flushWaveformWaiters(snap, clusterId, TIME_FRAME, true, true);
     else if(st == NOT_AVAILABLE){
         bool entryGone;
         {
-            QMutexLocker lk(&mutex);
-            entryGone = !waveformStatusMap.contains(clusterId);
+            QMutexLocker lk(&snap->waveforms->m);
+            entryGone = !snap->waveforms->status.contains(clusterId);
         }
-        if(entryGone) flushWaveformWaiters(clusterId, TIME_FRAME, true, false);
+        if(entryGone) flushWaveformWaiters(snap, clusterId, TIME_FRAME, true, false);
     }
     return st;
 }
 
-Data::WaveformSubscribe Data::subscribeWaveform(int clusterId, WaveformMode mode,
+Data::WaveformSubscribe Data::subscribeWaveform(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
+                                                int clusterId, WaveformMode mode,
                                                 bool wantsMean, dataType p1, dataType p2,
                                                 const std::shared_ptr<WaveformRequestTicket>& ticket,
                                                 bool failMarksTicket){
-    QMutexLocker lk(&mutex);
-    if(!waveformStatusMap.contains(clusterId))
+    WaveformCacheStore& store = *snap->waveforms;
+    QMutexLocker lk(&store.m);
+    if(!store.status.contains(clusterId))
         return WaveformSubscribe::DoneFail;
-    const WaveformStatus st = waveformStatusMap.value(clusterId);   // value(): const, non-detaching
+    const WaveformStatus st = store.status.value(clusterId);   // value(): const, non-detaching
     const Status spikes = (mode == SAMPLE) ? st.sampleStatus()     : st.timeFrameStatus();
     const Status mean   = (mode == SAMPLE) ? st.sampleMeanStatus() : st.timeFrameMeanStatus();
 
@@ -4980,28 +4964,30 @@ Data::WaveformSubscribe Data::subscribeWaveform(int clusterId, WaveformMode mode
     //The share is added under the same mutex that parks the waiter, so a
     //concurrent flush can only complete it after both are in place.
     ticket->remaining.fetch_add(1, std::memory_order_acq_rel);
-    waveformWaiters[qMakePair(clusterId, static_cast<int>(mode))].append(waiter);
+    store.waiters[qMakePair(clusterId, static_cast<int>(mode))].append(waiter);
     return WaveformSubscribe::Parked;
 }
 
-void Data::flushWaveformWaiters(int clusterId, int mode, bool meanEvent, bool ok){
+void Data::flushWaveformWaiters(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
+                                int clusterId, int mode, bool meanEvent, bool ok){
+    WaveformCacheStore& store = *snap->waveforms;
     const QPair<int,int> key(clusterId, mode);
     QList<WaveformWaiter> taken;
     {
-        QMutexLocker lk(&mutex);
-        if(!waveformWaiters.contains(key)) return;
+        QMutexLocker lk(&store.m);
+        if(!store.waiters.contains(key)) return;
         if(ok && meanEvent){
             // Mean terminal: only the mean waiters complete.
-            QList<WaveformWaiter>& parked = waveformWaiters[key];
+            QList<WaveformWaiter>& parked = store.waiters[key];
             for(int i = parked.count() - 1; i >= 0; --i)
                 if(parked.at(i).wantsMean)
                     taken.append(parked.takeAt(i));
-            if(parked.isEmpty()) waveformWaiters.remove(key);
+            if(parked.isEmpty()) store.waiters.remove(key);
         }
         else{
             // Spike terminal (either outcome) or any failure: everything
             // parked here is resolved now, one way or the other.
-            taken = waveformWaiters.take(key);
+            taken = store.waiters.take(key);
         }
     }
     if(taken.isEmpty()) return;
@@ -5035,12 +5021,12 @@ void Data::flushWaveformWaiters(int clusterId, int mode, bool meanEvent, bool ok
     }
     for(auto it = meanGroups.begin(); it != meanGroups.end(); ++it){
         const Status st = (mode == static_cast<int>(SAMPLE))
-            ? calculateSampleMean(clusterId, it.key().first)
-            : calculateTimeFrameMean(clusterId, it.key().first, it.key().second);
+            ? calculateSampleMean(snap, clusterId, it.key().first)
+            : calculateTimeFrameMean(snap, clusterId, it.key().first, it.key().second);
         if(st == IN_PROCESS){
             //Another job owns the mean now; its terminal completes them.
-            QMutexLocker lk(&mutex);
-            waveformWaiters[key] += it.value();
+            QMutexLocker lk(&store.m);
+            store.waiters[key] += it.value();
         }
         else{
             const bool groupOk = (st == READY);
@@ -5049,90 +5035,86 @@ void Data::flushWaveformWaiters(int clusterId, int mode, bool meanEvent, bool ok
     }
 }
 
-Data::Status Data::getSampleWaveformPointsInner(int clusterId,dataType nbSpkToDisplay){
-    //If the cluster has been suppress after the thread calling this function has been launched
-    //return this information that the data are not available.
-    bool clusterExists = false;
-    {
-        QMutexLocker lk(&mutex);
-        clusterExists = clusterInfoMap->contains(static_cast<dataType>(clusterId));
-    }
-    if(!clusterExists) return NOT_AVAILABLE;
+Data::Status Data::getSampleWaveformPointsInner(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,int clusterId,dataType nbSpkToDisplay){
+    //Membership is immutable within the epoch: a cluster either exists at
+    //this snapshot or it never will (epoch-snapshot step 3b).  The old
+    //cluster-suppressed / cluster-modified re-checks scattered through this
+    //body are gone with the live cache they guarded; the only way an entry
+    //vanishes mid-epoch is dropWaveformEntry() (a byte-writer), handled by
+    //the contains guards on the status writes below.
+    if(!snap->hasCluster(static_cast<dataType>(clusterId))) return NOT_AVAILABLE;
+
+    WaveformCacheStore& store = *snap->waveforms;
 
     //Take a sample of the spikes (displayNbSpikes) evenly distributed on all the recording.
-
-    QString clusterIdString = QString::fromLatin1("%1").arg(clusterId);
     SortableTable positionOfSpikes = SortableTable();
-    Waveforms* waveforms;
+    std::shared_ptr<Waveforms> waveforms;
     dataType nbSpikesOfCluster = 0;
 
     //Does this cluster has already been processed?
-    // Hold the mutex across the status check AND waveformDict lookup together.
-    // Without this, the main thread can delete waveformDict[key] between our status
-    // check and the pointer dereference, causing a use-after-free crash.
+    //Hold the store mutex across the status check AND the object lookup, and
+    //keep the object alive through the shared_ptr: a concurrent
+    //dropWaveformEntry() can remove the store's reference at any time.
     bool alreadyProcessed = false;
     Status statusLocked = NOT_AVAILABLE;
     {
-        QMutexLocker lk(&mutex);
-        alreadyProcessed = waveformStatusMap.contains(clusterId);
+        QMutexLocker lk(&store.m);
+        alreadyProcessed = store.status.contains(clusterId);
         if (alreadyProcessed) {
-            statusLocked = waveformStatusMap[clusterId].sampleStatus();
+            statusLocked = store.status[clusterId].sampleStatus();
             if (statusLocked != IN_PROCESS)
-                waveforms = waveformDict[clusterIdString];
+                waveforms = store.byCluster.value(clusterId);
         } else {
             // Claim the slot atomically so concurrent threads see IN_PROCESS
             // immediately, preventing the check-then-act race that allows
             // multiple threads to each allocate a new WaveformData object.
-            waveformStatusMap.insert(clusterId, WaveformStatus(IN_PROCESS));
+            store.status.insert(clusterId, WaveformStatus(IN_PROCESS));
         }
     }
 
     if(alreadyProcessed){
         Status status = statusLocked;
         if(status == IN_PROCESS)return IN_PROCESS;
+        //The entry was claimed (by the time-frame path) but its Waveforms
+        //object is not inserted yet — transient; the next request finds it.
+        //(The pre-store code dereferenced the null pointer here.)
+        if(!waveforms) return NOT_AVAILABLE;
         //status == READY with the same number of spikes to present
         if((waveforms->nbOfSpikesAsked() == nbSpkToDisplay) && (status == READY))return READY;
         //status == READY with a different number of spikes to present, recollect the data
         {
-            QMutexLocker lk(&mutex);
-        waveformStatusMap[clusterId].setSampleStatus(IN_PROCESS);
+            QMutexLocker lk(&store.m);
+            if(!store.status.contains(clusterId)) return NOT_AVAILABLE;   // dropped meanwhile
+            store.status[clusterId].setSampleStatus(IN_PROCESS);
         }
         //Check if there is not a mean calculation in process; if so, wait until it finishes.
-        //Use a mutex-protected check to avoid racing with main-thread removal of the entry.
         {
             // Spin until the concurrent mean calculation finishes.
-            // Cap at 5000 yields so a stuck mean thread can't block close() forever;
+            // Cap at 5000 yields so a stuck mean job can't block close() forever;
             // returning NOT_AVAILABLE lets the outer WaveformThread loop recheck
-            // haveToStopProcessing and exit cleanly.
+            // its cancellation and exit cleanly.
             bool stillInProcess = true;
             for(int _spinCount = 0; stillInProcess && _spinCount < 5000; ++_spinCount){
                 {
-                    QMutexLocker lk(&mutex);
-                stillInProcess = waveformStatusMap.contains(clusterId) &&
-                                 (waveformStatusMap[clusterId].sampleMeanStatus() == IN_PROCESS);
+                    QMutexLocker lk(&store.m);
+                    stillInProcess = store.status.contains(clusterId) &&
+                                     (store.status[clusterId].sampleMeanStatus() == IN_PROCESS);
                 }
                 if(stillInProcess) QThread::yieldCurrentThread();
             }
             if(stillInProcess) return NOT_AVAILABLE;  // timed out — let caller recheck stop flag
         }
-        //check if the cluster has not been removed while the mean function was running
-        //if so the entry in waveformStatusMap for that cluster will have been removed  in the mean function
-        if(!waveformStatusMap.contains(clusterId)) return NOT_AVAILABLE;
+        //check if the entry has not been dropped while the mean function was running
         {
-            QMutexLocker lk(&mutex);
-        waveformStatusMap[clusterId].setSampleMeanStatus(NOT_AVAILABLE);
+            QMutexLocker lk(&store.m);
+            if(!store.status.contains(clusterId)) return NOT_AVAILABLE;
+            store.status[clusterId].setSampleMeanStatus(NOT_AVAILABLE);
         }
 
-        //Check again that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
-        if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
-            {
-                QMutexLocker lk(&mutex);
-            waveformStatusMap[clusterId].setClusterModified(false);
-            delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
-            waveformStatusMap.remove(clusterId);
-            }
-            return NOT_AVAILABLE;
-        }
+        //Get the spikes positions in a one row SortableTable (this epoch's
+        //tables; cannot fail — hasCluster was checked above and the epoch's
+        //membership is immutable.  Kept as an invariant guard.)
+        if(!snap->spikePositions(clusterId,positionOfSpikes)) return NOT_AVAILABLE;
         waveforms->setNbOfSpikesAsked(nbSpkToDisplay);
         //Get the spikes information
         nbSpikesOfCluster = positionOfSpikes.nbOfColumns();
@@ -5140,17 +5122,14 @@ Data::Status Data::getSampleWaveformPointsInner(int clusterId,dataType nbSpkToDi
     }
     else{
         // IN_PROCESS was already inserted atomically in the initial lock above.
-        if(isTwoBytesRecording) waveforms = new WaveformData<short>(*this);
-        else waveforms = new WaveformData<long>(*this);
+        if(isTwoBytesRecording) waveforms = std::make_shared<WaveformData<short>>(*this);
+        else waveforms = std::make_shared<WaveformData<long>>(*this);
 
-        //Check that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
-        if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
-            {
-                QMutexLocker lk(&mutex);
-            waveformStatusMap[clusterId].setClusterModified(false);
-            delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
-            waveformStatusMap.remove(clusterId);
-            }
+        //Get the spikes positions (invariant guard, as above; unclaim on the
+        //impossible failure so the entry cannot wedge at IN_PROCESS).
+        if(!snap->spikePositions(clusterId,positionOfSpikes)){
+            QMutexLocker lk(&store.m);
+            store.status.remove(clusterId);
             return NOT_AVAILABLE;
         }
 
@@ -5160,66 +5139,66 @@ Data::Status Data::getSampleWaveformPointsInner(int clusterId,dataType nbSpkToDi
 
         waveforms->setSize(nbSpikesOfCluster,SAMPLE);
         {
-            QMutexLocker lk(&mutex);
-        waveformDict.insert(clusterIdString,waveforms);
+            QMutexLocker lk(&store.m);
+            //Skip the insert if the entry was dropped since the claim: the
+            //store must not hold an object its status map does not know.
+            if(store.status.contains(clusterId))
+                store.byCluster.insert(clusterId,waveforms);
         }
     }
 
-    //read and store the data through the shared positioned-read descriptor
-    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*spkReaderInstance,nbSpkToDisplay);
+    //read and store the data through this epoch's pinned reader
+    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*snap->spk,nbSpkToDisplay);
 
-    //If the cluster has been suppress or modified after the thread calling this function has been launched
-    //return this information that the data are not available and remove the collected data.
-    QMutexLocker lk(&mutex);
-    bool clusterGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
-    bool clusterMod  = !clusterGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
-    if(clusterGone || clusterMod){
-        if(waveformStatusMap.contains(clusterId)){
-            waveformStatusMap[clusterId].setClusterModified(false);
-            delete waveformDict.take(clusterIdString);  //not already done by the function which modified the data as the thread is running.
-            waveformStatusMap.remove(clusterId);
-        }
-        return NOT_AVAILABLE;
+    //Terminal.  The entry can have been removed mid-read only by
+    //dropWaveformEntry() (a byte-writer): the guard keeps this stale result
+    //out of the store — the completion still posts, and the view's next look
+    //at the store simply finds nothing there.
+    {
+        QMutexLocker lk(&store.m);
+        if(store.status.contains(clusterId))
+            store.status[clusterId].setSampleStatus(READY);
     }
-    else{
-        //Store the information in waveformStatusMap
-        if(waveformStatusMap.contains(clusterId))
-            waveformStatusMap[clusterId].setSampleStatus(READY);
-        return READY;
-    }
+    return READY;
 }
 
-Data::Status Data::getTimeFrameWaveformPointsInner(int clusterId,dataType start,dataType end){
-    //If the cluster has been suppress after the thread calling this function has been launched
-    //return this information that the data are not available.
-    bool clusterExists = false;
-    {
-        QMutexLocker lk(&mutex);
-        clusterExists = clusterInfoMap->contains(static_cast<dataType>(clusterId));
-    }
-    if(!clusterExists) return NOT_AVAILABLE;
+Data::Status Data::getTimeFrameWaveformPointsInner(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,int clusterId,dataType start,dataType end){
+    //Epoch membership check — see getSampleWaveformPointsInner.
+    if(!snap->hasCluster(static_cast<dataType>(clusterId))) return NOT_AVAILABLE;
+
+    WaveformCacheStore& store = *snap->waveforms;
 
     //Take all the spikes in a given time frame
-    QString clusterIdString = QString::fromLatin1("%1").arg(clusterId);
     SortableTable positionOfSpikes = SortableTable();
     dataType nbSpikesOfCluster = 0;
     dataType startInRecordingUnits = start * static_cast<dataType>(1000000.0 / samplingInterval);
     dataType endInRecordingUnits =  end * static_cast<dataType>(1000000.0 / samplingInterval);
     dataType currentSpikeIndex  = 0;
-    Waveforms* waveforms;
+    std::shared_ptr<Waveforms> waveforms;
 
-    //Does this cluster has already been processed?
-    if(waveformStatusMap.contains(clusterId)){
-        // Hold the mutex across status check AND waveformDict lookup to prevent
-        // main thread deleting the Waveforms* between our check and our dereference.
-        Status status = NOT_AVAILABLE;
-        {
-            QMutexLocker lk(&mutex);
-            status = waveformStatusMap[clusterId].timeFrameStatus();
-            if(status != IN_PROCESS)
-                waveforms = waveformDict[clusterIdString];
+    //Does this cluster has already been processed?  One locked section for
+    //the check, the object lookup and the claim (the pre-store code checked,
+    //released, and re-locked to claim, so two jobs could both allocate).
+    bool alreadyProcessed = false;
+    Status statusLocked = NOT_AVAILABLE;
+    {
+        QMutexLocker lk(&store.m);
+        alreadyProcessed = store.status.contains(clusterId);
+        if(alreadyProcessed){
+            statusLocked = store.status[clusterId].timeFrameStatus();
+            if(statusLocked != IN_PROCESS)
+                waveforms = store.byCluster.value(clusterId);
         }
+        else{
+            store.status.insert(clusterId,WaveformStatus(NOT_AVAILABLE,IN_PROCESS));
+        }
+    }
+
+    if(alreadyProcessed){
+        Status status = statusLocked;
         if(status == IN_PROCESS)return IN_PROCESS;
+        //Claimed by the sample path, object not inserted yet (transient).
+        if(!waveforms) return NOT_AVAILABLE;
         dataType timeEndIndex = waveforms->indexOfTimeEnd();
         dataType timeStart = waveforms->startTime();
         dataType timeEnd = waveforms->endTime();
@@ -5227,41 +5206,32 @@ Data::Status Data::getTimeFrameWaveformPointsInner(int clusterId,dataType start,
         //status == READY with the time frame
         if(timeStart == start && timeEnd == end && status == READY) return READY;
         {
-            QMutexLocker lk(&mutex);
-        waveformStatusMap[clusterId].setTimeFrameStatus(IN_PROCESS);
+            QMutexLocker lk(&store.m);
+            if(!store.status.contains(clusterId)) return NOT_AVAILABLE;   // dropped meanwhile
+            store.status[clusterId].setTimeFrameStatus(IN_PROCESS);
         }
-        //Check if there is not a mean calculation in process; wait under mutex to avoid racing with main-thread removal.
+        //Check if there is not a mean calculation in process (capped spin, see the sample variant).
         {
-            // Spin until the concurrent mean calculation finishes (capped, see sample variant).
             bool stillInProcess = true;
             for(int _spinCount = 0; stillInProcess && _spinCount < 5000; ++_spinCount){
                 {
-                    QMutexLocker lk(&mutex);
-                stillInProcess = waveformStatusMap.contains(clusterId) &&
-                                 (waveformStatusMap[clusterId].timeFrameMeanStatus() == IN_PROCESS);
+                    QMutexLocker lk(&store.m);
+                    stillInProcess = store.status.contains(clusterId) &&
+                                     (store.status[clusterId].timeFrameMeanStatus() == IN_PROCESS);
                 }
                 if(stillInProcess) QThread::yieldCurrentThread();
             }
             if(stillInProcess) return NOT_AVAILABLE;  // timed out — let caller recheck stop flag
         }
-        //check if the cluster has not been removed while the mean function was running
-        //if so the entry in waveformStatusMap for that cluster will have been removed  in the mean function
-        if(!waveformStatusMap.contains(clusterId)) return NOT_AVAILABLE;
+        //check if the entry has not been dropped while the mean function was running
         {
-            QMutexLocker lk(&mutex);
-        waveformStatusMap[clusterId].setTimeFrameMeanStatus(NOT_AVAILABLE);
+            QMutexLocker lk(&store.m);
+            if(!store.status.contains(clusterId)) return NOT_AVAILABLE;
+            store.status[clusterId].setTimeFrameMeanStatus(NOT_AVAILABLE);
         }
 
-        //Check again that the cluster has not been removed or modifed and get the spikes positions in a one row SortableTable.
-        if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
-            {
-                QMutexLocker lk(&mutex);
-            waveformStatusMap[clusterId].setClusterModified(false);
-            delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
-            waveformStatusMap.remove(clusterId);
-            }
-            return NOT_AVAILABLE;
-        }
+        //Get the spikes positions (invariant guard — see the sample variant).
+        if(!snap->spikePositions(clusterId,positionOfSpikes)) return NOT_AVAILABLE;
 
         //Get the spikes information
         nbSpikesOfCluster = positionOfSpikes.nbOfColumns();
@@ -5272,21 +5242,14 @@ Data::Status Data::getTimeFrameWaveformPointsInner(int clusterId,dataType start,
         if(start == timeEnd) currentSpikeIndex =  timeEndIndex;
     }
     else{
-        {
-            QMutexLocker lk(&mutex);
-        waveformStatusMap.insert(clusterId,WaveformStatus(NOT_AVAILABLE,IN_PROCESS));
-        }
-        if(isTwoBytesRecording) waveforms = new WaveformData<short>(*this);
-        else waveforms = new WaveformData<long>(*this);
+        //The claim was inserted atomically in the initial lock above.
+        if(isTwoBytesRecording) waveforms = std::make_shared<WaveformData<short>>(*this);
+        else waveforms = std::make_shared<WaveformData<long>>(*this);
 
-        //Check that the cluster has not been removed or modified and get the spikes positions in a one row SortableTable.
-        if(!spikePositionsNotModified(clusterId,positionOfSpikes)){
-            {
-                QMutexLocker lk(&mutex);
-            waveformStatusMap[clusterId].setClusterModified(false);
-            delete waveformDict.take(clusterIdString); //not already done by the function which modified the data as the thread is running.
-            waveformStatusMap.remove(clusterId);
-            }
+        //Invariant guard with unclaim, as in the sample variant.
+        if(!snap->spikePositions(clusterId,positionOfSpikes)){
+            QMutexLocker lk(&store.m);
+            store.status.remove(clusterId);
             return NOT_AVAILABLE;
         }
         //Get the spikes information
@@ -5294,8 +5257,9 @@ Data::Status Data::getTimeFrameWaveformPointsInner(int clusterId,dataType start,
 
         waveforms->setSize(nbSpikesOfCluster,TIME_FRAME);
         {
-            QMutexLocker lk(&mutex);
-        waveformDict.insert(clusterIdString,waveforms);
+            QMutexLocker lk(&store.m);
+            if(store.status.contains(clusterId))
+                store.byCluster.insert(clusterId,waveforms);
         }
     }
 
@@ -5311,34 +5275,21 @@ Data::Status Data::getTimeFrameWaveformPointsInner(int clusterId,dataType start,
         }
     }
 
-    //read and store the data through the shared positioned-read descriptor
-    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*spkReaderInstance,currentSpikeIndex,endInRecordingUnits);
+    //read and store the data through this epoch's pinned reader
+    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*snap->spk,currentSpikeIndex,endInRecordingUnits);
 
-    // Store timing info before taking the mutex (pure local work on the Waveforms object).
+    // Store timing info before taking the store mutex (pure local work on the Waveforms object).
     waveforms->setStartTime(start);
     waveforms->setEndTime(end);
     waveforms->setIndexOfTimeEnd(currentSpikeIndex);
 
-    //If the cluster has been suppress or modified after the thread calling this function has been launched
-    //return this information that the data are not available and remove the collected data.
+    //Terminal (see the sample variant for the drop guard).
     {
-        QMutexLocker lk(&mutex);
-    bool tfClusterGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
-    bool tfClusterMod  = !tfClusterGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
-    if(tfClusterGone || tfClusterMod){
-        if(waveformStatusMap.contains(clusterId)){
-            waveformStatusMap[clusterId].setClusterModified(false);
-            delete waveformDict.take(clusterIdString); //if not already done by the function which modified the data
-            waveformStatusMap.remove(clusterId);
-        }
-        return NOT_AVAILABLE;
+        QMutexLocker lk(&store.m);
+        if(store.status.contains(clusterId))
+            store.status[clusterId].setTimeFrameStatus(READY);
     }
-    else{
-        //Store the information in waveformStatusMap
-        waveformStatusMap[clusterId].setTimeFrameStatus(READY);
-        return READY;
-    }
-    }
+    return READY;
 }
 
 template <class T>
@@ -5503,118 +5454,88 @@ void Data::WaveformData<T>::calculateMean(WaveformMode waveformMode){
     }
 }
 
-Data::Status Data::calculateSampleMeanInner(int clusterId,dataType nbSpkToDisplay){
+Data::Status Data::calculateSampleMeanInner(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,int clusterId,dataType nbSpkToDisplay){
     //Calculate the mean and the standard deviation for
     //a sample of the spikes (displayNbSpikes) evenly distributed on all the recording.
-    QString clusterIdString = QString::fromLatin1("%1").arg(clusterId);
-    Waveforms* waveforms;
+    WaveformCacheStore& store = *snap->waveforms;
+    std::shared_ptr<Waveforms> waveforms;
 
     //Does this cluster already processed?
-    // Use mutex around both contains check and waveformDict lookup.
+    //Store mutex around both the status checks and the object lookup; the
+    //shared_ptr keeps the object alive across a concurrent drop.
     {
-        QMutexLocker lk(&mutex);
-        bool sampleExists = waveformStatusMap.contains(clusterId);
-        if(sampleExists){
-            Status status = waveformStatusMap[clusterId].sampleMeanStatus();
-            waveforms = waveformDict[clusterIdString];
-            if(status == IN_PROCESS)return IN_PROCESS;
-            else if(waveforms->nbOfSpikesAsked() != nbSpkToDisplay) return NOT_AVAILABLE;
-            //status == READY with the same number of spikes to present
-            else if((waveforms->nbOfSpikesAsked() == nbSpkToDisplay) && (status == READY))return READY;
-            else{
-                if(waveformStatusMap[clusterId].sampleStatus() != READY) return NOT_AVAILABLE;
-                if(waveforms->nbOfSpikes(SAMPLE) == 0){
-                    waveformStatusMap[clusterId].setSampleMeanStatus(NOT_AVAILABLE);
-                    return READY;
-                }
-                waveformStatusMap[clusterId].setSampleMeanStatus(IN_PROCESS);
-            }
+        QMutexLocker lk(&store.m);
+        if(!store.status.contains(clusterId)) return NOT_AVAILABLE;
+        Status status = store.status[clusterId].sampleMeanStatus();
+        waveforms = store.byCluster.value(clusterId);
+        if(status == IN_PROCESS)return IN_PROCESS;
+        //The spike fetch has claimed the entry but not inserted its object
+        //yet (transient; the pre-store code dereferenced the null pointer).
+        if(!waveforms) return NOT_AVAILABLE;
+        if(waveforms->nbOfSpikesAsked() != nbSpkToDisplay) return NOT_AVAILABLE;
+        //status == READY with the same number of spikes to present
+        if((waveforms->nbOfSpikesAsked() == nbSpkToDisplay) && (status == READY))return READY;
+        if(store.status[clusterId].sampleStatus() != READY) return NOT_AVAILABLE;
+        if(waveforms->nbOfSpikes(SAMPLE) == 0){
+            //Zero-spike quirk kept from the original: the mean is marked
+            //unavailable but the call reports success.
+            store.status[clusterId].setSampleMeanStatus(NOT_AVAILABLE);
+            return READY;
         }
-        else{
-            return NOT_AVAILABLE;
-        }
-    } // mutex released before calculateMean
+        store.status[clusterId].setSampleMeanStatus(IN_PROCESS);
+    } // store mutex released before calculateMean
 
     //calculate the mean and the standard deviation and store the data
     waveforms->calculateMean(SAMPLE);
-    //If the cluster has been suppress or modified after the thread calling this function has been launched
-    //return this information that the data are not available.
-    QMutexLocker lk(&mutex);
-    bool smGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
-    bool smMod  = !smGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
-    if(smGone || smMod){
-        if(waveformStatusMap.contains(clusterId)){
-            waveformStatusMap[clusterId].setClusterModified(false);
-            delete waveformDict.take(clusterIdString);  //if not already done by the function which modified the data
-            waveformStatusMap.remove(clusterId);
-        }
-        return NOT_AVAILABLE;
+
+    //Terminal.  The entry can have been removed mid-computation only by
+    //dropWaveformEntry(); the guard keeps the stale result out of the store
+    //(see getSampleWaveformPointsInner).
+    {
+        QMutexLocker lk(&store.m);
+        if(store.status.contains(clusterId))
+            store.status[clusterId].setSampleMeanStatus(READY);
     }
-    else{
-        //Store the information in waveformStatusMap
-        if(waveformStatusMap.contains(clusterId))
-            waveformStatusMap[clusterId].setSampleMeanStatus(READY);
-        return READY;
-    }
+    return READY;
 }
 
 
-Data::Status Data::calculateTimeFrameMeanInner(int clusterId,dataType start,dataType end){
+Data::Status Data::calculateTimeFrameMeanInner(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,int clusterId,dataType start,dataType end){
     //Calculate the mean and the standard deviation for
-    //a sample of the spikes (displayNbSpikes) evenly distributed on all the recording.
+    //the spikes in the given time frame.
+    WaveformCacheStore& store = *snap->waveforms;
+    std::shared_ptr<Waveforms> waveforms;
 
-    QString clusterIdString = QString::fromLatin1("%1").arg(clusterId);
-    Waveforms* waveforms;
-
-    //Does this cluster already processed?
-    // Use mutex around both contains check and waveformDict lookup.
+    //Does this cluster already processed?  (See the sample variant.)
     {
-        QMutexLocker lk(&mutex);
-        bool frameExists = waveformStatusMap.contains(clusterId);
-        if(frameExists){
-            Status status = waveformStatusMap[clusterId].timeFrameMeanStatus();
-            waveforms = waveformDict[clusterIdString];
-            dataType timeStart = waveforms->startTime();
-            dataType timeEnd = waveforms->endTime();
-
-            if(status == IN_PROCESS)return IN_PROCESS;
-            else if(timeStart == start && timeEnd == end && status == READY) return READY;
-            else{
-                if(waveformStatusMap[clusterId].timeFrameStatus() != READY) return NOT_AVAILABLE;
-                if(waveforms->nbOfSpikes(TIME_FRAME) == 0){
-                    waveformStatusMap[clusterId].setTimeFrameMeanStatus(NOT_AVAILABLE);
-                    return READY;
-                }
-                waveformStatusMap[clusterId].setTimeFrameMeanStatus(IN_PROCESS);
-            }
+        QMutexLocker lk(&store.m);
+        if(!store.status.contains(clusterId)) return NOT_AVAILABLE;
+        Status status = store.status[clusterId].timeFrameMeanStatus();
+        waveforms = store.byCluster.value(clusterId);
+        if(status == IN_PROCESS)return IN_PROCESS;
+        if(!waveforms) return NOT_AVAILABLE;
+        dataType timeStart = waveforms->startTime();
+        dataType timeEnd = waveforms->endTime();
+        if(timeStart == start && timeEnd == end && status == READY) return READY;
+        if(store.status[clusterId].timeFrameStatus() != READY) return NOT_AVAILABLE;
+        if(waveforms->nbOfSpikes(TIME_FRAME) == 0){
+            //Zero-spike quirk kept from the original (see the sample variant).
+            store.status[clusterId].setTimeFrameMeanStatus(NOT_AVAILABLE);
+            return READY;
         }
-        else{
-            return NOT_AVAILABLE;
-        }
-    } // mutex released before calculateMean
+        store.status[clusterId].setTimeFrameMeanStatus(IN_PROCESS);
+    } // store mutex released before calculateMean
 
     //calculate the mean and the standard deviation and store the data
     waveforms->calculateMean(TIME_FRAME);
 
-    //If the cluster has been suppress or modifed after the thread calling this function has been launched
-    //return this information that the data are not available.
-    QMutexLocker lk(&mutex);
-    bool tfmGone = !clusterInfoMap->contains(static_cast<dataType>(clusterId));
-    bool tfmMod  = !tfmGone && waveformStatusMap.contains(clusterId) && waveformStatusMap[clusterId].isClusterModified();
-    if(tfmGone || tfmMod){
-        if(waveformStatusMap.contains(clusterId)){
-            waveformStatusMap[clusterId].setClusterModified(false);
-            delete waveformDict.take(clusterIdString);  //if not already done by the function which modified the data
-            waveformStatusMap.remove(clusterId);
-        }
-        return NOT_AVAILABLE;
+    //Terminal (see the sample variant for the drop guard).
+    {
+        QMutexLocker lk(&store.m);
+        if(store.status.contains(clusterId))
+            store.status[clusterId].setTimeFrameMeanStatus(READY);
     }
-    else{
-        //Store the information in waveformStatusMap
-        if(waveformStatusMap.contains(clusterId))
-            waveformStatusMap[clusterId].setTimeFrameMeanStatus(READY);
-        return READY;
-    }
+    return READY;
 }
 
 
@@ -7081,24 +7002,14 @@ void Data::restartDimensionExtrema(const QList<int>& modifiedClusters)
 void Data::invalidateClusterCaches(int clusterId,
                                    const QList<dataType>& clusterListForCorrelations)
 {
-    //Remove the waveform and correlation data for the cluster if there is no
-    //thread working with them, otherwise advise the thread of the change by
-    //raising the modified flag and the thread will remove it.
-    {
-        QMutexLocker lk(&mutex);
-    if(waveformStatusMap.contains(clusterId)){
-        if(!waveformStatusMap[clusterId].isInProcess()){
-            delete waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
-            waveformStatusMap.remove(clusterId);
-        }
-        else{
-            WaveformStatus waveformStatus = waveformStatusMap[clusterId];
-            WaveformStatus waveformStatusCopy = WaveformStatus(waveformStatus);
-            waveformStatusCopy.setClusterModified(true);
-            waveformStatusMap.insert(clusterId,waveformStatusCopy);
-        }
-    }
-    }
+    //Waveforms: drop the cluster's entry from the current epoch's store
+    //(epoch-snapshot step 3b; no in-flight case — a mid-flight owner's
+    //terminals are contains-guarded and discard their own result).
+    dropWaveformEntry(clusterId);
+
+    //Correlations: remove the data for the cluster if there is no thread
+    //working with them, otherwise advise the thread of the change by raising
+    //the modified flag and the thread will remove it.
     if(!correlationsInProcess.contains(static_cast<dataType>(clusterId))) cleanCorrelation(static_cast<dataType>(clusterId),clusterListForCorrelations);
     else{
         {
@@ -7117,26 +7028,12 @@ void Data::invalidateWaveformCache(int clusterId)
     // run concurrently with an edit.
     clusterTemplates.remove(clusterId);
 
-    // Mirror the pattern used throughout data.cpp for cache invalidation:
-    // - If no thread is currently loading waveforms for this cluster, delete
-    //   the cached data immediately and remove the status entry so the next
-    //   WaveformThread request re-reads from the .spk file.
-    // - If a thread is in-flight, set the clusterModified flag instead.
-    //   The thread checks this flag after loading and discards its results,
-    //   then removes the status entry itself, forcing a fresh load next time.
-    {
-        QMutexLocker lk(&mutex);
-    if (waveformStatusMap.contains(clusterId)) {
-        if (!waveformStatusMap[clusterId].isInProcess()) {
-            delete waveformDict.take(QString::fromLatin1("%1").arg(clusterId));
-            waveformStatusMap.remove(clusterId);
-        } else {
-            WaveformStatus updated = waveformStatusMap[clusterId];
-            updated.setClusterModified(true);
-            waveformStatusMap.insert(clusterId, updated);
-        }
-    }
-    }
+    // Drop the entry from the current epoch's store so the next request
+    // re-reads from the .spk file (epoch-snapshot step 3b).  The old
+    // in-flight flagging is gone: a mid-flight owner's terminals are
+    // contains-guarded, so it discards its own result and the next request
+    // starts a fresh load.
+    dropWaveformEntry(clusterId);
 }
 
 void Data::invalidateCorrelogramCache(int clusterId)

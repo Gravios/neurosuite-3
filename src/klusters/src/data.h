@@ -907,16 +907,7 @@ public:
   * @return true if the cluster exist and the data have been retreive, false otherwise.
   */
     bool spikePositions(int clusterId,SortableTable& subsetTable);
-    /**Like spikePositions() but also atomically checks isClusterModified() under the same lock.
-     * Returns false if the cluster is gone OR was modified by the main thread. */
-    bool spikePositionsNotModified(int clusterId,SortableTable& subsetTable);
 
-    /**Invalidates the in-memory waveform cache for @p clusterId so that the
-     * next WaveformThread request re-reads waveforms from the .spk file.
-     * Must be called after the .spk file has been modified in-place (e.g.
-     * after spike realignment) to ensure the waveform view shows fresh data.
-     * Thread-safe: uses the internal mutex.
-     */
     /**Restarts the dimension-extrema worker for @p modifiedClusters.
      *
      * Fourteen edit paths performed this same four-step dance inline -- wait for
@@ -927,9 +918,11 @@ public:
      * WHICH clusters changed, which is the part that legitimately differs.*/
     void restartDimensionExtrema(const QList<int>& modifiedClusters);
 
-    /**Drops one cluster's cached waveforms AND correlograms, respecting threads
-     * that are mid-flight in either: a loaded cache is deleted outright, an
-     * in-process one is flagged so the thread discards its own result.
+    /**Drops one cluster's cached waveforms AND correlograms.  The waveform
+     * half is dropWaveformEntry() on the current epoch's store (epoch-snapshot
+     * step 3b); the correlation half keeps the historical in-flight-aware
+     * behaviour: a loaded correlogram is deleted outright, an in-process one
+     * is flagged so the thread discards its own result.
      *
      * NOT the same as invalidateWaveformCache + invalidateCorrelogramCache.
      * The latter calls cleanCorrelation unconditionally, while every inline
@@ -943,10 +936,19 @@ public:
      * that list still contains the clusters the edit removed, so their cached
      * pairs get evicted.  Passing the live clusterIds() instead would leave
      * correlograms keyed on clusters that no longer exist.  The difference is
-     * invisible until a deleted cluster's id is reused.*/
+     * invisible until a deleted cluster's id is reused.
+     *
+     * Must be called with the internal mutex NOT held.*/
     void invalidateClusterCaches(int clusterId,
                                  const QList<dataType>& clusterListForCorrelations);
 
+    /**Drops @p clusterId's entry from the CURRENT epoch's waveform store (and
+     * its compact template), so the next request re-reads from the .spk file.
+     * This is the API for writers that change the waveform BYTES behind an
+     * unchanged membership (the realign nudge): membership edits no longer
+     * need it — publishSnapshot()'s carry-forward refuses to carry an entry
+     * whose spike rows changed.  Must be called with the internal mutex NOT
+     * held.*/
     void invalidateWaveformCache(int clusterId);
 
     /** Invalidates the cached auto/cross-correlogram data for @p clusterId
@@ -1072,7 +1074,7 @@ public:
     /**Compact per-cluster template: the mean and SD of every sample on every
      * channel, laid out exactly like the waveform cache (sample * nChan + ch).
      *
-     * Kept SEPARATE from waveformDict on purpose.  That cache is display-driven:
+     * Kept SEPARATE from the waveform display cache on purpose.  That cache is display-driven:
      * it holds every displayed spike for the handful of clusters the waveform
      * view is showing, and it only exists for clusters somebody selected.  This
      * one is small (mean+SD only, ~5 KB per cluster on an 8x42 octrode), covers
@@ -1538,17 +1540,17 @@ private:
      *  Tracks whether each of the four cached views (sample-form raw,
      *  time-frame-form raw, sample-form mean, time-frame-form mean) is
      *  currently AVAILABLE, NOT_AVAILABLE, or IN_PROGRESS for a given
-     *  cluster, plus a `clusterModified` dirty bit set when any spike
-     *  belonging to the cluster has been moved/added/removed since the
-     *  last cache build.  Owned by Waveforms; one instance per cluster.
+     *  cluster.  One instance per cluster, in its epoch's
+     *  WaveformCacheStore.  (The historical `clusterModified` dirty bit is
+     *  gone with the live cache it protected: an epoch's membership is
+     *  immutable, so an entry can never be stale within its store —
+     *  epoch-snapshot step 3b.)
      */
     class WaveformStatus{
     public:
         explicit WaveformStatus(Status sample = NOT_AVAILABLE,Status timeFrame = NOT_AVAILABLE,Status sampleMean = NOT_AVAILABLE,Status timeFrameMean = NOT_AVAILABLE )
-            :sample(sample),timeFrame(timeFrame),sampleMean(sampleMean),timeFrameMean(timeFrameMean){
-            clusterModified = false;
-        }
-        WaveformStatus(const WaveformStatus& s):sample(s.sample),timeFrame(s.timeFrame),sampleMean(s.sampleMean),timeFrameMean(s.timeFrameMean), clusterModified(s.clusterModified){}
+            :sample(sample),timeFrame(timeFrame),sampleMean(sampleMean),timeFrameMean(timeFrameMean){}
+        WaveformStatus(const WaveformStatus& s):sample(s.sample),timeFrame(s.timeFrame),sampleMean(s.sampleMean),timeFrameMean(s.timeFrameMean){}
         ~WaveformStatus(){}
         void setSampleStatus(Status status){sample = status;}
         Status sampleStatus() const {return sample;}
@@ -1562,14 +1564,11 @@ private:
             if(sample == IN_PROCESS || timeFrame == IN_PROCESS || sampleMean == IN_PROCESS || timeFrameMean == IN_PROCESS) return true;
             else return false;
         }
-        void setClusterModified(bool modified){clusterModified = modified;}
-        bool isClusterModified()  const {return clusterModified;}
     private:
         Status sample;
         Status timeFrame;
         Status sampleMean;
         Status timeFrameMean;
-        bool clusterModified;
     };
 
     class Waveforms;
@@ -1708,16 +1707,10 @@ private:
     } ;
 
 
-    /**
-  * Map containing the waveform status by cluster. Only the clusters
-  * for which information have been asked are present in this map.
-  */
-    QMap<int,WaveformStatus> waveformStatusMap;
-
     /**A parked waveform waiter (subscribe-don't-wait, epoch-snapshot step
     * 3a): completes its ticket share when the computation it overlapped
-    * with reaches a terminal.  Kept per (cluster, mode) in
-    * waveformWaiters, guarded by the data mutex.*/
+    * with reaches a terminal.  Kept per (cluster, mode) in its epoch's
+    * WaveformCacheStore, guarded by the store mutex.*/
     struct WaveformWaiter {
         std::shared_ptr<WaveformRequestTicket> ticket;
         bool     wantsMean = false;   ///< completes on mean-ready, else on spikes-ready
@@ -1725,34 +1718,59 @@ private:
         dataType p2 = 0;              ///< TIME_FRAME: end
         bool     failMarksTicket = false;
     };
-    QHash<QPair<int,int>, QList<WaveformWaiter>> waveformWaiters; // key (clusterId, mode)
 
-    /**Completes/serves the waiters parked on (@p clusterId, @p mode) after a
-    * computation terminal.  @p meanEvent tells which computation ended (the
-    * mean, or the spike fetch); @p ok whether it succeeded (a failure —
-    * cluster gone — fails every waiter).  On a successful SPIKE terminal,
-    * plain waiters complete and mean waiters are SERVED: the caller (the
-    * spike computation's owner) computes the mean with each waiter's own
-    * parameters, completing, failing or re-parking them by the outcome.
-    * Must be called with the data mutex NOT held (it may run a mean
-    * computation).*/
-    void flushWaveformWaiters(int clusterId, int mode, bool meanEvent, bool ok);
+    /**The waveform display cache of ONE epoch (epoch-snapshot step 3b).
+    * Owned by the ClusteringSnapshot it was published with and internally
+    * synchronized; jobs fill the store of the snapshot they captured, the
+    * display reads the current snapshot's store.  Because the epoch's
+    * membership is immutable, the whole invalidation vocabulary of the old
+    * Data-owned cache — the clusterModified flag, the delete-or-flag walks
+    * in every edit committer — has no referent anymore: an edit publishes a
+    * new store, carrying over (see publishSnapshot) the entries of clusters
+    * whose spikes are unchanged, and everything else simply dies with its
+    * epoch.  The only in-epoch removal left is dropWaveformEntry(), for
+    * writers that change the waveform BYTES without touching membership
+    * (the realign nudge).  Waveforms objects are shared_ptr-held: a display
+    * iterator or a mid-compute owner keeps its object alive across a drop
+    * or an epoch change.*/
+    struct WaveformCacheStore {
+        mutable QMutex m;
+        QMap<int,WaveformStatus> status;
+        QHash<int, std::shared_ptr<Waveforms>> byCluster;
+        QHash<QPair<int,int>, QList<WaveformWaiter>> waiters; // key (clusterId, mode)
+    };
 
-    /**The pre-3a bodies of the four waveform functions, verbatim; the public
-    * names are now thin wrappers that flush the waiters at the terminals.*/
-    Status getSampleWaveformPointsInner(int clusterId,dataType nbSpkToDisplay);
-    Status getTimeFrameWaveformPointsInner(int clusterId,dataType start,dataType end);
-    Status calculateSampleMeanInner(int clusterId,dataType nbSpkToDisplay);
-    Status calculateTimeFrameMeanInner(int clusterId,dataType start,dataType end);
+    /**Completes/serves the waiters parked on (@p clusterId, @p mode) in
+    * @p snap's store after a computation terminal.  @p meanEvent tells which
+    * computation ended (the mean, or the spike fetch); @p ok whether it
+    * succeeded.  On a successful SPIKE terminal, plain waiters complete and
+    * mean waiters are SERVED: the caller (the spike computation's owner)
+    * computes the mean with each waiter's own parameters, completing,
+    * failing or re-parking them by the outcome.  Must be called with the
+    * store mutex NOT held (it may run a mean computation).*/
+    void flushWaveformWaiters(const std::shared_ptr<const ClusteringSnapshot>& snap,
+                              int clusterId, int mode, bool meanEvent, bool ok);
 
-    /**
-  * Dictionary containing the waveform data by cluster. Only the clusters
-  * for which data have been asked are present in this dictionary.
-  */
-    QHash<QString, Waveforms*> waveformDict;
+    /**The computation bodies of the four waveform functions, against
+    * @p snap's membership, reader and store; the public names are thin
+    * wrappers that flush the waiters at the terminals.*/
+    Status getSampleWaveformPointsInner(const std::shared_ptr<const ClusteringSnapshot>& snap,int clusterId,dataType nbSpkToDisplay);
+    Status getTimeFrameWaveformPointsInner(const std::shared_ptr<const ClusteringSnapshot>& snap,int clusterId,dataType start,dataType end);
+    Status calculateSampleMeanInner(const std::shared_ptr<const ClusteringSnapshot>& snap,int clusterId,dataType nbSpkToDisplay);
+    Status calculateTimeFrameMeanInner(const std::shared_ptr<const ClusteringSnapshot>& snap,int clusterId,dataType start,dataType end);
+
+    /**Removes @p clusterId's entry (status and Waveforms object) from the
+    * CURRENT epoch's store and fails the waiters parked on it — the entry's
+    * owner, if one is mid-flight, no longer reaches them: its terminals are
+    * contains-guarded, so its result is discarded and its own completion
+    * still posts.  The one in-epoch removal (see WaveformCacheStore); the
+    * public face is invalidateWaveformCache().  Must be called with
+    * Data::mutex NOT held (it reads the current snapshot).*/
+    void dropWaveformEntry(int clusterId);
 
     /**Compact mean/SD template per cluster; see buildMissingClusterTemplates().
-     * Independent of waveformDict, which only covers displayed clusters.*/
+     * Independent of the waveform display cache, which only covers displayed
+     * clusters.*/
     QHash<int, ClusterTemplate> clusterTemplates;
 
     /**Boolean use to inform the MinMaxThread that an undo or a redo is in process and that it has to stop.*/
@@ -1929,7 +1947,7 @@ private:
   * @return the status, READY if the data have already been collected or the current collection is finish,
   * and IN_PROCESS if an other thread is already treating @p clusterId.
   */
-    Status getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay);
+    Status getSampleWaveformPoints(const std::shared_ptr<const ClusteringSnapshot>& snap,int clusterId,dataType nbSpkToDisplay);
 
     /**
   * Gets the waveform points for cluster @p clusterId in time frame mode.
@@ -1940,7 +1958,7 @@ private:
   * @return the status, READY if the data have already been collected or the current collection is finish,
   * and IN_PROCESS if an other thread is already treating that cluster.
   */
-    Status getTimeFrameWaveformPoints(int clusterId,dataType start,dataType end);
+    Status getTimeFrameWaveformPoints(const std::shared_ptr<const ClusteringSnapshot>& snap,int clusterId,dataType start,dataType end);
 
     /**
   * Calculates the mean and the standard deviation for cluster @p clusterId in the sample mode.
@@ -1951,7 +1969,7 @@ private:
   * IN_PROCESS if an other thread is already treating that cluster and NOT_AVAILABLE
   * if the spikes have not been collected yet.
   */
-    Status calculateSampleMean(int clusterId,dataType nbSpkToDisplay);
+    Status calculateSampleMean(const std::shared_ptr<const ClusteringSnapshot>& snap,int clusterId,dataType nbSpkToDisplay);
 
     /**
   * Calculates the mean and the standard deviation for cluster @p clusterId in the time frame mode.
@@ -1963,7 +1981,7 @@ private:
   * IN_PROCESS if an other thread is already treating that cluster and NOT_AVAILABLE
   * if the spikes have not been collected yet.
   */
-    Status calculateTimeFrameMean(int clusterId,dataType start,dataType end);
+    Status calculateTimeFrameMean(const std::shared_ptr<const ClusteringSnapshot>& snap,int clusterId,dataType start,dataType end);
 
     /**Outcome of subscribeWaveform() (epoch-snapshot step 3a).*/
     enum class WaveformSubscribe {
@@ -1989,7 +2007,8 @@ private:
     *                   SAMPLE mode, (start, end) in TIME_FRAME mode.
     * @param failMarksTicket  a failed completion marks the ticket failed
     *                   (single-cluster request semantics).*/
-    WaveformSubscribe subscribeWaveform(int clusterId, WaveformMode mode,
+    WaveformSubscribe subscribeWaveform(const std::shared_ptr<const ClusteringSnapshot>& snap,
+                                        int clusterId, WaveformMode mode,
                                         bool wantsMean, dataType p1, dataType p2,
                                         const std::shared_ptr<WaveformRequestTicket>& ticket,
                                         bool failMarksTicket);
@@ -2122,7 +2141,7 @@ public:
         WaveformIterator(){init();}
 
     protected:
-        explicit WaveformIterator(Waveforms* waveformsData){
+        explicit WaveformIterator(const std::shared_ptr<Waveforms>& waveformsData){
             init();
             waveforms = waveformsData;
         }
@@ -2135,7 +2154,10 @@ public:
             meanAvailable = false;
         };
 
-        Waveforms* waveforms;
+        /**Shared with the epoch's cache store (epoch-snapshot step 3b), so
+        * the data this iterator walks stays alive across an in-epoch drop
+        * (a nudge) or an epoch change mid-paint.*/
+        std::shared_ptr<Waveforms> waveforms;
         dataType spikesIndex;
         dataType meanIndex;
         dataType stDeviationIndex;
@@ -2156,29 +2178,11 @@ public:
   * @param nbSampleSpikes number of spikes selected for the sample mode presentation.
   * @return the sampleWaveformIterator on the spikes of the given cluster.
   */
-    SampleWaveformIterator* sampleWaveformIterator(dataType clusterId,dataType nbSampleSpikes){
-        QString clusterIdString = QString::fromLatin1("%1").arg(clusterId);
-        int clusterIdInt = static_cast<int>(clusterId);
-        SampleWaveformIterator* waveformIterator;
-
-        if(waveformStatusMap.contains(clusterIdInt)){
-            Waveforms* waveforms = waveformDict[clusterIdString];
-            waveformIterator = new SampleWaveformIterator(waveforms);
-            if(waveformStatusMap[clusterIdInt].sampleMeanStatus() == READY)
-                waveformIterator->setMeanAvailable(true);
-            if(waveformStatusMap[clusterIdInt].sampleStatus() == READY){
-                waveformIterator->setSpikesAvailable(true);
-                waveformIterator->updateStatus(nbSampleSpikes);
-            }
-        }
-        else{
-            //No data are available, create any of the iterator (they will have their
-            //data availability booleans to false).
-            //The case is for security reason but should never be reach.
-            waveformIterator = new SampleWaveformIterator();
-        }
-        return waveformIterator;
-    }
+    /**Defined after ClusteringSnapshot below: it reads the CURRENT epoch's
+    * store, under the store mutex (the old direct map reads ran unlocked
+    * against the worker threads), and the iterator shares ownership of the
+    * Waveforms object it walks (epoch-snapshot step 3b).*/
+    SampleWaveformIterator* sampleWaveformIterator(dataType clusterId,dataType nbSampleSpikes);
 
     /** Returns an iterator on the latest waveform data stored by a request of
    * a waveformTread for a given cluster. The data correspond to the sample display mode
@@ -2212,7 +2216,7 @@ public:
         }
     private:
         SampleWaveformIterator(): WaveformIterator(){}
-        explicit SampleWaveformIterator(Waveforms* waveformsData): WaveformIterator(waveformsData){}
+        explicit SampleWaveformIterator(const std::shared_ptr<Waveforms>& waveformsData): WaveformIterator(waveformsData){}
         void updateStatus(dataType nbSampleSpikes){
             if(waveforms->nbOfSpikesAsked() != nbSampleSpikes){
                 setSpikesAvailable(false);
@@ -2234,28 +2238,8 @@ public:
   * @param endTime ending time selected for the time frame mode.
   * @return the TimeFrameWaveformIterator on the spikes of the given cluster.
   */
-    TimeFrameWaveformIterator* timeFrameWaveformIterator(dataType clusterId,dataType startTime,dataType endTime){
-        QString clusterIdString = QString::fromLatin1("%1").arg(clusterId);
-        int clusterIdInt = static_cast<int>(clusterId);
-        TimeFrameWaveformIterator* waveformIterator;
-
-        if(waveformStatusMap.contains(clusterIdInt)){
-            Waveforms* waveforms = waveformDict[clusterIdString];
-            waveformIterator = new TimeFrameWaveformIterator(waveforms);
-            if(waveformStatusMap[clusterIdInt].timeFrameMeanStatus() == READY) waveformIterator->setMeanAvailable(true);
-            if(waveformStatusMap[clusterIdInt].timeFrameStatus() == READY){
-                waveformIterator->setSpikesAvailable(true);
-                waveformIterator->updateStatus(startTime,endTime);
-            }
-        }
-        else{
-            //No data are available, create any of the iterator (they will have their
-            //data availability booleans to false).
-            //The case is for security reason but should never be reach.
-            waveformIterator = new TimeFrameWaveformIterator();
-        }
-        return waveformIterator;
-    }
+    /**Defined after ClusteringSnapshot below; see sampleWaveformIterator.*/
+    TimeFrameWaveformIterator* timeFrameWaveformIterator(dataType clusterId,dataType startTime,dataType endTime);
 
     /** Returns an iterator on the latest waveform data stored by a request of
    * a waveformTread for a given cluster. The data correspond to the time frame display mode
@@ -2290,7 +2274,7 @@ public:
 
     private:
         TimeFrameWaveformIterator(): WaveformIterator(){}
-        explicit TimeFrameWaveformIterator(Waveforms* waveformsData): WaveformIterator(waveformsData){}
+        explicit TimeFrameWaveformIterator(const std::shared_ptr<Waveforms>& waveformsData): WaveformIterator(waveformsData){}
         void updateStatus(dataType start,dataType end){
             if(waveforms->startTime() != start || waveforms->endTime() != end){
                 setSpikesAvailable(false);
@@ -2450,6 +2434,12 @@ struct Data::ClusteringSnapshot {
     * leaves this epoch reading its own inode.  In-place writes (the nudge)
     * still show through — their epoch story is plan step 7.*/
     std::shared_ptr<SpkReader> spk;
+    /**This epoch's waveform display cache (epoch-snapshot step 3b): filled
+    * by the jobs that captured this snapshot, read by the display through
+    * the current snapshot, dead with the last reference.  Entries of
+    * clusters whose spikes are unchanged are carried over from the previous
+    * epoch at publication.*/
+    std::shared_ptr<WaveformCacheStore> waveforms;
 
     /**Mirror of Data::clusterIds().*/
     QList<dataType> clusterIds() const { return clusterInfoMap->keys(); }
@@ -2477,5 +2467,52 @@ struct Data::ClusteringSnapshot {
         return true;
     }
 };
+
+inline Data::SampleWaveformIterator* Data::sampleWaveformIterator(dataType clusterId,dataType nbSampleSpikes){
+    const int clusterIdInt = static_cast<int>(clusterId);
+    SampleWaveformIterator* waveformIterator;
+    const std::shared_ptr<const ClusteringSnapshot> snap = currentSnapshot();
+    WaveformCacheStore& store = *snap->waveforms;
+
+    QMutexLocker lk(&store.m);
+    if(store.status.contains(clusterIdInt)){
+        waveformIterator = new SampleWaveformIterator(store.byCluster.value(clusterIdInt));
+        const WaveformStatus st = store.status.value(clusterIdInt);
+        if(st.sampleMeanStatus() == READY)
+            waveformIterator->setMeanAvailable(true);
+        if(st.sampleStatus() == READY){
+            waveformIterator->setSpikesAvailable(true);
+            waveformIterator->updateStatus(nbSampleSpikes);
+        }
+    }
+    else{
+        //No data are available for this cluster at the current epoch: the
+        //iterator reports both availability booleans false.
+        waveformIterator = new SampleWaveformIterator();
+    }
+    return waveformIterator;
+}
+
+inline Data::TimeFrameWaveformIterator* Data::timeFrameWaveformIterator(dataType clusterId,dataType startTime,dataType endTime){
+    const int clusterIdInt = static_cast<int>(clusterId);
+    TimeFrameWaveformIterator* waveformIterator;
+    const std::shared_ptr<const ClusteringSnapshot> snap = currentSnapshot();
+    WaveformCacheStore& store = *snap->waveforms;
+
+    QMutexLocker lk(&store.m);
+    if(store.status.contains(clusterIdInt)){
+        waveformIterator = new TimeFrameWaveformIterator(store.byCluster.value(clusterIdInt));
+        const WaveformStatus st = store.status.value(clusterIdInt);
+        if(st.timeFrameMeanStatus() == READY) waveformIterator->setMeanAvailable(true);
+        if(st.timeFrameStatus() == READY){
+            waveformIterator->setSpikesAvailable(true);
+            waveformIterator->updateStatus(startTime,endTime);
+        }
+    }
+    else{
+        waveformIterator = new TimeFrameWaveformIterator();
+    }
+    return waveformIterator;
+}
 
 #endif
