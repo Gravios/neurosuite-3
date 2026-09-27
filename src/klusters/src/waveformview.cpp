@@ -183,10 +183,16 @@ void WaveformView::askForWaveformInformation(const QList<int> &clusterIds){
         // request.  Every existing call site (removeClusterFromView,
         // spikesAddedToCluster, navigation, etc.) that reaches this
         // overload is replacing the entire waveform display, so a stale
-        // completion arriving afterwards would draw over it out of order.
+        // completion arriving afterwards would draw over it out of order —
+        // the generation bump fences those (queued ones are removed, late
+        // ones die on the customEvent guard).  No wait is owed: a doomed
+        // job reads only its captured snapshot, and if it is inside a store
+        // load it completes that load epoch-valid — parked waiters are
+        // served, no in-process marker can be stranded (epoch-snapshot
+        // step 8 follow-up; the blocking twin remains stopAndClearThreads).
         // The single-cluster overload (overlay mode) is intentionally left
         // alone.
-        stopAndClearThreads();
+        supersedeRunningThreads();
         dataReady = false;
         //Enqueue a job to get the waveform data for those clusters.
         WaveformThread* waveformThread = getWaveforms();
@@ -198,10 +204,11 @@ void WaveformView::askForWaveformInformation(const QList<int> &clusterIds){
 void WaveformView::addClusterToView(int clusterId,bool active){
     isZoomed = false;//Hack because all the tabs share the same data.
 
-    // Stop any in-flight threads before launching new ones.
+    // Supersede any in-flight jobs before launching new ones.
     // Mirrors the invariant in setSampleMode, setTimeFrameMode, etc.
-    // Without this, rapid cluster navigation accumulates sleeping threads.
-    if (active) stopAndClearThreads();
+    // (The historical accumulate-sleeping-threads concern is gone: doomed
+    // jobs hold no thread while queued and early-out at their next check.)
+    if (active) supersedeRunningThreads();
 
     if(active && overLayPresentation){
         if(drawContentsMode == REFRESH){
@@ -275,13 +282,13 @@ void WaveformView::spikesRemovedFromClusters(QList<int>& fromClusters,bool activ
 void WaveformView::spikesAddedToCluster(int clusterId,bool active){  
     isZoomed = false;//Hack because all the tabs share the same data.
 
-    // Stop any in-flight threads before launching new ones.
+    // Supersede any in-flight jobs before launching new ones.
     // Every other launch path (setSampleMode, setMeanPresentation, etc.)
-    // calls stopAndClearThreads() first; this path was the only exception.
-    // Without this, rapid cluster navigation accumulates sleeping threads
-    // (each sleeping 1 s in the IN_PROCESS retry loop) that race on
-    // the shared waveform cache and cause a segfault.
-    stopAndClearThreads();
+    // does the same; this path was historically the only exception, back
+    // when jobs slept in IN_PROCESS retry loops and raced on a live shared
+    // cache (the old segfault).  Both are structurally gone: jobs subscribe
+    // instead of sleeping and read per-epoch stores.
+    supersedeRunningThreads();
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
@@ -578,7 +585,7 @@ void WaveformView::updateWindow(){
 }
 
 void WaveformView::setMeanPresentation(){
-    stopAndClearThreads();
+    supersedeRunningThreads();
     meanPresentation = true;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -593,7 +600,7 @@ void WaveformView::setMeanPresentation(){
 }
 
 void WaveformView::setAllWaveformsPresentation(){
-    stopAndClearThreads();
+    supersedeRunningThreads();
     meanPresentation = false;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -607,7 +614,7 @@ void WaveformView::setAllWaveformsPresentation(){
 
 
 void WaveformView::setSampleMode(){
-    stopAndClearThreads();
+    supersedeRunningThreads();
     presentationMode = SAMPLE;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -620,7 +627,7 @@ void WaveformView::setSampleMode(){
 }
 
 void WaveformView::setTimeFrameMode(){
-    stopAndClearThreads();
+    supersedeRunningThreads();
     presentationMode = TIME_FRAME;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -633,7 +640,7 @@ void WaveformView::setTimeFrameMode(){
 }
 
 void WaveformView::setTimeFrame(long start, long width){
-    stopAndClearThreads();
+    supersedeRunningThreads();
     startTime = start;
     endTime = start + width;
     if(endTime > maximumTime) endTime = maximumTime;
@@ -649,7 +656,7 @@ void WaveformView::setTimeFrame(long start, long width){
 }
 
 void WaveformView::setDisplayNbSpikes(long nbSpikes){
-    stopAndClearThreads();
+    supersedeRunningThreads();
     nbSpkToDisplay =  nbSpikes;
     isZoomed = false;//Hack because all the tabs share the same data.
     drawContentsMode = REDRAW;
@@ -905,15 +912,17 @@ void WaveformView::stopAndClearThreads(){
     // generation.  Does NOT set goingToDie, so new requests can still be
     // enqueued afterwards.
     jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
-    // Synchronous quiesce: callers — the .spk-writing realign paths via
-    // KlustersView::stopAllViewThreads(), and this view's own relaunch
-    // resets — rely on no waveform job being inside a read once this
-    // returns.  Membership-only edits use the non-blocking
-    // supersedeRunningThreads() instead (epoch-snapshot step 6b).
-    // Superseded jobs notice the bump within one poll
-    // interval and queued-not-yet-started ones early-out as workers free up,
-    // so this is bounded by the same ~1 s the old per-thread wait() was —
-    // but by the pool's worker count instead of the request count.
+    // Synchronous quiesce: no waveform job is inside a read once this
+    // returns.  ZERO live callers since the view's own relaunch resets
+    // (mode switches, cluster navigation, edit repaints) moved to the
+    // non-blocking supersedeRunningThreads() (epoch-snapshot step 8
+    // follow-up): this is the view's member of the documented blocking
+    // family, reachable only through the stopRunningThreads() override
+    // that KlustersView::stopAllViewThreads() (itself zero-caller) would
+    // invoke.  Superseded jobs notice the bump within one poll interval
+    // and queued-not-yet-started ones early-out as workers free up, so a
+    // caller would block for at most ~1 s, bounded by the pool's worker
+    // count.
     while(jobToken->active.load(std::memory_order_acquire) > 0)
         QThread::msleep(1);
     // Drop completion events the superseded jobs posted before retiring.
