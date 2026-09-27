@@ -93,23 +93,28 @@ void Data::reopenSpkReader(){
 }
 
 void Data::publishSnapshot(){
-    auto snap  = std::make_shared<ClusteringSnapshot>();
-    auto store = std::make_shared<WaveformCacheStore>();
+    auto snap      = std::make_shared<ClusteringSnapshot>();
+    auto store     = std::make_shared<WaveformCacheStore>();
+    auto corrStore = std::make_shared<CorrelationCacheStore>();
 
-    //Carry the previous epoch's waveform entries whose backing is unchanged
-    //(epoch-snapshot step 3b).  Two guards: the READER — a fresh reader means
-    //the FILE changed (pending-copy redirect, re-extract), so every cached
-    //waveform is suspect; and the MEMBERSHIP — per cluster, the spike rows
-    //must be identical on both sides of the edit (compared by content, so a
-    //renumber that repacks positions still carries the clusters whose spike
-    //sets are untouched).  This one equality test replaces the old cache's
-    //whole invalidation vocabulary: the delete-or-flag walks in the edit
-    //committers, the clusterModified flag, the renumber re-keying.  What it
-    //cannot see is a byte-writer behind an unchanged membership — the
-    //realign nudge — which is what dropWaveformEntry() is for.
+    //Carry the previous epoch's waveform and correlogram entries whose
+    //backing is unchanged (epoch-snapshot steps 3b and 4).  Two guards: the
+    //READER — a fresh reader means the FILE changed (pending-copy redirect,
+    //re-extract), so every cached waveform is suspect; and the MEMBERSHIP —
+    //per cluster, the spike rows must be identical on both sides of the edit
+    //(compared by content, so a renumber that repacks positions still
+    //carries the clusters whose spike sets are untouched).  A correlogram
+    //pair carries when BOTH its clusters pass.  This one equality test
+    //replaces the old caches' whole invalidation vocabulary: the
+    //delete-or-flag walks in the edit committers, the clusterModified flag,
+    //the CorrelationsInProcess process counts, the re-keying at renumber.
+    //What it cannot see is a writer that changes the DATA behind an
+    //unchanged membership — waveform bytes (the realign nudge), spike
+    //timestamps (the realign) — which is what dropWaveformEntry() and
+    //dropCorrelationEntries() are for.
     //
     //In-flight entries stay behind: their owner is still filling the
-    //Waveforms object, in the epoch it captured.  Waiters are never carried:
+    //object, in the epoch it captured.  Waveform waiters are never carried:
     //they belong to computations running in the previous epoch, whose owners
     //complete them there.
     std::shared_ptr<const ClusteringSnapshot> prev;
@@ -117,9 +122,7 @@ void Data::publishSnapshot(){
         QMutexLocker lk(&mutex);
         prev = snapshot;
     }
-    if(prev && prev->waveforms && prev->spk == spkReaderInstance){
-        WaveformCacheStore& prevStore = *prev->waveforms;
-        QMutexLocker prevLk(&prevStore.m);
+    if(prev && prev->spk == spkReaderInstance){
         //Fast path: the tables themselves are unchanged (a republish after a
         //metadata-only change), so every settled entry carries.
         //CAVEAT (SNAPSHOT-ALIASING, plan step 6 blocker): a committer that
@@ -127,34 +130,66 @@ void Data::publishSnapshot(){
         //paths compare new-against-new for the clusters it touched, so they
         //compare equal and carry; such committers must drop the touched
         //clusters explicitly after publishing (moveSpikeSubset does, through
-        //invalidateWaveformCache).
+        //invalidateWaveformCache and invalidateCorrelogramCache).
         const bool sameTables = (prev->spikesByCluster == spikesByCluster) &&
                                 (prev->clusterInfoMap  == clusterInfoMap);
-        for(auto it = prevStore.status.constBegin(); it != prevStore.status.constEnd(); ++it){
-            const int cid = it.key();
-            if(it.value().isInProcess()) continue;
-            if(!sameTables){
-                SortableTable oldPositions;
-                if(!prev->spikePositions(cid, oldPositions)) continue;
-                if(!clusterInfoMap->contains(static_cast<dataType>(cid))) continue;
-                //The new epoch's positions, from the tables about to publish
-                //(const, non-detaching reads — see Data::nbOfSpikes).
+        //Memoized per-cluster verdict, shared by both carry loops (the new
+        //epoch's positions come from the tables about to publish — const,
+        //non-detaching reads, see Data::nbOfSpikes).
+        QHash<int,bool> verdicts;
+        auto clusterUnchanged = [&](int cid) -> bool {
+            if(sameTables) return true;
+            const auto seen = verdicts.constFind(cid);
+            if(seen != verdicts.constEnd()) return seen.value();
+            bool same = false;
+            SortableTable oldPositions;
+            if(prev->spikePositions(cid, oldPositions) &&
+               clusterInfoMap->contains(static_cast<dataType>(cid))){
                 ClusterInfo info = clusterInfoMap->value(static_cast<dataType>(cid));
                 SortableTable newPositions;
                 spikesByCluster->subset(newPositions,1,info.firstSpikePosition(),
                                         info.firstSpikePosition() + info.nbSpikes() - 1);
                 const dataType n = oldPositions.nbOfColumns();
-                if(newPositions.nbOfColumns() != n) continue;
-                bool same = true;
-                for(dataType i = 1; i <= n; ++i)
-                    if(oldPositions(1,i) != newPositions(1,i)){ same = false; break; }
-                if(!same) continue;
+                if(newPositions.nbOfColumns() == n){
+                    same = true;
+                    for(dataType i = 1; i <= n; ++i)
+                        if(oldPositions(1,i) != newPositions(1,i)){ same = false; break; }
+                }
             }
-            store->status.insert(cid, it.value());
-            store->byCluster.insert(cid, prevStore.byCluster.value(cid));
+            verdicts.insert(cid, same);
+            return same;
+        };
+
+        if(prev->waveforms){
+            WaveformCacheStore& prevStore = *prev->waveforms;
+            QMutexLocker prevLk(&prevStore.m);
+            for(auto it = prevStore.status.constBegin(); it != prevStore.status.constEnd(); ++it){
+                const int cid = it.key();
+                if(it.value().isInProcess()) continue;
+                if(!clusterUnchanged(cid)) continue;
+                store->status.insert(cid, it.value());
+                store->byCluster.insert(cid, prevStore.byCluster.value(cid));
+            }
+        }
+
+        if(prev->correlations){
+            CorrelationCacheStore& prevCorr = *prev->correlations;
+            QMutexLocker prevLk(&prevCorr.m);
+            for(auto it = prevCorr.byPair.constBegin(); it != prevCorr.byPair.constEnd(); ++it){
+                const Pair& p = it.key();
+                if(!clusterUnchanged(p.first) || !clusterUnchanged(p.second)) continue;
+                //Carry the pair's settled parameter entries; one still in
+                //flight stays with its owner's epoch.
+                QHash<QString, std::shared_ptr<Correlation>> carried;
+                for(auto pit = it.value().constBegin(); pit != it.value().constEnd(); ++pit)
+                    if(pit.value() && pit.value()->getStatus() != IN_PROCESS)
+                        carried.insert(pit.key(), pit.value());
+                if(!carried.isEmpty()) corrStore->byPair.insert(p, carried);
+            }
         }
     }
-    snap->waveforms = store;
+    snap->waveforms    = store;
+    snap->correlations = corrStore;
 
     QMutexLocker lk(&mutex);
     snap->epoch = ++snapshotEpochCounter;
@@ -185,12 +220,9 @@ Data::~Data(){
     spikesByClusterUndoList.clear();
     spikesByClusterRedoList.clear();
 
-    //The waveform stores die with their snapshots (the Waveforms objects are
-    //shared_ptr-held); parked waiters die with their tickets, and their views
-    //are gone too, so the unposted completions are moot.
-    qDeleteAll(correlationDict);
-    correlationDict.clear();
-
+    //The waveform and correlogram stores die with their snapshots (their
+    //objects are shared_ptr-held); parked waiters die with their tickets,
+    //and their views are gone too, so the unposted completions are moot.
 }
 
 MinMaxThread* Data::minMaxCalculator(){
@@ -2235,9 +2267,6 @@ dataType Data::createNewCluster(const SpikeSelection& selection, const QList <in
         //Sort the spikes of the newly created cluster.
         sortCluster(clusterInfoMapTemp,spikesByClusterTemp,newClusterId,lastPositions,nbOfspikes,-1);
 
-        //Get the list of clusters before applying the changes, this will be used in the clean
-        //of the correlation.
-        QList<dataType> currentClusterList = clusterIds();
 
         //Deal with the undo mechanism
         bool dimChanged = fromClusters.contains(0);
@@ -2251,10 +2280,8 @@ dataType Data::createNewCluster(const SpikeSelection& selection, const QList <in
         }
 
         //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
-        //if there is not a thread working with them,otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-        // and the thread will remove it.
-        QList<int>::iterator iterator;
-        for(int cid : fromClusters) invalidateClusterCaches(cid, currentClusterList);
+        //(dropped from the current epoch's stores.)
+        for(int cid : fromClusters) invalidateClusterCaches(cid);
 
         return newClusterId;
     }
@@ -2430,9 +2457,6 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
             ++i;
         }
 
-        //Get the list of clusters before applying the changes, this will be used in the clean
-        //of the correlation.
-        QList<dataType> currentClusterList = clusterIds();
 
         //Deal with the undo mechanism.
         bool dimChanged = fromToNewClusterIds.contains(0);
@@ -2450,22 +2474,10 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
             restartDimensionExtrema(fromToNewClusterIds.keys());
         }
 
-        //Remove the correlation data for the clusters which gave the spikes for the new cluster,
-        //if there is not a thread working with them, otherwise advise the thread of the change
-        //through correlationsInProcess and the thread will remove it.  (The waveform half of this
-        //walk is gone: these clusters' spike rows changed, so publishSnapshot's carry-forward
-        //already left their entries behind in the previous epoch — epoch-snapshot step 3b.)
-        QMap<int,int>::Iterator fromToNewClusterIdsIterator;
-        for(fromToNewClusterIdsIterator = fromToNewClusterIds.begin(); fromToNewClusterIdsIterator != fromToNewClusterIds.end(); ++fromToNewClusterIdsIterator){
-            int clusterId = fromToNewClusterIdsIterator.key();
-            if(!correlationsInProcess.contains(static_cast<dataType>(clusterId))) cleanCorrelation(static_cast<dataType>(clusterId),currentClusterList);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(static_cast<dataType>(clusterId),true);
-                }
-            }
-        }
+        //No cache walk anymore (epoch-snapshot steps 3b and 4): these
+        //clusters' spike rows changed, so publishSnapshot's carry-forward
+        //already left their waveform entries and correlogram pairs behind
+        //in the previous epoch.
     }
     return fromToNewClusterIds;
 }
@@ -3239,9 +3251,6 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
         //Sort the spikes of the newly created cluster.
         sortCluster(clusterInfoMapTemp,spikesByClusterTemp,destinationCluster,positions,nbOfspikes,firstPosition,number);
 
-        //Get the list of clusters before applying the changes, this will be used in the clean
-        //of the correlation.
-        QList<dataType> currentClusterList = clusterIds();
 
         //Deal with the undo mechanism.  Spikes crossing the cluster-0 boundary
         //in EITHER direction change the dimension extrema: destination 0 removes
@@ -3260,10 +3269,8 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
         }
 
         //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
-        //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-        // and the thread will remove it.
-        QList<int>::iterator iterator;
-        for(int cid : fromClusters) invalidateClusterCaches(cid, currentClusterList);
+        //(dropped from the current epoch's stores.)
+        for(int cid : fromClusters) invalidateClusterCaches(cid);
     }
 }
 
@@ -3340,9 +3347,6 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     //Sort the spikes of the newly created cluster.
     sortCluster(clusterInfoMapTemp,spikesByClusterTemp,0,positions,nbOfspikes,1,true);
 
-    //Get the list of clusters before applying the changes, this will be used in the clean
-    //of the correlation.
-    QList<dataType> currentClusterList = clusterIds();
 
     //Deal with the undo mechanism (dimension always changes when deleting to cluster 0)
     prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,true);
@@ -3351,24 +3355,12 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     restartDimensionExtrema(clustersToDelete);
 
     //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster 0.
-    //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-    // and the thread will remove it.
-    QList<int>::iterator iterator;
-    for(int cid : clustersToDelete) invalidateClusterCaches(cid, currentClusterList);
+    //(dropped from the current epoch's stores.)
+    for(int cid : clustersToDelete) invalidateClusterCaches(cid);
 
-    //remove the correlation data for the cluster 0 if clustersToDelete is not empty <=> cluster 0 will change
-    //and if there is not a thread working with it, otherwise advise the thread of the change through
-    //correlationsInProcess and the thread will remove it.  (No waveform half anymore: cluster 0's
-    //spike rows changed, so carry-forward left its entry behind — epoch-snapshot step 3b.)
-    if(!clustersToDelete.empty()){
-        if(!correlationsInProcess.contains(0)) cleanCorrelation(0,currentClusterList);
-        else{
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.setClusterModified(0,true);
-            }
-        }
-    }
+    //No cluster-0 cache walk anymore (epoch-snapshot steps 3b and 4): when
+    //clustersToDelete is not empty cluster 0's spike rows changed, so
+    //carry-forward left its waveform entry and correlogram pairs behind.
 }
 
 
@@ -3465,9 +3457,6 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     //Sort the spikes of the newly created cluster.
     sortCluster(clusterInfoMapTemp,spikesByClusterTemp,1,positions,nbOfspikes,1,true);
 
-    //Get the list of clusters before applying the changes, this will be used in the clean
-    //of the correlation.
-    QList<dataType> currentClusterList = clusterIds();
 
     //Deal with the undo mechanism
     bool dimChanged = clustersToDelete.contains(0);
@@ -3482,24 +3471,12 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
 
 
     //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster 1.
-    //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-    // and the thread will remove it.
-    QList<int>::iterator iterator;
-    for(int cid : clustersToDelete) invalidateClusterCaches(cid, currentClusterList);
+    //(dropped from the current epoch's stores.)
+    for(int cid : clustersToDelete) invalidateClusterCaches(cid);
 
-    //remove the correlation data for the cluster 1 if clustersToDelete is not empty <=> cluster 1 will change
-    //and if there is not a thread working with it, otherwise advise the thread of the change through
-    //correlationsInProcess and the thread will remove it.  (No waveform half anymore: cluster 1's
-    //spike rows changed, so carry-forward left its entry behind — epoch-snapshot step 3b.)
-    if(!clustersToDelete.empty()){
-        if(!correlationsInProcess.contains(1)) cleanCorrelation(1,currentClusterList);
-        else{
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.setClusterModified(1,true);
-            }
-        }
-    }
+    //No cluster-1 cache walk anymore (epoch-snapshot steps 3b and 4): when
+    //clustersToDelete is not empty cluster 1's spike rows changed, so
+    //carry-forward left its waveform entry and correlogram pairs behind.
 }
 
 dataType Data::groupClusters(QList<int>& clustersToGroup){
@@ -3609,9 +3586,6 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     //Sort the spikes of the newly created cluster.
     sortCluster(clusterInfoMapTemp,spikesByClusterTemp,newClusterId,positions,nbOfspikes,1);
 
-    //Get the list of clusters before applying the grouping, this will be used in the clean
-    //of the correlation.
-    QList<dataType> currentClusterList = clusterIds();
 
     //Deal with the undo mechanism
     bool dimChanged = clustersToGroup.contains(0);
@@ -3624,10 +3598,8 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     }
 
     //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
-    //if there is not a thread working with them, otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-    // and the thread will remove it.
-    QList<int>::iterator clustersToGroupIterator;
-    for(int cid : clustersToGroup) invalidateClusterCaches(cid, currentClusterList);
+    //(dropped from the current epoch's stores.)
+    for(int cid : clustersToGroup) invalidateClusterCaches(cid);
 
     return newClusterId;
 }
@@ -4311,45 +4283,21 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
     undoRedoInProcess = true;
 
 
-    //Get the list of clusters before applying the changes, this will be used in the clean
-    //of the correlation.
-    QList<dataType> currentClusterList = clusterIds();
 
-    //If addedClusters or updatedClusters contain any cluster, drop its cached waveforms and correlograms
-    //(the data will have to be uploaded again) — for the correlations, if there is not a thread working
-    //with it, otherwise advise the thread of the change through correlationsInProcess
-    // and the thread will remove it.
+    //If addedClusters or updatedClusters contain any cluster, drop its cached waveforms and
+    //correlograms from the current epoch's stores (the data will have to be uploaded again).
     if(!addedClusters.isEmpty() ){
-        QList<int>::iterator clustersToRemoveIterator;
-        for(int cid : addedClusters) invalidateClusterCaches(cid, currentClusterList);
+        for(int cid : addedClusters) invalidateClusterCaches(cid);
     }
     if(!updatedClusters.isEmpty()){
-        QList<int>::iterator clustersToRemoveIterator;
-        for(int cid : updatedClusters) invalidateClusterCaches(cid, currentClusterList);
+        for(int cid : updatedClusters) invalidateClusterCaches(cid);
     }
 
-    //if addedClusters and updatedClusters are both empty, the undo concern the renumbering
-    //Can not do much, all the data will have to be reloaded (it should not happen very often)
-    if(addedClusters.isEmpty() && updatedClusters.isEmpty()){
-        //Gets all the clustersId currently available
-        QList<dataType> clusters = clusterIds();
-
-        //Loop on all the clusters and delete the linked correlation information if possible (if a
-        //thread is not working with it), otherwise modify the status so the thread will delete it.
-        //(The waveform half of this walk is gone: the publish below carries each cluster's entry
-        //only if its spike rows are identical across the undo, so the ids the renumbering moved
-        //recompute and the untouched ones keep their cache — epoch-snapshot step 3b.)
-        QList<dataType>::iterator iterator;
-        for(iterator = clusters.begin(); iterator != clusters.end(); ++iterator){
-            if(!correlationsInProcess.contains(*iterator)) cleanCorrelation(*iterator,clusters);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(*iterator,true);
-                }
-            }
-        }
-    }
+    //if addedClusters and updatedClusters are both empty, the undo concerns a renumbering.
+    //No cache walk anymore (epoch-snapshot steps 3b and 4): the publish below carries each
+    //waveform entry and correlogram pair only if the cluster(s) hold identical spike rows
+    //across the undo, so the ids the renumbering moved recompute and the untouched ones
+    //keep their caches.
 
     //If clusterInfoMapUndoList is not empty, make the current clusterInfoMap become the first element
     //of the clusterInfoMapRedoList and the first element of the clusterInfoMapUndoList become the current clusterInfoMap.
@@ -4401,48 +4349,24 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
     //Inform that a redo is in process
     undoRedoInProcess = true;
 
-    //Get the list of clusters before applying the changes, this will be used in the clean
-    //of the correlation.
-    QList<dataType> currentClusterList = clusterIds();
 
     //If addedClusters or updatedClusters contain any cluster, drop its cached waveforms and correlograms
     //(the data will have to be uploaded again).
     if(!addedClusters.isEmpty() ){
-        QList<int>::iterator clustersToRemoveIterator;
-        for(int cid : addedClusters) invalidateClusterCaches(cid, currentClusterList);
+        for(int cid : addedClusters) invalidateClusterCaches(cid);
     }
 
     if(updatedClusters.size() > 0){
-        QList<int>::iterator clustersToRemoveIterator;
-        for(int cid : updatedClusters) invalidateClusterCaches(cid, currentClusterList);
+        for(int cid : updatedClusters) invalidateClusterCaches(cid);
     }
 
     if(!deletedClusters.isEmpty()){
-        QList<int>::iterator clustersToRemoveIterator;
-        for(int cid : deletedClusters) invalidateClusterCaches(cid, currentClusterList);
+        for(int cid : deletedClusters) invalidateClusterCaches(cid);
     }
 
 
-    //if addedClusters and updatedClusters are both empty, the undo concern the renumbering
-    //Can not do much, all the data will have to be reloaded (it should not happen very often)
-    if(addedClusters.isEmpty() && updatedClusters.isEmpty()){
-        //Gets all the clustersId currently available
-        QList<dataType> clusters = clusterIds();
-
-        //Loop on all the clusters and delete the linked correlation information if possible (if a
-        //thread is not working with it), otherwise modify the status so the thread will delete it.
-        //(No waveform half anymore — see the twin walk in undo().)
-        QList<dataType>::iterator iterator;
-        for(iterator = clusters.begin(); iterator != clusters.end(); ++iterator){
-            if(!correlationsInProcess.contains(*iterator)) cleanCorrelation(*iterator,clusters);
-            else{
-                {
-                    QMutexLocker lk(&mutex);
-                correlationsInProcess.setClusterModified(*iterator,true);
-                }
-            }
-        }
-    }
+    //if addedClusters and updatedClusters are both empty, the redo concerns a renumbering.
+    //No cache walk anymore — see the twin comment in undo().
 
     //If clusterInfoMapRedoList is not empty, make the current clusterInfoMap become the first element
     //of the clusterInfoMapUndoList and the first element of the clusterInfoMapRedoList become the current clusterInfoMap.
@@ -4588,14 +4512,13 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
         else{
             //Insert the new cluster id in the second row.
             for(long i = 0; i<nbSpikesOfCluster;++i) (*spikesByClusterTemp)(2,firstSpikePosition + i) = clusterNumber;
-            //The waveform cache is no longer re-keyed here (epoch-snapshot
-            //step 3b): the store is keyed per epoch, and prepareUndo's publish
-            //carries an id's entry only if that id holds the same spikes on
-            //both sides — an id the renumbering moved fails the test and its
-            //waveforms recompute in the background (accepted cost; the ids the
-            //renumbering left in place keep their cache).  The correlations,
-            //still a live Data-owned cache, are re-keyed below through
-            //renumberCorrelation once the complete mapping is known.
+            //The caches are no longer re-keyed here (epoch-snapshot steps 3b
+            //and 4): the stores are keyed per epoch, and prepareUndo's
+            //publish carries an id's waveform entry — and a pair's
+            //correlograms — only if the id(s) hold the same spikes on both
+            //sides.  An id the renumbering moved fails the test and its
+            //data recompute in the background (accepted cost; the ids the
+            //renumbering left in place keep their caches).
         }
         //Construct the new clusterInfoMap
         clusterInfoMapTemp->insert(clusterNumber,ClusterInfo(firstSpikePosition,nbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
@@ -4605,9 +4528,8 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
         ++clusterNumber;
     }
 
-    //Renumber the correlations, this is not done in the loop because the complet mapping has
-    //to be known in order to do it.
-    renumberCorrelation(clusterIdsOldNew);
+    //The correlograms are no longer re-keyed either (renumberCorrelation is
+    //gone with the live cache): the same carry-forward covers them per pair.
 
     //Deal with the undo mechanism (renumber does not affect cluster 0 dimensions)
     prepareUndo(spikesByClusterTemp,clusterInfoMapTemp,false);
@@ -4627,8 +4549,8 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
 //   - Spike-table layout (column 1 = original .fet row index, column 2 =
 //     cluster ID) is preserved exactly; only column 2 entries belonging to
 //     renamed clusters are rewritten.
-//   - The correlation cache is re-keyed via renumberCorrelation, matching
-//     Data::renumber; the waveform cache needs nothing (see pass 2).
+//   - Neither cache needs re-keying: publishSnapshot's carry-forward
+//     decides per id / per pair, exactly as in Data::renumber (see pass 2).
 //   - Caller (KlustersDoc) is responsible for matching prepareClusterColorUndo
 //     and view-side renumberClusters() calls.
 // ---------------------------------------------------------------------------
@@ -4762,12 +4684,8 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
         writePos += nbSp;
     }
 
-    // Renumber correlation cache; needs only the partial map (renumber()
-    // and renumberCorrelation() both treat unchanged clusters as identity).
-    {
-        QMap<int,int> partial = oldToNew;
-        renumberCorrelation(partial);
-    }
+    // No correlogram re-keying either — carry-forward covers the pairs the
+    // same way (see the comment in pass 2 and in Data::renumber).
 
     // Push the previous tables onto the undo stack and swap in the new ones.
     // renumberPartial does not affect cluster 0, so dimensionChanged = false.
@@ -5694,186 +5612,74 @@ void Data::sortCluster(ClusterInfoMap* clusterInfoMapTemp,SortableTable* spikesB
            nbSpikesOfCluster * sizeof(dataType));
 }
 
-Data::Status Data::getCorrelograms(Pair& pair,int binSize,int timeWindow,double binSizeInRU,float timeWindowInRU,int halfBins){
-    int cluster1 = pair.first;
-    int cluster2 = pair.second;
-    Pair parameters{binSize,timeWindow};
-    QHash<QString, Correlation*>* dict = nullptr;
+Data::Status Data::getCorrelograms(const std::shared_ptr<const Data::ClusteringSnapshot>& snap,Pair& pair,int binSize,int timeWindow,double binSizeInRU,float timeWindowInRU,int halfBins){
+    const int cluster1 = pair.first;
+    const int cluster2 = pair.second;
+    const QString params = pairKey(binSize,timeWindow);
 
-    //Test first if the clusters still exist
+    //Membership is immutable within the epoch: the pair's clusters either
+    //exist at this snapshot or they never will (epoch-snapshot step 4).  The
+    //old cluster-suppressed / cluster-modified re-checks scattered through
+    //this body — and the CorrelationsInProcess bookkeeping that served them
+    //— are gone with the live cache they guarded; the only way an entry
+    //vanishes mid-epoch is dropCorrelationEntries() (a timestamp writer),
+    //handled by the identity guard on the terminal below.
+    if(!snap->hasCluster(static_cast<dataType>(cluster1)) ||
+       !snap->hasCluster(static_cast<dataType>(cluster2))) return NOT_AVAILABLE;
+
+    CorrelationCacheStore& store = *snap->correlations;
+    std::shared_ptr<Correlation> correlation;
+
+    //Test if the correlogram is in process or already available, and claim
+    //it otherwise — one locked section, so concurrent jobs asking for the
+    //same (pair, parameters) see exactly one owner.
     {
-        QMutexLocker lk(&mutex);
-        bool cluster1Removed = !clusterInfoMap->contains(static_cast<dataType>(cluster1));
-        bool cluster2Removed = !clusterInfoMap->contains(static_cast<dataType>(cluster2));
-        if(cluster1Removed || cluster2Removed)return NOT_AVAILABLE;
+        QMutexLocker lk(&store.m);
+        std::shared_ptr<Correlation>& slot = store.byPair[pair][params];
+        if(slot){
+            const Status status = slot->getStatus(binSize,timeWindow);
+            if(status == IN_PROCESS) return IN_PROCESS;
+            if(status == READY)      return READY;
+        }
+        //Claim with a FRESH object (the parameters constructor starts it
+        //IN_PROCESS), never by resetting the previous one in place: a reader
+        //pinning the old object keeps a consistent correlogram.
+        correlation = std::make_shared<Correlation>(*this,binSize,timeWindow);
+        slot = correlation;
     }
 
-    //Test if the correlogram is in process or already available.
-    Status status = NOT_AVAILABLE;
+    //Get the spikes positions from this epoch's tables (cannot fail at a
+    //fixed epoch — hasCluster was checked above; kept as an invariant guard
+    //that unclaims, so nothing wedges at IN_PROCESS).
+    const bool autoCorrelogram = (cluster1 == cluster2);
+    SortableTable spikesOfCluster1 = SortableTable();
+    SortableTable spikesOfCluster2 = SortableTable();
+    if(!snap->spikePositions(cluster1,spikesOfCluster1) ||
+       (!autoCorrelogram && !snap->spikePositions(cluster2,spikesOfCluster2))){
+        QMutexLocker lk(&store.m);
+        auto pairIt = store.byPair.find(pair);
+        if(pairIt != store.byPair.end() && pairIt.value().value(params) == correlation){
+            pairIt.value().remove(params);
+            if(pairIt.value().isEmpty()) store.byPair.erase(pairIt);
+        }
+        return NOT_AVAILABLE;
+    }
+
+    //Compute the correlogram.  The spike times are read through the shared
+    //features table (plan step 5's concern, unchanged here).
+    if(!autoCorrelogram) correlation->calculateCorrelation(spikesOfCluster1,spikesOfCluster2,binSizeInRU,timeWindowInRU,halfBins,autoCorrelogram);
+    else correlation->calculateCorrelation(spikesOfCluster1,spikesOfCluster1,binSizeInRU,timeWindowInRU,halfBins,autoCorrelogram);
+
+    //Terminal.  The identity guard keeps a result whose entry was dropped
+    //mid-compute (dropCorrelationEntries) out of the store: the slot is
+    //gone or belongs to a newer owner, our object dies with us — the caller
+    //still gets its READY, and the view's next look at the store simply
+    //finds nothing there.
     {
-        QMutexLocker lk(&mutex);
-    if(correlationDict[pairKey(pair)] != 0){
-        dict = correlationDict[pairKey(pair)];
-        if((*dict)[pairKey(parameters)] != 0){
-            if(((*dict)[pairKey(parameters)])->getStatus(binSize,timeWindow) == IN_PROCESS) status = IN_PROCESS;
-            else if(((*dict)[pairKey(parameters)])->getStatus(binSize,timeWindow) == READY) status = READY;
-        }
-    }
-    }
-
-    if(status != NOT_AVAILABLE) return status;
-
-    //Test if the correlogram, for the given parametres, is not available, if so compute it.
-    //If the pair does not exist or the binSize and/or the timeFrame are different, the correlogram will have to be computed.
-    bool computeCorrelogram = false;
-    {
-        QMutexLocker lk(&mutex);
-    dict = correlationDict[pairKey(pair)];
-    if(correlationDict[pairKey(pair)] == 0 || ((*dict)[pairKey(parameters)] == 0))
-        computeCorrelogram = true;
-    }
-
-    if(computeCorrelogram){
-        //Advice that a correlation is in process on the cluster1 and cluster2.
-        {
-            QMutexLocker lk(&mutex);
-        correlationsInProcess.addProcess(static_cast<dataType>(cluster1));
-        correlationsInProcess.addProcess(static_cast<dataType>(cluster2));
-        }
-
-        //Create the correlation object or retrieve it if it already exists.
-        //In case several threads, working on the same pair with the same parameters, get to this point, make sure that only one will
-        //performs the computation.
-        bool correlationAlreadyInProcess = false;
-        Correlation* correlation = nullptr;
-        {
-            QMutexLocker lk(&mutex);
-        dict = correlationDict[pairKey(pair)];
-        if(dict == nullptr){
-            dict = new QHash<QString, Correlation*>();
-            correlation = new Correlation(*this,binSize,timeWindow);
-            correlation->setStatus(IN_PROCESS);
-            dict->insert(pairKey(parameters),correlation);
-            correlationDict.insert(pairKey(pair),dict);
-        }
-        else if((*dict)[pairKey(parameters)] == 0){
-            correlation = new Correlation(*this,binSize,timeWindow);
-            correlation->setStatus(IN_PROCESS);
-            dict->insert(pairKey(parameters),correlation);
-        }
-        else if(((*dict)[pairKey(parameters)] != 0) && (*dict)[pairKey(parameters)]->getStatus() != IN_PROCESS){
-            correlation = (*dict)[pairKey(parameters)];
-            correlation->setStatus(IN_PROCESS);
-            correlation->reset();
-            correlation->setBinSize(binSize);
-            correlation->setTimeWindow(timeWindow);
-        }
-        else correlationAlreadyInProcess = true;
-        }
-
-        if(correlationAlreadyInProcess){
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            }
-            return IN_PROCESS;
-        }
-
-        //If cluster1 or cluster2 have been suppress after the thread calling this function has been launched
-        //skip this pair.
-        bool clusterNotAvailable = false;
-        bool autoCorrelogram = false;
-        SortableTable spikesOfCluster1 = SortableTable();
-        SortableTable spikesOfCluster2 =  SortableTable();
-
-        if(cluster1 == cluster2) autoCorrelogram = true;
-
-        //Get the spikes positions for the cluster1 in a one row SortableTable.
-        if(!spikePositions(cluster1,spikesOfCluster1)){
-            cleanCorrelation(static_cast<dataType>(cluster1),clusterIds(),true);
-            clusterNotAvailable = true;
-        }
-        //Get the spikes positions for the cluster2 in a one row SortableTable.
-        if(!autoCorrelogram && (!spikePositions(cluster2,spikesOfCluster2))){
-            cleanCorrelation(static_cast<dataType>(cluster2),clusterIds(),true);
-            clusterNotAvailable = true;
-        }
-        if(clusterNotAvailable){
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            delete correlationDict.take(pairKey(pair)); //if the clusters do not exist anymore they would not have been
-            //removed in cleanCorrelation
-            }
-            return NOT_AVAILABLE;
-        }
-
-        //Check if either the cluster1 or the cluster2 have been modified since the thread has been launched
-        {
-            QMutexLocker lk(&mutex);
-        if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster1))){
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
-            delete correlationDict.take(pairKey(pair));
-            clusterNotAvailable = true;
-        }
-        if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster2))){
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            delete correlationDict.take(pairKey(pair));
-            clusterNotAvailable = true;
-        }
-        }
-        if(clusterNotAvailable) return NOT_AVAILABLE;
-
-
-        //Compute the correlogram.
-        if(!autoCorrelogram) correlation->calculateCorrelation(spikesOfCluster1,spikesOfCluster2,binSizeInRU,timeWindowInRU,halfBins,autoCorrelogram);
-        else correlation->calculateCorrelation(spikesOfCluster1,spikesOfCluster1,binSizeInRU,timeWindowInRU,halfBins,autoCorrelogram);
-
-        //If cluster1 or cluster2 have been suppress or modifed after the thread calling this function has been launched
-        //skip this pair.
-        if(!clusterInfoMap->contains(static_cast<dataType>(cluster1))){
-            cleanCorrelation(static_cast<dataType>(cluster1),clusterIds(),true);
-            clusterNotAvailable = true;
-        }
-        if(!autoCorrelogram && (!clusterInfoMap->contains(static_cast<dataType>(cluster2)))){
-            cleanCorrelation(static_cast<dataType>(cluster2),clusterIds(),true);
-            clusterNotAvailable = true;
-        }
-        if(clusterNotAvailable){
-            {
-                QMutexLocker lk(&mutex);
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            delete correlationDict.take(pairKey(pair)); //if the clusters do not exist anymore they would not have been
-            //removed in cleanCorrelation
-            }
-            return NOT_AVAILABLE;
-        }
-
-        {
-            QMutexLocker lk(&mutex);
-        if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster1))){
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
-            delete correlationDict.take(pairKey(pair));
-            clusterNotAvailable = true;
-        }
-        if(correlationsInProcess.isClusterModified(static_cast<dataType>(cluster2))){
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-            delete correlationDict.take(pairKey(pair));
-            clusterNotAvailable = true;
-        }
-        if(!clusterNotAvailable){
-            //Update the status
+        QMutexLocker lk(&store.m);
+        const auto pairIt = store.byPair.constFind(pair);
+        if(pairIt != store.byPair.constEnd() && pairIt.value().value(params) == correlation)
             correlation->setStatus(READY);
-
-            //Update the correlation status of the cluster1 and cluster2.
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster1));
-            correlationsInProcess.removeProcess(static_cast<dataType>(cluster2));
-        }
-        }
-        if(clusterNotAvailable) return NOT_AVAILABLE;
     }
     return READY;
 }
@@ -6027,59 +5833,23 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
     }
 }
 
-void Data::cleanCorrelation(dataType clusterId,const QList<dataType>& currentClusterList,bool cleanProcess){
-    {
-        QMutexLocker lk(&mutex);
-    if(cleanProcess) correlationsInProcess.removeCluster(clusterId);
-
-    //Remove the autocorrelogram separatly as the clusterID has already been removed from
-    //the list of clusters.
-    delete correlationDict.take(pairKey(static_cast<int>(clusterId),static_cast<int>(clusterId)));
-
-    //Gets all the clustersId currently available
-
-    //Remove all the correlations link to clusterId
-    QList<dataType>::const_iterator iterator;
-    QList<dataType>::const_iterator end(currentClusterList.end());
-    for(iterator = currentClusterList.begin(); iterator != end; ++iterator){
-        //Search pairs as (clusterId,*iterator) where clusterId > *iterator
-        //and (*iterator,clusterId) where *iterator > clusterId
-        if(*iterator <= clusterId) delete correlationDict.take(pairKey(static_cast<int>(*iterator),static_cast<int>(clusterId)));
-        else delete correlationDict.take(pairKey(static_cast<int>(clusterId),static_cast<int>(*iterator)));
-    }
-    }
-}
-
-void Data::renumberCorrelation(QMap<int,int>& clusterIdsOldNew){
-    //Get all the old cluster ids
-    QList<int> oldClusterIds = clusterIdsOldNew.keys();
-
-    QList<int>::iterator iterator;
-    {
-        QMutexLocker lk(&mutex);
-    int i = 0;
-    for(iterator = oldClusterIds.begin(); iterator != oldClusterIds.end(); ++iterator){
-        if(correlationsInProcess.contains(*iterator)){
-            correlationsInProcess.setClusterModified(*iterator,true);
-            continue;
-        }
-        for(int j = i; j<static_cast<int>(oldClusterIds.count());j++) {
-            int val = oldClusterIds.at(i);
-            int val2 = oldClusterIds.at(j);
-            if(val2 <= val){
-                QHash<QString, Correlation*>* dict = correlationDict.take(pairKey(val2,val));
-                if(dict != nullptr)
-                    correlationDict.insert(pairKey(clusterIdsOldNew[val2],clusterIdsOldNew[val]),dict);
-            }
-            else{
-                QHash<QString, Correlation*>* dict = correlationDict.take(pairKey(val,val2));
-                if(dict != nullptr)
-                    correlationDict.insert(pairKey(clusterIdsOldNew[val],clusterIdsOldNew[val2]),dict);
-            }
-
-        }
-        ++i;
-    }
+void Data::dropCorrelationEntries(int clusterId){
+    //The correlogram counterpart of dropWaveformEntry() (epoch-snapshot
+    //step 4): for writers that change the spike TIMESTAMPS behind an
+    //unchanged membership (the realign), which publishSnapshot's
+    //carry-forward equality cannot see.  Walks the CURRENT store's own pair
+    //keys, so the pre-edit cluster list the old cleanCorrelation needed —
+    //and the stale-pair class it fenced — has no referent anymore.  A
+    //mid-compute owner keeps its object alive through its shared_ptr; its
+    //identity-guarded terminal discards the result.
+    std::shared_ptr<const ClusteringSnapshot> snap = currentSnapshot();
+    CorrelationCacheStore& store = *snap->correlations;
+    QMutexLocker lk(&store.m);
+    for(auto it = store.byPair.begin(); it != store.byPair.end();){
+        if(it.key().first == clusterId || it.key().second == clusterId)
+            it = store.byPair.erase(it);
+        else
+            ++it;
     }
 }
 
@@ -6835,9 +6605,6 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
     //clear reclusteringSpikesByCluster
     reclusteringSpikesByCluster.setSize(0,true);
 
-    //Get the list of clusters before applying the changes, this will be used in the clean
-    //of the correlation.
-    QList<dataType> currentClusterList = clusterIds();
 
     //Deal with the undo mechanism
     bool dimChanged = clustersToRecluster.contains(0);
@@ -6851,10 +6618,8 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
     }
 
     //Remove the waveform and correlation data for the reclustered clusters.
-    //If there is not a thread working with them,otherwise advice the thread of the change,by updating waveformStatus and correlationsInProcess
-    // and the thread will remove it.
-    QList<int>::iterator iterator;
-    for(int cid : clustersToRecluster) invalidateClusterCaches(cid, currentClusterList);
+    //(dropped from the current epoch's stores.)
+    for(int cid : clustersToRecluster) invalidateClusterCaches(cid);
 
     // Localisation probe: the reclustered table was just installed (prepareUndo).
     // If the recluster integration left spikesByCluster referencing a feature row
@@ -6999,24 +6764,13 @@ void Data::restartDimensionExtrema(const QList<int>& modifiedClusters)
     minMaxThread->start();
 }
 
-void Data::invalidateClusterCaches(int clusterId,
-                                   const QList<dataType>& clusterListForCorrelations)
+void Data::invalidateClusterCaches(int clusterId)
 {
-    //Waveforms: drop the cluster's entry from the current epoch's store
-    //(epoch-snapshot step 3b; no in-flight case — a mid-flight owner's
-    //terminals are contains-guarded and discard their own result).
+    //Drop the cluster's entries from the current epoch's stores
+    //(epoch-snapshot steps 3b and 4; no in-flight case — a mid-flight
+    //owner's terminals are guarded and discard their own result).
     dropWaveformEntry(clusterId);
-
-    //Correlations: remove the data for the cluster if there is no thread
-    //working with them, otherwise advise the thread of the change by raising
-    //the modified flag and the thread will remove it.
-    if(!correlationsInProcess.contains(static_cast<dataType>(clusterId))) cleanCorrelation(static_cast<dataType>(clusterId),clusterListForCorrelations);
-    else{
-        {
-            QMutexLocker lk(&mutex);
-        correlationsInProcess.setClusterModified(static_cast<dataType>(clusterId),true);
-        }
-    }
+    dropCorrelationEntries(clusterId);
 }
 
 void Data::invalidateWaveformCache(int clusterId)
@@ -7038,9 +6792,8 @@ void Data::invalidateWaveformCache(int clusterId)
 
 void Data::invalidateCorrelogramCache(int clusterId)
 {
-    // Remove all cached correlogram entries that involve this cluster so the
-    // next CorrelationThread recomputes them from the updated in-memory
-    // timestamps.  Use the existing cleanCorrelation helper which handles
-    // the mutex and iterates all pairs that reference clusterId.
-    cleanCorrelation(static_cast<dataType>(clusterId), clusterIds(), false);
+    // Remove all cached correlogram entries that involve this cluster from
+    // the current epoch's store, so the next CorrelationThread recomputes
+    // them from the updated in-memory timestamps (epoch-snapshot step 4).
+    dropCorrelationEntries(clusterId);
 }
