@@ -23,17 +23,16 @@
 #include <QStyle>
 #include <QPixmap>
 #include <QList>
-#include <QMutex>
 
 #include <QResizeEvent>
 #include <QMouseEvent>
 
-#include <atomic>
 #include <memory>
 
 //include files for the application
 #include "zoomwindow.h"
 #include "viewwidget.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 
 
 
@@ -41,31 +40,6 @@
 class KlustersDoc;
 class KlustersView;
 class WaveformThread;
-
-/**Cancellation and completion state shared between a WaveformView and the
- * waveform jobs it enqueues on the shared worker pool (KlustersJobPool).
- * The view owns it through a shared_ptr and hands each job a copy, so the
- * state outlives whichever side dies first (worker-pool conversion, step 2).
- */
-struct WaveformJobToken {
-    /**Fences completion posts against view destruction: ~WaveformView sets
-    * viewDead under this mutex, and a job posts its completion event only
-    * while it is false (under the same mutex).*/
-    QMutex postMutex;
-    bool viewDead = false;
-    /**Request generation.  The view bumps it to supersede every in-flight
-    * job at once: a job whose captured generation no longer matches stops at
-    * its next cancellation check, and customEvent() drops its completion
-    * event.  This replaces both the per-thread stop flags and the
-    * threadsToBeKill ownership list.*/
-    std::atomic_int generation{0};
-    /**Number of jobs enqueued and not yet retired.  A job decrements it as
-    * the very last act of run(), so active == 0 means no job of this view is
-    * inside a Data call anymore — the synchronous quiesce contract that
-    * stopAndClearThreads() offers its callers, and what isThreadsRunning()
-    * reports.*/
-    std::atomic_int active{0};
-};
 
 /**
   * View displaying the waveforms of a subset of the spikes evenly
@@ -437,7 +411,7 @@ private:
     * cap-queue that bounded live loader threads: requests beyond the pool's
     * worker count now wait in the pool as inert job objects, costing no
     * thread and no file descriptors.*/
-    std::shared_ptr<WaveformJobToken> jobToken;
+    std::shared_ptr<KlustersJobToken> jobToken;
 
     /**True if the waveform information needed to draw the waveforms are available.*/
     bool dataReady;

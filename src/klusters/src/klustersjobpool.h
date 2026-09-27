@@ -15,6 +15,9 @@
 #ifndef KLUSTERSJOBPOOL_H
 #define KLUSTERSJOBPOOL_H
 
+#include <QMutex>
+#include <atomic>
+
 class QThreadPool;
 
 namespace KlustersJobPool {
@@ -30,5 +33,29 @@ QThreadPool* pool();
 void drain();
 
 }
+
+/**Cancellation and completion state shared between a view and the jobs it
+ * enqueues on the pool.  The view owns it through a shared_ptr and hands each
+ * job a copy, so the state outlives whichever side dies first.
+ */
+struct KlustersJobToken {
+    /**Fences completion posts against view destruction: the view's destructor
+    * sets viewDead under this mutex, and a job posts its completion event only
+    * while it is false (under the same mutex).*/
+    QMutex postMutex;
+    bool viewDead = false;
+    /**Request generation.  The view bumps it to supersede every in-flight
+    * job at once: a job whose captured generation no longer matches stops at
+    * its next cancellation check, and the view's customEvent() drops its
+    * completion event.  This replaces both the per-thread stop flags and the
+    * threadsToBeKill ownership lists.*/
+    std::atomic_int generation{0};
+    /**Number of jobs enqueued and not yet retired.  A job decrements it as
+    * the very last act of run(), so active == 0 means no job of this view is
+    * inside a Data call anymore — the synchronous quiesce contract that the
+    * views' stop methods offer their callers, and what isThreadsRunning()
+    * reports.*/
+    std::atomic_int active{0};
+};
 
 #endif // KLUSTERSJOBPOOL_H

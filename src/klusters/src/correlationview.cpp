@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <QApplication>
+#include <QThread>        // msleep for the synchronous job quiesce
+#include <QMutexLocker>
 /***************************************************************************
                           correlationview.cpp  -  description
                              -------------------
@@ -48,6 +50,7 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
                                  int minSize, int maxSize, int windowTopLeft ,int windowBottomRight, int border) :
     ViewWidget(doc,view,backgroundColor,statusBar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border,XMARGIN,YMARGIN),
     scaleMode(scale),
+    jobToken(std::make_shared<KlustersJobToken>()),
     dataReady(true),
     binSize(binSize),
     timeWindow(correlationTimeFrame),
@@ -121,32 +124,29 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
 }
 
 CorrelationView::~CorrelationView(){
-    //Ask the threads to stop as soon as possible.
+    //Supersede the in-flight jobs (and set goingToDie so nothing new launches).
     //Qualified (non-virtual) call: in its own destructor the object is already
     //this dynamic type, so this is the intended teardown; the explicit scope
     //documents that and silences the virtual-call-in-destructor warning.
     CorrelationView::willBeKilled();
 
-    //Wait until all the threads have finish before quiting otherwise
-    // it may endup in a crash of the application.
-    for(CorrelationThread* correlationThread : threadsToBeKill) {
-        while(!correlationThread->wait())
-        {
-            ;
-        }
+    //Fence the completion posts: once viewDead is set under the lock, no job
+    //will post to this view again (jobs check it under the same lock before
+    //posting).  The jobs themselves are not waited for: they were superseded
+    //above, the pool owns and deletes them, and the only state they share
+    //with us beyond the token is Data, which the document keeps alive until
+    //it drains the pool.
+    {
+        QMutexLocker lock(&jobToken->postMutex);
+        jobToken->viewDead = true;
     }
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
 
-    // Drain any thread-posted events so they don't fire after our destruction.
+    // Drain any job-posted events so they don't fire after our destruction.
     QApplication::removePostedEvents(this);
 }
 
-bool CorrelationView::isThreadsRunning() const{  
-    if(threadsToBeKill.isEmpty())
-        return false;
-    else
-        return true;
+bool CorrelationView::isThreadsRunning() const{
+    return jobToken->active.load(std::memory_order_acquire) > 0;
 }
 
 
@@ -332,12 +332,12 @@ void CorrelationView::paintEvent ( QPaintEvent *){
 }
 
 
-CorrelationThread* CorrelationView::getCorrelations(QList<Pair>* pairsToCompute,const QList<int>& clusterIds){
-    //The creation of a thread automatically start it.
-    return new CorrelationThread(*this,doc.data(),pairsToCompute,clusterIds);
+CorrelationThread* CorrelationView::getCorrelations(const QList<Pair>& pairsToCompute,const QList<int>& clusterIds){
+    //The creation of the job launches the request.
+    return new CorrelationThread(*this,doc.data(),pairsToCompute,clusterIds,jobToken);
 }
 
-void CorrelationView::askForCorrelograms(){  
+void CorrelationView::askForCorrelograms(){
     //If the widget is not about to be deleted, request the data.
     if(!goingToDie){
         dataReady = false;
@@ -352,37 +352,30 @@ void CorrelationView::askForCorrelograms(){
 
 
         pairs.clear();
-        QList<Pair>* clusterPairs = new QList<Pair>();
+        QList<Pair> clusterPairs;
         for(qsizetype j = 0; j < clusters.size(); ++j) {
             for(qsizetype h = j; h<clusters.size(); ++h) {
                 pairs.append(std::make_pair(clusters.at(j),clusters.at(h)));
-                clusterPairs->append(std::make_pair(clusters.at(j),clusters.at(h)));
+                clusterPairs.append(std::make_pair(clusters.at(j),clusters.at(h)));
             }
         }
 
 
-        //Create a thread to get the correlation data for that cluster.
-        CorrelationThread* correlationThread = getCorrelations(clusterPairs,clusters);
-        threadsToBeKill.append(correlationThread);
+        //Enqueue a job to get the correlation data for those clusters.
+        getCorrelations(clusterPairs,clusters);
     }
 }
 
 void CorrelationView::customEvent(QEvent *event){
-    //Event sent by a CorrelationThread to inform that the data are available.
+    //Event sent by a correlogram job to inform that the data are available.
     if(event->type() == QEvent::User + 300){
-        CorrelationThread::CorrelationsEvent* correlationEvent = (CorrelationThread::CorrelationsEvent*) event;
-        //Get the event information
-        CorrelationThread* correlationThread = correlationEvent->parentThread();
+        CorrelationThread::CorrelationsEvent* correlationEvent = static_cast<CorrelationThread::CorrelationsEvent*>(event);
 
-        //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
-        //action of the run method it seems that the event loop can be pretty fast and the run has not
-        //return when the event is received here.
-        while(!correlationThread->wait()){};
-
-        //Delete the correlationThread.
-        threadsToBeKill.removeAll(correlationThread);
-        delete correlationThread;
-        correlationThread = nullptr;
+        // Guard: results of a superseded request generation are stale — a
+        // stopRunningThreads() (or willBeKilled()) ran after the job was
+        // enqueued.  The job retired itself, so there is nothing to clean up.
+        if(correlationEvent->generation() != jobToken->generation.load(std::memory_order_acquire))
+            return;
 
         if(!goingToDie){
             //Each time a cluster is added to the view or modified, the size of the window is recalculated.
@@ -817,26 +810,29 @@ void CorrelationView::resizeEvent(QResizeEvent* e){
 void CorrelationView::willBeKilled(){
     if(!goingToDie){
         goingToDie = true;
-        //inform the running threads to stop processing as soon as possible.
-        for(CorrelationThread* correlationThread : threadsToBeKill) {
-            correlationThread->stopProcessing();
-        }
+        //Supersede the in-flight jobs: each stops at its next cancellation
+        //check (where it used to read its per-thread stop flag), and its
+        //completion event fails the generation guard in customEvent().
+        jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
     }
 }
 
 void CorrelationView::stopRunningThreads(){
     // Same synchronous quiesce as WaveformView::stopAndClearThreads /
-    // TemplateMatrixView::stopRunningThreadsSync: signal each thread, wait for
-    // run() to return, delete, and drop any completion events they posted so
-    // customEvent() can't later fire with a dangling thread pointer.  Does NOT
-    // set goingToDie, so fresh correlograms can be launched afterwards.
-    for(CorrelationThread* correlationThread : threadsToBeKill)
-        correlationThread->stopProcessing();
-    for(CorrelationThread* correlationThread : threadsToBeKill)
-        while(!correlationThread->wait()){}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
-    QApplication::removePostedEvents(this);
+    // TemplateMatrixView::stopRunningThreadsSync: supersede every in-flight
+    // job by bumping the request generation, then wait for the active count
+    // to drain so no correlogram job is inside a Data call once this returns.
+    // Does NOT set goingToDie, so fresh correlograms can be launched
+    // afterwards.
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    while(jobToken->active.load(std::memory_order_acquire) > 0)
+        QThread::msleep(1);
+    // Drop completion events the superseded jobs posted before retiring.
+    // They carry values, not thread pointers, and would fail the generation
+    // guard anyway; removing them just saves the no-op dispatches.  Only our
+    // event type is removed, so queued signal deliveries to this widget
+    // survive.
+    QApplication::removePostedEvents(this, QEvent::User + 300);
 }
 
 void CorrelationView::mouseMoveEvent(QMouseEvent* event){
