@@ -588,18 +588,18 @@ public:
     /**Returns the number of dimensions of the data.*/
     int nbOfDimensions(){return nbDimensions;}
 
-    /** Reverts the last user action.
-  * @param addedClusters list of clusters which were added (can be empty).
-  * @param updatedClusters list of clusters which were modified (can be empty).
+    /** Reverts the last user action: republishes the predecessor epoch's
+  * tables, re-adopting its waveform/correlogram stores when the byte
+  * context is unchanged (epoch-snapshot step 8).  The historical
+  * added/updated cluster lists are gone: which cached entries survive is
+  * decided by publishSnapshotAdopting()'s content rules, not by
+  * caller-supplied lists.
   */
-    void undo(QList<int>& addedClusters,QList<int>& updatedClusters);
+    void undo();
 
-    /** Reverts the last undo action
-  * @param addedClusters list of clusters which were added (can be empty).
-  * @param updatedClusters list of clusters which were modified (can be empty).
-  * @param deletedClusters list of clusters which were deleted (can be empty).
+    /** Reverts the last undo action (the mirror of undo()).
   */
-    void redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>& deletedClusters);
+    void redo();
 
     /**Renumbers the clusters, so the the clusterIds will be consecutive.
   * @param clusterIdsOldNew map between old and new cluster ids.
@@ -936,19 +936,6 @@ public:
      * the launch sequence; the callers still decide WHETHER to recompute and
      * WHICH clusters changed, which is the part that legitimately differs.*/
     void restartDimensionExtrema(const QList<int>& modifiedClusters);
-
-    /**Drops one cluster's cached waveforms AND correlograms from the current
-     * epoch's stores: dropWaveformEntry() plus dropCorrelationEntries()
-     * (epoch-snapshot steps 3b and 4).  Equivalent to invalidateWaveformCache
-     * + invalidateCorrelogramCache minus the compact-template removal; kept
-     * as the edit paths' one-call spelling.  The historical
-     * clusterListForCorrelations parameter is gone with the live cache it
-     * served: the store drop walks the store's own pair keys, so the
-     * carefully-passed pre-edit cluster list (and the stale-pair bug class
-     * it fenced) has no referent anymore.
-     *
-     * Must be called with the internal mutex NOT held.*/
-    void invalidateClusterCaches(int clusterId);
 
     /**Drops @p clusterId's entry from the CURRENT epoch's waveform store (and
      * its compact template), so the next request re-reads from the .spk file.

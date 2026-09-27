@@ -1507,9 +1507,7 @@ int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
 bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     if (!childData || childUndoStack.isEmpty()) return false;
     ChildEdit e = childUndoStack.takeFirst();
-    QList<int> added = e.added;                        // by-ref args; copy so the entry is preserved
-    QList<int> mod = e.modified;
-    childData->undo(added, mod);                       // reverts childData's tables
+    childData->undo();                                 // reverts childData's tables
     childRedoStack.prepend(e);
     syncChildColors();
     // Child-primary: an undo restores a previous labelling, and the map that goes
@@ -1529,8 +1527,7 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
 bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     if (!childData || childRedoStack.isEmpty()) return false;
     ChildEdit e = childRedoStack.takeFirst();
-    QList<int> added = e.added, mod = e.modified, deleted = e.deleted;
-    childData->redo(added, mod, deleted);             // re-applies the atom edit
+    childData->redo();                                // re-applies the atom edit
     childUndoStack.prepend(e);
     syncChildColors();
     // Child-primary: an undo restores a previous labelling, and the map that goes
