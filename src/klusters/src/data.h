@@ -301,9 +301,6 @@ public:
      */
     bool updateTimestamp(dataType spikeIndex, dataType newTimestamp);
 
-    /**Swaps all in-memory data (features, spikesByCluster) for two 1-based spike indices.*/
-    void swapSpikes(dataType idxA, dataType idxB);
-
     /**The ONE membership test the cluster builders use.  A polygon selection
   * is tested against the spike's position in the current projection exactly as
   * before; a row-named selection is a set lookup.*/
@@ -987,18 +984,6 @@ public:
     * place by rename (the re-extract): the old epochs keep the old inode,
     * the new epoch reads the new one.*/
     void reopenSpkReader();
-
-    /**Shared positioned-read access to the CURRENT .spk file version
-    * (worker-pool step 1): ONE descriptor serves every concurrent reader
-    * via pread.  Const: reading waveforms does not mutate the clustering.
-    * This is the live, current-epoch reader for serial current-state
-    * consumers (the strip, autoMerge, the sort CLI) and for the Data-owned
-    * caches until they move into the snapshot; a pool job reads through
-    * its captured snapshot's `spk` instead.  Never setPath/invalidate this
-    * reader — file replacement goes through setSpkFileName() /
-    * reopenSpkReader(), which install a fresh one (epoch-snapshot
-    * step 2).*/
-    SpkReader& spkReader() const { return *spkReaderInstance; }
 
     /**Returns the number of points corresponding to a spike. This equals to:
   * nbChannels * nbSamplesInWaveform

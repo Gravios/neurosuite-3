@@ -1351,8 +1351,10 @@ public:
      *  it to disk.  Original values are stored so rejectLastRealign() can
      *  undo the in-memory Data changes without touching disk. */
     struct PendingSpkRecord {
+        // The rewritten .spk bytes live in the Data-side SpkOverlay (one
+        // shared copy per record, epoch-snapshot step 7); this record keeps
+        // only what the reject path restores.
         int64_t              destPos;    // 0-based global spike position in file
-        std::vector<int16_t> spkRow;    // sample-major waveform for .spk
         int64_t              ts;        // new timestamp for .res
         std::vector<int64_t> fetRow;   // new feature row for .fet (length timeDim)
         // --- originals for reject ---

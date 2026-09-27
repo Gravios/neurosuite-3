@@ -6897,25 +6897,6 @@ bool Data::updateTimestamp(dataType spikeIndex, dataType newTimestamp)
     return true;
 }
 
-void Data::swapSpikes(dataType idxA, dataType idxB)
-{
-    if (idxA == idxB) return;
-    // Swap all feature columns (including timestamp)
-    for (int d = 1; d <= nbDimensions; ++d) {
-        dataType tmp        = features(idxA, d);
-        features(idxA, d)  = features(idxB, d);
-        features(idxB, d)  = tmp;
-    }
-    // Swap the two entries in spikesByCluster that point to idxA / idxB.
-    // Row 1 = feature row index; row 2 = cluster id.
-    // The table is sorted by cluster, so we need to search for both entries.
-    for (dataType k = 1; k <= nbSpikes; ++k) {
-        dataType ref = (*spikesByCluster)(1, k);
-        if (ref == idxA)       (*spikesByCluster)(1, k) = idxB;
-        else if (ref == idxB)  (*spikesByCluster)(1, k) = idxA;
-    }
-}
-
 void Data::restartDimensionExtrema(const QList<int>& modifiedClusters)
 {
     //If the minMaxThread has not finished, wait until it is done
