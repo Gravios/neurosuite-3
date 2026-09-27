@@ -238,6 +238,40 @@ void Data::clearSpkOverlay(){
     publishSnapshot();
 }
 
+void Data::publishSnapshotAdopting(const std::shared_ptr<const ClusteringSnapshot>& source){
+    //Adopt the popped epoch's caches wholesale when its byte context is
+    //still the live one: its stores describe exactly the tables being
+    //re-adopted, so the undo restores its cached waveforms and correlograms
+    //instantly — including everything the carry-forward's per-cluster
+    //equality would have recomputed only because an id changed and changed
+    //back.  Sharing a store between the popped epoch and the new one is
+    //sound for the same reason: identical tables over identical bytes.  A
+    //byte context that moved since that epoch (a realign/nudge batch, a
+    //pending reseed or re-extract redirect) makes its waveform bytes and
+    //correlogram timestamps suspect, so it falls back to the ordinary
+    //publish and its carry-forward from the CURRENT epoch.
+    bool adoptable = false;
+    if(source){
+        QMutexLocker lk(&mutex);
+        adoptable = (source->spk == spkReaderInstance) &&
+                    (source->spkOverlay == spkOverlayLive);
+    }
+    if(!adoptable){
+        publishSnapshot();
+        return;
+    }
+    auto snap = std::make_shared<ClusteringSnapshot>();
+    snap->waveforms    = source->waveforms;
+    snap->correlations = source->correlations;
+    QMutexLocker lk(&mutex);
+    snap->epoch = ++snapshotEpochCounter;
+    snap->spikesByCluster = spikesByCluster;
+    snap->clusterInfoMap  = clusterInfoMap;
+    snap->spk             = spkReaderInstance;
+    snap->spkOverlay      = spkOverlayLive;
+    snapshot = std::move(snap);
+}
+
 std::shared_ptr<const Data::ClusteringSnapshot> Data::currentSnapshot() const{
     QMutexLocker lk(&mutex);
     return snapshot;
@@ -336,10 +370,8 @@ Data::~Data(){
     spikesByCluster.reset();
     clusterInfoMap.reset();
 
-    clusterInfoMapUndoList.clear();
-    clusterInfoMapRedoList.clear();
-    spikesByClusterUndoList.clear();
-    spikesByClusterRedoList.clear();
+    undoSnapshots.clear();
+    redoSnapshots.clear();
 
     //The waveform and correlogram stores die with their snapshots (their
     //objects are shared_ptr-held); parked waiters die with their tickets,
@@ -4233,13 +4265,14 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
         return;
     }
 
-    //Store the current spikesByCluster in the undo list and make the temporary becomes the current one.
-    spikesByClusterUndoList.prepend(spikesByCluster);
-    //Store the current map in the undo list and make the temporary become the current one.
-    clusterInfoMapUndoList.prepend(clusterInfoMap);
+    //Push the PRE-edit epoch onto the undo history (epoch-snapshot step 8):
+    //the snapshot carries the current tables — publishSnapshot mirrors the
+    //live members at every publication — plus that epoch's stores, reader
+    //and overlay, which is what lets undo restore its caches wholesale.
+    undoSnapshots.prepend(currentSnapshot());
     //Record whether this operation changed the min/max dimensions.
     //Must be prepended HERE (not by the caller after returning) so the trim below
-    //keeps it in sync with the two data lists.
+    //keeps it in sync with the history.
     dimensionChangedUndo.prepend(dimensionChanged);
 
     {
@@ -4251,18 +4284,16 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
     //through: publish the new membership epoch here.
     publishSnapshot();
 
-    //if the number of undo has been reached, remove the oldest element from all three lists
-    //(the shared_ptrs release the tables with their last reference)
-    int currentNbUndo = spikesByClusterUndoList.count();
+    //if the number of undo has been reached, remove the oldest element
+    //(the shared_ptr releases the epoch — tables, stores — with its last reference)
+    int currentNbUndo = undoSnapshots.count();
     if(currentNbUndo > nbUndo){
-        spikesByClusterUndoList.removeAt(currentNbUndo - 1);
-        clusterInfoMapUndoList.removeAt(currentNbUndo - 1);
+        undoSnapshots.removeAt(currentNbUndo - 1);
         dimensionChangedUndo.removeAt(currentNbUndo - 1);
     }
 
-    //Clear the redoLists (including dimensionChangedRedo which must stay in sync)
-    spikesByClusterRedoList.clear();
-    clusterInfoMapRedoList.clear();
+    //Clear the redo history (including dimensionChangedRedo which must stay in sync)
+    redoSnapshots.clear();
     dimensionChangedRedo.clear();
 
     // Active consistency guarantee.  prepareUndo is the single commit point every
@@ -4290,31 +4321,28 @@ void Data::nbUndoChangedCleaning(int newNbUndo){
     //if the new number of possible undo is smaller than the current one,
     // clean the undo/redo related variables.
     if(newNbUndo < nbUndo){
-        int currentNbUndo = spikesByClusterUndoList.count();
+        int currentNbUndo = undoSnapshots.count();
         //if the current number of undo is bigger than the new number of undo,
-        // remove the last elements in the undo lists (first ones inserted).
+        // remove the last elements in the undo history (first ones inserted).
         if(currentNbUndo > newNbUndo){
             while(currentNbUndo > newNbUndo){
-                spikesByClusterUndoList.removeAt(currentNbUndo - 1);
-                clusterInfoMapUndoList.removeAt(currentNbUndo - 1);
+                undoSnapshots.removeAt(currentNbUndo - 1);
                 if(!dimensionChangedUndo.isEmpty()) dimensionChangedUndo.removeLast();
-                currentNbUndo = spikesByClusterUndoList.count();
+                currentNbUndo = undoSnapshots.count();
             }
-            //Clear the redoLists
-            spikesByClusterRedoList.clear();
-            clusterInfoMapRedoList.clear();
+            //Clear the redo history
+            redoSnapshots.clear();
             dimensionChangedRedo.clear();
         }
-        //currentNbUndo < newNbUndo, check the redo list.
+        //currentNbUndo < newNbUndo, check the redo history.
         else{
             //number of undo and redo must be <= new number of undo. Remove redo elements if need it.
-            int currentNbRedo = spikesByClusterRedoList.count();
+            int currentNbRedo = redoSnapshots.count();
             if((currentNbRedo + currentNbUndo) > newNbUndo){
                 while((currentNbRedo + currentNbUndo) > newNbUndo){
-                    clusterInfoMapRedoList.removeAt(currentNbRedo - 1);
-                    spikesByClusterRedoList.removeAt(currentNbRedo - 1);
+                    redoSnapshots.removeAt(currentNbRedo - 1);
                     if(!dimensionChangedRedo.isEmpty()) dimensionChangedRedo.removeLast();
-                    currentNbRedo = spikesByClusterRedoList.count();
+                    currentNbRedo = redoSnapshots.count();
                 }
             }
         }
@@ -4415,26 +4443,21 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
     //across the undo, so the ids the renumbering moved recompute and the untouched ones
     //keep their caches.
 
-    //If clusterInfoMapUndoList is not empty, make the current clusterInfoMap become the first element
-    //of the clusterInfoMapRedoList and the first element of the clusterInfoMapUndoList become the current clusterInfoMap.
-    //Do the same with the spikesByCluster
-    if(!clusterInfoMapUndoList.isEmpty()){
-
-        clusterInfoMapRedoList.prepend(clusterInfoMap);
-        std::shared_ptr<ClusterInfoMap> clusterInfoMapTemp = clusterInfoMapUndoList.takeAt(0);
-        spikesByClusterRedoList.prepend(spikesByCluster);
-        std::shared_ptr<SortableTable> spikesByClusterTemp = spikesByClusterUndoList.takeAt(0);
+    //Move the current epoch onto the redo history and re-adopt the
+    //predecessor epoch's tables (epoch-snapshot step 8).
+    if(!undoSnapshots.isEmpty()){
+        redoSnapshots.prepend(currentSnapshot());
+        std::shared_ptr<const ClusteringSnapshot> popped = undoSnapshots.takeAt(0);
 
         {
             QMutexLocker lk(&mutex);
-        clusterInfoMap =  clusterInfoMapTemp;
-
-
-        spikesByCluster =  spikesByClusterTemp;
-
+            clusterInfoMap  = popped->clusterInfoMap;
+            spikesByCluster = popped->spikesByCluster;
         }
-        //Undo republishes the predecessor tables as a NEW epoch.
-        publishSnapshot();
+        //Undo republishes the predecessor tables as a NEW epoch — with the
+        //predecessor's caches adopted wholesale when its byte context is
+        //still the live one.
+        publishSnapshotAdopting(popped);
 
 
         //If the last action implied a changed of the dimension, change the dimension again
@@ -4484,22 +4507,20 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
     //if addedClusters and updatedClusters are both empty, the redo concerns a renumbering.
     //No cache walk anymore — see the twin comment in undo().
 
-    //If clusterInfoMapRedoList is not empty, make the current clusterInfoMap become the first element
-    //of the clusterInfoMapUndoList and the first element of the clusterInfoMapRedoList become the current clusterInfoMap.
-    //Do the same with the spikesByCluster
-    if(!clusterInfoMapRedoList.isEmpty()){
-        clusterInfoMapUndoList.prepend(clusterInfoMap);
-        std::shared_ptr<ClusterInfoMap> clusterInfoMapTemp = clusterInfoMapRedoList.takeAt(0);
-        spikesByClusterUndoList.prepend(spikesByCluster);
-        std::shared_ptr<SortableTable> spikesByClusterTemp = spikesByClusterRedoList.takeAt(0);
+    //Move the current epoch onto the undo history and re-adopt the
+    //successor epoch's tables (epoch-snapshot step 8).
+    if(!redoSnapshots.isEmpty()){
+        undoSnapshots.prepend(currentSnapshot());
+        std::shared_ptr<const ClusteringSnapshot> popped = redoSnapshots.takeAt(0);
 
         {
             QMutexLocker lk(&mutex);
-        clusterInfoMap =  clusterInfoMapTemp;
-        spikesByCluster =  spikesByClusterTemp;
+            clusterInfoMap  = popped->clusterInfoMap;
+            spikesByCluster = popped->spikesByCluster;
         }
-        //Redo republishes the successor tables as a NEW epoch.
-        publishSnapshot();
+        //Redo republishes the successor tables as a NEW epoch — caches
+        //adopted as in undo().
+        publishSnapshotAdopting(popped);
 
         //If the last redo implied a changed of the dimension, change the dimension again
         bool dimChanged = !dimensionChangedRedo.isEmpty() && dimensionChangedRedo.takeFirst();

@@ -1390,16 +1390,6 @@ private:
   */
     std::shared_ptr<SortableTable> spikesByCluster;
 
-    /**Represents a list of clusterInfoMap
-  * use to enable undo action.
-  */
-    QList<std::shared_ptr<SortableTable>> spikesByClusterUndoList;
-
-    /**Represents a list of clusterInfoMap
-  * use to enable redo action.
-  */
-    QList<std::shared_ptr<SortableTable>> spikesByClusterRedoList;
-
     /**
   * Represents information on a cluster:
   * the index of the first spike of a given cluster number in spikesByCluster
@@ -1466,15 +1456,18 @@ private:
   */
     std::shared_ptr<ClusterInfoMap> clusterInfoMap;
 
-    /**Represents a list of clusterInfoMap
-  * use to enable undo action.
-  */
-    QList<std::shared_ptr<ClusterInfoMap>> clusterInfoMapUndoList;
-
-    /**Represents a list of clusterInfoMap
-  * use to enable redo action.
-  */
-    QList<std::shared_ptr<ClusterInfoMap>> clusterInfoMapRedoList;
+    /**The undo and redo histories as SNAPSHOTS (epoch-snapshot step 8):
+  * prepareUndo pushes the pre-edit epoch, undo/redo move epochs between
+  * the two lists and re-adopt the popped epoch's tables.  Replacing the
+  * four parallel table lists, a snapshot carries everything its epoch
+  * owned — so when the byte context is unchanged (same reader, same
+  * overlay generation) an undo re-adopts the epoch's waveform and
+  * correlogram stores wholesale (publishSnapshotAdopting) and the caches
+  * come back INSTANTLY, instead of the carry-forward recomputing what
+  * that epoch already held.  dimensionChangedUndo/Redo stay parallel:
+  * per-ACTION metadata, not epoch state.*/
+    QList<std::shared_ptr<const ClusteringSnapshot>> undoSnapshots;
+    QList<std::shared_ptr<const ClusteringSnapshot>> redoSnapshots;
 
     /**Builds a fresh ClusteringSnapshot from the current tables under the
     * mutex and publishes it.  Called at the end of every operation that
@@ -1491,6 +1484,14 @@ private:
     * afterwards (setSpkFileName / reopenSpkReader); initialize() relies on
     * its own later publication.*/
     void installSpkReader(const QString& path);
+
+    /**Publishes the re-adopted tables as a new epoch, taking @p source's
+    * waveform and correlogram stores with them when @p source's byte
+    * context is still the live one (same reader, same overlay
+    * generation) — the undo/redo fast path (epoch-snapshot step 8).  A
+    * moved byte context (a realign/nudge batch, a file redirect since
+    * that epoch) falls back to publishSnapshot() and its carry-forward.*/
+    void publishSnapshotAdopting(const std::shared_ptr<const ClusteringSnapshot>& source);
 
 public:
     /**Publishes a batch of rewritten .spk records into the overlay
@@ -1942,7 +1943,7 @@ private:
 
     //Methods
     /**
-  * Fills the undo lists (spikesByClusterUndoList,clusterInfoMapUndoList) to prepare for a future undo.
+  * Pushes the pre-edit epoch onto undoSnapshots to prepare for a future undo.
   * @param spikesByClusterTemp the newly created spikesByCluster array
   * @param clusterInfoMapTemp the newly created ClusterInfoMap map
   */
