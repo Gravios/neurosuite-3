@@ -72,11 +72,13 @@ public:
     /**Signals that the widget is about to be deleted.*/
     void willBeKilled() override;
     /**Supersedes all in-flight waveform jobs and waits for them to retire,
-     * without setting goingToDie.  Synchronous quiesce: callers (every
-     * cluster-mutating edit path, via KlustersView::stopAllViewThreads)
-     * rely on no job of this view being inside a Data call once this
-     * returns.  Call it before modifying document data that jobs read, and
-     * before launching replacement requests. */
+     * without setting goingToDie.  Synchronous quiesce with ZERO live
+     * callers: the view's own relaunch resets use the non-blocking
+     * supersedeRunningThreads() (jobs read their captured snapshot, so no
+     * wait is owed), leaving this as the view's member of the documented
+     * blocking family, reachable only through the stopRunningThreads()
+     * override that the zero-caller KlustersView::stopAllViewThreads()
+     * would invoke. */
     void stopAndClearThreads();
 
 public Q_SLOTS:
