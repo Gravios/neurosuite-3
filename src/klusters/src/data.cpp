@@ -125,12 +125,12 @@ void Data::publishSnapshot(){
     if(prev && prev->spk == spkReaderInstance){
         //Fast path: the tables themselves are unchanged (a republish after a
         //metadata-only change), so every settled entry carries.
-        //CAVEAT (SNAPSHOT-ALIASING, plan step 6 blocker): a committer that
-        //mutates the published maps IN PLACE (moveSpikeSubset) makes both
-        //paths compare new-against-new for the clusters it touched, so they
-        //compare equal and carry; such committers must drop the touched
-        //clusters explicitly after publishing (moveSpikeSubset does, through
-        //invalidateWaveformCache and invalidateCorrelogramCache).
+        //RULE: no committer may mutate a published table in place — both
+        //compare paths would then read new-against-new for the touched
+        //clusters and wrongly carry their entries.  moveSpikeSubset was the
+        //last such committer; step 6a moved its placeholder into a local
+        //iteration copy and deleted its dead post-publish cleanup, so every
+        //published table is immutable from publication on.
         const bool sameTables = (prev->spikesByCluster == spikesByCluster) &&
                                 (prev->clusterInfoMap  == clusterInfoMap);
         //Memoized per-cluster verdict, shared by both carry loops (the new
@@ -3698,15 +3698,18 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
     if (featureRowSet.isEmpty()) return;
     if (!clusterInfoMap->contains(static_cast<dataType>(fromCluster))) return;
 
-    // If toCluster does not yet exist insert an empty placeholder so the
-    // rebuild loop hits the toCluster branch and creates it.
-    // SNAPSHOT-ALIASING (plan step 6 blocker): this mutates the CURRENT map,
-    // which the published snapshot shares.  Harmless while every edit path
-    // still quiesces the readers first; must move into the rebuild below
-    // before that quiesce is removed.
-    const bool toClusterIsNew = !clusterInfoMap->contains(static_cast<dataType>(toCluster));
-    if (toClusterIsNew)
-        clusterInfoMap->insert(static_cast<dataType>(toCluster), ClusterInfo(0, 0));
+    // Iterate a LOCAL COPY of the map, with an empty placeholder for a
+    // toCluster that does not exist yet, so the rebuild loop hits the
+    // toCluster branch at its sorted position and creates it.  The copy is
+    // what unblocks plan step 6: the placeholder used to be inserted into —
+    // and, on the empty-move early-out, removed from — the CURRENT map,
+    // which the published snapshot shares and which therefore mutated
+    // behind the epoch it was published under (the SNAPSHOT-ALIASING
+    // blocker).  The copy is O(nbClusters), noise next to the O(nbSpikes)
+    // rebuild below.
+    ClusterInfoMap iterationMap = *clusterInfoMap;
+    if (!iterationMap.contains(static_cast<dataType>(toCluster)))
+        iterationMap.insert(static_cast<dataType>(toCluster), ClusterInfo(0, 0));
 
     // Collect feature-row indices that are actually in fromCluster.
     QList<dataType> movedRows;
@@ -3719,11 +3722,7 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
                 movedRows.append(row1);
         }
     }
-    if (movedRows.isEmpty()) {
-        if (toClusterIsNew)
-            clusterInfoMap->remove(static_cast<dataType>(toCluster));
-        return;
-    }
+    if (movedRows.isEmpty()) return;
 
     // Count total spikes retained to size the new table.
     SortableTable* newSpk  = new SortableTable();
@@ -3732,7 +3731,7 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
 
     dataType pos = 1;  // 1-based insertion cursor
 
-    for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it) {
+    for (auto it = iterationMap.constBegin(); it != iterationMap.constEnd(); ++it) {
         const dataType cid      = it.key();
         const dataType firstPos = it.value().firstSpikePosition();
         const dataType nSpk     = it.value().nbSpikes();
@@ -3814,28 +3813,24 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
     //   3. trims the undo list and clears the redo lists.
     prepareUndo(newSpk, newInfo, dimChanged);
 
-    // Remove emptied clusters from the (now-current) clusterInfoMap.
-    // SNAPSHOT-ALIASING (plan step 6 blocker): this mutates the map the
-    // epoch prepareUndo just published shares; the republish below restores
-    // the published-state invariant, and the quiesce covers the gap.  Must
-    // move into the newInfo build before the quiesce is removed.
-    for (int cid : emptiedClusters)
-        clusterInfoMap->remove(static_cast<dataType>(cid));
-    publishSnapshot();
+    // No post-publish cleanup: an emptied source was never inserted into
+    // newInfo (the kept == 0 branch above skips it), so the historical
+    // remove-emptied walk here — the other SNAPSHOT-ALIASING site, mutating
+    // the map the epoch prepareUndo had just published — was a no-op, and
+    // the republish that papered over it is gone with it.  prepareUndo's
+    // publish IS this edit's epoch.
 
     // Same wait/flag/list/start sequence as every sibling committer.
     if (dimChanged) {
         restartDimensionExtrema(fromClusters);
     }
 
-    // Both memberships changed, so the cached mean waveforms and correlograms
-    // of the two clusters are stale.  Every sibling committer cleans these
-    // (createNewCluster and groupClusters via their status-map walks,
-    // setClusterLabels / restoreClusterLabels via their touched sets); this
-    // one did not, so after a child drop/dissolve routed through here the
-    // parent's mean waveform kept showing the pre-move average until an
-    // unrelated edit invalidated it.  An emptied source is invalidated all the
-    // same -- clearing a dead id's cache entry is a no-op-safe removal.
+    // Belt-and-braces cache drops for the two touched clusters.  With the
+    // aliasing gone, publishSnapshot's carry-forward already excluded them
+    // (their spike rows changed), so these are ordinarily no-ops — kept as
+    // this committer's explicit statement of what it touched, and as the
+    // safety net should a future change reintroduce a carried entry.  An
+    // emptied source is dropped all the same; a dead id's drop is a no-op.
     invalidateWaveformCache(fromCluster);
     invalidateCorrelogramCache(fromCluster);
     if (toCluster != fromCluster) {
