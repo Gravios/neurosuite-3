@@ -39,6 +39,7 @@
 #include <viewwidget.h>
 #include "array.h"
 #include "pair.h"
+#include "data.h"              // Data::ClusteringSnapshot (the raw cache's epoch key)
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 
 // forward declaration
@@ -227,9 +228,10 @@ public Q_SLOTS:
   * @param clusterIdsOldNew map given for each old clusterId the new clusterId.
   */
     void renumber(QMap<int,int>& clusterIdsOldNew);
-    /**A nudge/realign reprojected clusterId's features (membership unchanged).
-     * Mark it modified so it enters changedIds and its incremental row is
-     * refreshed rather than reused stale.*/
+    /**A nudge/realign reprojected clusterId's features (membership
+     * unchanged) — the one change the snapshot diff cannot see.  Marks it
+     * in reprojectedSinceCache so it enters changedIds and its incremental
+     * row is refreshed rather than reused stale.*/
     void clusterFeaturesReprojected(int clusterId);
 
     /**Updates the error matrix drawing due to the reversion of the last renumbering action.
@@ -357,31 +359,38 @@ private:
     /**Feature dimensionality the cache was built with, and whether it is valid.*/
     int  rawProbCacheDims = -1;
     bool rawProbCacheValid = false;
-    /**Which clustering the cached raw columns were computed against: false =
-     * the parent clustering, true = a child's.  KlustersDoc::data() follows the
-     * ACTIVE clustering, and the two share their spikes and their .fet, so the
-     * cache's own geometry checks (rows, columns, sizes, dimensions) all pass
-     * across a scope switch and cannot tell the columns apart.  Without this,
-     * a parent cluster whose id and spike count happen to match a cached child
-     * cluster silently reuses P(spike | child N) as P(spike | parent N).*/
-    bool rawProbCacheChildScope = false;
-    /**The MATRIX scope the cached columns were computed under.  Distinct from
-     * rawProbCacheChildScope: that tracks isChildClusteringActive(), which is
-     * raised around an operation and lowered again and so reads false at every
-     * matrix launch -- it can never differ from itself and never invalidated
-     * anything.  What actually determines the model is whether the scoped mode is
-     * on and which parent it is scoped to.*/
-    bool rawProbCacheScopeActive = false;
-    int  rawProbCacheScopeParent = -1;
-    /**Set by the forward renumber slot when it has remapped rawProbCacheIds in
-     * place through the old->new map, so the compute launch can skip the
-     * defensive hasBeenRenumbered invalidate; consumed (reset) each launch.*/
-    bool rawCacheRenumberRemapped = false;
-    /**Discards the raw cache (e.g. after a renumber or session change).*/
+    /**The epoch the cached columns were computed against (epoch-snapshot
+     * step 5): the snapshot the job that produced them ran on, recorded at
+     * install and pinned by this shared_ptr.  It replaces the whole family
+     * of validity heuristics that used to guard reuse — the parent/child
+     * clustering flag, the matrix-scope identity pair, the renumber remap
+     * bookkeeping — because the next launch derives the changed set
+     * EXACTLY, by diffing this snapshot against the one the new job will
+     * compute on (Data::changedClustersBetween): content-identical clusters
+     * reuse (including across pure relabels and clustering switches, where
+     * reuse is mathematically sound — a raw column is a per-cluster
+     * function of its spike rows, the features and the active dimensions,
+     * and never of the surrounding cluster set), everything else
+     * recomputes.  The one change the diff cannot see is an in-place .fet
+     * rewrite behind unchanged rows — reprojectedSinceCache below.*/
+    std::shared_ptr<const Data::ClusteringSnapshot> rawProbCacheSnapshot;
+    /**Clusters whose .fet features were rewritten in place since the cache
+     * (clusterFeaturesReprojected — the realign): membership equality
+     * cannot see them, so they are force-added to changedIds.  Deliberately
+     * NOT touched by the undo slots (an undo restores membership, not the
+     * rewritten features) and not remapped away by anything except the
+     * renumber slot; cleared when a compute is accepted or the cache is
+     * dropped.*/
+    QSet<int> reprojectedSinceCache;
+    /**Discards the raw cache (e.g. after a channel-selection or session change).*/
     void invalidateRawProbCache(const char* reason = "");
-    /**Builds the set of cluster ids whose membership changed since the cache,
-     * from modifiedClusterList and the merge/delete targets in deletedMap.*/
-    QSet<int> changedClusterIdsSinceCache() const;
+    /**The exact set of clusters whose cached raw columns cannot be reused
+     * against @p jobSnap — the snapshot diff plus the .fet rewrite marks —
+     * and, via @p renamedFromTo, the pure relabels the launch translates
+     * the cached column ids through for this dispatch.*/
+    QSet<int> changedClusterIdsSinceCache(
+        const std::shared_ptr<const Data::ClusteringSnapshot>& jobSnap,
+        QHash<int,int>* renamedFromTo = nullptr) const;
 
     /**List of the clusters which have been modified since the last computation of the errror matrix.*/
     QList<int> modifiedClusterList;

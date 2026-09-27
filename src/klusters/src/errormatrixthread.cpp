@@ -27,6 +27,7 @@
 #include <cstdio>
 
 ErrorMatrixThread::ErrorMatrixThread(ErrorMatrixView& view,Data& d,
+                                     const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
                                      const std::shared_ptr<KlustersJobToken>& viewToken,
                                      bool incremental, bool verify,
                                      const Array<double>* prevRaw, const QList<int>& prevRawIds,
@@ -35,7 +36,7 @@ ErrorMatrixThread::ErrorMatrixThread(ErrorMatrixView& view,Data& d,
                                      std::vector<int> activeDims,
                                      QList<int> activeClusters)
     : errorMatrixView(view),data(d),token(viewToken),
-      snapshot(d.currentSnapshot()),
+      snapshot(snap),
       probabilities(nullptr),
       incremental(incremental),verify(verify),
       prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),

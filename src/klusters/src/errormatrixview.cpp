@@ -207,9 +207,11 @@ void ErrorMatrixView::customEvent(QEvent* event){
                     rawProbCacheSizes = errorMatrixEvent->getNewRawSizes();
                     rawProbCacheDims  = errorMatrixEvent->getNewRawDims();
                     rawProbCacheValid = true;
-                    rawProbCacheChildScope = doc.isChildClusteringActive();
-                    rawProbCacheScopeActive = doc.matrixScopeActive();
-                    rawProbCacheScopeParent = doc.curatedParent();
+                    //The epoch these columns belong to (epoch-snapshot
+                    //step 5) — the next launch diffs against it.  Edits
+                    //that landed after this warmer launched are exactly
+                    //what that diff will report.
+                    rawProbCacheSnapshot = errorMatrixEvent->jobSnapshot();
                 }
             }
             // Anything not taken — a superseded raw array, and the byproduct
@@ -246,20 +248,21 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 rawProbCacheSizes = errorMatrixEvent->getNewRawSizes();
                 rawProbCacheDims  = errorMatrixEvent->getNewRawDims();
                 rawProbCacheValid = true;
-                rawProbCacheChildScope = doc.isChildClusteringActive();
-                rawProbCacheScopeActive = doc.matrixScopeActive();
-                rawProbCacheScopeParent = doc.curatedParent();
+                //The epoch these columns belong to (epoch-snapshot step 5).
+                rawProbCacheSnapshot = errorMatrixEvent->jobSnapshot();
             } else {
                 invalidateRawProbCache("full recompute / fell-back result (customEvent)");
             }
 
             // The accepted compute's clusterList / probabilities reflect current
             // membership, so every pending edit is now applied — consume the
-            // changedIds tracking HERE (moved off dispatch).  A superseded compute
-            // never reaches this branch, so its changedIds accumulate for the
-            // compute that does accept.
+            // out-of-date tracking HERE (moved off dispatch).  A superseded
+            // compute never reaches this branch.  The .fet rewrite marks are
+            // consumed too: an accepted compute had them in its changedIds, so
+            // its columns are post-reprojection.
             modifiedClusterList.clear();
             deletedMap.clear();
+            reprojectedSinceCache.clear();
         } else {
             // Discard the stale / null result; any raw array the discarded
             // job produced is freed with the event.
@@ -337,7 +340,6 @@ void ErrorMatrixView::updateMatrixContents(){
         // applied them, so pending survives a superseded compute.
         selectedPairs.clear();
         hasBeenRenumbered = false;
-        rawCacheRenumberRemapped = false;
         renumbering.clear();
         nbActions = 0;
         nbRedo = 0;
@@ -358,83 +360,53 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     static const bool incrementalVerify =
         (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_INCREMENTAL_VERIFY") != 0);
 
-    // A renumber remaps cluster ids.  The forward renumber slot remaps the
-    // id-keyed cache in place through the old->new map and sets
-    // rawCacheRenumberRemapped, so the cache IS trustworthy across that case —
-    // skip the defensive invalidate for it.  Undo/redo renumber paths do not
-    // remap, so they still fall through to the conservative invalidate.
-    if(hasBeenRenumbered && !rawCacheRenumberRemapped)
-        invalidateRawProbCache("renumber seen at compute launch (hasBeenRenumbered)");
-    rawCacheRenumberRemapped = false;
+    //The snapshot this job will compute against — captured HERE so the cache
+    //diff below and the job's model are the same epoch by construction
+    //(epoch-snapshot step 5).
+    const std::shared_ptr<const Data::ClusteringSnapshot> jobSnap =
+        doc.matrixData().currentSnapshot();
 
-    // Conservative gate: only take the incremental path when AT MOST ONE edit
-    // operation has accumulated since the last matrix update.  nbActions is the
-    // net count of cluster-editing actions since updateMatrixContents last reset
-    // it, so:
-    //   * nbActions == 0  → no-op update, or the cold first compute — nothing to
-    //                       reuse incorrectly; incremental just (re)seeds.
-    //   * nbActions == 1  → a single edit, which maps cleanly onto
-    //                       changedClusterIdsSinceCache(): that one operation's
-    //                       modifiedClusterList + deletedMap entries fully and
-    //                       unambiguously describe which clusters changed.
-    //   * nbActions >= 2  → two or more edits have batched up; the accumulated
-    //                       union bookkeeping is harder to trust cluster-for-
-    //                       cluster (interleaved merges/splits/moves, transient
-    //                       ids), so we bail to the full recompute.  That path
-    //                       invalidates the raw cache (customEvent), and the next
-    //                       single-edit update cold-seeds it again.
-    // The full/GPU path is unchanged in every bailed case.
-    //
-    // A renumber is NOT one of those independent edits: it is a pure relabel (the
-    // id compaction a merge/delete cleanup performs), and since 0100 the raw cache
-    // survives it in place, so it changes nothing changedClusterIdsSinceCache()
-    // must recompute.  renumbering holds one entry per renumber counted in
-    // nbActions, so nbActions - renumbering.size() is the count of genuine editing
-    // actions.  Excluding renumbers lets a merge whose auto-realign cleanup
-    // renumbers (nbActions=2: the reprojection plus the renumber) read as the
-    // single semantic edit it is, and take the incremental path, instead of
-    // tripping the 2+-edit bail on a relabel.
+    // Cost gate: take the incremental path only when at most one edit
+    // operation has accumulated since the last matrix update.  Since the
+    // changed set became the exact snapshot diff, this is no longer a TRUST
+    // question — the diff is correct for any number of batched edits — it is
+    // a cost policy: the incremental path is CPU-only (the GPU path returns
+    // already-normalised probabilities, so it cannot emit raw columns to
+    // cache), and a large batched change approaches a cold seed, which the
+    // full/GPU path computes faster.  Renumbers are excluded from the count:
+    // a pure relabel is content-matched by the diff and reuses everything.
     const int  semanticEdits = qMax(0, nbActions - static_cast<int>(renumbering.size()));
     const bool singleEdit = (semanticEdits <= 1);
-    // On a COLD cache with no pending edit — startup, or the first refresh after a
-    // renumber / 2+-edit bail invalidated the cache — the incremental path would
-    // "cold-seed": recompute every column with ZERO reuse.  And it would do that on
-    // the CPU, because the incremental path is CPU-only (the GPU path returns
-    // already-normalised probabilities, so it cannot emit the raw columns the cache
-    // stores).  That is exactly the case the full path wins, since it DOES use the
-    // GPU.  Route it to the full/GPU path instead; the raw cache is then seeded
-    // lazily by the first actual edit (nbActions==1, still cold), after which reuse
-    // begins from the second edit on.  Net effect: fast GPU startup, one CPU
-    // cold-seed on the first edit, incremental thereafter.
-    // The cached columns belong to whichever clustering was active when they were
-    // computed.  A hierarchy op can switch that under us -- promoteChildren
-    // (promoting children to a new parent) calls setActiveClustering(false), so a
-    // cache seeded in child scope would be reused against the parent clustering.
-    // Nothing downstream can catch it: the two clusterings share their spikes and
-    // their .fet, so every geometry check in cacheUsable passes.
-    if(rawProbCacheValid && rawProbCacheChildScope != doc.isChildClusteringActive())
-        invalidateRawProbCache("clustering scope changed");
-
-    // And when the MATRIX scope changes.  The check above tests
-    // isChildClusteringActive(), which is raised around an operation and lowered
-    // again -- it reads false at every matrix launch, so it never differs from
-    // itself and has never invalidated anything.  The cached columns belong to the
-    // cluster set the model was built over, and that set is decided by whether the
-    // scoped mode is on and which parent it is scoped to.
+    // On a COLD cache with no pending edit — startup, or the first refresh
+    // after a 2+-edit bail invalidated the cache — the incremental path would
+    // "cold-seed": recompute every column with ZERO reuse, on the CPU.  That
+    // is exactly the case the full path wins, since it DOES use the GPU.
+    // Route it there; the raw cache is then seeded lazily by the first actual
+    // edit, after which reuse begins.
     //
-    // This is why only the error matrix stayed stale while the other three
-    // shrank: they have no cache and rebuild their cluster list every time, so
-    // toggling V is visible in them immediately.  The incremental path here reused
-    // a full-session matrix and no geometry check could catch it, since the two
-    // models share their spikes and their .fet.
-    if(rawProbCacheValid && (rawProbCacheScopeActive != doc.matrixScopeActive()
-                          || rawProbCacheScopeParent != doc.curatedParent()))
-        invalidateRawProbCache("matrix scope changed");
-
+    // The validity heuristics that used to sit here — the parent/child
+    // clustering flag, the matrix-scope identity pair, the defensive
+    // renumber invalidate — are gone (epoch-snapshot step 5): the diff
+    // against the cache's recorded snapshot decides reuse per cluster by
+    // CONTENT, which is exact across clustering switches, scope changes and
+    // relabels alike.  (A raw column is a per-cluster function of its spike
+    // rows, the features and the active dimensions — never of the
+    // surrounding cluster set — so a content match is sufficient, which is
+    // also why the scoped and unscoped matrices can share one cache.)
     const bool coldSeedRefresh = !rawProbCacheValid && (nbActions == 0);
     const bool useIncremental = incrementalEnabled && singleEdit && !coldSeedRefresh;
-    const QSet<int> changedIds = useIncremental ? changedClusterIdsSinceCache()
-                                                : QSet<int>();
+    QHash<int,int> cacheRenames;
+    const QSet<int> changedIds = useIncremental
+        ? changedClusterIdsSinceCache(jobSnap, &cacheRenames)
+        : QSet<int>();
+    //Translate the cached column ids through the pure relabels the diff
+    //found, for THIS dispatch only: the members stay untouched (keyed to
+    //rawProbCacheSnapshot), so a superseded compute cannot leave them
+    //half-remapped and the next launch re-derives from scratch.
+    QList<int> dispatchRawIds = rawProbCacheIds;
+    if(!cacheRenames.isEmpty())
+        for(int& id : dispatchRawIds)
+            id = cacheRenames.value(id, id);
 
     // Launch-time diagnostic (gated by NS3_ERRORMATRIX_DIAG): log the gate INPUTS and
     // the chosen path at the moment the compute is dispatched.  The worker's own line
@@ -452,12 +424,12 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             static_cast<long long>(doc.matrixData().totalNbOfSpikes());
         const int pending = useIncremental
             ? static_cast<int>(changedIds.size())
-            : static_cast<int>(changedClusterIdsSinceCache().size());
+            : static_cast<int>(changedClusterIdsSinceCache(jobSnap, nullptr).size());
         fprintf(stderr,
             "[errormatrix] launch: clusters=%d spikes=%lld nbActions=%d semEdits=%d "
             "cacheValid=%d renumbered=%d incrementalEnabled=%d coldSeed=%d pending=%d -> %s\n",
             launchClusters, launchSpikes, nbActions, semanticEdits,
-            rawProbCacheValid ? 1 : 0, hasBeenRenumbered ? 1 : 0,
+            rawProbCacheValid ? 1 : 0, hasBeenRenumbered ? 1 : 0,   // renumbered: informational only
             incrementalEnabled ? 1 : 0, coldSeedRefresh ? 1 : 0, pending,
             useIncremental        ? "INCREMENTAL"
             : !incrementalEnabled ? "FULL(disabled)"
@@ -485,10 +457,10 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
     }
     //The creation of the job launches it; the pool owns and deletes it.
     return new ErrorMatrixThread(
-        *this, doc.matrixData(), displayToken,
+        *this, doc.matrixData(), jobSnap, displayToken,
         useIncremental, incrementalVerify,
         (rawProbCacheValid ? rawProbCache : nullptr),
-        rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
+        dispatchRawIds, rawProbCacheSizes, rawProbCacheDims,
         changedIds, /*seedOnly*/ false, activeFeatureDims(),
         // Scoped matrices: when the child palette is driving and its parent has
         // enough children to be worth comparing, restrict the model to those
@@ -584,7 +556,7 @@ void ErrorMatrixView::launchCacheWarmer(){
                                                      : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
     }
     new ErrorMatrixThread(
-        *this, doc.matrixData(), warmerToken,
+        *this, doc.matrixData(), doc.matrixData().currentSnapshot(), warmerToken,
         /*incremental*/ true, /*verify*/ false,
         /*prevRaw*/ nullptr, QList<int>(), QList<int>(), -1,
         /*changedIds*/ QSet<int>(),
@@ -606,20 +578,27 @@ void ErrorMatrixView::invalidateRawProbCache(const char* reason){
     rawProbCacheSizes.clear();
     rawProbCacheDims = -1;
     rawProbCacheValid = false;
+    rawProbCacheSnapshot.reset();
+    //With no cache there is nothing the marks could protect: the next
+    //compute recomputes every column anyway.
+    reprojectedSinceCache.clear();
 }
 
-QSet<int> ErrorMatrixView::changedClusterIdsSinceCache() const {
-    // A cluster's raw column is reusable only if its membership (hence Gaussian
-    // model) is unchanged.  modifiedClusterList holds every source cluster
-    // touched by an edit; deletedMap keys hold the merge/delete TARGETS whose
-    // membership grew.  Their union is the set whose raw columns must be
-    // recomputed; every other cluster keeps its cached column.
-    QSet<int> changed;
-    for(int id : modifiedClusterList) changed.insert(id);
-    for(auto it = deletedMap.constBegin(); it != deletedMap.constEnd(); ++it){
-        changed.insert(it.key());
-        for(int id : it.value()) changed.insert(id);
-    }
+QSet<int> ErrorMatrixView::changedClusterIdsSinceCache(
+        const std::shared_ptr<const Data::ClusteringSnapshot>& jobSnap,
+        QHash<int,int>* renamedFromTo) const {
+    // A cluster's raw column is reusable only if its per-cluster model is
+    // unchanged: same spike rows over the same features (epoch-snapshot
+    // step 5).  The rows half is EXACT — a content diff between the epoch
+    // the cache was computed against and the epoch this job will compute
+    // against — replacing the modifiedClusterList/deletedMap union that
+    // approximated it (and whose accumulate/undo/remap bookkeeping was a
+    // repeat bug source).  The features half is the one thing membership
+    // equality cannot see: an in-place .fet rewrite (the realign), marked
+    // explicitly through clusterFeaturesReprojected.
+    QSet<int> changed =
+        Data::changedClustersBetween(rawProbCacheSnapshot, jobSnap, renamedFromTo);
+    for(int id : reprojectedSinceCache) changed.insert(id);
     return changed;
 }
 
@@ -1179,13 +1158,17 @@ void ErrorMatrixView::clustersGrouped(QList<int>& groupedClusters, int newCluste
 void ErrorMatrixView::clusterFeaturesReprojected(int clusterId){
     // A nudge or realign reprojected this cluster's spikes onto the PCA basis, so
     // its in-memory .fet features — and therefore its per-spike error-matrix
-    // probabilities — changed, even though its membership and id did not.  Mark
-    // it modified exactly like a cluster-editing slot would: it then shows as
-    // out-of-date AND, crucially, enters changedIds at the next update.  Being in
-    // changedIds makes the incremental path recompute this cluster's own column
-    // and, via changedSpans, its spikes' rows inside every reused column — so the
-    // stale pre-reprojection values are not reused for it.  Membership is
-    // unchanged, so no group/split/renumber signal fires for it otherwise.
+    // probabilities — changed, even though its membership and id did not.  This
+    // is the ONE change the snapshot diff cannot see (epoch-snapshot step 5),
+    // so it gets its own mark: being in changedIds makes the incremental path
+    // recompute this cluster's own column and, via changedSpans, its spikes'
+    // rows inside every reused column — so the stale pre-reprojection values
+    // are not reused for it.  The mark set is deliberately untouched by the
+    // undo slots (an undo restores membership, not the rewritten features —
+    // modifiedClusterList, which the undo slots DO prune, used to carry this
+    // and could lose the mark to exactly that pruning).  modifiedClusterList
+    // still gets the id for the out-of-date hint.
+    reprojectedSinceCache.insert(clusterId);
     if(clusterList.contains(clusterId) && !modifiedClusterList.contains(clusterId))
         modifiedClusterList.append(clusterId);
 
@@ -1309,23 +1292,29 @@ void ErrorMatrixView::newClustersAdded(QList<int>& clustersToRecluster){
 
 void ErrorMatrixView::renumber(QMap<int,int>& clusterIdsOldNew){
     hasBeenRenumbered = true;
-    // A renumber is a pure relabel: cluster models and spikes are unchanged, so
-    // each cached raw column raw_p(s,id) is byte-identical under the new id — only
-    // its column label moves.  Remap the id-keyed column labels in place through
-    // the old->new map (ids absent from the map keep their id) instead of
-    // discarding a still-valid cache, and flag that the renumber was absorbed so
-    // the launch gate does not re-invalidate defensively.  This id compaction is
-    // what a merge's cleanup performs; discarding the cache here is precisely what
-    // forced every post-merge matrix to a full GPU recompute.
-    if(rawProbCacheValid){
-        for(int& id : rawProbCacheIds)
-            id = clusterIdsOldNew.value(id, id);
-        rawCacheRenumberRemapped = true;
+    // A renumber is a pure relabel: cluster models and spikes are unchanged,
+    // so each cached raw column is byte-identical under the new id.  The
+    // cache is NO LONGER remapped here (epoch-snapshot step 5): the launch
+    // diff content-matches relabelled clusters against the cache's recorded
+    // snapshot and translates the cached column ids for that dispatch — an
+    // exact mechanism that also covers the undo/redo renumber paths this
+    // slot's forward map never could (they used to force a conservative
+    // cache invalidate).  Mutating rawProbCacheIds here while the recorded
+    // snapshot kept the old naming would make the diff and the reuse
+    // lookups disagree, which is why the remap goes rather than coexists.
+    //
+    // The out-of-date bookkeeping still holds pre-renumber ids — remap
+    // modifiedClusterList, the deletedMap keys/values and the .fet rewrite
+    // marks through the old->new map so they name the post-renumber
+    // clusters (the marks MUST follow the relabel: a reprojected cluster
+    // that is then renumbered content-matches in the diff, so only its
+    // mark forces the recompute).
+    {
+        QSet<int> remappedMarks;
+        for(int id : reprojectedSinceCache)
+            remappedMarks.insert(clusterIdsOldNew.value(id, id));
+        reprojectedSinceCache = remappedMarks;
     }
-    // The changedIds tracking is now retained across a preempted compute, so at a
-    // renumber it can still hold pre-renumber ids — remap modifiedClusterList and
-    // the deletedMap keys/values through the same old->new map so
-    // changedClusterIdsSinceCache() resolves against the post-renumber clusters.
     for(int& id : modifiedClusterList)
         id = clusterIdsOldNew.value(id, id);
     if(!deletedMap.isEmpty()){
