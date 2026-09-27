@@ -204,6 +204,88 @@ std::shared_ptr<const Data::ClusteringSnapshot> Data::currentSnapshot() const{
     return snapshot;
 }
 
+QSet<int> Data::changedClustersBetween(const std::shared_ptr<const Data::ClusteringSnapshot>& from,
+                                       const std::shared_ptr<const Data::ClusteringSnapshot>& to,
+                                       QHash<int,int>* renamedFromTo){
+    QSet<int> changed;
+    if(renamedFromTo) renamedFromTo->clear();
+    if(!to) return changed;
+    if(!from){
+        for(dataType id : to->clusterIds()) changed.insert(static_cast<int>(id));
+        return changed;
+    }
+    //Fast path: the very same tables — nothing changed, nothing renamed.
+    if(from->spikesByCluster == to->spikesByCluster &&
+       from->clusterInfoMap  == to->clusterInfoMap)
+        return changed;
+
+    auto sameRows = [](SortableTable& a, SortableTable& b) -> bool {
+        const dataType n = a.nbOfColumns();
+        if(b.nbOfColumns() != n) return false;
+        for(dataType i = 1; i <= n; ++i)
+            if(a(1,i) != b(1,i)) return false;
+        return true;
+    };
+
+    //Pass 1: id-stable clusters — the overwhelmingly common case.
+    QList<int> unmatchedTo;
+    QSet<int>  matchedFrom;
+    for(dataType idT : to->clusterIds()){
+        const int id = static_cast<int>(idT);
+        SortableTable rowsTo;
+        to->spikePositions(id, rowsTo);
+        SortableTable rowsFrom;
+        if(from->spikePositions(id, rowsFrom) && sameRows(rowsFrom, rowsTo)){
+            matchedFrom.insert(id);
+            continue;
+        }
+        unmatchedTo.append(id);
+    }
+    if(unmatchedTo.isEmpty()) return changed;
+
+    //Pass 2: content matching for moved ids — a renumber (or its undo/redo)
+    //relabels clusters without touching their rows.  Hash the row content of
+    //every from-side cluster no to-side id claimed, then probe with an exact
+    //compare: the hash only narrows the candidates, equality decides.
+    auto rowHash = [](SortableTable& rows) -> quint64 {
+        const dataType n = rows.nbOfColumns();
+        quint64 h = 1469598103934665603ull;                       // FNV-1a
+        auto mix = [&h](quint64 v){ h ^= v; h *= 1099511628211ull; };
+        mix(static_cast<quint64>(n));
+        for(dataType i = 1; i <= n; ++i) mix(static_cast<quint64>(rows(1,i)));
+        return h;
+    };
+    QMultiHash<quint64,int> fromByContent;
+    for(dataType idF : from->clusterIds()){
+        const int id = static_cast<int>(idF);
+        if(matchedFrom.contains(id)) continue;
+        SortableTable rowsFrom;
+        if(from->spikePositions(id, rowsFrom))
+            fromByContent.insert(rowHash(rowsFrom), id);
+    }
+    QSet<int> claimedFrom;
+    for(int id : unmatchedTo){
+        SortableTable rowsTo;
+        to->spikePositions(id, rowsTo);
+        bool renamed = false;
+        const quint64 h = rowHash(rowsTo);
+        for(auto it = fromByContent.constFind(h);
+            it != fromByContent.constEnd() && it.key() == h; ++it){
+            const int fromId = it.value();
+            if(claimedFrom.contains(fromId)) continue;
+            SortableTable rowsFrom;
+            if(from->spikePositions(fromId, rowsFrom) && sameRows(rowsFrom, rowsTo)){
+                if(renamedFromTo) renamedFromTo->insert(fromId, id);
+                claimedFrom.insert(fromId);
+                renamed = true;
+                break;
+            }
+        }
+        if(!renamed) changed.insert(id);
+    }
+    return changed;
+}
+
 Data::~Data(){
     //If the minMaxThread has not finish, wait until it is done
     minMaxThread->wait();

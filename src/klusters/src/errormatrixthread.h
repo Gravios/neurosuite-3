@@ -90,6 +90,10 @@ public:
         * keep; ownership transfers to the caller.  nullptr if the incremental
         * path was not used, or it was already taken.*/
         Array<double>* takeNewRaw(){ Array<double>* r = newRawResult; newRawResult = nullptr; return r; }
+        /**The snapshot the job computed against: the view records it as the
+        * epoch its raw cache belongs to (epoch-snapshot step 5), and the
+        * next launch diffs the then-current snapshot against it.*/
+        std::shared_ptr<const Data::ClusteringSnapshot> jobSnapshot() const {return snapshotResult;}
         QList<int> getNewRawIds() const {return newRawIdsResult;}
         QList<int> getNewRawSizes() const {return newRawSizesResult;}
         int getNewRawDims() const {return newRawDimsResult;}
@@ -108,6 +112,7 @@ public:
             computedClusterListResult(job.computedClusterList),
             ignoreClusterIndexResult(job.ignoreClusterIndex),
             newRawResult(job.newRaw),
+            snapshotResult(job.snapshot),
             newRawIdsResult(job.newRawIds),
             newRawSizesResult(job.newRawSizes),
             newRawDimsResult(job.newRawDims),
@@ -120,6 +125,7 @@ public:
         QList<int> computedClusterListResult;
         QList<int> ignoreClusterIndexResult;
         Array<double>* newRawResult;
+        std::shared_ptr<const Data::ClusteringSnapshot> snapshotResult;
         QList<int> newRawIdsResult;
         QList<int> newRawSizesResult;
         int newRawDimsResult;
@@ -136,6 +142,7 @@ private:
     /**Creating the job launches the request on the shared pool (as the old
     * thread constructor's start() did).  Runs on the GUI thread only.*/
     ErrorMatrixThread(ErrorMatrixView& view,Data& d,
+                      const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
                       const std::shared_ptr<KlustersJobToken>& viewToken,
                       bool incremental, bool verify,
                       const Array<double>* prevRaw, const QList<int>& prevRawIds,
@@ -166,9 +173,11 @@ private:
     std::shared_ptr<KlustersJobToken> token;
     /**The view's request generation this job was enqueued under.*/
     int jobGeneration = 0;
-    /**The membership epoch captured at creation (epoch-snapshot step 1):
-    * pins the epoch's tables for the duration of the job, and the assistant
-    * reads them directly (step 5) — no per-compute table copies, no Data
+    /**The membership epoch this job computes against, handed in by the
+    * launch site (epoch-snapshot steps 1 and 5): the view diffs its cache
+    * against exactly this snapshot, so job model and diff target can never
+    * disagree.  Pins the epoch's tables for the duration of the job; the
+    * assistant reads them directly — no per-compute table copies, no Data
     * mutex.  The .fet features are still the shared Data table, protected
     * by the edit-path quiesce until the plan's overlay step.*/
     std::shared_ptr<const Data::ClusteringSnapshot> snapshot;

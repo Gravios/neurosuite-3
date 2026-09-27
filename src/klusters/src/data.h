@@ -168,6 +168,26 @@ public:
     * of the job.  Never null once the Data object is constructed.*/
     std::shared_ptr<const ClusteringSnapshot> currentSnapshot() const;
 
+    /**The exact difference between two epochs, per cluster (epoch-snapshot
+    * step 5): returns the ids that exist in @p to whose spike rows are NOT
+    * identical to the same CONTENT in @p from — i.e. the clusters whose
+    * per-cluster model (and so any cached per-cluster result) cannot be
+    * reused across the change.  Matching is by content, not by id: an id
+    * that merely moved (a renumber, including its undo/redo) is matched to
+    * the @p from cluster holding the identical spike rows and reported in
+    * @p renamedFromTo (old id -> new id) instead of being flagged changed,
+    * so callers can carry id-keyed caches across pure relabels.  The two
+    * snapshots may come from DIFFERENT Data objects (the parent and a
+    * child clustering): the compare is content-exact either way, and a
+    * reuse it permits is mathematically sound — identical rows over the
+    * same features yield the identical per-cluster model.  What it cannot
+    * see is an in-place rewrite of the FEATURES behind unchanged rows (the
+    * realign); that stays an explicit caller-side mark, like the
+    * byte-writer drops on the display caches.  Cost O(total spikes).*/
+    static QSet<int> changedClustersBetween(const std::shared_ptr<const ClusteringSnapshot>& from,
+                                            const std::shared_ptr<const ClusteringSnapshot>& to,
+                                            QHash<int,int>* renamedFromTo = nullptr);
+
     /**
   * Loads the features in data.
   * @param featureFile the .fet file
