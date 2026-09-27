@@ -2467,11 +2467,12 @@ void KlustersDoc::resyncActiveClusterInfoMap()
     // Repair a row-table/cluster-map desync on the active clustering (the same
     // one activeClusterHasMembers validates against) without a save+reopen.
     //
-    // This rebuilds clusterInfoMap in place, so quiesce worker threads first
-    // (same reasoning as the edit/renumber paths): a concurrent correlogram /
-    // matrix reader would torn-read the map mid-rebuild.
+    // The resync builds FRESH tables and swaps them in (it has not rebuilt
+    // the map in place since the snapshot conversion), so this is a
+    // membership-only change: supersede the in-flight jobs without waiting
+    // (epoch-snapshot step 6b), same as the edit/renumber paths.
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     data().resyncClusterInfoMapFromRowTable();
 }

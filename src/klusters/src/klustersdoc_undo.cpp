@@ -446,7 +446,7 @@ void KlustersDoc::undo(){
         // event guards; the post-swap view->undo()/refresh below recomputes from
         // the new data, so all views end up consistent.
         for (int i = 0; i < viewList->count(); ++i)
-            viewList->at(i)->stopAllViewThreads();
+            viewList->at(i)->supersedeAllViewThreads();
 
         // Must be called after the guard: if the undo list is empty there is nothing
         // to revert at the data layer either, and calling it unconditionally can leave
@@ -637,7 +637,7 @@ void KlustersDoc::redo(){
         // result from landing after the swap and desyncing the async views from
         // the synchronous feature scatter / cluster list.
         for (int i = 0; i < viewList->count(); ++i)
-            viewList->at(i)->stopAllViewThreads();
+            viewList->at(i)->supersedeAllViewThreads();
 
         clusteringData->redo(*addedClusters,*modifiedClusters,*deletedClusters);
 

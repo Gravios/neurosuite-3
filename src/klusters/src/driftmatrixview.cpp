@@ -185,6 +185,16 @@ void DriftMatrixView::stopRunningThreadsSync()
     QApplication::removePostedEvents(this, QEvent::User + 606);
 }
 
+void DriftMatrixView::supersedeRunningThreads()
+{
+    //Non-blocking twin of stopRunningThreadsSync() (epoch-snapshot
+    //step 6b) — see TemplateMatrixView::supersedeRunningThreads().
+    shiftToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    computeToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    QApplication::removePostedEvents(this, QEvent::User + 604);
+    QApplication::removePostedEvents(this, QEvent::User + 606);
+}
+
 // ── compute ──────────────────────────────────────────────────────────────────
 
 void DriftMatrixView::launchComputeThread()

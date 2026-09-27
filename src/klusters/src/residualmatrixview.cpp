@@ -120,6 +120,14 @@ void ResidualMatrixView::stopRunningThreadsSync()
     QApplication::removePostedEvents(this, QEvent::User + 603);
 }
 
+void ResidualMatrixView::supersedeRunningThreads()
+{
+    //Non-blocking twin of stopRunningThreadsSync() (epoch-snapshot
+    //step 6b) — see TemplateMatrixView::supersedeRunningThreads().
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    QApplication::removePostedEvents(this, QEvent::User + 603);
+}
+
 // ── colour map (cool→warm; index high = warm/red, low = cool/blue) ───────────
 
 void ResidualMatrixView::initializeColorMap()

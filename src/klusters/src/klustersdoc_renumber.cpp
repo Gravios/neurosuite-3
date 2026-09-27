@@ -100,7 +100,7 @@ void KlustersDoc::renumberClusters(){
     // torn-read.  (Data::renumber early-returns on already-compact ids, so this is
     // a no-op stop in that common case.)
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     clusteringData->renumber(clusterIdsOldNew,clusterIdsNewOld);
 
@@ -424,7 +424,7 @@ void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
     // and swaps clusterInfoMap, which a concurrent correlogram/matrix reader would
     // torn-read.
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     // ── Curation log: this is a renumber, not a group ──
     logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL, clustersToRenumber);
@@ -625,7 +625,7 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
     // and swaps clusterInfoMap, which a concurrent correlogram/matrix reader would
     // torn-read.
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL, renamedClusters);
     prepareUndo(fullOldToNew, fullNewToOld);

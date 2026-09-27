@@ -268,6 +268,18 @@ void TemplateMatrixView::stopRunningThreadsSync()
     QApplication::removePostedEvents(this, QEvent::User + 602);
 }
 
+void TemplateMatrixView::supersedeRunningThreads()
+{
+    //Non-blocking twin of stopRunningThreadsSync() (epoch-snapshot
+    //step 6b): matrix jobs read their captured snapshot and its pinned
+    //.spk reader, so a membership-only edit needs no wait — the wait is
+    //owed only to the .spk byte writers, which keep the Sync form.
+    pairToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    matrixToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    QApplication::removePostedEvents(this, QEvent::User + 601);
+    QApplication::removePostedEvents(this, QEvent::User + 602);
+}
+
 // ── colour map ───────────────────────────────────────────────────────────────
 
 void TemplateMatrixView::initializeColorMap()

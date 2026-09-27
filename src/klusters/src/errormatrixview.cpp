@@ -167,6 +167,15 @@ void ErrorMatrixView::stopRunningThreads(){
     QApplication::removePostedEvents(this, QEvent::User + 600);
 }
 
+void ErrorMatrixView::supersedeRunningThreads(){
+    //Non-blocking twin of stopRunningThreads() (epoch-snapshot step 6b):
+    //both streams' jobs run against their captured snapshots, so a
+    //membership-only edit needs no wait.
+    displayToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    warmerToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    QApplication::removePostedEvents(this, QEvent::User + 600);
+}
+
 void ErrorMatrixView::customEvent(QEvent* event){
     //Event sent by an error-matrix job to inform that the data are available.
     if(event->type() == QEvent::User + 600){

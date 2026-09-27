@@ -67,6 +67,8 @@ public:
      *  run() to return.  Same contract as ResidualMatrixView::stopRunningThreadsSync;
      *  invoked from KlustersView::stopAllViewThreads via findChildren. */
     void stopRunningThreadsSync();
+    /**Non-blocking twin (epoch-snapshot step 6b) — see TemplateMatrixView.*/
+    void supersedeRunningThreads();
 
     void updateMatrixContents();
 

@@ -747,7 +747,7 @@ KlustersDoc::splitChildByKnnVsReferences(int    sourceChild,
     // matrix threads read the atom layer, and the split swaps the row table
     // underneath any reader (same as the atom watershed).
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     // NO curation log: the parent-stage logger's ids collide with atom
     // numerals -- the atom layer is out of its scope by design (see

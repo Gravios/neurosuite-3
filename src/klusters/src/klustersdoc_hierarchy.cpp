@@ -254,7 +254,7 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
     // merge, realign, and undo paths already take before their Data mutations.
     if (viewList)
         for (KlustersView* v : *viewList)
-            v->stopAllViewThreads();
+            v->supersedeAllViewThreads();
 
     // Second Data over the SAME fet/spk/par, with the .clc as the cluster file.
     // (v1 re-reads the feature/spike arrays; they could later be shared with the
@@ -418,7 +418,7 @@ bool KlustersDoc::compactAllClusterIds(){
     // parent path quiesces them: renumber rebuilds the row table underneath
     // any reader.
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     QMap<int,int> atomOldNew, atomNewOld;
     childData->renumber(atomOldNew, atomNewOld);

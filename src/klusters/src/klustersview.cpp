@@ -531,6 +531,27 @@ void KlustersView::stopAllViewThreads()
         dmv->stopRunningThreadsSync();
 }
 
+void KlustersView::supersedeAllViewThreads()
+{
+    //Mirror of stopAllViewThreads() with the non-blocking variants — see
+    //the header comment (epoch-snapshot step 6b).
+    const QList<ViewWidget*>& widgets = getViewList();
+    for (ViewWidget* w : widgets)
+        w->supersedeRunningThreads();
+
+    const QList<TemplateMatrixView*> tmvs = findChildren<TemplateMatrixView*>();
+    for (TemplateMatrixView* tmv : tmvs)
+        tmv->supersedeRunningThreads();
+
+    const QList<ResidualMatrixView*> rmvs = findChildren<ResidualMatrixView*>();
+    for (ResidualMatrixView* rmv : rmvs)
+        rmv->supersedeRunningThreads();
+
+    const QList<DriftMatrixView*> dmvs = findChildren<DriftMatrixView*>();
+    for (DriftMatrixView* dmv : dmvs)
+        dmv->supersedeRunningThreads();
+}
+
 bool KlustersView::errorMatrixConsolidating() const{
     const QList<ErrorMatrixView*> emvs = findChildren<ErrorMatrixView*>();
     for(ErrorMatrixView* emv : emvs)
@@ -543,8 +564,10 @@ void KlustersView::invalidateClusterDisplay(int clusterId)
     if (!shownClusters->contains(clusterId))
         return;
 
-    // Step 1: stop any in-flight WaveformThreads before launching new ones.
-    stopAllViewThreads();
+    // Step 1: supersede any in-flight jobs before launching new ones — no
+    // wait needed, they read their captured snapshots (epoch-snapshot
+    // step 6b); their late events fail the generation guards.
+    supersedeAllViewThreads();
 
     // Step 2: tell ClusterView (scatter) to do a full REDRAW so old ghost
     // points at pre-nudge feature coordinates are erased, then call update()

@@ -77,6 +77,7 @@ public:
      * (CorrelationView is a ViewWidget, so without this override
      * stopAllViewThreads's ViewWidget loop hit only the empty base virtual.)*/
     void stopRunningThreads() override;
+    void supersedeRunningThreads() override;
 
     /** Returns the size of the bins to use in the correlograms, given in miliseconds.
   *@return size of the bins.

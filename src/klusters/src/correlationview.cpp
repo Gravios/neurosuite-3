@@ -835,6 +835,16 @@ void CorrelationView::stopRunningThreads(){
     QApplication::removePostedEvents(this, QEvent::User + 300);
 }
 
+void CorrelationView::supersedeRunningThreads(){
+    //Non-blocking twin of stopRunningThreads() (epoch-snapshot step 6b):
+    //the bump stops doomed jobs at their next check and fences their late
+    //events; nothing waits, because correlogram jobs read only their
+    //captured snapshot (and the shared features, which membership-only
+    //callers do not touch).
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    QApplication::removePostedEvents(this, QEvent::User + 300);
+}
+
 void CorrelationView::mouseMoveEvent(QMouseEvent* event){
     //Write the current coordinates in the statusbar.
     QRect r((QRect)window);
