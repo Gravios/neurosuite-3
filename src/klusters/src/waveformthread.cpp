@@ -110,15 +110,18 @@ void WaveformThread::process(){
     const dataType p1 = (mode == Data::SAMPLE) ? snapNbSpkToDisplay : snapStartTime;
     const dataType p2 = (mode == Data::SAMPLE) ? 0                  : snapEndTime;
 
+    //Every Data call below works against the snapshot captured at enqueue:
+    //its membership, its pinned reader, and — since the cache moved into the
+    //snapshot (epoch-snapshot step 3b) — its own waveform store.
     auto fetchOnce = [&](int id) -> Data::Status {
         return (mode == Data::SAMPLE)
-            ? data.getSampleWaveformPoints(id, snapNbSpkToDisplay)
-            : data.getTimeFrameWaveformPoints(id, snapStartTime, snapEndTime);
+            ? data.getSampleWaveformPoints(snapshot, id, snapNbSpkToDisplay)
+            : data.getTimeFrameWaveformPoints(snapshot, id, snapStartTime, snapEndTime);
     };
     auto calcOnce = [&](int id) -> Data::Status {
         return (mode == Data::SAMPLE)
-            ? data.calculateSampleMean(id, snapNbSpkToDisplay)
-            : data.calculateTimeFrameMean(id, snapStartTime, snapEndTime);
+            ? data.calculateSampleMean(snapshot, id, snapNbSpkToDisplay)
+            : data.calculateTimeFrameMean(snapshot, id, snapStartTime, snapEndTime);
     };
 
     const QList<int> sweep = treatSingleCluster ? (QList<int>() << clusterId) : clusterIds;
@@ -142,7 +145,7 @@ void WaveformThread::process(){
             }
             //IN_PROCESS: subscribe on the owner's spike terminal.
             const Data::WaveformSubscribe sub =
-                data.subscribeWaveform(id, mode, /*wantsMean*/false, p1, p2, ticket, failFatal);
+                data.subscribeWaveform(snapshot, id, mode, /*wantsMean*/false, p1, p2, ticket, failFatal);
             if(sub == Data::WaveformSubscribe::DoneFail && failFatal){ singleFailed = true; break; }
             //Parked / DoneOk / DoneFail-on-multi: nothing more to do here.
         }
@@ -164,7 +167,7 @@ void WaveformThread::process(){
                 if(st == Data::READY){ resolved = true; break; }
                 if(st == Data::IN_PROCESS){
                     const Data::WaveformSubscribe sub =
-                        data.subscribeWaveform(id, mode, /*wantsMean*/true, p1, p2, ticket, failFatal);
+                        data.subscribeWaveform(snapshot, id, mode, /*wantsMean*/true, p1, p2, ticket, failFatal);
                     if(sub == Data::WaveformSubscribe::Retry) continue;   // mean landed meanwhile? recalc
                     if(sub == Data::WaveformSubscribe::DoneFail && failFatal) singleFailed = true;
                     resolved = true;                                      // Parked / DoneOk / DoneFail
@@ -176,7 +179,7 @@ void WaveformThread::process(){
                 if(fst == Data::READY) continue;
                 if(fst == Data::IN_PROCESS){
                     const Data::WaveformSubscribe sub =
-                        data.subscribeWaveform(id, mode, /*wantsMean*/true, p1, p2, ticket, failFatal);
+                        data.subscribeWaveform(snapshot, id, mode, /*wantsMean*/true, p1, p2, ticket, failFatal);
                     if(sub == Data::WaveformSubscribe::Retry) continue;
                     if(sub == Data::WaveformSubscribe::DoneFail && failFatal) singleFailed = true;
                     resolved = true;

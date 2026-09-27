@@ -280,7 +280,7 @@ void WaveformView::spikesAddedToCluster(int clusterId,bool active){
     // calls stopAndClearThreads() first; this path was the only exception.
     // Without this, rapid cluster navigation accumulates sleeping threads
     // (each sleeping 1 s in the IN_PROCESS retry loop) that race on
-    // waveformStatusMap/waveformDict and cause a segfault.
+    // the shared waveform cache and cause a segfault.
     stopAndClearThreads();
 
     //Update drawContentsMode if need it.
