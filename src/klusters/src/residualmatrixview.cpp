@@ -8,6 +8,8 @@
 #include "klustersview.h"
 
 #include <QApplication>
+#include <QThread>        // msleep for the synchronous job quiesce
+#include <QMutexLocker>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPainter>
@@ -34,7 +36,8 @@ ResidualMatrixView::ResidualMatrixView(KlustersDoc& doc_, KlustersView& view_,
     : QWidget(parent),
       doc(doc_), view(view_), statusBar(statusBar_),
       scores(nullptr),
-      dataReady(false), goingToDie(false), isStale(false), generation(0),
+      dataReady(false), goingToDie(false), isStale(false),
+      jobToken(std::make_shared<KlustersJobToken>()),
       displayMax(1.0),
       cellWidth(CELL_WIDTH), widthBorder(0), heightBorder(0)
 {
@@ -75,10 +78,14 @@ ResidualMatrixView::ResidualMatrixView(KlustersDoc& doc_, KlustersView& view_,
 ResidualMatrixView::~ResidualMatrixView()
 {
     willBeKilled();
-    for (ResidualMatrixThread* t : threadsToBeKill)
-        while (!t->wait()) {}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
+    //Fence the completion posts: once viewDead is set under the lock, no job
+    //will post to this view again.  The jobs themselves are not waited for:
+    //they were superseded above, the pool owns and deletes them, and their
+    //results travel inside the events, which delete what nobody takes.
+    {
+        QMutexLocker lock(&jobToken->postMutex);
+        jobToken->viewDead = true;
+    }
     delete scoresAll;
     delete scoresSel;   // `scores` is non-owning: it aliases one of these
     QApplication::removePostedEvents(this);
@@ -88,25 +95,29 @@ void ResidualMatrixView::willBeKilled()
 {
     if (!goingToDie) {
         goingToDie = true;
-        for (ResidualMatrixThread* t : threadsToBeKill)
-            t->stopProcessing();
+        //Supersede the in-flight jobs: each stops at its next cancellation
+        //check, and its completion event fails the generation guard.
+        jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
     }
 }
 
 bool ResidualMatrixView::isThreadsRunning() const
 {
-    return !threadsToBeKill.isEmpty();
+    return jobToken->active.load(std::memory_order_acquire) > 0;
 }
 
 void ResidualMatrixView::stopRunningThreadsSync()
 {
-    for (ResidualMatrixThread* t : threadsToBeKill)
-        t->stopProcessing();
-    for (ResidualMatrixThread* t : threadsToBeKill)
-        while (!t->wait()) {}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
-    QApplication::removePostedEvents(this);
+    // Supersede every in-flight job, then wait for them to retire: callers
+    // are about to rewrite .spk.pending, so no job of this view may still be
+    // inside a file read once this returns (the synchronous-quiesce
+    // contract).
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    while (jobToken->active.load(std::memory_order_acquire) > 0)
+        QThread::msleep(1);
+    // Drop completion events the superseded jobs posted before retiring;
+    // they would fail the generation guard anyway.
+    QApplication::removePostedEvents(this, QEvent::User + 603);
 }
 
 // ── colour map (cool→warm; index high = warm/red, low = cool/blue) ───────────
@@ -126,14 +137,13 @@ void ResidualMatrixView::initializeColorMap()
 void ResidualMatrixView::launchCompute()
 {
     if (goingToDie) return;
-    ++generation;
+    //Supersede the in-flight computes (their results are stale by definition
+    //now); the replacement job enqueued below captures the new generation.
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
     computing = true;      // paint a badge over the old matrix, do not blank
 
-    for (ResidualMatrixThread* t : threadsToBeKill)
-        t->stopProcessing();
-
     setCursor(Qt::WaitCursor);
-    threadsToBeKill.append(launchComputeThread());
+    launchComputeThread();
 
     isStale = false;
     update();
@@ -153,7 +163,7 @@ void ResidualMatrixView::updateMatrixContents()
     launchCompute();
 }
 
-ResidualMatrixThread* ResidualMatrixView::launchComputeThread()
+void ResidualMatrixView::launchComputeThread()
 {
     // Scoped matrices: restrict to one parent's children when the child palette is
     // driving and the parent has enough of them to be worth comparing.  Empty
@@ -175,9 +185,10 @@ ResidualMatrixThread* ResidualMatrixView::launchComputeThread()
             << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
                                                      : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
     }
-    return new ResidualMatrixThread(*this, doc.matrixData(), generation,
-                                    doc.selectedChannels(),
-                                    doc.matrixScopeClusters());
+    //Creating the job launches it; the pool owns and deletes it.
+    new ResidualMatrixThread(*this, doc.matrixData(), jobToken,
+                             doc.selectedChannels(),
+                             doc.matrixScopeClusters());
 }
 void ResidualMatrixView::invalidateCaches()
 {
@@ -233,21 +244,23 @@ void ResidualMatrixView::customEvent(QEvent* event)
 {
     if (event->type() != QEvent::Type(QEvent::User + 603)) return;
 
-    auto* ev     = static_cast<ResidualMatrixThread::ResidualMatrixEvent*>(event);
-    auto* thread = ev->parentThread();
+    auto* ev = static_cast<ResidualMatrixThread::ResidualMatrixEvent*>(event);
 
-    Array<double>* newScores = thread->getScores();
-    const bool accepted = (newScores != nullptr
-                           && thread->getGeneration() == generation);
+    //The job retired itself and the results travel in the event, so there is
+    //no thread to wait for or delete anymore.
+    const bool genMatch = (ev->generation()
+                           == jobToken->generation.load(std::memory_order_acquire));
+    Array<double>* newScores = ev->takeScores();
+    const bool accepted = (newScores != nullptr && genMatch);
     // Only the generation we are waiting on ends the "computing" state: a
     // superseded result arriving must not cancel the badge for the newer
     // compute that replaced it.
-    if (thread->getGeneration() == generation) computing = false;
+    if (genMatch) computing = false;
 
     if (accepted) {
         // File under the selection it was computed for, so the other slot
         // stays available for an instant swap.
-        const QList<int> ranFor = thread->getSelection();
+        const QList<int> ranFor = ev->getSelection();
         if (ranFor.isEmpty()) {
             delete scoresAll;
             scoresAll    = newScores;
@@ -259,22 +272,18 @@ void ResidualMatrixView::customEvent(QEvent* event)
             haveSelCache    = true;
         }
         scores      = newScores;
-        clusterList = thread->getClusterList();
+        clusterList = ev->getClusterList();
         recomputeDisplayMax();
     } else {
         delete newScores;
     }
-
-    while (!thread->wait()) {}
-    threadsToBeKill.removeAll(thread);
-    delete thread;
 
     if (!goingToDie) {
         if (accepted) {
             updateWindow();
             dataReady = true;
             setCursor(Qt::ArrowCursor);
-        } else if (threadsToBeKill.isEmpty()) {
+        } else if (jobToken->active.load(std::memory_order_acquire) == 0) {
             setCursor(Qt::ArrowCursor);
         }
         update();

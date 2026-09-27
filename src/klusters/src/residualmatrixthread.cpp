@@ -5,6 +5,8 @@
 #include "sortabletable.h"
 
 #include <QApplication>
+#include <QThreadPool>
+#include <QMutexLocker>
 #include <cmath>
 #include <algorithm>
 
@@ -13,13 +15,52 @@
 #endif
 
 // ---------------------------------------------------------------------------
+ResidualMatrixThread::ResidualMatrixThread(ResidualMatrixView& v, Data& d,
+                                           const std::shared_ptr<KlustersJobToken>& viewToken,
+                                           QList<int> sel, QList<int> clusterScope)
+    : view(v), data(d), token(viewToken), scores(nullptr),
+      selection(std::move(sel)),
+      activeClusters(std::move(clusterScope))
+{
+    setAutoDelete(true);
+    //The creation of the job launches the request, as the old thread's
+    //constructor did with start().
+    jobGeneration = token->generation.load(std::memory_order_acquire);
+    token->active.fetch_add(1, std::memory_order_acq_rel);
+    KlustersJobPool::pool()->start(this);
+}
+
+void ResidualMatrixThread::post(QEvent* event)
+{
+    // Fence against view destruction: ~ResidualMatrixView sets viewDead under
+    // the same mutex, so while we hold it and viewDead is false the view is a
+    // valid event receiver.  A refused event deletes itself — and with it the
+    // matrix it owns.
+    QMutexLocker lock(&token->postMutex);
+    if (token->viewDead) {
+        delete event;
+        return;
+    }
+    QApplication::postEvent(&view, event);
+}
+
 void ResidualMatrixThread::run()
 {
-    auto post = [this]() {
-        QApplication::postEvent(&view, new ResidualMatrixEvent(*this));
+    process();
+    //Retire: this must be the last touch of any shared state (Data above
+    //all).  The synchronous quiesce in stopRunningThreadsSync() and the
+    //document-close pool drain treat active == 0 as "no job is inside a
+    //Data call anymore".
+    token->active.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+void ResidualMatrixThread::process()
+{
+    auto postDone = [this]() {
+        post(new ResidualMatrixEvent(*this));
     };
 
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 1. Cluster list ──────────────────────────────────────────────────
     {
@@ -53,18 +94,18 @@ void ResidualMatrixThread::run()
 
 
     const int nClusters = clusterList.size();
-    if (nClusters < 2) { post(); return; }
+    if (nClusters < 2) { postDone(); return; }
 
     const int     nChan   = data.nbOfChannels();
     const int     nSamp   = data.nbSamplesPerWaveform();
     const int     nPts    = nChan * nSamp;
     const QString spkPath = data.getSpkFileName();
-    if (spkPath.isEmpty() || nPts <= 0) { post(); return; }
+    if (spkPath.isEmpty() || nPts <= 0) { postDone(); return; }
 
     // ── 2. Pre-fetch .spk file indices (serial, mutex-safe) ───────────────
     allFileIdx.resize(static_cast<size_t>(nClusters));
     for (int ci = 0; ci < nClusters; ++ci) {
-        if (haveToStopProcessing) { post(); return; }
+        if (cancelled()) { postDone(); return; }
         SortableTable posTable;
         if (!data.spikePositions(clusterList[ci], posTable)) continue;
         const long nSpk = static_cast<long>(data.nbOfSpikes(clusterList[ci]));
@@ -73,7 +114,7 @@ void ResidualMatrixThread::run()
             allFileIdx[static_cast<size_t>(ci)].push_back(
                 static_cast<int>(posTable(1, s + 1)) - 1);
     }
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 3. Per-cluster mean + within-cluster variance (one streaming pass) ─
     // mean_c[p] = (1/N) Σ x_s[p];  var_c[p] = (1/N) Σ x_s[p]^2 − mean_c[p]^2.
@@ -90,7 +131,7 @@ void ResidualMatrixThread::run()
     shared(meanWav, varWav, allFileIdx, spk) \
     firstprivate(nClusters, nPts, nChan, nSamp)
     for (int ci = 0; ci < nClusters; ++ci) {
-        if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
+        if (cancelled()) continue;
 
         const auto& fidx = allFileIdx[static_cast<size_t>(ci)];
         const long  nSpk = static_cast<long>(fidx.size());
@@ -103,7 +144,7 @@ void ResidualMatrixThread::run()
         long valid = 0;
 
         for (long s = 0; s < nSpk; ++s) {
-            if (haveToStopProcessing.load(std::memory_order_relaxed)) break;
+            if (cancelled()) break;
             if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
                                   nChan, nSamp, raw, sp))
                 continue;
@@ -128,7 +169,7 @@ void ResidualMatrixThread::run()
             }
         }
     }
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 4. Asymmetric separability matrix ─────────────────────────────────────
     //   noise_i  = mean_p var_i[p]                    (within-cluster floor)
@@ -167,7 +208,7 @@ void ResidualMatrixThread::run()
         }
     }
     const int effPts = effChan * nSamp;
-    if (effPts <= 0) { post(); return; }
+    if (effPts <= 0) { postDone(); return; }
 
     const double invPts = 1.0 / static_cast<double>(effPts);
 
@@ -196,7 +237,7 @@ void ResidualMatrixThread::run()
     shared(meanWav, meanVar, pairs, scores) \
     firstprivate(nPairs, effPts, invPts)
     for (int pi = 0; pi < nPairs; ++pi) {
-        if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
+        if (cancelled()) continue;
         const int i = pairs[static_cast<size_t>(pi)].first;
         const int j = pairs[static_cast<size_t>(pi)].second;
         const auto& mi = meanWav[static_cast<size_t>(i)];
@@ -214,5 +255,5 @@ void ResidualMatrixThread::run()
         (*scores)(j + 1, i + 1) = (dj > 0.0) ? gap / dj : 0.0;   // systematic fraction, row j
     }
 
-    post();
+    postDone();
 }

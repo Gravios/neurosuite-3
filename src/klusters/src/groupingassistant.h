@@ -20,6 +20,7 @@
 
 //include files for the application
 #include <vector>
+#include <functional>
 #include "data.h"
 #include "array.h"
 #include "types.h"
@@ -84,7 +85,20 @@ public:
     /**Asks the GroupingAssistant to stop his work as soon as possible.*/
     inline void stopComputing(){haveToStopComputing = true;}
 
+    /**Installs an external cancellation test, polled wherever the internal
+    * stop flag is (the per-cluster loop heads).  Lets a pooled error-matrix
+    * job route its request-generation check into the assistant, which is
+    * otherwise unreachable while a compute call is running (worker-pool
+    * conversion, step 4b).  Pass an empty function to clear it.*/
+    inline void setExternalStop(std::function<bool()> f){externalStop = std::move(f);}
+
 private:
+    /**True when the computation should stop: the internal flag, or the
+    * installed external test.*/
+    inline bool stopRequested() const {
+        return haveToStopComputing || (externalStop && externalStop());
+    }
+
     /**Array containing the covariances of the clusters computed.*/
     Array<double> covariances;
 
@@ -119,6 +133,8 @@ private:
 
     /**True if has been asked to stop the computation, false otherwise.*/
     bool haveToStopComputing;
+    /**Optional external cancellation test — see setExternalStop().*/
+    std::function<bool()> externalStop;
 
     /**
  * Computes an array giving the posterior probabilities of belonging

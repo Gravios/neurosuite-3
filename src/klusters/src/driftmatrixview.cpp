@@ -24,6 +24,8 @@
 #include "klustersview.h"
 
 #include <QApplication>
+#include <QThread>        // msleep for the synchronous job quiesce
+#include <QMutexLocker>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPainter>
@@ -54,7 +56,9 @@ DriftMatrixView::DriftMatrixView(KlustersDoc& doc_, KlustersView& view_,
     : QWidget(parent),
       doc(doc_), view(view_), statusBar(statusBar_),
       scores(nullptr),
-      dataReady(false), goingToDie(false), isStale(false), generation(0),
+      dataReady(false), goingToDie(false), isStale(false),
+      shiftToken(std::make_shared<KlustersJobToken>()),
+      computeToken(std::make_shared<KlustersJobToken>()),
       cellWidth(CELL_WIDTH), widthBorder(0), heightBorder(0)
 {
     QPalette pal = palette();
@@ -130,13 +134,19 @@ DriftMatrixView::DriftMatrixView(KlustersDoc& doc_, KlustersView& view_,
 DriftMatrixView::~DriftMatrixView()
 {
     willBeKilled();
-    // Reap the slider workers too: each holds a DriftMatrixView& and posts to it
-    // on exit, so letting one outlive this object posts to freed memory.
-    stopShiftThreads();
-    for (DriftMatrixThread* t : threadsToBeKill)
-        while (!t->wait()) {}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
+    //Fence the completion posts on both request streams: once viewDead is set
+    //under the locks, no job will post to this view again.  The jobs
+    //themselves are not waited for: they were superseded by willBeKilled(),
+    //the pool owns and deletes them, and their results travel inside the
+    //events, which delete what nobody takes.
+    {
+        QMutexLocker lock(&computeToken->postMutex);
+        computeToken->viewDead = true;
+    }
+    {
+        QMutexLocker lock(&shiftToken->postMutex);
+        shiftToken->viewDead = true;
+    }
     delete cacheAll.scores;
     delete cacheSel.scores;   // `scores` is non-owning: it aliases one of these
     QApplication::removePostedEvents(this);
@@ -146,33 +156,38 @@ void DriftMatrixView::willBeKilled()
 {
     if (!goingToDie) {
         goingToDie = true;
-        for (DriftMatrixThread* t : threadsToBeKill)
-            t->stopProcessing();
-        for (DriftShiftThread* t : shiftThreads)
-            t->stopProcessing();
+        //Supersede both request streams: each in-flight job stops at its next
+        //cancellation check, and its completion event fails the generation
+        //guard in customEvent().
+        computeToken->generation.fetch_add(1, std::memory_order_acq_rel);
+        shiftToken->generation.fetch_add(1, std::memory_order_acq_rel);
     }
 }
 
 bool DriftMatrixView::isThreadsRunning() const
 {
-    return !threadsToBeKill.isEmpty();
+    return computeToken->active.load(std::memory_order_acquire) > 0;
 }
 
 void DriftMatrixView::stopRunningThreadsSync()
 {
+    // Supersede both request streams, then wait for every job to retire:
+    // callers are about to rewrite .spk.pending, so no full-recompute job may
+    // still be inside a file read once this returns (the shift jobs only read
+    // their own copied means, but they are quiesced too, as before).
     stopShiftThreads();
-    for (DriftMatrixThread* t : threadsToBeKill)
-        t->stopProcessing();
-    for (DriftMatrixThread* t : threadsToBeKill)
-        while (!t->wait()) {}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
-    QApplication::removePostedEvents(this);
+    computeToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    while (computeToken->active.load(std::memory_order_acquire) > 0)
+        QThread::msleep(1);
+    // Drop completion events the superseded jobs posted before retiring;
+    // they would fail the generation guard anyway.
+    QApplication::removePostedEvents(this, QEvent::User + 604);
+    QApplication::removePostedEvents(this, QEvent::User + 606);
 }
 
 // ── compute ──────────────────────────────────────────────────────────────────
 
-DriftMatrixThread* DriftMatrixView::launchComputeThread()
+void DriftMatrixView::launchComputeThread()
 {
     // Resolve per-channel probe depths from the session YAML `probes:` section
     // + the referenced .probe geometry.  An empty result disables the slider;
@@ -216,23 +231,23 @@ DriftMatrixThread* DriftMatrixView::launchComputeThread()
             << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
                                                      : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
     }
-    return new DriftMatrixThread(*this, doc.matrixData(), std::move(chanDepths),
-                                 static_cast<float>(currentDriftUm), generation,
-                                 doc.selectedChannels(),
-                                 doc.matrixScopeClusters());
+    //Creating the job launches it; the pool owns and deletes it.
+    new DriftMatrixThread(*this, doc.matrixData(), std::move(chanDepths),
+                          static_cast<float>(currentDriftUm), computeToken,
+                          doc.selectedChannels(),
+                          doc.matrixScopeClusters());
 }
 
 void DriftMatrixView::launchCompute()
 {
     if (goingToDie) return;
-    ++generation;
+    //Supersede the in-flight computes (their results are stale by definition
+    //now); the replacement job enqueued below captures the new generation.
+    computeToken->generation.fetch_add(1, std::memory_order_acq_rel);
     computing = true;      // paint a badge over the old matrix, do not blank
 
-    for (DriftMatrixThread* t : threadsToBeKill)
-        t->stopProcessing();
-
     setCursor(Qt::WaitCursor);
-    threadsToBeKill.append(launchComputeThread());
+    launchComputeThread();
 
     isStale = false;
     update();
@@ -284,20 +299,22 @@ void DriftMatrixView::customEvent(QEvent* event)
     // ── slider recompute (User+606) ─────────────────────────────────────────
     if (event->type() == QEvent::Type(QEvent::User + 606)) {
         auto* sev = static_cast<DriftShiftThread::DriftShiftEvent*>(event);
-        auto* st  = sev->parentThread();
 
-        Array<double>* fresh = st->getScores();
+        //The job retired itself and the result travels in the event.
+        const bool genMatch = (sev->generation()
+                               == shiftToken->generation.load(std::memory_order_acquire));
+        Array<double>* fresh = sev->takeScores();
         // Only the newest drag position may paint; every earlier one was
-        // cancelled by it and returns nullptr anyway.
-        const bool ok = (fresh != nullptr && st->getGeneration() == shiftGeneration);
-        if (st->getGeneration() == shiftGeneration) computing = false;
+        // superseded by it and yields a null matrix anyway.
+        const bool ok = (fresh != nullptr && genMatch);
+        if (genMatch) computing = false;
 
         if (ok) {
             // Install into the cache slot this run was computed for, so the
             // matrix being painted and the cached one never diverge -- the old
             // in-place write kept them identical by construction and the swap
             // has to preserve that.
-            Cache& slot = st->wasForSelection() ? cacheSel : cacheAll;
+            Cache& slot = sev->wasForSelection() ? cacheSel : cacheAll;
             delete slot.scores;
             slot.scores = fresh;
             slot.valid  = true;
@@ -305,10 +322,6 @@ void DriftMatrixView::customEvent(QEvent* event)
         } else {
             delete fresh;
         }
-
-        while (!st->wait()) {}
-        shiftThreads.removeAll(st);
-        delete st;
 
         if (!goingToDie) {
             if (ok) { updateWindow(); setCursor(Qt::ArrowCursor); }
@@ -319,43 +332,41 @@ void DriftMatrixView::customEvent(QEvent* event)
 
     if (event->type() != QEvent::Type(QEvent::User + 604)) return;
 
-    auto* ev     = static_cast<DriftMatrixThread::DriftMatrixEvent*>(event);
-    auto* thread = ev->parentThread();
+    auto* ev = static_cast<DriftMatrixThread::DriftMatrixEvent*>(event);
 
-    Array<double>* newScores = thread->getScores();
-    const bool accepted = (newScores != nullptr
-                           && thread->getGeneration() == generation);
+    //The job retired itself and the results travel in the event, so there is
+    //no thread to wait for or delete anymore.
+    const bool genMatch = (ev->generation()
+                           == computeToken->generation.load(std::memory_order_acquire));
+    Array<double>* newScores = ev->takeScores();
+    const bool accepted = (newScores != nullptr && genMatch);
     // Only the generation we are waiting on ends the "computing" state: a
     // superseded result arriving must not cancel the badge for the newer
     // compute that replaced it.
-    if (thread->getGeneration() == generation) computing = false;
+    if (genMatch) computing = false;
 
     if (accepted) {
         // File the result under the selection it was computed for, together with
         // the means it came from, so the other slot stays usable for an instant
         // swap later.
-        const QList<int> ranFor = thread->getSelection();
+        const QList<int> ranFor = ev->getSelection();
         Cache& slot = ranFor.isEmpty() ? cacheAll : cacheSel;
         delete slot.scores;
         slot.scores     = newScores;
-        slot.meanWav    = thread->getMeanWav();
-        slot.depths     = thread->getDepths();
-        slot.nChan      = thread->getNbChannels();
-        slot.geometryOk = thread->geometryOk();
+        slot.meanWav    = std::move(ev->getMeanWav());
+        slot.depths     = std::move(ev->getDepths());
+        slot.nChan      = ev->getNbChannels();
+        slot.geometryOk = ev->geometryOk();
         slot.valid      = true;
         if (!ranFor.isEmpty()) cachedSelection = ranFor;
 
-        clusterList    = thread->getClusterList();
-        nSampCached    = thread->getNbSamples();
-        maxShiftCached = thread->getMaxShift();
+        clusterList    = ev->getClusterList();
+        nSampCached    = ev->getNbSamples();
+        maxShiftCached = ev->getMaxShift();
         activateCache(slot);
     } else {
         delete newScores;
     }
-
-    while (!thread->wait()) {}
-    threadsToBeKill.removeAll(thread);
-    delete thread;
 
     if (!goingToDie) {
         if (accepted) {
@@ -376,7 +387,7 @@ void DriftMatrixView::customEvent(QEvent* event)
             updateWindow();
             dataReady = true;
             setCursor(Qt::ArrowCursor);
-        } else if (threadsToBeKill.isEmpty()) {
+        } else if (computeToken->active.load(std::memory_order_acquire) == 0) {
             setCursor(Qt::ArrowCursor);
         }
         update();
@@ -397,25 +408,24 @@ void DriftMatrixView::recomputeAtCurrentDrift()
 
     // Off-thread, into a NEW matrix.  This used to run inline and write straight
     // into *scores -- safe only because it held the GUI thread throughout.  A
-    // drag issues one of these per valueChanged, so each new position cancels
-    // the one before it and only the last to survive is painted.
-    ++shiftGeneration;
-    for (DriftShiftThread* t : shiftThreads) t->stopProcessing();
+    // drag issues one of these per valueChanged, so each new position
+    // supersedes the one before it and only the last to survive is painted.
+    shiftToken->generation.fetch_add(1, std::memory_order_acq_rel);
 
     computing = true;                       // badge over the current matrix
-    shiftThreads.append(new DriftShiftThread(
-        *this, shiftGeneration, meanWav, depths,
+    new DriftShiftThread(
+        *this, shiftToken, meanWav, depths,
         nChanCached, nSampCached, maxShiftCached, currentDriftUm,
-        !cachedSelection.isEmpty()));
+        !cachedSelection.isEmpty());
     update();
 }
 
 void DriftMatrixView::stopShiftThreads()
 {
-    for (DriftShiftThread* t : shiftThreads) t->stopProcessing();
-    for (DriftShiftThread* t : shiftThreads) while (!t->wait()) {}
-    qDeleteAll(shiftThreads);
-    shiftThreads.clear();
+    // Supersede every in-flight slider job and wait for them to retire.
+    shiftToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    while (shiftToken->active.load(std::memory_order_acquire) > 0)
+        QThread::msleep(1);
 }
 
 int DriftMatrixView::driftSliderClusterCap() const

@@ -37,6 +37,9 @@
 #include <vector>
 
 #include "array.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
+
+#include <memory>
 
 class KlustersDoc;
 class KlustersView;
@@ -214,15 +217,15 @@ private:
     Cache      cacheAll;
     Cache      cacheSel;
 
-    /**Workers rebuilding the matrix at a new slider position.  Separate from
-     * threadsToBeKill (full recomputes) because the two are cancelled
-     * independently: a drag supersedes only other drags.*/
-    QList<DriftShiftThread*> shiftThreads;
-    int                      shiftGeneration = 0;
+    /**Cancellation/completion state for the jobs rebuilding the matrix at a
+     * new slider position.  Separate from computeToken (full recomputes)
+     * because the two are superseded independently: a drag supersedes only
+     * other drags.  Replaces the shiftThreads list and shiftGeneration.*/
+    std::shared_ptr<KlustersJobToken> shiftToken;
     /**True when the slider is disabled purely because of the cluster count, so
      * the tooltip can say so rather than blaming missing geometry.*/
     bool                     sliderCappedByClusterCount = false;
-    /**Cancel and reap every slider worker.*/
+    /**Supersede and quiesce every slider job.*/
     void stopShiftThreads();
     /**A recompute is in flight: the view keeps painting whatever it has and
      * overlays a small badge instead of blanking the frame.*/
@@ -244,7 +247,6 @@ private:
     bool           dataReady;
     bool           goingToDie;
     bool           isStale;
-    int            generation;
 
     // Cached from the worker so the slider can recompute without touching .spk.
     std::vector<std::vector<float>> meanWav;
@@ -256,7 +258,10 @@ private:
     QString geometryError;   // why depths were unavailable (shown when disabled)
     int   currentDriftUm{0};
 
-    QList<DriftMatrixThread*> threadsToBeKill;
+    /**Cancellation/completion state shared with the full-recompute jobs.
+    * Replaces the threadsToBeKill ownership list and the generation counter:
+    * the token's own generation is the request generation now.*/
+    std::shared_ptr<KlustersJobToken> computeToken;
 
     // ── geometry / colour / drawing ──────────────────────────────────────
     int cellWidth;
@@ -280,7 +285,7 @@ private:
     void updateInfoElide();
 
     // ── helpers ──────────────────────────────────────────────────────────
-    DriftMatrixThread* launchComputeThread();
+    void launchComputeThread();
     /// Recompute every cell from the cached means at currentDriftUm.
     void recomputeAtCurrentDrift();
     void updateWindow();

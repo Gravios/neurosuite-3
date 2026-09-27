@@ -20,6 +20,7 @@
 
 // include files for Qt
 #include <vector>
+#include <memory>
 #include <QWidget>
 #include <QMap>
 #include <QColor>
@@ -38,6 +39,7 @@
 #include <viewwidget.h>
 #include "array.h"
 #include "pair.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 
 // forward declaration
 class KlustersDoc;
@@ -467,7 +469,15 @@ private:
     static constexpr int pairBoxSettleMs{140};
 
     /**List of pointers on the threads which have to be suppress when this object is destroy.*/
-    QList<ErrorMatrixThread*> threadsToBeKill;
+    /**Cancellation/completion state shared with the jobs this view enqueues
+    * on the worker pool — one token per request stream: display computes
+    * (computeMatrix) and background cache warmers (launchCacheWarmer) are
+    * always superseded together, but isComputing() must see only the display
+    * stream, so they keep separate active counts.  These replace the
+    * threadsToBeKill ownership list and the generation counter: the tokens'
+    * own generations are the request generations now, bumped in tandem.*/
+    std::shared_ptr<KlustersJobToken> displayToken;
+    std::shared_ptr<KlustersJobToken> warmerToken;
 
     /**True if the probabilities are available.*/
     bool dataReady;
@@ -507,12 +517,6 @@ private:
      * user guessing whether the matrix on screen is current.*/
     bool computing = false;
     bool goingToDie;
-
-    /**Monotonically increasing counter, bumped each time updateMatrixContents() is called.
-     * Each ErrorMatrixThread stores the generation at the time it was created.
-     * customEvent() discards results whose generation != generation, preventing
-     * a superseded (pre-renumber) thread from overwriting a more recent result.*/
-    int generation;
 
     /**List of the selected pairs.*/
     QList<Pair> selectedPairs;

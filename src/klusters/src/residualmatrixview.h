@@ -10,6 +10,9 @@
 #include <QLabel>
 
 #include "array.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
+
+#include <memory>
 
 class KlustersDoc;
 class KlustersView;
@@ -183,10 +186,13 @@ private:
     bool           dataReady;
     bool           goingToDie;
     bool           isStale;
-    int            generation;
     double         displayMax;  // cached off-diagonal max for colour scaling
 
-    QList<ResidualMatrixThread*> threadsToBeKill;
+    /**Cancellation/completion state shared with the jobs this view enqueues
+    * on the worker pool.  Replaces the threadsToBeKill ownership list and
+    * the generation counter: the token's own generation is the request
+    * generation now.*/
+    std::shared_ptr<KlustersJobToken> jobToken;
 
     // ── geometry / colour / drawing ──────────────────────────────────────
     int cellWidth;
@@ -208,7 +214,7 @@ private:
     void updateInfoElide();
 
     // ── helpers ──────────────────────────────────────────────────────────
-    ResidualMatrixThread* launchComputeThread();
+    void launchComputeThread();
     void recomputeDisplayMax();
     void updateWindow();
     void drawMatrix(QPainter& painter);

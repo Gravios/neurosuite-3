@@ -1,16 +1,16 @@
 #ifndef RESIDUALMATRIXTHREAD_H
 #define RESIDUALMATRIXTHREAD_H
 
-#include <QThread>
+#include <QRunnable>
 #include <QEvent>
 #include <QList>
-#include <atomic>
+#include <memory>
 #include <vector>
-#include <cstdio>
 #include <cstdint>
 
 #include "array.h"
 #include "data.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the view)
 
 class ResidualMatrixView;
 
@@ -45,37 +45,50 @@ class ResidualMatrixView;
 // spike-count-gated reorder can seriate on real residual distances.
 //
 // Posts ResidualMatrixEvent (User+603) when done.
+//
+// Formerly one QThread per recompute; now a QRunnable on the shared worker
+// pool (KlustersJobPool — worker-pool conversion, step 4b).  Creating it
+// launches the request; the pool owns and deletes it after run().  The view
+// supersedes it by bumping its token's request generation, and the results
+// travel inside the completion event (the matrix freed by the event when no
+// handler takes it).
 // ---------------------------------------------------------------------------
-class ResidualMatrixThread : public QThread {
+class ResidualMatrixThread : public QRunnable {
 public:
     friend class ResidualMatrixView;
 
-    ~ResidualMatrixThread() {}
-
-    void stopProcessing() {
-        haveToStopProcessing.store(true, std::memory_order_release);
-    }
-    int getGeneration() const { return generation; }
-
-    // Results exposed to ResidualMatrixView after the thread finishes.
-    Array<double>* getScores()      const { return scores; }
-    QList<int>     getClusterList() const { return clusterList; }
-    /// The channel selection this run was launched for (empty = all channels).
-    /// The view files the result in the matching cache slot.
-    QList<int>     getSelection()   const { return selection; }
+    ~ResidualMatrixThread() override {}
 
     class ResidualMatrixEvent : public QEvent {
         friend class ResidualMatrixThread;
     public:
-        ResidualMatrixThread* parentThread() { return &thread; }
-        ~ResidualMatrixEvent() {}
+        /**Deletes the matrix when no handler took it.*/
+        ~ResidualMatrixEvent() { delete scoresResult; }
+
+        int generation() const { return eventGeneration; }
+        /**Hands the matrix (and its ownership) to the caller; nullptr when
+        * the compute was cancelled or degenerate, or it was already taken.*/
+        Array<double>* takeScores() { Array<double>* s = scoresResult; scoresResult = nullptr; return s; }
+        QList<int> getClusterList() const { return clusterListResult; }
+        /// The channel selection the run was launched for (empty = all channels).
+        /// The view files the result in the matching cache slot.
+        QList<int> getSelection() const { return selectionResult; }
     private:
-        explicit ResidualMatrixEvent(ResidualMatrixThread& t)
-            : QEvent(QEvent::Type(QEvent::User + 603)), thread(t) {}
-        ResidualMatrixThread& thread;
+        explicit ResidualMatrixEvent(ResidualMatrixThread& job)
+            : QEvent(QEvent::Type(QEvent::User + 603)),
+              eventGeneration(job.jobGeneration),
+              scoresResult(job.scores),
+              clusterListResult(job.clusterList),
+              selectionResult(job.selection) { job.scores = nullptr; }
+
+        int            eventGeneration;
+        Array<double>* scoresResult;
+        QList<int>     clusterListResult;
+        QList<int>     selectionResult;
     };
 
-protected:
+    /**Executed by a pool worker; builds the matrix, posts the completion
+    * event and retires the job.*/
     void run() override;
 
 private:
@@ -83,19 +96,35 @@ private:
      * @param sel  Channel selection (group-local indices, empty = all channels).
      *             The means and variances are restricted to it before the matrix
      *             is built.
+     *
+     * Creating the job launches the request on the shared pool (as the old
+     * thread constructor's start() did).  Runs on the GUI thread only.
      */
-    ResidualMatrixThread(ResidualMatrixView& v, Data& d, int gen,
+    ResidualMatrixThread(ResidualMatrixView& v, Data& d,
+                         const std::shared_ptr<KlustersJobToken>& viewToken,
                          QList<int> sel = QList<int>(),
-                         QList<int> clusterScope = QList<int>())
-        : view(v), data(d), generation(gen),
-          haveToStopProcessing(false), scores(nullptr),
-          selection(std::move(sel)),
-          activeClusters(std::move(clusterScope)) { start(); }
+                         QList<int> clusterScope = QList<int>());
+
+    /**True once the view has superseded this job's request generation: the
+    * job stops at its next check, exactly where the per-thread stop flag
+    * used to be read.*/
+    bool cancelled() const {
+        return token->generation.load(std::memory_order_acquire) != jobGeneration;
+    }
+
+    /**Posts @p event to the view, unless the view is being destroyed
+    * (fenced by the token's postMutex/viewDead).*/
+    void post(QEvent* event);
+
+    /**The old run() body; split out so run() can retire the job on every path.*/
+    void process();
 
     ResidualMatrixView&          view;
     Data&                        data;
-    int                          generation;
-    std::atomic_bool             haveToStopProcessing;
+    /**Shared cancellation/completion state owned by the view.*/
+    std::shared_ptr<KlustersJobToken> token;
+    /**The view's request generation this job was enqueued under.*/
+    int                          jobGeneration = 0;
 
     Array<double>*               scores;       // [N x N], 1-based, asymmetric
     QList<int>                   clusterList;   // matrix row/col -> cluster id
