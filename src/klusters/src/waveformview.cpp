@@ -55,7 +55,7 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
                            int border) :
     ViewWidget(doc,view,backgroundColor,statusBar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border,XMARGIN,YMARGIN)
   ,meanPresentation(mean),overLayPresentation(overLay),acquisitionGain(acquisitionGain),
-    jobToken(std::make_shared<WaveformJobToken>()),dataReady(true),
+    jobToken(std::make_shared<KlustersJobToken>()),dataReady(true),
     nbSpkToDisplay(nbSpkToDisplay),isZoomed(false),goingToDie(false){
 
     //Set the default modes

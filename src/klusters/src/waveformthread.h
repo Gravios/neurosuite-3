@@ -43,7 +43,7 @@
  * protocol (view.getWaveforms(), then one of the get* methods) are kept so
  * Data's friendship and the call sites stay unchanged.
  *
- * The request lifecycle runs through the view's WaveformJobToken:
+ * The request lifecycle runs through the view's KlustersJobToken:
  * - enqueueing captures the current request generation and increments the
  *   active count; the pool deletes the job after run() (autoDelete);
  * - the view supersedes in-flight jobs by bumping the generation: each job
@@ -138,7 +138,7 @@ public:
     void run() override;
 
 private:
-    WaveformThread(WaveformView& view,Data& d,const std::shared_ptr<WaveformJobToken>& viewToken)
+    WaveformThread(WaveformView& view,Data& d,const std::shared_ptr<KlustersJobToken>& viewToken)
         :waveformView(view),meanRequested(false),data(d),token(viewToken),
         snapPresentationMode(WaveformView::SAMPLE),snapNbSpkToDisplay(0),snapStartTime(0),snapEndTime(0),snapMeanPresentation(false){
         setAutoDelete(true);
@@ -183,7 +183,7 @@ private:
     bool meanRequested;
     Data& data;
     /**Shared cancellation/completion state owned by the view.*/
-    std::shared_ptr<WaveformJobToken> token;
+    std::shared_ptr<KlustersJobToken> token;
     /**The view's request generation this job was enqueued under.*/
     int jobGeneration = 0;
 

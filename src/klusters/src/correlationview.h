@@ -23,6 +23,7 @@
 #include "viewwidget.h"
 #include "pair.h"
 #include "data.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 
 // include files for QT
 #include <QPainter>
@@ -34,6 +35,8 @@
 
 #include <QResizeEvent>
 #include <QMouseEvent>
+
+#include <memory>
 
 
 class KlustersDoc;
@@ -66,12 +69,12 @@ public:
     /**Signals that the widget is about to be deleted.*/
     void willBeKilled() override;
 
-    /**Synchronously stop and clear in-flight CorrelationThreads.  Called by
-     * KlustersView::stopAllViewThreads() before cluster-mutating / .spk.pending
-     * writes so an in-flight correlogram read can't race the mutation and a
-     * thread can't post a completion event after its data is gone.  Unlike
-     * willBeKilled(), does NOT set goingToDie, so the view relaunches normally
-     * afterwards.  (CorrelationView is a ViewWidget, so without this override
+    /**Supersedes all in-flight correlogram jobs and waits for them to retire.
+     * Called by KlustersView::stopAllViewThreads() before cluster-mutating /
+     * .spk.pending writes so an in-flight correlogram read can't race the
+     * mutation — the synchronous quiesce contract.  Unlike willBeKilled(),
+     * does NOT set goingToDie, so the view relaunches normally afterwards.
+     * (CorrelationView is a ViewWidget, so without this override
      * stopAllViewThreads's ViewWidget loop hit only the empty base virtual.)*/
     void stopRunningThreads() override;
 
@@ -276,12 +279,14 @@ private:
   * The default is raw mode.*/
     Data::ScaleMode scaleMode;
 
-    /**Creates a thread which will get the correlations information for
+    /**Creates a job which will get the correlations information for
   * the pairs of clusters contained in @p pairsToCompute due to the clusters in @p clusterIds.
+  * Creating it launches the request on the shared worker pool, which owns and
+  * deletes it after it runs.
   * @param pairsToCompute couple of clusters for which a correlogram has to be obtained.
   * @param clusterIds clusters for which the correlograms will be computed.
   */
-    CorrelationThread* getCorrelations(QList<Pair>* pairsToCompute, const QList<int> &clusterIds);
+    CorrelationThread* getCorrelations(const QList<Pair>& pairsToCompute, const QList<int> &clusterIds);
 
     /**
  * Draws the correlograms of the pair of clusters in the list @p pairList on the given painter.
@@ -305,8 +310,10 @@ private:
 
     //Members
 
-    /**List of pointers on the threads which have to be suppress when this object is destroy.*/
-    QList<CorrelationThread*> threadsToBeKill;
+    /**Cancellation/completion state shared with the correlogram jobs this
+    * view enqueues on the worker pool.  Replaces the threadsToBeKill
+    * ownership list (jobs are owned and deleted by the pool).*/
+    std::shared_ptr<KlustersJobToken> jobToken;
 
     /**True if the correlation information needed to draw the correlograms are available.*/
     bool dataReady;
