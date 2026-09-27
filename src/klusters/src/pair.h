@@ -17,8 +17,8 @@
 // Pair — ordered (x, y) integer pair used as a correlation dictionary key.
 //
 // The underlying storage is std::pair<int,int>.  The only extra facility
-// is pairKey(x, y) which produces the canonical QString key used in
-// correlationDict and related maps.
+// is pairKey(x, y) which produces the canonical QString key used for
+// parameter sets in the correlogram store and related maps.
 // ---------------------------------------------------------------------------
 
 using Pair = std::pair<int, int>;

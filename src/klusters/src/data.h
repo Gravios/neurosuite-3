@@ -918,29 +918,18 @@ public:
      * WHICH clusters changed, which is the part that legitimately differs.*/
     void restartDimensionExtrema(const QList<int>& modifiedClusters);
 
-    /**Drops one cluster's cached waveforms AND correlograms.  The waveform
-     * half is dropWaveformEntry() on the current epoch's store (epoch-snapshot
-     * step 3b); the correlation half keeps the historical in-flight-aware
-     * behaviour: a loaded correlogram is deleted outright, an in-process one
-     * is flagged so the thread discards its own result.
-     *
-     * NOT the same as invalidateWaveformCache + invalidateCorrelogramCache.
-     * The latter calls cleanCorrelation unconditionally, while every inline
-     * copy of this block checks correlationsInProcess first and only flags a
-     * running correlation.  The two have been in the file together for a long
-     * time; this helper preserves the in-flight-aware behaviour the edit paths
-     * actually use rather than quietly adopting the other one.
-     *
-     * @p clusterListForCorrelations is the caller's cluster list -- every edit
-     * path passes the snapshot it took BEFORE mutating, which is the point:
-     * that list still contains the clusters the edit removed, so their cached
-     * pairs get evicted.  Passing the live clusterIds() instead would leave
-     * correlograms keyed on clusters that no longer exist.  The difference is
-     * invisible until a deleted cluster's id is reused.
+    /**Drops one cluster's cached waveforms AND correlograms from the current
+     * epoch's stores: dropWaveformEntry() plus dropCorrelationEntries()
+     * (epoch-snapshot steps 3b and 4).  Equivalent to invalidateWaveformCache
+     * + invalidateCorrelogramCache minus the compact-template removal; kept
+     * as the edit paths' one-call spelling.  The historical
+     * clusterListForCorrelations parameter is gone with the live cache it
+     * served: the store drop walks the store's own pair keys, so the
+     * carefully-passed pre-edit cluster list (and the stale-pair bug class
+     * it fenced) has no referent anymore.
      *
      * Must be called with the internal mutex NOT held.*/
-    void invalidateClusterCaches(int clusterId,
-                                 const QList<dataType>& clusterListForCorrelations);
+    void invalidateClusterCaches(int clusterId);
 
     /**Drops @p clusterId's entry from the CURRENT epoch's waveform store (and
      * its compact template), so the next request re-reads from the .spk file.
@@ -1779,47 +1768,6 @@ private:
     /**Boolean use to inform the MinMaxThread that the cluster 0 has changed and that it has to stop.*/
     std::atomic_bool clusterZeroJustModified;
 
-    /**
-  * This class stores the information to know which cluster has
-  * correlations in process.
-  */
-    class CorrelationsInProcess{
-
-    public:
-        CorrelationsInProcess(){}
-        ~CorrelationsInProcess(){}
-        void addProcess(dataType clusterId){
-            if(clusters.contains(clusterId)) clusters[clusterId]++;
-            else {
-                clusters.insert(clusterId,1);
-                clustersModified.insert(clusterId,false);
-            }
-        }
-        void removeProcess(dataType clusterId){
-            if(clusters.contains(clusterId) && clusters[clusterId] > 1)clusters[clusterId]--;
-            else if(clusters.contains(clusterId) && clusters[clusterId] == 1){
-                clusters.remove(clusterId);
-                clustersModified.remove(clusterId);
-            }
-        }
-        void removeCluster(dataType clusterId){
-            clusters.remove(clusterId);
-            clustersModified.remove(clusterId);
-        }
-        bool contains(dataType clusterId) const {return clusters.contains(clusterId);}
-
-        void setClusterModified(dataType clusterId,bool modified){clustersModified[clusterId] = modified;}
-        bool isClusterModified(dataType clusterId)  const {return clustersModified[clusterId];}
-
-    private:
-        QMap<dataType,int> clusters;
-        QMap<dataType,bool> clustersModified;
-    } ;
-
-    /**Stores the information to know which cluster has
- * correlations in process.*/
-    CorrelationsInProcess correlationsInProcess;
-
     class Correlation;
     friend class Correlation;
 
@@ -1899,12 +1847,27 @@ private:
         float firingRate;
     } ;
 
-    /**Dict containing the correlations.
-  * Key: a string representing the pair of clusters (id1-id2). The first value of the pair is always the bigger (the correlograms
-  * are calculated stored only for (A,B) with A > B and not for (B,A).
-  * value: a qdict containing a pair as a key and a Correlation object as a value. The pair represent the the bin size and the time window of the Correlation object.
-  */
-    QHash< QString, QHash<QString, Correlation*>* > correlationDict;
+    /**The correlogram cache of ONE epoch (epoch-snapshot step 4), the
+    * correlogram counterpart of WaveformCacheStore: owned by the
+    * ClusteringSnapshot it was published with, internally synchronized,
+    * filled by the jobs that captured the snapshot, read by the display
+    * through the current one, dead with the last reference.  Entries of
+    * pairs whose two clusters hold unchanged spike rows are carried over at
+    * publication; everything else — including the CorrelationsInProcess
+    * process-counting and the pair re-keying at renumber — died with the
+    * live cache this replaces (renamed ids simply recompute).  The only
+    * in-epoch removal is dropCorrelationEntries(), for timestamp writers.
+    *
+    * Outer key: the cluster pair, first >= second (correlograms are
+    * calculated and stored only for (A,B) with A >= B, never (B,A)).
+    * Inner key: pairKey(binSize, timeWindow) — one entry per parameter set.
+    * A recompute replaces the inner entry with a FRESH Correlation, so a
+    * reader pinning the previous object keeps a consistent correlogram.
+    * A slot is only ever IN_PROCESS (its owner is computing) or READY.*/
+    struct CorrelationCacheStore {
+        mutable QMutex m;
+        QHash<Pair, QHash<QString, std::shared_ptr<Correlation>>> byPair;
+    };
 
     /**Excerpt of spikesByCluster for the clusters selected to be recluster.*/
     SortableTable reclusteringSpikesByCluster;
@@ -2013,21 +1976,16 @@ private:
                                         const std::shared_ptr<WaveformRequestTicket>& ticket,
                                         bool failMarksTicket);
 
-    /**
-  * Remove all the correlations link to the cluster @p clusterId. This mean remove the
-  * corresponding entries from correlationMap.
-  * @param clusterId id of the cluster for which the cleaning has been asked.
-  * @param currentClusterList list of the clusters to look for cleaning.
-  * @param cleanProcess true if the cluster has to be remove from correlationInProcess false otherwise.
-  * The default is false.
-  */
-    void cleanCorrelation(dataType clusterId,const QList<dataType>& currentClusterList,bool cleanProcess = false);
-
-    /**
-  * Renumber all the correlations.
-  * @param clusterIdsOldNew map between old and new cluster ids.
-  */
-    void renumberCorrelation(QMap<int,int>& clusterIdsOldNew);
+    /**Removes every pair involving @p clusterId (status and Correlation
+    * objects) from the CURRENT epoch's correlogram store — the correlogram
+    * counterpart of dropWaveformEntry(), for writers that change the spike
+    * TIMESTAMPS behind an unchanged membership (the realign), which
+    * publishSnapshot()'s carry-forward equality cannot see.  A mid-compute
+    * owner keeps its object alive through its shared_ptr and its
+    * identity-guarded terminal discards the result.  The public face is
+    * invalidateCorrelogramCache().  Must be called with Data::mutex NOT
+    * held (it reads the current snapshot).*/
+    void dropCorrelationEntries(int clusterId);
 
     /**Returns the time corresponding to a spike.
   * @param spikesOfCluster one row SortableTable corresponding to the position of the cluser's spikes in
@@ -2294,8 +2252,12 @@ public:
   * (halfBins.5 for each halfTimeWindow).
   * @return the status, READY if the data have already been calculated or the asked computation is finish,
   * and IN_PROCESS if an other thread is already treating the pairs the thread has to do.
+  *
+  * Runs against @p snap's membership and correlogram store (epoch-snapshot
+  * step 4); the spike times themselves still come from the shared features
+  * table (plan step 5).
   */
-    Status getCorrelograms(Pair& pair,int binSize,int timeWindow,double binSizeInRU,float timeWindowInRU,int halfBins);
+    Status getCorrelograms(const std::shared_ptr<const ClusteringSnapshot>& snap,Pair& pair,int binSize,int timeWindow,double binSizeInRU,float timeWindowInRU,int halfBins);
 
     class CorrelogramIterator;
     friend class CorrelogramIterator;
@@ -2347,42 +2309,18 @@ public:
 
         float getFiringRate() const {return correlation->getFiringRate(); }
     private:
-        CorrelogramIterator(const Data& d,Pair pair,ScaleMode scaleMode,int binSize,int timeframe):data(d){
-            index = 0;
-            lastIndex = -1;
-            QHash<QString, Correlation*>* dict = data.correlationDict[pairKey(pair)];
-            if(dict == nullptr) dataAvailable = false;
-            else{
-                correlation = (*dict)[pairKey(binSize, timeframe)];
-                if(correlation == nullptr) dataAvailable = false;
-                else{
-                    if(correlation->getStatus(binSize,timeframe) == READY){
-                        dataAvailable = true;
-                        lastIndex = correlation->getNbBins() - 1;
-                        switch(scaleMode){
-                        case RAW:
-                            scale = 1;
-                            break;
-                        case MAX:
-                            scale = static_cast<float>(correlation->getMaximum());
-                            break;
-                        case SHOULDER:
-                            scale = correlation->getShoulder();
-                            break;
-                        }
-                    }
-                    else dataAvailable = false;
-                }
-            }
-        };
-        /**Returns true if the iterator has reach the last spike for the cluster on which it iterates,
-      * false otherwise.
-      */
+        /**Defined after ClusteringSnapshot below: it reads the CURRENT
+        * epoch's store, under the store mutex (the old direct dict read ran
+        * unlocked against the worker jobs), and shares ownership of the
+        * Correlation it walks, so the data survives a drop or an epoch
+        * change mid-paint (epoch-snapshot step 4).*/
+        CorrelogramIterator(const Data& d,Pair pair,ScaleMode scaleMode,int binSize,int timeframe);
+
         const Data& data;
         long index;
         long lastIndex;
         bool dataAvailable;
-        Data::Correlation* correlation;
+        std::shared_ptr<Correlation> correlation;
         float scale;
     };
 
@@ -2440,6 +2378,10 @@ struct Data::ClusteringSnapshot {
     * clusters whose spikes are unchanged are carried over from the previous
     * epoch at publication.*/
     std::shared_ptr<WaveformCacheStore> waveforms;
+    /**This epoch's correlogram cache (epoch-snapshot step 4), same
+    * lifecycle as the waveform store; a pair carries over when BOTH its
+    * clusters hold unchanged spike rows.*/
+    std::shared_ptr<CorrelationCacheStore> correlations;
 
     /**Mirror of Data::clusterIds().*/
     QList<dataType> clusterIds() const { return clusterInfoMap->keys(); }
@@ -2467,6 +2409,36 @@ struct Data::ClusteringSnapshot {
         return true;
     }
 };
+
+inline Data::CorrelogramIterator::CorrelogramIterator(const Data& d,Pair pair,ScaleMode scaleMode,int binSize,int timeframe):data(d){
+    index = 0;
+    lastIndex = -1;
+    dataAvailable = false;
+    scale = 1;
+    const std::shared_ptr<const ClusteringSnapshot> snap = d.currentSnapshot();
+    CorrelationCacheStore& store = *snap->correlations;
+
+    QMutexLocker lk(&store.m);
+    const auto pairIt = store.byPair.constFind(pair);
+    if(pairIt == store.byPair.constEnd()) return;
+    correlation = pairIt.value().value(pairKey(binSize, timeframe));
+    if(!correlation) return;
+    if(correlation->getStatus(binSize,timeframe) == READY){
+        dataAvailable = true;
+        lastIndex = correlation->getNbBins() - 1;
+        switch(scaleMode){
+        case RAW:
+            scale = 1;
+            break;
+        case MAX:
+            scale = static_cast<float>(correlation->getMaximum());
+            break;
+        case SHOULDER:
+            scale = correlation->getShoulder();
+            break;
+        }
+    }
+}
 
 inline Data::SampleWaveformIterator* Data::sampleWaveformIterator(dataType clusterId,dataType nbSampleSpikes){
     const int clusterIdInt = static_cast<int>(clusterId);

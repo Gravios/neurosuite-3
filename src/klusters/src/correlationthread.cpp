@@ -75,11 +75,14 @@ void CorrelationThread::process(){
         QList<Pair>::iterator pairIterator;
         for(pairIterator = clusterPairs.begin(); pairIterator != clusterPairs.end(); ++pairIterator){
             if(!cancelled()){
-                Data::Status status = data.getCorrelograms(*pairIterator,snapBinSize,snapTimeWindow,binSizeInRU,timeWindowInRU,halfBins);
+                //Against the snapshot captured at enqueue: its membership and —
+                //since the cache moved into the snapshot (epoch-snapshot
+                //step 4) — its own correlogram store.
+                Data::Status status = data.getCorrelograms(snapshot,*pairIterator,snapBinSize,snapTimeWindow,binSizeInRU,timeWindowInRU,halfBins);
                 if(status == Data::NOT_AVAILABLE)
                     continue;
                 else if(status == Data::IN_PROCESS) {
-                    while(!cancelled() && (data.getCorrelograms(*pairIterator,snapBinSize,snapTimeWindow,binSizeInRU,timeWindowInRU,halfBins) == Data::IN_PROCESS))
+                    while(!cancelled() && (data.getCorrelograms(snapshot,*pairIterator,snapBinSize,snapTimeWindow,binSizeInRU,timeWindowInRU,halfBins) == Data::IN_PROCESS))
                     {
                         QThread::sleep(1);
                     }
