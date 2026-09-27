@@ -1872,89 +1872,88 @@ private:
     */
     void prepareClusterColorUndo();
 
-    /**
-    * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the future undo.
-    * @param addedClustersTemp the list of newly created clusters which will be added
-    * to the addedClustersUndoList.
-    * @param modifiedClustersTemp the list of last modified clusters, the list will be added
-    * to the modifiedClustersUndoList.
-    * @param deletedClustersTemp the list of last deleted clusters, the list will be added
-    * to the deletedClustersUndoList.
-    * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
-    * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact abd cluster of noise respectively).
-    */
-    void prepareUndo(QList<int>* addedClustersTemp,QList<int>* modifiedClustersTemp,QList<int>* deletedClustersTemp,bool isModifiedByDeletion = false);
+    /**One clustering action's undo descriptor: the added/modified/deleted
+    * cluster ids the action reported, the by-deletion flag and — for a
+    * renumbering — the relabel maps.  These are per-action INTENT that the
+    * undo()/redo() view notifications replay (which ids each view shows or
+    * hides, the added↔modified creation pairing, the cluster-0/1 policy), so
+    * they are RECORDED rather than derived: a diff of the epoch snapshots
+    * (Data::changedClustersBetween) reproduces the content change but not
+    * the provenance the dispatch encodes.  One value per action — the atom
+    * layer's ChildEdit, arrived at from the parent side.*/
+    struct ClusterEditUndo {
+        QList<int> added;
+        QList<int> modified;
+        QList<int> deleted;
+        /**True when the modification came from deleting spikes (moved to
+        * cluster 0 or 1): redo then treats a 0/1 in @ref added as a
+        * by-product it must not re-show.*/
+        bool byDeletion = false;
+        /**True for a renumbering action; the two maps are its relabels.*/
+        bool renumbering = false;
+        QMap<int,int> renumberOldNew;
+        QMap<int,int> renumberNewOld;
+    };
 
     /**
-    * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) with
-    * empty list to prepare the future undo.
+    * Records one action's descriptor for the future undo: prepares the
+    * cluster-color undo, prepends @p action onto editUndoList (capped at
+    * nbUndo, in lockstep with the color stacks) and clears editRedoList.
+    */
+    void prepareUndo(ClusterEditUndo action);
+
+    /**
+    * Records an empty descriptor (an action reporting no cluster changes)
+    * to prepare the future undo.
     */
     void prepareUndo();
 
     /**
-    * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the future undo. modifiedClustersUndoList will be fill with an empty list.
-    * @param newCluster the newly created cluster which will be put in a list and added
-    * to the addedClustersUndoList.
-    * @param deletedClusters the list of last deleted clusters, the list will be added
-    * to the deletedClustersUndoList.
+    * Records the action's descriptor to prepare the future undo.
+    * @param newCluster the newly created cluster.
+    * @param deletedClusters the list of last deleted clusters.
     */
     void prepareUndo(int newCluster,QList<int>& deletedClusters);
 
     /**
-    * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the future undo. addedClustersUndoList will be fill with an empty list.
-    * @param modifiedClusters the list of last modified clusters, the list will be added
-    * to the modifiedClustersUndoList.
-    * @param deletedClusters the list of last deleted clusters, the list will be added
-    * to the deletedClustersUndoList.
+    * Records the action's descriptor to prepare the future undo.
+    * @param modifiedClusters the list of last modified clusters.
+    * @param deletedClusters the list of last deleted clusters.
     * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
     * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
    */
     void prepareUndo(QList<int>& modifiedClusters,QList<int>& deletedClusters,bool isModifiedByDeletion = false);
 
     /**
-    * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the future undo.
-    * @param newCluster the newly created cluster which will be put in a list and added
-    * to the addedClustersUndoList.
-    * @param modifiedClusters the list of last modified clusters, the list will be added
-    * to the modifiedClustersUndoList.
-    * @param deletedClusters the list of last deleted clusters, the list will be added
-    * to the deletedClustersUndoList.
+    * Records the action's descriptor to prepare the future undo.
+    * @param newCluster the newly created cluster.
+    * @param modifiedClusters the list of last modified clusters.
+    * @param deletedClusters the list of last deleted clusters.
     * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
     * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
     */
     void prepareUndo(int newCluster, QList<int>& modifiedClusters,QList<int>& deletedClusters,bool isModifiedByDeletion = false);
 
     /**
-    * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the future undo.
-    * @param newClusters the list of newly created clusters which will be added
-    * to the addedClustersUndoList.
-    * @param modifiedClusters the list of last modified clusters, the list will be added
-    * to the modifiedClustersUndoList.
-    * @param deletedClusters the list of last deleted clusters, the list will be added
-    * to the deletedClustersUndoList.
+    * Records the action's descriptor to prepare the future undo.
+    * @param newClusters the list of newly created clusters.
+    * @param modifiedClusters the list of last modified clusters.
+    * @param deletedClusters the list of last deleted clusters.
     */
     void prepareUndo(QList<int>& newClusters, QList<int>& modifiedClusters,QList<int>& deletedClusters);
 
     /**
-    * Clears the different undo and redo lists as no undo/redo is possible after a renumbering
-    * except on the renumbering itself.
+    * Records a renumbering action's descriptor (the relabel maps the
+    * undo/redo notifications replay) to prepare the future undo.
     * @param clusterIdsOldNew map giving the correspondence between the old numbering and the new numbering of the clusters.
     * @param clusterIdsNewOld map giving the correspondence between the new numbering and the old numbering of the clusters.
     */
     void prepareUndo(QMap<int,int> clusterIdsOldNew,QMap<int,int> clusterIdsNewOld);
     
     /**
-    * Fills the undo lists (addedClustersUndoList, deletedClustersUndoList and modifiedClustersUndoList) to
-    * prepare the future undo. modifiedClustersUndoList will be fill with an empty list.
-    * @param newClusters the list of clusters created  by the automaatic reclustering which will be added
-    * to the addedClustersUndoList.
-    * @param deletedClusters the list of automatically reclustered clusters  which will be deleted, the list will be added
-    * to the deletedClustersUndoList.
+    * Records an automatic reclustering's descriptor to prepare the future undo.
+    * @param newClusters the list of clusters created by the automatic reclustering.
+    * @param deletedClusters the list of automatically reclustered clusters which will be deleted.
     */
     void prepareReclusteringUndo(QList<int>& newClusters,QList<int>& deletedClusters);
 
@@ -2170,59 +2169,18 @@ private:
     /**Reference on the clusterPalette.*/
     ClusterPalette& clusterPalette;
 
-    /**List of current added clusters. */
-    QList<int>* addedClusters;
-    /**List of current modified clusters. */
-    QList<int>* modifiedClusters;
-    /**List of current deleted clusters. */
-    QList<int>* deletedClusters;
-    
-    /**Represents a list of list of added clusters use to enable undo action.
-    */
-    QList< QList<int>* > addedClustersUndoList;
+    /**Undo descriptors, front = the action undo() reverts next.  One entry
+    * per action, in lockstep with clusterColorListUndoList (whose count
+    * drives the menus and the cap).  Value-typed: this pair replaces the
+    * historical six heap-pointer stacks, three current-list pointers, two
+    * by-deletion index lists, two depth-keyed renumbering maps and the
+    * renumbering redo index list — every one of them a field of ONE
+    * per-action record, keyed by stack depth.*/
+    QList<ClusterEditUndo> editUndoList;
 
-    /**Represents a list of list of added  clusters use to enable redo action.
-    */
-    QList< QList<int>* > addedClustersRedoList;
-
-    /**Represents a list of list of modified clusters use to enable undo action.
-    */
-    QList< QList<int>* > modifiedClustersUndoList;
-
-    /**Represents a list of list of modified clusters use to enable redo action.
-    */
-    QList< QList<int>* > modifiedClustersRedoList;
-
-    /**Represents a list of list of deleted clusters use to enable undo action.
-    */
-    QList< QList<int>* > deletedClustersUndoList;
-
-    /**Represents a list of list of deleted clusters use to enable redo action.
-    */
-    QList< QList<int>* > deletedClustersRedoList;
-    
-    /**List of the undo numbers where the modification of clusters has been due to
-    * the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
-    * This list is used to reduce the number of cluster to redraw whenever possible.
-    */
-    QList<int> modifiedClustersByDeleteUndo;
-
-    /**List of the redo numbers where the modification of clusters has been due to
-    the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
-    * This list is used to reduce the number of cluster to redraw whenever possible.
-    */
-    QList<int> modifiedClustersByDeleteRedo;
-
-    /**Map with keys equal to the do/undo indices and values equal to a map
-   *giving the correspondence between the old numbering and the new numbering of the clusters.*/
-    QMap<int, QMap<int,int> > clusterIdsOldNewMap ;
-
-    /**Map with keys equal to the do/undo indices and values equal to a map
-   * giving the correspondence between the new numbering and the old numbering of the clusters.*/
-    QMap<int, QMap<int,int> > clusterIdsNewOldMap;
-
-    /**List given the undo indices corresponding to a renumbering which can be redo.*/
-    QList<int> renumberingRedoList;
+    /**Redo descriptors, front = the action redo() re-applies next; in
+    * lockstep with clusterColorListRedoList.*/
+    QList<ClusterEditUndo> editRedoList;
 
     /**Thread responsible for the autosaving of the document.*/
     AutoSaveThread* autoSaveThread;

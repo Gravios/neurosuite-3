@@ -138,16 +138,12 @@ void KlustersDoc::closeDocument(){
     clusterColorListUndoList.clear();
     qDeleteAll(clusterColorListRedoList);
     clusterColorListRedoList.clear();
-    qDeleteAll(addedClustersUndoList);
-    addedClustersUndoList.clear();
-    qDeleteAll(addedClustersRedoList);
-    addedClustersRedoList.clear();
-    qDeleteAll(modifiedClustersUndoList);
-    modifiedClustersUndoList.clear();
-    qDeleteAll(modifiedClustersRedoList);
-    modifiedClustersRedoList.clear();
-    clusterIdsNewOldMap.clear();
-    clusterIdsOldNewMap.clear();
+    //One clear per side covers everything the descriptor carries — including
+    //the deleted-cluster stacks, by-deletion flags and renumbering redo
+    //indices the historical list-by-list cleanup missed (the deleted-cluster
+    //heap lists leaked across every close/reopen).
+    editUndoList.clear();
+    editRedoList.clear();
 
 
     // Pool jobs hold references to the Data objects: let every queued and
@@ -166,10 +162,6 @@ void KlustersDoc::closeDocument(){
         delete childData;       childData = nullptr;
         delete childColorList;  childColorList = nullptr;
         activeData = nullptr;   activeColorList = nullptr;
-        delete addedClusters;
-        addedClusters = nullptr;
-        delete modifiedClusters;
-        modifiedClusters = nullptr;
     }
     //Remove the temp files if any
     tmpCluFile.clear();
@@ -235,9 +227,6 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     clusterColorList = new ItemColors();
     activeData = clusteringData;          // views render the parent until a child is shown
     activeColorList = clusterColorList;
-    addedClusters = new QList<int>();
-    modifiedClusters = new QList<int>();
-    deletedClusters = new QList<int>();
     modified = false;
 
     //Store the baseName for future use
