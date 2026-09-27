@@ -41,11 +41,13 @@
 
 
 #include <stdexcept>
+#include <cstring>   // memcpy in ClusteringSnapshot::readSpk
 #include <math.h>
 #include <vector>
 #include <atomic>
 #include <memory>
 #include "requestticket.h"
+#include "spkoverlay.h"
 using namespace std;
 
 // forward declaration
@@ -1505,6 +1507,41 @@ private:
     * its own later publication.*/
     void installSpkReader(const QString& path);
 
+public:
+    /**Publishes a batch of rewritten .spk records into the overlay
+    * (epoch-snapshot step 7): the new generation = the previous one's
+    * entries (shared) plus @p batch, the previous generation goes onto the
+    * history stack for revertLastSpkOverlayBatch(), and a new epoch is
+    * published so readers from here on see the batch.  Keys are byte
+    * offsets, values whole records — see spkoverlay.h.  Called by the
+    * byte writers (realign, nudge) after writing the same records into
+    * the pending file (which stays the journal for Save and for the
+    * writers' own readbacks).  @p revertible: true pushes the previous
+    * generation onto the history stack, pairing the batch with a
+    * rejectLastRealign(); the nudge — which has no reject path — passes
+    * false, so a later reject can only ever pop a realign's batch.*/
+    void applySpkOverlayBatch(const QHash<qint64, std::shared_ptr<const QByteArray>>& batch,
+                              bool revertible);
+
+    /**Restores the overlay generation from before the last
+    * applySpkOverlayBatch() and republishes — the reject path.  Earlier
+    * uncommitted batches stay readable (the historical reseed-and-forget
+    * lost their bytes while their in-memory features stayed applied).*/
+    void revertLastSpkOverlayBatch();
+
+    /**Drops the overlay and its history and republishes — the Save path:
+    * the committed base now holds the same bytes, so reads fall through
+    * to the descriptor.*/
+    void clearSpkOverlay();
+
+private:
+    /**The live overlay generation (guarded by mutex; published into every
+    * snapshot).  Null until the first batch.*/
+    std::shared_ptr<const SpkOverlay> spkOverlayLive;
+    /**Superseded generations, one per uncommitted batch, for the reject
+    * path; cleared at Save.*/
+    QList<std::shared_ptr<const SpkOverlay>> spkOverlayHistory;
+
     /**The published snapshot (guarded by mutex; read via currentSnapshot()).*/
     std::shared_ptr<const ClusteringSnapshot> snapshot;
     /**Monotonic epoch source for publishSnapshot().*/
@@ -1622,21 +1659,21 @@ private:
          *  Used for "all spikes" mode where the caller wants every member
          *  of the cluster up to a display cap.  @p nbSpikesOfCluster is
          *  the total cluster size (a hint for buffer sizing).
-         *  Reads through the document's shared SpkReader (positioned reads,
-         *  no seek state), so any number of loaders run concurrently on one
-         *  descriptor.
+         *  Reads through the epoch's snapshot — its overlay of rewritten
+         *  records first, its pinned descriptor otherwise (positioned reads,
+         *  no seek state) — so any number of loaders run concurrently and
+         *  every epoch sees its own bytes (epoch-snapshot step 7).
          */
-        virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType nbSpkToDisplay) = 0;
+        virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,const ClusteringSnapshot& snap,dataType nbSpkToDisplay) = 0;
 
         /** Read the contiguous range [@p currentSpikeIndex .. @p end] of
          *  spike records from @p spikeFile into the implementation's
          *  time-frame buffer.  Used for time-frame display where only
          *  spikes within a time window are shown; @p currentSpikeIndex
          *  is updated on return to point past the last record read so
-         *  the caller can resume scanning.  Shared-SpkReader access, as
-         *  above.
+         *  the caller can resume scanning.  Snapshot access, as above.
          */
-        virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType& currentSpikeIndex,dataType end) = 0;
+        virtual void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,const ClusteringSnapshot& snap,dataType& currentSpikeIndex,dataType end) = 0;
 
         virtual void calculateMean(WaveformMode waveformMode) = 0;
 
@@ -1703,8 +1740,8 @@ private:
         dataType getTimeFrameStDeviation(dataType index) const override {
             return static_cast<dataType>(timeFrameStDeviationTable[index]);
         }
-        void read(SortableTable& positionOfSpikes,dataType currentSpikeIndex,SpkReader& spikeFile,dataType nbSpkToDisplay) override;
-        void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType& currentSpikeIndex,dataType end) override;
+        void read(SortableTable& positionOfSpikes,dataType currentSpikeIndex,const ClusteringSnapshot& snap,dataType nbSpkToDisplay) override;
+        void read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,const ClusteringSnapshot& snap,dataType& currentSpikeIndex,dataType end) override;
         void calculateMean(WaveformMode waveformMode = SAMPLE);
     private:
         std::vector<T> sampleSpikesTable;
@@ -2440,6 +2477,28 @@ struct Data::ClusteringSnapshot {
     * lifecycle as the waveform store; a pair carries over when BOTH its
     * clusters hold unchanged spike rows.*/
     std::shared_ptr<CorrelationCacheStore> correlations;
+    /**This epoch's view of the rewritten .spk records (epoch-snapshot
+    * step 7): the overlay generation current when this epoch published —
+    * null until the first realign/nudge batch.  readSpk() serves reads
+    * from it before the pinned descriptor, so in-place rewrites by LATER
+    * batches never show through to this epoch.*/
+    std::shared_ptr<const SpkOverlay> spkOverlay;
+
+    /**Positioned .spk read for this epoch: the overlay's record at exactly
+    * (@p offset, @p bytes) when one exists, the pinned descriptor
+    * otherwise.  Every caller reads one whole record at a record-aligned
+    * offset, so a real read either hits exactly or misses entirely.*/
+    bool readSpk(void* dst, qint64 bytes, qint64 offset) const {
+        if(spkOverlay){
+            const auto it = spkOverlay->records.constFind(offset);
+            if(it != spkOverlay->records.constEnd() &&
+               static_cast<qint64>((*it)->size()) == bytes){
+                memcpy(dst, (*it)->constData(), static_cast<size_t>(bytes));
+                return true;
+            }
+        }
+        return spk->read(dst, bytes, offset);
+    }
 
     /**Mirror of Data::clusterIds().*/
     QList<dataType> clusterIds() const { return clusterInfoMap->keys(); }

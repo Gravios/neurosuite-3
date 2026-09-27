@@ -139,10 +139,10 @@ void DriftMatrixThread::process()
     meanWav.assign(static_cast<size_t>(nClusters),
                    std::vector<float>(static_cast<size_t>(nPts), 0.0f));
 
-    SpkReader& spk = *snapshot->spk;   // this epoch's pinned descriptor
+    const Data::ClusteringSnapshot& snap = *snapshot;   // this epoch's bytes (overlay + pinned descriptor)
 
 #pragma omp parallel for schedule(dynamic,1) default(none) \
-    shared(meanWav, allFileIdx, spk) \
+    shared(meanWav, allFileIdx, snap) \
     firstprivate(nClusters, nPts, nChan, nSamp)
     for (int ci = 0; ci < nClusters; ++ci) {
         if (cancelled()) continue;
@@ -158,7 +158,7 @@ void DriftMatrixThread::process()
 
         for (long s = 0; s < nSpk; ++s) {
             if (cancelled()) break;
-            if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
+            if (!tmReadSpikeFloat(snap, fidx[static_cast<size_t>(s)],
                                   nChan, nSamp, raw, sp))
                 continue;
             for (int p = 0; p < nPts; ++p)

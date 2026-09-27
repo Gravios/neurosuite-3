@@ -28,7 +28,7 @@ class TemplateMatrixView;
 // allocation in hot loops.  Returns false on read failure, leaving out
 // untouched.  Thread-safe: any number of callers may share one reader.
 // ---------------------------------------------------------------------------
-bool tmReadSpikeFloat(SpkReader& spk, long fileIdx0, int nChan, int nSamp,
+bool tmReadSpikeFloat(const Data::ClusteringSnapshot& snap, long fileIdx0, int nChan, int nSamp,
                       std::vector<int16_t>& rawScratch,
                       std::vector<float>& out);
 

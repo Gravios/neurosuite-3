@@ -1963,6 +1963,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     }
 
     _rtWopenMs = _rtmr.elapsed();
+    //The overlay batch (epoch-snapshot step 7): every record written into the
+    //pending file below is also staged here and published afterwards, so
+    //snapshots from then on serve these bytes from memory while epochs
+    //pinned before this batch never see them.
+    QHash<qint64, std::shared_ptr<const QByteArray>> overlayBatch;
     for (int64_t j = 0; j < N; ++j) {
         const int64_t csIdx = sortedOrder[static_cast<size_t>(j)];
         const int64_t dest  = targetPos[static_cast<size_t>(j)];
@@ -2092,6 +2097,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
             }
         }
 
+        overlayBatch.insert(
+            static_cast<qint64>(dest) * static_cast<qint64>(bytesPerSpike),
+            std::make_shared<const QByteArray>(
+                reinterpret_cast<const char*>(spkRow.data()),
+                static_cast<int>(spkElems * sizeof(int16_t))));
+
         rec.spkRow = std::move(spkRow);  // keep copy for flush-to-original
         pending.records.push_back(std::move(rec));
     }
@@ -2105,6 +2116,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     // spkFileName already points to pendingSpkPath (set on open and kept
     // permanently) — no redirect needed here.
     pendingRealign.push_back(std::move(pending));
+
+    //Publish the overlay batch (revertible: rejectLastRealign pairs with it).
+    //Both Data layers read the same pending .spk, so both get the batch —
+    //the records are shared, not copied.
+    clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ true);
+    if (childData) childData->applySpkOverlayBatch(overlayBatch, /*revertible*/ true);
 
     log << "Done. " << nShifted << " shifted, " << nSwapped
         << " reordered. (pending save)\n";
@@ -2375,6 +2392,10 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
     // Clear the in-memory queue — all realignment batches have been
     // applied to disk (even if a later step failed).  Don't replay them.
     pendingRealign.clear();
+    //And the overlay with it (epoch-snapshot step 7): the pending file the
+    //readers fall through to holds the same bytes now.
+    if (clusteringData) clusteringData->clearSpkOverlay();
+    if (childData)      childData->clearSpkOverlay();
 
     // Step 2 — renew.  The commit above copied each pending file OVER its original, so the two are
     // now byte-identical: re-seeding orig -> pending would copy a file onto content that already
@@ -2423,6 +2444,13 @@ void KlustersDoc::rejectLastRealign()
     }
 
     pendingRealign.pop_back();
+
+    //Restore the overlay generation from before the rejected batch
+    //(epoch-snapshot step 7).  Unlike the file reseed below — which wipes
+    //EVERY uncommitted batch's bytes from the pending copy — this keeps
+    //earlier batches' records readable, from memory.
+    clusteringData->revertLastSpkOverlayBatch();
+    if (childData) childData->revertLastSpkOverlayBatch();
 
     // Re-seed pending files from the untouched originals so the waveform
     // viewer immediately reflects the restored state.
@@ -3156,6 +3184,10 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     int64_t nReadBefore = 0;
     if (dumpMean) nReadBefore = computeMean(meanBefore);
 
+    //Overlay batch for the nudge's rewritten records (epoch-snapshot
+    //step 7); published after the loop.  Not revertible: the nudge has no
+    //reject path (pendingRealign never learns of it).
+    QHash<qint64, std::shared_ptr<const QByteArray>> overlayBatch;
     for (int64_t i = 0; i < N; ++i) {
         const dataType row  = static_cast<dataType>(
             spkTable(1, static_cast<dataType>(i + 1)));
@@ -3309,6 +3341,14 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             }
         }
 
+        // Stage the rewritten record for the overlay publish below.
+        if (gotWav && !spkRowWritten.empty())
+            overlayBatch.insert(
+                static_cast<qint64>(pos0) * static_cast<qint64>(bytesPerSpike),
+                std::make_shared<const QByteArray>(
+                    reinterpret_cast<const char*>(spkRowWritten.data()),
+                    static_cast<int>(spkRowWritten.size() * sizeof(int16_t))));
+
         // .spk read-back verification, mirroring the .fet check above.
         if (gotWav && !spkRowWritten.empty()) {
             if (fseeko(spkW, static_cast<off_t>(pos0)
@@ -3394,6 +3434,10 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     fclose(spkW); fclose(resW); fclose(fetW);
     if (filF) fclose(filF);
+
+    //Publish the nudge's overlay batch (see the realign's twin above).
+    clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ false);
+    if (childData) childData->applySpkOverlayBatch(overlayBatch, /*revertible*/ false);
 
     // ── Mean-waveform dump: AFTER pass + write file ────────────────────────
     if (dumpMean) {

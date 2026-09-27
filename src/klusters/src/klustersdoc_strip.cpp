@@ -86,7 +86,8 @@ KlustersDoc::stripByTemplate(int               templateCluster,
 
     // One shared pread descriptor serves the whole strip (see spkreader.h);
     // a missing file surfaces as zero readable template waveforms below.
-    SpkReader& spk = clusteringData->spkReader();
+    const std::shared_ptr<const Data::ClusteringSnapshot> snap = clusteringData->currentSnapshot();
+    const Data::ClusteringSnapshot& spkSrc = *snap;   // this epoch's bytes (overlay + descriptor)
 
     // ── Template: per-point median over up to 1024 evenly-strided spikes ─
     SortableTable tplPos;
@@ -105,7 +106,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
     long used = 0;
     for (long s = 0; s < nTpl; s += step) {
         const long row = static_cast<long>(tplPos(1, s + 1));
-        if (!tmReadSpikeFloat(spk, row - 1, nCh, nSamp, raw, wav)) continue;
+        if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
         for (int ci = 0; ci < nSel; ++ci) {
             const float* src = &wav[static_cast<size_t>(chans[ci]) * nSamp];
             tplBuf.insert(tplBuf.end(), src, src + nSamp);
@@ -184,7 +185,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
         long matched = 0;
         for (long s = 0; s < n; ++s) {
             const long row = static_cast<long>(pos(1, s + 1));
-            if (!tmReadSpikeFloat(spk, row - 1, nCh, nSamp, raw, wav)) continue;
+            if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
             ++nCand;
             double q = 0.0, xtw = 0.0, worstChan = 0.0;
             for (int ci = 0; ci < nSel; ++ci) {

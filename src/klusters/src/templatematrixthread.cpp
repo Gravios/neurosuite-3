@@ -17,8 +17,10 @@
 // ---------------------------------------------------------------------------
 // Shared .spk reader — see templatematrixthread.h.  int16 on disk, channel-major
 // float out.  No 2-vs-4-byte branch: the toolchain's extractor writes int16.
+// Reads through the epoch's snapshot — overlay first, pinned descriptor
+// otherwise (epoch-snapshot step 7).
 // ---------------------------------------------------------------------------
-bool tmReadSpikeFloat(SpkReader& spk, long fileIdx0, int nChan, int nSamp,
+bool tmReadSpikeFloat(const Data::ClusteringSnapshot& snap, long fileIdx0, int nChan, int nSamp,
                       std::vector<int16_t>& rawScratch,
                       std::vector<float>& out)
 {
@@ -30,8 +32,8 @@ bool tmReadSpikeFloat(SpkReader& spk, long fileIdx0, int nChan, int nSamp,
     const qint64 off = static_cast<qint64>(fileIdx0)
                      * static_cast<qint64>(nPts)
                      * static_cast<qint64>(sizeof(int16_t));
-    if (!spk.read(rawScratch.data(),
-                  static_cast<qint64>(nPts * sizeof(int16_t)), off))
+    if (!snap.readSpk(rawScratch.data(),
+                      static_cast<qint64>(nPts * sizeof(int16_t)), off))
         return false;
 
     for (int ch = 0; ch < nChan; ++ch)
@@ -374,10 +376,10 @@ void TemplateMatrixThread::process()
         noiseWav.assign(static_cast<size_t>(nClusters),
                         std::vector<float>(static_cast<size_t>(nPts), 0.0f));
 
-    SpkReader& spk = *snapshot->spk;   // this epoch's pinned descriptor
+    const Data::ClusteringSnapshot& snap = *snapshot;   // this epoch's bytes (overlay + pinned descriptor)
 
 #pragma omp parallel for schedule(dynamic,1) default(none) \
-    shared(meanWav, noiseWav, allFileIdx, spk) \
+    shared(meanWav, noiseWav, allFileIdx, snap) \
     firstprivate(nClusters, nPts, nChan, nSamp, needNoise)
     for (int ci = 0; ci < nClusters; ++ci) {
         if (cancelled()) continue;
@@ -395,7 +397,7 @@ void TemplateMatrixThread::process()
 
         for (long s = 0; s < nSpk; ++s) {
             if (cancelled()) break;
-            if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
+            if (!tmReadSpikeFloat(snap, fidx[static_cast<size_t>(s)],
                                   nChan, nSamp, raw, sp))
                 continue;
             for (int p = 0; p < nPts; ++p) {

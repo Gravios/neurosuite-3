@@ -196,7 +196,46 @@ void Data::publishSnapshot(){
     snap->spikesByCluster = spikesByCluster;
     snap->clusterInfoMap  = clusterInfoMap;
     snap->spk             = spkReaderInstance;
+    snap->spkOverlay      = spkOverlayLive;
     snapshot = std::move(snap);
+}
+
+void Data::applySpkOverlayBatch(const QHash<qint64, std::shared_ptr<const QByteArray>>& batch,
+                                bool revertible){
+    if(batch.isEmpty()) return;
+    auto next = std::make_shared<SpkOverlay>();
+    {
+        QMutexLocker lk(&mutex);
+        if(spkOverlayLive) next->records = spkOverlayLive->records;   // shallow: shared records
+        if(revertible)
+            spkOverlayHistory.append(spkOverlayLive);                 // null marks the empty state
+    }
+    for(auto it = batch.constBegin(); it != batch.constEnd(); ++it)
+        next->records.insert(it.key(), it.value());
+    {
+        QMutexLocker lk(&mutex);
+        spkOverlayLive = std::move(next);
+    }
+    publishSnapshot();
+}
+
+void Data::revertLastSpkOverlayBatch(){
+    {
+        QMutexLocker lk(&mutex);
+        if(spkOverlayHistory.isEmpty()) return;
+        spkOverlayLive = spkOverlayHistory.takeLast();
+    }
+    publishSnapshot();
+}
+
+void Data::clearSpkOverlay(){
+    {
+        QMutexLocker lk(&mutex);
+        if(!spkOverlayLive && spkOverlayHistory.isEmpty()) return;
+        spkOverlayLive.reset();
+        spkOverlayHistory.clear();
+    }
+    publishSnapshot();
 }
 
 std::shared_ptr<const Data::ClusteringSnapshot> Data::currentSnapshot() const{
@@ -5142,8 +5181,9 @@ Data::Status Data::getSampleWaveformPointsInner(const std::shared_ptr<const Data
         }
     }
 
-    //read and store the data through this epoch's pinned reader
-    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*snap->spk,nbSpkToDisplay);
+    //read and store the data through this epoch's snapshot (overlay first,
+    //pinned reader otherwise — epoch-snapshot step 7)
+    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*snap,nbSpkToDisplay);
 
     //Terminal.  The entry can have been removed mid-read only by
     //dropWaveformEntry() (a byte-writer): the guard keeps this stale result
@@ -5270,8 +5310,8 @@ Data::Status Data::getTimeFrameWaveformPointsInner(const std::shared_ptr<const D
         }
     }
 
-    //read and store the data through this epoch's pinned reader
-    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*snap->spk,currentSpikeIndex,endInRecordingUnits);
+    //read and store the data through this epoch's snapshot (see the sample variant)
+    waveforms->read(positionOfSpikes,nbSpikesOfCluster,*snap,currentSpikeIndex,endInRecordingUnits);
 
     // Store timing info before taking the store mutex (pure local work on the Waveforms object).
     waveforms->setStartTime(start);
@@ -5306,7 +5346,7 @@ void Data::WaveformData<T>::setSize(dataType size,WaveformMode waveformMode){
 
 
 template <class T>
-void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType nbSpkToDisplay){
+void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,const Data::ClusteringSnapshot& snap,dataType nbSpkToDisplay){
     // Capacity of sampleSpikesTable in elements (set by setSize() before this call).
     const dataType bufCap = static_cast<dataType>(sampleSpikesTable.size());
 
@@ -5325,7 +5365,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
                          static_cast<int>(bufCap));
                 break;
             }
-            if (!spikeFile.read(&(sampleSpikesTable[position]),
+            if (!snap.readSpk(&(sampleSpikesTable[position]),
                                 static_cast<qint64>(nbPtsBySpike) * sizeof(T),
                                 static_cast<qint64>(currentSpikePosition) * sizeof(T))) {
                 qWarning("WaveformData::read: short read — spike data may be truncated");
@@ -5339,7 +5379,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
     else if(nbSpkToDisplay == 1){
         //go to the spike position
         dataType currentSpikePosition = (positionOfSpikes(1,1) - 1) * nbPtsBySpike ;
-        if (spikeFile.read(&(sampleSpikesTable[0]),
+        if (snap.readSpk(&(sampleSpikesTable[0]),
                            static_cast<qint64>(nbPtsBySpike) * sizeof(T),
                            static_cast<qint64>(currentSpikePosition) * sizeof(T)))
             nbSampleSpikes = 1;
@@ -5361,7 +5401,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
                          static_cast<int>(i));
                 break;
             }
-            if (!spikeFile.read(&(sampleSpikesTable[position]),
+            if (!snap.readSpk(&(sampleSpikesTable[position]),
                                 static_cast<qint64>(nbPtsBySpike) * sizeof(T),
                                 static_cast<qint64>(currentSpikePosition) * sizeof(T))) {
                 qWarning("WaveformData::read: short read — spike data may be truncated");
@@ -5375,7 +5415,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
 }
 
 template <class T>
-void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,SpkReader& spikeFile,dataType& currentSpikeIndex,dataType end){
+void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,const Data::ClusteringSnapshot& snap,dataType& currentSpikeIndex,dataType end){
     dataType max = nbSpikesOfCluster +1;
     dataType position = 0;
     dataType startPositionInSpk;
@@ -5388,7 +5428,7 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         //positionOfSpikes and features take indices starting at 1, so currentPositionInFeatures
         //is already correct regarding the presence of an additional first line (nb of features) in the fet file.
         startPositionInSpk = (currentPositionInFeatures - 1) * nbPtsBySpike * sizeof(T);
-        if (!spikeFile.read(&(timeFrameSpikesTable[position]),
+        if (!snap.readSpk(&(timeFrameSpikesTable[position]),
                             static_cast<qint64>(nbPtsBySpike) * sizeof(T),
                             static_cast<qint64>(startPositionInSpk))) {
             qWarning("WaveformData::read: short read — spike data may be truncated");

@@ -12,13 +12,13 @@ PairXcorrThread::PairXcorrThread(TemplateMatrixView& v,
                                  int sourceCluster, int targetCluster,
                                  const std::vector<int>&   sourceFileIdx,
                                  const std::vector<float>& targetMean,
-                                 const QString& spkPath,
+                                 const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
                                  int nChan, int nSamp, bool twoBytes,
                                  const std::shared_ptr<KlustersJobToken>& viewToken)
     : view(v),
       sourceCluster(sourceCluster), targetCluster(targetCluster),
       sourceFileIdx(sourceFileIdx), targetMean(targetMean),
-      spkPath(spkPath), nChan(nChan), nSamp(nSamp),
+      snapshot(snap), nChan(nChan), nSamp(nSamp),
       twoBytes(twoBytes), token(viewToken)
 {
     setAutoDelete(true);
@@ -59,9 +59,8 @@ void PairXcorrThread::process()
 
     scores.reserve(static_cast<size_t>(nSpk));
 
-    spkReaderOwn.setPath(spkPath);
-    SpkReader& spk = spkReaderOwn;
-    if (spkPath.isEmpty()) { post(new PairXcorrEvent(*this)); return; }
+    if (!snapshot) { post(new PairXcorrEvent(*this)); return; }
+    const Data::ClusteringSnapshot& snap = *snapshot;   // this epoch's bytes (overlay + pinned descriptor)
 
     std::vector<int16_t> raw;
     std::vector<float>   sp;
@@ -70,7 +69,7 @@ void PairXcorrThread::process()
         if (cancelled()) break;
 
         const int  fileIdx0 = sourceFileIdx[static_cast<size_t>(s)];
-        const bool ok = tmReadSpikeFloat(spk, fileIdx0, nChan, nSamp, raw, sp);
+        const bool ok = tmReadSpikeFloat(snap, fileIdx0, nChan, nSamp, raw, sp);
 
         float sc = ok ? tmNormXcorr(sp, targetMean, maxShift, pearson) : 0.0f;
         scores.emplace_back(fileIdx0, sc);
