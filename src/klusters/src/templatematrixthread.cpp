@@ -5,6 +5,8 @@
 #include "configuration.h"
 
 #include <QApplication>
+#include <QThreadPool>
+#include <QMutexLocker>
 #include <cmath>
 #include <algorithm>
 
@@ -250,13 +252,52 @@ float tmProfileSim(const std::vector<float>& a,
 }
 
 // ---------------------------------------------------------------------------
+TemplateMatrixThread::TemplateMatrixThread(TemplateMatrixView& v, Data& d,
+                                           const std::shared_ptr<KlustersJobToken>& viewToken,
+                                           QList<int> sel, QList<int> clusterScope)
+    : view(v), data(d), token(viewToken), scores(nullptr),
+      selection(std::move(sel)),
+      activeClusters(std::move(clusterScope))
+{
+    setAutoDelete(true);
+    //The creation of the job launches the request, as the old thread's
+    //constructor did with start().
+    jobGeneration = token->generation.load(std::memory_order_acquire);
+    token->active.fetch_add(1, std::memory_order_acq_rel);
+    KlustersJobPool::pool()->start(this);
+}
+
+void TemplateMatrixThread::post(QEvent* event)
+{
+    // Fence against view destruction: ~TemplateMatrixView sets viewDead under
+    // the same mutex, so while we hold it and viewDead is false the view is a
+    // valid event receiver.  A refused event deletes itself — and with it the
+    // matrix it owns.
+    QMutexLocker lock(&token->postMutex);
+    if (token->viewDead) {
+        delete event;
+        return;
+    }
+    QApplication::postEvent(&view, event);
+}
+
 void TemplateMatrixThread::run()
 {
-    auto post = [this]() {
-        QApplication::postEvent(&view, new TemplateMatrixEvent(*this));
+    process();
+    //Retire: this must be the last touch of any shared state (Data above
+    //all).  The synchronous quiesce in stopRunningThreadsSync() and the
+    //document-close pool drain treat active == 0 as "no job is inside a
+    //Data call anymore".
+    token->active.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+void TemplateMatrixThread::process()
+{
+    auto postDone = [this]() {
+        post(new TemplateMatrixEvent(*this));
     };
 
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 1. Cluster list ──────────────────────────────────────────────────
     {
@@ -293,7 +334,7 @@ void TemplateMatrixThread::run()
 
 
     const int nClusters = clusterList.size();
-    if (nClusters < 2) { post(); return; }
+    if (nClusters < 2) { postDone(); return; }
 
     const int    nChan    = data.nbOfChannels();
     const int    nSamp    = data.nbSamplesPerWaveform();
@@ -304,12 +345,12 @@ void TemplateMatrixThread::run()
     const int    peak       = data.peakSampleIndex();                  // 0-based AP-window centre (fast-AP metric)
     const QString spkPath = data.getSpkFileName();
 
-    if (spkPath.isEmpty() || nPts <= 0) { post(); return; }
+    if (spkPath.isEmpty() || nPts <= 0) { postDone(); return; }
 
     // ── 2. Pre-fetch spike file indices (serial, mutex-safe) ─────────────
     allFileIdx.resize(static_cast<size_t>(nClusters));
     for (int ci = 0; ci < nClusters; ++ci) {
-        if (haveToStopProcessing) { post(); return; }
+        if (cancelled()) { postDone(); return; }
         SortableTable posTable;
         if (!data.spikePositions(clusterList[ci], posTable)) continue;
         const long nSpk = static_cast<long>(data.nbOfSpikes(clusterList[ci]));
@@ -319,7 +360,7 @@ void TemplateMatrixThread::run()
                 static_cast<int>(posTable(1, s + 1)) - 1);
     }
 
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 3. Parallel waveform reading — one FILE* per cluster/thread ──────
     // Compute mean waveforms only.  Per-spike waveforms are NOT retained;
@@ -339,7 +380,7 @@ void TemplateMatrixThread::run()
     shared(meanWav, noiseWav, allFileIdx, spk) \
     firstprivate(nClusters, nPts, nChan, nSamp, needNoise)
     for (int ci = 0; ci < nClusters; ++ci) {
-        if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
+        if (cancelled()) continue;
 
         const auto& fidx = allFileIdx[static_cast<size_t>(ci)];
         const long  nSpk = static_cast<long>(fidx.size());
@@ -353,7 +394,7 @@ void TemplateMatrixThread::run()
         long valid = 0;
 
         for (long s = 0; s < nSpk; ++s) {
-            if (haveToStopProcessing.load(std::memory_order_relaxed)) break;
+            if (cancelled()) break;
             if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
                                   nChan, nSamp, raw, sp))
                 continue;
@@ -379,7 +420,7 @@ void TemplateMatrixThread::run()
             }
     }
 
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 3b. Restrict the MATRIX to the selected channels ──────────────────
     // Into local copies, deliberately: meanWav is handed to PairXcorrThread by
@@ -432,7 +473,7 @@ void TemplateMatrixThread::run()
     shared(mMean, mNoise, pairs, scores) \
     firstprivate(nPairs, maxShift, pearson, raw, disatten, fastap, profile, nChan, nSamp, peak)
     for (int pi = 0; pi < nPairs; ++pi) {
-        if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
+        if (cancelled()) continue;
         const int ci = pairs[static_cast<size_t>(pi)].first;
         const int cj = pairs[static_cast<size_t>(pi)].second;
         float s;
@@ -465,7 +506,7 @@ void TemplateMatrixThread::run()
     // off-diagonal cell by the largest off-diagonal value: the most similar
     // pair reads 1.0 and the amplitude-weighted ordering is preserved.  The
     // diagonal stays 1.0.  Serial pass — the parallel fill is already done.
-    if (raw && !haveToStopProcessing.load(std::memory_order_relaxed)) {
+    if (raw && !cancelled()) {
         double gmax = 0.0;
         for (int pi = 0; pi < nPairs; ++pi) {
             const int ci = pairs[static_cast<size_t>(pi)].first;
@@ -484,5 +525,5 @@ void TemplateMatrixThread::run()
         }
     }
 
-    post();
+    postDone();
 }
