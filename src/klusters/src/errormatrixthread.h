@@ -18,7 +18,7 @@
 #ifndef ERRORMATRIXTHREAD_H
 #define ERRORMATRIXTHREAD_H
 
-#include <atomic>
+#include <memory>
 #include <vector>
 
 //include files for the application
@@ -26,125 +26,150 @@
 #include "data.h"
 #include "array.h"
 #include "groupingassistant.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the view)
 
 //include files for QT
-#include <QThread>
+#include <QRunnable>
 #include <QSet>
 
 
 #include <QEvent>
 #include <QList>
 
-/**Thread used to compute the Error Matrix. Each element in the matrix
+/**Job used to compute the Error Matrix. Each element in the matrix
   * indicates how likely it is that the two clusters corresponding to the row and column
   * of the element contain spikes from the same neuron.
+  *
+  * Formerly one QThread per recompute; now a QRunnable on the shared worker
+  * pool (KlustersJobPool — worker-pool conversion, step 4b).  Creating it
+  * launches the request; the pool owns and deletes it after run().  The view
+  * supersedes it by bumping the request generation of the token it was
+  * enqueued under (display computes and background cache warmers run on
+  * separate tokens so the view can still tell them apart), and the generation
+  * check is routed into the GroupingAssistant through its external-stop
+  * predicate — the assistant is where the interruptible work happens.  All
+  * results travel inside the completion event, the two owned arrays freed by
+  * the event when no handler takes them.
   *@author Lynn Hazan
   * @since klusters 1.1
   */
 
-class ErrorMatrixThread : public QThread  {
+class ErrorMatrixThread : public QRunnable  {
 public:
 
     //Only the method computeMatrix of ErrorMatrixView has access to the private part of ErrorMatrixThread,
-    //the constructor of ErrorMatrixThread being private, only this method con create a new ErrorMatrixThread
+    //the constructor of ErrorMatrixThread being private, only this method can create a new ErrorMatrixThread
     friend ErrorMatrixThread* ErrorMatrixView::computeMatrix();
     friend void ErrorMatrixView::launchCacheWarmer();
 
-    ~ErrorMatrixThread(){}
-    Array<double>* getProbabilities() const {return probabilities;}
-    QList<int> getClusterList() const {return clusterList;}
-    QList<int> getComputedClusterList() const {return computedClusterList;}
-    QList<int> getIgnoreClusterIndex() const {return ignoreClusterIndex;}
-
-    /**Refreshed raw (pre-normalisation) probability cache for the view to keep.
-     * getNewRaw() ownership transfers to the caller (view) on accept; nullptr if
-     * the incremental path was not used.*/
-    Array<double>* getNewRaw() const {return newRaw;}
-    QList<int> getNewRawIds() const {return newRawIds;}
-    QList<int> getNewRawSizes() const {return newRawSizes;}
-    int getNewRawDims() const {return newRawDims;}
-    bool getUsedIncremental() const {return usedIncremental;}
-    /**True for a background cache-warmer thread: customEvent() installs only the raw
-     * cache it produced and never touches the displayed matrix.*/
-    bool getSeedOnly() const {return seedOnly;}
-
-    /**Returns the generation counter at the time this thread was created.
-     * Used by ErrorMatrixView::customEvent() to discard results from threads
-     * that were superseded by a later updateMatrixContents() call.*/
-    int getGeneration() const {return generation;}
-
-    /**Asks the thread to stop his work as soon as possible.*/
-    void stopProcessing(){
-        haveToStopProcessing.store(true, std::memory_order_release);
-        assistant.stopComputing();
-    }
-
-    class ErrorMatrixEvent;
-    friend class ErrorMatrixEvent;
-
-    ErrorMatrixEvent* getErrorMatrixEvent(){
-        return new ErrorMatrixEvent(*this);
-    }
+    ~ErrorMatrixThread() override {}
 
     /**
   * Internal class use to send information to the ErrorMatrixView to inform it that
-  * the matrix has been computed.
+  * the matrix has been computed.  Carries the results (the job retires itself)
+  * plus the request generation, so the view can drop superseded results.
   * @since klusters 1.1
   */
     class ErrorMatrixEvent : public QEvent{
-        //Only the method getErrorMatrixEvent of ErrorMatrixThread has access to the private part of ErrorMatrixEvent,
-        //the constructor of ErrorMatrixEvent being private, only this method con create a new ErrorMatrixEvent
-        friend ErrorMatrixEvent* ErrorMatrixThread::getErrorMatrixEvent();
+        friend class ErrorMatrixThread;
 
     public:
-        ErrorMatrixThread* parentThread(){return &errorMatrixThread;}
-        ~ErrorMatrixEvent(){}
+        /**Deletes whatever no handler took (stale generation, or the event
+        * was removed unseen by removePostedEvents).*/
+        ~ErrorMatrixEvent(){ delete probabilitiesResult; delete newRawResult; }
+
+        int generation() const {return eventGeneration;}
+        /**Hands the matrix (and its ownership) to the caller; nullptr when the
+        * compute was cancelled or degenerate, or it was already taken.*/
+        Array<double>* takeProbabilities(){ Array<double>* p = probabilitiesResult; probabilitiesResult = nullptr; return p; }
+        QList<int> getClusterList() const {return clusterListResult;}
+        QList<int> getComputedClusterList() const {return computedClusterListResult;}
+        QList<int> getIgnoreClusterIndex() const {return ignoreClusterIndexResult;}
+
+        /**Refreshed raw (pre-normalisation) probability cache for the view to
+        * keep; ownership transfers to the caller.  nullptr if the incremental
+        * path was not used, or it was already taken.*/
+        Array<double>* takeNewRaw(){ Array<double>* r = newRawResult; newRawResult = nullptr; return r; }
+        QList<int> getNewRawIds() const {return newRawIdsResult;}
+        QList<int> getNewRawSizes() const {return newRawSizesResult;}
+        int getNewRawDims() const {return newRawDimsResult;}
+        bool getUsedIncremental() const {return usedIncrementalResult;}
+        /**True for a background cache-warmer job: customEvent() installs only the raw
+        * cache it produced and never touches the displayed matrix.*/
+        bool getSeedOnly() const {return seedOnlyResult;}
 
     private:
-        explicit ErrorMatrixEvent(ErrorMatrixThread& thread):QEvent(QEvent::Type(QEvent::User + 600)),errorMatrixThread(thread){}
+        /**Takes over the job's results: the owned arrays move into the event
+        * (the job posts as its final act and never touches them again).*/
+        explicit ErrorMatrixEvent(ErrorMatrixThread& job):QEvent(QEvent::Type(QEvent::User + 600)),
+            eventGeneration(job.jobGeneration),
+            probabilitiesResult(job.probabilities),
+            clusterListResult(job.clusterList),
+            computedClusterListResult(job.computedClusterList),
+            ignoreClusterIndexResult(job.ignoreClusterIndex),
+            newRawResult(job.newRaw),
+            newRawIdsResult(job.newRawIds),
+            newRawSizesResult(job.newRawSizes),
+            newRawDimsResult(job.newRawDims),
+            usedIncrementalResult(job.usedIncremental),
+            seedOnlyResult(job.seedOnly){ job.probabilities = nullptr; job.newRaw = nullptr; }
 
-        ErrorMatrixThread& errorMatrixThread;
+        int eventGeneration;
+        Array<double>* probabilitiesResult;
+        QList<int> clusterListResult;
+        QList<int> computedClusterListResult;
+        QList<int> ignoreClusterIndexResult;
+        Array<double>* newRawResult;
+        QList<int> newRawIdsResult;
+        QList<int> newRawSizesResult;
+        int newRawDimsResult;
+        bool usedIncrementalResult;
+        bool seedOnlyResult;
     };
 
-protected:
-    void run();
+    /**Executed by a pool worker; computes the matrix, posts the completion
+    * event and retires the job.*/
+    void run() override;
 
 private:
 
-    ErrorMatrixThread(ErrorMatrixView& view,Data& d, int generation,
+    /**Creating the job launches the request on the shared pool (as the old
+    * thread constructor's start() did).  Runs on the GUI thread only.*/
+    ErrorMatrixThread(ErrorMatrixView& view,Data& d,
+                      const std::shared_ptr<KlustersJobToken>& viewToken,
                       bool incremental, bool verify,
                       const Array<double>* prevRaw, const QList<int>& prevRawIds,
                       const QList<int>& prevRawSizes, int prevNbDimensions,
                       const QSet<int>& changedIds, bool seedOnly = false,
                       std::vector<int> activeDims = std::vector<int>(),
-                      QList<int> activeClusters = QList<int>())
-        : errorMatrixView(view),data(d),generation(generation),
-          haveToStopProcessing(false),probabilities(nullptr),
-          incremental(incremental),verify(verify),
-          prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),
-          prevNbDimensions(prevNbDimensions),changedIds(changedIds),
-          newRaw(nullptr),newRawDims(-1),nbReused(0),usedIncremental(false),
-          seedOnly(seedOnly),activeDims(std::move(activeDims)),
-          activeClusters(std::move(activeClusters)){
-        // Restrict the model to the selected channels' feature columns before
-        // anything is computed; empty = every dimension, i.e. unchanged.
-        assistant.setActiveDimensions(this->activeDims);
-        // And to one parent's children when the child palette is driving; empty =
-        // every cluster, i.e. unchanged.  Both restrictions must be set before the
-        // thread starts, since run() computes immediately.
-        assistant.setActiveClusters(this->activeClusters);
-        start();
+                      QList<int> activeClusters = QList<int>());
+
+    /**True once the view has superseded this job's request generation: the
+    * job (and, through the external-stop predicate, its assistant) stops at
+    * the next check, exactly where the stop flags used to be read.*/
+    bool cancelled() const {
+        return token->generation.load(std::memory_order_acquire) != jobGeneration;
     }
+
+    /**Posts @p event to the view, unless the view is being destroyed
+    * (fenced by the token's postMutex/viewDead).*/
+    void post(QEvent* event);
+
+    /**The old run() body; split out so run() can retire the job on every path.*/
+    void process();
 
         ErrorMatrixView& errorMatrixView;
     Data& data;
-    int generation;
+    /**Shared cancellation/completion state owned by the view (the display
+    * stream's token for computeMatrix() jobs, the warmer stream's for
+    * launchCacheWarmer() jobs).*/
+    std::shared_ptr<KlustersJobToken> token;
+    /**The view's request generation this job was enqueued under.*/
+    int jobGeneration = 0;
     Array<double>* probabilities;
     QList<int> clusterList;
     QList<int> computedClusterList;
     QList<int> ignoreClusterIndex;
-    /**True if the thread has to stop processing, false otherwise.*/
-    std::atomic_bool haveToStopProcessing;
     GroupingAssistant assistant;
 
     // ── Incremental error-matrix support (opt-in) ───────────────────────────

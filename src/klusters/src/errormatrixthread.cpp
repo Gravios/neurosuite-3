@@ -19,13 +19,71 @@
 
 //QT include files
 #include <QApplication>
+#include <QThreadPool>
+#include <QMutexLocker>
 #include <QElapsedTimer>
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
 
+ErrorMatrixThread::ErrorMatrixThread(ErrorMatrixView& view,Data& d,
+                                     const std::shared_ptr<KlustersJobToken>& viewToken,
+                                     bool incremental, bool verify,
+                                     const Array<double>* prevRaw, const QList<int>& prevRawIds,
+                                     const QList<int>& prevRawSizes, int prevNbDimensions,
+                                     const QSet<int>& changedIds, bool seedOnly,
+                                     std::vector<int> activeDims,
+                                     QList<int> activeClusters)
+    : errorMatrixView(view),data(d),token(viewToken),
+      probabilities(nullptr),
+      incremental(incremental),verify(verify),
+      prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),
+      prevNbDimensions(prevNbDimensions),changedIds(changedIds),
+      newRaw(nullptr),newRawDims(-1),nbReused(0),usedIncremental(false),
+      seedOnly(seedOnly),activeDims(std::move(activeDims)),
+      activeClusters(std::move(activeClusters)){
+    setAutoDelete(true);
+    // Restrict the model to the selected channels' feature columns before
+    // anything is computed; empty = every dimension, i.e. unchanged.
+    assistant.setActiveDimensions(this->activeDims);
+    // And to one parent's children when the child palette is driving; empty =
+    // every cluster, i.e. unchanged.  Both restrictions must be set before the
+    // job is enqueued, since run() computes immediately.
+    assistant.setActiveClusters(this->activeClusters);
+    //Route the request-generation check into the assistant's own stop
+    //polling: it is the only way to interrupt a compute call in progress.
+    assistant.setExternalStop([this]{ return cancelled(); });
+    //The creation of the job launches the request, as the old thread's
+    //constructor did with start().
+    jobGeneration = token->generation.load(std::memory_order_acquire);
+    token->active.fetch_add(1, std::memory_order_acq_rel);
+    KlustersJobPool::pool()->start(this);
+}
+
+void ErrorMatrixThread::post(QEvent* event){
+    // Fence against view destruction: ~ErrorMatrixView sets viewDead under
+    // the same mutex, so while we hold it and viewDead is false the view is a
+    // valid event receiver.  A refused event deletes itself — and with it the
+    // arrays it owns.
+    QMutexLocker lock(&token->postMutex);
+    if(token->viewDead){
+        delete event;
+        return;
+    }
+    QApplication::postEvent(&errorMatrixView,event);
+}
+
 void ErrorMatrixThread::run(){
-    if(!haveToStopProcessing){
+    process();
+    //Retire: this must be the last touch of any shared state (Data above
+    //all).  The synchronous quiesce in ErrorMatrixView::stopRunningThreads()
+    //and the document-close pool drain treat active == 0 as "no job is
+    //inside a Data call anymore".
+    token->active.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+void ErrorMatrixThread::process(){
+    if(!cancelled()){
         Array<double>* result = nullptr;
         QElapsedTimer diagTimer; diagTimer.start();
 
@@ -45,7 +103,7 @@ void ErrorMatrixThread::run(){
                 // (~1e-9) is expected GPU/CPU summation drift when the full path
                 // runs on the GPU.  Verification never changes the returned
                 // result — it only reports.
-                if(verify && !haveToStopProcessing){
+                if(verify && !cancelled()){
                     GroupingAssistant fullAssistant;
                     QList<int> cl, ccl, ici;
                     Array<double>* full =
@@ -78,7 +136,7 @@ void ErrorMatrixThread::run(){
             }
         }
 
-        if(result == nullptr && !haveToStopProcessing){
+        if(result == nullptr && !cancelled()){
             // Full recompute — the default path and the incremental fallback.
             result = assistant.computeMeanProbabilities(
                 data, clusterList, computedClusterList, ignoreClusterIndex);
@@ -113,7 +171,6 @@ void ErrorMatrixThread::run(){
     }
 
     //Send an event to the ErrorMatrixView to let it know that the computation is finish.
-    ErrorMatrixEvent* event = getErrorMatrixEvent();
-    QApplication::postEvent(&errorMatrixView,event);
+    post(new ErrorMatrixEvent(*this));
 }
 

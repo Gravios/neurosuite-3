@@ -17,6 +17,8 @@
 #include "sortabletable.h"
 
 #include <QApplication>
+#include <QThreadPool>
+#include <QMutexLocker>
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -25,13 +27,54 @@
 #include <omp.h>
 #endif
 
+DriftMatrixThread::DriftMatrixThread(QObject& view, Data& d, std::vector<float> chanDepths,
+                                     float deltaUm,
+                                     const std::shared_ptr<KlustersJobToken>& viewToken,
+                                     QList<int> sel, QList<int> clusterScope)
+    : target(view), data(d), depths(std::move(chanDepths)),
+      initialDeltaUm(deltaUm), token(viewToken), scores(nullptr),
+      selection(std::move(sel)),
+      activeClusters(std::move(clusterScope))
+{
+    setAutoDelete(true);
+    //The creation of the job launches the request, as the old thread's
+    //constructor did with start().
+    jobGeneration = token->generation.load(std::memory_order_acquire);
+    token->active.fetch_add(1, std::memory_order_acq_rel);
+    KlustersJobPool::pool()->start(this);
+}
+
+void DriftMatrixThread::post(QEvent* event)
+{
+    // Fence against view destruction: ~DriftMatrixView sets viewDead under
+    // the same mutex, so while we hold it and viewDead is false the target is
+    // a valid event receiver.  A refused event deletes itself — and with it
+    // the matrix it owns.
+    QMutexLocker lock(&token->postMutex);
+    if (token->viewDead) {
+        delete event;
+        return;
+    }
+    QApplication::postEvent(&target, event);
+}
+
 void DriftMatrixThread::run()
 {
-    auto post = [this]() {
-        QApplication::postEvent(&target, new DriftMatrixEvent(*this));
+    process();
+    //Retire: this must be the last touch of any shared state (Data above
+    //all).  The synchronous quiesce in stopRunningThreadsSync() and the
+    //document-close pool drain treat active == 0 as "no job is inside a
+    //Data call anymore".
+    token->active.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+void DriftMatrixThread::process()
+{
+    auto postDone = [this]() {
+        post(new DriftMatrixEvent(*this));
     };
 
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 1. Cluster list ──────────────────────────────────────────────────
     {
@@ -64,7 +107,7 @@ void DriftMatrixThread::run()
     }
 
     const int nClusters = clusterList.size();
-    if (nClusters < 2) { post(); return; }
+    if (nClusters < 2) { postDone(); return; }
 
     const int nChan    = data.nbOfChannels();
     const int nSamp    = data.nbSamplesPerWaveform();
@@ -73,14 +116,14 @@ void DriftMatrixThread::run()
     nChanCached = nChan; nSampCached = nSamp; maxShiftCached = maxShift;
 
     const QString spkPath = data.getSpkFileName();
-    if (spkPath.isEmpty() || nPts <= 0) { post(); return; }
+    if (spkPath.isEmpty() || nPts <= 0) { postDone(); return; }
 
     depthsValid = (static_cast<int>(depths.size()) == nChan);
 
     // ── 2. Pre-fetch spike file indices (serial, mutex-safe) ────────────────
     std::vector<std::vector<int>> allFileIdx(static_cast<size_t>(nClusters));
     for (int ci = 0; ci < nClusters; ++ci) {
-        if (haveToStopProcessing) { post(); return; }
+        if (cancelled()) { postDone(); return; }
         SortableTable posTable;
         if (!data.spikePositions(clusterList[ci], posTable)) continue;
         const long nSpk = static_cast<long>(data.nbOfSpikes(clusterList[ci]));
@@ -89,7 +132,7 @@ void DriftMatrixThread::run()
             allFileIdx[static_cast<size_t>(ci)].push_back(
                 static_cast<int>(posTable(1, s + 1)) - 1);
     }
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 3. Parallel mean waveforms — one FILE* per cluster ──────────────────
     meanWav.assign(static_cast<size_t>(nClusters),
@@ -101,7 +144,7 @@ void DriftMatrixThread::run()
     shared(meanWav, allFileIdx, spk) \
     firstprivate(nClusters, nPts, nChan, nSamp)
     for (int ci = 0; ci < nClusters; ++ci) {
-        if (haveToStopProcessing.load(std::memory_order_relaxed)) continue;
+        if (cancelled()) continue;
 
         const auto& fidx = allFileIdx[static_cast<size_t>(ci)];
         const long  nSpk = static_cast<long>(fidx.size());
@@ -113,7 +156,7 @@ void DriftMatrixThread::run()
         long valid = 0;
 
         for (long s = 0; s < nSpk; ++s) {
-            if (haveToStopProcessing.load(std::memory_order_relaxed)) break;
+            if (cancelled()) break;
             if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
                                   nChan, nSamp, raw, sp))
                 continue;
@@ -127,7 +170,7 @@ void DriftMatrixThread::run()
                 meanWav[static_cast<size_t>(ci)][static_cast<size_t>(p)] =
                     static_cast<float>(acc[static_cast<size_t>(p)] / valid);
     }
-    if (haveToStopProcessing) { post(); return; }
+    if (cancelled()) { postDone(); return; }
 
     // ── 3b. Restrict to the selected channels ──────────────────────────────
     // Applied AFTER the means are built: the .spk read is the expensive part and
@@ -163,17 +206,17 @@ void DriftMatrixThread::run()
     scores = new Array<double>();
     scores->setSize(nClusters, nClusters);
 
-    // Both branches poll the stop flag per ROW.  Neither used to, so
-    // stopProcessing() set a flag nothing read and the whole O(clusters^2) ran to
-    // completion regardless -- which is what made the next edit's
+    // Both branches poll the cancellation test per ROW.  Neither used to, so
+    // a stop request set a flag nothing read and the whole O(clusters^2) ran
+    // to completion regardless -- which is what made the next edit's
     // stopAllViewThreads() block the GUI thread in wait() for minutes.
-    const std::function<bool()> cancelled = [this]{
-        return haveToStopProcessing.load(std::memory_order_relaxed);
+    const std::function<bool()> stopPoll = [this]{
+        return cancelled();
     };
 
     if (depthsValid) {
         dmComputeDriftMatrix(meanWav, depths, effChan, nSamp, maxShift,
-                             initialDeltaUm, *scores, cancelled);
+                             initialDeltaUm, *scores, stopPoll);
     } else {
         // No usable geometry: plain unshifted mean xcorr so the view still
         // shows something (the slider will be disabled by the view).
@@ -188,7 +231,7 @@ void DriftMatrixThread::run()
 #pragma omp parallel for schedule(dynamic)
 #endif
         for (int i = 0; i < nClusters; ++i) {
-            if (cancelled()) continue;            // OpenMP: skip, cannot break
+            if (stopPoll()) continue;            // OpenMP: skip, cannot break
             (*scores)(i + 1, i + 1) = 1.0;
             for (int j = i + 1; j < nClusters; ++j) {
                 const float s = dmNormXcorr(meanWav[static_cast<size_t>(i)],
@@ -201,12 +244,12 @@ void DriftMatrixThread::run()
 
     // A cancelled run leaves the matrix partially filled.  Publishing it would
     // paint rows of zeros as though they were real correlations, so drop it and
-    // let the view reject the result on scores == nullptr -- the same contract
+    // let the view reject the result on a null matrix -- the same contract
     // the early-outs above already rely on.
-    if (haveToStopProcessing) {
+    if (cancelled()) {
         delete scores;
         scores = nullptr;
     }
 
-    post();
+    postDone();
 }

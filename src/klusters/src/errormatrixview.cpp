@@ -18,6 +18,8 @@
 #include <cmath>
 #include <algorithm>
 #include <QApplication>
+#include <QThread>        // msleep for the synchronous job quiesce
+#include <QMutexLocker>
 #include <QTimer>
 #include "errormatrixview.h"
 #include "matrixgrid.h"
@@ -68,7 +70,8 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
     nbPreviousUndo(0),
     nbPreviousRedo(0),
     goingToDie(false),
-    generation(0),
+    displayToken(std::make_shared<KlustersJobToken>()),
+    warmerToken(std::make_shared<KlustersJobToken>()),
     probabilities(nullptr)
 {
 
@@ -106,112 +109,121 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
 }
 
 ErrorMatrixView::~ErrorMatrixView(){
-    //Ask the threads to stop as soon as possible.
+    //Supersede the in-flight jobs (and set goingToDie so nothing new launches).
     //Qualified (non-virtual) call: in its own destructor the object is already
     //this dynamic type, so this is the intended teardown; the explicit scope
     //documents that and silences the virtual-call-in-destructor warning.
     ErrorMatrixView::willBeKilled();
 
-    //Wait until all the threads have finish before quiting otherwise
-    // it may endup in a crash of the application.
-    for(ErrorMatrixThread* errorMatrixThread : threadsToBeKill) {
-        while(!errorMatrixThread->wait() && !dataReady){};
+    //Fence the completion posts on both request streams: once viewDead is set
+    //under the locks, no job will post to this view again.  The jobs
+    //themselves are not waited for: they were superseded above, the pool owns
+    //and deletes them, and their results travel inside the events, which
+    //delete what nobody takes.  Data lifetime is covered by the document
+    //draining the pool before deleting Data.
+    {
+        QMutexLocker lock(&displayToken->postMutex);
+        displayToken->viewDead = true;
     }
-    
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
+    {
+        QMutexLocker lock(&warmerToken->postMutex);
+        warmerToken->viewDead = true;
+    }
     delete probabilities;
     delete rawProbCache;
 
-    // Drain any thread-posted events so they don't fire after our destruction.
+    // Drain any job-posted events so they don't fire after our destruction.
     QApplication::removePostedEvents(this);
 }
 
 bool ErrorMatrixView::isThreadsRunning() const {
-    if(threadsToBeKill.isEmpty())
-        return false;
-    else
-        return true;
+    return displayToken->active.load(std::memory_order_acquire) > 0
+        || warmerToken->active.load(std::memory_order_acquire) > 0;
 }
 
 void ErrorMatrixView::stopRunningThreads(){
-    // Synchronous quiesce mirroring CorrelationView::stopRunningThreads and this
-    // view's own destructor teardown: signal each ErrorMatrixThread to stop, wait
-    // for run() to return, delete it, and drop any completion event it posted so a
-    // later customEvent() can't fire with a dangling thread pointer.  Deliberately
-    // does NOT call willBeKilled()/set goingToDie, so a fresh matrix can be
-    // recomputed afterwards (updateMatrixContents).
+    // Synchronous quiesce mirroring CorrelationView::stopRunningThreads:
+    // supersede the jobs and wait for them to retire.  Deliberately does NOT
+    // call willBeKilled()/set goingToDie, so a fresh matrix can be recomputed
+    // afterwards (updateMatrixContents).
     //
     // Required because ErrorMatrixView is a ViewWidget but — unlike CorrelationView —
     // never overrode the empty ViewWidget::stopRunningThreads virtual.  Thus
     // KlustersView::stopAllViewThreads() called the empty base on it, leaving the
-    // ErrorMatrixThread reading Data while a group/merge (and likewise undo/realign)
-    // mutated it in place — the non-deterministic QThread segfault when grouping
-    // from the error matrix.  stopProcessing() sets the thread's atomic
-    // haveToStopProcessing flag and stops its GroupingAssistant, so run() returns
-    // promptly and wait() cannot hang (same contract the destructor relies on).
-    for(ErrorMatrixThread* errorMatrixThread : threadsToBeKill)
-        errorMatrixThread->stopProcessing();
-    for(ErrorMatrixThread* errorMatrixThread : threadsToBeKill)
-        while(!errorMatrixThread->wait()){}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
-    QApplication::removePostedEvents(this);
+    // error-matrix compute reading Data while a group/merge (and likewise
+    // undo/realign) mutated it in place — the non-deterministic segfault when
+    // grouping from the error matrix.
+    //Supersede both request streams (the assistants notice through their
+    //external-stop predicates), then wait for every job to retire: no job of
+    //this view may still be inside a Data call once this returns.
+    displayToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    warmerToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    while(displayToken->active.load(std::memory_order_acquire) > 0
+          || warmerToken->active.load(std::memory_order_acquire) > 0)
+        QThread::msleep(1);
+    // Drop completion events the superseded jobs posted before retiring.
+    // They carry their own results (freed with the event), and would fail
+    // the generation guard anyway.
+    QApplication::removePostedEvents(this, QEvent::User + 600);
 }
 
 void ErrorMatrixView::customEvent(QEvent* event){
-    //Event sent by a ErrorMatrixThread to inform that the data are available.
+    //Event sent by an error-matrix job to inform that the data are available.
     if(event->type() == QEvent::User + 600){
 
-        ErrorMatrixThread::ErrorMatrixEvent* errorMatrixEvent = (ErrorMatrixThread::ErrorMatrixEvent*) event;
-        //Get the event information
-        ErrorMatrixThread* errorMatrixThread = errorMatrixEvent->parentThread();
-        Array<double>* newProb = errorMatrixThread->getProbabilities();
+        ErrorMatrixThread::ErrorMatrixEvent* errorMatrixEvent = static_cast<ErrorMatrixThread::ErrorMatrixEvent*>(event);
+        //The job retired itself and the results travel in the event, so there
+        //is no thread to wait for or delete anymore.  Warmer events are
+        //checked against the warmer stream's generation, display events
+        //against the display stream's.
+        const bool seedOnly = errorMatrixEvent->getSeedOnly();
+        const int currentGeneration = (seedOnly ? warmerToken : displayToken)
+                                          ->generation.load(std::memory_order_acquire);
+        Array<double>* newProb = errorMatrixEvent->takeProbabilities();
 
         // Accept the result only if:
-        //  (a) the thread computed a non-null result, AND
-        //  (b) this thread belongs to the current generation (not superseded by a
+        //  (a) the job computed a non-null result, AND
+        //  (b) it belongs to the current generation (not superseded by a
         //      later updateMatrixContents() call such as one triggered by renumbering).
-        // Without the generation check a slow pre-renumber thread arriving after a
-        // fast post-renumber thread would silently overwrite the correct result.
+        // Without the generation check a slow pre-renumber compute arriving after a
+        // fast post-renumber one would silently overwrite the correct result.
         const bool accepted = (newProb != nullptr
-                               && errorMatrixThread->getGeneration() == generation);
+                               && errorMatrixEvent->generation() == currentGeneration);
     // Only the generation we are waiting on ends the "computing" state: a
     // superseded result must not cancel the badge for the newer compute.
-    if(errorMatrixThread->getGeneration() == generation) computing = false;
+    if(errorMatrixEvent->generation() == currentGeneration) computing = false;
 
         // Background cache warmer: it never drives the display.  Install only the raw
         // cache it produced (if still current) so the next edit is a fast incremental
         // update; the normalized matrix it computed as a byproduct is discarded.  No
         // repaint, no matrixUpdated, no cursor change, and no warmer relaunch.
-        if(errorMatrixThread->getSeedOnly()){
-            if(accepted && errorMatrixThread->getUsedIncremental()
-               && errorMatrixThread->getNewRaw() != nullptr){
-                delete rawProbCache;
-                rawProbCache      = errorMatrixThread->getNewRaw();   // take ownership
-                rawProbCacheIds   = errorMatrixThread->getNewRawIds();
-                rawProbCacheSizes = errorMatrixThread->getNewRawSizes();
-                rawProbCacheDims  = errorMatrixThread->getNewRawDims();
-                rawProbCacheValid = true;
-                rawProbCacheChildScope = doc.isChildClusteringActive();
-                rawProbCacheScopeActive = doc.matrixScopeActive();
-                rawProbCacheScopeParent = doc.curatedParent();
-            } else {
-                delete errorMatrixThread->getNewRaw();                // superseded / unusable
+        if(seedOnly){
+            if(accepted && errorMatrixEvent->getUsedIncremental()){
+                Array<double>* freshRaw = errorMatrixEvent->takeNewRaw();
+                if(freshRaw != nullptr){
+                    delete rawProbCache;
+                    rawProbCache      = freshRaw;                         // take ownership
+                    rawProbCacheIds   = errorMatrixEvent->getNewRawIds();
+                    rawProbCacheSizes = errorMatrixEvent->getNewRawSizes();
+                    rawProbCacheDims  = errorMatrixEvent->getNewRawDims();
+                    rawProbCacheValid = true;
+                    rawProbCacheChildScope = doc.isChildClusteringActive();
+                    rawProbCacheScopeActive = doc.matrixScopeActive();
+                    rawProbCacheScopeParent = doc.curatedParent();
+                }
             }
+            // Anything not taken — a superseded raw array, and the byproduct
+            // matrix — is freed with the event.
             delete newProb;                                          // byproduct, never shown
-            while(!errorMatrixThread->wait()){};
-            threadsToBeKill.removeAll(errorMatrixThread);
-            delete errorMatrixThread;
             return;
         }
 
         if(accepted){
             delete probabilities;  // release the previous result before overwriting
             probabilities = newProb;
-            clusterList = errorMatrixThread->getClusterList();
-            computedClusterList = errorMatrixThread->getComputedClusterList();
-            ignoreClusterIndex = errorMatrixThread->getIgnoreClusterIndex();
+            clusterList = errorMatrixEvent->getClusterList();
+            computedClusterList = errorMatrixEvent->getComputedClusterList();
+            ignoreClusterIndex = errorMatrixEvent->getIgnoreClusterIndex();
             // A fresh compute moves the rows, so the display permutation is
             // re-derived rather than kept: from the doc's held child-scope
             // sort order when one is held (the scoped sort survives
@@ -225,13 +237,14 @@ void ErrorMatrixView::customEvent(QEvent* event){
             // transfers here); otherwise (full-path fallback) the cache is now
             // stale for the new cluster state, so drop it and let the next compute
             // cold-seed a fresh one.
-            if(errorMatrixThread->getUsedIncremental()
-               && errorMatrixThread->getNewRaw() != nullptr){
+            Array<double>* freshRaw = errorMatrixEvent->getUsedIncremental()
+                                          ? errorMatrixEvent->takeNewRaw() : nullptr;
+            if(freshRaw != nullptr){
                 delete rawProbCache;
-                rawProbCache      = errorMatrixThread->getNewRaw();  // take ownership
-                rawProbCacheIds   = errorMatrixThread->getNewRawIds();
-                rawProbCacheSizes = errorMatrixThread->getNewRawSizes();
-                rawProbCacheDims  = errorMatrixThread->getNewRawDims();
+                rawProbCache      = freshRaw;                        // take ownership
+                rawProbCacheIds   = errorMatrixEvent->getNewRawIds();
+                rawProbCacheSizes = errorMatrixEvent->getNewRawSizes();
+                rawProbCacheDims  = errorMatrixEvent->getNewRawDims();
                 rawProbCacheValid = true;
                 rawProbCacheChildScope = doc.isChildClusteringActive();
                 rawProbCacheScopeActive = doc.matrixScopeActive();
@@ -248,22 +261,10 @@ void ErrorMatrixView::customEvent(QEvent* event){
             modifiedClusterList.clear();
             deletedMap.clear();
         } else {
-            // Discard the stale / null result.  newProb ownership stays with us
-            // when non-null; delete it to avoid a leak.  Same for any raw array
-            // the discarded thread produced.
+            // Discard the stale / null result; any raw array the discarded
+            // job produced is freed with the event.
             delete newProb;
-            delete errorMatrixThread->getNewRaw();
         }
-
-        //Wait to be sure the thread has return from his run method. Even if the send of the event is the last
-        //action of the run method it seems that the event loop can be pretty fast and the run has not
-        //return when the event is received here.
-        while(!errorMatrixThread->wait()){};
-
-        //Delete the errorMatrixThread.
-        threadsToBeKill.removeAll(errorMatrixThread);
-        delete errorMatrixThread;
-        errorMatrixThread = nullptr;
 
         if(!goingToDie){
             if(accepted){
@@ -289,9 +290,9 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 if(!rawProbCacheValid && errorMatrixIncrementalEnabled())
                     launchCacheWarmer();
             } else {
-                // Stale result discarded — restore cursor if no other thread is still
-                // computing, so the UI is not stuck in wait-cursor state.
-                if(threadsToBeKill.isEmpty())
+                // Stale result discarded — restore cursor if no other compute is
+                // still in flight, so the UI is not stuck in wait-cursor state.
+                if(displayToken->active.load(std::memory_order_acquire) == 0)
                     setCursor(Qt::ArrowCursor);
             }
         }
@@ -299,12 +300,10 @@ void ErrorMatrixView::customEvent(QEvent* event){
 }
 
 bool ErrorMatrixView::isComputing() const{
-    // A display-driving compute is any non-seedOnly thread still pending in
-    // threadsToBeKill.  The background cache warmer is seedOnly and is excluded
-    // so it never holds the edit lock.
-    for(ErrorMatrixThread* t : threadsToBeKill)
-        if(t && !t->getSeedOnly()) return true;
-    return false;
+    // A display-driving compute is any job in flight on the display stream.
+    // The background cache warmer runs on its own token and is excluded, so
+    // it never holds the edit lock.
+    return displayToken->active.load(std::memory_order_acquire) > 0;
 }
 
 void ErrorMatrixView::updateMatrixContents(){
@@ -315,19 +314,18 @@ void ErrorMatrixView::updateMatrixContents(){
 
     computing = true;      // paint a badge over the old matrix, do not blank
     if(!goingToDie){
-        //Bump the generation so that customEvent() can identify — and discard — results
-        //from any threads that were launched before this call.  This prevents a slow
-        //pre-renumber thread from overwriting the result of a faster post-renumber thread.
-        ++generation;
-
-        //Ask any already-running threads to stop early; they will still post their
-        //event but customEvent() will discard the stale result via the generation check.
-        for(ErrorMatrixThread* t : threadsToBeKill)
-            t->stopProcessing();
+        //Bump the request generations so that customEvent() can identify — and
+        //discard — results from any jobs launched before this call.  This
+        //prevents a slow pre-renumber compute from overwriting the result of a
+        //faster post-renumber one; in-flight jobs also stop early at their
+        //next check (routed into their assistants), still posting an event
+        //that the generation guard then drops.  The warmer stream is
+        //superseded in tandem: its cache would be as stale as the matrix.
+        displayToken->generation.fetch_add(1, std::memory_order_acq_rel);
+        warmerToken->generation.fetch_add(1, std::memory_order_acq_rel);
 
         setCursor(Qt::WaitCursor);
-        ErrorMatrixThread* thread = computeMatrix();
-        threadsToBeKill.append(thread);
+        computeMatrix();
 
         //Reset the information used to show that the matrix is not up to date.
         // NB: modifiedClusterList / deletedMap — the changedIds tracking — are
@@ -485,9 +483,9 @@ ErrorMatrixThread* ErrorMatrixView::computeMatrix(){
             << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
                                                      : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
     }
-    //The creation of a thread automatically start it.
+    //The creation of the job launches it; the pool owns and deletes it.
     return new ErrorMatrixThread(
-        *this, doc.matrixData(), generation,
+        *this, doc.matrixData(), displayToken,
         useIncremental, incrementalVerify,
         (rawProbCacheValid ? rawProbCache : nullptr),
         rawProbCacheIds, rawProbCacheSizes, rawProbCacheDims,
@@ -561,13 +559,13 @@ void ErrorMatrixView::selectedChannelsChanged(const QList<int>&)
 void ErrorMatrixView::launchCacheWarmer(){
     // Display-less cold-seed: force the incremental path (prevRaw == nullptr, so it
     // reuses nothing and recomputes every raw column — now parallel across cores) and
-    // mark it seedOnly so customEvent() installs ONLY the raw cache.  Carries the
-    // current generation; an edit that supersedes it (generation bump + stopProcessing
-    // in updateMatrixContents) makes customEvent discard its result, and that edit
+    // mark it seedOnly so customEvent() installs ONLY the raw cache.  Runs on the
+    // warmer token; an edit that supersedes it (both generations bumped in
+    // updateMatrixContents) makes customEvent discard its result, and that edit
     // cold-seeds itself.  Deliberately leaves the cursor alone — this is a background
-    // task that must neither block nor signal the UI.  Added to threadsToBeKill so it
-    // is quiesced with the others before any Data mutation (the stopRunningThreads
-    // contract).
+    // task that must neither block nor signal the UI.  The warmer token's active
+    // count keeps it quiesced with the others before any Data mutation (the
+    // stopRunningThreads contract).
     if (qEnvironmentVariableIsSet("NS3_VERBOSE")) {
         const QList<dataType> ids = doc.matrixData().clusterIds();
         const QList<int> scope = doc.matrixScopeClusters();
@@ -585,13 +583,12 @@ void ErrorMatrixView::launchCacheWarmer(){
             << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
                                                      : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
     }
-    ErrorMatrixThread* warmer = new ErrorMatrixThread(
-        *this, doc.matrixData(), generation,
+    new ErrorMatrixThread(
+        *this, doc.matrixData(), warmerToken,
         /*incremental*/ true, /*verify*/ false,
         /*prevRaw*/ nullptr, QList<int>(), QList<int>(), -1,
         /*changedIds*/ QSet<int>(),
         /*seedOnly*/ true, activeFeatureDims(), doc.matrixScopeClusters());
-    threadsToBeKill.append(warmer);
 }
 
 void ErrorMatrixView::invalidateRawProbCache(const char* reason){
@@ -1681,10 +1678,11 @@ void ErrorMatrixView::redoDeletion(QList<int>& deletedClusters){
 void ErrorMatrixView::willBeKilled(){
     if(!goingToDie){
         goingToDie = true;
-        //inform the running threads to stop processing as soon as possible.
-        for(ErrorMatrixThread* errorMatrixThread : threadsToBeKill) {
-            errorMatrixThread->stopProcessing();
-        }
+        //Supersede both request streams: each in-flight job stops at its next
+        //cancellation check (routed into its assistant), and its completion
+        //event fails the generation guard in customEvent().
+        displayToken->generation.fetch_add(1, std::memory_order_acq_rel);
+        warmerToken->generation.fetch_add(1, std::memory_order_acq_rel);
     }
 }
 

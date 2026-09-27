@@ -106,7 +106,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
         QList<int>& computedClusterList,
         QList<int>& ignoreClusterIndex)
 {
-    if (haveToStopComputing) return new Array<double>(0, 0);
+    if (stopRequested()) return new Array<double>(0, 0);
 
     QElapsedTimer emxTmg;
     const bool emxTiming = qEnvironmentVariableIntValue("NS3_ERRORMATRIX_TIMING") != 0;
@@ -208,7 +208,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     if (outRawIds)   outRawIds->clear();
     if (outRawSizes) outRawSizes->clear();
     if (outNbReused) *outNbReused = 0;
-    if (haveToStopComputing) return nullptr;
+    if (stopRequested()) return nullptr;
 
     const dataType nbSpikes     = clusteringData.totalNbOfSpikes();
     // Model dimensionality: the active feature subspace (all dimensions unless
@@ -253,7 +253,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
 
     if (clusterInfoMap->contains(ClusterId::Artefact)) clusterInfoMap->remove(ClusterId::Artefact);
     const int nbClustersReal = model.size();
-    if (nbClustersReal < 1 || haveToStopComputing) {
+    if (nbClustersReal < 1 || stopRequested()) {
         delete spikesByCluster; delete clusterInfoMap;
         spikesByCluster = nullptr; clusterInfoMap = nullptr;
         return nullptr;
@@ -262,7 +262,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     // Models for every cluster (identical to computeProbabilities; cheap).
     meanCovarianceComputation(model, nbClustersReal, nbDimensions, nbSpikes,
                               clusteringData, ignoreClusterIndex);
-    if (haveToStopComputing) {
+    if (stopRequested()) {
         delete spikesByCluster; delete clusterInfoMap;
         spikesByCluster = nullptr; clusterInfoMap = nullptr;
         return nullptr;
@@ -355,7 +355,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
 #pragma omp parallel for schedule(dynamic) default(shared) reduction(+:nbReused)
 #endif
     for (int cjIdx = 0; cjIdx < nbClustersReal; ++cjIdx) {
-        if (haveToStopComputing) continue;
+        if (stopRequested()) continue;
         const Col& cj = cols[static_cast<size_t>(cjIdx)];
         const int  ci1 = cjIdx + 1;                        // 1-based column
         if (cj.ignore) continue;                           // stays all-zero (matches full path)
@@ -440,7 +440,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         const double* L    = cj.L.data();
         const double  logT = cj.logTerm;
         for (int ci2 = 0; ci2 < nbClustersReal; ++ci2) {
-            if (haveToStopComputing) break;
+            if (stopRequested()) break;
             if (cols[static_cast<size_t>(ci2)].ignore) continue;
             const dataType first = spans[static_cast<size_t>(ci2)].first;
             const dataType last  = spans[static_cast<size_t>(ci2)].second;
@@ -458,7 +458,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
             }
         }
     }
-    if (haveToStopComputing) {
+    if (stopRequested()) {
         delete raw; delete spikesByCluster; delete clusterInfoMap;
         spikesByCluster = nullptr; clusterInfoMap = nullptr;
         return nullptr;
@@ -503,7 +503,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     // frees and returns nullptr, so the result is simply ignored here.
     normaliseRowsToPosteriors(probabilities, model, ignoreClusterIndex, nbClusters);
 
-    if (haveToStopComputing) {
+    if (stopRequested()) {
         delete probabilities; delete spikesByCluster; delete clusterInfoMap;
         spikesByCluster = nullptr; clusterInfoMap = nullptr;
         return nullptr;
@@ -558,11 +558,11 @@ Array<double>* GroupingAssistant::computeProbabilities(
     int nbClusters = model.size();
     if (pTiming) t_dup = pt.restart();
 
-    if (haveToStopComputing) {
+    if (stopRequested()) {
         // Free before aborting.  duplicate() has already allocated both, they are
         // MEMBERS, and the next call overwrites the pointers -- so returning here
         // without freeing leaks a per-spike array and the cluster map, once per
-        // aborted compute.  Aborts are not rare: haveToStopComputing is set
+        // aborted compute.  Aborts are not rare: stopRequested() is set
         // whenever an edit supersedes a running matrix, which is most of them
         // during curation.  Every other abort in this function already frees;
         // these two did not.
@@ -644,11 +644,11 @@ Array<double>* GroupingAssistant::computeProbabilities(
             << " ignored="           << ignoreClusterIndex.size()
             << " computed="          << computedClusterList.size();
 
-    if (haveToStopComputing) {
+    if (stopRequested()) {
         // Free before aborting.  duplicate() has already allocated both, they are
         // MEMBERS, and the next call overwrites the pointers -- so returning here
         // without freeing leaks a per-spike array and the cluster map, once per
-        // aborted compute.  Aborts are not rare: haveToStopComputing is set
+        // aborted compute.  Aborts are not rare: stopRequested() is set
         // whenever an edit supersedes a running matrix, which is most of them
         // during curation.  Every other abort in this function already frees;
         // these two did not.
@@ -845,7 +845,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
            nbClustersInt, nbDimensions)
 #endif
     for (int ci = 0; ci < static_cast<int>(cdata.size()); ++ci) {
-        if (haveToStopComputing) continue;
+        if (stopRequested()) continue;
         const ClusterData& cd = cdata[static_cast<size_t>(ci)];
         if (cd.ignore) continue;
 
@@ -859,7 +859,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
         int           ci1  = ci + 1;
 
         for (int ci2 = 0; ci2 < nbClustersInt; ++ci2) {
-            if (haveToStopComputing) break;
+            if (stopRequested()) break;
             if (cdata[static_cast<size_t>(ci2)].ignore) continue;
             dataType first = spans[static_cast<size_t>(ci2)].first;
             dataType last  = spans[static_cast<size_t>(ci2)].last;
@@ -879,7 +879,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
         }
     }
 
-    if (haveToStopComputing) return probabilities;
+    if (stopRequested()) return probabilities;
 
     // Same cluster-1 prepend as the GPU path above.  When cluster 1 was absent,
     // insert a synthetic zero column so the probabilities array has the same
@@ -933,13 +933,13 @@ Array<double>* GroupingAssistant::aggregateErrorMatrix(const Array<double>* prob
     shared(entries, ignoreClusterIndex, probabilities, errorMatrix, nbClusters)
 #endif
     for (int ei = 0; ei < static_cast<int>(entries.size()); ++ei) {
-        if (haveToStopComputing) continue;
+        if (stopRequested()) continue;
         const CE& e = entries[static_cast<size_t>(ei)];
         if (ignoreClusterIndex.contains(e.idx)) continue;
         dataType last = e.first + e.nb;
         for (int ci2 = initIndex; ci2 <= nbClusters; ++ci2) {
             if (ignoreClusterIndex.contains(ci2)) continue;
-            if (haveToStopComputing) break;
+            if (stopRequested()) break;
             double sum = 0.0;
             for (dataType i = e.first; i < last; ++i)
                 sum += (*probabilities)((*spikesByCluster)(1, i), ci2);
@@ -978,7 +978,7 @@ bool GroupingAssistant::normaliseRowsToPosteriors(Array<double>* probabilities,
     int clusterIndex = initIndex;
     for (const ModelEntry& me : model) {
         const int thisIndex = clusterIndex++;
-        if (haveToStopComputing) return false;
+        if (stopRequested()) return false;
         if (ignoreClusterIndex.contains(thisIndex)) continue;
         dataType first = me.first;
         dataType last  = first + me.nb;
@@ -1043,7 +1043,7 @@ void GroupingAssistant::meanCovarianceComputation(
     shared(cinfo, ignoreClusterIndex, clusteringData, nbDimensions)
 #endif
     for (int ei = 0; ei < static_cast<int>(cinfo.size()); ++ei) {
-        if (haveToStopComputing) continue;
+        if (stopRequested()) continue;
         const CInfo& c = cinfo[static_cast<size_t>(ei)];
 
         if (c.nb <= static_cast<dataType>(nbDimensions)) {
