@@ -7,13 +7,14 @@
 #ifndef MERGERECOMMENDTHREAD_H
 #define MERGERECOMMENDTHREAD_H
 
-#include <QThread>
+#include <QRunnable>
 #include <QEvent>
 #include <QList>
-#include <atomic>
+#include <memory>
 #include <vector>
 
 #include "mergerecommend.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the view)
 
 class MergeRecommendView;
 
@@ -34,44 +35,53 @@ class MergeRecommendView;
 // on every hierarchyChanged: which is why a single parent merge froze the UI
 // for ~3 minutes on one core while every other matrix view sat threaded.
 //
-// This thread owns that scan.  It does NOT touch Data: the view snapshots the
+// This job owns that scan.  It does NOT touch Data: the view snapshots the
 // error-matrix slice and the per-cluster waveform templates on the GUI thread
 // before starting it, so a concurrent edit cannot pull the tables out from
-// under the worker.  That is the difference from the other matrix threads,
+// under the worker.  That is the difference from the other matrix jobs,
 // which read Data live and rely on stopAllViewThreads() -- a protocol this
 // panel is outside of, since it lives in a dock rather than under a
 // KlustersView.
 //
 // Posts MergeRecommendEvent (User+605) when done.
+//
+// Formerly one QThread per scan; now a QRunnable on the shared worker pool
+// (KlustersJobPool -- worker-pool conversion, step 5).  Creating it launches
+// the request; the pool owns and deletes it after run().  The view supersedes
+// it by bumping its token's request generation, and the ranked result travels
+// inside the completion event, moved out of the job as it posts.
 // ---------------------------------------------------------------------------
-class MergeRecommendThread : public QThread {
+class MergeRecommendThread : public QRunnable {
 public:
     friend class MergeRecommendView;
 
     ~MergeRecommendThread() override {}
 
-    void stopProcessing() {
-        haveToStopProcessing.store(true, std::memory_order_release);
-    }
-    int getGeneration() const { return generation; }
-
-    /// Ranked, capped, selection-filtered result. Valid once the event lands.
-    std::vector<MergeCandidate> getResults() const { return results; }
-    /// True when the run completed rather than being cancelled part-way.
-    bool completed() const { return finished_ok; }
-
     class MergeRecommendEvent : public QEvent {
         friend class MergeRecommendThread;
     public:
-        MergeRecommendThread* parentThread() { return &thread; }
         ~MergeRecommendEvent() override {}
+
+        int generation() const { return eventGeneration; }
+        /// True when the run completed rather than being superseded part-way.
+        bool completed() const { return finishedOk; }
+        /// Ranked, capped, selection-filtered result.  Mutable on purpose:
+        /// the accepting handler moves it out.
+        std::vector<MergeCandidate>& getResults() { return resultsPayload; }
     private:
-        explicit MergeRecommendEvent(MergeRecommendThread& t)
-            : QEvent(QEvent::Type(QEvent::User + 605)), thread(t) {}
-        MergeRecommendThread& thread;
+        explicit MergeRecommendEvent(MergeRecommendThread& job)
+            : QEvent(QEvent::Type(QEvent::User + 605)),
+              eventGeneration(job.jobGeneration),
+              finishedOk(job.finished_ok),
+              resultsPayload(std::move(job.results)) {}
+
+        int eventGeneration;
+        bool finishedOk;
+        std::vector<MergeCandidate> resultsPayload;
     };
 
-protected:
+    /**Executed by a pool worker; ranks the pairs, posts the completion event
+    * and retires the job.*/
     void run() override;
 
 private:
@@ -82,26 +92,39 @@ private:
      * appears in it, keyed by cluster id through @p tplId, each of length
      * nSamp*nChan.  A cluster absent from the snapshot means "no opinion",
      * matching clusterEnvelopeOverlap returning false.
+     *
+     * Creating the job launches the request on the shared pool.  Runs on the
+     * GUI thread only.
      */
-    MergeRecommendThread(MergeRecommendView& v, int gen,
+    MergeRecommendThread(MergeRecommendView& v,
+                         const std::shared_ptr<KlustersJobToken>& viewToken,
                          std::vector<MergePair> gated,
                          std::vector<int> tplId,
                          std::vector<std::vector<double>> tplMean,
                          std::vector<std::vector<double>> tplSd,
                          int nSamp, int nChan, int maxShift,
                          std::size_t maxCount, double qualityFloor,
-                         std::vector<int> restrictTo)
-        : view(v), generation(gen),
-          gated(std::move(gated)),
-          tplId(std::move(tplId)),
-          tplMean(std::move(tplMean)), tplSd(std::move(tplSd)),
-          nSamp(nSamp), nChan(nChan), maxShift(maxShift),
-          maxCount(maxCount), qualityFloor(qualityFloor),
-          restrictTo(std::move(restrictTo)),
-          haveToStopProcessing(false), finished_ok(false) { start(); }
+                         std::vector<int> restrictTo);
+
+    /**True once the view has superseded this job's request generation: the
+    * scan stops at its next check, exactly where the per-thread stop flag
+    * used to be read.*/
+    bool cancelled() const {
+        return token->generation.load(std::memory_order_acquire) != jobGeneration;
+    }
+
+    /**Posts @p event to the view, unless the view is being destroyed
+    * (fenced by the token's postMutex/viewDead).*/
+    void post(QEvent* event);
+
+    /**The old run() body; split out so run() can retire the job on every path.*/
+    void process();
 
     MergeRecommendView&              view;
-    int                              generation;
+    /**Shared cancellation/completion state owned by the view.*/
+    std::shared_ptr<KlustersJobToken> token;
+    /**The view's request generation this job was enqueued under.*/
+    int                              jobGeneration = 0;
 
     std::vector<MergePair>           gated;      // error-gated pairs to score
     std::vector<int>                 tplId;      // snapshot slot -> cluster id
@@ -114,7 +137,6 @@ private:
     double                           qualityFloor;
     std::vector<int>                 restrictTo;
 
-    std::atomic_bool                 haveToStopProcessing;
     bool                             finished_ok;
     std::vector<MergeCandidate>      results;
 };

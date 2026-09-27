@@ -19,8 +19,10 @@
 #include <QWidget>
 
 #include <vector>
+#include <memory>
 
 #include "mergerecommend.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 
 class Data;
 class KlustersView;
@@ -77,13 +79,14 @@ private:
     QTreeWidget* tree   = nullptr;
     QLabel*      notice = nullptr;
 
-    // Only the newest generation's result is accepted; anything older is a
-    // refresh that a later edit already superseded.  Mirrors the guard the other
-    // matrix views use.
-    int                                generation = 0;
     bool                               goingToDie = false;
     bool                               computing  = false;
-    QList<MergeRecommendThread*>       threadsToBeKill;
+    /**Cancellation/completion state shared with the ranking jobs this view
+    * enqueues on the worker pool.  Only the newest generation's result is
+    * accepted; anything older is a refresh that a later edit already
+    * superseded — mirrors the guard the other matrix views use.  Replaces
+    * the threadsToBeKill ownership list and the generation counter.*/
+    std::shared_ptr<KlustersJobToken>  jobToken;
     /**Remembered so an accepted result can report what it was ranked over.*/
     bool                               lastRestricted = false;
 };

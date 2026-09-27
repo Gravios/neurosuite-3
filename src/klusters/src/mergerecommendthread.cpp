@@ -9,9 +9,58 @@
 #include "waveformiou.h"
 
 #include <QApplication>
+#include <QThreadPool>
+#include <QMutexLocker>
 #include <unordered_map>
 
+MergeRecommendThread::MergeRecommendThread(MergeRecommendView& v,
+                                           const std::shared_ptr<KlustersJobToken>& viewToken,
+                                           std::vector<MergePair> gated,
+                                           std::vector<int> tplId,
+                                           std::vector<std::vector<double>> tplMean,
+                                           std::vector<std::vector<double>> tplSd,
+                                           int nSamp, int nChan, int maxShift,
+                                           std::size_t maxCount, double qualityFloor,
+                                           std::vector<int> restrictTo)
+    : view(v), token(viewToken),
+      gated(std::move(gated)),
+      tplId(std::move(tplId)),
+      tplMean(std::move(tplMean)), tplSd(std::move(tplSd)),
+      nSamp(nSamp), nChan(nChan), maxShift(maxShift),
+      maxCount(maxCount), qualityFloor(qualityFloor),
+      restrictTo(std::move(restrictTo)),
+      finished_ok(false)
+{
+    setAutoDelete(true);
+    //The creation of the job launches the request, as the old thread's
+    //constructor did with start().
+    jobGeneration = token->generation.load(std::memory_order_acquire);
+    token->active.fetch_add(1, std::memory_order_acq_rel);
+    KlustersJobPool::pool()->start(this);
+}
+
+void MergeRecommendThread::post(QEvent* event)
+{
+    // Fence against view destruction: ~MergeRecommendView sets viewDead under
+    // the same mutex, so while we hold it and viewDead is false the view is a
+    // valid event receiver.
+    QMutexLocker lock(&token->postMutex);
+    if (token->viewDead) {
+        delete event;
+        return;
+    }
+    QApplication::postEvent(&view, event);
+}
+
 void MergeRecommendThread::run()
+{
+    process();
+    //Retire: the job reads only its own snapshots, but the document-close
+    //pool drain still treats active == 0 as "no job is running".
+    token->active.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+void MergeRecommendThread::process()
 {
     // Cluster id -> snapshot slot.  Built here rather than passed in so the GUI
     // thread's share of the work stays the sweep and the copy, nothing more.
@@ -20,8 +69,8 @@ void MergeRecommendThread::run()
     for (std::size_t i = 0; i < tplId.size(); ++i)
         slot.emplace(tplId[i], static_cast<int>(i));
 
-    auto cancelled = [this]{
-        return haveToStopProcessing.load(std::memory_order_acquire);
+    auto stopPoll = [this]{
+        return cancelled();
     };
 
     // Same contract as Data::clusterEnvelopeOverlap, scored against the snapshot
@@ -51,10 +100,10 @@ void MergeRecommendThread::run()
         };
 
     results = mrRankGatedPairs(gated, overlapOf, maxCount, qualityFloor,
-                               restrictTo, cancelled);
+                               restrictTo, stopPoll);
     finished_ok = !cancelled();
 
     // The view owns acceptance: it checks the generation and discards a result
     // that a newer refresh has already superseded.
-    QApplication::postEvent(&view, new MergeRecommendEvent(*this));
+    post(new MergeRecommendEvent(*this));
 }
