@@ -2520,14 +2520,21 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     logBefore(CurationLogger::ActionType::NUDGE, QList<int>{ clusterId });
 
-    // ── Stop all in-flight WaveformThreads BEFORE any file writes ─────────
-    // A WaveformThread reads from pendingSpkPath (= spkFileName) without
-    // holding any lock around the fread call.  If we write to that file
-    // while the thread is mid-read we get a torn read → garbage waveforms
-    // or, when that data drives an array index, a segfault.  Stop all
-    // threads first so the file is idle before we touch it.
+    // ── Supersede in-flight view jobs, without waiting (epoch-snapshot
+    // step 7 — the LAST blocking quiesce goes).  The bytes this nudge
+    // rewrites reach readers epoch-correctly through the SpkOverlay: jobs
+    // launched after the batch's publish read the new records from memory,
+    // and epochs pinned before it keep their own.  What the old wait still
+    // covered is now the accepted delta: a job superseded here can, before
+    // its next cancellation check, read a base-file record mid-rewrite or
+    // an in-memory .fet row mid-update — torn VALUES inside a result the
+    // generation guard then discards, never a memory hazard (record reads
+    // fill fixed-size buffers; every feature consumer clamps or treats the
+    // value as data).  The big realign worker has always run its writes
+    // under exactly this contract — it never quiesced the views — so the
+    // nudge now simply states the same one.
     for (int i = 0; i < viewList->count(); ++i)
-        viewList->at(i)->stopAllViewThreads();
+        viewList->at(i)->supersedeAllViewThreads();
 
     if (pendingResPath.isEmpty()) {
         if (!initPendingFiles()) return false;

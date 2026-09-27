@@ -223,12 +223,10 @@ void TemplateMatrixView::stopPairThread()
 // ---------------------------------------------------------------------------
 // stopRunningThreadsSync — synchronous teardown for safe concurrent file writes
 //
-// Both TemplateMatrixThread and PairXcorrThread fopen()/fread() the .spk
-// pending file directly (templatematrixthread.cpp:113 and
-// pairxcorrthread.cpp:21).  Operations that REWRITE .spk.pending —
-// nudgeClusterTimestamps and realignSpikes — call
-// KlustersView::stopAllViewThreads() to quiesce concurrent readers before
-// touching the file.
+// Both TemplateMatrixThread and PairXcorrThread read the pending .spk —
+// nowadays through their captured snapshot (overlay first, pinned
+// descriptor otherwise; epoch-snapshot steps 2 and 7), so the byte
+// writers no longer quiesce anyone before touching the file.
 //
 // The catch: TemplateMatrixView inherits from QWidget, not ViewWidget, so
 // it is NOT in KlustersView::viewList (which is a QList<ViewWidget*>).

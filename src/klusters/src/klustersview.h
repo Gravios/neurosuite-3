@@ -625,6 +625,13 @@ public:
     /** Stop all in-flight WaveformThreads in every sub-view widget.
      *  Call before writing to the pending .spk file so no thread is
      *  mid-fread when the write happens. */
+    /**BLOCKING quiesce of every view widget's jobs: supersede, then spin
+    * until each retires.  No caller remains since the SpkOverlay landed
+    * (epoch-snapshot step 7): the byte writers publish their records into
+    * the snapshots, so nothing needs the views' jobs GONE anymore — the
+    * edit and writer paths all use supersedeAllViewThreads() below.  Kept,
+    * with its per-widget Sync counterparts, as the documented blocking
+    * primitive should a future writer of shared mutable state need one.*/
     void stopAllViewThreads();
     /**Non-blocking counterpart of stopAllViewThreads() (epoch-snapshot
     * step 6b): supersedes every widget's in-flight jobs without waiting.

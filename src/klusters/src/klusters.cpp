@@ -4791,8 +4791,10 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
     if (configuration().getAutoUpdateMatricesAfterMerge()){
         slotUpdateErrorMatrix();
         // The matrix recompute runs on a background thread; lock further edits
-        // until it finishes so the next edit's stopAllViewThreads() cannot stall
-        // on the in-flight (un-interruptible) GPU kernel.
+        // until it finishes.  (Historically this kept the next edit's blocking
+        // quiesce from stalling on the un-interruptible GPU kernel; edits only
+        // supersede now, but back-to-back edits mid-consolidation would still
+        // waste the kernel and thrash the matrix, so the lock stays.)
         maybeLockEditsForConsolidation();
     }
     // Last step (mirrors the batch-finish path): land on the produced parents.  For
