@@ -2103,7 +2103,6 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                 reinterpret_cast<const char*>(spkRow.data()),
                 static_cast<int>(spkElems * sizeof(int16_t))));
 
-        rec.spkRow = std::move(spkRow);  // keep copy for flush-to-original
         pending.records.push_back(std::move(rec));
     }
 
