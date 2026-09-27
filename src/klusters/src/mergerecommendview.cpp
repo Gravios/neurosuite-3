@@ -14,6 +14,7 @@
 #include "mergerecommend.h"
 
 #include <QApplication>
+#include <QMutexLocker>
 #include <QHeaderView>
 #include <QVBoxLayout>
 
@@ -22,7 +23,8 @@
 #include <vector>
 
 MergeRecommendView::MergeRecommendView(QWidget* parent)
-    : QWidget(parent)
+    : QWidget(parent),
+      jobToken(std::make_shared<KlustersJobToken>())
 {
     QVBoxLayout* box = new QVBoxLayout(this);
     box->setContentsMargins(2, 2, 2, 2);
@@ -172,18 +174,20 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
 
     // ── half 2, on a worker: one envelope IOU with a lag search per pair ─────
     // This is the part that took minutes on the GUI thread at 8736 parents.
-    ++generation;
+    //Supersede any in-flight scan; the replacement job enqueued below
+    //captures the new generation.
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
     computing = true;
     lastRestricted = !selected.isEmpty();
-    for (MergeRecommendThread* t : threadsToBeKill) t->stopProcessing();
 
     setNotice(tr("Ranking %1 candidate pair(s)\u2026").arg(static_cast<qulonglong>(gated.size())));
 
-    threadsToBeKill.append(new MergeRecommendThread(
-        *this, generation, gated, tplId, tplMean, tplSd,
+    //Creating the job launches it; the pool owns and deletes it.
+    new MergeRecommendThread(
+        *this, jobToken, gated, tplId, tplMean, tplSd,
         data->nbSamplesPerWaveform(), data->nbOfChannels(),
         configuration().getMergeRecommendMaxShift(),
-        static_cast<std::size_t>(maxRecs), qFloor, restrict));
+        static_cast<std::size_t>(maxRecs), qFloor, restrict);
 }
 
 MergeRecommendView::~MergeRecommendView()
@@ -194,10 +198,15 @@ MergeRecommendView::~MergeRecommendView()
 
 void MergeRecommendView::stopThreads()
 {
-    for (MergeRecommendThread* t : threadsToBeKill) t->stopProcessing();
-    for (MergeRecommendThread* t : threadsToBeKill) while (!t->wait()) {}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
+    //Supersede the in-flight scans (they early-out at their next check) and
+    //fence their completion posts: the jobs read only their own snapshots, so
+    //nothing waits for them — the pool owns and deletes them, and their
+    //results are freed with the events nobody takes.
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    {
+        QMutexLocker lock(&jobToken->postMutex);
+        jobToken->viewDead = true;
+    }
     QApplication::removePostedEvents(this);
 }
 
@@ -205,25 +214,20 @@ void MergeRecommendView::customEvent(QEvent* event)
 {
     if (event->type() != QEvent::Type(QEvent::User + 605)) return;
 
-    auto* ev     = static_cast<MergeRecommendThread::MergeRecommendEvent*>(event);
-    auto* thread = ev->parentThread();
+    auto* ev = static_cast<MergeRecommendThread::MergeRecommendEvent*>(event);
 
+    //The job retired itself and the result travels in the event, so there is
+    //no thread to wait for or delete anymore.
+    const bool genMatch = (ev->generation()
+                           == jobToken->generation.load(std::memory_order_acquire));
     // Only the generation we are waiting on may paint, and only it clears the
     // badge: a superseded result arriving must not cancel the newer compute that
     // replaced it.
-    const bool accepted = (thread->getGeneration() == generation
-                           && thread->completed());
-    if (thread->getGeneration() == generation) computing = false;
-
-    std::vector<MergeCandidate> recs;
-    if (accepted) recs = thread->getResults();
-
-    while (!thread->wait()) {}
-    threadsToBeKill.removeAll(thread);
-    delete thread;
+    const bool accepted = (genMatch && ev->completed());
+    if (genMatch) computing = false;
 
     if (goingToDie || !accepted) return;
-    populate(recs);
+    populate(std::move(ev->getResults()));
 }
 
 void MergeRecommendView::populate(const std::vector<MergeCandidate>& recs)
