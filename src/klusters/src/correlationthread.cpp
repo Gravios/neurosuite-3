@@ -20,7 +20,6 @@
 
 //QT include files
 #include <QApplication>
-#include <QThread>
 #include <QThreadPool>
 
 #include <QList>
@@ -40,19 +39,6 @@ CorrelationThread::CorrelationThread(CorrelationView& view,Data& d,const QList<P
     KlustersJobPool::pool()->start(this, KlustersJobPool::InteractivePriority);   // correlograms for the shown clusters
 }
 
-void CorrelationThread::post(QEvent* event){
-    // Fence against view destruction: ~CorrelationView sets viewDead under
-    // the same mutex, so while we hold it and viewDead is false the view is a
-    // valid event receiver (events it already received are flushed by its
-    // destructor's removePostedEvents).
-    QMutexLocker lock(&token->postMutex);
-    if(token->viewDead){
-        delete event;
-        return;
-    }
-    QApplication::postEvent(&correlationView,event);
-}
-
 void CorrelationThread::run(){
     process();
     //Retire: this must be the last touch of any shared state (Data above
@@ -63,6 +49,24 @@ void CorrelationThread::run(){
 }
 
 void CorrelationThread::process(){
+    //One ticket per request: one share for this sweep, one more per parked
+    //waiter (added by Data::subscribeCorrelogram).  The completion closure
+    //is installed before any share can complete and carries everything the
+    //event needs, because it may run from a waiter flush on another worker
+    //long after this job object is deleted.  It posts under the view token's
+    //postMutex/viewDead fence, as the old post() member did.
+    auto ticket = std::make_shared<RequestTicket>();
+    {
+        auto tok = token;
+        auto* viewPtr = &correlationView;
+        const int gen = jobGeneration;
+        ticket->post = [tok, viewPtr, gen](bool){
+            QMutexLocker lock(&tok->postMutex);
+            if(tok->viewDead) return;
+            QApplication::postEvent(viewPtr, new CorrelationsEvent(gen));
+        };
+    }
+
     if(!cancelled()){
         //Convert the miliseconds in recording units.
         double binSizeInRU = static_cast<double>((static_cast<double>(snapBinSize) * 1000.0) / data.samplingInterval);
@@ -74,23 +78,33 @@ void CorrelationThread::process(){
 
         QList<Pair>::iterator pairIterator;
         for(pairIterator = clusterPairs.begin(); pairIterator != clusterPairs.end(); ++pairIterator){
-            if(!cancelled()){
-                //Against the snapshot captured at enqueue: its membership and —
-                //since the cache moved into the snapshot (epoch-snapshot
-                //step 4) — its own correlogram store.
-                Data::Status status = data.getCorrelograms(snapshot,*pairIterator,snapBinSize,snapTimeWindow,binSizeInRU,timeWindowInRU,halfBins);
-                if(status == Data::NOT_AVAILABLE)
-                    continue;
-                else if(status == Data::IN_PROCESS) {
-                    while(!cancelled() && (data.getCorrelograms(snapshot,*pairIterator,snapBinSize,snapTimeWindow,binSizeInRU,timeWindowInRU,halfBins) == Data::IN_PROCESS))
-                    {
-                        QThread::sleep(1);
-                    }
-                }
+            if(cancelled()) break;
+            //Against the snapshot captured at enqueue: its membership and —
+            //since the cache moved into the snapshot (epoch-snapshot
+            //step 4) — its own correlogram store.  A pair another job owns
+            //is subscribed on that computation instead of sleep(1)-polled;
+            //NOT_AVAILABLE is a skip, as it always was.  Retry covers the
+            //rare drop of the owner mid-subscription (the entry is gone, so
+            //the next getCorrelograms call claims and computes it here) —
+            //capped, in place of the old unbounded poll.
+            bool settled = false;
+            for(int attempt = 0; attempt < 4 && !settled && !cancelled(); ++attempt){
+                const Data::Status status = data.getCorrelograms(snapshot,*pairIterator,snapBinSize,snapTimeWindow,binSizeInRU,timeWindowInRU,halfBins);
+                if(status != Data::IN_PROCESS){ settled = true; break; }   // READY, or NOT_AVAILABLE (skip)
+                const Data::CorrelationSubscribe sub =
+                    data.subscribeCorrelogram(snapshot, *pairIterator, snapBinSize, snapTimeWindow, ticket);
+                if(sub == Data::CorrelationSubscribe::Retry) continue;
+                settled = true;                                            // Parked / DoneOk
             }
+            if(!settled && !cancelled())
+                qWarning("CorrelationThread: correlogram (%d,%d) did not settle after "
+                         "4 attempts; giving up on it for this request.",
+                         pairIterator->first, pairIterator->second);
         }
     }
 
-    //Send an event to the CorrelationView to let it know that the data requested are available.
-    post(new CorrelationsEvent(*this));
+    //Complete this sweep's own share.  If nothing was parked, this posts the
+    //completion event right here; otherwise the last waiter to complete
+    //posts it from the owner's terminal.
+    ticket->completeOne();
 }

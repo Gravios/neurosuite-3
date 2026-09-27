@@ -45,7 +45,7 @@
 #include <vector>
 #include <atomic>
 #include <memory>
-#include "waveformticket.h"
+#include "requestticket.h"
 using namespace std;
 
 // forward declaration
@@ -1701,7 +1701,7 @@ private:
     * with reaches a terminal.  Kept per (cluster, mode) in its epoch's
     * WaveformCacheStore, guarded by the store mutex.*/
     struct WaveformWaiter {
-        std::shared_ptr<WaveformRequestTicket> ticket;
+        std::shared_ptr<RequestTicket> ticket;
         bool     wantsMean = false;   ///< completes on mean-ready, else on spikes-ready
         dataType p1 = 0;              ///< SAMPLE: nbSpkToDisplay; TIME_FRAME: start
         dataType p2 = 0;              ///< TIME_FRAME: end
@@ -1847,6 +1847,16 @@ private:
         float firingRate;
     } ;
 
+    /**A parked correlogram waiter (subscribe-don't-wait, epoch-snapshot
+    * step 4, the correlogram twin of WaveformWaiter): completes its ticket
+    * share when the computation it overlapped with reaches its terminal.
+    * No failure flag: a pair that cannot be delivered is a skip — the old
+    * poll simply moved on — so every terminal completes the waiter the
+    * same way.*/
+    struct CorrelationWaiter {
+        std::shared_ptr<RequestTicket> ticket;
+    };
+
     /**The correlogram cache of ONE epoch (epoch-snapshot step 4), the
     * correlogram counterpart of WaveformCacheStore: owned by the
     * ClusteringSnapshot it was published with, internally synchronized,
@@ -1867,7 +1877,18 @@ private:
     struct CorrelationCacheStore {
         mutable QMutex m;
         QHash<Pair, QHash<QString, std::shared_ptr<Correlation>>> byPair;
+        /**Waiters keyed by the OWNING Correlation object — the computation
+        * instance, not (pair, params) — so a drop-and-reclaim can never
+        * hand one owner another owner's waiters.  A waiter parks only on a
+        * slot it saw IN_PROCESS under the mutex, and every path that ends
+        * that computation (the READY terminal, the unclaim, a drop) takes
+        * and completes the object's list.*/
+        QHash<Correlation*, QList<CorrelationWaiter>> waiters;
     };
+
+    /**Completes the waiters parked on @p owner's computation in @p store,
+    * after its terminal.  Must be called with the store mutex NOT held.*/
+    void flushCorrelationWaiters(CorrelationCacheStore& store, Correlation* owner);
 
     /**Excerpt of spikesByCluster for the clusters selected to be recluster.*/
     SortableTable reclusteringSpikesByCluster;
@@ -1973,7 +1994,7 @@ private:
     WaveformSubscribe subscribeWaveform(const std::shared_ptr<const ClusteringSnapshot>& snap,
                                         int clusterId, WaveformMode mode,
                                         bool wantsMean, dataType p1, dataType p2,
-                                        const std::shared_ptr<WaveformRequestTicket>& ticket,
+                                        const std::shared_ptr<RequestTicket>& ticket,
                                         bool failMarksTicket);
 
     /**Removes every pair involving @p clusterId (status and Correlation
@@ -2258,6 +2279,23 @@ public:
   * table (plan step 5).
   */
     Status getCorrelograms(const std::shared_ptr<const ClusteringSnapshot>& snap,Pair& pair,int binSize,int timeWindow,double binSizeInRU,float timeWindowInRU,int halfBins);
+
+    /**Outcome of subscribeCorrelogram() (epoch-snapshot step 4).*/
+    enum class CorrelationSubscribe {
+        Parked,   ///< waiter registered; the owner's terminal completes the share
+        DoneOk,   ///< already READY — nothing to wait for
+        Retry     ///< the computation ended without a result — call getCorrelograms again
+    };
+
+    /**Parks a waiter on the in-flight computation of (@p pair, @p binSize,
+    * @p timeWindow) in @p snap's store, adding a completion share to
+    * @p ticket.  Called by a job whose getCorrelograms() returned
+    * IN_PROCESS, in place of the old sleep(1) poll; the state is re-checked
+    * under the store mutex, so a terminal racing the subscription is never
+    * missed.*/
+    CorrelationSubscribe subscribeCorrelogram(const std::shared_ptr<const ClusteringSnapshot>& snap,
+                                              const Pair& pair, int binSize, int timeWindow,
+                                              const std::shared_ptr<RequestTicket>& ticket);
 
     class CorrelogramIterator;
     friend class CorrelogramIterator;
