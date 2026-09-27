@@ -448,11 +448,10 @@ void KlustersDoc::undo(){
         for (int i = 0; i < viewList->count(); ++i)
             viewList->at(i)->supersedeAllViewThreads();
 
-        // Must be called after the guard: if the undo list is empty there is nothing
-        // to revert at the data layer either, and calling it unconditionally can leave
-        // addedClusters/modifiedClusters in an inconsistent state (null after takeAt on
-        // an empty list) which later causes a crash through the waveform cleanup path.
-        clusteringData->undo(*addedClusters,*modifiedClusters);
+        // Must be called inside the guard: the data layer reverts exactly when the
+        // doc layer does — an unpaired data undo would desync the published epoch
+        // from the color and notification state handled below.
+        clusteringData->undo();
 
         clusterColorListRedoList.prepend(clusterColorList);
         ItemColors* clusterColorListTemp = clusterColorListUndoList.takeAt(0);
@@ -639,7 +638,7 @@ void KlustersDoc::redo(){
         for (int i = 0; i < viewList->count(); ++i)
             viewList->at(i)->supersedeAllViewThreads();
 
-        clusteringData->redo(*addedClusters,*modifiedClusters,*deletedClusters);
+        clusteringData->redo();
 
         //If this redo does concern renumbering
         int nbUndo = clusterColorListUndoList.count();

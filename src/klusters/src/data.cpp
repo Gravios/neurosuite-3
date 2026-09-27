@@ -2432,9 +2432,10 @@ dataType Data::createNewCluster(const SpikeSelection& selection, const QList <in
             restartDimensionExtrema(fromClusters);
         }
 
-        //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
-        //(dropped from the current epoch's stores.)
-        for(int cid : fromClusters) invalidateClusterCaches(cid);
+        //No source-cluster cache walk (epoch-snapshot step 8): prepareUndo()
+        //above already published the post-edit epoch, and its carry-forward is
+        //content-exact — the clusters that lost spikes were never carried, so
+        //the historical drop re-removed entries the new stores did not hold.
 
         return newClusterId;
     }
@@ -3421,9 +3422,9 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
             restartDimensionExtrema(fromClusters);
         }
 
-        //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
-        //(dropped from the current epoch's stores.)
-        for(int cid : fromClusters) invalidateClusterCaches(cid);
+        //No source-cluster cache walk (epoch-snapshot step 8): the publish in
+        //prepareUndo() above carried forward only content-identical clusters,
+        //so the changed sources and destination already recompute on demand.
     }
 }
 
@@ -3507,13 +3508,10 @@ void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
     //The max and min dimensions have to be recalculated.
     restartDimensionExtrema(clustersToDelete);
 
-    //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster 0.
-    //(dropped from the current epoch's stores.)
-    for(int cid : clustersToDelete) invalidateClusterCaches(cid);
-
-    //No cluster-0 cache walk anymore (epoch-snapshot steps 3b and 4): when
-    //clustersToDelete is not empty cluster 0's spike rows changed, so
-    //carry-forward left its waveform entry and correlogram pairs behind.
+    //No cache walk at all anymore (epoch-snapshot steps 3b, 4 and 8): the
+    //deleted clusters' rows changed exactly like cluster 0's, so the publish
+    //in prepareUndo() above left every affected entry behind — the historical
+    //per-cluster drop had nothing left to remove.
 }
 
 
@@ -3623,13 +3621,10 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     }
 
 
-    //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster 1.
-    //(dropped from the current epoch's stores.)
-    for(int cid : clustersToDelete) invalidateClusterCaches(cid);
-
-    //No cluster-1 cache walk anymore (epoch-snapshot steps 3b and 4): when
-    //clustersToDelete is not empty cluster 1's spike rows changed, so
-    //carry-forward left its waveform entry and correlogram pairs behind.
+    //No cache walk at all anymore (epoch-snapshot steps 3b, 4 and 8): the
+    //deleted clusters' rows changed exactly like cluster 1's, so the publish
+    //in prepareUndo() above left every affected entry behind — the historical
+    //per-cluster drop had nothing left to remove.
 }
 
 dataType Data::groupClusters(QList<int>& clustersToGroup){
@@ -3750,9 +3745,9 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
         restartDimensionExtrema(clustersToGroup);
     }
 
-    //Remove the waveform and correlation data for the clusters which gave the spikes for the new cluster.
-    //(dropped from the current epoch's stores.)
-    for(int cid : clustersToGroup) invalidateClusterCaches(cid);
+    //No source-cluster cache walk (epoch-snapshot step 8): the grouped
+    //clusters vanished from the published tables, so carry-forward already
+    //dropped their entries; the walk was a no-op on the new stores.
 
     return newClusterId;
 }
@@ -4422,26 +4417,18 @@ void Data::moveClusters(QList<int>& clustersToDelete,SortableTable* spikesByClus
     }
 }
 
-void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
+void Data::undo(){
     //Inform that an undo is in process
     undoRedoInProcess = true;
 
-
-
-    //If addedClusters or updatedClusters contain any cluster, drop its cached waveforms and
-    //correlograms from the current epoch's stores (the data will have to be uploaded again).
-    if(!addedClusters.isEmpty() ){
-        for(int cid : addedClusters) invalidateClusterCaches(cid);
-    }
-    if(!updatedClusters.isEmpty()){
-        for(int cid : updatedClusters) invalidateClusterCaches(cid);
-    }
-
-    //if addedClusters and updatedClusters are both empty, the undo concerns a renumbering.
-    //No cache walk anymore (epoch-snapshot steps 3b and 4): the publish below carries each
-    //waveform entry and correlogram pair only if the cluster(s) hold identical spike rows
-    //across the undo, so the ids the renumbering moved recompute and the untouched ones
-    //keep their caches.
+    //No cache walk (epoch-snapshot step 8).  The historical per-cluster drops
+    //for the added/updated ids ran on the CURRENT epoch's stores — the very
+    //snapshot the shelving below moves onto the redo history — so they gutted
+    //exactly the entries publishSnapshotAdopting() hands back when the user
+    //redoes.  Validity never needed them: adoption requires an unchanged byte
+    //context, and the fallback publish carries an entry only when the
+    //cluster's spike rows are identical across the undo, so changed and
+    //vanished clusters recompute either way (steps 3b and 4).
 
     //Move the current epoch onto the redo history and re-adopt the
     //predecessor epoch's tables (epoch-snapshot step 8).
@@ -4484,28 +4471,13 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
 }
 
 
-void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>& deletedClusters){
+void Data::redo(){
     //Inform that a redo is in process
     undoRedoInProcess = true;
 
-
-    //If addedClusters or updatedClusters contain any cluster, drop its cached waveforms and correlograms
-    //(the data will have to be uploaded again).
-    if(!addedClusters.isEmpty() ){
-        for(int cid : addedClusters) invalidateClusterCaches(cid);
-    }
-
-    if(updatedClusters.size() > 0){
-        for(int cid : updatedClusters) invalidateClusterCaches(cid);
-    }
-
-    if(!deletedClusters.isEmpty()){
-        for(int cid : deletedClusters) invalidateClusterCaches(cid);
-    }
-
-
-    //if addedClusters and updatedClusters are both empty, the redo concerns a renumbering.
-    //No cache walk anymore — see the twin comment in undo().
+    //No cache walk — the mirror of undo(): the historical drops mutilated the
+    //snapshot headed for the UNDO history, degrading the next undo's adopted
+    //caches while adding nothing to validity.
 
     //Move the current epoch onto the undo history and re-adopt the
     //successor epoch's tables (epoch-snapshot step 8).
@@ -6803,9 +6775,10 @@ bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<in
         restartDimensionExtrema(clustersToRecluster);
     }
 
-    //Remove the waveform and correlation data for the reclustered clusters.
-    //(dropped from the current epoch's stores.)
-    for(int cid : clustersToRecluster) invalidateClusterCaches(cid);
+    //No reclustered-cluster cache walk (epoch-snapshot step 8): the sources
+    //were dissolved or mutated by the integration, so the publish in
+    //prepareUndo() above already left their entries behind — the historical
+    //per-cluster drop had nothing left to remove from the new stores.
 
     // Localisation probe: the reclustered table was just installed (prepareUndo).
     // If the recluster integration left spikesByCluster referencing a feature row
@@ -6929,15 +6902,6 @@ void Data::restartDimensionExtrema(const QList<int>& modifiedClusters)
     // whatever list the PREVIOUS launch left behind.
     minMaxThread->setModifiedClusters(modifiedClusters);
     minMaxThread->start();
-}
-
-void Data::invalidateClusterCaches(int clusterId)
-{
-    //Drop the cluster's entries from the current epoch's stores
-    //(epoch-snapshot steps 3b and 4; no in-flight case — a mid-flight
-    //owner's terminals are guarded and discard their own result).
-    dropWaveformEntry(clusterId);
-    dropCorrelationEntries(clusterId);
 }
 
 void Data::invalidateWaveformCache(int clusterId)
