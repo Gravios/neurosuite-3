@@ -45,6 +45,7 @@
 #include <vector>
 #include <atomic>
 #include <memory>
+#include "waveformticket.h"
 using namespace std;
 
 // forward declaration
@@ -1713,6 +1714,37 @@ private:
   */
     QMap<int,WaveformStatus> waveformStatusMap;
 
+    /**A parked waveform waiter (subscribe-don't-wait, epoch-snapshot step
+    * 3a): completes its ticket share when the computation it overlapped
+    * with reaches a terminal.  Kept per (cluster, mode) in
+    * waveformWaiters, guarded by the data mutex.*/
+    struct WaveformWaiter {
+        std::shared_ptr<WaveformRequestTicket> ticket;
+        bool     wantsMean = false;   ///< completes on mean-ready, else on spikes-ready
+        dataType p1 = 0;              ///< SAMPLE: nbSpkToDisplay; TIME_FRAME: start
+        dataType p2 = 0;              ///< TIME_FRAME: end
+        bool     failMarksTicket = false;
+    };
+    QHash<QPair<int,int>, QList<WaveformWaiter>> waveformWaiters; // key (clusterId, mode)
+
+    /**Completes/serves the waiters parked on (@p clusterId, @p mode) after a
+    * computation terminal.  @p meanEvent tells which computation ended (the
+    * mean, or the spike fetch); @p ok whether it succeeded (a failure —
+    * cluster gone — fails every waiter).  On a successful SPIKE terminal,
+    * plain waiters complete and mean waiters are SERVED: the caller (the
+    * spike computation's owner) computes the mean with each waiter's own
+    * parameters, completing, failing or re-parking them by the outcome.
+    * Must be called with the data mutex NOT held (it may run a mean
+    * computation).*/
+    void flushWaveformWaiters(int clusterId, int mode, bool meanEvent, bool ok);
+
+    /**The pre-3a bodies of the four waveform functions, verbatim; the public
+    * names are now thin wrappers that flush the waiters at the terminals.*/
+    Status getSampleWaveformPointsInner(int clusterId,dataType nbSpkToDisplay);
+    Status getTimeFrameWaveformPointsInner(int clusterId,dataType start,dataType end);
+    Status calculateSampleMeanInner(int clusterId,dataType nbSpkToDisplay);
+    Status calculateTimeFrameMeanInner(int clusterId,dataType start,dataType end);
+
     /**
   * Dictionary containing the waveform data by cluster. Only the clusters
   * for which data have been asked are present in this dictionary.
@@ -1932,6 +1964,35 @@ private:
   * if the spikes have not been collected yet.
   */
     Status calculateTimeFrameMean(int clusterId,dataType start,dataType end);
+
+    /**Outcome of subscribeWaveform() (epoch-snapshot step 3a).*/
+    enum class WaveformSubscribe {
+        Parked,   ///< waiter registered: a completion share was added to the ticket
+        DoneOk,   ///< already satisfied — nothing was registered
+        DoneFail, ///< the cluster is gone — nothing was registered
+        Retry     ///< state moved on (spikes landed): re-run the calculate step
+    };
+
+    /**Registers a waiter for a waveform computation another job owns, in
+    * place of the old sleep(1) polling (subscribe-don't-wait, epoch-snapshot
+    * step 3a).  Called by a waveform job after one of the four functions
+    * above returned IN_PROCESS (or, for @p wantsMean, after the
+    * calculate/fetch dance found the spikes in flight).  Re-checks the state
+    * under the mutex: when the wait is still real the waiter is parked — the
+    * OWNER of the computation completes it from its terminal (a mean waiter
+    * parked on the spike fetch is served by the owner computing the mean
+    * with the waiter's own parameters before completing it) — otherwise the
+    * outcome is returned inline and nothing is parked.
+    * @param wantsMean  the waiter completes when the MEAN is ready (else
+    *                   when the spikes are).
+    * @param p1,p2      the waiter's parameters: (nbSpkToDisplay, unused) in
+    *                   SAMPLE mode, (start, end) in TIME_FRAME mode.
+    * @param failMarksTicket  a failed completion marks the ticket failed
+    *                   (single-cluster request semantics).*/
+    WaveformSubscribe subscribeWaveform(int clusterId, WaveformMode mode,
+                                        bool wantsMean, dataType p1, dataType p2,
+                                        const std::shared_ptr<WaveformRequestTicket>& ticket,
+                                        bool failMarksTicket);
 
     /**
   * Remove all the correlations link to the cluster @p clusterId. This mean remove the
