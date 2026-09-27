@@ -32,7 +32,8 @@ DriftMatrixThread::DriftMatrixThread(QObject& view, Data& d, std::vector<float> 
                                      const std::shared_ptr<KlustersJobToken>& viewToken,
                                      QList<int> sel, QList<int> clusterScope)
     : target(view), data(d), depths(std::move(chanDepths)),
-      initialDeltaUm(deltaUm), token(viewToken), scores(nullptr),
+      initialDeltaUm(deltaUm), token(viewToken),
+      snapshot(d.currentSnapshot()), scores(nullptr),
       selection(std::move(sel)),
       activeClusters(std::move(clusterScope))
 {
@@ -78,7 +79,7 @@ void DriftMatrixThread::process()
 
     // ── 1. Cluster list ──────────────────────────────────────────────────
     {
-        const QList<dataType> allIds = data.clusterIds();
+        const QList<dataType> allIds = snapshot->clusterIds();
         if (!activeClusters.isEmpty()) {
             // Scoped: build the list DIRECTLY as [noise, children...] rather than
             // building every cluster and filtering after.  The matrix is sized from
@@ -97,10 +98,10 @@ void DriftMatrixThread::process()
             for (dataType id : allIds)
                 if (id == ClusterId::Noise) clusterList.append(static_cast<int>(id));
             for (int id : activeClusters)
-                if (id > 1 && data.nbOfSpikes(id) > 0) clusterList.append(id);
+                if (id > 1 && snapshot->nbOfSpikes(id) > 0) clusterList.append(id);
         } else {
             for (dataType id : allIds)
-                if (id >= 1 && data.nbOfSpikes(id) > 0)
+                if (id >= 1 && snapshot->nbOfSpikes(id) > 0)
                     clusterList.append(static_cast<int>(id));
         }
         std::sort(clusterList.begin(), clusterList.end());
@@ -125,8 +126,8 @@ void DriftMatrixThread::process()
     for (int ci = 0; ci < nClusters; ++ci) {
         if (cancelled()) { postDone(); return; }
         SortableTable posTable;
-        if (!data.spikePositions(clusterList[ci], posTable)) continue;
-        const long nSpk = static_cast<long>(data.nbOfSpikes(clusterList[ci]));
+        if (!snapshot->spikePositions(clusterList[ci], posTable)) continue;
+        const long nSpk = static_cast<long>(snapshot->nbOfSpikes(clusterList[ci]));
         allFileIdx[static_cast<size_t>(ci)].reserve(static_cast<size_t>(nSpk));
         for (long s = 0; s < nSpk; ++s)
             allFileIdx[static_cast<size_t>(ci)].push_back(

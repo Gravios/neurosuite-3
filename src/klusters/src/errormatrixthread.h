@@ -166,6 +166,11 @@ private:
     std::shared_ptr<KlustersJobToken> token;
     /**The view's request generation this job was enqueued under.*/
     int jobGeneration = 0;
+    /**The membership epoch captured at creation (epoch-snapshot step 1):
+    * pins the epoch's tables for the duration of the job.  The assistant
+    * still reads Data live until the error-matrix step of the plan
+    * (step 5).*/
+    std::shared_ptr<const Data::ClusteringSnapshot> snapshot;
     Array<double>* probabilities;
     QList<int> clusterList;
     QList<int> computedClusterList;

@@ -35,6 +35,7 @@ ErrorMatrixThread::ErrorMatrixThread(ErrorMatrixView& view,Data& d,
                                      std::vector<int> activeDims,
                                      QList<int> activeClusters)
     : errorMatrixView(view),data(d),token(viewToken),
+      snapshot(d.currentSnapshot()),
       probabilities(nullptr),
       incremental(incremental),verify(verify),
       prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),

@@ -29,6 +29,7 @@
 CorrelationThread::CorrelationThread(CorrelationView& view,Data& d,const QList<Pair>& pairs,const QList<int>& clusterIds,
                                      const std::shared_ptr<KlustersJobToken>& viewToken)
     :correlationView(view),data(d),clusterPairs(pairs),token(viewToken),
+    snapshot(d.currentSnapshot()),
     snapBinSize(view.binSize),snapTimeWindow(view.timeWindow){
     this->clusterIds = clusterIds;
     setAutoDelete(true);
