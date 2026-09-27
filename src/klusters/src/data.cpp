@@ -125,6 +125,9 @@ Data::~Data(){
 
     qDeleteAll(waveformDict);
     waveformDict.clear();
+    //Parked waveform waiters die with their tickets; their views are gone
+    //too, so the unposted completions are moot.
+    waveformWaiters.clear();
     qDeleteAll(correlationDict);
     correlationDict.clear();
 
@@ -4868,7 +4871,185 @@ bool Data::spikePositionsNotModified(int clusterId,SortableTable& subsetTable){
 
 
 
+// ───────────────────────────────────────────────────────────────────────────
+// Subscribe-don't-wait plumbing (epoch-snapshot step 3a).  The four public
+// waveform functions are thin wrappers around the historical bodies (…Inner):
+// at a terminal they flush the waiters parked on the cluster.  A terminal is
+// READY, or a NOT_AVAILABLE that removed the cluster's cache entry (the
+// cluster is gone); a NOT_AVAILABLE that KEEPS the entry is transient — the
+// early not-computable-yet returns, and the capped yield-timeout — and
+// flushes nothing, mirroring what the old pollers saw.
+// ───────────────────────────────────────────────────────────────────────────
+
 Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay){
+    const Status st = getSampleWaveformPointsInner(clusterId,nbSpkToDisplay);
+    if(st == READY)
+        flushWaveformWaiters(clusterId, SAMPLE, /*meanEvent*/false, /*ok*/true);
+    else if(st == NOT_AVAILABLE){
+        bool entryGone;
+        {
+            QMutexLocker lk(&mutex);
+            entryGone = !waveformStatusMap.contains(clusterId);
+        }
+        if(entryGone) flushWaveformWaiters(clusterId, SAMPLE, false, false);
+    }
+    return st;
+}
+
+Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataType end){
+    const Status st = getTimeFrameWaveformPointsInner(clusterId,start,end);
+    if(st == READY)
+        flushWaveformWaiters(clusterId, TIME_FRAME, false, true);
+    else if(st == NOT_AVAILABLE){
+        bool entryGone;
+        {
+            QMutexLocker lk(&mutex);
+            entryGone = !waveformStatusMap.contains(clusterId);
+        }
+        if(entryGone) flushWaveformWaiters(clusterId, TIME_FRAME, false, false);
+    }
+    return st;
+}
+
+Data::Status Data::calculateSampleMean(int clusterId,dataType nbSpkToDisplay){
+    const Status st = calculateSampleMeanInner(clusterId,nbSpkToDisplay);
+    if(st == READY)
+        flushWaveformWaiters(clusterId, SAMPLE, /*meanEvent*/true, /*ok*/true);
+    else if(st == NOT_AVAILABLE){
+        bool entryGone;
+        {
+            QMutexLocker lk(&mutex);
+            entryGone = !waveformStatusMap.contains(clusterId);
+        }
+        if(entryGone) flushWaveformWaiters(clusterId, SAMPLE, true, false);
+    }
+    return st;
+}
+
+Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType end){
+    const Status st = calculateTimeFrameMeanInner(clusterId,start,end);
+    if(st == READY)
+        flushWaveformWaiters(clusterId, TIME_FRAME, true, true);
+    else if(st == NOT_AVAILABLE){
+        bool entryGone;
+        {
+            QMutexLocker lk(&mutex);
+            entryGone = !waveformStatusMap.contains(clusterId);
+        }
+        if(entryGone) flushWaveformWaiters(clusterId, TIME_FRAME, true, false);
+    }
+    return st;
+}
+
+Data::WaveformSubscribe Data::subscribeWaveform(int clusterId, WaveformMode mode,
+                                                bool wantsMean, dataType p1, dataType p2,
+                                                const std::shared_ptr<WaveformRequestTicket>& ticket,
+                                                bool failMarksTicket){
+    QMutexLocker lk(&mutex);
+    if(!waveformStatusMap.contains(clusterId))
+        return WaveformSubscribe::DoneFail;
+    const WaveformStatus st = waveformStatusMap.value(clusterId);   // value(): const, non-detaching
+    const Status spikes = (mode == SAMPLE) ? st.sampleStatus()     : st.timeFrameStatus();
+    const Status mean   = (mode == SAMPLE) ? st.sampleMeanStatus() : st.timeFrameMeanStatus();
+
+    if(!wantsMean){
+        if(spikes == READY)         return WaveformSubscribe::DoneOk;
+        if(spikes == NOT_AVAILABLE) return WaveformSubscribe::DoneFail;
+        // spikes IN_PROCESS: park on the owner's terminal
+    }
+    else{
+        if(mean == READY)  return WaveformSubscribe::DoneOk;
+        if(mean != IN_PROCESS){
+            // Nobody is computing the mean.  If the spikes are in flight,
+            // park: the spike owner will compute the mean with OUR
+            // parameters before completing us.  If the spikes already
+            // landed, the caller should just run the calculate step again.
+            if(spikes == READY)         return WaveformSubscribe::Retry;
+            if(spikes == NOT_AVAILABLE) return WaveformSubscribe::DoneFail;
+        }
+        // mean IN_PROCESS (owner's mean terminal completes us), or spikes
+        // IN_PROCESS (owner's spike terminal serves us): park either way.
+    }
+
+    WaveformWaiter waiter;
+    waiter.ticket = ticket;
+    waiter.wantsMean = wantsMean;
+    waiter.p1 = p1;
+    waiter.p2 = p2;
+    waiter.failMarksTicket = failMarksTicket;
+    //The share is added under the same mutex that parks the waiter, so a
+    //concurrent flush can only complete it after both are in place.
+    ticket->remaining.fetch_add(1, std::memory_order_acq_rel);
+    waveformWaiters[qMakePair(clusterId, static_cast<int>(mode))].append(waiter);
+    return WaveformSubscribe::Parked;
+}
+
+void Data::flushWaveformWaiters(int clusterId, int mode, bool meanEvent, bool ok){
+    const QPair<int,int> key(clusterId, mode);
+    QList<WaveformWaiter> taken;
+    {
+        QMutexLocker lk(&mutex);
+        if(!waveformWaiters.contains(key)) return;
+        if(ok && meanEvent){
+            // Mean terminal: only the mean waiters complete.
+            QList<WaveformWaiter>& parked = waveformWaiters[key];
+            for(int i = parked.count() - 1; i >= 0; --i)
+                if(parked.at(i).wantsMean)
+                    taken.append(parked.takeAt(i));
+            if(parked.isEmpty()) waveformWaiters.remove(key);
+        }
+        else{
+            // Spike terminal (either outcome) or any failure: everything
+            // parked here is resolved now, one way or the other.
+            taken = waveformWaiters.take(key);
+        }
+    }
+    if(taken.isEmpty()) return;
+
+    auto complete = [](const WaveformWaiter& w, bool waiterOk){
+        if(!waiterOk && w.failMarksTicket)
+            w.ticket->failed.store(true, std::memory_order_release);
+        w.ticket->completeOne();
+    };
+
+    if(!ok){
+        for(const WaveformWaiter& w : taken) complete(w, false);
+        return;
+    }
+    if(meanEvent){
+        for(const WaveformWaiter& w : taken) complete(w, true);
+        return;
+    }
+
+    // Spikes just landed.  Plain waiters are done; mean waiters are SERVED
+    // here, in the spike owner's context: compute the mean with each
+    // waiter's own parameters (grouped, so shared parameters cost one
+    // computation).  The calculate call is the public wrapper, so ITS
+    // terminal flushes any mean waiters parked meanwhile; the ones taken
+    // here are completed from its return value — or re-parked when another
+    // job got to the mean first.
+    QHash<QPair<dataType,dataType>, QList<WaveformWaiter>> meanGroups;
+    for(const WaveformWaiter& w : taken){
+        if(!w.wantsMean){ complete(w, true); continue; }
+        meanGroups[qMakePair(w.p1, w.p2)].append(w);
+    }
+    for(auto it = meanGroups.begin(); it != meanGroups.end(); ++it){
+        const Status st = (mode == static_cast<int>(SAMPLE))
+            ? calculateSampleMean(clusterId, it.key().first)
+            : calculateTimeFrameMean(clusterId, it.key().first, it.key().second);
+        if(st == IN_PROCESS){
+            //Another job owns the mean now; its terminal completes them.
+            QMutexLocker lk(&mutex);
+            waveformWaiters[key] += it.value();
+        }
+        else{
+            const bool groupOk = (st == READY);
+            for(const WaveformWaiter& w : it.value()) complete(w, groupOk);
+        }
+    }
+}
+
+Data::Status Data::getSampleWaveformPointsInner(int clusterId,dataType nbSpkToDisplay){
     //If the cluster has been suppress after the thread calling this function has been launched
     //return this information that the data are not available.
     bool clusterExists = false;
@@ -5008,7 +5189,7 @@ Data::Status Data::getSampleWaveformPoints(int clusterId,dataType nbSpkToDisplay
     }
 }
 
-Data::Status Data::getTimeFrameWaveformPoints(int clusterId,dataType start,dataType end){
+Data::Status Data::getTimeFrameWaveformPointsInner(int clusterId,dataType start,dataType end){
     //If the cluster has been suppress after the thread calling this function has been launched
     //return this information that the data are not available.
     bool clusterExists = false;
@@ -5322,7 +5503,7 @@ void Data::WaveformData<T>::calculateMean(WaveformMode waveformMode){
     }
 }
 
-Data::Status Data::calculateSampleMean(int clusterId,dataType nbSpkToDisplay){
+Data::Status Data::calculateSampleMeanInner(int clusterId,dataType nbSpkToDisplay){
     //Calculate the mean and the standard deviation for
     //a sample of the spikes (displayNbSpikes) evenly distributed on all the recording.
     QString clusterIdString = QString::fromLatin1("%1").arg(clusterId);
@@ -5378,7 +5559,7 @@ Data::Status Data::calculateSampleMean(int clusterId,dataType nbSpkToDisplay){
 }
 
 
-Data::Status Data::calculateTimeFrameMean(int clusterId,dataType start,dataType end){
+Data::Status Data::calculateTimeFrameMeanInner(int clusterId,dataType start,dataType end){
     //Calculate the mean and the standard deviation for
     //a sample of the spikes (displayNbSpikes) evenly distributed on all the recording.
 

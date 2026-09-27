@@ -68,19 +68,6 @@ void WaveformThread::enqueue(){
     KlustersJobPool::pool()->start(this, KlustersJobPool::InteractivePriority);   // the user is watching the waveform pane fill
 }
 
-void WaveformThread::post(QEvent* event){
-    // Fence against view destruction: ~WaveformView sets viewDead under the
-    // same mutex, so while we hold it and viewDead is false the view is a
-    // valid event receiver (events it already received are flushed by its
-    // destructor's removePostedEvents).
-    QMutexLocker lock(&token->postMutex);
-    if(token->viewDead){
-        delete event;
-        return;
-    }
-    QApplication::postEvent(&waveformView,event);
-}
-
 void WaveformThread::run(){
     process();
     //Retire: this must be the last touch of any shared state (Data above
@@ -91,324 +78,126 @@ void WaveformThread::run(){
 }
 
 void WaveformThread::process(){
-    unsigned long sleepingAmount = 1;
-    //If the triggering action is not the calculation of the mean and standard variation,
-    //get the data and store them in waveformView.waveformInfoMap.
-    //wait until the data are available. The status can be READY or IN_PROCESS.
-    //In the later case, an other thread in working on the same cluster.
-    if(!meanRequested  && !cancelled()){
-        if(snapPresentationMode == WaveformView::SAMPLE){
-            if(treatSingleCluster){
-                if(!cancelled()){
-                    Data::Status status = data.getSampleWaveformPoints(clusterId,snapNbSpkToDisplay);
-                    if(status == Data::NOT_AVAILABLE){
-                        //Send an event to the waveformView to let it know that the data requested are not available.
-                        post(new NoWaveformDataEvent(*this));
-                        return;
-                    }
-                    else if(status == Data::IN_PROCESS){
-                        while(true){
-                            if(cancelled()) break;
-                            QThread::sleep(sleepingAmount);
-                            status = data.getSampleWaveformPoints(clusterId,snapNbSpkToDisplay);
-                            if(status == Data::READY) break;
-                            else if(status == Data::NOT_AVAILABLE){
-                                //Send an event to the waveformView to let it know that the data requested are not available.
-                                post(new NoWaveformDataEvent(*this));
-                                return;
-                            }
-                        }
-                    }
-                }
+    //One ticket per request: one share for this sweep, one more per parked
+    //waiter (added by Data::subscribeWaveform).  The completion closure is
+    //installed before any share can complete and carries everything the
+    //event needs, because it may run from a waiter flush on another worker
+    //long after this job object is deleted.
+    auto ticket = std::make_shared<WaveformRequestTicket>();
+    {
+        auto tok  = token;
+        auto* viewPtr = &waveformView;
+        const int  gen    = jobGeneration;
+        const bool single = treatSingleCluster;
+        const int  cid    = clusterId;
+        const QList<int> cids = clusterIds;
+        const bool meanReq = meanRequested;
+        const bool lwm     = snapMeanPresentation;
+        const WaveformView::PresentationMode m = snapPresentationMode;
+        ticket->post = [tok, viewPtr, gen, single, cid, cids, meanReq, lwm, m](bool failed){
+            QMutexLocker lock(&tok->postMutex);
+            if(tok->viewDead) return;
+            if(failed)
+                QApplication::postEvent(viewPtr, new NoWaveformDataEvent(gen));
+            else
+                QApplication::postEvent(viewPtr, new GetWaveformsEvent(gen, single, cid, cids,
+                                                                       meanReq, lwm, m));
+        };
+    }
+
+    const Data::WaveformMode mode =
+        (snapPresentationMode == WaveformView::SAMPLE) ? Data::SAMPLE : Data::TIME_FRAME;
+    const dataType p1 = (mode == Data::SAMPLE) ? snapNbSpkToDisplay : snapStartTime;
+    const dataType p2 = (mode == Data::SAMPLE) ? 0                  : snapEndTime;
+
+    auto fetchOnce = [&](int id) -> Data::Status {
+        return (mode == Data::SAMPLE)
+            ? data.getSampleWaveformPoints(id, snapNbSpkToDisplay)
+            : data.getTimeFrameWaveformPoints(id, snapStartTime, snapEndTime);
+    };
+    auto calcOnce = [&](int id) -> Data::Status {
+        return (mode == Data::SAMPLE)
+            ? data.calculateSampleMean(id, snapNbSpkToDisplay)
+            : data.calculateTimeFrameMean(id, snapStartTime, snapEndTime);
+    };
+
+    const QList<int> sweep = treatSingleCluster ? (QList<int>() << clusterId) : clusterIds;
+    //Single-cluster requests treat an unavailable cluster as fatal (the view
+    //gets the no-data event); multi-cluster requests skip it.
+    const bool failFatal = treatSingleCluster;
+    bool singleFailed = false;
+
+    //── Phase 1: make the spikes of every requested cluster available ──────
+    //Mirrors the old fetch loops, with the IN_PROCESS sleep(1) polls
+    //replaced by subscription: the owner of the overlapping computation
+    //completes our share from its terminal.
+    if(!meanRequested && !cancelled()){
+        for(int id : sweep){
+            if(cancelled()) break;
+            const Data::Status st = fetchOnce(id);
+            if(st == Data::READY) continue;
+            if(st == Data::NOT_AVAILABLE){
+                if(failFatal){ singleFailed = true; break; }
+                continue;                       // multi: skip this cluster
             }
-            //iterate on all the clusters contained in clusterIds before returning
-            else{
-                if(!cancelled()){
-                    QList<int>::iterator iterator;
-                    QList<int>::iterator end(clusterIds.end());
-                    for(iterator = clusterIds.begin(); iterator != end; ++iterator){
-                        if(!cancelled()){
-                            Data::Status status = data.getSampleWaveformPoints(*iterator,snapNbSpkToDisplay);
-                            //If the data for one cluster is not available, skip it (do not send an event to the waveformView)
-                            if(status == Data::NOT_AVAILABLE)
-                                continue;
-                            else if(status == Data::IN_PROCESS)
-                                while(!cancelled() && (data.getSampleWaveformPoints(*iterator,snapNbSpkToDisplay) == Data::IN_PROCESS))
-                                {
-                                    QThread::sleep(sleepingAmount);
-                                }
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        else if(snapPresentationMode == WaveformView::TIME_FRAME){
-            if(treatSingleCluster){
-                if(!cancelled()){
-                    Data::Status status = data.getTimeFrameWaveformPoints(clusterId,snapStartTime,snapEndTime);
-                    if(status == Data::NOT_AVAILABLE){
-                        //Send an event to the waveformView to let it know that the data requested are not available.
-                        post(new NoWaveformDataEvent(*this));
-                        return;
-                    }
-                    else if(status == Data::IN_PROCESS){
-                        while(true){
-                            if(cancelled()) break;
-                            QThread::sleep(sleepingAmount);
-                            status = data.getTimeFrameWaveformPoints(clusterId,snapStartTime,snapEndTime);
-                            if(status == Data::READY) break;
-                            else if(status == Data::NOT_AVAILABLE){
-                                //Send an event to the waveformView to let it know that the data requested are not available.
-                                post(new NoWaveformDataEvent(*this));
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-            //iterate on all the clusters contained in clusterIds before returning
-            else{
-                if(!cancelled()){
-                    QList<int>::iterator iterator;
-                    QList<int>::iterator end(clusterIds.end());
-                    for(iterator = clusterIds.begin(); iterator != end; ++iterator){
-                        if(!cancelled()){
-                            Data::Status status = data.getTimeFrameWaveformPoints(*iterator,snapStartTime,snapEndTime);
-                            //If the data for one cluster is not available, skip it (do not send an event to the waveformView)
-                            if(status == Data::NOT_AVAILABLE) continue;
-                            else if(status == Data::IN_PROCESS)
-                                while(!cancelled() && (data.getTimeFrameWaveformPoints(*iterator,snapStartTime,snapEndTime) == Data::IN_PROCESS))
-                                {
-                                    QThread::sleep(sleepingAmount);
-                                }
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
+            //IN_PROCESS: subscribe on the owner's spike terminal.
+            const Data::WaveformSubscribe sub =
+                data.subscribeWaveform(id, mode, /*wantsMean*/false, p1, p2, ticket, failFatal);
+            if(sub == Data::WaveformSubscribe::DoneFail && failFatal){ singleFailed = true; break; }
+            //Parked / DoneOk / DoneFail-on-multi: nothing more to do here.
         }
     }
-    //Calculate the means and standard deviation if needed
-    //wait until the data are available. The status can be READY, IN_PROCESS or NOT_AVAILABLE.
-    //In the IN_PROCESS case, an other thread in working on the same cluster,
-    //In the NOT_AVAILABLE case, the spikes have not been collected, get the data and
-    //ask to calculate the data again.
-    if((meanRequested || snapMeanPresentation)  && !cancelled()){
-        if(snapPresentationMode == WaveformView::SAMPLE){
-            if(treatSingleCluster){
-                if(!cancelled()){
-                    Data::Status status = data.calculateSampleMean(clusterId,snapNbSpkToDisplay);
-                    if(status == Data::NOT_AVAILABLE && !cancelled()){
-                        Data::Status dataStatus = data.getSampleWaveformPoints(clusterId,snapNbSpkToDisplay);
-                        if(dataStatus == Data::NOT_AVAILABLE){
-                            //Send an event to the waveformView to let it know that the data requested are not available.
-                            post(new NoWaveformDataEvent(*this));
-                            return;
-                        }
-                        else if(dataStatus == Data::IN_PROCESS){
-                            while(true){
-                                if(cancelled()) break;
-                                QThread::sleep(sleepingAmount);
-                                dataStatus = data.getSampleWaveformPoints(clusterId,snapNbSpkToDisplay);
-                                if(dataStatus == Data::READY) break;
-                                else if(dataStatus == Data::NOT_AVAILABLE){
-                                    //Send an event to the waveformView to let it know that the data requested are not available.
-                                    post(new NoWaveformDataEvent(*this));
-                                    return;
-                                }
-                            }
-                        }
-                        //Now that the data are available, compute the mean and standard deviation
-                        while(true){
-                            if(cancelled()) break;
-                            status = data.calculateSampleMean(clusterId,snapNbSpkToDisplay);
-                            if(status == Data::READY) break;
-                            else if(status == Data::NOT_AVAILABLE){
-                                //Send an event to the waveformView to let it know that the data requested are not available.
-                                post(new NoWaveformDataEvent(*this));
-                                return;
-                            }
-                            QThread::sleep(sleepingAmount);
-                        }
-                    }
-                    else if(status == Data::IN_PROCESS){
-                        while(true){
-                            if(cancelled()) break;
-                            QThread::sleep(sleepingAmount);
-                            status = data.calculateSampleMean(clusterId,snapNbSpkToDisplay);
-                            if(status == Data::READY) break;
-                            else if(status == Data::NOT_AVAILABLE){
-                                //Send an event to the waveformView to let it know that the data requested are not available.
-                                post(new NoWaveformDataEvent(*this));
-                                return;
-                            }
-                        }
-                    }
+
+    //── Phase 2: means and standard deviations, if this request wants them ──
+    //Mirrors the old calculate/fetch dance without its poll loops: a mean
+    //someone else owns is subscribed on the mean terminal, spikes in flight
+    //are subscribed with wantsMean (the spike owner then computes the mean
+    //with OUR parameters before completing us), and the missing-data case
+    //fetches once and retries the calculation, with a small cap in place of
+    //the old unbounded sleep loops.
+    if((meanRequested || snapMeanPresentation) && !cancelled() && !singleFailed){
+        for(int id : sweep){
+            if(cancelled()) break;
+            bool resolved = false;
+            for(int attempt = 0; attempt < 4 && !resolved && !cancelled(); ++attempt){
+                const Data::Status st = calcOnce(id);
+                if(st == Data::READY){ resolved = true; break; }
+                if(st == Data::IN_PROCESS){
+                    const Data::WaveformSubscribe sub =
+                        data.subscribeWaveform(id, mode, /*wantsMean*/true, p1, p2, ticket, failFatal);
+                    if(sub == Data::WaveformSubscribe::Retry) continue;   // mean landed meanwhile? recalc
+                    if(sub == Data::WaveformSubscribe::DoneFail && failFatal) singleFailed = true;
+                    resolved = true;                                      // Parked / DoneOk / DoneFail
+                    break;
                 }
-            } //one cluster
-            //iterate on all the clusters contained in clusterIds before returning
-            else{
-                if(!cancelled()){
-                    QList<int>::iterator iterator;
-                    QList<int>::iterator end(clusterIds.end());
-                    for(iterator = clusterIds.begin(); iterator != end; ++iterator){
-                        if(!cancelled()){
-                            Data::Status status = data.calculateSampleMean(*iterator,snapNbSpkToDisplay);
-                            if(status == Data::NOT_AVAILABLE && !cancelled()){
-                                Data::Status dataStatus = data.getSampleWaveformPoints(*iterator,snapNbSpkToDisplay);
+                //NOT_AVAILABLE: the spikes are missing or mismatched — make
+                //them available, then loop to recalculate.
+                const Data::Status fst = fetchOnce(id);
+                if(fst == Data::READY) continue;
+                if(fst == Data::IN_PROCESS){
+                    const Data::WaveformSubscribe sub =
+                        data.subscribeWaveform(id, mode, /*wantsMean*/true, p1, p2, ticket, failFatal);
+                    if(sub == Data::WaveformSubscribe::Retry) continue;
+                    if(sub == Data::WaveformSubscribe::DoneFail && failFatal) singleFailed = true;
+                    resolved = true;
+                    break;
+                }
+                //fetch NOT_AVAILABLE: the cluster is gone (or wedged).
+                if(failFatal) singleFailed = true;
+                resolved = true;
+                break;
+            }
+            if(!resolved && !cancelled())
+                qWarning("WaveformThread: mean of cluster %d did not settle after "
+                         "4 attempts; giving up on it for this request.", id);
+            if(singleFailed) break;
+        }
+    }
 
-                                //If the data for one cluster is not available, skip it (do not send an event to the waveformView)
-                                if(dataStatus == Data::NOT_AVAILABLE) continue;
-                                if(dataStatus == Data::IN_PROCESS || (dataStatus == Data::READY)){
-                                    while(true){
-                                        if(cancelled()) break;
-                                        if(dataStatus == Data::READY){
-                                            //Now that the data are available, compute the mean and standard deviation
-                                            while(true){
-                                                if(cancelled())
-                                                    break;
-                                                status = data.calculateSampleMean(*iterator,snapNbSpkToDisplay);
-                                                if(status == Data::READY || status == Data::NOT_AVAILABLE)
-                                                    break;
-                                                QThread::sleep(sleepingAmount);
-                                            }
-                                            break;
-                                        }
-                                        else{
-                                            QThread::sleep(sleepingAmount);
-                                            dataStatus = data.getSampleWaveformPoints(*iterator,snapNbSpkToDisplay);
-                                            if(dataStatus == Data::NOT_AVAILABLE)
-                                                break;
-                                        }
-                                    }
-                                }
-                            }
-                            else if(status == Data::IN_PROCESS){
-                                //If the data for one cluster is not available, skip it (do not send an event to the waveformView)
-                                while(true){
-                                    if(cancelled())
-                                        break;
-                                    QThread::sleep(sleepingAmount);
-                                    status = data.calculateSampleMean(*iterator,snapNbSpkToDisplay);
-                                    if(status == Data::READY || status == Data::NOT_AVAILABLE)
-                                        break;
-                                }
-                            }
-                        }//Stop processing
-                        else break;
-                    }//iteration on the clusters
-                }//Stop processing
-            }//several clusters
-        }//Sample
-        else if(snapPresentationMode == WaveformView::TIME_FRAME){
-            if(treatSingleCluster){
-                if(!cancelled()){
-                    Data::Status status = data.calculateTimeFrameMean(clusterId,snapStartTime,snapEndTime);
-                    if(status == Data::NOT_AVAILABLE && !cancelled()){
-                        Data::Status dataStatus = data.getTimeFrameWaveformPoints(clusterId,snapStartTime,snapEndTime);
-                        if(dataStatus == Data::NOT_AVAILABLE){
-                            //Send an event to the waveformView to let it know that the data requested are not available.
-                            post(new NoWaveformDataEvent(*this));
-                            return;
-                        }
-                        else if(dataStatus == Data::IN_PROCESS){
-                            while(true){
-                                if(cancelled())
-                                    break;
-                                QThread::sleep(sleepingAmount);
-                                dataStatus = data.getTimeFrameWaveformPoints(clusterId,snapStartTime,snapEndTime);
-                                if(dataStatus == Data::READY)  {
-                                    break;
-                                } else if(dataStatus == Data::NOT_AVAILABLE) {
-                                    //Send an event to the waveformView to let it know that the data requested are not available.
-                                    post(new NoWaveformDataEvent(*this));
-                                    return;
-                                }
-                            }
-                        }
-                        //Now that the data are available, compute the mean and standard deviation
-                        while(true){
-                            if(cancelled()) break;
-                            status = data.calculateTimeFrameMean(clusterId,snapStartTime,snapEndTime);
-                            if(status == Data::READY) break;
-                            else if(status == Data::NOT_AVAILABLE){
-                                //Send an event to the waveformView to let it know that the data requested are not available.
-                                post(new NoWaveformDataEvent(*this));
-                                return;
-                            }
-                            QThread::sleep(sleepingAmount);
-                        }
-                    }
-                    else if(status == Data::IN_PROCESS){
-                        while(true){
-                            if(cancelled()) break;
-                            QThread::sleep(sleepingAmount);
-                            status = data.calculateTimeFrameMean(clusterId,snapStartTime,snapEndTime);
-                            if(status == Data::READY) break;
-                            else if(status == Data::NOT_AVAILABLE){
-                                //Send an event to the waveformView to let it know that the data requested are not available.
-                                post(new NoWaveformDataEvent(*this));
-                                return;
-                            }
-                        }
-                    }
-                }//Stop processing
-            }//one cluster
-            //iterate on all the clusters contained in clusterIds before returning
-            else{
-                if(!cancelled()){
-                    QList<int>::iterator iterator;
-                    QList<int>::iterator end(clusterIds.end());
-                    for(iterator = clusterIds.begin(); iterator != end; ++iterator){
-                        if(!cancelled()){
-                            Data::Status status = data.calculateTimeFrameMean(*iterator,snapStartTime,snapEndTime);
-                            if(status == Data::NOT_AVAILABLE && !cancelled()){
-                                Data::Status dataStatus = data.getTimeFrameWaveformPoints(*iterator,snapStartTime,snapEndTime);
-                                //If the data for one cluster is not available, skip it (do not send an event to the waveformView)
-                                if(dataStatus == Data::NOT_AVAILABLE)
-                                    continue;
-                                if(dataStatus == Data::IN_PROCESS  || (dataStatus == Data::READY)){
-                                    while(true){
-                                        if(cancelled()) break;
-                                        if(dataStatus == Data::READY){
-                                            //Now that the data are available, compute the mean and standard deviation
-                                            while(true){
-                                                if(cancelled()) break;
-                                                status = data.calculateTimeFrameMean(*iterator,snapStartTime,snapEndTime);
-                                                if(status == Data::READY || status == Data::NOT_AVAILABLE) break;
-                                                QThread::sleep(sleepingAmount);
-                                            }
-                                            break;
-                                        }
-                                        else{
-                                            QThread::sleep(sleepingAmount);
-                                            dataStatus = data.getTimeFrameWaveformPoints(*iterator,snapStartTime,snapEndTime);
-                                            if(dataStatus == Data::NOT_AVAILABLE)
-                                                break;
-                                        }
-                                    }
-                                }
-                            }
-                            else if(status == Data::IN_PROCESS){
-                                //If the data for one cluster is not available, skip it (do not send an event to the waveformView)
-                                while(true){
-                                    if(cancelled()) break;
-                                    QThread::sleep(sleepingAmount);
-                                    status = data.calculateTimeFrameMean(*iterator,snapStartTime,snapEndTime);
-                                    if(status == Data::READY || status == Data::NOT_AVAILABLE) break;
-                                }
-                            }
-                        }//Stop processing
-                        else break;
-                    }//iteration on the clusters
-                }//Stop processing
-            }//several clusters
-        }//Time frame
-    }//mean
-
-    //Send an event to the waveformView to let it know that the waveform information have been retrieved.
-    post(new GetWaveformsEvent(*this));
+    if(singleFailed)
+        ticket->failed.store(true, std::memory_order_release);
+    //Complete this sweep's own share.  If nothing was parked, this posts the
+    //completion event right here; otherwise the last waiter to complete
+    //posts it from the owner's terminal.
+    ticket->completeOne();
 }

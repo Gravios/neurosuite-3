@@ -103,6 +103,15 @@ public:
             clusterIds(job.clusterIds),meanRequested(job.meanRequested),
             launchedWithMean(job.snapMeanPresentation),snapMode(job.snapPresentationMode){}
 
+        /**Field form, for the ticket closure: the completion may fire from a
+        * waiter flush long after the job object is gone (epoch-snapshot
+        * step 3a).*/
+        GetWaveformsEvent(int gen,bool single,int clusterId,const QList<int>& clusterIds,
+                          bool meanRequested,bool launchedWithMean,WaveformView::PresentationMode m)
+            :QEvent(QEvent::Type(QEvent::User + 200)),
+            eventGeneration(gen),single(single),clusterId(clusterId),clusterIds(clusterIds),
+            meanRequested(meanRequested),launchedWithMean(launchedWithMean),snapMode(m){}
+
         int eventGeneration;
         bool single;
         int clusterId;
@@ -129,6 +138,10 @@ public:
     private:
         explicit NoWaveformDataEvent(const WaveformThread& job):QEvent(QEvent::Type(QEvent::User + 250)),
             eventGeneration(job.jobGeneration){}
+
+        /**Field form, for the ticket closure (see GetWaveformsEvent).*/
+        explicit NoWaveformDataEvent(int gen):QEvent(QEvent::Type(QEvent::User + 250)),
+            eventGeneration(gen){}
 
         int eventGeneration;
     };
@@ -168,13 +181,11 @@ private:
         return token->generation.load(std::memory_order_acquire) != jobGeneration;
     }
 
-    /**Posts @p event to the view, unless the view is being destroyed
-    * (fenced by the token's postMutex/viewDead, see ~WaveformView()).*/
-    void post(QEvent* event);
-
-    /**The old run() body: the fetch and mean state machines, posting
-    * NoWaveformDataEvent on the early-out paths and GetWaveformsEvent at the
-    * end.  Split out so run() can retire the job on every path.*/
+    /**The fetch and mean sweep.  Since the subscribe-don't-wait conversion
+    * (epoch-snapshot step 3a) it never sleeps: a computation another job
+    * owns is subscribed to through the request ticket instead of polled,
+    * and the completion event fires when the last outstanding share —
+    * this sweep, or a parked waiter — completes.*/
     void process();
 
     WaveformView& waveformView;
