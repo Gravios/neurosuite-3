@@ -10,6 +10,8 @@
 #include "configuration.h"
 
 #include <QApplication>
+#include <QThread>        // msleep for the synchronous job quiesce
+#include <QMutexLocker>
 #include <QComboBox>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
@@ -38,8 +40,9 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     : QWidget(parent),
       doc(doc_), view(view_), statusBar(statusBar_),
       scores(nullptr),
-      dataReady(false), goingToDie(false), isStale(false), generation(0),
-      pairThread(nullptr), pairGeneration(0),
+      dataReady(false), goingToDie(false), isStale(false),
+      matrixToken(std::make_shared<KlustersJobToken>()),
+      pairToken(std::make_shared<KlustersJobToken>()),
       selectedA(-1), selectedB(-1),
       cellWidth(CELL_WIDTH), widthBorder(0), heightBorder(0),
       currentThreshold(0.90),
@@ -167,11 +170,21 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
 TemplateMatrixView::~TemplateMatrixView()
 {
     willBeKilled();
-    stopPairThread();
-    for (TemplateMatrixThread* t : threadsToBeKill)
-        while (!t->wait()) {}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
+    //Fence the completion posts on both request streams: once viewDead is
+    //set under the locks, no job will post to this view again.  The jobs
+    //themselves are not waited for: they were superseded by willBeKilled()
+    //(so they retire within one check interval), the pool owns and deletes
+    //them, and their results now travel inside the events, which delete
+    //what nobody takes.  Data lifetime is covered by the document draining
+    //the pool before deleting Data.
+    {
+        QMutexLocker lock(&matrixToken->postMutex);
+        matrixToken->viewDead = true;
+    }
+    {
+        QMutexLocker lock(&pairToken->postMutex);
+        pairToken->viewDead = true;
+    }
     delete scoresAll;
     delete scoresSel;   // `scores` is non-owning: it aliases one of these
     QApplication::removePostedEvents(this);
@@ -181,25 +194,30 @@ void TemplateMatrixView::willBeKilled()
 {
     if (!goingToDie) {
         goingToDie = true;
+        //Supersede both request streams: each in-flight job stops at its
+        //next cancellation check, and its completion event fails the
+        //generation guard in customEvent().
         stopPairThread();
-        for (TemplateMatrixThread* t : threadsToBeKill)
-            t->stopProcessing();
+        matrixToken->generation.fetch_add(1, std::memory_order_acq_rel);
     }
 }
 
 bool TemplateMatrixView::isThreadsRunning() const
 {
-    return !threadsToBeKill.isEmpty() || (pairThread != nullptr);
+    return matrixToken->active.load(std::memory_order_acquire) > 0
+        || pairToken->active.load(std::memory_order_acquire) > 0;
 }
 
 void TemplateMatrixView::stopPairThread()
 {
-    if (pairThread) {
-        pairThread->stopProcessing();
-        // Don't wait here — the thread will post its event and we'll clean up
-        // in customEvent (generation mismatch will discard the result).
-        pairThread = nullptr;  // ownership stays with the thread until it posts
-    }
+    // Supersede the in-flight pair job, if any: it early-outs at its next
+    // check and its completion event fails the generation guard.  This also
+    // closes an old gap: the previous stop only set the job's stop flag
+    // WITHOUT bumping pairGeneration, so a stopped job's PARTIAL score list
+    // still matched the generation check and could be filed into the cache
+    // (freshly cleared by a matrix recompute).  Superseding by generation
+    // rejects it.
+    pairToken->generation.fetch_add(1, std::memory_order_acq_rel);
 }
 
 // ---------------------------------------------------------------------------
@@ -229,37 +247,25 @@ void TemplateMatrixView::stopPairThread()
 // ---------------------------------------------------------------------------
 void TemplateMatrixView::stopRunningThreadsSync()
 {
-    // 1. Pair thread: signal stop, then wait for run() to return.  We must
-    //    NOT use the existing stopPairThread() here because that orphans
-    //    the pointer (deferred cleanup in customEvent).  We need synchronous
-    //    completion so the file handle is closed before we return.
-    if (pairThread) {
-        pairThread->stopProcessing();
-        while (!pairThread->wait()) {}
-        // Thread has finished run() and posted its event; the customEvent
-        // handler that consumes the post takes ownership.  Clear our
-        // pointer so subsequent calls don't try to wait again.  The
-        // event will arrive and be discarded by the generation check —
-        // see TemplateMatrixView::customEvent's sourceCluster mismatch
-        // branch.
-        pairThread = nullptr;
-    }
+    // Supersede both request streams, then wait for every job to retire:
+    // callers are about to rewrite .spk.pending, so no job of this view may
+    // still be inside a file read once this returns.  Superseded jobs notice
+    // the bump within one check interval and queued-not-yet-started ones
+    // early-out as pool workers free up, the same synchronous-quiesce
+    // contract the per-thread stop-and-wait used to provide.
+    pairToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    matrixToken->generation.fetch_add(1, std::memory_order_acq_rel);
+    while (matrixToken->active.load(std::memory_order_acquire) > 0
+           || pairToken->active.load(std::memory_order_acquire) > 0)
+        QThread::msleep(1);
 
-    // 2. Matrix threads: same pattern as WaveformView::stopAndClearThreads.
-    //    The threads currently in threadsToBeKill are NOT necessarily dead
-    //    yet — the destructor pattern relies on Qt's event loop to drain
-    //    them via customEvent.  For the in-place quiesce we need, drain
-    //    them ourselves.
-    for (TemplateMatrixThread* t : threadsToBeKill)
-        t->stopProcessing();
-    for (TemplateMatrixThread* t : threadsToBeKill)
-        while (!t->wait()) {}
-    qDeleteAll(threadsToBeKill);
-    threadsToBeKill.clear();
-
-    // 3. Drop any completion events those threads posted before we waited
-    //    so customEvent doesn't fire later with a dangling thread pointer.
-    QApplication::removePostedEvents(this);
+    // Drop completion events the superseded jobs posted before retiring.
+    // They carry their own results (freed with the event), not thread
+    // pointers, and would fail the generation guard anyway; removing them
+    // just saves the no-op dispatches.  Only our two event types are
+    // removed, so queued signal deliveries to this widget survive.
+    QApplication::removePostedEvents(this, QEvent::User + 601);
+    QApplication::removePostedEvents(this, QEvent::User + 602);
 }
 
 // ── colour map ───────────────────────────────────────────────────────────────
@@ -294,7 +300,10 @@ void TemplateMatrixView::updateSliderRange()
 void TemplateMatrixView::launchCompute()
 {
     if (goingToDie) return;
-    ++generation;
+    //Supersede the in-flight matrix computes (their results are stale by
+    //definition now); the replacement job enqueued below captures the new
+    //generation.
+    matrixToken->generation.fetch_add(1, std::memory_order_acq_rel);
     computing = true;      // paint a badge over the old matrix, do not blank
     stopPairThread();
     // The pair scores are per-template; a different channel subset changes the
@@ -310,11 +319,8 @@ void TemplateMatrixView::launchCompute()
         metricCombo->setCurrentIndex((metric >= 0 && metric <= 5) ? metric : 0);
     }
 
-    for (TemplateMatrixThread* t : threadsToBeKill)
-        t->stopProcessing();
-
     setCursor(Qt::WaitCursor);
-    threadsToBeKill.append(launchComputeThread());
+    launchComputeThread();
 
     isStale = false;
     selectedPairs.clear();
@@ -375,7 +381,7 @@ void TemplateMatrixView::selectedChannelsChanged(const QList<int>& channels)
     launchCompute();
 }
 
-TemplateMatrixThread* TemplateMatrixView::launchComputeThread()
+void TemplateMatrixView::launchComputeThread()
 {
     // Scoped matrices: restrict to one parent's children when the child palette is
     // driving and the parent has enough of them to be worth comparing.  Empty
@@ -397,9 +403,10 @@ TemplateMatrixThread* TemplateMatrixView::launchComputeThread()
             << (scope.isEmpty() ? "" : (overlap == 0 ? "   <-- DISJOINT: wrong id space"
                                                      : (overlap < scope.size() ? "   <-- PARTIAL" : "")));
     }
-    return new TemplateMatrixThread(*this, doc.matrixData(), generation,
-                                    doc.selectedChannels(),
-                                    doc.matrixScopeClusters());
+    //Creating the job launches it; the pool owns and deletes it.
+    new TemplateMatrixThread(*this, doc.matrixData(), matrixToken,
+                             doc.selectedChannels(),
+                             doc.matrixScopeClusters());
 }
 
 void TemplateMatrixView::launchPairXcorr(int sourceCluster, int targetCluster)
@@ -421,12 +428,13 @@ void TemplateMatrixView::launchPairXcorr(int sourceCluster, int targetCluster)
         ciTgt >= static_cast<int>(meanWav.size()))
         return;
 
-    stopPairThread();
-    ++pairGeneration;
+    stopPairThread();   // supersede the previous pair request
     countLabel->setText("Computing scores…");
     applyButton->setEnabled(false);
 
-    pairThread = new PairXcorrThread(
+    //Creating the job launches it (capturing the fresh pair generation);
+    //the pool owns and deletes it, so no pointer is kept.
+    new PairXcorrThread(
         *this,
         sourceCluster, targetCluster,
         allFileIdx[static_cast<size_t>(ciSrc)],
@@ -435,9 +443,7 @@ void TemplateMatrixView::launchPairXcorr(int sourceCluster, int targetCluster)
         doc.data().nbOfChannels(),
         doc.data().nbSamplesPerWaveform(),
         doc.data().isRecordingTwoBytes(),
-        pairGeneration);
-    // pairThread starts itself; ownership transfers to the thread
-    // — we keep the pointer only to call stopProcessing() if needed.
+        pairToken);
 }
 
 // ── customEvent: handles both User+601 (matrix) and User+602 (pair xcorr) ───
@@ -446,21 +452,23 @@ void TemplateMatrixView::customEvent(QEvent* event)
 {
     // ── Main matrix result ─────────────────────────────────────────────────
     if (event->type() == QEvent::Type(QEvent::User + 601)) {
-        auto* ev     = static_cast<TemplateMatrixThread::TemplateMatrixEvent*>(event);
-        auto* thread = ev->parentThread();
+        auto* ev = static_cast<TemplateMatrixThread::TemplateMatrixEvent*>(event);
 
-        Array<double>* newScores = thread->getScores();
-        const bool accepted = (newScores != nullptr
-                               && thread->getGeneration() == generation);
+        //The job retired itself and the results travel in the event, so
+        //there is no thread to wait for or delete anymore.
+        const bool genMatch = (ev->generation()
+                               == matrixToken->generation.load(std::memory_order_acquire));
+        Array<double>* newScores = ev->takeScores();
+        const bool accepted = (newScores != nullptr && genMatch);
         // Only the generation we are waiting on ends the "computing" state: a
         // superseded result must not cancel the badge for the newer compute
         // that replaced it.
-        if (thread->getGeneration() == generation) computing = false;
+        if (genMatch) computing = false;
 
         if (accepted) {
             // File under the selection it was computed for, so the other slot
             // stays available for an instant swap.
-            const QList<int> ranFor = thread->getSelection();
+            const QList<int> ranFor = ev->getSelection();
             if (ranFor.isEmpty()) {
                 delete scoresAll;
                 scoresAll    = newScores;
@@ -472,23 +480,19 @@ void TemplateMatrixView::customEvent(QEvent* event)
                 haveSelCache    = true;
             }
             scores      = newScores;
-            clusterList = thread->getClusterList();
-            meanWav   = thread->getMeanWav();
-            allFileIdx= thread->getAllFileIdx();
+            clusterList = ev->getClusterList();
+            meanWav   = std::move(ev->getMeanWav());
+            allFileIdx= std::move(ev->getAllFileIdx());
         } else {
             delete newScores;
         }
-
-        while (!thread->wait()) {}
-        threadsToBeKill.removeAll(thread);
-        delete thread;
 
         if (!goingToDie) {
             if (accepted) {
                 updateWindow();
                 dataReady = true;
                 setCursor(Qt::ArrowCursor);
-            } else if (threadsToBeKill.isEmpty()) {
+            } else if (matrixToken->active.load(std::memory_order_acquire) == 0) {
                 setCursor(Qt::ArrowCursor);
             }
             update();
@@ -504,19 +508,15 @@ void TemplateMatrixView::customEvent(QEvent* event)
 
     // ── Per-pair xcorr result ──────────────────────────────────────────────
     if (event->type() == QEvent::Type(QEvent::User + 602)) {
-        auto* ev     = static_cast<PairXcorrThread::PairXcorrEvent*>(event);
-        auto* thread = ev->parentThread();
+        auto* ev = static_cast<PairXcorrThread::PairXcorrEvent*>(event);
 
-        const bool accepted = (thread->getGeneration() == pairGeneration);
+        const bool accepted = (ev->generation()
+                               == pairToken->generation.load(std::memory_order_acquire));
 
         if (accepted) {
-            const QPair<int,int> key(thread->getSourceCluster(), thread->getTargetCluster());
-            pairCache.insert(key, thread->getScores());
+            const QPair<int,int> key(ev->getSourceCluster(), ev->getTargetCluster());
+            pairCache.insert(key, std::move(ev->getScores()));
         }
-
-        while (!thread->wait()) {}
-        if (pairThread == thread) pairThread = nullptr;
-        delete thread;
 
         if (!goingToDie && accepted)
             updateSliderPreview();

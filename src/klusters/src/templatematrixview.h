@@ -19,9 +19,11 @@
 #include <QComboBox>
 #include <vector>
 #include <utility>
+#include <memory>
 
 #include "array.h"
 #include "pair.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 
 class KlustersDoc;
 class KlustersView;
@@ -71,19 +73,19 @@ public:
     void willBeKilled();
     bool isThreadsRunning() const;
 
-    /** Synchronously stop all in-flight threads (TemplateMatrixThread instances
-     *  in `threadsToBeKill` plus the active PairXcorrThread).  Waits for each
-     *  thread to actually return from `run()` before returning, so callers can
-     *  safely write to .spk.pending immediately afterward without worrying
-     *  about torn reads.
+    /** Synchronously quiesce all in-flight jobs (matrix computes plus the
+     *  active pair xcorr).  Supersedes both request streams by bumping their
+     *  token generations, then waits for the active counts to drain, so
+     *  callers can safely write to .spk.pending immediately afterward
+     *  without worrying about torn reads.
      *
      *  Distinct from `willBeKilled()`: this method does NOT set `goingToDie`,
-     *  so the view continues to function and can launch new threads
+     *  so the view continues to function and can launch new requests
      *  afterward (e.g. when the user triggers an update).
      *
-     *  Distinct from `stopPairThread()`: that method is asynchronous (sets
-     *  the stop flag and abandons the pointer); this method waits for
-     *  termination so the underlying file handle is actually closed.
+     *  Distinct from `stopPairThread()`: that method only supersedes (no
+     *  wait); this method waits for retirement so the in-flight file reads
+     *  have actually finished.
      *
      *  Not an override: TemplateMatrixView inherits from QWidget, not
      *  ViewWidget, so it isn't part of `KlustersView::viewList` and cannot
@@ -266,17 +268,19 @@ private:
     bool           dataReady;
     bool           goingToDie;
     bool           isStale;
-    int            generation;
 
     // Stored for PairXcorrThread construction
     std::vector<std::vector<float>> meanWav;    // [clusterIdx] channel-major mean
     std::vector<std::vector<int>>   allFileIdx; // [clusterIdx] 0-based .spk indices
 
-    QList<TemplateMatrixThread*> threadsToBeKill;
-
-    // ── per-pair xcorr (on-demand) ───────────────────────────────────────────
-    PairXcorrThread* pairThread;      // currently running pair thread (or null)
-    int              pairGeneration;  // incremented on each new pair request
+    /**Cancellation/completion state shared with the jobs this view enqueues
+    * on the worker pool — one token per request stream, because a pair
+    * request must be supersedable without orphaning a matrix compute (and
+    * vice versa).  These replace the threadsToBeKill list, the pairThread
+    * pointer and the generation/pairGeneration counters: the tokens' own
+    * generations are the request generations now.*/
+    std::shared_ptr<KlustersJobToken> matrixToken;
+    std::shared_ptr<KlustersJobToken> pairToken;
 
     // Cache: (sourceClusterId, targetClusterId) → per-spike scores
     // Cleared when the matrix is recomputed (updateMatrixContents).
@@ -323,8 +327,12 @@ private:
     double       sliderMax;
 
     // ── helpers ──────────────────────────────────────────────────────────────
-    TemplateMatrixThread* launchComputeThread();
+    void launchComputeThread();
     void launchPairXcorr(int sourceCluster, int targetCluster);
+    /**Supersedes the in-flight pair-xcorr job, if any: bumps the pair token's
+    * request generation, so the job early-outs and its result is dropped by
+    * the generation guard (a superseded PARTIAL score list must never enter
+    * the cache).*/
     void stopPairThread();
     void updateWindow();
     void drawMatrix(QPainter& painter);

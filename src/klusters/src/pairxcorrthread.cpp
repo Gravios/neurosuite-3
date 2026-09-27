@@ -4,14 +4,55 @@
 #include "configuration.h"
 
 #include <QApplication>
+#include <QThreadPool>
+#include <QMutexLocker>
 #include <cmath>
+
+PairXcorrThread::PairXcorrThread(TemplateMatrixView& v,
+                                 int sourceCluster, int targetCluster,
+                                 const std::vector<int>&   sourceFileIdx,
+                                 const std::vector<float>& targetMean,
+                                 const QString& spkPath,
+                                 int nChan, int nSamp, bool twoBytes,
+                                 const std::shared_ptr<KlustersJobToken>& viewToken)
+    : view(v),
+      sourceCluster(sourceCluster), targetCluster(targetCluster),
+      sourceFileIdx(sourceFileIdx), targetMean(targetMean),
+      spkPath(spkPath), nChan(nChan), nSamp(nSamp),
+      twoBytes(twoBytes), token(viewToken)
+{
+    setAutoDelete(true);
+    //The creation of the job launches the request, as the old thread's
+    //constructor did with start().
+    jobGeneration = token->generation.load(std::memory_order_acquire);
+    token->active.fetch_add(1, std::memory_order_acq_rel);
+    KlustersJobPool::pool()->start(this);
+}
+
+void PairXcorrThread::post(QEvent* event)
+{
+    // Fence against view destruction: ~TemplateMatrixView sets viewDead under
+    // the same mutex, so while we hold it and viewDead is false the view is a
+    // valid event receiver.
+    QMutexLocker lock(&token->postMutex);
+    if (token->viewDead) {
+        delete event;
+        return;
+    }
+    QApplication::postEvent(&view, event);
+}
 
 void PairXcorrThread::run()
 {
-    auto post = [this]() {
-        QApplication::postEvent(&view, new PairXcorrEvent(*this));
-    };
+    process();
+    //Retire: this must be the last touch of any shared state.  The
+    //synchronous quiesce in stopRunningThreadsSync() and the document-close
+    //pool drain treat active == 0 as "no job is inside a file read anymore".
+    token->active.fetch_sub(1, std::memory_order_acq_rel);
+}
 
+void PairXcorrThread::process()
+{
     const int maxShift = std::max(1, nSamp / 4);
     const bool pearson = configuration().getTemplateXcorrPearson();
     const long nSpk  = static_cast<long>(sourceFileIdx.size());
@@ -20,13 +61,13 @@ void PairXcorrThread::run()
 
     spkReaderOwn.setPath(spkPath);
     SpkReader& spk = spkReaderOwn;
-    if (spkPath.isEmpty()) { post(); return; }
+    if (spkPath.isEmpty()) { post(new PairXcorrEvent(*this)); return; }
 
     std::vector<int16_t> raw;
     std::vector<float>   sp;
 
     for (long s = 0; s < nSpk; ++s) {
-        if (haveToStopProcessing.load(std::memory_order_relaxed)) break;
+        if (cancelled()) break;
 
         const int  fileIdx0 = sourceFileIdx[static_cast<size_t>(s)];
         const bool ok = tmReadSpikeFloat(spk, fileIdx0, nChan, nSamp, raw, sp);
@@ -35,5 +76,5 @@ void PairXcorrThread::run()
         scores.emplace_back(fileIdx0, sc);
     }
 
-    post();
+    post(new PairXcorrEvent(*this));
 }

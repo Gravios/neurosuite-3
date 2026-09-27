@@ -1,10 +1,10 @@
 #ifndef TEMPLATEMATRIXTHREAD_H
 #define TEMPLATEMATRIXTHREAD_H
 
-#include <QThread>
+#include <QRunnable>
 #include <QEvent>
 #include <QList>
-#include <atomic>
+#include <memory>
 #include <vector>
 #include <cstdint>
 
@@ -12,6 +12,7 @@ class SpkReader;
 
 #include "array.h"
 #include "data.h"
+#include "klustersjobpool.h"   // KlustersJobToken (shared with the view)
 
 class TemplateMatrixView;
 
@@ -98,65 +99,109 @@ float tmProfileSim(const std::vector<float>& a,
                    int nSamp);
 
 // ---------------------------------------------------------------------------
-// Main background thread: reads all cluster waveforms, computes means, and
+// Main background job: reads all cluster waveforms, computes means, and
 // builds the pairwise mean-vs-mean xcorr matrix.
 // Does NOT compute per-spike xcorr — that is deferred to PairXcorrThread.
 // Posts TemplateMatrixEvent (User+601) when done.
+//
+// Formerly one QThread per recompute; now a QRunnable on the shared worker
+// pool (KlustersJobPool — worker-pool conversion, step 4a).  Creating it
+// launches the request, as the old constructor's start() did; the pool owns
+// and deletes it after run().  Cancellation runs through the view's matrix
+// token: the job polls the request generation where it used to poll its
+// per-thread stop flag.  The results — which used to be read out of the
+// thread object after the event arrived — now travel INSIDE the event: the
+// matrix by owning pointer (freed by the event if nobody takes it), the
+// templates and spike indices moved in by value.  The OpenMP passes inside
+// run() are unchanged: OMP teams are plain threads without event loops, so
+// they never allocate descriptor-costing wakeup pipes.
 // ---------------------------------------------------------------------------
-class TemplateMatrixThread : public QThread {
+class TemplateMatrixThread : public QRunnable {
 public:
     friend class TemplateMatrixView;
 
-    ~TemplateMatrixThread() {}
-
-    void stopProcessing() {
-        haveToStopProcessing.store(true, std::memory_order_release);
-    }
-    int getGeneration() const { return generation; }
-
-    // Results exposed to TemplateMatrixView after thread finishes
-    Array<double>*                      getScores()      const { return scores; }
-    QList<int>                          getClusterList() const { return clusterList; }
-    const std::vector<std::vector<float>>& getMeanWav()  const { return meanWav; }
-    const std::vector<std::vector<int>>&   getAllFileIdx()const { return allFileIdx; }
-    /// The channel selection this run was launched for (empty = all channels).
-    /// The view files the result in the matching cache slot.
-    QList<int>                             getSelection() const { return selection; }
+    ~TemplateMatrixThread() override {}
 
     class TemplateMatrixEvent : public QEvent {
         friend class TemplateMatrixThread;
     public:
-        TemplateMatrixThread* parentThread() { return &thread; }
-        ~TemplateMatrixEvent() {}
+        /**Deletes the matrix when no handler took it (stale generation, or
+        * the event was removed unseen by removePostedEvents).*/
+        ~TemplateMatrixEvent() { delete scoresResult; }
+
+        int generation() const { return eventGeneration; }
+        /**Hands the matrix (and its ownership) to the caller; nullptr when
+        * the compute was cancelled or degenerate, or it was already taken.*/
+        Array<double>* takeScores() { Array<double>* s = scoresResult; scoresResult = nullptr; return s; }
+        QList<int> getClusterList() const { return clusterListResult; }
+        /**Mutable on purpose: the accepting handler moves these out.*/
+        std::vector<std::vector<float>>& getMeanWav()   { return meanWavResult; }
+        std::vector<std::vector<int>>&   getAllFileIdx(){ return allFileIdxResult; }
+        /// The channel selection the run was launched for (empty = all channels).
+        /// The view files the result in the matching cache slot.
+        QList<int> getSelection() const { return selectionResult; }
+
     private:
-        explicit TemplateMatrixEvent(TemplateMatrixThread& t)
-            : QEvent(QEvent::Type(QEvent::User + 601)), thread(t) {}
-        TemplateMatrixThread& thread;
+        /**Takes over the job's results: the matrix pointer moves into the
+        * event, the heavy vectors are moved (the job posts as its final act
+        * and never touches them again).*/
+        explicit TemplateMatrixEvent(TemplateMatrixThread& job)
+            : QEvent(QEvent::Type(QEvent::User + 601)),
+              eventGeneration(job.jobGeneration),
+              scoresResult(job.scores),
+              clusterListResult(job.clusterList),
+              meanWavResult(std::move(job.meanWav)),
+              allFileIdxResult(std::move(job.allFileIdx)),
+              selectionResult(job.selection) { job.scores = nullptr; }
+
+        int                             eventGeneration;
+        Array<double>*                  scoresResult;
+        QList<int>                      clusterListResult;
+        std::vector<std::vector<float>> meanWavResult;
+        std::vector<std::vector<int>>   allFileIdxResult;
+        QList<int>                      selectionResult;
     };
 
-protected:
+    /**Executed by a pool worker; builds the matrix, posts the completion
+    * event and retires the job.*/
     void run() override;
 
 private:
     /**
      * @param sel  Channel selection (group-local indices, empty = all channels).
-     *             Only the MATRIX is restricted to it: getMeanWav() stays
-     *             full-width because TemplateMatrixView hands those templates to
+     *             Only the MATRIX is restricted to it: the meanWav templates stay
+     *             full-width because TemplateMatrixView hands them to
      *             PairXcorrThread together with Data::nbOfChannels(), which
      *             would mismatch a compacted template.
+     *
+     * Creating the job launches the request on the shared pool (as the old
+     * thread constructor's start() did).  Runs on the GUI thread only.
      */
-    TemplateMatrixThread(TemplateMatrixView& v, Data& d, int gen,
+    TemplateMatrixThread(TemplateMatrixView& v, Data& d,
+                         const std::shared_ptr<KlustersJobToken>& viewToken,
                          QList<int> sel = QList<int>(),
-                         QList<int> clusterScope = QList<int>())
-        : view(v), data(d), generation(gen),
-          haveToStopProcessing(false), scores(nullptr),
-          selection(std::move(sel)),
-          activeClusters(std::move(clusterScope)) { start(); }
+                         QList<int> clusterScope = QList<int>());
+
+    /**True once the view has superseded this job's request generation: the
+    * job stops at its next check, exactly where the per-thread stop flag
+    * used to be read.*/
+    bool cancelled() const {
+        return token->generation.load(std::memory_order_acquire) != jobGeneration;
+    }
+
+    /**Posts @p event to the view, unless the view is being destroyed
+    * (fenced by the token's postMutex/viewDead).*/
+    void post(QEvent* event);
+
+    /**The old run() body; split out so run() can retire the job on every path.*/
+    void process();
 
     TemplateMatrixView&          view;
     Data&                        data;
-    int                          generation;
-    std::atomic_bool             haveToStopProcessing;
+    /**Shared cancellation/completion state owned by the view (matrix stream).*/
+    std::shared_ptr<KlustersJobToken> token;
+    /**The view's request generation this job was enqueued under.*/
+    int                          jobGeneration = 0;
 
     Array<double>*               scores;
     QList<int>                   clusterList;
