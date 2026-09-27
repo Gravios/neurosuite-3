@@ -121,75 +121,27 @@ void KlustersDoc::prepareClusterColorUndo(){
     emit updateRedoNb(0);
 }
 
-void KlustersDoc::prepareUndo(QList<int>* addedClustersTemp,QList<int>* modifiedClustersTemp,QList<int>* deletedClustersTemp,bool isModifiedByDeletion){
+void KlustersDoc::prepareUndo(ClusterEditUndo action){
     //Prepare the undo for the cluster palette
     prepareClusterColorUndo();
 
-    //Store the current addedClusters in the undo list and make the temporary become the current one.
-    addedClustersUndoList.prepend(addedClusters);
-    addedClusters = addedClustersTemp;
+    //Record the action's descriptor.  Everything rides IN the record — the
+    //by-deletion flag and the renumbering maps included — so the historical
+    //depth arithmetic is gone, and with it the cap-overflow shift dance the
+    //renumbering maps needed and the by-deletion index lists silently got
+    //wrong (their indices were never shifted when the oldest entry fell off,
+    //leaving every older flag pointing one action too high).
+    editUndoList.prepend(std::move(action));
 
-    //Store the current modifiedClusters in the undo list and make the temporary become the current one.
-    modifiedClustersUndoList.prepend(modifiedClusters);
-    modifiedClusters = modifiedClustersTemp;
+    //if the number of undo has been reached remove the last element in the
+    //undo list (first inserted); prepareClusterColorUndo() capped the color
+    //stack the same way, keeping the two in lockstep.
+    if(editUndoList.count() > nbUndo)
+        editUndoList.removeLast();
 
-    //Store the current deletedClusters in the undo list and make the temporary become the current one.
-    deletedClustersUndoList.prepend(deletedClusters);
-    deletedClusters = deletedClustersTemp;
-
-    //The renumbering actions which were redo are now lost
-    QList<int>::iterator iterator;
-    for(iterator = renumberingRedoList.begin(); iterator != renumberingRedoList.end(); ++iterator){
-        clusterIdsOldNewMap.remove(*iterator);
-        clusterIdsNewOldMap.remove(*iterator);
-    }
-    renumberingRedoList.clear();
-
-    //if the number of undo has been reach remove the last element in the undo lists (first inserted)
-    int currentNbUndo = addedClustersUndoList.count();
-    if(currentNbUndo > nbUndo){
-        delete addedClustersUndoList.takeAt(currentNbUndo - 1);
-        delete modifiedClustersUndoList.takeAt(currentNbUndo - 1);
-        delete deletedClustersUndoList.takeAt(currentNbUndo - 1);
-        // removeAll(value) removes list entries whose VALUE equals currentNbUndo.
-        // (removeAt(index) would be an out-of-bounds crash when the list is short.)
-        modifiedClustersByDeleteUndo.removeAll(currentNbUndo);
-        if(isModifiedByDeletion) modifiedClustersByDeleteUndo.append(currentNbUndo - 1);
-
-        //The clusterIdsOldNew and clusterIdsNewOld maps are associated with
-        //undo numbers. As the meaning of the numbers change (first undo will not be accessible anymore,
-        //and the following ones are shift by one down (2->1, 3->2 etc..)), the maps have to be updated accordingly.
-        if(clusterIdsOldNewMap.count() == 1 && clusterIdsOldNewMap.contains(1)){
-            clusterIdsOldNewMap.remove(1);
-            clusterIdsNewOldMap.remove(1);
-        }
-        else{
-            for(int i = 2; i <= nbUndo; ++i){
-                if(!clusterIdsOldNewMap.contains(i)) continue;
-                QMap<int,int> clusterIdsOldNew = clusterIdsOldNewMap[i];
-                clusterIdsOldNewMap.insert(i-1,clusterIdsOldNew);
-                QMap<int,int> clusterIdsNewOld = clusterIdsNewOldMap[i];
-                clusterIdsNewOldMap.insert(i-1,clusterIdsNewOld);
-            }
-            //remove the map entries with the bigger key (has not be taken into account by the previous loop)
-            if(!clusterIdsOldNewMap.isEmpty()) {
-                QList<int> undoNbs = clusterIdsOldNewMap.keys();
-                std::sort(undoNbs.begin(), undoNbs.end());
-                int biggerUndo = undoNbs.last();
-                clusterIdsOldNewMap.remove(biggerUndo);
-                clusterIdsNewOldMap.remove(biggerUndo);
-            }
-        }
-    }
-    else if(isModifiedByDeletion) modifiedClustersByDeleteUndo.append(currentNbUndo);
-
-    //Clear the redoLists
-    qDeleteAll(addedClustersRedoList);
-    addedClustersRedoList.clear();
-    qDeleteAll(modifiedClustersRedoList);
-    modifiedClustersRedoList.clear();
-    qDeleteAll(deletedClustersRedoList);
-    deletedClustersRedoList.clear();
+    //Clear the redoList: the actions which could be redone are now lost,
+    //their renumbering maps and by-deletion flags with them.
+    editRedoList.clear();
 }
 
 
@@ -209,64 +161,21 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
         //Make data clean its internal variables
         clusteringData->nbUndoChangedCleaning(newNbUndo);
 
-        //Process the renumbering variables. All the undo indices in renumberingRedoList which
-        //are bigger than newNbUndo will not be accesible any more, delete them.
-        QList<int>::iterator iterator;
-        QList<int> suppressIndices;
-        for(iterator = renumberingRedoList.begin(); iterator != renumberingRedoList.end(); ++iterator){
-            if(*iterator > newNbUndo){
-                clusterIdsOldNewMap.remove(*iterator);
-                clusterIdsNewOldMap.remove(*iterator);
-                suppressIndices.append(*iterator);
-            }
-        }
-        for(iterator = suppressIndices.begin(); iterator != suppressIndices.end(); ++iterator)
-            renumberingRedoList.removeAll(*iterator);
-
         int currentNbUndo = clusterColorListUndoList.count();
 
         //if the current number of undo is bigger than the new number of undo,
         // remove the last elements in the undo lists (first ones inserted).
+        //The descriptor stack trims alongside the color stack — the trimmed
+        //entries take their renumbering maps and by-deletion flags with them,
+        //which is all the depth-shift bookkeeping this loop used to do.
         if(currentNbUndo > newNbUndo){
             while(currentNbUndo > newNbUndo){
-                delete addedClustersUndoList.takeAt(currentNbUndo - 1);
-                delete modifiedClustersUndoList.takeAt(currentNbUndo - 1);
-                delete deletedClustersUndoList.takeAt(currentNbUndo - 1);
+                if(!editUndoList.isEmpty()) editUndoList.removeLast();
                 delete clusterColorListUndoList.takeAt(currentNbUndo - 1);
-                modifiedClustersByDeleteUndo.removeAll(currentNbUndo);
-
-                //The clusterIdsOldNew and clusterIdsNewOld maps are associated with
-                //undo numbers. As the meaning of the numbers change (first undo will not be accessible anymore,
-                //and the following ones are shift by one down (2->1, 3->2 etc..)), the maps have to be updated accordingly.
-                if(clusterIdsOldNewMap.count() == 1 && clusterIdsOldNewMap.contains(1)){
-                    clusterIdsOldNewMap.remove(1);
-                    clusterIdsNewOldMap.remove(1);
-                }
-                else{
-                    for(int i = 2; i <= currentNbUndo; ++i){
-                        if(!clusterIdsOldNewMap.contains(i)) continue;
-                        QMap<int,int> clusterIdsOldNew = clusterIdsOldNewMap[i];
-                        clusterIdsOldNewMap.insert(i-1,clusterIdsOldNew);
-                        QMap<int,int> clusterIdsNewOld = clusterIdsNewOldMap[i];
-                        clusterIdsNewOldMap.insert(i-1,clusterIdsNewOld);
-                    }
-                    //remove the map entries with the bigger key (has not be taken into account by the previous loop)
-                    QList<int> undoNbs = clusterIdsOldNewMap.keys();
-                    std::sort(undoNbs.begin(), undoNbs.end());
-                    int biggerUndo = undoNbs.last();
-                    clusterIdsOldNewMap.remove(biggerUndo);
-                    clusterIdsNewOldMap.remove(biggerUndo);
-                }
-
                 currentNbUndo = clusterColorListUndoList.count();
             }
             //clear the redo lists
-            qDeleteAll(addedClustersRedoList);
-            addedClustersRedoList.clear();
-            qDeleteAll(modifiedClustersRedoList);
-            modifiedClustersRedoList.clear();
-            qDeleteAll(deletedClustersRedoList);
-            deletedClustersRedoList.clear();
+            editRedoList.clear();
             qDeleteAll(clusterColorListRedoList);
             clusterColorListRedoList.clear();
         }
@@ -276,12 +185,8 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
             int currentNbRedo = clusterColorListRedoList.count();
             if((currentNbRedo + currentNbUndo) > newNbUndo){
                 while((currentNbRedo + currentNbUndo) > newNbUndo){
-                    delete addedClustersRedoList.takeAt(currentNbRedo - 1);
-                    delete modifiedClustersRedoList.takeAt(currentNbRedo - 1);
-                    delete deletedClustersRedoList.takeAt(currentNbRedo - 1);
+                    if(!editRedoList.isEmpty()) editRedoList.removeLast();
                     delete clusterColorListRedoList.takeAt(currentNbRedo - 1);
-                    modifiedClustersByDeleteRedo.removeAll(currentNbRedo);
-
                     currentNbRedo = clusterColorListRedoList.count();
                 }
             }
@@ -302,119 +207,59 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
 
 
 void KlustersDoc::prepareUndo(){
-    //Create a new empty list of created clusters
-    QList<int>* addedClustersTemp = new QList<int>();
-
-    //Create a new empty list of modified clusters
-    QList<int>* modifiedClustersTemp = new QList<int>();
-
-    //Create a new empty list of deleted clusters
-    QList<int>* deletedClustersTemp = new QList<int>();
-
-    prepareUndo(addedClustersTemp, modifiedClustersTemp,deletedClustersTemp);
+    //An action which reports no cluster changes.
+    prepareUndo(ClusterEditUndo());
 }
 
 void KlustersDoc::prepareUndo(int newCluster,QList<int>& deletedClusters){
-    //Create a new list of created clusters
-    QList<int>* addedClustersTemp = new QList<int>();
-    addedClustersTemp->append(newCluster);
-
-    //Create a new list of modified clusters
-    QList<int>* modifiedClustersTemp = new QList<int>();
-
-    //Create a new list of deleted clusters
-    QList<int>* deletedClustersTemp = new QList<int>();
-    QList<int>::iterator iterator;
-    for (iterator = deletedClusters.begin(); iterator != deletedClusters.end(); ++iterator)
-        deletedClustersTemp->append(*iterator);
-
-    prepareUndo(addedClustersTemp, modifiedClustersTemp,deletedClustersTemp);
+    ClusterEditUndo action;
+    action.added.append(newCluster);
+    action.deleted = deletedClusters;
+    prepareUndo(std::move(action));
 }
 
 void KlustersDoc::prepareUndo(QList<int>& modifiedClusters,QList<int>& deletedClusters,bool isModifiedByDeletion){
-    //Create a new empty list of created clusters
-    QList<int>* addedClustersTemp = new QList<int>();
-
-    //Create a new list of modified clusters
-    QList<int>* modifiedClustersTemp = new QList<int>();
-    QList<int>::iterator iterator;
-    for (iterator = modifiedClusters.begin(); iterator != modifiedClusters.end(); ++iterator)
-        modifiedClustersTemp->append(*iterator);
-
-    //Create a new list of deleted clusters
-    QList<int>* deletedClustersTemp = new QList<int>();
-    for (iterator = deletedClusters.begin(); iterator != deletedClusters.end(); ++iterator)
-        deletedClustersTemp->append(*iterator);
-
-    prepareUndo(addedClustersTemp, modifiedClustersTemp,deletedClustersTemp,isModifiedByDeletion);
+    ClusterEditUndo action;
+    action.modified = modifiedClusters;
+    action.deleted = deletedClusters;
+    action.byDeletion = isModifiedByDeletion;
+    prepareUndo(std::move(action));
 }
 
 void KlustersDoc::prepareUndo(int newCluster, QList<int>& modifiedClusters,QList<int>& deletedClusters,bool isModifiedByDeletion){
-    //Create a new empty list of created clusters
-    QList<int>* addedClustersTemp = new QList<int>();
-    addedClustersTemp->append(newCluster);
-
-    //Create a new list of modified clusters
-    QList<int>* modifiedClustersTemp = new QList<int>();
-    QList<int>::iterator iterator;
-    for (iterator = modifiedClusters.begin(); iterator != modifiedClusters.end(); ++iterator)
-        modifiedClustersTemp->append(*iterator);
-
-    //Create a new list of deleted clusters
-    QList<int>* deletedClustersTemp = new QList<int>();
-    for (iterator = deletedClusters.begin(); iterator != deletedClusters.end(); ++iterator)
-        deletedClustersTemp->append(*iterator);
-
-    prepareUndo(addedClustersTemp, modifiedClustersTemp,deletedClustersTemp,isModifiedByDeletion);
+    ClusterEditUndo action;
+    action.added.append(newCluster);
+    action.modified = modifiedClusters;
+    action.deleted = deletedClusters;
+    action.byDeletion = isModifiedByDeletion;
+    prepareUndo(std::move(action));
 }
 
 void KlustersDoc::prepareUndo(QList<int>& newClusters, QList<int>& modifiedClusters,QList<int>& deletedClusters){
-    //Create a new list of created clusters
-    QList<int>* addedClustersTemp = new QList<int>();
-    QList<int>::iterator iterator;
-    for (iterator = newClusters.begin(); iterator != newClusters.end(); ++iterator)
-        addedClustersTemp->append(*iterator);
-
-    //Create a new list of modified clusters
-    QList<int>* modifiedClustersTemp = new QList<int>();
-    for (iterator = modifiedClusters.begin(); iterator != modifiedClusters.end(); ++iterator)
-        modifiedClustersTemp->append(*iterator);
-
-    //Create a new list of deleted clusters
-    QList<int>* deletedClustersTemp = new QList<int>();
-    for (iterator = deletedClusters.begin(); iterator != deletedClusters.end(); ++iterator)
-        deletedClustersTemp->append(*iterator);
-
-    prepareUndo(addedClustersTemp, modifiedClustersTemp,deletedClustersTemp);
+    ClusterEditUndo action;
+    action.added = newClusters;
+    action.modified = modifiedClusters;
+    action.deleted = deletedClusters;
+    prepareUndo(std::move(action));
 }
 
 
 void KlustersDoc::prepareUndo(QMap<int,int> clusterIdsOldNew,QMap<int,int> clusterIdsNewOld){
-    prepareUndo();
-
-    //Update the renumbering lists
-    int currentNbUndo = clusterColorListUndoList.count();
-    NS3_DIAG()<<"currentNbUndo in KlustersDoc::prepareUndo: "<<currentNbUndo;
-    clusterIdsOldNewMap.insert(currentNbUndo,clusterIdsOldNew);
-    clusterIdsNewOldMap.insert(currentNbUndo,clusterIdsNewOld);
+    //A renumbering action: the descriptor carries the relabel maps the
+    //undo/redo notifications replay (view->undoRenumbering/redoRenumbering).
+    ClusterEditUndo action;
+    action.renumbering = true;
+    action.renumberOldNew = clusterIdsOldNew;
+    action.renumberNewOld = clusterIdsNewOld;
+    prepareUndo(std::move(action));
 }
 
 
 void KlustersDoc::prepareReclusteringUndo(QList<int>& newClusters,QList<int>& deletedClusters){
-    //Create a new list of created clusters
-    QList<int>* addedClustersTemp = new QList<int>();
-    for (int v : newClusters)
-        addedClustersTemp->append(v);
-
-    //Create a new list of modified clusters
-    QList<int>* modifiedClustersTemp = new QList<int>();
-
-    //Create a new list of deleted clusters
-    QList<int>* deletedClustersTemp = new QList<int>();
-    for (int v : deletedClusters)
-        deletedClustersTemp->append(v);
-
-    prepareUndo(addedClustersTemp, modifiedClustersTemp,deletedClustersTemp);
+    ClusterEditUndo action;
+    action.added = newClusters;
+    action.deleted = deletedClusters;
+    prepareUndo(std::move(action));
 }
 
 void KlustersDoc::undo(){
@@ -457,76 +302,73 @@ void KlustersDoc::undo(){
         ItemColors* clusterColorListTemp = clusterColorListUndoList.takeAt(0);
         clusterColorList =  clusterColorListTemp;
 
-        int nbUndo = clusterColorListUndoList.count();
+        NS3_DIAG() << "nbUndo in KlustersDoc::undo: "<<clusterColorListUndoList.count();
 
-        NS3_DIAG() << "nbUndo in KlustersDoc::undo: "<<nbUndo;
+        //Move the reverted action's descriptor onto the redo side and dispatch
+        //on a local copy: one move per undo keeps the descriptor stack in
+        //lockstep with the color stacks, whose counts drive the menus.  (The
+        //defensive default preserves the historical both-empty dispatch below
+        //for a desynced stack instead of popping a missing entry.)
+        ClusterEditUndo action;
+        if(!editUndoList.isEmpty()) action = editUndoList.takeFirst();
+        editRedoList.prepend(action);
 
         //If this undo does concern renumbering
-        if(clusterIdsNewOldMap.contains(nbUndo + 1)){
-            NS3_DIAG() << "renumber in KlustersDoc::undo, nbUndo + 1 : "<<nbUndo + 1;
-            //Add the current undo indice to the renumberingRedoList
-            renumberingRedoList.append(nbUndo + 1);
-
+        if(action.renumbering){
             // Reverse any S-pin renumbers made by the original action
             // so a pin the user set on the pre-renumber cluster id is
             // restored when undo brings that id back.
-            clusterPalette.renumberPinnedIds(clusterIdsNewOldMap[nbUndo + 1]);
+            clusterPalette.renumberPinnedIds(action.renumberNewOld);
 
             //Notify all the views of the undo
 
             for (KlustersView* view : *viewList) {
                 const bool isActive = (view == activeView);
-                    view->undoRenumbering(clusterIdsNewOldMap[nbUndo + 1], isActive);
+                    view->undoRenumbering(action.renumberNewOld, isActive);
                     view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
             }
 
             //Notify the errorMatrixView of the modification
-            emit undoRenumbering(clusterIdsNewOldMap[nbUndo + 1]);
+            emit undoRenumbering(action.renumberNewOld);
         }
         else{
-            if(modifiedClustersByDeleteUndo.contains(nbUndo + 1) != 0){
-                modifiedClustersByDeleteUndo.removeAll(nbUndo + 1);
-                int nbRedo = clusterColorListRedoList.count();
-                modifiedClustersByDeleteRedo.append(nbRedo);
-            }
-
             //Notify all the views of the undo
-            if(addedClusters->size() > 0 && modifiedClusters->size() > 0){
-                NS3_DIAG() << "addedClusters->size() > 0 && modifiedClusters->size() > 0";
+            if(action.added.size() > 0 && action.modified.size() > 0){
+                NS3_DIAG() << "added.size() > 0 && modified.size() > 0";
                 for (KlustersView* view : *viewList) {
                     const bool isActive = (view == activeView);
-                        view->undo(*addedClusters,*modifiedClusters, isActive);
+                        view->undo(action.added,action.modified, isActive);
                         view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
-                emit undoAdditionModification(*addedClusters,*modifiedClusters);
+                emit undoAdditionModification(action.added,action.modified);
             }
-            else if(!addedClusters->isEmpty() && modifiedClusters->isEmpty()){
-                NS3_DIAG() << "addedClusters->size() > 0 && modifiedClusters->size() == 0";
+            else if(!action.added.isEmpty() && action.modified.isEmpty()){
+                NS3_DIAG() << "added.size() > 0 && modified.size() == 0";
                 for (KlustersView* view : *viewList) {
                     const bool isActive = (view == activeView);
-                        view->undoAddedClusters(*addedClusters, isActive);
+                        view->undoAddedClusters(action.added, isActive);
                         view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
-                emit undoAddition(*addedClusters);
+                emit undoAddition(action.added);
             }
-            else if(addedClusters->isEmpty() && !modifiedClusters->isEmpty()){
-                NS3_DIAG() << "addedClusters->size() == 0 && modifiedClusters->size() > 0";
+            else if(action.added.isEmpty() && !action.modified.isEmpty()){
+                NS3_DIAG() << "added.size() == 0 && modified.size() > 0";
                 for (KlustersView* view : *viewList) {
                     const bool isActive = (view == activeView);
-                        view->undoModifiedClusters(*modifiedClusters, isActive);
+                        view->undoModifiedClusters(action.modified, isActive);
                         view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
-                emit undoModification(*modifiedClusters);
+                emit undoModification(action.modified);
             }
             //////!!!!This last condition should not be reach anymore, to test and remove.!!!!!////
-            else if(addedClusters->size() == 0 && modifiedClusters->size() == 0){
-                NS3_DIAG() << "addedClusters->size() == 0 && modifiedClusters->size() == 0";
+            else if(action.added.size() == 0 && action.modified.size() == 0){
+                NS3_DIAG() << "added.size() == 0 && modified.size() == 0";
                 for (KlustersView* view : *viewList) {
                     const bool isActive = (view == activeView);
                     view->undo(isActive);
@@ -534,23 +376,6 @@ void KlustersDoc::undo(){
                 }
             }
         }
-        addedClustersRedoList.prepend(addedClusters);
-        QList<int>* addedClustersTemp = addedClustersUndoList.isEmpty()
-                                        ? new QList<int>()
-                                        : addedClustersUndoList.takeAt(0);
-        addedClusters =  addedClustersTemp;
-
-        modifiedClustersRedoList.prepend(modifiedClusters);
-        QList<int>* modifiedClustersTemp = modifiedClustersUndoList.isEmpty()
-                                           ? new QList<int>()
-                                           : modifiedClustersUndoList.takeAt(0);
-        modifiedClusters =  modifiedClustersTemp;
-
-        deletedClustersRedoList.prepend(deletedClusters);
-        QList<int>* deletedClustersTemp = deletedClustersUndoList.isEmpty()
-                                          ? new QList<int>()
-                                          : deletedClustersUndoList.takeAt(0);
-        deletedClusters =  deletedClustersTemp;
 
         QList<int> clustersToShow = activeView->clusters();
 
@@ -619,17 +444,11 @@ void KlustersDoc::redo(){
         ItemColors* clusterColorListTemp = clusterColorListRedoList.takeAt(0);
         clusterColorList =  clusterColorListTemp;
 
-        addedClustersUndoList.prepend(addedClusters);
-        QList<int>* addedClustersTemp = addedClustersRedoList.takeAt(0);
-        addedClusters =  addedClustersTemp;
-
-        modifiedClustersUndoList.prepend(modifiedClusters);
-        QList<int>* modifiedClustersTemp = modifiedClustersRedoList.takeAt(0);
-        modifiedClusters =  modifiedClustersTemp;
-
-        deletedClustersUndoList.prepend(deletedClusters);
-        QList<int>* deletedClustersTemp = deletedClustersRedoList.takeAt(0);
-        deletedClusters =  deletedClustersTemp;
+        //Move the re-applied action's descriptor back onto the undo side and
+        //dispatch on a local copy (the mirror of undo()).
+        ClusterEditUndo action;
+        if(!editRedoList.isEmpty()) action = editRedoList.takeFirst();
+        editUndoList.prepend(action);
 
         // Stop in-flight view worker threads before the data swap (see the
         // matching comment in undo()): prevents a stale waveform/correlation
@@ -641,84 +460,71 @@ void KlustersDoc::redo(){
         clusteringData->redo();
 
         //If this redo does concern renumbering
-        int nbUndo = clusterColorListUndoList.count();
+        NS3_DIAG() << "in KlustersDoc::redo, nbUndo  : "<<clusterColorListUndoList.count();
 
-        NS3_DIAG() << "in KlustersDoc::redo, nbUndo  : "<<nbUndo;
-
-        if(clusterIdsOldNewMap.contains(nbUndo)){
-            NS3_DIAG() << "renumber in KlustersDoc::redo, nbUndo  : "<<nbUndo;
-            //remove the current undo indice from the renumberingRedoList
-            renumberingRedoList.removeAll(nbUndo);
-
+        if(action.renumbering){
             // Re-apply the original rename to S-pinned ids so a pin
             // restored by undo gets re-translated when redo replays
             // the renumber.
-            clusterPalette.renumberPinnedIds(clusterIdsOldNewMap[nbUndo]);
+            clusterPalette.renumberPinnedIds(action.renumberOldNew);
 
             //Notify all the views of the undo
             for (KlustersView* view : *viewList) {
                 const bool isActive = (view == activeView);
-                    view->redoRenumbering(clusterIdsOldNewMap[nbUndo], isActive);
+                    view->redoRenumbering(action.renumberOldNew, isActive);
                     view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
             }
 
             //Notify the errorMatrixView of the modification
-            emit redoRenumbering(clusterIdsOldNewMap[nbUndo]);
+            emit redoRenumbering(action.renumberOldNew);
         }
         else{
-            int nbRedo = clusterColorListRedoList.count();
-            bool isModifiedByDeletion = false;
-            if(modifiedClustersByDeleteRedo.contains(nbRedo + 1) != 0){
-                isModifiedByDeletion = true;
-                modifiedClustersByDeleteRedo.removeAll(nbRedo + 1);
-                int nbUndo = clusterColorListUndoList.count();
-                modifiedClustersByDeleteUndo.append(nbUndo);
-            }
+            const bool isModifiedByDeletion = action.byDeletion;
 
             //Notify all the views of the undo
-            if(addedClusters->size() > 0 && modifiedClusters->size() > 0){
-                NS3_DIAG() << "in KlustersDoc::redo, nbUndo  addedClusters->size() > 0 && modifiedClusters->size()>0";
+            if(action.added.size() > 0 && action.modified.size() > 0){
+                NS3_DIAG() << "in KlustersDoc::redo, added.size() > 0 && modified.size()>0";
                 for (KlustersView* view : *viewList) {
                     const bool isActive = (view == activeView);
-                    view->redo(*addedClusters, *modifiedClusters, isModifiedByDeletion, isActive, *deletedClusters);
+                    view->redo(action.added, action.modified, isModifiedByDeletion, isActive, action.deleted);
                     view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
-                emit redoAdditionModification(*addedClusters,*modifiedClusters,isModifiedByDeletion,*deletedClusters);
+                emit redoAdditionModification(action.added,action.modified,isModifiedByDeletion,action.deleted);
             }
-            else if(addedClusters->size() > 0 && modifiedClusters->size() == 0){
-                NS3_DIAG() << "in KlustersDoc::redo, nbUndo  addedClusters->size() > 0 && modifiedClusters->size()==0";
+            else if(action.added.size() > 0 && action.modified.size() == 0){
+                NS3_DIAG() << "in KlustersDoc::redo, added.size() > 0 && modified.size()==0";
                 for (KlustersView* view : *viewList) {
                     const bool isActive = (view == activeView);
-                    view->redoAddedClusters(*addedClusters, isActive, *deletedClusters);
+                    view->redoAddedClusters(action.added, isActive, action.deleted);
                     view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
-                emit redoAddition(*addedClusters,*deletedClusters);
+                emit redoAddition(action.added,action.deleted);
             }
-            else if(addedClusters->size() == 0 && modifiedClusters->size() > 0){
-                NS3_DIAG() << "in KlustersDoc::redo, nbUndo  addedClusters->size() == 0 && modifiedClusters->size()>0";
+            else if(action.added.size() == 0 && action.modified.size() > 0){
+                NS3_DIAG() << "in KlustersDoc::redo, added.size() == 0 && modified.size()>0";
                 for (KlustersView* view : *viewList) {
                     const bool isActive = (view == activeView);
-                    view->redoModifiedClusters(*modifiedClusters, isModifiedByDeletion, isActive, *deletedClusters);
+                    view->redoModifiedClusters(action.modified, isModifiedByDeletion, isActive, action.deleted);
                     view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
-                emit redoModification(*modifiedClusters,isModifiedByDeletion,*deletedClusters);
+                emit redoModification(action.modified,isModifiedByDeletion,action.deleted);
             }
-            else if(addedClusters->size() == 0 && modifiedClusters->size() == 0){
-                NS3_DIAG() << "in KlustersDoc::redo, nbUndo  addedClusters->size() == 0 && modifiedClusters->size() ==0";
+            else if(action.added.size() == 0 && action.modified.size() == 0){
+                NS3_DIAG() << "in KlustersDoc::redo, added.size() == 0 && modified.size() ==0";
                 for (KlustersView* view : *viewList) {
                     const bool isActive = (view == activeView);
-                    view->redo(isActive, *deletedClusters);
+                    view->redo(isActive, action.deleted);
                     view->updateTraceView(electrodeGroupID, clusterColorList, isActive);
                 }
 
                 //Notify the errorMatrixView of the modification
-                emit redoDeletion(*deletedClusters);
+                emit redoDeletion(action.deleted);
             }
         }
 

@@ -90,8 +90,7 @@ using klustersdoc_internal::resolveFeature;
 using klustersdoc_internal::stripFeatureSuffix;
 
 KlustersDoc::KlustersDoc(QWidget* parent,ClusterPalette& clusterPalette,bool autoSave,int savingInterval)
-    : clusterColorListUndoList(),clusterColorListRedoList(),modified(false),docUrl(),parent(parent),clusterPalette(clusterPalette),
-    addedClustersUndoList(),addedClustersRedoList(),modifiedClustersUndoList(),modifiedClustersRedoList()
+    : clusterColorListUndoList(),clusterColorListRedoList(),modified(false),docUrl(),parent(parent),clusterPalette(clusterPalette)
   ,autoSave(autoSave),savingInterval(savingInterval),tracesProvider(nullptr),clustersProvider(nullptr),channelColorList(nullptr)
 {
     // Child-primary backend, chosen per session rather than per build.  Read once
@@ -105,9 +104,6 @@ KlustersDoc::KlustersDoc(QWidget* parent,ClusterPalette& clusterPalette,bool aut
 
     viewList = new QList<KlustersView*>();
     clusterColorList = nullptr;
-    addedClusters = nullptr;
-    modifiedClusters = nullptr;
-    deletedClusters = nullptr;
     endAutoSaving = false;
     autoSaveThread = nullptr;
 }
@@ -139,9 +135,6 @@ KlustersDoc::~KlustersDoc(){
     if(clusterColorList != nullptr){
         delete clusteringData;
         delete clusterColorList;
-        delete addedClusters;
-        delete modifiedClusters;
-        delete deletedClusters;
     }
 
     // Drop the .pending scratch copies now that nothing reads them (clusteringData, which had its
