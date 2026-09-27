@@ -884,11 +884,14 @@ public:
   * block or fewer, which is not an error).*/
     int partitionClusterByTime(int clusterId, double blockSeconds);
 
-    void createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin);
+    /**Row-named form.
+    * @return the new cluster's id (an atom id in child scope), or 0 when the
+    * selection produced no new cluster.*/
+    int createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin);
 
     /**Polygon form: the scatter views' gesture, unchanged.*/
-    void createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
-        createNewCluster(SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
+    int createNewCluster(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+        return createNewCluster(SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
     }
 
     /**
@@ -901,11 +904,11 @@ public:
     * @param dimensionY the dimension used as ordinate to display the clusters.
     * @return a list of the numbers of the newly created clusters.
     */
-    void createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin);
+    QList<int> createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin);
 
     /**Polygon form: the scatter views' gesture, unchanged.*/
-    void createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
-        createNewClusters(SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
+    QList<int> createNewClusters(QRegion& region, const QList <int>& clustersOfOrigin, int dimensionX, int dimensionY){
+        return createNewClusters(SpikeSelection(region,dimensionX,dimensionY),clustersOfOrigin);
     }
 
     /** DipSplit result summary — returned by dipSplitApply().

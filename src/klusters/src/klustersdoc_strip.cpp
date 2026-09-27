@@ -240,10 +240,11 @@ KlustersDoc::stripByTemplate(int               templateCluster,
 
     // ── The cut: the lasso's row-named path ─────────────────────────────
     int nProducts = 0;
+    QList<int> products;                       // the strip's landing, below
     if (onePerSource) {
-        createNewClusters(SpikeSelection(rows,
-                              QStringLiteral("template_strip")), R.sources);
-        nProducts = R.sources.size();
+        products = createNewClusters(SpikeSelection(rows,
+                       QStringLiteral("template_strip")), R.sources);
+        nProducts = products.size();
     } else {
         // Combined product(s): one per parent in scope, so a joint child
         // scope cannot mint a parent-straddling atom; the parent scope is a
@@ -257,11 +258,25 @@ KlustersDoc::stripByTemplate(int               templateCluster,
             g.second.append(src);
         }
         for (auto it = groups.begin(); it != groups.end(); ++it) {
-            createNewCluster(SpikeSelection(it.value().first,
-                                 QStringLiteral("template_strip")),
-                             it.value().second);
-            ++nProducts;
+            const int product =
+                createNewCluster(SpikeSelection(it.value().first,
+                                     QStringLiteral("template_strip")),
+                                 it.value().second);
+            if (product > 0) { products.append(product); ++nProducts; }
         }
+    }
+    // Land on the products ALONE, overriding the ride path's split landing
+    // (products + surviving sources).  That landing is right for a lasso —
+    // a handful of pieces judged against each other — but a whole-scope
+    // strip has hundreds of surviving donors, and the post-edit apply
+    // (applyPendingParentSelection, or the child palette's drain) both
+    // SELECTS and SHOWS the parked list, burying the product under a
+    // selection the views struggle to draw.  The strip's judgement object
+    // is the product; the donors keep their places.
+    if (!products.isEmpty()) {
+        std::sort(products.begin(), products.end());
+        if (onChild) setPendingChildSelection(products);
+        else         setPendingParentSelection(products);
     }
     R.accepted = true;
     R.reason = tr("Stripped %1 of %2 examined spikes matching template %3 "

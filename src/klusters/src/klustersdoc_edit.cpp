@@ -1162,7 +1162,7 @@ int KlustersDoc::partitionClusterByTime(int clusterId, double blockSeconds)
     return created;
 }
 
-void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
+int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
     // ACTIVE-layer edit: this is the one builder that legitimately runs on
     // either clustering -- on atoms it carries a full child branch below.  The
     // ids must therefore name the layer that is active right now.
@@ -1317,9 +1317,12 @@ void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList 
         }
         logAfter(resultIds);
     }
+    //One return for all three branches: 0 when nothing was created, the new
+    //atom's id on a child split, the new parent's id otherwise.
+    return static_cast<int>(newClusterId);
 }
 
-void KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
+QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
     idsBelongTo(data(), clustersOfOrigin, "createNewClusters");   // ACTIVE layer, as above
     //list which will contain the clusters really having spikes in the region of selection.
     QList <int> fromClusters;
@@ -1483,4 +1486,7 @@ void KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList
             logAfter(resultIds);
         }
     }
+    //One return for all three branches: empty when nothing was created, the
+    //new atom ids on a child split, the new parent ids otherwise.
+    return newClusters;
 }
