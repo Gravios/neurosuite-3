@@ -63,9 +63,24 @@ Data::Data()
 {
 
     minMaxThread = minMaxCalculator();
-    spikesByCluster = new SortableTable();
-    clusterInfoMap = new ClusterInfoMap();
+    spikesByCluster = std::make_shared<SortableTable>();
+    clusterInfoMap = std::make_shared<ClusterInfoMap>();
+    //Publish the (empty) epoch 1 so currentSnapshot() is never null.
+    publishSnapshot();
+}
 
+void Data::publishSnapshot(){
+    auto snap = std::make_shared<ClusteringSnapshot>();
+    QMutexLocker lk(&mutex);
+    snap->epoch = ++snapshotEpochCounter;
+    snap->spikesByCluster = spikesByCluster;
+    snap->clusterInfoMap  = clusterInfoMap;
+    snapshot = std::move(snap);
+}
+
+std::shared_ptr<const Data::ClusteringSnapshot> Data::currentSnapshot() const{
+    QMutexLocker lk(&mutex);
+    return snapshot;
 }
 
 Data::~Data(){
@@ -73,17 +88,15 @@ Data::~Data(){
     minMaxThread->wait();
     delete minMaxThread;
 
-    //delete the pointers to the tables and maps
-    delete spikesByCluster;
-    delete clusterInfoMap;
+    //The tables and maps are shared_ptr-owned (with the snapshots and the
+    //undo/redo histories); clearing the references releases whatever nothing
+    //else still holds.
+    spikesByCluster.reset();
+    clusterInfoMap.reset();
 
-    qDeleteAll(clusterInfoMapUndoList);
     clusterInfoMapUndoList.clear();
-    qDeleteAll(clusterInfoMapRedoList);
     clusterInfoMapRedoList.clear();
-    qDeleteAll(spikesByClusterUndoList);
     spikesByClusterUndoList.clear();
-    qDeleteAll(spikesByClusterRedoList);
     spikesByClusterRedoList.clear();
 
     qDeleteAll(waveformDict);
@@ -1535,10 +1548,10 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,Q
         positions[clusterId] ++;
     }
 
-    //Delete spikesByCluster and assign to the pointer the value of spikesByClusterTemp;
-    delete spikesByCluster;
-    spikesByCluster = nullptr;
-    spikesByCluster =  spikesByClusterTemp;
+    //Hand ownership of the freshly built table to the shared pointer; the
+    //previous (spike-order) table is released with its last reference.
+    spikesByCluster = std::shared_ptr<SortableTable>(spikesByClusterTemp);
+    publishSnapshot();
 
 
     //Calculate the minimum and maximum for each dimension and store them in
@@ -1701,10 +1714,13 @@ void Data::resyncClusterInfoMapFromRowTable()
 
     {
         QMutexLocker lk(&mutex);
-        delete spikesByCluster;
-        spikesByCluster = tmp;
-        *clusterInfoMap = rebuilt;
+        spikesByCluster = std::shared_ptr<SortableTable>(tmp);
+        //A fresh map rather than assigning into the current one: the current
+        //map is shared with the published snapshot, which must not change
+        //behind the epoch it was published under.
+        clusterInfoMap = std::make_shared<ClusterInfoMap>(rebuilt);
     }
+    publishSnapshot();
 }
 
 
@@ -1773,6 +1789,7 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,QString& errorInform
         (*spikesByCluster)(1,i) = i;
 
     clusterInfoMap->insert(1, ClusterInfo(1,nbSpikes));
+    publishSnapshot();
 
     //Calculate the minimum and maximum for each dimension and store them in
     //dimensionMinima and dimensionMaxima respectively
@@ -3569,6 +3586,10 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
 
     // If toCluster does not yet exist insert an empty placeholder so the
     // rebuild loop hits the toCluster branch and creates it.
+    // SNAPSHOT-ALIASING (plan step 6 blocker): this mutates the CURRENT map,
+    // which the published snapshot shares.  Harmless while every edit path
+    // still quiesces the readers first; must move into the rebuild below
+    // before that quiesce is removed.
     const bool toClusterIsNew = !clusterInfoMap->contains(static_cast<dataType>(toCluster));
     if (toClusterIsNew)
         clusterInfoMap->insert(static_cast<dataType>(toCluster), ClusterInfo(0, 0));
@@ -3680,8 +3701,13 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
     prepareUndo(newSpk, newInfo, dimChanged);
 
     // Remove emptied clusters from the (now-current) clusterInfoMap.
+    // SNAPSHOT-ALIASING (plan step 6 blocker): this mutates the map the
+    // epoch prepareUndo just published shares; the republish below restores
+    // the published-state invariant, and the quiesce covers the gap.  Must
+    // move into the newInfo build before the quiesce is removed.
     for (int cid : emptiedClusters)
         clusterInfoMap->remove(static_cast<dataType>(cid));
+    publishSnapshot();
 
     // Same wait/flag/list/start sequence as every sibling committer.
     if (dimChanged) {
@@ -3736,9 +3762,10 @@ void Data::restoreClusterLabels(const QVector<dataType>& labels)
 
     {
         QMutexLocker lk(&mutex);
-        delete spikesByCluster; spikesByCluster = newSpk;
-        delete clusterInfoMap;  clusterInfoMap  = newInfo;
+        spikesByCluster = std::shared_ptr<SortableTable>(newSpk);
+        clusterInfoMap  = std::shared_ptr<ClusterInfoMap>(newInfo);
     }
+    publishSnapshot();
 
     QSet<dataType> touched(before.begin(), before.end());
     for (auto it = newInfo->constBegin(); it != newInfo->constEnd(); ++it)
@@ -4069,22 +4096,24 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
 
     {
         QMutexLocker lk(&mutex);
-    clusterInfoMap = clusterInfoMapTemp;
-    spikesByCluster = spikesByClusterTemp;
+    clusterInfoMap = std::shared_ptr<ClusterInfoMap>(clusterInfoMapTemp);
+    spikesByCluster = std::shared_ptr<SortableTable>(spikesByClusterTemp);
     }
+    //prepareUndo is the single commit point every forward edit funnels
+    //through: publish the new membership epoch here.
+    publishSnapshot();
 
     //if the number of undo has been reached, remove the oldest element from all three lists
+    //(the shared_ptrs release the tables with their last reference)
     int currentNbUndo = spikesByClusterUndoList.count();
     if(currentNbUndo > nbUndo){
-        delete spikesByClusterUndoList.takeAt(currentNbUndo - 1);
-        delete clusterInfoMapUndoList.takeAt(currentNbUndo - 1);
+        spikesByClusterUndoList.removeAt(currentNbUndo - 1);
+        clusterInfoMapUndoList.removeAt(currentNbUndo - 1);
         dimensionChangedUndo.removeAt(currentNbUndo - 1);
     }
 
     //Clear the redoLists (including dimensionChangedRedo which must stay in sync)
-    qDeleteAll(spikesByClusterRedoList);
     spikesByClusterRedoList.clear();
-    qDeleteAll(clusterInfoMapRedoList);
     clusterInfoMapRedoList.clear();
     dimensionChangedRedo.clear();
 
@@ -4118,15 +4147,13 @@ void Data::nbUndoChangedCleaning(int newNbUndo){
         // remove the last elements in the undo lists (first ones inserted).
         if(currentNbUndo > newNbUndo){
             while(currentNbUndo > newNbUndo){
-                delete spikesByClusterUndoList.takeAt(currentNbUndo - 1);
-                delete clusterInfoMapUndoList.takeAt(currentNbUndo - 1);
+                spikesByClusterUndoList.removeAt(currentNbUndo - 1);
+                clusterInfoMapUndoList.removeAt(currentNbUndo - 1);
                 if(!dimensionChangedUndo.isEmpty()) dimensionChangedUndo.removeLast();
                 currentNbUndo = spikesByClusterUndoList.count();
             }
             //Clear the redoLists
-            qDeleteAll(spikesByClusterRedoList);
             spikesByClusterRedoList.clear();
-            qDeleteAll(clusterInfoMapRedoList);
             clusterInfoMapRedoList.clear();
             dimensionChangedRedo.clear();
         }
@@ -4136,8 +4163,8 @@ void Data::nbUndoChangedCleaning(int newNbUndo){
             int currentNbRedo = spikesByClusterRedoList.count();
             if((currentNbRedo + currentNbUndo) > newNbUndo){
                 while((currentNbRedo + currentNbUndo) > newNbUndo){
-                    delete clusterInfoMapRedoList.takeAt(currentNbRedo - 1);
-                    delete spikesByClusterRedoList.takeAt(currentNbRedo - 1);
+                    clusterInfoMapRedoList.removeAt(currentNbRedo - 1);
+                    spikesByClusterRedoList.removeAt(currentNbRedo - 1);
                     if(!dimensionChangedRedo.isEmpty()) dimensionChangedRedo.removeLast();
                     currentNbRedo = spikesByClusterRedoList.count();
                 }
@@ -4285,9 +4312,9 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
     if(!clusterInfoMapUndoList.isEmpty()){
 
         clusterInfoMapRedoList.prepend(clusterInfoMap);
-        ClusterInfoMap* clusterInfoMapTemp = clusterInfoMapUndoList.takeAt(0);
+        std::shared_ptr<ClusterInfoMap> clusterInfoMapTemp = clusterInfoMapUndoList.takeAt(0);
         spikesByClusterRedoList.prepend(spikesByCluster);
-        SortableTable* spikesByClusterTemp = spikesByClusterUndoList.takeAt(0);
+        std::shared_ptr<SortableTable> spikesByClusterTemp = spikesByClusterUndoList.takeAt(0);
 
         {
             QMutexLocker lk(&mutex);
@@ -4297,6 +4324,8 @@ void Data::undo(QList<int>& addedClusters,QList<int>& updatedClusters){
         spikesByCluster =  spikesByClusterTemp;
 
         }
+        //Undo republishes the predecessor tables as a NEW epoch.
+        publishSnapshot();
 
 
         //If the last action implied a changed of the dimension, change the dimension again
@@ -4389,15 +4418,17 @@ void Data::redo(QList<int>& addedClusters,QList<int>& updatedClusters,QList<int>
     //Do the same with the spikesByCluster
     if(!clusterInfoMapRedoList.isEmpty()){
         clusterInfoMapUndoList.prepend(clusterInfoMap);
-        ClusterInfoMap* clusterInfoMapTemp = clusterInfoMapRedoList.takeAt(0);
+        std::shared_ptr<ClusterInfoMap> clusterInfoMapTemp = clusterInfoMapRedoList.takeAt(0);
         spikesByClusterUndoList.prepend(spikesByCluster);
-        SortableTable* spikesByClusterTemp = spikesByClusterRedoList.takeAt(0);
+        std::shared_ptr<SortableTable> spikesByClusterTemp = spikesByClusterRedoList.takeAt(0);
 
         {
             QMutexLocker lk(&mutex);
         clusterInfoMap =  clusterInfoMapTemp;
         spikesByCluster =  spikesByClusterTemp;
         }
+        //Redo republishes the successor tables as a NEW epoch.
+        publishSnapshot();
 
         //If the last redo implied a changed of the dimension, change the dimension again
         bool dimChanged = !dimensionChangedRedo.isEmpty() && dimensionChangedRedo.takeFirst();

@@ -44,6 +44,7 @@
 #include <math.h>
 #include <vector>
 #include <atomic>
+#include <memory>
 using namespace std;
 
 // forward declaration
@@ -135,15 +136,36 @@ public:
     Data();
     ~Data();
 
-    // Data owns raw resources (spikesByCluster, clusterInfoMap, the worker
-    // threads) and is the single document-model instance — held by pointer
-    // (KlustersDoc::clusteringData) and never copied.  Delete the copy
-    // operations so an accidental by-value copy is a compile error rather than
-    // the implicit shallow copy, which would alias those owned pointers and
-    // double-free them.  (Declaring ~Data() already suppresses implicit move
-    // generation, so Data is also non-movable, which is what we want.)
+    // Data owns raw resources (the worker threads, caches) and is the single
+    // document-model instance — held by pointer (KlustersDoc::clusteringData)
+    // and never copied.  Delete the copy operations so an accidental by-value
+    // copy is a compile error rather than the implicit shallow copy, which
+    // would alias those owned pointers and double-free them.  (Declaring
+    // ~Data() already suppresses implicit move generation, so Data is also
+    // non-movable, which is what we want.)
     Data(const Data&)            = delete;
     Data& operator=(const Data&) = delete;
+
+    /**One published edit epoch of the cluster membership: the spike/cluster
+    * row table and the per-cluster bookkeeping map behind an epoch number
+    * (epoch-snapshot architecture, step 1 — see the plan).  Republished on
+    * every membership change; refcounting keeps a captured epoch's tables
+    * alive for as long as any job holds them, however many edits follow.
+    *
+    * READ-ONLY BY CONTRACT: the inner pointers are shared with Data's live
+    * members until the next publication, and constness is not yet enforced
+    * (SortableTable/Array lack a const read surface — tightened in a later
+    * step).  Known aliasing writers that still mutate the CURRENT tables in
+    * place are flagged at their sites (moveSpikeSubset's placeholder
+    * insert/removes); they are harmless while every edit path still quiesces
+    * the readers first, and must be converted before that quiesce is
+    * removed (plan step 6).*/
+    struct ClusteringSnapshot;
+
+    /**The currently published snapshot.  Captured by pool jobs at enqueue
+    * time (on the GUI thread), pinning the epoch's tables for the duration
+    * of the job.  Never null once the Data object is constructed.*/
+    std::shared_ptr<const ClusteringSnapshot> currentSnapshot() const;
 
     /**
   * Loads the features in data.
@@ -1345,18 +1367,23 @@ private:
   * A two line array which contains sorted by cluster numbers and then by time:
   * the row index of the spike in features
   * the id of the cluster
+  *
+  * Held by shared_ptr since the epoch-snapshot conversion (step 1): every
+  * published ClusteringSnapshot shares ownership of the table that was
+  * current at its epoch, so an edit swapping in a successor can never free
+  * a table a captured snapshot (a running job) still reads.
   */
-    SortableTable* spikesByCluster;
+    std::shared_ptr<SortableTable> spikesByCluster;
 
     /**Represents a list of clusterInfoMap
   * use to enable undo action.
   */
-    QList<SortableTable*> spikesByClusterUndoList;
+    QList<std::shared_ptr<SortableTable>> spikesByClusterUndoList;
 
     /**Represents a list of clusterInfoMap
   * use to enable redo action.
   */
-    QList<SortableTable*> spikesByClusterRedoList;
+    QList<std::shared_ptr<SortableTable>> spikesByClusterRedoList;
 
     /**
   * Represents information on a cluster:
@@ -1418,18 +1445,36 @@ private:
   * key: cluster number
   * value: a ClusterInfo (which gives:
   * the index of the first spike in spikesByCluster and the number of spikes for a given cluster)
+  *
+  * Held by shared_ptr since the epoch-snapshot conversion (step 1); see
+  * spikesByCluster above.
   */
-    ClusterInfoMap* clusterInfoMap;
+    std::shared_ptr<ClusterInfoMap> clusterInfoMap;
 
     /**Represents a list of clusterInfoMap
   * use to enable undo action.
   */
-    QList<ClusterInfoMap*> clusterInfoMapUndoList;
+    QList<std::shared_ptr<ClusterInfoMap>> clusterInfoMapUndoList;
 
     /**Represents a list of clusterInfoMap
   * use to enable redo action.
   */
-    QList<ClusterInfoMap*> clusterInfoMapRedoList;
+    QList<std::shared_ptr<ClusterInfoMap>> clusterInfoMapRedoList;
+
+    /**Builds a fresh ClusteringSnapshot from the current tables under the
+    * mutex and publishes it.  Called at the end of every operation that
+    * changed the membership: the two core initialize() overloads, the
+    * prepareUndo() commit point every forward edit funnels through,
+    * undo()/redo(), and the paths that swap outside the undo protocol
+    * (restoreClusterLabels, resyncClusterInfoMapFromRowTable,
+    * moveSpikeSubset's trailing cleanup).  Must be called with the mutex
+    * NOT held.*/
+    void publishSnapshot();
+
+    /**The published snapshot (guarded by mutex; read via currentSnapshot()).*/
+    std::shared_ptr<const ClusteringSnapshot> snapshot;
+    /**Monotonic epoch source for publishSnapshot().*/
+    quint64 snapshotEpochCounter = 0;
 
     /**List of the maximum of each dimension*/
     Array<dataType> dimensionMaxima;
@@ -2302,6 +2347,46 @@ public:
   */
     bool initialize(QFile &featureFile, QFile &clusterFile, long spkFileLength, QString& errorInformation);
 
+};
+
+/**See the in-class declaration for the contract.  Defined out of line so the
+ * private nested types (ClusterInfo, ClusterInfoMap) are in scope; as a
+ * member of Data it may use them, and its accessors below are the public
+ * read surface pool jobs use in place of the mutex-taking Data methods —
+ * the tables are immutable once published, so no locking is needed.*/
+struct Data::ClusteringSnapshot {
+    /**Monotonic edit-epoch number this snapshot was published under.*/
+    quint64 epoch = 0;
+    /**The membership tables current at this epoch (read-only by contract;
+    * shared with Data's live members until the next publication).*/
+    std::shared_ptr<SortableTable> spikesByCluster;
+    std::shared_ptr<ClusterInfoMap> clusterInfoMap;
+
+    /**Mirror of Data::clusterIds().*/
+    QList<dataType> clusterIds() const { return clusterInfoMap->keys(); }
+
+    /**True if @p clusterId exists at this epoch.*/
+    bool hasCluster(dataType clusterId) const {
+        return clusterInfoMap->contains(clusterId);
+    }
+
+    /**Mirror of Data::nbOfSpikes(): value() is a const, non-detaching read.*/
+    dataType nbOfSpikes(dataType clusterId) const {
+        return clusterInfoMap->value(clusterId).nbSpikes();
+    }
+
+    /**Mirror of Data::spikePositions(), against this epoch's tables and
+    * without the mutex.  Returns false if the cluster does not exist at
+    * this epoch.*/
+    bool spikePositions(int clusterId, SortableTable& subsetTable) const {
+        if(!clusterInfoMap->contains(static_cast<dataType>(clusterId)))
+            return false;
+        ClusterInfo clusterInfo = clusterInfoMap->value(static_cast<dataType>(clusterId));
+        const dataType firstSpikePosition = clusterInfo.firstSpikePosition();
+        const dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
+        spikesByCluster->subset(subsetTable,1,firstSpikePosition,firstSpikePosition + nbSpikesOfCluster - 1);
+        return true;
+    }
 };
 
 #endif

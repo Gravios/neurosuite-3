@@ -140,6 +140,7 @@ public:
 private:
     WaveformThread(WaveformView& view,Data& d,const std::shared_ptr<KlustersJobToken>& viewToken)
         :waveformView(view),meanRequested(false),data(d),token(viewToken),
+        snapshot(d.currentSnapshot()),
         snapPresentationMode(WaveformView::SAMPLE),snapNbSpkToDisplay(0),snapStartTime(0),snapEndTime(0),snapMeanPresentation(false){
         setAutoDelete(true);
     }
@@ -186,6 +187,11 @@ private:
     std::shared_ptr<KlustersJobToken> token;
     /**The view's request generation this job was enqueued under.*/
     int jobGeneration = 0;
+    /**The membership epoch captured at creation (epoch-snapshot step 1):
+    * pins the epoch's tables for the duration of the job.  The waveform
+    * reads themselves still go through Data until the cache moves into the
+    * snapshot (plan step 3).*/
+    std::shared_ptr<const Data::ClusteringSnapshot> snapshot;
 
     // Snapshots of WaveformView fields captured before the job is enqueued.
     WaveformView::PresentationMode snapPresentationMode;

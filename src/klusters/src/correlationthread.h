@@ -116,6 +116,11 @@ private:
     std::shared_ptr<KlustersJobToken> token;
     /**The view's request generation this job was enqueued under.*/
     int jobGeneration = 0;
+    /**The membership epoch captured at creation (epoch-snapshot step 1):
+    * pins the epoch's tables for the duration of the job.  The correlogram
+    * reads themselves still go through Data until the cache moves into the
+    * snapshot (plan step 4).*/
+    std::shared_ptr<const Data::ClusteringSnapshot> snapshot;
 
     // Snapshots of CorrelationView fields captured before the job is enqueued.
     int snapBinSize;

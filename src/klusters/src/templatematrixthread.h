@@ -202,6 +202,10 @@ private:
     std::shared_ptr<KlustersJobToken> token;
     /**The view's request generation this job was enqueued under.*/
     int                          jobGeneration = 0;
+    /**The membership epoch captured at creation (epoch-snapshot step 1): pins
+    * the epoch's tables, and the cluster-list build and spike-position
+    * prefetch below read through it — immutable, so no mutex.*/
+    std::shared_ptr<const Data::ClusteringSnapshot> snapshot;
 
     Array<double>*               scores;
     QList<int>                   clusterList;
