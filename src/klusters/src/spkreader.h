@@ -19,9 +19,11 @@
 // unix pin-by-fd guarantee — while new epochs open the new file.  prime()
 // opens eagerly at install for exactly that reason: a lazily-opened reader
 // would resolve its path to whatever inode is there LATER.  In-place
-// writers (the realign nudge's r+b handle) still need nothing: pread sees
-// the updated bytes through the same inode (their epoch story is plan
-// step 7's overlay).
+// writers (the realign/nudge r+b handles) rewrite records through the same
+// inode every pinned descriptor shares — which is why each batch is ALSO
+// staged into the snapshot-side SpkOverlay (epoch-snapshot step 7,
+// spkoverlay.h): reads go through ClusteringSnapshot::readSpk, overlay
+// first, this descriptor otherwise, so every epoch sees its own bytes.
 #ifndef SPKREADER_H
 #define SPKREADER_H
 

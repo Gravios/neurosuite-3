@@ -281,7 +281,8 @@ QList<MergeGroup> computeProposals(
     if (needNoise)
         noiseWav.assign(static_cast<size_t>(nClusters), std::vector<float>());
 
-    SpkReader& spk = data.spkReader();   // one shared pread descriptor
+    const std::shared_ptr<const Data::ClusteringSnapshot> snap = data.currentSnapshot();
+    const Data::ClusteringSnapshot& spkSrc = *snap;   // this epoch's bytes (overlay + descriptor)
 
     // Stable RNG seed → reproducible previews across runs of the same data.
     std::mt19937 rng(0x4d525142u);  // 'MRQB'
@@ -332,7 +333,7 @@ QList<MergeGroup> computeProposals(
         long valid = 0;
         for (int i = 0; i < M; ++i) {
             const int s = readSpikes[static_cast<size_t>(i)];
-            if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)],
+            if (!tmReadSpikeFloat(spkSrc, fidx[static_cast<size_t>(s)],
                                   nChan, nSamp, raw, sp))
                 continue;
             if (useMedian) {

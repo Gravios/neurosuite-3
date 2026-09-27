@@ -7,7 +7,7 @@
 #include <vector>
 #include <utility>
 
-#include "spkreader.h"
+#include "data.h"        // Data::ClusteringSnapshot (the epoch this job reads)
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the view)
 
 class TemplateMatrixView;
@@ -73,7 +73,7 @@ private:
                     int sourceCluster, int targetCluster,
                     const std::vector<int>&   sourceFileIdx,  // 0-based .spk indices
                     const std::vector<float>& targetMean,     // channel-major mean
-                    const QString& spkPath,
+                    const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
                     int nChan, int nSamp, bool twoBytes,
                     const std::shared_ptr<KlustersJobToken>& viewToken);
 
@@ -96,9 +96,12 @@ private:
     int                       targetCluster;
     std::vector<int>          sourceFileIdx;
     std::vector<float>        targetMean;
-    QString                   spkPath;
-    /**Positioned-read access for this job (see spkreader.h).*/
-    SpkReader spkReaderOwn;
+    /**The epoch this job reads (epoch-snapshot steps 2 and 7): its pinned
+    * .spk descriptor and its overlay of rewritten records — the strip scores
+    * exactly the bytes the matrix it was clicked from was computed over
+    * (this job historically opened the path afresh at click time, correct
+    * only under the blocking quiesce).*/
+    std::shared_ptr<const Data::ClusteringSnapshot> snapshot;
     int                       nChan, nSamp;
     bool                      twoBytes;
     /**Shared cancellation/completion state owned by the view (pair stream).*/

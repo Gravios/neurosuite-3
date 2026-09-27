@@ -1568,7 +1568,8 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
     // clusters, each worker with its own FILE handle.
     std::vector<std::vector<float>> medWav(
         static_cast<size_t>(N), std::vector<float>(static_cast<size_t>(nPts), 0.0f));
-    SpkReader& spk = d.spkReader();      // one shared pread descriptor
+    const std::shared_ptr<const Data::ClusteringSnapshot> snap = d.currentSnapshot();
+    const Data::ClusteringSnapshot& spkSrc = *snap;   // this epoch's bytes (overlay + descriptor)
 
     // Progress bar for the dominant, disk-bound per-cluster median-read phase.
     // Clusters are read in chunks (chunk >= the OpenMP width, so each chunk
@@ -1596,7 +1597,7 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
         std::vector<float>   sp;
         long valid = 0;
         for (long s = 0; s < nSpk; ++s) {
-            if (!tmReadSpikeFloat(spk, fidx[static_cast<size_t>(s)], nChan, nSamp, raw, sp))
+            if (!tmReadSpikeFloat(spkSrc, fidx[static_cast<size_t>(s)], nChan, nSamp, raw, sp))
                 continue;
             std::copy(sp.begin(), sp.begin() + nPts,
                       buf.begin() + static_cast<size_t>(valid) * nPts);

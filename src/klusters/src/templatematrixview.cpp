@@ -451,7 +451,7 @@ void TemplateMatrixView::launchPairXcorr(int sourceCluster, int targetCluster)
         sourceCluster, targetCluster,
         allFileIdx[static_cast<size_t>(ciSrc)],
         meanWav[static_cast<size_t>(ciTgt)],
-        doc.data().getSpkFileName(),
+        doc.data().currentSnapshot(),
         doc.data().nbOfChannels(),
         doc.data().nbSamplesPerWaveform(),
         doc.data().isRecordingTwoBytes(),
