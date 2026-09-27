@@ -167,9 +167,10 @@ private:
     /**The view's request generation this job was enqueued under.*/
     int jobGeneration = 0;
     /**The membership epoch captured at creation (epoch-snapshot step 1):
-    * pins the epoch's tables for the duration of the job.  The assistant
-    * still reads Data live until the error-matrix step of the plan
-    * (step 5).*/
+    * pins the epoch's tables for the duration of the job, and the assistant
+    * reads them directly (step 5) — no per-compute table copies, no Data
+    * mutex.  The .fet features are still the shared Data table, protected
+    * by the edit-path quiesce until the plan's overlay step.*/
     std::shared_ptr<const Data::ClusteringSnapshot> snapshot;
     Array<double>* probabilities;
     QList<int> clusterList;
