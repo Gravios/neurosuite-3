@@ -626,6 +626,15 @@ public:
      *  Call before writing to the pending .spk file so no thread is
      *  mid-fread when the write happens. */
     void stopAllViewThreads();
+    /**Non-blocking counterpart of stopAllViewThreads() (epoch-snapshot
+    * step 6b): supersedes every widget's in-flight jobs without waiting.
+    * The membership-only edit paths call this — their jobs read the epoch
+    * snapshot they captured, so the table swap cannot tear under them and
+    * the ONLY services the old blocking quiesce still owed them were
+    * stopping doomed work early and fencing stale events, which the bump
+    * provides.  The .spk/.fet writers (the realign paths) keep
+    * stopAllViewThreads().*/
+    void supersedeAllViewThreads();
 
     /// True while this view's error matrix has a display-driving compute in
     /// flight (post-edit consolidation).  Used to block cluster edits until the

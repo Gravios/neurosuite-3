@@ -161,6 +161,7 @@ public Q_SLOTS:
      * quiesces this view's threads before a caller mutates Data (group/merge, undo,
      * realign).  Does NOT set goingToDie, so a fresh matrix can be recomputed after.*/
     void stopRunningThreads() override;
+    void supersedeRunningThreads() override;
 
     /**Update the error matrix.*/
     void updateMatrixContents();

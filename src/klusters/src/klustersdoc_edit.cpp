@@ -92,17 +92,18 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     //Call data to group the clusters
     logBefore(CurationLogger::ActionType::GROUP, clustersToGroup);
 
-    // Quiesce every background view thread BEFORE mutating Data.  groupClusters
-    // renumbers/reassigns spikes in clusteringData in place; a WaveformView,
-    // CorrelationView or matrix thread reading the old cluster layout at that
-    // instant gets a torn read or a stale array index -> the non-deterministic
-    // segfault seen on grouping (including grouping two parent parents, which
-    // routes here via mergeParents).  This is the same guard the undo
-    // (klustersdoc_undo) and realign (klustersdoc_realign) paths already take
+    // Supersede in-flight view jobs, without waiting (epoch-snapshot
+    // step 6b).  Jobs read the epoch snapshot they captured, so the
+    // build-and-swap below cannot tear under them; the bump stops doomed
+    // work at its next check and fences its late events behind the
+    // generation guards.  The blocking quiesce this replaced — the guard
+    // against the historical torn-read segfault on grouping — remains only
+    // where the shared mutable data the snapshots do not cover is written
+    // (.spk/.fet: the realign paths, klustersdoc_realign)
     // before their in-place Data mutations; group was the one mutating primitive
     // that omitted it.
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     // PARENT-layer edit: group() merges parent clusters; the atom layer follows
     // through the hierarchy refresh below, it is not the thing being merged.
@@ -296,10 +297,11 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
         featureRowSet.insert(static_cast<dataType>(idx + 1));
 
     QList<int> fromClusters, emptiedClusters;
-        // Quiesce background view threads before mutating Data, so a view/matrix
-        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        // Supersede in-flight view jobs, without waiting: they read their
+        // captured epoch snapshot, so the swap cannot tear under them (see
+        // groupClusters; epoch-snapshot step 6b).
         for (KlustersView* view : *viewList)
-            view->stopAllViewThreads();
+            view->supersedeAllViewThreads();
     // PARENT-layer edit by design -- see the header: atoms are moved by
     // re-cutting the child layer afterwards, never by naming atom ids here.
     idsBelongTo(parentData(), QList<int>{ fromCluster }, "moveSpikeSubsetToCluster");
@@ -428,10 +430,11 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
                                   : CurationLogger::ActionType::DELETE_ARTEFACT,
                   clustersToDelete);
 
-        // Quiesce background view threads before mutating Data, so a view/matrix
-        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        // Supersede in-flight view jobs, without waiting: they read their
+        // captured epoch snapshot, so the swap cannot tear under them (see
+        // groupClusters; epoch-snapshot step 6b).
         for (KlustersView* view : *viewList)
-            view->stopAllViewThreads();
+            view->supersedeAllViewThreads();
 
 
     // Child-primary: a delete is a RECLASSIFICATION, in either scope.
@@ -765,10 +768,11 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
         originClusters     = parents;
     }
 
-        // Quiesce background view threads before mutating Data, so a view/matrix
-        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        // Supersede in-flight view jobs, without waiting: they read their
+        // captured epoch snapshot, so the swap cannot tear under them (see
+        // groupClusters; epoch-snapshot step 6b).
         for (KlustersView* view : *viewList)
-            view->stopAllViewThreads();
+            view->supersedeAllViewThreads();
     // PARENT-layer edit; in child scope originClusters was translated above
     // from the shown atoms to the parents those spikes are actually in.
     idsBelongTo(parentData(), originClusters, "deleteSpikesFromClusters");
@@ -1186,10 +1190,11 @@ void KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList 
         logBefore(CurationLogger::ActionType::SPLIT,
                   QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
-        // Quiesce background view threads before mutating Data, so a view/matrix
-        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        // Supersede in-flight view jobs, without waiting: they read their
+        // captured epoch snapshot, so the swap cannot tear under them (see
+        // groupClusters; epoch-snapshot step 6b).
         for (KlustersView* view : *viewList)
-            view->stopAllViewThreads();
+            view->supersedeAllViewThreads();
     float newClusterId = targetData.createNewCluster(selection,clustersOfOrigin,fromClusters,emptyClusters);
 
     //Check if a new cluster has been created
@@ -1337,10 +1342,11 @@ void KlustersDoc::createNewClusters(const SpikeSelection& selection, const QList
         logBefore(CurationLogger::ActionType::SPLIT_N,
                   QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
-        // Quiesce background view threads before mutating Data, so a view/matrix
-        // thread cannot torn-read the cluster layout mid-swap (see groupClusters).
+        // Supersede in-flight view jobs, without waiting: they read their
+        // captured epoch snapshot, so the swap cannot tear under them (see
+        // groupClusters; epoch-snapshot step 6b).
         for (KlustersView* view : *viewList)
-            view->stopAllViewThreads();
+            view->supersedeAllViewThreads();
     QMap<int,int> fromToNewClusterIds = targetData.createNewClusters(selection,clustersOfOrigin,emptyClusters);
     newClusters = fromToNewClusterIds.values();
     fromClusters = fromToNewClusterIds.keys();

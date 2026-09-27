@@ -177,6 +177,15 @@ public Q_SLOTS:
      *  from the main thread before launching new threads, e.g. after a
      *  nudge.  Default no-op; override in WaveformView. */
     virtual void stopRunningThreads() {}
+    /**Non-blocking counterpart of stopRunningThreads() (epoch-snapshot
+    * step 6b): supersedes the widget's in-flight jobs — they stop at their
+    * next cancellation check and their late events fail the generation
+    * guard — WITHOUT waiting for them to retire.  Sufficient for
+    * membership-only edits, whose jobs read the epoch snapshot they
+    * captured; the blocking quiesce remains for writers of the shared
+    * mutable data the snapshots do not cover (.spk bytes, .fet features —
+    * the realign paths).*/
+    virtual void supersedeRunningThreads() {}
     /**Prints the currently display information on a printer via the painter @p printPainter.
   * @param printPainter painter on a printer.
   * @param metrics object providing information about the printer.

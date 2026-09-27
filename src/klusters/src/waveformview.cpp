@@ -905,10 +905,12 @@ void WaveformView::stopAndClearThreads(){
     // generation.  Does NOT set goingToDie, so new requests can still be
     // enqueued afterwards.
     jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
-    // Synchronous quiesce: callers — every cluster-mutating edit path, via
-    // KlustersView::stopAllViewThreads() — rely on no waveform job being
-    // inside a Data call once this returns (the realign paths rewrite the
-    // .spk the jobs read).  Superseded jobs notice the bump within one poll
+    // Synchronous quiesce: callers — the .spk-writing realign paths via
+    // KlustersView::stopAllViewThreads(), and this view's own relaunch
+    // resets — rely on no waveform job being inside a read once this
+    // returns.  Membership-only edits use the non-blocking
+    // supersedeRunningThreads() instead (epoch-snapshot step 6b).
+    // Superseded jobs notice the bump within one poll
     // interval and queued-not-yet-started ones early-out as workers free up,
     // so this is bounded by the same ~1 s the old per-thread wait() was —
     // but by the pool's worker count instead of the request count.
@@ -919,6 +921,17 @@ void WaveformView::stopAndClearThreads(){
     // guard anyway; removing them just saves the no-op dispatches.  Only our
     // two event types are removed — unlike the old blanket removal, queued
     // signal deliveries to this widget survive.
+    QApplication::removePostedEvents(this, QEvent::User + 200);
+    QApplication::removePostedEvents(this, QEvent::User + 250);
+}
+
+void WaveformView::supersedeRunningThreads(){
+    //Non-blocking twin of stopAndClearThreads() (epoch-snapshot step 6b):
+    //waveform jobs read their captured snapshot — tables, pinned reader,
+    //per-epoch store — so a membership-only edit needs no wait; the bump
+    //stops doomed work early and fences stale events.  The blocking
+    //quiesce remains for the .spk byte writers (the realign paths).
+    jobToken->generation.fetch_add(1, std::memory_order_acq_rel);
     QApplication::removePostedEvents(this, QEvent::User + 200);
     QApplication::removePostedEvents(this, QEvent::User + 250);
 }

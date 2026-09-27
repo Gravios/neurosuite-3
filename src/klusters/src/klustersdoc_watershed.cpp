@@ -203,7 +203,7 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     // (createNewCluster, groupClusters, the atom watershed); this path
     // predated the convention.
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     QList<int> newClusterList;
     if (!clusteringData->integrateBasinLabeling(inputs, rowToBasin,
@@ -452,7 +452,7 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
     // parent watershed above predates the quiesce convention and still runs
     // unquiesced -- observed, not changed here).
     for (KlustersView* view : *viewList)
-        view->stopAllViewThreads();
+        view->supersedeAllViewThreads();
 
     // NO curation log: the parent-stage logger's ids collide with atom
     // numerals -- the atom layer is out of its scope by design (see

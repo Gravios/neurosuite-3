@@ -94,6 +94,10 @@ public:
      *  invoke this method directly — see the call site in
      *  KlustersView::stopAllViewThreads. */
     void stopRunningThreadsSync();
+    /**Non-blocking twin (epoch-snapshot step 6b): bump both streams, wait
+    * for nothing.  For membership-only edits; the Sync form remains for
+    * the .spk writers.*/
+    void supersedeRunningThreads();
 
     void updateMatrixContents();
     void updateSliderRange();
