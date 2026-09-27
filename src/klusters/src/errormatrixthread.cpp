@@ -57,7 +57,10 @@ ErrorMatrixThread::ErrorMatrixThread(ErrorMatrixView& view,Data& d,
     //constructor did with start().
     jobGeneration = token->generation.load(std::memory_order_acquire);
     token->active.fetch_add(1, std::memory_order_acq_rel);
-    KlustersJobPool::pool()->start(this);
+    //A display compute is batch work the user sees land; the seedOnly cache
+    //warmer is background work nobody is watching.
+    KlustersJobPool::pool()->start(this, seedOnly ? KlustersJobPool::BackgroundPriority
+                                                  : KlustersJobPool::BatchPriority);
 }
 
 void ErrorMatrixThread::post(QEvent* event){

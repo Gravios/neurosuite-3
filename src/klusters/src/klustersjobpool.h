@@ -22,6 +22,26 @@ class QThreadPool;
 
 namespace KlustersJobPool {
 
+/**Queue priorities for pool()->start(job, priority).  Higher runs first when
+* workers free up; equal priorities keep FIFO order.  This orders the QUEUE
+* only — a running job is never preempted — so a pool saturated with batch
+* computes still delays a fresh interactive request until a worker retires;
+* if that occupancy (rather than ordering) ever bites, the fallback is a
+* second pool separating the lanes.
+*
+* Interactive: work the user is actively waiting on to see something —
+* waveform/correlogram loads for the shown clusters, a clicked matrix cell's
+* per-spike scores, a drift-slider step.
+* Batch: the full matrix computes — O(clusters^2) scans that can run for
+* minutes at large cluster counts.
+* Background: work nobody is watching — the error-matrix cache warmer, the
+* merge-recommendation scan.*/
+enum Priority {
+    BackgroundPriority  = -1,
+    BatchPriority       = 0,
+    InteractivePriority = 1
+};
+
 /**The shared pool.  maxThreadCount = qMax(4, QThread::idealThreadCount()).*/
 QThreadPool* pool();
 

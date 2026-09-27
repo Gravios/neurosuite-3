@@ -65,7 +65,7 @@ void WaveformThread::getMean(const QList<int>& clusterIds,WaveformView::Presenta
 void WaveformThread::enqueue(){
     jobGeneration = token->generation.load(std::memory_order_acquire);
     token->active.fetch_add(1, std::memory_order_acq_rel);
-    KlustersJobPool::pool()->start(this);
+    KlustersJobPool::pool()->start(this, KlustersJobPool::InteractivePriority);   // the user is watching the waveform pane fill
 }
 
 void WaveformThread::post(QEvent* event){

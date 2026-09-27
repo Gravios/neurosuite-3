@@ -29,7 +29,7 @@ DriftShiftThread::DriftShiftThread(DriftMatrixView& v,
     //constructor did with start().
     jobGeneration = token->generation.load(std::memory_order_acquire);
     token->active.fetch_add(1, std::memory_order_acq_rel);
-    KlustersJobPool::pool()->start(this);
+    KlustersJobPool::pool()->start(this, KlustersJobPool::InteractivePriority);   // a slider step mid-drag
 }
 
 void DriftShiftThread::post(QEvent* event)
