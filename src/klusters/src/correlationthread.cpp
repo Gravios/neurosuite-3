@@ -36,7 +36,7 @@ CorrelationThread::CorrelationThread(CorrelationView& view,Data& d,const QList<P
     //constructor did with start().
     jobGeneration = token->generation.load(std::memory_order_acquire);
     token->active.fetch_add(1, std::memory_order_acq_rel);
-    KlustersJobPool::pool()->start(this, KlustersJobPool::InteractivePriority);   // correlograms for the shown clusters
+    KlustersJobPool::start(this, KlustersJobPool::InteractivePriority);   // correlograms for the shown clusters
 }
 
 void CorrelationThread::run(){

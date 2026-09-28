@@ -26,7 +26,7 @@ PairXcorrThread::PairXcorrThread(TemplateMatrixView& v,
     //constructor did with start().
     jobGeneration = token->generation.load(std::memory_order_acquire);
     token->active.fetch_add(1, std::memory_order_acq_rel);
-    KlustersJobPool::pool()->start(this, KlustersJobPool::InteractivePriority);   // a clicked matrix cell, slider preview pending
+    KlustersJobPool::start(this, KlustersJobPool::InteractivePriority);   // a clicked matrix cell, slider preview pending
 }
 
 void PairXcorrThread::post(QEvent* event)

@@ -266,7 +266,7 @@ TemplateMatrixThread::TemplateMatrixThread(TemplateMatrixView& v, Data& d,
     //constructor did with start().
     jobGeneration = token->generation.load(std::memory_order_acquire);
     token->active.fetch_add(1, std::memory_order_acq_rel);
-    KlustersJobPool::pool()->start(this, KlustersJobPool::BatchPriority);   // full matrix compute
+    KlustersJobPool::start(this, KlustersJobPool::BatchPriority);   // full matrix compute
 }
 
 void TemplateMatrixThread::post(QEvent* event)
