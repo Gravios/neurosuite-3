@@ -18,7 +18,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>          // memcpy — overlay patch in the coalesced sweep
 #include <vector>
+
+#include <QDebug>
+#include <QElapsedTimer>
 
 #include "klustersdoc.h"
 #include "data.h"
@@ -174,18 +178,100 @@ KlustersDoc::stripByTemplate(int               templateCluster,
     const bool chanGate = maxChannelDistance > 0.0;
 
     // ── Score every source spike, collect rows at or below threshold ────
+    // File-order sweep through coalesced reads.  The historical per-source
+    // loops issued ONE positioned read per record; a whole-scope strip reads
+    // nearly every record of the .spk, so that was millions of syscalls per
+    // gesture.  The sources' spikes are gathered into one row-sorted
+    // worklist first; runs of strictly consecutive records — which dominate
+    // when most of the file is in scope, since only the template's and the
+    // reserve bins' spikes break the sequence — are read in single readSpk
+    // calls of a few MB, and each record of a run is then overlay-patched
+    // under readSpk's own hit rule (an entry at exactly the record's offset
+    // with exactly its size), so a pending realign/nudge rewrite is
+    // honoured record for record exactly as the per-record path honoured
+    // it.  Scattered rows degrade to the historical one-read-per-record
+    // (tmReadSpikeFloat) — never more I/O volume, only fewer calls.
     QSet<dataType> rows;
     QHash<int, QSet<dataType>> rowsBySource;
+    QHash<int, long> matchedBySource;
     long nCand = 0;
+
+    struct Cand { long row; int src; };
+    std::vector<Cand> work;
+    {
+        size_t total = 0;
+        for (int src : sources) {
+            const dataType n = layer.nbOfSpikes(static_cast<dataType>(src));
+            if (n > 0) total += static_cast<size_t>(n);
+        }
+        work.reserve(total);
+    }
     for (int src : sources) {
         SortableTable pos;
         if (!layer.spikePositions(src, pos)) continue;
         const long n = static_cast<long>(
             layer.nbOfSpikes(static_cast<dataType>(src)));
-        long matched = 0;
-        for (long s = 0; s < n; ++s) {
-            const long row = static_cast<long>(pos(1, s + 1));
-            if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+        for (long s = 0; s < n; ++s)
+            work.push_back({ static_cast<long>(pos(1, s + 1)), src });
+    }
+    std::sort(work.begin(), work.end(),
+              [](const Cand& a, const Cand& b){ return a.row < b.row; });
+
+    const size_t nPts        = static_cast<size_t>(nCh) * nSamp;
+    const qint64 recordBytes = static_cast<qint64>(nPts)
+                             * static_cast<qint64>(sizeof(int16_t));
+    const long   runCap      = std::max<long>(
+        1, static_cast<long>((4LL << 20) / recordBytes));   // ~4 MB per read
+    std::vector<int16_t> block;
+
+    QElapsedTimer sweepTimer;
+    sweepTimer.start();
+    long nRuns = 0;
+
+    size_t i = 0;
+    while (i < work.size()) {
+        size_t j = i + 1;                    // maximal consecutive run, capped
+        while (j < work.size()
+               && work[j].row == work[j - 1].row + 1
+               && static_cast<long>(j - i) < runCap)
+            ++j;
+        const long   nRec   = static_cast<long>(j - i);
+        const qint64 runOff = (static_cast<qint64>(work[i].row) - 1) * recordBytes;
+        ++nRuns;
+
+        bool blockOk = false;
+        if (nRec > 1) {
+            block.resize(static_cast<size_t>(nRec) * nPts);
+            blockOk = spkSrc.readSpk(block.data(), nRec * recordBytes, runOff);
+            if (blockOk && spkSrc.spkOverlay) {
+                for (long r = 0; r < nRec; ++r) {
+                    const qint64 off = runOff + r * recordBytes;
+                    const auto it = spkSrc.spkOverlay->records.constFind(off);
+                    if (it != spkSrc.spkOverlay->records.constEnd()
+                        && static_cast<qint64>((*it)->size()) == recordBytes)
+                        memcpy(block.data() + static_cast<size_t>(r) * nPts,
+                               (*it)->constData(),
+                               static_cast<size_t>(recordBytes));
+                }
+            }
+        }
+
+        for (size_t k = i; k < j; ++k) {
+            const long row = work[k].row;
+            const int  src = work[k].src;
+            if (blockOk) {
+                const int16_t* rec = block.data()
+                    + static_cast<size_t>(row - work[i].row) * nPts;
+                if (wav.size() < nPts) wav.resize(nPts);
+                // De-interleave exactly as tmReadSpikeFloat does.
+                for (int ch = 0; ch < nCh; ++ch)
+                    for (int sm = 0; sm < nSamp; ++sm)
+                        wav[static_cast<size_t>(ch) * nSamp + sm] =
+                            static_cast<float>(
+                                rec[static_cast<size_t>(sm) * nCh + ch]);
+            }
+            else if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav))
+                continue;                     // short read: skip, as before
             ++nCand;
             double q = 0.0, xtw = 0.0, worstChan = 0.0;
             for (int ci = 0; ci < nSel; ++ci) {
@@ -219,10 +305,19 @@ KlustersDoc::stripByTemplate(int               templateCluster,
             }
             rows.insert(static_cast<dataType>(row));
             rowsBySource[src].insert(static_cast<dataType>(row));
-            ++matched;
+            ++matchedBySource[src];
         }
-        if (matched > 0) R.sources.append(src);
+        i = j;
     }
+    qDebug().noquote()
+        << QStringLiteral("[strip] scored %1 records through %2 coalesced "
+                          "reads in %3 ms")
+               .arg(nCand).arg(nRuns).arg(sweepTimer.elapsed());
+    //R.sources in the original selection order, as the per-source loops
+    //reported it (a source counts once it contributed at least one match).
+    for (int src : sources)
+        if (matchedBySource.value(src, 0) > 0)
+            R.sources.append(src);
 
     R.nCandidates = static_cast<int>(nCand);
     R.nMatched    = static_cast<int>(rows.size());
