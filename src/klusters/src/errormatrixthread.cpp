@@ -61,8 +61,8 @@ ErrorMatrixThread::ErrorMatrixThread(ErrorMatrixView& view,Data& d,
     token->active.fetch_add(1, std::memory_order_acq_rel);
     //A display compute is batch work the user sees land; the seedOnly cache
     //warmer is background work nobody is watching.
-    KlustersJobPool::pool()->start(this, seedOnly ? KlustersJobPool::BackgroundPriority
-                                                  : KlustersJobPool::BatchPriority);
+    KlustersJobPool::start(this, seedOnly ? KlustersJobPool::BackgroundPriority
+                                          : KlustersJobPool::BatchPriority);
 }
 
 void ErrorMatrixThread::post(QEvent* event){
