@@ -345,6 +345,10 @@ private Q_SLOTS:
      *  Detection is a non-mutating two-pass scan so the exact spike count can be
      *  confirmed before anything moves; the moves are undoable. */
     void slotStripFeatureOutliers();
+    /** Actions: strip each selected cluster's own WAVEFORM outliers (residual to
+     *  its median waveform, robust MAD tail) into the artefact cluster.  The
+     *  waveform counterpart of slotStripFeatureOutliers; shortcut Shift+X. */
+    void slotStripWaveformOutliers();
     /** Renumber clusters so IDs run by descending spike count (largest = 2).
      *  Clusters 0/1 untouched; undoable. */
     void slotSortClustersBySpikeCount();
@@ -1014,6 +1018,7 @@ private:
     QAction *mAutoMerge;            // patch 0069 — Auto-Merge action
     QAction *mPurgeSmallClusters;   // move all clusters below N spikes to noise
     QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artefact(0)
+    QAction *mStripWaveformOutliers; // move waveform-residual outliers of selected clusters to artefact(0)
     QAction *mSortClustersBySpikeCount; // renumber clusters by descending spike count
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination

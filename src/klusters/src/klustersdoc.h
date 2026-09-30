@@ -1105,6 +1105,38 @@ public:
                                         bool             onePerSource,
                                         bool             onChild);
 
+    /** Result of detectWaveformOutliers (non-mutating scan). */
+    struct WaveformOutlierResult {
+        bool                    ok    = false; ///< true iff the scan ran to completion
+        long long               total = 0;     ///< flagged spikes across all clusters
+        int                     scored = 0;    ///< clusters that carried a usable template
+        QMap<int, QVector<int>> byCluster;     ///< cluster id -> flagged 0-based .spk indices
+        QString                 reason;         ///< user-facing summary or error
+    };
+
+    /** Waveform self-outlier scan (the INVERSE of the template strip): for each
+     *  parent cluster in @p clusters, build its OWN median waveform template and
+     *  flag every spike whose normalized kernel-weighted residual against that
+     *  template exceeds a robust self-threshold.  Non-mutating -- returns the
+     *  flagged 0-based .spk indices per cluster for the caller to confirm and
+     *  move (slotStripWaveformOutliers routes them to the artefact cluster via
+     *  the undoable moveSpikeSubsetToCluster, exactly as the feature-outlier
+     *  strip does).  The waveform counterpart of Strip Feature Outliers, and the
+     *  interactive twin of fiber-kit's consolidate mode=shed.
+     *
+     *  Metric, per spike x over the selected channels' points p (same as
+     *  stripByTemplate, but scored against the cluster's OWN median):
+     *    w[p] = |T[p]| ;  D(x) = sqrt(sum w (x-T)^2 / sum w) / sqrt(sum w T^2 / sum w)
+     *  D is one-sided and right-skewed, so the cut is the ROBUST tail
+     *  median(D) + @p kMad * 1.4826 * MAD(D) -- not a symmetric sigma, which
+     *  would misread a skewed non-negative distribution.  Channel restriction is
+     *  the document's selection (selectedChannels(); all channels when none).
+     *  A cluster with fewer than @p minSpikes spikes, a flat template, or a
+     *  degenerate (zero-MAD) residual distribution is left untouched. */
+    WaveformOutlierResult detectWaveformOutliers(const QList<int>& clusters,
+                                                 double            kMad,
+                                                 long              minSpikes);
+
     /**Returns the number of dimensions of the data.*/
     int nbDimensions(){return clusteringData->nbOfDimensions();}
 
