@@ -434,6 +434,20 @@ void KlustersApp::createMenus()
     mStripOutliers = actionMenu->addAction(tr("Strip Feature &Outliers (5\u03c3)\u2026"));
     connect(mStripOutliers, &QAction::triggered, this, &KlustersApp::slotStripFeatureOutliers);
 
+    // Waveform counterpart of the feature strip, and the interactive twin of
+    // fiber-kit's consolidate mode=shed: strip each SELECTED cluster's own
+    // worst-fitting spikes (residual to its median waveform, robust MAD tail)
+    // into the artefact cluster.  Selection-scoped (not bulk) because it is
+    // shortcut-driven -- Shift+X acts on the cluster under inspection.  Same
+    // non-mutating scan -> confirm -> undoable move as the feature strip.
+    mStripWaveformOutliers = actionMenu->addAction(tr("Strip &Waveform Outliers\u2026"));
+    mStripWaveformOutliers->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_X));
+    mStripWaveformOutliers->setToolTip(
+        tr("Move each selected cluster's waveform outliers (residual to its own "
+           "median waveform) into the artefact cluster.  Undoable."));
+    connect(mStripWaveformOutliers, &QAction::triggered,
+            this, &KlustersApp::slotStripWaveformOutliers);
+
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
@@ -5053,6 +5067,82 @@ void KlustersApp::slotStripFeatureOutliers()
 
     slotStatusMsg(tr("Stripped %1 outlier spike(s) from %2 cluster(s) into the artefact cluster.")
                       .arg(totalOutliers).arg(movedClusters));
+}
+
+// ---------------------------------------------------------------------------
+// slotStripWaveformOutliers  --  waveform-space self-outlier removal (Shift+X)
+//
+// The waveform counterpart of slotStripFeatureOutliers, and the interactive
+// twin of fiber-kit's consolidate mode=shed.  For each SELECTED cluster, flag
+// the spikes whose residual against the cluster's OWN median waveform lies in
+// the robust upper tail (median + k*1.4826*MAD, one-sided since the residual
+// is non-negative and skewed) and move them into the artefact cluster (0).
+//
+// Selection-scoped, not bulk: it is shortcut-driven, so Shift+X strips the
+// cluster(s) the user is inspecting rather than silently rewriting all of them
+// (and it reads waveforms, unlike the in-memory feature strip).  Detection is
+// the non-mutating doc scan detectWaveformOutliers; the user confirms the exact
+// count (default No) before the undoable per-cluster moveSpikeSubsetToCluster.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotStripWaveformOutliers()
+{
+    KlustersView* view = activeView();
+    if (!view) return;
+
+    // Parent-scope selection (moveSpikeSubsetToCluster is parent-scope), minus
+    // the artefact/noise bins, which are never stripped.
+    QList<int> selected = view->clusters();
+    selected.removeAll(0);
+    selected.removeAll(1);
+    if (selected.isEmpty()) {
+        slotStatusMsg(tr("Strip waveform outliers: select one or more clusters first."));
+        return;
+    }
+
+    // kMad = the shed knee measured in fiber-kit (FK_CONS_SHED_K); minSpikes
+    // its floor (FK_CONS_SHED_MIN).  Named constants here, as kSigma is for the
+    // feature strip; promoting them to a preference later is easy.
+    constexpr double kMad      = 3.0;
+    constexpr long   minSpikes = 40;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const KlustersDoc::WaveformOutlierResult R =
+        doc->detectWaveformOutliers(selected, kMad, minSpikes);
+    QApplication::restoreOverrideCursor();
+
+    if (!R.ok || R.total == 0) {
+        slotStatusMsg(!R.reason.isEmpty()
+            ? R.reason
+            : tr("Strip waveform outliers: no spikes beyond %1 MAD from the "
+                 "median waveform in the %2 scored cluster(s).")
+                  .arg(kMad).arg(R.scored));
+        return;
+    }
+
+    QMessageBox box(QMessageBox::Question, tr("Strip Waveform Outliers"),
+        tr("Move %1 spike(s) whose waveform lies more than %2 MAD from their "
+           "cluster's own median (over the selected channels) into the artefact "
+           "cluster (0)?\n\n%3 of %4 selected cluster(s) contribute outliers.  "
+           "This can be undone.")
+            .arg(R.total).arg(kMad).arg(R.byCluster.size()).arg(selected.size()),
+        QMessageBox::Yes | QMessageBox::No, this);
+    box.setDefaultButton(QMessageBox::No);
+    if (box.exec() != QMessageBox::Yes) return;
+
+    // Apply: one undoable move per contributing cluster.  .spk indices are
+    // stable spike identities, so each cluster's flagged rows stay valid across
+    // the earlier moves in this loop (the feature strip relies on the same).
+    int movedClusters = 0;
+    for (auto it = R.byCluster.constBegin(); it != R.byCluster.constEnd(); ++it) {
+        KlustersView* v = activeView();
+        if (!v) break;                              // view could close mid-loop
+        doc->moveSpikeSubsetToCluster(it.key(), it.value(), /*artefact=*/0, *v);
+        ++movedClusters;
+    }
+
+    slotStatusMsg(tr("Stripped %1 waveform outlier spike(s) from %2 cluster(s) "
+                     "into the artefact cluster.")
+                      .arg(R.total).arg(movedClusters));
 }
 
 // ---------------------------------------------------------------------------
