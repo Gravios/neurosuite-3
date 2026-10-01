@@ -36,8 +36,9 @@ class QMenu;
 
 // include files for Qt
 #include <QList>
+#include <QSet>
 #include <QVector>
-#include <QSpinBox> 
+#include <QSpinBox>
 #include <QValidator>
 #include <QLineEdit>
 #include <QLabel>
@@ -722,8 +723,33 @@ private:
     ProcessWidget* mPluginProcess = nullptr;   ///< plugin output tab; separate from the recluster processWidget
     KlustersPlugin mRunningPlugin;             ///< descriptor of the in-flight / just-finished plugin
     bool           mPluginRunning = false;     ///< guards against concurrent/overlapping runs
+    bool           mPluginReportModal = true;  ///< true: report completion with a dialog; false: status bar (auto runs)
     qint64         mPluginStartMs = 0;         ///< run start (epoch ms, with a small skew margin)
     QString        mPluginRunBase;             ///< resolved session base of the in-flight run
+    /** Concurrency guard + argv build + output tab + start, shared by the
+     *  interactive runPlugin and the automatic template run.  Returns false (with
+     *  feedback) if a job is already running, no document is open, or start fails. */
+    bool launchPlugin(const KlustersPlugin& plugin, const QMap<QString, QString>& params);
+
+    // ── Template library: "Mark as Template" + write .wtf on save ──────────────
+    // The marked units are the template library for the open clustering: on save
+    // Klusters runs the fiber-template plugin (via launchPlugin) to (re)write their
+    // linked .wtf series in every available variant.  The set is persisted next to
+    // the session as <base>.templates[.<variant>].<group>[.<tag>] (one unit id per
+    // line) and reloaded on open.
+    QSet<int> mTemplateUnits;                  ///< unit ids marked as templates for the open clustering
+    /** Toggle the selected cluster(s) (ids > 1) in/out of the template set and mark
+     *  the document modified so a save persists them and refreshes the .wtf. */
+    void slotToggleTemplate();
+    /** <base>.templates[.<variant>].<group>[.<tag>] for the open document ("" if none). */
+    QString templatesSidecarPath() const;
+    void loadTemplateMarks();                  ///< replace mTemplateUnits from the sidecar (no-op if none)
+    void saveTemplateMarks() const;            ///< write mTemplateUnits to the sidecar (removes it when empty)
+    /** After a successful save, run fiber-template for the marked units (all
+     *  available spk variants) so their .wtf is rewritten from the saved files. */
+    void runTemplateGeneration();
+    /** spk variant tokens present for the open group (<base>.spk.<variant>.<group>). */
+    QStringList availableSpkVariants() const;
 
     void createToolBar();
 
@@ -1055,6 +1081,7 @@ private:
     QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artefact(0)
     QAction *mStripWaveformOutliers; // split waveform-residual outliers of selected clusters into a new cluster
     QAction *mSetObliqueBasis;       // pin the oblique projection's template axes (Set Oblique Basis…)
+    QAction *mMarkAsTemplate = nullptr;  // toggle the selected cluster(s) as template units (.wtf on save)
     QAction *mSortClustersBySpikeCount; // renumber clusters by descending spike count
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination

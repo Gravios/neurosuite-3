@@ -10,6 +10,7 @@
    <parameter><n>links</n><value>drift adapt</value><status>Optional</status></parameter>
    <parameter><n>n-chunks</n><value>6</value><status>Optional</status></parameter>
    <parameter><n>n-energy</n><value>5</value><status>Optional</status></parameter>
+   <parameter><n>units</n><value></value><status>Optional</status></parameter>
    <parameter><n>nsamp</n><value></value><status>Mandatory</status></parameter>
    <parameter><n>nchan</n><value></value><status>Mandatory</status></parameter>
    <parameter><n>sr</n><value>32552</value><status>Optional</status></parameter>
@@ -25,7 +26,9 @@ Both are built in every requested spk variant and row-aligned to a shared
 
 Reads the clustering files ON DISK (save first if you have unsaved edits).
 nsamp and nchan are prefilled from the open group; variants is the list of .spk
-methods to template; clu-variant / clu-tag identify the units .clu to read.
+methods to template; clu-variant / clu-tag identify the units .clu to read;
+units restricts to specific unit ids (empty = all).  Klusters runs this
+automatically on save for the clusters you Mark as Template.
 Engine: the fiber-kit 'fiber-template' console script.</help>
  </program>
  <klusters>
