@@ -1138,6 +1138,41 @@ public:
                                                  double            kMad,
                                                  long              minSpikes);
 
+    /** Result of computeResidualPreview (non-mutating).  All waveform traces are
+     *  channel-major, length nChan*nSamp (channel c, sample s at c*nSamp + s),
+     *  in raw .spk amplitude units, over ALL channels so they map 1:1 onto the
+     *  waveform view's channel layout. */
+    struct ResidualPreview {
+        bool               ok    = false;
+        int                nChan = 0;
+        int                nSamp = 0;
+        long               nUsed = 0;      ///< lassoed spikes averaged (may be a sample)
+        QList<int>         basis;          ///< basis cluster ids; empty => residual to own mean
+        std::vector<float> meanWave;       ///< mean lassoed waveform  x̄
+        std::vector<float> fit;            ///< basis reconstruction   B·ā (zero when no basis)
+        std::vector<float> resid;          ///< mean residual          x̄ − B·ā
+        std::vector<float> residRms;       ///< per-sample residual RMS (spread envelope)
+        double             medResidNorm = 0.0;  ///< median per-spike ||x − B·a||
+        double             peakWave     = 0.0;  ///< max |mean waveform|
+        double             peakResid    = 0.0;  ///< max |mean residual|
+        QString            verdict;             ///< one-line user-facing read-out
+    };
+
+    /** Non-mutating waveform-space residual of a prospective cut, for the
+     *  post-lasso preview.  For the @p featureRows just lassoed in the embedding
+     *  view, read their .spk waveforms (sampled to @p maxSpikes) and fit each to
+     *  the basis spanned by the mean waveforms of @p basisClusters by least
+     *  squares (a = (BᵀB)⁻¹Bᵀx, ridge-stabilised); the residual x − B·a is what
+     *  the basis does not explain.  A lassoed cloud that is just a mixture or a
+     *  single of the basis cells collapses to the noise floor (flat mean
+     *  residual); a genuine distinct unit leaves its own template in the
+     *  residual.  With @p basisClusters empty the basis is the lassoed spikes'
+     *  OWN mean, so the preview reports the group's spread instead (residRms).
+     *  Parent scope; reads the current spike snapshot, mutates nothing. */
+    ResidualPreview computeResidualPreview(const QSet<dataType>& featureRows,
+                                           const QList<int>&     basisClusters,
+                                           long                  maxSpikes = 600);
+
     /**Returns the number of dimensions of the data.*/
     int nbDimensions(){return clusteringData->nbOfDimensions();}
 

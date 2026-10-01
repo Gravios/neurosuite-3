@@ -19,6 +19,7 @@
 #include "clusterview.h"
 #include "klustersview.h"
 #include "klustersdoc.h"
+#include "waveformview.h"          // residual preview is pushed to the sibling view
 #include "data.h"
 #include "itemcolors.h"
 #include "configuration.h"
@@ -128,6 +129,7 @@ void ClusterView::tsneInvalidate(){
 }
 
 void ClusterView::exitTsne(const QString& reason){
+    clearPendingLasso();                 // a pending residual preview does not outlive the embedding
     tsneCancel = true;
     // Do NOT wait here.  The flag is polled inside the neighbour and bandwidth
     // phases now, so the worker stops promptly -- but promptly is not
@@ -542,17 +544,45 @@ void ClusterView::applyTsneLasso(){
     const int nSelected = rows.size();
     resetSelectionPolygon();
 
-    // Apply through the SAME builders the scatter's polygon uses, with the
-    // selection named by row instead of by region: colour registration, the
-    // creation notice every view and the palette need, the create-flavoured
-    // undo entry and the curation-log detail all come with them.  Driving this
-    // through the move primitive instead -- as the first version did -- moved
-    // the right spikes into an id that no view had been told about and no
-    // colour existed for, which is what made the new cluster come out
-    // malformed.
+    // CREATE modes defer: capture the selection, show a residual preview in the
+    // waveform view, and wait for the curator to confirm (Enter) or cancel (Esc).
+    // DELETE modes (to a reserve bin) apply at once, as before — there is no
+    // prospective cluster to inspect.
+    if (mode == NEW_CLUSTER || mode == NEW_CLUSTERS) {
+        clearPendingLasso();                 // supersede any earlier pending preview
+        pendingRows_    = rows;
+        pendingSources_ = sources;
+        pendingMode_    = static_cast<int>(mode);
+        pendingNSel_    = nSelected;
+        pendingLasso_   = true;
+        showLassoResidualPreview();
+        drawContentsMode = REDRAW;            // repaint the embedding without the polygon
+        update();
+        if (statusBar) statusBar->showMessage(
+            tr("t-SNE lasso: %1 spikes — Enter to apply, Esc to cancel "
+               "(residual shown in the waveform view)").arg(nSelected), 0);
+        return;
+    }
+
+    applyLassoSelection(rows, sources, static_cast<int>(mode), nSelected);
+}
+
+// ---------------------------------------------------------------------------
+// applyLassoSelection / showLassoResidualPreview / confirm / cancel — the
+// deferred-lasso path.  A closed create-mode embedding lasso shows the residual
+// of the would-be cut against the pinned oblique basis (or the lassoed spikes'
+// own mean) in the waveform view; the cut lands only once the curator confirms.
+// ---------------------------------------------------------------------------
+void ClusterView::applyLassoSelection(const QSet<dataType>& rows, const QList<int>& sources,
+                                      int lassoMode, int nSelected){
+    // The shared apply path: the SAME builders the scatter's polygon uses, with
+    // the selection named by row (colour registration, the creation notice every
+    // view and the palette need, the create-flavoured undo entry and the
+    // curation-log detail all come with them — not the move primitive, which
+    // would land spikes in an id no view/colour knew about).
     const SpikeSelection selection(rows);
     tsneApplyingLasso = true;               // our own edit: do not self-drop
-    switch (mode) {
+    switch (static_cast<BaseFrame::Mode>(lassoMode)) {
     case DELETE_ARTEFACT: doc.deleteArtifact(selection, sources);    break;
     case DELETE_NOISE:    doc.deleteNoise(selection, sources);       break;
     case NEW_CLUSTER:     doc.createNewCluster(selection, sources);  break;
@@ -572,6 +602,43 @@ void ClusterView::applyTsneLasso(){
                 .arg(nSelected).arg(sources.size())
           : tr("t-SNE lasso: %1 spikes from %2 cluster(s) applied")
                 .arg(nSelected).arg(sources.size()), 6000);
+}
+
+void ClusterView::showLassoResidualPreview(){
+    // Basis = the pinned oblique basis if set; empty => residual to own mean.
+    const KlustersDoc::ResidualPreview p = doc.computeResidualPreview(pendingRows_, obliqueBasis);
+    for (ViewWidget* w : view.getViewList())
+        if (WaveformView* wv = qobject_cast<WaveformView*>(w))
+            wv->setResidualPreview(p.nChan, p.nSamp, p.meanWave, p.fit, p.resid, p.verdict);
+}
+
+void ClusterView::clearPendingLasso(){
+    pendingLasso_ = false;
+    pendingRows_.clear();
+    pendingSources_.clear();
+    pendingMode_ = -1;
+    pendingNSel_ = 0;
+    for (ViewWidget* w : view.getViewList())
+        if (WaveformView* wv = qobject_cast<WaveformView*>(w))
+            wv->clearResidualPreview();
+}
+
+void ClusterView::confirmPendingLasso(){
+    if (!pendingLasso_) return;
+    const QSet<dataType> rows    = pendingRows_;
+    const QList<int>     sources = pendingSources_;
+    const int            m       = pendingMode_;
+    const int            nSel    = pendingNSel_;
+    clearPendingLasso();                     // also clears the waveform preview
+    applyLassoSelection(rows, sources, m, nSel);
+}
+
+void ClusterView::cancelPendingLasso(){
+    if (!pendingLasso_) return;
+    clearPendingLasso();
+    drawContentsMode = REDRAW;
+    update();
+    if (statusBar) statusBar->showMessage(tr("t-SNE lasso cancelled"), 3000);
 }
 
 void ClusterView::paintTsneProgress(QPainter& painter){

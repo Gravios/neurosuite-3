@@ -23,6 +23,7 @@
 
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QStringList>
 
 #include "klustersdoc.h"
 #include "data.h"
@@ -524,5 +525,202 @@ KlustersDoc::detectWaveformOutliers(const QList<int>& clusters,
         R.reason = tr("Strip waveform outliers: no selected cluster carries "
                       "enough spikes (>= %1) for a stable median waveform.")
                        .arg(minSpikes);
+    return R;
+}
+
+
+// ---------------------------------------------------------------------------
+// computeResidualPreview — waveform-space residual of a prospective lasso cut.
+//
+// Companion to the post-lasso preview.  For the feature rows just lassoed in the
+// embedding view, read their .spk waveforms (sampled to maxSpikes) and fit each
+// to the basis spanned by the basis clusters' MEAN waveforms, a = (BᵀB)⁻¹Bᵀx
+// (ridge-stabilised).  The residual x − B·a is what the basis cannot explain: a
+// mixture or single of the basis cells collapses to the noise floor (flat mean
+// residual), a distinct unit keeps its own template.  Empty basis -> residual to
+// the lassoed spikes' OWN mean (reports the group's spread).  Same snapshot +
+// tmReadSpikeFloat read path as detectWaveformOutliers; parent scope; traces are
+// over ALL channels (channel-major) so the waveform view overlays them 1:1.
+// ---------------------------------------------------------------------------
+namespace {
+// Invert a small K×K matrix in place by Gauss–Jordan (K = basis size, tiny).
+static bool smallInverse(std::vector<double>& A, int K) {
+    std::vector<double> I(static_cast<size_t>(K) * K, 0.0);
+    for (int i = 0; i < K; ++i) I[static_cast<size_t>(i) * K + i] = 1.0;
+    for (int c = 0; c < K; ++c) {
+        const double piv = A[static_cast<size_t>(c) * K + c];
+        if (std::fabs(piv) < 1e-12) return false;
+        const double inv = 1.0 / piv;
+        for (int j = 0; j < K; ++j) { A[(size_t)c*K+j] *= inv; I[(size_t)c*K+j] *= inv; }
+        for (int r = 0; r < K; ++r) {
+            if (r == c) continue;
+            const double f = A[(size_t)r*K+c];
+            if (f == 0.0) continue;
+            for (int j = 0; j < K; ++j) {
+                A[(size_t)r*K+j] -= f * A[(size_t)c*K+j];
+                I[(size_t)r*K+j] -= f * I[(size_t)c*K+j];
+            }
+        }
+    }
+    A.swap(I);
+    return true;
+}
+} // namespace
+
+KlustersDoc::ResidualPreview
+KlustersDoc::computeResidualPreview(const QSet<dataType>& featureRows,
+                                    const QList<int>&     basisClusters,
+                                    long                  maxSpikes)
+{
+    ResidualPreview R;
+    Data& layer = parentData();
+    const int nCh   = layer.nbOfChannels();
+    const int nSamp = layer.nbOfSampleInWaveform();
+    if (nCh <= 0 || nSamp <= 0 || featureRows.isEmpty()) {
+        R.verdict = tr("Residual preview: no waveform geometry or no spikes selected.");
+        return R;
+    }
+    const int P = nCh * nSamp;                          // ALL channels, channel-major
+    const std::shared_ptr<const Data::ClusteringSnapshot> snap = layer.currentSnapshot();
+    const Data::ClusteringSnapshot& spkSrc = *snap;
+    std::vector<int16_t> raw;
+    std::vector<float>   wav;
+
+    // ---- basis templates B (K columns, each P long): mean .spk waveform ----
+    std::vector<std::vector<double>> B;
+    for (int bc : basisClusters) {
+        if (bc <= 1) continue;                          // reserve bins carry no template
+        SortableTable pos;
+        if (!layer.spikePositions(bc, pos)) continue;
+        const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(bc)));
+        if (n <= 0) continue;
+        const long step = std::max(1L, n / 1024L);
+        std::vector<double> acc(static_cast<size_t>(P), 0.0);
+        long used = 0;
+        for (long s = 0; s < n; s += step) {
+            const long row = static_cast<long>(pos(1, s + 1));
+            if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+            for (int p = 0; p < P; ++p) acc[static_cast<size_t>(p)] += wav[static_cast<size_t>(p)];
+            ++used;
+        }
+        if (used < 1) continue;
+        for (int p = 0; p < P; ++p) acc[static_cast<size_t>(p)] /= static_cast<double>(used);
+        B.push_back(std::move(acc));
+    }
+    int K = static_cast<int>(B.size());
+
+    // ---- Gram inverse (K×K, ridge-stabilised) for the least-squares fit ----
+    std::vector<double> Ginv;
+    if (K >= 1) {
+        std::vector<double> G(static_cast<size_t>(K) * K, 0.0);
+        double trace = 0.0;
+        for (int a = 0; a < K; ++a)
+            for (int b = 0; b < K; ++b) {
+                double s = 0.0;
+                for (int p = 0; p < P; ++p) s += B[a][p] * B[b][p];
+                G[(size_t)a*K+b] = s;
+                if (a == b) trace += s;
+            }
+        const double ridge = 1e-6 * (trace / std::max(1, K)) + 1e-9;
+        for (int a = 0; a < K; ++a) G[(size_t)a*K+a] += ridge;
+        if (smallInverse(G, K)) Ginv = std::move(G);
+    }
+    const bool basisOK = (K >= 1) && !Ginv.empty();
+    if (!basisOK) { B.clear(); K = 0; }
+
+    // ---- the lassoed rows, sampled to maxSpikes ----
+    std::vector<dataType> rows(featureRows.begin(), featureRows.end());
+    const long nL = static_cast<long>(rows.size());
+    const long lstep = std::max(1L, nL / std::max(1L, maxSpikes));
+
+    // Own-mean fallback needs the lassoed mean before it can fit; prepass for it.
+    std::vector<double> ownMean;
+    if (!basisOK) {
+        std::vector<double> sx(static_cast<size_t>(P), 0.0); long u = 0;
+        for (long i = 0; i < nL; i += lstep) {
+            const long row = static_cast<long>(rows[static_cast<size_t>(i)]);
+            if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+            for (int p = 0; p < P; ++p) sx[(size_t)p] += wav[(size_t)p];
+            ++u;
+        }
+        if (u < 1) { R.verdict = tr("Residual preview: no readable waveforms."); return R; }
+        ownMean.resize(static_cast<size_t>(P));
+        for (int p = 0; p < P; ++p) ownMean[(size_t)p] = sx[(size_t)p] / static_cast<double>(u);
+    }
+
+    std::vector<double> sumX(P,0.0), sumFit(P,0.0), sumR(P,0.0), sumR2(P,0.0);
+    std::vector<double> rnorms; rnorms.reserve(static_cast<size_t>(maxSpikes));
+    long nUsed = 0;
+    for (long i = 0; i < nL; i += lstep) {
+        const long row = static_cast<long>(rows[static_cast<size_t>(i)]);
+        if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+        std::vector<double> fit(static_cast<size_t>(P), 0.0);
+        if (basisOK) {
+            std::vector<double> bt(static_cast<size_t>(K), 0.0);
+            for (int k = 0; k < K; ++k) {
+                double s = 0.0;
+                for (int p = 0; p < P; ++p) s += B[k][p] * wav[(size_t)p];
+                bt[(size_t)k] = s;
+            }
+            for (int k = 0; k < K; ++k) {
+                double a = 0.0;
+                for (int j = 0; j < K; ++j) a += Ginv[(size_t)k*K+j] * bt[(size_t)j];
+                for (int p = 0; p < P; ++p) fit[(size_t)p] += a * B[k][p];
+            }
+        } else {
+            double num = 0.0, den = 0.0;
+            for (int p = 0; p < P; ++p) { num += ownMean[(size_t)p]*wav[(size_t)p]; den += ownMean[(size_t)p]*ownMean[(size_t)p]; }
+            const double a = (den > 0.0) ? num/den : 0.0;
+            for (int p = 0; p < P; ++p) fit[(size_t)p] = a * ownMean[(size_t)p];
+        }
+        double rn2 = 0.0;
+        for (int p = 0; p < P; ++p) {
+            const double x = wav[(size_t)p], r = x - fit[(size_t)p];
+            sumX[(size_t)p]+=x; sumFit[(size_t)p]+=fit[(size_t)p]; sumR[(size_t)p]+=r; sumR2[(size_t)p]+=r*r;
+            rn2 += r*r;
+        }
+        rnorms.push_back(std::sqrt(rn2));
+        ++nUsed;
+    }
+    if (nUsed < 1) { R.verdict = tr("Residual preview: no readable waveforms."); return R; }
+
+    R.meanWave.resize(static_cast<size_t>(P));
+    R.fit.resize(static_cast<size_t>(P));
+    R.resid.resize(static_cast<size_t>(P));
+    R.residRms.resize(static_cast<size_t>(P));
+    for (int p = 0; p < P; ++p) {
+        R.meanWave[(size_t)p] = static_cast<float>(sumX[(size_t)p]  / nUsed);
+        R.fit[(size_t)p]      = static_cast<float>(sumFit[(size_t)p] / nUsed);
+        R.resid[(size_t)p]    = static_cast<float>(sumR[(size_t)p]  / nUsed);
+        R.residRms[(size_t)p] = static_cast<float>(std::sqrt(sumR2[(size_t)p] / nUsed));
+    }
+    std::sort(rnorms.begin(), rnorms.end());
+    R.medResidNorm = rnorms[rnorms.size() / 2];
+    for (int p = 0; p < P; ++p) {
+        R.peakWave  = std::max(R.peakWave,  std::fabs(static_cast<double>(R.meanWave[(size_t)p])));
+        R.peakResid = std::max(R.peakResid, std::fabs(static_cast<double>(R.resid[(size_t)p])));
+    }
+    R.ok = true; R.nChan = nCh; R.nSamp = nSamp; R.nUsed = nUsed;
+    for (int bc : basisClusters) if (bc > 1 && basisOK) R.basis.append(bc);
+
+    const double frac = (R.peakWave > 0.0) ? R.peakResid / R.peakWave : 0.0;
+    if (!basisOK) {
+        R.verdict = tr("Residual preview: %1 spikes, no basis — residual to own mean; "
+                       "median spread %2 (tightness of the prospective cluster) — "
+                       "Enter to apply, Esc to cancel")
+                        .arg(nUsed).arg(R.medResidNorm, 0, 'f', 0);
+    } else {
+        QStringList b; for (int id : R.basis) b << QString::number(id);
+        const QString read = (frac < 0.10)
+            ? tr("explained by the basis (~mix/single, low residual)")
+            : (frac < 0.25) ? tr("partly explained, some residual structure")
+                            : tr("DISTINCT structure, a separate unit");
+        R.verdict = tr("Residual vs basis [%1]: %2  (peak residual %3% of the waveform, "
+                       "%4 spikes) — Enter to apply, Esc to cancel")
+                        .arg(b.join(QStringLiteral(",")))
+                        .arg(read)
+                        .arg(frac * 100.0, 0, 'f', 0)
+                        .arg(nUsed);
+    }
     return R;
 }

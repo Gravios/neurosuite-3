@@ -398,15 +398,21 @@ void WaveformView::paintEvent ( QPaintEvent *){
             //Fill the double buffer with the background
             doublebuffer.fill(palette().color(backgroundRole()));
 
-            //Shade the selected channels, then paint the waveforms on top.
-            drawChannelSelection(painter);
+            if(hasResidualPreview_){
+                //A lasso is pending confirmation: show its residual preview in
+                //place of the cluster waveforms until it is applied or cancelled.
+                drawResidualPreview(painter);
+            } else {
+                //Shade the selected channels, then paint the waveforms on top.
+                drawChannelSelection(painter);
 
-            //Paint all the waveforms in the shownclusters list (in the double buffer)
-            drawWaveforms(painter,view.clusters());
+                //Paint all the waveforms in the shownclusters list (in the double buffer)
+                drawWaveforms(painter,view.clusters());
+            }
         }
 
         //The update mode applies only when the color of a cluster has changed.
-        if(drawContentsMode == UPDATE){
+        if(drawContentsMode == UPDATE && !hasResidualPreview_){
             //Paint the waveforms for the clusters contained in clusterUpdateList
             drawWaveforms(painter,clusterUpdateList);
 
@@ -560,7 +566,69 @@ void WaveformView::drawWaveforms(QPainter& painter,const QList<int>& clusterList
     }
 }
 
-void WaveformView::updateWindow(){  
+void WaveformView::setResidualPreview(int nChan, int nSamp,
+                                      const std::vector<float>& meanWave,
+                                      const std::vector<float>& fit,
+                                      const std::vector<float>& resid,
+                                      const QString& verdict){
+    // Stop any in-flight waveform job so it cannot redraw normal traces over the
+    // preview, then show the preview self-contained (no thread/cache needed).
+    supersedeRunningThreads();
+    rpChan_ = nChan; rpSamp_ = nSamp;
+    rpMean_ = meanWave; rpFit_ = fit; rpResid_ = resid; rpVerdict_ = verdict;
+    hasResidualPreview_ = true;
+    dataReady = true;
+    updateWindow();                       // world box for the currently-shown clusters
+    drawContentsMode = REDRAW;
+    update();
+}
+
+void WaveformView::clearResidualPreview(){
+    if(!hasResidualPreview_) return;
+    hasResidualPreview_ = false;
+    rpMean_.clear(); rpFit_.clear(); rpResid_.clear(); rpVerdict_.clear();
+    rpChan_ = rpSamp_ = 0;
+    // The cluster waveform cache was never touched, so a plain redraw restores
+    // the normal display.
+    drawContentsMode = REDRAW;
+    update();
+}
+
+void WaveformView::drawResidualPreview(QPainter& painter){
+    if(!hasResidualPreview_ || rpChan_ <= 0 || rpSamp_ <= 0) return;
+    const int need    = rpChan_ * rpSamp_;
+    const int step    = YsizeForMaxAmp + Yspace;
+    const int nChShow = std::min(rpChan_, nbchannels);
+
+    // One column at X0, channel ch's baseline at world-y -(Y0 - pos*step), exactly
+    // as drawWaveforms / drawChannelSelection.  drawWaveforms draws
+    // -Y + alreadyInverted*Yfactor with the iterator pre-negating the raw sample
+    // for Qt's downward Y; our traces are raw, so we negate here on the line
+    // marked (*).  If the preview renders upside-down, flip that sign.
+    auto drawTrace = [&](const std::vector<float>& tr, const QColor& color){
+        if(static_cast<int>(tr.size()) < need) return;
+        painter.setPen(QPen(color));
+        for(int ch = 0; ch < nChShow; ++ch){
+            const int cpos = (ch < static_cast<int>(channelPositions.size()))
+                                 ? channelPositions[ch] : ch;
+            const long Y = Y0 - static_cast<long>(cpos) * step;
+            QPolygon poly(rpSamp_);
+            long x = 0;
+            for(int i = 0; i < rpSamp_; ++i){
+                const float v = tr[static_cast<size_t>(ch) * rpSamp_ + i];
+                poly.setPoint(i, static_cast<int>(X0 + x),
+                              static_cast<int>(-Y - static_cast<long>(v * Yfactor)));  // (*) sign
+                x += Xstep;
+            }
+            painter.drawPolyline(poly);
+        }
+    };
+    drawTrace(rpMean_, QColor(140,140,140));          // mean lassoed waveform (grey)
+    if(!rpFit_.empty()) drawTrace(rpFit_, QColor(60,120,220));  // basis fit B·ā (blue)
+    drawTrace(rpResid_, QColor(214,40,40));           // residual x̄−B·ā (red, headline)
+}
+
+void WaveformView::updateWindow(){
     int nbOfClusters = view.clusters().size();
 
     //Update the window if the clusters are side by side or any case if there is only one cluster.

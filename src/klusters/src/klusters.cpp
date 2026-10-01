@@ -2183,6 +2183,24 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
+    // ── Enter / Esc — commit or discard a pending lasso's residual preview ─
+    // Live ONLY while a create-mode embedding lasso is awaiting confirmation
+    // (hasPendingLasso), so the keys keep their normal meaning everywhere else.
+    if(event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter
+            || ke->key() == Qt::Key_Escape)
+           && ke->modifiers() == Qt::NoModifier && doc && !focusIsInTextInput()){
+            if(ClusterView* cv = activeClusterView()){
+                if(cv->hasPendingLasso()){
+                    if(ke->key() == Qt::Key_Escape) cv->cancelPendingLasso();
+                    else                            cv->confirmPendingLasso();
+                    return true;
+                }
+            }
+        }
+    }
+
     // ── Up / Down — t-SNE perplexity, ONLY while the embedding is showing ─
     // Gated on isTsneActive() so the arrows keep their normal meaning
     // (palette navigation) everywhere else: a modal binding, live exactly as
