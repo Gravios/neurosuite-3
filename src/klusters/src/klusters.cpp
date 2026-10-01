@@ -437,14 +437,16 @@ void KlustersApp::createMenus()
     // Waveform counterpart of the feature strip, and the interactive twin of
     // fiber-kit's consolidate mode=shed: strip each SELECTED cluster's own
     // worst-fitting spikes (residual to its median waveform, robust MAD tail)
-    // into the artefact cluster.  Selection-scoped (not bulk) because it is
-    // shortcut-driven -- Shift+X acts on the cluster under inspection.  Same
-    // non-mutating scan -> confirm -> undoable move as the feature strip.
+    // into ONE new cluster (not the artefact bin -- the strip is a hypothesis to
+    // review, so the shed spikes stay inspectable rather than being discarded).
+    // Selection-scoped (not bulk) because it is shortcut-driven -- Shift+X acts
+    // on the cluster under inspection.  Same non-mutating scan -> confirm ->
+    // undoable split as the feature strip's scan -> confirm -> move.
     mStripWaveformOutliers = actionMenu->addAction(tr("Strip &Waveform Outliers\u2026"));
     mStripWaveformOutliers->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_X));
     mStripWaveformOutliers->setToolTip(
-        tr("Move each selected cluster's waveform outliers (residual to its own "
-           "median waveform) into the artefact cluster.  Undoable."));
+        tr("Split each selected cluster's waveform outliers (residual to its own "
+           "median waveform) off into a new cluster.  Undoable."));
     connect(mStripWaveformOutliers, &QAction::triggered,
             this, &KlustersApp::slotStripWaveformOutliers);
 
@@ -5090,21 +5092,42 @@ void KlustersApp::slotStripFeatureOutliers()
 // twin of fiber-kit's consolidate mode=shed.  For each SELECTED cluster, flag
 // the spikes whose residual against the cluster's OWN median waveform lies in
 // the robust upper tail (median + k*1.4826*MAD, one-sided since the residual
-// is non-negative and skewed) and move them into the artefact cluster (0).
+// is non-negative and skewed) and split them off into ONE new cluster.
+//
+// The shed spikes land in a fresh cluster, not the artefact/noise bin: a
+// self-outlier strip is a hypothesis ("these do not belong"), and parking the
+// result where the curator can look at it -- compare it to the source, split it
+// further, or send it to noise once satisfied -- keeps the gesture reversible in
+// practice as well as by Ctrl+Z.  The new cluster is made through the SAME
+// row-named builder the t-SNE lasso's NEW_CLUSTER gesture uses (createNewCluster),
+// never moveSpikeSubsetToCluster into a fresh id, which would land the spikes in
+// an id no view and no colour knows about (see the lasso note in clusterview.cpp).
 //
 // Selection-scoped, not bulk: it is shortcut-driven, so Shift+X strips the
 // cluster(s) the user is inspecting rather than silently rewriting all of them
 // (and it reads waveforms, unlike the in-memory feature strip).  Detection is
 // the non-mutating doc scan detectWaveformOutliers; the user confirms the exact
-// count (default No) before the undoable per-cluster moveSpikeSubsetToCluster.
+// count (default No) before the single undoable createNewCluster.  Parent scope
+// only: the scan reads parentData(), so the split must run on the parent too --
+// it refuses while a child (atom) layer is active rather than splitting an atom.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotStripWaveformOutliers()
 {
     KlustersView* view = activeView();
     if (!view) return;
 
-    // Parent-scope selection (moveSpikeSubsetToCluster is parent-scope), minus
-    // the artefact/noise bins, which are never stripped.
+    // Parent scope: the scan reads parentData() and the split (createNewCluster)
+    // runs on the ACTIVE layer, so the two agree only while the parent is active.
+    // Refuse in child (atom) view rather than scoring parent ids against atom
+    // spikes and then splitting an atom -- neither of which the gesture means.
+    if (doc->isChildClusteringActive()) {
+        slotStatusMsg(tr("Strip waveform outliers: switch to the parent clustering "
+                         "first (the strip does not operate on atoms)."));
+        return;
+    }
+
+    // Parent-scope selection, minus the artefact/noise bins, which are never
+    // stripped.
     QList<int> selected = view->clusters();
     selected.removeAll(0);
     selected.removeAll(1);
@@ -5134,29 +5157,51 @@ void KlustersApp::slotStripWaveformOutliers()
     }
 
     QMessageBox box(QMessageBox::Question, tr("Strip Waveform Outliers"),
-        tr("Move %1 spike(s) whose waveform lies more than %2 MAD from their "
-           "cluster's own median (over the selected channels) into the artefact "
-           "cluster (0)?\n\n%3 of %4 selected cluster(s) contribute outliers.  "
+        tr("Split %1 spike(s) whose waveform lies more than %2 MAD from their "
+           "cluster's own median (over the selected channels) off into a new "
+           "cluster?\n\n%3 of %4 selected cluster(s) contribute outliers.  "
            "This can be undone.")
             .arg(R.total).arg(kMad).arg(R.byCluster.size()).arg(selected.size()),
         QMessageBox::Yes | QMessageBox::No, this);
     box.setDefaultButton(QMessageBox::No);
     if (box.exec() != QMessageBox::Yes) return;
 
-    // Apply: one undoable move per contributing cluster.  .spk indices are
-    // stable spike identities, so each cluster's flagged rows stay valid across
-    // the earlier moves in this loop (the feature strip relies on the same).
-    int movedClusters = 0;
+    // Apply: ONE new cluster collecting every flagged spike, created through the
+    // row-named builder the t-SNE lasso's NEW_CLUSTER gesture uses.  NOT
+    // moveSpikeSubsetToCluster into a fresh id -- that moves spikes into an id no
+    // view and no colour was told about, a malformed cluster (the lasso learned
+    // this; see clusterview.cpp).  createNewCluster allocates the id and colour,
+    // emits the creation notice, parks the new cluster + its sources as the
+    // selection, records the SPLIT in the curation log and registers a single
+    // create-flavoured undo entry for the whole strip.
+    //
+    // detectWaveformOutliers returns 0-based .spk indices; the builder speaks
+    // 1-based feature rows (exactly as moveSpikeSubsetToCluster does internally),
+    // so each index is lifted by +1 as the flagged rows of every contributing
+    // cluster are pooled into one selection.  The sources are those clusters.
+    int nFlagged = 0;
+    for (auto it = R.byCluster.constBegin(); it != R.byCluster.constEnd(); ++it)
+        nFlagged += it.value().size();
+    QSet<dataType> rowSet;
+    rowSet.reserve(nFlagged);
+    QList<int> sources;
     for (auto it = R.byCluster.constBegin(); it != R.byCluster.constEnd(); ++it) {
-        KlustersView* v = activeView();
-        if (!v) break;                              // view could close mid-loop
-        doc->moveSpikeSubsetToCluster(it.key(), it.value(), /*artefact=*/0, *v);
-        ++movedClusters;
+        sources.append(it.key());
+        for (int idx : it.value())
+            rowSet.insert(static_cast<dataType>(idx + 1));   // 0-based .spk -> 1-based row
+    }
+
+    const SpikeSelection selection(rowSet, QStringLiteral("waveform_outlier_strip"));
+    const int newCluster = doc->createNewCluster(selection, sources);
+    if (newCluster <= 1) {                           // 0 = nothing created; 1 = noise
+        slotStatusMsg(tr("Strip waveform outliers: the %1 flagged spike(s) could "
+                         "not be split into a new cluster.").arg(R.total));
+        return;
     }
 
     slotStatusMsg(tr("Stripped %1 waveform outlier spike(s) from %2 cluster(s) "
-                     "into the artefact cluster.")
-                      .arg(R.total).arg(movedClusters));
+                     "into new cluster %3.")
+                      .arg(R.total).arg(sources.size()).arg(newCluster));
 }
 
 // ---------------------------------------------------------------------------

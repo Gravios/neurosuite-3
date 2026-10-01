@@ -1119,10 +1119,11 @@ public:
      *  flag every spike whose normalized kernel-weighted residual against that
      *  template exceeds a robust self-threshold.  Non-mutating -- returns the
      *  flagged 0-based .spk indices per cluster for the caller to confirm and
-     *  move (slotStripWaveformOutliers routes them to the artefact cluster via
-     *  the undoable moveSpikeSubsetToCluster, exactly as the feature-outlier
-     *  strip does).  The waveform counterpart of Strip Feature Outliers, and the
-     *  interactive twin of fiber-kit's consolidate mode=shed.
+     *  act on (slotStripWaveformOutliers pools them, lifts each to its 1-based
+     *  feature row and splits them off into ONE new cluster via the undoable
+     *  createNewCluster -- the shed spikes stay inspectable rather than being
+     *  dropped into the artefact bin).  The waveform counterpart of Strip Feature
+     *  Outliers, and the interactive twin of fiber-kit's consolidate mode=shed.
      *
      *  Metric, per spike x over the selected channels' points p (same as
      *  stripByTemplate, but scored against the cluster's OWN median):
