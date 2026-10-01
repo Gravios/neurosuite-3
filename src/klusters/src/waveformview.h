@@ -229,6 +229,21 @@ public Q_SLOTS:
   */
     void setDisplayNbSpikes(long nbSpikes);
 
+    /** Post-lasso residual preview (filled by ClusterView via KlustersView).
+     *  Shows the given channel-major traces INSTEAD of the normal waveforms until
+     *  cleared: the mean lassoed waveform (grey), the basis reconstruction B·ā
+     *  (blue) and the mean residual x̄−B·ā (red), so a cut can be judged before it
+     *  is committed.  Arrays are length nChan*nSamp (channel c, sample s at
+     *  c*nSamp+s); @p fit may be empty (own-mean mode). */
+    void setResidualPreview(int nChan, int nSamp,
+                            const std::vector<float>& meanWave,
+                            const std::vector<float>& fit,
+                            const std::vector<float>& resid,
+                            const QString& verdict);
+    /** Clear the residual preview and return to the normal waveform display. */
+    void clearResidualPreview();
+    bool hasResidualPreview() const { return hasResidualPreview_; }
+
     /**Enables the caller to know if there is any thread running launch by the view.*/
     bool isThreadsRunning() const override;
     void stopRunningThreads() override { stopAndClearThreads(); }
@@ -447,6 +462,21 @@ private:
   * @param clusterList list of clusters to draw
   */
     void drawWaveforms(QPainter& painter,const QList<int>& clusterList);
+
+    /** Draw the post-lasso residual preview (setResidualPreview) in place of the
+     *  normal waveforms, reusing the per-channel baseline geometry drawWaveforms
+     *  and drawChannelSelection use. */
+    void drawResidualPreview(QPainter& painter);
+
+    // Post-lasso residual preview overlay — set by ClusterView through
+    // KlustersView, drawn instead of the cluster waveforms while present.
+    bool               hasResidualPreview_ = false;
+    int                rpChan_ = 0;
+    int                rpSamp_ = 0;
+    std::vector<float> rpMean_;
+    std::vector<float> rpFit_;
+    std::vector<float> rpResid_;
+    QString            rpVerdict_;
 
     /**Updates the dimension of the window.*/
     void updateWindow();

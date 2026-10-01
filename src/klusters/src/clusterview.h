@@ -93,6 +93,13 @@ public:
      *  pre-fill it. */
     QList<int> obliqueBasisClusters() const { return obliqueBasis; }
 
+    /** A closed create-mode embedding lasso defers its cut and shows the residual
+     *  preview in the waveform view; these commit (Enter) or discard (Esc) it.
+     *  Public because the confirm keys are dispatched by the application filter. */
+    bool hasPendingLasso() const { return pendingLasso_; }
+    void confirmPendingLasso();
+    void cancelPendingLasso();
+
     /** Toggles autoscale-to-visible-clusters.  Public for the same reason:
      *  the A key is dispatched by the application filter. */
     void toggleAutoscale();
@@ -473,6 +480,15 @@ private:
     // examined against the same pair; startOblique re-validates it each time.
     QList<int>           obliqueBasis;
 
+    // A create-mode embedding lasso, closed and awaiting confirmation: its cut is
+    // deferred while the residual preview shows in the waveform view (Enter
+    // applies, Esc cancels).  pendingMode_ holds the BaseFrame::Mode (as int).
+    bool                 pendingLasso_ = false;
+    QSet<dataType>       pendingRows_;
+    QList<int>           pendingSources_;
+    int                  pendingMode_  = -1;
+    int                  pendingNSel_  = 0;
+
     /** @p perplexityOverride > 0 pins the perplexity (the arrow-key path);
      *  0 means "pick the default for this N". */
     void startTsne(double perplexityOverride = 0.0);
@@ -528,6 +544,17 @@ private:
      *  their CURRENT cluster and applies the active selection mode through
      *  the document's explicit-spike-list primitive. */
     void applyTsneLasso();
+    /** Apply a built embedding-lasso selection through the scatter's builders —
+     *  shared by the immediate delete path and the confirmed create path.
+     *  @p lassoMode is a BaseFrame::Mode value. */
+    void applyLassoSelection(const QSet<dataType>& rows, const QList<int>& sources,
+                             int lassoMode, int nSelected);
+    /** Compute the pending lasso's residual (against the pinned oblique basis, or
+     *  the lassoed spikes' own mean when none) and push it to the sibling
+     *  waveform view(s) as a preview. */
+    void showLassoResidualPreview();
+    /** Drop any pending lasso and clear the waveform preview. */
+    void clearPendingLasso();
 
     /** Re-reads the embedded spikes' cluster ids from the document after an
      *  edit.  The positions are still valid -- features did not change, only
