@@ -1,9 +1,11 @@
 # Klusters Plugin / Extension API
 
-Status: **specification (v1 draft)** — formalizes how external engines (recluster
-backends, re-fibering tools, analyses, exporters) are registered with and invoked
-from Klusters, modeled on the existing **ndmanager-plugins** mechanism already in
-this repository (`src/ndmanager-plugins`, parsed by `src/ndmanager`).
+Status: **phases 1–2 implemented** (discovery + dialog + runner + `none`/
+`hierarchy-reload` integration); phase 3 (`recluster-integrate`) pending — see §6.
+Formalizes how external engines (recluster backends, re-fibering tools, analyses,
+exporters) are registered with and invoked from Klusters, modeled on the existing
+**ndmanager-plugins** mechanism already in this repository (`src/ndmanager-plugins`,
+parsed by `src/ndmanager`).
 
 The goal is that adding a new engine to Klusters requires **no Klusters code
 change** — only a descriptor file and a program on `PATH`, exactly as adding an
@@ -152,16 +154,24 @@ user's alternative backend are registered the same way.
 
 ## 6. Implementation phases
 
-1. **Core move + registry (read-only):** relocate `DescriptionYamlReader` to
-   `libneurosuite-core`; add `KlustersPlugin` + `PluginRegistry` + a `&Plugins`
-   menu that lists discovered plugins (no run yet). Lowest risk; no behaviour
-   change to existing recluster.
-2. **Dialog + runner for `analysis`/`export`/`refiber`:** `PluginDialog` +
-   `PluginRunner` over `ProcessWidget`; wire `hierarchy-reload` (depends on the
-   `.clc/.clp` detection + reload already added to Klusters).
-3. **`recluster` kind:** route a plugin's `.clu` through
-   `integrateReclusteredClusters`; migrate the built-in KlustaKwik action onto
-   the plugin path so there is a single recluster code path.
+1. ✅ **Core move + registry (read-only):** `KlustersPlugin` + `PluginRegistry` +
+   a `&Plugins` menu that lists discovered plugins. (`DescriptionYamlReader` has
+   not yet moved to `libneurosuite-core`; the registry parses the XML directly —
+   YAML/`DescriptionYamlReader` consolidation remains a follow-up.)
+2. ✅ **Dialog + runner for `analysis`/`export`/`refiber`:** `PluginDialog`
+   (parameter form, prefilled from the resolved context) + a runner over
+   `ProcessWidget` — here `KlustersApp::runPlugin` / `slotPluginFinished` /
+   `integratePluginResult`, deliberately independent of the recluster process
+   slots.  `<integration>none` reports the files the engine wrote;
+   `<integration>hierarchy-reload` reloads the session from disk via the proven
+   `slotFileClose()` + `openDocumentFile()` path (a full reopen — heavier than an
+   in-place triple refresh, but it reuses one well-tested code path).  Starter
+   descriptors are installed to `share/klusters/plugins/descriptions`.
+3. ⏳ **`recluster` kind:** route a plugin's `.clu` through
+   `integrateReclusteredClusters` / `reclusteringUpdate`; migrate the built-in
+   KlustaKwik action onto the plugin path so there is a single recluster code
+   path.  Until then the runner executes a `recluster-integrate` engine but leaves
+   integration to the built-in Recluster action.
 
-Phase 2's `hierarchy-reload` depends on the child-sibling detection/reload work;
-sequence it after that lands.
+A future refinement of phase 2's `hierarchy-reload` is an in-place triple refresh
+(re-read `.clu/.clc/.clp` + `buildHierarchyMaps`) to avoid the full reopen.

@@ -7,7 +7,8 @@
 #include <QPushButton>
 #include <QDialogButtonBox>
 
-PluginDialog::PluginDialog(const KlustersPlugin& plugin, QWidget* parent)
+PluginDialog::PluginDialog(const KlustersPlugin& plugin,
+                           const QMap<QString, QString>& context, QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle(tr("Run plugin: %1").arg(plugin.name));
@@ -23,7 +24,11 @@ PluginDialog::PluginDialog(const KlustersPlugin& plugin, QWidget* parent)
 
     QFormLayout* form = new QFormLayout();
     for (const PluginParameter& p : plugin.parameters) {
-        QLineEdit* edit = new QLineEdit(p.value, this);
+        // A value Klusters resolved from the open document (keyed by the parameter
+        // name) wins over the descriptor's static default, so geometry-dependent
+        // fields (nsamp / nchan) come in correct and editable.
+        const QString ctxVal = context.value(p.name);
+        QLineEdit* edit = new QLineEdit(ctxVal.isEmpty() ? p.value : ctxVal, this);
         const bool mandatory =
             (p.status.compare(QStringLiteral("Mandatory"), Qt::CaseInsensitive) == 0);
         edit->setToolTip(mandatory ? tr("required") : tr("optional"));

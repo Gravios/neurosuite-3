@@ -156,6 +156,14 @@ add_subdirectory(src)
 add_subdirectory(po)
 add_subdirectory(doc)
 
+# Ship the starter plugin descriptors to the discovery path
+# (<prefix>/share/klusters/plugins/descriptions — the app-relative fallback in
+# PluginRegistry::discoveryDirs).  Without this the Plugins menu finds nothing
+# unless $KLUSTERS_PLUGIN_PATH is set.  install(DIRECTORY plugins/descriptions …)
+# places the 'descriptions' folder (and its *.xml) under the destination.
+install(DIRECTORY plugins/descriptions
+        DESTINATION share/klusters/plugins)
+
 include(CPack)
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Cluster cutting application")
 set(CPACK_PACKAGE_NAME "klusters")
