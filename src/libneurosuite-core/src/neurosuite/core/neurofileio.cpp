@@ -228,6 +228,57 @@ FetBinaryFile readFetBinary(const std::string& path)
     out.ok = true;
     return out;
 }
+
+SpkFile readSpk(const std::string& path, int nSamples, int nChannels)
+{
+    SpkFile out;
+    out.nSamples  = nSamples;
+    out.nChannels = nChannels;
+    if (nSamples <= 0 || nChannels <= 0) return out;
+
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in) return out;
+    const std::streamoff bytes = in.tellg();
+    const int64_t recVals  = static_cast<int64_t>(nSamples) * nChannels;
+    const int64_t recBytes = recVals * static_cast<int64_t>(sizeof(int16_t));
+    // A file that is not a whole number of (nSamples × nChannels) records has a
+    // geometry mismatch (wrong group/variant) — reject rather than misread.
+    if (bytes < 0 || recBytes <= 0 || (static_cast<int64_t>(bytes) % recBytes) != 0)
+        return out;
+    out.nSpikes = static_cast<int64_t>(bytes) / recBytes;
+
+    in.seekg(0, std::ios::beg);
+    const int64_t total = out.nSpikes * recVals;
+    out.samples.resize(static_cast<size_t>(total));
+    if (total > 0) {
+        in.read(reinterpret_cast<char*>(out.samples.data()),
+                static_cast<std::streamsize>(total) * static_cast<std::streamsize>(sizeof(int16_t)));
+        if (in.gcount() != static_cast<std::streamsize>(total) * static_cast<std::streamsize>(sizeof(int16_t))) {
+            out.samples.clear();
+            out.nSpikes = 0;
+            return out;
+        }
+    }
+    out.ok = true;
+    return out;
+}
+
+bool writeSpk(const std::string& path, int nSamples, int nChannels,
+              const std::vector<int16_t>& samples)
+{
+    if (nSamples <= 0 || nChannels <= 0) return false;
+    const int64_t recVals = static_cast<int64_t>(nSamples) * nChannels;
+    // Refuse a buffer that is not a whole number of spike records.
+    if (recVals <= 0 || (static_cast<int64_t>(samples.size()) % recVals) != 0)
+        return false;
+    std::ofstream os(path, std::ios::binary);
+    if (!os) return false;
+    if (!samples.empty())
+        os.write(reinterpret_cast<const char*>(samples.data()),
+                 static_cast<std::streamsize>(samples.size()) * static_cast<std::streamsize>(sizeof(int16_t)));
+    return static_cast<bool>(os);
+}
+
 std::vector<EvtEntry> readEvt(const std::string& path, bool* ok)
 {
     std::vector<EvtEntry> out;
@@ -353,6 +404,12 @@ std::string methodPath(const std::string& base, const std::string& type,
                        const std::string& method, int group)
 {
     return neurosuite::custody::methodPath(base, type, method, group);
+}
+
+std::string stagePath(const std::string& base, const std::string& type,
+                      const std::string& method, int group, const std::string& stage)
+{
+    return neurosuite::custody::stagePath(base, type, method, group, stage);
 }
 
 ResolvedInput resolveInputForMethod(const std::string& base, const std::string& type,

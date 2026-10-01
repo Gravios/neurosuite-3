@@ -12,6 +12,16 @@ add_test(NAME core_test_custody_conformance
          COMMAND core_test_custody_conformance
                  "${CMAKE_CURRENT_SOURCE_DIR}/custody_vectors.tsv")
 
+# .spk int16 waveform I/O + stage-tagged path composition round-trip.  Links the
+# library (unlike the header-only custody test) because readSpk/writeSpk/stagePath
+# live in neurofileio.cpp.
+add_executable(core_test_neurofileio_spk neurofileio_spk_test.cpp)
+target_compile_features(core_test_neurofileio_spk PRIVATE cxx_std_17)
+target_include_directories(core_test_neurofileio_spk
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_neurofileio_spk PRIVATE Neurosuite::core)
+add_test(NAME core_test_neurofileio_spk COMMAND core_test_neurofileio_spk)
+
 # PCAE transform-method enum conformance.  Pins core::Method's integer values and
 # its spatialOrder/hasTemporalDiff/methodTag helpers against the shared table; the
 # fiber-kit Python mirror runs an identical copy so the cross-repo enum cannot drift.
