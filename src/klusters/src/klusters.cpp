@@ -2155,6 +2155,20 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
+    // ── Shift+O — oblique (template-axis) projection of the selected clusters ─
+    // A modified combo, so it does not collide with the palette type-ahead the
+    // bare F/A block above has to claim, nor with bare O (the overlay toggle).
+    if(event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_O && ke->modifiers() == Qt::ShiftModifier
+           && doc && !focusIsInTextInput()){
+            if(ClusterView* cv = activeClusterView()){
+                cv->toggleObliquePresentation();
+                return true;
+            }
+        }
+    }
+
     // ── Up / Down — t-SNE perplexity, ONLY while the embedding is showing ─
     // Gated on isTsneActive() so the arrows keep their normal meaning
     // (palette navigation) everywhere else: a modal binding, live exactly as
@@ -6543,6 +6557,7 @@ const KlustersApp::FilterKey KlustersApp::kFilterKeys[] = {
     {Qt::Key_V,      Qt::NoModifier, "V",      "Curation matrices: parent view / child view of the selected parent"},
     {Qt::Key_E,      Qt::NoModifier, "E",      "Cycle the matrix tabs (Error, Template, Residual, Drift)"},
     {Qt::Key_F,      Qt::NoModifier, "F",      "Toggle the t-SNE embedding of the selected clusters"},
+    {Qt::Key_O,      Qt::ShiftModifier, "Shift+O", "Toggle the oblique (template-axis) projection of the selected clusters"},
     {Qt::Key_A,      Qt::NoModifier, "A",      "Toggle autoscale in the feature view"},
     {Qt::Key_Up,     Qt::NoModifier, "Up",     "While the t-SNE view is showing: raise the perplexity and recompute"},
     {Qt::Key_Down,   Qt::NoModifier, "Down",   "While the t-SNE view is showing: lower the perplexity and recompute"},
