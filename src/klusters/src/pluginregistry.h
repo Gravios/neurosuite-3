@@ -1,12 +1,13 @@
 #ifndef PLUGINREGISTRY_H
 #define PLUGINREGISTRY_H
 
-// Read-only discovery + parse of Klusters plugin descriptors (see
-// docs/PLUGIN_API.md).  Descriptors use the ndmanager-plugins <program> schema
-// plus an optional <klusters> block (kind / consumes / produces / integration /
-// selection).  Phase 1: parse XML descriptors and list them; the dialog + runner
-// arrive in later phases.  (YAML descriptors are deferred to the shared
-// DescriptionYamlReader consolidation noted in the spec.)
+// Discovery + parse of Klusters plugin descriptors (see docs/PLUGIN_API.md).
+// Descriptors use the ndmanager-plugins <program> schema plus an optional
+// <klusters> block (kind / consumes / produces / integration / selection).  This
+// class parses XML descriptors, lists them, and assembles the invocation
+// (buildArgv); the parameter dialog (PluginDialog) and the execute + integrate
+// runner (KlustersApp::runPlugin) consume it.  (YAML descriptors are deferred to
+// the shared DescriptionYamlReader consolidation noted in the spec.)
 
 #include <QString>
 #include <QStringList>

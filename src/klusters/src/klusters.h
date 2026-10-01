@@ -695,6 +695,36 @@ private:
      *  <consumes> contract. */
     QMap<QString, QString> pluginContext() const;
 
+    // ── Plugin runner (phase 2: execute + integrate; see docs/PLUGIN_API.md) ──
+    // The PluginRunner role from the spec, hosted on KlustersApp so it reuses the
+    // existing ProcessWidget tab plumbing and the document open path.  It is kept
+    // deliberately INDEPENDENT of the recluster process slots (slotProcessExited
+    // and its clustersToRecluster / retry-timer state) so a plugin run can never
+    // perturb a recluster in flight.  The recluster-integrate kind stays on the
+    // built-in Recluster action until phase 3 unifies the two code paths.
+    /** Resolve the invocation, run it in the plugin output tab, then dispatch by
+     *  <integration> on success.  No-op (with a dialog) if a job is already
+     *  running or no document is open. */
+    void runPlugin(const KlustersPlugin& plugin, const QMap<QString, QString>& params);
+    /** QProcess::finished handler for mPluginProcess: unlock, report failure, or
+     *  defer integratePluginResult() to a clean stack. */
+    void slotPluginFinished(int exitCode, QProcess::ExitStatus status);
+    /** Act on the finished run per mRunningPlugin.integration (hierarchy-reload /
+     *  recluster-integrate / none). */
+    void integratePluginResult();
+    /** Reload the (externally rewritten) session from disk via the proven
+     *  slotFileClose() + openDocumentFile() path (hierarchy-reload). */
+    void reopenCurrentDocument();
+    /** Session-dir files written/updated since the run started (prefix-matched to
+     *  the session base); used to report what an analysis/export plugin produced. */
+    QStringList pluginProducedFiles() const;
+
+    ProcessWidget* mPluginProcess = nullptr;   ///< plugin output tab; separate from the recluster processWidget
+    KlustersPlugin mRunningPlugin;             ///< descriptor of the in-flight / just-finished plugin
+    bool           mPluginRunning = false;     ///< guards against concurrent/overlapping runs
+    qint64         mPluginStartMs = 0;         ///< run start (epoch ms, with a small skew margin)
+    QString        mPluginRunBase;             ///< resolved session base of the in-flight run
+
     void createToolBar();
 
     /**Initializes the different parameter widgets.*/

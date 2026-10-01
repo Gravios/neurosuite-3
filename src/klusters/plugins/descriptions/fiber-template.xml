@@ -1,0 +1,38 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>fiber-template</n>
+  <parameters>
+   <parameter><n>variants</n><value>standard stderiv_C5_D34</value><status>Mandatory</status></parameter>
+   <parameter><n>clu-variant</n><value>stderiv_C5_D34</value><status>Mandatory</status></parameter>
+   <parameter><n>clu-tag</n><value></value><status>Optional</status></parameter>
+   <parameter><n>out-tag</n><value></value><status>Optional</status></parameter>
+   <parameter><n>links</n><value>drift adapt</value><status>Optional</status></parameter>
+   <parameter><n>n-chunks</n><value>6</value><status>Optional</status></parameter>
+   <parameter><n>n-energy</n><value>5</value><status>Optional</status></parameter>
+   <parameter><n>nsamp</n><value></value><status>Mandatory</status></parameter>
+   <parameter><n>nchan</n><value></value><status>Mandatory</status></parameter>
+   <parameter><n>sr</n><value>32552</value><status>Optional</status></parameter>
+  </parameters>
+  <help>Store a marked unit's waveform as a LINKED template series, written one .wtf
+file per method (variant) and stage (tag) next to the session — the template
+library.  A template is not one global median but a linked series of per-bin
+medians, like a fiber's per-chunk geometry:
+  * link=drift  — a median per time chunk (tracks probe/tissue drift);
+  * link=adapt  — a median per spike-energy bin (tracks within-burst adaptation).
+Both are built in every requested spk variant and row-aligned to a shared
+.wtfinfo index.
+
+Reads the clustering files ON DISK (save first if you have unsaved edits).
+nsamp and nchan are prefilled from the open group; variants is the list of .spk
+methods to template; clu-variant / clu-tag identify the units .clu to read.
+Engine: the fiber-kit 'fiber-template' console script.</help>
+ </program>
+ <klusters>
+  <kind>analysis</kind>
+  <consumes>base group</consumes>
+  <produces>none</produces>
+  <integration>none</integration>
+  <selection>none</selection>
+ </klusters>
+</parameter>

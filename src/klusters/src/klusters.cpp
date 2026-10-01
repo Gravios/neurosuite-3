@@ -66,6 +66,7 @@
 #include <QDialogButtonBox>
 #include <QListWidget>
 #include <QElapsedTimer>
+#include <QDateTime>
 #include <QProgressBar>
 #include <QEventLoop>
 #ifdef _OPENMP
@@ -3027,6 +3028,13 @@ bool KlustersApp::queryClose()
                     delete processWidget;
                     processWidget = nullptr ;
                 }
+                if(mPluginProcess){
+                    if(mPluginProcess->isRunning())
+                        mPluginProcess->killJob();
+                    delete mPluginProcess;
+                    mPluginProcess = nullptr;
+                    mPluginRunning = false;
+                }
                 doc->closeDocument();
                 QApplication::restoreOverrideCursor();
                 return true;
@@ -3139,6 +3147,19 @@ void KlustersApp::slotFileClose(){
                         QTimer::singleShot(2000, this, &KlustersApp::slotFileClose);
                         return;
                     }
+                }
+                // The plugin output tab is a ProcessWidget, not a DockArea, so the
+                // DockArea-cast delete loop below must not reach it: remove, delete
+                // and clear it explicitly first (mirrors the processWidget handling).
+                if(mPluginProcess){
+                    if(mPluginProcess->isRunning())
+                        mPluginProcess->killJob();
+                    const int pIdx = tabsParent->indexOf(mPluginProcess);
+                    if(pIdx >= 0)
+                        tabsParent->removeTab(pIdx);
+                    delete mPluginProcess;
+                    mPluginProcess = nullptr;
+                    mPluginRunning = false;
                 }
                 while(true){
                     DockArea* current = static_cast<DockArea*>(tabsParent->widget(0));
@@ -6867,8 +6888,11 @@ void KlustersApp::slotShowShortcutHelp()
 }
 
 // ---------------------------------------------------------------------------
-// Plugins menu (descriptor discovery; read-only listing in v1 — the parameter
-// dialog + process runner arrive in later phases, see docs/PLUGIN_API.md).
+// Plugins menu (descriptor discovery + parameter dialog + process runner).
+// Selecting an entry opens PluginDialog for its parameters, then runPlugin()
+// executes the resolved invocation and dispatches by <integration> on success
+// (see docs/PLUGIN_API.md).  The recluster-integrate kind is still handled by
+// the built-in Recluster action (phase 3 unifies them).
 // ---------------------------------------------------------------------------
 void KlustersApp::populatePluginsMenu()
 {
@@ -6895,25 +6919,10 @@ void KlustersApp::populatePluginsMenu()
                         tr("Open a clustering before running a plugin."));
                     return;
                 }
-                PluginDialog dlg(info, this);
+                PluginDialog dlg(info, pluginContext(), this);
                 if (dlg.exec() != QDialog::Accepted)
                     return;
-                const QMap<QString, QString> params = dlg.values();
-                const QMap<QString, QString> ctx = pluginContext();
-                const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters()
-                                                      : QList<int>();
-                const QStringList argv = PluginRegistry::buildArgv(info, params, ctx, sel);
-                // v1: dry-run preview.  The process runner (ProcessWidget) and the
-                // <integration> dispatch land in the next phase.
-                QMessageBox box(this);
-                box.setWindowTitle(tr("Plugin command (preview): %1").arg(info.name));
-                box.setIcon(QMessageBox::Information);
-                box.setText(argv.join(QLatin1Char(' ')));
-                box.setInformativeText(
-                    tr("This is the command Klusters will run once the process-runner "
-                       "phase lands.  Integration on success: %1.")
-                        .arg(info.integration.isEmpty() ? tr("none") : info.integration));
-                box.exec();
+                runPlugin(info, dlg.values());
             });
         }
     }
@@ -6941,10 +6950,217 @@ QMap<QString, QString> KlustersApp::pluginContext() const
     ctx.insert(QStringLiteral("base"),
                (i > 0) ? full.left(i)
                        : fi.absolutePath() + QLatin1Char('/') + fi.completeBaseName());
-    ctx.insert(QStringLiteral("group"), doc->currentElectrodeGroupID());
-    // variant/tag are parsed from the filename in a later pass; the starter
-    // descriptors do not consume them.
-    ctx.insert(QStringLiteral("variant"), QString());
-    ctx.insert(QStringLiteral("tag"), QString());
+    const QString group = doc->currentElectrodeGroupID();
+    ctx.insert(QStringLiteral("group"), group);
+    // Resolve variant + tag from the file name, which follows the neurosuite
+    // contract  <base>.clu[.<variant>].<group>[.<tag>]  (method/variant token(s)
+    // BEFORE the numeric group token, stage tag AFTER it), e.g.
+    //   ...-20120316.clu.stderiv_C5_D34.6.alB  ->  variant=stderiv_C5_D34 tag=alB
+    //   ...-20120316.clu.6                     ->  variant=""             tag=""
+    // The group token is the first segment equal to the active group id; variant
+    // method names are non-numeric, so this is unambiguous for these sessions.
+    QString variant, tag;
+    if (i > 0) {                                         // i = index of ".clu" in full
+        const QStringList toks =
+            full.mid(i + 4).split(QLatin1Char('.'), Qt::SkipEmptyParts);
+        int g = -1;
+        for (int k = 0; k < toks.size(); ++k)
+            if (toks[k] == group) { g = k; break; }
+        if (g >= 0) {
+            if (g > 0)               variant = QStringList(toks.mid(0, g)).join(QLatin1Char('.'));
+            if (g + 1 < toks.size()) tag     = QStringList(toks.mid(g + 1)).join(QLatin1Char('.'));
+        }
+    }
+    ctx.insert(QStringLiteral("variant"), variant);
+    ctx.insert(QStringLiteral("tag"), tag);
+
+    // Waveform geometry of the open group, so a templating/extraction engine gets
+    // the right --nsamp/--nchan without the user having to know them.  nsamp =
+    // samplesBeforePeak + samplesAfterPeak + 1 (the peak sample itself).
+    ctx.insert(QStringLiteral("nchan"), QString::number(doc->nbOfchannels()));
+    ctx.insert(QStringLiteral("nsamp"),
+               QString::number(doc->getNbSamplesBeforePeak() + doc->getNbSamplesAfterPeak() + 1));
     return ctx;
+}
+
+// ---------------------------------------------------------------------------
+// Plugin runner (phase 2): run the resolved invocation in a dedicated
+// ProcessWidget output tab, then dispatch by <integration>.  See the header for
+// why this is independent of the recluster process slots.
+// ---------------------------------------------------------------------------
+void KlustersApp::runPlugin(const KlustersPlugin& plugin, const QMap<QString, QString>& params)
+{
+    if (mPluginRunning || (processWidget && !processFinished)) {
+        QMessageBox::information(this, tr("Plugins"),
+            tr("A job is already running. Wait for it to finish before starting another."));
+        return;
+    }
+    if (doc->url().isEmpty()) {
+        QMessageBox::information(this, tr("Plugins"),
+            tr("Open a clustering before running a plugin."));
+        return;
+    }
+
+    const QMap<QString, QString> ctx = pluginContext();
+    const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters() : QList<int>();
+    const QStringList argv = PluginRegistry::buildArgv(plugin, params, ctx, sel);
+    if (argv.isEmpty())
+        return;
+    const QString program = argv.first();
+    const QStringList args = argv.mid(1);
+
+    // The engine reads the session files ON DISK.  If the live document has
+    // unsaved edits the plugin would run against the stale saved state.  Saving is
+    // asynchronous (SaveThread), so we cannot save-then-run in one call without
+    // racing the writer — require a manual save first and abort.
+    if (doc->isModified()) {
+        QMessageBox::warning(this, tr("Plugins"),
+            tr("The open clustering has unsaved changes, and \"%1\" reads the files "
+               "on disk.\n\nSave first (File > Save), then run the plugin again.")
+                .arg(plugin.name));
+        return;
+    }
+
+    // A hierarchy-reload engine rewrites the clustering files in place; the reload
+    // afterwards discards the in-memory session and undo history, so confirm.
+    if (plugin.integration == QLatin1String("hierarchy-reload")) {
+        const QMessageBox::StandardButton ans = QMessageBox::question(this, tr("Plugins"),
+            tr("\"%1\" rewrites the clustering files on disk. On success Klusters will "
+               "reload the session from disk, replacing the current in-memory state and "
+               "undo history.\n\nProceed?").arg(plugin.name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (ans != QMessageBox::Yes)
+            return;
+    }
+
+    if (!mPluginProcess) {
+        mPluginProcess = new ProcessWidget(this);
+        mPluginProcess->setFocusPolicy(Qt::NoFocus);
+        connect(mPluginProcess, &ProcessWidget::finished,
+                this, &KlustersApp::slotPluginFinished);
+        tabsParent->addTab(mPluginProcess, tr("Plugin output"));
+        displayCount++;
+    }
+    tabsParent->setCurrentWidget(mPluginProcess);
+
+    mRunningPlugin = plugin;
+    mPluginRunBase = ctx.value(QStringLiteral("base"));
+    mPluginStartMs = QDateTime::currentMSecsSinceEpoch() - 1500;   // small skew margin for 1-s mtimes
+    mPluginRunning = true;
+    if (mPluginsMenu)
+        mPluginsMenu->setEnabled(false);
+
+    NS3_DIAG() << "[plugin] run:" << program << args.join(QLatin1Char(' '));
+    const bool ok = mPluginProcess->startJob(doc->documentDirectory(), program, args);
+    if (!ok) {
+        // startJob already logged the failure to the tab and emitted
+        // processNotStarted (not wired here); finished() will not arrive, so
+        // unlock now.
+        mPluginRunning = false;
+        if (mPluginsMenu)
+            mPluginsMenu->setEnabled(true);
+        QMessageBox::critical(this, tr("Plugins"),
+            tr("Could not start \"%1\". Is it installed and on your PATH?").arg(program));
+    }
+}
+
+void KlustersApp::slotPluginFinished(int exitCode, QProcess::ExitStatus status)
+{
+    mPluginRunning = false;
+    if (mPluginsMenu)
+        mPluginsMenu->setEnabled(true);
+
+    if (!(status == QProcess::NormalExit && exitCode == 0)) {
+        QMessageBox::critical(this, tr("Plugins"),
+            tr("\"%1\" did not finish normally (see the Plugin output tab).")
+                .arg(mRunningPlugin.name));
+        return;
+    }
+
+    statusBar()->showMessage(tr("Plugin \"%1\" finished.").arg(mRunningPlugin.name), 5000);
+    // Defer integration out of the ProcessWidget::finished emission: a
+    // hierarchy-reload tears down the very ProcessWidget whose signal we are in,
+    // which must not happen on this stack.  A queued single-shot runs it once the
+    // signal has fully unwound.
+    QTimer::singleShot(0, this, [this]() { integratePluginResult(); });
+}
+
+void KlustersApp::integratePluginResult()
+{
+    const QString integ = mRunningPlugin.integration;
+
+    if (integ == QLatin1String("hierarchy-reload")) {
+        reopenCurrentDocument();
+        return;
+    }
+    if (integ == QLatin1String("recluster-integrate")) {
+        // Phase 3 routes a recluster plugin's .clu through the existing
+        // integrateReclusteredClusters / reclusteringUpdate path; until then the
+        // generic runner only executes the engine and leaves integration to the
+        // built-in Recluster action.
+        QMessageBox::information(this, tr("Plugins"),
+            tr("\"%1\" produced a reclustering. Automatic recluster integration is not "
+               "wired to the plugin runner yet; its output files are on disk.")
+                .arg(mRunningPlugin.name));
+        return;
+    }
+
+    // "none" / "report" / empty: report what the run wrote next to the session.
+    const QStringList produced = pluginProducedFiles();
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Information);
+    box.setWindowTitle(tr("Plugin finished: %1").arg(mRunningPlugin.name));
+    if (produced.isEmpty()) {
+        box.setText(tr("\"%1\" finished. No new session files were detected.")
+                        .arg(mRunningPlugin.name));
+    } else {
+        box.setText(tr("\"%1\" wrote or updated %n file(s) next to the session.", "",
+                       int(produced.size())).arg(mRunningPlugin.name));
+        box.setDetailedText(produced.join(QLatin1Char('\n')));
+    }
+    box.exec();
+}
+
+void KlustersApp::reopenCurrentDocument()
+{
+    const QString url = doc ? doc->url() : QString();
+    if (url.isEmpty())
+        return;
+    // Reload the externally rewritten session through the proven open path:
+    // slotFileClose() performs the full teardown (clears the process tabs, deletes
+    // every display, closes the document, resetState), then openDocumentFile()
+    // re-runs the complete .clu/.clc/.clp detection and hierarchy build.
+    // mPluginProcess is one of the tabs slotFileClose deletes, so it clears our
+    // pointer there; nothing to null here.
+    slotFileClose();
+    // slotFileClose() clears mainDock only on its success path (the
+    // canCloseView/canCloseDocument gates passed and the teardown ran); a
+    // deferred or declined close leaves mainDock set, in which case we do not
+    // reopen but tell the user how to.
+    if (!mainDock) {
+        openDocumentFile(url);
+        statusBar()->showMessage(
+            tr("Reloaded \"%1\" after %2.")
+                .arg(QFileInfo(url).fileName(), mRunningPlugin.name), 5000);
+    } else {
+        statusBar()->showMessage(
+            tr("\"%1\" finished; reopen \"%2\" to see the reloaded clustering.")
+                .arg(mRunningPlugin.name, QFileInfo(url).fileName()), 8000);
+    }
+}
+
+QStringList KlustersApp::pluginProducedFiles() const
+{
+    QStringList out;
+    if (mPluginRunBase.isEmpty())
+        return out;
+    const QFileInfo baseInfo(mPluginRunBase);
+    const QDir dir(baseInfo.absolutePath());
+    const QString prefix = baseInfo.fileName();           // e.g. sirotaA-...-20120316
+    const QFileInfoList entries =
+        dir.entryInfoList(QStringList{prefix + QStringLiteral("*")}, QDir::Files, QDir::Name);
+    for (const QFileInfo& fi : entries)
+        if (fi.lastModified().toMSecsSinceEpoch() >= mPluginStartMs)
+            out << fi.fileName();
+    return out;
 }

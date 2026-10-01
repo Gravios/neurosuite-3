@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <algorithm>
@@ -110,14 +111,18 @@ QStringList PluginRegistry::buildArgv(const KlustersPlugin& plugin,
     // Descriptor parameters as "--name value".  An Optional parameter left empty
     // is omitted; a value-less parameter becomes a bare flag.
     for (const PluginParameter& p : plugin.parameters) {
-        const QString v = params.value(p.name, p.value);
+        const QString v = params.value(p.name, p.value).trimmed();
         const bool mandatory =
             (p.status.compare(QStringLiteral("Mandatory"), Qt::CaseInsensitive) == 0);
         if (v.isEmpty() && !mandatory)
             continue;
         argv << (QStringLiteral("--") + p.name);
+        // A field may hold several whitespace-separated tokens (a list option, e.g.
+        // "standard stderiv_C5_D34" or "drift adapt") that an nargs>=1 CLI needs as
+        // DISTINCT arguments, not one glued string.  Split shell-style so a value
+        // that genuinely contains a space can still be protected with quotes.
         if (!v.isEmpty())
-            argv << v;
+            argv << QProcess::splitCommand(v);
     }
     return argv;
 }
