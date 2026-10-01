@@ -349,6 +349,11 @@ private Q_SLOTS:
      *  its median waveform, robust MAD tail) into the artefact cluster.  The
      *  waveform counterpart of slotStripFeatureOutliers; shortcut Shift+X. */
     void slotStripWaveformOutliers();
+    /** Actions: pin a basis for the oblique (template-axis) projection.  Prompts
+     *  for the cluster ids whose templates become the fixed axes, so a different
+     *  cluster can be examined against them with Shift+O; empty input clears the
+     *  pin.  See ClusterView::setObliqueBasis. */
+    void slotSetObliqueBasis();
     /** Renumber clusters so IDs run by descending spike count (largest = 2).
      *  Clusters 0/1 untouched; undoable. */
     void slotSortClustersBySpikeCount();
@@ -1018,7 +1023,8 @@ private:
     QAction *mAutoMerge;            // patch 0069 — Auto-Merge action
     QAction *mPurgeSmallClusters;   // move all clusters below N spikes to noise
     QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artefact(0)
-    QAction *mStripWaveformOutliers; // move waveform-residual outliers of selected clusters to artefact(0)
+    QAction *mStripWaveformOutliers; // split waveform-residual outliers of selected clusters into a new cluster
+    QAction *mSetObliqueBasis;       // pin the oblique projection's template axes (Set Oblique Basis…)
     QAction *mSortClustersBySpikeCount; // renumber clusters by descending spike count
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination

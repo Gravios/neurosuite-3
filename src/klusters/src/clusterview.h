@@ -78,6 +78,21 @@ public:
      *  the Shift+O key is dispatched by the application filter. */
     void toggleObliquePresentation();
 
+    /** Pins @p ids as the oblique basis (the template axes): a later
+     *  toggleObliquePresentation() then projects the current SELECTION onto these
+     *  fixed axes instead of onto the selection itself, so a third cluster can be
+     *  examined against a chosen pair.  @p ids must be >= 2 existing parent
+     *  clusters that own spikes (artefact/noise 0,1 rejected); an EMPTY list
+     *  clears the pin and restores the default (basis == selection).  The pin
+     *  persists across view toggles until re-set, cleared, or invalidated by a
+     *  later edit.  Returns false with *message set on a bad id, true with a
+     *  confirming *message otherwise.  Public for the same reason as the toggle:
+     *  it is driven from the Actions menu (Set Oblique Basis…). */
+    bool setObliqueBasis(const QList<int>& ids, QString* message);
+    /** The currently pinned oblique basis (empty when none), so the dialog can
+     *  pre-fill it. */
+    QList<int> obliqueBasisClusters() const { return obliqueBasis; }
+
     /** Toggles autoscale-to-visible-clusters.  Public for the same reason:
      *  the A key is dispatched by the application filter. */
     void toggleAutoscale();
@@ -449,6 +464,14 @@ private:
     // tsneMode (an embedding is on screen) and never tsneComputing (synchronous).
     bool                 obliqueMode = false;
     double               obliqueCond = 0.0;   ///< Gram condition number of the basis
+    // Pinned oblique basis (Set Oblique Basis…): the cluster ids whose templates
+    // are the fixed axes.  EMPTY means the default -- the basis is the selection.
+    // When non-empty, startOblique projects the selection onto these axes and
+    // gathers the basis clusters too (the engine builds each basis template from
+    // its gathered rows).  Unlike obliqueMode/obliqueCond this is NOT cleared by
+    // exitTsne(): the pin is a persistent choice so successive thirds can be
+    // examined against the same pair; startOblique re-validates it each time.
+    QList<int>           obliqueBasis;
 
     /** @p perplexityOverride > 0 pins the perplexity (the arrow-key path);
      *  0 means "pick the default for this N". */

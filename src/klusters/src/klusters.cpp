@@ -450,6 +450,18 @@ void KlustersApp::createMenus()
     connect(mStripWaveformOutliers, &QAction::triggered,
             this, &KlustersApp::slotStripWaveformOutliers);
 
+    // Pin the oblique (template-axis) projection's basis.  The oblique view
+    // (Shift+O) normally uses the SELECTED clusters as its axes; this fixes a
+    // chosen pair (or more) as the axes so a DIFFERENT cluster can be examined
+    // against them -- select the third and press Shift+O.  Set via a dialog, as
+    // it is a configuration rather than a per-view gesture.
+    mSetObliqueBasis = actionMenu->addAction(tr("Set Oblique &Basis…"));
+    mSetObliqueBasis->setToolTip(
+        tr("Pin cluster(s) as the fixed axes of the oblique (template-axis) view, "
+           "so a different cluster can be projected onto them with Shift+O."));
+    connect(mSetObliqueBasis, &QAction::triggered,
+            this, &KlustersApp::slotSetObliqueBasis);
+
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
@@ -5205,6 +5217,59 @@ void KlustersApp::slotStripWaveformOutliers()
 }
 
 // ---------------------------------------------------------------------------
+// slotSetObliqueBasis  --  pin the oblique projection's template axes
+//
+// The oblique view (Shift+O) normally spans the SELECTED clusters as its axes.
+// This lets the curator fix a chosen basis -- e.g. a near-collinear interneuron
+// pair -- so a THIRD cluster can be dropped into the same template plane and
+// read off against it.  The basis is entered as cluster ids in a dialog (a
+// configuration, not a per-view gesture), pre-filled with the current pin if
+// any else the current selection; an empty entry clears it.  Validation and
+// storage are ClusterView::setObliqueBasis -- this is the prompt + status relay.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotSetObliqueBasis()
+{
+    ClusterView* cv = activeClusterView();
+    if (!cv) {
+        slotStatusMsg(tr("Set oblique basis: open a cluster (feature) view first."));
+        return;
+    }
+
+    // Pre-fill: the existing pin, else the current selection minus the reserve
+    // bins (artefact 0 / noise 1), which can never be a template axis.
+    QList<int> prefill = cv->obliqueBasisClusters();
+    if (prefill.isEmpty() && activeView())
+        for (int id : activeView()->clusters())
+            if (id > 1 && !prefill.contains(id)) prefill.append(id);
+    QStringList pre; for (int id : prefill) pre << QString::number(id);
+
+    bool ok = false;
+    const QString text = QInputDialog::getText(
+        this, tr("Set Oblique Basis"),
+        tr("Cluster ids for the oblique basis (the template axes), separated by "
+           "spaces or commas.\nTwo or more; leave empty to clear the basis."),
+        QLineEdit::Normal, pre.join(QLatin1Char(' ')), &ok);
+    if (!ok) return;                                 // Cancel -> leave the pin unchanged
+
+    // Parse: every run of digits is one id; any other character is a separator.
+    QList<int> ids;
+    QString cur;
+    auto flush = [&]() {
+        if (cur.isEmpty()) return;
+        bool good = false;
+        const int v = cur.toInt(&good);
+        if (good) ids.append(v);
+        cur.clear();
+    };
+    for (QChar ch : text) { if (ch.isDigit()) cur += ch; else flush(); }
+    flush();
+
+    QString msg;
+    cv->setObliqueBasis(ids, &msg);                  // validates + stores (or clears)
+    slotStatusMsg(msg);
+}
+
+// ---------------------------------------------------------------------------
 // clusterSortActions
 //
 // The "Sort Clusters" submenu's actions, exposed so other widgets (a view's
@@ -6602,7 +6667,7 @@ const KlustersApp::FilterKey KlustersApp::kFilterKeys[] = {
     {Qt::Key_V,      Qt::NoModifier, "V",      "Curation matrices: parent view / child view of the selected parent"},
     {Qt::Key_E,      Qt::NoModifier, "E",      "Cycle the matrix tabs (Error, Template, Residual, Drift)"},
     {Qt::Key_F,      Qt::NoModifier, "F",      "Toggle the t-SNE embedding of the selected clusters"},
-    {Qt::Key_O,      Qt::ShiftModifier, "Shift+O", "Toggle the oblique (template-axis) projection of the selected clusters"},
+    {Qt::Key_O,      Qt::ShiftModifier, "Shift+O", "Toggle the oblique (template-axis) projection — onto the selected clusters, or onto a pinned basis (Actions ▸ Set Oblique Basis…) to examine a third"},
     {Qt::Key_A,      Qt::NoModifier, "A",      "Toggle autoscale in the feature view"},
     {Qt::Key_Up,     Qt::NoModifier, "Up",     "While the t-SNE view is showing: raise the perplexity and recompute"},
     {Qt::Key_Down,   Qt::NoModifier, "Down",   "While the t-SNE view is showing: lower the perplexity and recompute"},
