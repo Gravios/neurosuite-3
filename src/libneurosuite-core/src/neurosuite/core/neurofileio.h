@@ -101,6 +101,30 @@ struct FetBinaryFile {
 };
 NEUROSUITE_CORE_EXPORT FetBinaryFile readFetBinary(const std::string& path);
 
+// ── .spk.N — windowed int16 waveforms (NeuroSuite) ──────────────────────────
+// A .spk holds nSpikes records back to back, each record nSamples × nChannels
+// int16, NO header.  Within a record the order is sample-major with channel
+// varying fastest, i.e. value(spike s, sample t, channel c) sits at flat index
+//     ((s * nSamples) + t) * nChannels + c
+// This is the layout process_extractspikes writes and both klusters' Data and
+// fiber-kit read; nSpikes is derived from the file size.  (A .wtf template file
+// is byte-identical to a .spk slice, so these also read/write it.)
+struct SpkFile {
+    int                  nSamples  = 0;
+    int                  nChannels = 0;
+    int64_t              nSpikes   = 0;
+    std::vector<int16_t> samples;   ///< nSpikes * nSamples * nChannels, see order above
+    bool                 ok = false;
+};
+// nSamples and nChannels must be known up front (the record geometry is not in
+// the file).  readSpk rejects a file whose size is not a whole number of records
+// (ok = false).
+NEUROSUITE_CORE_EXPORT SpkFile readSpk(const std::string& path, int nSamples, int nChannels);
+// writeSpk requires samples.size() to be a whole number of nSamples*nChannels
+// records, else it writes nothing and returns false.
+NEUROSUITE_CORE_EXPORT bool    writeSpk(const std::string& path, int nSamples, int nChannels,
+                 const std::vector<int16_t>& samples);
+
 // ── .evt ──────────────────────────────────────────────────────────────────
 struct EvtEntry {
     double      timeMs = 0.0;
@@ -179,6 +203,13 @@ NEUROSUITE_CORE_EXPORT std::vector<std::string> preferCanonical();  ///< {"","st
 NEUROSUITE_CORE_EXPORT std::string methodPath(
     const std::string& base, const std::string& type,
     const std::string& method, int group);
+
+// Compose a stage-tagged path <base>.<type>.<method>.<group>[.<stage>].  `stage`
+// is the trailing stage/tag (no leading dot), as written by a "Save As stage"
+// and read back by parseAnchor as the suffix; an empty stage == methodPath.
+NEUROSUITE_CORE_EXPORT std::string stagePath(
+    const std::string& base, const std::string& type,
+    const std::string& method, int group, const std::string& stage);
 
 // Resolve a method-pinned input. `found` reflects existence; `path` is always
 // the composed method path, so callers can emit a precise missing-input error.

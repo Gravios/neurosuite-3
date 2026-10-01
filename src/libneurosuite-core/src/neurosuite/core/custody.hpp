@@ -182,6 +182,22 @@ inline std::string methodPath(const std::string& base, const std::string& type,
     return base + "." + type + "." + method + "." + std::to_string(group);
 }
 
+// Compose a stage-tagged per-group path:
+//     <base>.<type>.<method>.<group>[.<stage>]
+// `stage` is the trailing stage/tag token parseAnchor reads back as
+// Anchor::suffix (supplied WITHOUT a leading dot); an empty stage yields the
+// plain methodPath.  This is the write side of the suffix the parser already
+// understands, so a staged file round-trips: parseAnchor(stagePath(...)).suffix
+// == stage.
+inline std::string stagePath(const std::string& base, const std::string& type,
+                             const std::string& method, int group,
+                             const std::string& stage)
+{
+    std::string p = methodPath(base, type, method, group);
+    if (!stage.empty()) p += "." + stage;
+    return p;
+}
+
 inline std::string untaggedPath(const std::string& base, const std::string& type,
                                 int group)
 {
