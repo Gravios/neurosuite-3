@@ -463,6 +463,17 @@ void KlustersApp::createMenus()
     connect(mSetObliqueBasis, &QAction::triggered,
             this, &KlustersApp::slotSetObliqueBasis);
 
+    // Mark/unmark the selected cluster(s) as template units.  Marked units are the
+    // template library for this clustering; a save persists the set and (re)writes
+    // their .wtf via the fiber-template plugin.  A gesture on the selection, like
+    // the move-to-noise/artefact actions, rather than a configuration dialog.
+    mMarkAsTemplate = actionMenu->addAction(tr("Mark/Unmark as &Template"));
+    mMarkAsTemplate->setToolTip(
+        tr("Toggle the selected cluster(s) as template units.  On save their linked "
+           "template waveforms (.wtf) are written in every available method."));
+    connect(mMarkAsTemplate, &QAction::triggered,
+            this, &KlustersApp::slotToggleTemplate);
+
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
@@ -2888,6 +2899,7 @@ void KlustersApp::openDocumentFile(const QString& url)
 
         setWindowTitle(doc->documentName());
         initDisplay();
+        loadTemplateMarks();          // restore the template-unit set for this clustering
 
         //A traceView is possible only if the variables it needs are available (provided in the new parameter file) and
         //the .dat file exists.
@@ -3062,6 +3074,12 @@ void KlustersApp::customEvent (QEvent* event){
                 mFileOpenRecent->addRecentFile(doc->url());
                 setWindowTitle(doc->documentName());
             }
+            // Persist the template-unit set next to the just-saved clustering and,
+            // if any unit is marked, (re)write their .wtf from the saved files.
+            // Deferred: run the generator off this event-handler stack.
+            saveTemplateMarks();
+            if(!mTemplateUnits.isEmpty())
+                QTimer::singleShot(0, this, [this]() { runTemplateGeneration(); });
         } else {
             // patch63 — show the actual error rather than a generic "I/O Error"
             // that left the user with no information about what failed.
@@ -5780,6 +5798,7 @@ void KlustersApp::resetState(){
     displayCount = 0;
     errorMatrixExists = false;
     filePath.clear();
+    mTemplateUnits.clear();          // template marks belong to the (now closed) clustering
 
     //Disable some actions when no document is open (see the klustersui.rc file)
     slotStateChanged("initState");
@@ -6990,24 +7009,13 @@ QMap<QString, QString> KlustersApp::pluginContext() const
 // ---------------------------------------------------------------------------
 void KlustersApp::runPlugin(const KlustersPlugin& plugin, const QMap<QString, QString>& params)
 {
-    if (mPluginRunning || (processWidget && !processFinished)) {
-        QMessageBox::information(this, tr("Plugins"),
-            tr("A job is already running. Wait for it to finish before starting another."));
-        return;
-    }
+    // Interactive front-end: the checks that only make sense when a human invoked
+    // the plugin from the menu, then the shared launcher.
     if (doc->url().isEmpty()) {
         QMessageBox::information(this, tr("Plugins"),
             tr("Open a clustering before running a plugin."));
         return;
     }
-
-    const QMap<QString, QString> ctx = pluginContext();
-    const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters() : QList<int>();
-    const QStringList argv = PluginRegistry::buildArgv(plugin, params, ctx, sel);
-    if (argv.isEmpty())
-        return;
-    const QString program = argv.first();
-    const QStringList args = argv.mid(1);
 
     // The engine reads the session files ON DISK.  If the live document has
     // unsaved edits the plugin would run against the stale saved state.  Saving is
@@ -7032,6 +7040,28 @@ void KlustersApp::runPlugin(const KlustersPlugin& plugin, const QMap<QString, QS
         if (ans != QMessageBox::Yes)
             return;
     }
+
+    mPluginReportModal = true;          // a menu-invoked run reports completion with a dialog
+    launchPlugin(plugin, params);
+}
+
+bool KlustersApp::launchPlugin(const KlustersPlugin& plugin, const QMap<QString, QString>& params)
+{
+    if (mPluginRunning || (processWidget && !processFinished)) {
+        QMessageBox::information(this, tr("Plugins"),
+            tr("A job is already running. Wait for it to finish before starting another."));
+        return false;
+    }
+    if (doc->url().isEmpty())
+        return false;
+
+    const QMap<QString, QString> ctx = pluginContext();
+    const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters() : QList<int>();
+    const QStringList argv = PluginRegistry::buildArgv(plugin, params, ctx, sel);
+    if (argv.isEmpty())
+        return false;
+    const QString program = argv.first();
+    const QStringList args = argv.mid(1);
 
     if (!mPluginProcess) {
         mPluginProcess = new ProcessWidget(this);
@@ -7059,9 +7089,16 @@ void KlustersApp::runPlugin(const KlustersPlugin& plugin, const QMap<QString, QS
         mPluginRunning = false;
         if (mPluginsMenu)
             mPluginsMenu->setEnabled(true);
-        QMessageBox::critical(this, tr("Plugins"),
-            tr("Could not start \"%1\". Is it installed and on your PATH?").arg(program));
+        if (mPluginReportModal)
+            QMessageBox::critical(this, tr("Plugins"),
+                tr("Could not start \"%1\". Is it installed and on your PATH?").arg(program));
+        else
+            statusBar()->showMessage(
+                tr("Could not start \"%1\" (not on PATH?); templates not written.")
+                    .arg(program), 8000);
+        return false;
     }
+    return true;
 }
 
 void KlustersApp::slotPluginFinished(int exitCode, QProcess::ExitStatus status)
@@ -7071,9 +7108,14 @@ void KlustersApp::slotPluginFinished(int exitCode, QProcess::ExitStatus status)
         mPluginsMenu->setEnabled(true);
 
     if (!(status == QProcess::NormalExit && exitCode == 0)) {
-        QMessageBox::critical(this, tr("Plugins"),
-            tr("\"%1\" did not finish normally (see the Plugin output tab).")
-                .arg(mRunningPlugin.name));
+        if (mPluginReportModal)
+            QMessageBox::critical(this, tr("Plugins"),
+                tr("\"%1\" did not finish normally (see the Plugin output tab).")
+                    .arg(mRunningPlugin.name));
+        else
+            statusBar()->showMessage(
+                tr("\"%1\" failed (see the Plugin output tab); templates not written.")
+                    .arg(mRunningPlugin.name), 8000);
         return;
     }
 
@@ -7107,6 +7149,15 @@ void KlustersApp::integratePluginResult()
 
     // "none" / "report" / empty: report what the run wrote next to the session.
     const QStringList produced = pluginProducedFiles();
+    if (!mPluginReportModal) {
+        // Automatic run (e.g. templates on save): keep it to the status bar.
+        statusBar()->showMessage(
+            produced.isEmpty()
+                ? tr("\"%1\" finished; no new files.").arg(mRunningPlugin.name)
+                : tr("\"%1\" wrote %n file(s).", "", int(produced.size())).arg(mRunningPlugin.name),
+            6000);
+        return;
+    }
     QMessageBox box(this);
     box.setIcon(QMessageBox::Information);
     box.setWindowTitle(tr("Plugin finished: %1").arg(mRunningPlugin.name));
@@ -7163,4 +7214,182 @@ QStringList KlustersApp::pluginProducedFiles() const
         if (fi.lastModified().toMSecsSinceEpoch() >= mPluginStartMs)
             out << fi.fileName();
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Template library: "Mark as Template" + write .wtf on save.
+//
+// Marked units are the template library for the open clustering.  The set lives
+// in mTemplateUnits, is persisted next to the session as
+// <base>.templates[.<variant>].<group>[.<tag>] (one unit id per line) and, on a
+// successful save, is turned into linked .wtf templates by running the
+// fiber-template plugin (through launchPlugin) for exactly those units in every
+// available spk variant.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotToggleTemplate()
+{
+    if (doc->url().isEmpty()) {
+        slotStatusMsg(tr("Mark as template: open a clustering first."));
+        return;
+    }
+    const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters() : QList<int>();
+    QList<int> targets;
+    for (int id : sel)
+        if (id > 1) targets.append(id);              // never the artefact(0)/noise(1) bins
+    if (targets.isEmpty()) {
+        slotStatusMsg(tr("Mark as template: select one or more clusters (not noise/artefact)."));
+        return;
+    }
+    // Toggle as a group: unmark only if every target is already a template;
+    // otherwise mark them all (a mixed selection becomes fully marked).
+    bool allMarked = true;
+    for (int id : targets) if (!mTemplateUnits.contains(id)) { allMarked = false; break; }
+    for (int id : targets) {
+        if (allMarked) mTemplateUnits.remove(id);
+        else           mTemplateUnits.insert(id);
+    }
+    doc->setModified(true);                          // persist + refresh .wtf on the next save
+
+    QList<int> all = mTemplateUnits.values();
+    std::sort(all.begin(), all.end());
+    QStringList s; for (int id : all) s << QString::number(id);
+    const QString list = s.isEmpty() ? tr("(none)") : s.join(QLatin1Char(' '));
+    slotStatusMsg(allMarked
+        ? tr("Unmarked %n cluster(s). Template units: %1", "", int(targets.size())).arg(list)
+        : tr("Marked %n cluster(s). Template units: %1", "", int(targets.size())).arg(list));
+}
+
+QString KlustersApp::templatesSidecarPath() const
+{
+    if (doc->url().isEmpty())
+        return QString();
+    const QMap<QString, QString> ctx = pluginContext();
+    const QString base = ctx.value(QStringLiteral("base"));
+    const QString grp  = ctx.value(QStringLiteral("group"));
+    if (base.isEmpty() || grp.isEmpty())
+        return QString();
+    const QString var = ctx.value(QStringLiteral("variant"));
+    const QString tag = ctx.value(QStringLiteral("tag"));
+    QString p = base + QStringLiteral(".templates");
+    if (!var.isEmpty()) p += QLatin1Char('.') + var;     // variant before the group token
+    p += QLatin1Char('.') + grp;
+    if (!tag.isEmpty()) p += QLatin1Char('.') + tag;     // stage tag after
+    return p;
+}
+
+void KlustersApp::loadTemplateMarks()
+{
+    mTemplateUnits.clear();
+    const QString path = templatesSidecarPath();
+    if (path.isEmpty())
+        return;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;                                          // no sidecar yet -> nothing marked
+    const QList<QByteArray> lines = f.readAll().split('\n');
+    f.close();
+    for (const QByteArray& ln : lines) {
+        bool ok = false;
+        const int id = ln.trimmed().toInt(&ok);
+        if (ok && id > 1) mTemplateUnits.insert(id);
+    }
+    if (!mTemplateUnits.isEmpty())
+        slotStatusMsg(tr("%n template unit(s) loaded.", "", int(mTemplateUnits.size())));
+}
+
+void KlustersApp::saveTemplateMarks() const
+{
+    const QString path = templatesSidecarPath();
+    if (path.isEmpty())
+        return;
+    if (mTemplateUnits.isEmpty()) {
+        QFile::remove(path);                             // no marks -> no stale sidecar
+        return;
+    }
+    QList<int> ids = mTemplateUnits.values();
+    std::sort(ids.begin(), ids.end());
+    QByteArray out;
+    for (int id : ids) out += QByteArray::number(id) + '\n';
+    QFile f(path);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        f.write(out);
+    // best-effort: a failed sidecar write must not break the save
+}
+
+QStringList KlustersApp::availableSpkVariants() const
+{
+    QStringList variants;
+    if (doc->url().isEmpty())
+        return variants;
+    const QMap<QString, QString> ctx = pluginContext();
+    const QString base = ctx.value(QStringLiteral("base"));
+    const QString grp  = ctx.value(QStringLiteral("group"));
+    if (base.isEmpty() || grp.isEmpty())
+        return variants;
+    const QFileInfo bi(base);
+    const QDir dir(bi.absolutePath());
+    const QString pre = bi.fileName() + QStringLiteral(".spk.");   // <stem>.spk.
+    const QString suf = QLatin1Char('.') + grp;                    // .<group>
+    const QFileInfoList es = dir.entryInfoList(
+        QStringList{bi.fileName() + QStringLiteral(".spk.*.") + grp}, QDir::Files, QDir::Name);
+    for (const QFileInfo& fi : es) {
+        const QString n = fi.fileName();
+        if (n.startsWith(pre) && n.endsWith(suf)) {
+            const QString v = n.mid(pre.size(), n.size() - pre.size() - suf.size());
+            // A single-token method name only (reject anything with a further dot,
+            // so a stray `.spk.<v>.<grp>.<extra>` cannot masquerade as a variant).
+            if (!v.isEmpty() && !v.contains(QLatin1Char('.')) && !variants.contains(v))
+                variants << v;
+        }
+    }
+    return variants;
+}
+
+void KlustersApp::runTemplateGeneration()
+{
+    if (mTemplateUnits.isEmpty())
+        return;
+    // Don't fight a run already in progress; the next save refreshes the templates.
+    if (mPluginRunning || (processWidget && !processFinished)) {
+        slotStatusMsg(tr("A job is running; templates will refresh on the next save."));
+        return;
+    }
+    if (mPluginRegistry.plugins().isEmpty())
+        mPluginRegistry.reload();                        // in case the Plugins menu was never opened
+    const KlustersPlugin* tmpl = nullptr;
+    for (const KlustersPlugin& p : mPluginRegistry.plugins())
+        if (p.name == QLatin1String("fiber-template")) { tmpl = &p; break; }
+    if (!tmpl) {
+        slotStatusMsg(tr("Template write skipped: the fiber-template plugin was not found."));
+        return;
+    }
+
+    const QMap<QString, QString> ctx = pluginContext();
+    if (ctx.value(QStringLiteral("variant")).isEmpty()) {
+        // fiber-template needs a --clu-variant; a classic clu with no method token
+        // cannot be templated this way.
+        slotStatusMsg(tr("Template write skipped: the open clustering has no method/variant token."));
+        return;
+    }
+    QStringList vars = availableSpkVariants();
+    if (vars.isEmpty())
+        vars << ctx.value(QStringLiteral("variant"));    // fall back to the open variant
+
+    QList<int> ids = mTemplateUnits.values();
+    std::sort(ids.begin(), ids.end());
+    QStringList idss; for (int id : ids) idss << QString::number(id);
+
+    QMap<QString, QString> params;
+    params.insert(QStringLiteral("variants"),    vars.join(QLatin1Char(' ')));
+    params.insert(QStringLiteral("clu-variant"), ctx.value(QStringLiteral("variant")));
+    params.insert(QStringLiteral("clu-tag"),     ctx.value(QStringLiteral("tag")));
+    params.insert(QStringLiteral("out-tag"),     ctx.value(QStringLiteral("tag")));
+    params.insert(QStringLiteral("nsamp"),       ctx.value(QStringLiteral("nsamp")));
+    params.insert(QStringLiteral("nchan"),       ctx.value(QStringLiteral("nchan")));
+    params.insert(QStringLiteral("units"),       idss.join(QLatin1Char(' ')));
+    // links / n-chunks / n-energy / sr keep the descriptor defaults.
+
+    mPluginReportModal = false;                          // automatic run -> status bar, not a dialog
+    if (launchPlugin(*tmpl, params))
+        slotStatusMsg(tr("Writing templates for %n unit(s)…", "", int(ids.size())));
 }
