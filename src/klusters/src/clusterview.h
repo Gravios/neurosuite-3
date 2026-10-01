@@ -69,6 +69,15 @@ public:
      *  almost every operation. */
     void toggleTsnePresentation();
 
+    /** Toggles the OBLIQUE (non-orthogonal dual-basis) alternate presentation of
+     *  the selected clusters -- a direct linear projection onto the per-cluster
+     *  template axes, for characterising near-collinear pairs (e.g. coupled
+     *  interneurons) with explicit per-cell coordinates.  Shares the embedding
+     *  display + lasso with the t-SNE presentation but is computed synchronously
+     *  (no worker, no perplexity).  Public for the same reason as the others:
+     *  the Shift+O key is dispatched by the application filter. */
+    void toggleObliquePresentation();
+
     /** Toggles autoscale-to-visible-clusters.  Public for the same reason:
      *  the A key is dispatched by the application filter. */
     void toggleAutoscale();
@@ -433,10 +442,21 @@ private:
     int                  tsneSpikeCount = 0;
     int                  tsneClusterCount = 0;
     double               tsnePerplexity = 30.0;
+    // Oblique presentation reuses every embedding buffer above (tsneXY,
+    // tsneRowCluster, tsneRowSpike, the bbox) and its display + lasso; these two
+    // only distinguish the KIND so the label reads "oblique", the perplexity
+    // arrows stay inert, and exitTsne() clears it.  Invariant: obliqueMode implies
+    // tsneMode (an embedding is on screen) and never tsneComputing (synchronous).
+    bool                 obliqueMode = false;
+    double               obliqueCond = 0.0;   ///< Gram condition number of the basis
 
     /** @p perplexityOverride > 0 pins the perplexity (the arrow-key path);
      *  0 means "pick the default for this N". */
     void startTsne(double perplexityOverride = 0.0);
+    /** Computes and shows the oblique projection of the selected clusters
+     *  synchronously (no worker).  Refuses with a status message on < 2 clusters,
+     *  < 2 feature dims, or a degenerate basis. */
+    void startOblique();
     void exitTsne(const QString& reason = QString());
     void tsneDropIfActive();
     void onTsneFinished(int runId, bool ok, const QString& err,

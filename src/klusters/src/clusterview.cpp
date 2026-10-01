@@ -47,6 +47,7 @@
 #include <random>
 #include <numeric>
 #include <algorithm>
+#include <cmath>
 #include <QSet>
 #include <QThread>
 #include <QPointer>
@@ -54,6 +55,7 @@
 #include <memory>
 
 #include "tsne_embed.h"
+#include "oblique_embed.h"
 #include "configuration.h"
 
 
@@ -140,6 +142,8 @@ void ClusterView::exitTsne(const QString& reason){
     resetSelectionPolygon();
     if (tsneMode) {
         tsneMode = false;
+        obliqueMode = false;        // obliqueMode implies tsneMode; clear together
+        obliqueCond = 0.0;
         drawContentsMode = REDRAW;
         update();
     }
@@ -148,6 +152,7 @@ void ClusterView::exitTsne(const QString& reason){
 
 void ClusterView::adjustTsnePerplexity(int direction){
     if (!tsneMode) return;                       // arrows are normal keys otherwise
+    if (obliqueMode) return;                     // oblique has no perplexity to step
     if (tsneComputing) {                         // one embedding at a time
         if (statusBar) statusBar->showMessage(
             tr("t-SNE: still computing — wait, or press F to cancel"), 3000);
@@ -673,13 +678,26 @@ void ClusterView::paintTsne(QPainter& painter){
         painter.drawPolyline(selectionPolygon);
     }
     painter.setPen(palette().color(QPalette::WindowText));
-    painter.drawText(vp.left() + 8, vp.top() + 18,
-        (tsneChildLayer
-           ? tr("t-SNE  —  %1 spikes, %2 atom(s) of the child layer, perplexity %3   "
-                "(↑/↓ perplexity — F returns to features)")
-           : tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   "
-                "(↑/↓ perplexity — F returns to features)"))
-            .arg(tsneSpikeCount).arg(tsneClusterCount).arg(tsnePerplexity, 0, 'f', 0));
+    if (obliqueMode) {
+        // The condition number is the headline: it tells the curator when the
+        // selected templates are genuinely separable (~1-3) versus fusing (large),
+        // which is the whole point of looking at a near-collinear pair this way.
+        painter.drawText(vp.left() + 8, vp.top() + 18,
+            (tsneChildLayer
+               ? tr("oblique  —  %1 spikes, %2 atom template(s), condition %3   "
+                    "(Shift+O returns to features)")
+               : tr("oblique  —  %1 spikes, %2 template(s), condition %3   "
+                    "(Shift+O returns to features)"))
+                .arg(tsneSpikeCount).arg(tsneClusterCount).arg(obliqueCond, 0, 'f', 1));
+    } else {
+        painter.drawText(vp.left() + 8, vp.top() + 18,
+            (tsneChildLayer
+               ? tr("t-SNE  —  %1 spikes, %2 atom(s) of the child layer, perplexity %3   "
+                    "(↑/↓ perplexity — F returns to features)")
+               : tr("t-SNE  —  %1 spikes, %2 cluster(s), perplexity %3   "
+                    "(↑/↓ perplexity — F returns to features)"))
+                .arg(tsneSpikeCount).arg(tsneClusterCount).arg(tsnePerplexity, 0, 'f', 0));
+    }
 }
 
 void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,bool drawCircles){
@@ -1311,6 +1329,166 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
 void ClusterView::toggleTsnePresentation(){
     if (tsneMode) exitTsne(tr("t-SNE off"));
     else          startTsne();
+}
+
+void ClusterView::toggleObliquePresentation(){
+    if (obliqueMode) exitTsne(tr("oblique off"));
+    else             startOblique();
+}
+
+void ClusterView::startOblique(){
+    if (tsneComputing || tsneThread) {           // a t-SNE run owns the scatter
+        if (statusBar) statusBar->showMessage(
+            tr("oblique: a t-SNE run is computing — press F to cancel it first"), 3000);
+        return;
+    }
+    if (tsneMode) exitTsne();                     // replace any showing embedding
+    const QList<int> shown = view.clusters();
+    if (shown.size() < 2) {
+        if (statusBar) statusBar->showMessage(
+            tr("oblique: select at least two clusters — they are the template axes"), 4000);
+        return;
+    }
+    Data& d = doc.data();
+    const bool childLayer = doc.isChildClusteringActive();
+    const int allDims = d.nbOfDimensionsTotal() - 1;         // every dim except time
+    const int dimCap  = configuration().getTsneMaxDimensions();
+    const int D = (dimCap > 0) ? qMin(dimCap, allDims) : allDims;
+    if (D < 2) {
+        if (statusBar) statusBar->showMessage(tr("oblique: not enough feature dimensions"), 3000);
+        return;
+    }
+
+    // GLOBAL per-dimension mean / inv-std over ALL spikes in the group.  This is
+    // the standardising reference the projection needs: centering over only the
+    // selected clusters would collapse the basis (see oblique_embed.h).  Two
+    // inline passes over the feature table -- a few M reads, below a frame.
+    const dataType nAll = d.totalNbOfSpikes();
+    if (nAll < 2) {
+        if (statusBar) statusBar->showMessage(tr("oblique: no spikes in this group"), 3000);
+        return;
+    }
+    std::vector<double> gMean(D, 0.0), gInv(D, 0.0);
+    for (dataType row = 1; row <= nAll; ++row)
+        for (int dim = 1; dim <= D; ++dim)
+            gMean[dim - 1] += static_cast<double>(d.featureValue(row, dim));
+    for (int k = 0; k < D; ++k) gMean[k] /= static_cast<double>(nAll);
+    for (dataType row = 1; row <= nAll; ++row)
+        for (int dim = 1; dim <= D; ++dim) {
+            const double v = static_cast<double>(d.featureValue(row, dim)) - gMean[dim - 1];
+            gInv[dim - 1] += v * v;
+        }
+    for (int k = 0; k < D; ++k) {
+        const double var = gInv[k] / std::max<double>(1.0, static_cast<double>(nAll - 1));
+        gInv[k] = (var > 1e-12) ? 1.0 / std::sqrt(var) : 0.0;   // dead dim -> dropped
+    }
+
+    // Gather the selected clusters' feature rows + labels + .spk rows, with the
+    // same spike cap/subsample as the t-SNE path (the cap is a RENDER budget; the
+    // projection itself is cheap).  Mirrors startTsne's gather deliberately.
+    const int cap = configuration().getTsneSpikeCap();
+    QList<QPair<int, SortableTable*>> tables;
+    qint64 total = 0;
+    for (int id : shown) {
+        auto* t = new SortableTable();
+        if (!d.spikePositions(id, *t)) { delete t; continue; }
+        total += t->nbOfColumns();
+        tables.append(qMakePair(id, t));
+        if (total > cap) break;
+    }
+    const bool subsample = configuration().getTsneSubsampleOverCap();
+    if ((total > cap && !subsample) || tables.isEmpty() || total < 8) {
+        for (auto& pr : tables) delete pr.second;
+        if (statusBar) statusBar->showMessage(
+            total > cap
+              ? tr("oblique refused: %1 spikes selected, cap is %2 "
+                   "(raise it, or enable subsampling, in Preferences)").arg(total).arg(cap)
+              : tr("oblique: too few spikes selected"), 5000);
+        return;
+    }
+    const unsigned seed = 42u;                    // deterministic: no optimiser to vary
+    QSet<qint64> keep;
+    const bool sampled = (total > cap);
+    if (sampled) {
+        std::vector<qint64> idx(static_cast<size_t>(total));
+        std::iota(idx.begin(), idx.end(), 0);
+        std::shuffle(idx.begin(), idx.end(), std::mt19937(seed));
+        idx.resize(static_cast<size_t>(cap));
+        for (qint64 v : idx) keep.insert(v);
+    }
+    const int N = sampled ? cap : static_cast<int>(total);
+    std::vector<double> X(static_cast<size_t>(N) * D);
+    std::vector<int>    labelsVec; labelsVec.reserve(N);
+    QVector<int>        rows;       rows.reserve(N);
+    int r = 0;
+    qint64 seen = 0;
+    for (auto& pr : tables) {
+        SortableTable& t = *pr.second;
+        const dataType n = t.nbOfColumns();
+        for (dataType i = 1; i <= n; ++i, ++seen) {
+            if (sampled && !keep.contains(seen)) continue;
+            const dataType row = t(1, i);
+            for (int dim = 1; dim <= D; ++dim)
+                X[static_cast<size_t>(r) * D + (dim - 1)] =
+                    static_cast<double>(d.featureValue(row, dim));
+            labelsVec.push_back(pr.first);
+            rows.append(static_cast<int>(row) - 1);
+            ++r;
+        }
+        delete pr.second;
+    }
+
+    std::vector<int> basis;
+    basis.reserve(shown.size());
+    for (int id : shown) basis.push_back(id);
+
+    std::vector<double> xy;
+    double cond = 0.0;
+    std::string err;
+    if (!obliqueProject(X, N, D, labelsVec, basis, gMean, gInv, xy, cond, &err)) {
+        if (statusBar) statusBar->showMessage(
+            tr("oblique failed: %1").arg(QString::fromStdString(err)), 5000);
+        return;
+    }
+
+    // Hand the result to the shared embedding buffers and show it exactly as the
+    // t-SNE path does (same paint, same lasso, same bbox mapping).
+    tsneChildLayer = childLayer;
+    tsneXY = std::move(xy);
+    QList<int> labels; labels.reserve(N);
+    for (int v : labelsVec) labels.append(v);
+    tsneRowCluster = std::move(labels);
+    tsneRowSpike   = std::move(rows);
+    resetSelectionPolygon();
+    {   // capture the bounding box once: paint and hit-test must agree
+        const int n = static_cast<int>(tsneXY.size() / 2);
+        tsneMinX = tsneMaxX = tsneMinY = tsneMaxY = 0.0;
+        if (n > 0) {
+            tsneMinX = tsneMaxX = tsneXY[0];
+            tsneMinY = tsneMaxY = tsneXY[1];
+            for (int i = 1; i < n; ++i) {
+                tsneMinX = qMin(tsneMinX, tsneXY[2 * i]);
+                tsneMaxX = qMax(tsneMaxX, tsneXY[2 * i]);
+                tsneMinY = qMin(tsneMinY, tsneXY[2 * i + 1]);
+                tsneMaxY = qMax(tsneMaxY, tsneXY[2 * i + 1]);
+            }
+            const double mx = (tsneMaxX - tsneMinX) * 0.05 + 1e-9;
+            const double my = (tsneMaxY - tsneMinY) * 0.05 + 1e-9;
+            tsneMinX -= mx; tsneMaxX += mx; tsneMinY -= my; tsneMaxY += my;
+        }
+    }
+    tsneSpikeCount   = N;
+    tsneClusterCount = shown.size();
+    obliqueCond      = cond;
+    obliqueMode      = true;
+    tsneMode         = true;
+    drawContentsMode = REDRAW;
+    update();
+    if (statusBar) statusBar->showMessage(
+        (childLayer
+           ? tr("oblique: %1 spikes, %2 atom template(s), condition %3 — lasso to cut, Shift+O returns")
+           : tr("oblique: %1 spikes, %2 template(s), condition %3 — lasso to cut, Shift+O returns"))
+            .arg(N).arg(shown.size()).arg(cond, 0, 'f', 1), 8000);
 }
 
 void ClusterView::toggleAutoscale(){
