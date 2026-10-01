@@ -1336,6 +1336,44 @@ void ClusterView::toggleObliquePresentation(){
     else             startOblique();
 }
 
+bool ClusterView::setObliqueBasis(const QList<int>& ids, QString* message){
+    // Empty -> clear the pin and restore the default (basis == the selection).
+    if (ids.isEmpty()) {
+        obliqueBasis.clear();
+        if (message) *message =
+            tr("Oblique basis cleared — Shift+O again uses the selected clusters as the axes.");
+        return true;
+    }
+    QList<int> clean;                               // de-duplicate, preserve order
+    for (int id : ids) {
+        if (id <= 1) {                              // 0 artefact / 1 noise carry no template
+            if (message) *message = tr("Oblique basis: cluster %1 is a reserve bin "
+                                       "(artefact/noise) and has no template.").arg(id);
+            return false;
+        }
+        if (!clean.contains(id)) clean.append(id);
+    }
+    if (clean.size() < 2) {
+        if (message) *message = tr("Oblique basis: give at least two distinct clusters.");
+        return false;
+    }
+    // Validate against the ACTIVE layer (the layer startOblique projects on) and
+    // require spikes -- the engine averages each basis cluster's own rows.
+    Data& d = doc.data();
+    for (int id : clean)
+        if (d.nbOfSpikes(static_cast<dataType>(id)) <= 0) {
+            if (message) *message = tr("Oblique basis: cluster %1 does not exist or "
+                                       "has no spikes in the active view.").arg(id);
+            return false;
+        }
+    obliqueBasis = clean;
+    QStringList s; for (int id : clean) s << QString::number(id);
+    if (message) *message = tr("Oblique basis pinned to cluster(s) %1 — select a cluster "
+                               "to examine and press Shift+O to project it onto these axes.")
+                               .arg(s.join(QStringLiteral(", ")));
+    return true;
+}
+
 void ClusterView::startOblique(){
     if (tsneComputing || tsneThread) {           // a t-SNE run owns the scatter
         if (statusBar) statusBar->showMessage(
@@ -1343,14 +1381,29 @@ void ClusterView::startOblique(){
         return;
     }
     if (tsneMode) exitTsne();                     // replace any showing embedding
-    const QList<int> shown = view.clusters();
-    if (shown.size() < 2) {
-        if (statusBar) statusBar->showMessage(
-            tr("oblique: select at least two clusters — they are the template axes"), 4000);
-        return;
-    }
     Data& d = doc.data();
     const bool childLayer = doc.isChildClusteringActive();
+
+    const QList<int> shown = view.clusters();
+    // Resolve the pinned basis (Set Oblique Basis…) against the ACTIVE layer:
+    // keep only ids that still own spikes here.  Two or more survivors -> the
+    // projection uses THEM as the fixed template axes and the selection is what
+    // gets examined against them; otherwise fall back to the default (basis ==
+    // the selection), which still needs two selected clusters.
+    QList<int> pinned;
+    for (int id : obliqueBasis)
+        if (id > 1 && !pinned.contains(id)
+            && d.nbOfSpikes(static_cast<dataType>(id)) > 0) pinned.append(id);
+    const bool usePinned = pinned.size() >= 2;
+    if (!obliqueBasis.isEmpty() && !usePinned && statusBar)
+        statusBar->showMessage(
+            tr("oblique: the pinned basis is no longer valid here — using the selected clusters"), 4000);
+    if (!usePinned && shown.size() < 2) {
+        if (statusBar) statusBar->showMessage(
+            tr("oblique: select at least two clusters — they are the template axes "
+               "(or pin a basis with Actions ▸ Set Oblique Basis…)"), 4000);
+        return;
+    }
     const int allDims = d.nbOfDimensionsTotal() - 1;         // every dim except time
     const int dimCap  = configuration().getTsneMaxDimensions();
     const int D = (dimCap > 0) ? qMin(dimCap, allDims) : allDims;
@@ -1383,64 +1436,138 @@ void ClusterView::startOblique(){
         gInv[k] = (var > 1e-12) ? 1.0 / std::sqrt(var) : 0.0;   // dead dim -> dropped
     }
 
-    // Gather the selected clusters' feature rows + labels + .spk rows, with the
-    // same spike cap/subsample as the t-SNE path (the cap is a RENDER budget; the
-    // projection itself is cheap).  Mirrors startTsne's gather deliberately.
+    // Gather the feature rows + labels + .spk rows to project.  Two shapes: the
+    // DEFAULT (basis == selection) mirrors startTsne's gather exactly; the PINNED
+    // shape adds the basis clusters to the pool (the engine builds each basis
+    // template from its own gathered rows) and protects the examined clusters'
+    // render budget against a high-rate basis.
+    std::vector<double> X;
+    std::vector<int>    labelsVec;
+    QVector<int>        rows;
+    std::vector<int>    basis;
+    int N = 0;
     const int cap = configuration().getTsneSpikeCap();
-    QList<QPair<int, SortableTable*>> tables;
-    qint64 total = 0;
-    for (int id : shown) {
-        auto* t = new SortableTable();
-        if (!d.spikePositions(id, *t)) { delete t; continue; }
-        total += t->nbOfColumns();
-        tables.append(qMakePair(id, t));
-        if (total > cap) break;
-    }
     const bool subsample = configuration().getTsneSubsampleOverCap();
-    if ((total > cap && !subsample) || tables.isEmpty() || total < 8) {
-        for (auto& pr : tables) delete pr.second;
-        if (statusBar) statusBar->showMessage(
-            total > cap
-              ? tr("oblique refused: %1 spikes selected, cap is %2 "
-                   "(raise it, or enable subsampling, in Preferences)").arg(total).arg(cap)
-              : tr("oblique: too few spikes selected"), 5000);
-        return;
-    }
-    const unsigned seed = 42u;                    // deterministic: no optimiser to vary
-    QSet<qint64> keep;
-    const bool sampled = (total > cap);
-    if (sampled) {
-        std::vector<qint64> idx(static_cast<size_t>(total));
-        std::iota(idx.begin(), idx.end(), 0);
-        std::shuffle(idx.begin(), idx.end(), std::mt19937(seed));
-        idx.resize(static_cast<size_t>(cap));
-        for (qint64 v : idx) keep.insert(v);
-    }
-    const int N = sampled ? cap : static_cast<int>(total);
-    std::vector<double> X(static_cast<size_t>(N) * D);
-    std::vector<int>    labelsVec; labelsVec.reserve(N);
-    QVector<int>        rows;       rows.reserve(N);
-    int r = 0;
-    qint64 seen = 0;
-    for (auto& pr : tables) {
-        SortableTable& t = *pr.second;
-        const dataType n = t.nbOfColumns();
-        for (dataType i = 1; i <= n; ++i, ++seen) {
-            if (sampled && !keep.contains(seen)) continue;
-            const dataType row = t(1, i);
+
+    if (!usePinned) {
+        // ---- default: basis == selection (unchanged from the original) ----
+        QList<QPair<int, SortableTable*>> tables;
+        qint64 total = 0;
+        for (int id : shown) {
+            auto* t = new SortableTable();
+            if (!d.spikePositions(id, *t)) { delete t; continue; }
+            total += t->nbOfColumns();
+            tables.append(qMakePair(id, t));
+            if (total > cap) break;
+        }
+        if ((total > cap && !subsample) || tables.isEmpty() || total < 8) {
+            for (auto& pr : tables) delete pr.second;
+            if (statusBar) statusBar->showMessage(
+                total > cap
+                  ? tr("oblique refused: %1 spikes selected, cap is %2 "
+                       "(raise it, or enable subsampling, in Preferences)").arg(total).arg(cap)
+                  : tr("oblique: too few spikes selected"), 5000);
+            return;
+        }
+        QSet<qint64> keep;
+        const bool sampled = (total > cap);
+        if (sampled) {
+            std::vector<qint64> idx(static_cast<size_t>(total));
+            std::iota(idx.begin(), idx.end(), 0);
+            std::shuffle(idx.begin(), idx.end(), std::mt19937(42u));
+            idx.resize(static_cast<size_t>(cap));
+            for (qint64 v : idx) keep.insert(v);
+        }
+        N = sampled ? cap : static_cast<int>(total);
+        X.assign(static_cast<size_t>(N) * D, 0.0);
+        labelsVec.reserve(N);
+        rows.reserve(N);
+        int r = 0;
+        qint64 seen = 0;
+        for (auto& pr : tables) {
+            SortableTable& t = *pr.second;
+            const dataType n = t.nbOfColumns();
+            for (dataType i = 1; i <= n; ++i, ++seen) {
+                if (sampled && !keep.contains(seen)) continue;
+                const dataType row = t(1, i);
+                for (int dim = 1; dim <= D; ++dim)
+                    X[static_cast<size_t>(r) * D + (dim - 1)] =
+                        static_cast<double>(d.featureValue(row, dim));
+                labelsVec.push_back(pr.first);
+                rows.append(static_cast<int>(row) - 1);
+                ++r;
+            }
+            delete pr.second;
+        }
+        basis.reserve(shown.size());
+        for (int id : shown) basis.push_back(id);
+    } else {
+        // ---- pinned: project the selection onto the pinned basis axes ----
+        // One strided pull per cluster.  Basis clusters are capped to a reference
+        // sample (basisRef) so a fast-spiking basis cannot eat the budget; the
+        // examined (non-basis) clusters take the rest and are subsampled only if
+        // THEY overflow.  Basis rows are always kept -- their mean IS the axis.
+        const int K = pinned.size();
+        const int basisRef = qBound(50, cap / (2 * (K + 1)), 4000);
+        struct Ent { dataType row; int cid; };
+        std::vector<Ent> basisEnts, thirdEnts;
+        auto pull = [&](int id, bool basisCl){
+            SortableTable t;
+            if (!d.spikePositions(id, t)) return;
+            const long nn = static_cast<long>(t.nbOfColumns());
+            if (nn <= 0) return;
+            const long take = basisCl ? qMin<long>(nn, basisRef) : nn;
+            const long step = qMax<long>(1, basisCl ? nn / qMax<long>(1, take) : 1);
+            std::vector<Ent>& dst = basisCl ? basisEnts : thirdEnts;
+            for (long i = 1; i <= nn; i += step)
+                dst.push_back(Ent{ t(1, static_cast<dataType>(i)), id });
+        };
+        for (int id : pinned) pull(id, true);
+        for (int id : shown) if (!pinned.contains(id)) pull(id, false);
+
+        const qint64 nBasis = static_cast<qint64>(basisEnts.size());
+        const qint64 nThird = static_cast<qint64>(thirdEnts.size());
+        if (nBasis == 0 || (nBasis + nThird) < 8) {
+            if (statusBar) statusBar->showMessage(
+                tr("oblique: too few spikes to project onto the pinned basis"), 5000);
+            return;
+        }
+        const qint64 thirdBudget = qMax<qint64>(0, static_cast<qint64>(cap) - nBasis);
+        if (nThird > thirdBudget && !subsample) {
+            if (statusBar) statusBar->showMessage(
+                tr("oblique refused: %1 spikes (%2 basis + %3 examined), cap is %4 "
+                   "(raise it, or enable subsampling, in Preferences)")
+                    .arg(nBasis + nThird).arg(nBasis).arg(nThird).arg(cap), 6000);
+            return;
+        }
+        QSet<qint64> keepThird;
+        const bool sampled = (nThird > thirdBudget);
+        if (sampled) {
+            std::vector<qint64> idx(static_cast<size_t>(nThird));
+            std::iota(idx.begin(), idx.end(), 0);
+            std::shuffle(idx.begin(), idx.end(), std::mt19937(42u));
+            idx.resize(static_cast<size_t>(thirdBudget));
+            for (qint64 v : idx) keepThird.insert(v);
+        }
+        N = static_cast<int>(nBasis + (sampled ? thirdBudget : nThird));
+        X.assign(static_cast<size_t>(N) * D, 0.0);
+        labelsVec.reserve(N);
+        rows.reserve(N);
+        int r = 0;
+        auto addRow = [&](const Ent& e){           // not named 'emit' -- Qt macro
             for (int dim = 1; dim <= D; ++dim)
                 X[static_cast<size_t>(r) * D + (dim - 1)] =
-                    static_cast<double>(d.featureValue(row, dim));
-            labelsVec.push_back(pr.first);
-            rows.append(static_cast<int>(row) - 1);
+                    static_cast<double>(d.featureValue(e.row, dim));
+            labelsVec.push_back(e.cid);
+            rows.append(static_cast<int>(e.row) - 1);
             ++r;
-        }
-        delete pr.second;
+        };
+        for (const Ent& e : basisEnts) addRow(e);
+        qint64 ti = 0;
+        for (const Ent& e : thirdEnts) { if (!sampled || keepThird.contains(ti)) addRow(e); ++ti; }
+        basis.reserve(K);
+        for (int id : pinned) basis.push_back(id);
     }
-
-    std::vector<int> basis;
-    basis.reserve(shown.size());
-    for (int id : shown) basis.push_back(id);
 
     std::vector<double> xy;
     double cond = 0.0;
@@ -1478,17 +1605,33 @@ void ClusterView::startOblique(){
         }
     }
     tsneSpikeCount   = N;
-    tsneClusterCount = shown.size();
+    if (usePinned) {
+        QSet<int> distinctClusters;                 // basis + examined, as projected
+        for (int v : labelsVec) distinctClusters.insert(v);
+        tsneClusterCount = distinctClusters.size();
+    } else {
+        tsneClusterCount = shown.size();
+    }
     obliqueCond      = cond;
     obliqueMode      = true;
     tsneMode         = true;
     drawContentsMode = REDRAW;
     update();
-    if (statusBar) statusBar->showMessage(
-        (childLayer
-           ? tr("oblique: %1 spikes, %2 atom template(s), condition %3 — lasso to cut, Shift+O returns")
-           : tr("oblique: %1 spikes, %2 template(s), condition %3 — lasso to cut, Shift+O returns"))
-            .arg(N).arg(shown.size()).arg(cond, 0, 'f', 1), 8000);
+    if (statusBar) {
+        if (usePinned) {
+            QStringList b; for (int id : pinned) b << QString::number(id);
+            statusBar->showMessage(
+                tr("oblique: %1 spikes on the pinned basis [%2], condition %3 — "
+                   "lasso to cut, Shift+O returns")
+                    .arg(N).arg(b.join(QStringLiteral(","))).arg(cond, 0, 'f', 1), 8000);
+        } else {
+            statusBar->showMessage(
+                (childLayer
+                   ? tr("oblique: %1 spikes, %2 atom template(s), condition %3 — lasso to cut, Shift+O returns")
+                   : tr("oblique: %1 spikes, %2 template(s), condition %3 — lasso to cut, Shift+O returns"))
+                    .arg(N).arg(shown.size()).arg(cond, 0, 'f', 1), 8000);
+        }
+    }
 }
 
 void ClusterView::toggleAutoscale(){
