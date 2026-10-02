@@ -123,7 +123,8 @@ NEUROSUITE_CORE_EXPORT bool writeFetBinary(const std::string& path, int nFeature
 //     ((s * nSamples) + t) * nChannels + c
 // This is the layout process_extractspikes writes and both klusters' Data and
 // fiber-kit read; nSpikes is derived from the file size.  (A .wtf template file
-// is byte-identical to a .spk slice, so these also read/write it.)
+// is byte-identical to a .spk slice, so these also read/write it — one record
+// per template-series row; the companion .wti index below names each row.)
 struct SpkFile {
     int                  nSamples  = 0;
     int                  nChannels = 0;
@@ -154,6 +155,63 @@ NEUROSUITE_CORE_EXPORT bool    writeSpk(const std::string& path, int nSamples, i
 struct ColDecomp { int64_t spikeIndex = -1; int u1 = 0; int sh1 = 0; double a1 = 0.0;
                                              int u2 = 0; int sh2 = 0; double a2 = 0.0; };
 NEUROSUITE_CORE_EXPORT std::vector<ColDecomp> readColAccepted(const std::string& path);
+
+// ── .wti — waveform-template index (companion to .wtf) ──────────────────────
+// The template library stores a marked unit's waveform as a LINKED SERIES: not
+// one global mean but a median per drift chunk (link "drift") and a median per
+// spike-energy bin (link "adapt").  The waveforms themselves live in a .wtf,
+// which is a headerless .spk-layout int16 stack (read with readSpk) — one record
+// per series row.  The .wtf carries no structure, so this .wti names each row:
+// which unit, which link, which bin, the bin's coordinates, and how many spikes
+// its median was built from.  One .wti is SHARED across waveform methods (the
+// row layout is identical for every method's .wtf), so it lives at a method-less
+// path (<base>.wti.<group>[.<stage>]); each method keeps its own .wtf.
+//
+// Canonical text format (little friction for a human and for fiber-template to
+// emit), version-tagged so a reader rejects anything it does not understand:
+//
+//     wti 1
+//     nSamples 42
+//     nChannels 8
+//     peakSample 21            # -1 if unknown
+//     sr 32552                 # 0 if unknown
+//     nRows 6
+//     # row unit link bin a b nSpikes
+//     row 0 31 drift 0 0.000 120.000 540
+//     row 1 31 drift 1 120.000 240.000 613
+//     row 2 31 adapt 0 1.00 2.00 410
+//     ...
+//
+// `link` is drift|adapt (unknown tokens tolerated and kept verbatim); `bin` is
+// the 0-based ordinal within that (unit,link) series; a/b are the bin's
+// coordinates (drift: chunk start/end seconds; adapt: energy lo/hi); nSpikes is
+// the spike count behind that median (0 = an empty placeholder row).  Row i maps
+// 1:1 to .wtf record i, so readSpk(wtf).nSpikes must equal rows.size().
+struct WtiRow {
+    int         row    = 0;    ///< 0-based; equals the .wtf record index
+    int         unitId = 0;    ///< cluster/unit this template belongs to
+    std::string link;          ///< "drift" | "adapt" (verbatim; extensible)
+    int         bin    = 0;    ///< 0-based ordinal within this (unit,link) series
+    double      a      = 0.0;  ///< bin coordinate lo (drift: start s; adapt: energy lo)
+    double      b      = 0.0;  ///< bin coordinate hi (drift: end s;   adapt: energy hi)
+    int64_t     nSpikes = 0;   ///< spikes behind this median (0 = empty placeholder)
+};
+struct WtiIndex {
+    int                 version    = 1;
+    int                 nSamples   = 0;
+    int                 nChannels  = 0;
+    int                 peakSample = -1;   ///< -1 if unknown
+    double              sr         = 0.0;  ///< 0 if unknown
+    std::vector<WtiRow> rows;
+    bool                ok = false;        ///< false on open / parse / bad version
+};
+// Parse a .wti.  Rejects a missing file, a bad "wti <version>" line, or a version
+// the reader does not implement (ok = false).  `nRows`, when present, is checked
+// against the rows actually parsed.
+NEUROSUITE_CORE_EXPORT WtiIndex readWti(const std::string& path);
+// Write a .wti from `idx` (its version field is honoured; rows written in order).
+// Returns false if the file cannot be opened.
+NEUROSUITE_CORE_EXPORT bool     writeWti(const std::string& path, const WtiIndex& idx);
 
 // ── .evt ──────────────────────────────────────────────────────────────────
 struct EvtEntry {

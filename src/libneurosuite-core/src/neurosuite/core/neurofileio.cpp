@@ -359,6 +359,76 @@ std::vector<ColDecomp> readColAccepted(const std::string& path)
     return out;
 }
 
+// ── .wti — waveform-template index (see neurofileio.h) ──────────────────────
+WtiIndex readWti(const std::string& path)
+{
+    WtiIndex idx;
+    std::ifstream in(path);
+    if (!in) return idx;
+
+    std::string line;
+    bool haveHeader = false;
+    long declaredRows = -1;                       // from an "nRows" line, if present
+    while (std::getline(in, line)) {
+        // Trim a trailing CR (tolerate CRLF) and skip blank / comment lines.
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        std::size_t s = line.find_first_not_of(" \t");
+        if (s == std::string::npos || line[s] == '#') continue;
+
+        std::istringstream ls(line);
+        std::string key;
+        ls >> key;
+        if (!haveHeader) {
+            // The first non-blank, non-comment line MUST be "wti <version>".
+            if (key != "wti") return WtiIndex{};
+            int ver = 0;
+            if (!(ls >> ver) || ver != 1) return WtiIndex{};   // only v1 implemented
+            idx.version = ver;
+            haveHeader = true;
+            continue;
+        }
+        if (key == "nSamples")        ls >> idx.nSamples;
+        else if (key == "nChannels")  ls >> idx.nChannels;
+        else if (key == "peakSample") ls >> idx.peakSample;
+        else if (key == "sr")         ls >> idx.sr;
+        else if (key == "nRows")      ls >> declaredRows;
+        else if (key == "row") {
+            WtiRow r;
+            // row <row> <unit> <link> <bin> <a> <b> <nSpikes>
+            if (ls >> r.row >> r.unitId >> r.link >> r.bin >> r.a >> r.b >> r.nSpikes)
+                idx.rows.push_back(r);
+            // A malformed row line is skipped rather than aborting the whole index.
+        }
+        // Unknown keys are ignored, so the format can gain fields without
+        // breaking older readers.
+    }
+    if (!haveHeader) return WtiIndex{};
+    // If the writer declared a row count, it must match what we parsed.
+    if (declaredRows >= 0 && declaredRows != static_cast<long>(idx.rows.size()))
+        return WtiIndex{};
+    idx.ok = true;
+    return idx;
+}
+
+bool writeWti(const std::string& path, const WtiIndex& idx)
+{
+    std::ofstream out(path);
+    if (!out) return false;
+    out << "wti " << idx.version << "\n";
+    out << "nSamples "   << idx.nSamples   << "\n";
+    out << "nChannels "  << idx.nChannels  << "\n";
+    out << "peakSample " << idx.peakSample << "\n";
+    out << "sr "         << idx.sr         << "\n";
+    out << "nRows "      << idx.rows.size() << "\n";
+    out << "# row unit link bin a b nSpikes\n";
+    for (const WtiRow& r : idx.rows) {
+        out << "row " << r.row << ' ' << r.unitId << ' '
+            << (r.link.empty() ? std::string("drift") : r.link) << ' '
+            << r.bin << ' ' << r.a << ' ' << r.b << ' ' << r.nSpikes << "\n";
+    }
+    return static_cast<bool>(out);
+}
+
 std::vector<EvtEntry> readEvt(const std::string& path, bool* ok)
 {
     std::vector<EvtEntry> out;

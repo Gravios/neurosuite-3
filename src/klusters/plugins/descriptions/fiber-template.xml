@@ -22,7 +22,7 @@ medians, like a fiber's per-chunk geometry:
   * link=drift  — a median per time chunk (tracks probe/tissue drift);
   * link=adapt  — a median per spike-energy bin (tracks within-burst adaptation).
 Both are built in every requested spk variant and row-aligned to a shared
-.wtfinfo index.
+.wti index (one .wti per group+stage names each .wtf row: unit, link, bin).
 
 Reads the clustering files ON DISK (save first if you have unsaved edits).
 nsamp and nchan are prefilled from the open group; variants is the list of .spk

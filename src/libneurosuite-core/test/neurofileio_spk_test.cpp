@@ -118,6 +118,61 @@ int main()
         std::remove(cp.c_str());
     }
 
+    // ── .wti waveform-template index: round-trip + .wtf row alignment ────────
+    {
+        WtiIndex w;
+        w.version = 1; w.nSamples = nSamples; w.nChannels = nChannels;
+        w.peakSample = 2; w.sr = 32552.0;
+        // 2 units, each a 2-bin drift series then a 2-bin adapt series = 8 rows,
+        // row index == .wtf record index.
+        int row = 0;
+        for (int u : {31, 9}) {
+            for (int bin = 0; bin < 2; ++bin)
+                w.rows.push_back(WtiRow{row++, u, "drift", bin, bin*120.0, (bin+1)*120.0, 500 + bin});
+            for (int bin = 0; bin < 2; ++bin)
+                w.rows.push_back(WtiRow{row++, u, "adapt", bin, 1.0+bin, 2.0+bin, 400 + bin});
+        }
+        const std::string wp = "nfio_wti_roundtrip.tmp.wti";
+        check(writeWti(wp, w), "writeWti ok");
+
+        WtiIndex r = readWti(wp);
+        check(r.ok, "readWti ok");
+        check(r.version==1 && r.nSamples==nSamples && r.nChannels==nChannels
+              && r.peakSample==2 && std::fabs(r.sr-32552.0) < 1e-6, "readWti geometry round-trips");
+        check(r.rows.size()==8, "readWti row count");
+        if (r.rows.size()==8) {
+            check(r.rows[0].unitId==31 && r.rows[0].link=="drift" && r.rows[0].bin==0
+                  && r.rows[0].nSpikes==500, "wti row 0 fields");
+            check(r.rows[2].unitId==31 && r.rows[2].link=="adapt" && r.rows[2].bin==0,
+                  "wti row 2 is the unit's first adapt bin");
+            check(r.rows[4].unitId==9 && r.rows[4].link=="drift", "wti row 4 switches unit");
+            check(std::fabs(r.rows[1].b-240.0) < 1e-6, "wti drift bin coordinate round-trips");
+        }
+
+        // The .wtf is a headerless .spk-layout int16 stack: one record per wti row.
+        std::vector<int16_t> wtf(static_cast<size_t>(r.rows.size()) * recVals);
+        for (size_t k = 0; k < wtf.size(); ++k) wtf[k] = static_cast<int16_t>(k % 97 - 48);
+        const std::string wtfp = "nfio_wtf_roundtrip.tmp.wtf";
+        check(writeSpk(wtfp, nSamples, nChannels, wtf), "writeSpk(.wtf) ok");
+        SpkFile wf = readSpk(wtfp, nSamples, nChannels);
+        check(wf.ok && static_cast<std::size_t>(wf.nSpikes)==r.rows.size(),
+              ".wtf record count == wti row count (alignment contract)");
+
+        // Negative cases: bad header, version, nRows mismatch, missing file.
+        { std::ofstream bad("nfio_wti_bad.tmp.wti"); bad << "notwti 1\nnSamples 4\n"; }
+        check(!readWti("nfio_wti_bad.tmp.wti").ok, "readWti rejects a bad header line");
+        { std::ofstream bad("nfio_wti_ver.tmp.wti"); bad << "wti 2\nnRows 0\n"; }
+        check(!readWti("nfio_wti_ver.tmp.wti").ok, "readWti rejects an unknown version");
+        { std::ofstream bad("nfio_wti_cnt.tmp.wti");
+          bad << "wti 1\nnRows 3\nrow 0 1 drift 0 0 1 5\n"; }
+        check(!readWti("nfio_wti_cnt.tmp.wti").ok, "readWti rejects a declared/actual row mismatch");
+        check(!readWti("nope.wti").ok, "readWti missing file -> not ok");
+
+        std::remove(wp.c_str()); std::remove(wtfp.c_str());
+        std::remove("nfio_wti_bad.tmp.wti"); std::remove("nfio_wti_ver.tmp.wti");
+        std::remove("nfio_wti_cnt.tmp.wti");
+    }
+
     // ── stage-tagged path composition ───────────────────────────────────────
     // <base>.<type>.<method>.<group>[.<stage>], and parseAnchor reads the stage
     // back as the suffix (no leading dot), so a staged file round-trips.
