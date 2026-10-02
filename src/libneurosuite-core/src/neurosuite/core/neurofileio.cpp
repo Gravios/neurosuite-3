@@ -317,6 +317,48 @@ bool writeSpk(const std::string& path, int nSamples, int nChannels,
     return static_cast<bool>(os);
 }
 
+std::vector<ColDecomp> readColAccepted(const std::string& path)
+{
+    std::vector<ColDecomp> out;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return out;
+
+    auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };
+    auto rdI32 = [&](int32_t&  v) { in.read(reinterpret_cast<char*>(&v), 4); };
+    auto rdI64 = [&](int64_t&  v) { in.read(reinterpret_cast<char*>(&v), 8); };
+    auto rdF32 = [&](float&    v) { in.read(reinterpret_cast<char*>(&v), 4); };
+
+    unsigned char magic[4] = {0, 0, 0, 0};
+    in.read(reinterpret_cast<char*>(magic), 4);
+    if (!in || magic[0] != 'C' || magic[1] != 'O' || magic[2] != 'L' || magic[3] != 0x01)
+        return out;
+    uint32_t nSpikes = 0, nRecords = 0, nTemplates = 0, group = 0, flags = 0;
+    rdU32(nSpikes); rdU32(nRecords); rdU32(nTemplates); rdU32(group); rdU32(flags);
+    in.seekg(8, std::ios::cur);                              // header pad[8]
+    in.seekg(32, std::ios::cur);                             // ColParams (32B)
+    in.seekg(static_cast<std::streamoff>(nTemplates) * 24, std::ios::cur);  // ColTemplate[] (24B each)
+    if (!in) return out;
+
+    static constexpr uint32_t REC_FLAG_ACCEPTED = 1u;
+    out.reserve(nRecords);
+    for (uint32_t r = 0; r < nRecords; ++r) {
+        int64_t ts = 0; int32_t spikeIdx = 0, bsu = 0; float bsc = 0; uint32_t rf = 0; float rn = 0;
+        int32_t u1 = 0, sh1 = 0; float sf1 = 0, a1 = 0; int32_t u2 = 0, sh2 = 0; float sf2 = 0, a2 = 0;
+        rdI64(ts); rdI32(spikeIdx); rdI32(bsu); rdF32(bsc); rdU32(rf); rdF32(rn);
+        rdI32(u1); rdI32(sh1); rdF32(sf1); rdF32(a1);
+        rdI32(u2); rdI32(sh2); rdF32(sf2); rdF32(a2);
+        if (!in) break;
+        if (rf & REC_FLAG_ACCEPTED) {
+            ColDecomp d;
+            d.spikeIndex = spikeIdx;
+            d.u1 = u1; d.sh1 = sh1; d.a1 = a1;
+            d.u2 = u2; d.sh2 = sh2; d.a2 = a2;
+            out.push_back(d);
+        }
+    }
+    return out;
+}
+
 std::vector<EvtEntry> readEvt(const std::string& path, bool* ok)
 {
     std::vector<EvtEntry> out;

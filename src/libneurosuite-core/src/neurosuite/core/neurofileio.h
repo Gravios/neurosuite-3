@@ -140,6 +140,21 @@ NEUROSUITE_CORE_EXPORT SpkFile readSpk(const std::string& path, int nSamples, in
 NEUROSUITE_CORE_EXPORT bool    writeSpk(const std::string& path, int nSamples, int nChannels,
                  const std::vector<int16_t>& samples);
 
+// ── .col.N — collision-decomposition sidecar (process_decomposecollisions) ──
+// Binary, little-endian; the format is owned by process_decomposecollisions.h:
+//   Header 32B: magic {'C','O','L',0x01}, n_spikes(u32), n_records(u32),
+//               n_templates(u32), group(u32), flags(u32), pad[8].
+//   Params 32B, then n_templates × 24B template rows, then n_records × 60B records
+//   (ts i64, spike_idx i32, best_single_unit i32, best_single_corr f32, flags u32,
+//    resid_norm f32, u1 i32, sh1 i32, sf1 f32, a1 f32, u2 i32, sh2 i32, sf2 f32, a2 f32).
+// A record with REC_FLAG_ACCEPTED (flags bit 0) is an accepted two-component
+// decomposition.  readColAccepted returns ONLY those, as (spikeIndex, the two
+// components with their integer shift + amplitude) — the input the decollide
+// engine applies.  Returns empty on a bad magic / short file.
+struct ColDecomp { int64_t spikeIndex = -1; int u1 = 0; int sh1 = 0; double a1 = 0.0;
+                                             int u2 = 0; int sh2 = 0; double a2 = 0.0; };
+NEUROSUITE_CORE_EXPORT std::vector<ColDecomp> readColAccepted(const std::string& path);
+
 // ── .evt ──────────────────────────────────────────────────────────────────
 struct EvtEntry {
     double      timeMs = 0.0;
