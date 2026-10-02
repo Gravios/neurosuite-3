@@ -126,12 +126,45 @@ int main()
         check(t1 && t2, "shifted apply: events land at det+tau1 / det+tau2");
     }
 
-    // ── missing template -> the collision is left as-is (no growth) ──────────
+    // ── missing template -> still grows (+1), constituents copy the collision;
+    //    row alignment across methods is preserved regardless of templates ─────
     {
         std::vector<Decomp> ds;
         Decomp d; d.spikeIndex = 4; d.c1 = {2, 0, a1}; d.c2 = {99, 0, a2}; ds.push_back(d);  // unit 99 absent
         const Grown gm = applyMethod(res, clu, spk, NS, NC, ds);
-        check(gm.ok && gm.res.size() == res.size(), "missing template -> spike left as-is");
+        check(gm.ok && gm.res.size() == res.size() + 1, "missing template -> still grows (+1), aligned");
+    }
+
+    // ── applyFeatures: grow the feature table on the SAME plan, by PCA linearity
+    //    from in-memory features (f(clean1)=f(c)-a2*meanFeat(k2), etc.) ─────────
+    {
+        const std::size_t D = 3;
+        const std::vector<int64_t> MF2 = {100, 0, 10}, MF3 = {0, 80, 5};
+        // collision features chosen so the exact (tau=0) split recovers a1*MF2 / a2*MF3
+        std::vector<int64_t> fc(D);
+        for (std::size_t j = 0; j < D; ++j)
+            fc[j] = (int64_t)std::llround(a1 * MF2[j] + a2 * MF3[j]);
+        // fet table aligned with the main res/clu (idx 0,1=unit2; 2,3=unit3; 4=collision)
+        std::vector<std::vector<int64_t>> fet = {MF2, MF2, MF3, MF3, fc};
+        std::vector<Decomp> dsf;
+        { Decomp d; d.spikeIndex = 4; d.c1 = {2, 0, a1}; d.c2 = {3, 0, a2}; dsf.push_back(d); }
+
+        const Grown gA = applyMethod(res, clu, spk, NS, NC, dsf);
+        const auto gf = applyFeatures(res, clu, fet, dsf);
+        check(gf.size() == gA.res.size(), "applyFeatures row count == applyMethod (aligned)");
+        auto rowEqV = [&](const std::vector<int64_t>& r, const std::vector<int64_t>& m, double s) {
+            if (r.size() != D) return false;
+            for (std::size_t j = 0; j < D; ++j) if (r[j] != (int64_t)std::llround(s * m[j])) return false;
+            return true;
+        };
+        int okU2 = 0, okU3 = 0, pass = 0;
+        for (std::size_t o = 0; o < gA.res.size(); ++o) {
+            if (gA.res[o] == collTime && gA.clu[o] == 2 && rowEqV(gf[o], MF2, a1)) ++okU2;  // f=a1*MF2
+            if (gA.res[o] == collTime && gA.clu[o] == 3 && rowEqV(gf[o], MF3, a2)) ++okU3;  // f=a2*MF3
+            if (gA.clu[o] == 2 && gA.res[o] == 10 && gf[o] == MF2) ++pass;                   // a passthrough row
+        }
+        check(okU2 == 1 && okU3 == 1, "new feature rows = constituent features (exact at tau=0)");
+        check(pass == 1, "passthrough feature rows carried over unchanged");
     }
 
     // ── fitPair: two-template matching pursuit against a fixed basis pair ────
