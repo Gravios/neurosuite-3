@@ -26,6 +26,8 @@
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include <neurosuite/core/neurofileio.h> // shared res/clu/spk/fet readers+writers (decollide stage)
 #include <neurosuite/core/decollide.hpp> // shared collision fit + grow engine (targeted decollide)
+#include <neurosuite/core/decollide_eap.hpp> // Decomp -> .eap membership bridge (annotate-in-place)
+#include <QDate>
 #include "clusterPalette.h"
 #include "autoMerge.h"      // patch 0069
 #include "savethread.h"
@@ -7633,6 +7635,44 @@ void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decom
         QApplication::restoreOverrideCursor();
         QMessageBox::warning(this, tr("Decollide"),
             tr("Could not read consistent res/clu/spk/fet for this group.")); return;
+    }
+
+    // Annotate-in-place: record these decompositions as .eap membership (+ .tcl
+    // classes) on the CURRENT (parent) stage — the same primitive the batch tools
+    // use (claude/eap-template-class-design §9).  Keyed by Decomp.spikeIndex into
+    // the current res/clu, so it MUST run before the grow/reopen below (the grown
+    // stage renumbers spikes).  Amplitudes/shifts stay in the decomposition; .eap
+    // carries presence + integer offset only.  The stage-grow output is the export
+    // representation; this is the annotate-in-place twin.
+    {
+        const std::string pStage  = aClu.suffix;                 // current stage ("" = untagged)
+        const std::string baseEap = neurosuite::custody::untaggedPath(base, "eap", grp);
+        const std::string eapPath = pStage.empty() ? baseEap : (baseEap + "." + pStage);
+        const std::string tclPath = neurosuite::custody::untaggedPath(base, "tcl", grp);
+        EapFile e = readEap(eapPath);
+        if (!e.ok && !pStage.empty()) e = readEap(baseEap);      // inherit the base membership
+        if (!e.ok) {                                             // fresh all-absent N x 128
+            e = EapFile{};
+            e.nSpikes  = static_cast<int64_t>(cr.ids.size());
+            e.nClasses = 128; e.group = grp;
+            e.cells.assign(static_cast<std::size_t>(e.nSpikes) * 128, EAP_ABSENT);
+            e.ok = true;
+        }
+        if (e.nSpikes == static_cast<int64_t>(cr.ids.size())) {
+            TclRegistry reg = readTcl(tclPath);
+            if (!reg.ok) reg = initTcl(e.nClasses);
+            const int T = std::max(e.nClasses, reg.nClasses);    // reconcile against the shared .tcl
+            if (e.nClasses < T) e = growEap(e, T);
+            while (static_cast<int>(reg.entries.size()) < T) {
+                TclEntry t; t.col = static_cast<int>(reg.entries.size()); t.status = TclStatus::Free;
+                reg.entries.push_back(t);
+            }
+            reg.nClasses = T;
+            dc::applyDecompsToEap(e, reg, decomps, pStage,
+                                  QDate::currentDate().toString(Qt::ISODate).toStdString());
+            writeEap(eapPath, e.nSpikes, e.nClasses, e.group, e.flags, e.cells);
+            writeTcl(tclPath, reg);
+        }
     }
 
     // Grow + write every spk method under the new tag; keep the open method's grown
