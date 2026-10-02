@@ -460,6 +460,199 @@ std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int unitId, const std::string
     return rows;
 }
 
+// ── .eap — EAP membership + offset matrix (see neurofileio.h) ───────────────
+EapFile readEap(const std::string& path)
+{
+    EapFile e;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return e;
+
+    unsigned char magic[4] = {0, 0, 0, 0};
+    in.read(reinterpret_cast<char*>(magic), 4);
+    if (!in || magic[0] != 'E' || magic[1] != 'A' || magic[2] != 'P' || magic[3] != 0x01)
+        return e;
+    uint32_t nSpikes = 0, nClasses = 0, group = 0, flags = 0;
+    auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };
+    rdU32(nSpikes); rdU32(nClasses); rdU32(group); rdU32(flags);
+    in.seekg(8, std::ios::cur);                             // pad[8]
+    if (!in) return e;
+
+    const std::size_t n = static_cast<std::size_t>(nSpikes) * nClasses;
+    std::vector<int8_t> cells(n);
+    if (n) in.read(reinterpret_cast<char*>(cells.data()), static_cast<std::streamsize>(n));
+    if (!in && n) return e;                                 // short body
+
+    e.nSpikes  = static_cast<int64_t>(nSpikes);
+    e.nClasses = static_cast<int>(nClasses);
+    e.group    = static_cast<int>(group);
+    e.flags    = flags;
+    e.cells    = std::move(cells);
+    e.ok = true;
+    return e;
+}
+
+bool writeEap(const std::string& path, int64_t nSpikes, int nClasses, int group,
+              uint32_t flags, const std::vector<int8_t>& cells)
+{
+    if (nSpikes < 0 || nClasses < 0) return false;
+    if (cells.size() != static_cast<std::size_t>(nSpikes) * static_cast<std::size_t>(nClasses))
+        return false;                                       // not a whole N×T matrix
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    const unsigned char magic[4] = {'E', 'A', 'P', 0x01};
+    out.write(reinterpret_cast<const char*>(magic), 4);
+    const uint32_t hs = static_cast<uint32_t>(nSpikes), hc = static_cast<uint32_t>(nClasses),
+                   hg = static_cast<uint32_t>(group),   hf = flags;
+    auto wrU32 = [&](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
+    wrU32(hs); wrU32(hc); wrU32(hg); wrU32(hf);
+    const char pad[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    out.write(pad, 8);
+    if (!cells.empty())
+        out.write(reinterpret_cast<const char*>(cells.data()),
+                  static_cast<std::streamsize>(cells.size()));
+    return static_cast<bool>(out);
+}
+
+bool initEap(const std::string& path, int64_t nSpikes, int nClasses, int group)
+{
+    if (nSpikes < 0 || nClasses < 0) return false;
+    std::vector<int8_t> cells(static_cast<std::size_t>(nSpikes) * nClasses, EAP_ABSENT);
+    return writeEap(path, nSpikes, nClasses, group, 0u, cells);
+}
+
+EapFile growEap(const EapFile& in, int newT)
+{
+    if (!in.ok || newT <= in.nClasses) return in;           // no-op: already wide enough
+    EapFile out = in;
+    out.nClasses = newT;
+    out.cells.assign(static_cast<std::size_t>(in.nSpikes) * newT, EAP_ABSENT);
+    for (int64_t i = 0; i < in.nSpikes; ++i)
+        for (int j = 0; j < in.nClasses; ++j)
+            out.cells[static_cast<std::size_t>(i) * newT + j] =
+                in.cells[static_cast<std::size_t>(i) * in.nClasses + j];
+    return out;
+}
+
+std::vector<int64_t> eapClassSpikes(const EapFile& e, int classId)
+{
+    std::vector<int64_t> out;
+    if (!e.ok || classId < 0 || classId >= e.nClasses) return out;
+    for (int64_t i = 0; i < e.nSpikes; ++i)
+        if (eapPresent(e.cells[static_cast<std::size_t>(i) * e.nClasses + classId]))
+            out.push_back(i);
+    return out;
+}
+
+std::vector<std::pair<int,int8_t>> eapSpikeClasses(const EapFile& e, int64_t spike)
+{
+    std::vector<std::pair<int,int8_t>> out;
+    if (!e.ok || spike < 0 || spike >= e.nSpikes) return out;
+    const std::size_t base = static_cast<std::size_t>(spike) * e.nClasses;
+    for (int j = 0; j < e.nClasses; ++j) {
+        const int8_t v = e.cells[base + j];
+        if (eapPresent(v)) out.emplace_back(j, v);
+    }
+    return out;
+}
+
+// ── .tcl — template-class registry (see neurofileio.h) ──────────────────────
+static std::string tclStatusToken(const TclEntry& t)
+{
+    switch (t.status) {
+        case TclStatus::Active: return "active";
+        case TclStatus::Tomb:   return "tomb";
+        case TclStatus::Merged: return "merged:" + std::to_string(t.mergedInto);
+        case TclStatus::Free:
+        default:                return "free";
+    }
+}
+
+TclRegistry readTcl(const std::string& path)
+{
+    TclRegistry reg;
+    std::ifstream in(path);
+    if (!in) return reg;
+
+    std::string line;
+    bool haveHeader = false;
+    long declaredN = -1;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        const std::size_t s = line.find_first_not_of(" \t");
+        if (s == std::string::npos || line[s] == '#') continue;
+        if (!haveHeader) {
+            std::istringstream hs(line);
+            std::string key; int ver = 0;
+            if (!(hs >> key >> ver) || key != "tcl" || ver != 1) return TclRegistry{};
+            reg.version = ver; haveHeader = true; continue;
+        }
+        // nClasses header line (space-separated) vs a col row (TAB-separated).
+        if (line.compare(0, 9, "nClasses ") == 0) {
+            std::istringstream ns(line);
+            std::string key; ns >> key >> declaredN;
+            continue;
+        }
+        // col row: col <TAB> status <TAB> label <TAB> prov_clu <TAB> prov_stage <TAB> created
+        std::vector<std::string> f;
+        std::string cur;
+        for (char c : line) { if (c == '\t') { f.push_back(cur); cur.clear(); } else cur += c; }
+        f.push_back(cur);
+        if (f.size() < 2) continue;                          // not a valid row
+        TclEntry e;
+        try { e.col = std::stoi(f[0]); } catch (...) { continue; }
+        const std::string& st = f[1];
+        if      (st == "active") e.status = TclStatus::Active;
+        else if (st == "tomb")   e.status = TclStatus::Tomb;
+        else if (st == "free")   e.status = TclStatus::Free;
+        else if (st.compare(0, 7, "merged:") == 0) {
+            e.status = TclStatus::Merged;
+            try { e.mergedInto = std::stoi(st.substr(7)); } catch (...) { e.mergedInto = -1; }
+        } else e.status = TclStatus::Free;
+        auto dash = [](const std::string& v) { return v == "-" ? std::string() : v; };
+        if (f.size() > 2) e.label = dash(f[2]);
+        if (f.size() > 3) { const std::string p = dash(f[3]);
+            try { e.provenanceClu = p.empty() ? -1 : std::stoi(p); } catch (...) { e.provenanceClu = -1; } }
+        if (f.size() > 4) e.provenanceStage = dash(f[4]);
+        if (f.size() > 5) e.created = dash(f[5]);
+        reg.entries.push_back(e);
+    }
+    if (!haveHeader) return TclRegistry{};
+    reg.nClasses = (declaredN >= 0) ? static_cast<int>(declaredN)
+                                    : static_cast<int>(reg.entries.size());
+    reg.ok = true;
+    return reg;
+}
+
+bool writeTcl(const std::string& path, const TclRegistry& reg)
+{
+    std::ofstream out(path);
+    if (!out) return false;
+    out << "tcl " << reg.version << "\n";
+    out << "nClasses " << reg.nClasses << "\n";
+    out << "# col\tstatus\tlabel\tprovenance_clu\tprovenance_stage\tcreated\n";
+    auto dash = [](const std::string& v) { return v.empty() ? std::string("-") : v; };
+    for (const TclEntry& e : reg.entries) {
+        out << e.col << '\t' << tclStatusToken(e) << '\t' << dash(e.label) << '\t'
+            << (e.provenanceClu < 0 ? std::string("-") : std::to_string(e.provenanceClu)) << '\t'
+            << dash(e.provenanceStage) << '\t' << dash(e.created) << "\n";
+    }
+    return static_cast<bool>(out);
+}
+
+TclRegistry initTcl(int nClasses)
+{
+    TclRegistry reg;
+    reg.version = 1;
+    reg.nClasses = (nClasses < 0) ? 0 : nClasses;
+    reg.entries.resize(static_cast<std::size_t>(reg.nClasses));
+    for (int i = 0; i < reg.nClasses; ++i) {
+        reg.entries[static_cast<std::size_t>(i)].col = i;
+        reg.entries[static_cast<std::size_t>(i)].status = TclStatus::Free;
+    }
+    reg.ok = true;
+    return reg;
+}
+
 std::vector<EvtEntry> readEvt(const std::string& path, bool* ok)
 {
     std::vector<EvtEntry> out;

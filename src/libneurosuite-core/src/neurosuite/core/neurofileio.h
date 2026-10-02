@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <utility>   // std::pair (eapSpikeClasses)
 
 #include "neurosuite_core_export.h"
 
@@ -227,6 +228,83 @@ NEUROSUITE_CORE_EXPORT std::vector<std::string> wtiLinks(const WtiIndex& idx, in
 // series along that link.  Empty if the unit/link is absent.
 NEUROSUITE_CORE_EXPORT std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int unitId,
                                                      const std::string& link);
+
+// ── .eap — EAP membership + offset matrix (see claude/eap-template-class-design) ─
+// A multi-label membership layer that augments (never appends to) the .spk: one
+// ROW per spike, one COLUMN per template CLASS.  A column index IS the stable
+// template-class id (pre-allocated from the spike group's nCells), so identity
+// survives cluster-id churn.  Coexists with .clu (which stays the dominant-label
+// partition); a collision waveform is one spk row with >= 2 classes set here.
+//
+// Binary, little-endian:
+//   Header 32B: magic {'E','A','P',0x01}, nSpikes u32, nClasses u32 (= T),
+//               group u32, flags u32, pad[8]
+//   Body:       nSpikes × nClasses int8, ROW-MAJOR (cell[i][j] at i*T + j)
+// Cell = the integer-sample temporal offset of class j's EAP within spike i's
+// window, relative to spike i's .res; EAP_ABSENT (-128) means class j is NOT in
+// spike i, so offset 0 stays valid (the dominant class's own cell is ~0).  Method
+// -less + per stage.  Amplitude / fractional shift live in the .col companion,
+// not here.
+static constexpr int8_t EAP_ABSENT = -128;   // sentinel: class not present in this spike
+struct EapFile {
+    int64_t              nSpikes  = 0;
+    int                  nClasses = 0;   ///< T (columns); a column index is the class id
+    int                  group    = 0;
+    uint32_t             flags    = 0;
+    std::vector<int8_t>  cells;          ///< nSpikes * nClasses, row-major; EAP_ABSENT = none
+    bool                 ok = false;
+};
+inline bool eapPresent(int8_t cell) { return cell != EAP_ABSENT; }
+// Read / write the matrix.  writeEap requires cells.size()==nSpikes*nClasses
+// (else writes nothing, returns false).  readEap rejects a bad magic / short file.
+NEUROSUITE_CORE_EXPORT EapFile readEap(const std::string& path);
+NEUROSUITE_CORE_EXPORT bool    writeEap(const std::string& path, int64_t nSpikes,
+                 int nClasses, int group, uint32_t flags, const std::vector<int8_t>& cells);
+// Pre-construct an all-absent matrix at T=nClasses (session setup), nSpikes rows.
+NEUROSUITE_CORE_EXPORT bool    initEap(const std::string& path, int64_t nSpikes,
+                 int nClasses, int group);
+// Widen to newT columns IN MEMORY (overflow past the pre-allocation); the new
+// columns are EAP_ABSENT and existing cells keep their (spike,class).  No-op if
+// newT <= nClasses.  Caller writes the result back.
+NEUROSUITE_CORE_EXPORT EapFile growEap(const EapFile& in, int newT);
+// Query helpers (the "which spikes <-> which classes" matrix views):
+//   spike indices where class j is present, ascending;
+//   (class, offset) pairs present in spike i, by ascending class.
+NEUROSUITE_CORE_EXPORT std::vector<int64_t> eapClassSpikes(const EapFile& e, int classId);
+NEUROSUITE_CORE_EXPORT std::vector<std::pair<int,int8_t>> eapSpikeClasses(const EapFile& e,
+                                                                          int64_t spike);
+
+// ── .tcl — template-class registry (see claude/eap-template-class-design) ────
+// Session+group, STAGE-INDEPENDENT (a class id means the same .eap column across
+// a session's stages).  One entry per column: its lifecycle status and the
+// provenance it was generated from.  Version-tagged text; the col rows are TAB
+// -separated so a label may contain spaces; an empty field is written "-".
+//   tcl 1
+//   nClasses 128
+//   # col <TAB> status <TAB> label <TAB> provenance_clu <TAB> provenance_stage <TAB> created
+//   0 <TAB> active <TAB> CA1 pyr a <TAB> 23 <TAB> gt <TAB> 2026-10-02
+// status: free (available) | active (live class) | tomb (deleted, id never reused)
+//       | merged (folded into mergedInto; its spikes moved there).
+enum class TclStatus { Free, Active, Tomb, Merged };
+struct TclEntry {
+    int          col           = 0;
+    TclStatus    status        = TclStatus::Free;
+    std::string  label;                 ///< "" if none
+    int          provenanceClu = -1;    ///< -1 if none
+    std::string  provenanceStage;       ///< "" if none
+    std::string  created;               ///< "" if none
+    int          mergedInto    = -1;    ///< survivor column when status==Merged, else -1
+};
+struct TclRegistry {
+    int                   version  = 1;
+    int                   nClasses = 0;
+    std::vector<TclEntry> entries;      ///< size nClasses, indexed by col
+    bool                  ok = false;
+};
+NEUROSUITE_CORE_EXPORT TclRegistry readTcl(const std::string& path);
+NEUROSUITE_CORE_EXPORT bool        writeTcl(const std::string& path, const TclRegistry& reg);
+// A fresh registry of nClasses Free slots (col i set, everything else default).
+NEUROSUITE_CORE_EXPORT TclRegistry initTcl(int nClasses);
 
 // ── .evt ──────────────────────────────────────────────────────────────────
 struct EvtEntry {

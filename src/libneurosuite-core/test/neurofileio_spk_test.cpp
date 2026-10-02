@@ -15,6 +15,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <utility>
 
 static int g_fail = 0;
 static int g_ran  = 0;
@@ -184,6 +185,87 @@ int main()
         std::remove(wp.c_str()); std::remove(wtfp.c_str());
         std::remove("nfio_wti_bad.tmp.wti"); std::remove("nfio_wti_ver.tmp.wti");
         std::remove("nfio_wti_cnt.tmp.wti");
+    }
+
+    // ── .eap membership+offset matrix: round-trip, sentinel, grow, queries ──
+    {
+        const int64_t N = 4; const int T = 3;
+        std::vector<int8_t> cells(static_cast<size_t>(N) * T, EAP_ABSENT);
+        auto set = [&](int64_t i, int j, int8_t v){ cells[static_cast<size_t>(i)*T + j] = v; };
+        set(0, 1, 0);                 // spike0: class1 at offset 0 (offset 0 is NOT "absent")
+        set(1, 0, -5); set(1, 2, 7);  // spike1: a collision — classes 0 and 2
+        // spike2: nothing
+        set(3, 2, -127);              // spike3: class2 at the extreme offset
+
+        const std::string ep = "nfio_eap_roundtrip.tmp.eap";
+        check(writeEap(ep, N, T, 6, 0u, cells), "writeEap ok");
+        EapFile e = readEap(ep);
+        check(e.ok && e.nSpikes==N && e.nClasses==T && e.group==6, "readEap geometry");
+        check(e.cells == cells, "eap cells byte-identical");
+        check(eapPresent(e.cells[0*T+1]) && e.cells[0*T+1]==0, "offset 0 is present, not absent");
+        check(!eapPresent(e.cells[2*T+0]), "unset cell reads as absent");
+
+        const auto c2 = eapClassSpikes(e, 2);
+        check(c2.size()==2 && c2[0]==1 && c2[1]==3, "eapClassSpikes(2) -> {1,3}");
+        check(eapClassSpikes(e, 1).size()==1, "eapClassSpikes(1) -> {0}");
+        const auto s1 = eapSpikeClasses(e, 1);
+        check(s1.size()==2 && s1[0].first==0 && s1[0].second==-5
+              && s1[1].first==2 && s1[1].second==7, "eapSpikeClasses(1) collision pairs");
+        check(eapSpikeClasses(e, 2).empty(), "eapSpikeClasses(2) -> empty");
+
+        // grow 3 -> 5: existing cells preserved at the new stride, new cols absent.
+        EapFile g = growEap(e, 5);
+        check(g.nClasses==5 && g.nSpikes==N, "growEap widens T");
+        check(g.cells[1*5+0]==-5 && g.cells[1*5+2]==7, "growEap preserves existing cells");
+        check(!eapPresent(g.cells[1*5+3]) && !eapPresent(g.cells[3*5+4]), "grown columns are absent");
+        check(growEap(e, 2).nClasses==T, "growEap is a no-op when newT <= T");
+
+        // init: all-absent preallocation.
+        const std::string ip = "nfio_eap_init.tmp.eap";
+        check(initEap(ip, N, T, 6), "initEap ok");
+        EapFile ie = readEap(ip);
+        bool allAbsent = ie.ok;
+        for (int8_t v : ie.cells) if (eapPresent(v)) allAbsent = false;
+        check(allAbsent && ie.nClasses==T, "initEap is all-absent");
+
+        check(!writeEap("x.eap", N, T, 6, 0u, std::vector<int8_t>(5)), "writeEap refuses a wrong-size matrix");
+        check(!readEap("nope.eap").ok, "readEap missing file -> not ok");
+
+        std::remove(ep.c_str()); std::remove(ip.c_str());
+    }
+
+    // ── .tcl template-class registry: round-trip + statuses + empty fields ──
+    {
+        TclRegistry reg = initTcl(4);
+        check(reg.ok && reg.nClasses==4 && reg.entries.size()==4
+              && reg.entries[0].status==TclStatus::Free, "initTcl -> 4 free slots");
+        reg.entries[0].status = TclStatus::Active;
+        reg.entries[0].label = "CA1 pyr a";          // a label WITH spaces
+        reg.entries[0].provenanceClu = 23;
+        reg.entries[0].provenanceStage = "gt";
+        reg.entries[0].created = "2026-10-02";
+        reg.entries[1].status = TclStatus::Merged; reg.entries[1].mergedInto = 0;
+        reg.entries[2].status = TclStatus::Tomb;   reg.entries[2].provenanceClu = 41;
+        // entry[3] stays Free with all-empty fields
+
+        const std::string tp = "nfio_tcl_roundtrip.tmp.tcl";
+        check(writeTcl(tp, reg), "writeTcl ok");
+        TclRegistry r = readTcl(tp);
+        check(r.ok && r.nClasses==4 && r.entries.size()==4, "readTcl geometry");
+        check(r.entries[0].status==TclStatus::Active && r.entries[0].label=="CA1 pyr a"
+              && r.entries[0].provenanceClu==23 && r.entries[0].provenanceStage=="gt"
+              && r.entries[0].created=="2026-10-02", "tcl active entry (label with spaces) round-trips");
+        check(r.entries[1].status==TclStatus::Merged && r.entries[1].mergedInto==0, "tcl merged:<col> round-trips");
+        check(r.entries[2].status==TclStatus::Tomb && r.entries[2].provenanceClu==41, "tcl tomb round-trips");
+        check(r.entries[3].status==TclStatus::Free && r.entries[3].label.empty()
+              && r.entries[3].provenanceClu==-1 && r.entries[3].provenanceStage.empty(),
+              "tcl free slot: empty fields read back empty");
+
+        check(!readTcl("nope.tcl").ok, "readTcl missing file -> not ok");
+        { std::ofstream bad("nfio_tcl_bad.tmp.tcl"); bad << "nottcl 1\n"; }
+        check(!readTcl("nfio_tcl_bad.tmp.tcl").ok, "readTcl rejects a bad header");
+
+        std::remove(tp.c_str()); std::remove("nfio_tcl_bad.tmp.tcl");
     }
 
     // ── stage-tagged path composition ───────────────────────────────────────
