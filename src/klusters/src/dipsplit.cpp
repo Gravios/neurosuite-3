@@ -19,7 +19,7 @@ namespace dipsplit {
 // 1. Standard-deviation & Silverman bandwidth:
 //      h = 1.06 · σ · n^(-1/5)
 //    (use inter-quartile range when σ is very small relative to range)
-// 2. Grid of G=300 points spanning [min−3h, max+3h]
+// 2. Grid of G=301 points spanning [min−3h, max+3h]
 // 3. KDE with Gaussian kernel at each grid point
 // 4. Scan for local maxima (peaks) and local minima (valleys)
 // 5. For each valley between two adjacent peaks, depth = 1 − v / min(p_left, p_right)

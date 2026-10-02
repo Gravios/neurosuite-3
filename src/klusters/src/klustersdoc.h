@@ -714,12 +714,14 @@ public:
     bool redoChildEdit(KlustersView& activeView);
     int childUndoCount() const { return childUndoStack.count(); }
     int childRedoCount() const { return childRedoStack.count(); }
-    /** Unified undo/redo dispatcher.  Routes Ctrl+Z / Ctrl+Y to the parent
-     *  (clusteringData) or atom (childData) timeline by the recorded order of
-     *  edits, so one shortcut reverts the single most recent edit regardless of
-     *  which layer produced it.  Stale order markers (a layer capped by nbUndo,
-     *  or cleared when a parent op re-cut the child layer) are skipped using the
-     *  live per-layer stack counts as the source of truth. */
+    /** Undo/redo dispatcher for Ctrl+Z / Ctrl+Y.  Routes to the SHOWN layer's
+     *  stack ONLY: the parent (clusteringData) stack when the parent layer is
+     *  shown, the atom (childData) stack when the child layer is shown — gated on
+     *  childScopeActive via the live per-layer stack counts.  There is no unified
+     *  cross-layer timeline: a keystroke reverts the most recent edit in the
+     *  active layer, and an atom undo never reverts a parent edit or vice versa
+     *  (switch scope, or use the forced atom undo/redo Ctrl+Shift+Z/Y, to reach
+     *  the other layer). */
     void undoDispatch();
     void redoDispatch();
     int  parentUndoCount() const { return clusterColorListUndoList.count(); }

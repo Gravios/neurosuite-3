@@ -1,5 +1,5 @@
 /***************************************************************************
-                          minmaxthread.h  -  description
+                          minmaxthread.cpp  -  description
                              -------------------
     begin                : Wed Oct 22 2003
     copyright            : (C) 2003 by Lynn Hazan

@@ -1378,6 +1378,12 @@ void TraceView::drawTraces(const QList<int> &channels,bool highlight){
 
 }
 
+// Render the current [startTime,endTime] window of traces into `painter`: lays the
+// shown channels out in one column or several (multiColumns), draws each channel's
+// samples decimated by `downSampling`, and records every channel's baseline ordinate
+// in channelsStartingOrdinate — the cache the click hit-testing and the spike/event
+// overlays read back.  The per-frame hot path; distinct from the (channels,highlight)
+// overload above, which repaints selected channels onto the double buffer.
 void TraceView::drawTraces(QPainter& painter){
     channelsStartingOrdinate.clear();
     int limit = viewportToWorldHeight(1);

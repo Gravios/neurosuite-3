@@ -481,6 +481,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     nSwapped = 0;
     logOut.clear();
 
+    // Pipeline (follow the ── section banners below): refuse early only if features
+    // cannot be reprojected; restrict to the active channels; cross-correlate each
+    // spike against the cluster template and circularly roll it to the template peak;
+    // PCA-refine the shift (GPU fast path, Phases A–D, else the CPU per-spike loop);
+    // optionally RMS-recenter; re-extract waveforms and write the shifted res/spk to
+    // pending files; then commit pending over the originals.  One large function by
+    // design — the Phase-0 helpers above are the only extracted parts.
+
     // Snapshot the cluster before any waveform data is modified.  During an
     // Align-All batch the centroid pass this triggers is served from a
     // batch-scoped cache (see beginRealignBatchLog), so per-cluster logging

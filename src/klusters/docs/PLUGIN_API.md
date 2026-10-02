@@ -36,11 +36,19 @@ plus an **executable** of the same name on `PATH`. The descriptor declares the
 parameters Klusters renders as a form; the executable does the work and writes
 files Klusters knows how to reload.
 
-Discovery order (later overrides earlier on name collision):
+Discovery (as implemented in `pluginregistry.cpp`): the registry globs **`*.xml`
+only** — `.yaml` descriptors are not currently scanned — across these directories,
+and **a later directory wins on a name collision**:
 
-1. `${CMAKE_INSTALL_PREFIX}/share/klusters/plugins/descriptions/*.{xml,yaml}`
-2. `$XDG_DATA_HOME/klusters/plugins/descriptions/*.{xml,yaml}`  (user plugins)
+1. `$XDG_DATA_HOME/klusters/plugins/descriptions/`  (per-user)
+2. the install share `…/share/klusters/plugins/descriptions/` (generic data dirs,
+   then the `<bindir>/../share/...` fallback)
 3. a path in `$KLUSTERS_PLUGIN_PATH`
+
+Because later wins, the install share currently overrides a same-named user
+descriptor, and `$KLUSTERS_PLUGIN_PATH` overrides both — i.e. the opposite of the
+"user overrides system" order this section originally specified; revisit the dir
+order in `pluginregistry.cpp` if user-override is the intent.
 
 ---
 

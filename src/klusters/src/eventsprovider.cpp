@@ -185,6 +185,12 @@ void EventsProvider::retrieveData(long startTime,long endTime,QObject* initiator
     }
     if(endTime > fileMaxTime) endTime = fileMaxTime;
 
+    // Warm-started dichotomy: the event file is time-sorted, so the index range for
+    // [startTime,endTime] is bracketed from the PREVIOUS query's indices rather than
+    // from the whole file.  The branches below pick a seed bracket from where the new
+    // window sits relative to the previous one, bisect until the bracket is within
+    // `dicotomyBreak` events, then scan index-by-index to the exact first/last
+    // in-range event.  (The sibling retrieveData/findIndex paths use the same shape.)
     long startIndex = previousStartIndex;
     long endIndex = previousEndIndex;
     long dicotomyBreak = 1000;

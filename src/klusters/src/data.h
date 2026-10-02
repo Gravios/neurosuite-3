@@ -179,13 +179,13 @@ public:
     * alive for as long as any job holds them, however many edits follow.
     *
     * READ-ONLY BY CONTRACT: the inner pointers are shared with Data's live
-    * members until the next publication, and constness is not yet enforced
-    * (SortableTable/Array lack a const read surface — tightened in a later
-    * step).  Known aliasing writers that still mutate the CURRENT tables in
-    * place are flagged at their sites (moveSpikeSubset's placeholder
-    * insert/removes); they are harmless while every edit path still quiesces
-    * the readers first, and must be converted before that quiesce is
-    * removed (plan step 6).*/
+    * members until the next publication.  Every published table is immutable
+    * from publication on — moveSpikeSubset was the last committer that mutated a
+    * current table in place, and its placeholder insert/removes were moved into a
+    * local iteration copy (see publishSnapshot's carry-forward), so a captured
+    * epoch never changes under a worker.  Constness is not enforced at the type
+    * level (SortableTable/Array lack a const read surface), so the contract holds
+    * by discipline rather than by the compiler.*/
     struct ClusteringSnapshot;
 
     /**The currently published snapshot.  Captured by pool jobs at enqueue
@@ -543,11 +543,13 @@ public:
 
     /** Inverse of labelByFeatureRow(): rebuild spikesByCluster + clusterInfoMap so
      *  the spike at 1-based feature row r belongs to cluster @p labels[r].  Used to
-     *  revert a child-layer re-cut as one atomic step inside a parent undo/redo --
-     *  the re-cut runs through moveSpikeSubset, which pushes no Data undo level, so
-     *  it cannot be reverted by undo()/redo(); a label snapshot taken before the
-     *  re-cut is replayed here instead.  Invalidates the waveform / correlation
-     *  caches for every cluster whose membership may have changed. */
+     *  revert a child-layer re-cut as one atomic step inside a parent undo/redo: it
+     *  rebuilds the tables and publishSnapshot()s directly, deliberately WITHOUT a
+     *  prepareUndo, so it adds no Data undo level of its own (it IS the replay half
+     *  of a parent undo — see the prepareUndo-based variant below for the opposite,
+     *  one-undo-level behaviour).  A label snapshot taken before the re-cut is
+     *  replayed here.  Invalidates the waveform / correlation caches for every
+     *  cluster whose membership may have changed. */
     void restoreClusterLabels(const QVector<dataType>& labels);
 
     /** Same relabelling as restoreClusterLabels(), but pushed through prepareUndo
