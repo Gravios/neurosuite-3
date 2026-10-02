@@ -43,6 +43,19 @@ bool writeClu(const std::string& path, int nClusters,
     return static_cast<bool>(os);
 }
 
+bool writeCluBinary(const std::string& path, int nClusters, const std::vector<int>& ids)
+{
+    std::ofstream os(path, std::ios::binary);
+    if (!os) return false;
+    const int32_t hdr = static_cast<int32_t>(nClusters);
+    os.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+    // ids are int (platform int == int32 on the targets); write as int32_t to
+    // match readCluBinary, which reads int32_t ids.
+    for (int id : ids) { const int32_t v = static_cast<int32_t>(id);
+        os.write(reinterpret_cast<const char*>(&v), sizeof(v)); }
+    return static_cast<bool>(os);
+}
+
 CluFile readCluBinary(const std::string& path, int64_t nSpikes)
 {
     CluFile out;
@@ -105,6 +118,16 @@ bool writeRes(const std::string& path, const std::vector<int64_t>& times)
     std::ofstream os(path);
     if (!os) return false;
     for (int64_t t : times) os << t << '\n';
+    return static_cast<bool>(os);
+}
+
+bool writeResBinary(const std::string& path, const std::vector<int64_t>& times)
+{
+    std::ofstream os(path, std::ios::binary);
+    if (!os) return false;
+    if (!times.empty())
+        os.write(reinterpret_cast<const char*>(times.data()),
+                 static_cast<std::streamsize>(times.size()) * static_cast<std::streamsize>(sizeof(int64_t)));
     return static_cast<bool>(os);
 }
 
@@ -227,6 +250,21 @@ FetBinaryFile readFetBinary(const std::string& path)
     }
     out.ok = true;
     return out;
+}
+
+bool writeFetBinary(const std::string& path, int nFeatures,
+                    const std::vector<int64_t>& values)
+{
+    if (nFeatures < 1) return false;
+    if ((values.size() % static_cast<std::size_t>(nFeatures)) != 0) return false;  // not whole rows
+    std::ofstream os(path, std::ios::binary);
+    if (!os) return false;
+    const int32_t hdr = static_cast<int32_t>(nFeatures);
+    os.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+    if (!values.empty())
+        os.write(reinterpret_cast<const char*>(values.data()),
+                 static_cast<std::streamsize>(values.size()) * static_cast<std::streamsize>(sizeof(int64_t)));
+    return static_cast<bool>(os);
 }
 
 SpkFile readSpk(const std::string& path, int nSamples, int nChannels)

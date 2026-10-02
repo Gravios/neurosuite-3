@@ -24,6 +24,8 @@
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
+#include <neurosuite/core/neurofileio.h> // shared res/clu/spk/fet readers+writers (decollide stage)
+#include <neurosuite/core/decollide.hpp> // shared collision fit + grow engine (targeted decollide)
 #include "clusterPalette.h"
 #include "autoMerge.h"      // patch 0069
 #include "savethread.h"
@@ -2201,12 +2203,30 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     if(event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter
-            || ke->key() == Qt::Key_Escape)
+            || ke->key() == Qt::Key_Escape || ke->key() == Qt::Key_D)
            && ke->modifiers() == Qt::NoModifier && doc && !focusIsInTextInput()){
             if(ClusterView* cv = activeClusterView()){
                 if(cv->hasPendingLasso()){
-                    if(ke->key() == Qt::Key_Escape) cv->cancelPendingLasso();
-                    else                            cv->confirmPendingLasso();
+                    if(ke->key() == Qt::Key_Escape) {
+                        cv->cancelPendingLasso();
+                    } else if(ke->key() == Qt::Key_D) {
+                        // D = decollide the lassoed spikes against the pinned basis
+                        // pair (instead of Enter's new-cluster cut).  Defer off the
+                        // key-event stack: the commit closes+reopens the document,
+                        // which must not run while this view is handling its event.
+                        const QList<int> basis = cv->obliqueBasisClusters();
+                        if(basis.size() == 2) {
+                            const QList<int> rows = cv->pendingRows();
+                            cv->cancelPendingLasso();
+                            QTimer::singleShot(0, this, [this, rows, basis]() {
+                                decollideLassoAgainstBasis(rows, basis); });
+                        } else {
+                            slotStatusMsg(tr("Decollide: pin a 2-cluster oblique basis first "
+                                             "(Actions > Set Oblique Basis), then Enter=cut, D=decollide."));
+                        }
+                    } else {
+                        cv->confirmPendingLasso();
+                    }
                     return true;
                 }
             }
@@ -7392,4 +7412,141 @@ void KlustersApp::runTemplateGeneration()
     mPluginReportModal = false;                          // automatic run -> status bar, not a dialog
     if (launchPlugin(*tmpl, params))
         slotStatusMsg(tr("Writing templates for %n unit(s)…", "", int(ids.size())));
+}
+
+// ---------------------------------------------------------------------------
+// Targeted decollide: fit the lassoed spikes to the pinned basis pair, grow the
+// clustering (res/clu/spk + in-memory .fet) with the shared neurosuite::decollide
+// engine, write the grown files under a new stage tag via neurofileio, and reopen
+// the stage.  Reads the files the document actually loaded (origSpk/Res/FetPath +
+// url()), so the per-type method/tag tokens are correct without re-derivation.
+// ---------------------------------------------------------------------------
+void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList<int>& basis)
+{
+    using namespace neurofileio;
+    namespace dc = neurosuite::decollide;
+
+    if (!doc || doc->url().isEmpty()) return;
+    if (basis.size() != 2) { slotStatusMsg(tr("Decollide: need exactly two basis clusters.")); return; }
+    const int A = basis[0], B = basis[1];
+    if (A <= 1 || B <= 1) { slotStatusMsg(tr("Decollide: basis clusters must be real units (not noise/artefact).")); return; }
+    if (rows.isEmpty())   { slotStatusMsg(tr("Decollide: no spikes lassoed.")); return; }
+
+    // The engine reads the files on DISK; unsaved edits would make the on-disk clu
+    // stale relative to the lasso.  Require a save first (as the plugin path does).
+    if (doc->isModified()) {
+        QMessageBox::warning(this, tr("Decollide"),
+            tr("Save the clustering first (File > Save), then lasso and press D — the "
+               "decollide reads the files on disk."));
+        return;
+    }
+
+    const int nChan = doc->nbOfchannels();
+    const int nSamp = doc->getNbSamplesBeforePeak() + doc->getNbSamplesAfterPeak() + 1;
+    if (nChan <= 0 || nSamp <= 0) { slotStatusMsg(tr("Decollide: no waveform geometry.")); return; }
+
+    // Resolve the loaded file paths + their (base, method, group, tag) tokens.
+    const QString cluPath = doc->url();
+    const QString spkPath = doc->origSpkFilePath();
+    const QString resPath = doc->origResFilePath();
+    const QString fetPath = doc->origFetFilePath();
+    const auto aClu = neurosuite::custody::parseAnchor(QFileInfo(cluPath).fileName().toStdString());
+    const auto aSpk = neurosuite::custody::parseAnchor(QFileInfo(spkPath).fileName().toStdString());
+    const auto aRes = neurosuite::custody::parseAnchor(QFileInfo(resPath).fileName().toStdString());
+    const auto aFet = neurosuite::custody::parseAnchor(QFileInfo(fetPath).fileName().toStdString());
+    if (!aClu.ok || !aSpk.ok || !aRes.ok || !aFet.ok) {
+        slotStatusMsg(tr("Decollide: could not parse the session file names.")); return;
+    }
+    const QString  dir  = QFileInfo(cluPath).absolutePath() + QDir::separator();
+    const std::string base = (dir + QString::fromStdString(aClu.base)).toStdString();
+    const int grp = aClu.group;
+    const QString outTag = aClu.suffix.empty() ? QStringLiteral("dc")
+                               : (QString::fromStdString(aClu.suffix) + QStringLiteral("_dc"));
+    const std::string outTagS = outTag.toStdString();
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+
+    // Read the current clustering (auto-detect binary/text), the open method's spk,
+    // and the feature table.
+    ClusterResData cr = readClusterRes(cluPath.toStdString(), resPath.toStdString());
+    SpkFile       spkOpen = readSpk(spkPath.toStdString(), nSamp, nChan);
+    FetBinaryFile fb      = readFetBinary(fetPath.toStdString());
+    if (!cr.ok || !spkOpen.ok || !fb.ok
+        || cr.ids.size() != cr.times.size()
+        || static_cast<int64_t>(cr.ids.size()) != spkOpen.nSpikes
+        || fb.nSpikes != spkOpen.nSpikes) {
+        QApplication::restoreOverrideCursor();
+        QMessageBox::warning(this, tr("Decollide"),
+            tr("Could not read consistent res/clu/spk/fet for this group.")); return;
+    }
+
+    // Basis templates (open method) + the lassoed collision indices (row-1 = .spk id).
+    const auto T = dc::meanTemplates(spkOpen.samples, nSamp, nChan, cr.ids);
+    if (!T.count(A) || !T.count(B)) {
+        QApplication::restoreOverrideCursor();
+        slotStatusMsg(tr("Decollide: a basis cluster has no spikes in this method.")); return;
+    }
+    std::vector<int64_t> idx; idx.reserve(rows.size());
+    for (int r : rows) { const int64_t i = static_cast<int64_t>(r) - 1;
+        if (i >= 0 && i < spkOpen.nSpikes) idx.push_back(i); }
+
+    const std::vector<dc::Decomp> decomps =
+        dc::fitPair(spkOpen.samples, nSamp, nChan, idx, A, T.at(A), B, T.at(B),
+                    /*maxShift=*/6, /*residualThreshold=*/0.25);
+    if (decomps.empty()) {
+        QApplication::restoreOverrideCursor();
+        slotStatusMsg(tr("Decollide: none of the %1 lassoed spikes resolved against the basis.")
+                          .arg(rows.size())); return;
+    }
+
+    // Grow + write every spk method under the new tag; keep the open method's grown
+    // res/clu (identical across methods) for the res/clu write.
+    QStringList spkMethods = availableSpkVariants();
+    if (spkMethods.isEmpty()) spkMethods << QString::fromStdString(aSpk.method);
+    dc::Grown grownOpen;
+    for (const QString& m : spkMethods) {
+        const std::string inSpk = stagePath(base, "spk", m.toStdString(), grp, aSpk.suffix);
+        SpkFile sm = readSpk(inSpk, nSamp, nChan);
+        if (!sm.ok || sm.nSpikes != spkOpen.nSpikes) continue;      // skip a mismatched method
+        const dc::Grown g = dc::applyMethod(cr.times, cr.ids, sm.samples, nSamp, nChan, decomps);
+        if (!g.ok) continue;
+        writeSpk(stagePath(base, "spk", m.toStdString(), grp, outTagS), nSamp, nChan, g.spk);
+        if (m.toStdString() == aSpk.method) grownOpen = g;
+    }
+    if (!grownOpen.ok)
+        grownOpen = dc::applyMethod(cr.times, cr.ids, spkOpen.samples, nSamp, nChan, decomps);
+
+    // res (binary, its own method token) + clu (binary, clu method) written once.
+    writeResBinary(stagePath(base, "res", aRes.method, grp, outTagS), grownOpen.res);
+    writeCluBinary(stagePath(base, "clu", aClu.method, grp, outTagS), cr.nClusters, grownOpen.clu);
+
+    // .fet grown IN MEMORY (PCA-linearity) and written binary under the tag.
+    std::vector<std::vector<int64_t>> fetRows(static_cast<std::size_t>(fb.nSpikes));
+    for (int64_t s = 0; s < fb.nSpikes; ++s)
+        fetRows[static_cast<std::size_t>(s)].assign(
+            fb.values.begin() + static_cast<std::ptrdiff_t>(s * fb.nFeatures),
+            fb.values.begin() + static_cast<std::ptrdiff_t>((s + 1) * fb.nFeatures));
+    const auto grownFet = dc::applyFeatures(cr.times, cr.ids, fetRows, decomps);
+    std::vector<int64_t> fetFlat; fetFlat.reserve(grownFet.size() * static_cast<std::size_t>(fb.nFeatures));
+    for (const auto& fr : grownFet) fetFlat.insert(fetFlat.end(), fr.begin(), fr.end());
+    writeFetBinary(stagePath(base, "fet", aFet.method, grp, outTagS), fb.nFeatures, fetFlat);
+
+    const QString outCluPath =
+        QString::fromStdString(stagePath(base, "clu", aClu.method, grp, outTagS));
+    const int nResolved = static_cast<int>(decomps.size());
+    const int nLassoed  = rows.size();
+    QApplication::restoreOverrideCursor();
+
+    // Reopen the new stage to display the decollided clustering (proven open path).
+    slotFileClose();
+    if (!mainDock) {
+        openDocumentFile(outCluPath);
+        statusBar()->showMessage(
+            tr("Decollided %1 of %2 lassoed spike(s) against clusters %3/%4 -> stage \"%5\".")
+                .arg(nResolved).arg(nLassoed).arg(A).arg(B).arg(outTag), 8000);
+    } else {
+        statusBar()->showMessage(
+            tr("Decollided %1 collision(s) -> stage \"%2\"; reopen it to view.")
+                .arg(nResolved).arg(outTag), 8000);
+    }
 }

@@ -142,6 +142,13 @@ public:
     int saveDocument(const QString &url, const char* format=nullptr);
     /**Returns the QString of the document. */
     const QString& url() const{return docUrl;}
+    /** Absolute paths of the session's loaded sibling files, resolved at open
+     *  (each carries its own method/tag token — e.g. the .res method differs from
+     *  the .spk/.fet/.clu method).  Consumed by the decollide action so it reads
+     *  and re-tags the exact files the document loaded rather than re-deriving. */
+    const QString& origSpkFilePath() const { return origSpkPath; }
+    const QString& origResFilePath() const { return origResPath; }
+    const QString& origFetFilePath() const { return origFetPath; }
     /**Returns the absolute path of the session YAML parameter file, or an empty
      * string if the document was opened without one.  Note this is NOT url():
      * that one is the .clu file the document was opened from.*/

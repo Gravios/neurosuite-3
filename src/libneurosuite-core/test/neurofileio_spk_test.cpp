@@ -66,6 +66,20 @@ int main()
     SpkFile empty = readSpk(path, nSamples, nChannels);
     check(empty.ok && empty.nSpikes == 0 && empty.samples.empty(), "readSpk empty -> 0 spikes");
 
+    // ── binary .fet write/read round-trip ───────────────────────────────────
+    {
+        const int nFeat = 4;
+        std::vector<int64_t> vals;                       // 3 spikes x 4 features, row-major
+        for (int64_t k = 0; k < 12; ++k) vals.push_back(k * 7 - 20);
+        const std::string fp = "nfio_fet_roundtrip.tmp.fet";
+        check(writeFetBinary(fp, nFeat, vals), "writeFetBinary ok");
+        FetBinaryFile fb = readFetBinary(fp);
+        check(fb.ok && fb.nFeatures == nFeat && fb.nSpikes == 3, "readFetBinary geometry");
+        check(fb.values == vals, "fet values round-trip identical");
+        check(!writeFetBinary("x.fet", nFeat, {1, 2, 3}), "writeFetBinary refuses partial rows");
+        std::remove(fp.c_str());
+    }
+
     // ── stage-tagged path composition ───────────────────────────────────────
     // <base>.<type>.<method>.<group>[.<stage>], and parseAnchor reads the stage
     // back as the suffix (no leading dot), so a staged file round-trips.

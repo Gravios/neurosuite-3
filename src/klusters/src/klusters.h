@@ -751,6 +751,14 @@ private:
     /** spk variant tokens present for the open group (<base>.spk.<variant>.<group>). */
     QStringList availableSpkVariants() const;
 
+    // ── Targeted decollide: lasso-against-basis -> grown stage ─────────────────
+    /** Decollide the lassoed feature rows (1-based .spk ids) against the pinned
+     *  2-cluster oblique basis: fit each to the pair (neurosuite::decollide),
+     *  grow res/clu/spk (all methods) + .fet (in memory) via the shared engine,
+     *  write the grown four files under a new stage tag (base.<type>.<method>.<grp>.<tag>_dc)
+     *  with neurofileio, then reopen that stage.  Requires a saved document. */
+    void decollideLassoAgainstBasis(const QList<int>& rows, const QList<int>& basis);
+
     void createToolBar();
 
     /**Initializes the different parameter widgets.*/

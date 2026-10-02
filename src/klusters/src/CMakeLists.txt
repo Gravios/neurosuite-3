@@ -219,6 +219,7 @@ endif()
 target_link_libraries(klusters
     PRIVATE
     KlustersShared::klustersshared
+    Neurosuite::core                # neurofileio res/clu/spk/fet IO (decollide stage writer)
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
