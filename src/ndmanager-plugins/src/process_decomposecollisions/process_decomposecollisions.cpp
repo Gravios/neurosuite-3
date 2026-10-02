@@ -141,6 +141,8 @@ static GroupParams read_group_params(const std::string &yaml_path, int group_idx
                 int v = extract_int("nSamples:"); if (v > 0) gp.n_samp = v;
             } else if (line.find("peakSampleIndex:") != std::string::npos) {
                 int v = extract_int("peakSampleIndex:"); if (v >= 0) gp.peak_sample = v;
+            } else if (line.find("nCells:") != std::string::npos) {
+                int v = extract_int("nCells:"); if (v > 0) gp.n_cells = v;   // .eap preallocation (T)
             } else if (in_channels) {
                 // Multi-line channel list continuation: "  - 3"
                 auto dash = line.find('-');
@@ -161,6 +163,10 @@ static GroupParams read_group_params(const std::string &yaml_path, int group_idx
 // ── File I/O ──────────────────────────────────────────────────────────────
 
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody resolver
+#include <neurosuite/core/neurofileio.h>    // .eap / .tcl read/write
+#include <neurosuite/core/decollide.hpp>    // decollide::Decomp / Component
+#include <neurosuite/core/decollide_eap.hpp>// applyDecompsToEap (Decomp -> .eap)
+#include <ctime>                            // today's date for .tcl provenance
 
 static std::vector<int64_t> read_res(const std::string &path)
 {
@@ -962,6 +968,91 @@ static Args parse_args(int argc, char **argv)
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────
+// ── .eap membership emission ────────────────────────────────────────────────
+// Record the accepted decompositions as .eap membership (+ .tcl classes) for the
+// group, using the shared core primitive.  The .eap is method-less + per-stage
+// (<base>.eap.<g>[.<clu_tag>]); the .tcl is method-less + stage-independent
+// (<base>.tcl.<g>).  Resolution: this stage's .eap; else inherit the untagged
+// base; else a fresh all-absent N × nCells (process_initeap normally pre-builds
+// it).  The save targets the STAGE .eap path, never the base.  Amplitude /
+// fractional shift stay in .col — .eap carries presence + integer offset only.
+static std::string today_iso()
+{
+    std::time_t t = std::time(nullptr);
+    std::tm tmv{};
+#if defined(_WIN32)
+    localtime_s(&tmv, &t);
+#else
+    localtime_r(&t, &tmv);
+#endif
+    char buf[16];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tmv);
+    return std::string(buf);
+}
+
+static bool write_eap_membership(const std::string &session, int g,
+                                 const std::string &clu_tag, size_t n, int n_cells,
+                                 const std::vector<SpikeRecord> &records)
+{
+    namespace cst = neurosuite::custody;
+    namespace nf  = neurofileio;
+    namespace dc  = neurosuite::decollide;
+
+    // Build decomps from the ACCEPTED records (both constituents present).
+    std::vector<dc::Decomp> decomps;
+    decomps.reserve(records.size());
+    for (const SpikeRecord &r : records) {
+        if (!r.accepted || r.comp1.unit_id < 0 || r.comp2.unit_id < 0) continue;
+        dc::Decomp d;
+        d.spikeIndex = r.spike_idx;
+        d.c1 = { r.comp1.unit_id, r.comp1.shift_samp, (double)r.comp1.amplitude };
+        d.c2 = { r.comp2.unit_id, r.comp2.shift_samp, (double)r.comp2.amplitude };
+        decomps.push_back(d);
+    }
+    if (decomps.empty()) return true;                       // nothing to annotate
+
+    const std::string baseEap = cst::untaggedPath(session, "eap", g);
+    const std::string eapPath = clu_tag.empty() ? baseEap : (baseEap + "." + clu_tag);
+    const std::string tclPath = cst::untaggedPath(session, "tcl", g);
+
+    nf::EapFile e = nf::readEap(eapPath);
+    if (!e.ok && !clu_tag.empty()) e = nf::readEap(baseEap);  // inherit the base membership
+    if (!e.ok) {                                             // fresh all-absent matrix
+        const int T = (n_cells > 0) ? n_cells : 128;
+        e = nf::EapFile{};
+        e.nSpikes = (int64_t)n; e.nClasses = T; e.group = g;
+        e.cells.assign((size_t)n * (size_t)T, nf::EAP_ABSENT); e.ok = true;
+    }
+    if (e.nSpikes != (int64_t)n) {
+        fprintf(stderr, "  group %d: .eap nSpikes=%lld != group spikes=%zu; skipping .eap\n",
+                g, (long long)e.nSpikes, n);
+        return false;
+    }
+    nf::TclRegistry reg = nf::readTcl(tclPath);
+    if (!reg.ok) reg = nf::initTcl(e.nClasses);
+
+    // Reconcile widths (a sibling stage may have grown the shared .tcl pool).
+    const int T = std::max(e.nClasses, reg.nClasses);
+    if (e.nClasses < T) e = nf::growEap(e, T);
+    while ((int)reg.entries.size() < T) {
+        nf::TclEntry t; t.col = (int)reg.entries.size(); t.status = nf::TclStatus::Free;
+        reg.entries.push_back(t);
+    }
+    reg.nClasses = T;
+
+    const dc::EapApply ap = dc::applyDecompsToEap(e, reg, decomps, clu_tag, today_iso(),
+                                                  (n_cells > 0 ? n_cells : 128));
+    if (!ap.ok) { fprintf(stderr, "  group %d: .eap apply failed\n", g); return false; }
+
+    const bool okE = nf::writeEap(eapPath, e.nSpikes, e.nClasses, e.group, e.flags, e.cells);
+    const bool okT = nf::writeTcl(tclPath, reg);
+    if (!okE || !okT) { fprintf(stderr, "  group %d: failed writing .eap/.tcl\n", g); return false; }
+    fprintf(stderr, "  group %d: .eap %d cells, %d new class(es)%s -> %s\n",
+            g, ap.cellsWritten, ap.classesCreated, ap.grows ? " (pool grown)" : "",
+            eapPath.c_str());
+    return true;
+}
+
 int main(int argc, char **argv)
 {
     Args args = parse_args(argc, argv);
@@ -1105,6 +1196,11 @@ int main(int argc, char **argv)
         write_col(out_path, g, n, is_stderiv, args.exclude_noise,
                   tmpls, records, args);
         fprintf(stderr, "  Wrote %s\n", out_path.c_str());
+
+        // Also record membership in .eap (+ .tcl classes) — the annotate-in-place
+        // representation of the same decompositions (presence + integer offset);
+        // amplitudes/fractional shifts remain in the .col just written.
+        write_eap_membership(args.session, g, args.clu_tag, n, gp.n_cells, records);
         ++n_written;
     }
 

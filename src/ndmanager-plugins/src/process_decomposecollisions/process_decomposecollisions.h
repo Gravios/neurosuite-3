@@ -117,6 +117,7 @@ struct SpikeRecord {
 struct GroupParams {
     int              n_samp       = 52;
     int              peak_sample  = 26;
+    int              n_cells      = 128;   // pre-allocated .eap template-class columns (T) for THIS group
     std::vector<int> channels;
 };
 

@@ -18,6 +18,10 @@ add_library(_pdc_flags INTERFACE)
 target_compile_features(_pdc_flags INTERFACE cxx_std_20)
 target_compile_options(_pdc_flags INTERFACE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O3 -Wall -Wextra>)
+# neurosuite-core: custody.hpp (header-only) + neurofileio .eap/.tcl read/write
+# and the decollide_eap Decomp->.eap bridge (both CPU and GPU binaries consume
+# this interface, so the link + PUBLIC include propagate to both).
+target_link_libraries(_pdc_flags INTERFACE Neurosuite::core)
 
 find_package(OpenMP)
 
