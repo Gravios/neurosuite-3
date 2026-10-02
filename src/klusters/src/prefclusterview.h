@@ -92,6 +92,14 @@ public:
     void setTsneRandomSeed(bool b);
     bool getTsneRandomSeed() const;
 
+    // EAP template-class projection scope (claude/eap-template-class-design §7).
+    void setProjectionScopeMode(int m);         ///< 0 session-spanning, 1 temporally-restricted
+    int  getProjectionScopeMode() const;
+    void setProjectionScopeMinutes(double v);   ///< scope-chunk granularity (minutes)
+    double getProjectionScopeMinutes() const;
+    void setProjectionOutOfScopeHidden(bool b); ///< true = hide, false = grey/non-selectable
+    bool getProjectionOutOfScopeHidden() const;
+
 };
 
 #endif

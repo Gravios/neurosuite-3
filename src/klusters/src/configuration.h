@@ -139,6 +139,11 @@ public:
     void setDipSplitBloatFactor(double v){dipSplitBloatFactor = qBound(0.0, v, 10.0);}
     void setDipSplitValleyThresh(double v){dipSplitValleyThresh = qBound(0.0, v, 1.0);}
 
+    // EAP template-class projection scope (claude/eap-template-class-design §7).
+    void setProjectionScopeMode(int m)         {projectionScopeMode = (m == 1) ? 1 : 0;}      // 0 session-spanning, 1 temporally-restricted
+    void setProjectionScopeMinutes(double v)   {projectionScopeMinutes = qBound(0.1, v, 600.0);}
+    void setProjectionOutOfScopeHidden(bool b) {projectionOutOfScopeHidden = b;}               // false = grey/non-selectable
+
     // KNN voting split (Shift+K) defaults.  Mirrors the dipSplit pattern
     // above: persisted in QSettings, prefilled into the modal Shift+K
     // dialog, written back on accept so the dialog remembers the user's
@@ -265,6 +270,10 @@ public:
     double getDipSplitBloatFactor() const {return dipSplitBloatFactor;}
     double getDipSplitValleyThresh()const {return dipSplitValleyThresh;}
 
+    int    getProjectionScopeMode()        const {return projectionScopeMode;}
+    double getProjectionScopeMinutes()     const {return projectionScopeMinutes;}
+    bool   getProjectionOutOfScopeHidden() const {return projectionOutOfScopeHidden;}
+
     int    getKnnK()         const {return knnK;}
     double getKnnThreshold() const {return knnThreshold;}
     int    getKnnMinNew()    const {return knnMinNew;}
@@ -371,6 +380,10 @@ public:
     int    getDipSplitMinSizeDefault()      const {return 50;}
     double getDipSplitBloatFactorDefault()  const {return 0.0;}
     double getDipSplitValleyThreshDefault() const {return 0.20;}
+
+    int    getProjectionScopeModeDefault()        const {return 0;}      // session-spanning
+    double getProjectionScopeMinutesDefault()     const {return 12.0;}   // 12-min chunk granularity
+    bool   getProjectionOutOfScopeHiddenDefault() const {return false;}  // grey/non-selectable
 
     int    getKnnKDefault()         const {return 10;}
     double getKnnThresholdDefault() const {return 0.50;}
@@ -543,6 +556,10 @@ private:
     int     dipSplitMinSize;       ///< minimum cluster size to consider for DipSplit
     double  dipSplitBloatFactor;   ///< Mahalanobis bloat threshold (× χ²(d, 0.9))
     double  dipSplitValleyThresh;  ///< minimum KDE valley depth in [0, 1]
+
+    int     projectionScopeMode;        ///< 0 = session-spanning, 1 = temporally-restricted
+    double  projectionScopeMinutes;     ///< scope-chunk granularity (minutes); default 12
+    bool    projectionOutOfScopeHidden; ///< true = hide out-of-scope spikes; false = grey/non-selectable
 
     // KNN voting split (Shift+K) — see slotSplitClusterByKnn.
     int     knnK;                  ///< K neighbours per spike (2-200)

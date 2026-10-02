@@ -62,6 +62,18 @@ PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent
     tsneCapLineEdit->setToolTip(
         tr("Selections with more spikes than this refuse the t-SNE toggle.\n"
            "Latency budget: ~30k spikes take on the order of a minute."));
+
+    projScopeMinutesLineEdit->setValidator(
+        new QDoubleValidator(0.1, 600.0, 2, projScopeMinutesLineEdit));
+    projModeCombo->setToolTip(tr(
+        "Session-spanning projects every selected spike onto the pinned template(s).\n"
+        "Temporally-restricted only projects spikes whose time falls in the template's scope."));
+    projScopeMinutesLineEdit->setToolTip(tr(
+        "Chunk granularity (minutes) defining a template's temporal window; matches the\n"
+        "fiber-template drift binning.  Default 12."));
+    projHideOutOfScopeCheckBox->setToolTip(tr(
+        "In temporally-restricted mode: hide out-of-scope spikes entirely, or (unchecked)\n"
+        "keep them greyed and non-selectable for context."));
 }
 PrefClusterView::~PrefClusterView(){
 }
@@ -178,4 +190,30 @@ int PrefClusterView::getTsnePerplexityStep() const{
     bool ok = false;
     const int v = tsneStepLineEdit->text().toInt(&ok);
     return ok ? v : 5;       // Configuration clamps the floor on apply
+}
+
+void PrefClusterView::setProjectionScopeMode(int m){
+    projModeCombo->setCurrentIndex((m == 1) ? 1 : 0);
+}
+
+int PrefClusterView::getProjectionScopeMode() const{
+    return (projModeCombo->currentIndex() == 1) ? 1 : 0;
+}
+
+void PrefClusterView::setProjectionScopeMinutes(double v){
+    projScopeMinutesLineEdit->setText(QString::number(v));
+}
+
+double PrefClusterView::getProjectionScopeMinutes() const{
+    bool ok = false;
+    const double v = projScopeMinutesLineEdit->text().toDouble(&ok);
+    return ok ? v : 12.0;    // Configuration clamps the range on apply
+}
+
+void PrefClusterView::setProjectionOutOfScopeHidden(bool b){
+    projHideOutOfScopeCheckBox->setChecked(b);
+}
+
+bool PrefClusterView::getProjectionOutOfScopeHidden() const{
+    return projHideOutOfScopeCheckBox->isChecked();
 }
