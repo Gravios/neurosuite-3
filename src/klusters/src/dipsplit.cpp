@@ -255,7 +255,9 @@ int kmeans2_refine(
                 d1 += a1 * a1;
             }
             const int new_lbl = (d1 < d0) ? 1 : 0;
-            if (labels_out[i] != new_lbl) ++changed;
+            // iter 0 writes labels_out for the first time; only count changes
+            // afterwards so the pre-init value is never read (was benign UB).
+            if (iter > 0 && labels_out[i] != new_lbl) ++changed;
             labels_out[i] = new_lbl;
         }
         if (iter > 0 && changed == 0) break;

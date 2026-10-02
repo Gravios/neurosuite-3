@@ -5866,6 +5866,7 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
                 //calculate the bin.
                 int bin = halfBins + static_cast<int>(floor(0.5 + (backwardsTime - timeOfCluster1)/ static_cast<double>(binSizeInRU)));
                 if ( bin < 0 ) bin = 0;
+                if ( bin > totalNbBins ) bin = totalNbBins;
                 tmpValues[bin]++;
             }
         }
@@ -5879,6 +5880,7 @@ void Data::Correlation::calculateCorrelation(SortableTable& spikesOfCluster1,Sor
             //calculate the bin.
             int bin = halfBins + static_cast<int>(floor(0.5 + (forwardsTime - timeOfCluster1)/ static_cast<double>(binSizeInRU)));
             if ( bin < 0 ) bin = 0;
+            if ( bin > totalNbBins ) bin = totalNbBins;
             tmpValues[bin]++;
         }
 

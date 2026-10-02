@@ -264,7 +264,7 @@ void Configuration::write() const {
     //write waveform view options
     settings.beginGroup("waveformView");
     settings.setValue("gain",gain);
-    settings.beginGroup("General");
+    settings.endGroup();
 }
 
 Configuration& configuration() {

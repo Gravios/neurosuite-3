@@ -567,6 +567,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     parseRealignArgs(args, maxShift, minScore, nIter, nTopChan,
                      pcaRefine, rmsRecenter, rMin, alignCentroid);
 
+    // Clamp maxShift to the waveform width.  --maxshift is parsed with only a
+    // >=1 lower bound, so a user value >= nSamp makes the circular roll index
+    // (t + s + nSamp) % nSamp go negative (out-of-bounds read); the PCA-refine
+    // and xcorr passes size their buffers from maxShift too.  nSamp-1 keeps
+    // every shifted index in [0, nSamp).
+    if (maxShift > nSamp - 1) maxShift = nSamp - 1;
+    if (maxShift < 1)         maxShift = 1;
+
     const QString dir   = documentDirectory();
     const QString base  = documentBaseName();
     const QString grpId = currentElectrodeGroupID();

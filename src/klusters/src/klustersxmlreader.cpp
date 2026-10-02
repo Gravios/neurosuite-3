@@ -277,11 +277,8 @@ int KlustersXmlReader::getNbSamples(int electrodeGroupID)const{
                                                 if (!valGroup.isNull()) {
                                                     tag = valGroup.tagName();
                                                     if( tag == NB_SAMPLES) {
-                                                        if((i + 1) != electrodeGroupID) {
-                                                            ++i;
-                                                            continue;
-                                                        }
-                                                        nbSamples = valGroup.text().toInt();
+                                                        if((i + 1) == electrodeGroupID)
+                                                            nbSamples = valGroup.text().toInt();
                                                     }
                                                 }
                                                 group = group.nextSibling();
@@ -337,11 +334,8 @@ int KlustersXmlReader::getPeakSampleIndex(int electrodeGroupID)const{
                                                 if (!valGroup.isNull()) {
                                                     tag = valGroup.tagName();
                                                     if( tag == PEAK_SAMPLE_INDEX) {
-                                                        if((i + 1) != electrodeGroupID) {
-                                                            ++i;
-                                                            continue;
-                                                        }
-                                                        index = valGroup.text().toInt();
+                                                        if((i + 1) == electrodeGroupID)
+                                                            index = valGroup.text().toInt();
                                                     }
                                                 }
                                                 group = group.nextSibling();
@@ -398,11 +392,8 @@ int KlustersXmlReader::getNbFeatures(int electrodeGroupID)const{
                                                 if (!valGroup.isNull()) {
                                                     tag = valGroup.tagName();
                                                     if( tag == NB_FEATURES) {
-                                                        if((i + 1) != electrodeGroupID) {
-                                                            ++i;
-                                                            continue;
-                                                        }
-                                                        nbFeatures = valGroup.text().toInt();
+                                                        if((i + 1) == electrodeGroupID)
+                                                            nbFeatures = valGroup.text().toInt();
                                                     }
                                                 }
                                                 group = group.nextSibling();

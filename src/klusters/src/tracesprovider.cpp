@@ -75,13 +75,9 @@ void TracesProvider::requestData(long startTime,long endTime,QObject* initiator,
 void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator,long startTimeInRecordingUnits){
     Array<dataType> data;
 
-    FILE* dataFile = fopen(qPrintable(fileName),"rb");
-    if(dataFile == nullptr){
-        //emit the signal with an empty array, the reciever will take care of it, given a message to the user.
-        data.setSize(0,0);
-        emit dataReady(data,initiator);
-        return;
-    }
+    // Each per-resolution branch below opens and checks its own QFile.  A
+    // redundant probe FILE* used to be opened here and leaked on every early
+    // return (it was fclose()d only on the success path) — removed.
 
     //When the bug in gcc will be corrected for the 64 bits, the c++ code will be use
     //[alex@slut]/home/alex/src/sizetest > ./sizetest-2.95.3
@@ -185,9 +181,6 @@ void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator
             }
         }
     }
-
-    //The data have been retrieve, close the file.
-    fclose(dataFile);//dataFile.close();
 
     //Send the information to the receiver.
     emit dataReady(data,initiator);

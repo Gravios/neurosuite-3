@@ -54,7 +54,13 @@ void MergeRecommendThread::post(QEvent* event)
 
 void MergeRecommendThread::run()
 {
-    process();
+    //A throw (e.g. bad_alloc) must not escape QThread::run(), and must not skip
+    //the active-counter decrement below, or the document-close pool drain waits
+    //forever for active == 0.
+    try {
+        process();
+    } catch (...) {
+    }
     //Retire: the job reads only its own snapshots, but the document-close
     //pool drain still treats active == 0 as "no job is running".
     token->active.fetch_sub(1, std::memory_order_acq_rel);

@@ -931,11 +931,20 @@ long EventsProvider::findIndex(double eventTime,int eventId){
     if(eventId != -1){
         int id = eventIds[events(1,startIndex)];
         if(id != eventId){
-            double diff1 = fabs(timeStamps(1,startIndex) - timeStamps(1,startIndex - 1));
-            double diff2 = fabs(timeStamps(1,startIndex + 1) - timeStamps(1,startIndex));
-            if(diff1 < diff2 && eventIds[events(1,startIndex - 1)] == eventId) startIndex--;
-            else if(diff1 < diff2 && eventIds[events(1,startIndex - 1)] != eventId && eventIds[events(1,startIndex + 1)] == eventId ) startIndex++;
-            else if(diff2 < diff1 && eventIds[events(1,startIndex + 1)] == eventId) startIndex++;
+            // Guard the +-1 neighbour probes: startIndex can be the first (1)
+            // or last (nbEvents) event, where startIndex-1 / startIndex+1 index
+            // the 1-based arrays out of range.  Behaviour is unchanged when both
+            // neighbours exist.
+            const bool havePrev = (startIndex > 1);
+            const bool haveNext = (startIndex < nbEvents);
+            const bool prevMatch = havePrev && (eventIds[events(1,startIndex - 1)] == eventId);
+            const bool nextMatch = haveNext && (eventIds[events(1,startIndex + 1)] == eventId);
+            double diff1 = 0.0, diff2 = 0.0;
+            if(havePrev) diff1 = fabs(timeStamps(1,startIndex)     - timeStamps(1,startIndex - 1));
+            if(haveNext) diff2 = fabs(timeStamps(1,startIndex + 1) - timeStamps(1,startIndex));
+            if(havePrev && (!haveNext || diff1 < diff2) && prevMatch) startIndex--;
+            else if(havePrev && haveNext && diff1 < diff2 && !prevMatch && nextMatch) startIndex++;
+            else if(haveNext && (!havePrev || diff2 < diff1) && nextMatch) startIndex++;
         }
     }
 

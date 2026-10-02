@@ -328,6 +328,12 @@ public:
   * is tested against the spike's position in the current projection exactly as
   * before; a row-named selection is a set lookup.*/
     bool selectionContains(const SpikeSelection& selection, dataType featuresRowIndex) const {
+        // Release-mode bounds guard: a stale feature-row index against a resized
+        // feature table would index features() out of range (Array's own check
+        // is debug-only).  An out-of-range row is treated as not-contained, as
+        // on the hardened read-only metric paths.
+        if(featuresRowIndex < 1 || featuresRowIndex > static_cast<dataType>(features.nbOfRows()))
+            return false;
         bool in;
         if(selection.byRows())
             in = selection.rows().contains(featuresRowIndex);
