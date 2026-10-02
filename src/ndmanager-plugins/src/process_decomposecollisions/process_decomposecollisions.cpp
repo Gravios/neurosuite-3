@@ -86,13 +86,28 @@ static GroupParams read_group_params(const std::string &yaml_path, int group_idx
     std::ifstream f(yaml_path);
     if (!f.is_open()) return gp;
 
-    // Minimal line-by-line YAML parser for the spikeDetection block.
-    // Finds the Nth channelGroups entry (1-based) and extracts fields.
+    // Minimal line-by-line YAML parser for the spikeDetection block.  Finds the
+    // Nth channelGroups entry (1-based) within spikeDetection and extracts fields.
+    // The scan is ANCHORED to the top-level `spikeDetection:` section and bounded
+    // by the next top-level key: the session YAML also carries
+    // `anatomicalDescription:` groups using the same `- channels:` token, so a
+    // scan counting groups from the top of the file lands in the wrong section
+    // (reading anatomical groups, which have no nSamples -> the 52 default).
     std::string line;
     int  grp_count   = 0;
     bool in_channels = false;
     bool found_grp   = false;
+    bool in_section  = false;   // inside the top-level spikeDetection: block
     while (std::getline(f, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        // A top-level key (column 0, not a comment) bounds sections.
+        if (!line.empty() && line[0] != ' ' && line[0] != '\t' && line[0] != '#') {
+            in_section  = (line.rfind("spikeDetection", 0) == 0);
+            in_channels = false;
+            found_grp   = false;
+            continue;
+        }
+        if (!in_section) continue;
         // Detect start of a new channelGroup entry
         if (line.find("- channels:") != std::string::npos ||
             (line.find("channels:") != std::string::npos &&
