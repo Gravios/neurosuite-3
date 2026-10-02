@@ -30,6 +30,16 @@ target_include_directories(core_test_decollide
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_decollide COMMAND core_test_decollide)
 
+# Template-class CRUD engine (templateclass.hpp) over the .eap matrix + .tcl
+# registry.  Header-only, but links the library for the writeEap/writeTcl +
+# readEap/readTcl persistence round-trip.
+add_executable(core_test_templateclass templateclass_test.cpp)
+target_compile_features(core_test_templateclass PRIVATE cxx_std_17)
+target_include_directories(core_test_templateclass
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_templateclass PRIVATE Neurosuite::core)
+add_test(NAME core_test_templateclass COMMAND core_test_templateclass)
+
 # PCAE transform-method enum conformance.  Pins core::Method's integer values and
 # its spatialOrder/hasTemporalDiff/methodTag helpers against the shared table; the
 # fiber-kit Python mirror runs an identical copy so the cross-repo enum cannot drift.
