@@ -1059,6 +1059,15 @@ void KlustersApp::createMenus()
            "(the session YAML probes: section)."));
     connect(mNewDriftMatrix,&QAction::triggered, this,&KlustersApp::slotNewDriftMatrix);
 
+    mNewTemplateLibrary = displayMenu->addAction(tr("New Template &Library Display"));
+    mNewTemplateLibrary->setToolTip(
+        tr("Open the template library for the open group: the marked units'\n"
+           "linked waveform series (.wtf/.wti).  Pick a unit and a link\n"
+           "(drift / adapt) and scrub its bins; select two or more units and\n"
+           "pin them as the oblique (template-axis) basis.  Mark units as\n"
+           "templates and save to build the library."));
+    connect(mNewTemplateLibrary,&QAction::triggered, this,&KlustersApp::slotWindowNewTemplateLibraryDisplay);
+
     displayMenu->addSeparator();
 
     mRenameActiveDisplay = displayMenu->addAction(tr("&Rename Active Display"));
@@ -3652,6 +3661,14 @@ void KlustersApp::slotNewTraceDisplay(){
     slotStatusMsg(tr("Ready."));
 }
 
+void KlustersApp::slotWindowNewTemplateLibraryDisplay(){
+    slotStatusMsg(tr("Opening the template library..."));
+
+    createDisplay(KlustersView::TEMPLATE_LIBRARY);
+
+    slotStatusMsg(tr("Ready."));
+}
+
 
 void KlustersApp::slotStatusMsg(const QString &text)
 {
@@ -5343,6 +5360,22 @@ void KlustersApp::slotSetObliqueBasis()
 
     QString msg;
     cv->setObliqueBasis(ids, &msg);                  // validates + stores (or clears)
+    slotStatusMsg(msg);
+}
+
+// pinObliqueBasisFromTemplates -- the template-library view's "Pin selected as
+// oblique basis" action.  Same storage path as slotSetObliqueBasis (the active
+// cluster view validates), but the ids come from the selected template units
+// rather than a dialog.  Needs a cluster (feature) view open to hold the pin.
+void KlustersApp::pinObliqueBasisFromTemplates(const QList<int>& ids)
+{
+    ClusterView* cv = activeClusterView();
+    if (!cv) {
+        slotStatusMsg(tr("Pin oblique basis: open a cluster (feature) view first."));
+        return;
+    }
+    QString msg;
+    cv->setObliqueBasis(ids, &msg);
     slotStatusMsg(msg);
 }
 

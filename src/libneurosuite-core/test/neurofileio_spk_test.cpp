@@ -149,6 +149,19 @@ int main()
             check(std::fabs(r.rows[1].b-240.0) < 1e-6, "wti drift bin coordinate round-trips");
         }
 
+        // view-model helpers: unit set, per-unit links, per-(unit,link) series.
+        const auto units = wtiUnits(r);
+        check(units.size()==2 && units[0]==9 && units[1]==31, "wtiUnits -> ascending {9,31}");
+        const auto links = wtiLinks(r, 31);
+        check(links.size()==2 && links[0]=="drift" && links[1]=="adapt", "wtiLinks first-seen {drift,adapt}");
+        const auto driftSer = wtiSeries(r, 31, "drift");
+        check(driftSer.size()==2 && driftSer[0].bin==0 && driftSer[1].bin==1
+              && driftSer[0].row==0 && driftSer[1].row==1, "wtiSeries(31,drift) bins/rows in order");
+        const auto adaptSer = wtiSeries(r, 9, "adapt");
+        check(adaptSer.size()==2 && adaptSer[0].row==6 && adaptSer[1].row==7,
+              "wtiSeries(9,adapt) maps to that unit's .wtf records");
+        check(wtiSeries(r, 31, "nope").empty(), "wtiSeries unknown link -> empty");
+
         // The .wtf is a headerless .spk-layout int16 stack: one record per wti row.
         std::vector<int16_t> wtf(static_cast<size_t>(r.rows.size()) * recVals);
         for (size_t k = 0; k < wtf.size(); ++k) wtf[k] = static_cast<int16_t>(k % 97 - 48);

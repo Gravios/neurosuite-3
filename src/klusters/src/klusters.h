@@ -134,6 +134,11 @@ public:
     */
     void widgetRemovedFromDisplay(KlustersView::DisplayType displayType);
 
+    /** Pin @p ids as the oblique basis from the template-library view's selection
+     *  (same storage as slotSetObliqueBasis, no dialog).  Called by KlustersView
+     *  on behalf of TemplateView. */
+    void pinObliqueBasisFromTemplates(const QList<int>& ids);
+
     /**Informs of the existance of an Error Matrix View in the application.
     * @return true if an Error Matrix View exists in the application, false otherwise.
     */
@@ -265,7 +270,11 @@ private Q_SLOTS:
      * list of displays the document maintains.
      */
     void slotNewTraceDisplay();
-    
+
+    /** Opens the template-library display (DisplayType TEMPLATE_LIBRARY): the
+     *  marked units' .wtf drift/adapt waveform series for the open group+stage. */
+    void slotWindowNewTemplateLibraryDisplay();
+
     /** Changes the statusbar contents for the standard label permanently, used to indicate current actions.
      * @param text the text that is displayed in the statusbar
      */
@@ -1180,6 +1189,7 @@ private:
     QAction *mUpdateErrorMatrix;
     QAction *mNewResidualMatrix;
     QAction *mNewDriftMatrix;
+    QAction *mNewTemplateLibrary;
     QAction *mReorderClustersBySimilarity;
     QAction *mPreferenceAction;
 
