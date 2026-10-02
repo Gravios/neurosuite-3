@@ -193,5 +193,121 @@ inline Grown applyMethod(
     return g;
 }
 
+// ── fit: two-template matching pursuit against a FIXED basis pair {A,B} ──────
+// The interactive mode's "find the decomposition" step (the batch mode uses
+// process_decomposecollisions instead).  A collision is modelled as one event of
+// each basis unit; a greedy two-pass fit over integer shifts recovers
+// (unit,tau,amp) for each, with the least-squares amplitude a = <r,T@tau>/<T@tau,T@tau>.
+// Operates in the SAME channel-fastest layout as applyMethod, so its output feeds
+// applyMethod directly.
+struct Fit {
+    Component c1;              ///< stronger component (found first)
+    Component c2;              ///< the other
+    double    residFrac = 1.0; ///< ||c - a1*T1@t1 - a2*T2@t2||^2 / ||c||^2
+    bool      ok = false;
+};
+
+namespace detail {
+inline double dot(const float* a, const float* b, std::size_t n) {
+    double s = 0.0; for (std::size_t i = 0; i < n; ++i) s += static_cast<double>(a[i]) * b[i]; return s;
+}
+// Best (tau in [-maxShift,maxShift], least-squares amplitude) of template T
+// against target r; bestResid = ||r - amp*T@tau||^2 (computed analytically).
+inline void bestShiftAmp(const std::vector<float>& r, const std::vector<float>& T,
+                         int nS, int nC, int maxShift,
+                         int& bestTau, double& bestAmp, double& bestResid) {
+    const std::size_t rec = static_cast<std::size_t>(nS) * nC;
+    const double rr = dot(r.data(), r.data(), rec);
+    std::vector<float> sh;
+    bestResid = -1.0; bestTau = 0; bestAmp = 0.0;
+    for (int tau = -maxShift; tau <= maxShift; ++tau) {
+        roll0(T, nS, nC, tau, sh);
+        const double tt = dot(sh.data(), sh.data(), rec);
+        if (tt <= 1e-12) continue;
+        const double a     = dot(r.data(), sh.data(), rec) / tt;   // least-squares amplitude
+        const double resid = rr - a * a * tt;                      // ||r - a*sh||^2
+        if (bestResid < 0.0 || resid < bestResid) { bestResid = resid; bestTau = tau; bestAmp = a; }
+    }
+}
+}  // namespace detail
+
+// Fit one collision waveform `c` to the pair; greedy: whichever of A/B explains
+// more is c1, the other fit to the residual is c2.
+inline Fit fitOne(const std::vector<float>& c,
+                  int unitA, const std::vector<float>& TA,
+                  int unitB, const std::vector<float>& TB,
+                  int nSamples, int nChannels, int maxShift) {
+    Fit f;
+    const std::size_t rec = static_cast<std::size_t>(nSamples) * nChannels;
+    if (c.size() != rec || TA.size() != rec || TB.size() != rec) return f;
+    int tauA, tauB; double ampA, ampB, resA, resB;
+    detail::bestShiftAmp(c, TA, nSamples, nChannels, maxShift, tauA, ampA, resA);
+    detail::bestShiftAmp(c, TB, nSamples, nChannels, maxShift, tauB, ampB, resB);
+
+    int k1, t1; double a1; const std::vector<float>* T2; int k2;
+    if (resA <= resB) { k1 = unitA; t1 = tauA; a1 = ampA; T2 = &TB; k2 = unitB; }
+    else              { k1 = unitB; t1 = tauB; a1 = ampB; T2 = &TA; k2 = unitA; }
+    const std::vector<float>& T1 = (k1 == unitA) ? TA : TB;
+
+    std::vector<float> sh, r(rec);
+    roll0(T1, nSamples, nChannels, t1, sh);
+    for (std::size_t j = 0; j < rec; ++j) r[j] = c[j] - static_cast<float>(a1) * sh[j];
+
+    int t2; double a2, resid2;
+    detail::bestShiftAmp(r, *T2, nSamples, nChannels, maxShift, t2, a2, resid2);
+
+    const double cc = detail::dot(c.data(), c.data(), rec);
+    f.c1 = Component{k1, t1, a1};
+    f.c2 = Component{k2, t2, a2};
+    f.residFrac = (cc > 1e-12) ? (resid2 / cc) : 0.0;
+    f.ok = true;
+    return f;
+}
+
+// Per-unit empirical amplitude gate (peak-to-peak bounds); hi<=lo disables it.
+struct AmpGate { double lo = 0.0; double hi = 0.0; };
+
+// Peak-to-peak of a template scaled by `amp` (the fitted component's amplitude).
+inline double peakToPeak(const std::vector<float>& w, double amp) {
+    double mx = -1e300, mn = 1e300;
+    for (float v : w) { const double s = amp * v; if (s > mx) mx = s; if (s < mn) mn = s; }
+    return (w.empty() ? 0.0 : mx - mn);
+}
+
+// Fit each collision index to the pair and return the ACCEPTED decompositions
+// (rejected ones are simply omitted — applyMethod then leaves those spikes as-is).
+// Gates mirror process_decomposecollisions / fiber-kit: residFrac <
+// residualThreshold, both amplitudes > 0, and (when a gate's hi>lo) the
+// component's peak-to-peak amplitude within [lo,hi].
+inline std::vector<Decomp> fitPair(
+    const std::vector<int16_t>& spk, int nSamples, int nChannels,
+    const std::vector<int64_t>& idx,
+    int unitA, const std::vector<float>& TA,
+    int unitB, const std::vector<float>& TB,
+    int maxShift, double residualThreshold,
+    AmpGate gateA = AmpGate{}, AmpGate gateB = AmpGate{}) {
+    std::vector<Decomp> out;
+    const std::size_t rec = static_cast<std::size_t>(nSamples) * nChannels;
+    if (nSamples <= 0 || nChannels <= 0 || TA.size() != rec || TB.size() != rec) return out;
+    const std::size_t n = (rec ? spk.size() / rec : 0);
+    for (int64_t i : idx) {
+        if (i < 0 || static_cast<std::size_t>(i) >= n) continue;
+        std::vector<float> c(rec);
+        for (std::size_t j = 0; j < rec; ++j) c[j] = static_cast<float>(spk[static_cast<std::size_t>(i) * rec + j]);
+        const Fit f = fitOne(c, unitA, TA, unitB, TB, nSamples, nChannels, maxShift);
+        if (!f.ok || f.residFrac >= residualThreshold) continue;
+        if (f.c1.amp <= 0.0 || f.c2.amp <= 0.0) continue;
+        const AmpGate g1 = (f.c1.unit == unitA) ? gateA : gateB;
+        const AmpGate g2 = (f.c2.unit == unitA) ? gateA : gateB;
+        if (g1.hi > g1.lo) { const double v = peakToPeak(f.c1.unit == unitA ? TA : TB, f.c1.amp);
+                             if (v < g1.lo || v > g1.hi) continue; }
+        if (g2.hi > g2.lo) { const double v = peakToPeak(f.c2.unit == unitA ? TA : TB, f.c2.amp);
+                             if (v < g2.lo || v > g2.hi) continue; }
+        Decomp d; d.spikeIndex = i; d.c1 = f.c1; d.c2 = f.c2;
+        out.push_back(d);
+    }
+    return out;
+}
+
 }  // namespace decollide
 }  // namespace neurosuite
