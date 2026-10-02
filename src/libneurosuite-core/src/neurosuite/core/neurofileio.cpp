@@ -474,7 +474,7 @@ EapFile readEap(const std::string& path)
     uint32_t nSpikes = 0, nClasses = 0, group = 0, flags = 0;
     auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };
     rdU32(nSpikes); rdU32(nClasses); rdU32(group); rdU32(flags);
-    in.seekg(8, std::ios::cur);                             // pad[8]
+    in.seekg(12, std::ios::cur);                            // pad -> 32B header (4+4*4+12)
     if (!in) return e;
 
     const std::size_t n = static_cast<std::size_t>(nSpikes) * nClasses;
@@ -505,8 +505,8 @@ bool writeEap(const std::string& path, int64_t nSpikes, int nClasses, int group,
                    hg = static_cast<uint32_t>(group),   hf = flags;
     auto wrU32 = [&](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
     wrU32(hs); wrU32(hc); wrU32(hg); wrU32(hf);
-    const char pad[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    out.write(pad, 8);
+    const char pad[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};   // -> 32B header
+    out.write(pad, 12);
     if (!cells.empty())
         out.write(reinterpret_cast<const char*>(cells.data()),
                   static_cast<std::streamsize>(cells.size()));

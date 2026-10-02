@@ -238,7 +238,7 @@ NEUROSUITE_CORE_EXPORT std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int un
 //
 // Binary, little-endian:
 //   Header 32B: magic {'E','A','P',0x01}, nSpikes u32, nClasses u32 (= T),
-//               group u32, flags u32, pad[8]
+//               group u32, flags u32, pad[12]
 //   Body:       nSpikes × nClasses int8, ROW-MAJOR (cell[i][j] at i*T + j)
 // Cell = the integer-sample temporal offset of class j's EAP within spike i's
 // window, relative to spike i's .res; EAP_ABSENT (-128) means class j is NOT in

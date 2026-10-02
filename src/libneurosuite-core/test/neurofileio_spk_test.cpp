@@ -202,6 +202,9 @@ int main()
         EapFile e = readEap(ep);
         check(e.ok && e.nSpikes==N && e.nClasses==T && e.group==6, "readEap geometry");
         check(e.cells == cells, "eap cells byte-identical");
+        { std::ifstream szf(ep, std::ios::binary | std::ios::ate);
+          check(szf && static_cast<long long>(szf.tellg()) == 32 + N*T,
+                ".eap on-disk size == 32B header + N*T body"); }
         check(eapPresent(e.cells[0*T+1]) && e.cells[0*T+1]==0, "offset 0 is present, not absent");
         check(!eapPresent(e.cells[2*T+0]), "unset cell reads as absent");
 
