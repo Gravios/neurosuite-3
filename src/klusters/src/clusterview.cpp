@@ -507,10 +507,17 @@ void ClusterView::applyTsneLasso(){
     // Hit-test in viewport pixels through the SAME mapping paintTsne uses.
     const QRegion area(selectionPolygon);   // viewport pixels in this view
     QSet<dataType> rows;                    // 1-based feature rows
+    const bool scopeGate = projScopeActive();   // temporally-restricted: exclude out-of-scope
     const int n = qMin(static_cast<int>(tsneXY.size() / 2), tsneRowSpike.size());
-    for (int i = 0; i < n; ++i)
-        if (area.contains(tsneViewportPos(i)))
-            rows.insert(static_cast<dataType>(tsneRowSpike.at(i)) + 1);
+    for (int i = 0; i < n; ++i) {
+        if (!area.contains(tsneViewportPos(i))) continue;
+        if (scopeGate) {
+            const double t = static_cast<double>(doc.data().featureValue(
+                static_cast<dataType>(tsneRowSpike.at(i)) + 1, timeDimension));
+            if (!spikeTimeInScope(t)) continue;     // out of scope -> not selectable
+        }
+        rows.insert(static_cast<dataType>(tsneRowSpike.at(i)) + 1);
+    }
 
     if (rows.isEmpty()) {
         if (statusBar) statusBar->showMessage(tr("t-SNE lasso: no spikes inside"), 3000);
@@ -2024,20 +2031,34 @@ void ClusterView::customEvent(QEvent* event){
         //Create a QRegion with the new selection area in order to use the research facilities offer by a QRegion.
         selectionArea = QRegion(reviewPolygon);
         if(!selectionArea.isEmpty()){
+            // Route through the SpikeSelection form so the temporally-restricted
+            // scope (when active) marks out-of-scope spikes non-selectable:
+            // selectionContains ANDs the region test with the time-window test.
+            // Identical to the QRegion overloads otherwise (they build the same
+            // SpikeSelection, just without a scope).
+            SpikeSelection selection(selectionArea,
+                                     static_cast<int>(Xdimension), static_cast<int>(Ydimension));
+            if(projScopeActive()){
+                std::vector<std::pair<double,double> > win;
+                win.reserve(projScopeRU.size());
+                for(const neurosuite::projectionscope::Interval& iv : projScopeRU)
+                    win.emplace_back(iv.a, iv.b);
+                selection.setTimeScope(win, timeDimension);
+            }
             //Call any appropriate method
             switch(mode){
             case DELETE_NOISE:
-                doc.deleteNoise(selectionArea,view.clusters(),Xdimension,Ydimension);
+                doc.deleteNoise(selection,view.clusters());
                 break;
             case DELETE_ARTEFACT:
-                doc.deleteArtifact(selectionArea,view.clusters(),Xdimension,Ydimension);
+                doc.deleteArtifact(selection,view.clusters());
                 break;
             case NEW_CLUSTER:
-                doc.createNewCluster(selectionArea,view.clusters(),Xdimension,Ydimension);
+                doc.createNewCluster(selection,view.clusters());
                 setFocus(Qt::OtherFocusReason);
                 break;
             case NEW_CLUSTERS:
-                doc.createNewClusters(selectionArea,view.clusters(),Xdimension,Ydimension);
+                doc.createNewClusters(selection,view.clusters());
                 setFocus(Qt::OtherFocusReason);
                 break;
             case ZOOM:

@@ -44,6 +44,7 @@
 #include <cstring>   // memcpy in ClusteringSnapshot::readSpk
 #include <math.h>
 #include <vector>
+#include <utility>   // std::pair (SpikeSelection time-scope windows)
 #include <atomic>
 #include <memory>
 #include "requestticket.h"
@@ -86,6 +87,26 @@ public:
         return byRows_ ? algorithm_ : QStringLiteral("manual_polygon");
     }
 
+    /**Optionally restrict the selection to a set of time windows (the EAP
+  * temporally-restricted projection scope, claude/eap-template-class-design §7).
+  * @p windows are [lo,hi] pairs in the feature table's TIME column units
+  * (recording units), sorted and non-overlapping; @p timeDim is the 1-based time
+  * dimension.  While set, a spike is in the selection only if it also falls in a
+  * window -- so out-of-scope spikes are non-selectable without changing either
+  * membership gesture.  Empty (the default) imposes no restriction.*/
+    void setTimeScope(const std::vector<std::pair<double,double> >& windows, int timeDim) {
+        timeScope_ = windows; timeScopeDim_ = timeDim;
+    }
+    bool timeRestricted() const { return !timeScope_.empty(); }
+    int  timeScopeDim()   const { return timeScopeDim_; }
+    /**True iff @p t (a spike's time-column value) is in any scope window.  A
+  * non-empty scope with no matching window means out of scope (not selectable).*/
+    bool inTimeScope(double t) const {
+        for (const std::pair<double,double>& w : timeScope_)
+            if (t >= w.first && t <= w.second) return true;
+        return false;
+    }
+
 private:
     QRegion region_;
     QSet<dataType> rows_;
@@ -93,6 +114,8 @@ private:
     int dimX_ = 0;
     int dimY_ = 0;
     bool byRows_;
+    std::vector<std::pair<double,double> > timeScope_;   ///< [lo,hi] time windows (recording units); empty = no restriction
+    int timeScopeDim_ = -1;                              ///< 1-based time dimension for the scope test
 };
 class WaveformThread;
 class CorrelationThread;
@@ -305,11 +328,19 @@ public:
   * is tested against the spike's position in the current projection exactly as
   * before; a row-named selection is a set lookup.*/
     bool selectionContains(const SpikeSelection& selection, dataType featuresRowIndex) const {
+        bool in;
         if(selection.byRows())
-            return selection.rows().contains(featuresRowIndex);
-        return selection.region().contains(
+            in = selection.rows().contains(featuresRowIndex);
+        else
+            in = selection.region().contains(
                     QPoint(static_cast<dataType>(features(featuresRowIndex,selection.dimensionX())),
                            static_cast<dataType>(features(featuresRowIndex,selection.dimensionY()))));
+        // Temporally-restricted projection scope: an in-region/in-set spike whose
+        // time is outside the pinned basis's coverage is NOT selectable.
+        if(in && selection.timeRestricted())
+            in = selection.inTimeScope(
+                    static_cast<double>(features(featuresRowIndex, selection.timeScopeDim())));
+        return in;
     }
 
     /**Returns the feature value at (spikeIndex, dimension) — both 1-based.*/
