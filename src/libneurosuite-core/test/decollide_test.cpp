@@ -134,6 +134,56 @@ int main()
         check(gm.ok && gm.res.size() == res.size(), "missing template -> spike left as-is");
     }
 
+    // ── fitPair: two-template matching pursuit against a fixed basis pair ────
+    // Orthogonal templates (A on ch0, B on ch1) so the greedy two-pass fit
+    // recovers the components EXACTLY (modulo int16 rounding of the collision).
+    {
+        const int uA = 2, uB = 3, mShift = 3;
+        std::vector<float> FA(REC(), 0.0f), FB(REC(), 0.0f);
+        FA[2 * NC + 0] = 100.0f; FA[1 * NC + 0] = 40.0f;   // A: channel 0 only
+        FB[2 * NC + 1] = 80.0f;  FB[3 * NC + 1] = 30.0f;    // B: channel 1 only
+
+        const double aA = 2.0, aB = 1.5; const int tA = 1, tB = -1;
+        std::vector<float> rA, rB;
+        roll0(FA, NS, NC, tA, rA);
+        roll0(FB, NS, NC, tB, rB);
+        std::vector<int16_t> coll(REC());
+        for (std::size_t j = 0; j < REC(); ++j)
+            coll[j] = static_cast<int16_t>(std::nearbyint(aA * rA[j] + aB * rB[j]));
+
+        const std::vector<int64_t> at = {0};
+        std::vector<Decomp> ds = fitPair(coll, NS, NC, at, uA, FA, uB, FB, mShift, 0.25);
+        check(ds.size() == 1, "fitPair resolves the collision");
+        if (ds.size() == 1) {
+            const Component& c1 = ds[0].c1; const Component& c2 = ds[0].c2;
+            // by unit, regardless of which came out stronger
+            const Component& cA = (c1.unit == uA) ? c1 : c2;
+            const Component& cB = (c1.unit == uB) ? c1 : c2;
+            check(cA.unit == uA && cB.unit == uB, "both basis units present in the fit");
+            check(cA.tau == tA && cB.tau == tB, "shifts recovered exactly");
+            check(std::fabs(cA.amp - aA) < 0.05 && std::fabs(cB.amp - aB) < 0.05, "amplitudes recovered");
+        }
+
+        // A pure single-unit spike (only A) is NOT a collision: pass-2 amplitude
+        // collapses to ~0, so the positivity gate rejects it.
+        std::vector<int16_t> pureA(REC());
+        for (std::size_t j = 0; j < REC(); ++j) pureA[j] = static_cast<int16_t>(std::nearbyint(aA * rA[j]));
+        check(fitPair(pureA, NS, NC, at, uA, FA, uB, FB, mShift, 0.25).empty(),
+              "pure single-unit spike rejected (not a two-component collision)");
+
+        // Unexplainable waveform (energy off both templates) -> residFrac high -> rejected.
+        std::vector<int16_t> junk(REC(), 0);
+        junk[0 * NC + 0] = 500; junk[4 * NC + 1] = -500;   // nothing like A@ch0-peak or B@ch1-peak
+        check(fitPair(junk, NS, NC, at, uA, FA, uB, FB, mShift, 0.25).empty(),
+              "high-residual waveform rejected");
+
+        // Amplitude gate: tightening B's band to exclude its true p2p rejects the fit.
+        const double bPP = peakToPeak(FB, aB);                 // the accepted component's p2p
+        AmpGate gA{}, gBbad{bPP + 10.0, bPP + 20.0};           // band entirely above the true value
+        check(fitPair(coll, NS, NC, at, uA, FA, uB, FB, mShift, 0.25, gA, gBbad).empty(),
+              "amplitude-percentile gate rejects an out-of-band component");
+    }
+
     std::printf("%s: %d checks, %d failed\n", (g_fail ? "FAIL" : "OK"), g_ran, g_fail);
     return g_fail ? 1 : 0;
 }
