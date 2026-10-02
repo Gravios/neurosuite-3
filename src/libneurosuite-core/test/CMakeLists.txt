@@ -40,6 +40,16 @@ target_include_directories(core_test_templateclass
 target_link_libraries(core_test_templateclass PRIVATE Neurosuite::core)
 add_test(NAME core_test_templateclass COMMAND core_test_templateclass)
 
+# Decomp -> .eap bridge (decollide_eap.hpp): maps collision constituents onto the
+# membership matrix via .tcl provenance.  Header-only, links the library for the
+# growEap/writeEap/writeTcl + readEap/readTcl persistence round-trip.
+add_executable(core_test_decollide_eap decollide_eap_test.cpp)
+target_compile_features(core_test_decollide_eap PRIVATE cxx_std_17)
+target_include_directories(core_test_decollide_eap
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_decollide_eap PRIVATE Neurosuite::core)
+add_test(NAME core_test_decollide_eap COMMAND core_test_decollide_eap)
+
 # PCAE transform-method enum conformance.  Pins core::Method's integer values and
 # its spatialOrder/hasTemporalDiff/methodTag helpers against the shared table; the
 # fiber-kit Python mirror runs an identical copy so the cross-repo enum cannot drift.
