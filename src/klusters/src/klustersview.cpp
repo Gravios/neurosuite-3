@@ -1205,6 +1205,13 @@ void KlustersView::requestPinObliqueBasis(const QList<int>& ids){
     mainWindow.pinObliqueBasisFromTemplates(ids);
 }
 
+void KlustersView::requestTemplateRegen(){
+    // The template library view asks to refresh the template waveform series
+    // after a class-membership edit; the application reruns fiber-template for
+    // the marked units (all available spk variants).
+    mainWindow.runTemplateGeneration();
+}
+
 
 void KlustersView::shownClustersUpdate(const QList<int>& clustersToShow){
     //Try to minimize the number of clusters to draw

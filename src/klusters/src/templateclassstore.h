@@ -55,6 +55,10 @@ public:
     // class id, or -1 only on an internal inconsistency.
     int  createClass(const std::vector<int64_t>& spikes, const std::string& label,
                      int provClu, const std::string& provStage, const std::string& created);
+    // Re-set an ACTIVE class's membership to EXACTLY `spikes` (each at `offset`),
+    // clearing any prior membership of that column — the "update primary with the
+    // current selection" operation.  Returns false unless `col` is an active class.
+    bool updateClass(int col, const std::vector<int64_t>& spikes, int8_t offset = 0);
     // Fold `victim` into `survivor` (survivor kept primary); returns false unless
     // both are distinct active classes.
     bool mergeClasses(int survivor, int victim);

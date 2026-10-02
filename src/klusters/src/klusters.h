@@ -139,6 +139,12 @@ public:
      *  on behalf of TemplateView. */
     void pinObliqueBasisFromTemplates(const QList<int>& ids);
 
+    /** (Re)generate the template waveform series with fiber-template for the
+     *  marked units — also the refresh after a template-class membership edit.
+     *  Public so KlustersView::requestTemplateRegen() can forward TemplateView's
+     *  request (mirrors pinObliqueBasisFromTemplates). */
+    void runTemplateGeneration();
+
     /**Informs of the existance of an Error Matrix View in the application.
     * @return true if an Error Matrix View exists in the application, false otherwise.
     */
@@ -759,9 +765,11 @@ private:
     QString templatesSidecarPath() const;
     void loadTemplateMarks();                  ///< replace mTemplateUnits from the sidecar (no-op if none)
     void saveTemplateMarks() const;            ///< write mTemplateUnits to the sidecar (removes it when empty)
-    /** After a successful save, run fiber-template for the marked units (all
-     *  available spk variants) so their .wtf is rewritten from the saved files. */
-    void runTemplateGeneration();
+    // runTemplateGeneration() — "After a successful save, run fiber-template for
+    // the marked units (all available spk variants) so their .wtf is rewritten
+    // from the saved files" — is now declared in the PUBLIC section (above), so
+    // KlustersView::requestTemplateRegen() can forward TemplateView's class-edit
+    // regen request to it.
     /** spk variant tokens present for the open group (<base>.spk.<variant>.<group>). */
     QStringList availableSpkVariants() const;
 

@@ -122,6 +122,16 @@ int TemplateClassStore::createClass(const std::vector<int64_t>& spikes,
     return col;
 }
 
+bool TemplateClassStore::updateClass(int col, const std::vector<int64_t>& spikes,
+                                     int8_t offset)
+{
+    if (!loaded_) return false;
+    if (col < 0 || col >= static_cast<int>(tcl_.entries.size())) return false;
+    if (tcl_.entries[static_cast<std::size_t>(col)].status != nf::TclStatus::Active)
+        return false;
+    return tc::setMembership(eap_, col, spikes, offset);
+}
+
 bool TemplateClassStore::mergeClasses(int survivor, int victim)
 {
     if (!loaded_) return false;
