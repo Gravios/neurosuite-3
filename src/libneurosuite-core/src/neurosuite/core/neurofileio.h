@@ -53,6 +53,11 @@ NEUROSUITE_CORE_EXPORT bool    writeClu(const std::string& path, int nClusters,
 // found) rather than silently truncated to the first nSpikes.
 NEUROSUITE_CORE_EXPORT CluFile readCluBinary(const std::string& path, int64_t nSpikes);
 
+// Write a binary .clu: int32_t cluster-count header, then one int32_t id per
+// spike (the inverse of readCluBinary).
+NEUROSUITE_CORE_EXPORT bool writeCluBinary(const std::string& path, int nClusters,
+                 const std::vector<int>& ids);
+
 // ── .res.N ────────────────────────────────────────────────────────────────
 NEUROSUITE_CORE_EXPORT std::vector<int64_t> readRes(const std::string& path, bool* ok = nullptr);
 NEUROSUITE_CORE_EXPORT bool                 writeRes(const std::string& path,
@@ -60,6 +65,9 @@ NEUROSUITE_CORE_EXPORT bool                 writeRes(const std::string& path,
 
 // Binary .res: nSpikes × int64_t timestamps, no header (nSpikes = size/8).
 NEUROSUITE_CORE_EXPORT std::vector<int64_t> readResBinary(const std::string& path, bool* ok = nullptr);
+
+// Write a binary .res: one int64_t timestamp per spike, no header.
+NEUROSUITE_CORE_EXPORT bool writeResBinary(const std::string& path, const std::vector<int64_t>& times);
 
 // ── matched .clu + .res pair (auto-detecting binary vs text) ────────────────
 // NeuroSuite cluster data is a .clu/.res pair read together. Some tools write a
@@ -100,6 +108,13 @@ struct FetBinaryFile {
     bool                 ok = false;
 };
 NEUROSUITE_CORE_EXPORT FetBinaryFile readFetBinary(const std::string& path);
+
+// Write a binary .fet: int32_t feature-count header, then values row-major
+// (nSpikes × nFeatures int64) — the inverse of readFetBinary, the layout
+// process_pca writes and klusters/KlustaKwik read.  `values.size()` must be a
+// whole multiple of nFeatures, else nothing is written and it returns false.
+NEUROSUITE_CORE_EXPORT bool writeFetBinary(const std::string& path, int nFeatures,
+                 const std::vector<int64_t>& values);
 
 // ── .spk.N — windowed int16 waveforms (NeuroSuite) ──────────────────────────
 // A .spk holds nSpikes records back to back, each record nSamples × nChannels

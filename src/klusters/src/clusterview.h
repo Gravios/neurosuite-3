@@ -97,6 +97,13 @@ public:
      *  preview in the waveform view; these commit (Enter) or discard (Esc) it.
      *  Public because the confirm keys are dispatched by the application filter. */
     bool hasPendingLasso() const { return pendingLasso_; }
+    /** The feature rows captured by the pending lasso (1-based .spk record ids),
+     *  as a plain int list — consumed by the decollide-against-basis commit. */
+    QList<int> pendingRows() const {
+        QList<int> r; r.reserve(pendingRows_.size());
+        for (dataType x : pendingRows_) r.append(static_cast<int>(x));
+        return r;
+    }
     void confirmPendingLasso();
     void cancelPendingLasso();
 
