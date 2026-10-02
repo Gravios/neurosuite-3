@@ -59,6 +59,10 @@
 #include "oblique_embed.h"
 #include "configuration.h"
 
+#include "neurosuite/core/neurofileio.h"   // readWti / readTcl for the projection scope
+#include "neurosuite/core/custody.hpp"     // parseAnchor / untaggedPath for the .wti/.tcl paths
+#include <QFileInfo>
+
 
 
 const QColor ClusterView::NEW_CLUSTER_COLOR(Qt::green);
@@ -721,11 +725,24 @@ void ClusterView::paintTsne(QPainter& painter){
     painter.setPen(Qt::NoPen);
     const int r = qMax(1, pointSize);
     const QColor unknown(160, 160, 160);
+    // Same temporally-restricted gate as the scatter: grey (or hide) embedded
+    // points whose spike time falls outside the pinned basis classes' scope.
+    const bool gate    = projScopeActive();
+    const bool hideOOS = gate && configuration().getProjectionOutOfScopeHidden();
+    const QColor greyOOS(110, 110, 110);
     for (int i = 0; i < N; ++i) {
         const int id = tsneRowCluster.at(i);
+        bool oos = false;
+        if (gate && i < tsneRowSpike.size()) {
+            const double t = static_cast<double>(doc.data().featureValue(
+                static_cast<dataType>(tsneRowSpike.at(i) + 1), timeDimension));
+            oos = !spikeTimeInScope(t);
+            if (oos && hideOOS) continue;
+        }
         // A lasso can send spikes to a cluster the palette has not coloured
         // yet; fall back rather than asking ItemColors for a missing id.
-        painter.setBrush(colors.contains(id) ? colors.color(id) : unknown);
+        painter.setBrush(oos ? greyOOS
+                             : (colors.contains(id) ? colors.color(id) : unknown));
         const QPoint p = tsneViewportPos(i);
         painter.drawEllipse(p.x() - r, p.y() - r, 2 * r, 2 * r);
     }
@@ -781,6 +798,13 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
     painter.resetTransform();
     const int r = pointSize;           // pixel radius
 
+    // Temporally-restricted projection: out-of-scope spikes (time not in the pinned
+    // basis classes' .wti coverage) are greyed, or hidden if the pref says so.  The
+    // gate is off (fast path) unless restricted mode is on AND a scope is pinned.
+    const bool gate   = projScopeActive();
+    const bool hideOOS = gate && configuration().getProjectionOutOfScopeHidden();
+    const QColor greyOOS(110, 110, 110);
+
     for (int clustId : clustersList) {
         const QColor clusterColor = clusterColors.color(clustId);
         painter.setPen(clusterColor);
@@ -792,6 +816,12 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
             painter.setPen(Qt::NoPen);
             for(;spikeIterator.hasNext();spikeIterator.next())
             {
+                if (gate) {
+                    const bool oos = !spikeTimeInScope(
+                        static_cast<double>(spikeIterator(static_cast<dataType>(timeDimension))));
+                    if (oos && hideOOS) continue;
+                    painter.setBrush(oos ? greyOOS : clusterColor);
+                }
                 QPoint px = worldToViewport(spikeIterator(dimensionX,dimensionY));
                 painter.drawEllipse(px.x() - r, px.y() - r, r*2, r*2);
             }
@@ -799,8 +829,16 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
         else  {
             QPen pen(clusterColor);
             pen.setWidth(r > 1 ? r : 1);
+            QPen greyPen(greyOOS);
+            greyPen.setWidth(r > 1 ? r : 1);
             painter.setPen(pen);
             for(;spikeIterator.hasNext();spikeIterator.next()){
+                if (gate) {
+                    const bool oos = !spikeTimeInScope(
+                        static_cast<double>(spikeIterator(static_cast<dataType>(timeDimension))));
+                    if (oos && hideOOS) continue;
+                    painter.setPen(oos ? greyPen : pen);
+                }
                 QPoint px = worldToViewport(spikeIterator(dimensionX,dimensionY));
                 painter.drawPoint(px);
             }
@@ -1407,6 +1445,7 @@ bool ClusterView::setObliqueBasis(const QList<int>& ids, QString* message){
     // Empty -> clear the pin and restore the default (basis == the selection).
     if (ids.isEmpty()) {
         obliqueBasis.clear();
+        refreshProjectionScope();               // no basis -> empty scope (gate off)
         if (message) *message =
             tr("Oblique basis cleared — Shift+O again uses the selected clusters as the axes.");
         return true;
@@ -1434,11 +1473,66 @@ bool ClusterView::setObliqueBasis(const QList<int>& ids, QString* message){
             return false;
         }
     obliqueBasis = clean;
+    refreshProjectionScope();                   // rebuild the temporal scope from the new basis
     QStringList s; for (int id : clean) s << QString::number(id);
     if (message) *message = tr("Oblique basis pinned to cluster(s) %1 — select a cluster "
                                "to examine and press Shift+O to project it onto these axes.")
                                .arg(s.join(QStringLiteral(", ")));
     return true;
+}
+
+bool ClusterView::projScopeActive() const {
+    // Read the mode live so a Preferences toggle takes effect on the next repaint;
+    // the intervals (projScopeRU) only change when the basis/stage does.  An empty
+    // scope leaves the gate off (never hide every spike) — see gateActive().
+    return (configuration().getProjectionScopeMode() == 1) && !projScopeRU.empty();
+}
+
+bool ClusterView::spikeTimeInScope(double tRecordingUnits) const {
+    return neurosuite::projectionscope::inScope(projScopeRU, tRecordingUnits);
+}
+
+void ClusterView::refreshProjectionScope(){
+    namespace ps  = neurosuite::projectionscope;
+    namespace nf  = neurofileio;
+    namespace cst = neurosuite::custody;
+    projScopeRU.clear();
+
+    // Only the pinned oblique basis defines a scope.
+    std::vector<int> basis;
+    for (int id : obliqueBasis) basis.push_back(id);
+    if (basis.empty() || samplingInterval <= 0.0) return;
+
+    // Resolve the session base/group/stage from the open document's .clu path.
+    const QString cluPath = doc.url();
+    if (cluPath.isEmpty()) return;
+    const auto a = cst::parseAnchor(QFileInfo(cluPath).fileName().toStdString());
+    if (!a.ok) return;
+    const QString dir = QFileInfo(cluPath).absolutePath() + QLatin1Char('/');
+    const std::string base = (dir + QString::fromStdString(a.base)).toStdString();
+    const int         group = a.group;
+    const std::string tag   = a.suffix;             // "" = untagged stage
+
+    // .wti is method-less, per-stage; .tcl is method-less, stage-independent.
+    std::string wtiPath = cst::untaggedPath(base, "wti", group);
+    if (!tag.empty()) wtiPath += "." + tag;
+    const std::string tclPath = cst::untaggedPath(base, "tcl", group);
+
+    const nf::WtiIndex   wti = nf::readWti(wtiPath);
+    const nf::TclRegistry reg = nf::readTcl(tclPath);
+    if (!wti.ok || !reg.ok) return;
+
+    const std::vector<ps::Interval> sec = ps::scopeIntervals(wti, reg, basis);
+    if (sec.empty()) return;
+
+    // seconds -> recording units (the feature table's time column):
+    //   ru = s * 1e6 / samplingInterval   (samplingInterval is microseconds/sample)
+    // Multiplying by a positive constant preserves the sorted, non-overlapping order
+    // scopeIntervals produced, so inScope()'s binary search stays valid.
+    const double k = 1000000.0 / samplingInterval;
+    projScopeRU.reserve(sec.size());
+    for (const ps::Interval& iv : sec)
+        projScopeRU.push_back(ps::Interval{ iv.a * k, iv.b * k });
 }
 
 void ClusterView::startOblique(){

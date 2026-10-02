@@ -40,6 +40,8 @@
 #include "viewwidget.h"
 #include "types.h"
 
+#include "neurosuite/core/projectionscope.hpp"   // temporally-restricted projection scope
+
 
 class KlustersDoc;
 class KlustersView;
@@ -92,6 +94,13 @@ public:
     /** The currently pinned oblique basis (empty when none), so the dialog can
      *  pre-fill it. */
     QList<int> obliqueBasisClusters() const { return obliqueBasis; }
+
+    /** Recompute the temporally-restricted projection scope from the pinned
+     *  oblique basis (each basis cluster -> its template class via .tcl
+     *  provenance -> the union of that class's .wti drift windows), converted to
+     *  recording-unit time.  Called when the basis changes; also safe to call to
+     *  refresh after a preferences change.  No-op bookkeeping when nothing pins. */
+    void refreshProjectionScope();
 
     /** A closed create-mode embedding lasso defers its cut and shows the residual
      *  preview in the waveform view; these commit (Enter) or discard (Esc) it.
@@ -486,6 +495,16 @@ private:
     // exitTsne(): the pin is a persistent choice so successive thirds can be
     // examined against the same pair; startOblique re-validates it each time.
     QList<int>           obliqueBasis;
+
+    // Temporally-restricted projection scope (claude/eap-template-class-design §7),
+    // the union of the pinned basis classes' .wti drift windows, stored in RECORDING
+    // units (the feature table's time column), recomputed by refreshProjectionScope().
+    // The mode/hidden flags are read live from Configuration at draw time, so a prefs
+    // toggle takes effect on the next repaint without a signal; these intervals change
+    // only when the basis/stage does.  `spikeTimeInScope` tests a spike's time column.
+    std::vector<neurosuite::projectionscope::Interval> projScopeRU;
+    bool projScopeActive() const;                 ///< restricted mode AND a non-empty scope
+    bool spikeTimeInScope(double tRecordingUnits) const;
 
     // A create-mode embedding lasso, closed and awaiting confirmation: its cut is
     // deferred while the residual preview shows in the waveform view (Enter
