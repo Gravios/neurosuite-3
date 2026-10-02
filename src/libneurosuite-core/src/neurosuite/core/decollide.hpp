@@ -102,11 +102,60 @@ inline std::map<int, std::vector<float>> meanTemplates(
     return mean;
 }
 
-// Apply `decomps` to ONE method's (res, clu, spk).  Per-unit templates are the
-// mean of that method's spk (computed here).  Unselected spikes are carried over
-// unchanged; each resolved collision is replaced by its two constituents (a
-// decomp referencing a unit with no template is left as-is); the output is stable
-// sorted by time and rounded to int16 (round-half-to-even, matching numpy rint).
+// ── grow plan (method-independent order + provenance) ───────────────────────
+// Decides, ONCE, the grown output: each unselected spike passes through; each
+// decomp (a resolved collision) becomes its two constituents.  Stable time-sorted,
+// so res/clu/spk/fet rendered from it stay row-aligned AND identical across methods
+// (the order depends only on times, not on any method's waveforms/features).
+struct OutRow {
+    int64_t time      = 0;
+    int     clu       = 0;
+    int64_t src       = -1;  ///< source spike index (passthrough, or the collision for a constituent)
+    int     decompIdx = -1;  ///< index into decomps for a constituent, else -1
+    int     comp      = 0;   ///< 0 passthrough, 1 = c1 (clean1), 2 = c2 (clean2)
+};
+
+inline std::vector<OutRow> planGrow(
+    const std::vector<int64_t>& res, const std::vector<int>& clu,
+    const std::vector<Decomp>& decomps)
+{
+    const std::size_t n = res.size();
+    std::vector<char> selected(n, 0);
+    for (const auto& d : decomps)
+        if (d.spikeIndex >= 0 && static_cast<std::size_t>(d.spikeIndex) < n)
+            selected[static_cast<std::size_t>(d.spikeIndex)] = 1;
+
+    std::vector<OutRow> plan;
+    plan.reserve(n + decomps.size());
+    for (std::size_t i = 0; i < n; ++i) {
+        if (selected[i]) continue;
+        OutRow r; r.time = res[i]; r.clu = clu[i]; r.src = static_cast<int64_t>(i); r.comp = 0;
+        plan.push_back(r);
+    }
+    for (std::size_t j = 0; j < decomps.size(); ++j) {
+        const Decomp& d = decomps[j];
+        if (d.spikeIndex < 0 || static_cast<std::size_t>(d.spikeIndex) >= n) continue;
+        const int64_t det = res[static_cast<std::size_t>(d.spikeIndex)];
+        OutRow a; a.time = det + d.c1.tau; a.clu = d.c1.unit; a.src = d.spikeIndex;
+        a.decompIdx = static_cast<int>(j); a.comp = 1;
+        OutRow b; b.time = det + d.c2.tau; b.clu = d.c2.unit; b.src = d.spikeIndex;
+        b.decompIdx = static_cast<int>(j); b.comp = 2;
+        plan.push_back(a); plan.push_back(b);
+    }
+    std::vector<std::size_t> order(plan.size());
+    for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(),
+                     [&](std::size_t x, std::size_t y) { return plan[x].time < plan[y].time; });
+    std::vector<OutRow> sorted(plan.size());
+    for (std::size_t o = 0; o < order.size(); ++o) sorted[o] = plan[order[o]];
+    return sorted;
+}
+
+// Apply `decomps` to ONE method's (res, clu, spk) via the shared plan.  Per-unit
+// templates are the mean of that method's spk.  A constituent's waveform is the
+// mutual-subtraction clean1/clean2 (a missing template — not expected for real
+// basis units — degrades to the collision waveform, preserving row alignment).
+// Output int16, round-half-to-even (numpy rint).
 inline Grown applyMethod(
     const std::vector<int64_t>& res, const std::vector<int>& clu,
     const std::vector<int16_t>& spk, int nSamples, int nChannels,
@@ -118,79 +167,103 @@ inline Grown applyMethod(
     if (nSamples <= 0 || nChannels <= 0 || clu.size() != n || spk.size() != n * rec)
         return g;
 
-    const auto T = meanTemplates(spk, nSamples, nChannels, clu);
+    const auto T    = meanTemplates(spk, nSamples, nChannels, clu);
+    const auto plan = planGrow(res, clu, decomps);
 
-    std::vector<char> selected(n, 0);
-    for (const auto& d : decomps)
-        if (d.spikeIndex >= 0 && static_cast<std::size_t>(d.spikeIndex) < n)
-            selected[static_cast<std::size_t>(d.spikeIndex)] = 1;
+    g.res.resize(plan.size());
+    g.clu.resize(plan.size());
+    g.spk.resize(plan.size() * rec);
 
-    std::vector<int64_t>            ot;
-    std::vector<int>                oc;
-    std::vector<std::vector<float>> ow;
-    ot.reserve(n + decomps.size());
-    oc.reserve(n + decomps.size());
-    ow.reserve(n + decomps.size());
-
-    // Unselected spikes, unchanged.
-    for (std::size_t i = 0; i < n; ++i) {
-        if (selected[i]) continue;
-        ot.push_back(res[i]);
-        oc.push_back(clu[i]);
-        ow.emplace_back(spk.begin() + static_cast<std::ptrdiff_t>(i * rec),
-                        spk.begin() + static_cast<std::ptrdiff_t>((i + 1) * rec));
-    }
-
-    // Resolved collisions.
-    std::vector<float> rolled, mid;
-    for (const auto& d : decomps) {
-        if (d.spikeIndex < 0 || static_cast<std::size_t>(d.spikeIndex) >= n) continue;
-        const std::size_t i = static_cast<std::size_t>(d.spikeIndex);
-        const std::vector<float> c(spk.begin() + static_cast<std::ptrdiff_t>(i * rec),
-                                   spk.begin() + static_cast<std::ptrdiff_t>((i + 1) * rec));
-        const auto it1 = T.find(d.c1.unit);
-        const auto it2 = T.find(d.c2.unit);
-        if (it1 == T.end() || it2 == T.end()) {   // no template to subtract: leave as-is
-            ot.push_back(res[i]); oc.push_back(clu[i]); ow.push_back(c);
-            continue;
+    std::vector<float> rolled, mid, out(rec);
+    for (std::size_t o = 0; o < plan.size(); ++o) {
+        const OutRow& r = plan[o];
+        g.res[o] = r.time;
+        g.clu[o] = r.clu;
+        const std::size_t i = static_cast<std::size_t>(r.src);
+        const int16_t* csrc = &spk[i * rec];
+        if (r.comp == 0) {
+            for (std::size_t j = 0; j < rec; ++j) out[j] = static_cast<float>(csrc[j]);
+        } else {
+            const Decomp& d = decomps[static_cast<std::size_t>(r.decompIdx)];
+            std::vector<float> c(rec);
+            for (std::size_t j = 0; j < rec; ++j) c[j] = static_cast<float>(csrc[j]);
+            const auto it1 = T.find(d.c1.unit);
+            const auto it2 = T.find(d.c2.unit);
+            if (it1 == T.end() || it2 == T.end()) {
+                out = c;                                   // no template: keep aligned, copy collision
+            } else if (r.comp == 1) {                      // clean1 = c - a2*roll0(T2,t2)
+                roll0(it2->second, nSamples, nChannels, d.c2.tau, rolled);
+                for (std::size_t j = 0; j < rec; ++j) out[j] = c[j] - static_cast<float>(d.c2.amp) * rolled[j];
+            } else {                                       // clean2 = roll0(c - a1*roll0(T1,t1), -t2)
+                roll0(it1->second, nSamples, nChannels, d.c1.tau, rolled);
+                mid.assign(rec, 0.0f);
+                for (std::size_t j = 0; j < rec; ++j) mid[j] = c[j] - static_cast<float>(d.c1.amp) * rolled[j];
+                roll0(mid, nSamples, nChannels, -d.c2.tau, out);
+            }
         }
-        // clean1 = c - a2 * roll0(T2, tau2)
-        roll0(it2->second, nSamples, nChannels, d.c2.tau, rolled);
-        std::vector<float> clean1(rec);
         for (std::size_t j = 0; j < rec; ++j)
-            clean1[j] = c[j] - static_cast<float>(d.c2.amp) * rolled[j];
-        // clean2 = roll0(c - a1 * roll0(T1, tau1), -tau2)
-        roll0(it1->second, nSamples, nChannels, d.c1.tau, rolled);
-        mid.assign(rec, 0.0f);
-        for (std::size_t j = 0; j < rec; ++j)
-            mid[j] = c[j] - static_cast<float>(d.c1.amp) * rolled[j];
-        std::vector<float> clean2;
-        roll0(mid, nSamples, nChannels, -d.c2.tau, clean2);
-
-        const int64_t det = res[i];
-        ot.push_back(det + d.c1.tau); oc.push_back(d.c1.unit); ow.push_back(std::move(clean1));
-        ot.push_back(det + d.c2.tau); oc.push_back(d.c2.unit); ow.push_back(std::move(clean2));
-    }
-
-    // Stable sort by time (keeps the cross-method res/clu identical).
-    std::vector<std::size_t> order(ot.size());
-    for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
-    std::stable_sort(order.begin(), order.end(),
-                     [&](std::size_t a, std::size_t b) { return ot[a] < ot[b]; });
-
-    g.res.resize(order.size());
-    g.clu.resize(order.size());
-    g.spk.resize(order.size() * rec);
-    for (std::size_t o = 0; o < order.size(); ++o) {
-        const std::size_t s = order[o];
-        g.res[o] = ot[s];
-        g.clu[o] = oc[s];
-        const std::vector<float>& w = ow[s];
-        for (std::size_t j = 0; j < rec; ++j)
-            g.spk[o * rec + j] = static_cast<int16_t>(std::nearbyint(w[j]));
+            g.spk[o * rec + j] = static_cast<int16_t>(std::nearbyint(out[j]));
     }
     g.ok = true;
     return g;
+}
+
+// Grow the IN-MEMORY feature table alongside applyMethod, using the SAME plan so
+// rows stay aligned with res/clu/spk.  PCA projection is linear and Klusters
+// already holds every spike's features, so a constituent's features follow from
+// the collision's existing row and the other unit's mean features — no
+// re-projection, no .pca read:
+//     f(clean1) = f(collision) - a2 * meanFeat(unit2)
+//     f(clean2) = f(collision) - a1 * meanFeat(unit1)
+// (an approximation only in the subtracted template's shift; exact at tau = 0).
+// `fet` is one int64 row per spike (the .fet body, header excluded); returns the
+// grown rows rounded to int64, row-aligned with applyMethod's res/clu.
+inline std::vector<std::vector<int64_t>> applyFeatures(
+    const std::vector<int64_t>& res, const std::vector<int>& clu,
+    const std::vector<std::vector<int64_t>>& fet,
+    const std::vector<Decomp>& decomps)
+{
+    std::vector<std::vector<int64_t>> out;
+    const std::size_t n = res.size();
+    if (fet.size() != n || n == 0) return out;
+    const std::size_t D = fet[0].size();
+
+    std::map<int, std::vector<double>> sum; std::map<int, long> cnt;
+    for (std::size_t i = 0; i < n; ++i) {
+        auto& s = sum[clu[i]]; if (s.empty()) s.assign(D, 0.0);
+        const std::size_t d = std::min(D, fet[i].size());
+        for (std::size_t j = 0; j < d; ++j) s[j] += static_cast<double>(fet[i][j]);
+        ++cnt[clu[i]];
+    }
+    std::map<int, std::vector<double>> meanF;
+    for (auto& kv : sum) {
+        const long c = cnt[kv.first]; std::vector<double> m(D, 0.0);
+        if (c > 0) for (std::size_t j = 0; j < D; ++j) m[j] = kv.second[j] / static_cast<double>(c);
+        meanF[kv.first] = std::move(m);
+    }
+
+    const auto plan = planGrow(res, clu, decomps);
+    out.resize(plan.size());
+    for (std::size_t o = 0; o < plan.size(); ++o) {
+        const OutRow& r = plan[o];
+        const std::size_t i = static_cast<std::size_t>(r.src);
+        std::vector<int64_t> row(D, 0);
+        if (r.comp == 0) {
+            row = fet[i];
+        } else {
+            const Decomp& d = decomps[static_cast<std::size_t>(r.decompIdx)];
+            const int    otherUnit = (r.comp == 1) ? d.c2.unit : d.c1.unit;
+            const double otherAmp  = (r.comp == 1) ? d.c2.amp  : d.c1.amp;
+            const auto mit = meanF.find(otherUnit);
+            for (std::size_t j = 0; j < D; ++j) {
+                double v = (j < fet[i].size()) ? static_cast<double>(fet[i][j]) : 0.0;
+                if (mit != meanF.end()) v -= otherAmp * mit->second[j];
+                row[j] = static_cast<int64_t>(std::llround(v));
+            }
+        }
+        out[o] = std::move(row);
+    }
+    return out;
 }
 
 // ── fit: two-template matching pursuit against a FIXED basis pair {A,B} ──────
