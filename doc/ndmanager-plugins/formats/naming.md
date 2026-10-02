@@ -70,6 +70,30 @@ exist should be an error, not a silent fall-back to a different variant's
 data — mixing a `stderiv` `.clu` with a `standard` `.fet` would be a
 correctness bug.
 
+## EAP template-library family (composed directly)
+
+The EAP template-class layer — [`.eap`](eap.md), [`.tcl`](tcl.md),
+[`.wti`](wti.md), [`.wtf`](wtf.md) — is **not** registered in `custody.hpp`'s
+type tables (`isKnownType`), so it never goes through the three-`Klass`
+`resolve()` fallback above. Writers and readers compose these paths **directly**
+with the `untaggedPath` / `stagePath` helpers, and a fixed per-group layer always
+exists (there is nothing to fall back to), so the extra machinery buys nothing.
+
+| Type | Composed as | Method | Stage |
+|---|---|---|---|
+| `.eap` | `untaggedPath(base,"eap",group)` → `<base>.eap.<group>` | **method-less** | per-stage (trailing `.<stage>` appended) |
+| `.tcl` | `untaggedPath(base,"tcl",group)` → `<base>.tcl.<group>` | **method-less** | stage-**independent** (one per session+group) |
+| `.wti` | `untaggedPath(base,"wti",group)` → `<base>.wti.<group>` | **method-less** | per-stage (trailing `.<stage>` appended) |
+| `.wtf` | `stagePath(base,"wtf",variant,group,stage)` → `<base>.wtf.<variant>.<group>[.<stage>]` | **method-tagged** | per-stage |
+
+Membership, the class registry and the template index do not depend on the
+waveform method, so `.eap`/`.tcl`/`.wti` carry **no** method token; only the
+`.wtf` waveform *stack* does, because its sample values depend on the extraction
+method while the companion `.wti` index does not. The stage tag is the trailing
+`suffix` token — for the method-less types it is appended by hand (there is no
+method slot to pass it through), and `.tcl` takes none because a class id must
+mean the same column at every stage.
+
 ## Resolution rules
 
 Given a `base`, `type`, `group`, and requested `method`:

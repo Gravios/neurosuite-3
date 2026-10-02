@@ -52,7 +52,8 @@ For task-oriented walkthroughs that span multiple programs, see
 | [`kk_resolve_prior.py`](commands/kk_resolve_prior.md) | Look up the prior for a session+group |
 | [`ndm_stripdat`](commands/ndm_stripdat.md) | Subtract spikes to produce a cleaned `.dat` |
 | [`ndm_redetectspikes`](commands/ndm_redetectspikes.md) | Second-round detection on cleaned `.dat` |
-| [`ndm_decomposecollisions`](commands/ndm_decomposecollisions.md) | Collision decomposition (`.col.N`) |
+| [`process_initeap`](commands/process_initeap.md) | Pre-construct the EAP template-class layer (`.eap.N` / `.tcl.N`) |
+| [`ndm_decomposecollisions`](commands/ndm_decomposecollisions.md) | Collision decomposition (`.col.N`; also fills the `.eap.N` / `.tcl.N` layer) |
 | [`ndm_localise`](commands/ndm_localise.md) | Per-spike source localisation (`.loc.N`) |
 | [`ndm_estimatedrift`](commands/ndm_estimatedrift.md) | Spatial probe drift estimation (`.drift`) |
 | [`ndm_applydrift`](commands/ndm_applydrift.md) | Propagate curated drift to sibling shanks |
@@ -80,6 +81,10 @@ For task-oriented walkthroughs that span multiple programs, see
 | [`.clc.<method>.N`](formats/clc.md) | Child (atom) layer of a hierarchical clustering |
 | [`.clp.<method>.N`](formats/clp.md) | Atom→fiber map for a hierarchical clustering |
 | [`.col.<method>.N`](formats/col.md) | Collision decomposition results |
+| [`.eap.N`](formats/eap.md) | EAP template-class membership + offset matrix (method-less) |
+| [`.tcl.N`](formats/tcl.md) | Template-class registry (method-less, stage-independent) |
+| [`.wti.N`](formats/wti.md) | Template-waveform index (method-less) |
+| [`.wtf.<method>.N`](formats/wtf.md) | Template-waveform stack (method-tagged) |
 | [`.drift`](formats/drift.md) | Probe drift trajectories |
 | [`.chunks.N`](formats/chunks.md) | Adaptive KiloKlustaKwik chunk boundaries |
 | [`.loc.N`](formats/loc.md) | Per-spike source locations |
