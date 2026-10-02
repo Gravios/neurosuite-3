@@ -32,6 +32,7 @@ set(klusters_SRCS
     errormatrixview.cpp
     templatematrixthread.cpp
     templatematrixview.cpp
+    templateview.cpp
     residualmatrixthread.cpp
     residualmatrixview.cpp
     pairxcorrthread.cpp

@@ -64,7 +64,7 @@ public:
     /**
     * Enum indicating wich type of view the user wants.
     */
-    enum DisplayType {CLUSTERS=0,WAVEFORMS=1,CORRELATIONS=2,OVERVIEW=3,GROUPING_ASSISTANT_VIEW=4,ERROR_MATRIX=5,TRACES=6,TEMPLATE_MATRIX=7,RESIDUAL_MATRIX=8,DRIFT_MATRIX=9};
+    enum DisplayType {CLUSTERS=0,WAVEFORMS=1,CORRELATIONS=2,OVERVIEW=3,GROUPING_ASSISTANT_VIEW=4,ERROR_MATRIX=5,TRACES=6,TEMPLATE_MATRIX=7,RESIDUAL_MATRIX=8,DRIFT_MATRIX=9,TEMPLATE_LIBRARY=10};
 
     /** Constructs a view.
       * @param mainWindow a reference on the main window of the application.
@@ -177,6 +177,10 @@ public:
     * @param dimensionY ordinate dimension.
     **/
     void updateDimensions(int dimensionX,int dimensionY);
+
+    /** Forward a template-library request to pin @p ids as the oblique basis to
+     *  the application (which resolves the active cluster view and validates). */
+    void requestPinObliqueBasis(const QList<int>& ids);
 
     /**Returns the dimension used for the abscissa axis in the Cluster View.
     * @return abscissa dimension.

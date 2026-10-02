@@ -213,6 +213,21 @@ NEUROSUITE_CORE_EXPORT WtiIndex readWti(const std::string& path);
 // Returns false if the file cannot be opened.
 NEUROSUITE_CORE_EXPORT bool     writeWti(const std::string& path, const WtiIndex& idx);
 
+// ── .wti view-model helpers (one template unit's series) ────────────────────
+// Trivial filters over WtiIndex.rows, factored out so a viewer and a test share
+// one definition.  The row order of the result is the scrub order; each row's
+// .row field is the matching .wtf record index.
+//
+// Distinct unit ids present in `idx`, ascending — the set of units that HAVE a
+// template (fiber-template writes a series only for marked units).
+NEUROSUITE_CORE_EXPORT std::vector<int> wtiUnits(const WtiIndex& idx);
+// Distinct link names for `unitId`, in first-seen order (e.g. "drift", "adapt").
+NEUROSUITE_CORE_EXPORT std::vector<std::string> wtiLinks(const WtiIndex& idx, int unitId);
+// Rows of `idx` for (unitId, link), ascending by bin — one unit's scrubbable
+// series along that link.  Empty if the unit/link is absent.
+NEUROSUITE_CORE_EXPORT std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int unitId,
+                                                     const std::string& link);
+
 // ── .evt ──────────────────────────────────────────────────────────────────
 struct EvtEntry {
     double      timeMs = 0.0;

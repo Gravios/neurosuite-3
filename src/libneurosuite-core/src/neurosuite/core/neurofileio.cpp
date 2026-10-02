@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 namespace neurofileio {
 
@@ -427,6 +428,36 @@ bool writeWti(const std::string& path, const WtiIndex& idx)
             << r.bin << ' ' << r.a << ' ' << r.b << ' ' << r.nSpikes << "\n";
     }
     return static_cast<bool>(out);
+}
+
+std::vector<int> wtiUnits(const WtiIndex& idx)
+{
+    std::vector<int> units;
+    for (const WtiRow& r : idx.rows) units.push_back(r.unitId);
+    std::sort(units.begin(), units.end());
+    units.erase(std::unique(units.begin(), units.end()), units.end());
+    return units;
+}
+
+std::vector<std::string> wtiLinks(const WtiIndex& idx, int unitId)
+{
+    std::vector<std::string> links;                 // first-seen order, de-duplicated
+    for (const WtiRow& r : idx.rows) {
+        if (r.unitId != unitId) continue;
+        if (std::find(links.begin(), links.end(), r.link) == links.end())
+            links.push_back(r.link);
+    }
+    return links;
+}
+
+std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int unitId, const std::string& link)
+{
+    std::vector<WtiRow> rows;
+    for (const WtiRow& r : idx.rows)
+        if (r.unitId == unitId && r.link == link) rows.push_back(r);
+    std::stable_sort(rows.begin(), rows.end(),
+                     [](const WtiRow& a, const WtiRow& b) { return a.bin < b.bin; });
+    return rows;
 }
 
 std::vector<EvtEntry> readEvt(const std::string& path, bool* ok)

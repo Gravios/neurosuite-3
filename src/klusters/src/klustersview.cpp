@@ -41,6 +41,7 @@
 #include "waveformview.h"
 #include "errormatrixview.h"
 #include "templatematrixview.h"
+#include "templateview.h"
 #include "residualmatrixview.h"
 #include "driftmatrixview.h"
 #include "tracewidget.h"
@@ -58,7 +59,9 @@ const QString KlustersView::DisplayTypeNames[]={QObject::tr("Cluster Display"),
                                                 QObject::tr("Error Matrix Display"),
                                                 QObject::tr("Trace Display"),
                                                 QObject::tr("Template Matrix Display"),
-                                                QObject::tr("Residual Matrix Display")};
+                                                QObject::tr("Residual Matrix Display"),
+                                                QObject::tr("Drift Matrix Display"),
+                                                QObject::tr("Template Library")};
 
 
 KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColor& backgroundColor,int initialDimensionX,int initialDimensionY,
@@ -223,6 +226,25 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         mainDock->installEventFilter(this);
         viewCounter.insert("TraceView",1);
         setConnections(TRACES,traceWidget,mainDock);
+    }
+        break;
+    case TEMPLATE_LIBRARY:
+    {
+        isThereWaveformView = false;
+        isThereClusterView = false;
+        isThereCorrelationView = false;
+        isThereErrorMatrixView = false;
+        isThereTemplateMatrixView = false;
+        isThereTraceView = false;
+        // Self-contained reader view (like TemplateMatrixView it is a QWidget,
+        // not a ViewWidget): it loads the open group's .wtf/.wti from disk.
+        mainDock->setWidget(new TemplateView(doc,*this,backgroundColor,statusBar,mainDock));
+        mainDock->setWindowTitle(tr("Template Library"));
+        mainDock->installEventFilter(this);
+        viewCounter.insert("TemplateView",1);
+        // setConnections' common updateContents->update() is enough; the view has
+        // no spike-selection plumbing to wire.
+        setConnections(TEMPLATE_LIBRARY,mainDock->widget(),mainDock);
     }
         break;
     }
@@ -1170,11 +1192,17 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
     return newViewType;
 }
 
-void KlustersView::updateDimensions(int dimensionX,int dimensionY){  
+void KlustersView::updateDimensions(int dimensionX,int dimensionY){
     this->dimensionX = dimensionX;
     this->dimensionY = dimensionY;
     //Signal a change to the Widgets
     emit updatedDimensions(dimensionX,dimensionY);
+}
+
+void KlustersView::requestPinObliqueBasis(const QList<int>& ids){
+    // The template library view asks to pin its selected units as the oblique
+    // basis; the application resolves the active cluster view and validates.
+    mainWindow.pinObliqueBasisFromTemplates(ids);
 }
 
 
