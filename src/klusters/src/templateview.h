@@ -28,6 +28,7 @@
 #include <cstdint>
 
 #include "neurosuite/core/neurofileio.h"   // WtiIndex / SpkFile / wti* helpers
+#include "templateclassstore.h"            // EAP template-class state model (.eap/.tcl)
 
 class KlustersDoc;
 class KlustersView;
@@ -81,6 +82,23 @@ private:
     void onPinClicked();                 // selected units -> oblique basis (via the view)
     int  shownUnit() const;              // the unit whose series is displayed (current row)
 
+    // ── template classes (.eap/.tcl via TemplateClassStore) ───────────────────
+    void loadClasses();                  // open the store for the resolved group+stage
+    void rebuildClassList();             // fill the class list from active .tcl classes
+    void updateClassButtons();           // enable/disable per selection + primary
+    void persistClasses();               // save the store (.eap + .tcl) to disk
+    void showStatus(const QString& msg); // status bar, null-safe
+    int  selectedClassCol() const;       // .eap column of the selected class row, or -1
+    int  firstSelectedUnit() const;      // lowest shown cluster id > 1, or -1 (provenance)
+    std::vector<int64_t> selectionSpikeIndices() const;  // 0-based .spk ids of shown units
+    void onNewClass();                   // new class from the current cluster selection
+    void onUpdatePrimary();              // re-set the primary class to the current selection
+    void onMergeIntoPrimary();           // fold the selected class into the primary
+    void onDeleteClass();                // tombstone the selected class
+    void onRenameClass();                // relabel the selected class
+    void onSetPrimary();                 // make the selected class the primary
+    void onRegenClicked();               // request a fiber-template waveform regen
+
     KlustersDoc&  doc;
     KlustersView& klView;
     QStatusBar*   statusBar = nullptr;
@@ -96,6 +114,11 @@ private:
     neurofileio::WtiIndex   wti;         // the shared row index
     neurofileio::SpkFile    wtf;         // the open variant's waveform stack
     bool                    loaded = false;
+    bool                    coordsResolved = false;  // base/group/tag/geometry known
+
+    // template-class state (independent of the .wti library; see TemplateClassStore)
+    TemplateClassStore      classStore;
+    bool                    classesLoaded = false;
 
     // widgets
     QListWidget*      unitList = nullptr;   // template units (multi-select)
@@ -105,6 +128,17 @@ private:
     QLabel*           headerLabel = nullptr;// session/method summary or "no templates"
     QPushButton*      pinButton = nullptr;  // pin selected units as the oblique basis
     TemplateWavePanel* panel = nullptr;
+
+    // template-class panel
+    QLabel*      classHeader       = nullptr;  // "Template classes" + primary summary
+    QListWidget* classList         = nullptr;  // active classes (id, label, member count)
+    QPushButton* newClassButton    = nullptr;
+    QPushButton* updateClassButton = nullptr;
+    QPushButton* mergeClassButton  = nullptr;
+    QPushButton* deleteClassButton = nullptr;
+    QPushButton* renameClassButton = nullptr;
+    QPushButton* setPrimaryButton  = nullptr;
+    QPushButton* regenButton       = nullptr;
 };
 
 #endif // TEMPLATEVIEW_H
