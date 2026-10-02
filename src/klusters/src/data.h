@@ -701,6 +701,10 @@ public:
             return QPoint(data.features(featuresRowIndex,dimensionX),
                           - data.features(featuresRowIndex,dimensionY));
         }
+        /** The current spike's 1-based feature row (its global index into the
+    * features / .spk / .eap tables).  Lets a drawing pass map a drawn point back
+    * to its spike — e.g. the EAP collision overlay looks up the spike's .eap row. */
+        dataType featureRow() const { return (*data.spikesByCluster)(1,index); }
         /**
     * Returns the specified feature for the current spike for the cluster on which this class iterates.
     * @param dimension the feature requested

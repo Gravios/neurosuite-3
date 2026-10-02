@@ -108,6 +108,7 @@ void Configuration::read() {
     projectionScopeMode        = settings.value("projectionScopeMode",        0).toInt();
     projectionScopeMinutes     = settings.value("projectionScopeMinutes",     12.0).toDouble();
     projectionOutOfScopeHidden = settings.value("projectionOutOfScopeHidden", false).toBool();
+    showEapCollisions          = settings.value("showEapCollisions",          false).toBool();
     knnK         = settings.value("knnK",         10).toInt();
     knnThreshold = settings.value("knnThreshold", 0.50).toDouble();
     knnMinNew    = settings.value("knnMinNew",    5).toInt();
@@ -214,6 +215,7 @@ void Configuration::write() const {
     settings.setValue("projectionScopeMode",        projectionScopeMode);
     settings.setValue("projectionScopeMinutes",     projectionScopeMinutes);
     settings.setValue("projectionOutOfScopeHidden", projectionOutOfScopeHidden);
+    settings.setValue("showEapCollisions",          showEapCollisions);
     settings.setValue("knnK",         knnK);
     settings.setValue("knnThreshold", knnThreshold);
     settings.setValue("knnMinNew",    knnMinNew);

@@ -99,6 +99,8 @@ public:
     double getProjectionScopeMinutes() const;
     void setProjectionOutOfScopeHidden(bool b); ///< true = hide, false = grey/non-selectable
     bool getProjectionOutOfScopeHidden() const;
+    void setShowEapCollisions(bool b);          ///< ring spikes with >=2 .eap classes
+    bool getShowEapCollisions() const;
 
 };
 

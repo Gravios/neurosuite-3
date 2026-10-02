@@ -506,6 +506,18 @@ private:
     bool projScopeActive() const;                 ///< restricted mode AND a non-empty scope
     bool spikeTimeInScope(double tRecordingUnits) const;
 
+    // EAP collision overlay (claude/eap-template-class-design §8): a per-spike flag
+    // (indexed by 0-based .spk/.eap row) set when that spike's .eap row carries two
+    // or more template classes.  Loaded once for the open stage; the feature views
+    // ring these spikes when the Configuration overlay pref is on.  Empty when no
+    // .eap exists for the stage.
+    std::vector<char> eapCollision;
+    bool resolveSessionPaths(std::string& base, int& group, std::string& tag) const;
+    void loadEapCollisions();                     ///< read the stage .eap, fill eapCollision
+    bool spikeIsCollision(long spk0) const {      ///< 0-based spike row -> is a collision
+        return spk0 >= 0 && spk0 < static_cast<long>(eapCollision.size()) && eapCollision[spk0];
+    }
+
     // A create-mode embedding lasso, closed and awaiting confirmation: its cut is
     // deferred while the residual preview shows in the waveform view (Enter
     // applies, Esc cancels).  pendingMode_ holds the BaseFrame::Mode (as int).

@@ -74,6 +74,9 @@ PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent
     projHideOutOfScopeCheckBox->setToolTip(tr(
         "In temporally-restricted mode: hide out-of-scope spikes entirely, or (unchecked)\n"
         "keep them greyed and non-selectable for context."));
+    showCollisionsCheckBox->setToolTip(tr(
+        "Overlay a ring on feature-view spikes whose .eap row has two or more template\n"
+        "classes set (collisions) — so multi-membership is visible over the .clu colours."));
 }
 PrefClusterView::~PrefClusterView(){
 }
@@ -216,4 +219,12 @@ void PrefClusterView::setProjectionOutOfScopeHidden(bool b){
 
 bool PrefClusterView::getProjectionOutOfScopeHidden() const{
     return projHideOutOfScopeCheckBox->isChecked();
+}
+
+void PrefClusterView::setShowEapCollisions(bool b){
+    showCollisionsCheckBox->setChecked(b);
+}
+
+bool PrefClusterView::getShowEapCollisions() const{
+    return showCollisionsCheckBox->isChecked();
 }

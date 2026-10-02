@@ -323,6 +323,7 @@ void PrefDialog::updateDialog()
     prefclusterView->setProjectionScopeMode(configuration().getProjectionScopeMode());
     prefclusterView->setProjectionScopeMinutes(configuration().getProjectionScopeMinutes());
     prefclusterView->setProjectionOutOfScopeHidden(configuration().getProjectionOutOfScopeHidden());
+    prefclusterView->setShowEapCollisions(configuration().getShowEapCollisions());
     prefWaveformView->setGain(configuration().getGain());
 
     // Appearance: reflect the current suite-wide theme preference.
@@ -419,6 +420,7 @@ void PrefDialog::updateConfiguration()
     configuration().setProjectionScopeMode(prefclusterView->getProjectionScopeMode());
     configuration().setProjectionScopeMinutes(prefclusterView->getProjectionScopeMinutes());
     configuration().setProjectionOutOfScopeHidden(prefclusterView->getProjectionOutOfScopeHidden());
+    configuration().setShowEapCollisions(prefclusterView->getShowEapCollisions());
     configuration().setGain(prefWaveformView->getGain());
     configuration().setNbChannels(prefWaveformView->getNbChannels());
     configuration().setChannelPositions(prefWaveformView->getChannelPositions());
@@ -515,6 +517,7 @@ void PrefDialog::slotDefault()
     prefclusterView->setProjectionScopeMode(configuration().getProjectionScopeModeDefault());
     prefclusterView->setProjectionScopeMinutes(configuration().getProjectionScopeMinutesDefault());
     prefclusterView->setProjectionOutOfScopeHidden(configuration().getProjectionOutOfScopeHiddenDefault());
+    prefclusterView->setShowEapCollisions(configuration().getShowEapCollisionsDefault());
     prefWaveformView->setGain(configuration().getGainDefault());
     prefWaveformView->resetChannelList(configuration().getNbChannels());
 

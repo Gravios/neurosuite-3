@@ -86,6 +86,7 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     timeDimension = doc.data().timeDimension();
     samplingInterval = doc.data().intervalOfSampling();
     setTimeStepInSecond(timeInterval);
+    loadEapCollisions();                 // precompute the .eap collision set for this stage
 
     //Update the dimension of the window and the values of dimensionX and dimensionY
     //Qualified (non-virtual) call: ClusterView is the most-derived type in its
@@ -753,6 +754,25 @@ void ClusterView::paintTsne(QPainter& painter){
         const QPoint p = tsneViewportPos(i);
         painter.drawEllipse(p.x() - r, p.y() - r, 2 * r, 2 * r);
     }
+    // EAP collision overlay: ring embedded points whose spike is a collision.
+    if (configuration().getShowEapCollisions() && !eapCollision.empty()) {
+        painter.setBrush(Qt::NoBrush);
+        QPen ringPen(QColor(255, 210, 0));
+        ringPen.setWidth(1);
+        painter.setPen(ringPen);
+        const int rr = r + 2;
+        for (int i = 0; i < N && i < tsneRowSpike.size(); ++i) {
+            if (!spikeIsCollision(static_cast<long>(tsneRowSpike.at(i)))) continue;
+            if (hideOOS) {                               // don't ring a hidden out-of-scope spike
+                const double t = static_cast<double>(doc.data().featureValue(
+                    static_cast<dataType>(tsneRowSpike.at(i)) + 1, timeDimension));
+                if (!spikeTimeInScope(t)) continue;
+            }
+            const QPoint p = tsneViewportPos(i);
+            painter.drawEllipse(p.x() - rr, p.y() - rr, 2 * rr, 2 * rr);
+        }
+        painter.setPen(Qt::NoPen);
+    }
     if (!selectionPolygon.isEmpty()) {
         // Same overlay as the scatter: the mode's colour and the configured
         // line width, so the polygon tells the curator which action is armed.
@@ -848,6 +868,26 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
                 }
                 QPoint px = worldToViewport(spikeIterator(dimensionX,dimensionY));
                 painter.drawPoint(px);
+            }
+        }
+    }
+
+    // EAP collision overlay: ring spikes whose .eap row has >= 2 template classes,
+    // in a second pass so the hot point loop stays untouched when the overlay is off.
+    if (configuration().getShowEapCollisions() && !eapCollision.empty()) {
+        painter.setBrush(Qt::NoBrush);
+        QPen ringPen(QColor(255, 210, 0));          // amber — distinct from cluster colours + grey
+        ringPen.setWidth(1);
+        painter.setPen(ringPen);
+        const int rr = r + 2;
+        for (int clustId : clustersList) {
+            Data::Iterator it = clusteringData.iterator(static_cast<dataType>(clustId));
+            for (; it.hasNext(); it.next()) {
+                if (!spikeIsCollision(static_cast<long>(it.featureRow()) - 1)) continue;
+                if (hideOOS && !spikeTimeInScope(            // don't ring a hidden out-of-scope spike
+                        static_cast<double>(it(static_cast<dataType>(timeDimension))))) continue;
+                QPoint px = worldToViewport(it(dimensionX,dimensionY));
+                painter.drawEllipse(px.x() - rr, px.y() - rr, rr*2, rr*2);
             }
         }
     }
@@ -1499,6 +1539,40 @@ bool ClusterView::spikeTimeInScope(double tRecordingUnits) const {
     return neurosuite::projectionscope::inScope(projScopeRU, tRecordingUnits);
 }
 
+bool ClusterView::resolveSessionPaths(std::string& base, int& group, std::string& tag) const {
+    // base/group/stage of the open document, from its .clu file name (custody).
+    const QString cluPath = doc.url();
+    if (cluPath.isEmpty()) return false;
+    const auto a = neurosuite::custody::parseAnchor(QFileInfo(cluPath).fileName().toStdString());
+    if (!a.ok) return false;
+    const QString dir = QFileInfo(cluPath).absolutePath() + QLatin1Char('/');
+    base  = (dir + QString::fromStdString(a.base)).toStdString();
+    group = a.group;
+    tag   = a.suffix;                               // "" = untagged stage
+    return true;
+}
+
+void ClusterView::loadEapCollisions(){
+    namespace nf  = neurofileio;
+    namespace cst = neurosuite::custody;
+    eapCollision.clear();
+    std::string base, tag; int group = 0;
+    if (!resolveSessionPaths(base, group, tag)) return;
+    // .eap is method-less + per-stage: <base>.eap.<group>[.<tag>].
+    std::string eapPath = cst::untaggedPath(base, "eap", group);
+    if (!tag.empty()) eapPath += "." + tag;
+    const nf::EapFile e = nf::readEap(eapPath);
+    if (!e.ok || e.nSpikes <= 0 || e.nClasses <= 0) return;
+    eapCollision.assign(static_cast<std::size_t>(e.nSpikes), 0);
+    for (int64_t i = 0; i < e.nSpikes; ++i) {
+        const std::size_t rowBase = static_cast<std::size_t>(i) * e.nClasses;
+        int cnt = 0;
+        for (int j = 0; j < e.nClasses; ++j)
+            if (nf::eapPresent(e.cells[rowBase + j]) && ++cnt >= 2) break;   // stop at 2
+        if (cnt >= 2) eapCollision[static_cast<std::size_t>(i)] = 1;
+    }
+}
+
 void ClusterView::refreshProjectionScope(){
     namespace ps  = neurosuite::projectionscope;
     namespace nf  = neurofileio;
@@ -1510,15 +1584,8 @@ void ClusterView::refreshProjectionScope(){
     for (int id : obliqueBasis) basis.push_back(id);
     if (basis.empty() || samplingInterval <= 0.0) return;
 
-    // Resolve the session base/group/stage from the open document's .clu path.
-    const QString cluPath = doc.url();
-    if (cluPath.isEmpty()) return;
-    const auto a = cst::parseAnchor(QFileInfo(cluPath).fileName().toStdString());
-    if (!a.ok) return;
-    const QString dir = QFileInfo(cluPath).absolutePath() + QLatin1Char('/');
-    const std::string base = (dir + QString::fromStdString(a.base)).toStdString();
-    const int         group = a.group;
-    const std::string tag   = a.suffix;             // "" = untagged stage
+    std::string base, tag; int group = 0;
+    if (!resolveSessionPaths(base, group, tag)) return;
 
     // .wti is method-less, per-stage; .tcl is method-less, stage-independent.
     std::string wtiPath = cst::untaggedPath(base, "wti", group);

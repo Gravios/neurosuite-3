@@ -380,6 +380,11 @@
           <property name="text"><string>Hide out-of-scope spikes (otherwise greyed &amp; non-selectable)</string></property>
          </widget>
         </item>
+        <item row="3" column="0" colspan="2">
+         <widget class="QCheckBox" name="showCollisionsCheckBox">
+          <property name="text"><string>Ring collision spikes (&gt;= 2 template classes in .eap)</string></property>
+         </widget>
+        </item>
        </layout>
       </widget>
      </item>
