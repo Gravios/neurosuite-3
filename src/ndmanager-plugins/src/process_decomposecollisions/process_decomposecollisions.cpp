@@ -926,8 +926,11 @@ static Args parse_args(int argc, char **argv)
         const char *v = argv[++i];
         if      (k=="--session")            a.session      = v;
         else if (k=="--method")             a.method       = v;
+        else if (k=="--clu-tag")            a.clu_tag      = v;
         else if (k=="--param-file")         a.param_file   = v;
         else if (k=="--n-groups")           a.n_groups     = std::atoi(v);
+        else if (k=="--group")              a.single_group = std::atoi(v);
+        else if (k=="--n-samp")             a.n_samp       = std::atoi(v);
         else if (k=="--n-channels")         a.n_channels   = std::atoi(v);
         else if (k=="--max-shift-samp")     a.max_shift    = std::atoi(v);
         else if (k=="--corr-window")        a.corr_window  = std::atoi(v);
@@ -947,10 +950,14 @@ static Args parse_args(int argc, char **argv)
 int main(int argc, char **argv)
 {
     Args args = parse_args(argc, argv);
-    if (args.session.empty() || args.n_groups < 1) {
+    if (args.session.empty() || (args.n_groups < 1 && args.single_group < 1)) {
         fprintf(stderr,
             "Usage: process_decomposecollisions\n"
             "  --session S --param-file P --n-groups G --n-channels C\n"
+            "  [--method M]       chain-of-custody method token (default standard)\n"
+            "  [--clu-tag T]      read the .clu stage <base>.clu.M.g.T (tags .col the same)\n"
+            "  [--group G]        process ONLY this 1-based group (ignores --n-groups)\n"
+            "  [--n-samp N]       override the nSamples geometry (else from --param-file)\n"
             "  [--max-shift-samp N] [--corr-window W]\n"
             "  [--corr-threshold T] [--residual-threshold R]\n"
             "  [--min-snr-rms V] [--min-spikes-template M]\n"
@@ -985,15 +992,28 @@ int main(int argc, char **argv)
 
     int n_written = 0;
 
-    for (int g = 1; g <= args.n_groups; ++g) {
+    // A single-group run (--group G) does only that group; otherwise groups 1..n_groups.
+    const int g_lo = (args.single_group >= 1) ? args.single_group : 1;
+    const int g_hi = (args.single_group >= 1) ? args.single_group : args.n_groups;
+    for (int g = g_lo; g <= g_hi; ++g) {
         namespace cst = neurosuite::custody;
-        // .clu is method-specific (strict); .col is method-tagged output.
-        std::string clu_path = cst::methodPath(args.session, "clu", args.method, g);
-        std::string out_path = cst::methodPath(args.session, "col", args.method, g);
-        // .res and raw .spk are shared across methods (fall back to the
-        // existing copy).
+        // .clu is method-specific; a --clu-tag reads a curated stage instead of the
+        // untagged canonical, and the .col output is tagged the same so stages do
+        // not clobber one another.
+        std::string clu_path = args.clu_tag.empty()
+            ? cst::methodPath(args.session, "clu", args.method, g)
+            : cst::stagePath (args.session, "clu", args.method, g, args.clu_tag);
+        std::string out_path = args.clu_tag.empty()
+            ? cst::methodPath(args.session, "col", args.method, g)
+            : cst::stagePath (args.session, "col", args.method, g, args.clu_tag);
+        // .res and raw .spk are shared across methods and tag-independent.  resolve()
+        // walks method -> default -> untagged; when the session uses a method token
+        // resolve() does not know (e.g. a .res.stderiv alongside a .clu.stderiv_C5_D34),
+        // fall back to resolveAny(), which scans for any bare method token.
         cst::Resolved res_r = cst::resolve(args.session, "res", g, args.method);
+        if (!res_r.found) res_r = cst::resolveAny(args.session, "res", g, args.method);
         cst::Resolved spk_r = cst::resolve(args.session, "spk", g, args.method);
+        if (!spk_r.found) spk_r = cst::resolveAny(args.session, "spk", g, args.method);
         std::string res_path = res_r.path;
         std::string spk_path = spk_r.path;
 
@@ -1014,7 +1034,7 @@ int main(int argc, char **argv)
         }
 
         GroupParams gp = read_group_params(args.param_file, g);
-        int n_samp   = gp.n_samp;
+        int n_samp   = (args.n_samp > 0) ? args.n_samp : gp.n_samp;  // caller override wins
         int n_sites  = (int)gp.channels.size();
         if (n_sites == 0) n_sites = args.n_channels;
 

@@ -56,6 +56,7 @@ class QMenu;
 #include <QProcess>
 #include <QTimer>
 #include <QThread>
+#include <vector>          // decollideCommit takes std::vector<decollide::Decomp>
 
 
 
@@ -72,6 +73,10 @@ class QProgressBar;
 class QRecentFileAction;
 class QExtendTabWidget;
 class SerialJobQueue;   // experimental realign-via-queue lane (opt-in)
+
+// Shared collision-fit result (defined in neurosuite/core/decollide.hpp, pulled
+// in only by klusters.cpp).  A reference parameter needs the name, not the body.
+namespace neurosuite { namespace decollide { struct Decomp; } }
 
 /**
   * The Klusters main window and central class. It sets up the main
@@ -758,6 +763,17 @@ private:
      *  write the grown four files under a new stage tag (base.<type>.<method>.<grp>.<tag>_dc)
      *  with neurofileio, then reopen that stage.  Requires a saved document. */
     void decollideLassoAgainstBasis(const QList<int>& rows, const QList<int>& basis);
+
+    /** Shared tail for both decollide modes: given per-spike pair decompositions,
+     *  grow res/clu/spk (all methods) + .fet (in memory) via the shared engine,
+     *  write the grown four files under a new stage tag, then reopen that stage.
+     *  Manages its own wait cursor.  Requires a saved document. */
+    void decollideCommit(const std::vector<neurosuite::decollide::Decomp>& decomps);
+
+    /** Batch decollide: read the accepted records of a process_decomposecollisions
+     *  sidecar (<base>.col.<method>.<group>) and apply them through decollideCommit.
+     *  Invoked from the plugin integration dispatch after the runner finishes. */
+    void decollideApplyCol(const QString& colPath);
 
     void createToolBar();
 

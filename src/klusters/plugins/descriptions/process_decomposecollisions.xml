@@ -1,0 +1,48 @@
+<?xml version='1.0'?>
+<parameter>
+ <program>
+  <n>process_decomposecollisions</n>
+  <parameters>
+   <parameter><n>session</n><value></value><status>Mandatory</status></parameter>
+   <parameter><n>method</n><value></value><status>Mandatory</status></parameter>
+   <parameter><n>clu-tag</n><value></value><status>Optional</status></parameter>
+   <parameter><n>group</n><value></value><status>Mandatory</status></parameter>
+   <parameter><n>n-samp</n><value></value><status>Mandatory</status></parameter>
+   <parameter><n>n-channels</n><value></value><status>Mandatory</status></parameter>
+   <parameter><n>param-file</n><value></value><status>Optional</status></parameter>
+   <parameter><n>max-shift-samp</n><value>10</value><status>Optional</status></parameter>
+   <parameter><n>corr-threshold</n><value>0.85</value><status>Optional</status></parameter>
+   <parameter><n>residual-threshold</n><value>0.25</value><status>Optional</status></parameter>
+   <parameter><n>min-snr-rms</n><value>4.0</value><status>Optional</status></parameter>
+   <parameter><n>min-spikes-template</n><value>30</value><status>Optional</status></parameter>
+   <parameter><n>exclude-noise</n><value>1</value><status>Optional</status></parameter>
+   <parameter><n>overwrite</n><value>1</value><status>Optional</status></parameter>
+  </parameters>
+  <help>Full-group collision decomposition (the batch counterpart to the targeted
+lasso decollide).  Builds a mean-waveform template per unit, then for every spike
+tries to explain it as a shifted, scaled sum of two templates (matching pursuit).
+Each accepted two-template fit is written to a .col sidecar
+(&lt;base&gt;.col.&lt;method&gt;.&lt;group&gt;[.&lt;clu-tag&gt;]); on success Klusters grows a
+decollided stage from the accepted records — each collision spike replaced by its
+two clean constituents in res/clu/spk and the in-memory .fet — and opens it.
+
+Reads the clustering files ON DISK (save first if you have unsaved edits).
+session / method / group / n-samp / n-channels and the open stage's clu-tag are
+prefilled from the open group; clu-tag empty reads the untagged canonical clu.
+param-file is an optional session YAML for per-group nSamples/peak/channels (the
+n-samp prefill already covers the open group, so it is only needed for a
+peak-centred correlation window).  Tuning: a fit passes when its best single-unit
+correlation clears corr-threshold, its two-template residual is below
+residual-threshold, and each component's amplitude clears min-snr-rms x the RMS
+noise; templates with fewer than min-spikes-template spikes are skipped and
+exclude-noise drops clusters 0/1 from the template set.
+Engine: the ndmanager-plugins 'process_decomposecollisions' console tool.</help>
+ </program>
+ <klusters>
+  <kind>recluster</kind>
+  <consumes></consumes>
+  <produces>none</produces>
+  <integration>decollide-apply</integration>
+  <selection>none</selection>
+ </klusters>
+</parameter>

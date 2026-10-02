@@ -124,7 +124,10 @@ struct Args {
     std::string session;
     std::string param_file;
     std::string method      = "standard";  // chain-of-custody method tag
+    std::string clu_tag;                    // stage tag of the clu to read (empty = untagged canonical)
     int    n_groups         = 1;
+    int    single_group     = 0;   // >0: process ONLY this 1-based group (ignore n_groups)
+    int    n_samp           = 0;   // >0: override the param-file/default nSamples geometry
     int    n_channels       = 4;
     int    max_shift        = 10;
     int    corr_window      = 0;

@@ -7019,6 +7019,17 @@ QMap<QString, QString> KlustersApp::pluginContext() const
     ctx.insert(QStringLiteral("nchan"), QString::number(doc->nbOfchannels()));
     ctx.insert(QStringLiteral("nsamp"),
                QString::number(doc->getNbSamplesBeforePeak() + doc->getNbSamplesAfterPeak() + 1));
+
+    // Aliases under the CLI flag stems some engines use verbatim, so a descriptor
+    // parameter named exactly for the flag (--session/--method/--clu-tag/--group/
+    // --n-samp/--n-channels) prefills from the open group.  process_decomposecollisions
+    // is the first such consumer (batch decollide); the keys above stay for the
+    // engines that use base/variant/tag/nsamp/nchan.
+    ctx.insert(QStringLiteral("session"),    ctx.value(QStringLiteral("base")));
+    ctx.insert(QStringLiteral("method"),     variant);
+    ctx.insert(QStringLiteral("clu-tag"),    tag);
+    ctx.insert(QStringLiteral("n-samp"),     ctx.value(QStringLiteral("nsamp")));
+    ctx.insert(QStringLiteral("n-channels"), ctx.value(QStringLiteral("nchan")));
     return ctx;
 }
 
@@ -7056,6 +7067,19 @@ void KlustersApp::runPlugin(const KlustersPlugin& plugin, const QMap<QString, QS
             tr("\"%1\" rewrites the clustering files on disk. On success Klusters will "
                "reload the session from disk, replacing the current in-memory state and "
                "undo history.\n\nProceed?").arg(plugin.name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (ans != QMessageBox::Yes)
+            return;
+    }
+
+    // A decollide-apply engine detects collisions across the whole group; on success
+    // Klusters grows a new decollided stage from the sidecar and opens it, closing
+    // the current session (its files stay on disk).  Confirm the close+reopen.
+    if (plugin.integration == QLatin1String("decollide-apply")) {
+        const QMessageBox::StandardButton ans = QMessageBox::question(this, tr("Plugins"),
+            tr("\"%1\" detects collisions across the open group. On success Klusters will "
+               "grow a decollided stage and open it, closing the current session (its "
+               "files stay on disk).\n\nProceed?").arg(plugin.name),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
         if (ans != QMessageBox::Yes)
             return;
@@ -7164,6 +7188,26 @@ void KlustersApp::integratePluginResult()
             tr("\"%1\" produced a reclustering. Automatic recluster integration is not "
                "wired to the plugin runner yet; its output files are on disk.")
                 .arg(mRunningPlugin.name));
+        return;
+    }
+    if (integ == QLatin1String("decollide-apply")) {
+        // Batch decollide: process_decomposecollisions wrote the accepted-collision
+        // sidecar for the open group, tagged like the stage it read
+        // (<base>.col.<method>.<group>[.<tag>]).  Grow + stage it through the same
+        // shared engine the targeted lasso decollide uses.
+        const QMap<QString, QString> ctx = pluginContext();
+        const QString col = QString::fromStdString(neurofileio::stagePath(
+            ctx.value(QStringLiteral("base")).toStdString(), "col",
+            ctx.value(QStringLiteral("variant")).toStdString(),
+            ctx.value(QStringLiteral("group")).toInt(),
+            ctx.value(QStringLiteral("tag")).toStdString()));
+        if (!QFileInfo::exists(col)) {
+            QMessageBox::information(this, tr("Plugins"),
+                tr("\"%1\" finished but wrote no collision sidecar for the open group "
+                   "(expected %2).").arg(mRunningPlugin.name, QFileInfo(col).fileName()));
+            return;
+        }
+        decollideApplyCol(col);
         return;
     }
 
@@ -7499,14 +7543,63 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
                           .arg(rows.size())); return;
     }
 
+    QApplication::restoreOverrideCursor();   // decollideCommit manages its own cursor
+    slotStatusMsg(tr("Decollide: %1 of %2 lassoed spike(s) resolved against clusters %3/%4…")
+                      .arg(decomps.size()).arg(rows.size()).arg(A).arg(B));
+    decollideCommit(decomps);
+}
+
+// Shared tail of both decollide modes: grow res/clu/spk (all methods) + .fet (in
+// memory) from `decomps`, write the grown four under a new stage tag with
+// neurofileio, and reopen the stage.  Self-contained (resolves the loaded paths
+// from the document), so the lasso fit and the batch .col path share it.
+void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decomp>& decomps)
+{
+    using namespace neurofileio;
+    namespace dc = neurosuite::decollide;
+    if (decomps.empty() || !doc || doc->url().isEmpty()) return;
+
+    const int nChan = doc->nbOfchannels();
+    const int nSamp = doc->getNbSamplesBeforePeak() + doc->getNbSamplesAfterPeak() + 1;
+    if (nChan <= 0 || nSamp <= 0) return;
+
+    const QString cluPath = doc->url();
+    const QString spkPath = doc->origSpkFilePath();
+    const QString resPath = doc->origResFilePath();
+    const QString fetPath = doc->origFetFilePath();
+    const auto aClu = neurosuite::custody::parseAnchor(QFileInfo(cluPath).fileName().toStdString());
+    const auto aSpk = neurosuite::custody::parseAnchor(QFileInfo(spkPath).fileName().toStdString());
+    const auto aRes = neurosuite::custody::parseAnchor(QFileInfo(resPath).fileName().toStdString());
+    const auto aFet = neurosuite::custody::parseAnchor(QFileInfo(fetPath).fileName().toStdString());
+    if (!aClu.ok || !aSpk.ok || !aRes.ok || !aFet.ok) {
+        slotStatusMsg(tr("Decollide: could not parse the session file names.")); return; }
+    const QString  dir  = QFileInfo(cluPath).absolutePath() + QDir::separator();
+    const std::string base = (dir + QString::fromStdString(aClu.base)).toStdString();
+    const int grp = aClu.group;
+    const QString outTag = aClu.suffix.empty() ? QStringLiteral("dc")
+                               : (QString::fromStdString(aClu.suffix) + QStringLiteral("_dc"));
+    const std::string outTagS = outTag.toStdString();
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    ClusterResData cr      = readClusterRes(cluPath.toStdString(), resPath.toStdString());
+    SpkFile       spkOpen  = readSpk(spkPath.toStdString(), nSamp, nChan);
+    FetBinaryFile fb       = readFetBinary(fetPath.toStdString());
+    if (!cr.ok || !spkOpen.ok || !fb.ok
+        || cr.ids.size() != cr.times.size()
+        || static_cast<int64_t>(cr.ids.size()) != spkOpen.nSpikes
+        || fb.nSpikes != spkOpen.nSpikes) {
+        QApplication::restoreOverrideCursor();
+        QMessageBox::warning(this, tr("Decollide"),
+            tr("Could not read consistent res/clu/spk/fet for this group.")); return;
+    }
+
     // Grow + write every spk method under the new tag; keep the open method's grown
     // res/clu (identical across methods) for the res/clu write.
     QStringList spkMethods = availableSpkVariants();
     if (spkMethods.isEmpty()) spkMethods << QString::fromStdString(aSpk.method);
     dc::Grown grownOpen;
     for (const QString& m : spkMethods) {
-        const std::string inSpk = stagePath(base, "spk", m.toStdString(), grp, aSpk.suffix);
-        SpkFile sm = readSpk(inSpk, nSamp, nChan);
+        SpkFile sm = readSpk(stagePath(base, "spk", m.toStdString(), grp, aSpk.suffix), nSamp, nChan);
         if (!sm.ok || sm.nSpikes != spkOpen.nSpikes) continue;      // skip a mismatched method
         const dc::Grown g = dc::applyMethod(cr.times, cr.ids, sm.samples, nSamp, nChan, decomps);
         if (!g.ok) continue;
@@ -7515,6 +7608,8 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
     }
     if (!grownOpen.ok)
         grownOpen = dc::applyMethod(cr.times, cr.ids, spkOpen.samples, nSamp, nChan, decomps);
+    if (!grownOpen.ok) { QApplication::restoreOverrideCursor();
+        slotStatusMsg(tr("Decollide: nothing to write.")); return; }
 
     // res (binary, its own method token) + clu (binary, clu method) written once.
     writeResBinary(stagePath(base, "res", aRes.method, grp, outTagS), grownOpen.res);
@@ -7534,7 +7629,6 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
     const QString outCluPath =
         QString::fromStdString(stagePath(base, "clu", aClu.method, grp, outTagS));
     const int nResolved = static_cast<int>(decomps.size());
-    const int nLassoed  = rows.size();
     QApplication::restoreOverrideCursor();
 
     // Reopen the new stage to display the decollided clustering (proven open path).
@@ -7542,11 +7636,33 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
     if (!mainDock) {
         openDocumentFile(outCluPath);
         statusBar()->showMessage(
-            tr("Decollided %1 of %2 lassoed spike(s) against clusters %3/%4 -> stage \"%5\".")
-                .arg(nResolved).arg(nLassoed).arg(A).arg(B).arg(outTag), 8000);
+            tr("Decollided %1 collision(s) -> stage \"%2\".").arg(nResolved).arg(outTag), 8000);
     } else {
         statusBar()->showMessage(
             tr("Decollided %1 collision(s) -> stage \"%2\"; reopen it to view.")
                 .arg(nResolved).arg(outTag), 8000);
     }
+}
+
+// Batch decollide: apply a process_decomposecollisions .col sidecar (its accepted
+// two-component records) through the SAME grow+stage path as the lasso mode.
+void KlustersApp::decollideApplyCol(const QString& colPath)
+{
+    namespace dc = neurosuite::decollide;
+    const std::vector<neurofileio::ColDecomp> accepted =
+        neurofileio::readColAccepted(colPath.toStdString());
+    if (accepted.empty()) {
+        slotStatusMsg(tr("Decollide (batch): no accepted collisions in %1.")
+                          .arg(QFileInfo(colPath).fileName()));
+        return;
+    }
+    std::vector<dc::Decomp> decomps; decomps.reserve(accepted.size());
+    for (const neurofileio::ColDecomp& a : accepted) {
+        dc::Decomp d; d.spikeIndex = a.spikeIndex;
+        d.c1 = dc::Component{a.u1, a.sh1, a.a1};
+        d.c2 = dc::Component{a.u2, a.sh2, a.a2};
+        decomps.push_back(d);
+    }
+    slotStatusMsg(tr("Decollide (batch): applying %1 accepted collision(s)…").arg(decomps.size()));
+    decollideCommit(decomps);
 }
