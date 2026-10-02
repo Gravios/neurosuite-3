@@ -77,6 +77,9 @@ PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent
     showCollisionsCheckBox->setToolTip(tr(
         "Overlay a ring on feature-view spikes whose .eap row has two or more template\n"
         "classes set (collisions) — so multi-membership is visible over the .clu colours."));
+    showClassMembersCheckBox->setToolTip(tr(
+        "Ring the .eap members of the template class selected in the template-library\n"
+        "view — a class's membership footprint across the feature view, over .clu colours."));
 }
 PrefClusterView::~PrefClusterView(){
 }
@@ -227,4 +230,12 @@ void PrefClusterView::setShowEapCollisions(bool b){
 
 bool PrefClusterView::getShowEapCollisions() const{
     return showCollisionsCheckBox->isChecked();
+}
+
+void PrefClusterView::setShowEapClassMembers(bool b){
+    showClassMembersCheckBox->setChecked(b);
+}
+
+bool PrefClusterView::getShowEapClassMembers() const{
+    return showClassMembersCheckBox->isChecked();
 }

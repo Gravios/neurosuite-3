@@ -145,6 +145,11 @@ public:
      *  request (mirrors pinObliqueBasisFromTemplates). */
     void runTemplateGeneration();
 
+    /** Highlight template class @p col's .eap members in the active feature view
+     *  (-1 clears).  Called by KlustersView on behalf of TemplateView; resolves
+     *  the active cluster view (mirrors pinObliqueBasisFromTemplates). */
+    void highlightTemplateClassMembers(int col);
+
     /**Informs of the existance of an Error Matrix View in the application.
     * @return true if an Error Matrix View exists in the application, false otherwise.
     */

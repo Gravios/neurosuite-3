@@ -385,6 +385,11 @@
           <property name="text"><string>Ring collision spikes (&gt;= 2 template classes in .eap)</string></property>
          </widget>
         </item>
+        <item row="4" column="0" colspan="2">
+         <widget class="QCheckBox" name="showClassMembersCheckBox">
+          <property name="text"><string>Ring the selected template class's .eap members</string></property>
+         </widget>
+        </item>
        </layout>
       </widget>
      </item>

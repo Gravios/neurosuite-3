@@ -102,6 +102,11 @@ public:
      *  refresh after a preferences change.  No-op bookkeeping when nothing pins. */
     void refreshProjectionScope();
 
+    /** Highlight template class @p col's .eap members in the feature views (reads
+     *  the stage .eap for that column); @p col < 0 clears the highlight.  Pushed in
+     *  by KlustersApp on behalf of the template-library view's class selection. */
+    void setHighlightClass(int col);
+
     /** A closed create-mode embedding lasso defers its cut and shows the residual
      *  preview in the waveform view; these commit (Enter) or discard (Esc) it.
      *  Public because the confirm keys are dispatched by the application filter. */
@@ -516,6 +521,16 @@ private:
     void loadEapCollisions();                     ///< read the stage .eap, fill eapCollision
     bool spikeIsCollision(long spk0) const {      ///< 0-based spike row -> is a collision
         return spk0 >= 0 && spk0 < static_cast<long>(eapCollision.size()) && eapCollision[spk0];
+    }
+
+    // Highlighted template class: its .eap members are ringed in the feature views
+    // (claude/eap-template-class-design §8).  The class is chosen in the template-
+    // library view and pushed in via setHighlightClass (KlustersApp forwards it);
+    // eapHighlightMember is the per-spike (0-based row) membership of that column.
+    int highlightClassCol = -1;
+    std::vector<char> eapHighlightMember;
+    bool spikeIsHighlightMember(long spk0) const {
+        return spk0 >= 0 && spk0 < static_cast<long>(eapHighlightMember.size()) && eapHighlightMember[spk0];
     }
 
     // A create-mode embedding lasso, closed and awaiting confirmation: its cut is

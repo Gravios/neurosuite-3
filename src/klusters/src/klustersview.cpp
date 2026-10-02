@@ -1212,6 +1212,12 @@ void KlustersView::requestTemplateRegen(){
     mainWindow.runTemplateGeneration();
 }
 
+void KlustersView::requestHighlightClassMembers(int col){
+    // The template library view asks to highlight a template class's .eap members
+    // in the active feature view; the application resolves the active cluster view.
+    mainWindow.highlightTemplateClassMembers(col);
+}
+
 
 void KlustersView::shownClustersUpdate(const QList<int>& clustersToShow){
     //Try to minimize the number of clusters to draw

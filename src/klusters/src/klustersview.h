@@ -186,6 +186,10 @@ public:
      *  series (fiber-template) after a template-class membership edit. */
     void requestTemplateRegen();
 
+    /** Forward TemplateView's request to highlight template class @p col's .eap
+     *  members in the active feature view (-1 clears the highlight). */
+    void requestHighlightClassMembers(int col);
+
     /**Returns the dimension used for the abscissa axis in the Cluster View.
     * @return abscissa dimension.
     */

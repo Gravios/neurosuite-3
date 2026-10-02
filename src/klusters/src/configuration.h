@@ -144,6 +144,7 @@ public:
     void setProjectionScopeMinutes(double v)   {projectionScopeMinutes = qBound(0.1, v, 600.0);}
     void setProjectionOutOfScopeHidden(bool b) {projectionOutOfScopeHidden = b;}               // false = grey/non-selectable
     void setShowEapCollisions(bool b)          {showEapCollisions = b;}                        // ring spikes with >=2 .eap classes
+    void setShowEapClassMembers(bool b)        {showEapClassMembers = b;}                      // ring the highlighted class's .eap members
 
     // KNN voting split (Shift+K) defaults.  Mirrors the dipSplit pattern
     // above: persisted in QSettings, prefilled into the modal Shift+K
@@ -275,6 +276,7 @@ public:
     double getProjectionScopeMinutes()     const {return projectionScopeMinutes;}
     bool   getProjectionOutOfScopeHidden() const {return projectionOutOfScopeHidden;}
     bool   getShowEapCollisions()          const {return showEapCollisions;}
+    bool   getShowEapClassMembers()        const {return showEapClassMembers;}
 
     int    getKnnK()         const {return knnK;}
     double getKnnThreshold() const {return knnThreshold;}
@@ -387,6 +389,7 @@ public:
     double getProjectionScopeMinutesDefault()     const {return 12.0;}   // 12-min chunk granularity
     bool   getProjectionOutOfScopeHiddenDefault() const {return false;}  // grey/non-selectable
     bool   getShowEapCollisionsDefault()          const {return false;}  // overlay off by default
+    bool   getShowEapClassMembersDefault()        const {return false;}  // overlay off by default
 
     int    getKnnKDefault()         const {return 10;}
     double getKnnThresholdDefault() const {return 0.50;}
@@ -564,6 +567,7 @@ private:
     double  projectionScopeMinutes;     ///< scope-chunk granularity (minutes); default 12
     bool    projectionOutOfScopeHidden; ///< true = hide out-of-scope spikes; false = grey/non-selectable
     bool    showEapCollisions;          ///< ring feature-view spikes with >=2 active .eap classes
+    bool    showEapClassMembers;        ///< ring the highlighted template class's .eap members
 
     // KNN voting split (Shift+K) — see slotSplitClusterByKnn.
     int     knnK;                  ///< K neighbours per spike (2-200)

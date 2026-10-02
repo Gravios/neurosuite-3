@@ -203,7 +203,10 @@ TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
     connect(binSlider, &QSlider::valueChanged, this, [this](int){ onLinkOrBinChanged(); });
     connect(pinButton, &QPushButton::clicked, this, [this](){ onPinClicked(); });
 
-    connect(classList, &QListWidget::currentRowChanged, this, [this](int){ updateClassButtons(); });
+    connect(classList, &QListWidget::currentRowChanged, this, [this](int){
+        updateClassButtons();
+        klView.requestHighlightClassMembers(selectedClassCol());   // ring this class's .eap members
+    });
     connect(newClassButton,    &QPushButton::clicked, this, [this](){ onNewClass(); });
     connect(updateClassButton, &QPushButton::clicked, this, [this](){ onUpdatePrimary(); });
     connect(mergeClassButton,  &QPushButton::clicked, this, [this](){ onMergeIntoPrimary(); });

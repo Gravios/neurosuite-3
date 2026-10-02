@@ -5379,6 +5379,15 @@ void KlustersApp::pinObliqueBasisFromTemplates(const QList<int>& ids)
     slotStatusMsg(msg);
 }
 
+void KlustersApp::highlightTemplateClassMembers(int col)
+{
+    // Passive highlight driven by the template-library view's class selection:
+    // ring that class's .eap members in the active feature view.  Silent when no
+    // feature view is open (nothing to highlight).
+    if (ClusterView* cv = activeClusterView())
+        cv->setHighlightClass(col);
+}
+
 // ---------------------------------------------------------------------------
 // clusterSortActions
 //

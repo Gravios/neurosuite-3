@@ -754,22 +754,29 @@ void ClusterView::paintTsne(QPainter& painter){
         const QPoint p = tsneViewportPos(i);
         painter.drawEllipse(p.x() - r, p.y() - r, 2 * r, 2 * r);
     }
-    // EAP collision overlay: ring embedded points whose spike is a collision.
-    if (configuration().getShowEapCollisions() && !eapCollision.empty()) {
+    // EAP overlays: amber ring on collision points, cyan ring on the highlighted
+    // class's members (a point can carry both).
+    const bool ovColl = configuration().getShowEapCollisions()   && !eapCollision.empty();
+    const bool ovMem  = configuration().getShowEapClassMembers() && highlightClassCol >= 0
+                        && !eapHighlightMember.empty();
+    if (ovColl || ovMem) {
         painter.setBrush(Qt::NoBrush);
-        QPen ringPen(QColor(255, 210, 0));
-        ringPen.setWidth(1);
-        painter.setPen(ringPen);
-        const int rr = r + 2;
+        QPen collPen(QColor(255, 210, 0)); collPen.setWidth(1);
+        QPen memPen (QColor(0, 200, 255)); memPen.setWidth(1);
+        const int rc = r + 2, rm = r + 4;
         for (int i = 0; i < N && i < tsneRowSpike.size(); ++i) {
-            if (!spikeIsCollision(static_cast<long>(tsneRowSpike.at(i)))) continue;
+            const long s0  = static_cast<long>(tsneRowSpike.at(i));
+            const bool coll = ovColl && spikeIsCollision(s0);
+            const bool mem  = ovMem  && spikeIsHighlightMember(s0);
+            if (!coll && !mem) continue;
             if (hideOOS) {                               // don't ring a hidden out-of-scope spike
                 const double t = static_cast<double>(doc.data().featureValue(
-                    static_cast<dataType>(tsneRowSpike.at(i)) + 1, timeDimension));
+                    static_cast<dataType>(s0) + 1, timeDimension));
                 if (!spikeTimeInScope(t)) continue;
             }
             const QPoint p = tsneViewportPos(i);
-            painter.drawEllipse(p.x() - rr, p.y() - rr, 2 * rr, 2 * rr);
+            if (mem)  { painter.setPen(memPen);  painter.drawEllipse(p.x() - rm, p.y() - rm, 2*rm, 2*rm); }
+            if (coll) { painter.setPen(collPen); painter.drawEllipse(p.x() - rc, p.y() - rc, 2*rc, 2*rc); }
         }
         painter.setPen(Qt::NoPen);
     }
@@ -872,22 +879,29 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
         }
     }
 
-    // EAP collision overlay: ring spikes whose .eap row has >= 2 template classes,
-    // in a second pass so the hot point loop stays untouched when the overlay is off.
-    if (configuration().getShowEapCollisions() && !eapCollision.empty()) {
+    // EAP overlays, in a second pass so the hot point loop stays untouched when
+    // off: an amber ring on collision spikes (>= 2 .eap classes) and a cyan ring
+    // on the highlighted class's members.  A spike can carry both (nested rings).
+    const bool ovColl = configuration().getShowEapCollisions()   && !eapCollision.empty();
+    const bool ovMem  = configuration().getShowEapClassMembers() && highlightClassCol >= 0
+                        && !eapHighlightMember.empty();
+    if (ovColl || ovMem) {
         painter.setBrush(Qt::NoBrush);
-        QPen ringPen(QColor(255, 210, 0));          // amber — distinct from cluster colours + grey
-        ringPen.setWidth(1);
-        painter.setPen(ringPen);
-        const int rr = r + 2;
+        QPen collPen(QColor(255, 210, 0)); collPen.setWidth(1);   // amber: collision
+        QPen memPen (QColor(0, 200, 255)); memPen.setWidth(1);    // cyan: highlighted-class member
+        const int rc = r + 2, rm = r + 4;
         for (int clustId : clustersList) {
             Data::Iterator it = clusteringData.iterator(static_cast<dataType>(clustId));
             for (; it.hasNext(); it.next()) {
-                if (!spikeIsCollision(static_cast<long>(it.featureRow()) - 1)) continue;
+                const long s0  = static_cast<long>(it.featureRow()) - 1;
+                const bool coll = ovColl && spikeIsCollision(s0);
+                const bool mem  = ovMem  && spikeIsHighlightMember(s0);
+                if (!coll && !mem) continue;
                 if (hideOOS && !spikeTimeInScope(            // don't ring a hidden out-of-scope spike
                         static_cast<double>(it(static_cast<dataType>(timeDimension))))) continue;
-                QPoint px = worldToViewport(it(dimensionX,dimensionY));
-                painter.drawEllipse(px.x() - rr, px.y() - rr, rr*2, rr*2);
+                const QPoint px = worldToViewport(it(dimensionX,dimensionY));
+                if (mem)  { painter.setPen(memPen);  painter.drawEllipse(px.x() - rm, px.y() - rm, rm*2, rm*2); }
+                if (coll) { painter.setPen(collPen); painter.drawEllipse(px.x() - rc, px.y() - rc, rc*2, rc*2); }
             }
         }
     }
@@ -1571,6 +1585,29 @@ void ClusterView::loadEapCollisions(){
             if (nf::eapPresent(e.cells[rowBase + j]) && ++cnt >= 2) break;   // stop at 2
         if (cnt >= 2) eapCollision[static_cast<std::size_t>(i)] = 1;
     }
+}
+
+void ClusterView::setHighlightClass(int col){
+    namespace nf  = neurofileio;
+    namespace cst = neurosuite::custody;
+    highlightClassCol = col;
+    eapHighlightMember.clear();
+    if (col >= 0) {
+        std::string base, tag; int group = 0;
+        if (resolveSessionPaths(base, group, tag)) {
+            std::string eapPath = cst::untaggedPath(base, "eap", group);
+            if (!tag.empty()) eapPath += "." + tag;
+            const nf::EapFile e = nf::readEap(eapPath);
+            if (e.ok && col < e.nClasses && e.nSpikes > 0) {
+                eapHighlightMember.assign(static_cast<std::size_t>(e.nSpikes), 0);
+                for (int64_t i = 0; i < e.nSpikes; ++i)
+                    if (nf::eapPresent(e.cells[static_cast<std::size_t>(i) * e.nClasses + col]))
+                        eapHighlightMember[static_cast<std::size_t>(i)] = 1;
+            }
+        }
+    }
+    drawContentsMode = REDRAW;   // repaint with the new (or cleared) member highlight
+    update();
 }
 
 void ClusterView::refreshProjectionScope(){

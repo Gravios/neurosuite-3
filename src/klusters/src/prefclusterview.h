@@ -101,6 +101,8 @@ public:
     bool getProjectionOutOfScopeHidden() const;
     void setShowEapCollisions(bool b);          ///< ring spikes with >=2 .eap classes
     bool getShowEapCollisions() const;
+    void setShowEapClassMembers(bool b);        ///< ring the selected class's .eap members
+    bool getShowEapClassMembers() const;
 
 };
 
