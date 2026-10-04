@@ -50,6 +50,16 @@ target_include_directories(core_test_decollide_eap
 target_link_libraries(core_test_decollide_eap PRIVATE Neurosuite::core)
 add_test(NAME core_test_decollide_eap COMMAND core_test_decollide_eap)
 
+# Native fiber-template port (template_generate.hpp): the LINKED per-unit/class
+# median series — drift chunks + energy bins, numpy-matching (median, quantile
+# edges, subsample stride, res-frame roll, rint->int16).  Header-only (the pure
+# core uses only neurofileio's inline structs), so no link.
+add_executable(core_test_template_generate template_generate_test.cpp)
+target_compile_features(core_test_template_generate PRIVATE cxx_std_17)
+target_include_directories(core_test_template_generate
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_template_generate COMMAND core_test_template_generate)
+
 # Temporally-restricted projection scope (projectionscope.hpp): cluster->class
 # resolution, the union of a class's .wti drift windows, interval merge + the
 # in-scope test.  Header-only (builds the structs directly), so no link.
