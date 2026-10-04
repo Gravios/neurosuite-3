@@ -2699,6 +2699,16 @@ void KlustersApp::initDisplay(){
             slotUpdateErrorMatrix();
         });
     }
+
+    // Open a Template Library display on document open (on by default; toggle
+    // in Preferences > Displays).  Deferred to the next event-loop iteration
+    // like the matrices above, so the initial Clusters/Overview loads settle
+    // before the template view queries the .wti/.wtf.
+    if (configuration().getAutoShowTemplateLibraryOnOpen()) {
+        QTimer::singleShot(0, this, [this]() {
+            createDisplay(KlustersView::TEMPLATE_LIBRARY);
+        });
+    }
 }
 
 void KlustersApp::createDisplay(KlustersView::DisplayType type)

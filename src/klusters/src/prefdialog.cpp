@@ -187,6 +187,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefDisplay->autoscaleMarginSpinBox,       &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
     connect(prefDisplay->useWhiteColorPrinting,        &QAbstractButton::clicked,      this, &PrefDialog::enableApply);
     connect(prefDisplay->autoShowMatricesOnOpenCheckBox,&QAbstractButton::clicked,     this, &PrefDialog::enableApply);
+    connect(prefDisplay->autoShowTemplateLibraryOnOpenCheckBox,&QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefDisplay->templateThresholdMinSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
     connect(prefDisplay->templateThresholdMaxSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
     connect(prefDisplay->templateXcorrMetricComboBox,  &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
@@ -291,6 +292,7 @@ void PrefDialog::updateDialog()
     prefDisplay->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercent());
     prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
     prefDisplay->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpen());
+    prefDisplay->setAutoShowTemplateLibraryOnOpen(configuration().getAutoShowTemplateLibraryOnOpen());
     prefDisplay->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
     prefDisplay->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
     prefDisplay->setTemplateXcorrMetric(configuration().getTemplateXcorrMetric());
@@ -389,6 +391,7 @@ void PrefDialog::updateConfiguration()
     configuration().setAutoscaleMarginPercent(prefDisplay->getAutoscaleMarginPercent());
     configuration().setUseWhiteColorDuringPrinting(prefDisplay->useWhiteColorDuringPrinting());
     configuration().setAutoShowMatricesOnOpen(prefDisplay->getAutoShowMatricesOnOpen());
+    configuration().setAutoShowTemplateLibraryOnOpen(prefDisplay->getAutoShowTemplateLibraryOnOpen());
     configuration().setTemplateThresholdMin(prefDisplay->getTemplateThresholdMin());
     configuration().setTemplateThresholdMax(prefDisplay->getTemplateThresholdMax());
     configuration().setTemplateXcorrMetric(prefDisplay->getTemplateXcorrMetric());
@@ -491,6 +494,7 @@ void PrefDialog::slotDefault()
     prefDisplay->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());
     prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
     prefDisplay->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpenDefault());
+    prefDisplay->setAutoShowTemplateLibraryOnOpen(configuration().getAutoShowTemplateLibraryOnOpenDefault());
 
     // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
     prefAutoMerge->setAlgorithm(configuration().getAutoMergeAlgorithmDefault());

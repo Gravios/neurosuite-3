@@ -29,6 +29,9 @@ public:
     void setAutoShowMatricesOnOpen(bool checked);
     bool getAutoShowMatricesOnOpen() const;
 
+    void setAutoShowTemplateLibraryOnOpen(bool checked);
+    bool getAutoShowTemplateLibraryOnOpen() const;
+
     void   setTemplateThresholdMin(double v);
     double getTemplateThresholdMin() const;
     void   setTemplateThresholdMax(double v);

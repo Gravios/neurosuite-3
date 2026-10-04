@@ -208,6 +208,16 @@
        </widget>
       </item>
       <item row="4" column="0">
+       <widget class="QCheckBox" name="autoShowTemplateLibraryOnOpenCheckBox">
+        <property name="text">
+         <string>Open a Template Library display on open</string>
+        </property>
+        <property name="toolTip">
+         <string>When checked, opening a document also opens a Template Library display for the current group (its marked units and their .wti/.wtf template waveforms).  On by default; uncheck to open it manually from Display &gt; New Template Library Display.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
        <layout class="QHBoxLayout" name="templateXcorrMetricLayout">
         <item>
          <widget class="QLabel" name="templateXcorrMetricLabel">

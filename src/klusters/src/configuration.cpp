@@ -35,6 +35,8 @@ const bool Configuration::reclusterChannelVarianceDefault = false;
 const bool Configuration::reclusterMedianWaveformResidualDefault = false;
 // patch79 — opt-in: off by default
 const bool Configuration::autoShowMatricesOnOpenDefault = false;
+// Template Library display: open by default (on)
+const bool Configuration::autoShowTemplateLibraryOnOpenDefault = true;
 const double Configuration::autoscaleMarginPercentDefault = 5.0;
 const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
@@ -153,6 +155,9 @@ void Configuration::read() {
     autoShowMatricesOnOpen = settings.value(
         "autoShowMatricesOnOpen",
         autoShowMatricesOnOpenDefault).toBool();
+    autoShowTemplateLibraryOnOpen = settings.value(
+        "autoShowTemplateLibraryOnOpen",
+        autoShowTemplateLibraryOnOpenDefault).toBool();
     autoscaleMarginPercent = settings.value("autoscaleMarginPercent", autoscaleMarginPercentDefault).toDouble();
     settings.endGroup();
 
@@ -253,6 +258,8 @@ void Configuration::write() const {
     // patch79
     settings.setValue("autoShowMatricesOnOpen",
                       autoShowMatricesOnOpen);
+    settings.setValue("autoShowTemplateLibraryOnOpen",
+                      autoShowTemplateLibraryOnOpen);
     settings.setValue("autoscaleMarginPercent", autoscaleMarginPercent);
     settings.endGroup();
     

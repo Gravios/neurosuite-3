@@ -482,6 +482,13 @@ public:
         { return autoShowMatricesOnOpenDefault; }
     void setAutoShowMatricesOnOpen(bool b)
         { autoShowMatricesOnOpen = b; }
+    // Open a Template Library display on document open (on by default).
+    bool getAutoShowTemplateLibraryOnOpen() const
+        { return autoShowTemplateLibraryOnOpen; }
+    bool getAutoShowTemplateLibraryOnOpenDefault() const
+        { return autoShowTemplateLibraryOnOpenDefault; }
+    void setAutoShowTemplateLibraryOnOpen(bool b)
+        { autoShowTemplateLibraryOnOpen = b; }
 
     /**Returns the fractional margin applied to the autoscale fit in
      * ClusterView (F key), expressed as a percent of the data extent on
@@ -616,6 +623,9 @@ private:
     // patch79 — auto-show error & template matrices on document open
     bool autoShowMatricesOnOpen;
     static const bool autoShowMatricesOnOpenDefault;
+    // Open a Template Library display on document open (on by default)
+    bool autoShowTemplateLibraryOnOpen;
+    static const bool autoShowTemplateLibraryOnOpenDefault;
     /**Margin (percent of data extent) added on each side of the autoscale fit
      * in ClusterView (F key).  0 = tight fit, 5 = original behaviour.*/
     double autoscaleMarginPercent;
