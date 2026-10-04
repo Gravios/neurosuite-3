@@ -67,6 +67,7 @@ if(_CUDA_ACTIVE)
         USE_CUDA
         $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
     target_link_libraries(process_decomposecollisions PRIVATE
+        _pdc_flags
         CUDA::cudart CUDA::cublas)
     if(OpenMP_CXX_FOUND)
         target_link_libraries(process_decomposecollisions PRIVATE OpenMP::OpenMP_CXX)
