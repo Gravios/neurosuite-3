@@ -37,6 +37,9 @@ int main()
     std::remove(tg::sessionPath(base, "wtl", group, "", "part").c_str());
     std::remove(tg::sessionPath(base, "wti", group, "", "part").c_str());
     std::remove(tg::sessionPath(base, "wtf", group, "standard", "part").c_str());
+    std::remove(tg::sessionPath(base, "wtl", group, "", "grain").c_str());
+    std::remove(tg::sessionPath(base, "wti", group, "", "grain").c_str());
+    std::remove(tg::sessionPath(base, "wtf", group, "standard", "grain").c_str());
 
     // Synthetic .spk.standard.5 : 8 spikes, spike s all-equal to val[s].
     std::vector<int> val = {100,100,200,200, 50, 70, 10, 10};
@@ -143,6 +146,28 @@ int main()
         }
         check(leafSp == std::vector<int64_t>({4,5}) && leafParent == rootId,
               "leaf kept + re-parented under the merged root");
+
+        // Seed grain (the no-.wti default): a fresh stage with no prior .wtl tiles
+        // the session at the grain the GUI passes from the cluster time-restricted
+        // mode, rather than a single region.  An existing forest's windows win, so
+        // this only applies to the empty-forest branch.
+        {
+            TemplateLineageStore gs;                  // 90 s session, grain 30 s -> 3 regions
+            check(gs.load(base, group, "grain", "standard", "", nsamp, nchan, 1.0, 30.0),
+                  "grain store load ok");
+            check(gs.partitionReady() && gs.partition().nRegions() == 3 && gs.tEnd() == 90.0,
+                  "seed grain 30 s over a 90 s session -> 3 regions");
+
+            TemplateLineageStore gs2;                 // grain >= session -> a single region
+            check(gs2.load(base, group, "grain", "standard", "", nsamp, nchan, 1.0, 100.0)
+                      && gs2.partition().nRegions() == 1,
+                  "seed grain >= session -> one region");
+
+            TemplateLineageStore gs3;                 // grain 0 (session-spanning) -> one region
+            check(gs3.load(base, group, "grain", "standard", "", nsamp, nchan, 1.0, 0.0)
+                      && gs3.partition().nRegions() == 1,
+                  "seed grain 0 -> one region (unchanged default)");
+        }
 
         // Not-ready guard: a store with no .res leaves the partition ops inert.
         TemplateLineageStore nr;

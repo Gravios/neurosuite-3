@@ -4,6 +4,7 @@
 #include "klustersdoc.h"
 #include "klustersview.h"
 #include "data.h"                          // Data::clusterSpkIndices / totalNbOfSpikes
+#include "configuration.h"                 // projection-scope mode + grain (no-.wti seed)
 
 #include "neurosuite/core/custody.hpp"     // parseAnchor / untaggedPath / stagePath / resolveAny
 #include "neurosuite/core/template_generate.hpp"  // sessionPath / readResAny (lineage render + res)
@@ -786,8 +787,16 @@ void TemplateView::loadLineage()
         // reads the .res, seeds the session partition, and re-grains the forest.
         const int ns = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
         const int nc = doc.nbOfchannels();
+        // With no prior .wtl, seed the partition at the cluster view's CURRENT
+        // temporally-restricted grain (mode 1 → projectionScopeMinutes per region);
+        // in session-spanning mode (0) the seed is a single region.  An existing
+        // forest's own drift windows always override this.
+        double seedGrainSec = 0.0;
+        if (configuration().getProjectionScopeMode() == 1)
+            seedGrainSec = configuration().getProjectionScopeMinutes() * 60.0;
         lineageStore.load(base.toStdString(), group, tag.toStdString(),
-                          variant.toStdString(), spkTag.toStdString(), ns, nc, doc.getSamplingRate());
+                          variant.toStdString(), spkTag.toStdString(), ns, nc,
+                          doc.getSamplingRate(), seedGrainSec);
         lineageLoaded = lineageStore.ok();
         // Tile every active template class into the partition's regions
         // (placeholders), so each class shows region rows ready to fill.

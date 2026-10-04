@@ -29,10 +29,16 @@ public:
     // forest.  The render reads the input waveforms from
     // <base>.spk.<spkVariant>.<group>[.<spkTag>] and writes the library
     // (<base>.wtl/.wti.<group>[.<stage>] + <base>.wtf.<spkVariant>.<group>[.<stage>]).
-    // Always usable afterward; ok() reflects whether coordinates resolved.
+    // `seedGrainSec` is the initial partition grain (seconds per region) used ONLY
+    // when the loaded forest carries no drift windows (a fresh session, no prior
+    // .wtl): the session is tiled into equal regions of that width — the cluster
+    // view's temporally-restricted mode grain.  0 (the default) seeds a single
+    // session-spanning region, as before.  An existing forest's own windows always
+    // win over this seed.  Always usable afterward; ok() reflects whether
+    // coordinates resolved.
     bool load(const std::string& base, int group, const std::string& stage,
               const std::string& spkVariant, const std::string& spkTag,
-              int nSamples, int nChannels, double sr);
+              int nSamples, int nChannels, double sr, double seedGrainSec = 0.0);
     bool ok() const { return loaded_; }
 
     // ── forest access ─────────────────────────────────────────────────────────
@@ -54,8 +60,9 @@ public:
     void clear() { forest_.nodes.clear(); }
 
     // ── the session drift partition (the shared time grain; §9) ────────────────
-    // Seeded on load from the forest's drift-root windows (else a single region
-    // over [0,tEnd]); `partitionReady()` is false when the .res could not be read
+    // Seeded on load from the forest's drift-root windows (else tiled at the
+    // load-time seed grain — default a single region over [0,tEnd]);
+    // `partitionReady()` is false when the .res could not be read
     // (no res times → the partition edits are no-ops and the forest is left as
     // loaded, never silently wiped).
     const neurosuite::drift::Partition& partition() const { return partition_; }

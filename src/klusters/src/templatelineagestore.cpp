@@ -4,13 +4,14 @@
 #include "neurosuite/core/custody.hpp"   // resolveAny for the SHARED .res
 
 #include <algorithm>
+#include <cmath>
 
 namespace tg = neurosuite::templategen;
 namespace dr = neurosuite::drift;
 
 bool TemplateLineageStore::load(const std::string& base, int group, const std::string& stage,
                                 const std::string& spkVariant, const std::string& spkTag,
-                                int nSamples, int nChannels, double sr)
+                                int nSamples, int nChannels, double sr, double seedGrainSec)
 {
     base_ = base; group_ = group; stage_ = stage;
     spkVariant_ = spkVariant; spkTag_ = spkTag;
@@ -39,14 +40,21 @@ bool TemplateLineageStore::load(const std::string& base, int group, const std::s
 
     if (partitionReady_) {
         // Seed the partition from the loaded forest's drift-root windows (the
-        // tiling placeholders carry the grain); an empty/absent forest -> a single
-        // session-spanning region, which the GUI may replace with the cluster
-        // time-restricted mode's grain.
+        // tiling placeholders carry the grain).  An empty/absent forest (a fresh
+        // session, no prior .wtl) tiles at `seedGrainSec` — the cluster view's
+        // temporally-restricted mode grain the GUI passes in — or, when that is 0,
+        // a single session-spanning region the curator can split by hand.
         std::vector<std::pair<double,double>> windows;
         for (const neurofileio::WtlNode& n : forest_.nodes)
             if (dr::detail::isDriftKind(n.kind) && n.parent < 0) windows.push_back({ n.a, n.b });
-        partition_ = windows.empty() ? dr::uniformPartition(tEnd_, 1)
-                                     : dr::partitionFromWindows(windows, tEnd_);
+        if (!windows.empty()) {
+            partition_ = dr::partitionFromWindows(windows, tEnd_);
+        } else {
+            int k = 1;
+            if (seedGrainSec > 0.0 && tEnd_ > seedGrainSec)
+                k = static_cast<int>(std::ceil(tEnd_ / seedGrainSec));
+            partition_ = dr::uniformPartition(tEnd_, std::max(1, k));
+        }
         retile();                       // normalise the forest to the seeded grain
     } else {
         partition_ = dr::Partition{};
