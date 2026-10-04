@@ -417,10 +417,10 @@ protected:
      * event defers to the base ViewWidget/BaseFrame handling.*/
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
-    virtual  void mouseDoubleClickEvent(QMouseEvent* event) override {
-        //Trigger parent event
-        ViewWidget::mouseDoubleClickEvent(event);
-    }
+    // Overridden for the lineage overlay (§11.3): a left double-click on a region
+    // boundary starts a double-left-drag to move it; everything else defers to the
+    // base.  Non-overlay behaviour is unchanged.
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     /**Treat the events informing that it is time to compute the new data
   * due to the selection polygon.
   */
@@ -559,6 +559,16 @@ private:
     // a viewport point to the nearest node / interior partition boundary.
     int  lineageNodeAt(const QPoint& vp, int pxTol = 8);       ///< nearest node id, or -1
     int  lineageBoundaryAt(const QPoint& vp, int pxTol = 5);   ///< nearest interior boundary index, or -1
+    // Interaction (§11.3): double-left-drag moves a boundary; right-click opens a
+    // context menu.  Both gated by lineageOverlay_ and injected as guarded early-
+    // returns, so the mode-driven lasso / zoom / pan is untouched when off.
+    int    lineageDragBoundary_  = -1;        ///< interior boundary being double-drag-moved, or -1
+    double lineageDragBoundaryT_ = 0.0;       ///< live preview time (s) while dragging
+    void   showLineageContextMenu(const QPoint& vp);
+    void   commitLineageOverlay();            ///< render the model (.mti/.mtf) from the forest
+    void   lineageEdited();                   ///< recompute + repaint + "commit to render" hint
+    double timeAtViewport(const QPoint& vp);  ///< viewport X -> seconds (valid when X is time)
+    std::vector<int64_t> shownClusterSpikes() const;   ///< displayed clusters' 0-based .spk ids
 
     // Highlighted template class: its .eap members are ringed in the feature views
     // (claude/eap-template-class-design §8).  The class is chosen in the template-

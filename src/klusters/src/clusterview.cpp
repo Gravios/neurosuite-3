@@ -50,6 +50,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <QMenu>          // lineage overlay context menu (§11.3)
 #include <QSet>
 #include <QThread>
 #include <QPointer>
@@ -1334,6 +1335,13 @@ void ClusterView::setMode(BaseFrame::Mode selectedMode){
 
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
+    // Lineage overlay (§11.3): right-click opens the context menu, unless a
+    // selection polygon is mid-draw (there right-click still erases the last line).
+    if (lineageOverlay_ && !tsneMode && e->button() == Qt::RightButton && selectionPolygon.isEmpty()) {
+        showLineageContextMenu(e->position().toPoint());
+        e->accept();
+        return;
+    }
     if (tsneMode) {
         // The embedding's lasso is the SCATTER's lasso: the selection-mode
         // block at the end of this handler runs for both, and the two differ
@@ -1425,6 +1433,15 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
 }
 
 void ClusterView::mouseReleaseEvent(QMouseEvent* event){
+    // Lineage overlay (§11.3): finish a double-left-drag of a region boundary.
+    if (lineageDragBoundary_ >= 0) {
+        const int i = lineageDragBoundary_; lineageDragBoundary_ = -1;
+        const double t = timeAtViewport(event->position().toPoint());
+        if (t > 0.0 && lineageStore_.moveBoundary(i, t)) lineageEdited();
+        else { recomputeLineagePositions(); drawContentsMode = REFRESH; update(); }  // snap back
+        event->accept();
+        return;
+    }
     if (tsneMode) return;
     // End a Ctrl+drag pan.  Ctrl+Left is fully owned by the pan gesture (its
     // press was intercepted, so the base never started a rubber-band / click-zoom)
@@ -1750,10 +1767,15 @@ void ClusterView::paintLineageOverlay(QPainter& p)
     if (dimensionX == timeDimension && lineageStore_.partitionReady()) {
         const double sr = doc.getSamplingRate();
         QPen bPen(QColor(150, 150, 150, 160)); bPen.setCosmetic(true); bPen.setStyle(Qt::DashLine);
-        p.setPen(bPen);
-        for (double bsec : lineageStore_.partition().bounds) {
-            const int x = worldToViewport(QPoint(static_cast<int>(std::lround(bsec * sr)), 0)).x();
-            if (x >= 0 && x <= W) p.drawLine(x, 0, x, H);
+        QPen dPen(QColor(255, 180, 80));       dPen.setCosmetic(true); dPen.setWidth(2);  // dragged
+        const std::vector<double>& bnds = lineageStore_.partition().bounds;
+        for (std::size_t i = 0; i < bnds.size(); ++i) {
+            const bool dragged = (static_cast<int>(i) == lineageDragBoundary_);
+            const double bt = dragged ? lineageDragBoundaryT_ : bnds[i];
+            const int x = worldToViewport(QPoint(static_cast<int>(std::lround(bt * sr)), 0)).x();
+            if (x < 0 || x > W) continue;
+            p.setPen(dragged ? dPen : bPen);
+            p.drawLine(x, 0, x, H);
         }
     }
 
@@ -1838,6 +1860,112 @@ int ClusterView::lineageBoundaryAt(const QPoint& vp, int pxTol)
         if (dx <= bestDx) { bestDx = dx; best = static_cast<int>(i); }
     }
     return best;
+}
+
+double ClusterView::timeAtViewport(const QPoint& vp)
+{
+    const double sr = doc.getSamplingRate();
+    if (dimensionX != timeDimension || sr <= 0.0) return -1.0;
+    const QPoint w = viewportToWorld(vp.x(), vp.y());
+    return static_cast<double>(w.x()) / sr;      // recording units -> seconds
+}
+
+std::vector<int64_t> ClusterView::shownClusterSpikes() const
+{
+    std::vector<int64_t> out;
+    const QList<int> shown = view.clusters();
+    for (int cid : shown) {
+        if (cid <= 1) continue;                  // skip noise(0) / artefact(1)
+        const QVector<int> idx = doc.data().clusterSpkIndices(cid);
+        for (int s : idx) if (s >= 0) out.push_back(static_cast<int64_t>(s));
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+void ClusterView::lineageEdited()
+{
+    recomputeLineagePositions();
+    drawContentsMode = REFRESH;
+    update();
+    if (statusBar) statusBar->showMessage(
+        tr("Lineage edited — right-click → Commit lineage to render .mti/.mtf"), 4000);
+}
+
+void ClusterView::commitLineageOverlay()
+{
+    std::string wtlPath, mtiPath;
+    const neurosuite::templategen::Result R = lineageStore_.commit(&wtlPath, &mtiPath);
+    if (statusBar) statusBar->showMessage(R.ok
+        ? tr("Committed lineage → %1").arg(QFileInfo(QString::fromStdString(mtiPath)).fileName())
+        : tr("Commit failed: %1").arg(QString::fromStdString(R.err)), 6000);
+    recomputeLineagePositions();
+    drawContentsMode = REFRESH;
+    update();
+}
+
+void ClusterView::mouseDoubleClickEvent(QMouseEvent* e)
+{
+    if (lineageOverlay_ && !tsneMode && e->button() == Qt::LeftButton) {
+        const int b = lineageBoundaryAt(e->position().toPoint());
+        if (b >= 0 && b < static_cast<int>(lineageStore_.partition().bounds.size())) {
+            lineageDragBoundary_  = b;
+            lineageDragBoundaryT_ = lineageStore_.partition().bounds[static_cast<std::size_t>(b)];
+            // Drop any stray vertex the first click of the double-click may have
+            // started, so the selection polygon is not left half-open.
+            selectionPolygon.resize(0); nbSelectionPoints = 0;
+            e->accept();
+            return;
+        }
+    }
+    ViewWidget::mouseDoubleClickEvent(e);
+}
+
+void ClusterView::showLineageContextMenu(const QPoint& vp)
+{
+    if (!lineageOverlay_) return;
+    QMenu menu(this);
+    const int nodeId   = lineageNodeAt(vp);
+    const int boundary = (nodeId < 0) ? lineageBoundaryAt(vp) : -1;
+    const std::vector<int64_t> sel = shownClusterSpikes();
+
+    if (nodeId >= 0) {
+        const neurofileio::WtlNode* n = lineageStore_.node(nodeId);
+        const int cls    = n ? n->classId : -1;
+        const int region = (n && lineageStore_.partitionReady())
+            ? lineageStore_.partition().regionOf(0.5 * (n->a + n->b)) : -1;
+        const bool canEdit = !sel.empty() && cls >= 0 && region >= 0;
+        QAction* aDrift = menu.addAction(tr("Set region drift from shown clusters"));
+        QAction* aAdapt = menu.addAction(tr("Add adapt leaf from shown clusters"));
+        QAction* aColl  = menu.addAction(tr("Add collision leaf from shown clusters"));
+        aDrift->setEnabled(canEdit); aAdapt->setEnabled(canEdit); aColl->setEnabled(canEdit);
+        menu.addSeparator();
+        QAction* aRemove = menu.addAction(tr("Remove node"));
+        menu.addSeparator();
+        QAction* aCommit = menu.addAction(tr("Commit lineage (render .mti/.mtf)"));
+        const QAction* c = menu.exec(mapToGlobal(vp));
+        if      (c == aDrift)  { lineageStore_.setRegionSpikes(cls, region, sel);           lineageEdited(); }
+        else if (c == aAdapt)  { lineageStore_.addLeaf(cls, region, "adapt-leaf", sel);     lineageEdited(); }
+        else if (c == aColl)   { lineageStore_.addLeaf(cls, region, "collision-leaf", sel); lineageEdited(); }
+        else if (c == aRemove) { lineageStore_.removeNode(nodeId);                          lineageEdited(); }
+        else if (c == aCommit)   commitLineageOverlay();
+        return;
+    }
+    if (boundary >= 0) {
+        QAction* aDel = menu.addAction(tr("Delete boundary (merge regions)"));
+        if (menu.exec(mapToGlobal(vp)) == aDel) { lineageStore_.deleteBoundary(boundary); lineageEdited(); }
+        return;
+    }
+    // Empty space: split the clicked region (X must be time) or commit.
+    const double tsec = timeAtViewport(vp);
+    QAction* aSplit = menu.addAction(tr("Split region here"));
+    aSplit->setEnabled(lineageStore_.partitionReady() && tsec > 0.0);
+    menu.addSeparator();
+    QAction* aCommit = menu.addAction(tr("Commit lineage (render .mti/.mtf)"));
+    const QAction* c = menu.exec(mapToGlobal(vp));
+    if      (c == aSplit)  { lineageStore_.splitAt(tsec); lineageEdited(); }
+    else if (c == aCommit)   commitLineageOverlay();
 }
 
 void ClusterView::startOblique(){
@@ -2204,6 +2332,12 @@ void ClusterView::autoscaleToVisibleClusters()
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){
+    // Lineage overlay (§11.3): live-preview a boundary being double-left-dragged.
+    if (lineageDragBoundary_ >= 0) {
+        lineageDragBoundaryT_ = timeAtViewport(e->position().toPoint());
+        drawContentsMode = REFRESH; update();
+        return;
+    }
     if (tsneMode) {
         // Same tracking-vertex behaviour as the scatter, in embedding pixels:
         // the polygon carries the point under the cursor and it is committed
