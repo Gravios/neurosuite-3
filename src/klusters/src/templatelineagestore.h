@@ -91,12 +91,14 @@ public:
                  const std::vector<int64_t>& spikes);
 
     // ── commit ─────────────────────────────────────────────────────────────────
-    // Persist the forest to .wtl and render the library (.wti v2 + .wtf) via the
-    // shared neurosuite-core engine (reads the group's .spk).  Returns the engine
-    // Result (ok/err + rows) for the caller to report; `wtlPath`/`wtiPath`, when
-    // non-null, receive the written paths.
+    // Persist the forest to .wtl (the source) and render the MODEL (.mti v2 + .mtf)
+    // via the shared neurosuite-core engine (reads the group's .spk).  The model
+    // files are distinct from the auto-generated .wti/.wtf library, so a commit
+    // never clobbers a generation; an all-placeholder forest is refused.  Returns
+    // the engine Result (ok/err + rows); `wtlPath`/`mtiPath`, when non-null, receive
+    // the written paths.
     neurosuite::templategen::Result commit(std::string* wtlPath = nullptr,
-                                           std::string* wtiPath = nullptr);
+                                           std::string* mtiPath = nullptr);
 
 private:
     int   indexOf(int nodeId) const;                 // position in forest_.nodes, or -1

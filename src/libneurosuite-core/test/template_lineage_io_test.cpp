@@ -47,39 +47,62 @@ int main()
     fp.base = base; fp.group = group; fp.variants = {"standard"};
     fp.stage = "refine"; fp.spkTag = ""; fp.nSamples = nsamp; fp.nChannels = nchan; fp.sr = 32552.0;
 
-    std::string wtlPath, wtiPath;
-    std::map<std::string, std::string> wtfPaths;
-    Result R = renderLineageToFiles(fp, f, &wtlPath, &wtiPath, &wtfPaths);
+    // Clear any stale outputs from a prior run so the model-path / no-clobber
+    // checks below are meaningful (ctest reuses the build dir between runs).
+    std::remove(sessionPath(base, "wtl", group, "", "refine").c_str());
+    std::remove(sessionPath(base, "wti", group, "", "refine").c_str());
+    std::remove(sessionPath(base, "wtf", group, "standard", "refine").c_str());
+    std::remove(sessionPath(base, "mti", group, "", "refine").c_str());
+    std::remove(sessionPath(base, "mtf", group, "standard", "refine").c_str());
+
+    std::string wtlPath, mtiPath;
+    std::map<std::string, std::string> mtfPaths;
+    Result R = renderLineageToFiles(fp, f, &wtlPath, &mtiPath, &mtfPaths);
     check(R.ok, "renderLineageToFiles ok");
 
-    // .wtl persisted == forest.
+    // The render targets the MODEL files (.mti/.mtf), NOT the .wti/.wtf library.
+    check(mtiPath == sessionPath(base, "mti", group, "", "refine"), "model index path is .mti");
+    check(mtfPaths["standard"] == sessionPath(base, "mtf", group, "standard", "refine"),
+          "model waveform path is .mtf");
+
+    // .wtl (the source) persisted == forest.
     neurofileio::WtlForest rl = neurofileio::readWtl(wtlPath);
     check(rl.ok && rl.nodes.size() == 4, "readback .wtl has 4 nodes");
     check(rl.ok && rl.nodes.size()==4 && rl.nodes[2].kind == "collision-leaf"
           && rl.nodes[2].spikes == std::vector<int64_t>({6,7}), "collision-leaf node persisted");
     check(rl.ok && rl.nodes.size()==4 && rl.nodes[3].spikes.empty(), "empty drift-root persisted");
 
-    // .wti is v2 with the parent tree + kind→link mapping.
-    neurofileio::WtiIndex wi = neurofileio::readWti(wtiPath);
-    check(wi.ok && wi.version == 2, ".wti written as v2 (has parents)");
-    check(wi.rows.size() == 4, ".wti 4 rows");
+    // .mti is the wti v2 schema with the parent tree + kind→link mapping.
+    neurofileio::WtiIndex wi = neurofileio::readWti(mtiPath);
+    check(wi.ok && wi.version == 2, ".mti written as v2 (has parents)");
+    check(wi.rows.size() == 4, ".mti 4 rows");
     check(wi.rows.size()==4 && wi.rows[0].link=="drift" && wi.rows[0].parent==-1, "row0 drift root");
     check(wi.rows.size()==4 && wi.rows[1].link=="adapt" && wi.rows[1].parent==0, "row1 adapt child of row0");
     check(wi.rows.size()==4 && wi.rows[2].link=="collision" && wi.rows[2].parent==0, "row2 collision child of row0");
     check(wi.rows.size()==4 && wi.rows[3].link=="drift" && wi.rows[3].nSpikes==0, "row3 empty drift placeholder");
-    check(wi.nSamples == nsamp && wi.nChannels == nchan, ".wti geometry header");
+    check(wi.nSamples == nsamp && wi.nChannels == nchan, ".mti geometry header");
 
-    // .wtf medians (one record per row), empty row zero-filled.
-    neurofileio::SpkFile wf = neurofileio::readSpk(wtfPaths["standard"], nsamp, nchan);
-    check(wf.ok && wf.nSpikes == 4, ".wtf has 4 records");
+    // .mtf medians (one record per row), empty row zero-filled.
+    neurofileio::SpkFile wf = neurofileio::readSpk(mtfPaths["standard"], nsamp, nchan);
+    check(wf.ok && wf.nSpikes == 4, ".mtf has 4 records");
     auto recAll = [&](int r, int16_t want) {
         for (std::size_t e = 0; e < recLen; ++e) if (wf.samples[r*recLen + e] != want) return false; return true; };
     check(wf.ok && recAll(0,150) && recAll(1,60) && recAll(2,10) && recAll(3,0),
-          ".wtf medians 150/60/10 + 0 placeholder");
+          ".mtf medians 150/60/10 + 0 placeholder");
+
+    // The commit does NOT touch the auto-generated .wti/.wtf library (no clobber).
+    check(!neurofileio::readWti(sessionPath(base, "wti", group, "", "refine")).ok,
+          "no .wti written by the lineage render");
 
     // A missing .spk variant is a clean error (nothing half-written beyond this call's inputs).
     LineageFileParams bad = fp; bad.variants = {"nope"};
     check(!renderLineageToFiles(bad, f).ok, "missing .spk variant -> error");
+
+    // An all-placeholder forest (every node 0-spk) is refused — nothing to commit.
+    neurofileio::WtlForest empty; empty.version = 1;
+    { neurofileio::WtlNode n; n.node=0; n.classId=31; n.kind="drift-root"; n.parent=-1; n.a=0; n.b=120; n.spikes={}; empty.nodes.push_back(n); }
+    const Result ER = renderLineageToFiles(fp, empty);
+    check(!ER.ok && !ER.err.empty(), "all-placeholder forest -> commit refused");
 
     std::printf("template_lineage_io_test: %d checks, %d failures%s\n",
                 g_ran, g_fail, g_fail ? " — FAILURES" : "");

@@ -630,13 +630,16 @@ inline Result renderLineage(const neurofileio::WtlForest&                      f
 }
 
 // ── On-disk wrapper for the manual lineage ──────────────────────────────────
-// Persist the curator's forest and render it: write the `.wtl` (the lineage
-// itself), then read each variant's `.spk` and renderLineage → write the shared
-// method-less `.wti` (v2, carrying the tree) + one `.wtf` per variant.  The
-// `.wtl`/`.wti`/`.wtf` are stage-tagged exactly like the existing library (method
-// -less `.wtl`/`.wti`, per-variant `.wtf`); `spkTag` names the stage of the input
-// `.spk` the node indices refer to.  Like generateToFiles this ODR-uses the
-// out-of-line neurofileio readers/writers, so a caller must link Neurosuite::core.
+// Persist the curator's forest and render the final MODEL: write the `.wtl` (the
+// editable lineage source), then read each variant's `.spk` and renderLineage →
+// write the shared method-less `.mti` (the `.wti` v2 schema at the model
+// extension, carrying the tree) + one `.mtf` per variant.  The model files
+// (`.mti`/`.mtf`) are DISTINCT from the auto-generated library (`.wti`/`.wtf`), so
+// committing a lineage never clobbers a fiber-template generation.  All are
+// stage-tagged; `spkTag` names the stage of the input `.spk` the node indices
+// refer to.  Refuses an all-placeholder forest (nothing to commit).  Like
+// generateToFiles this ODR-uses the out-of-line neurofileio readers/writers, so a
+// caller must link Neurosuite::core.
 struct LineageFileParams {
     std::string              base;
     int                      group     = 0;
@@ -651,13 +654,25 @@ struct LineageFileParams {
 inline Result renderLineageToFiles(const LineageFileParams&            fp,
                                    const neurofileio::WtlForest&       forest,
                                    std::string*                        wtlPathOut = nullptr,
-                                   std::string*                        wtiPathOut = nullptr,
-                                   std::map<std::string, std::string>* wtfPaths   = nullptr)
+                                   std::string*                        mtiPathOut = nullptr,
+                                   std::map<std::string, std::string>* mtfPaths   = nullptr)
 {
     Result R;
     const int nsamp = fp.nSamples, nchan = fp.nChannels;
     if (nsamp <= 0 || nchan <= 0) { R.err = "bad waveform geometry"; return R; }
     if (fp.variants.empty())      { R.err = "no variants requested"; return R; }
+
+    // Refuse to render an empty model: if every node is a 0-spike placeholder (an
+    // unset region), there is nothing to commit yet.  A UX guard at the commit
+    // layer only — the pure renderLineage() stays permissive — so a curator cannot
+    // write a flat 0-spike model over a freshly-seeded, still-empty lineage.
+    bool anySpikes = false;
+    for (const neurofileio::WtlNode& nd : forest.nodes)
+        if (!nd.spikes.empty()) { anySpikes = true; break; }
+    if (!anySpikes) {
+        R.err = "every node is an empty placeholder — set at least one region's drift before committing";
+        return R;
+    }
 
     std::map<std::string, std::vector<int16_t>> spk;
     for (const std::string& v : fp.variants) {
@@ -670,22 +685,25 @@ inline Result renderLineageToFiles(const LineageFileParams&            fp,
     R = renderLineage(forest, fp.variants, spk, nsamp, nchan);
     if (!R.ok) return R;
 
-    // Persist the lineage itself.
+    // Persist the lineage SOURCE (.wtl).
     const std::string wtlPath = sessionPath(fp.base, "wtl", fp.group, "", fp.stage);
     if (!neurofileio::writeWtl(wtlPath, forest)) {
         R.ok = false; R.err = "cannot write .wtl: " + wtlPath; return R;
     }
     if (wtlPathOut) *wtlPathOut = wtlPath;
 
-    // The per-variant .wtf stacks ...
+    // The rendered MODEL: one per-variant .mtf waveform stack ...
     for (const std::string& v : fp.variants) {
-        const std::string wp = sessionPath(fp.base, "wtf", fp.group, v, fp.stage);
-        if (!neurofileio::writeSpk(wp, nsamp, nchan, R.wtf[v])) {
-            R.ok = false; R.err = "cannot write .wtf: " + wp; return R;
+        const std::string mp = sessionPath(fp.base, "mtf", fp.group, v, fp.stage);
+        if (!neurofileio::writeSpk(mp, nsamp, nchan, R.wtf[v])) {
+            R.ok = false; R.err = "cannot write .mtf: " + mp; return R;
         }
-        if (wtfPaths) (*wtfPaths)[v] = wp;
+        if (mtfPaths) (*mtfPaths)[v] = mp;
     }
-    // ... and the shared, method-less index (writeWti emits v2 — the rows carry parents).
+    // ... and the shared, method-less .mti index (the .wti v2 schema at the model
+    // extension — writeWti emits v2 because the rows carry parents).  The model
+    // (.mti/.mtf) is kept DISTINCT from the auto-generated library (.wti/.wtf), so
+    // committing a lineage never clobbers a fiber-template generation.
     neurofileio::WtiIndex idx;
     idx.version    = 1;
     idx.nSamples   = nsamp;
@@ -693,11 +711,11 @@ inline Result renderLineageToFiles(const LineageFileParams&            fp,
     idx.peakSample = -1;
     idx.sr         = fp.sr;
     idx.rows       = R.rows;
-    const std::string wtiPath = sessionPath(fp.base, "wti", fp.group, "", fp.stage);
-    if (!neurofileio::writeWti(wtiPath, idx)) {
-        R.ok = false; R.err = "cannot write .wti: " + wtiPath; return R;
+    const std::string mtiPath = sessionPath(fp.base, "mti", fp.group, "", fp.stage);
+    if (!neurofileio::writeWti(mtiPath, idx)) {
+        R.ok = false; R.err = "cannot write .mti: " + mtiPath; return R;
     }
-    if (wtiPathOut) *wtiPathOut = wtiPath;
+    if (mtiPathOut) *mtiPathOut = mtiPath;
 
     return R;
 }

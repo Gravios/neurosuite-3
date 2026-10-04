@@ -787,13 +787,12 @@ void TemplateView::loadLineage()
         // reads the .res, seeds the session partition, and re-grains the forest.
         const int ns = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
         const int nc = doc.nbOfchannels();
-        // With no prior .wtl, seed the partition at the cluster view's CURRENT
-        // temporally-restricted grain (mode 1 → projectionScopeMinutes per region);
-        // in session-spanning mode (0) the seed is a single region.  An existing
-        // forest's own drift windows always override this.
-        double seedGrainSec = 0.0;
-        if (configuration().getProjectionScopeMode() == 1)
-            seedGrainSec = configuration().getProjectionScopeMinutes() * 60.0;
+        // With no prior .wtl, seed the partition at the Preferences temporal-
+        // restriction grain value (projectionScopeMinutes per region).  Decoupled
+        // from projectionScopeMode — that flag governs the oblique projection, a
+        // different feature; gating the lineage grain on it left the grain dormant.
+        // An existing forest's own drift windows always override this.
+        const double seedGrainSec = configuration().getProjectionScopeMinutes() * 60.0;
         lineageStore.load(base.toStdString(), group, tag.toStdString(),
                           variant.toStdString(), spkTag.toStdString(), ns, nc,
                           doc.getSamplingRate(), seedGrainSec);
@@ -943,18 +942,20 @@ void TemplateView::onCommitLineage()
     if (!lineageLoaded) return;
     // The render reads the group's .spk (stable on disk) and the in-memory forest;
     // it does not depend on the live .clu, so no save-first gate is needed.
-    std::string wtlPath, wtiPath;
-    const neurosuite::templategen::Result R = lineageStore.commit(&wtlPath, &wtiPath);
+    std::string wtlPath, mtiPath;
+    const neurosuite::templategen::Result R = lineageStore.commit(&wtlPath, &mtiPath);
     if (!R.ok) {
         showStatus(tr("Commit failed: %1").arg(QString::fromStdString(R.err)));
         return;
     }
     const int rows = static_cast<int>(R.rows.size());
-    // Re-read the freshly written library (and the .wtl) so the unit list, the
-    // tree and the preview all reflect disk and stay index-aligned.
+    // Re-read so the tree + .wtl reflect disk.  NOTE: the model (.mti/.mtf) is a
+    // separate artifact from the .wti/.wtf library this tab still reads, so the
+    // committed model is surfaced by the scope-overlay / waveform-overlay editor,
+    // not here (this tab is being retired — see the curation plan §10).
     reloadFromDisk();
-    showStatus(tr("Committed lineage: wrote %1 and rendered %n row(s).", "", rows)
-                   .arg(QFileInfo(QString::fromStdString(wtiPath)).fileName()));
+    showStatus(tr("Committed lineage: wrote %1 and rendered %n model row(s).", "", rows)
+                   .arg(QFileInfo(QString::fromStdString(mtiPath)).fileName()));
 }
 
 // ── partition edits (Edit grain mode) ───────────────────────────────────────

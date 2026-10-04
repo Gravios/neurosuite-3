@@ -32,8 +32,8 @@ int main()
     std::remove(tg::sessionPath(base, "spk", group, "standard", "").c_str());
     std::remove(tg::sessionPath(base, "res", group, "standard", "").c_str());
     std::remove(tg::sessionPath(base, "wtl", group, "", "refine").c_str());
-    std::remove(tg::sessionPath(base, "wti", group, "", "refine").c_str());
-    std::remove(tg::sessionPath(base, "wtf", group, "standard", "refine").c_str());
+    std::remove(tg::sessionPath(base, "mti", group, "", "refine").c_str());
+    std::remove(tg::sessionPath(base, "mtf", group, "standard", "refine").c_str());
     std::remove(tg::sessionPath(base, "wtl", group, "", "part").c_str());
     std::remove(tg::sessionPath(base, "wti", group, "", "part").c_str());
     std::remove(tg::sessionPath(base, "wtf", group, "standard", "part").c_str());
@@ -62,27 +62,28 @@ int main()
     check(st.nodeCount() == 4, "4 nodes");
     check(st.node(l1) && st.node(l1)->parent == r0, "adapt-leaf parent is the drift root");
 
-    // Commit -> persist .wtl + render library.
-    std::string wtlPath, wtiPath;
-    tg::Result R = st.commit(&wtlPath, &wtiPath);
+    // Commit -> persist .wtl (source) + render the model (.mti/.mtf).
+    std::string wtlPath, mtiPath;
+    tg::Result R = st.commit(&wtlPath, &mtiPath);
     check(R.ok, "commit ok");
     check(R.rows.size() == 4, "4 rows rendered");
+    check(mtiPath == tg::sessionPath(base, "mti", group, "", "refine"), "model index is .mti (not .wti)");
 
     neurofileio::WtlForest rl = neurofileio::readWtl(wtlPath);
     check(rl.ok && rl.nodes.size() == 4, ".wtl persisted with 4 nodes");
 
-    neurofileio::WtiIndex wi = neurofileio::readWti(wtiPath);
-    check(wi.ok && wi.version == 2, ".wti written v2 (parents present)");
+    neurofileio::WtiIndex wi = neurofileio::readWti(mtiPath);
+    check(wi.ok && wi.version == 2, ".mti written v2 (parents present)");
     check(wi.rows.size()==4 && wi.rows[1].link=="adapt" && wi.rows[1].parent==0, "adapt child row parent==0");
     check(wi.rows.size()==4 && wi.rows[2].link=="collision" && wi.rows[2].parent==0, "collision child row parent==0");
     check(wi.rows.size()==4 && wi.rows[3].nSpikes==0, "empty drift-root placeholder row");
 
     neurofileio::SpkFile wf = neurofileio::readSpk(
-        tg::sessionPath(base, "wtf", group, "standard", "refine"), nsamp, nchan);
+        tg::sessionPath(base, "mtf", group, "standard", "refine"), nsamp, nchan);
     auto recAll = [&](int r, int16_t want) {
         for (std::size_t e = 0; e < recLen; ++e) if (wf.samples[r*recLen + e] != want) return false; return true; };
     check(wf.ok && wf.nSpikes==4 && recAll(0,150) && recAll(1,60) && recAll(2,10) && recAll(3,0),
-          ".wtf medians 150/60/10 + 0 placeholder");
+          ".mtf medians 150/60/10 + 0 placeholder");
 
     // ── node ops ────────────────────────────────────────────────────────────
     check(st.setKind(l2, "my-kind") && st.node(l2)->kind == "my-kind", "setKind");

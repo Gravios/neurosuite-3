@@ -132,7 +132,7 @@ bool TemplateLineageStore::setWindow(int nodeId, double a, double b)
     return true;
 }
 
-tg::Result TemplateLineageStore::commit(std::string* wtlPath, std::string* wtiPath)
+tg::Result TemplateLineageStore::commit(std::string* wtlPath, std::string* mtiPath)
 {
     tg::LineageFileParams fp;
     fp.base = base_;
@@ -143,7 +143,7 @@ tg::Result TemplateLineageStore::commit(std::string* wtlPath, std::string* wtiPa
     fp.nSamples = nSamples_;
     fp.nChannels = nChannels_;
     fp.sr = sr_;
-    return tg::renderLineageToFiles(fp, forest_, wtlPath, wtiPath, nullptr);
+    return tg::renderLineageToFiles(fp, forest_, wtlPath, mtiPath, nullptr);
 }
 
 // ── session drift partition ─────────────────────────────────────────────────
