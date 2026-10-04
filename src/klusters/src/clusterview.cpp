@@ -1663,16 +1663,29 @@ void ClusterView::refreshProjectionScope(){
 void ClusterView::toggleLineageOverlay()
 {
     lineageOverlay_ = !lineageOverlay_;
-    if (lineageOverlay_) { loadLineageOverlay(); recomputeLineagePositions(); }
-    else                   lineageDraw_.clear();
-    if (statusBar) {
-        const QString hint = (lineageOverlay_ && dimensionX != timeDimension)
-            ? tr(" — set X to the time dimension to see the drift regions") : QString();
-        statusBar->showMessage(lineageOverlay_
-            ? tr("Lineage overlay on: median nodes + drift tree over the scatter%1").arg(hint)
-            : tr("Lineage overlay off"), 5000);
+    bool dimsChanged = false;
+    if (lineageOverlay_) {
+        loadLineageOverlay();
+        // Force time (X) × energy-ladder feature (Y) so drift reads left→right and
+        // the amplitude ladder reads vertically; save the prior projection to
+        // restore on exit.  updateDimensions() is the view-wide lever (it drives
+        // the slot that sets our dimensionX/Y + re-grains the overlay positions).
+        savedDimX_ = view.abscissaDimension();
+        savedDimY_ = view.ordinateDimension();
+        const int tdim = doc.data().timeDimension();
+        const int ydim = bestEnergyLadderDim();
+        dimsForced_ = (savedDimX_ != tdim || savedDimY_ != ydim);
+        if (dimsForced_) { view.updateDimensions(tdim, ydim); dimsChanged = true; }
+        recomputeLineagePositions();        // covers the already-time×energy case too
+    } else {
+        lineageDraw_.clear();
+        if (dimsForced_) { view.updateDimensions(savedDimX_, savedDimY_); dimsForced_ = false; dimsChanged = true; }
     }
-    drawContentsMode = REFRESH;        // the overlay is drawn on top; no cluster redraw needed
+    if (statusBar)
+        statusBar->showMessage(lineageOverlay_
+            ? tr("Lineage overlay on: median nodes + drift tree over the time×amplitude scatter")
+            : tr("Lineage overlay off"), 5000);
+    if (!dimsChanged) drawContentsMode = REFRESH;   // overlay sits on top; else a REDRAW is already queued
     update();
 }
 
@@ -1781,6 +1794,50 @@ void ClusterView::paintLineageOverlay(QPainter& p)
         p.drawEllipse(c.x() - rad, c.y() - rad, rad * 2, rad * 2);
     }
     p.setBrush(Qt::NoBrush);
+}
+
+int ClusterView::bestEnergyLadderDim() const
+{
+    // "Best feature to view the energy ladder": the non-time feature dimension
+    // with the widest value spread (amplitude varies most there) — a cheap stand-in
+    // for the amplitude axis.  Dimensions are 1..timeDimension()-1 (time excluded).
+    const Data& d = doc.data();
+    const int timeDim = d.timeDimension();
+    int best = (timeDim > 1) ? 1 : timeDim;
+    dataType bestExtent = -1;
+    for (int dim = 1; dim < timeDim; ++dim) {
+        const dataType ext = d.maxDimension(dim) - d.minDimension(dim);
+        if (ext > bestExtent) { bestExtent = ext; best = dim; }
+    }
+    return best;
+}
+
+int ClusterView::lineageNodeAt(const QPoint& vp, int pxTol)
+{
+    if (!lineageOverlay_) return -1;
+    int bestId = -1;
+    int bestD2 = (pxTol + 1) * (pxTol + 1);
+    for (const LineageNodeDraw& nd : lineageDraw_) {
+        const QPoint s = worldToViewport(nd.world);
+        const int dx = s.x() - vp.x(), dy = s.y() - vp.y();
+        const int d2 = dx * dx + dy * dy;
+        if (d2 <= bestD2) { bestD2 = d2; bestId = nd.node; }
+    }
+    return bestId;
+}
+
+int ClusterView::lineageBoundaryAt(const QPoint& vp, int pxTol)
+{
+    if (!lineageOverlay_ || dimensionX != timeDimension || !lineageStore_.partitionReady()) return -1;
+    const double sr = doc.getSamplingRate();
+    const std::vector<double>& b = lineageStore_.partition().bounds;
+    int best = -1, bestDx = pxTol + 1;
+    for (std::size_t i = 0; i < b.size(); ++i) {
+        const int x = worldToViewport(QPoint(static_cast<int>(std::lround(b[i] * sr)), 0)).x();
+        const int dx = std::abs(x - vp.x());
+        if (dx <= bestDx) { bestDx = dx; best = static_cast<int>(i); }
+    }
+    return best;
 }
 
 void ClusterView::startOblique(){

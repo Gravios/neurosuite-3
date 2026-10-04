@@ -549,6 +549,16 @@ private:
     void recomputeLineagePositions();             ///< node centroids in the current projection
     void paintLineageOverlay(QPainter& p);        ///< draw nodes / edges / boundaries on top
     QColor lineageClassColor(int classId) const;  ///< stable per-class colour
+    // On entry the overlay forces the projection to time (X) × the energy-ladder
+    // feature (Y) so drift reads left→right and the amplitude ladder reads
+    // vertically; the prior projection is saved and restored on exit (§11.2).
+    int  bestEnergyLadderDim() const;             ///< non-time feature dim with the widest spread
+    int  savedDimX_ = -1, savedDimY_ = -1;        ///< projection saved on overlay entry
+    bool dimsForced_ = false;                     ///< true while the overlay forced time×amplitude
+    // Hit-testing (groundwork for the §11.3 double-left-drag + context menus): map
+    // a viewport point to the nearest node / interior partition boundary.
+    int  lineageNodeAt(const QPoint& vp, int pxTol = 8);       ///< nearest node id, or -1
+    int  lineageBoundaryAt(const QPoint& vp, int pxTol = 5);   ///< nearest interior boundary index, or -1
 
     // Highlighted template class: its .eap members are ringed in the feature views
     // (claude/eap-template-class-design §8).  The class is chosen in the template-
