@@ -272,11 +272,15 @@ void KlustersApp::initView()
     clusterStack->setChildrenCollapsible(false);
     clusterStack->addWidget(clusterPanel);
     clusterStack->addWidget(childPanel);
-    clusterStack->addWidget(recommendPanel);
-    // Main palette gets the top half; the child palette and the recommendations
-    // split the bottom half between them.  Sizes are a starting ratio only --
-    // the splitter is user-draggable from here.
-    clusterStack->setSizes({ 200, 100, 100 });
+    // [template-curation §11.4] The "Recommended merges" dock is isolated for
+    // future reconsideration: its slot in this stack is reserved for the template
+    // palette.  Its creation is commented out in initClusterPanel() (recommendPanel
+    // stays null, so every refresh call short-circuits).  To restore the panel,
+    // un-comment there and re-add it here with a third size entry.
+    // clusterStack->addWidget(recommendPanel);
+    // Main palette gets the top half; the child palette takes the bottom.  Sizes
+    // are a starting ratio only -- the splitter is user-draggable from here.
+    clusterStack->setSizes({ 200, 100 });
     splitter->addWidget(clusterStack);
     splitter->setChildrenCollapsible(false);
     tabsParent = new QExtendTabWidget(this);
@@ -2514,13 +2518,20 @@ void KlustersApp::initClusterPanel()
     // agreement between the error and residual matrices.  A reader only -- it
     // selects a pair in the main palette and leaves the merge to the existing
     // hierarchy ops, so undo and colour handling stay in one place.
-    recommendPanel = new QDockWidget(tr("Recommended merges"),nullptr);
-    recommendView  = new MergeRecommendView(recommendPanel);
-    recommendPanel->setWidget(recommendView);
-    recommendPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
-    recommendPanel->hide();
-    connect(recommendView,&MergeRecommendView::recommendationActivated,
-            this,&KlustersApp::slotRecommendationActivated);
+    // [template-curation §11.4] Recommendation panel isolated for future
+    // reconsideration — its left-column slot is reserved for the template palette.
+    // Left commented out (not deleted) so it can be restored wholesale; recommendPanel
+    // / recommendView stay null, and every scheduleRefreshMergeRecommendations() /
+    // slotRefreshMergeRecommendations() path short-circuits on the null panel, so the
+    // merge-recommendation machinery is inert but still compiles.  To restore: un-
+    // comment this block and the clusterStack->addWidget(recommendPanel) in initView().
+    // recommendPanel = new QDockWidget(tr("Recommended merges"),nullptr);
+    // recommendView  = new MergeRecommendView(recommendPanel);
+    // recommendPanel->setWidget(recommendView);
+    // recommendPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    // recommendPanel->hide();
+    // connect(recommendView,&MergeRecommendView::recommendationActivated,
+    //         this,&KlustersApp::slotRecommendationActivated);
 }
 
 void KlustersApp::initDisplay(){
