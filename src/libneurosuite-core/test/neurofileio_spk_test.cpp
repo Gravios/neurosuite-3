@@ -175,7 +175,8 @@ int main()
         // Negative cases: bad header, version, nRows mismatch, missing file.
         { std::ofstream bad("nfio_wti_bad.tmp.wti"); bad << "notwti 1\nnSamples 4\n"; }
         check(!readWti("nfio_wti_bad.tmp.wti").ok, "readWti rejects a bad header line");
-        { std::ofstream bad("nfio_wti_ver.tmp.wti"); bad << "wti 2\nnRows 0\n"; }
+        // v1 and v2 are both valid now (v2 adds the parent column); 3 is unknown.
+        { std::ofstream bad("nfio_wti_ver.tmp.wti"); bad << "wti 3\nnRows 0\n"; }
         check(!readWti("nfio_wti_ver.tmp.wti").ok, "readWti rejects an unknown version");
         { std::ofstream bad("nfio_wti_cnt.tmp.wti");
           bad << "wti 1\nnRows 3\nrow 0 1 drift 0 0 1 5\n"; }

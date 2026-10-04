@@ -60,6 +60,16 @@ target_include_directories(core_test_template_generate
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_template_generate COMMAND core_test_template_generate)
 
+# .wti template index (readWti/writeWti): the version-2 schema bump — the trailing
+# `parent` lineage column + the `collision` link kind — and v1/v2 back-compat.
+# Links the library (the readers/writers live in neurofileio.cpp).
+add_executable(core_test_wti wti_test.cpp)
+target_compile_features(core_test_wti PRIVATE cxx_std_17)
+target_include_directories(core_test_wti
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_wti PRIVATE Neurosuite::core)
+add_test(NAME core_test_wti COMMAND core_test_wti)
+
 # .wtl manual template-linkage sidecar (readWtl/writeWtl + the wtl* view-model
 # helpers): the per-node curator lineage the native generator re-medians.  Links
 # the library (the readers/writers live in neurofileio.cpp), like the .spk test.

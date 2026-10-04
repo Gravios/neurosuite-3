@@ -183,19 +183,35 @@ NEUROSUITE_CORE_EXPORT std::vector<ColDecomp> readColAccepted(const std::string&
 //     row 2 31 adapt 0 1.00 2.00 410
 //     ...
 //
-// `link` is drift|adapt (unknown tokens tolerated and kept verbatim); `bin` is
-// the 0-based ordinal within that (unit,link) series; a/b are the bin's
+// `link` is drift|adapt|collision (unknown tokens tolerated and kept verbatim);
+// `bin` is the 0-based ordinal within that (unit,link) series; a/b are the bin's
 // coordinates (drift: chunk start/end seconds; adapt: energy lo/hi); nSpikes is
 // the spike count behind that median (0 = an empty placeholder row).  Row i maps
 // 1:1 to .wtf record i, so readSpk(wtf).nSpikes must equal rows.size().
+//
+// Version 2 adds a trailing `parent` column — the .wti row index of this row's
+// parent in the manual lineage (-1 = a tree root), so a rendered library carries
+// the .wtl tree structure (drift roots with adapt/collision children):
+//
+//     wti 2
+//     # ... row unit link bin a b nSpikes parent
+//     row 0 31 drift 0 0.000 120.000 540 -1
+//     row 1 31 adapt 0 1.00 2.00 410 0        # child of row 0
+//
+// The bump is additive: readWti accepts v1 AND v2 (v1 rows get parent = -1), and
+// writeWti emits v2 (with the parent column) ONLY when some row sets parent >= 0,
+// otherwise v1 — byte-identical to pre-v2 output.  The column is appended, like
+// fiber-kit's trailing src_clu_* provenance columns the reader already ignores.
+// `collision` needs no schema change: it is just another `link` string.
 struct WtiRow {
     int         row    = 0;    ///< 0-based; equals the .wtf record index
     int         unitId = 0;    ///< cluster/unit this template belongs to
-    std::string link;          ///< "drift" | "adapt" (verbatim; extensible)
+    std::string link;          ///< "drift" | "adapt" | "collision" (verbatim; extensible)
     int         bin    = 0;    ///< 0-based ordinal within this (unit,link) series
     double      a      = 0.0;  ///< bin coordinate lo (drift: start s; adapt: energy lo)
     double      b      = 0.0;  ///< bin coordinate hi (drift: end s;   adapt: energy hi)
     int64_t     nSpikes = 0;   ///< spikes behind this median (0 = empty placeholder)
+    int         parent  = -1;  ///< v2: .wti row index of the lineage parent (-1 = tree root)
 };
 struct WtiIndex {
     int                 version    = 1;

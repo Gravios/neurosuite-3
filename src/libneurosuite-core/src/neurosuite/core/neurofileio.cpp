@@ -383,7 +383,7 @@ WtiIndex readWti(const std::string& path)
             // The first non-blank, non-comment line MUST be "wti <version>".
             if (key != "wti") return WtiIndex{};
             int ver = 0;
-            if (!(ls >> ver) || ver != 1) return WtiIndex{};   // only v1 implemented
+            if (!(ls >> ver) || (ver != 1 && ver != 2)) return WtiIndex{};  // v1 + v2 implemented
             idx.version = ver;
             haveHeader = true;
             continue;
@@ -395,9 +395,12 @@ WtiIndex readWti(const std::string& path)
         else if (key == "nRows")      ls >> declaredRows;
         else if (key == "row") {
             WtiRow r;
-            // row <row> <unit> <link> <bin> <a> <b> <nSpikes>
-            if (ls >> r.row >> r.unitId >> r.link >> r.bin >> r.a >> r.b >> r.nSpikes)
+            // v1: row <row> <unit> <link> <bin> <a> <b> <nSpikes>
+            // v2: ... <nSpikes> <parent>  (parent appended; -1 = tree root)
+            if (ls >> r.row >> r.unitId >> r.link >> r.bin >> r.a >> r.b >> r.nSpikes) {
+                if (idx.version >= 2) ls >> r.parent;   // tolerant: absent -> default -1
                 idx.rows.push_back(r);
+            }
             // A malformed row line is skipped rather than aborting the whole index.
         }
         // Unknown keys are ignored, so the format can gain fields without
@@ -415,17 +418,25 @@ bool writeWti(const std::string& path, const WtiIndex& idx)
 {
     std::ofstream out(path);
     if (!out) return false;
-    out << "wti " << idx.version << "\n";
+    // Emit v2 (with the trailing parent column) only when some row carries a
+    // lineage parent; otherwise v1, byte-identical to pre-v2 output.
+    bool anyParent = false;
+    for (const WtiRow& r : idx.rows) if (r.parent >= 0) { anyParent = true; break; }
+    const int ver = anyParent ? 2 : 1;
+    out << "wti " << ver << "\n";
     out << "nSamples "   << idx.nSamples   << "\n";
     out << "nChannels "  << idx.nChannels  << "\n";
     out << "peakSample " << idx.peakSample << "\n";
     out << "sr "         << idx.sr         << "\n";
     out << "nRows "      << idx.rows.size() << "\n";
-    out << "# row unit link bin a b nSpikes\n";
+    out << (ver >= 2 ? "# row unit link bin a b nSpikes parent\n"
+                     : "# row unit link bin a b nSpikes\n");
     for (const WtiRow& r : idx.rows) {
         out << "row " << r.row << ' ' << r.unitId << ' '
             << (r.link.empty() ? std::string("drift") : r.link) << ' '
-            << r.bin << ' ' << r.a << ' ' << r.b << ' ' << r.nSpikes << "\n";
+            << r.bin << ' ' << r.a << ' ' << r.b << ' ' << r.nSpikes;
+        if (ver >= 2) out << ' ' << r.parent;
+        out << "\n";
     }
     return static_cast<bool>(out);
 }
