@@ -556,11 +556,14 @@ void ClusterView::applyTsneLasso(){
     const int nSelected = rows.size();
     resetSelectionPolygon();
 
-    // CREATE modes defer: capture the selection, show a residual preview in the
-    // waveform view, and wait for the curator to confirm (Enter) or cancel (Esc).
-    // DELETE modes (to a reserve bin) apply at once, as before — there is no
-    // prospective cluster to inspect.
-    if (mode == NEW_CLUSTER || mode == NEW_CLUSTERS) {
+    // The residual-preview-then-confirm step belongs to the OBLIQUE (template-
+    // axis) projection, where the cut is judged against the pinned basis's
+    // templates: capture the selection, show the residual in the waveform view,
+    // and wait for the curator to confirm (Enter), cancel (Esc) or decollide (D).
+    // The plain t-SNE embedding carries no basis to preview against, so it
+    // creates IMMEDIATELY — exactly like the feature-space scatter.  DELETE modes
+    // apply at once in both (there is no prospective cluster to inspect).
+    if (obliqueMode && (mode == NEW_CLUSTER || mode == NEW_CLUSTERS)) {
         clearPendingLasso();                 // supersede any earlier pending preview
         pendingRows_    = rows;
         pendingSources_ = sources;
@@ -568,11 +571,11 @@ void ClusterView::applyTsneLasso(){
         pendingNSel_    = nSelected;
         pendingLasso_   = true;
         showLassoResidualPreview();
-        drawContentsMode = REDRAW;            // repaint the embedding without the polygon
+        drawContentsMode = REDRAW;            // repaint the projection without the polygon
         update();
         if (statusBar) statusBar->showMessage(
-            tr("t-SNE lasso: %1 spikes — Enter to apply, Esc to cancel "
-               "(residual shown in the waveform view)").arg(nSelected), 0);
+            tr("Oblique lasso: %1 spikes — Enter to apply, Esc to cancel, "
+               "D to decollide (residual shown in the waveform view)").arg(nSelected), 0);
         return;
     }
 
@@ -608,12 +611,13 @@ void ClusterView::applyLassoSelection(const QSet<dataType>& rows, const QList<in
     drawContentsMode = REDRAW;
     update();
 
+    const QString lassoName = obliqueMode ? tr("Oblique lasso") : tr("t-SNE lasso");
     if (statusBar) statusBar->showMessage(
         tsneChildLayer
-          ? tr("t-SNE lasso: %1 spikes from %2 atom(s) applied")
-                .arg(nSelected).arg(sources.size())
-          : tr("t-SNE lasso: %1 spikes from %2 cluster(s) applied")
-                .arg(nSelected).arg(sources.size()), 6000);
+          ? tr("%1: %2 spikes from %3 atom(s) applied")
+                .arg(lassoName).arg(nSelected).arg(sources.size())
+          : tr("%1: %2 spikes from %3 cluster(s) applied")
+                .arg(lassoName).arg(nSelected).arg(sources.size()), 6000);
 }
 
 void ClusterView::showLassoResidualPreview(){
