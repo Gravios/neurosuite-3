@@ -27,6 +27,8 @@
 #include <QFrame>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QCheckBox>
+#include <QMouseEvent>
 
 #include <algorithm>
 #include <cmath>
@@ -105,6 +107,108 @@ void TemplateWavePanel::paintEvent(QPaintEvent*)
     }
 }
 
+// ── PartitionStrip ──────────────────────────────────────────────────────────
+PartitionStrip::PartitionStrip(QWidget* parent) : QWidget(parent)
+{
+    setMinimumHeight(34);
+    setMaximumHeight(44);
+}
+
+void PartitionStrip::setData(double tEndSec, std::vector<double> b, bool edit, int selected)
+{
+    tEnd = tEndSec; bounds = std::move(b); editMode = edit; selectedBoundary = selected;
+    dragIdx_ = -1;
+    update();
+}
+
+double PartitionStrip::xToTime(int x) const
+{
+    const int W = width();
+    if (W <= 0 || tEnd <= 0.0) return 0.0;
+    double t = (static_cast<double>(x) / W) * tEnd;
+    if (t < 0.0) t = 0.0; if (t > tEnd) t = tEnd;
+    return t;
+}
+int PartitionStrip::timeToX(double t) const
+{
+    const int W = width();
+    if (tEnd <= 0.0) return 0;
+    return static_cast<int>(t / tEnd * W);
+}
+int PartitionStrip::nearestBoundary(int x, int pxThresh) const
+{
+    int best = -1, bestD = pxThresh + 1;
+    for (std::size_t i = 0; i < bounds.size(); ++i) {
+        const int d = std::abs(timeToX(bounds[i]) - x);
+        if (d < bestD) { bestD = d; best = static_cast<int>(i); }
+    }
+    return (bestD <= pxThresh) ? best : -1;
+}
+
+void PartitionStrip::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+    const int W = width(), H = height();
+    p.fillRect(rect(), background);
+    if (tEnd <= 0.0) {
+        p.setPen(QColor(150, 150, 150));
+        p.drawText(rect(), Qt::AlignCenter, tr("no partition"));
+        return;
+    }
+    // Alternate region shading.
+    const int n = static_cast<int>(bounds.size()) + 1;
+    for (int r = 0; r < n; ++r) {
+        const int x0 = (r == 0) ? 0 : timeToX(bounds[static_cast<std::size_t>(r) - 1]);
+        const int x1 = (r == n - 1) ? W : timeToX(bounds[static_cast<std::size_t>(r)]);
+        QColor c = (r % 2) ? QColor(44, 48, 56) : QColor(34, 38, 46);
+        p.fillRect(QRect(x0, 0, x1 - x0, H), c);
+    }
+    // Boundaries (the dragged one follows the cursor).
+    for (std::size_t i = 0; i < bounds.size(); ++i) {
+        const int bx = (dragIdx_ == static_cast<int>(i)) ? timeToX(dragT_) : timeToX(bounds[i]);
+        const bool sel = (static_cast<int>(i) == selectedBoundary);
+        p.setPen(QPen(sel ? QColor(255, 180, 80) : QColor(120, 170, 255), sel ? 3 : 2));
+        p.drawLine(bx, 0, bx, H);
+    }
+}
+
+void PartitionStrip::mousePressEvent(QMouseEvent* e)
+{
+    if (tEnd <= 0.0) return;
+    const int x = static_cast<int>(e->position().x());
+    const int hit = nearestBoundary(x, 5);
+    if (hit >= 0) {
+        selectedBoundary = hit;
+        if (onSelectBoundary) onSelectBoundary(hit);
+        if (editMode) { dragIdx_ = hit; dragT_ = bounds[static_cast<std::size_t>(hit)]; }
+        update();
+    } else {
+        selectedBoundary = -1;
+        if (onSelectBoundary) onSelectBoundary(-1);
+        update();
+    }
+}
+void PartitionStrip::mouseMoveEvent(QMouseEvent* e)
+{
+    if (dragIdx_ < 0) return;
+    dragT_ = xToTime(static_cast<int>(e->position().x()));
+    update();
+}
+void PartitionStrip::mouseReleaseEvent(QMouseEvent* e)
+{
+    if (dragIdx_ < 0) return;
+    const int i = dragIdx_; dragIdx_ = -1;
+    const double t = xToTime(static_cast<int>(e->position().x()));
+    if (onMoveBoundary) onMoveBoundary(i, t);
+}
+void PartitionStrip::mouseDoubleClickEvent(QMouseEvent* e)
+{
+    if (!editMode || tEnd <= 0.0) return;
+    const int x = static_cast<int>(e->position().x());
+    if (nearestBoundary(x, 5) >= 0) return;          // double-click on a body, not a boundary
+    if (onSplit) onSplit(xToTime(x));
+}
+
 // ── TemplateView ────────────────────────────────────────────────────────────
 TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
                            const QColor& backgroundColor, QStatusBar* sb,
@@ -151,28 +255,41 @@ TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
     regenButton->setToolTip(tr("Rerun fiber-template so the template waveform series reflects "
                                "the current class membership."));
 
-    // ── manual-lineage panel (.wtl) ────────────────────────────────────────────
+    // ── manual-lineage panel (.wtl) + the session drift partition ──────────────
     lineageHeader = new QLabel(tr("Lineage"), this);
     lineageHeader->setWordWrap(true);
+    partitionStrip = new PartitionStrip(this);
+    partitionStrip->background = backgroundColor.isValid() ? backgroundColor : QColor(20, 20, 20);
+    partitionStrip->setToolTip(tr("The session drift partition (shared by all classes). In Edit "
+                                  "grain mode, drag a boundary to move it, double-click a region to "
+                                  "split it, or click a boundary and Delete."));
+    editModeCheck = new QCheckBox(tr("Edit grain"), this);
+    editModeCheck->setToolTip(tr("Unlock the partition: drag / split / delete region boundaries "
+                                 "(affects every class)."));
     lineageTree = new QTreeWidget(this);
     lineageTree->setColumnCount(1);
     lineageTree->setHeaderHidden(true);
     lineageTree->setMaximumWidth(300);
-    lineageTree->setToolTip(tr("The selected class's manual median tree: drift roots (per time "
-                               "region) with adapt/collision leaves.  Build nodes from the current "
-                               "cluster selection, then Commit to write .wtl and render .wti/.wtf."));
-    addRootButton      = new QPushButton(tr("+ Drift root"), this);
+    lineageTree->setToolTip(tr("The selected class's manual median tree: a drift root per time "
+                               "region (placeholders until filled) with adapt/collision leaves. "
+                               "Pick a region row, then set its spikes / add a leaf from the current "
+                               "cluster selection; Commit writes .wtl and renders .wti/.wtf."));
+    addRootButton      = new QPushButton(tr("Set region drift"), this);
     addAdaptButton     = new QPushButton(tr("+ Adapt leaf"), this);
     addCollisionButton = new QPushButton(tr("+ Collision leaf"), this);
+    splitButton        = new QPushButton(tr("Split region"), this);
+    deleteBoundaryButton = new QPushButton(tr("Delete boundary"), this);
     removeNodeButton   = new QPushButton(tr("Remove node"), this);
     commitLineageButton= new QPushButton(tr("Commit lineage"), this);
-    addRootButton->setToolTip(tr("Add a drift-root node for the SELECTED template class from the "
-                                 "current cluster selection's spikes (an empty selection is a "
-                                 "placeholder for an unset time region)."));
-    addAdaptButton->setToolTip(tr("Add a lower-amplitude adaptation leaf under the selected node, "
-                                  "from the current cluster selection."));
-    addCollisionButton->setToolTip(tr("Add a collision leaf (a recurring locked-pair shape) under "
-                                      "the selected node, from the current cluster selection."));
+    addRootButton->setToolTip(tr("Set the selected region's drift-root for its class to the current "
+                                 "cluster selection, restricted to that region's time window."));
+    addAdaptButton->setToolTip(tr("Add a lower-amplitude adaptation leaf under the selected region's "
+                                  "root, from the current cluster selection (region-restricted)."));
+    addCollisionButton->setToolTip(tr("Add a collision leaf (a recurring locked-pair shape) under the "
+                                      "selected region's root, from the current cluster selection."));
+    splitButton->setToolTip(tr("Split the selected region at its midpoint (Edit grain mode)."));
+    deleteBoundaryButton->setToolTip(tr("Delete the selected partition boundary, merging the two "
+                                        "regions (Edit grain mode)."));
     removeNodeButton->setToolTip(tr("Remove the selected node; its children are kept and orphaned."));
     commitLineageButton->setToolTip(tr("Write the lineage to .wtl and render the library "
                                        "(.wti/.wtf) from it."));
@@ -215,12 +332,16 @@ TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
     sep2->setFrameShadow(QFrame::Sunken);
     left->addWidget(sep2);
     left->addWidget(lineageHeader);
+    left->addWidget(partitionStrip);
+    left->addWidget(editModeCheck);
     left->addWidget(lineageTree, 1);
     auto* linBtns = new QGridLayout;
-    linBtns->addWidget(addRootButton,      0, 0);
-    linBtns->addWidget(removeNodeButton,   0, 1);
-    linBtns->addWidget(addAdaptButton,     1, 0);
-    linBtns->addWidget(addCollisionButton, 1, 1);
+    linBtns->addWidget(addRootButton,        0, 0);
+    linBtns->addWidget(removeNodeButton,     0, 1);
+    linBtns->addWidget(addAdaptButton,       1, 0);
+    linBtns->addWidget(addCollisionButton,   1, 1);
+    linBtns->addWidget(splitButton,          2, 0);
+    linBtns->addWidget(deleteBoundaryButton, 2, 1);
     left->addLayout(linBtns);
     left->addWidget(commitLineageButton);
 
@@ -263,11 +384,24 @@ TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
             [this](QTreeWidgetItem*, QTreeWidgetItem*){ updateLineageButtons(); showLineageMedian(selectedLineageNode()); });
     // The selected class scopes which drift roots can take leaves; refresh on class change too.
     connect(classList, &QListWidget::currentRowChanged, this, [this](int){ updateLineageButtons(); });
-    connect(addRootButton,       &QPushButton::clicked, this, [this](){ onAddDriftRoot(); });
+    connect(addRootButton,       &QPushButton::clicked, this, [this](){ onSetRegionDrift(); });
     connect(addAdaptButton,      &QPushButton::clicked, this, [this](){ onAddLeaf("adapt-leaf"); });
     connect(addCollisionButton,  &QPushButton::clicked, this, [this](){ onAddLeaf("collision-leaf"); });
     connect(removeNodeButton,    &QPushButton::clicked, this, [this](){ onRemoveNode(); });
     connect(commitLineageButton, &QPushButton::clicked, this, [this](){ onCommitLineage(); });
+    connect(splitButton,         &QPushButton::clicked, this, [this](){
+        const int r = selectedRegion();
+        if (r < 0) { showStatus(tr("Select a region (a drift-root row) to split.")); return; }
+        const auto ab = lineageStore.partition().region(r);
+        onStripSplit(0.5 * (ab.first + ab.second));
+    });
+    connect(deleteBoundaryButton, &QPushButton::clicked, this, [this](){ onDeleteBoundary(); });
+    connect(editModeCheck, &QCheckBox::toggled, this, [this](bool on){ onEditModeToggled(on); });
+
+    // Partition-strip callbacks (the strip has no signals, like TemplateWavePanel).
+    partitionStrip->onMoveBoundary   = [this](int i, double t){ onStripMoveBoundary(i, t); };
+    partitionStrip->onSplit          = [this](double t){ onStripSplit(t); };
+    partitionStrip->onSelectBoundary = [this](int i){ stripSelectedBoundary = i; updateLineageButtons(); };
 
     loadFromDisk();
     rebuildUnitList();
@@ -641,41 +775,54 @@ void TemplateView::onRegenClicked()
     klView.requestTemplateRegen();      // reruns fiber-template for the marked units
 }
 
-// ── manual lineage (.wtl) ────────────────────────────────────────────────────
+// ── manual lineage (.wtl) + the session drift partition ─────────────────────
 void TemplateView::loadLineage()
 {
     lineageLoaded = false;
-    resTimes.clear();
+    stripSelectedBoundary = -1;
     if (coordsResolved && !base.isEmpty()) {
         // Use the OPEN document's geometry for the lineage's .spk reads (not the
-        // .wti-stored geometry, which may describe an older render).
+        // .wti-stored geometry, which may describe an older render).  The store
+        // reads the .res, seeds the session partition, and re-grains the forest.
         const int ns = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
         const int nc = doc.nbOfchannels();
-        // The shared res (for drift-window seconds): whichever method token wrote it.
-        const auto rr = neurosuite::custody::resolveAny(
-            base.toStdString(), "res", group, variant.toStdString());
-        if (rr.found) { bool rok = false; resTimes = neurosuite::templategen::readResAny(rr.path, &rok);
-                        if (!rok) resTimes.clear(); }
         lineageStore.load(base.toStdString(), group, tag.toStdString(),
                           variant.toStdString(), spkTag.toStdString(), ns, nc, doc.getSamplingRate());
         lineageLoaded = lineageStore.ok();
+        // Tile every active template class into the partition's regions
+        // (placeholders), so each class shows region rows ready to fill.
+        if (lineageLoaded && lineageStore.partitionReady() && classesLoaded)
+            for (int col : classStore.activeClasses()) lineageStore.ensureClassTiled(col);
     }
+    rebuildPartitionStrip();
     rebuildLineageTree();
 }
 
-std::pair<double,double> TemplateView::windowForSpikes(const std::vector<int64_t>& spikes) const
+void TemplateView::rebuildPartitionStrip()
 {
-    const double sr = doc.getSamplingRate();
-    if (spikes.empty() || resTimes.empty() || sr <= 0.0) return { 0.0, 0.0 };
-    int64_t lo = -1, hi = -1;
-    for (int64_t s : spikes) {
-        if (s < 0 || s >= static_cast<int64_t>(resTimes.size())) continue;
-        const int64_t t = resTimes[static_cast<std::size_t>(s)];
-        if (lo < 0 || t < lo) lo = t;
-        if (hi < 0 || t > hi) hi = t;
-    }
-    if (lo < 0) return { 0.0, 0.0 };
-    return { static_cast<double>(lo) / sr, static_cast<double>(hi) / sr };
+    if (!partitionStrip) return;
+    const bool edit = editModeCheck && editModeCheck->isChecked();
+    if (lineageLoaded && lineageStore.partitionReady())
+        partitionStrip->setData(lineageStore.tEnd(), lineageStore.partition().bounds,
+                                edit, stripSelectedBoundary);
+    else
+        partitionStrip->setData(0.0, {}, edit, -1);
+}
+
+int TemplateView::selectedRegion() const
+{
+    if (!lineageLoaded || !lineageStore.partitionReady()) return -1;
+    const int id = selectedLineageNode();
+    const neurofileio::WtlNode* n = (id >= 0) ? lineageStore.node(id) : nullptr;
+    if (!n) return -1;
+    return lineageStore.partition().regionOf(0.5 * (n->a + n->b));
+}
+
+int TemplateView::selectedRegionClass() const
+{
+    const int id = selectedLineageNode();
+    const neurofileio::WtlNode* n = (id >= 0) ? lineageStore.node(id) : nullptr;
+    return n ? n->classId : selectedClassCol();
 }
 
 void TemplateView::rebuildLineageTree()
@@ -725,43 +872,51 @@ int TemplateView::selectedLineageNode() const
 
 void TemplateView::updateLineageButtons()
 {
-    const bool on = lineageLoaded;
-    const bool haveClass = selectedClassCol() >= 0;
-    const bool haveNode  = selectedLineageNode() >= 0;
-    if (addRootButton)       addRootButton->setEnabled(on && haveClass);
-    if (addAdaptButton)      addAdaptButton->setEnabled(on && haveNode);
-    if (addCollisionButton)  addCollisionButton->setEnabled(on && haveNode);
-    if (removeNodeButton)    removeNodeButton->setEnabled(on && haveNode);
-    if (commitLineageButton) commitLineageButton->setEnabled(on);
+    const bool on       = lineageLoaded;
+    const bool ready    = on && lineageStore.partitionReady();
+    const bool edit     = editModeCheck && editModeCheck->isChecked();
+    const bool haveNode = selectedLineageNode() >= 0;
+    if (addRootButton)        addRootButton->setEnabled(ready && haveNode);
+    if (addAdaptButton)       addAdaptButton->setEnabled(ready && haveNode);
+    if (addCollisionButton)   addCollisionButton->setEnabled(ready && haveNode);
+    if (splitButton)          splitButton->setEnabled(ready && edit && haveNode);
+    if (deleteBoundaryButton) deleteBoundaryButton->setEnabled(ready && edit && stripSelectedBoundary >= 0);
+    if (removeNodeButton)     removeNodeButton->setEnabled(on && haveNode);
+    if (commitLineageButton)  commitLineageButton->setEnabled(on);
+    if (editModeCheck)        editModeCheck->setEnabled(ready);
 }
 
-void TemplateView::onAddDriftRoot()
+void TemplateView::onSetRegionDrift()
 {
-    if (!lineageLoaded) return;
-    const int cls = selectedClassCol();
-    if (cls < 0) { showStatus(tr("Select a template class first — a lineage is built per class.")); return; }
-    const std::vector<int64_t> spk = selectionSpikeIndices();   // empty = an unset-region placeholder
-    const auto ab = windowForSpikes(spk);
-    const int id = lineageStore.addNode(cls, "drift-root", -1, ab.first, ab.second, spk);
+    if (!lineageLoaded || !lineageStore.partitionReady()) return;
+    const int region = selectedRegion();
+    const int cls    = selectedRegionClass();
+    if (region < 0 || cls < 0) {
+        showStatus(tr("Select a region (a drift-root row) first — a lineage is built per class per region."));
+        return;
+    }
+    const int rid = lineageStore.setRegionSpikes(cls, region, selectionSpikeIndices());
+    if (rid < 0) { showStatus(tr("Could not set the region's drift spikes.")); return; }
     rebuildLineageTree();
-    showStatus(tr("Added drift-root #%1 to class #%2 (%3 spk). Commit to render.")
-                   .arg(id).arg(cls).arg(static_cast<int>(spk.size())));
+    const neurofileio::WtlNode* n = lineageStore.node(rid);
+    const int nsp = n ? static_cast<int>(n->spikes.size()) : 0;
+    showStatus(tr("Set class #%1 region %2 drift to %3 in-region spike(s). Commit to render.")
+                   .arg(cls).arg(region).arg(nsp));
 }
 
 void TemplateView::onAddLeaf(const char* kind)
 {
-    if (!lineageLoaded) return;
-    const int parent = selectedLineageNode();
-    if (parent < 0) { showStatus(tr("Select the parent node (a drift root) first.")); return; }
-    const neurofileio::WtlNode* pn = lineageStore.node(parent);
-    const int cls = pn ? pn->classId : selectedClassCol();
-    const std::vector<int64_t> spk = selectionSpikeIndices();
-    if (spk.empty()) { showStatus(tr("Select the leaf's spikes (one or more clusters) first.")); return; }
-    const auto ab = windowForSpikes(spk);
-    const int id = lineageStore.addNode(cls, kind, parent, ab.first, ab.second, spk);
+    if (!lineageLoaded || !lineageStore.partitionReady()) return;
+    const int region = selectedRegion();
+    const int cls    = selectedRegionClass();
+    if (region < 0 || cls < 0) { showStatus(tr("Select a region (a drift-root row) first.")); return; }
+    const std::vector<int64_t> sel = selectionSpikeIndices();
+    if (sel.empty()) { showStatus(tr("Select the leaf's spikes (one or more clusters) first.")); return; }
+    const int id = lineageStore.addLeaf(cls, region, kind, sel);
+    if (id < 0) { showStatus(tr("Could not add the leaf.")); return; }
     rebuildLineageTree();
-    showStatus(tr("Added %1 #%2 under #%3 (%4 spk). Commit to render.")
-                   .arg(QString::fromLatin1(kind)).arg(id).arg(parent).arg(static_cast<int>(spk.size())));
+    showStatus(tr("Added %1 under class #%2 region %3. Commit to render.")
+                   .arg(QString::fromLatin1(kind)).arg(cls).arg(region));
 }
 
 void TemplateView::onRemoveNode()
@@ -791,6 +946,52 @@ void TemplateView::onCommitLineage()
     reloadFromDisk();
     showStatus(tr("Committed lineage: wrote %1 and rendered %n row(s).", "", rows)
                    .arg(QFileInfo(QString::fromStdString(wtiPath)).fileName()));
+}
+
+// ── partition edits (Edit grain mode) ───────────────────────────────────────
+void TemplateView::onEditModeToggled(bool on)
+{
+    stripSelectedBoundary = -1;
+    rebuildPartitionStrip();
+    updateLineageButtons();
+    showStatus(on ? tr("Edit grain: drag a boundary, double-click a region to split, "
+                       "or click a boundary and Delete. Changes affect every class.")
+                  : tr("Edit grain off."));
+}
+
+void TemplateView::onStripMoveBoundary(int i, double tSec)
+{
+    if (!lineageStore.moveBoundary(i, tSec)) {
+        showStatus(tr("Could not move the boundary there (it must stay between its neighbours)."));
+        rebuildPartitionStrip();   // snap back
+        return;
+    }
+    rebuildPartitionStrip();
+    rebuildLineageTree();
+    showStatus(tr("Moved boundary %1 to %2 s. Commit to render.").arg(i).arg(tSec, 0, 'f', 3));
+}
+
+void TemplateView::onStripSplit(double tSec)
+{
+    if (!lineageStore.splitAt(tSec)) { showStatus(tr("Could not split there.")); return; }
+    stripSelectedBoundary = -1;
+    rebuildPartitionStrip();
+    rebuildLineageTree();
+    showStatus(tr("Split the region at %1 s. Commit to render.").arg(tSec, 0, 'f', 3));
+}
+
+void TemplateView::onDeleteBoundary()
+{
+    if (stripSelectedBoundary < 0) {
+        showStatus(tr("Click a partition boundary to select it, then Delete."));
+        return;
+    }
+    const int i = stripSelectedBoundary;
+    if (!lineageStore.deleteBoundary(i)) { showStatus(tr("Could not delete that boundary.")); return; }
+    stripSelectedBoundary = -1;
+    rebuildPartitionStrip();
+    rebuildLineageTree();
+    showStatus(tr("Deleted boundary %1 — regions merged. Commit to render.").arg(i));
 }
 
 void TemplateView::showLineageMedian(int nodeId)

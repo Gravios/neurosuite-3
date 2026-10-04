@@ -26,12 +26,11 @@
 #include <QColor>
 #include <vector>
 #include <cstdint>
+#include <functional>
 
 #include "neurosuite/core/neurofileio.h"   // WtiIndex / SpkFile / wti* helpers
 #include "templateclassstore.h"            // EAP template-class state model (.eap/.tcl)
 #include "templatelineagestore.h"          // manual template-lineage model (.wtl)
-
-#include <utility>                          // std::pair (drift-window helper)
 
 class KlustersDoc;
 class KlustersView;
@@ -42,6 +41,7 @@ class QLabel;
 class QPushButton;
 class QStatusBar;
 class QTreeWidget;
+class QCheckBox;
 
 // ── waveform panel ──────────────────────────────────────────────────────────
 // A plain QWidget (no signals/slots, so no moc) that paints one template bin's
@@ -68,6 +68,44 @@ protected:
 
 private:
     double globalMaxAbs() const;   // across the whole series, for a shared scale
+};
+
+// ── partition strip ─────────────────────────────────────────────────────────
+// A thin timeline of the session drift partition: regions shaded alternately,
+// interior boundaries as vertical handles.  In edit mode a boundary can be dragged
+// (→ onMoveBoundary), a region body double-clicked to split (→ onSplit), and a
+// boundary clicked to select it (→ onSelectBoundary, for the Delete button).  A
+// plain QWidget (no signals/slots, so no moc — TemplateView sets the callbacks),
+// like TemplateWavePanel.
+class PartitionStrip : public QWidget {
+public:
+    explicit PartitionStrip(QWidget* parent = nullptr);
+
+    double              tEnd = 0.0;        // session end (seconds)
+    std::vector<double> bounds;            // interior boundaries (seconds)
+    bool                editMode = false;
+    int                 selectedBoundary = -1;
+    QColor              background = QColor(20, 20, 20);
+
+    std::function<void(int,double)> onMoveBoundary;   // (boundary index, new time s)
+    std::function<void(double)>     onSplit;          // (time s)
+    std::function<void(int)>        onSelectBoundary; // (index, or -1)
+
+    void setData(double tEndSec, std::vector<double> b, bool edit, int selected);
+
+protected:
+    void paintEvent(QPaintEvent*) override;
+    void mousePressEvent(QMouseEvent*) override;
+    void mouseMoveEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
+    void mouseDoubleClickEvent(QMouseEvent*) override;
+
+private:
+    double xToTime(int x) const;
+    int    timeToX(double t) const;
+    int    nearestBoundary(int x, int pxThresh) const;   // index or -1
+    int    dragIdx_ = -1;
+    double dragT_   = 0.0;
 };
 
 // ── the display ───────────────────────────────────────────────────────────
@@ -108,17 +146,25 @@ private:
     void onSetPrimary();                 // make the selected class the primary
     void onRegenClicked();               // request a fiber-template waveform regen
 
-    // ── manual lineage (.wtl via TemplateLineageStore) ────────────────────────
-    void loadLineage();                  // open the lineage store for the resolved group+stage
+    // ── manual lineage (.wtl via TemplateLineageStore) + the session partition ─
+    void loadLineage();                  // open the lineage store; seed the partition; tile active classes
     void rebuildLineageTree();           // fill the tree widget from the forest
-    void updateLineageButtons();         // enable/disable per selection
+    void rebuildPartitionStrip();        // push the partition into the strip
+    void updateLineageButtons();         // enable/disable per selection + edit mode
     int  selectedLineageNode() const;    // node id of the selected tree row, or -1
-    void onAddDriftRoot();               // add a drift-root from the current cluster selection
-    void onAddLeaf(const char* kind);    // add an adapt/collision leaf under the selected node
+    int  selectedRegion() const;         // region of the selected tree node (its root's region), or -1
+    int  selectedRegionClass() const;    // class of the selected tree node, or the selected template class
+    void onSetRegionDrift();             // set the selected region+class drift-root to the cluster selection
+    void onAddLeaf(const char* kind);    // add an adapt/collision leaf under the selected node's region
     void onRemoveNode();                 // remove the selected node (orphan its children)
     void onCommitLineage();              // persist .wtl + render .wti/.wtf, then refresh
     void showLineageMedian(int nodeId);  // preview a committed node's median in the panel
-    std::pair<double,double> windowForSpikes(const std::vector<int64_t>& spikes) const;
+    // partition edits (edit mode)
+    void onEditModeToggled(bool on);
+    void onStripMoveBoundary(int i, double tSec);
+    void onStripSplit(double tSec);
+    void onDeleteBoundary();             // delete the strip-selected boundary
+    int  stripSelectedBoundary = -1;
 
     KlustersDoc&  doc;
     KlustersView& klView;
@@ -142,10 +188,9 @@ private:
     TemplateClassStore      classStore;
     bool                    classesLoaded = false;
 
-    // manual-lineage state (the .wtl forest; see TemplateLineageStore)
+    // manual-lineage state (the .wtl forest + session partition; see TemplateLineageStore)
     TemplateLineageStore    lineageStore;
     bool                    lineageLoaded = false;
-    std::vector<int64_t>    resTimes;        // per-spike res times (for drift-window seconds)
 
     // widgets
     QListWidget*      unitList = nullptr;   // template units (multi-select)
@@ -167,14 +212,18 @@ private:
     QPushButton* setPrimaryButton  = nullptr;
     QPushButton* regenButton       = nullptr;
 
-    // lineage panel (the per-class median tree)
-    QLabel*      lineageHeader       = nullptr;
-    QTreeWidget* lineageTree         = nullptr;  // forest: roots + nested leaves
-    QPushButton* addRootButton       = nullptr;  // add a drift-root from the selection
-    QPushButton* addAdaptButton      = nullptr;  // add an adapt-leaf under the selected node
-    QPushButton* addCollisionButton  = nullptr;  // add a collision-leaf under the selected node
-    QPushButton* removeNodeButton    = nullptr;
-    QPushButton* commitLineageButton = nullptr;  // write .wtl + render .wti/.wtf
+    // lineage panel (the per-class median tree + the session partition)
+    QLabel*         lineageHeader       = nullptr;
+    PartitionStrip* partitionStrip      = nullptr;  // the session drift partition (regions + boundaries)
+    QCheckBox*      editModeCheck       = nullptr;  // gate boundary drag / split / delete
+    QTreeWidget*    lineageTree         = nullptr;  // forest: roots + nested leaves
+    QPushButton*    addRootButton       = nullptr;  // set the selected region+class drift-root from the selection
+    QPushButton*    addAdaptButton      = nullptr;  // add an adapt-leaf under the selected region
+    QPushButton*    addCollisionButton  = nullptr;  // add a collision-leaf under the selected region
+    QPushButton*    splitButton         = nullptr;  // split the selected region (edit mode)
+    QPushButton*    deleteBoundaryButton= nullptr;  // delete the selected boundary (edit mode)
+    QPushButton*    removeNodeButton    = nullptr;
+    QPushButton*    commitLineageButton = nullptr;  // write .wtl + render .wti/.wtf
 };
 
 #endif // TEMPLATEVIEW_H
