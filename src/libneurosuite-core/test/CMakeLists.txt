@@ -60,6 +60,16 @@ target_include_directories(core_test_template_generate
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_template_generate COMMAND core_test_template_generate)
 
+# .wtl manual template-linkage sidecar (readWtl/writeWtl + the wtl* view-model
+# helpers): the per-node curator lineage the native generator re-medians.  Links
+# the library (the readers/writers live in neurofileio.cpp), like the .spk test.
+add_executable(core_test_wtl wtl_test.cpp)
+target_compile_features(core_test_wtl PRIVATE cxx_std_17)
+target_include_directories(core_test_wtl
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_wtl PRIVATE Neurosuite::core)
+add_test(NAME core_test_wtl COMMAND core_test_wtl)
+
 # Temporally-restricted projection scope (projectionscope.hpp): cluster->class
 # resolution, the union of a class's .wti drift windows, interval merge + the
 # in-scope test.  Header-only (builds the structs directly), so no link.

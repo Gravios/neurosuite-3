@@ -229,6 +229,70 @@ NEUROSUITE_CORE_EXPORT std::vector<std::string> wtiLinks(const WtiIndex& idx, in
 NEUROSUITE_CORE_EXPORT std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int unitId,
                                                      const std::string& link);
 
+// ── .wtl — manual template-linkage sidecar (see claude/template-curation-plan.md) ─
+// Where the .wti/.wtf are the RENDERED template library (one median per row), the
+// .wtl is the CURATOR'S manual lineage that the native generator re-medians as the
+// refinement.  During curation the curator hand-builds each template class's
+// internal structure — select spikes → median them → link medians into a per-class
+// TREE — so the .wtl is a FOREST (one tree per class).  Per-group and per-stage,
+// like .eap: <base>.wtl.<group>[.<stage>].
+//
+// One entry per NODE.  A node carries its class, its KIND, its PARENT (another
+// node, or -1 for a tree root), the bin WINDOW it covers, and — the source of
+// truth — the explicit SET of spike indices medianed to build it (the generator
+// re-medians exactly these; the median is always the median of this set):
+//   "drift-root"     a top-row median over a time region's higher-amplitude spikes
+//                    (a tree root, no parent);
+//   "adapt-leaf"     a lower-amplitude (within-burst adaptation) median, child of
+//                    its region's drift root;
+//   "collision-leaf" a collision-variant median, child of its drift root.
+// Kind tokens are kept verbatim and are extensible (as with the .wti `link`).
+//
+// Canonical text format, version-tagged so a reader rejects anything it does not
+// understand:
+//
+//     wtl 1
+//     nNodes 3
+//     # node class kind parent a b nSpikes spikes...
+//     node 0 31 drift-root -1 0.000 120.000 540 12 37 59 ...
+//     node 1 31 adapt-leaf 0 1.0 2.0 210 12 59 ...
+//     node 2 31 collision-leaf 0 0.0 0.0 8 88 91 ...
+//
+// `node` is the 0-based node id (its own handle, referenced by children's
+// `parent`); `class` is the .eap column / template-class id; `parent` is another
+// node's id or -1; a/b are the window coordinates (drift: chunk start/end seconds;
+// adapt: energy/amplitude lo/hi); `nSpikes` is how many indices follow, and those
+// indices are the remainder of the line.  A node whose index count disagrees with
+// its nSpikes is skipped (not fatal); `nNodes`, when present, is checked.
+struct WtlNode {
+    int                  node    = 0;    ///< 0-based node id (referenced by children's `parent`)
+    int                  classId = 0;    ///< .eap column / template-class id this node belongs to
+    std::string          kind;           ///< "drift-root" | "adapt-leaf" | "collision-leaf" (verbatim, extensible)
+    int                  parent  = -1;   ///< parent node id, or -1 for a tree root
+    double               a       = 0.0;  ///< window lo (drift: start s; adapt: energy/amp lo)
+    double               b       = 0.0;  ///< window hi (drift: end s;   adapt: energy/amp hi)
+    std::vector<int64_t> spikes;         ///< the spike indices medianed (source of truth)
+};
+struct WtlForest {
+    int                  version = 1;
+    std::vector<WtlNode> nodes;          ///< file order (a tree root precedes its leaves by convention)
+    bool                 ok = false;     ///< false on open / parse / bad version
+};
+// Parse a .wtl.  Rejects a missing file, a bad "wtl <version>" line, or a version
+// the reader does not implement (ok = false).
+NEUROSUITE_CORE_EXPORT WtlForest readWtl(const std::string& path);
+// Write a .wtl from `f` (its version field is honoured; nodes written in order).
+// Returns false if the file cannot be opened.
+NEUROSUITE_CORE_EXPORT bool       writeWtl(const std::string& path, const WtlForest& f);
+
+// ── .wtl view-model helpers (trivial filters, shared by a viewer and its test) ──
+// Distinct class ids present in `f`, ascending.
+NEUROSUITE_CORE_EXPORT std::vector<int> wtlClasses(const WtlForest& f);
+// Nodes of `classId` in file order (one class's tree: its roots and their leaves).
+NEUROSUITE_CORE_EXPORT std::vector<WtlNode> wtlClassNodes(const WtlForest& f, int classId);
+// The children of node `nodeId` (parent == nodeId), in file order.
+NEUROSUITE_CORE_EXPORT std::vector<WtlNode> wtlChildren(const WtlForest& f, int nodeId);
+
 // ── .eap — EAP membership + offset matrix (see claude/eap-template-class-design) ─
 // A multi-label membership layer that augments (never appends to) the .spk: one
 // ROW per spike, one COLUMN per template CLASS.  A column index IS the stable

@@ -460,6 +460,107 @@ std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int unitId, const std::string
     return rows;
 }
 
+// ── .wtl — manual template-linkage sidecar (see neurofileio.h) ──────────────
+WtlForest readWtl(const std::string& path)
+{
+    WtlForest f;
+    std::ifstream in(path);
+    if (!in) return f;
+
+    std::string line;
+    bool haveHeader = false;
+    long declaredNodes = -1;                      // from an "nNodes" line, if present
+    while (std::getline(in, line)) {
+        // Trim a trailing CR (tolerate CRLF) and skip blank / comment lines.
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        const std::size_t s = line.find_first_not_of(" \t");
+        if (s == std::string::npos || line[s] == '#') continue;
+
+        std::istringstream ls(line);
+        std::string key;
+        ls >> key;
+        if (!haveHeader) {
+            // The first non-blank, non-comment line MUST be "wtl <version>".
+            if (key != "wtl") return WtlForest{};
+            int ver = 0;
+            if (!(ls >> ver) || ver != 1) return WtlForest{};   // only v1 implemented
+            f.version = ver;
+            haveHeader = true;
+            continue;
+        }
+        if (key == "nNodes") { ls >> declaredNodes; continue; }
+        if (key == "node") {
+            // node <node> <class> <kind> <parent> <a> <b> <nSpikes> <spike...>
+            WtlNode n;
+            long long nsp = 0;
+            if (!(ls >> n.node >> n.classId >> n.kind >> n.parent >> n.a >> n.b >> nsp))
+                continue;                           // malformed fixed fields: skip the node
+            if (nsp < 0) continue;
+            n.spikes.reserve(static_cast<std::size_t>(nsp));
+            bool bad = false;
+            for (long long k = 0; k < nsp; ++k) {
+                int64_t idx = 0;
+                if (!(ls >> idx)) { bad = true; break; }
+                n.spikes.push_back(idx);
+            }
+            // The index count must match the declared nSpikes (a short/long tail is
+            // a corrupt node line, skipped rather than aborting the whole forest).
+            if (bad || static_cast<long long>(n.spikes.size()) != nsp) continue;
+            f.nodes.push_back(std::move(n));
+        }
+        // Unknown keys are ignored, so the format can gain fields without
+        // breaking older readers.
+    }
+    if (!haveHeader) return WtlForest{};
+    // If the writer declared a node count, it must match what we parsed.
+    if (declaredNodes >= 0 && declaredNodes != static_cast<long>(f.nodes.size()))
+        return WtlForest{};
+    f.ok = true;
+    return f;
+}
+
+bool writeWtl(const std::string& path, const WtlForest& f)
+{
+    std::ofstream out(path);
+    if (!out) return false;
+    out << "wtl " << f.version << "\n";
+    out << "nNodes " << f.nodes.size() << "\n";
+    out << "# node class kind parent a b nSpikes spikes...\n";
+    for (const WtlNode& n : f.nodes) {
+        out << "node " << n.node << ' ' << n.classId << ' '
+            << (n.kind.empty() ? std::string("drift-root") : n.kind) << ' '
+            << n.parent << ' ' << n.a << ' ' << n.b << ' ' << n.spikes.size();
+        for (int64_t idx : n.spikes) out << ' ' << idx;
+        out << "\n";
+    }
+    return static_cast<bool>(out);
+}
+
+std::vector<int> wtlClasses(const WtlForest& f)
+{
+    std::vector<int> classes;
+    for (const WtlNode& n : f.nodes) classes.push_back(n.classId);
+    std::sort(classes.begin(), classes.end());
+    classes.erase(std::unique(classes.begin(), classes.end()), classes.end());
+    return classes;
+}
+
+std::vector<WtlNode> wtlClassNodes(const WtlForest& f, int classId)
+{
+    std::vector<WtlNode> out;                       // file order (root before its leaves)
+    for (const WtlNode& n : f.nodes)
+        if (n.classId == classId) out.push_back(n);
+    return out;
+}
+
+std::vector<WtlNode> wtlChildren(const WtlForest& f, int nodeId)
+{
+    std::vector<WtlNode> out;
+    for (const WtlNode& n : f.nodes)
+        if (n.parent == nodeId) out.push_back(n);
+    return out;
+}
+
 // ── .eap — EAP membership + offset matrix (see neurofileio.h) ───────────────
 EapFile readEap(const std::string& path)
 {
