@@ -145,6 +145,11 @@ public:
      *  request (mirrors pinObliqueBasisFromTemplates). */
     void runTemplateGeneration();
 
+    /** Launch fiber-template (clu-mode) for exactly @p ids — shared by the
+     *  on-save marked-units run and the on-demand per-cluster action.  The
+     *  caller sets mPluginReportModal. */
+    void runTemplateGenerationForUnits(const QList<int>& ids);
+
     /** Highlight template class @p col's .eap members in the active feature view
      *  (-1 clears).  Called by KlustersView on behalf of TemplateView; resolves
      *  the active cluster view (mirrors pinObliqueBasisFromTemplates). */
@@ -766,6 +771,10 @@ private:
     /** Toggle the selected cluster(s) (ids > 1) in/out of the template set and mark
      *  the document modified so a save persists them and refreshes the .wtf. */
     void slotToggleTemplate();
+    /** On-demand: run fiber-template now for the selected cluster(s) only — the
+     *  per-cluster refinement step (one unit at a time, not only the marked set
+     *  on save). */
+    void slotGenerateTemplateForSelection();
     /** <base>.templates[.<variant>].<group>[.<tag>] for the open document ("" if none). */
     QString templatesSidecarPath() const;
     void loadTemplateMarks();                  ///< replace mTemplateUnits from the sidecar (no-op if none)
@@ -1128,6 +1137,7 @@ private:
     QAction *mStripWaveformOutliers; // split waveform-residual outliers of selected clusters into a new cluster
     QAction *mSetObliqueBasis;       // pin the oblique projection's template axes (Set Oblique Basis…)
     QAction *mMarkAsTemplate = nullptr;  // toggle the selected cluster(s) as template units (.wtf on save)
+    QAction *mGenerateTemplate = nullptr;  // run fiber-template now for the selected cluster(s) only
     QAction *mSortClustersBySpikeCount; // renumber clusters by descending spike count
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination

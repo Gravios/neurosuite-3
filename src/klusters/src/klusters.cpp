@@ -478,6 +478,17 @@ void KlustersApp::createMenus()
     connect(mMarkAsTemplate, &QAction::triggered,
             this, &KlustersApp::slotToggleTemplate);
 
+    // Run fiber-template on demand for the selected cluster(s) only — the
+    // per-cluster "refine this unit now" step of the curation workflow, distinct
+    // from the on-save run over the whole marked set.
+    mGenerateTemplate = actionMenu->addAction(tr("&Generate Template for Selected Cluster(s)"));
+    mGenerateTemplate->setToolTip(
+        tr("Run fiber-template now for the selected cluster(s) only, writing their "
+           "linked template waveforms (.wti/.wtf).  Save first — the tool reads the "
+           "clustering files on disk."));
+    connect(mGenerateTemplate, &QAction::triggered,
+            this, &KlustersApp::slotGenerateTemplateForSelection);
+
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
     mUpdateDisplay->setIcon(QIcon(":/icons/update"));
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
@@ -7467,6 +7478,19 @@ void KlustersApp::runTemplateGeneration()
 {
     if (mTemplateUnits.isEmpty())
         return;
+    QList<int> ids = mTemplateUnits.values();
+    std::sort(ids.begin(), ids.end());
+    mPluginReportModal = false;                          // automatic run (on save) -> status bar, not a dialog
+    runTemplateGenerationForUnits(ids);
+}
+
+// Launch fiber-template (clu-mode) for exactly `idsIn`.  Shared by the on-save
+// marked-units run (runTemplateGeneration) and the on-demand per-cluster action
+// (slotGenerateTemplateForSelection); the caller sets mPluginReportModal.
+void KlustersApp::runTemplateGenerationForUnits(const QList<int>& idsIn)
+{
+    if (idsIn.isEmpty())
+        return;
     // Don't fight a run already in progress; the next save refreshes the templates.
     if (mPluginRunning || (processWidget && !processFinished)) {
         slotStatusMsg(tr("A job is running; templates will refresh on the next save."));
@@ -7493,7 +7517,7 @@ void KlustersApp::runTemplateGeneration()
     if (vars.isEmpty())
         vars << ctx.value(QStringLiteral("variant"));    // fall back to the open variant
 
-    QList<int> ids = mTemplateUnits.values();
+    QList<int> ids = idsIn;
     std::sort(ids.begin(), ids.end());
     QStringList idss; for (int id : ids) idss << QString::number(id);
 
@@ -7507,9 +7531,35 @@ void KlustersApp::runTemplateGeneration()
     params.insert(QStringLiteral("units"),       idss.join(QLatin1Char(' ')));
     // links / n-chunks / n-energy / sr keep the descriptor defaults.
 
-    mPluginReportModal = false;                          // automatic run -> status bar, not a dialog
     if (launchPlugin(*tmpl, params))
         slotStatusMsg(tr("Writing templates for %n unit(s)…", "", int(ids.size())));
+}
+
+// On-demand: run fiber-template now for the selected cluster(s) only — the
+// per-cluster "refine this unit" step of the curation workflow, distinct from
+// the on-save run over the whole marked set.
+void KlustersApp::slotGenerateTemplateForSelection()
+{
+    if (!doc || doc->url().isEmpty()) {
+        slotStatusMsg(tr("Generate template: open a clustering first."));
+        return;
+    }
+    const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters() : QList<int>();
+    QList<int> targets;
+    for (int id : sel)
+        if (id > 1) targets.append(id);                  // never noise(1)/artefact(0)
+    if (targets.isEmpty()) {
+        slotStatusMsg(tr("Generate template: select one or more clusters (not noise/artefact)."));
+        return;
+    }
+    // fiber-template reads the clustering files ON DISK; unsaved edits would
+    // template a stale .clu.
+    if (doc->isModified()) {
+        slotStatusMsg(tr("Generate template: save first (File > Save) — fiber-template reads the files on disk."));
+        return;
+    }
+    mPluginReportModal = true;                           // explicit user action -> show the run's report
+    runTemplateGenerationForUnits(targets);
 }
 
 // ---------------------------------------------------------------------------
