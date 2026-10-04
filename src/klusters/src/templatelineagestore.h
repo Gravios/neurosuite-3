@@ -15,6 +15,7 @@
 
 #include "neurosuite/core/neurofileio.h"
 #include "neurosuite/core/template_generate.hpp"
+#include "neurosuite/core/drift_partition.hpp"
 
 #include <string>
 #include <vector>
@@ -52,6 +53,36 @@ public:
     bool setWindow(int nodeId, double a, double b);
     void clear() { forest_.nodes.clear(); }
 
+    // ── the session drift partition (the shared time grain; §9) ────────────────
+    // Seeded on load from the forest's drift-root windows (else a single region
+    // over [0,tEnd]); `partitionReady()` is false when the .res could not be read
+    // (no res times → the partition edits are no-ops and the forest is left as
+    // loaded, never silently wiped).
+    const neurosuite::drift::Partition& partition() const { return partition_; }
+    bool   partitionReady() const { return partitionReady_; }
+    double tEnd() const { return tEnd_; }
+
+    // Replace the partition and re-grain every class onto it (tile with
+    // placeholders; re-bin pooled drift spikes; re-parent leaves).  No-op if not ready.
+    void setPartition(const neurosuite::drift::Partition& p);
+    // Split the region containing `tSec` at `tSec`; re-grain.  False if not ready / invalid.
+    bool splitAt(double tSec);
+    // Delete interior boundary `i` (merge the two regions it separates); re-grain.
+    bool deleteBoundary(int i);
+    // Move interior boundary `i` to `tSec` (clamped strictly between neighbours); re-grain.
+    bool moveBoundary(int i, double tSec);
+
+    // Ensure `classId` has a drift-root in every region (all-placeholder if new).
+    void ensureClassTiled(int classId);
+    // Set the (classId, region) drift-root's spikes to `spikes` RESTRICTED to that
+    // region's time window — the time-restricted, class-scoped template edit.
+    // Returns the region root's node id, or -1 if not ready / out of range.
+    int  setRegionSpikes(int classId, int region, const std::vector<int64_t>& spikes);
+    // Add a `kind` leaf under the (classId, region) drift-root from `spikes`
+    // restricted to the region.  Returns the leaf node id, or -1.
+    int  addLeaf(int classId, int region, const std::string& kind,
+                 const std::vector<int64_t>& spikes);
+
     // ── commit ─────────────────────────────────────────────────────────────────
     // Persist the forest to .wtl and render the library (.wti v2 + .wtf) via the
     // shared neurosuite-core engine (reads the group's .spk).  Returns the engine
@@ -63,6 +94,9 @@ public:
 private:
     int   indexOf(int nodeId) const;                 // position in forest_.nodes, or -1
     int   nextNodeId() const;                        // max existing id + 1 (0 if empty)
+    void  retile();                                  // regrain the forest onto partition_
+    int   regionRootId(int classId, int region) const;   // (class,region) drift-root id, or -1
+    std::vector<int64_t> restrictToRegion(const std::vector<int64_t>& spikes, int region) const;
 
     neurofileio::WtlForest forest_;
     std::string base_, stage_, spkVariant_, spkTag_;
@@ -71,6 +105,11 @@ private:
     int         nChannels_ = 0;
     double      sr_        = 0.0;
     bool        loaded_    = false;
+
+    neurosuite::drift::Partition partition_;
+    std::vector<int64_t>         times_;             // per-spike res times (samples)
+    double                       tEnd_          = 0.0;   // session end (seconds)
+    bool                         partitionReady_ = false;
 };
 
 #endif // TEMPLATELINEAGESTORE_H

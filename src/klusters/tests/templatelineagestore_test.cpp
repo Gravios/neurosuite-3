@@ -1,8 +1,9 @@
 // templatelineagestore_test.cpp — the Qt-free manual-lineage model
 // (TemplateLineageStore): node ops (id assignment, orphan-on-remove, setParent/
-// setKind) and the commit round-trip (persist .wtl + render .wti v2/.wtf) on a
-// synthetic session.  Links Neurosuite::core for the neurofileio + renderLineage*
-// engine.  Self-contained (own main, assert-based); run via ctest.
+// setKind), the commit round-trip (persist .wtl + render .wti v2/.wtf), and the
+// session drift partition (seed from the .res, split / move / delete a boundary,
+// region-restricted setRegionSpikes / addLeaf).  Links Neurosuite::core for the
+// neurofileio + renderLineage* / drift engine.  Self-contained, run via ctest.
 
 #include "templatelineagestore.h"
 #include "neurosuite/core/neurofileio.h"
@@ -29,9 +30,13 @@ int main()
     // Start from a clean slate so the test is idempotent across ctest runs (a prior
     // run's committed .wtl would otherwise make the fresh-forest check fail).
     std::remove(tg::sessionPath(base, "spk", group, "standard", "").c_str());
+    std::remove(tg::sessionPath(base, "res", group, "standard", "").c_str());
     std::remove(tg::sessionPath(base, "wtl", group, "", "refine").c_str());
     std::remove(tg::sessionPath(base, "wti", group, "", "refine").c_str());
     std::remove(tg::sessionPath(base, "wtf", group, "standard", "refine").c_str());
+    std::remove(tg::sessionPath(base, "wtl", group, "", "part").c_str());
+    std::remove(tg::sessionPath(base, "wti", group, "", "part").c_str());
+    std::remove(tg::sessionPath(base, "wtf", group, "standard", "part").c_str());
 
     // Synthetic .spk.standard.5 : 8 spikes, spike s all-equal to val[s].
     std::vector<int> val = {100,100,200,200, 50, 70, 10, 10};
@@ -91,6 +96,61 @@ int main()
     // A new node after removal reuses the next free id (max+1), never a stale id.
     const int rN = st.addNode(40, "drift-root", -1, 0, 1, {0});
     check(rN == 4, "nextNodeId is max+1 even after a removal");
+
+    // ── session drift partition (§9) ─────────────────────────────────────────
+    {
+        // A .res with sr = 1 (so seconds == samples): 8 spikes at 10..90.
+        const std::vector<int64_t> times = {10,20,30,40,60,70,80,90};
+        check(neurofileio::writeResBinary(tg::sessionPath(base, "res", group, "standard", ""), times),
+              "wrote synthetic .res");
+
+        TemplateLineageStore ps;
+        check(ps.load(base, group, "part", "standard", "", nsamp, nchan, 1.0), "partition store load ok");
+        check(ps.partitionReady(), "partition ready (res present)");
+        check(ps.partition().nRegions() == 1 && ps.tEnd() == 90.0, "seed: one session-spanning region");
+
+        // The (class,region) drift-root's spikes, read from the live forest.
+        auto rootSpikes = [&](int cls, int region) -> std::vector<int64_t> {
+            for (const neurofileio::WtlNode& n : ps.forest().nodes)
+                if (n.classId == cls && n.kind == "drift-root" && n.parent < 0
+                    && ps.partition().regionOf(0.5 * (n.a + n.b)) == region) return n.spikes;
+            return {};
+        };
+
+        check(ps.setRegionSpikes(31, 0, {0,1,2,3,4,5,6,7}) >= 0, "setRegionSpikes region 0");
+        check(rootSpikes(31,0) == std::vector<int64_t>({0,1,2,3,4,5,6,7}), "region-0 root holds all 8");
+
+        check(ps.splitAt(50.0) && ps.partition().nRegions() == 2, "split at 50 -> 2 regions");
+        check(rootSpikes(31,0) == std::vector<int64_t>({0,1,2,3}), "split: region 0 = early spikes");
+        check(rootSpikes(31,1) == std::vector<int64_t>({4,5,6,7}), "split: region 1 = late spikes");
+
+        check(ps.moveBoundary(0, 25.0) && ps.partition().bounds.size()==1 && ps.partition().bounds[0]==25.0,
+              "move boundary to 25");
+        check(rootSpikes(31,0) == std::vector<int64_t>({0,1}), "move: region 0 = {0,1}");
+        check(rootSpikes(31,1) == std::vector<int64_t>({2,3,4,5,6,7}), "move: region 1 = the rest");
+
+        const int leaf = ps.addLeaf(31, 1, "adapt-leaf", {4,5,99});   // 99 out of range -> dropped
+        check(leaf >= 0 && ps.node(leaf) && ps.node(leaf)->spikes == std::vector<int64_t>({4,5}),
+              "addLeaf region-restricts + drops out-of-range");
+
+        check(ps.deleteBoundary(0) && ps.partition().nRegions() == 1, "delete boundary -> 1 region");
+        check(rootSpikes(31,0) == std::vector<int64_t>({0,1,2,3,4,5,6,7}), "merge re-pools all drift spikes");
+        // the leaf survived the merge (re-grain reassigns ids); re-find it.
+        int leafParent = -2, rootId = -1; std::vector<int64_t> leafSp;
+        for (const neurofileio::WtlNode& n : ps.forest().nodes) {
+            if (n.classId==31 && n.kind=="drift-root" && n.parent<0) rootId = n.node;
+            if (n.classId==31 && n.kind=="adapt-leaf") { leafParent = n.parent; leafSp = n.spikes; }
+        }
+        check(leafSp == std::vector<int64_t>({4,5}) && leafParent == rootId,
+              "leaf kept + re-parented under the merged root");
+
+        // Not-ready guard: a store with no .res leaves the partition ops inert.
+        TemplateLineageStore nr;
+        std::remove(tg::sessionPath(base, "res", group, "standard", "").c_str());
+        nr.load(base, group, "nores", "standard", "", nsamp, nchan, 1.0);
+        check(!nr.partitionReady() && !nr.splitAt(5.0) && !nr.deleteBoundary(0),
+              "no .res -> partition not ready, edits are no-ops");
+    }
 
     std::printf("templatelineagestore_test: %d checks, %d failures%s\n",
                 g_ran, g_fail, g_fail ? " — FAILURES" : "");
