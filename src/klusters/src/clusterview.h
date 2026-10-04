@@ -41,6 +41,7 @@
 #include "types.h"
 
 #include "neurosuite/core/projectionscope.hpp"   // temporally-restricted projection scope
+#include "templatelineagestore.h"                 // manual-lineage overlay model (plan §11)
 
 
 class KlustersDoc;
@@ -124,6 +125,16 @@ public:
     /** Toggles autoscale-to-visible-clusters.  Public for the same reason:
      *  the A key is dispatched by the application filter. */
     void toggleAutoscale();
+
+    /** Toggle the manual-lineage overlay (Shift+E, dispatched by the app key
+     *  filter like Shift+O).  When on, the open group+stage's `.wtl` forest + the
+     *  session drift partition are drawn over the feature scatter: one node per
+     *  median at its spikes' centroid in the CURRENT projection, child +
+     *  drift-trajectory edges, and — when X is the time dimension — the region
+     *  boundaries as vertical lines.  Read-only in this cut (plan §11.1); the
+     *  Shift+E edit mode and direct manipulation are §11.3. */
+    void toggleLineageOverlay();
+    bool lineageOverlayActive() const { return lineageOverlay_; }
 
     /** True while a selection polygon is part-drawn, in either view.  The
      *  application filter asks before deciding what Escape means. */
@@ -522,6 +533,22 @@ private:
     bool spikeIsCollision(long spk0) const {      ///< 0-based spike row -> is a collision
         return spk0 >= 0 && spk0 < static_cast<long>(eapCollision.size()) && eapCollision[spk0];
     }
+
+    // ── manual-lineage overlay (template-curation plan §11.1, read-only) ────────
+    // Drawn over the feature scatter when `lineageOverlay_` is on: the open
+    // group+stage `.wtl` forest + session partition, loaded like eapCollision.
+    // Each node's WORLD position is the centroid of its spikes in the current
+    // (dimensionX, dimensionY) projection (an empty placeholder is placed at its
+    // region's mid-time on X); cached and recomputed when the projection changes,
+    // then mapped with worldToViewport every repaint.
+    struct LineageNodeDraw { int node; int classId; int parent; bool drift; bool empty; QPoint world; };
+    bool                         lineageOverlay_ = false;
+    TemplateLineageStore         lineageStore_;
+    std::vector<LineageNodeDraw> lineageDraw_;
+    void loadLineageOverlay();                    ///< (re)load the store for the open stage
+    void recomputeLineagePositions();             ///< node centroids in the current projection
+    void paintLineageOverlay(QPainter& p);        ///< draw nodes / edges / boundaries on top
+    QColor lineageClassColor(int classId) const;  ///< stable per-class colour
 
     // Highlighted template class: its .eap members are ringed in the feature views
     // (claude/eap-template-class-design §8).  The class is chosen in the template-

@@ -49,6 +49,7 @@
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <QSet>
 #include <QThread>
 #include <QPointer>
@@ -1046,6 +1047,12 @@ void ClusterView::paintEvent ( QPaintEvent*){
     // happened and the new clusters are visible via normal rendering.
     if (!dsHud.isEmpty())
         paintDipsplitPostCommitHud(p);
+
+    // Manual-lineage overlay (Shift+E) — median nodes + drift tree + region
+    // boundaries over the scatter.  Drawn last, on top, repainted every event
+    // (never cached into the doublebuffer), like the other live overlays.
+    if (lineageOverlay_)
+        paintLineageOverlay(p);
 }
 
 void ClusterView::setWatershedOverlay(const QImage& img,
@@ -1242,6 +1249,8 @@ void ClusterView::updatedDimensions(int dimensionX, int dimensionY){
 
     //reset the information on the polygon to enable a mousetrack in mousemovEvent
     polygonClosed = false;
+
+    if (lineageOverlay_) recomputeLineagePositions();   // node centroids follow the new projection
 }
 
 bool ClusterView::recomputeWorldBounds(){
@@ -1648,6 +1657,130 @@ void ClusterView::refreshProjectionScope(){
     projScopeRU.reserve(sec.size());
     for (const ps::Interval& iv : sec)
         projScopeRU.push_back(ps::Interval{ iv.a * k, iv.b * k });
+}
+
+// ── manual-lineage overlay (template-curation plan §11.1, read-only) ─────────
+void ClusterView::toggleLineageOverlay()
+{
+    lineageOverlay_ = !lineageOverlay_;
+    if (lineageOverlay_) { loadLineageOverlay(); recomputeLineagePositions(); }
+    else                   lineageDraw_.clear();
+    if (statusBar) {
+        const QString hint = (lineageOverlay_ && dimensionX != timeDimension)
+            ? tr(" — set X to the time dimension to see the drift regions") : QString();
+        statusBar->showMessage(lineageOverlay_
+            ? tr("Lineage overlay on: median nodes + drift tree over the scatter%1").arg(hint)
+            : tr("Lineage overlay off"), 5000);
+    }
+    drawContentsMode = REFRESH;        // the overlay is drawn on top; no cluster redraw needed
+    update();
+}
+
+QColor ClusterView::lineageClassColor(int classId) const
+{
+    const int h = ((classId * 47) % 360 + 360) % 360;   // stable, well-separated hue per class
+    return QColor::fromHsv(h, 200, 255);
+}
+
+void ClusterView::loadLineageOverlay()
+{
+    std::string base, tag; int group = 0;
+    if (!resolveSessionPaths(base, group, tag)) { lineageStore_ = TemplateLineageStore{}; return; }
+    // The open document's .spk variant (for the store's shared-.res resolve); the
+    // overlay needs only the forest + partition, not the rendered waveforms.
+    const auto aSpk = neurosuite::custody::parseAnchor(
+        QFileInfo(doc.origSpkFilePath()).fileName().toStdString());
+    const std::string variant = aSpk.ok ? aSpk.method : std::string();
+    const std::string spkTag  = aSpk.ok ? aSpk.suffix : std::string();
+    const int ns = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
+    const int nc = doc.nbOfchannels();
+    const double grain = configuration().getProjectionScopeMinutes() * 60.0;
+    lineageStore_.load(base, group, tag, variant, spkTag, ns, nc, doc.getSamplingRate(), grain);
+}
+
+void ClusterView::recomputeLineagePositions()
+{
+    lineageDraw_.clear();
+    if (!lineageOverlay_) return;
+    const Data& d = doc.data();
+    const double sr = doc.getSamplingRate();
+    for (const neurofileio::WtlNode& n : lineageStore_.forest().nodes) {
+        LineageNodeDraw nd;
+        nd.node = n.node; nd.classId = n.classId; nd.parent = n.parent;
+        nd.drift = (n.kind.rfind("drift", 0) == 0);
+        double sx = 0.0, sy = 0.0; long cnt = 0;
+        for (int64_t s : n.spikes) {
+            const dataType row = static_cast<dataType>(s) + 1;   // 0-based .spk id -> 1-based feature row
+            if (!d.isValidSpikeIndex(row)) continue;
+            sx += static_cast<double>(d.featureValue(row, dimensionX));
+            sy += static_cast<double>(d.featureValue(row, dimensionY));
+            ++cnt;
+        }
+        nd.empty = (cnt == 0);
+        if (cnt > 0)
+            nd.world = QPoint(static_cast<int>(std::lround(sx / cnt)),
+                              -static_cast<int>(std::lround(sy / cnt)));   // ordinate is flipped
+        else
+            // Placeholder (no spikes): put it at its region's mid-time on X (recording
+            // units), Y at 0 — reads as that region's node when X is the time dim.
+            nd.world = QPoint(static_cast<int>(std::lround(0.5 * (n.a + n.b) * sr)), 0);
+        lineageDraw_.push_back(nd);
+    }
+}
+
+void ClusterView::paintLineageOverlay(QPainter& p)
+{
+    if (!lineageOverlay_) return;
+    const int W = width(), H = height();
+
+    // Region boundaries — vertical lines, only meaningful when X is the time dim.
+    if (dimensionX == timeDimension && lineageStore_.partitionReady()) {
+        const double sr = doc.getSamplingRate();
+        QPen bPen(QColor(150, 150, 150, 160)); bPen.setCosmetic(true); bPen.setStyle(Qt::DashLine);
+        p.setPen(bPen);
+        for (double bsec : lineageStore_.partition().bounds) {
+            const int x = worldToViewport(QPoint(static_cast<int>(std::lround(bsec * sr)), 0)).x();
+            if (x >= 0 && x <= W) p.drawLine(x, 0, x, H);
+        }
+    }
+
+    std::map<int, QPoint> screenOf;
+    for (const LineageNodeDraw& nd : lineageDraw_) screenOf[nd.node] = worldToViewport(nd.world);
+
+    // Child edges (parent -> child).
+    QPen ePen(QColor(200, 200, 200, 150)); ePen.setCosmetic(true);
+    p.setPen(ePen);
+    for (const LineageNodeDraw& nd : lineageDraw_) {
+        if (nd.parent < 0) continue;
+        auto itp = screenOf.find(nd.parent);
+        if (itp != screenOf.end()) p.drawLine(itp->second, screenOf[nd.node]);
+    }
+
+    // Drift trajectory — each class's drift roots joined in time (x) order.
+    std::map<int, std::vector<const LineageNodeDraw*>> rootsByClass;
+    for (const LineageNodeDraw& nd : lineageDraw_)
+        if (nd.drift && nd.parent < 0) rootsByClass[nd.classId].push_back(&nd);
+    for (auto& kv : rootsByClass) {
+        std::vector<const LineageNodeDraw*>& v = kv.second;
+        std::sort(v.begin(), v.end(),
+                  [](const LineageNodeDraw* a, const LineageNodeDraw* b){ return a->world.x() < b->world.x(); });
+        QPen tPen(lineageClassColor(kv.first)); tPen.setCosmetic(true); tPen.setWidth(2);
+        p.setPen(tPen);
+        for (std::size_t i = 1; i < v.size(); ++i)
+            p.drawLine(screenOf[v[i-1]->node], screenOf[v[i]->node]);
+    }
+
+    // Nodes — disc per median (bigger for a drift root), hollow when empty.
+    for (const LineageNodeDraw& nd : lineageDraw_) {
+        const QPoint c = screenOf[nd.node];
+        const QColor col = lineageClassColor(nd.classId);
+        const int rad = nd.drift ? 6 : 4;
+        QPen np(col); np.setCosmetic(true); np.setWidth(2);
+        p.setPen(np);
+        p.setBrush(nd.empty ? QBrush(Qt::NoBrush) : QBrush(col));
+        p.drawEllipse(c.x() - rad, c.y() - rad, rad * 2, rad * 2);
+    }
+    p.setBrush(Qt::NoBrush);
 }
 
 void ClusterView::startOblique(){

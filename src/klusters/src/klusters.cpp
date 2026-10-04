@@ -2221,6 +2221,20 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
+    // ── Shift+E — manual-lineage overlay on the feature scatter (plan §11) ─
+    // A modified combo (bare E stays with the palette type-ahead), dispatched
+    // here so it is reachable from palette focus, like Shift+O above.
+    if(event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        if(ke->key() == Qt::Key_E && ke->modifiers() == Qt::ShiftModifier
+           && doc && !focusIsInTextInput()){
+            if(ClusterView* cv = activeClusterView()){
+                cv->toggleLineageOverlay();
+                return true;
+            }
+        }
+    }
+
     // ── Enter / Esc — commit or discard a pending lasso's residual preview ─
     // Live ONLY while a create-mode embedding lasso is awaiting confirmation
     // (hasPendingLasso), so the keys keep their normal meaning everywhere else.
@@ -6813,6 +6827,7 @@ const KlustersApp::FilterKey KlustersApp::kFilterKeys[] = {
     {Qt::Key_E,      Qt::NoModifier, "E",      "Cycle the matrix tabs (Error, Template, Residual, Drift)"},
     {Qt::Key_F,      Qt::NoModifier, "F",      "Toggle the t-SNE embedding of the selected clusters"},
     {Qt::Key_O,      Qt::ShiftModifier, "Shift+O", "Toggle the oblique (template-axis) projection — onto the selected clusters, or onto a pinned basis (Actions ▸ Set Oblique Basis…) to examine a third"},
+    {Qt::Key_E,      Qt::ShiftModifier, "Shift+E", "Toggle the manual-lineage overlay — median nodes + drift tree + region boundaries over the feature scatter (set X to time to see the regions)"},
     {Qt::Key_A,      Qt::NoModifier, "A",      "Toggle autoscale in the feature view"},
     {Qt::Key_Up,     Qt::NoModifier, "Up",     "While the t-SNE view is showing: raise the perplexity and recompute"},
     {Qt::Key_Down,   Qt::NoModifier, "Down",   "While the t-SNE view is showing: lower the perplexity and recompute"},
