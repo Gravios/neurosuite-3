@@ -5,7 +5,8 @@
 #include "klustersview.h"
 #include "data.h"                          // Data::clusterSpkIndices / totalNbOfSpikes
 
-#include "neurosuite/core/custody.hpp"     // parseAnchor / untaggedPath / stagePath
+#include "neurosuite/core/custody.hpp"     // parseAnchor / untaggedPath / stagePath / resolveAny
+#include "neurosuite/core/template_generate.hpp"  // sessionPath / readResAny (lineage render + res)
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -24,9 +25,12 @@
 #include <QLineEdit>
 #include <QDate>
 #include <QFrame>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 // ── TemplateWavePanel ───────────────────────────────────────────────────────
 TemplateWavePanel::TemplateWavePanel(QWidget* parent) : QWidget(parent)
@@ -147,6 +151,32 @@ TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
     regenButton->setToolTip(tr("Rerun fiber-template so the template waveform series reflects "
                                "the current class membership."));
 
+    // ── manual-lineage panel (.wtl) ────────────────────────────────────────────
+    lineageHeader = new QLabel(tr("Lineage"), this);
+    lineageHeader->setWordWrap(true);
+    lineageTree = new QTreeWidget(this);
+    lineageTree->setColumnCount(1);
+    lineageTree->setHeaderHidden(true);
+    lineageTree->setMaximumWidth(300);
+    lineageTree->setToolTip(tr("The selected class's manual median tree: drift roots (per time "
+                               "region) with adapt/collision leaves.  Build nodes from the current "
+                               "cluster selection, then Commit to write .wtl and render .wti/.wtf."));
+    addRootButton      = new QPushButton(tr("+ Drift root"), this);
+    addAdaptButton     = new QPushButton(tr("+ Adapt leaf"), this);
+    addCollisionButton = new QPushButton(tr("+ Collision leaf"), this);
+    removeNodeButton   = new QPushButton(tr("Remove node"), this);
+    commitLineageButton= new QPushButton(tr("Commit lineage"), this);
+    addRootButton->setToolTip(tr("Add a drift-root node for the SELECTED template class from the "
+                                 "current cluster selection's spikes (an empty selection is a "
+                                 "placeholder for an unset time region)."));
+    addAdaptButton->setToolTip(tr("Add a lower-amplitude adaptation leaf under the selected node, "
+                                  "from the current cluster selection."));
+    addCollisionButton->setToolTip(tr("Add a collision leaf (a recurring locked-pair shape) under "
+                                      "the selected node, from the current cluster selection."));
+    removeNodeButton->setToolTip(tr("Remove the selected node; its children are kept and orphaned."));
+    commitLineageButton->setToolTip(tr("Write the lineage to .wtl and render the library "
+                                       "(.wti/.wtf) from it."));
+
     linkCombo = new QComboBox(this);
     binSlider = new QSlider(Qt::Horizontal, this);
     binSlider->setMinimum(0);
@@ -179,6 +209,20 @@ TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
     classBtns->addWidget(deleteClassButton, 2, 1);
     left->addLayout(classBtns);
     left->addWidget(regenButton);
+
+    auto* sep2 = new QFrame(this);
+    sep2->setFrameShape(QFrame::HLine);
+    sep2->setFrameShadow(QFrame::Sunken);
+    left->addWidget(sep2);
+    left->addWidget(lineageHeader);
+    left->addWidget(lineageTree, 1);
+    auto* linBtns = new QGridLayout;
+    linBtns->addWidget(addRootButton,      0, 0);
+    linBtns->addWidget(removeNodeButton,   0, 1);
+    linBtns->addWidget(addAdaptButton,     1, 0);
+    linBtns->addWidget(addCollisionButton, 1, 1);
+    left->addLayout(linBtns);
+    left->addWidget(commitLineageButton);
 
     auto* controls = new QHBoxLayout;
     controls->addWidget(new QLabel(tr("Link:"), this));
@@ -215,19 +259,31 @@ TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
     connect(setPrimaryButton,  &QPushButton::clicked, this, [this](){ onSetPrimary(); });
     connect(regenButton,       &QPushButton::clicked, this, [this](){ onRegenClicked(); });
 
+    connect(lineageTree, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem*, QTreeWidgetItem*){ updateLineageButtons(); showLineageMedian(selectedLineageNode()); });
+    // The selected class scopes which drift roots can take leaves; refresh on class change too.
+    connect(classList, &QListWidget::currentRowChanged, this, [this](int){ updateLineageButtons(); });
+    connect(addRootButton,       &QPushButton::clicked, this, [this](){ onAddDriftRoot(); });
+    connect(addAdaptButton,      &QPushButton::clicked, this, [this](){ onAddLeaf("adapt-leaf"); });
+    connect(addCollisionButton,  &QPushButton::clicked, this, [this](){ onAddLeaf("collision-leaf"); });
+    connect(removeNodeButton,    &QPushButton::clicked, this, [this](){ onRemoveNode(); });
+    connect(commitLineageButton, &QPushButton::clicked, this, [this](){ onCommitLineage(); });
+
     loadFromDisk();
     rebuildUnitList();
     loadClasses();
+    loadLineage();
 }
 
 void TemplateView::reloadFromDisk()
 {
     // Mirror the constructor's disk-load sequence so a freshly written library is
-    // fully reflected: the .wti/.wtf (loadFromDisk + rebuildUnitList) and the
-    // .eap/.tcl class store (loadClasses).
+    // fully reflected: the .wti/.wtf (loadFromDisk + rebuildUnitList), the
+    // .eap/.tcl class store (loadClasses) and the .wtl lineage (loadLineage).
     loadFromDisk();
     rebuildUnitList();
     loadClasses();
+    loadLineage();
 }
 
 void TemplateView::loadFromDisk()
@@ -246,6 +302,7 @@ void TemplateView::loadFromDisk()
     group     = aClu.group;
     variant   = aSpk.ok ? QString::fromStdString(aSpk.method) : QString();
     tag       = QString::fromStdString(aClu.suffix);            // "" = untagged stage
+    spkTag    = aSpk.ok ? QString::fromStdString(aSpk.suffix) : QString();  // the loaded .spk's stage
     nSamples  = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
     nChannels = doc.nbOfchannels();
     coordsResolved = true;        // base/group/tag/geometry are valid from here on
@@ -582,4 +639,173 @@ void TemplateView::onRegenClicked()
     if (!classesLoaded) return;
     showStatus(tr("Regenerating template waveforms (fiber-template)…"));
     klView.requestTemplateRegen();      // reruns fiber-template for the marked units
+}
+
+// ── manual lineage (.wtl) ────────────────────────────────────────────────────
+void TemplateView::loadLineage()
+{
+    lineageLoaded = false;
+    resTimes.clear();
+    if (coordsResolved && !base.isEmpty()) {
+        // Use the OPEN document's geometry for the lineage's .spk reads (not the
+        // .wti-stored geometry, which may describe an older render).
+        const int ns = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
+        const int nc = doc.nbOfchannels();
+        // The shared res (for drift-window seconds): whichever method token wrote it.
+        const auto rr = neurosuite::custody::resolveAny(
+            base.toStdString(), "res", group, variant.toStdString());
+        if (rr.found) { bool rok = false; resTimes = neurosuite::templategen::readResAny(rr.path, &rok);
+                        if (!rok) resTimes.clear(); }
+        lineageStore.load(base.toStdString(), group, tag.toStdString(),
+                          variant.toStdString(), spkTag.toStdString(), ns, nc, doc.getSamplingRate());
+        lineageLoaded = lineageStore.ok();
+    }
+    rebuildLineageTree();
+}
+
+std::pair<double,double> TemplateView::windowForSpikes(const std::vector<int64_t>& spikes) const
+{
+    const double sr = doc.getSamplingRate();
+    if (spikes.empty() || resTimes.empty() || sr <= 0.0) return { 0.0, 0.0 };
+    int64_t lo = -1, hi = -1;
+    for (int64_t s : spikes) {
+        if (s < 0 || s >= static_cast<int64_t>(resTimes.size())) continue;
+        const int64_t t = resTimes[static_cast<std::size_t>(s)];
+        if (lo < 0 || t < lo) lo = t;
+        if (hi < 0 || t > hi) hi = t;
+    }
+    if (lo < 0) return { 0.0, 0.0 };
+    return { static_cast<double>(lo) / sr, static_cast<double>(hi) / sr };
+}
+
+void TemplateView::rebuildLineageTree()
+{
+    if (!lineageTree) return;
+    const int keep = selectedLineageNode();
+    lineageTree->clear();
+    if (!lineageLoaded) {
+        lineageHeader->setText(tr("Lineage — unavailable (no open group)."));
+        updateLineageButtons();
+        return;
+    }
+    const neurofileio::WtlForest& f = lineageStore.forest();
+    // Two passes: create an item per node, then nest each under its parent (so any
+    // node order is handled, not just root-before-leaf).
+    std::map<int, QTreeWidgetItem*> items;
+    for (const neurofileio::WtlNode& n : f.nodes) {
+        const QString link = QString::fromStdString(
+            neurosuite::templategen::lineageKindToLink(n.kind));
+        QString txt = tr("#%1 %2  %3–%4s  (%5 spk)  cls %6")
+            .arg(n.node).arg(link)
+            .arg(n.a, 0, 'f', 1).arg(n.b, 0, 'f', 1)
+            .arg(static_cast<long long>(n.spikes.size())).arg(n.classId);
+        auto* item = new QTreeWidgetItem;
+        item->setText(0, txt);
+        item->setData(0, Qt::UserRole, n.node);
+        items[n.node] = item;
+    }
+    for (const neurofileio::WtlNode& n : f.nodes) {
+        QTreeWidgetItem* item = items[n.node];
+        auto pit = items.find(n.parent);
+        if (n.parent >= 0 && pit != items.end()) pit->second->addChild(item);
+        else                                     lineageTree->addTopLevelItem(item);
+        if (n.node == keep) lineageTree->setCurrentItem(item);
+    }
+    lineageTree->expandAll();
+    lineageHeader->setText(tr("Lineage — %n node(s)%1", "", static_cast<int>(f.nodes.size()))
+        .arg(lineageStore.nodeCount() == wti.rows.size() ? QString() : tr(" (uncommitted)")));
+    updateLineageButtons();
+}
+
+int TemplateView::selectedLineageNode() const
+{
+    const QTreeWidgetItem* it = lineageTree ? lineageTree->currentItem() : nullptr;
+    return it ? it->data(0, Qt::UserRole).toInt() : -1;
+}
+
+void TemplateView::updateLineageButtons()
+{
+    const bool on = lineageLoaded;
+    const bool haveClass = selectedClassCol() >= 0;
+    const bool haveNode  = selectedLineageNode() >= 0;
+    if (addRootButton)       addRootButton->setEnabled(on && haveClass);
+    if (addAdaptButton)      addAdaptButton->setEnabled(on && haveNode);
+    if (addCollisionButton)  addCollisionButton->setEnabled(on && haveNode);
+    if (removeNodeButton)    removeNodeButton->setEnabled(on && haveNode);
+    if (commitLineageButton) commitLineageButton->setEnabled(on);
+}
+
+void TemplateView::onAddDriftRoot()
+{
+    if (!lineageLoaded) return;
+    const int cls = selectedClassCol();
+    if (cls < 0) { showStatus(tr("Select a template class first — a lineage is built per class.")); return; }
+    const std::vector<int64_t> spk = selectionSpikeIndices();   // empty = an unset-region placeholder
+    const auto ab = windowForSpikes(spk);
+    const int id = lineageStore.addNode(cls, "drift-root", -1, ab.first, ab.second, spk);
+    rebuildLineageTree();
+    showStatus(tr("Added drift-root #%1 to class #%2 (%3 spk). Commit to render.")
+                   .arg(id).arg(cls).arg(static_cast<int>(spk.size())));
+}
+
+void TemplateView::onAddLeaf(const char* kind)
+{
+    if (!lineageLoaded) return;
+    const int parent = selectedLineageNode();
+    if (parent < 0) { showStatus(tr("Select the parent node (a drift root) first.")); return; }
+    const neurofileio::WtlNode* pn = lineageStore.node(parent);
+    const int cls = pn ? pn->classId : selectedClassCol();
+    const std::vector<int64_t> spk = selectionSpikeIndices();
+    if (spk.empty()) { showStatus(tr("Select the leaf's spikes (one or more clusters) first.")); return; }
+    const auto ab = windowForSpikes(spk);
+    const int id = lineageStore.addNode(cls, kind, parent, ab.first, ab.second, spk);
+    rebuildLineageTree();
+    showStatus(tr("Added %1 #%2 under #%3 (%4 spk). Commit to render.")
+                   .arg(QString::fromLatin1(kind)).arg(id).arg(parent).arg(static_cast<int>(spk.size())));
+}
+
+void TemplateView::onRemoveNode()
+{
+    if (!lineageLoaded) return;
+    const int id = selectedLineageNode();
+    if (id < 0) return;
+    if (!lineageStore.removeNode(id)) { showStatus(tr("No such node.")); return; }
+    rebuildLineageTree();
+    showStatus(tr("Removed node #%1 (its children were kept and orphaned).").arg(id));
+}
+
+void TemplateView::onCommitLineage()
+{
+    if (!lineageLoaded) return;
+    // The render reads the group's .spk (stable on disk) and the in-memory forest;
+    // it does not depend on the live .clu, so no save-first gate is needed.
+    std::string wtlPath, wtiPath;
+    const neurosuite::templategen::Result R = lineageStore.commit(&wtlPath, &wtiPath);
+    if (!R.ok) {
+        showStatus(tr("Commit failed: %1").arg(QString::fromStdString(R.err)));
+        return;
+    }
+    const int rows = static_cast<int>(R.rows.size());
+    // Re-read the freshly written library (and the .wtl) so the unit list, the
+    // tree and the preview all reflect disk and stay index-aligned.
+    reloadFromDisk();
+    showStatus(tr("Committed lineage: wrote %1 and rendered %n row(s).", "", rows)
+                   .arg(QFileInfo(QString::fromStdString(wtiPath)).fileName()));
+}
+
+void TemplateView::showLineageMedian(int nodeId)
+{
+    if (nodeId < 0 || !panel) return;
+    // Preview works only when the in-memory forest matches the on-disk render
+    // (i.e. right after a commit): row i of the .wtf is forest node i.
+    if (!wtf.ok || lineageStore.nodeCount() != wti.rows.size()) return;
+    const neurofileio::WtlForest& f = lineageStore.forest();
+    int idx = -1;
+    for (std::size_t i = 0; i < f.nodes.size(); ++i) if (f.nodes[i].node == nodeId) { idx = static_cast<int>(i); break; }
+    if (idx < 0 || static_cast<int64_t>(idx) >= wtf.nSpikes) return;
+    const std::size_t recLen = static_cast<std::size_t>(nSamples) * nChannels;
+    std::vector<int16_t> rec(wtf.samples.begin() + static_cast<std::ptrdiff_t>(idx * recLen),
+                             wtf.samples.begin() + static_cast<std::ptrdiff_t>((idx + 1) * recLen));
+    std::vector<std::vector<int16_t>> one; one.push_back(std::move(rec));
+    panel->setData(nSamples, nChannels, std::move(one), 0);
 }

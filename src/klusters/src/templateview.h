@@ -29,6 +29,9 @@
 
 #include "neurosuite/core/neurofileio.h"   // WtiIndex / SpkFile / wti* helpers
 #include "templateclassstore.h"            // EAP template-class state model (.eap/.tcl)
+#include "templatelineagestore.h"          // manual template-lineage model (.wtl)
+
+#include <utility>                          // std::pair (drift-window helper)
 
 class KlustersDoc;
 class KlustersView;
@@ -38,6 +41,7 @@ class QSlider;
 class QLabel;
 class QPushButton;
 class QStatusBar;
+class QTreeWidget;
 
 // ── waveform panel ──────────────────────────────────────────────────────────
 // A plain QWidget (no signals/slots, so no moc) that paints one template bin's
@@ -104,6 +108,18 @@ private:
     void onSetPrimary();                 // make the selected class the primary
     void onRegenClicked();               // request a fiber-template waveform regen
 
+    // ── manual lineage (.wtl via TemplateLineageStore) ────────────────────────
+    void loadLineage();                  // open the lineage store for the resolved group+stage
+    void rebuildLineageTree();           // fill the tree widget from the forest
+    void updateLineageButtons();         // enable/disable per selection
+    int  selectedLineageNode() const;    // node id of the selected tree row, or -1
+    void onAddDriftRoot();               // add a drift-root from the current cluster selection
+    void onAddLeaf(const char* kind);    // add an adapt/collision leaf under the selected node
+    void onRemoveNode();                 // remove the selected node (orphan its children)
+    void onCommitLineage();              // persist .wtl + render .wti/.wtf, then refresh
+    void showLineageMedian(int nodeId);  // preview a committed node's median in the panel
+    std::pair<double,double> windowForSpikes(const std::vector<int64_t>& spikes) const;
+
     KlustersDoc&  doc;
     KlustersView& klView;
     QStatusBar*   statusBar = nullptr;
@@ -112,6 +128,7 @@ private:
     QString base;        // absolute <...>/<sessionBase>
     QString variant;     // waveform method token (the open .spk variant)
     QString tag;         // stage tag ("" = untagged)
+    QString spkTag;      // stage tag of the loaded .spk (the lineage's input)
     int     group    = 0;
     int     nSamples = 0;
     int     nChannels = 0;
@@ -124,6 +141,11 @@ private:
     // template-class state (independent of the .wti library; see TemplateClassStore)
     TemplateClassStore      classStore;
     bool                    classesLoaded = false;
+
+    // manual-lineage state (the .wtl forest; see TemplateLineageStore)
+    TemplateLineageStore    lineageStore;
+    bool                    lineageLoaded = false;
+    std::vector<int64_t>    resTimes;        // per-spike res times (for drift-window seconds)
 
     // widgets
     QListWidget*      unitList = nullptr;   // template units (multi-select)
@@ -144,6 +166,15 @@ private:
     QPushButton* renameClassButton = nullptr;
     QPushButton* setPrimaryButton  = nullptr;
     QPushButton* regenButton       = nullptr;
+
+    // lineage panel (the per-class median tree)
+    QLabel*      lineageHeader       = nullptr;
+    QTreeWidget* lineageTree         = nullptr;  // forest: roots + nested leaves
+    QPushButton* addRootButton       = nullptr;  // add a drift-root from the selection
+    QPushButton* addAdaptButton      = nullptr;  // add an adapt-leaf under the selected node
+    QPushButton* addCollisionButton  = nullptr;  // add a collision-leaf under the selected node
+    QPushButton* removeNodeButton    = nullptr;
+    QPushButton* commitLineageButton = nullptr;  // write .wtl + render .wti/.wtf
 };
 
 #endif // TEMPLATEVIEW_H
