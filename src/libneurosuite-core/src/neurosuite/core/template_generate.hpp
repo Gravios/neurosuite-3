@@ -629,6 +629,79 @@ inline Result renderLineage(const neurofileio::WtlForest&                      f
     return R;
 }
 
+// ── On-disk wrapper for the manual lineage ──────────────────────────────────
+// Persist the curator's forest and render it: write the `.wtl` (the lineage
+// itself), then read each variant's `.spk` and renderLineage → write the shared
+// method-less `.wti` (v2, carrying the tree) + one `.wtf` per variant.  The
+// `.wtl`/`.wti`/`.wtf` are stage-tagged exactly like the existing library (method
+// -less `.wtl`/`.wti`, per-variant `.wtf`); `spkTag` names the stage of the input
+// `.spk` the node indices refer to.  Like generateToFiles this ODR-uses the
+// out-of-line neurofileio readers/writers, so a caller must link Neurosuite::core.
+struct LineageFileParams {
+    std::string              base;
+    int                      group     = 0;
+    std::vector<std::string> variants;             ///< .spk variants to render (one .wtf each)
+    std::string              stage;                 ///< stage tag for .wtl/.wti/.wtf ("" = none)
+    std::string              spkTag;                ///< stage tag of the input .spk ("" = none)
+    int                      nSamples  = 0;
+    int                      nChannels = 0;
+    double                   sr        = 0.0;       ///< .wti header (0 = unknown)
+};
+
+inline Result renderLineageToFiles(const LineageFileParams&            fp,
+                                   const neurofileio::WtlForest&       forest,
+                                   std::string*                        wtlPathOut = nullptr,
+                                   std::string*                        wtiPathOut = nullptr,
+                                   std::map<std::string, std::string>* wtfPaths   = nullptr)
+{
+    Result R;
+    const int nsamp = fp.nSamples, nchan = fp.nChannels;
+    if (nsamp <= 0 || nchan <= 0) { R.err = "bad waveform geometry"; return R; }
+    if (fp.variants.empty())      { R.err = "no variants requested"; return R; }
+
+    std::map<std::string, std::vector<int16_t>> spk;
+    for (const std::string& v : fp.variants) {
+        const std::string p = sessionPath(fp.base, "spk", fp.group, v, fp.spkTag);
+        neurofileio::SpkFile s = neurofileio::readSpk(p, nsamp, nchan);
+        if (!s.ok) { R.err = "cannot read .spk variant '" + v + "': " + p; return R; }
+        spk[v] = std::move(s.samples);
+    }
+
+    R = renderLineage(forest, fp.variants, spk, nsamp, nchan);
+    if (!R.ok) return R;
+
+    // Persist the lineage itself.
+    const std::string wtlPath = sessionPath(fp.base, "wtl", fp.group, "", fp.stage);
+    if (!neurofileio::writeWtl(wtlPath, forest)) {
+        R.ok = false; R.err = "cannot write .wtl: " + wtlPath; return R;
+    }
+    if (wtlPathOut) *wtlPathOut = wtlPath;
+
+    // The per-variant .wtf stacks ...
+    for (const std::string& v : fp.variants) {
+        const std::string wp = sessionPath(fp.base, "wtf", fp.group, v, fp.stage);
+        if (!neurofileio::writeSpk(wp, nsamp, nchan, R.wtf[v])) {
+            R.ok = false; R.err = "cannot write .wtf: " + wp; return R;
+        }
+        if (wtfPaths) (*wtfPaths)[v] = wp;
+    }
+    // ... and the shared, method-less index (writeWti emits v2 — the rows carry parents).
+    neurofileio::WtiIndex idx;
+    idx.version    = 1;
+    idx.nSamples   = nsamp;
+    idx.nChannels  = nchan;
+    idx.peakSample = -1;
+    idx.sr         = fp.sr;
+    idx.rows       = R.rows;
+    const std::string wtiPath = sessionPath(fp.base, "wti", fp.group, "", fp.stage);
+    if (!neurofileio::writeWti(wtiPath, idx)) {
+        R.ok = false; R.err = "cannot write .wti: " + wtiPath; return R;
+    }
+    if (wtiPathOut) *wtiPathOut = wtiPath;
+
+    return R;
+}
+
 } // namespace templategen
 } // namespace neurosuite
 
