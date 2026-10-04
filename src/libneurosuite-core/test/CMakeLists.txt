@@ -80,6 +80,16 @@ target_include_directories(core_test_wtl
 target_link_libraries(core_test_wtl PRIVATE Neurosuite::core)
 add_test(NAME core_test_wtl COMMAND core_test_wtl)
 
+# Manual-lineage renderer (template_generate.hpp renderLineage): a .wtl forest ->
+# .wti rows + per-variant .wtf, one median per node over its own spike set (no
+# binning), with the kind->link mapping, parent row indices and empty placeholders.
+# Header-only (uses only the inline median primitives + neurofileio structs), no link.
+add_executable(core_test_template_lineage template_lineage_test.cpp)
+target_compile_features(core_test_template_lineage PRIVATE cxx_std_17)
+target_include_directories(core_test_template_lineage
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_template_lineage COMMAND core_test_template_lineage)
+
 # Temporally-restricted projection scope (projectionscope.hpp): cluster->class
 # resolution, the union of a class's .wti drift windows, interval merge + the
 # in-scope test.  Header-only (builds the structs directly), so no link.

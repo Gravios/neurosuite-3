@@ -525,6 +525,110 @@ inline Result generateToFiles(const FileParams& fp, const Params& gen,
     return R;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  renderLineage — a MANUAL .wtl lineage → .wti rows + per-variant .wtf stacks
+//
+//  Where generate() invents the binning (drift chunks, energy bins) from the
+//  membership, renderLineage takes the curator's EXPLICIT per-node spike sets (a
+//  WtlForest, read from .wtl) and medians each node verbatim — the curator's
+//  nodes ARE the series (claude/template-curation-plan.md phase 5).  One .wti row
+//  per node, in forest order:
+//    * link    = the node kind mapped to the .wti vocabulary (drift-root→drift,
+//                adapt-leaf→adapt, collision-leaf→collision; else verbatim);
+//    * bin     = the 0-based ordinal within that (class, link) run;
+//    * parent  = the .wti ROW INDEX of the node's parent node (-1 for a root);
+//    * nSpikes = the node's spike count; an EMPTY node (an "unset" drift region)
+//                emits a 0-filled placeholder row (nSpikes 0), so gaps are kept;
+//    * the .wtf median is the per-element median of the node's OWN spikes
+//                (subsampled to maxPer like generate), raw — no eap alignment and
+//                no partner subtraction (a collision node's median IS the locked-
+//                pair shape).
+//  Pure: hand in each variant's full int16 .spk stack; get the rows + stacks back
+//  (writeWti sees parent >= 0 and emits .wti v2).  No disk, no Qt.
+inline std::string lineageKindToLink(const std::string& kind)
+{
+    if (kind.rfind("drift", 0) == 0)     return "drift";
+    if (kind.rfind("adapt", 0) == 0)     return "adapt";
+    if (kind.rfind("collision", 0) == 0) return "collision";
+    return kind;                                   // unknown kinds kept verbatim
+}
+
+inline Result renderLineage(const neurofileio::WtlForest&                      forest,
+                            const std::vector<std::string>&                   variants,
+                            const std::map<std::string, std::vector<int16_t>>& spk,
+                            int nSamples, int nChannels, int maxPer = 800)
+{
+    Result R;
+    const int nsamp = nSamples, nchan = nChannels;
+    const std::size_t recLen = static_cast<std::size_t>(nsamp) * static_cast<std::size_t>(nchan);
+    if (nsamp <= 0 || nchan <= 0) { R.err = "bad waveform geometry";  return R; }
+    if (variants.empty())         { R.err = "no variants requested";  return R; }
+
+    // Each variant's stack must be a whole number of records and agree on N.
+    int64_t N = -1;
+    for (const std::string& v : variants) {
+        auto it = spk.find(v);
+        if (it == spk.end())                    { R.err = "spk variant '" + v + "' missing"; return R; }
+        if (recLen == 0 || it->second.size() % recLen != 0)
+            { R.err = "spk variant '" + v + "' not a whole number of records"; return R; }
+        const int64_t n = static_cast<int64_t>(it->second.size() / recLen);
+        if (N < 0) N = n;
+        else if (n != N)                        { R.err = "spk variants differ in spike count"; return R; }
+    }
+    // Every node's spike indices must be in range.
+    for (const neurofileio::WtlNode& nd : forest.nodes)
+        for (int64_t i : nd.spikes)
+            if (i < 0 || i >= N)                { R.err = "node spike index out of range"; return R; }
+
+    for (const std::string& v : variants) R.wtf[v] = {};
+
+    std::map<int, int>                          rowOf;     // node id -> emitted .wti row index
+    std::map<std::pair<int, std::string>, int>  binCtr;    // (class, link) -> next bin ordinal
+
+    for (const neurofileio::WtlNode& nd : forest.nodes) {
+        neurofileio::WtiRow row;
+        row.row     = static_cast<int>(R.rows.size());
+        row.unitId  = nd.classId;
+        row.link    = lineageKindToLink(nd.kind);
+        row.bin     = binCtr[{nd.classId, row.link}]++;
+        row.a       = nd.a;
+        row.b       = nd.b;
+        row.nSpikes = static_cast<int64_t>(nd.spikes.size());
+        auto pit    = rowOf.find(nd.parent);
+        row.parent  = (nd.parent >= 0 && pit != rowOf.end()) ? pit->second : -1;
+        rowOf[nd.node] = row.row;
+        R.rows.push_back(row);
+
+        // Subsample the node's spikes to <= maxPer (a median over a few hundred is
+        // already stable), matching generate().
+        std::vector<int64_t> sub = nd.spikes;
+        if (static_cast<int>(sub.size()) > maxPer) {
+            const std::vector<std::size_t> keep = linspace_indices(sub.size(), maxPer);
+            std::vector<int64_t> picked(keep.size());
+            for (std::size_t j = 0; j < keep.size(); ++j) picked[j] = sub[keep[j]];
+            sub.swap(picked);
+        }
+
+        for (const std::string& v : variants) {
+            const std::vector<int16_t>& stack = spk.at(v);
+            std::vector<int16_t> med(recLen, 0);
+            if (!sub.empty()) {
+                std::vector<float> col(sub.size());
+                for (std::size_t e = 0; e < recLen; ++e) {
+                    for (std::size_t m = 0; m < sub.size(); ++m)
+                        col[m] = static_cast<float>(stack[static_cast<std::size_t>(sub[m]) * recLen + e]);
+                    med[e] = static_cast<int16_t>(std::rint(median_np(col)));
+                }
+            }
+            std::vector<int16_t>& out = R.wtf[v];
+            out.insert(out.end(), med.begin(), med.end());
+        }
+    }
+
+    R.ok = true;
+    return R;
+}
+
 } // namespace templategen
 } // namespace neurosuite
 
