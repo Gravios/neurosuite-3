@@ -28,6 +28,7 @@
 #define NEUROSUITE_CORE_TEMPLATE_GENERATE_HPP
 
 #include "neurosuite/core/neurofileio.h"
+#include "neurosuite/core/custody.hpp"   // resolveAny for the SHARED .res (generateToFiles)
 
 #include <algorithm>
 #include <cmath>
@@ -219,12 +220,13 @@ inline Result generate(const std::vector<int64_t>&                       times,
         }
     }
 
-    // Chunk defaults (main()): explicit flag wins, else 12-min chunks in eap mode
-    // (stable across concatenation), else the legacy 6-chunk default.
-    if (p.nChunks == 0 && p.chunkMin == 0.0) {
-        if (p.eap) p.chunkMin = 12.0;
-        else       p.nChunks  = 6;
-    }
+    // Chunk default: mirror the Python generate() signature (n_chunks=6,
+    // chunk_min=None) — when the caller pins neither, fall back to 6 chunks.
+    // The eap-specific "12-minute chunks" policy is a CLI/wrapper concern (it
+    // lives in fiber_template.main(), not generate()), applied by generateToFiles
+    // / the Klusters launch, so this pure core reproduces Python generate() for
+    // any given argument set.
+    if (p.nChunks == 0 && p.chunkMin == 0.0) p.nChunks = 6;
 
     // Membership + default unit/class set.
     if (p.eap) {
@@ -369,6 +371,157 @@ inline Result generate(const std::vector<int64_t>&                       times,
     }
 
     R.ok = true;
+    return R;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  On-disk wrapper — read a session's inputs, run generate(), write .wtf/.wti
+//
+//  The pure generate() above is dependency-light (inline neurofileio structs
+//  only), so its test links nothing.  THIS wrapper calls the out-of-line
+//  neurofileio readers/writers (readSpk, readClusterRes, readEap, writeSpk,
+//  writeWti), so any translation unit that ODR-uses generateToFiles() must link
+//  Neurosuite::core.  It is the exact on-disk contract of fiber_template.py's
+//  generate(): same <base>.<type>[.<variant>].<group>[.<tag>] path scheme, same
+//  inputs, same outputs — so a C++ run reproduces the Python one byte-for-byte
+//  in the .wtf (the median waveforms) and field-for-field in the .wti.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Inputs + output naming for generateToFiles (the numeric Params ride alongside).
+struct FileParams {
+    std::string              base;                   ///< session base path (dir/stem)
+    int                      group        = 0;       ///< electrode/spike group (the trailing token)
+    std::vector<std::string> variants;               ///< .spk variants to template (one .wtf each)
+    std::string              resVariant   = "standard"; ///< preferred method token for the SHARED .res (resolveAny hint)
+    std::string              cluVariant;              ///< clu-mode: variant of the units .clu
+    std::string              cluTag;                  ///< clu-mode: tag/stage of the units .clu
+    std::string              eapTag;                  ///< eap-mode: stage of the (method-less) .eap
+    std::string              outTag;                  ///< stage tag stamped on the written .wtf/.wti
+    std::string              energyVariant;           ///< adapt energy reference ("" = standard/first)
+    std::vector<int>         units;                   ///< explicit ids (empty = derive)
+};
+
+// fiber-kit's session_path(): <base>.<type>[.<variant>].<group>[.<tag>].  A '.'
+// in a tag is folded to '_' (Klusters parses '.' as a field separator), exactly
+// as neuro_io.session_path does.
+inline std::string sessionPath(const std::string& base, const std::string& type,
+                               int group, const std::string& variant,
+                               const std::string& tag)
+{
+    std::string p = base + "." + type;
+    if (!variant.empty()) p += "." + variant;
+    p += "." + std::to_string(group);
+    if (!tag.empty()) {
+        std::string t = tag;
+        for (char& c : t) if (c == '.') c = '_';
+        p += "." + t;
+    }
+    return p;
+}
+
+// Read a .res that may be text or binary, picking the format the way
+// neurofileio's own cluster-pair reader does (binary iff the byte pattern says
+// so).  Returns the timestamps; `ok` reflects success.
+inline std::vector<int64_t> readResAny(const std::string& resPath, bool* ok)
+{
+    if (neurofileio::isBinaryClusterRes(resPath))
+        return neurofileio::readResBinary(resPath, ok);
+    return neurofileio::readRes(resPath, ok);
+}
+
+// Resolve + read the session's inputs, run generate(), and write the outputs.
+//   clu-mode (gen.eap == false): membership from <base>.clu.<cluVariant>.<g>[.<cluTag>],
+//     read together with the shared .res so the format detection + length check
+//     are the library's.
+//   eap-mode (gen.eap == true):  membership from the method-less <base>.eap.<g>[.<eapTag>];
+//     the .res is read on its own.
+// Writes one <base>.wtf.<variant>.<g>[.<outTag>] per variant and the shared,
+// method-less index <base>.wti.<g>[.<outTag>].  `wtiPathOut` / `wtfPaths`, when
+// non-null, receive the written paths.  On any read failure R.ok is false and
+// nothing is written.
+inline Result generateToFiles(const FileParams& fp, const Params& gen,
+                              std::string* wtiPathOut = nullptr,
+                              std::map<std::string, std::string>* wtfPaths = nullptr)
+{
+    Result R;
+    const int nsamp = gen.nSamples, nchan = gen.nChannels;
+    if (nsamp <= 0 || nchan <= 0) { R.err = "bad waveform geometry"; return R; }
+    if (fp.variants.empty())      { R.err = "no variants requested"; return R; }
+
+    // The .res is the one SHARED artifact: whichever method token wrote it (or
+    // the untagged legacy name), take that one — exactly fiber-kit read_res's
+    // resolve_any.  .clu / .spk below are method-pinned (composed directly).
+    const neurosuite::custody::Resolved rr =
+        neurosuite::custody::resolveAny(fp.base, "res", fp.group, fp.resVariant);
+    if (!rr.found) { R.err = "cannot find .res for group " + std::to_string(fp.group); return R; }
+    const std::string resPath = rr.path;
+
+    std::vector<int64_t>  times;
+    std::vector<int>      clu;
+    neurofileio::EapFile  eap;
+
+    if (gen.eap) {
+        bool rok = false;
+        times = readResAny(resPath, &rok);
+        if (!rok) { R.err = "cannot read .res: " + resPath; return R; }
+        const std::string eapPath = sessionPath(fp.base, "eap", fp.group, "", fp.eapTag);
+        eap = neurofileio::readEap(eapPath);
+        if (!eap.ok) { R.err = "cannot read .eap: " + eapPath; return R; }
+    } else {
+        const std::string cluPath = sessionPath(fp.base, "clu", fp.group, fp.cluVariant, fp.cluTag);
+        neurofileio::ClusterResData cr = neurofileio::readClusterRes(cluPath, resPath);
+        if (!cr.ok) { R.err = "cannot read .clu/.res pair: " + cluPath + " / " + resPath; return R; }
+        times = cr.times;
+        clu   = cr.ids;
+    }
+
+    // Read each variant's .spk (method-pinned, no fallback — matches open_spk_at).
+    std::map<std::string, std::vector<int16_t>> spk;
+    for (const std::string& v : fp.variants) {
+        const std::string spkPath = sessionPath(fp.base, "spk", fp.group, v, "");
+        neurofileio::SpkFile s = neurofileio::readSpk(spkPath, nsamp, nchan);
+        if (!s.ok) { R.err = "cannot read .spk variant '" + v + "': " + spkPath; return R; }
+        spk[v] = std::move(s.samples);
+    }
+
+    // CLI/wrapper-level chunk default (mirrors fiber_template.main()): with no
+    // explicit chunking, eap mode uses 12-minute chunks (stable across session
+    // concatenation), clu mode the legacy 6 chunks.  generate() itself only
+    // knows the plain 6-chunk fallback, so this policy is applied here.
+    Params g = gen;
+    if (g.nChunks == 0 && g.chunkMin == 0.0) {
+        if (g.eap) g.chunkMin = 12.0;
+        else       g.nChunks  = 6;
+    }
+
+    R = generate(times, fp.variants, spk, fp.energyVariant,
+                 g.eap ? nullptr : &clu,
+                 g.eap ? &eap    : nullptr,
+                 fp.units, g);
+    if (!R.ok) return R;
+
+    // Write one .wtf per variant (byte-identical to a .spk slice) ...
+    for (const std::string& v : fp.variants) {
+        const std::string wtfPath = sessionPath(fp.base, "wtf", fp.group, v, fp.outTag);
+        if (!neurofileio::writeSpk(wtfPath, nsamp, nchan, R.wtf[v])) {
+            R.ok = false; R.err = "cannot write .wtf: " + wtfPath; return R;
+        }
+        if (wtfPaths) (*wtfPaths)[v] = wtfPath;
+    }
+    // ... and the one shared, method-less .wti index.
+    neurofileio::WtiIndex idx;
+    idx.version    = 1;
+    idx.nSamples   = nsamp;
+    idx.nChannels  = nchan;
+    idx.peakSample = -1;
+    idx.sr         = gen.sr;
+    idx.rows       = R.rows;
+    const std::string wtiPath = sessionPath(fp.base, "wti", fp.group, "", fp.outTag);
+    if (!neurofileio::writeWti(wtiPath, idx)) {
+        R.ok = false; R.err = "cannot write .wti: " + wtiPath; return R;
+    }
+    if (wtiPathOut) *wtiPathOut = wtiPath;
+
     return R;
 }
 

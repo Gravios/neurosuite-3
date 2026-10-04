@@ -25,6 +25,7 @@
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include <neurosuite/core/neurofileio.h> // shared res/clu/spk/fet readers+writers (decollide stage)
+#include <neurosuite/core/template_generate.hpp> // native fiber-template port (standalone template gen)
 #include <neurosuite/core/decollide.hpp> // shared collision fit + grow engine (targeted decollide)
 #include <neurosuite/core/decollide_eap.hpp> // Decomp -> .eap membership bridge (annotate-in-place)
 #include <QDate>
@@ -44,6 +45,7 @@
 #include "templatematrixview.h"
 #include "residualmatrixview.h"
 #include "driftmatrixview.h"
+#include "templateview.h"           // TemplateView::reloadFromDisk (refresh after native gen)
 #include "templatematrixthread.h"   // tmReadSpikeFloat (median-waveform NN sort)
 #include "array.h"
 
@@ -7484,9 +7486,19 @@ void KlustersApp::runTemplateGeneration()
     runTemplateGenerationForUnits(ids);
 }
 
-// Launch fiber-template (clu-mode) for exactly `idsIn`.  Shared by the on-save
-// marked-units run (runTemplateGeneration) and the on-demand per-cluster action
-// (slotGenerateTemplateForSelection); the caller sets mPluginReportModal.
+// Build the linked-median template library (.wti/.wtf) for exactly `idsIn`.
+// Shared by the on-save marked-units run (runTemplateGeneration) and the
+// on-demand per-cluster action (slotGenerateTemplateForSelection); the caller
+// sets mPluginReportModal.
+//
+// NATIVE-PRIMARY: the generation is done in-process by the shared neurosuite-core
+// engine (neurosuite::templategen, a byte-for-byte port of fiber-kit's
+// fiber_template.py), so Klusters writes templates STANDALONE with no external
+// Python plugin.  It reads the clustering files ON DISK (the save-first invariant
+// the callers enforce) and writes <base>.wtf.<variant>.<group>[.<tag>] per spk
+// variant + the shared, method-less <base>.wti.<group>[.<tag>].  The external
+// fiber-template plugin, if still installed, is kept only as a FALLBACK for a
+// session the native reader cannot satisfy — no behavioural regression.
 void KlustersApp::runTemplateGenerationForUnits(const QList<int>& idsIn)
 {
     if (idsIn.isEmpty())
@@ -7496,43 +7508,125 @@ void KlustersApp::runTemplateGenerationForUnits(const QList<int>& idsIn)
         slotStatusMsg(tr("A job is running; templates will refresh on the next save."));
         return;
     }
-    if (mPluginRegistry.plugins().isEmpty())
-        mPluginRegistry.reload();                        // in case the Plugins menu was never opened
-    const KlustersPlugin* tmpl = nullptr;
-    for (const KlustersPlugin& p : mPluginRegistry.plugins())
-        if (p.name == QLatin1String("fiber-template")) { tmpl = &p; break; }
-    if (!tmpl) {
-        slotStatusMsg(tr("Template write skipped: the fiber-template plugin was not found."));
-        return;
-    }
 
     const QMap<QString, QString> ctx = pluginContext();
-    if (ctx.value(QStringLiteral("variant")).isEmpty()) {
-        // fiber-template needs a --clu-variant; a classic clu with no method token
-        // cannot be templated this way.
+    const QString base    = ctx.value(QStringLiteral("base"));
+    const QString variant = ctx.value(QStringLiteral("variant"));
+    const QString tag     = ctx.value(QStringLiteral("tag"));
+    bool gok = false;
+    const int group = ctx.value(QStringLiteral("group")).toInt(&gok);
+    const int nchan = ctx.value(QStringLiteral("nchan")).toInt();
+    const int nsamp = ctx.value(QStringLiteral("nsamp")).toInt();
+
+    if (base.isEmpty() || !gok) {
+        slotStatusMsg(tr("Template write skipped: could not resolve the session base/group."));
+        return;
+    }
+    if (variant.isEmpty()) {
+        // The template files are keyed on the clustering's method/variant token; a
+        // classic clu with no token cannot be templated this way.
         slotStatusMsg(tr("Template write skipped: the open clustering has no method/variant token."));
         return;
     }
+    if (nsamp <= 0 || nchan <= 0) {
+        slotStatusMsg(tr("Template write skipped: unknown waveform geometry for the open group."));
+        return;
+    }
+
     QStringList vars = availableSpkVariants();
     if (vars.isEmpty())
-        vars << ctx.value(QStringLiteral("variant"));    // fall back to the open variant
+        vars << variant;                                 // fall back to the open variant
 
     QList<int> ids = idsIn;
     std::sort(ids.begin(), ids.end());
-    QStringList idss; for (int id : ids) idss << QString::number(id);
 
+    // ── Native generation (in-process, no external process) ──────────────────
+    namespace tg = neurosuite::templategen;
+    tg::FileParams fp;
+    fp.base       = base.toStdString();
+    fp.group      = group;
+    for (const QString& v : vars) fp.variants.push_back(v.toStdString());
+    fp.resVariant = variant.toStdString();               // resolveAny hint for the SHARED .res
+    fp.cluVariant = variant.toStdString();
+    fp.cluTag     = tag.toStdString();
+    fp.outTag     = tag.toStdString();
+    for (int id : ids) fp.units.push_back(id);
+
+    tg::Params p;
+    p.nSamples  = nsamp;
+    p.nChannels = nchan;
+    const double sr = doc->getSamplingRate();
+    if (sr > 0.0) p.sr = sr;                             // else the 32552 default (cosmetic a/b only)
+    p.linkDrift = true;                                  // descriptor default: links = drift
+    p.linkAdapt = false;
+    // n-chunks / n-energy / max-per keep the Params defaults (6 chunks, clu-mode).
+
+    std::string wtiPath;
+    std::map<std::string, std::string> wtfPaths;
+    tg::Result R = tg::generateToFiles(fp, p, &wtiPath, &wtfPaths);
+
+    if (R.ok) {
+        if (mPluginReportModal) {
+            QStringList produced;
+            produced << QFileInfo(QString::fromStdString(wtiPath)).fileName();
+            for (auto it = wtfPaths.cbegin(); it != wtfPaths.cend(); ++it)
+                produced << QFileInfo(QString::fromStdString(it->second)).fileName();
+            QMessageBox box(this);
+            box.setIcon(QMessageBox::Information);
+            box.setWindowTitle(tr("Template generation"));
+            box.setText(tr("Generated linked templates for %n unit(s) (%1 rows).", "",
+                           int(ids.size())).arg(int(R.rows.size())));
+            box.setDetailedText(produced.join(QLatin1Char('\n')));
+            box.exec();
+        } else {
+            slotStatusMsg(tr("Wrote templates for %n unit(s) (%1 rows).", "",
+                             int(ids.size())).arg(int(R.rows.size())));
+        }
+        // Refresh any open Template Library display so the new series show at once.
+        refreshTemplateLibraryDisplays();
+        return;
+    }
+
+    // ── Fallback: the external fiber-template plugin, if installed ────────────
+    // Native generation could not read an input (reported in R.err).  Try the
+    // Python plugin so an unusual session still produces templates; if it is not
+    // present, surface the native error.
+    if (mPluginRegistry.plugins().isEmpty())
+        mPluginRegistry.reload();                        // in case the Plugins menu was never opened
+    const KlustersPlugin* tmpl = nullptr;
+    for (const KlustersPlugin& pl : mPluginRegistry.plugins())
+        if (pl.name == QLatin1String("fiber-template")) { tmpl = &pl; break; }
+    if (!tmpl) {
+        slotStatusMsg(tr("Template generation failed: %1.").arg(QString::fromStdString(R.err)));
+        return;
+    }
+
+    QStringList idss; for (int id : ids) idss << QString::number(id);
     QMap<QString, QString> params;
     params.insert(QStringLiteral("variants"),    vars.join(QLatin1Char(' ')));
-    params.insert(QStringLiteral("clu-variant"), ctx.value(QStringLiteral("variant")));
-    params.insert(QStringLiteral("clu-tag"),     ctx.value(QStringLiteral("tag")));
-    params.insert(QStringLiteral("out-tag"),     ctx.value(QStringLiteral("tag")));
+    params.insert(QStringLiteral("clu-variant"), variant);
+    params.insert(QStringLiteral("clu-tag"),     tag);
+    params.insert(QStringLiteral("out-tag"),     tag);
     params.insert(QStringLiteral("nsamp"),       ctx.value(QStringLiteral("nsamp")));
     params.insert(QStringLiteral("nchan"),       ctx.value(QStringLiteral("nchan")));
     params.insert(QStringLiteral("units"),       idss.join(QLatin1Char(' ')));
     // links / n-chunks / n-energy / sr keep the descriptor defaults.
 
+    slotStatusMsg(tr("Native template generation unavailable (%1); running the fiber-template plugin…")
+                      .arg(QString::fromStdString(R.err)));
     if (launchPlugin(*tmpl, params))
         slotStatusMsg(tr("Writing templates for %n unit(s)…", "", int(ids.size())));
+}
+
+// Reload every open Template Library display from disk.  Called after native
+// generation writes the .wti/.wtf so an open display refreshes in place; the
+// external-plugin path leaves this to its own completion handler (the view reads
+// on next open), so no double-refresh.
+void KlustersApp::refreshTemplateLibraryDisplays()
+{
+    const QList<TemplateView*> views = findChildren<TemplateView*>();
+    for (TemplateView* v : views)
+        v->reloadFromDisk();
 }
 
 // On-demand: run fiber-template now for the selected cluster(s) only — the

@@ -145,10 +145,15 @@ public:
      *  request (mirrors pinObliqueBasisFromTemplates). */
     void runTemplateGeneration();
 
-    /** Launch fiber-template (clu-mode) for exactly @p ids — shared by the
-     *  on-save marked-units run and the on-demand per-cluster action.  The
-     *  caller sets mPluginReportModal. */
+    /** Build the linked-median template library (.wti/.wtf) for exactly @p ids —
+     *  shared by the on-save marked-units run and the on-demand per-cluster
+     *  action.  Native-primary (neurosuite::templategen, in-process); the external
+     *  fiber-template plugin is a fallback only.  The caller sets mPluginReportModal. */
     void runTemplateGenerationForUnits(const QList<int>& ids);
+
+    /** Reload every open Template Library display from disk, so a freshly written
+     *  .wti/.wtf is shown without the user reopening the display. */
+    void refreshTemplateLibraryDisplays();
 
     /** Highlight template class @p col's .eap members in the active feature view
      *  (-1 clears).  Called by KlustersView on behalf of TemplateView; resolves

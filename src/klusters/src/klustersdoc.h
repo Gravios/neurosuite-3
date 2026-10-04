@@ -1276,6 +1276,10 @@ public:
     /**Returns the number of channels used.*/
     int nbOfchannels() const{return clusteringData->nbOfchannels();}
 
+    /**Returns the recording sampling rate (Hz), or 0 if unknown.  Used by the
+       native template generator for the .wti drift-window seconds coordinates.*/
+    double getSamplingRate() const{return clusteringData->getSamplingRate();}
+
     /**Returns the total number of PCAs used
   * (number of channels times number of PCA by channel).*/
     int totalNbOfPCAs() const{return clusteringData->totalNbOfPCAs();}

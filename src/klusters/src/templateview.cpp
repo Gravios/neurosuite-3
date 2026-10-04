@@ -220,6 +220,16 @@ TemplateView::TemplateView(KlustersDoc& pDoc, KlustersView& pView,
     loadClasses();
 }
 
+void TemplateView::reloadFromDisk()
+{
+    // Mirror the constructor's disk-load sequence so a freshly written library is
+    // fully reflected: the .wti/.wtf (loadFromDisk + rebuildUnitList) and the
+    // .eap/.tcl class store (loadClasses).
+    loadFromDisk();
+    rebuildUnitList();
+    loadClasses();
+}
+
 void TemplateView::loadFromDisk()
 {
     loaded = false;

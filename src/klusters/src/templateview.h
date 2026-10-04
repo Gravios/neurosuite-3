@@ -74,6 +74,11 @@ public:
                           const QColor& backgroundColor, QStatusBar* statusBar,
                           QWidget* parent = nullptr);
 
+    // Re-read the .wti/.wtf library and the .eap/.tcl class store from disk and
+    // rebuild the UI — same sequence the constructor runs.  Called after Klusters
+    // (re)writes templates so an open display updates without being reopened.
+    void reloadFromDisk();
+
 private:
     void loadFromDisk();                 // resolve paths, read .wti + .wtf
     void rebuildUnitList();              // fill the unit list from the .wti
