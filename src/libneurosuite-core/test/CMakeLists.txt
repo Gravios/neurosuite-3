@@ -100,6 +100,16 @@ target_include_directories(core_test_template_lineage_io
 target_link_libraries(core_test_template_lineage_io PRIVATE Neurosuite::core)
 add_test(NAME core_test_template_lineage_io COMMAND core_test_template_lineage_io)
 
+# Session-wide drift partition + forest re-grain (drift_partition.hpp): the tiling
+# of the session into disjoint time regions shared by all classes, split/delete,
+# and the re-bin of pooled drift spikes onto a new grain (leaf re-parenting,
+# placeholders).  Header-only (neurofileio structs only), so no link.
+add_executable(core_test_drift_partition drift_partition_test.cpp)
+target_compile_features(core_test_drift_partition PRIVATE cxx_std_17)
+target_include_directories(core_test_drift_partition
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_drift_partition COMMAND core_test_drift_partition)
+
 # Temporally-restricted projection scope (projectionscope.hpp): cluster->class
 # resolution, the union of a class's .wti drift windows, interval merge + the
 # in-scope test.  Header-only (builds the structs directly), so no link.
