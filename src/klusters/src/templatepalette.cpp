@@ -48,6 +48,7 @@ TemplatePalette::TemplatePalette(QWidget* parent)
     v->addWidget(scaleAbs_);
 
     connect(list_, &QListWidget::currentRowChanged, this, [this](int){ onRowChanged(); });
+    connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* it){ onItemClicked(it); });
     connect(newBtn_, &QPushButton::clicked, this, &TemplatePalette::onNewClicked);
     connect(delBtn_, &QPushButton::clicked, this, &TemplatePalette::onDeleteClicked);
     connect(scaleAbs_, &QCheckBox::toggled, this, [this](bool on){ Q_EMIT scaleAbsoluteToggled(on); });
@@ -134,12 +135,22 @@ void TemplatePalette::updateButtons()
 
 void TemplatePalette::onRowChanged()
 {
+    // Row selection is navigation only (Delete / `s` act on it).  The PRIMARY (★),
+    // which drives the overlay, is toggled by a click — see onItemClicked.
     updateButtons();
-    const int col = selectedClass();
-    if (col < 0) return;
-    classStore_.setPrimary(col);        // the palette's selection IS the active/primary class
-    rebuild();                          // refresh the ★ marker
-    Q_EMIT classSelected(col);
+}
+
+void TemplatePalette::onItemClicked(QListWidgetItem* item)
+{
+    if (!item) return;
+    const int col = item->data(Qt::UserRole).toInt();
+    // Click a non-primary class to MARK it primary (★); click the current primary
+    // again to UNMARK it — no primary means no overlay downstream.
+    const int newPrimary = (classStore_.primary() == col) ? -1 : col;
+    classStore_.setPrimary(newPrimary);
+    rebuild();                          // refresh the ★
+    updateButtons();
+    Q_EMIT classSelected(newPrimary);   // -1 clears the overlay / marks downstream
 }
 
 void TemplatePalette::onNewClicked()
@@ -157,10 +168,11 @@ int TemplatePalette::createClassFromSpikes(const std::vector<int64_t>& spikes, i
         QDate::currentDate().toString(Qt::ISODate).toStdString());
     if (col < 0) return -1;
     classStore_.save();
-    rebuild();
-    // Select the new class so it becomes active/primary.
+    rebuild();                          // createClass already made `col` the primary (★)
+    // Select the new class in the list and announce it as the primary downstream.
     for (int i = 0; i < list_->count(); ++i)
         if (list_->item(i)->data(Qt::UserRole).toInt() == col) { list_->setCurrentRow(i); break; }
+    Q_EMIT classSelected(col);
     Q_EMIT classesChanged();
     return col;
 }

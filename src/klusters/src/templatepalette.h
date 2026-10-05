@@ -23,6 +23,7 @@
 #include <vector>
 
 class QListWidget;
+class QListWidgetItem;
 class QLabel;
 class QPushButton;
 class QCheckBox;
@@ -69,6 +70,7 @@ protected:
 
 private Q_SLOTS:
     void onRowChanged();
+    void onItemClicked(QListWidgetItem* item);   ///< toggle the PRIMARY (★) on click
     void onNewClicked();
     void onDeleteClicked();
 

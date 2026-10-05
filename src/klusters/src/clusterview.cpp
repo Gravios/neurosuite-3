@@ -1711,10 +1711,17 @@ void ClusterView::refreshProjectionScope(){
 // ── manual-lineage overlay (template-curation plan §11.1, read-only) ─────────
 void ClusterView::toggleLineageOverlay()
 {
+    // Edit mode needs a PRIMARY template class: there is nothing to edit without one,
+    // and Shift+E must be a no-op until the curator marks a primary (its ★ in the palette).
+    if (!lineageOverlay_ && lineageActiveClass_ < 0) {
+        if (statusBar) statusBar->showMessage(
+            tr("Mark a primary template class first (click it in the palette) to edit its lineage"), 4000);
+        return;
+    }
     lineageOverlay_ = !lineageOverlay_;
     bool dimsChanged = false;
     if (lineageOverlay_) {
-        loadLineageOverlay();
+        if (!lineageLoaded_) { loadLineageOverlay(); lineageLoaded_ = lineageStore_.ok(); }
         // Force time (X) × energy-ladder feature (Y) so drift reads left→right and
         // the amplitude ladder reads vertically; save the prior projection to
         // restore on exit.  updateDimensions() is the view-wide lever (it drives
@@ -1770,7 +1777,8 @@ void ClusterView::loadLineageOverlay()
     // lineage instead of a blank overlay; stays in memory until a region is
     // populated and committed (an all-placeholder commit is refused).  Templates
     // mode is already gated upstream at the Shift+E dispatch.
-    if (lineageStore_.ok() && lineageStore_.nodeCount() == 0 && lineageStore_.partitionReady())
+    if (lineageStore_.ok() && lineageStore_.nodeCount() == 0 && lineageStore_.partitionReady()
+        && lineageActiveClass_ >= 0)
         lineageStore_.ensureClassTiled(lineageActiveClass_);
 }
 
@@ -1787,28 +1795,42 @@ void ClusterView::removeLineageClass(int classId)
     if (classId < 0) return;
     const int removed = lineageStore_.removeClass(classId);
     if (removed > 0) lineageStore_.saveWtl();          // make the deletion stick across a reload
-    if (lineageActiveClass_ == classId) lineageActiveClass_ = 0;   // a deleted class can't stay active
-    if (lineageOverlay_) {
-        recomputeLineagePositions();
-        pushActiveLineageBands();                      // the active class may have changed / lost nodes
-        drawContentsMode = REFRESH;
-        update();
+    if (lineageActiveClass_ == classId) {              // the deleted class can't stay primary
+        lineageActiveClass_ = -1;
+        markedNodes_.clear();
+        if (lineageOverlay_) toggleLineageOverlay();   // leave edit mode — no primary
+        clearTemplatePreviewOnViews();
     }
+    recomputeLineagePositions();
+    pushActiveLineageBands();                          // no primary -> clears; else refreshes
+    drawContentsMode = REFRESH;
+    update();
 }
 
 void ClusterView::setLineageActiveClass(int classId)
 {
-    if (classId < 0) return;
+    if (classId == lineageActiveClass_) return;        // no change
     lineageActiveClass_ = classId;
-    // When the overlay is live, make sure the chosen class is tiled across the
-    // regions (so its ribbon shows) and repaint.
-    if (lineageOverlay_ && lineageStore_.partitionReady()) {
-        lineageStore_.ensureClassTiled(classId);
-        recomputeLineagePositions();
-        pushActiveLineageBands();       // show the newly-active class's band (if it has any populated nodes)
+    markedNodes_.clear();                              // marks belonged to the previous primary
+
+    if (classId < 0) {
+        // Primary unset: drop the band and leave edit mode (nothing to edit without one).
+        if (lineageOverlay_) toggleLineageOverlay();   // off-branch restores the projection + clears the band
+        clearTemplatePreviewOnViews();
         drawContentsMode = REFRESH;
         update();
+        return;
     }
+
+    // A primary is marked: load its lineage so the mean band shows over the waveforms
+    // even outside edit mode.  In edit mode, also tile + repaint the scatter overlay.
+    if (!lineageLoaded_) { loadLineageOverlay(); lineageLoaded_ = lineageStore_.ok(); }
+    if (lineageOverlay_ && lineageStore_.partitionReady())
+        lineageStore_.ensureClassTiled(classId);
+    recomputeLineagePositions();
+    pushActiveLineageBands();
+    drawContentsMode = REFRESH;
+    update();
 }
 
 void ClusterView::recomputeLineagePositions()
@@ -2111,11 +2133,12 @@ void ClusterView::pushTemplatePreview(const neurosuite::templategen::Result& R)
 
 void ClusterView::pushActiveLineageBands()
 {
-    // Source the band straight from the active class's stored node summaries — the
+    // Source the band straight from the PRIMARY class's stored node summaries — the
     // nodes already carry {mean, std, count}, so there is nothing to render: a fold
     // is visible the instant it lands.  Each populated node (root or leaf) becomes a
-    // translucent mean±std band in the class colour over the spikes.
-    if (!lineageOverlay_) { clearTemplatePreviewOnViews(); return; }
+    // translucent mean±std band in the class colour over the spikes.  Shown whenever a
+    // primary is marked (not only in edit mode), and cleared when there is no primary.
+    if (lineageActiveClass_ < 0) { clearTemplatePreviewOnViews(); return; }
     const int nsamp = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
     const int nchan = doc.nbOfchannels();
     if (nsamp <= 0 || nchan <= 0) { clearTemplatePreviewOnViews(); return; }

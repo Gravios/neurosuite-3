@@ -29,6 +29,7 @@
 #include <atomic>
 #include <vector>
 #include <map>
+#include <set>
 #include <QImage>
 
 
@@ -557,7 +558,13 @@ private:
     // then mapped with worldToViewport every repaint.
     struct LineageNodeDraw { int node; int classId; int parent; bool drift; bool empty; QPoint world; double a; double b; };
     bool                         lineageOverlay_ = false;
-    int                          lineageActiveClass_ = 0;   ///< class the overlay edits (palette-driven)
+    int                          lineageActiveClass_ = -1;  ///< the PRIMARY template class (palette ★); -1 = none.
+                                                            ///< Drives the waveform band's visibility and gates edit mode.
+    std::set<int>                markedNodes_;              ///< node ids marked (edit-mode context menu) for the matrices;
+                                                            ///< cleared whenever the primary changes / is unset.
+    bool                         lineageLoaded_ = false;    ///< the .wtl forest is loaded for the open stage.  Loaded
+                                                            ///< once (lazily) and kept, so switching primary never
+                                                            ///< reloads and discards uncommitted in-memory edits.
     TemplateLineageStore         lineageStore_;
     std::vector<LineageNodeDraw> lineageDraw_;
     void loadLineageOverlay();                    ///< (re)load the store for the open stage
