@@ -37,7 +37,8 @@
 #include <vector>
 
 #include "array.h"
-#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
+#include "klustersjobpool.h"    // KlustersJobToken (shared with the jobs)
+#include "matrixtemplatecols.h" // MatrixTemplateCol — marked-node template strip (§11.5)
 
 #include <memory>
 
@@ -104,6 +105,15 @@ public:
      * cluster-count preference.  Public so applyPreferences() can call it when
      * the limit changes, rather than the change waiting for the next recompute.*/
     void refreshSliderEnabled();
+
+    /**Marked-node template strip (§11.5): the curator's marked lineage nodes
+     * pushed from ClusterView via KlustersView::setMatrixTemplateColumns.  Each
+     * cell is the drift-shifted xcorr between a cluster mean and a template mean
+     * at the current slider µm — ASYMMETRIC like the matrix body: the ROW is the
+     * shifted side (a cluster-row shifts +Δ against a template column; a
+     * template-row shifts −Δ against a cluster column), greyed where the cluster
+     * has no spikes in the node's time window.  Recomputed on every slider step.*/
+    void setTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
 
 Q_SIGNALS:
     void viewInteracted();
@@ -285,6 +295,26 @@ private:
     void setInfoText(const QString& text);
     /// Re-elide infoText to the label's current width.
     void updateInfoElide();
+
+    // ── marked-node template strip (§11.5) ────────────────────────────────
+    /**The marked templates to draw at the edge (empty = no strip).*/
+    std::vector<MatrixTemplateCol> tplCols_;
+    /**Per (template t, cluster j) drift-shifted xcorr, both off-diagonal
+     * directions kept separately because the drift matrix is asymmetric:
+     *  tplClusterRow_[t][j] — cell (row=cluster j, col=template t): cluster +Δ
+     *  tplTemplateRow_[t][j] — cell (row=template t, col=cluster j): template −Δ
+     * tplCorner_[t][u] is the template×template block (row t shifted +Δ if t<u,
+     * −Δ if t>u, 1 on the diagonal).  tplGrey_[t][j] greys where cluster j has no
+     * spikes in template t's window.  Sized M×N (M×M for the corner).*/
+    std::vector<std::vector<double>> tplClusterRow_;
+    std::vector<std::vector<double>> tplTemplateRow_;
+    std::vector<std::vector<double>> tplCorner_;
+    std::vector<std::vector<bool>>   tplGrey_;
+    /**Recompute the strip cells from the cached means at the current drift µm
+     * (cheap: a handful of templates × clusters).  Called on setTemplateColumns
+     * and on every accepted matrix/slider result (customEvent).*/
+    void recomputeTemplateStripCells();
+    void drawTemplateStrip(QPainter& painter);
 
     // ── helpers ──────────────────────────────────────────────────────────
     void launchComputeThread();

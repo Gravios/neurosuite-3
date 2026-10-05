@@ -19,6 +19,7 @@
 #include "matrixbadge.h"
 #include "driftmatrixthread.h"
 #include "driftmatrixkernel.h"
+#include "matrixtemplatecols.h"  // drawMatrixTemplateStrip — the shared edge-strip renderer
 #include "driftgeometry.h"
 #include "klustersdoc.h"
 #include "klustersview.h"
@@ -334,7 +335,8 @@ void DriftMatrixView::customEvent(QEvent* event)
         }
 
         if (!goingToDie) {
-            if (ok) { updateWindow(); setCursor(Qt::ArrowCursor); }
+            if (ok) { recomputeTemplateStripCells();   // same drift the body just moved to
+                      updateWindow(); setCursor(Qt::ArrowCursor); }
             update();
         }
         return;
@@ -394,8 +396,9 @@ void DriftMatrixView::customEvent(QEvent* event)
                                "correlations; the drift slider is disabled.").arg(why));
             }
 
-            updateWindow();
             dataReady = true;
+            recomputeTemplateStripCells();   // fresh means/clusters: refresh the strip
+            updateWindow();
             setCursor(Qt::ArrowCursor);
         } else if (computeToken->active.load(std::memory_order_acquire) == 0) {
             setCursor(Qt::ArrowCursor);
@@ -553,11 +556,15 @@ void DriftMatrixView::updateWindow()
 {
     const int n = clusterList.size();
     if (n <= 0) return;
+    // Reserve room for the marked-node template strip (gap + M cells) so it fits
+    // on screen instead of running off the right/bottom edge (as the others do).
+    const int nStrip = tplCols_.empty() ? 0 : (kTemplateStripGapCells + static_cast<int>(tplCols_.size()));
+    const int nTot   = n + nStrip;
     const int matH   = std::max(height() - CTRL_H - INFO_H, 1);
     const int availW = width() - LABEL_MARGIN - 10;
     const int availH = matH - 14 - 10;
-    const int fitW   = (availW > 0) ? availW / n : CELL_WIDTH;
-    const int fitH   = (availH > 0) ? availH / n : CELL_WIDTH;
+    const int fitW   = (availW > 0) ? availW / nTot : CELL_WIDTH;
+    const int fitH   = (availH > 0) ? availH / nTot : CELL_WIDTH;
     cellWidth        = std::max(4, std::min({fitW, fitH, CELL_WIDTH}));
     widthBorder      = cellWidth / 3 + 5;
     heightBorder     = cellWidth / 3 + 14;
@@ -663,6 +670,9 @@ void DriftMatrixView::drawMatrix(QPainter& p)
             drawMatrixParentBands(p, oriF, eff, parentPerCell, colourPerCell);
         }
     }
+
+    // Marked-node template columns/rows at the edge (drift-shifted xcorr, §11.5).
+    drawTemplateStrip(p);
 }
 
 void DriftMatrixView::drawClusterIds(QPainter& p)
@@ -692,6 +702,106 @@ void DriftMatrixView::drawClusterIds(QPainter& p)
     }
 }
 
+
+// ── marked-node template columns (§11.5) ──────────────────────────────────────
+void DriftMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
+{
+    tplCols_ = cols;
+    recomputeTemplateStripCells();
+    if (dataReady) updateWindow();   // refit so the strip (gap + M cells) is on screen
+    update();
+}
+
+void DriftMatrixView::recomputeTemplateStripCells()
+{
+    const int M = static_cast<int>(tplCols_.size());
+    const int N = clusterList.size();
+    tplClusterRow_.assign(M, std::vector<double>(N, 0.0));
+    tplTemplateRow_.assign(M, std::vector<double>(N, 0.0));
+    tplGrey_.assign(M, std::vector<bool>(N, true));
+    tplCorner_.assign(M, std::vector<double>(M, 0.0));
+    if (M == 0 || N == 0 || static_cast<int>(meanWav.size()) < N) return;
+
+    const int   nChan    = nChanCached, nSamp = nSampCached;
+    const int   maxShift = std::max(1, maxShiftCached);
+    const float delta    = static_cast<float>(currentDriftUm);
+    // Without probe geometry the shift is meaningless (the body shows unshifted
+    // correlations and the slider is disabled); mirror that for the strip.
+    const bool  canShift = geometryOk && delta != 0.0f
+                           && static_cast<int>(depths.size()) == nChan;
+
+    // Per-cluster spike-time RANGE [lo,hi] in samples (two feature reads: the
+    // cluster's spike block is time-ordered) — for the in-window greying.
+    const int timeDim = doc.data().timeDimension();
+    std::vector<double> cLo(N, 0.0), cHi(N, -1.0);              // cHi < cLo = "no spikes"
+    for (int j = 0; j < N; ++j) {
+        const auto idx = doc.data().clusterSpkIndices(clusterList[j]);
+        if (idx.isEmpty()) continue;
+        const double t0 = static_cast<double>(doc.data().featureValue(idx.first() + 1, timeDim));
+        const double t1 = static_cast<double>(doc.data().featureValue(idx.last()  + 1, timeDim));
+        cLo[j] = std::min(t0, t1); cHi[j] = std::max(t0, t1);
+    }
+    const double sr = doc.getSamplingRate();
+
+    std::vector<float> sh;                                     // per-template scratch
+    for (int t = 0; t < M; ++t) {
+        const double winLo = tplCols_[t].a * sr, winHi = tplCols_[t].b * sr;
+        const std::vector<float>& tpl = tplCols_[t].mean;
+        const bool tplOk = (static_cast<int>(tpl.size()) == nChan * nSamp);
+        std::vector<float> tplMinus;                           // template row shifted −Δ
+        if (tplOk && canShift) dmDriftShift(tpl, nChan, nSamp, depths, -delta, tplMinus);
+
+        for (int j = 0; j < N; ++j) {
+            const std::vector<float>& cl = meanWav[static_cast<size_t>(j)];
+            const bool sizeOk = tplOk && (cl.size() == tpl.size());
+            if (sizeOk) {
+                // cluster-row cell: shift the cluster +Δ (upper triangle), xcorr with template.
+                if (canShift) { dmDriftShift(cl, nChan, nSamp, depths, +delta, sh);
+                                tplClusterRow_[t][j] = dmNormXcorr(sh, tpl, maxShift); }
+                else            tplClusterRow_[t][j] = dmNormXcorr(cl, tpl, maxShift);
+                // template-row cell: shift the template −Δ (lower triangle), xcorr with cluster.
+                tplTemplateRow_[t][j] = canShift ? dmNormXcorr(tplMinus, cl, maxShift)
+                                                 : dmNormXcorr(tpl, cl, maxShift);
+            }
+            const bool noSpk = (cHi[j] < cLo[j]) || (cHi[j] < winLo) || (cLo[j] > winHi);
+            tplGrey_[t][j] = noSpk || !sizeOk;
+        }
+
+        for (int u = 0; u < M; ++u) {
+            const std::vector<float>& tu = tplCols_[u].mean;
+            if (!tplOk || tu.size() != tpl.size()) { tplCorner_[t][u] = 0.0; continue; }
+            if (t == u)                            { tplCorner_[t][u] = 1.0; continue; }  // diagonal
+            if (canShift) { dmDriftShift(tpl, nChan, nSamp, depths, (t < u ? +delta : -delta), sh);
+                            tplCorner_[t][u] = dmNormXcorr(sh, tu, maxShift); }
+            else            tplCorner_[t][u] = dmNormXcorr(tpl, tu, maxShift);
+        }
+    }
+}
+
+void DriftMatrixView::drawTemplateStrip(QPainter& p)
+{
+    const int M = static_cast<int>(tplCols_.size());
+    const int N = clusterList.size();
+    if (M == 0 || N == 0 || static_cast<int>(tplClusterRow_.size()) != M) return;
+    const QPointF oriF = effMatrixTopLeft();
+    const double  eff  = effCellSize();
+
+    // ASYMMETRIC: the row is the shifted side.  A cluster-row (r<N) against a
+    // template-col (c>=N) always has r<c -> +Δ on the cluster; a template-row
+    // (r>=N) against a cluster-col (c<N) always has r>c -> −Δ on the template.
+    auto value = [&](int r, int c, bool& grey)->double{
+        if (r < N && c >= N) { const int t = c - N; grey = tplGrey_[t][r]; return tplClusterRow_[t][r]; }
+        if (r >= N && c < N) { const int t = r - N; grey = tplGrey_[t][c]; return tplTemplateRow_[t][c]; }
+        grey = false; return tplCorner_[r - N][c - N];     // template×template corner
+    };
+    auto colourFor = [&](double v)->QColor{                // same ramp as drawMatrix
+        double r = std::max(0.0, std::min(1.0, v));
+        int idx = static_cast<int>(r * (NB_COLORS - 1) + 0.5);
+        idx = std::max(0, std::min(NB_COLORS - 1, idx));
+        return colorMap[idx];
+    };
+    drawMatrixTemplateStrip(p, oriF, eff, N, M, value, colourFor);
+}
 
 void DriftMatrixView::setInfoText(const QString& text)
 {

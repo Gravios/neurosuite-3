@@ -936,6 +936,9 @@ void KlustersView::setMatrixTemplateColumns(const std::vector<MatrixTemplateCol>
 
     const QList<ErrorMatrixView*> emvs = findChildren<ErrorMatrixView*>();
     for (ErrorMatrixView* v : emvs) v->setTemplateColumns(cols);
+
+    const QList<DriftMatrixView*> dmvs = findChildren<DriftMatrixView*>();
+    for (DriftMatrixView* v : dmvs) v->setTemplateColumns(cols);
 }
 
 void KlustersView::closeEvent(QCloseEvent* e){
