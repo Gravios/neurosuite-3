@@ -38,7 +38,7 @@
 
 #include "array.h"
 #include "klustersjobpool.h"    // KlustersJobToken (shared with the jobs)
-#include "matrixtemplatecols.h" // MatrixTemplateCol — marked-node template strip (§11.5)
+#include "matrixtemplatestrip.h" // MatrixTemplateStrip — shared marked-node template region (§11.5)
 
 #include <memory>
 
@@ -302,21 +302,18 @@ private:
     /// Re-elide infoText to the label's current width.
     void updateInfoElide();
 
-    // ── marked-node template strip (§11.5) ────────────────────────────────
-    /**The marked templates to draw at the edge (empty = no strip).*/
-    std::vector<MatrixTemplateCol> tplCols_;
+    // ── marked-node template region (§11.5) ───────────────────────────────
+    MatrixTemplateStrip strip_;   // columns + shade + geometry (shared helper)
     /**Per (template t, cluster j) drift-shifted xcorr, both off-diagonal
      * directions kept separately because the drift matrix is asymmetric:
      *  tplClusterRow_[t][j] — cell (row=cluster j, col=template t): cluster +Δ
      *  tplTemplateRow_[t][j] — cell (row=template t, col=cluster j): template −Δ
      * tplCorner_[t][u] is the template×template block (row t shifted +Δ if t<u,
-     * −Δ if t>u, 1 on the diagonal).  tplShade_[t][j] is the MatrixStripShade:
-     * value, dim (cluster j has no spikes in template t's window — the value is
-     * still shown, at half alpha), or grey (no data).  Sized M×N (M×M corner).*/
+     * −Δ if t>u, 1 on the diagonal).  The per-cell shade (value / dim / grey)
+     * lives in strip_.  Sized M×N (M×M corner).*/
     std::vector<std::vector<double>> tplClusterRow_;
     std::vector<std::vector<double>> tplTemplateRow_;
     std::vector<std::vector<double>> tplCorner_;
-    std::vector<std::vector<unsigned char>> tplShade_;
     /**Recompute the strip cells from the cached means at the current drift µm
      * (cheap: a handful of templates × clusters).  Called on setTemplateColumns
      * and on every accepted matrix/slider result (customEvent).*/

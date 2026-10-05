@@ -43,6 +43,7 @@ set(klusters_SRCS
     driftmatrixthread.cpp
     driftshiftthread.cpp
     driftmatrixview.cpp
+    matrixtemplatestrip.cpp    # shared marked-node template region for the 4 curation matrices (§11.5)
     rangeslider.cpp
     mergerecommendview.cpp
     mergerecommendthread.cpp

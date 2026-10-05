@@ -625,11 +625,10 @@ void ErrorMatrixView::recomputeCellWidth()
 {
     const int n = clusterList.size();
     if (n <= 0) { cellWidth = CELL_WIDTH; widthBorder = 5; heightBorder = 14; return; }
-    // Reserve room for the marked-node template strip (gap + M cells) so it fits
+    // Reserve room for the marked-node template region (gap + M cells) so it fits
     // on screen instead of running off the right/bottom edge (mirrors the other
     // three matrices).
-    const int nStrip = tplCols_.empty() ? 0 : (kTemplateStripGapCells + static_cast<int>(tplCols_.size()));
-    const int nTot   = n + nStrip;
+    const int nTot   = n + strip_.stripCells();
     const int matH   = std::max(height() - CONTROLS_H, 1);
     const int availW = width() - LABEL_MARGIN - 10;
     const int availH = matH - 14 - 10;
@@ -944,15 +943,15 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
 // ── marked-node template columns (§11.5) ──────────────────────────────────────
 void ErrorMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
 {
-    tplCols_ = cols;
-    updateWindow();              // refit so the strip (gap + M cells) is on screen
+    strip_.setColumns(cols);     // no computeShade: every error cell is solid grey
+    updateWindow();              // refit so the region (gap + M cells) is on screen
     drawContentsMode = REDRAW;
     update();
 }
 
 void ErrorMatrixView::drawTemplateStrip(QPainter& painter)
 {
-    const int M = static_cast<int>(tplCols_.size());
+    const int M = strip_.size();
     const int N = clusterList.size();
     if (M == 0 || N == 0) return;
     const QPointF oriF = effMatrixTopLeft();
@@ -1055,14 +1054,14 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
     // below, whose qBound would otherwise clamp such a click onto the last
     // cluster.  This view alone reorders its rows/columns, so the cluster axis
     // is passed in DISPLAY order — the click selects the cluster the user sees.
-    if(!tplCols_.empty()){
+    if(!strip_.empty()){
         QList<int> displayIds;
         displayIds.reserve(clusterList.size());
         for(int i = 0; i < clusterList.size(); ++i)
             displayIds.append(clusterList[displayToMatrix(i)]);
-        const MatrixStripHit sh = matrixStripHitTest(
+        const MatrixStripHit sh = strip_.hitTest(
             e->position().x(), e->position().y(),
-            effMatrixTopLeft(), effCellSize(), displayIds, tplCols_);
+            effMatrixTopLeft(), effCellSize(), displayIds);
         if(sh.ok){ emit templateCellActivated(sh.clusterId, sh.node); update(); return; }
     }
 

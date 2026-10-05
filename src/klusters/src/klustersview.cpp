@@ -926,40 +926,35 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
 
 }
 
+namespace {
+// Connect every curation matrix of type T in this display to the strip-cell
+// handler (idempotent via UniqueConnection, so repeated pushes never double up)
+// and push the current template columns.  Factors the four identical per-view
+// blocks setMatrixTemplateColumns used to repeat (§11.5, audit D5).  T is any of
+// the four matrix views: each declares templateCellActivated(int,int) and
+// setTemplateColumns(const std::vector<MatrixTemplateCol>&).
+template <class T>
+void pushTemplateColumnsTo(KlustersView* self, const std::vector<MatrixTemplateCol>& cols)
+{
+    const QList<T*> views = self->findChildren<T*>();
+    for (T* v : views) {
+        QObject::connect(v, &T::templateCellActivated,
+                         self, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
+        v->setTemplateColumns(cols);
+    }
+}
+} // namespace
+
 void KlustersView::setMatrixTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
 {
     // Forward to every curation matrix in this display.  The template/residual/drift
     // matrices compute a real cluster×template value; the error matrix greys them
-    // (no mean-waveform statistic).  All share the same setTemplateColumns API, and
-    // all emit templateCellActivated when the user clicks one of the extra cells —
-    // (re)connect each here (UniqueConnection, so repeated pushes never double up).
-    const QList<TemplateMatrixView*> tmvs = findChildren<TemplateMatrixView*>();
-    for (TemplateMatrixView* v : tmvs) {
-        connect(v, &TemplateMatrixView::templateCellActivated,
-                this, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
-        v->setTemplateColumns(cols);
-    }
-
-    const QList<ErrorMatrixView*> emvs = findChildren<ErrorMatrixView*>();
-    for (ErrorMatrixView* v : emvs) {
-        connect(v, &ErrorMatrixView::templateCellActivated,
-                this, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
-        v->setTemplateColumns(cols);
-    }
-
-    const QList<DriftMatrixView*> dmvs = findChildren<DriftMatrixView*>();
-    for (DriftMatrixView* v : dmvs) {
-        connect(v, &DriftMatrixView::templateCellActivated,
-                this, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
-        v->setTemplateColumns(cols);
-    }
-
-    const QList<ResidualMatrixView*> rmvs = findChildren<ResidualMatrixView*>();
-    for (ResidualMatrixView* v : rmvs) {
-        connect(v, &ResidualMatrixView::templateCellActivated,
-                this, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
-        v->setTemplateColumns(cols);
-    }
+    // (no mean-waveform statistic).  All share the same setTemplateColumns API and
+    // all emit templateCellActivated on a strip-cell click.
+    pushTemplateColumnsTo<TemplateMatrixView>(this, cols);
+    pushTemplateColumnsTo<ErrorMatrixView>(this, cols);
+    pushTemplateColumnsTo<DriftMatrixView>(this, cols);
+    pushTemplateColumnsTo<ResidualMatrixView>(this, cols);
 }
 
 void KlustersView::onTemplateCellActivated(int clusterId, int node)

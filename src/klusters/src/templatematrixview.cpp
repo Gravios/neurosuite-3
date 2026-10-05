@@ -546,8 +546,7 @@ void TemplateMatrixView::updateWindow()
     if (n <= 0) return;
     // Reserve room for the marked-node template strip (gap + M cells) so it fits
     // on screen instead of running off the right/bottom edge.
-    const int nStrip = tplCols_.empty() ? 0 : (kTemplateStripGapCells + static_cast<int>(tplCols_.size()));
-    const int nTot   = n + nStrip;
+    const int nTot   = n + strip_.stripCells();
     const int matH   = std::max(height() - CONTROLS_H, 1);
     matrixViewport   = QRect(0, 0, width(), matH);
     const int availW = width() - LABEL_MARGIN - 10;
@@ -633,9 +632,9 @@ void TemplateMatrixView::paintEvent(QPaintEvent*)
 // ── marked-node template columns (§11.5) ──────────────────────────────────────
 void TemplateMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
 {
-    tplCols_ = cols;
+    strip_.setColumns(cols);
     recomputeTemplateCells();
-    updateWindow();        // refit so the strip is on screen (it adds gap + M cells)
+    updateWindow();        // refit so the region is on screen (it adds gap + M cells)
     update();
 }
 
@@ -652,52 +651,43 @@ double TemplateMatrixView::templatePairXcorr(const std::vector<float>& a,
 
 void TemplateMatrixView::recomputeTemplateCells()
 {
-    const int M = static_cast<int>(tplCols_.size());
+    const auto& tc = strip_.cols();
+    const int M = static_cast<int>(tc.size());
     const int N = clusterList.size();
     tplVal_.assign(M, std::vector<double>(N, 0.0));
-    tplShade_.assign(M, std::vector<unsigned char>(N, MatrixStripGrey));
     tplCorner_.assign(M, std::vector<double>(M, 0.0));
     if (M == 0 || N == 0 || static_cast<int>(meanWav.size()) < N) return;
 
-    // Per-cluster spike-time RANGE [lo,hi] in samples (two feature reads: the cluster's
-    // spike block is time-ordered, so the ends bound it) — for the in-window dimming.
-    const int timeDim = doc.data().timeDimension();
-    std::vector<double> cLo(N, 0.0), cHi(N, -1.0);              // cHi < cLo = "no spikes"
-    for (int j = 0; j < N; ++j) {
-        const QVector<int> idx = doc.data().clusterSpkIndices(clusterList[j]);
-        if (idx.isEmpty()) continue;
-        const double t0 = static_cast<double>(doc.data().featureValue(idx.first() + 1, timeDim));
-        const double t1 = static_cast<double>(doc.data().featureValue(idx.last()  + 1, timeDim));
-        cLo[j] = std::min(t0, t1); cHi[j] = std::max(t0, t1);
-    }
-    const double sr = doc.getSamplingRate();
+    // A template column compares to a cluster only when their means are the same
+    // length — the single predicate that drives both the value and the shade.
+    auto hasData = [&](int i, int j) {
+        return !tc[static_cast<size_t>(i)].mean.empty()
+               && meanWav[static_cast<size_t>(j)].size() == tc[static_cast<size_t>(i)].mean.size();
+    };
 
     for (int i = 0; i < M; ++i) {
-        const double winLo = tplCols_[i].a * sr, winHi = tplCols_[i].b * sr;   // s -> samples
-        for (int j = 0; j < N; ++j) {
-            const bool hasData = !tplCols_[i].mean.empty()
-                                 && meanWav[static_cast<size_t>(j)].size() == tplCols_[i].mean.size();
-            tplVal_[i][j] = hasData ? templatePairXcorr(meanWav[static_cast<size_t>(j)], tplCols_[i].mean) : 0.0;
-            const bool noSpk = (cHi[j] < cLo[j]) || (cHi[j] < winLo) || (cLo[j] > winHi);  // ranges disjoint
-            // No data -> solid grey; data but no time overlap -> dim the (still-shown) value.
-            tplShade_[i][j] = !hasData ? MatrixStripGrey : (noSpk ? MatrixStripDim : MatrixStripValue);
-        }
+        for (int j = 0; j < N; ++j)
+            tplVal_[i][j] = hasData(i, j)
+                ? templatePairXcorr(meanWav[static_cast<size_t>(j)], tc[static_cast<size_t>(i)].mean) : 0.0;
         for (int u = 0; u < M; ++u)
-            tplCorner_[i][u] = templatePairXcorr(tplCols_[i].mean, tplCols_[u].mean);
+            tplCorner_[i][u] = templatePairXcorr(tc[static_cast<size_t>(i)].mean, tc[static_cast<size_t>(u)].mean);
     }
+    // The in-window dimming (spike-time range vs each node's [a,b]) now lives in the
+    // shared helper, fed the same hasData predicate.
+    strip_.computeShade(doc, clusterList, hasData);
 }
 
 void TemplateMatrixView::drawTemplateStrip(QPainter& p)
 {
-    const int M = static_cast<int>(tplCols_.size());
+    const int M = strip_.size();
     const int N = clusterList.size();
     if (M == 0 || N == 0 || static_cast<int>(tplVal_.size()) != M) return;
     const QPointF oriF = effMatrixTopLeft();
     const double  eff  = effCellSize();
 
     auto value = [&](int r, int c, MatrixStripShade& shade)->double{   // xcorr is symmetric
-        if (r < N && c >= N) { const int t = c - N; shade = static_cast<MatrixStripShade>(tplShade_[t][r]); return tplVal_[t][r]; }
-        if (r >= N && c < N) { const int t = r - N; shade = static_cast<MatrixStripShade>(tplShade_[t][c]); return tplVal_[t][c]; }
+        if (r < N && c >= N) { const int t = c - N; shade = strip_.shade(t, r); return tplVal_[t][r]; }
+        if (r >= N && c < N) { const int t = r - N; shade = strip_.shade(t, c); return tplVal_[t][c]; }
         shade = MatrixStripValue; return tplCorner_[r - N][c - N];     // template×template corner
     };
     auto colourFor = [&](double v)->QColor{ return colorMap[colourIndexFor(v, NB_COLORS)]; };
@@ -948,12 +938,12 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
     emit viewInteracted();
     if (!dataReady || clusterList.isEmpty()) return;
 
-    // Marked-node template strip (§11.5): a click on a strip cell selects the
-    // cell's cluster and overlays its node, handled by KlustersView.
-    if (!tplCols_.empty()) {
-        const MatrixStripHit sh = matrixStripHitTest(
+    // Marked-node template region (§11.5): a click on one of the extra cells
+    // selects the cell's cluster and overlays its node, handled by KlustersView.
+    if (!strip_.empty()) {
+        const MatrixStripHit sh = strip_.hitTest(
             e->position().x(), e->position().y(),
-            effMatrixTopLeft(), effCellSize(), clusterList, tplCols_);
+            effMatrixTopLeft(), effCellSize(), clusterList);
         if (sh.ok) { emit templateCellActivated(sh.clusterId, sh.node); update(); return; }
     }
 

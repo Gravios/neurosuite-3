@@ -24,7 +24,7 @@
 #include "array.h"
 #include "pair.h"
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
-#include "matrixtemplatecols.h"   // MatrixTemplateCol — marked-node template columns
+#include "matrixtemplatestrip.h"  // MatrixTemplateStrip — shared marked-node template region (§11.5)
 
 class KlustersDoc;
 class KlustersView;
@@ -289,13 +289,11 @@ private:
     std::vector<std::vector<float>> meanWav;    // [clusterIdx] channel-major mean
     std::vector<std::vector<int>>   allFileIdx; // [clusterIdx] 0-based .spk indices
 
-    // ── marked-node template columns (§11.5) ─────────────────────────────────
-    std::vector<MatrixTemplateCol>   tplCols_;   // marked templates (empty = no strip)
+    // ── marked-node template region (§11.5) ─────────────────────────────────
+    MatrixTemplateStrip              strip_;     // columns + shade + geometry (shared helper)
     std::vector<std::vector<double>> tplVal_;    // [tpl][cluster] cluster×template xcorr
-    std::vector<std::vector<unsigned char>> tplShade_; // [tpl][cluster] MatrixStripShade: value /
-                                                       // dim (no spikes in [a,b]) / grey (no data)
     std::vector<std::vector<double>> tplCorner_; // [tpl][tpl]     template×template xcorr
-    /** Recompute tplVal_ / tplShade_ / tplCorner_ from the current means + the metric
+    /** Recompute tplVal_ / strip_ shade / tplCorner_ from the current means + the metric
      *  (cheap: a handful of templates × clusters).  Called on setTemplateColumns, on a
      *  fresh matrix (means changed) and on a metric change. */
     void recomputeTemplateCells();

@@ -558,8 +558,7 @@ void DriftMatrixView::updateWindow()
     if (n <= 0) return;
     // Reserve room for the marked-node template strip (gap + M cells) so it fits
     // on screen instead of running off the right/bottom edge (as the others do).
-    const int nStrip = tplCols_.empty() ? 0 : (kTemplateStripGapCells + static_cast<int>(tplCols_.size()));
-    const int nTot   = n + nStrip;
+    const int nTot   = n + strip_.stripCells();
     const int matH   = std::max(height() - CTRL_H - INFO_H, 1);
     const int availW = width() - LABEL_MARGIN - 10;
     const int availH = matH - 14 - 10;
@@ -706,19 +705,19 @@ void DriftMatrixView::drawClusterIds(QPainter& p)
 // ── marked-node template columns (§11.5) ──────────────────────────────────────
 void DriftMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
 {
-    tplCols_ = cols;
+    strip_.setColumns(cols);
     recomputeTemplateStripCells();
-    if (dataReady) updateWindow();   // refit so the strip (gap + M cells) is on screen
+    if (dataReady) updateWindow();   // refit so the region (gap + M cells) is on screen
     update();
 }
 
 void DriftMatrixView::recomputeTemplateStripCells()
 {
-    const int M = static_cast<int>(tplCols_.size());
+    const auto& tc = strip_.cols();
+    const int M = static_cast<int>(tc.size());
     const int N = clusterList.size();
     tplClusterRow_.assign(M, std::vector<double>(N, 0.0));
     tplTemplateRow_.assign(M, std::vector<double>(N, 0.0));
-    tplShade_.assign(M, std::vector<unsigned char>(N, MatrixStripGrey));
     tplCorner_.assign(M, std::vector<double>(M, 0.0));
     if (M == 0 || N == 0 || static_cast<int>(meanWav.size()) < N) return;
 
@@ -726,50 +725,38 @@ void DriftMatrixView::recomputeTemplateStripCells()
     const int   maxShift = std::max(1, maxShiftCached);
     const float delta    = static_cast<float>(currentDriftUm);
     // Without probe geometry the shift is meaningless (the body shows unshifted
-    // correlations and the slider is disabled); mirror that for the strip.
+    // correlations and the slider is disabled); mirror that for the region.
     const bool  canShift = geometryOk && delta != 0.0f
                            && static_cast<int>(depths.size()) == nChan;
 
-    // Per-cluster spike-time RANGE [lo,hi] in samples (two feature reads: the
-    // cluster's spike block is time-ordered) — for the in-window greying.
-    const int timeDim = doc.data().timeDimension();
-    std::vector<double> cLo(N, 0.0), cHi(N, -1.0);              // cHi < cLo = "no spikes"
-    for (int j = 0; j < N; ++j) {
-        const auto idx = doc.data().clusterSpkIndices(clusterList[j]);
-        if (idx.isEmpty()) continue;
-        const double t0 = static_cast<double>(doc.data().featureValue(idx.first() + 1, timeDim));
-        const double t1 = static_cast<double>(doc.data().featureValue(idx.last()  + 1, timeDim));
-        cLo[j] = std::min(t0, t1); cHi[j] = std::max(t0, t1);
-    }
-    const double sr = doc.getSamplingRate();
+    // A template column compares to a cluster only when their means are the same
+    // length — the single predicate for both the value and the shade.
+    auto hasData = [&](int t, int j) {
+        return static_cast<int>(tc[static_cast<size_t>(t)].mean.size()) == nChan * nSamp
+               && meanWav[static_cast<size_t>(j)].size() == tc[static_cast<size_t>(t)].mean.size();
+    };
 
     std::vector<float> sh;                                     // per-template scratch
     for (int t = 0; t < M; ++t) {
-        const double winLo = tplCols_[t].a * sr, winHi = tplCols_[t].b * sr;
-        const std::vector<float>& tpl = tplCols_[t].mean;
+        const std::vector<float>& tpl = tc[static_cast<size_t>(t)].mean;
         const bool tplOk = (static_cast<int>(tpl.size()) == nChan * nSamp);
         std::vector<float> tplMinus;                           // template row shifted −Δ
         if (tplOk && canShift) dmDriftShift(tpl, nChan, nSamp, depths, -delta, tplMinus);
 
         for (int j = 0; j < N; ++j) {
+            if (!hasData(t, j)) continue;                      // leave the row/col pair at 0 (shaded grey)
             const std::vector<float>& cl = meanWav[static_cast<size_t>(j)];
-            const bool sizeOk = tplOk && (cl.size() == tpl.size());
-            if (sizeOk) {
-                // cluster-row cell: shift the cluster +Δ (upper triangle), xcorr with template.
-                if (canShift) { dmDriftShift(cl, nChan, nSamp, depths, +delta, sh);
-                                tplClusterRow_[t][j] = dmNormXcorr(sh, tpl, maxShift); }
-                else            tplClusterRow_[t][j] = dmNormXcorr(cl, tpl, maxShift);
-                // template-row cell: shift the template −Δ (lower triangle), xcorr with cluster.
-                tplTemplateRow_[t][j] = canShift ? dmNormXcorr(tplMinus, cl, maxShift)
-                                                 : dmNormXcorr(tpl, cl, maxShift);
-            }
-            const bool noSpk = (cHi[j] < cLo[j]) || (cHi[j] < winLo) || (cLo[j] > winHi);
-            // No data -> solid grey; data but no time overlap -> dim the (still-shown) value.
-            tplShade_[t][j] = !sizeOk ? MatrixStripGrey : (noSpk ? MatrixStripDim : MatrixStripValue);
+            // cluster-row cell: shift the cluster +Δ (upper triangle), xcorr with template.
+            if (canShift) { dmDriftShift(cl, nChan, nSamp, depths, +delta, sh);
+                            tplClusterRow_[t][j] = dmNormXcorr(sh, tpl, maxShift); }
+            else            tplClusterRow_[t][j] = dmNormXcorr(cl, tpl, maxShift);
+            // template-row cell: shift the template −Δ (lower triangle), xcorr with cluster.
+            tplTemplateRow_[t][j] = canShift ? dmNormXcorr(tplMinus, cl, maxShift)
+                                             : dmNormXcorr(tpl, cl, maxShift);
         }
 
         for (int u = 0; u < M; ++u) {
-            const std::vector<float>& tu = tplCols_[u].mean;
+            const std::vector<float>& tu = tc[static_cast<size_t>(u)].mean;
             if (!tplOk || tu.size() != tpl.size()) { tplCorner_[t][u] = 0.0; continue; }
             if (t == u)                            { tplCorner_[t][u] = 1.0; continue; }  // diagonal
             if (canShift) { dmDriftShift(tpl, nChan, nSamp, depths, (t < u ? +delta : -delta), sh);
@@ -777,11 +764,14 @@ void DriftMatrixView::recomputeTemplateStripCells()
             else            tplCorner_[t][u] = dmNormXcorr(tpl, tu, maxShift);
         }
     }
+    // The in-window dimming (spike-time range vs each node's [a,b]) lives in the
+    // shared helper, fed the same hasData predicate.
+    strip_.computeShade(doc, clusterList, hasData);
 }
 
 void DriftMatrixView::drawTemplateStrip(QPainter& p)
 {
-    const int M = static_cast<int>(tplCols_.size());
+    const int M = strip_.size();
     const int N = clusterList.size();
     if (M == 0 || N == 0 || static_cast<int>(tplClusterRow_.size()) != M) return;
     const QPointF oriF = effMatrixTopLeft();
@@ -791,8 +781,8 @@ void DriftMatrixView::drawTemplateStrip(QPainter& p)
     // template-col (c>=N) always has r<c -> +Δ on the cluster; a template-row
     // (r>=N) against a cluster-col (c<N) always has r>c -> −Δ on the template.
     auto value = [&](int r, int c, MatrixStripShade& shade)->double{
-        if (r < N && c >= N) { const int t = c - N; shade = static_cast<MatrixStripShade>(tplShade_[t][r]); return tplClusterRow_[t][r]; }
-        if (r >= N && c < N) { const int t = r - N; shade = static_cast<MatrixStripShade>(tplShade_[t][c]); return tplTemplateRow_[t][c]; }
+        if (r < N && c >= N) { const int t = c - N; shade = strip_.shade(t, r); return tplClusterRow_[t][r]; }
+        if (r >= N && c < N) { const int t = r - N; shade = strip_.shade(t, c); return tplTemplateRow_[t][c]; }
         shade = MatrixStripValue; return tplCorner_[r - N][c - N];     // template×template corner
     };
     auto colourFor = [&](double v)->QColor{                // same ramp as drawMatrix
@@ -934,10 +924,10 @@ void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)
     // Marked-node template region (§11.5): a click on one of the extra template
     // rows/columns selects that cell's cluster and overlays its node (handled by
     // KlustersView), before the cluster-pair hit-test below.
-    if (!tplCols_.empty()) {
-        const MatrixStripHit sh = matrixStripHitTest(
+    if (!strip_.empty()) {
+        const MatrixStripHit sh = strip_.hitTest(
             e->position().x(), e->position().y(),
-            effMatrixTopLeft(), effCellSize(), clusterList, tplCols_);
+            effMatrixTopLeft(), effCellSize(), clusterList);
         if (sh.ok) { emit templateCellActivated(sh.clusterId, sh.node); update(); return; }
     }
 

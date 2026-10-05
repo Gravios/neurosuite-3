@@ -41,7 +41,7 @@
 #include "pair.h"
 #include "data.h"              // Data::ClusteringSnapshot (the raw cache's epoch key)
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
-#include "matrixtemplatecols.h" // MatrixTemplateCol — marked-node template strip (§11.5)
+#include "matrixtemplatestrip.h" // MatrixTemplateStrip — shared marked-node template region (§11.5)
 
 // forward declaration
 class KlustersDoc;
@@ -409,9 +409,10 @@ private:
         const std::shared_ptr<const Data::ClusteringSnapshot>& jobSnap,
         QHash<int,int>* renamedFromTo = nullptr) const;
 
-    /**Marked-node templates to draw as the edge strip (empty = no strip).  Stored
-     * only for geometry/room; the error matrix computes no per-cell value (all grey).*/
-    std::vector<MatrixTemplateCol> tplCols_;
+    /**Marked-node template region (shared helper).  The error matrix stores only
+     * the columns for geometry/room + hit-test; it computes no per-cell value and
+     * never calls computeShade — every cell is drawn solid grey (no waveform stat).*/
+    MatrixTemplateStrip strip_;
 
     /**List of the clusters which have been modified since the last computation of the errror matrix.*/
     QList<int> modifiedClusterList;
