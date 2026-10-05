@@ -1415,6 +1415,35 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
         }
     }
 
+    // Plain Left in the overlay, with the default ZOOM tool: MARK/unmark the node
+    // under the cursor (the left-click counterpart of the right-click Mark/Unmark,
+    // §11.5) instead of starting a rubber-band zoom.  This replaces the ZOOM tool's
+    // left-click only — Ctrl+Left still pans, Shift+Left still grabs a region
+    // boundary, the lasso tools (NEW_CLUSTER, …) keep their left-click, and
+    // Ctrl+wheel / double-click still zoom.  The press is consumed whether or not a
+    // node was hit, so the feature view no longer zooms on a stray left-click while
+    // the curator is marking.
+    if (lineageOverlay_ && mode == ZOOM && e->button() == Qt::LeftButton
+        && !(e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier))) {
+        const int nodeId = lineageNodeAt(e->position().toPoint());
+        if (nodeId >= 0) {
+            const neurofileio::WtlNode* n = lineageStore_.node(nodeId);
+            const bool marked  = (markedNodes_.count(nodeId) > 0);
+            const bool canMark = (n && n->count > 0);      // an empty placeholder has no template
+            if (marked || canMark) {
+                if (marked) markedNodes_.erase(nodeId); else markedNodes_.insert(nodeId);
+                Q_EMIT lineageMarksChanged();
+                if (statusBar) statusBar->showMessage(
+                    marked ? tr("Node unmarked (removed from the curation matrices)")
+                           : tr("Node marked (added to the curation matrices)"), 2000);
+                drawContentsMode = REFRESH;
+                update();
+            }
+        }
+        e->accept();
+        return;
+    }
+
     //Defining a time window t oupdate the Traceview
     if(mode == SELECT_TIME){
         QPoint current = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
