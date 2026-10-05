@@ -605,12 +605,6 @@ private:
     double lineageDragBoundaryT_ = 0.0;       ///< live preview time (s) while dragging
     void   showLineageContextMenu(const QPoint& vp);
     void   commitLineageOverlay();            ///< render the model (.mti/.mtf) from the forest
-    // Edit-mode template preview (plan §11.4): after a commit the rendered model
-    // waveforms (carried in the engine Result, one .spk-layout record per forest
-    // node) are pushed to the WaveformView(s), which draw them in the foreground
-    // over the first shown cluster's mean±std band.  clearTemplatePreviewOnViews
-    // drops them again when the overlay is switched off.
-    void   pushTemplatePreview(const neurosuite::templategen::Result& R);
     // Push the ACTIVE class's populated nodes/leaves to the WaveformView(s) as a
     // translucent mean±std band, straight from the stored node summaries (no commit
     // / render needed).  Called on class-select, after an edit, on overlay-on and

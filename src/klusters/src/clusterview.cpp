@@ -2138,47 +2138,21 @@ void ClusterView::commitLineageOverlay()
     update();
 }
 
-void ClusterView::pushTemplatePreview(const neurosuite::templategen::Result& R)
+// Transpose a lineage node's SAMPLE-major summary (smp*nChan + ch, how WtlNode
+// stores its running mean/std) into the CHANNEL-major layout (ch*nSamp + smp)
+// the WaveformView and the curation matrices want.  Used for both the mean and
+// the std; a src that is not nChan*nSamp long (e.g. a node with no std) leaves
+// dst empty, so callers can test dst.empty() for "no std".
+static void nodeToChannelMajor(const std::vector<float>& src, int nchan, int nsamp,
+                               std::vector<float>& dst)
 {
-    // The engine Result carries the rendered model in memory: one .spk-layout
-    // (sample-major, channel-fastest: s*nChan + ch) int16 record per forest node,
-    // in R.wtf[variant], indexed by R.rows[i].row.  The WaveformView wants raw
-    // CHANNEL-MAJOR float curves (ch*nSamp + i), so transpose each kept record.
-    if (R.wtf.empty() || R.rows.empty()) { clearTemplatePreviewOnViews(); return; }
-    const std::vector<int16_t>& stack = R.wtf.begin()->second;   // the store renders one variant
-    const int nsamp = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
-    const int nchan = doc.nbOfchannels();
-    if (nsamp <= 0 || nchan <= 0) { clearTemplatePreviewOnViews(); return; }
     const std::size_t recLen = static_cast<std::size_t>(nsamp) * static_cast<std::size_t>(nchan);
-
-    std::vector<std::vector<float>> templates;
-    std::vector<QColor>             colors;
-    templates.reserve(R.rows.size());
-    colors.reserve(R.rows.size());
-    for (const neurofileio::WtiRow& row : R.rows) {
-        if (row.nSpikes <= 0) continue;                          // skip empty placeholders
-        const std::size_t off = static_cast<std::size_t>(row.row) * recLen;
-        if (off + recLen > stack.size()) continue;               // defensive: ragged stack
-        std::vector<float> chMajor(recLen);
-        for (int s = 0; s < nsamp; ++s)
-            for (int ch = 0; ch < nchan; ++ch)
-                chMajor[static_cast<std::size_t>(ch) * nsamp + s] =
-                    static_cast<float>(stack[off + static_cast<std::size_t>(s) * nchan + ch]);
-        templates.push_back(std::move(chMajor));
-        colors.push_back(lineageClassColor(row.unitId));
-    }
-    if (templates.empty()) { clearTemplatePreviewOnViews(); return; }
-
-    // Band = the first shown cluster's mean±std (edit-mode grey underlay).
-    QList<int> cl = view.clusters();
-    std::sort(cl.begin(), cl.end());
-    int bandCluster = -1;
-    for (int c : cl) if (c > 1) { bandCluster = c; break; }
-
-    for (ViewWidget* w : view.getViewList())
-        if (WaveformView* wv = qobject_cast<WaveformView*>(w))
-            wv->setTemplatePreview(/*editMode*/true, nchan, nsamp, templates, colors,
-                                   bandCluster, lineageScaleAbsolute_);
+    if (src.size() != recLen) { dst.clear(); return; }
+    dst.resize(recLen);
+    for (int smp = 0; smp < nsamp; ++smp)
+        for (int ch = 0; ch < nchan; ++ch)
+            dst[static_cast<std::size_t>(ch) * nsamp + smp] =
+                src[static_cast<std::size_t>(smp) * nchan + ch];
 }
 
 void ClusterView::pushActiveLineageBands()
@@ -2202,15 +2176,10 @@ void ClusterView::pushActiveLineageBands()
         if (lineageSingleNode_ >= 0) { if (n.node != lineageSingleNode_) continue; }
         else if (n.classId != lineageActiveClass_) continue;
         if (n.count <= 0 || n.mean.size() != recLen) continue;      // skip empty placeholders
-        const bool haveStd = (n.std.size() == recLen);
-        std::vector<float> m(recLen), s(recLen, 0.f);
-        for (int smp = 0; smp < nsamp; ++smp)                       // node summary: sample-major
-            for (int ch = 0; ch < nchan; ++ch) {                    // waveform view: channel-major
-                const std::size_t src = static_cast<std::size_t>(smp) * nchan + ch;
-                const std::size_t dst = static_cast<std::size_t>(ch) * nsamp + smp;
-                m[dst] = n.mean[src];
-                if (haveStd) s[dst] = n.std[src];
-            }
+        std::vector<float> m, s;
+        nodeToChannelMajor(n.mean, nchan, nsamp, m);                // node summary -> channel-major
+        nodeToChannelMajor(n.std,  nchan, nsamp, s);                // empty if the node has no std
+        if (s.empty()) s.assign(recLen, 0.f);                       // the band wants a parallel std
         templates.push_back(std::move(m));
         stds.push_back(std::move(s));
         colors.push_back(lineageClassColor(n.classId));
@@ -2241,16 +2210,8 @@ std::vector<MatrixTemplateCol> ClusterView::markedTemplates() const
         const neurofileio::WtlNode* n = lineageStore_.node(id);
         if (!n || n->count <= 0 || n->mean.size() != recLen) continue;   // placeholders have no template
         MatrixTemplateCol mt; mt.node = n->node; mt.classId = n->classId; mt.a = n->a; mt.b = n->b;
-        mt.mean.resize(recLen);
-        const bool haveStd = (n->std.size() == recLen);        // residual needs the node's noise floor
-        if (haveStd) mt.std.resize(recLen);
-        for (int smp = 0; smp < nsamp; ++smp)                 // node summary: sample-major
-            for (int ch = 0; ch < nchan; ++ch) {              // -> channel-major (ch*nSamp + smp)
-                const std::size_t dst = static_cast<std::size_t>(ch) * nsamp + smp;
-                const std::size_t src = static_cast<std::size_t>(smp) * nchan + ch;
-                mt.mean[dst] = n->mean[src];
-                if (haveStd) mt.std[dst] = n->std[src];
-            }
+        nodeToChannelMajor(n->mean, nchan, nsamp, mt.mean);        // node summary -> channel-major
+        nodeToChannelMajor(n->std,  nchan, nsamp, mt.std);         // left empty if the node has no std
         out.push_back(std::move(mt));
     }
     // Present the extra template rows/columns in TIME order (the node's window
