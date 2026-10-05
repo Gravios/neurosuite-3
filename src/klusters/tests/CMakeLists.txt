@@ -45,3 +45,18 @@ target_include_directories(klusters_test_templateclassstore
     PRIVATE "${_klu_src}" "${_shared}" "${_core}")
 target_link_libraries(klusters_test_templateclassstore PRIVATE Neurosuite::core)
 add_test(NAME klusters_test_templateclassstore COMMAND klusters_test_templateclassstore)
+
+# MatrixTemplateStrip geometry — the §11.5 marked-node template region's pixel
+# <-> cell math and click hit-test (matrixtemplatecols.h).  Unlike the Qt-free
+# suites above this one pulls QPointF/QColor, so it links Qt6 Core+Gui; guarded
+# so a Qt-less configure just skips it.  The per-cell shade (computeShade) needs
+# a live KlustersDoc and is not covered here.
+find_package(Qt6 COMPONENTS Core Gui QUIET)
+if(Qt6_FOUND)
+    add_executable(klusters_test_matrixtemplatestrip matrixtemplatestrip_test.cpp)
+    target_compile_features(klusters_test_matrixtemplatestrip PRIVATE cxx_std_20)
+    target_include_directories(klusters_test_matrixtemplatestrip
+        PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    target_link_libraries(klusters_test_matrixtemplatestrip PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME klusters_test_matrixtemplatestrip COMMAND klusters_test_matrixtemplatestrip)
+endif()
