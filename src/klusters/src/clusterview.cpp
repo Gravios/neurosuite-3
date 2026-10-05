@@ -2138,15 +2138,43 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
         if (menu.exec(mapToGlobal(vp)) == aDel) { lineageStore_.deleteBoundary(boundary); lineageEdited(); }
         return;
     }
-    // Empty space: split the clicked region (X must be time) or commit.
-    const double tsec = timeAtViewport(vp);
+    // Empty space (the click missed a root ribbon and a boundary line).  The root
+    // ribbon is a thin strip at the very top, so requiring a pixel-accurate hit on
+    // it to add a drift/leaf was the "no right-click menu to generate leaves" the
+    // curator ran into.  Instead, when the overlay is in its time×amplitude
+    // projection and a class is active (the palette selection), a right-click
+    // ANYWHERE in a region's column edits THAT class's root for the region under
+    // the cursor — the same three Add actions the ribbon offers, plus split/commit.
+    const double tsec    = timeAtViewport(vp);
+    const bool   timeX   = (dimensionX == timeDimension && lineageStore_.partitionReady());
+    const int    acls    = lineageActiveClass_;
+    const int    aregion = (timeX && tsec > 0.0) ? lineageStore_.partition().regionOf(tsec) : -1;
+    const bool   canEdit = !sel.empty() && acls >= 0 && aregion >= 0;
+
+    QAction* aDrift = nullptr; QAction* aAdapt = nullptr; QAction* aColl = nullptr;
+    if (aregion >= 0) {
+        aDrift = menu.addAction(tr("Add shown clusters to region drift (class %1)").arg(acls));
+        aAdapt = menu.addAction(tr("Add adapt leaf from shown clusters (class %1)").arg(acls));
+        aColl  = menu.addAction(tr("Add collision leaf from shown clusters (class %1)").arg(acls));
+        aDrift->setEnabled(canEdit); aAdapt->setEnabled(canEdit); aColl->setEnabled(canEdit);
+        if (sel.empty()) {
+            const QString hint = tr("Select the source clusters in the feature view first.");
+            aDrift->setToolTip(hint); aAdapt->setToolTip(hint); aColl->setToolTip(hint);
+        }
+        menu.addSeparator();
+    }
     QAction* aSplit = menu.addAction(tr("Split region here"));
-    aSplit->setEnabled(lineageStore_.partitionReady() && tsec > 0.0);
+    aSplit->setEnabled(timeX && tsec > 0.0);
     menu.addSeparator();
     QAction* aCommit = menu.addAction(tr("Commit lineage (render .mti/.mtf)"));
     const QAction* c = menu.exec(mapToGlobal(vp));
-    if      (c == aSplit)  { lineageStore_.splitAt(tsec); lineageEdited(); }
-    else if (c == aCommit)   commitLineageOverlay();
+    // ensureClassTiled makes the (class,region) drift-root exist before a fold, so a
+    // body click works even on a class whose ribbon was never explicitly tiled.
+    if      (c && c == aDrift) { lineageStore_.ensureClassTiled(acls); lineageStore_.setRegionSpikes(acls, aregion, sel);           lineageEdited(); }
+    else if (c && c == aAdapt) { lineageStore_.ensureClassTiled(acls); lineageStore_.addLeaf(acls, aregion, "adapt-leaf", sel);     lineageEdited(); }
+    else if (c && c == aColl)  { lineageStore_.ensureClassTiled(acls); lineageStore_.addLeaf(acls, aregion, "collision-leaf", sel); lineageEdited(); }
+    else if (c == aSplit)      { lineageStore_.splitAt(tsec); lineageEdited(); }
+    else if (c == aCommit)       commitLineageOverlay();
 }
 
 void ClusterView::startOblique(){
