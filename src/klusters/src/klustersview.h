@@ -36,6 +36,7 @@
 #include "itemcolors.h"
 #include "data.h"
 #include "viewwidget.h"
+#include "matrixtemplatecols.h"   // MatrixTemplateCol (marked-node template columns)
 #include "correlationview.h"
 #include <dockarea.h>
 
@@ -674,6 +675,11 @@ public:
     bool containsTemplateMatrixView() const {return isThereTemplateMatrixView;}
     bool containsResidualMatrixView() const {return isThereResidualMatrixView;}
     bool containsDriftMatrixView() const {return isThereDriftMatrixView;}
+
+    /**Push the marked-node template columns (from the lineage overlay) onto this
+     * display's curation matrices, which append them as cluster×template cells.
+     * Called by ClusterView whenever the marks change.*/
+    void setMatrixTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
 
     /***Update the background color of the views.*/
     void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}

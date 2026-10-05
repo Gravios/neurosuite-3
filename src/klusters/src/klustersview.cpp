@@ -926,6 +926,16 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
 
 }
 
+void KlustersView::setMatrixTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
+{
+    // Forward to every curation matrix in this display.  The template/residual/drift
+    // matrices compute a real cluster×template value; the error matrix greys them
+    // (no mean-waveform statistic).  (Template matrix wired first; the other three
+    // follow the same setTemplateColumns API.)
+    const QList<TemplateMatrixView*> tmvs = findChildren<TemplateMatrixView*>();
+    for (TemplateMatrixView* v : tmvs) v->setTemplateColumns(cols);
+}
+
 void KlustersView::closeEvent(QCloseEvent* e){
 
     // DO NOT CALL QWidget::closeEvent(e) here !!

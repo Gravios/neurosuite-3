@@ -108,6 +108,10 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
 
     //Allowed the mouse tracking to draw the tracking lines and write the mouse coordinates
     setMouseTracking(true) ;
+
+    // A mark change (mark/unmark a node, or a primary/edit that cleared marks) pushes
+    // the marked-node templates onto this display's curation matrices.
+    connect(this, &ClusterView::lineageMarksChanged, this, &ClusterView::pushMarkedTemplatesToMatrices);
 }
 
 ClusterView::~ClusterView(){
@@ -2220,9 +2224,9 @@ void ClusterView::pushActiveLineageBands()
                                    bandCluster, lineageScaleAbsolute_, stds);
 }
 
-std::vector<ClusterView::MarkedTemplate> ClusterView::markedTemplates() const
+std::vector<MatrixTemplateCol> ClusterView::markedTemplates() const
 {
-    std::vector<MarkedTemplate> out;
+    std::vector<MatrixTemplateCol> out;
     if (lineageActiveClass_ < 0 || markedNodes_.empty()) return out;
     const int nsamp = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
     const int nchan = doc.nbOfchannels();
@@ -2231,7 +2235,7 @@ std::vector<ClusterView::MarkedTemplate> ClusterView::markedTemplates() const
     for (int id : markedNodes_) {
         const neurofileio::WtlNode* n = lineageStore_.node(id);
         if (!n || n->count <= 0 || n->mean.size() != recLen) continue;   // placeholders have no template
-        MarkedTemplate mt; mt.node = n->node; mt.classId = n->classId; mt.a = n->a; mt.b = n->b;
+        MatrixTemplateCol mt; mt.node = n->node; mt.classId = n->classId; mt.a = n->a; mt.b = n->b;
         mt.mean.resize(recLen);
         for (int smp = 0; smp < nsamp; ++smp)                 // node summary: sample-major
             for (int ch = 0; ch < nchan; ++ch)                // -> channel-major (ch*nSamp + smp)
@@ -2240,6 +2244,11 @@ std::vector<ClusterView::MarkedTemplate> ClusterView::markedTemplates() const
         out.push_back(std::move(mt));
     }
     return out;
+}
+
+void ClusterView::pushMarkedTemplatesToMatrices()
+{
+    view.setMatrixTemplateColumns(markedTemplates());
 }
 
 void ClusterView::clearTemplatePreviewOnViews()

@@ -24,6 +24,7 @@
 #include "array.h"
 #include "pair.h"
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
+#include "matrixtemplatecols.h"   // MatrixTemplateCol — marked-node template columns
 
 class KlustersDoc;
 class KlustersView;
@@ -101,6 +102,11 @@ public:
 
     void updateMatrixContents();
     void updateSliderRange();
+
+    /** Marked-node templates to append as cluster×template columns/rows (§11.5).
+     *  Empty clears the strip.  Recomputes the cells against the current per-cluster
+     *  means and repaints. */
+    void setTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
 
     // Stale-marker slots wired from KlustersDoc signals
     void clustersGrouped(QList<int>& groupedClusters, int newClusterId);
@@ -276,6 +282,21 @@ private:
     // Stored for PairXcorrThread construction
     std::vector<std::vector<float>> meanWav;    // [clusterIdx] channel-major mean
     std::vector<std::vector<int>>   allFileIdx; // [clusterIdx] 0-based .spk indices
+
+    // ── marked-node template columns (§11.5) ─────────────────────────────────
+    std::vector<MatrixTemplateCol>   tplCols_;   // marked templates (empty = no strip)
+    std::vector<std::vector<double>> tplVal_;    // [tpl][cluster] cluster×template xcorr
+    std::vector<std::vector<bool>>   tplGrey_;   // [tpl][cluster] greyed: no spikes in [a,b]
+    std::vector<std::vector<double>> tplCorner_; // [tpl][tpl]     template×template xcorr
+    /** Recompute tplVal_ / tplGrey_ / tplCorner_ from the current means + the metric
+     *  (cheap: a handful of templates × clusters).  Called on setTemplateColumns, on a
+     *  fresh matrix (means changed) and on a metric change. */
+    void recomputeTemplateCells();
+    /** Paint the template strip (right columns + bottom rows + corner) over the grid. */
+    void drawTemplateStrip(QPainter& p);
+    /** xcorr(a,b) under the current metric (cosine/pearson/raw; others fall back to
+     *  cosine, which needs no per-cluster noise term the strip doesn't have). */
+    double templatePairXcorr(const std::vector<float>& a, const std::vector<float>& b) const;
 
     /**Cancellation/completion state shared with the jobs this view enqueues
     * on the worker pool — one token per request stream, because a pair

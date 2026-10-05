@@ -30,6 +30,8 @@
 #include <vector>
 #include <map>
 #include <set>
+
+#include "matrixtemplatecols.h"   // MatrixTemplateCol — marked-node template columns
 #include <QImage>
 
 
@@ -723,13 +725,17 @@ Q_SIGNALS:
     void lineageMarksChanged();
 
 public:
-    /** Marked nodes of the PRIMARY class, as {classId, window [a,b] seconds, mean
-     *  waveform (channel-major, nChan×nSamp)} — the data the augmented curation
-     *  matrices need for their cluster×template cells.  Empty when no primary / no marks. */
-    struct MarkedTemplate { int node; int classId; double a; double b; std::vector<float> mean; };
-    std::vector<MarkedTemplate> markedTemplates() const;
+    /** Marked nodes of the PRIMARY class as curation-matrix template columns
+     *  (classId, window [a,b] seconds, channel-major mean waveform) — the data the
+     *  augmented matrices need for their cluster×template cells.  Empty when there
+     *  is no primary or no marks. */
+    std::vector<MatrixTemplateCol> markedTemplates() const;
 
 private:
+    /** Rebuild the matrix template columns from the current marks and push them to
+     *  this display's curation matrices (via KlustersView).  Wired to
+     *  lineageMarksChanged in the ctor. */
+    void pushMarkedTemplatesToMatrices();
 
     //Color for the different selection modes
     static const QColor NEW_CLUSTER_COLOR;

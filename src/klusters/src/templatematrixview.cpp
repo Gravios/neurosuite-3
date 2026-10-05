@@ -493,6 +493,7 @@ void TemplateMatrixView::customEvent(QEvent* event)
             clusterList = ev->getClusterList();
             meanWav   = std::move(ev->getMeanWav());
             allFileIdx= std::move(ev->getAllFileIdx());
+            recomputeTemplateCells();      // means/clusters changed: refresh the template strip
         } else {
             delete newScores;
         }
@@ -543,12 +544,16 @@ void TemplateMatrixView::updateWindow()
     // stable and the matrix never progressively shrinks on resize events.
     const int n = clusterList.size();
     if (n <= 0) return;
+    // Reserve room for the marked-node template strip (gap + M cells) so it fits
+    // on screen instead of running off the right/bottom edge.
+    const int nStrip = tplCols_.empty() ? 0 : (kTemplateStripGapCells + static_cast<int>(tplCols_.size()));
+    const int nTot   = n + nStrip;
     const int matH   = std::max(height() - CONTROLS_H, 1);
     matrixViewport   = QRect(0, 0, width(), matH);
     const int availW = width() - LABEL_MARGIN - 10;
     const int availH = matH - 14 - 10;
-    const int fitW   = (availW > 0 && n > 0) ? availW / n : CELL_WIDTH;
-    const int fitH   = (availH > 0 && n > 0) ? availH / n : CELL_WIDTH;
+    const int fitW   = (availW > 0) ? availW / nTot : CELL_WIDTH;
+    const int fitH   = (availH > 0) ? availH / nTot : CELL_WIDTH;
     cellWidth        = std::max(4, std::min({fitW, fitH, CELL_WIDTH}));
     widthBorder      = cellWidth / 3 + 5;
     heightBorder     = cellWidth / 3 + 14;
@@ -623,6 +628,78 @@ void TemplateMatrixView::paintEvent(QPaintEvent*)
 
     QPainter p(this);
     p.drawPixmap(0, 0, doublebuffer);
+}
+
+// ── marked-node template columns (§11.5) ──────────────────────────────────────
+void TemplateMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
+{
+    tplCols_ = cols;
+    recomputeTemplateCells();
+    updateWindow();        // refit so the strip is on screen (it adds gap + M cells)
+    update();
+}
+
+double TemplateMatrixView::templatePairXcorr(const std::vector<float>& a,
+                                             const std::vector<float>& b) const
+{
+    if (a.empty() || a.size() != b.size()) return 0.0;
+    const int nsamp    = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
+    const int maxShift = std::max(1, nsamp / 4);                 // same window the thread uses
+    const int metric   = configuration().getTemplateXcorrMetric();
+    if (metric == 2) return tmRawXcorr(a, b, maxShift);          // raw peak xcorr
+    return tmNormXcorr(a, b, maxShift, metric == 1);             // pearson(1) else cosine (0/3/4/5)
+}
+
+void TemplateMatrixView::recomputeTemplateCells()
+{
+    const int M = static_cast<int>(tplCols_.size());
+    const int N = clusterList.size();
+    tplVal_.assign(M, std::vector<double>(N, 0.0));
+    tplGrey_.assign(M, std::vector<bool>(N, true));
+    tplCorner_.assign(M, std::vector<double>(M, 0.0));
+    if (M == 0 || N == 0 || static_cast<int>(meanWav.size()) < N) return;
+
+    // Per-cluster spike-time RANGE [lo,hi] in samples (two feature reads: the cluster's
+    // spike block is time-ordered, so the ends bound it) — for the in-window greying.
+    const int timeDim = doc.data().timeDimension();
+    std::vector<double> cLo(N, 0.0), cHi(N, -1.0);              // cHi < cLo = "no spikes"
+    for (int j = 0; j < N; ++j) {
+        const QVector<int> idx = doc.data().clusterSpkIndices(clusterList[j]);
+        if (idx.isEmpty()) continue;
+        const double t0 = static_cast<double>(doc.data().featureValue(idx.first() + 1, timeDim));
+        const double t1 = static_cast<double>(doc.data().featureValue(idx.last()  + 1, timeDim));
+        cLo[j] = std::min(t0, t1); cHi[j] = std::max(t0, t1);
+    }
+    const double sr = doc.getSamplingRate();
+
+    for (int i = 0; i < M; ++i) {
+        const double winLo = tplCols_[i].a * sr, winHi = tplCols_[i].b * sr;   // s -> samples
+        for (int j = 0; j < N; ++j) {
+            const bool hasData = !tplCols_[i].mean.empty()
+                                 && meanWav[static_cast<size_t>(j)].size() == tplCols_[i].mean.size();
+            tplVal_[i][j] = hasData ? templatePairXcorr(meanWav[static_cast<size_t>(j)], tplCols_[i].mean) : 0.0;
+            const bool noSpk = (cHi[j] < cLo[j]) || (cHi[j] < winLo) || (cLo[j] > winHi);  // ranges disjoint
+            tplGrey_[i][j] = noSpk || !hasData;
+        }
+        for (int u = 0; u < M; ++u)
+            tplCorner_[i][u] = templatePairXcorr(tplCols_[i].mean, tplCols_[u].mean);
+    }
+}
+
+void TemplateMatrixView::drawTemplateStrip(QPainter& p)
+{
+    const int M = static_cast<int>(tplCols_.size());
+    const int N = clusterList.size();
+    if (M == 0 || N == 0 || static_cast<int>(tplVal_.size()) != M) return;
+    const QPointF oriF = effMatrixTopLeft();
+    const double  eff  = effCellSize();
+
+    auto valueGrey = [&](int i, int j, bool& grey)->double{
+        if (j < N) { grey = tplGrey_[i][j]; return tplVal_[i][j]; }   // cluster j
+        grey = false; return tplCorner_[i][j - N];                   // template j-N
+    };
+    auto colourFor = [&](double v)->QColor{ return colorMap[colourIndexFor(v, NB_COLORS)]; };
+    drawMatrixTemplateStrip(p, oriF, eff, N, M, valueGrey, colourFor);
 }
 
 void TemplateMatrixView::drawMatrix(QPainter& p)
@@ -707,6 +784,9 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
         }
         p.setPen(Qt::NoPen);
     }
+
+    // Marked-node template columns/rows at the edge (cluster×template cells, §11.5).
+    drawTemplateStrip(p);
 
     // Edge-highlight every selected pair (multi-select via Ctrl-click), not
     // just the most-recent one.  Each pair is stored as (rowSourceId,
