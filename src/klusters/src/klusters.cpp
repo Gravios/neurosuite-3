@@ -2232,6 +2232,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         if(ke->key() == Qt::Key_E && ke->modifiers() == Qt::ShiftModifier
            && doc && !focusIsInTextInput()){
+            if(!configuration().getTemplatesMode()){
+                if(statusBar()) statusBar()->showMessage(
+                    tr("Templates mode is off (Preferences ▸ Display)"), 4000);
+                return true;
+            }
             if(ClusterView* cv = activeClusterView()){
                 cv->toggleLineageOverlay();
                 return true;
@@ -2742,7 +2747,8 @@ void KlustersApp::initDisplay(){
     // in Preferences > Displays).  Deferred to the next event-loop iteration
     // like the matrices above, so the initial Clusters/Overview loads settle
     // before the template view queries the .wti/.wtf.
-    if (configuration().getAutoShowTemplateLibraryOnOpen()) {
+    if (configuration().getTemplatesMode()
+        && configuration().getAutoShowTemplateLibraryOnOpen()) {
         QTimer::singleShot(0, this, [this]() {
             createDisplay(KlustersView::TEMPLATE_LIBRARY);
         });
@@ -7527,6 +7533,8 @@ void KlustersApp::runTemplateGeneration()
 // session the native reader cannot satisfy — no behavioural regression.
 void KlustersApp::runTemplateGenerationForUnits(const QList<int>& idsIn)
 {
+    if (!configuration().getTemplatesMode())             // template features switched off
+        return;
     if (idsIn.isEmpty())
         return;
     // Don't fight a run already in progress; the next save refreshes the templates.

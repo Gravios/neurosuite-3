@@ -489,6 +489,16 @@ public:
         { return autoShowTemplateLibraryOnOpenDefault; }
     void setAutoShowTemplateLibraryOnOpen(bool b)
         { autoShowTemplateLibraryOnOpen = b; }
+    // Master switch for the template-curation features (the Shift+E lineage
+    // overlay, the Template Library display + its auto-show, on-demand template
+    // generation/commit).  On by default; when off, those features are inert and
+    // their preference controls grey out.
+    bool getTemplatesMode() const
+        { return templatesMode; }
+    bool getTemplatesModeDefault() const
+        { return templatesModeDefault; }
+    void setTemplatesMode(bool b)
+        { templatesMode = b; }
 
     /**Returns the fractional margin applied to the autoscale fit in
      * ClusterView (F key), expressed as a percent of the data extent on
@@ -626,6 +636,9 @@ private:
     // Open a Template Library display on document open (on by default)
     bool autoShowTemplateLibraryOnOpen;
     static const bool autoShowTemplateLibraryOnOpenDefault;
+    // Master switch for the template-curation features (on by default)
+    bool templatesMode;
+    static const bool templatesModeDefault;
     /**Margin (percent of data extent) added on each side of the autoscale fit
      * in ClusterView (F key).  0 = tight fit, 5 = original behaviour.*/
     double autoscaleMarginPercent;

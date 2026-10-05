@@ -32,6 +32,9 @@ public:
     void setAutoShowTemplateLibraryOnOpen(bool checked);
     bool getAutoShowTemplateLibraryOnOpen() const;
 
+    void setTemplatesMode(bool checked);
+    bool getTemplatesMode() const;
+
     void   setTemplateThresholdMin(double v);
     double getTemplateThresholdMin() const;
     void   setTemplateThresholdMax(double v);
@@ -42,6 +45,11 @@ public:
 
     void setDriftSliderMaxClusters(int n);
     int  getDriftSliderMaxClusters() const;
+
+private:
+    // Grey the template-specific controls (library auto-show, matrix tuning,
+    // drift slider) when Templates mode is off.
+    void setTemplateControlsEnabled(bool on);
 };
 
 #endif

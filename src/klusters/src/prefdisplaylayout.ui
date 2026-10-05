@@ -208,6 +208,16 @@
        </widget>
       </item>
       <item row="4" column="0">
+       <widget class="QCheckBox" name="templatesModeCheckBox">
+        <property name="text">
+         <string>Templates mode</string>
+        </property>
+        <property name="toolTip">
+         <string>Master switch for the template-curation features: the Shift+E manual-lineage overlay, the Template Library display and its auto-show, and on-demand template generation/commit.  On by default.  When unchecked, those features are inert and the template-specific options below grey out.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
        <widget class="QCheckBox" name="autoShowTemplateLibraryOnOpenCheckBox">
         <property name="text">
          <string>Open a Template Library display on open</string>
@@ -217,7 +227,7 @@
         </property>
        </widget>
       </item>
-      <item row="5" column="0">
+      <item row="6" column="0">
        <layout class="QHBoxLayout" name="templateXcorrMetricLayout">
         <item>
          <widget class="QLabel" name="templateXcorrMetricLabel">

@@ -37,6 +37,7 @@ const bool Configuration::reclusterMedianWaveformResidualDefault = false;
 const bool Configuration::autoShowMatricesOnOpenDefault = false;
 // Template Library display: open by default (on)
 const bool Configuration::autoShowTemplateLibraryOnOpenDefault = true;
+const bool Configuration::templatesModeDefault = true;
 const double Configuration::autoscaleMarginPercentDefault = 5.0;
 const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
@@ -158,6 +159,9 @@ void Configuration::read() {
     autoShowTemplateLibraryOnOpen = settings.value(
         "autoShowTemplateLibraryOnOpen",
         autoShowTemplateLibraryOnOpenDefault).toBool();
+    templatesMode = settings.value(
+        "templatesMode",
+        templatesModeDefault).toBool();
     autoscaleMarginPercent = settings.value("autoscaleMarginPercent", autoscaleMarginPercentDefault).toDouble();
     settings.endGroup();
 
@@ -260,6 +264,7 @@ void Configuration::write() const {
                       autoShowMatricesOnOpen);
     settings.setValue("autoShowTemplateLibraryOnOpen",
                       autoShowTemplateLibraryOnOpen);
+    settings.setValue("templatesMode", templatesMode);
     settings.setValue("autoscaleMarginPercent", autoscaleMarginPercent);
     settings.endGroup();
     
