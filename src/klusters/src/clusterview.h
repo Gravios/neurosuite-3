@@ -136,6 +136,15 @@ public:
      *  Shift+E edit mode and direct manipulation are §11.3. */
     void toggleLineageOverlay();
     bool lineageOverlayActive() const { return lineageOverlay_; }
+    /** The template class the lineage overlay edits (auto-seed + new regions).  Set
+     *  by the template palette when a class is selected; defaults to 0.  When the
+     *  overlay is engaged, switching class tiles that class and repaints. */
+    void setLineageActiveClass(int classId);
+    int  lineageActiveClass() const { return lineageActiveClass_; }
+    /** Template-preview scale: best-fit (false) vs absolute data gain (true).  Sets
+     *  the mode future pushes use and updates any live WaveformView preview. */
+    void setTemplateScaleAbsolute(bool absolute);
+    bool templateScaleAbsolute() const { return lineageScaleAbsolute_; }
 
     /** True while a selection polygon is part-drawn, in either view.  The
      *  application filter asks before deciding what Escape means. */
@@ -544,6 +553,7 @@ private:
     // then mapped with worldToViewport every repaint.
     struct LineageNodeDraw { int node; int classId; int parent; bool drift; bool empty; QPoint world; double a; double b; };
     bool                         lineageOverlay_ = false;
+    int                          lineageActiveClass_ = 0;   ///< class the overlay edits (palette-driven)
     TemplateLineageStore         lineageStore_;
     std::vector<LineageNodeDraw> lineageDraw_;
     void loadLineageOverlay();                    ///< (re)load the store for the open stage

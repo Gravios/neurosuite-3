@@ -30,6 +30,7 @@
 #include <neurosuite/core/decollide_eap.hpp> // Decomp -> .eap membership bridge (annotate-in-place)
 #include <QDate>
 #include "clusterPalette.h"
+#include "templatepalette.h"
 #include "autoMerge.h"      // patch 0069
 #include "savethread.h"
 #include "prefdialog.h"
@@ -278,9 +279,11 @@ void KlustersApp::initView()
     // stays null, so every refresh call short-circuits).  To restore the panel,
     // un-comment there and re-add it here with a third size entry.
     // clusterStack->addWidget(recommendPanel);
+    // Template-class palette (§11.5) takes the freed slot, under the child panel.
+    if (templatePanel) clusterStack->addWidget(templatePanel);
     // Main palette gets the top half; the child palette takes the bottom.  Sizes
     // are a starting ratio only -- the splitter is user-draggable from here.
-    clusterStack->setSizes({ 200, 100 });
+    clusterStack->setSizes({ 200, 100, 100 });
     splitter->addWidget(clusterStack);
     splitter->setChildrenCollapsible(false);
     tabsParent = new QExtendTabWidget(this);
@@ -1715,8 +1718,12 @@ void KlustersApp::executePreferencesDlg(){
     }
 }
 
-void KlustersApp::applyPreferences() {  
+void KlustersApp::applyPreferences() {
     configuration().write();
+
+    // Templates mode toggled -> show/hide + (re)load the template palette live.
+    if (templatePanel) { reloadTemplatePalette(); updateTemplatePanelVisibility(); }
+
     int newNbUndo = configuration().getNbUndo();
     if(nbUndo != newNbUndo){
         if(mainDock)
@@ -2406,6 +2413,10 @@ void KlustersApp::buildFocusZones()
     if(childPanel && childPanel->isVisible() && childPaletteA)
         focusZones.append(childPaletteA);
 
+    // 1c. Template palette, while Templates mode shows it.
+    if(templatePanel && templatePanel->isVisible() && templatePalette)
+        focusZones.append(templatePalette);
+
     // 2. Toolbar fields only
     if(paramBar){
         const QList<QAction*> actions = paramBar->actions();
@@ -2537,6 +2548,22 @@ void KlustersApp::initClusterPanel()
     // recommendPanel->hide();
     // connect(recommendView,&MergeRecommendView::recommendationActivated,
     //         this,&KlustersApp::slotRecommendationActivated);
+
+    // Template-class palette (§11.5) in the recommend panel's freed slot: a compact
+    // class list that drives the lineage overlay's active class + the oblique basis.
+    // Shown with the child panel while Templates mode is on; reloaded on open.
+    templatePanel   = new QDockWidget(tr("Template palette"), nullptr);
+    templatePalette = new TemplatePalette(templatePanel);
+    templatePanel->setWidget(templatePalette);
+    templatePanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    templatePanel->hide();
+    connect(templatePalette, &TemplatePalette::classSelected,    this, &KlustersApp::slotTemplateClassSelected);
+    connect(templatePalette, &TemplatePalette::obliqueRequested,  this, &KlustersApp::slotTemplatePaletteOblique);
+    connect(templatePalette, &TemplatePalette::newClassRequested, this, &KlustersApp::slotTemplatePaletteNewClass);
+    connect(templatePalette, &TemplatePalette::classesChanged,    this, &KlustersApp::slotTemplateClassesChanged);
+    connect(templatePalette, &TemplatePalette::scaleAbsoluteToggled, this, [this](bool on){
+        if (ClusterView* cv = activeClusterView()) cv->setTemplateScaleAbsolute(on);
+    });
 }
 
 void KlustersApp::initDisplay(){
@@ -2753,6 +2780,11 @@ void KlustersApp::initDisplay(){
             createDisplay(KlustersView::TEMPLATE_LIBRARY);
         });
     }
+
+    // Template-class palette (§11.5): load the open group+stage's classes and show
+    // the panel while Templates mode is on.
+    reloadTemplatePalette();
+    updateTemplatePanelVisibility();
 }
 
 void KlustersApp::createDisplay(KlustersView::DisplayType type)
@@ -7688,6 +7720,88 @@ void KlustersApp::slotGenerateTemplateForSelection()
     }
     mPluginReportModal = true;                           // explicit user action -> show the run's report
     runTemplateGenerationForUnits(targets);
+}
+
+// ── template palette (§11.5) ─────────────────────────────────────────────────
+void KlustersApp::reloadTemplatePalette()
+{
+    if (!templatePalette) return;
+    if (!doc || !configuration().getTemplatesMode()) { templatePalette->clearClasses(); return; }
+    const QString cluPath = doc->url();
+    if (cluPath.isEmpty()) { templatePalette->clearClasses(); return; }
+    const auto aClu = neurosuite::custody::parseAnchor(QFileInfo(cluPath).fileName().toStdString());
+    if (!aClu.ok) { templatePalette->clearClasses(); return; }
+    const QString dir  = QFileInfo(cluPath).absolutePath() + QStringLiteral("/");
+    const std::string base = (dir + QString::fromStdString(aClu.base)).toStdString();
+    templatePalette->reload(base, aClu.group, aClu.suffix,
+                            static_cast<int64_t>(doc->data().totalNbOfSpikes()));
+}
+
+void KlustersApp::updateTemplatePanelVisibility()
+{
+    if (!templatePanel) return;
+    const bool show = doc && !doc->url().isEmpty() && configuration().getTemplatesMode();
+    templatePanel->setVisible(show);
+    buildFocusZones();
+}
+
+void KlustersApp::slotTemplateClassSelected(int col)
+{
+    if (ClusterView* cv = activeClusterView()) cv->setLineageActiveClass(col);
+}
+
+void KlustersApp::slotTemplatePaletteOblique(const QList<int>& cols)
+{
+    if (!templatePalette) return;
+    QList<int> clusters;                                  // the classes' provenance clusters
+    for (int c : cols) {
+        const int pc = templatePalette->provCluOf(c);
+        if (pc > 1 && !clusters.contains(pc)) clusters.append(pc);
+    }
+    if (clusters.size() < 2) {
+        statusBar()->showMessage(tr("Select two or more template classes with distinct source "
+                                    "clusters to pin an oblique basis."), 5000);
+        return;
+    }
+    ClusterView* cv = activeClusterView();
+    if (!cv) return;
+    QString msg;
+    if (!cv->setObliqueBasis(clusters, &msg))
+        statusBar()->showMessage(msg.isEmpty() ? tr("Could not pin the oblique basis.") : msg, 5000);
+}
+
+void KlustersApp::slotTemplatePaletteNewClass()
+{
+    if (!templatePalette || !doc) return;
+    std::vector<int64_t> spikes;                          // the shown unit clusters' spikes
+    int provClu = -1;
+    if (KlustersView* av = activeView()) {
+        const QList<int> cl = av->clusters();
+        for (int cid : cl) {
+            if (cid <= 1) continue;                       // skip noise(0)/artifact(1)
+            if (provClu < 0 || cid < provClu) provClu = cid;
+            const QVector<int> idx = doc->data().clusterSpkIndices(cid);
+            for (int s : idx) if (s >= 0) spikes.push_back(static_cast<int64_t>(s));
+        }
+    }
+    std::sort(spikes.begin(), spikes.end());
+    spikes.erase(std::unique(spikes.begin(), spikes.end()), spikes.end());
+    if (spikes.empty()) {
+        statusBar()->showMessage(tr("Select one or more unit clusters (id > 1) to make a template class."), 5000);
+        return;
+    }
+    const QString label = (provClu >= 0) ? tr("clu %1").arg(provClu) : QString();
+    const int col = templatePalette->createClassFromSpikes(spikes, provClu, label.toStdString());
+    if (col < 0) { statusBar()->showMessage(tr("Could not create a template class."), 5000); return; }
+    if (ClusterView* cv = activeClusterView()) cv->setLineageActiveClass(col);
+    statusBar()->showMessage(tr("Created template class #%1 from %2 spikes.")
+                                 .arg(col).arg(static_cast<int>(spikes.size())), 5000);
+}
+
+void KlustersApp::slotTemplateClassesChanged()
+{
+    // The palette rebuilt itself after its own create/delete; the Template Library
+    // tab (if open) reloads its own .eap/.tcl store on its next show.
 }
 
 // ---------------------------------------------------------------------------

@@ -63,6 +63,7 @@ class QMenu;
 // forward declaration of the Klusters classes
 class KlustersDoc;
 class ClusterPalette;
+class TemplatePalette;
 class MergeRecommendView;
 class ClusterView;     // for watershed live-preview overlay
 class SaveThread;
@@ -782,6 +783,14 @@ private:
     void slotGenerateTemplateForSelection();
     /** <base>.templates[.<variant>].<group>[.<tag>] for the open document ("" if none). */
     QString templatesSidecarPath() const;
+
+    // ── template palette (§11.5) ──────────────────────────────────────────────
+    void slotTemplateClassSelected(int col);   ///< palette selection -> overlay active class
+    void slotTemplatePaletteOblique(const QList<int>& cols); ///< `s` -> pin oblique basis (provClu)
+    void slotTemplatePaletteNewClass();         ///< "New" -> create a class from the shown clusters
+    void slotTemplateClassesChanged();          ///< palette CRUD -> reload the Template Library tab
+    void reloadTemplatePalette();               ///< (re)load the palette for the open group+stage
+    void updateTemplatePanelVisibility();       ///< show with the child panel while Templates mode is on
     void loadTemplateMarks();                  ///< replace mTemplateUnits from the sidecar (no-op if none)
     void saveTemplateMarks() const;            ///< write mTemplateUnits to the sidecar (removes it when empty)
     // runTemplateGeneration() — "After a successful save, run fiber-template for
@@ -997,6 +1006,12 @@ private:
      *  matrices.  Shown/hidden with the hierarchical view, like childPanel. */
     QDockWidget*        recommendPanel = nullptr;
     MergeRecommendView* recommendView  = nullptr;
+
+    /** Template-class palette (§11.5), in the recommend panel's freed slot: a
+     *  compact class list that drives the lineage overlay's active class + the
+     *  oblique basis.  Shown with the hierarchical view while Templates mode is on. */
+    QDockWidget*     templatePanel   = nullptr;
+    TemplatePalette* templatePalette = nullptr;
     /**Build any missing per-cluster waveform templates, which is what the
      * recommendation panel scores overlaps from and what the amplitude/SNR sorts
      * rank by.  Synchronous: see Data::buildMissingClusterTemplates() for why it

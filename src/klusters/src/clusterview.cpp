@@ -1770,7 +1770,29 @@ void ClusterView::loadLineageOverlay()
     // populated and committed (an all-placeholder commit is refused).  Templates
     // mode is already gated upstream at the Shift+E dispatch.
     if (lineageStore_.ok() && lineageStore_.nodeCount() == 0 && lineageStore_.partitionReady())
-        lineageStore_.ensureClassTiled(0);
+        lineageStore_.ensureClassTiled(lineageActiveClass_);
+}
+
+void ClusterView::setTemplateScaleAbsolute(bool absolute)
+{
+    lineageScaleAbsolute_ = absolute;
+    for (ViewWidget* w : view.getViewList())
+        if (WaveformView* wv = qobject_cast<WaveformView*>(w))
+            wv->setTemplatePreviewScaleAbsolute(absolute);
+}
+
+void ClusterView::setLineageActiveClass(int classId)
+{
+    if (classId < 0) return;
+    lineageActiveClass_ = classId;
+    // When the overlay is live, make sure the chosen class is tiled across the
+    // regions (so its ribbon shows) and repaint.
+    if (lineageOverlay_ && lineageStore_.partitionReady()) {
+        lineageStore_.ensureClassTiled(classId);
+        recomputeLineagePositions();
+        drawContentsMode = REFRESH;
+        update();
+    }
 }
 
 void ClusterView::recomputeLineagePositions()

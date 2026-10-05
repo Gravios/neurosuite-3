@@ -33,6 +33,7 @@ set(klusters_SRCS
     templatematrixthread.cpp
     templatematrixview.cpp
     templateview.cpp
+    templatepalette.cpp        # left-column template-class palette (§11.5)
     templateclassstore.cpp     # EAP template-class state model (.eap/.tcl over neurosuite-core)
     templatelineagestore.cpp   # manual template-lineage model (.wtl over neurosuite-core)
     residualmatrixthread.cpp
