@@ -678,8 +678,15 @@ public:
 
     /**Push the marked-node template columns (from the lineage overlay) onto this
      * display's curation matrices, which append them as cluster×template cells.
-     * Called by ClusterView whenever the marks change.*/
+     * Called by ClusterView whenever the marks change.  Also (re)connects each
+     * matrix's templateCellActivated to onTemplateCellActivated (UniqueConnection).*/
     void setMatrixTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
+
+    /**Handle a click on a curation matrix's extra marked-node template cell
+     * (§11.5): select the clicked cluster (if any) in this display and ask the
+     * ClusterView to overlay only that node's template.  Connected to every
+     * matrix's templateCellActivated signal.*/
+    void onTemplateCellActivated(int clusterId, int node);
 
     /***Update the background color of the views.*/
     void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}

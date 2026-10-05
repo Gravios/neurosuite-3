@@ -930,18 +930,51 @@ void KlustersView::setMatrixTemplateColumns(const std::vector<MatrixTemplateCol>
 {
     // Forward to every curation matrix in this display.  The template/residual/drift
     // matrices compute a real cluster×template value; the error matrix greys them
-    // (no mean-waveform statistic).  All share the same setTemplateColumns API.
+    // (no mean-waveform statistic).  All share the same setTemplateColumns API, and
+    // all emit templateCellActivated when the user clicks one of the extra cells —
+    // (re)connect each here (UniqueConnection, so repeated pushes never double up).
     const QList<TemplateMatrixView*> tmvs = findChildren<TemplateMatrixView*>();
-    for (TemplateMatrixView* v : tmvs) v->setTemplateColumns(cols);
+    for (TemplateMatrixView* v : tmvs) {
+        connect(v, &TemplateMatrixView::templateCellActivated,
+                this, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
+        v->setTemplateColumns(cols);
+    }
 
     const QList<ErrorMatrixView*> emvs = findChildren<ErrorMatrixView*>();
-    for (ErrorMatrixView* v : emvs) v->setTemplateColumns(cols);
+    for (ErrorMatrixView* v : emvs) {
+        connect(v, &ErrorMatrixView::templateCellActivated,
+                this, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
+        v->setTemplateColumns(cols);
+    }
 
     const QList<DriftMatrixView*> dmvs = findChildren<DriftMatrixView*>();
-    for (DriftMatrixView* v : dmvs) v->setTemplateColumns(cols);
+    for (DriftMatrixView* v : dmvs) {
+        connect(v, &DriftMatrixView::templateCellActivated,
+                this, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
+        v->setTemplateColumns(cols);
+    }
 
     const QList<ResidualMatrixView*> rmvs = findChildren<ResidualMatrixView*>();
-    for (ResidualMatrixView* v : rmvs) v->setTemplateColumns(cols);
+    for (ResidualMatrixView* v : rmvs) {
+        connect(v, &ResidualMatrixView::templateCellActivated,
+                this, &KlustersView::onTemplateCellActivated, Qt::UniqueConnection);
+        v->setTemplateColumns(cols);
+    }
+}
+
+void KlustersView::onTemplateCellActivated(int clusterId, int node)
+{
+    // A click on one of the extra marked-node template rows/columns: select the
+    // cell's cluster (so its waveforms come up) and tell the ClusterView to overlay
+    // ONLY that node's template.  clusterId < 0 is the template×template corner —
+    // nothing to select, but still focus the node.
+    if (clusterId >= 0) {
+        QList<int> one;
+        one << clusterId;
+        doc.selectFromMatrix(one);
+    }
+    const QList<ClusterView*> cvs = findChildren<ClusterView*>();
+    for (ClusterView* cv : cvs) cv->overlaySingleNode(node);
 }
 
 void KlustersView::closeEvent(QCloseEvent* e){

@@ -1723,6 +1723,7 @@ void ClusterView::toggleLineageOverlay()
         return;
     }
     lineageOverlay_ = !lineageOverlay_;
+    lineageSingleNode_ = -1;        // a mode switch drops any review-mode single-node focus
     bool dimsChanged = false;
     if (lineageOverlay_) {
         if (!lineageLoaded_) { loadLineageOverlay(); lineageLoaded_ = lineageStore_.ok(); }
@@ -1739,9 +1740,9 @@ void ClusterView::toggleLineageOverlay()
         recomputeLineagePositions();        // covers the already-time×energy case too
         pushActiveLineageBands();           // show the active class's band if the loaded .wtl has one
     } else {
-        lineageDraw_.clear();
-        clearTemplatePreviewOnViews();          // drop the edit-mode model preview from the waveform view
+        lineageDraw_.clear();                   // the scatter overlay is edit-mode only…
         if (dimsForced_) { view.updateDimensions(savedDimX_, savedDimY_); dimsForced_ = false; dimsChanged = true; }
+        pushActiveLineageBands();               // …but the primary's band stays on the waveforms in review mode
     }
     if (statusBar)
         statusBar->showMessage(lineageOverlay_
@@ -1817,6 +1818,7 @@ void ClusterView::setLineageActiveClass(int classId)
     if (classId == lineageActiveClass_) return;        // no change
     lineageActiveClass_ = classId;
     markedNodes_.clear();                              // marks belonged to the previous primary
+    lineageSingleNode_ = -1;                           // and so did any review-mode single-node focus
     Q_EMIT lineageMarksChanged();
 
     if (classId < 0) {
@@ -2195,7 +2197,10 @@ void ClusterView::pushActiveLineageBands()
     std::vector<std::vector<float>> templates, stds;
     std::vector<QColor>             colors;
     for (const neurofileio::WtlNode& n : lineageStore_.forest().nodes) {
-        if (n.classId != lineageActiveClass_) continue;
+        // Review-mode single-node focus (a matrix strip-cell click) shows ONLY that
+        // node; otherwise every populated node of the primary class.
+        if (lineageSingleNode_ >= 0) { if (n.node != lineageSingleNode_) continue; }
+        else if (n.classId != lineageActiveClass_) continue;
         if (n.count <= 0 || n.mean.size() != recLen) continue;      // skip empty placeholders
         const bool haveStd = (n.std.size() == recLen);
         std::vector<float> m(recLen), s(recLen, 0.f);
@@ -2248,12 +2253,34 @@ std::vector<MatrixTemplateCol> ClusterView::markedTemplates() const
             }
         out.push_back(std::move(mt));
     }
+    // Present the extra template rows/columns in TIME order (the node's window
+    // start), so they read left→right / top→bottom across the session; markedNodes_
+    // is a std::set ordered by node id, which is not time.
+    std::sort(out.begin(), out.end(),
+              [](const MatrixTemplateCol& x, const MatrixTemplateCol& y){
+                  if (x.a != y.a) return x.a < y.a;
+                  return x.node < y.node;           // stable tie-break for equal windows
+              });
     return out;
 }
 
 void ClusterView::pushMarkedTemplatesToMatrices()
 {
+    // The marked set is what the strip is built from; if it changed, any
+    // single-node focus pinned to an old cell is stale — fall back to the band.
+    if (lineageSingleNode_ >= 0) { lineageSingleNode_ = -1; pushActiveLineageBands(); }
     view.setMatrixTemplateColumns(markedTemplates());
+}
+
+void ClusterView::overlaySingleNode(int node)
+{
+    // A curation-matrix strip cell was clicked: show ONLY this node's band over the
+    // waveforms (the cluster it was compared against is selected separately by the
+    // caller).  node < 0 restores the full primary-class band.
+    lineageSingleNode_ = node;
+    pushActiveLineageBands();
+    drawContentsMode = REFRESH;
+    update();
 }
 
 void ClusterView::clearTemplatePreviewOnViews()

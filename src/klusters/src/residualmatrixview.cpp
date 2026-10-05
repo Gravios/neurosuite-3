@@ -548,6 +548,17 @@ void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
     emit viewInteracted();
     if (!dataReady || clusterList.isEmpty())
         return;
+
+    // Marked-node template region (§11.5): a click on one of the extra template
+    // rows/columns selects that cell's cluster and overlays its node (handled by
+    // KlustersView), before the cluster-pair hit-test below.
+    if (!tplCols_.empty()) {
+        const MatrixStripHit sh = matrixStripHitTest(
+            e->position().x(), e->position().y(),
+            effMatrixTopLeft(), effCellSize(), clusterList, tplCols_);
+        if (sh.ok) { emit templateCellActivated(sh.clusterId, sh.node); update(); return; }
+    }
+
     const int col = cellAtX(e->position().toPoint().x());
     const int row = cellAtY(e->position().toPoint().y());
     if (row < 0 || col < 0)

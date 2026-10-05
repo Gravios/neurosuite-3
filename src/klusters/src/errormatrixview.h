@@ -148,6 +148,12 @@ Q_SIGNALS:
     /// hand without polling or blocking.
     void matrixUpdated();
 
+    /// Emitted when the user clicks a marked-node template STRIP cell (§11.5):
+    /// `clusterId` is the cluster that cell sits on (-1 for the template×template
+    /// corner) and `node` is the lineage node it compares against.  KlustersView
+    /// selects the cluster and asks the ClusterView to overlay just that node.
+    void templateCellActivated(int clusterId, int node);
+
     /// Emitted when the user changes this view's zoom level (wheel, reset).
     /// Used to keep the error and template matrix zooms synchronised.
     void viewChanged(double zoom, double panX, double panY);

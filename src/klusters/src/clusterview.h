@@ -144,6 +144,12 @@ public:
      *  overlay is engaged, switching class tiles that class and repaints. */
     void setLineageActiveClass(int classId);
     int  lineageActiveClass() const { return lineageActiveClass_; }
+    /** Review-mode single-node overlay (§11.5): clicking a curation-matrix template
+     *  strip cell asks the waveform view to show ONLY that one node's mean±std band
+     *  (instead of the whole primary class's bands).  `node` is a lineage node id;
+     *  pass -1 to return to the full primary-class band.  The override is cleared
+     *  whenever the primary changes, edit mode is toggled, or the marks change. */
+    void overlaySingleNode(int node);
     /** Drop a deleted template class's nodes from the overlay (the palette tombstoned
      *  it in .eap/.tcl; the .wtl forest is separate), persist the pruned source, and
      *  repaint.  Resets the active class if it was the deleted one. */
@@ -564,6 +570,10 @@ private:
                                                             ///< Drives the waveform band's visibility and gates edit mode.
     std::set<int>                markedNodes_;              ///< node ids marked (edit-mode context menu) for the matrices;
                                                             ///< cleared whenever the primary changes / is unset.
+    int                          lineageSingleNode_ = -1;   ///< review-mode single-node overlay (§11.5): when >=0 the
+                                                            ///< waveform band shows only this node, not the whole class;
+                                                            ///< set by a matrix strip-cell click, cleared on primary
+                                                            ///< change / edit toggle / marks change.
     bool                         lineageLoaded_ = false;    ///< the .wtl forest is loaded for the open stage.  Loaded
                                                             ///< once (lazily) and kept, so switching primary never
                                                             ///< reloads and discards uncommitted in-memory edits.

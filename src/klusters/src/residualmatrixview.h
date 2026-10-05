@@ -99,6 +99,12 @@ Q_SIGNALS:
     void viewInteracted();
     void matrixUpdated();
 
+    /// Emitted when the user clicks one of the extra marked-node template
+    /// rows/columns (§11.5): `clusterId` is the cluster that cell sits on (-1 for
+    /// the template×template corner) and `node` is the lineage node it compares
+    /// against.  KlustersView selects the cluster and overlays just that node.
+    void templateCellActivated(int clusterId, int node);
+
     /// Emitted when the user changes this view's zoom or pan (wheel, drag,
     /// reset).  Keeps every matrix view's zoom/pan synchronised.
     void viewChanged(double zoom, double panX, double panY);

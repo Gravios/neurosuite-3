@@ -1047,6 +1047,24 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
     emit viewInteracted();
     if(clusterList.isEmpty())
         return;
+
+    // Marked-node template region (§11.5): a click on one of the extra
+    // template rows/columns selects that cell's cluster and overlays its node
+    // (handled by KlustersView).  Checked before the cluster-block hit-test
+    // below, whose qBound would otherwise clamp such a click onto the last
+    // cluster.  This view alone reorders its rows/columns, so the cluster axis
+    // is passed in DISPLAY order — the click selects the cluster the user sees.
+    if(!tplCols_.empty()){
+        QList<int> displayIds;
+        displayIds.reserve(clusterList.size());
+        for(int i = 0; i < clusterList.size(); ++i)
+            displayIds.append(clusterList[displayToMatrix(i)]);
+        const MatrixStripHit sh = matrixStripHitTest(
+            e->position().x(), e->position().y(),
+            effMatrixTopLeft(), effCellSize(), displayIds, tplCols_);
+        if(sh.ok){ emit templateCellActivated(sh.clusterId, sh.node); update(); return; }
+    }
+
     //Select the clusters corresponding to the current cell of the matrix (if they still exist)
     const double eff = effCellSize();
     const QPointF oriF = effMatrixTopLeft();

@@ -946,6 +946,16 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
     // user "focusing" this view for the Shift+S reorder selection.
     emit viewInteracted();
     if (!dataReady || clusterList.isEmpty()) return;
+
+    // Marked-node template strip (§11.5): a click on a strip cell selects the
+    // cell's cluster and overlays its node, handled by KlustersView.
+    if (!tplCols_.empty()) {
+        const MatrixStripHit sh = matrixStripHitTest(
+            e->position().x(), e->position().y(),
+            effMatrixTopLeft(), effCellSize(), clusterList, tplCols_);
+        if (sh.ok) { emit templateCellActivated(sh.clusterId, sh.node); update(); return; }
+    }
+
     const int col = cellAtX(e->position().toPoint().x());
     const int row = cellAtY(e->position().toPoint().y());
     if (col < 0 || row < 0) return;

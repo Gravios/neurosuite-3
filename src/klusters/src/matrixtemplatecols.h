@@ -24,6 +24,7 @@
 #define MATRIXTEMPLATECOLS_H
 
 #include <vector>
+#include <cmath>
 #include <QColor>
 #include <QPainter>
 #include <QPointF>
@@ -88,6 +89,57 @@ inline void drawMatrixTemplateStrip(QPainter& p, const QPointF& oriF, double eff
     p.drawLine(QPointF(x, oriF.y()), QPointF(x, oriF.y() + span));
     p.drawLine(QPointF(oriF.x(), yy), QPointF(oriF.x() + span, yy));
     p.restore();
+}
+
+// ── Strip hit-testing (§11.5) ──────────────────────────────────────────────
+// Clicking a strip cell selects the cell's cluster and overlays the cell's node
+// template; the geometry has to match drawMatrixTemplateStrip exactly, so it is
+// defined here next to the renderer rather than duplicated in each view.
+
+/** Map a 1-D offset `coord` (pixels from the strip origin along one axis) to an
+ *  extended index in [0, N+M): [0,N) is a cluster cell, [N,N+M) is one of the M
+ *  template cells after the gap.  Returns -1 for the gap or outside the grid.
+ *  Mirrors the `at()` layout drawMatrixTemplateStrip paints with. */
+inline int matrixStripIndexAt(double coord, double eff, int N, int M)
+{
+    if (eff <= 0.0 || coord < 0.0) return -1;
+    if (coord < N * eff) { const int k = static_cast<int>(coord / eff); return (k < N) ? k : -1; }
+    const double gap = kTemplateStripGapCells * eff;
+    const double stripStart = N * eff + gap;
+    if (coord < stripStart) return -1;                       // inside the gap
+    const int t = static_cast<int>((coord - stripStart) / eff);
+    return (t >= 0 && t < M) ? (N + t) : -1;
+}
+
+/** What a strip-cell click resolves to: the cluster whose row/column the cell sits
+ *  on and the template node it compares against.  `clusterId` is -1 for the
+ *  template×template corner (no cluster). */
+struct MatrixStripHit { bool ok = false; int clusterId = -1; int classId = -1; int node = -1; };
+
+/** Resolve a widget-space click (px,py) against a strip drawn at (oriF, eff) for an
+ *  N-cluster matrix with the templates `tpl`.  ok=false when the click is outside
+ *  the strip — the gap, the N×N cluster block, or off-grid.  `clusters` is the
+ *  view's cluster-id list (operator[] -> int), one id per matrix row/column. */
+template <class ClusterListT>
+inline MatrixStripHit matrixStripHitTest(double px, double py,
+                                         const QPointF& oriF, double eff,
+                                         const ClusterListT& clusters,
+                                         const std::vector<MatrixTemplateCol>& tpl)
+{
+    MatrixStripHit h;
+    const int N = static_cast<int>(clusters.size());
+    const int M = static_cast<int>(tpl.size());
+    if (M <= 0 || N <= 0) return h;
+    const int r = matrixStripIndexAt(py - oriF.y(), eff, N, M);
+    const int c = matrixStripIndexAt(px - oriF.x(), eff, N, M);
+    if (r < 0 || c < 0) return h;
+    if (r < N && c < N) return h;                            // the cluster block, not the strip
+    const MatrixTemplateCol* t = nullptr;
+    if (r < N && c >= N)      { h.clusterId = clusters[r]; t = &tpl[c - N]; }  // cluster row × template col
+    else if (r >= N && c < N) { h.clusterId = clusters[c]; t = &tpl[r - N]; }  // template row × cluster col
+    else                      { t = &tpl[r - N]; }                            // template × template corner
+    h.classId = t->classId; h.node = t->node; h.ok = true;
+    return h;
 }
 
 #endif // MATRIXTEMPLATECOLS_H
