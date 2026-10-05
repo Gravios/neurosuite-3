@@ -172,6 +172,7 @@ void TemplatePalette::onDeleteClicked()
     if (!classStore_.deleteClass(col)) return;
     classStore_.save();
     rebuild();
+    Q_EMIT classDeleted(col);          // the lineage overlay drops this class's nodes + repaints
     Q_EMIT classesChanged();
 }
 

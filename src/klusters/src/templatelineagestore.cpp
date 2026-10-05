@@ -133,6 +133,23 @@ bool TemplateLineageStore::setWindow(int nodeId, double a, double b)
     return true;
 }
 
+int TemplateLineageStore::removeClass(int classId)
+{
+    const std::size_t before = forest_.nodes.size();
+    auto& v = forest_.nodes;
+    v.erase(std::remove_if(v.begin(), v.end(),
+                [classId](const neurofileio::WtlNode& n){ return n.classId == classId; }),
+            v.end());
+    return static_cast<int>(before - v.size());
+}
+
+bool TemplateLineageStore::saveWtl()
+{
+    if (!loaded_) return false;
+    const std::string wtlPath = tg::sessionPath(base_, "wtl", group_, "", stage_);
+    return neurofileio::writeWtl(wtlPath, forest_);
+}
+
 tg::Result TemplateLineageStore::commit(std::string* wtlPath, std::string* mtiPath)
 {
     tg::LineageFileParams fp;

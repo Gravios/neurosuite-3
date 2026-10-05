@@ -1782,6 +1782,20 @@ void ClusterView::setTemplateScaleAbsolute(bool absolute)
             wv->setTemplatePreviewScaleAbsolute(absolute);
 }
 
+void ClusterView::removeLineageClass(int classId)
+{
+    if (classId < 0) return;
+    const int removed = lineageStore_.removeClass(classId);
+    if (removed > 0) lineageStore_.saveWtl();          // make the deletion stick across a reload
+    if (lineageActiveClass_ == classId) lineageActiveClass_ = 0;   // a deleted class can't stay active
+    if (lineageOverlay_) {
+        recomputeLineagePositions();
+        pushActiveLineageBands();                      // the active class may have changed / lost nodes
+        drawContentsMode = REFRESH;
+        update();
+    }
+}
+
 void ClusterView::setLineageActiveClass(int classId)
 {
     if (classId < 0) return;

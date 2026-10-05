@@ -2560,6 +2560,9 @@ void KlustersApp::initClusterPanel()
     connect(templatePalette, &TemplatePalette::classSelected,    this, &KlustersApp::slotTemplateClassSelected);
     connect(templatePalette, &TemplatePalette::obliqueRequested,  this, &KlustersApp::slotTemplatePaletteOblique);
     connect(templatePalette, &TemplatePalette::newClassRequested, this, &KlustersApp::slotTemplatePaletteNewClass);
+    connect(templatePalette, &TemplatePalette::classDeleted,      this, [this](int col){
+        if (ClusterView* cv = activeClusterView()) cv->removeLineageClass(col);
+    });
     connect(templatePalette, &TemplatePalette::classesChanged,    this, &KlustersApp::slotTemplateClassesChanged);
     connect(templatePalette, &TemplatePalette::scaleAbsoluteToggled, this, [this](bool on){
         if (ClusterView* cv = activeClusterView()) cv->setTemplateScaleAbsolute(on);

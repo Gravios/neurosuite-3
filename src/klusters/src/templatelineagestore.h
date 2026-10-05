@@ -98,6 +98,14 @@ public:
     int  addLeaf(int classId, int region, const std::string& kind,
                  const std::vector<int64_t>& spikes);
 
+    // Remove every node of `classId` (its roots and leaves all carry that classId),
+    // e.g. after the palette tombstones the class.  Returns the number removed.
+    int  removeClass(int classId);
+    // Persist the current forest to its .wtl source (no model render) — used after an
+    // in-place edit that must survive a reload, such as a class delete.  False if not
+    // loaded or the write failed.
+    bool saveWtl();
+
     // ── commit ─────────────────────────────────────────────────────────────────
     // Persist the forest to .wtl (the source) and render the MODEL (.mti v2 + .mtf)
     // via the shared neurosuite-core engine (reads the group's .spk).  The model

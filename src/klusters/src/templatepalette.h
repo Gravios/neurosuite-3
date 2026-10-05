@@ -60,6 +60,7 @@ Q_SIGNALS:
     void classSelected(int col);                 ///< list row changed -> this class is active/primary
     void obliqueRequested(const QList<int>& cols);///< `s` on >=1 selected class(es) -> pin oblique basis
     void newClassRequested();                    ///< "New" clicked -> KlustersApp gathers the selection
+    void classDeleted(int col);                  ///< a class was tombstoned -> the overlay drops its nodes
     void classesChanged();                       ///< a create/delete here -> the tab should reload
     void scaleAbsoluteToggled(bool absolute);    ///< waveform preview scale: best-fit <-> absolute
 

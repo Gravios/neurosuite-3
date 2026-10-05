@@ -141,6 +141,10 @@ public:
      *  overlay is engaged, switching class tiles that class and repaints. */
     void setLineageActiveClass(int classId);
     int  lineageActiveClass() const { return lineageActiveClass_; }
+    /** Drop a deleted template class's nodes from the overlay (the palette tombstoned
+     *  it in .eap/.tcl; the .wtl forest is separate), persist the pruned source, and
+     *  repaint.  Resets the active class if it was the deleted one. */
+    void removeLineageClass(int classId);
     /** Template-preview scale: best-fit (false) vs absolute data gain (true).  Sets
      *  the mode future pushes use and updates any live WaveformView preview. */
     void setTemplateScaleAbsolute(bool absolute);
