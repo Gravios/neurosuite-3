@@ -748,11 +748,21 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
         for(float v : tr){ const float a = (v < 0.f) ? -v : v; if(a > pk) pk = a; }
         return pk;
     };
+    // Zoom multiplier: the view's current gain relative to its gain-0 value
+    // (Yfactor0 = YsizeForMaxAmp / acquisitionGain).  Absolute mode already rides
+    // Yfactor; best-fit normalises each template to a channel at gain 0, so without
+    // this it would stay fixed while the spikes grow.  Folding `zoom` in makes the
+    // best-fit band track the waveform amplitude scale (increase/decrease amplitude,
+    // auto-fit) just like the spikes.
+    const double zoom = (YsizeForMaxAmp > 0 && acquisitionGain > 0)
+        ? (static_cast<double>(Yfactor) * static_cast<double>(acquisitionGain)
+             / static_cast<double>(YsizeForMaxAmp))
+        : 1.0;
     auto factorFor = [&](const std::vector<float>& tr)->double{
-        if(tpScaleAbsolute_) return Yfactor;             // absolute: data gain
+        if(tpScaleAbsolute_) return Yfactor;             // absolute: the view's data gain
         const float pk = peakOf(tr);
         if(pk <= 0.f) return Yfactor;
-        return (0.75 * YsizeForMaxAmp) / pk;             // best-fit: tallest spans ~75%
+        return (0.75 * YsizeForMaxAmp / pk) * zoom;      // best-fit: ~75% at gain 0, scales with zoom
     };
     auto drawOne = [&](const std::vector<float>& tr, const QColor& col, int X, double factor){
         if(static_cast<int>(tr.size()) < need) return;
