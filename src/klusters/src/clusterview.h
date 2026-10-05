@@ -718,6 +718,16 @@ private:
 
 Q_SIGNALS:
     void moveToTime(long startTime);
+    /** The set of marked lineage nodes changed (mark/unmark, or a primary/edit that
+     *  cleared them).  KlustersApp refreshes the curation matrices' template columns. */
+    void lineageMarksChanged();
+
+public:
+    /** Marked nodes of the PRIMARY class, as {classId, window [a,b] seconds, mean
+     *  waveform (channel-major, nChan×nSamp)} — the data the augmented curation
+     *  matrices need for their cluster×template cells.  Empty when no primary / no marks. */
+    struct MarkedTemplate { int node; int classId; double a; double b; std::vector<float> mean; };
+    std::vector<MarkedTemplate> markedTemplates() const;
 
 private:
 

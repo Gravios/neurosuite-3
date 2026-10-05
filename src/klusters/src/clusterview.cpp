@@ -1798,6 +1798,7 @@ void ClusterView::removeLineageClass(int classId)
     if (lineageActiveClass_ == classId) {              // the deleted class can't stay primary
         lineageActiveClass_ = -1;
         markedNodes_.clear();
+        Q_EMIT lineageMarksChanged();
         if (lineageOverlay_) toggleLineageOverlay();   // leave edit mode — no primary
         clearTemplatePreviewOnViews();
     }
@@ -1812,6 +1813,7 @@ void ClusterView::setLineageActiveClass(int classId)
     if (classId == lineageActiveClass_) return;        // no change
     lineageActiveClass_ = classId;
     markedNodes_.clear();                              // marks belonged to the previous primary
+    Q_EMIT lineageMarksChanged();
 
     if (classId < 0) {
         // Primary unset: drop the band and leave edit mode (nothing to edit without one).
@@ -1959,6 +1961,11 @@ void ClusterView::paintLineageOverlay(QPainter& p)
                 p.setPen(border); p.setBrush(fill);
             }
             p.drawRect(bar);
+            if (markedNodes_.count(nd.node)) {       // marked for the matrices: a bright halo
+                QPen mk(QColor(255, 255, 255)); mk.setCosmetic(true); mk.setWidth(2);
+                p.setPen(mk); p.setBrush(Qt::NoBrush);
+                p.drawRect(bar.adjusted(-2, -2, 2, 2));
+            }
         }
         p.setBrush(Qt::NoBrush);
     }
@@ -1973,6 +1980,11 @@ void ClusterView::paintLineageOverlay(QPainter& p)
         p.setPen(np);
         p.setBrush(nd.empty ? QBrush(Qt::NoBrush) : QBrush(col));
         p.drawEllipse(c.x() - rad, c.y() - rad, rad * 2, rad * 2);
+        if (markedNodes_.count(nd.node)) {          // marked for the matrices: a bright ring
+            QPen mk(QColor(255, 255, 255)); mk.setCosmetic(true); mk.setWidth(2);
+            p.setPen(mk); p.setBrush(Qt::NoBrush);
+            p.drawEllipse(c.x() - rad - 3, c.y() - rad - 3, (rad + 3) * 2, (rad + 3) * 2);
+        }
     }
     p.setBrush(Qt::NoBrush);
 }
@@ -2084,6 +2096,7 @@ void ClusterView::lineageUndo()
     std::set<int> keep;
     for (int id : markedNodes_) if (lineageStore_.node(id)) keep.insert(id);
     markedNodes_.swap(keep);
+    Q_EMIT lineageMarksChanged();       // the marked templates' data (or set) changed
     recomputeLineagePositions();
     pushActiveLineageBands();
     drawContentsMode = REFRESH;
@@ -2098,6 +2111,7 @@ void ClusterView::lineageRedo()
     std::set<int> keep;
     for (int id : markedNodes_) if (lineageStore_.node(id)) keep.insert(id);
     markedNodes_.swap(keep);
+    Q_EMIT lineageMarksChanged();
     recomputeLineagePositions();
     pushActiveLineageBands();
     drawContentsMode = REFRESH;
@@ -2206,6 +2220,28 @@ void ClusterView::pushActiveLineageBands()
                                    bandCluster, lineageScaleAbsolute_, stds);
 }
 
+std::vector<ClusterView::MarkedTemplate> ClusterView::markedTemplates() const
+{
+    std::vector<MarkedTemplate> out;
+    if (lineageActiveClass_ < 0 || markedNodes_.empty()) return out;
+    const int nsamp = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
+    const int nchan = doc.nbOfchannels();
+    if (nsamp <= 0 || nchan <= 0) return out;
+    const std::size_t recLen = static_cast<std::size_t>(nsamp) * static_cast<std::size_t>(nchan);
+    for (int id : markedNodes_) {
+        const neurofileio::WtlNode* n = lineageStore_.node(id);
+        if (!n || n->count <= 0 || n->mean.size() != recLen) continue;   // placeholders have no template
+        MarkedTemplate mt; mt.node = n->node; mt.classId = n->classId; mt.a = n->a; mt.b = n->b;
+        mt.mean.resize(recLen);
+        for (int smp = 0; smp < nsamp; ++smp)                 // node summary: sample-major
+            for (int ch = 0; ch < nchan; ++ch)                // -> channel-major (ch*nSamp + smp)
+                mt.mean[static_cast<std::size_t>(ch) * nsamp + smp] =
+                    n->mean[static_cast<std::size_t>(smp) * nchan + ch];
+        out.push_back(std::move(mt));
+    }
+    return out;
+}
+
 void ClusterView::clearTemplatePreviewOnViews()
 {
     for (ViewWidget* w : view.getViewList())
@@ -2258,6 +2294,11 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
         QAction* aColl  = menu.addAction(tr("Add collision leaf from shown clusters"));
         aDrift->setEnabled(canEdit); aAdapt->setEnabled(canEdit); aColl->setEnabled(canEdit);
         menu.addSeparator();
+        const bool marked = (markedNodes_.count(nodeId) > 0);
+        const bool canMark = (n && n->count > 0);          // an empty placeholder has no template
+        QAction* aMark = menu.addAction(marked ? tr("Unmark node (remove from curation matrices)")
+                                               : tr("Mark node (add to curation matrices)"));
+        aMark->setEnabled(marked || canMark);
         QAction* aRemove = menu.addAction(tr("Remove node"));
         addHistory(menu);
         menu.addSeparator();
@@ -2267,7 +2308,10 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
         if      (c == aDrift)  { lineageStore_.setRegionSpikes(cls, region, sel);           lineageEdited(); }
         else if (c == aAdapt)  { lineageStore_.addLeaf(cls, region, "adapt-leaf", sel);     lineageEdited(); }
         else if (c == aColl)   { lineageStore_.addLeaf(cls, region, "collision-leaf", sel); lineageEdited(); }
-        else if (c == aRemove) { lineageStore_.removeNode(nodeId);                          lineageEdited(); }
+        else if (c == aMark)   { if (marked) markedNodes_.erase(nodeId); else markedNodes_.insert(nodeId);
+                                 Q_EMIT lineageMarksChanged(); drawContentsMode = REFRESH; update(); }
+        else if (c == aRemove) { markedNodes_.erase(nodeId); lineageStore_.removeNode(nodeId);
+                                 Q_EMIT lineageMarksChanged(); lineageEdited(); }
         else if (c == aCommit)   commitLineageOverlay();
         return;
     }
