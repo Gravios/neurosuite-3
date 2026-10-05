@@ -1696,6 +1696,7 @@ void ClusterView::toggleLineageOverlay()
         recomputeLineagePositions();        // covers the already-time×energy case too
     } else {
         lineageDraw_.clear();
+        clearTemplatePreviewOnViews();          // drop the edit-mode model preview from the waveform view
         if (dimsForced_) { view.updateDimensions(savedDimX_, savedDimY_); dimsForced_ = false; dimsChanged = true; }
     }
     if (statusBar)
@@ -1900,9 +1901,60 @@ void ClusterView::commitLineageOverlay()
     if (statusBar) statusBar->showMessage(R.ok
         ? tr("Committed lineage → %1").arg(QFileInfo(QString::fromStdString(mtiPath)).fileName())
         : tr("Commit failed: %1").arg(QString::fromStdString(R.err)), 6000);
+    if (R.ok) pushTemplatePreview(R);          // show the just-rendered model in the waveform view
     recomputeLineagePositions();
     drawContentsMode = REFRESH;
     update();
+}
+
+void ClusterView::pushTemplatePreview(const neurosuite::templategen::Result& R)
+{
+    // The engine Result carries the rendered model in memory: one .spk-layout
+    // (sample-major, channel-fastest: s*nChan + ch) int16 record per forest node,
+    // in R.wtf[variant], indexed by R.rows[i].row.  The WaveformView wants raw
+    // CHANNEL-MAJOR float curves (ch*nSamp + i), so transpose each kept record.
+    if (R.wtf.empty() || R.rows.empty()) { clearTemplatePreviewOnViews(); return; }
+    const std::vector<int16_t>& stack = R.wtf.begin()->second;   // the store renders one variant
+    const int nsamp = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
+    const int nchan = doc.nbOfchannels();
+    if (nsamp <= 0 || nchan <= 0) { clearTemplatePreviewOnViews(); return; }
+    const std::size_t recLen = static_cast<std::size_t>(nsamp) * static_cast<std::size_t>(nchan);
+
+    std::vector<std::vector<float>> templates;
+    std::vector<QColor>             colors;
+    templates.reserve(R.rows.size());
+    colors.reserve(R.rows.size());
+    for (const neurofileio::WtiRow& row : R.rows) {
+        if (row.nSpikes <= 0) continue;                          // skip empty placeholders
+        const std::size_t off = static_cast<std::size_t>(row.row) * recLen;
+        if (off + recLen > stack.size()) continue;               // defensive: ragged stack
+        std::vector<float> chMajor(recLen);
+        for (int s = 0; s < nsamp; ++s)
+            for (int ch = 0; ch < nchan; ++ch)
+                chMajor[static_cast<std::size_t>(ch) * nsamp + s] =
+                    static_cast<float>(stack[off + static_cast<std::size_t>(s) * nchan + ch]);
+        templates.push_back(std::move(chMajor));
+        colors.push_back(lineageClassColor(row.unitId));
+    }
+    if (templates.empty()) { clearTemplatePreviewOnViews(); return; }
+
+    // Band = the first shown cluster's mean±std (edit-mode grey underlay).
+    QList<int> cl = view.clusters();
+    std::sort(cl.begin(), cl.end());
+    int bandCluster = -1;
+    for (int c : cl) if (c > 1) { bandCluster = c; break; }
+
+    for (ViewWidget* w : view.getViewList())
+        if (WaveformView* wv = qobject_cast<WaveformView*>(w))
+            wv->setTemplatePreview(/*editMode*/true, nchan, nsamp, templates, colors,
+                                   bandCluster, lineageScaleAbsolute_);
+}
+
+void ClusterView::clearTemplatePreviewOnViews()
+{
+    for (ViewWidget* w : view.getViewList())
+        if (WaveformView* wv = qobject_cast<WaveformView*>(w))
+            wv->clearTemplatePreview();
 }
 
 void ClusterView::mouseDoubleClickEvent(QMouseEvent* e)

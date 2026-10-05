@@ -566,6 +566,14 @@ private:
     double lineageDragBoundaryT_ = 0.0;       ///< live preview time (s) while dragging
     void   showLineageContextMenu(const QPoint& vp);
     void   commitLineageOverlay();            ///< render the model (.mti/.mtf) from the forest
+    // Edit-mode template preview (plan §11.4): after a commit the rendered model
+    // waveforms (carried in the engine Result, one .spk-layout record per forest
+    // node) are pushed to the WaveformView(s), which draw them in the foreground
+    // over the first shown cluster's mean±std band.  clearTemplatePreviewOnViews
+    // drops them again when the overlay is switched off.
+    void   pushTemplatePreview(const neurosuite::templategen::Result& R);
+    void   clearTemplatePreviewOnViews();
+    bool   lineageScaleAbsolute_ = false;     ///< WaveformView template scale: best-fit (false) vs absolute
     void   lineageEdited();                   ///< recompute + repaint + "commit to render" hint
     double timeAtViewport(const QPoint& vp);  ///< viewport X -> seconds (valid when X is time)
     std::vector<int64_t> shownClusterSpikes() const;   ///< displayed clusters' 0-based .spk ids

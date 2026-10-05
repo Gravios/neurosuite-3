@@ -402,9 +402,18 @@ void WaveformView::paintEvent ( QPaintEvent *){
                 //A lasso is pending confirmation: show its residual preview in
                 //place of the cluster waveforms until it is applied or cancelled.
                 drawResidualPreview(painter);
+            } else if(hasTemplatePreview_ && tpEdit_){
+                //Edit mode: the templates take the foreground and the first
+                //selected cluster's mean±std is a grey band underlay.  The spike
+                //waveforms are hidden while editing.
+                drawTemplateBand(painter);
+                drawTemplatePreview(painter);
             } else {
                 //Shade the selected channels, then paint the waveforms on top.
                 drawChannelSelection(painter);
+
+                //Review mode: a faint primary-template underlay behind the waveforms.
+                if(hasTemplatePreview_) drawTemplatePreview(painter);
 
                 //Paint all the waveforms in the shownclusters list (in the double buffer)
                 drawWaveforms(painter,view.clusters());
@@ -412,7 +421,7 @@ void WaveformView::paintEvent ( QPaintEvent *){
         }
 
         //The update mode applies only when the color of a cluster has changed.
-        if(drawContentsMode == UPDATE && !hasResidualPreview_){
+        if(drawContentsMode == UPDATE && !hasResidualPreview_ && !(hasTemplatePreview_ && tpEdit_)){
             //Paint the waveforms for the clusters contained in clusterUpdateList
             drawWaveforms(painter,clusterUpdateList);
 
@@ -626,6 +635,161 @@ void WaveformView::drawResidualPreview(QPainter& painter){
     drawTrace(rpMean_, QColor(140,140,140));          // mean lassoed waveform (grey)
     if(!rpFit_.empty()) drawTrace(rpFit_, QColor(60,120,220));  // basis fit B·ā (blue)
     drawTrace(rpResid_, QColor(214,40,40));           // residual x̄−B·ā (red, headline)
+}
+
+// ── template preview (plan §11.4) ──────────────────────────────────────────
+
+void WaveformView::setTemplatePreview(bool editMode, int nChan, int nSamp,
+                                      const std::vector<std::vector<float>>& templates,
+                                      const std::vector<QColor>& colors,
+                                      int bandCluster, bool scaleAbsolute){
+    tpEdit_          = editMode;
+    tpChan_          = nChan;
+    tpSamp_          = nSamp;
+    tpTemplates_     = templates;
+    tpColors_        = colors;
+    tpBandCluster_   = bandCluster;
+    tpScaleAbsolute_ = scaleAbsolute;
+    hasTemplatePreview_ = true;
+    dataReady = true;
+    // Edit mode underlays cluster `bandCluster`'s mean±std as a grey band; make
+    // sure that mean is computed.  Best-effort: if the job has not finished the
+    // band simply does not draw yet, and its completion posts a redraw (which
+    // still routes through this preview because hasTemplatePreview_ stays set).
+    if(editMode && bandCluster > 1 && !view.clusters().isEmpty()){
+        WaveformThread* meanJob = getWaveforms();
+        meanJob->getMean(bandCluster, presentationMode);
+    }
+    updateWindow();                       // size the world box for the shown clusters
+    drawContentsMode = REDRAW;
+    update();
+}
+
+void WaveformView::clearTemplatePreview(){
+    if(!hasTemplatePreview_) return;
+    hasTemplatePreview_ = false;
+    tpEdit_ = false;
+    tpTemplates_.clear();
+    tpColors_.clear();
+    tpChan_ = tpSamp_ = 0;
+    tpBandCluster_ = -1;
+    // The cluster waveform cache was never touched, so a plain redraw restores
+    // the normal display.
+    drawContentsMode = REDRAW;
+    update();
+}
+
+void WaveformView::setTemplatePreviewScaleAbsolute(bool absolute){
+    if(tpScaleAbsolute_ == absolute) return;
+    tpScaleAbsolute_ = absolute;
+    if(hasTemplatePreview_){
+        drawContentsMode = REDRAW;
+        update();
+    }
+}
+
+void WaveformView::drawTemplateBand(QPainter& painter){
+    // Edit mode only: cluster tpBandCluster_'s mean±std as a grey dotted band
+    // underlay, consuming the iterator sample-major exactly as the mean
+    // presentation in drawWaveforms (so the mean/stdev pairing lines up).
+    if(tpBandCluster_ <= 1) return;
+    Data& clusteringData = doc.data();
+    Data::WaveformIterator* it;
+    if(presentationMode == SAMPLE)
+        it = clusteringData.sampleWaveformIterator(static_cast<dataType>(tpBandCluster_), nbSpkToDisplay);
+    else
+        it = clusteringData.timeFrameWaveformIterator(static_cast<dataType>(tpBandCluster_), startTime, endTime);
+    if(!it->isMeanAvailable()){ delete it; return; }
+
+    const int X = X0;                     // the first (left-most) column
+    QPolygon mn, mx;
+    int x = 0;
+    for(int i = 0; i < nbSamplesInWaveform; ++i){
+        for(int j = 0; j < nbchannels; ++j){
+            const long Y = Y0 - channelPositions[j] * (YsizeForMaxAmp + Yspace);
+            const long meanValue = it->nextMeanValue();           // already inverted
+            const long stDev     = it->nextStDeviationValue();
+            mn.putPoints((j*nbSamplesInWaveform) + i, 1, X + x, -Y + static_cast<long>((meanValue - stDev) * Yfactor));
+            mx.putPoints((j*nbSamplesInWaveform) + i, 1, X + x, -Y + static_cast<long>((meanValue + stDev) * Yfactor));
+        }
+        x += Xstep;
+    }
+    delete it;
+
+    QPen band(QColor(150,150,150));
+    band.setStyle(Qt::DotLine);
+    painter.setPen(band);
+    for(int k = 0; k < nbchannels; ++k){
+        const int cntMin = (nbSamplesInWaveform == -1) ? mn.size() - k*nbSamplesInWaveform : nbSamplesInWaveform;
+        painter.drawPolyline(mn.constData() + k*nbSamplesInWaveform, cntMin);
+        const int cntMax = (nbSamplesInWaveform == -1) ? mx.size() - k*nbSamplesInWaveform : nbSamplesInWaveform;
+        painter.drawPolyline(mx.constData() + k*nbSamplesInWaveform, cntMax);
+    }
+}
+
+void WaveformView::drawTemplatePreview(QPainter& painter){
+    // Templates are raw, CHANNEL-MAJOR (ch*nSamp + i) — the same layout + sign
+    // convention as drawResidualPreview (raw negated on the point; if it renders
+    // upside-down, flip that sign on the marked line).
+    if(tpTemplates_.empty() || tpChan_ <= 0 || tpSamp_ <= 0) return;
+    const int step    = YsizeForMaxAmp + Yspace;
+    const int nChShow = std::min(tpChan_, nbchannels);
+    const int alpha   = tpEdit_ ? 255 : 90;              // front vs faint underlay
+    const int need    = tpChan_ * tpSamp_;
+
+    auto peakOf = [&](const std::vector<float>& tr)->float{
+        float pk = 0.f;
+        for(float v : tr){ const float a = (v < 0.f) ? -v : v; if(a > pk) pk = a; }
+        return pk;
+    };
+    auto factorFor = [&](const std::vector<float>& tr)->double{
+        if(tpScaleAbsolute_) return Yfactor;             // absolute: data gain
+        const float pk = peakOf(tr);
+        if(pk <= 0.f) return Yfactor;
+        return (0.75 * YsizeForMaxAmp) / pk;             // best-fit: tallest spans ~75%
+    };
+    auto drawOne = [&](const std::vector<float>& tr, const QColor& col, int X, double factor){
+        if(static_cast<int>(tr.size()) < need) return;
+        QColor c = col; c.setAlpha(alpha);
+        QPen pen(c); pen.setWidth(tpEdit_ ? 2 : 1);
+        painter.setPen(pen);
+        for(int ch = 0; ch < nChShow; ++ch){
+            const int cpos = (ch < static_cast<int>(channelPositions.size())) ? channelPositions[ch] : ch;
+            const long Y = Y0 - static_cast<long>(cpos) * step;
+            QPolygon poly(tpSamp_);
+            long x = 0;
+            for(int i = 0; i < tpSamp_; ++i){
+                const float v = tr[static_cast<size_t>(ch) * tpSamp_ + i];     // channel-major
+                poly.setPoint(i, static_cast<int>(X + x),
+                              static_cast<int>(-Y - static_cast<long>(v * factor)));  // (*) sign
+                x += Xstep;
+            }
+            painter.drawPolyline(poly);
+        }
+    };
+
+    if(tpEdit_){
+        // Templates in the foreground, overlaid at the first column.
+        for(size_t t = 0; t < tpTemplates_.size(); ++t){
+            const QColor col = (t < tpColors_.size()) ? tpColors_[t] : QColor(60,120,220);
+            drawOne(tpTemplates_[t], col, X0, factorFor(tpTemplates_[t]));
+        }
+    } else {
+        // Review: the primary template as a faint underlay behind each shown
+        // cluster's waveform column (one column at X0 in overlay presentation).
+        const std::vector<float>& prim = tpTemplates_.front();
+        const QColor col = tpColors_.empty() ? QColor(60,120,220) : tpColors_.front();
+        const double factor = factorFor(prim);
+        QList<int> cl = view.clusters();
+        std::sort(cl.begin(), cl.end());
+        const int colShift = overLayPresentation ? 0 : shift;
+        if(cl.isEmpty() || colShift == 0){
+            drawOne(prim, col, X0, factor);
+        } else {
+            int X = X0;
+            for(int n = 0; n < cl.size(); ++n){ drawOne(prim, col, X, factor); X += colShift; }
+        }
+    }
 }
 
 void WaveformView::updateWindow(){

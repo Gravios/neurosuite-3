@@ -244,6 +244,25 @@ public Q_SLOTS:
     void clearResidualPreview();
     bool hasResidualPreview() const { return hasResidualPreview_; }
 
+    // ── template preview (plan §11.4) ──────────────────────────────────────────
+    // Pushed by ClusterView (via KlustersView::getViewList) while the lineage
+    // overlay is engaged.  `templates` is a list of raw, CHANNEL-MAJOR curves
+    // (index ch*nSamp + i) — the same layout + sign convention setResidualPreview
+    // uses.  `editMode` flips the roles:
+    //   review (false): the spike waveforms stay in front, the template(s) drawn as
+    //     a faint underlay behind them;
+    //   edit   (true):  the template(s) are in front, with cluster `bandCluster`'s
+    //     mean±std drawn as a grey band underlay.
+    // `scaleAbsolute` true draws at the data's gain (Yfactor); false (best-fit)
+    // normalises each template's peak to ~75% of a channel's height.
+    void setTemplatePreview(bool editMode, int nChan, int nSamp,
+                            const std::vector<std::vector<float>>& templates,
+                            const std::vector<QColor>& colors,
+                            int bandCluster, bool scaleAbsolute);
+    void clearTemplatePreview();
+    bool hasTemplatePreview() const { return hasTemplatePreview_; }
+    void setTemplatePreviewScaleAbsolute(bool absolute);   // best-fit <-> absolute, repaints
+
     /**Enables the caller to know if there is any thread running launch by the view.*/
     bool isThreadsRunning() const override;
     void stopRunningThreads() override { stopAndClearThreads(); }
@@ -477,6 +496,28 @@ private:
     std::vector<float> rpFit_;
     std::vector<float> rpResid_;
     QString            rpVerdict_;
+
+    /** Draw the committed template curves (setTemplatePreview) over the normal
+     *  per-channel baseline geometry — front in edit mode, a faint underlay in
+     *  review mode.  Scaled by scaleAbsolute (gain) or best-fit (peak→~75%). */
+    void drawTemplatePreview(QPainter& painter);
+    /** Draw cluster `tpBandCluster_`'s mean±std as a grey band underlay (edit
+     *  mode only), reusing the per-channel baseline geometry. */
+    void drawTemplateBand(QPainter& painter);
+
+    // Template preview overlay (plan §11.4) — set by ClusterView through
+    // KlustersView while the lineage overlay is engaged.  Templates are raw,
+    // CHANNEL-MAJOR (ch*nSamp + i), same sign convention as the residual
+    // preview.  Review mode: underlay behind the waveforms; edit mode: in
+    // front, with tpBandCluster_'s mean±std as a grey band.
+    bool                            hasTemplatePreview_ = false;
+    bool                            tpEdit_ = false;
+    bool                            tpScaleAbsolute_ = false;
+    int                             tpChan_ = 0;
+    int                             tpSamp_ = 0;
+    int                             tpBandCluster_ = -1;
+    std::vector<std::vector<float>> tpTemplates_;
+    std::vector<QColor>             tpColors_;
 
     /**Updates the dimension of the window.*/
     void updateWindow();
