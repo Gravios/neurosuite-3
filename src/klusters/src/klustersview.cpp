@@ -930,10 +930,12 @@ void KlustersView::setMatrixTemplateColumns(const std::vector<MatrixTemplateCol>
 {
     // Forward to every curation matrix in this display.  The template/residual/drift
     // matrices compute a real cluster×template value; the error matrix greys them
-    // (no mean-waveform statistic).  (Template matrix wired first; the other three
-    // follow the same setTemplateColumns API.)
+    // (no mean-waveform statistic).  All share the same setTemplateColumns API.
     const QList<TemplateMatrixView*> tmvs = findChildren<TemplateMatrixView*>();
     for (TemplateMatrixView* v : tmvs) v->setTemplateColumns(cols);
+
+    const QList<ErrorMatrixView*> emvs = findChildren<ErrorMatrixView*>();
+    for (ErrorMatrixView* v : emvs) v->setTemplateColumns(cols);
 }
 
 void KlustersView::closeEvent(QCloseEvent* e){

@@ -41,6 +41,7 @@
 #include "pair.h"
 #include "data.h"              // Data::ClusteringSnapshot (the raw cache's epoch key)
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
+#include "matrixtemplatecols.h" // MatrixTemplateCol — marked-node template strip (§11.5)
 
 // forward declaration
 class KlustersDoc;
@@ -122,6 +123,15 @@ public:
     void resetDisplayOrder();
     /// Pointer to the [N x N] probability matrix (1-based; may be null).
     const Array<double>* matrixData() const { return probabilities; }
+
+    /// Marked-node template strip (§11.5): the curator's marked lineage nodes
+    /// pushed from ClusterView via KlustersView::setMatrixTemplateColumns.  The
+    /// error matrix has no per-cluster/template similarity it can compute (its
+    /// cells are a same-neuron probability between two clusters with spikes, and
+    /// a template is not a cluster), so every cell of the strip is GREYED — the
+    /// strip is still drawn so the four matrices share one geometry and the
+    /// marked templates read at the same edge position across all of them.
+    void setTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
 
 Q_SIGNALS:
     /// Emitted when the user clicks anywhere in the matrix view.  Used
@@ -393,6 +403,10 @@ private:
         const std::shared_ptr<const Data::ClusteringSnapshot>& jobSnap,
         QHash<int,int>* renamedFromTo = nullptr) const;
 
+    /**Marked-node templates to draw as the edge strip (empty = no strip).  Stored
+     * only for geometry/room; the error matrix computes no per-cell value (all grey).*/
+    std::vector<MatrixTemplateCol> tplCols_;
+
     /**List of the clusters which have been modified since the last computation of the errror matrix.*/
     QList<int> modifiedClusterList;
 
@@ -560,6 +574,11 @@ private:
   * @param painter painter on which to draw the information
   */
     void drawClusterIds(QPainter& painter);
+
+    /**Draws the marked-node template strip (§11.5) at the right/bottom edge.  All
+     * cells grey (see setTemplateColumns): the value functor sets grey=true for
+     * every extended cell, so colourFor is never consulted.*/
+    void drawTemplateStrip(QPainter& painter);
 
     /**Initialize the internal colorMap use to represents the probabilities of the error matrix.*/
     void initializeColorMap();

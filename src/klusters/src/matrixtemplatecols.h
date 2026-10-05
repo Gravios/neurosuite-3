@@ -45,61 +45,44 @@ inline constexpr int kTemplateStripGapCells = 1;
 /** Draw the M-template strip (right columns + bottom rows + the template×template
  *  corner) for an N-cluster matrix already drawn at (oriF, eff).
  *
- *  valueGrey(i, j, &grey) returns the display VALUE for template i against
- *  LOGICAL column/row j — where j in [0,N) is cluster j and j in [N,N+M) is
- *  template (j-N) — and sets `grey` true when the cell should be greyed.
- *  colourFor maps a value to a QColor; greyed cells use `greyColour`.
+ *  `value(r, c, &grey)` returns the display value for the EXTENDED cell at logical
+ *  row r, column c — where an index in [0,N) is a cluster and in [N,N+M) is template
+ *  (index-N) — and sets `grey` true when the cell should be greyed.  Only cells with
+ *  r>=N or c>=N are drawn (the N×N cluster block is already on screen).  Taking full
+ *  (r,c) rather than (template,cluster) lets ASYMMETRIC matrices (residual, drift)
+ *  give the two off-diagonal directions distinct values.  colourFor maps a value to
+ *  a QColor; greyed cells use `greyColour`.
  *
- *  The strip starts one gap-cell past the N block on each axis.  M is small
- *  (a handful of marked nodes), so per-cell fillRect is cheap. */
-template <class ValueGreyFn, class ColourFn>
+ *  M is small (a handful of marked nodes), so the ~2NM+M² per-cell fillRects are cheap. */
+template <class ValueFn, class ColourFn>
 inline void drawMatrixTemplateStrip(QPainter& p, const QPointF& oriF, double eff,
                                     int N, int M,
-                                    ValueGreyFn valueGrey, ColourFn colourFor,
+                                    ValueFn value, ColourFn colourFor,
                                     const QColor& greyColour = QColor(70, 70, 70),
                                     const QColor& sepColour  = QColor(200, 200, 90))
 {
     if (M <= 0 || eff <= 0.0) return;
-    const double gap   = kTemplateStripGapCells * eff;
-    const double colX0 = oriF.x() + N * eff + gap;   // template columns start (x)
-    const double rowY0 = oriF.y() + N * eff + gap;   // template rows start (y)
-
-    auto cell = [&](double x, double y, double value, bool grey){
-        p.fillRect(QRectF(x, y, eff, eff), grey ? greyColour : colourFor(value));
-    };
+    const double gap = kTemplateStripGapCells * eff;
+    auto at = [&](int k){ return (k < N) ? k * eff : (N * eff + gap + (k - N) * eff); };
 
     p.save();
     p.setPen(Qt::NoPen);
-    // Right columns: template i (x = colX0 + i*eff) vs every cluster row j in [0,N),
-    // then the template×template rows (the corner) below the gap.
-    for (int i = 0; i < M; ++i) {
-        const double x = colX0 + i * eff;
-        for (int j = 0; j < N; ++j) {
-            bool grey = false; const double v = valueGrey(i, j, grey);
-            cell(x, oriF.y() + j * eff, v, grey);
-        }
-        for (int u = 0; u < M; ++u) {               // corner: template i vs template u
-            bool grey = false; const double v = valueGrey(i, N + u, grey);
-            cell(x, rowY0 + u * eff, v, grey);
-        }
-    }
-    // Bottom rows: template i (y = rowY0 + i*eff) vs every cluster column j in [0,N).
-    for (int i = 0; i < M; ++i) {
-        const double y = rowY0 + i * eff;
-        for (int j = 0; j < N; ++j) {
-            bool grey = false; const double v = valueGrey(i, j, grey);
-            cell(oriF.x() + j * eff, y, v, grey);
+    for (int r = 0; r < N + M; ++r) {
+        const double y = oriF.y() + at(r);
+        for (int c = 0; c < N + M; ++c) {
+            if (r < N && c < N) continue;        // the cluster block is already drawn
+            bool grey = false; const double v = value(r, c, grey);
+            p.fillRect(QRectF(oriF.x() + at(c), y, eff, eff), grey ? greyColour : colourFor(v));
         }
     }
     // A separator line in the gap so the strip reads as appended, not part of the grid.
     QPen sep(sepColour); sep.setCosmetic(true); sep.setWidth(0);
     p.setPen(sep);
-    const double x = oriF.x() + N * eff + gap * 0.5;
-    const double y = oriF.y() + N * eff + gap * 0.5;
-    const double spanX = (N + M) * eff + gap;
-    const double spanY = (N + M) * eff + gap;
-    p.drawLine(QPointF(x, oriF.y()), QPointF(x, oriF.y() + spanY));
-    p.drawLine(QPointF(oriF.x(), y), QPointF(oriF.x() + spanX, y));
+    const double x  = oriF.x() + N * eff + gap * 0.5;
+    const double yy = oriF.y() + N * eff + gap * 0.5;
+    const double span = (N + M) * eff + gap;
+    p.drawLine(QPointF(x, oriF.y()), QPointF(x, oriF.y() + span));
+    p.drawLine(QPointF(oriF.x(), yy), QPointF(oriF.x() + span, yy));
     p.restore();
 }
 

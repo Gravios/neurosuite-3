@@ -694,12 +694,13 @@ void TemplateMatrixView::drawTemplateStrip(QPainter& p)
     const QPointF oriF = effMatrixTopLeft();
     const double  eff  = effCellSize();
 
-    auto valueGrey = [&](int i, int j, bool& grey)->double{
-        if (j < N) { grey = tplGrey_[i][j]; return tplVal_[i][j]; }   // cluster j
-        grey = false; return tplCorner_[i][j - N];                   // template j-N
+    auto value = [&](int r, int c, bool& grey)->double{       // xcorr is symmetric
+        if (r < N && c >= N) { const int t = c - N; grey = tplGrey_[t][r]; return tplVal_[t][r]; }
+        if (r >= N && c < N) { const int t = r - N; grey = tplGrey_[t][c]; return tplVal_[t][c]; }
+        grey = false; return tplCorner_[r - N][c - N];        // template×template corner
     };
     auto colourFor = [&](double v)->QColor{ return colorMap[colourIndexFor(v, NB_COLORS)]; };
-    drawMatrixTemplateStrip(p, oriF, eff, N, M, valueGrey, colourFor);
+    drawMatrixTemplateStrip(p, oriF, eff, N, M, value, colourFor);
 }
 
 void TemplateMatrixView::drawMatrix(QPainter& p)

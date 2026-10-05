@@ -24,6 +24,7 @@
 #include "errormatrixview.h"
 #include "matrixgrid.h"
 #include "matrixbadge.h"
+#include "matrixtemplatecols.h"  // drawMatrixTemplateStrip — the shared edge-strip renderer
 #include "featuremask.h"
 #include <QStringList>
 #include <vector>
@@ -624,11 +625,16 @@ void ErrorMatrixView::recomputeCellWidth()
 {
     const int n = clusterList.size();
     if (n <= 0) { cellWidth = CELL_WIDTH; widthBorder = 5; heightBorder = 14; return; }
+    // Reserve room for the marked-node template strip (gap + M cells) so it fits
+    // on screen instead of running off the right/bottom edge (mirrors the other
+    // three matrices).
+    const int nStrip = tplCols_.empty() ? 0 : (kTemplateStripGapCells + static_cast<int>(tplCols_.size()));
+    const int nTot   = n + nStrip;
     const int matH   = std::max(height() - CONTROLS_H, 1);
     const int availW = width() - LABEL_MARGIN - 10;
     const int availH = matH - 14 - 10;
-    const int fitW   = (availW > 0) ? availW / n : CELL_WIDTH;
-    const int fitH   = (availH > 0) ? availH / n : CELL_WIDTH;
+    const int fitW   = (availW > 0) ? availW / nTot : CELL_WIDTH;
+    const int fitH   = (availH > 0) ? availH / nTot : CELL_WIDTH;
     cellWidth        = std::max(4, std::min({fitW, fitH, CELL_WIDTH}));
     widthBorder      = cellWidth / 3 + 5;
     heightBorder     = cellWidth / 3 + 14;
@@ -905,6 +911,11 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
         }
     }
 
+    // Marked-node template columns/rows at the edge (§11.5) — all grey for the
+    // error matrix (no cluster×template probability exists).  Drawn before the
+    // selection boxes so a selected pair still outlines on top.
+    drawTemplateStrip(painter);
+
     // Edge-highlight every selected pair (not just the most recent one).  The
     // cell layout mirrors the loop above: column = pair.first cluster (advances
     // x), row = pair.second cluster (advances y), both 0-based offsets from the
@@ -929,6 +940,33 @@ void ErrorMatrixView::drawMatrix(QPainter& painter){
     }
 }
 
+
+// ── marked-node template columns (§11.5) ──────────────────────────────────────
+void ErrorMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
+{
+    tplCols_ = cols;
+    updateWindow();              // refit so the strip (gap + M cells) is on screen
+    drawContentsMode = REDRAW;
+    update();
+}
+
+void ErrorMatrixView::drawTemplateStrip(QPainter& painter)
+{
+    const int M = static_cast<int>(tplCols_.size());
+    const int N = clusterList.size();
+    if (M == 0 || N == 0) return;
+    const QPointF oriF = effMatrixTopLeft();
+    const double  eff  = effCellSize();
+
+    // Every extended cell is greyed: the error "probability" is defined only
+    // between two spiking clusters (how likely they are the same neuron), so a
+    // cluster×template or template×template cell has no meaning here.  value()
+    // flags grey for every (r,c), so colourFor is never consulted — the black
+    // fallback only satisfies the renderer's signature.
+    auto value     = [&](int, int, bool& grey)->double{ grey = true; return 0.0; };
+    auto colourFor = [&](double)->QColor{ return QColor(0, 0, 0); };
+    drawMatrixTemplateStrip(painter, oriF, eff, N, M, value, colourFor);
+}
 
 void ErrorMatrixView::initializeColorMap(){
     for(int i = 0;i<nbColors;i++){
