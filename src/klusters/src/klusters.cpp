@@ -6844,7 +6844,7 @@ const KlustersApp::FilterKey KlustersApp::kFilterKeys[] = {
     {Qt::Key_E,      Qt::NoModifier, "E",      "Cycle the matrix tabs (Error, Template, Residual, Drift)"},
     {Qt::Key_F,      Qt::NoModifier, "F",      "Toggle the t-SNE embedding of the selected clusters"},
     {Qt::Key_O,      Qt::ShiftModifier, "Shift+O", "Toggle the oblique (template-axis) projection — onto the selected clusters, or onto a pinned basis (Actions ▸ Set Oblique Basis…) to examine a third"},
-    {Qt::Key_E,      Qt::ShiftModifier, "Shift+E", "Toggle the manual-lineage overlay — median nodes + drift tree + region boundaries over the feature scatter (set X to time to see the regions)"},
+    {Qt::Key_E,      Qt::ShiftModifier, "Shift+E", "Toggle the manual-lineage overlay — drift roots ride a ribbon above the scatter spanning each region, leaves hang below; right-click a node/boundary for its menu, Shift+left-drag a boundary to move it (needs Templates mode, Preferences ▸ Display)"},
     {Qt::Key_A,      Qt::NoModifier, "A",      "Toggle autoscale in the feature view"},
     {Qt::Key_Up,     Qt::NoModifier, "Up",     "While the t-SNE view is showing: raise the perplexity and recompute"},
     {Qt::Key_Down,   Qt::NoModifier, "Down",   "While the t-SNE view is showing: lower the perplexity and recompute"},

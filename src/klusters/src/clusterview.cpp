@@ -1380,6 +1380,22 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
         return;
     }
 
+    // Shift+Left arms a lineage region-boundary drag (double-left is reset-zoom,
+    // so it can no longer be used).  Only when the overlay is on and the press is
+    // over a boundary; otherwise it falls through to normal selection/zoom.
+    if (lineageOverlay_ && (e->button() == Qt::LeftButton)
+        && (e->modifiers() & Qt::ShiftModifier)) {
+        const int b = lineageBoundaryAt(e->position().toPoint());
+        if (b >= 0 && b < static_cast<int>(lineageStore_.partition().bounds.size())) {
+            lineageDragBoundary_  = b;
+            lineageDragBoundaryT_ = lineageStore_.partition().bounds[static_cast<std::size_t>(b)];
+            selectionPolygon.resize(0); nbSelectionPoints = 0;   // no half-open polygon
+            setCursor(Qt::SizeHorCursor);
+            e->accept();
+            return;
+        }
+    }
+
     //Defining a time window t oupdate the Traceview
     if(mode == SELECT_TIME){
         QPoint current = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
@@ -1433,9 +1449,10 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
 }
 
 void ClusterView::mouseReleaseEvent(QMouseEvent* event){
-    // Lineage overlay (§11.3): finish a double-left-drag of a region boundary.
+    // Lineage overlay (§11.3): finish a Shift+left-drag of a region boundary.
     if (lineageDragBoundary_ >= 0) {
         const int i = lineageDragBoundary_; lineageDragBoundary_ = -1;
+        unsetCursor();
         const double t = timeAtViewport(event->position().toPoint());
         if (t > 0.0 && lineageStore_.moveBoundary(i, t)) lineageEdited();
         else { recomputeLineagePositions(); drawContentsMode = REFRESH; update(); }  // snap back
@@ -1727,6 +1744,15 @@ void ClusterView::loadLineageOverlay()
     const int nc = doc.nbOfchannels();
     const double grain = configuration().getProjectionScopeMinutes() * 60.0;
     lineageStore_.load(base, group, tag, variant, spkTag, ns, nc, doc.getSamplingRate(), grain);
+
+    // Auto-seed a fresh session: with no prior .wtl the forest loads empty, so
+    // start the curator off with ONE template class tiled across every region as
+    // empty placeholders (ensureClassTiled).  Gives an immediately-populatable
+    // lineage instead of a blank overlay; stays in memory until a region is
+    // populated and committed (an all-placeholder commit is refused).  Templates
+    // mode is already gated upstream at the Shift+E dispatch.
+    if (lineageStore_.ok() && lineageStore_.nodeCount() == 0 && lineageStore_.partitionReady())
+        lineageStore_.ensureClassTiled(0);
 }
 
 void ClusterView::recomputeLineagePositions()
@@ -1739,6 +1765,7 @@ void ClusterView::recomputeLineagePositions()
         LineageNodeDraw nd;
         nd.node = n.node; nd.classId = n.classId; nd.parent = n.parent;
         nd.drift = (n.kind.rfind("drift", 0) == 0);
+        nd.a = n.a; nd.b = n.b;                       // region window (for root-ribbon span)
         double sx = 0.0, sy = 0.0; long cnt = 0;
         for (int64_t s : n.spikes) {
             const dataType row = static_cast<dataType>(s) + 1;   // 0-based .spk id -> 1-based feature row
@@ -1763,27 +1790,41 @@ void ClusterView::paintLineageOverlay(QPainter& p)
 {
     if (!lineageOverlay_) return;
     const int W = width(), H = height();
+    const double sr = doc.getSamplingRate();
+    const bool timeX = (dimensionX == timeDimension && lineageStore_.partitionReady());
+    const int rootBarY = 14;        // screen px from the top — the drift roots sit
+                                    // ABOVE the top feature, as a per-region ribbon.
+    auto xAt = [&](double tSec){
+        return worldToViewport(QPoint(static_cast<int>(std::lround(tSec * sr)), 0)).x();
+    };
+    auto isRoot = [](const LineageNodeDraw& nd){ return nd.drift && nd.parent < 0; };
 
     // Region boundaries — vertical lines, only meaningful when X is the time dim.
-    if (dimensionX == timeDimension && lineageStore_.partitionReady()) {
-        const double sr = doc.getSamplingRate();
+    if (timeX) {
         QPen bPen(QColor(150, 150, 150, 160)); bPen.setCosmetic(true); bPen.setStyle(Qt::DashLine);
         QPen dPen(QColor(255, 180, 80));       dPen.setCosmetic(true); dPen.setWidth(2);  // dragged
         const std::vector<double>& bnds = lineageStore_.partition().bounds;
         for (std::size_t i = 0; i < bnds.size(); ++i) {
             const bool dragged = (static_cast<int>(i) == lineageDragBoundary_);
             const double bt = dragged ? lineageDragBoundaryT_ : bnds[i];
-            const int x = worldToViewport(QPoint(static_cast<int>(std::lround(bt * sr)), 0)).x();
+            const int x = xAt(bt);
             if (x < 0 || x > W) continue;
             p.setPen(dragged ? dPen : bPen);
             p.drawLine(x, 0, x, H);
         }
     }
 
+    // Screen position per node: a drift ROOT sits on the top ribbon, centred over
+    // its region's time span; every other node at its world (feature) point.
     std::map<int, QPoint> screenOf;
-    for (const LineageNodeDraw& nd : lineageDraw_) screenOf[nd.node] = worldToViewport(nd.world);
+    for (const LineageNodeDraw& nd : lineageDraw_) {
+        if (timeX && isRoot(nd))
+            screenOf[nd.node] = QPoint((xAt(nd.a) + xAt(nd.b)) / 2, rootBarY);
+        else
+            screenOf[nd.node] = worldToViewport(nd.world);
+    }
 
-    // Child edges (parent -> child).
+    // Child edges (parent -> child): a leaf hangs from its region root's ribbon.
     QPen ePen(QColor(200, 200, 200, 150)); ePen.setCosmetic(true);
     p.setPen(ePen);
     for (const LineageNodeDraw& nd : lineageDraw_) {
@@ -1795,19 +1836,41 @@ void ClusterView::paintLineageOverlay(QPainter& p)
     // Drift trajectory — each class's drift roots joined in time (x) order.
     std::map<int, std::vector<const LineageNodeDraw*>> rootsByClass;
     for (const LineageNodeDraw& nd : lineageDraw_)
-        if (nd.drift && nd.parent < 0) rootsByClass[nd.classId].push_back(&nd);
+        if (isRoot(nd)) rootsByClass[nd.classId].push_back(&nd);
     for (auto& kv : rootsByClass) {
         std::vector<const LineageNodeDraw*>& v = kv.second;
         std::sort(v.begin(), v.end(),
-                  [](const LineageNodeDraw* a, const LineageNodeDraw* b){ return a->world.x() < b->world.x(); });
-        QPen tPen(lineageClassColor(kv.first)); tPen.setCosmetic(true); tPen.setWidth(2);
+                  [](const LineageNodeDraw* a, const LineageNodeDraw* b){ return a->a < b->a; });
+        QPen tPen(lineageClassColor(kv.first)); tPen.setCosmetic(true); tPen.setWidth(1);
+        tPen.setStyle(Qt::DotLine);
         p.setPen(tPen);
         for (std::size_t i = 1; i < v.size(); ++i)
             p.drawLine(screenOf[v[i-1]->node], screenOf[v[i]->node]);
     }
 
-    // Nodes — disc per median (bigger for a drift root), hollow when empty.
+    // Drift ROOTS — a horizontal bar on the top ribbon spanning the region
+    // (dashed + thin when an empty placeholder, solid + thick once populated).
+    if (timeX) {
+        for (const LineageNodeDraw& nd : lineageDraw_) {
+            if (!isRoot(nd)) continue;
+            int xa = xAt(nd.a), xb = xAt(nd.b);
+            if (xb < xa) std::swap(xa, xb);
+            xa = std::max(xa, 0) + 2; xb = std::min(xb, W) - 2;
+            if (xb <= xa) continue;
+            const QColor col = lineageClassColor(nd.classId);
+            QPen bar(col); bar.setCosmetic(true); bar.setWidth(nd.empty ? 2 : 4);
+            if (nd.empty) bar.setStyle(Qt::DashLine);
+            p.setPen(bar);
+            p.drawLine(xa, rootBarY, xb, rootBarY);
+            p.setPen(QPen(col, 1));       // end ticks mark the region extent
+            p.drawLine(xa, rootBarY - 4, xa, rootBarY + 4);
+            p.drawLine(xb, rootBarY - 4, xb, rootBarY + 4);
+        }
+    }
+
+    // Leaves (and any root when X is not time): a disc, hollow when empty.
     for (const LineageNodeDraw& nd : lineageDraw_) {
+        if (timeX && isRoot(nd)) continue;          // drawn as a ribbon bar above
         const QPoint c = screenOf[nd.node];
         const QColor col = lineageClassColor(nd.classId);
         const int rad = nd.drift ? 6 : 4;
@@ -1959,18 +2022,9 @@ void ClusterView::clearTemplatePreviewOnViews()
 
 void ClusterView::mouseDoubleClickEvent(QMouseEvent* e)
 {
-    if (lineageOverlay_ && !tsneMode && e->button() == Qt::LeftButton) {
-        const int b = lineageBoundaryAt(e->position().toPoint());
-        if (b >= 0 && b < static_cast<int>(lineageStore_.partition().bounds.size())) {
-            lineageDragBoundary_  = b;
-            lineageDragBoundaryT_ = lineageStore_.partition().bounds[static_cast<std::size_t>(b)];
-            // Drop any stray vertex the first click of the double-click may have
-            // started, so the selection polygon is not left half-open.
-            selectionPolygon.resize(0); nbSelectionPoints = 0;
-            e->accept();
-            return;
-        }
-    }
+    // Double-left-click is reset-zoom (handled by the base).  The lineage overlay
+    // does NOT intercept it any more — region boundaries are moved with
+    // Shift+left-drag (see mousePressEvent), so double-click stays reset-zoom.
     ViewWidget::mouseDoubleClickEvent(e);
 }
 
@@ -2384,7 +2438,7 @@ void ClusterView::autoscaleToVisibleClusters()
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){
-    // Lineage overlay (§11.3): live-preview a boundary being double-left-dragged.
+    // Lineage overlay (§11.3): live-preview a boundary being Shift+left-dragged.
     if (lineageDragBoundary_ >= 0) {
         lineageDragBoundaryT_ = timeAtViewport(e->position().toPoint());
         drawContentsMode = REFRESH; update();

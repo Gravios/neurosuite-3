@@ -541,7 +541,7 @@ private:
     // (dimensionX, dimensionY) projection (an empty placeholder is placed at its
     // region's mid-time on X); cached and recomputed when the projection changes,
     // then mapped with worldToViewport every repaint.
-    struct LineageNodeDraw { int node; int classId; int parent; bool drift; bool empty; QPoint world; };
+    struct LineageNodeDraw { int node; int classId; int parent; bool drift; bool empty; QPoint world; double a; double b; };
     bool                         lineageOverlay_ = false;
     TemplateLineageStore         lineageStore_;
     std::vector<LineageNodeDraw> lineageDraw_;
