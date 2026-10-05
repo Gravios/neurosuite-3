@@ -402,21 +402,24 @@ void WaveformView::paintEvent ( QPaintEvent *){
                 //A lasso is pending confirmation: show its residual preview in
                 //place of the cluster waveforms until it is applied or cancelled.
                 drawResidualPreview(painter);
-            } else if(hasTemplatePreview_ && tpEdit_){
-                //Edit mode: the templates take the foreground and the first
-                //selected cluster's mean±std is a grey band underlay.  The spike
-                //waveforms are hidden while editing.
-                drawTemplateBand(painter);
-                drawTemplatePreview(painter);
             } else {
-                //Shade the selected channels, then paint the waveforms on top.
+                //Shade the selected channels.
                 drawChannelSelection(painter);
 
-                //Review mode: a faint primary-template underlay behind the waveforms.
-                if(hasTemplatePreview_) drawTemplatePreview(painter);
+                //Review mode: a faint primary-template underlay BEHIND the waveforms.
+                if(hasTemplatePreview_ && !tpEdit_) drawTemplatePreview(painter);
 
-                //Paint all the waveforms in the shownclusters list (in the double buffer)
+                //Paint all the waveforms in the shownclusters list (in the double buffer).
                 drawWaveforms(painter,view.clusters());
+
+                //Edit mode (lineage overlay): the active template's mean±std band is
+                //overlaid translucently ON TOP of the spikes, with the shown cluster's
+                //own mean±std as a grey reference band — so the curator reads the model
+                //against the actual waveforms instead of the spikes being hidden.
+                if(hasTemplatePreview_ && tpEdit_){
+                    drawTemplateBand(painter);
+                    drawTemplatePreview(painter);
+                }
             }
         }
 
@@ -642,11 +645,13 @@ void WaveformView::drawResidualPreview(QPainter& painter){
 void WaveformView::setTemplatePreview(bool editMode, int nChan, int nSamp,
                                       const std::vector<std::vector<float>>& templates,
                                       const std::vector<QColor>& colors,
-                                      int bandCluster, bool scaleAbsolute){
+                                      int bandCluster, bool scaleAbsolute,
+                                      const std::vector<std::vector<float>>& stds){
     tpEdit_          = editMode;
     tpChan_          = nChan;
     tpSamp_          = nSamp;
     tpTemplates_     = templates;
+    tpStds_          = stds;
     tpColors_        = colors;
     tpBandCluster_   = bandCluster;
     tpScaleAbsolute_ = scaleAbsolute;
@@ -670,6 +675,7 @@ void WaveformView::clearTemplatePreview(){
     hasTemplatePreview_ = false;
     tpEdit_ = false;
     tpTemplates_.clear();
+    tpStds_.clear();
     tpColors_.clear();
     tpChan_ = tpSamp_ = 0;
     tpBandCluster_ = -1;
@@ -768,11 +774,44 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
         }
     };
 
+    // A mean±std BAND: a translucent filled ribbon between (mean-std) and (mean+std)
+    // per channel, so the model reads against the actual spikes without hiding them.
+    // Drawn only when a matching std curve was supplied (tpStds_); otherwise the
+    // caller gets the bare mean polyline from drawOne.
+    auto drawBand = [&](const std::vector<float>& tr, const std::vector<float>& sd,
+                        const QColor& col, int X, double factor){
+        if(static_cast<int>(tr.size()) < need || static_cast<int>(sd.size()) < need) return;
+        QColor fill = col; fill.setAlpha(tpEdit_ ? 70 : 45);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(fill);
+        for(int ch = 0; ch < nChShow; ++ch){
+            const int cpos = (ch < static_cast<int>(channelPositions.size())) ? channelPositions[ch] : ch;
+            const long Y = Y0 - static_cast<long>(cpos) * step;
+            QPolygon band(2 * tpSamp_);
+            long x = 0;
+            for(int i = 0; i < tpSamp_; ++i){
+                const float m = tr[static_cast<size_t>(ch) * tpSamp_ + i];
+                const float s = sd[static_cast<size_t>(ch) * tpSamp_ + i];
+                band.setPoint(i,                   static_cast<int>(X + x),
+                              static_cast<int>(-Y - static_cast<long>((m + s) * factor)));   // (*) sign
+                band.setPoint(2 * tpSamp_ - 1 - i, static_cast<int>(X + x),
+                              static_cast<int>(-Y - static_cast<long>((m - s) * factor)));   // lower, reversed
+                x += Xstep;
+            }
+            painter.drawPolygon(band);
+        }
+        painter.setBrush(Qt::NoBrush);
+    };
+    auto hasStd = [&](size_t t){ return t < tpStds_.size() && static_cast<int>(tpStds_[t].size()) >= need; };
+
     if(tpEdit_){
-        // Templates in the foreground, overlaid at the first column.
+        // Templates overlaid at the first column, on top of the spikes.  A supplied
+        // std draws the ±band first, then a thin mean centreline over it.
         for(size_t t = 0; t < tpTemplates_.size(); ++t){
             const QColor col = (t < tpColors_.size()) ? tpColors_[t] : QColor(60,120,220);
-            drawOne(tpTemplates_[t], col, X0, factorFor(tpTemplates_[t]));
+            const double f   = factorFor(tpTemplates_[t]);
+            if(hasStd(t)) drawBand(tpTemplates_[t], tpStds_[t], col, X0, f);
+            drawOne(tpTemplates_[t], col, X0, f);
         }
     } else {
         // Review: the primary template as a faint underlay behind each shown
@@ -780,14 +819,20 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
         const std::vector<float>& prim = tpTemplates_.front();
         const QColor col = tpColors_.empty() ? QColor(60,120,220) : tpColors_.front();
         const double factor = factorFor(prim);
+        const bool   primStd = hasStd(0);
         QList<int> cl = view.clusters();
         std::sort(cl.begin(), cl.end());
         const int colShift = overLayPresentation ? 0 : shift;
         if(cl.isEmpty() || colShift == 0){
+            if(primStd) drawBand(prim, tpStds_[0], col, X0, factor);
             drawOne(prim, col, X0, factor);
         } else {
             int X = X0;
-            for(int n = 0; n < cl.size(); ++n){ drawOne(prim, col, X, factor); X += colShift; }
+            for(int n = 0; n < cl.size(); ++n){
+                if(primStd) drawBand(prim, tpStds_[0], col, X, factor);
+                drawOne(prim, col, X, factor);
+                X += colShift;
+            }
         }
     }
 }

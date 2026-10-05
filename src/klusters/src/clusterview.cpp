@@ -1726,6 +1726,7 @@ void ClusterView::toggleLineageOverlay()
         dimsForced_ = (savedDimX_ != tdim || savedDimY_ != ydim);
         if (dimsForced_) { view.updateDimensions(tdim, ydim); dimsChanged = true; }
         recomputeLineagePositions();        // covers the already-time×energy case too
+        pushActiveLineageBands();           // show the active class's band if the loaded .wtl has one
     } else {
         lineageDraw_.clear();
         clearTemplatePreviewOnViews();          // drop the edit-mode model preview from the waveform view
@@ -1790,6 +1791,7 @@ void ClusterView::setLineageActiveClass(int classId)
     if (lineageOverlay_ && lineageStore_.partitionReady()) {
         lineageStore_.ensureClassTiled(classId);
         recomputeLineagePositions();
+        pushActiveLineageBands();       // show the newly-active class's band (if it has any populated nodes)
         drawContentsMode = REFRESH;
         update();
     }
@@ -2022,6 +2024,7 @@ std::vector<int64_t> ClusterView::shownClusterSpikes() const
 void ClusterView::lineageEdited()
 {
     recomputeLineagePositions();
+    pushActiveLineageBands();           // the fold just landed — show its mean±std band now
     drawContentsMode = REFRESH;
     update();
     if (statusBar) statusBar->showMessage(
@@ -2035,7 +2038,7 @@ void ClusterView::commitLineageOverlay()
     if (statusBar) statusBar->showMessage(R.ok
         ? tr("Committed lineage → %1").arg(QFileInfo(QString::fromStdString(mtiPath)).fileName())
         : tr("Commit failed: %1").arg(QString::fromStdString(R.err)), 6000);
-    if (R.ok) pushTemplatePreview(R);          // show the just-rendered model in the waveform view
+    pushActiveLineageBands();                  // the committed model == the stored means; show its band
     recomputeLineagePositions();
     drawContentsMode = REFRESH;
     update();
@@ -2082,6 +2085,50 @@ void ClusterView::pushTemplatePreview(const neurosuite::templategen::Result& R)
         if (WaveformView* wv = qobject_cast<WaveformView*>(w))
             wv->setTemplatePreview(/*editMode*/true, nchan, nsamp, templates, colors,
                                    bandCluster, lineageScaleAbsolute_);
+}
+
+void ClusterView::pushActiveLineageBands()
+{
+    // Source the band straight from the active class's stored node summaries — the
+    // nodes already carry {mean, std, count}, so there is nothing to render: a fold
+    // is visible the instant it lands.  Each populated node (root or leaf) becomes a
+    // translucent mean±std band in the class colour over the spikes.
+    if (!lineageOverlay_) { clearTemplatePreviewOnViews(); return; }
+    const int nsamp = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
+    const int nchan = doc.nbOfchannels();
+    if (nsamp <= 0 || nchan <= 0) { clearTemplatePreviewOnViews(); return; }
+    const std::size_t recLen = static_cast<std::size_t>(nsamp) * static_cast<std::size_t>(nchan);
+
+    std::vector<std::vector<float>> templates, stds;
+    std::vector<QColor>             colors;
+    for (const neurofileio::WtlNode& n : lineageStore_.forest().nodes) {
+        if (n.classId != lineageActiveClass_) continue;
+        if (n.count <= 0 || n.mean.size() != recLen) continue;      // skip empty placeholders
+        const bool haveStd = (n.std.size() == recLen);
+        std::vector<float> m(recLen), s(recLen, 0.f);
+        for (int smp = 0; smp < nsamp; ++smp)                       // node summary: sample-major
+            for (int ch = 0; ch < nchan; ++ch) {                    // waveform view: channel-major
+                const std::size_t src = static_cast<std::size_t>(smp) * nchan + ch;
+                const std::size_t dst = static_cast<std::size_t>(ch) * nsamp + smp;
+                m[dst] = n.mean[src];
+                if (haveStd) s[dst] = n.std[src];
+            }
+        templates.push_back(std::move(m));
+        stds.push_back(std::move(s));
+        colors.push_back(lineageClassColor(n.classId));
+    }
+    if (templates.empty()) { clearTemplatePreviewOnViews(); return; }
+
+    // The first shown real cluster's own mean±std is kept as a grey reference band.
+    QList<int> cl = view.clusters();
+    std::sort(cl.begin(), cl.end());
+    int bandCluster = -1;
+    for (int c : cl) if (c > 1) { bandCluster = c; break; }
+
+    for (ViewWidget* w : view.getViewList())
+        if (WaveformView* wv = qobject_cast<WaveformView*>(w))
+            wv->setTemplatePreview(/*editMode*/true, nchan, nsamp, templates, colors,
+                                   bandCluster, lineageScaleAbsolute_, stds);
 }
 
 void ClusterView::clearTemplatePreviewOnViews()

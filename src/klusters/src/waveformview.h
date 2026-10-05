@@ -251,14 +251,20 @@ public Q_SLOTS:
     // uses.  `editMode` flips the roles:
     //   review (false): the spike waveforms stay in front, the template(s) drawn as
     //     a faint underlay behind them;
-    //   edit   (true):  the template(s) are in front, with cluster `bandCluster`'s
-    //     mean±std drawn as a grey band underlay.
+    //   edit   (true):  the spike waveforms stay visible and the template(s) are
+    //     drawn ON TOP as a translucent overlay, with cluster `bandCluster`'s
+    //     mean±std as a grey reference band.
     // `scaleAbsolute` true draws at the data's gain (Yfactor); false (best-fit)
     // normalises each template's peak to ~75% of a channel's height.
+    // `stds`, when non-empty, is parallel to `templates` (same CHANNEL-MAJOR layout)
+    // and makes each template draw as a translucent mean±std BAND (filled) with a
+    // thin mean centreline, instead of a bare mean polyline — the clearest way to
+    // read the node/leaf model against the actual spikes.
     void setTemplatePreview(bool editMode, int nChan, int nSamp,
                             const std::vector<std::vector<float>>& templates,
                             const std::vector<QColor>& colors,
-                            int bandCluster, bool scaleAbsolute);
+                            int bandCluster, bool scaleAbsolute,
+                            const std::vector<std::vector<float>>& stds = {});
     void clearTemplatePreview();
     bool hasTemplatePreview() const { return hasTemplatePreview_; }
     void setTemplatePreviewScaleAbsolute(bool absolute);   // best-fit <-> absolute, repaints
@@ -517,6 +523,7 @@ private:
     int                             tpSamp_ = 0;
     int                             tpBandCluster_ = -1;
     std::vector<std::vector<float>> tpTemplates_;
+    std::vector<std::vector<float>> tpStds_;      // per-template std (±band), parallel to tpTemplates_; may be empty
     std::vector<QColor>             tpColors_;
 
     /**Updates the dimension of the window.*/

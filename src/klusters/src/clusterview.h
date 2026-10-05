@@ -588,6 +588,11 @@ private:
     // over the first shown cluster's mean±std band.  clearTemplatePreviewOnViews
     // drops them again when the overlay is switched off.
     void   pushTemplatePreview(const neurosuite::templategen::Result& R);
+    // Push the ACTIVE class's populated nodes/leaves to the WaveformView(s) as a
+    // translucent mean±std band, straight from the stored node summaries (no commit
+    // / render needed).  Called on class-select, after an edit, on overlay-on and
+    // after a commit, so the band tracks what the curator is building live.
+    void   pushActiveLineageBands();
     void   clearTemplatePreviewOnViews();
     bool   lineageScaleAbsolute_ = false;     ///< WaveformView template scale: best-fit (false) vs absolute
     void   lineageEdited();                   ///< recompute + repaint + "commit to render" hint
