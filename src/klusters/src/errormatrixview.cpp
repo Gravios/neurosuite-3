@@ -689,29 +689,22 @@ double ErrorMatrixView::effZoomMin() const
 
 void ErrorMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
 {
-    newZoom = std::clamp(newZoom, effZoomMin(), zoomMax);
-    if (zoom <= 0.0) return;
-    const double ratio = newZoom / zoom;
-    const QPoint  base = matrixTopLeft();
-    panX += (pivot.x() - base.x() - panX) * (1.0 - ratio);
-    panY += (pivot.y() - base.y() - panY) * (1.0 - ratio);
-    zoom = newZoom;
+    vp_.zoomAround(newZoom, pivot, matrixTopLeft(), effZoomMin(), zoomMax);
     // Hold the selected-pair overlay off during the gesture; the settle timer
     // repaints it once the wheel goes quiet.
     suppressPairBoxes = true;
     pairBoxSettleTimer->start(pairBoxSettleMs);
     drawContentsMode = REDRAW;
     update();
-    emit viewChanged(zoom, panX, panY);
+    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
 
 void ErrorMatrixView::resetPanZoom()
 {
-    panX = panY = 0.0;
-    zoom = 1.0;
+    vp_.reset();
     drawContentsMode = REDRAW;
     update();
-    emit viewChanged(zoom, panX, panY);
+    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
 
 void ErrorMatrixView::paintEvent ( QPaintEvent*){
@@ -986,8 +979,8 @@ void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
         panArmed    = true;
         panning     = false;
         panAnchorPx = e->position().toPoint();
-        panAnchorX  = panX;
-        panAnchorY  = panY;
+        panAnchorX  = vp_.panX;
+        panAnchorY  = vp_.panY;
         setCursor(Qt::ClosedHandCursor);
         e->accept();
     }
@@ -1001,14 +994,14 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
         if(!panning && (qAbs(d.x()) + qAbs(d.y()) >= panDragThreshold))
             panning = true;
         if(panning){
-            panX = panAnchorX + d.x();
-            panY = panAnchorY + d.y();
+            vp_.panX = panAnchorX + d.x();
+            vp_.panY = panAnchorY + d.y();
             // Suppress the overlay while the drag is live; settle timer restores it.
             suppressPairBoxes = true;
             pairBoxSettleTimer->start(pairBoxSettleMs);
             drawContentsMode = REDRAW;
             update();
-            emit viewChanged(zoom, panX, panY);
+            emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
         }
         e->accept();
         return;
@@ -1149,7 +1142,7 @@ void ErrorMatrixView::wheelEvent(QWheelEvent* e){
     const int delta = e->angleDelta().y();
     if(delta == 0){ e->accept(); return; }
     const double factor = (delta > 0) ? zoomStep : 1.0 / zoomStep;
-    zoomAroundPoint(zoom * factor, e->position());
+    zoomAroundPoint(vp_.zoom * factor, e->position());
     e->accept();
 }
 
@@ -1160,38 +1153,13 @@ void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){
 }
 
 // ---------------------------------------------------------------------------
-// ErrorMatrixView::swapViewStateForScope
-//
-// Stash the current zoom/pan under the scope we are leaving and restore the one
-// we are entering.  Called from the paint path, which is the one place that runs
-// for every scope change however it was reached -- the V toggle, a curated-parent
-// change, or the parent ceasing to exist.
-// ---------------------------------------------------------------------------
-void ErrorMatrixView::swapViewStateForScope(bool scopeActive)
-{
-    if (scopeActive == lastScopeActive) return;
-
-    ViewState& leaving  = lastScopeActive ? childScopeView : parentScopeView;
-    ViewState& entering = scopeActive     ? childScopeView : parentScopeView;
-
-    leaving.panX = panX; leaving.panY = panY; leaving.zoom = zoom; leaving.valid = true;
-
-    if (entering.valid) {
-        panX = entering.panX; panY = entering.panY; zoom = entering.zoom;
-    } else {
-        // First time in this scope: start from the default framing rather than
-        // inheriting a position computed for a matrix of a different size.
-        panX = 0.0; panY = 0.0; zoom = 1.0;
-    }
-    lastScopeActive = scopeActive;
-}
+// ErrorMatrixView::swapViewStateForScope is now an inline forwarder to
+// vp_.swapForScope() (see the header); the shared logic lives in MatrixViewport.
 
 void ErrorMatrixView::setViewState(double newZoom, double px, double py){
     // Full (zoom + pan) state pushed from the cross-connected template view.  No
     // signal is emitted so the two views do not echo the change back and forth.
-    zoom = std::clamp(newZoom, effZoomMin(), zoomMax);
-    panX = px;
-    panY = py;
+    vp_.setState(newZoom, px, py, effZoomMin(), zoomMax);
     suppressPairBoxes = true;
     pairBoxSettleTimer->start(pairBoxSettleMs);
     drawContentsMode = REDRAW;

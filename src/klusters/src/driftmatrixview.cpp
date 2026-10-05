@@ -822,55 +822,21 @@ void DriftMatrixView::updateInfoElide()
 
 void DriftMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
 {
-    newZoom = std::max(zoomMin, std::min(zoomMax, newZoom));
-    const QPointF base = QPointF(matrixTopLeft());
-    const double oldEff = cellWidth * zoom;
-    const double newEff = cellWidth * newZoom;
-    if (oldEff > 0.0) {
-        const double mx = (pivot.x() - base.x() - panX) / oldEff;
-        const double my = (pivot.y() - base.y() - panY) / oldEff;
-        panX = pivot.x() - base.x() - mx * newEff;
-        panY = pivot.y() - base.y() - my * newEff;
-    }
-    zoom = newZoom;
+    // No adaptive floor here (unlike the error/template matrices) — clamp to zoomMin.
+    vp_.zoomAround(newZoom, pivot, matrixTopLeft(), zoomMin, zoomMax);
     update();
-    emit viewChanged(zoom, panX, panY);
+    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
 
 void DriftMatrixView::resetPanZoom()
 {
-    panX = panY = 0.0;
-    zoom = 1.0;
+    vp_.reset();
     update();
-    emit viewChanged(zoom, panX, panY);
+    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
 
-// ---------------------------------------------------------------------------
-// DriftMatrixView::swapViewStateForScope
-//
-// Stash the current zoom/pan under the scope we are leaving and restore the one
-// we are entering.  Called from the paint path, which is the one place that runs
-// for every scope change however it was reached -- the V toggle, a curated-parent
-// change, or the parent ceasing to exist.
-// ---------------------------------------------------------------------------
-void DriftMatrixView::swapViewStateForScope(bool scopeActive)
-{
-    if (scopeActive == lastScopeActive) return;
-
-    ViewState& leaving  = lastScopeActive ? childScopeView : parentScopeView;
-    ViewState& entering = scopeActive     ? childScopeView : parentScopeView;
-
-    leaving.panX = panX; leaving.panY = panY; leaving.zoom = zoom; leaving.valid = true;
-
-    if (entering.valid) {
-        panX = entering.panX; panY = entering.panY; zoom = entering.zoom;
-    } else {
-        // First time in this scope: start from the default framing rather than
-        // inheriting a position computed for a matrix of a different size.
-        panX = 0.0; panY = 0.0; zoom = 1.0;
-    }
-    lastScopeActive = scopeActive;
-}
+// DriftMatrixView::swapViewStateForScope is now an inline forwarder to
+// vp_.swapForScope() (see the header); the shared logic lives in MatrixViewport.
 
 void DriftMatrixView::setViewState(double newZoom, double px, double py)
 {
@@ -878,9 +844,7 @@ void DriftMatrixView::setViewState(double newZoom, double px, double py)
     // All matrix views share an identical pixel layout at equal size, so
     // panX/panY transfer directly.  No signal is emitted so the change is not
     // echoed back to the sender.
-    zoom = std::max(zoomMin, std::min(zoomMax, newZoom));
-    panX = px;
-    panY = py;
+    vp_.setState(newZoom, px, py, zoomMin, zoomMax);
     update();
 }
 
@@ -891,8 +855,8 @@ void DriftMatrixView::mousePressEvent(QMouseEvent* e)
     emit viewInteracted();
     if ((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)) {
         panAnchorPx = e->position().toPoint();
-        panAnchorX  = panX;
-        panAnchorY  = panY;
+        panAnchorX  = vp_.panX;
+        panAnchorY  = vp_.panY;
         panning     = false;   // becomes true once past the drag threshold
         e->accept();
         return;
@@ -951,10 +915,10 @@ void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
         const QPoint d = e->position().toPoint() - panAnchorPx;
         if (panning || d.manhattanLength() >= panDragThreshold) {
             panning = true;
-            panX = panAnchorX + d.x();
-            panY = panAnchorY + d.y();
+            vp_.panX = panAnchorX + d.x();
+            vp_.panY = panAnchorY + d.y();
             update();
-            emit viewChanged(zoom, panX, panY);
+            emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
         }
         e->accept();
         return;
@@ -991,7 +955,7 @@ void DriftMatrixView::wheelEvent(QWheelEvent* event)
     emit viewInteracted();
     const int steps = event->angleDelta().y() / 120;
     if (steps == 0) { event->accept(); return; }
-    zoomAroundPoint(zoom * std::pow(zoomStep, steps), event->position());
+    zoomAroundPoint(vp_.zoom * std::pow(zoomStep, steps), event->position());
     event->accept();
 }
 
@@ -1000,12 +964,12 @@ void DriftMatrixView::keyPressEvent(QKeyEvent* event)
     switch (event->key()) {
     case Qt::Key_Plus:
     case Qt::Key_Equal:
-        zoomAroundPoint(zoom * zoomStep,
+        zoomAroundPoint(vp_.zoom * zoomStep,
                         QPointF(width()/2.0, (height()-INFO_H+CTRL_H)/2.0));
         event->accept();
         return;
     case Qt::Key_Minus:
-        zoomAroundPoint(zoom / zoomStep,
+        zoomAroundPoint(vp_.zoom / zoomStep,
                         QPointF(width()/2.0, (height()-INFO_H+CTRL_H)/2.0));
         event->accept();
         return;

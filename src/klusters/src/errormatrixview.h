@@ -42,6 +42,7 @@
 #include "data.h"              // Data::ClusteringSnapshot (the raw cache's epoch key)
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 #include "matrixtemplatestrip.h" // MatrixTemplateStrip — shared marked-node template region (§11.5)
+#include "matrixviewport.h"      // MatrixViewport — shared pan/zoom state + per-scope swap
 
 // forward declaration
 class KlustersDoc;
@@ -444,34 +445,16 @@ private:
     static constexpr int    CELL_WIDTH   = 50;
     static constexpr int    LABEL_MARGIN = 16;
     static constexpr int    CONTROLS_H   = 0;   // ErrorMatrixView has no control bar
-    double  panX{0.0};
-    double  panY{0.0};
-    double  zoom{1.0};
 
-    /** Zoom and pan, remembered PER SCOPE.
-     *
-     *  The parent matrix and the child-scoped matrix are different matrices: one
-     *  is ~1984 clusters, the other the handful of children under the curated
-     *  parent.  A zoom that frames a region of the first is meaningless in the
-     *  second, so carrying one state across the V toggle threw away wherever the
-     *  user had navigated to and replaced it with a position from a matrix of a
-     *  different size.
-     *
-     *  Two states, swapped when the scope changes: leaving the child scope stashes
-     *  its view and restores the parent's, and returning restores the child's.
-     *  Each is remembered until the view is destroyed, so toggling back and forth
-     *  returns to exactly where you were in each.
-     */
-    struct ViewState { double panX{0.0}, panY{0.0}, zoom{1.0}; bool valid{false}; };
-    ViewState parentScopeView;
-    ViewState childScopeView;
-    bool      lastScopeActive{false};
-    void      swapViewStateForScope(bool scopeActive);
+    // Pan/zoom state + the per-scope view swap (shared helper, audit D1/S5).  This
+    // view keeps its own matrixTopLeft()/effZoomMin()/mouse handling below.
+    MatrixViewport vp_;
+    void swapViewStateForScope(bool scopeActive) { vp_.swapForScope(scopeActive); }
     bool    panArmed{false};     // Ctrl+press seen; awaiting drag threshold
     bool    panning{false};      // drag threshold crossed → actively panning
     QPoint  panAnchorPx;         // mouse position where Ctrl-drag started
-    double  panAnchorX{0.0};     // panX at drag start
-    double  panAnchorY{0.0};     // panY at drag start
+    double  panAnchorX{0.0};     // vp_.panX at drag start
+    double  panAnchorY{0.0};     // vp_.panY at drag start
     static constexpr int    panDragThreshold{3};       // px before press → pan
     static constexpr int    selectionSuppressMove{2};  // px of Ctrl-drag that cancels the cell selection on release
     static constexpr double zoomMin{0.5};    // baseline zoom-out floor; effZoomMin() lowers it to fit large grids
@@ -480,11 +463,8 @@ private:
 
     double  effZoomMin() const;              // adaptive max-zoom-out to fit large grids
     QPoint  matrixTopLeft() const;           // fixed grid origin (label strips reserved)
-    inline double  effCellSize() const { return cellWidth * zoom; }
-    inline QPointF effMatrixTopLeft() const {
-        const QPoint b = matrixTopLeft();
-        return QPointF(b.x() + panX, b.y() + panY);
-    }
+    inline double  effCellSize() const { return cellWidth * vp_.zoom; }
+    inline QPointF effMatrixTopLeft() const { return vp_.effTopLeft(matrixTopLeft()); }
     int  cellAtX(int viewX) const;
     int  cellAtY(int viewY) const;
     void zoomAroundPoint(double newZoom, const QPointF& pivot);

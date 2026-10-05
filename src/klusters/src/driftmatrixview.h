@@ -39,6 +39,7 @@
 #include "array.h"
 #include "klustersjobpool.h"    // KlustersJobToken (shared with the jobs)
 #include "matrixtemplatestrip.h" // MatrixTemplateStrip — shared marked-node template region (§11.5)
+#include "matrixviewport.h"      // MatrixViewport — shared pan/zoom state + per-scope swap
 
 #include <memory>
 
@@ -163,30 +164,11 @@ private:
     KlustersView& view;
     QStatusBar*   statusBar;
 
-    // ── pan + zoom (same transform as ResidualMatrixView) ────────────────
-    double  panX{0.0};
-    double  panY{0.0};
-    double  zoom{1.0};
-
-    /** Zoom and pan, remembered PER SCOPE.
-     *
-     *  The parent matrix and the child-scoped matrix are different matrices: one
-     *  is ~1984 clusters, the other the handful of children under the curated
-     *  parent.  A zoom that frames a region of the first is meaningless in the
-     *  second, so carrying one state across the V toggle threw away wherever the
-     *  user had navigated to and replaced it with a position from a matrix of a
-     *  different size.
-     *
-     *  Two states, swapped when the scope changes: leaving the child scope stashes
-     *  its view and restores the parent's, and returning restores the child's.
-     *  Each is remembered until the view is destroyed, so toggling back and forth
-     *  returns to exactly where you were in each.
-     */
-    struct ViewState { double panX{0.0}, panY{0.0}, zoom{1.0}; bool valid{false}; };
-    ViewState parentScopeView;
-    ViewState childScopeView;
-    bool      lastScopeActive{false};
-    void      swapViewStateForScope(bool scopeActive);
+    // ── pan + zoom (shared helper, audit D1/S5; same transform as the others) ──
+    // This view keeps its own matrixTopLeft()/mouse handling; it has no adaptive
+    // effZoomMin(), so it clamps to the plain zoomMin.
+    MatrixViewport vp_;
+    void swapViewStateForScope(bool scopeActive) { vp_.swapForScope(scopeActive); }
     bool    panning{false};
     QPoint  panAnchorPx;
     double  panAnchorX{0.0};
@@ -196,11 +178,8 @@ private:
     static constexpr double zoomStep{1.15};
     static constexpr int    panDragThreshold{3};
 
-    inline double effCellSize() const { return cellWidth * zoom; }
-    inline QPointF effMatrixTopLeft() const {
-        const QPoint b = matrixTopLeft();
-        return QPointF(b.x() + panX, b.y() + panY);
-    }
+    inline double effCellSize() const { return cellWidth * vp_.zoom; }
+    inline QPointF effMatrixTopLeft() const { return vp_.effTopLeft(matrixTopLeft()); }
     void  zoomAroundPoint(double newZoom, const QPointF& pivot);
     void  resetPanZoom();
 

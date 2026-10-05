@@ -859,8 +859,8 @@ void TemplateMatrixView::mousePressEvent(QMouseEvent* e)
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
         panAnchorPx = e->position().toPoint();
-        panAnchorX  = panX;
-        panAnchorY  = panY;
+        panAnchorX  = vp_.panX;
+        panAnchorY  = vp_.panY;
         // Do NOT set panning yet — wait for move past threshold.
         // This keeps Ctrl + quick-click → add-clusters working.
         setCursor(Qt::ClosedHandCursor);
@@ -883,10 +883,10 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
             panning = true;
         }
         if (panning) {
-            panX = panAnchorX + d.x();
-            panY = panAnchorY + d.y();
+            vp_.panX = panAnchorX + d.x();
+            vp_.panY = panAnchorY + d.y();
             update();
-            emit viewChanged(zoom, panX, panY);
+            emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
             e->accept();
             return;
         }
@@ -1018,62 +1018,27 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
 
 void TemplateMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
 {
-    newZoom = std::clamp(newZoom, effZoomMin(), zoomMax);
-    if (zoom <= 0.0) return;
-    const double ratio = newZoom / zoom;
-    const QPoint  base = matrixTopLeft();
-    const double dx = (pivot.x() - base.x() - panX) * (1.0 - ratio);
-    const double dy = (pivot.y() - base.y() - panY) * (1.0 - ratio);
-    panX += dx;
-    panY += dy;
-    zoom = newZoom;
+    vp_.zoomAround(newZoom, pivot, matrixTopLeft(), effZoomMin(), zoomMax);
     update();
-    emit viewChanged(zoom, panX, panY);
+    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
 
 void TemplateMatrixView::resetPanZoom()
 {
-    panX = panY = 0.0;
-    zoom = 1.0;
+    vp_.reset();
     update();
-    emit viewChanged(zoom, panX, panY);
+    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
 
-// ---------------------------------------------------------------------------
-// TemplateMatrixView::swapViewStateForScope
-//
-// Stash the current zoom/pan under the scope we are leaving and restore the one
-// we are entering.  Called from the paint path, which is the one place that runs
-// for every scope change however it was reached -- the V toggle, a curated-parent
-// change, or the parent ceasing to exist.
-// ---------------------------------------------------------------------------
-void TemplateMatrixView::swapViewStateForScope(bool scopeActive)
-{
-    if (scopeActive == lastScopeActive) return;
-
-    ViewState& leaving  = lastScopeActive ? childScopeView : parentScopeView;
-    ViewState& entering = scopeActive     ? childScopeView : parentScopeView;
-
-    leaving.panX = panX; leaving.panY = panY; leaving.zoom = zoom; leaving.valid = true;
-
-    if (entering.valid) {
-        panX = entering.panX; panY = entering.panY; zoom = entering.zoom;
-    } else {
-        // First time in this scope: start from the default framing rather than
-        // inheriting a position computed for a matrix of a different size.
-        panX = 0.0; panY = 0.0; zoom = 1.0;
-    }
-    lastScopeActive = scopeActive;
-}
+// TemplateMatrixView::swapViewStateForScope is now an inline forwarder to
+// vp_.swapForScope() (see the header); the shared logic lives in MatrixViewport.
 
 void TemplateMatrixView::setViewState(double newZoom, double px, double py)
 {
     // Full (zoom + pan) state pushed from the cross-connected error-matrix view.
     // The two views share an identical pixel layout at equal size, so panX/panY
     // transfer directly.  No signal is emitted so the change is not echoed back.
-    zoom = std::clamp(newZoom, effZoomMin(), zoomMax);
-    panX = px;
-    panY = py;
+    vp_.setState(newZoom, px, py, effZoomMin(), zoomMax);
     update();
 }
 
@@ -1088,7 +1053,7 @@ void TemplateMatrixView::wheelEvent(QWheelEvent* event)
     const int delta = event->angleDelta().y();
     if (delta == 0) { event->accept(); return; }
     const double factor = (delta > 0) ? zoomStep : 1.0 / zoomStep;
-    zoomAroundPoint(zoom * factor, event->position());
+    zoomAroundPoint(vp_.zoom * factor, event->position());
     event->accept();
 }
 
@@ -1201,13 +1166,13 @@ void TemplateMatrixView::keyPressEvent(QKeyEvent* event)
     if (key == Qt::Key_Plus || key == Qt::Key_Equal) {
         const QPointF c(width() * 0.5,
                         (height() - CONTROLS_H) * 0.5);
-        zoomAroundPoint(zoom * zoomStep, c);
+        zoomAroundPoint(vp_.zoom * zoomStep, c);
         event->accept(); return;
     }
     if (key == Qt::Key_Minus || key == Qt::Key_Underscore) {
         const QPointF c(width() * 0.5,
                         (height() - CONTROLS_H) * 0.5);
-        zoomAroundPoint(zoom / zoomStep, c);
+        zoomAroundPoint(vp_.zoom / zoomStep, c);
         event->accept(); return;
     }
     if (key == Qt::Key_0) {
