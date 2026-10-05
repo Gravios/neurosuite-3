@@ -145,7 +145,7 @@ bool WaveformView::isThreadsRunning() const{
 }
 
 void WaveformView::singleColorUpdate(int clusterId,bool active){
-    if(active){
+    if(active && !hasTemplatePreview_){
         //Add the the cluster id to the clusterUpdateList,
         // so it will be updated during the next update
         if(drawContentsMode == REFRESH){
@@ -156,7 +156,8 @@ void WaveformView::singleColorUpdate(int clusterId,bool active){
             clusterUpdateList.append(clusterId);
     }
     else{
-        //Update drawContentsMode if need it.
+        //A template preview is painted over the whole frame and can't be updated
+        //incrementally, so force a full redraw (also the non-active case, as before).
         if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)
             drawContentsMode = REDRAW;
     }
@@ -210,7 +211,12 @@ void WaveformView::addClusterToView(int clusterId,bool active){
     // jobs hold no thread while queued and early-out at their next check.)
     if (active) supersedeRunningThreads();
 
-    if(active && overLayPresentation){
+    // A template preview can't be updated incrementally — the band is painted over
+    // the whole frame — so a new cluster must force a FULL redraw.  Otherwise, in
+    // edit mode the UPDATE path is skipped and the overlay never realigns to the
+    // newly shown waveforms.  So the incremental branch is taken only when there is
+    // no preview.
+    if(active && overLayPresentation && !hasTemplatePreview_){
         if(drawContentsMode == REFRESH){
             clusterUpdateList.append(clusterId);
             drawContentsMode = UPDATE;
@@ -226,6 +232,8 @@ void WaveformView::addClusterToView(int clusterId,bool active){
         //Update drawContentsMode if need it.
         if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
 
+        syncTemplateBandCluster();          // realign the template overlay to the new selection
+
         //The data have to be collected, if need it, for all the clusters.
         if(active && !view.clusters().isEmpty()){
             setCursor(Qt::WaitCursor);
@@ -238,11 +246,13 @@ void WaveformView::addClusterToView(int clusterId,bool active){
     }
 }
 
-void WaveformView::removeClusterFromView(int clusterId,bool active){ 
+void WaveformView::removeClusterFromView(int clusterId,bool active){
     isZoomed = false;//Hack because all the tabs share the same data.
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+
+    syncTemplateBandCluster();          // the first shown cluster may have changed
 
     //The data have to be collected, if need it, for all the clusters.
     if(active && !view.clusters().isEmpty()){
@@ -258,6 +268,8 @@ void WaveformView::addNewClusterToView(QList<int>& fromClusters,int clusterId,bo
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
 
+    syncTemplateBandCluster();          // the first shown cluster may have changed
+
     //The data have to be collected, if need it, for all the clusters.
     if(active && !view.clusters().isEmpty()){
         setCursor(Qt::WaitCursor);
@@ -271,6 +283,8 @@ void WaveformView::spikesRemovedFromClusters(QList<int>& fromClusters,bool activ
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+
+    syncTemplateBandCluster();          // the current cluster's waveforms changed
 
     //The data have to be collected, if need it, for all the clusters.
     if(active && !view.clusters().isEmpty()){
@@ -292,6 +306,8 @@ void WaveformView::spikesAddedToCluster(int clusterId,bool active){
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+
+    syncTemplateBandCluster();          // the current cluster's waveforms changed
 
     //The data have to be collected, if need it, for all the clusters.
     if(active && !view.clusters().isEmpty()){
@@ -691,6 +707,20 @@ void WaveformView::setTemplatePreviewScaleAbsolute(bool absolute){
     if(hasTemplatePreview_){
         drawContentsMode = REDRAW;
         update();
+    }
+}
+
+void WaveformView::syncTemplateBandCluster(){
+    if(!hasTemplatePreview_) return;
+    QList<int> cl = view.clusters();
+    std::sort(cl.begin(), cl.end());
+    int band = -1;
+    for(int c : cl) if(c > 1){ band = c; break; }      // first real unit cluster
+    tpBandCluster_ = band;
+    // Make sure the reference cluster's mean is (being) computed so the band can draw.
+    if(tpEdit_ && band > 1){
+        WaveformThread* meanJob = getWaveforms();
+        if(meanJob) meanJob->getMean(band, presentationMode);
     }
 }
 

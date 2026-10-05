@@ -510,6 +510,11 @@ private:
     /** Draw cluster `tpBandCluster_`'s mean±std as a grey band underlay (edit
      *  mode only), reusing the per-channel baseline geometry. */
     void drawTemplateBand(QPainter& painter);
+    /** Point the template band's grey reference at the CURRENT first shown real
+     *  cluster and request its mean, so the overlay reads against the waveforms on
+     *  screen now (a new cluster selected, or the current one edited). No-op without
+     *  a preview. */
+    void syncTemplateBandCluster();
 
     // Template preview overlay (plan §11.4) — set by ClusterView through
     // KlustersView while the lineage overlay is engaged.  Templates are raw,
