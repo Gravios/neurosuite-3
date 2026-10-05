@@ -504,27 +504,61 @@ void TemplateMatrixThread::process()
         (*scores)(cj+1, ci+1) = s;
     }
 
-    // Raw xcorr is unbounded (scales with waveform energy) while the colour map
-    // and threshold slider assume [0,1].  Map onto that scale by dividing every
-    // off-diagonal cell by the largest off-diagonal value: the most similar
-    // pair reads 1.0 and the amplitude-weighted ordering is preserved.  The
-    // diagonal stays 1.0.  Serial pass — the parallel fill is already done.
+    // Raw xcorr is unbounded and heavy-tailed: it scales with the product of the
+    // two waveform energies, so across pairs it is ≈ log-normal.  Dividing by the
+    // global max (the old scheme) is a pure rescale — it leaves the skew, so the
+    // bulk collapses to the bottom of the colour ramp and pairs are
+    // indistinguishable.  Instead normalise in LOG space: take ln(raw) of the
+    // positive off-diagonal cells, and map it linearly onto [0,1] over
+    // [median − 2σ, median + 2σ] with σ the robust 1.4826·MAD (a central
+    // percentile band is the fallback when the MAD is ~0).  A log-normal
+    // distribution then spreads symmetrically across the ramp (median pair → 0.5).
+    // The ln-domain interval [lo,hi] is stored so the completion event can hand it
+    // to the template strip, which maps its raw cells on the SAME scale.  Diagonal
+    // stays 1.0.  Serial pass — the parallel fill is already done.
     if (raw && !cancelled()) {
-        double gmax = 0.0;
+        std::vector<double> ls;
+        ls.reserve(static_cast<size_t>(nPairs));
         for (int pi = 0; pi < nPairs; ++pi) {
             const int ci = pairs[static_cast<size_t>(pi)].first;
             const int cj = pairs[static_cast<size_t>(pi)].second;
-            gmax = std::max(gmax, (*scores)(ci+1, cj+1));
+            const double v = (*scores)(ci+1, cj+1);
+            if (v > 0.0) ls.push_back(std::log(v));
         }
-        if (gmax > 0.0) {
-            const double inv = 1.0 / gmax;
-            for (int pi = 0; pi < nPairs; ++pi) {
-                const int ci = pairs[static_cast<size_t>(pi)].first;
-                const int cj = pairs[static_cast<size_t>(pi)].second;
-                const double v = (*scores)(ci+1, cj+1) * inv;
-                (*scores)(ci+1, cj+1) = v;
-                (*scores)(cj+1, ci+1) = v;
+        double lo = 0.0, hi = 0.0;
+        if (!ls.empty()) {
+            const size_t mid = ls.size() / 2;
+            std::nth_element(ls.begin(), ls.begin() + mid, ls.end());
+            const double med = ls[mid];
+            std::vector<double> dev(ls.size());
+            for (size_t i = 0; i < ls.size(); ++i) dev[i] = std::fabs(ls[i] - med);
+            std::nth_element(dev.begin(), dev.begin() + mid, dev.end());
+            const double sigma = 1.4826 * dev[mid];
+            if (sigma > 1e-9) {
+                lo = med - 2.0 * sigma;
+                hi = med + 2.0 * sigma;
+            } else {
+                // Degenerate MAD (near-identical raws): a central percentile band,
+                // which collapses to lo==hi (→ 0.5 everywhere) when truly flat.
+                std::sort(ls.begin(), ls.end());
+                const auto pct = [&](double p) {
+                    const double idx = p * static_cast<double>(ls.size() - 1);
+                    const size_t i = static_cast<size_t>(idx);
+                    const double f = idx - static_cast<double>(i);
+                    return (i + 1 < ls.size()) ? ls[i] * (1.0 - f) + ls[i+1] * f : ls[i];
+                };
+                lo = pct(0.02);
+                hi = pct(0.98);
             }
+        }
+        rawLogLo = lo;
+        rawLogHi = hi;
+        for (int pi = 0; pi < nPairs; ++pi) {
+            const int ci = pairs[static_cast<size_t>(pi)].first;
+            const int cj = pairs[static_cast<size_t>(pi)].second;
+            const double v = tmRawLogNorm((*scores)(ci+1, cj+1), lo, hi);
+            (*scores)(ci+1, cj+1) = v;
+            (*scores)(cj+1, ci+1) = v;
         }
     }
 

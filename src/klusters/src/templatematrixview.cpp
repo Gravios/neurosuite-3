@@ -494,6 +494,8 @@ void TemplateMatrixView::customEvent(QEvent* event)
             meanWav   = std::move(ev->getMeanWav());
             allFileIdx= std::move(ev->getAllFileIdx());
             noiseWav_ = std::move(ev->getNoiseWav());   // non-empty only under the disattenuated metric
+            rawLogLo_ = ev->getRawLogLo();              // raw-metric log scale (both 0 for other metrics)
+            rawLogHi_ = ev->getRawLogHi();
             recomputeTemplateCells();      // means/clusters changed: refresh the template strip
         } else {
             delete newScores;
@@ -653,7 +655,7 @@ double TemplateMatrixView::templatePairXcorr(const std::vector<float>& a,
     // channel-major means carry (nSamp from the document, nChan from its size).
     switch (metric) {
     case 1: return tmNormXcorr(a, b, maxShift, /*pearson*/true);
-    case 2: return tmRawXcorr(a, b, maxShift);
+    case 2: return tmRawLogNorm(tmRawXcorr(a, b, maxShift), rawLogLo_, rawLogHi_);  // same log scale as the matrix
     case 3:
         // Noise-disattenuated: only when BOTH operands carry a correctly-sized noise
         // vector (the matrix fills them only under this metric); else plain cosine.

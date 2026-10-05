@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 #include <cstdint>
+#include <cmath>
 
 class SpkReader;
 
@@ -98,6 +99,22 @@ float tmProfileSim(const std::vector<float>& a,
                    const std::vector<float>& b,
                    int nSamp);
 
+// Map a raw (unbounded, ≈log-normal) xcorr onto [0,1] for the colour ramp.
+// Raw scales with the product of the two waveform energies, so its distribution
+// across pairs is heavy-tailed; a plain max-divide leaves the skew and the bulk
+// collapses to one end of the ramp.  Instead the value is normalised in LOG
+// space over a precomputed ln-domain interval [lo,hi] (the matrix fills it from
+// its own off-diagonal distribution — median ∓ 2·robust-σ, with a percentile
+// band as the fallback), so a log-normal spread maps symmetrically across [0,1].
+// v<=0 → 0 (ramp floor); a degenerate interval (hi<=lo) → 0.5 (mid-ramp).  Both
+// the matrix build and the template strip call this, so they share one scale.
+inline double tmRawLogNorm(double v, double lo, double hi) {
+    if (v <= 0.0) return 0.0;
+    if (hi <= lo) return 0.5;
+    const double t = (std::log(v) - lo) / (hi - lo);
+    return t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+}
+
 // ---------------------------------------------------------------------------
 // Main background job: reads all cluster waveforms, computes means, and
 // builds the pairwise mean-vs-mean xcorr matrix.
@@ -139,6 +156,10 @@ public:
         std::vector<std::vector<int>>&   getAllFileIdx(){ return allFileIdxResult; }
         /**Per-mean noise energy (empty unless the disattenuated metric ran).*/
         std::vector<std::vector<float>>& getNoiseWav()  { return noiseWavResult; }
+        /**ln-domain interval mapping raw xcorr onto [0,1] (see tmRawLogNorm); both
+        * zero unless the raw metric ran.  The strip maps its raw cells with these.*/
+        double getRawLogLo() const { return rawLogLoResult; }
+        double getRawLogHi() const { return rawLogHiResult; }
         /// The channel selection the run was launched for (empty = all channels).
         /// The view files the result in the matching cache slot.
         QList<int> getSelection() const { return selectionResult; }
@@ -155,7 +176,9 @@ public:
               meanWavResult(std::move(job.meanWav)),
               allFileIdxResult(std::move(job.allFileIdx)),
               noiseWavResult(std::move(job.noiseWav)),
-              selectionResult(job.selection) { job.scores = nullptr; }
+              selectionResult(job.selection),
+              rawLogLoResult(job.rawLogLo),
+              rawLogHiResult(job.rawLogHi) { job.scores = nullptr; }
 
         int                             eventGeneration;
         Array<double>*                  scoresResult;
@@ -164,6 +187,8 @@ public:
         std::vector<std::vector<int>>   allFileIdxResult;
         std::vector<std::vector<float>> noiseWavResult;
         QList<int>                      selectionResult;
+        double                          rawLogLoResult = 0.0;
+        double                          rawLogHiResult = 0.0;
     };
 
     /**Executed by a pool worker; builds the matrix, posts the completion
@@ -220,6 +245,11 @@ private:
     // otherwise.  Travels in the event so the template strip can disattenuate its
     // cluster×template cells against the same quantity the matrix uses.
     std::vector<std::vector<float>> noiseWav;
+    // ln-domain interval that maps the raw metric onto [0,1] (see tmRawLogNorm),
+    // computed in the raw post-pass from this matrix's off-diagonal distribution.
+    // Both zero for every other metric.  Shipped in the event for the strip.
+    double                          rawLogLo = 0.0;
+    double                          rawLogHi = 0.0;
     QList<int>                      selection;  // empty = all channels
     QList<int>                      activeClusters; // empty = all clusters.  Declared
                                                 // after selection so member init

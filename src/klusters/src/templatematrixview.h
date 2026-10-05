@@ -271,6 +271,12 @@ private:
     // filled by the matrix thread ONLY under the disattenuated metric, empty
     // otherwise.  The strip disattenuates its cluster×template cells against it.
     std::vector<std::vector<float>> noiseWav_;
+    // ln-domain interval mapping the raw metric onto [0,1] (see tmRawLogNorm),
+    // computed by the matrix thread over its off-diagonal distribution and shipped
+    // in the event, so the strip's raw cells use the SAME scale as the matrix.
+    // Both zero for every other metric.
+    double rawLogLo_ = 0.0;
+    double rawLogHi_ = 0.0;
 
     // ── marked-node template region (§11.5) ─────────────────────────────────
     MatrixTemplateStrip              strip_;     // columns + shade + geometry (shared helper)
@@ -283,7 +289,8 @@ private:
     /** Paint the template strip (right columns + bottom rows + corner) over the grid. */
     void drawTemplateStrip(QPainter& p);
     /** xcorr(a,b) under the current template metric, matching TemplateMatrixThread's
-     *  matrix build for every mode: 0 cosine, 1 pearson, 2 raw, 3 noise-disattenuated,
+     *  matrix build for every mode: 0 cosine, 1 pearson, 2 raw (log-normalised onto
+     *  [0,1] via the matrix's shared ln-domain interval), 3 noise-disattenuated,
      *  4 fast-AP-windowed, 5 inter-channel profile.  The disattenuated metric (3) needs
      *  the per-point noise energy of each operand's mean; pass @p noiseA / @p noiseB
      *  (channel-major, same length as a / b).  When they are missing or mis-sized the
