@@ -33,3 +33,15 @@ target_include_directories(klusters_test_templatelineagestore
     PRIVATE "${_klu_src}" "${_shared}" "${_core}")
 target_link_libraries(klusters_test_templatelineagestore PRIVATE Neurosuite::core)
 add_test(NAME klusters_test_templatelineagestore COMMAND klusters_test_templatelineagestore)
+
+# TemplateClassStore — the Qt-free EAP template-class model (phase 4).  Same
+# shape as the lineage-store test: compiles the store source and LINKS
+# Neurosuite::core (readEap/readTcl/writeEap/writeTcl + the templateclass engine
+# live out of line there).
+add_executable(klusters_test_templateclassstore
+    templateclassstore_test.cpp "${_klu_src}/templateclassstore.cpp")
+target_compile_features(klusters_test_templateclassstore PRIVATE cxx_std_20)
+target_include_directories(klusters_test_templateclassstore
+    PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+target_link_libraries(klusters_test_templateclassstore PRIVATE Neurosuite::core)
+add_test(NAME klusters_test_templateclassstore COMMAND klusters_test_templateclassstore)

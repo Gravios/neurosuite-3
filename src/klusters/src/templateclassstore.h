@@ -41,6 +41,12 @@ public:
     std::vector<int>     activeClasses() const;        // active column ids, ascending
     std::string          label(int col) const;         // "" if none / out of range
     std::vector<int64_t> members(int col) const;        // present spikes of the column
+    // Creation provenance recorded in the .tcl at createClass time (TclEntry).
+    // provClu is the originating cluster id — what `s` → Set Oblique Basis needs,
+    // since setObliqueBasis takes cluster ids; -1 when none / out of range.
+    int                  provClu(int col) const;        // originating cluster id, -1 if none
+    std::string          provStage(int col) const;      // originating stage, "" if none
+    std::string          created(int col) const;        // creation stamp, "" if none
     int   nClasses() const { return eap_.nClasses; }
     int   primary() const { return primary_; }
     void  setPrimary(int col) { primary_ = col; }

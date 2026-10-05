@@ -94,6 +94,21 @@ std::vector<int64_t> TemplateClassStore::members(int col) const
 {
     return tc::members(eap_, col);
 }
+int TemplateClassStore::provClu(int col) const
+{
+    if (col < 0 || col >= static_cast<int>(tcl_.entries.size())) return -1;
+    return tcl_.entries[static_cast<std::size_t>(col)].provenanceClu;
+}
+std::string TemplateClassStore::provStage(int col) const
+{
+    if (col < 0 || col >= static_cast<int>(tcl_.entries.size())) return std::string();
+    return tcl_.entries[static_cast<std::size_t>(col)].provenanceStage;
+}
+std::string TemplateClassStore::created(int col) const
+{
+    if (col < 0 || col >= static_cast<int>(tcl_.entries.size())) return std::string();
+    return tcl_.entries[static_cast<std::size_t>(col)].created;
+}
 
 void TemplateClassStore::growTo(int newT)
 {
