@@ -1311,30 +1311,24 @@ void ClusterView::setMode(BaseFrame::Mode selectedMode){
     selectionPolygon.clear();
     nbSelectionPoints = 0;
     mode = selectedMode;
-
-    //set the cursor according to the selected mode.
-    switch(mode){
-    case DELETE_NOISE:
-        setCursor(deleteNoiseCursor);
-        break;
-    case DELETE_ARTEFACT:
-        setCursor(deleteArtefactCursor);
-        break;
-    case NEW_CLUSTER:
-        setCursor(newClusterCursor);
-        break;
-    case NEW_CLUSTERS:
-        setCursor(newClustersCursor);
-        break;
-    case ZOOM:
-        setCursor(zoomCursor);
-        break;
-    case SELECT_TIME:
-        setCursor(selectTimeCursor);
-        break;
-    }
+    applyModeCursor();   // pointer in the lineage overlay, else the tool's cursor
     drawContentsMode = REFRESH;
     update();
+}
+
+// The resting cursor.  In the lineage overlay the feature view is a node-marking
+// surface, not a zoom surface, so it shows a plain pointer rather than the zoom
+// magnifier; otherwise it follows the active tool.
+void ClusterView::applyModeCursor(){
+    if (lineageOverlay_) { setCursor(Qt::ArrowCursor); return; }
+    switch(mode){
+    case DELETE_NOISE:    setCursor(deleteNoiseCursor);    break;
+    case DELETE_ARTEFACT: setCursor(deleteArtefactCursor); break;
+    case NEW_CLUSTER:     setCursor(newClusterCursor);     break;
+    case NEW_CLUSTERS:    setCursor(newClustersCursor);    break;
+    case ZOOM:            setCursor(zoomCursor);           break;
+    case SELECT_TIME:     setCursor(selectTimeCursor);     break;
+    }
 }
 
 
@@ -1415,31 +1409,19 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
         }
     }
 
-    // Plain Left in the overlay, with the default ZOOM tool: MARK/unmark the node
-    // under the cursor (the left-click counterpart of the right-click Mark/Unmark,
-    // §11.5) instead of starting a rubber-band zoom.  This replaces the ZOOM tool's
-    // left-click only — Ctrl+Left still pans, Shift+Left still grabs a region
-    // boundary, the lasso tools (NEW_CLUSTER, …) keep their left-click, and
-    // Ctrl+wheel / double-click still zoom.  The press is consumed whether or not a
-    // node was hit, so the feature view no longer zooms on a stray left-click while
-    // the curator is marking.
+    // Plain Left in the overlay with the default ZOOM tool starts a NODE gesture,
+    // never a zoom: a click toggles the node under the cursor, a drag rubber-bands a
+    // rectangle that marks every node inside it (resolved in mouseReleaseEvent).
+    // Only here — Ctrl+Left still pans, Shift+Left still grabs a region boundary, the
+    // lasso tools (NEW_CLUSTER, …) keep their left-click, and Ctrl+wheel /
+    // double-click still zoom.  The press is consumed (the base rubber-band zoom is
+    // never started), so the feature view no longer zooms on a left click/drag here.
     if (lineageOverlay_ && mode == ZOOM && e->button() == Qt::LeftButton
         && !(e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier))) {
-        const int nodeId = lineageNodeAt(e->position().toPoint());
-        if (nodeId >= 0) {
-            const neurofileio::WtlNode* n = lineageStore_.node(nodeId);
-            const bool marked  = (markedNodes_.count(nodeId) > 0);
-            const bool canMark = (n && n->count > 0);      // an empty placeholder has no template
-            if (marked || canMark) {
-                if (marked) markedNodes_.erase(nodeId); else markedNodes_.insert(nodeId);
-                Q_EMIT lineageMarksChanged();
-                if (statusBar) statusBar->showMessage(
-                    marked ? tr("Node unmarked (removed from the curation matrices)")
-                           : tr("Node marked (added to the curation matrices)"), 2000);
-                drawContentsMode = REFRESH;
-                update();
-            }
-        }
+        lineageLassoActive_  = true;
+        lineageLassoDragged_ = false;
+        lineageLassoAnchor_  = e->position().toPoint();
+        lineageLassoRect_    = QRect(lineageLassoAnchor_, lineageLassoAnchor_);
         e->accept();
         return;
     }
@@ -1500,10 +1482,26 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
     // Lineage overlay (§11.3): finish a Shift+left-drag of a region boundary.
     if (lineageDragBoundary_ >= 0) {
         const int i = lineageDragBoundary_; lineageDragBoundary_ = -1;
-        unsetCursor();
+        applyModeCursor();                       // overlay: back to the pointer
         const double t = timeAtViewport(event->position().toPoint());
         if (t > 0.0 && lineageStore_.moveBoundary(i, t)) lineageEdited();
         else { recomputeLineagePositions(); drawContentsMode = REFRESH; update(); }  // snap back
+        event->accept();
+        return;
+    }
+    // Lineage overlay (§11.5): finish a plain-Left node gesture — a drag marks every
+    // node inside the rubber-band rectangle, a click toggles the node under the cursor.
+    if (lineageLassoActive_) {
+        lineageLassoActive_ = false;
+        const bool dragged = lineageLassoDragged_;
+        lineageLassoDragged_ = false;
+        if (dragged) markNodesInLineageRect(lineageLassoRect_);
+        else {
+            const int nodeId = lineageNodeAt(event->position().toPoint());
+            if (nodeId >= 0) toggleLineageNodeMark(nodeId);
+        }
+        drawContentsMode = REFRESH;
+        update();
         event->accept();
         return;
     }
@@ -1514,7 +1512,8 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
     if(ctrlPanArmed){
         ctrlPanArmed = false;
         ctrlPanning  = false;
-        unsetCursor();
+        if (lineageOverlay_) applyModeCursor();  // overlay → pointer
+        else                 unsetCursor();      // non-overlay: unchanged
         event->accept();
         return;
     }
@@ -1753,6 +1752,8 @@ void ClusterView::toggleLineageOverlay()
     }
     lineageOverlay_ = !lineageOverlay_;
     lineageSingleNode_ = -1;        // a mode switch drops any review-mode single-node focus
+    lineageLassoActive_ = false;    // and any in-flight node lasso
+    applyModeCursor();              // overlay → pointer; off → the active tool's cursor
     bool dimsChanged = false;
     if (lineageOverlay_) {
         if (!lineageLoaded_) { loadLineageOverlay(); lineageLoaded_ = lineageStore_.ok(); }
@@ -2022,6 +2023,13 @@ void ClusterView::paintLineageOverlay(QPainter& p)
         }
     }
     p.setBrush(Qt::NoBrush);
+
+    // The node-lasso rectangle in progress (viewport px, like the markers above).
+    if (lineageLassoActive_ && lineageLassoDragged_) {
+        QPen lp(QColor(255, 255, 255)); lp.setCosmetic(true); lp.setStyle(Qt::DashLine);
+        p.setPen(lp); p.setBrush(Qt::NoBrush);
+        p.drawRect(lineageLassoRect_);
+    }
 }
 
 int ClusterView::bestEnergyLadderDim() const
@@ -2288,6 +2296,44 @@ void ClusterView::mouseDoubleClickEvent(QMouseEvent* e)
     ViewWidget::mouseDoubleClickEvent(e);
 }
 
+// Toggle one node's mark (shared by the left-click, the lasso's click fallback, and
+// the right-click Mark/Unmark menu).  An empty placeholder (count 0) has no template,
+// so it can only be unmarked, never marked.
+void ClusterView::toggleLineageNodeMark(int node)
+{
+    const neurofileio::WtlNode* n = lineageStore_.node(node);
+    const bool marked  = (markedNodes_.count(node) > 0);
+    const bool canMark = (n && n->count > 0);
+    if (!(marked || canMark)) return;
+    if (marked) markedNodes_.erase(node); else markedNodes_.insert(node);
+    Q_EMIT lineageMarksChanged();
+    if (statusBar) statusBar->showMessage(
+        marked ? tr("Node unmarked (removed from the curation matrices)")
+               : tr("Node marked (added to the curation matrices)"), 2000);
+}
+
+// Mark every populated node whose marker falls inside the lasso rectangle (viewport
+// px).  A lasso ADDS to the marks (already-marked nodes stay); empty placeholders are
+// skipped.  To clear marks, left-click an already-marked node (toggle) or change the
+// primary.
+void ClusterView::markNodesInLineageRect(const QRect& rect)
+{
+    if (rect.width() < 1 && rect.height() < 1) return;
+    const std::map<int, QPoint> pos = lineageScreenPositions();
+    int added = 0;
+    for (const auto& [id, pt] : pos) {
+        if (!rect.contains(pt)) continue;
+        const neurofileio::WtlNode* n = lineageStore_.node(id);
+        if (!(n && n->count > 0)) continue;            // skip empty placeholders
+        if (markedNodes_.insert(id).second) ++added;   // new mark (already-marked stay)
+    }
+    if (added) {
+        Q_EMIT lineageMarksChanged();
+        if (statusBar) statusBar->showMessage(
+            tr("Marked %1 node(s) in the lasso (added to the curation matrices)").arg(added), 2500);
+    }
+}
+
 void ClusterView::showLineageContextMenu(const QPoint& vp)
 {
     if (!lineageOverlay_) return;
@@ -2339,8 +2385,7 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
         if      (c == aDrift)  { lineageStore_.setRegionSpikes(cls, region, sel);           lineageEdited(); }
         else if (c == aAdapt)  { lineageStore_.addLeaf(cls, region, "adapt-leaf", sel);     lineageEdited(); }
         else if (c == aColl)   { lineageStore_.addLeaf(cls, region, "collision-leaf", sel); lineageEdited(); }
-        else if (c == aMark)   { if (marked) markedNodes_.erase(nodeId); else markedNodes_.insert(nodeId);
-                                 Q_EMIT lineageMarksChanged(); drawContentsMode = REFRESH; update(); }
+        else if (c == aMark)   { toggleLineageNodeMark(nodeId); drawContentsMode = REFRESH; update(); }
         else if (c == aRemove) { markedNodes_.erase(nodeId); lineageStore_.removeNode(nodeId);
                                  Q_EMIT lineageMarksChanged(); lineageEdited(); }
         else if (c == aCommit)   commitLineageOverlay();
@@ -2763,6 +2808,20 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
     if (lineageDragBoundary_ >= 0) {
         lineageDragBoundaryT_ = timeAtViewport(e->position().toPoint());
         drawContentsMode = REFRESH; update();
+        return;
+    }
+    // Lineage overlay (§11.5): grow the node-lasso rectangle (plain Left drag).  Past
+    // a few px it becomes a rectangle (vs a click); the rect is painted by
+    // paintLineageOverlay and resolved to marks on release.
+    if (lineageLassoActive_ && (e->buttons() & Qt::LeftButton)) {
+        const QPoint vp = e->position().toPoint();
+        if (!lineageLassoDragged_ &&
+            (qAbs(vp.x() - lineageLassoAnchor_.x()) +
+             qAbs(vp.y() - lineageLassoAnchor_.y()) >= 3))
+            lineageLassoDragged_ = true;
+        lineageLassoRect_ = QRect(lineageLassoAnchor_, vp).normalized();
+        if (lineageLassoDragged_) { drawContentsMode = REFRESH; update(); }
+        e->accept();
         return;
     }
     if (tsneMode) {

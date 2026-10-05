@@ -603,6 +603,17 @@ private:
     // returns, so the mode-driven lasso / zoom / pan is untouched when off.
     int    lineageDragBoundary_  = -1;        ///< interior boundary being double-drag-moved, or -1
     double lineageDragBoundaryT_ = 0.0;       ///< live preview time (s) while dragging
+    // Left-click node marking + rectangular node lasso (§11.5).  In the overlay with
+    // the default ZOOM tool a plain Left press no longer zooms: a click toggles the
+    // node under the cursor, a drag rubber-bands a rectangle that marks every node
+    // inside it.  (Zoom stays on Ctrl+wheel and double-click-reset.)
+    bool   lineageLassoActive_  = false;      ///< a plain-Left press/drag is in progress in the overlay
+    bool   lineageLassoDragged_ = false;      ///< moved past the click→drag threshold (it is a rectangle)
+    QPoint lineageLassoAnchor_;               ///< press point (viewport px)
+    QRect  lineageLassoRect_;                 ///< current lasso rectangle (viewport px, normalized)
+    void   applyModeCursor();                 ///< set the resting cursor: a pointer in the overlay, else the tool's
+    void   toggleLineageNodeMark(int node);   ///< mark/unmark one node (shared by click + the context menu path)
+    void   markNodesInLineageRect(const QRect& rect);  ///< mark every populated node whose marker is inside rect
     void   showLineageContextMenu(const QPoint& vp);
     void   commitLineageOverlay();            ///< render the model (.mti/.mtf) from the forest
     // Push the ACTIVE class's populated nodes/leaves to the WaveformView(s) as a
