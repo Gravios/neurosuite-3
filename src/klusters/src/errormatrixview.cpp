@@ -958,12 +958,13 @@ void ErrorMatrixView::drawTemplateStrip(QPainter& painter)
     const QPointF oriF = effMatrixTopLeft();
     const double  eff  = effCellSize();
 
-    // Every extended cell is greyed: the error "probability" is defined only
+    // Every extended cell is solid grey: the error "probability" is defined only
     // between two spiking clusters (how likely they are the same neuron), so a
-    // cluster×template or template×template cell has no meaning here.  value()
-    // flags grey for every (r,c), so colourFor is never consulted — the black
-    // fallback only satisfies the renderer's signature.
-    auto value     = [&](int, int, bool& grey)->double{ grey = true; return 0.0; };
+    // cluster×template or template×template cell has no waveform statistic at all —
+    // unlike the other three matrices there is nothing to show at half alpha.  value()
+    // flags Grey for every (r,c), so colourFor is never consulted (the black fallback
+    // only satisfies the renderer's signature).
+    auto value     = [&](int, int, MatrixStripShade& shade)->double{ shade = MatrixStripGrey; return 0.0; };
     auto colourFor = [&](double)->QColor{ return QColor(0, 0, 0); };
     drawMatrixTemplateStrip(painter, oriF, eff, N, M, value, colourFor);
 }

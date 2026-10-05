@@ -310,12 +310,13 @@ private:
      *  tplClusterRow_[t][j] — cell (row=cluster j, col=template t): cluster +Δ
      *  tplTemplateRow_[t][j] — cell (row=template t, col=cluster j): template −Δ
      * tplCorner_[t][u] is the template×template block (row t shifted +Δ if t<u,
-     * −Δ if t>u, 1 on the diagonal).  tplGrey_[t][j] greys where cluster j has no
-     * spikes in template t's window.  Sized M×N (M×M for the corner).*/
+     * −Δ if t>u, 1 on the diagonal).  tplShade_[t][j] is the MatrixStripShade:
+     * value, dim (cluster j has no spikes in template t's window — the value is
+     * still shown, at half alpha), or grey (no data).  Sized M×N (M×M corner).*/
     std::vector<std::vector<double>> tplClusterRow_;
     std::vector<std::vector<double>> tplTemplateRow_;
     std::vector<std::vector<double>> tplCorner_;
-    std::vector<std::vector<bool>>   tplGrey_;
+    std::vector<std::vector<unsigned char>> tplShade_;
     /**Recompute the strip cells from the cached means at the current drift µm
      * (cheap: a handful of templates × clusters).  Called on setTemplateColumns
      * and on every accepted matrix/slider result (customEvent).*/

@@ -718,7 +718,7 @@ void DriftMatrixView::recomputeTemplateStripCells()
     const int N = clusterList.size();
     tplClusterRow_.assign(M, std::vector<double>(N, 0.0));
     tplTemplateRow_.assign(M, std::vector<double>(N, 0.0));
-    tplGrey_.assign(M, std::vector<bool>(N, true));
+    tplShade_.assign(M, std::vector<unsigned char>(N, MatrixStripGrey));
     tplCorner_.assign(M, std::vector<double>(M, 0.0));
     if (M == 0 || N == 0 || static_cast<int>(meanWav.size()) < N) return;
 
@@ -764,7 +764,8 @@ void DriftMatrixView::recomputeTemplateStripCells()
                                                  : dmNormXcorr(tpl, cl, maxShift);
             }
             const bool noSpk = (cHi[j] < cLo[j]) || (cHi[j] < winLo) || (cLo[j] > winHi);
-            tplGrey_[t][j] = noSpk || !sizeOk;
+            // No data -> solid grey; data but no time overlap -> dim the (still-shown) value.
+            tplShade_[t][j] = !sizeOk ? MatrixStripGrey : (noSpk ? MatrixStripDim : MatrixStripValue);
         }
 
         for (int u = 0; u < M; ++u) {
@@ -789,10 +790,10 @@ void DriftMatrixView::drawTemplateStrip(QPainter& p)
     // ASYMMETRIC: the row is the shifted side.  A cluster-row (r<N) against a
     // template-col (c>=N) always has r<c -> +Δ on the cluster; a template-row
     // (r>=N) against a cluster-col (c<N) always has r>c -> −Δ on the template.
-    auto value = [&](int r, int c, bool& grey)->double{
-        if (r < N && c >= N) { const int t = c - N; grey = tplGrey_[t][r]; return tplClusterRow_[t][r]; }
-        if (r >= N && c < N) { const int t = r - N; grey = tplGrey_[t][c]; return tplTemplateRow_[t][c]; }
-        grey = false; return tplCorner_[r - N][c - N];     // template×template corner
+    auto value = [&](int r, int c, MatrixStripShade& shade)->double{
+        if (r < N && c >= N) { const int t = c - N; shade = static_cast<MatrixStripShade>(tplShade_[t][r]); return tplClusterRow_[t][r]; }
+        if (r >= N && c < N) { const int t = r - N; shade = static_cast<MatrixStripShade>(tplShade_[t][c]); return tplTemplateRow_[t][c]; }
+        shade = MatrixStripValue; return tplCorner_[r - N][c - N];     // template×template corner
     };
     auto colourFor = [&](double v)->QColor{                // same ramp as drawMatrix
         double r = std::max(0.0, std::min(1.0, v));

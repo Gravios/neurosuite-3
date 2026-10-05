@@ -655,12 +655,12 @@ void TemplateMatrixView::recomputeTemplateCells()
     const int M = static_cast<int>(tplCols_.size());
     const int N = clusterList.size();
     tplVal_.assign(M, std::vector<double>(N, 0.0));
-    tplGrey_.assign(M, std::vector<bool>(N, true));
+    tplShade_.assign(M, std::vector<unsigned char>(N, MatrixStripGrey));
     tplCorner_.assign(M, std::vector<double>(M, 0.0));
     if (M == 0 || N == 0 || static_cast<int>(meanWav.size()) < N) return;
 
     // Per-cluster spike-time RANGE [lo,hi] in samples (two feature reads: the cluster's
-    // spike block is time-ordered, so the ends bound it) — for the in-window greying.
+    // spike block is time-ordered, so the ends bound it) — for the in-window dimming.
     const int timeDim = doc.data().timeDimension();
     std::vector<double> cLo(N, 0.0), cHi(N, -1.0);              // cHi < cLo = "no spikes"
     for (int j = 0; j < N; ++j) {
@@ -679,7 +679,8 @@ void TemplateMatrixView::recomputeTemplateCells()
                                  && meanWav[static_cast<size_t>(j)].size() == tplCols_[i].mean.size();
             tplVal_[i][j] = hasData ? templatePairXcorr(meanWav[static_cast<size_t>(j)], tplCols_[i].mean) : 0.0;
             const bool noSpk = (cHi[j] < cLo[j]) || (cHi[j] < winLo) || (cLo[j] > winHi);  // ranges disjoint
-            tplGrey_[i][j] = noSpk || !hasData;
+            // No data -> solid grey; data but no time overlap -> dim the (still-shown) value.
+            tplShade_[i][j] = !hasData ? MatrixStripGrey : (noSpk ? MatrixStripDim : MatrixStripValue);
         }
         for (int u = 0; u < M; ++u)
             tplCorner_[i][u] = templatePairXcorr(tplCols_[i].mean, tplCols_[u].mean);
@@ -694,10 +695,10 @@ void TemplateMatrixView::drawTemplateStrip(QPainter& p)
     const QPointF oriF = effMatrixTopLeft();
     const double  eff  = effCellSize();
 
-    auto value = [&](int r, int c, bool& grey)->double{       // xcorr is symmetric
-        if (r < N && c >= N) { const int t = c - N; grey = tplGrey_[t][r]; return tplVal_[t][r]; }
-        if (r >= N && c < N) { const int t = r - N; grey = tplGrey_[t][c]; return tplVal_[t][c]; }
-        grey = false; return tplCorner_[r - N][c - N];        // template×template corner
+    auto value = [&](int r, int c, MatrixStripShade& shade)->double{   // xcorr is symmetric
+        if (r < N && c >= N) { const int t = c - N; shade = static_cast<MatrixStripShade>(tplShade_[t][r]); return tplVal_[t][r]; }
+        if (r >= N && c < N) { const int t = r - N; shade = static_cast<MatrixStripShade>(tplShade_[t][c]); return tplVal_[t][c]; }
+        shade = MatrixStripValue; return tplCorner_[r - N][c - N];     // template×template corner
     };
     auto colourFor = [&](double v)->QColor{ return colorMap[colourIndexFor(v, NB_COLORS)]; };
     drawMatrixTemplateStrip(p, oriF, eff, N, M, value, colourFor);

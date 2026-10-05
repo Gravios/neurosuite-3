@@ -47,16 +47,30 @@ struct MatrixTemplateCol {
 /** Cells of gap between the N-cluster block and the M-template strip. */
 inline constexpr int kTemplateStripGapCells = 1;
 
+/** How a strip cell is shaded:
+ *   Value — full-alpha stat colour (the cluster fired within the node's window);
+ *   Dim   — the SAME stat colour at half alpha (the stat is still shown, but the
+ *           cluster has no spikes in the node's [a,b], so the comparison is across
+ *           non-overlapping time — dimmed so it reads as out-of-window);
+ *   Grey  — solid grey, no value (a cell with no waveform statistic at all, e.g.
+ *           every error-matrix cell, or a defensive size mismatch). */
+enum MatrixStripShade { MatrixStripValue = 0, MatrixStripDim = 1, MatrixStripGrey = 2 };
+
+/** Alpha applied to a Dim cell's stat colour. */
+inline constexpr double kTemplateStripDimAlpha = 0.5;
+
 /** Draw the M-template strip (right columns + bottom rows + the template×template
  *  corner) for an N-cluster matrix already drawn at (oriF, eff).
  *
- *  `value(r, c, &grey)` returns the display value for the EXTENDED cell at logical
+ *  `value(r, c, &shade)` returns the display value for the EXTENDED cell at logical
  *  row r, column c — where an index in [0,N) is a cluster and in [N,N+M) is template
- *  (index-N) — and sets `grey` true when the cell should be greyed.  Only cells with
- *  r>=N or c>=N are drawn (the N×N cluster block is already on screen).  Taking full
- *  (r,c) rather than (template,cluster) lets ASYMMETRIC matrices (residual, drift)
- *  give the two off-diagonal directions distinct values.  colourFor maps a value to
- *  a QColor; greyed cells use `greyColour`.
+ *  (index-N) — and sets `shade` (MatrixStripShade) to how the cell is drawn: a
+ *  full-alpha value, the same value at half alpha when the cluster/template don't
+ *  overlap in time (Dim), or solid grey when there is no value (Grey).  Only cells
+ *  with r>=N or c>=N are drawn (the N×N cluster block is already on screen).  Taking
+ *  full (r,c) rather than (template,cluster) lets ASYMMETRIC matrices (residual,
+ *  drift) give the two off-diagonal directions distinct values.  colourFor maps a
+ *  value to a QColor; Grey cells use `greyColour`.
  *
  *  M is small (a handful of marked nodes), so the ~2NM+M² per-cell fillRects are cheap. */
 template <class ValueFn, class ColourFn>
@@ -76,8 +90,15 @@ inline void drawMatrixTemplateStrip(QPainter& p, const QPointF& oriF, double eff
         const double y = oriF.y() + at(r);
         for (int c = 0; c < N + M; ++c) {
             if (r < N && c < N) continue;        // the cluster block is already drawn
-            bool grey = false; const double v = value(r, c, grey);
-            p.fillRect(QRectF(oriF.x() + at(c), y, eff, eff), grey ? greyColour : colourFor(v));
+            MatrixStripShade shade = MatrixStripValue;
+            const double v = value(r, c, shade);
+            QColor fill;
+            if (shade == MatrixStripGrey) fill = greyColour;                 // no value
+            else {                                                            // value, full or dimmed
+                fill = colourFor(v);
+                if (shade == MatrixStripDim) fill.setAlphaF(kTemplateStripDimAlpha);
+            }
+            p.fillRect(QRectF(oriF.x() + at(c), y, eff, eff), fill);
         }
     }
     // A separator line in the gap so the strip reads as appended, not part of the grid.

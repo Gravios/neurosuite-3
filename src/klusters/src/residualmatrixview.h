@@ -248,12 +248,13 @@ private:
      * directions kept separately (the matrix is asymmetric):
      *  tplClusterRow_[t][j] — cell (row=cluster j, col=template t), floor=cluster noise
      *  tplTemplateRow_[t][j] — cell (row=template t, col=cluster j), floor=template noise
-     * tplCorner_[t][u] is the template×template block (row t's floor); tplGrey_
-     * greys where cluster j has no spikes in template t's window.*/
+     * tplCorner_[t][u] is the template×template block (row t's floor); tplShade_
+     * is the MatrixStripShade: value, dim (cluster j has no spikes in template t's
+     * window — value still shown at half alpha), or grey (no data).*/
     std::vector<std::vector<double>> tplClusterRow_;
     std::vector<std::vector<double>> tplTemplateRow_;
     std::vector<std::vector<double>> tplCorner_;
-    std::vector<std::vector<bool>>   tplGrey_;
+    std::vector<std::vector<unsigned char>> tplShade_;
     void recomputeTemplateStripCells();
     void drawTemplateStrip(QPainter& painter);
 

@@ -292,9 +292,10 @@ private:
     // ── marked-node template columns (§11.5) ─────────────────────────────────
     std::vector<MatrixTemplateCol>   tplCols_;   // marked templates (empty = no strip)
     std::vector<std::vector<double>> tplVal_;    // [tpl][cluster] cluster×template xcorr
-    std::vector<std::vector<bool>>   tplGrey_;   // [tpl][cluster] greyed: no spikes in [a,b]
+    std::vector<std::vector<unsigned char>> tplShade_; // [tpl][cluster] MatrixStripShade: value /
+                                                       // dim (no spikes in [a,b]) / grey (no data)
     std::vector<std::vector<double>> tplCorner_; // [tpl][tpl]     template×template xcorr
-    /** Recompute tplVal_ / tplGrey_ / tplCorner_ from the current means + the metric
+    /** Recompute tplVal_ / tplShade_ / tplCorner_ from the current means + the metric
      *  (cheap: a handful of templates × clusters).  Called on setTemplateColumns, on a
      *  fresh matrix (means changed) and on a metric change. */
     void recomputeTemplateCells();
