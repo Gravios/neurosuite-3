@@ -892,6 +892,14 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
 
         QMouseEvent* mouseEvent = dynamic_cast<QMouseEvent*>(event);
         if(mouseEvent->button() == Qt::RightButton){
+            // The lineage overlay (Shift+E) owns the right-click while it is engaged:
+            // its own context menu adds drift/adapt/collision nodes and splits/commits
+            // the region.  This filter runs BEFORE ClusterView::mousePressEvent, so
+            // without this guard the Sort Clusters popup always shadows the lineage
+            // menu.  Let the press through to the ClusterView's own handler instead.
+            if(ClusterView* cvOverlay = qobject_cast<ClusterView*>(object);
+               cvOverlay && cvOverlay->lineageOverlayActive())
+                return QWidget::eventFilter(object,event);
             //Create the popmenu: the cluster-sorting options.  Reuse the main
             //window's "Sort Clusters" actions directly, so each item carries its
             //own text, enabled state, and triggered() connection -- selecting one
