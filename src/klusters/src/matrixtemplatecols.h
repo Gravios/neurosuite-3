@@ -31,12 +31,16 @@
 
 /** A marked lineage-node template offered to a curation matrix.  `mean` is
  *  CHANNEL-MAJOR (ch*nSamp + smp), length nChan*nSamp; [a,b] is the node's time
- *  window in SECONDS (used for the spike-in-window greying). */
+ *  window in SECONDS (used for the spike-in-window greying).  `std` is the
+ *  node's per-point standard deviation in the SAME layout and length (its square
+ *  is the template's own noise floor — the residual matrix needs it for the
+ *  template-row direction); it may be empty when the node carries no std. */
 struct MatrixTemplateCol {
     int   node    = -1;
     int   classId = -1;
     double a = 0.0, b = 0.0;
     std::vector<float> mean;        // channel-major, nChan*nSamp
+    std::vector<float> std;         // channel-major, nChan*nSamp (empty if unknown)
 };
 
 /** Cells of gap between the N-cluster block and the M-template strip. */

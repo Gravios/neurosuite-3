@@ -10,7 +10,8 @@
 #include <QLabel>
 
 #include "array.h"
-#include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
+#include "klustersjobpool.h"    // KlustersJobToken (shared with the jobs)
+#include "matrixtemplatecols.h" // MatrixTemplateCol — marked-node template strip (§11.5)
 
 #include <memory>
 
@@ -83,6 +84,16 @@ public:
     bool isOutOfDate()     const { return !dataReady || isStale; }
     QList<int> matrixClusterList() const { return clusterList; }
     const Array<double>* matrixData() const { return scores; }
+
+    /**Marked-node template strip (§11.5): the curator's marked lineage nodes
+     * pushed from ClusterView via KlustersView::setMatrixTemplateColumns.  Each
+     * cell is the SAME bounded separability index M = gap/(noise+gap) the matrix
+     * body uses, so the strip's colours read on the same scale — ASYMMETRIC like
+     * the body: a cluster-row cell normalises by the cluster's own noise floor, a
+     * template-row cell by the template node's noise floor (std²).  Greyed where
+     * the cluster has no spikes in the node's time window.  Computed from the
+     * per-cluster means the thread already built (carried in its event).*/
+    void setTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
 
 Q_SIGNALS:
     void viewInteracted();
@@ -214,6 +225,31 @@ private:
     void setInfoText(const QString& text);
     /// Re-elide infoText to the label's current width.
     void updateInfoElide();
+
+    // ── marked-node template strip (§11.5) ────────────────────────────────
+    /**The marked templates to draw at the edge (empty = no strip).*/
+    std::vector<MatrixTemplateCol> tplCols_;
+    /**Per-cluster compacted means and noise floors the matrix was built from,
+     * kept PER CACHE SLOT (all-channel vs selection) so a channel-selection swap
+     * — which swaps the displayed matrix without recomputing — keeps the strip
+     * consistent with whichever matrix is shown.  recomputeTemplateStripCells()
+     * reads the slot `scores` currently aliases.*/
+    std::vector<std::vector<float>> meanAll_, meanSel_;
+    std::vector<double>             noiseAll_, noiseSel_;
+    std::vector<int>                keepAll_,  keepSel_;    // surviving channels (empty = all)
+    int                             nChanFull_ = 0, nSampFull_ = 0;
+    /**Per (template t, cluster j) separability index, both off-diagonal
+     * directions kept separately (the matrix is asymmetric):
+     *  tplClusterRow_[t][j] — cell (row=cluster j, col=template t), floor=cluster noise
+     *  tplTemplateRow_[t][j] — cell (row=template t, col=cluster j), floor=template noise
+     * tplCorner_[t][u] is the template×template block (row t's floor); tplGrey_
+     * greys where cluster j has no spikes in template t's window.*/
+    std::vector<std::vector<double>> tplClusterRow_;
+    std::vector<std::vector<double>> tplTemplateRow_;
+    std::vector<std::vector<double>> tplCorner_;
+    std::vector<std::vector<bool>>   tplGrey_;
+    void recomputeTemplateStripCells();
+    void drawTemplateStrip(QPainter& painter);
 
     // ── helpers ──────────────────────────────────────────────────────────
     void launchComputeThread();

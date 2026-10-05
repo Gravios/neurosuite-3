@@ -73,18 +73,43 @@ public:
         /// The channel selection the run was launched for (empty = all channels).
         /// The view files the result in the matching cache slot.
         QList<int> getSelection() const { return selectionResult; }
+
+        // ── Per-cluster waveform summaries for the marked-node template strip
+        //    (§11.5).  These are the SAME compacted means and noise floors the
+        //    matrix cells were built from, so the strip's residuals match the
+        //    body exactly.  Moved out (each taken once by the view's handler).
+        /// Per-cluster compacted mean waveform (channel-major, effPts), row order
+        /// == getClusterList().
+        std::vector<std::vector<float>> takeMeanWav() { return std::move(meanWavResult); }
+        /// Per-cluster noise floor mean_p var[p] (the matrix diagonal / row offset).
+        std::vector<double> takeMeanVar() { return std::move(meanVarResult); }
+        /// Channels surviving the selection (empty = all), for compacting the
+        /// template the same way the cluster means were compacted.
+        std::vector<int> takeKeepChannels() { return std::move(keepResult); }
+        int getNbChannels() const { return nChanResult; }  // full channel count
+        int getNbSamples()  const { return nSampResult; }  // samples per waveform
     private:
         explicit ResidualMatrixEvent(ResidualMatrixThread& job)
             : QEvent(QEvent::Type(QEvent::User + 603)),
               eventGeneration(job.jobGeneration),
               scoresResult(job.scores),
               clusterListResult(job.clusterList),
-              selectionResult(job.selection) { job.scores = nullptr; }
+              selectionResult(job.selection),
+              meanWavResult(std::move(job.meanWavResult)),
+              meanVarResult(std::move(job.meanVarResult)),
+              keepResult(std::move(job.keepChannels)),
+              nChanResult(job.nChanResult),
+              nSampResult(job.nSampResult) { job.scores = nullptr; }
 
         int            eventGeneration;
         Array<double>* scoresResult;
         QList<int>     clusterListResult;
         QList<int>     selectionResult;
+        std::vector<std::vector<float>> meanWavResult;
+        std::vector<double>             meanVarResult;
+        std::vector<int>                keepResult;
+        int            nChanResult = 0;
+        int            nSampResult = 0;
     };
 
     /**Executed by a pool worker; builds the matrix, posts the completion
@@ -134,6 +159,17 @@ private:
     QList<int>                   clusterList;   // matrix row/col -> cluster id
     std::vector<std::vector<int>> allFileIdx;   // [clusterIdx] -> 0-based .spk rows
     QList<int>                   selection;    // empty = all channels
+
+    // ── Carried to the view for the marked-node template strip (§11.5) ──────
+    // Filled by process() just before the final post: the compacted per-cluster
+    // means and noise floors the matrix was built from, plus the surviving
+    // channel set and session geometry so the view can compact a template to
+    // match.  Empty on every early (degenerate/cancelled) return.
+    std::vector<std::vector<float>> meanWavResult;   // channel-major, effPts
+    std::vector<double>             meanVarResult;   // per-cluster mean_p var[p]
+    std::vector<int>                keepChannels;    // empty = all channels
+    int                             nChanResult = 0;
+    int                             nSampResult = 0;
     QList<int>                   activeClusters;  // empty = all clusters.  After selection so
                                      // member init order matches the ctor list.
 };

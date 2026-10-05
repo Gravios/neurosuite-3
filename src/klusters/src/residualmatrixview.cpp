@@ -3,6 +3,8 @@
 #include <QStringList>
 #include "matrixgrid.h"
 #include "matrixbadge.h"
+#include "matrixtemplatecols.h"  // drawMatrixTemplateStrip — the shared edge-strip renderer
+#include "channelmask.h"         // cmCompactChannels — match the template to the matrix's channels
 #include "residualmatrixthread.h"
 #include "klustersdoc.h"
 #include "klustersview.h"
@@ -221,6 +223,7 @@ void ResidualMatrixView::selectedChannelsChanged(const QList<int>& channels)
         if (haveAllCache && scoresAll) {
             scores = scoresAll;
             dataReady = true;
+            recomputeTemplateStripCells();   // strip follows the swapped-in matrix's means
             updateWindow();
             update();
             return;
@@ -228,6 +231,7 @@ void ResidualMatrixView::selectedChannelsChanged(const QList<int>& channels)
     } else if (haveSelCache && channels == cachedSelection && scoresSel) {
         scores = scoresSel;
         dataReady = true;
+        recomputeTemplateStripCells();       // strip follows the swapped-in matrix's means
         updateWindow();
         update();
         return;
@@ -267,21 +271,32 @@ void ResidualMatrixView::customEvent(QEvent* event)
 
     if (accepted) {
         // File under the selection it was computed for, so the other slot
-        // stays available for an instant swap.
+        // stays available for an instant swap.  The per-cluster means/noise the
+        // strip needs travel with it and are filed in the matching slot, so a
+        // later swap restores them together with the matrix.
         const QList<int> ranFor = ev->getSelection();
         if (ranFor.isEmpty()) {
             delete scoresAll;
             scoresAll    = newScores;
             haveAllCache = true;
+            meanAll_  = ev->takeMeanWav();
+            noiseAll_ = ev->takeMeanVar();
+            keepAll_  = ev->takeKeepChannels();
         } else {
             delete scoresSel;
             scoresSel       = newScores;
             cachedSelection = ranFor;
             haveSelCache    = true;
+            meanSel_  = ev->takeMeanWav();
+            noiseSel_ = ev->takeMeanVar();
+            keepSel_  = ev->takeKeepChannels();
         }
+        nChanFull_  = ev->getNbChannels();
+        nSampFull_  = ev->getNbSamples();
         scores      = newScores;
         clusterList = ev->getClusterList();
         recomputeDisplayMax();
+        recomputeTemplateStripCells();   // fresh means/clusters: refresh the strip
     } else {
         delete newScores;
     }
@@ -306,12 +321,16 @@ void ResidualMatrixView::updateWindow()
 {
     const int n = clusterList.size();
     if (n <= 0) return;
+    // Reserve room for the marked-node template strip (gap + M cells) so it fits
+    // on screen instead of running off the right/bottom edge (as the others do).
+    const int nStrip = tplCols_.empty() ? 0 : (kTemplateStripGapCells + static_cast<int>(tplCols_.size()));
+    const int nTot   = n + nStrip;
     const int matH   = std::max(height() - INFO_H, 1);
     matrixViewport   = QRect(0, 0, width(), matH);
     const int availW = width() - LABEL_MARGIN - 10;
     const int availH = matH - 14 - 10;
-    const int fitW   = (availW > 0) ? availW / n : CELL_WIDTH;
-    const int fitH   = (availH > 0) ? availH / n : CELL_WIDTH;
+    const int fitW   = (availW > 0) ? availW / nTot : CELL_WIDTH;
+    const int fitH   = (availH > 0) ? availH / nTot : CELL_WIDTH;
     cellWidth        = std::max(4, std::min({fitW, fitH, CELL_WIDTH}));
     widthBorder      = cellWidth / 3 + 5;
     heightBorder     = cellWidth / 3 + 14;
@@ -426,6 +445,9 @@ void ResidualMatrixView::drawMatrix(QPainter& p)
             drawMatrixParentBands(p, oriF, eff, parentPerCell, colourPerCell);
         }
     }
+
+    // Marked-node template columns/rows at the edge (residual separability, §11.5).
+    drawTemplateStrip(p);
 }
 
 void ResidualMatrixView::drawClusterIds(QPainter& p)
@@ -540,6 +562,134 @@ void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
         doc.selectFromMatrix(clustersToShow);
 }
 
+
+// ── marked-node template columns (§11.5) ──────────────────────────────────────
+void ResidualMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>& cols)
+{
+    tplCols_ = cols;
+    recomputeTemplateStripCells();
+    if (dataReady) updateWindow();   // refit so the strip (gap + M cells) is on screen
+    update();
+}
+
+void ResidualMatrixView::recomputeTemplateStripCells()
+{
+    const int M = static_cast<int>(tplCols_.size());
+    const int N = clusterList.size();
+    tplClusterRow_.assign(M, std::vector<double>(N, 0.0));
+    tplTemplateRow_.assign(M, std::vector<double>(N, 0.0));
+    tplGrey_.assign(M, std::vector<bool>(N, true));
+    tplCorner_.assign(M, std::vector<double>(M, 0.0));
+    if (M == 0 || N == 0 || nSampFull_ <= 0) return;
+
+    // Read the slot `scores` currently aliases, so the strip matches the matrix
+    // on screen even after a channel-selection swap.
+    const bool useSel = (scores != nullptr && scores == scoresSel);
+    const std::vector<std::vector<float>>& clMean  = useSel ? meanSel_  : meanAll_;
+    const std::vector<double>&             clNoise = useSel ? noiseSel_ : noiseAll_;
+    const std::vector<int>&                keep    = useSel ? keepSel_  : keepAll_;
+    if (static_cast<int>(clMean.size()) < N || static_cast<int>(clNoise.size()) < N) return;
+    const int effPts = clMean.empty() ? 0 : static_cast<int>(clMean[0].size());
+    if (effPts <= 0) return;
+    const double invPts = 1.0 / static_cast<double>(effPts);
+
+    // Compact each template mean + its per-point variance (std²) to the same
+    // channels the matrix used, so the residual is over the same points.
+    std::vector<std::vector<float>> tMean(M);
+    std::vector<double>             tNoise(M, 0.0);   // template noise floor mean_p var_T[p]
+    std::vector<char>               tOk(M, 0);
+    std::vector<float> tmp;
+    for (int t = 0; t < M; ++t) {
+        if (static_cast<int>(tplCols_[t].mean.size()) != nChanFull_ * nSampFull_) continue;
+        cmCompactChannels(tplCols_[t].mean, nChanFull_, nSampFull_, keep, tmp);
+        if (static_cast<int>(tmp.size()) != effPts) continue;      // geometry mismatch -> leave greyed
+        tMean[t] = tmp;
+        if (static_cast<int>(tplCols_[t].std.size()) == nChanFull_ * nSampFull_) {
+            std::vector<float> vtmp;
+            cmCompactChannels(tplCols_[t].std, nChanFull_, nSampFull_, keep, vtmp);
+            double s = 0.0;
+            for (int p = 0; p < effPts; ++p) s += static_cast<double>(vtmp[static_cast<size_t>(p)])
+                                                 * static_cast<double>(vtmp[static_cast<size_t>(p)]);
+            tNoise[t] = s * invPts;                                // mean_p std_T[p]²
+        }
+        tOk[t] = 1;
+    }
+
+    // Per-cluster spike-time RANGE [lo,hi] in samples — for the in-window greying.
+    const int timeDim = doc.data().timeDimension();
+    std::vector<double> cLo(N, 0.0), cHi(N, -1.0);                 // cHi < cLo = "no spikes"
+    for (int j = 0; j < N; ++j) {
+        const auto idx = doc.data().clusterSpkIndices(clusterList[j]);
+        if (idx.isEmpty()) continue;
+        const double t0 = static_cast<double>(doc.data().featureValue(idx.first() + 1, timeDim));
+        const double t1 = static_cast<double>(doc.data().featureValue(idx.last()  + 1, timeDim));
+        cLo[j] = std::min(t0, t1); cHi[j] = std::max(t0, t1);
+    }
+    const double sr = doc.getSamplingRate();
+
+    auto sepIndex = [](double gap, double floor)->double {        // M = gap/(noise+gap), as the body
+        const double d = floor + gap;
+        return (d > 0.0) ? gap / d : 0.0;
+    };
+
+    for (int t = 0; t < M; ++t) {
+        const double winLo = tplCols_[t].a * sr, winHi = tplCols_[t].b * sr;
+        for (int j = 0; j < N; ++j) {
+            const std::vector<float>& cm = clMean[static_cast<size_t>(j)];
+            const bool sizeOk = tOk[t] && (static_cast<int>(cm.size()) == effPts);
+            if (sizeOk) {
+                double gap = 0.0;                                 // mean_p (mean_j − T)²  (symmetric)
+                for (int p = 0; p < effPts; ++p) {
+                    const double d = static_cast<double>(cm[static_cast<size_t>(p)])
+                                   - static_cast<double>(tMean[t][static_cast<size_t>(p)]);
+                    gap += d * d;
+                }
+                gap *= invPts;
+                tplClusterRow_[t][j]  = sepIndex(gap, clNoise[static_cast<size_t>(j)]);  // row = cluster
+                tplTemplateRow_[t][j] = sepIndex(gap, tNoise[t]);                        // row = template
+            }
+            const bool noSpk = (cHi[j] < cLo[j]) || (cHi[j] < winLo) || (cLo[j] > winHi);
+            tplGrey_[t][j] = noSpk || !sizeOk;
+        }
+        for (int u = 0; u < M; ++u) {
+            if (!tOk[t] || !tOk[u]) { tplCorner_[t][u] = 0.0; continue; }
+            double gap = 0.0;
+            for (int p = 0; p < effPts; ++p) {
+                const double d = static_cast<double>(tMean[t][static_cast<size_t>(p)])
+                               - static_cast<double>(tMean[u][static_cast<size_t>(p)]);
+                gap += d * d;
+            }
+            gap *= invPts;
+            tplCorner_[t][u] = sepIndex(gap, tNoise[t]);          // row = template t floor
+        }
+    }
+}
+
+void ResidualMatrixView::drawTemplateStrip(QPainter& p)
+{
+    const int M = static_cast<int>(tplCols_.size());
+    const int N = clusterList.size();
+    if (M == 0 || N == 0 || static_cast<int>(tplClusterRow_.size()) != M) return;
+    const QPointF oriF = effMatrixTopLeft();
+    const double  eff  = effCellSize();
+
+    // ASYMMETRIC: a cluster-row cell normalises by the cluster's noise, a
+    // template-row cell by the template's noise, exactly like the matrix body.
+    auto value = [&](int r, int c, bool& grey)->double{
+        if (r < N && c >= N) { const int t = c - N; grey = tplGrey_[t][r]; return tplClusterRow_[t][r]; }
+        if (r >= N && c < N) { const int t = r - N; grey = tplGrey_[t][c]; return tplTemplateRow_[t][c]; }
+        grey = false; return tplCorner_[r - N][c - N];     // template×template corner
+    };
+    const double inv = (displayMax > 0.0) ? 1.0 / displayMax : 1.0;
+    auto colourFor = [&](double v)->QColor{                // same ramp as drawMatrix
+        double r = v * inv;
+        r = std::max(0.0, std::min(1.0, r));
+        int idx = static_cast<int>((1.0 - r) * (NB_COLORS - 1) + 0.5);
+        idx = std::max(0, std::min(NB_COLORS - 1, idx));
+        return colorMap[idx];
+    };
+    drawMatrixTemplateStrip(p, oriF, eff, N, M, value, colourFor);
+}
 
 void ResidualMatrixView::setInfoText(const QString& text)
 {

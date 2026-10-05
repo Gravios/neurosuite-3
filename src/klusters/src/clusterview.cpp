@@ -2237,10 +2237,15 @@ std::vector<MatrixTemplateCol> ClusterView::markedTemplates() const
         if (!n || n->count <= 0 || n->mean.size() != recLen) continue;   // placeholders have no template
         MatrixTemplateCol mt; mt.node = n->node; mt.classId = n->classId; mt.a = n->a; mt.b = n->b;
         mt.mean.resize(recLen);
+        const bool haveStd = (n->std.size() == recLen);        // residual needs the node's noise floor
+        if (haveStd) mt.std.resize(recLen);
         for (int smp = 0; smp < nsamp; ++smp)                 // node summary: sample-major
-            for (int ch = 0; ch < nchan; ++ch)                // -> channel-major (ch*nSamp + smp)
-                mt.mean[static_cast<std::size_t>(ch) * nsamp + smp] =
-                    n->mean[static_cast<std::size_t>(smp) * nchan + ch];
+            for (int ch = 0; ch < nchan; ++ch) {              // -> channel-major (ch*nSamp + smp)
+                const std::size_t dst = static_cast<std::size_t>(ch) * nsamp + smp;
+                const std::size_t src = static_cast<std::size_t>(smp) * nchan + ch;
+                mt.mean[dst] = n->mean[src];
+                if (haveStd) mt.std[dst] = n->std[src];
+            }
         out.push_back(std::move(mt));
     }
     return out;

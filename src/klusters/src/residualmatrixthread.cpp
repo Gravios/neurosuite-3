@@ -101,6 +101,8 @@ void ResidualMatrixThread::process()
     const int     nPts    = nChan * nSamp;
     const QString spkPath = data.getSpkFileName();
     if (spkPath.isEmpty() || nPts <= 0) { postDone(); return; }
+    nChanResult = nChan;   // session geometry carried to the view for the template strip
+    nSampResult = nSamp;
 
     // ── 2. Pre-fetch .spk file indices (serial, mutex-safe) ───────────────
     allFileIdx.resize(static_cast<size_t>(nClusters));
@@ -206,6 +208,7 @@ void ResidualMatrixThread::process()
             for (auto& v : varWav)  { cmCompactChannels(v, nChan, nSamp, keep, tmp); v.swap(tmp); }
             effChan = static_cast<int>(keep.size());
         }
+        keepChannels = keep;   // remember the surviving channels (empty = all) for the strip
     }
     const int effPts = effChan * nSamp;
     if (effPts <= 0) { postDone(); return; }
@@ -254,6 +257,12 @@ void ResidualMatrixThread::process()
         (*scores)(i + 1, j + 1) = (di > 0.0) ? gap / di : 0.0;   // systematic fraction, row i
         (*scores)(j + 1, i + 1) = (dj > 0.0) ? gap / dj : 0.0;   // systematic fraction, row j
     }
+
+    // Hand the compacted means and noise floors to the view for the template
+    // strip.  meanWav/meanVar are done being read (the pair loop above was their
+    // last use), so move rather than copy.
+    meanWavResult = std::move(meanWav);
+    meanVarResult = std::move(meanVar);
 
     postDone();
 }
