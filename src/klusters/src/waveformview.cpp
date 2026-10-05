@@ -794,9 +794,7 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
         if(pk <= 0.f) return Yfactor;
         return (0.75 * YsizeForMaxAmp / pk) * zoom;      // best-fit: ~75% at gain 0, scales with zoom
     };
-    // `rot` circularly shifts the template along the sample axis (for the per-node
-    // drift stagger — see the edit-mode loop).  0 = drawn in place.
-    auto drawOne = [&](const std::vector<float>& tr, const QColor& col, int X, double factor, int rot){
+    auto drawOne = [&](const std::vector<float>& tr, const QColor& col, int X, double factor){
         if(static_cast<int>(tr.size()) < need) return;
         QColor c = col; c.setAlpha(alpha);
         QPen pen(c); pen.setWidth(tpEdit_ ? 2 : 1);
@@ -807,8 +805,7 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
             QPolygon poly(tpSamp_);
             long x = 0;
             for(int i = 0; i < tpSamp_; ++i){
-                const int si = ((i - rot) % tpSamp_ + tpSamp_) % tpSamp_;      // circular shift
-                const float v = tr[static_cast<size_t>(ch) * tpSamp_ + si];    // channel-major
+                const float v = tr[static_cast<size_t>(ch) * tpSamp_ + i];     // channel-major
                 poly.setPoint(i, static_cast<int>(X + x),
                               static_cast<int>(-Y - static_cast<long>(v * factor)));  // (*) sign
                 x += Xstep;
@@ -822,7 +819,7 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
     // Drawn only when a matching std curve was supplied (tpStds_); otherwise the
     // caller gets the bare mean polyline from drawOne.
     auto drawBand = [&](const std::vector<float>& tr, const std::vector<float>& sd,
-                        const QColor& col, int X, double factor, int rot){
+                        const QColor& col, int X, double factor){
         if(static_cast<int>(tr.size()) < need || static_cast<int>(sd.size()) < need) return;
         QColor fill = col; fill.setAlpha(tpEdit_ ? 70 : 45);
         painter.setPen(Qt::NoPen);
@@ -833,9 +830,8 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
             QPolygon band(2 * tpSamp_);
             long x = 0;
             for(int i = 0; i < tpSamp_; ++i){
-                const int si = ((i - rot) % tpSamp_ + tpSamp_) % tpSamp_;      // circular shift
-                const float m = tr[static_cast<size_t>(ch) * tpSamp_ + si];
-                const float s = sd[static_cast<size_t>(ch) * tpSamp_ + si];
+                const float m = tr[static_cast<size_t>(ch) * tpSamp_ + i];
+                const float s = sd[static_cast<size_t>(ch) * tpSamp_ + i];
                 band.setPoint(i,                   static_cast<int>(X + x),
                               static_cast<int>(-Y - static_cast<long>((m + s) * factor)));   // (*) sign
                 band.setPoint(2 * tpSamp_ - 1 - i, static_cast<int>(X + x),
@@ -849,20 +845,13 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
     auto hasStd = [&](size_t t){ return t < tpStds_.size() && static_cast<int>(tpStds_[t].size()) >= need; };
 
     if(tpEdit_){
-        // Every populated node of the active class is drawn at X0, and they share the
-        // class colour, so without separation they superimpose into one trace.  Stagger
-        // them with a per-node CIRCULAR shift along the sample axis (the nodes arrive in
-        // session-time order), so the drift reads as a left-to-right progression while
-        // each node stays within its channel.  The first node is unshifted (aligned to
-        // the spikes); tune the spread via rotStep.
-        const int nTpl    = static_cast<int>(tpTemplates_.size());
-        const int rotStep = (nTpl > 1) ? std::max(1, tpSamp_ / nTpl) : 0;
+        // Templates overlaid at the first column, on top of the spikes.  A supplied
+        // std draws the ±band first, then a thin mean centreline over it.
         for(size_t t = 0; t < tpTemplates_.size(); ++t){
             const QColor col = (t < tpColors_.size()) ? tpColors_[t] : QColor(60,120,220);
             const double f   = factorFor(tpTemplates_[t]);
-            const int    rot = static_cast<int>(t) * rotStep;
-            if(hasStd(t)) drawBand(tpTemplates_[t], tpStds_[t], col, X0, f, rot);
-            drawOne(tpTemplates_[t], col, X0, f, rot);
+            if(hasStd(t)) drawBand(tpTemplates_[t], tpStds_[t], col, X0, f);
+            drawOne(tpTemplates_[t], col, X0, f);
         }
     } else {
         // Review: the primary template as a faint underlay behind each shown
@@ -875,13 +864,13 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
         std::sort(cl.begin(), cl.end());
         const int colShift = overLayPresentation ? 0 : shift;
         if(cl.isEmpty() || colShift == 0){
-            if(primStd) drawBand(prim, tpStds_[0], col, X0, factor, 0);
-            drawOne(prim, col, X0, factor, 0);
+            if(primStd) drawBand(prim, tpStds_[0], col, X0, factor);
+            drawOne(prim, col, X0, factor);
         } else {
             int X = X0;
             for(int n = 0; n < cl.size(); ++n){
-                if(primStd) drawBand(prim, tpStds_[0], col, X, factor, 0);
-                drawOne(prim, col, X, factor, 0);
+                if(primStd) drawBand(prim, tpStds_[0], col, X, factor);
+                drawOne(prim, col, X, factor);
                 X += colShift;
             }
         }

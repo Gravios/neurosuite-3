@@ -2121,22 +2121,11 @@ void ClusterView::pushActiveLineageBands()
     if (nsamp <= 0 || nchan <= 0) { clearTemplatePreviewOnViews(); return; }
     const std::size_t recLen = static_cast<std::size_t>(nsamp) * static_cast<std::size_t>(nchan);
 
-    // Gather the active class's populated nodes in SESSION-TIME order (by window
-    // start, then id), so the per-node circular-shift stagger in the WaveformView
-    // reads as a left→right drift progression (roots before their leaves in a region).
-    std::vector<const neurofileio::WtlNode*> picked;
-    for (const neurofileio::WtlNode& n : lineageStore_.forest().nodes)
-        if (n.classId == lineageActiveClass_ && n.count > 0 && n.mean.size() == recLen)
-            picked.push_back(&n);
-    std::sort(picked.begin(), picked.end(),
-              [](const neurofileio::WtlNode* a, const neurofileio::WtlNode* b){
-                  return (a->a != b->a) ? (a->a < b->a) : (a->node < b->node);
-              });
-
     std::vector<std::vector<float>> templates, stds;
     std::vector<QColor>             colors;
-    for (const neurofileio::WtlNode* np : picked) {
-        const neurofileio::WtlNode& n = *np;
+    for (const neurofileio::WtlNode& n : lineageStore_.forest().nodes) {
+        if (n.classId != lineageActiveClass_) continue;
+        if (n.count <= 0 || n.mean.size() != recLen) continue;      // skip empty placeholders
         const bool haveStd = (n.std.size() == recLen);
         std::vector<float> m(recLen), s(recLen, 0.f);
         for (int smp = 0; smp < nsamp; ++smp)                       // node summary: sample-major
