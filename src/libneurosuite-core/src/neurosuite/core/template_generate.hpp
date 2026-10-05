@@ -28,7 +28,8 @@
 #define NEUROSUITE_CORE_TEMPLATE_GENERATE_HPP
 
 #include "neurosuite/core/neurofileio.h"
-#include "neurosuite/core/custody.hpp"   // resolveAny for the SHARED .res (generateToFiles)
+#include "neurosuite/core/custody.hpp"       // resolveAny for the SHARED .res (generateToFiles)
+#include "neurosuite/core/running_stats.hpp" // MeanStd / meanStdOfRecords / combineMeanStd (lineage node payload)
 
 #include <algorithm>
 #include <cmath>
@@ -553,34 +554,22 @@ inline std::string lineageKindToLink(const std::string& kind)
     return kind;                                   // unknown kinds kept verbatim
 }
 
-inline Result renderLineage(const neurofileio::WtlForest&                      forest,
-                            const std::vector<std::string>&                   variants,
-                            const std::map<std::string, std::vector<int16_t>>& spk,
-                            int nSamples, int nChannels, int maxPer = 800)
+// Render the committed lineage to .wti rows + a single .mtf-layout int16 stack:
+// each node's STORED running mean (rounded to int16) becomes its record, so the
+// model is a copy — no .spk, no re-median.  `variant` only tags the output; the
+// stored mean is variant-independent (it was summarised at edit time).
+inline Result renderLineage(const neurofileio::WtlForest& forest,
+                            const std::string& variant,
+                            int nSamples, int nChannels)
 {
     Result R;
     const int nsamp = nSamples, nchan = nChannels;
     const std::size_t recLen = static_cast<std::size_t>(nsamp) * static_cast<std::size_t>(nchan);
-    if (nsamp <= 0 || nchan <= 0) { R.err = "bad waveform geometry";  return R; }
-    if (variants.empty())         { R.err = "no variants requested";  return R; }
+    if (nsamp <= 0 || nchan <= 0) { R.err = "bad waveform geometry"; return R; }
 
-    // Each variant's stack must be a whole number of records and agree on N.
-    int64_t N = -1;
-    for (const std::string& v : variants) {
-        auto it = spk.find(v);
-        if (it == spk.end())                    { R.err = "spk variant '" + v + "' missing"; return R; }
-        if (recLen == 0 || it->second.size() % recLen != 0)
-            { R.err = "spk variant '" + v + "' not a whole number of records"; return R; }
-        const int64_t n = static_cast<int64_t>(it->second.size() / recLen);
-        if (N < 0) N = n;
-        else if (n != N)                        { R.err = "spk variants differ in spike count"; return R; }
-    }
-    // Every node's spike indices must be in range.
-    for (const neurofileio::WtlNode& nd : forest.nodes)
-        for (int64_t i : nd.spikes)
-            if (i < 0 || i >= N)                { R.err = "node spike index out of range"; return R; }
-
-    for (const std::string& v : variants) R.wtf[v] = {};
+    R.wtf[variant] = {};
+    std::vector<int16_t>& out = R.wtf[variant];
+    out.reserve(forest.nodes.size() * recLen);
 
     std::map<int, int>                          rowOf;     // node id -> emitted .wti row index
     std::map<std::pair<int, std::string>, int>  binCtr;    // (class, link) -> next bin ordinal
@@ -593,36 +582,18 @@ inline Result renderLineage(const neurofileio::WtlForest&                      f
         row.bin     = binCtr[{nd.classId, row.link}]++;
         row.a       = nd.a;
         row.b       = nd.b;
-        row.nSpikes = static_cast<int64_t>(nd.spikes.size());
+        row.nSpikes = nd.count;
         auto pit    = rowOf.find(nd.parent);
         row.parent  = (nd.parent >= 0 && pit != rowOf.end()) ? pit->second : -1;
         rowOf[nd.node] = row.row;
         R.rows.push_back(row);
 
-        // Subsample the node's spikes to <= maxPer (a median over a few hundred is
-        // already stable), matching generate().
-        std::vector<int64_t> sub = nd.spikes;
-        if (static_cast<int>(sub.size()) > maxPer) {
-            const std::vector<std::size_t> keep = linspace_indices(sub.size(), maxPer);
-            std::vector<int64_t> picked(keep.size());
-            for (std::size_t j = 0; j < keep.size(); ++j) picked[j] = sub[keep[j]];
-            sub.swap(picked);
-        }
-
-        for (const std::string& v : variants) {
-            const std::vector<int16_t>& stack = spk.at(v);
-            std::vector<int16_t> med(recLen, 0);
-            if (!sub.empty()) {
-                std::vector<float> col(sub.size());
-                for (std::size_t e = 0; e < recLen; ++e) {
-                    for (std::size_t m = 0; m < sub.size(); ++m)
-                        col[m] = static_cast<float>(stack[static_cast<std::size_t>(sub[m]) * recLen + e]);
-                    med[e] = static_cast<int16_t>(std::rint(median_np(col)));
-                }
-            }
-            std::vector<int16_t>& out = R.wtf[v];
-            out.insert(out.end(), med.begin(), med.end());
-        }
+        // Copy the stored running mean (rounded).  A placeholder (empty mean)
+        // renders as a 0-filled record so .wti row i stays 1:1 with .mtf record i.
+        std::vector<int16_t> med(recLen, 0);
+        if (nd.mean.size() == recLen)
+            for (std::size_t e = 0; e < recLen; ++e) med[e] = static_cast<int16_t>(std::rint(nd.mean[e]));
+        out.insert(out.end(), med.begin(), med.end());
     }
 
     R.ok = true;
@@ -630,16 +601,16 @@ inline Result renderLineage(const neurofileio::WtlForest&                      f
 }
 
 // ── On-disk wrapper for the manual lineage ──────────────────────────────────
-// Persist the curator's forest and render the final MODEL: write the `.wtl` (the
-// editable lineage source), then read each variant's `.spk` and renderLineage →
-// write the shared method-less `.mti` (the `.wti` v2 schema at the model
-// extension, carrying the tree) + one `.mtf` per variant.  The model files
-// (`.mti`/`.mtf`) are DISTINCT from the auto-generated library (`.wti`/`.wtf`), so
-// committing a lineage never clobbers a fiber-template generation.  All are
-// stage-tagged; `spkTag` names the stage of the input `.spk` the node indices
-// refer to.  Refuses an all-placeholder forest (nothing to commit).  Like
-// generateToFiles this ODR-uses the out-of-line neurofileio readers/writers, so a
-// caller must link Neurosuite::core.
+// Persist the curator's forest and render the final MODEL: write the `.wtl` v2
+// (the editable lineage source — tree + per-node running mean/std/count), then
+// renderLineage (a COPY of the stored means — no `.spk`, no re-median) → write the
+// shared method-less `.mti` (the `.wti` v2 schema at the model extension, carrying
+// the tree) + one `.mtf` (the stored means, tagged with variants[0]).  The model
+// files (`.mti`/`.mtf`) are DISTINCT from the auto-generated library
+// (`.wti`/`.wtf`), so committing a lineage never clobbers a fiber-template
+// generation.  All are stage-tagged.  Refuses an all-placeholder forest (nothing
+// to commit).  Like generateToFiles this ODR-uses the out-of-line neurofileio
+// readers/writers, so a caller must link Neurosuite::core.
 struct LineageFileParams {
     std::string              base;
     int                      group     = 0;
@@ -662,43 +633,42 @@ inline Result renderLineageToFiles(const LineageFileParams&            fp,
     if (nsamp <= 0 || nchan <= 0) { R.err = "bad waveform geometry"; return R; }
     if (fp.variants.empty())      { R.err = "no variants requested"; return R; }
 
-    // Refuse to render an empty model: if every node is a 0-spike placeholder (an
+    // Refuse to render an empty model: if every node is a 0-count placeholder (an
     // unset region), there is nothing to commit yet.  A UX guard at the commit
     // layer only — the pure renderLineage() stays permissive — so a curator cannot
-    // write a flat 0-spike model over a freshly-seeded, still-empty lineage.
-    bool anySpikes = false;
+    // write a flat empty model over a freshly-seeded, still-empty lineage.
+    bool anyPopulated = false;
     for (const neurofileio::WtlNode& nd : forest.nodes)
-        if (!nd.spikes.empty()) { anySpikes = true; break; }
-    if (!anySpikes) {
-        R.err = "every node is an empty placeholder — set at least one region's drift before committing";
+        if (nd.count > 0) { anyPopulated = true; break; }
+    if (!anyPopulated) {
+        R.err = "every node is an empty placeholder — populate at least one region before committing";
         return R;
     }
 
-    std::map<std::string, std::vector<int16_t>> spk;
-    for (const std::string& v : fp.variants) {
-        const std::string p = sessionPath(fp.base, "spk", fp.group, v, fp.spkTag);
-        neurofileio::SpkFile s = neurofileio::readSpk(p, nsamp, nchan);
-        if (!s.ok) { R.err = "cannot read .spk variant '" + v + "': " + p; return R; }
-        spk[v] = std::move(s.samples);
-    }
-
-    R = renderLineage(forest, fp.variants, spk, nsamp, nchan);
+    // The model is a COPY of the stored running means — no .spk read, no re-median.
+    // The .mtf is tagged with the edit variant (variants[0]); the mean itself is
+    // variant-independent.
+    const std::string variant = fp.variants.front();
+    R = renderLineage(forest, variant, nsamp, nchan);
     if (!R.ok) return R;
 
-    // Persist the lineage SOURCE (.wtl).
+    // Persist the lineage SOURCE (.wtl v2: tree + per-node running mean/std/count),
+    // stamping the waveform geometry into its header.
+    neurofileio::WtlForest fout = forest;
+    fout.version = 2; fout.nSamples = nsamp; fout.nChannels = nchan;
     const std::string wtlPath = sessionPath(fp.base, "wtl", fp.group, "", fp.stage);
-    if (!neurofileio::writeWtl(wtlPath, forest)) {
+    if (!neurofileio::writeWtl(wtlPath, fout)) {
         R.ok = false; R.err = "cannot write .wtl: " + wtlPath; return R;
     }
     if (wtlPathOut) *wtlPathOut = wtlPath;
 
-    // The rendered MODEL: one per-variant .mtf waveform stack ...
-    for (const std::string& v : fp.variants) {
-        const std::string mp = sessionPath(fp.base, "mtf", fp.group, v, fp.stage);
-        if (!neurofileio::writeSpk(mp, nsamp, nchan, R.wtf[v])) {
+    // The rendered MODEL: one .mtf waveform stack (the stored means) ...
+    {
+        const std::string mp = sessionPath(fp.base, "mtf", fp.group, variant, fp.stage);
+        if (!neurofileio::writeSpk(mp, nsamp, nchan, R.wtf[variant])) {
             R.ok = false; R.err = "cannot write .mtf: " + mp; return R;
         }
-        if (mtfPaths) (*mtfPaths)[v] = mp;
+        if (mtfPaths) (*mtfPaths)[variant] = mp;
     }
     // ... and the shared, method-less .mti index (the .wti v2 schema at the model
     // extension — writeWti emits v2 because the rows carry parents).  The model

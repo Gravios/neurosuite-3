@@ -853,7 +853,7 @@ void TemplateView::rebuildLineageTree()
         QString txt = tr("#%1 %2  %3–%4s  (%5 spk)  cls %6")
             .arg(n.node).arg(link)
             .arg(n.a, 0, 'f', 1).arg(n.b, 0, 'f', 1)
-            .arg(static_cast<long long>(n.spikes.size())).arg(n.classId);
+            .arg(static_cast<long long>(n.count)).arg(n.classId);
         auto* item = new QTreeWidgetItem;
         item->setText(0, txt);
         item->setData(0, Qt::UserRole, n.node);
@@ -904,12 +904,12 @@ void TemplateView::onSetRegionDrift()
         return;
     }
     const int rid = lineageStore.setRegionSpikes(cls, region, selectionSpikeIndices());
-    if (rid < 0) { showStatus(tr("Could not set the region's drift spikes.")); return; }
+    if (rid < 0) { showStatus(tr("Could not fold the selection into the region drift.")); return; }
     rebuildLineageTree();
     const neurofileio::WtlNode* n = lineageStore.node(rid);
-    const int nsp = n ? static_cast<int>(n->spikes.size()) : 0;
-    showStatus(tr("Set class #%1 region %2 drift to %3 in-region spike(s). Commit to render.")
-                   .arg(cls).arg(region).arg(nsp));
+    const long long cnt = n ? static_cast<long long>(n->count) : 0;
+    showStatus(tr("Class #%1 region %2 drift now summarises %3 spike(s). Commit to render.")
+                   .arg(cls).arg(region).arg(cnt));
 }
 
 void TemplateView::onAddLeaf(const char* kind)

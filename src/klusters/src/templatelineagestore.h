@@ -47,10 +47,9 @@ public:
     const neurofileio::WtlNode* node(int nodeId) const;   // nullptr if absent
 
     // ── node ops (mutate memory; the caller commit()s) ─────────────────────────
-    // Append a node (its id = max existing id + 1) and return that id.  `spikes`
-    // is the explicit set medianed to build it (empty = an unset/placeholder node).
-    int  addNode(int classId, const std::string& kind, int parent,
-                 double a, double b, const std::vector<int64_t>& spikes);
+    // Append an EMPTY node (its id = max existing id + 1, count 0) and return that
+    // id.  A selection is folded in afterwards with setRegionSpikes / addLeaf.
+    int  addNode(int classId, const std::string& kind, int parent, double a, double b);
     // Remove a node; any children are ORPHANED (their parent reset to -1), never
     // silently deleted.  Returns false if the id is absent.
     bool removeNode(int nodeId);
@@ -81,12 +80,14 @@ public:
 
     // Ensure `classId` has a drift-root in every region (all-placeholder if new).
     void ensureClassTiled(int classId);
-    // Set the (classId, region) drift-root's spikes to `spikes` RESTRICTED to that
-    // region's time window — the time-restricted, class-scoped template edit.
+    // FOLD a selection into the (classId, region) drift-root: `spikes` is restricted
+    // to the region's time window, its waveforms are read from the group's .spk,
+    // summarised (mean/std/count), and COMBINED into the root's running summary
+    // (the weighted update — repeated edits accumulate; the spikes are not kept).
     // Returns the region root's node id, or -1 if not ready / out of range.
     int  setRegionSpikes(int classId, int region, const std::vector<int64_t>& spikes);
-    // Add a `kind` leaf under the (classId, region) drift-root from `spikes`
-    // restricted to the region.  Returns the leaf node id, or -1.
+    // Add a `kind` leaf under the (classId, region) drift-root and fold `spikes`
+    // (restricted to the region) into it.  Returns the leaf node id, or -1.
     int  addLeaf(int classId, int region, const std::string& kind,
                  const std::vector<int64_t>& spikes);
 
@@ -106,6 +107,10 @@ private:
     void  retile();                                  // regrain the forest onto partition_
     int   regionRootId(int classId, int region) const;   // (class,region) drift-root id, or -1
     std::vector<int64_t> restrictToRegion(const std::vector<int64_t>& spikes, int region) const;
+    // Read the .spk records for `indices`, summarise (mean/std/count) and combine
+    // into the node at forest index `idx` (the weighted update).  False on bad
+    // geometry / empty selection / read failure.
+    bool  foldSelection(int idx, const std::vector<int64_t>& indices);
 
     neurofileio::WtlForest forest_;
     std::string base_, stage_, spkVariant_, spkTag_;

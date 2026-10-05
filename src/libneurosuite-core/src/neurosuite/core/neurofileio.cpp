@@ -302,6 +302,37 @@ SpkFile readSpk(const std::string& path, int nSamples, int nChannels)
     return out;
 }
 
+SpkFile readSpkRecords(const std::string& path, int nSamples, int nChannels,
+                       const std::vector<int64_t>& indices)
+{
+    SpkFile out;
+    out.nSamples  = nSamples;
+    out.nChannels = nChannels;
+    if (nSamples <= 0 || nChannels <= 0) return out;
+
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in) return out;
+    const std::streamoff bytes = in.tellg();
+    const int64_t recVals  = static_cast<int64_t>(nSamples) * nChannels;
+    const int64_t recBytes = recVals * static_cast<int64_t>(sizeof(int16_t));
+    if (bytes < 0 || recBytes <= 0 || (static_cast<int64_t>(bytes) % recBytes) != 0)
+        return out;                                   // geometry mismatch
+    const int64_t nRec = static_cast<int64_t>(bytes) / recBytes;
+
+    out.samples.resize(indices.size() * static_cast<std::size_t>(recVals));
+    for (std::size_t k = 0; k < indices.size(); ++k) {
+        const int64_t idx = indices[k];
+        if (idx < 0 || idx >= nRec) { out.samples.clear(); return out; }  // out-of-range
+        in.seekg(static_cast<std::streamoff>(idx) * static_cast<std::streamoff>(recBytes), std::ios::beg);
+        in.read(reinterpret_cast<char*>(out.samples.data() + k * static_cast<std::size_t>(recVals)),
+                static_cast<std::streamsize>(recBytes));
+        if (in.gcount() != static_cast<std::streamsize>(recBytes)) { out.samples.clear(); return out; }
+    }
+    out.nSpikes = static_cast<int64_t>(indices.size());
+    out.ok = true;
+    return out;
+}
+
 bool writeSpk(const std::string& path, int nSamples, int nChannels,
               const std::vector<int16_t>& samples)
 {
@@ -494,30 +525,44 @@ WtlForest readWtl(const std::string& path)
             // The first non-blank, non-comment line MUST be "wtl <version>".
             if (key != "wtl") return WtlForest{};
             int ver = 0;
-            if (!(ls >> ver) || ver != 1) return WtlForest{};   // only v1 implemented
+            if (!(ls >> ver) || (ver != 1 && ver != 2)) return WtlForest{};  // v1 (spikes) + v2 (summary)
             f.version = ver;
             haveHeader = true;
             continue;
         }
-        if (key == "nNodes") { ls >> declaredNodes; continue; }
+        if (key == "nSamples")  { ls >> f.nSamples;  continue; }
+        if (key == "nChannels") { ls >> f.nChannels; continue; }
+        if (key == "nNodes")    { ls >> declaredNodes; continue; }
         if (key == "node") {
-            // node <node> <class> <kind> <parent> <a> <b> <nSpikes> <spike...>
+            // v2: node <node> <class> <kind> <parent> <a> <b> <count>  (summary on next lines)
+            // v1: node <node> <class> <kind> <parent> <a> <b> <nSpikes> <spike...>
             WtlNode n;
-            long long nsp = 0;
-            if (!(ls >> n.node >> n.classId >> n.kind >> n.parent >> n.a >> n.b >> nsp))
+            long long cnt = 0;
+            if (!(ls >> n.node >> n.classId >> n.kind >> n.parent >> n.a >> n.b >> cnt))
                 continue;                           // malformed fixed fields: skip the node
-            if (nsp < 0) continue;
-            n.spikes.reserve(static_cast<std::size_t>(nsp));
-            bool bad = false;
-            for (long long k = 0; k < nsp; ++k) {
-                int64_t idx = 0;
-                if (!(ls >> idx)) { bad = true; break; }
-                n.spikes.push_back(idx);
+            if (cnt < 0) continue;
+            n.count = static_cast<int64_t>(cnt);
+            if (f.version == 1) {
+                // v1 kept the spike indices on the line; drop them (v2 keeps only the
+                // count + running mean/std, which a v1 node lacks — repopulate to fill).
+                bool bad = false;
+                for (long long k = 0; k < cnt; ++k) { int64_t idx; if (!(ls >> idx)) { bad = true; break; } }
+                if (bad) continue;                  // short tail: corrupt node, skip
             }
-            // The index count must match the declared nSpikes (a short/long tail is
-            // a corrupt node line, skipped rather than aborting the whole forest).
-            if (bad || static_cast<long long>(n.spikes.size()) != nsp) continue;
-            f.nodes.push_back(std::move(n));
+            f.nodes.push_back(std::move(n));        // v2 mean/std arrive on the next lines
+            continue;
+        }
+        if (key == "mean" || key == "std") {
+            if (f.nodes.empty()) continue;          // stray summary before any node
+            long long N = 0;
+            if (!(ls >> N) || N < 0) continue;
+            std::vector<float> v; v.reserve(static_cast<std::size_t>(N));
+            bool bad = false;
+            for (long long k = 0; k < N; ++k) { float x; if (!(ls >> x)) { bad = true; break; } v.push_back(x); }
+            if (bad) continue;                      // short tail: drop this summary line
+            if (key == "mean") f.nodes.back().mean = std::move(v);
+            else               f.nodes.back().std  = std::move(v);
+            continue;
         }
         // Unknown keys are ignored, so the format can gain fields without
         // breaking older readers.
@@ -534,14 +579,21 @@ bool writeWtl(const std::string& path, const WtlForest& f)
 {
     std::ofstream out(path);
     if (!out) return false;
-    out << "wtl " << f.version << "\n";
+    out << "wtl 2\n";                               // always the current (summary) version
+    out << "nSamples " << f.nSamples << "\n";
+    out << "nChannels " << f.nChannels << "\n";
     out << "nNodes " << f.nodes.size() << "\n";
-    out << "# node class kind parent a b nSpikes spikes...\n";
+    out << "# node class kind parent a b count\n";
+    out << "# mean <N> ...  then  std <N> ...   (N = nSamples*nChannels, 0 = placeholder)\n";
     for (const WtlNode& n : f.nodes) {
         out << "node " << n.node << ' ' << n.classId << ' '
             << (n.kind.empty() ? std::string("drift-root") : n.kind) << ' '
-            << n.parent << ' ' << n.a << ' ' << n.b << ' ' << n.spikes.size();
-        for (int64_t idx : n.spikes) out << ' ' << idx;
+            << n.parent << ' ' << n.a << ' ' << n.b << ' ' << n.count << "\n";
+        out << "mean " << n.mean.size();
+        for (float x : n.mean) out << ' ' << x;
+        out << "\n";
+        out << "std " << n.std.size();
+        for (float x : n.std) out << ' ' << x;
         out << "\n";
     }
     return static_cast<bool>(out);

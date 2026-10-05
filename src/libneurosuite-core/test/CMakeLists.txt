@@ -70,9 +70,18 @@ target_include_directories(core_test_wti
 target_link_libraries(core_test_wti PRIVATE Neurosuite::core)
 add_test(NAME core_test_wti COMMAND core_test_wti)
 
+# Running mean/std summaries (running_stats.hpp): the lineage node payload math —
+# meanStdOfRecords + the EXACT weighted combine combineMeanStd.  Headline invariant:
+# combine(A,B) == summary(A∪B), which is why a node keeps no spikes.  Header-only.
+add_executable(core_test_running_stats running_stats_test.cpp)
+target_compile_features(core_test_running_stats PRIVATE cxx_std_17)
+target_include_directories(core_test_running_stats
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_running_stats COMMAND core_test_running_stats)
+
 # .wtl manual template-linkage sidecar (readWtl/writeWtl + the wtl* view-model
-# helpers): the per-node curator lineage the native generator re-medians.  Links
-# the library (the readers/writers live in neurofileio.cpp), like the .spk test.
+# helpers): the per-node curator lineage (v2 running mean/std/count).  Links the
+# library (the readers/writers live in neurofileio.cpp), like the .spk test.
 add_executable(core_test_wtl wtl_test.cpp)
 target_compile_features(core_test_wtl PRIVATE cxx_std_17)
 target_include_directories(core_test_wtl

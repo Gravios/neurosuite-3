@@ -137,6 +137,12 @@ struct SpkFile {
 // the file).  readSpk rejects a file whose size is not a whole number of records
 // (ok = false).
 NEUROSUITE_CORE_EXPORT SpkFile readSpk(const std::string& path, int nSamples, int nChannels);
+// Read only the records at `indices` (0-based), seeking per record — O(selection)
+// IO + memory, for folding a selection into a running summary without loading the
+// whole stack.  The result's `samples` holds the requested records back-to-back in
+// `indices` order (nSpikes = indices.size()); an out-of-range index makes ok=false.
+NEUROSUITE_CORE_EXPORT SpkFile readSpkRecords(const std::string& path, int nSamples,
+                                              int nChannels, const std::vector<int64_t>& indices);
 // writeSpk requires samples.size() to be a whole number of nSamples*nChannels
 // records, else it writes nothing and returns false.
 NEUROSUITE_CORE_EXPORT bool    writeSpk(const std::string& path, int nSamples, int nChannels,
@@ -267,30 +273,47 @@ NEUROSUITE_CORE_EXPORT std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int un
 // Canonical text format, version-tagged so a reader rejects anything it does not
 // understand:
 //
-//     wtl 1
-//     nNodes 3
-//     # node class kind parent a b nSpikes spikes...
-//     node 0 31 drift-root -1 0.000 120.000 540 12 37 59 ...
-//     node 1 31 adapt-leaf 0 1.0 2.0 210 12 59 ...
-//     node 2 31 collision-leaf 0 0.0 0.0 8 88 91 ...
+//     wtl 2
+//     nSamples 33
+//     nChannels 8
+//     nNodes 2
+//     # node class kind parent a b count
+//     node 0 31 drift-root -1 0.000 120.000 540
+//     mean 264 103 98 ...        (count>0: nSamples*nChannels running-mean values)
+//     std  264 2.1 3.0 ...        (nSamples*nChannels running-std values)
+//     node 1 31 adapt-leaf 0 1.0 2.0 0
+//     mean 0
+//     std 0
 //
 // `node` is the 0-based node id (its own handle, referenced by children's
 // `parent`); `class` is the .eap column / template-class id; `parent` is another
 // node's id or -1; a/b are the window coordinates (drift: chunk start/end seconds;
-// adapt: energy/amplitude lo/hi); `nSpikes` is how many indices follow, and those
-// indices are the remainder of the line.  A node whose index count disagrees with
-// its nSpikes is skipped (not fatal); `nNodes`, when present, is checked.
+// adapt: energy/amplitude lo/hi); `count` is how many spikes are behind the
+// running summary (0 = an empty placeholder).  Each node line is followed by a
+// `mean <N> …` and a `std <N> …` line carrying the node's running mean and std
+// waveforms (N = nSamples*nChannels, 0 for a placeholder) in .spk element order.
+//
+// v2 stores these SUMMARIES, not the spike indices: a node is updated by folding
+// a new selection's (mean,std,count) into its own with the exact parallel-variance
+// combine (template_generate.hpp), so the originating spikes are never kept.  v1
+// (spike-list) files still read — their nodes map to count=nSpikes with empty
+// mean/std (repopulate to fill them).  `nNodes`/`nSamples`/`nChannels`, when
+// present, are checked.
 struct WtlNode {
-    int                  node    = 0;    ///< 0-based node id (referenced by children's `parent`)
-    int                  classId = 0;    ///< .eap column / template-class id this node belongs to
-    std::string          kind;           ///< "drift-root" | "adapt-leaf" | "collision-leaf" (verbatim, extensible)
-    int                  parent  = -1;   ///< parent node id, or -1 for a tree root
-    double               a       = 0.0;  ///< window lo (drift: start s; adapt: energy/amp lo)
-    double               b       = 0.0;  ///< window hi (drift: end s;   adapt: energy/amp hi)
-    std::vector<int64_t> spikes;         ///< the spike indices medianed (source of truth)
+    int                node    = 0;    ///< 0-based node id (referenced by children's `parent`)
+    int                classId = 0;    ///< .eap column / template-class id this node belongs to
+    std::string        kind;           ///< "drift-root" | "adapt-leaf" | "collision-leaf" (verbatim, extensible)
+    int                parent  = -1;   ///< parent node id, or -1 for a tree root
+    double             a       = 0.0;  ///< window lo (drift: start s; adapt: energy/amp lo)
+    double             b       = 0.0;  ///< window hi (drift: end s;   adapt: energy/amp hi)
+    int64_t            count   = 0;    ///< spikes behind the running summary (0 = empty placeholder)
+    std::vector<float> mean;           ///< running mean waveform (nSamples*nChannels, empty when count==0)
+    std::vector<float> std;            ///< running std  waveform (nSamples*nChannels, empty when count==0)
 };
 struct WtlForest {
-    int                  version = 1;
+    int                  version   = 2;
+    int                  nSamples  = 0;  ///< waveform geometry stamped in the v2 header (0 = unknown)
+    int                  nChannels = 0;
     std::vector<WtlNode> nodes;          ///< file order (a tree root precedes its leaves by convention)
     bool                 ok = false;     ///< false on open / parse / bad version
 };

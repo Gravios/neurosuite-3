@@ -1759,29 +1759,18 @@ void ClusterView::recomputeLineagePositions()
 {
     lineageDraw_.clear();
     if (!lineageOverlay_) return;
-    const Data& d = doc.data();
     const double sr = doc.getSamplingRate();
+    // The nodes carry running summaries (mean/std/count), not spikes, so there is
+    // no feature-space centroid to place a node at.  A node's world X is its region
+    // mid-time; the actual screen layout (roots on the top ribbon, leaves stacked
+    // below their root) is done in paintLineageOverlay.  `empty` = count 0.
     for (const neurofileio::WtlNode& n : lineageStore_.forest().nodes) {
         LineageNodeDraw nd;
         nd.node = n.node; nd.classId = n.classId; nd.parent = n.parent;
         nd.drift = (n.kind.rfind("drift", 0) == 0);
         nd.a = n.a; nd.b = n.b;                       // region window (for root-ribbon span)
-        double sx = 0.0, sy = 0.0; long cnt = 0;
-        for (int64_t s : n.spikes) {
-            const dataType row = static_cast<dataType>(s) + 1;   // 0-based .spk id -> 1-based feature row
-            if (!d.isValidSpikeIndex(row)) continue;
-            sx += static_cast<double>(d.featureValue(row, dimensionX));
-            sy += static_cast<double>(d.featureValue(row, dimensionY));
-            ++cnt;
-        }
-        nd.empty = (cnt == 0);
-        if (cnt > 0)
-            nd.world = QPoint(static_cast<int>(std::lround(sx / cnt)),
-                              -static_cast<int>(std::lround(sy / cnt)));   // ordinate is flipped
-        else
-            // Placeholder (no spikes): put it at its region's mid-time on X (recording
-            // units), Y at 0 — reads as that region's node when X is the time dim.
-            nd.world = QPoint(static_cast<int>(std::lround(0.5 * (n.a + n.b) * sr)), 0);
+        nd.empty = (n.count == 0);
+        nd.world = QPoint(static_cast<int>(std::lround(0.5 * (n.a + n.b) * sr)), 0);
         lineageDraw_.push_back(nd);
     }
 }
@@ -1815,13 +1804,22 @@ void ClusterView::paintLineageOverlay(QPainter& p)
     }
 
     // Screen position per node: a drift ROOT sits on the top ribbon, centred over
-    // its region's time span; every other node at its world (feature) point.
+    // its region's time span; a leaf stacks below its parent root (file order puts
+    // the root first, so its slot is already placed).  No spikes => no feature
+    // centroid, so when X is not time we fall back to the region mid-time world X.
     std::map<int, QPoint> screenOf;
+    std::map<int, int>    leafSlot;                 // parent node id -> next stack slot
     for (const LineageNodeDraw& nd : lineageDraw_) {
-        if (timeX && isRoot(nd))
+        if (timeX && isRoot(nd)) {
             screenOf[nd.node] = QPoint((xAt(nd.a) + xAt(nd.b)) / 2, rootBarY);
-        else
+        } else if (timeX) {
+            auto itp = screenOf.find(nd.parent);
+            const int px = (itp != screenOf.end()) ? itp->second.x() : (xAt(nd.a) + xAt(nd.b)) / 2;
+            const int slot = leafSlot[nd.parent]++;
+            screenOf[nd.node] = QPoint(px, rootBarY + 22 + slot * 16);
+        } else {
             screenOf[nd.node] = worldToViewport(nd.world);
+        }
     }
 
     // Child edges (parent -> child): a leaf hangs from its region root's ribbon.
@@ -2042,7 +2040,7 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
         const int region = (n && lineageStore_.partitionReady())
             ? lineageStore_.partition().regionOf(0.5 * (n->a + n->b)) : -1;
         const bool canEdit = !sel.empty() && cls >= 0 && region >= 0;
-        QAction* aDrift = menu.addAction(tr("Set region drift from shown clusters"));
+        QAction* aDrift = menu.addAction(tr("Add shown clusters to region drift"));
         QAction* aAdapt = menu.addAction(tr("Add adapt leaf from shown clusters"));
         QAction* aColl  = menu.addAction(tr("Add collision leaf from shown clusters"));
         aDrift->setEnabled(canEdit); aAdapt->setEnabled(canEdit); aColl->setEnabled(canEdit);

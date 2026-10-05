@@ -10,16 +10,17 @@
 //
 //  Model: a Partition tiles [0, tEnd) seconds into contiguous, DISJOINT regions
 //  (a strictly-increasing list of interior boundaries).  Every region carries a
-//  drift-root per class (a 0-spike placeholder when empty), so the partition is
+//  drift-root per class (an empty placeholder when count 0), so the partition is
 //  fully recoverable from the tiling drift-root windows — no separate on-disk
 //  partition object is needed.
 //
-//  Re-grain is a pure FOREST → FOREST transform: it pools each class's drift-root
-//  spikes (the source of truth) and re-bins them onto the new regions, then
-//  re-parents each adapt/collision leaf under the region containing its spikes'
-//  median time.  renderLineage() then produces the waveforms, so regrain never
-//  interpolates a median — it re-medians by reassigning spikes (exact).  Splitting
-//  and deleting a partition both reduce to "re-bin the pooled spikes onto p".
+//  Re-grain is a pure FOREST → FOREST transform over the nodes' running SUMMARIES
+//  (mean/std/count — no spikes).  Each new region's drift-root is the EXACT weighted
+//  combine of every old drift-root whose window overlaps it (combineMeanStd): a
+//  merge combines, a split duplicates the parent into each half, a region nothing
+//  overlaps is an empty placeholder.  Leaves keep their own summary and re-parent to
+//  the new region their old parent root maps to.  renderLineage() then just copies
+//  the stored means (no re-median — the median cannot be recombined from summaries).
 //
 //  Qt-free, header-only (std + neurofileio structs), so it is harness-testable and
 //  usable from both Klusters and a headless tool.
@@ -28,6 +29,7 @@
 #define NEUROSUITE_CORE_DRIFT_PARTITION_HPP
 
 #include "neurosuite/core/neurofileio.h"
+#include "neurosuite/core/running_stats.hpp"   // combineMeanStd (re-grain = combine overlapping summaries)
 
 #include <algorithm>
 #include <cstdint>
@@ -156,20 +158,33 @@ inline double medianTime(const std::vector<int64_t>& spikes,
 }
 } // namespace detail
 
-// Re-tile `forest` onto partition `p`.  For every class present, the class's
-// drift-root spikes are POOLED and re-binned by region: one drift-root per region
-// (its spikes = the pooled spikes whose res time falls in that region; an empty
-// region is a 0-spike placeholder, so the result tiles the session).  Each
-// adapt/collision leaf is kept (its spikes unchanged) and re-parented under the
-// drift-root of the region containing its spikes' median time.  Node ids are
-// reassigned densely; windows are set to each region's [a,b] seconds.  Out-of-
-// range spike indices (a session that shrank under the lineage) are dropped.
+namespace detail {
+// Do windows [a0,b0) and [a1,b1) overlap?
+inline bool overlaps(double a0, double b0, double a1, double b1) { return a0 < b1 && b0 > a1; }
+// Overlap length of [a0,b0) and [a1,b1) (0 if disjoint).
+inline double overlapLen(double a0, double b0, double a1, double b1)
+{ const double lo = std::max(a0, a1), hi = std::min(b0, b1); return (hi > lo) ? (hi - lo) : 0.0; }
+} // namespace detail
+
+// Re-tile `forest`'s running SUMMARIES onto partition `p` (no spikes needed — the
+// nodes carry {mean,std,count}).  For every class, each NEW region's drift-root is
+// the EXACT weighted combine (combineMeanStd) of every OLD drift-root whose window
+// overlaps it.  This covers all three cases with one rule:
+//   * exact match      — one old root overlaps → copied;
+//   * merge regions    — several old roots fall inside → combined (exact);
+//   * split a region   — one old root overlaps both halves → DUPLICATED into each
+//                        (per the curator's "duplicates are fine" — non-destructive;
+//                        refine each with the next update);
+//   * boundary move    — partial overlaps on both sides → combined (approximate,
+//                        reweighted on the next update).
+// Leaves keep their own summary and re-parent to the new region their OLD parent
+// root maps to (max overlap).  Node ids are reassigned densely; windows become each
+// region's [a,b].
 inline neurofileio::WtlForest regrainForest(const neurofileio::WtlForest& forest,
-                                            const std::vector<int64_t>& times, double sr,
                                             const Partition& p)
 {
     neurofileio::WtlForest out;
-    out.version = 1;
+    out.version = 2; out.nSamples = forest.nSamples; out.nChannels = forest.nChannels;
     const int nR = p.nRegions();
 
     // Distinct classes in first-seen order (stable output).
@@ -178,42 +193,54 @@ inline neurofileio::WtlForest regrainForest(const neurofileio::WtlForest& forest
         if (std::find(classes.begin(), classes.end(), n.classId) == classes.end())
             classes.push_back(n.classId);
 
+    auto isRoot = [](const neurofileio::WtlNode& n){ return detail::isDriftKind(n.kind) && n.parent < 0; };
+
     int nextId = 0;
     for (int cls : classes) {
-        // Pool this class's drift-root spikes (the source of truth), re-bin by region.
-        std::vector<std::vector<int64_t>> byRegion(static_cast<std::size_t>(nR));
-        for (const neurofileio::WtlNode& n : forest.nodes) {
-            if (n.classId != cls || !detail::isDriftKind(n.kind) || n.parent >= 0) continue;
-            for (int64_t s : n.spikes) {
-                const double t = detail::timeOf(times, sr, s);
-                if (t < 0.0) continue;                       // drop out-of-range
-                byRegion[static_cast<std::size_t>(p.regionOf(t))].push_back(s);
-            }
-        }
-        // One drift-root per region (placeholder if empty); record its node id so
-        // leaves can re-parent to it.
+        // This class's OLD drift roots (with their windows + summaries).
+        std::vector<const neurofileio::WtlNode*> oldRoots;
+        for (const neurofileio::WtlNode& n : forest.nodes)
+            if (n.classId == cls && isRoot(n)) oldRoots.push_back(&n);
+
+        // One NEW drift-root per region = combine of the old roots overlapping it.
         std::vector<int> rootId(static_cast<std::size_t>(nR), -1);
         for (int r = 0; r < nR; ++r) {
-            std::vector<int64_t>& sp = byRegion[static_cast<std::size_t>(r)];
-            std::sort(sp.begin(), sp.end());
-            sp.erase(std::unique(sp.begin(), sp.end()), sp.end());
+            const auto ab = p.region(r);
+            neurosuite::stats::MeanStd acc;                 // empty = placeholder
+            for (const neurofileio::WtlNode* orp : oldRoots)
+                if (detail::overlaps(orp->a, orp->b, ab.first, ab.second))
+                    acc = neurosuite::stats::combineMeanStd(acc.mean, acc.std, acc.count,
+                                                            orp->mean, orp->std, orp->count);
             neurofileio::WtlNode root;
             root.node = nextId++;
             root.classId = cls;
             root.kind = "drift-root";
             root.parent = -1;
-            const auto ab = p.region(r);
             root.a = ab.first; root.b = ab.second;
-            root.spikes = sp;
+            root.count = acc.count; root.mean = std::move(acc.mean); root.std = std::move(acc.std);
             rootId[static_cast<std::size_t>(r)] = root.node;
             out.nodes.push_back(std::move(root));
         }
-        // Re-attach this class's leaves under the region of their median time.
+
+        // Old root node id -> the new region it overlaps most (for leaf re-parenting).
+        std::map<int,int> oldRootRegion;
+        for (const neurofileio::WtlNode* orp : oldRoots) {
+            int best = 0; double bestOv = -1.0;
+            for (int r = 0; r < nR; ++r) {
+                const auto ab = p.region(r);
+                const double ov = detail::overlapLen(orp->a, orp->b, ab.first, ab.second);
+                if (ov > bestOv) { bestOv = ov; best = r; }
+            }
+            oldRootRegion[orp->node] = best;
+        }
+
+        // Re-attach this class's leaves (own summary kept) under the new region of
+        // their old parent root.
         for (const neurofileio::WtlNode& n : forest.nodes) {
-            if (n.classId != cls || (detail::isDriftKind(n.kind) && n.parent < 0)) continue;
-            const double mt = detail::medianTime(n.spikes, times, sr);
-            const int r = (mt >= 0.0) ? p.regionOf(mt) : 0;
-            neurofileio::WtlNode leaf = n;
+            if (n.classId != cls || isRoot(n)) continue;    // leaves only
+            auto it = oldRootRegion.find(n.parent);
+            const int r = (it != oldRootRegion.end()) ? it->second : 0;
+            neurofileio::WtlNode leaf = n;                  // copies mean/std/count
             leaf.node = nextId++;
             leaf.parent = rootId[static_cast<std::size_t>(r)];
             out.nodes.push_back(std::move(leaf));
@@ -223,27 +250,16 @@ inline neurofileio::WtlForest regrainForest(const neurofileio::WtlForest& forest
     return out;
 }
 
-// Build a fresh tiled drift series for ONE class from a flat spike set (the
-// no-.wtl default, or a cluster selection), appending to `forest`: one drift-root
-// per region, placeholder if empty.  New node ids continue after the max present.
-inline void tileClassDrift(neurofileio::WtlForest& forest, int classId,
-                           const std::vector<int64_t>& driftSpikes,
-                           const std::vector<int64_t>& times, double sr, const Partition& p)
+// Build a fresh tiled drift series for ONE class, appending to `forest`: one EMPTY
+// placeholder drift-root per region (count 0).  The curator populates each region
+// by folding a selection in later; no spikes are needed to seed.  New node ids
+// continue after the max present.
+inline void tileClassDrift(neurofileio::WtlForest& forest, int classId, const Partition& p)
 {
     int nextId = 0;
     for (const neurofileio::WtlNode& n : forest.nodes) nextId = std::max(nextId, n.node + 1);
-
     const int nR = p.nRegions();
-    std::vector<std::vector<int64_t>> byRegion(static_cast<std::size_t>(nR));
-    for (int64_t s : driftSpikes) {
-        const double t = detail::timeOf(times, sr, s);
-        if (t < 0.0) continue;
-        byRegion[static_cast<std::size_t>(p.regionOf(t))].push_back(s);
-    }
     for (int r = 0; r < nR; ++r) {
-        std::vector<int64_t>& sp = byRegion[static_cast<std::size_t>(r)];
-        std::sort(sp.begin(), sp.end());
-        sp.erase(std::unique(sp.begin(), sp.end()), sp.end());
         neurofileio::WtlNode root;
         root.node = nextId++;
         root.classId = classId;
@@ -251,7 +267,7 @@ inline void tileClassDrift(neurofileio::WtlForest& forest, int classId,
         root.parent = -1;
         const auto ab = p.region(r);
         root.a = ab.first; root.b = ab.second;
-        root.spikes = sp;
+        root.count = 0;                                     // empty placeholder
         forest.nodes.push_back(std::move(root));
     }
 }

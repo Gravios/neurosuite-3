@@ -21,7 +21,8 @@ bool TemplateLineageStore::load(const std::string& base, int group, const std::s
     const std::string wtlPath = tg::sessionPath(base_, "wtl", group_, "", stage_);
     neurofileio::WtlForest f = neurofileio::readWtl(wtlPath);
     forest_ = f.ok ? f : neurofileio::WtlForest{};   // absent/invalid -> empty forest
-    forest_.version = 1;
+    forest_.version = 2;
+    forest_.nSamples = nSamples_; forest_.nChannels = nChannels_;   // stamp geometry for write/re-grain
     loaded_ = (nSamples_ > 0 && nChannels_ > 0 && !base_.empty());
 
     // The SHARED res (spike times, for the drift partition / re-grain).  Take
@@ -83,7 +84,7 @@ int TemplateLineageStore::nextNodeId() const
 }
 
 int TemplateLineageStore::addNode(int classId, const std::string& kind, int parent,
-                                  double a, double b, const std::vector<int64_t>& spikes)
+                                  double a, double b)
 {
     neurofileio::WtlNode n;
     n.node = nextNodeId();
@@ -91,7 +92,7 @@ int TemplateLineageStore::addNode(int classId, const std::string& kind, int pare
     n.kind = kind;
     n.parent = parent;
     n.a = a; n.b = b;
-    n.spikes = spikes;
+    n.count = 0;                        // empty; a selection is folded in afterwards
     forest_.nodes.push_back(std::move(n));
     return forest_.nodes.back().node;
 }
@@ -150,7 +151,8 @@ tg::Result TemplateLineageStore::commit(std::string* wtlPath, std::string* mtiPa
 void TemplateLineageStore::retile()
 {
     if (!partitionReady_) return;
-    forest_ = dr::regrainForest(forest_, times_, sr_, partition_);
+    forest_ = dr::regrainForest(forest_, partition_);   // combine summaries by region overlap (no spikes)
+    forest_.nSamples = nSamples_; forest_.nChannels = nChannels_;
 }
 
 int TemplateLineageStore::regionRootId(int classId, int region) const
@@ -219,7 +221,27 @@ void TemplateLineageStore::ensureClassTiled(int classId)
     if (!partitionReady_) return;
     for (const neurofileio::WtlNode& n : forest_.nodes)
         if (n.classId == classId) return;                 // already present (load/retile tiled it)
-    dr::tileClassDrift(forest_, classId, {}, times_, sr_, partition_);
+    dr::tileClassDrift(forest_, classId, partition_);      // one empty placeholder root per region
+    forest_.nSamples = nSamples_; forest_.nChannels = nChannels_;
+}
+
+bool TemplateLineageStore::foldSelection(int idx, const std::vector<int64_t>& indices)
+{
+    if (idx < 0 || idx >= static_cast<int>(forest_.nodes.size()) || indices.empty()) return false;
+    if (nSamples_ <= 0 || nChannels_ <= 0) return false;
+    // Read only the selection's records from the group's .spk and summarise them.
+    const std::string spkPath = tg::sessionPath(base_, "spk", group_, spkVariant_, spkTag_);
+    neurofileio::SpkFile recs = neurofileio::readSpkRecords(spkPath, nSamples_, nChannels_, indices);
+    if (!recs.ok) return false;
+    const std::size_t recLen = static_cast<std::size_t>(nSamples_) * static_cast<std::size_t>(nChannels_);
+    neurosuite::stats::MeanStd sel = neurosuite::stats::meanStdOfRecords(recs.samples, recLen);
+    if (sel.count <= 0) return false;
+    // Fold the selection into the node's running summary (exact weighted combine).
+    neurofileio::WtlNode& nd = forest_.nodes[static_cast<std::size_t>(idx)];
+    neurosuite::stats::MeanStd comb = neurosuite::stats::combineMeanStd(
+        nd.mean, nd.std, nd.count, sel.mean, sel.std, sel.count);
+    nd.mean = std::move(comb.mean); nd.std = std::move(comb.std); nd.count = comb.count;
+    return true;
 }
 
 int TemplateLineageStore::setRegionSpikes(int classId, int region, const std::vector<int64_t>& spikes)
@@ -230,7 +252,7 @@ int TemplateLineageStore::setRegionSpikes(int classId, int region, const std::ve
     if (rid < 0) return -1;
     const int idx = indexOf(rid);
     if (idx < 0) return -1;
-    forest_.nodes[static_cast<std::size_t>(idx)].spikes = restrictToRegion(spikes, region);
+    foldSelection(idx, restrictToRegion(spikes, region));   // weighted update into the region root
     return rid;
 }
 
@@ -242,5 +264,7 @@ int TemplateLineageStore::addLeaf(int classId, int region, const std::string& ki
     const int rid = regionRootId(classId, region);
     if (rid < 0) return -1;
     const auto ab = partition_.region(region);
-    return addNode(classId, kind, rid, ab.first, ab.second, restrictToRegion(spikes, region));
+    const int leaf = addNode(classId, kind, rid, ab.first, ab.second);
+    foldSelection(indexOf(leaf), restrictToRegion(spikes, region));
+    return leaf;
 }
