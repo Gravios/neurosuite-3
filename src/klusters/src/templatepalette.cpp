@@ -42,8 +42,9 @@ TemplatePalette::TemplatePalette(QWidget* parent)
     v->addLayout(btns);
 
     scaleAbs_ = new QCheckBox(tr("Absolute waveform scale"), this);
-    scaleAbs_->setToolTip(tr("Template preview in the waveform view: checked = absolute (data gain), "
-                             "unchecked = best-fit (each template's peak fills a channel)."));
+    scaleAbs_->setToolTip(tr("Template preview in the waveform view: checked = absolute (data gain, "
+                             "matches the clusters), unchecked = best-fit (each template's peak fills a channel)."));
+    scaleAbs_->setChecked(true);      // default: absolute, so the template matches the clusters' scale
     v->addWidget(scaleAbs_);
 
     connect(list_, &QListWidget::currentRowChanged, this, [this](int){ onRowChanged(); });

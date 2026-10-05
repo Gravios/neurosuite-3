@@ -598,7 +598,8 @@ private:
     // after a commit, so the band tracks what the curator is building live.
     void   pushActiveLineageBands();
     void   clearTemplatePreviewOnViews();
-    bool   lineageScaleAbsolute_ = false;     ///< WaveformView template scale: best-fit (false) vs absolute
+    bool   lineageScaleAbsolute_ = true;      ///< WaveformView template scale: absolute (default, matches the
+                                              ///< clusters' data gain) vs best-fit (normalised per template)
     void   lineageEdited();                   ///< recompute + repaint + "commit to render" hint
     double timeAtViewport(const QPoint& vp);  ///< viewport X -> seconds (valid when X is time)
     std::vector<int64_t> shownClusterSpikes() const;   ///< displayed clusters' 0-based .spk ids
