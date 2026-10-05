@@ -493,6 +493,7 @@ void TemplateMatrixView::customEvent(QEvent* event)
             clusterList = ev->getClusterList();
             meanWav   = std::move(ev->getMeanWav());
             allFileIdx= std::move(ev->getAllFileIdx());
+            noiseWav_ = std::move(ev->getNoiseWav());   // non-empty only under the disattenuated metric
             recomputeTemplateCells();      // means/clusters changed: refresh the template strip
         } else {
             delete newScores;
@@ -639,14 +640,33 @@ void TemplateMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>
 }
 
 double TemplateMatrixView::templatePairXcorr(const std::vector<float>& a,
-                                             const std::vector<float>& b) const
+                                             const std::vector<float>& b,
+                                             const std::vector<float>& noiseA,
+                                             const std::vector<float>& noiseB) const
 {
     if (a.empty() || a.size() != b.size()) return 0.0;
     const int nsamp    = doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak() + 1;
     const int maxShift = std::max(1, nsamp / 4);                 // same window the thread uses
     const int metric   = configuration().getTemplateXcorrMetric();
-    if (metric == 2) return tmRawXcorr(a, b, maxShift);          // raw peak xcorr
-    return tmNormXcorr(a, b, maxShift, metric == 1);             // pearson(1) else cosine (0/3/4/5)
+    // One dispatch for all six modes so the strip tracks the matrix exactly;
+    // geometry-only metrics (fast-AP, profile) need nChan/peak, which the full
+    // channel-major means carry (nSamp from the document, nChan from its size).
+    switch (metric) {
+    case 1: return tmNormXcorr(a, b, maxShift, /*pearson*/true);
+    case 2: return tmRawXcorr(a, b, maxShift);
+    case 3:
+        // Noise-disattenuated: only when BOTH operands carry a correctly-sized noise
+        // vector (the matrix fills them only under this metric); else plain cosine.
+        if (noiseA.size() == a.size() && noiseB.size() == b.size())
+            return tmDisattenXcorr(a, b, noiseA, noiseB, maxShift);
+        return tmNormXcorr(a, b, maxShift, /*pearson*/false);
+    case 4: {
+        const int nChan = (nsamp > 0) ? static_cast<int>(a.size()) / nsamp : 0;
+        return tmFastWinXcorr(a, b, nChan, nsamp, doc.data().peakSampleIndex(), maxShift);
+    }
+    case 5: return tmProfileSim(a, b, nsamp);                     // channel count derived inside
+    default: return tmNormXcorr(a, b, maxShift, /*pearson*/false); // 0 = cosine
+    }
 }
 
 void TemplateMatrixView::recomputeTemplateCells()
@@ -665,12 +685,40 @@ void TemplateMatrixView::recomputeTemplateCells()
                && meanWav[static_cast<size_t>(j)].size() == tc[static_cast<size_t>(i)].mean.size();
     };
 
+    // Per-point noise energy of each operand's MEAN, for the disattenuated metric.
+    // Cluster j: the matrix thread's noiseWav_[j] (sample variance / N), present
+    // only under that metric.  Template i: std²/count from the node summary — the
+    // same quantity in the template direction.  Both empty for every other metric,
+    // where templatePairXcorr ignores them.  (Cheap: M is a handful of nodes.)
+    auto clusterNoise = [&](int j) -> const std::vector<float>& {
+        static const std::vector<float> kNone;
+        if (j < static_cast<int>(noiseWav_.size())
+            && noiseWav_[static_cast<size_t>(j)].size() == meanWav[static_cast<size_t>(j)].size())
+            return noiseWav_[static_cast<size_t>(j)];
+        return kNone;
+    };
+    std::vector<std::vector<float>> tnoise(static_cast<size_t>(M));
     for (int i = 0; i < M; ++i) {
+        const MatrixTemplateCol& t = tc[static_cast<size_t>(i)];
+        if (t.count > 0 && t.std.size() == t.mean.size()) {
+            tnoise[static_cast<size_t>(i)].resize(t.std.size());
+            const double inv = 1.0 / static_cast<double>(t.count);
+            for (size_t k = 0; k < t.std.size(); ++k) {
+                const double sd = t.std[k];
+                tnoise[static_cast<size_t>(i)][k] = static_cast<float>(sd * sd * inv);
+            }
+        }
+    }
+
+    for (int i = 0; i < M; ++i) {
+        const std::vector<float>& tnI = tnoise[static_cast<size_t>(i)];
         for (int j = 0; j < N; ++j)
             tplVal_[i][j] = hasData(i, j)
-                ? templatePairXcorr(meanWav[static_cast<size_t>(j)], tc[static_cast<size_t>(i)].mean) : 0.0;
+                ? templatePairXcorr(meanWav[static_cast<size_t>(j)], tc[static_cast<size_t>(i)].mean,
+                                    clusterNoise(j), tnI) : 0.0;
         for (int u = 0; u < M; ++u)
-            tplCorner_[i][u] = templatePairXcorr(tc[static_cast<size_t>(i)].mean, tc[static_cast<size_t>(u)].mean);
+            tplCorner_[i][u] = templatePairXcorr(tc[static_cast<size_t>(i)].mean, tc[static_cast<size_t>(u)].mean,
+                                                 tnI, tnoise[static_cast<size_t>(u)]);
     }
     // The in-window dimming (spike-time range vs each node's [a,b]) now lives in the
     // shared helper, fed the same hasData predicate.

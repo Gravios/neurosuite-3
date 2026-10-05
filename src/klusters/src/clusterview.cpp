@@ -1778,6 +1778,9 @@ void ClusterView::toggleLineageOverlay()
         statusBar->showMessage(lineageOverlay_
             ? tr("Lineage overlay on: median nodes + drift tree over the time×amplitude scatter")
             : tr("Lineage overlay off"), 5000);
+    // The forced (entry) / restored (exit) feature pair must reach the toolbar spin
+    // boxes too — updateDimensions() only drives the ViewWidgets, not the toolbar.
+    if (dimsChanged) view.syncToolbarDimensions();
     if (!dimsChanged) drawContentsMode = REFRESH;   // overlay sits on top; else a REDRAW is already queued
     update();
 }
@@ -1881,6 +1884,11 @@ void ClusterView::recomputeLineagePositions()
     // mid-time; the actual screen layout (roots on the top ribbon, leaves stacked
     // below their root) is done in paintLineageOverlay.  `empty` = count 0.
     for (const neurofileio::WtlNode& n : lineageStore_.forest().nodes) {
+        // Scope the overlay to the PRIMARY class only (edit mode always has one):
+        // other classes' nodes belong to their own lineage and must not clutter this
+        // one — a freshly-created class then shows just its own blank tiled banner.
+        // Matches pushActiveLineageBands(), which already filters the waveform band.
+        if (lineageActiveClass_ >= 0 && n.classId != lineageActiveClass_) continue;
         LineageNodeDraw nd;
         nd.node = n.node; nd.classId = n.classId; nd.parent = n.parent;
         nd.drift = (n.kind.rfind("drift", 0) == 0);
@@ -2247,6 +2255,7 @@ std::vector<MatrixTemplateCol> ClusterView::markedTemplates() const
         const neurofileio::WtlNode* n = lineageStore_.node(id);
         if (!n || n->count <= 0 || n->mean.size() != recLen) continue;   // placeholders have no template
         MatrixTemplateCol mt; mt.node = n->node; mt.classId = n->classId; mt.a = n->a; mt.b = n->b;
+        mt.count = static_cast<long>(n->count);                    // for the disatten noise floor (std²/count)
         nodeToChannelMajor(n->mean, nchan, nsamp, mt.mean);        // node summary -> channel-major
         nodeToChannelMajor(n->std,  nchan, nsamp, mt.std);         // left empty if the node has no std
         out.push_back(std::move(mt));

@@ -2246,6 +2246,10 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             }
             if(ClusterView* cv = activeClusterView()){
                 cv->toggleLineageOverlay();
+                // Entering edit mode: a plain left click marks lineage nodes, so any
+                // manual-lasso tool (New Cluster / Split / Delete…) must be off — the
+                // node gesture only arms under the ZOOM tool.  Reset it on entry.
+                if(cv->lineageOverlayActive()) slotZoom();
                 return true;
             }
         }

@@ -35,11 +35,16 @@
  *  window in SECONDS (used for the spike-in-window greying).  `std` is the
  *  node's per-point standard deviation in the SAME layout and length (its square
  *  is the template's own noise floor — the residual matrix needs it for the
- *  template-row direction); it may be empty when the node carries no std. */
+ *  template-row direction); it may be empty when the node carries no std.
+ *  `count` is how many spikes are behind the running summary: with `std` it
+ *  gives the noise energy of the MEAN (std²/count, per point), which the
+ *  noise-disattenuated xcorr metric subtracts — the same quantity the matrix
+ *  thread computes for a cluster mean (sample variance / N). */
 struct MatrixTemplateCol {
     int   node    = -1;
     int   classId = -1;
     double a = 0.0, b = 0.0;
+    long  count   = 0;              // spikes behind the summary (0 = empty placeholder)
     std::vector<float> mean;        // channel-major, nChan*nSamp
     std::vector<float> std;         // channel-major, nChan*nSamp (empty if unknown)
 };

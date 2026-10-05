@@ -1253,6 +1253,14 @@ void KlustersView::updateDimensions(int dimensionX,int dimensionY){
     emit updatedDimensions(dimensionX,dimensionY);
 }
 
+void KlustersView::syncToolbarDimensions(){
+    // Mirror the focus-sync path in eventFilter(): the toolbar reflects whichever
+    // ClusterView is active, and the app's setter guards against feedback (isInit),
+    // so a direct call cannot re-enter the view.  Used after a programmatic
+    // dimension change that does not come from a user focus event.
+    mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
+}
+
 void KlustersView::requestPinObliqueBasis(const QList<int>& ids){
     // The template library view asks to pin its selected units as the oblique
     // basis; the application resolves the active cluster view and validates.

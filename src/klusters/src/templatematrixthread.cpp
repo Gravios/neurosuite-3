@@ -370,8 +370,9 @@ void TemplateMatrixThread::process()
     meanWav.assign(static_cast<size_t>(nClusters),
                    std::vector<float>(static_cast<size_t>(nPts), 0.0f));
     // Per-point noise energy of each MEAN (within-cluster sample variance / N),
-    // filled only when the disattenuated metric needs it.
-    std::vector<std::vector<float>> noiseWav;
+    // filled only when the disattenuated metric needs it.  This is the job's
+    // `noiseWav` MEMBER (not a local): it travels in the completion event so the
+    // template strip can disattenuate against the same quantity.  Empty otherwise.
     if (needNoise)
         noiseWav.assign(static_cast<size_t>(nClusters),
                         std::vector<float>(static_cast<size_t>(nPts), 0.0f));

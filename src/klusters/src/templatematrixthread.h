@@ -137,6 +137,8 @@ public:
         /**Mutable on purpose: the accepting handler moves these out.*/
         std::vector<std::vector<float>>& getMeanWav()   { return meanWavResult; }
         std::vector<std::vector<int>>&   getAllFileIdx(){ return allFileIdxResult; }
+        /**Per-mean noise energy (empty unless the disattenuated metric ran).*/
+        std::vector<std::vector<float>>& getNoiseWav()  { return noiseWavResult; }
         /// The channel selection the run was launched for (empty = all channels).
         /// The view files the result in the matching cache slot.
         QList<int> getSelection() const { return selectionResult; }
@@ -152,6 +154,7 @@ public:
               clusterListResult(job.clusterList),
               meanWavResult(std::move(job.meanWav)),
               allFileIdxResult(std::move(job.allFileIdx)),
+              noiseWavResult(std::move(job.noiseWav)),
               selectionResult(job.selection) { job.scores = nullptr; }
 
         int                             eventGeneration;
@@ -159,6 +162,7 @@ public:
         QList<int>                      clusterListResult;
         std::vector<std::vector<float>> meanWavResult;
         std::vector<std::vector<int>>   allFileIdxResult;
+        std::vector<std::vector<float>> noiseWavResult;
         QList<int>                      selectionResult;
     };
 
@@ -211,6 +215,11 @@ private:
     QList<int>                   clusterList;
     std::vector<std::vector<float>> meanWav;    // [clusterIdx] → channel-major mean
     std::vector<std::vector<int>>   allFileIdx; // [clusterIdx] → 0-based .spk indices
+    // Per-point noise energy of each MEAN (sample variance / N), channel-major like
+    // meanWav.  Filled ONLY under the disattenuated metric (metric==3); empty
+    // otherwise.  Travels in the event so the template strip can disattenuate its
+    // cluster×template cells against the same quantity the matrix uses.
+    std::vector<std::vector<float>> noiseWav;
     QList<int>                      selection;  // empty = all channels
     QList<int>                      activeClusters; // empty = all clusters.  Declared
                                                 // after selection so member init

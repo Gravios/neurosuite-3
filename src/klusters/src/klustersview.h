@@ -179,6 +179,14 @@ public:
     **/
     void updateDimensions(int dimensionX,int dimensionY);
 
+    /** Push this view's current (dimensionX, dimensionY) into the toolbar's feature
+     *  spin boxes.  updateDimensions() only drives the ViewWidgets (the focused view
+     *  is the one wired to updatedDimensions), so a PROGRAMMATIC dimension change —
+     *  e.g. the lineage overlay forcing time×amplitude and restoring on exit — leaves
+     *  the toolbar stale.  The active cluster view calls this after such a change so
+     *  the spin boxes track the feature pair actually on screen. */
+    void syncToolbarDimensions();
+
     /** Forward a template-library request to pin @p ids as the oblique basis to
      *  the application (which resolves the active cluster view and validates). */
     void requestPinObliqueBasis(const QList<int>& ids);

@@ -267,6 +267,10 @@ private:
     // Stored for PairXcorrThread construction
     std::vector<std::vector<float>> meanWav;    // [clusterIdx] channel-major mean
     std::vector<std::vector<int>>   allFileIdx; // [clusterIdx] 0-based .spk indices
+    // Per-mean noise energy (sample variance / N), channel-major like meanWav —
+    // filled by the matrix thread ONLY under the disattenuated metric, empty
+    // otherwise.  The strip disattenuates its cluster×template cells against it.
+    std::vector<std::vector<float>> noiseWav_;
 
     // ── marked-node template region (§11.5) ─────────────────────────────────
     MatrixTemplateStrip              strip_;     // columns + shade + geometry (shared helper)
@@ -278,9 +282,15 @@ private:
     void recomputeTemplateCells();
     /** Paint the template strip (right columns + bottom rows + corner) over the grid. */
     void drawTemplateStrip(QPainter& p);
-    /** xcorr(a,b) under the current metric (cosine/pearson/raw; others fall back to
-     *  cosine, which needs no per-cluster noise term the strip doesn't have). */
-    double templatePairXcorr(const std::vector<float>& a, const std::vector<float>& b) const;
+    /** xcorr(a,b) under the current template metric, matching TemplateMatrixThread's
+     *  matrix build for every mode: 0 cosine, 1 pearson, 2 raw, 3 noise-disattenuated,
+     *  4 fast-AP-windowed, 5 inter-channel profile.  The disattenuated metric (3) needs
+     *  the per-point noise energy of each operand's mean; pass @p noiseA / @p noiseB
+     *  (channel-major, same length as a / b).  When they are missing or mis-sized the
+     *  disattenuated metric falls back to plain cosine; every other metric ignores them. */
+    double templatePairXcorr(const std::vector<float>& a, const std::vector<float>& b,
+                             const std::vector<float>& noiseA = std::vector<float>(),
+                             const std::vector<float>& noiseB = std::vector<float>()) const;
 
     /**Cancellation/completion state shared with the jobs this view enqueues
     * on the worker pool — one token per request stream, because a pair
