@@ -1900,9 +1900,11 @@ void ClusterView::paintLineageOverlay(QPainter& p)
             p.drawLine(screenOf[v[i-1]->node], screenOf[v[i]->node]);
     }
 
-    // Drift ROOTS — a horizontal bar on the top ribbon spanning the region
-    // (dashed + thin when an empty placeholder, solid + thick once populated).
+    // Drift ROOTS — a 2-D ribbon BAND on the top strip spanning each region
+    // (hollow + dashed when an empty placeholder, filled translucent once
+    // populated).  A band, not a hairline: legible, and a real right-click target.
     if (timeX) {
+        const int barH = 16, barTop = rootBarY - barH / 2;
         for (const LineageNodeDraw& nd : lineageDraw_) {
             if (!isRoot(nd)) continue;
             int xa = xAt(nd.a), xb = xAt(nd.b);
@@ -1910,14 +1912,19 @@ void ClusterView::paintLineageOverlay(QPainter& p)
             xa = std::max(xa, 0) + 2; xb = std::min(xb, W) - 2;
             if (xb <= xa) continue;
             const QColor col = lineageClassColor(nd.classId);
-            QPen bar(col); bar.setCosmetic(true); bar.setWidth(nd.empty ? 2 : 4);
-            if (nd.empty) bar.setStyle(Qt::DashLine);
-            p.setPen(bar);
-            p.drawLine(xa, rootBarY, xb, rootBarY);
-            p.setPen(QPen(col, 1));       // end ticks mark the region extent
-            p.drawLine(xa, rootBarY - 4, xa, rootBarY + 4);
-            p.drawLine(xb, rootBarY - 4, xb, rootBarY + 4);
+            const QRect bar(xa, barTop, xb - xa, barH);
+            QPen border(col); border.setCosmetic(true);
+            if (nd.empty) {                     // placeholder: hollow, dashed outline
+                border.setStyle(Qt::DashLine); border.setWidth(1);
+                p.setPen(border); p.setBrush(Qt::NoBrush);
+            } else {                            // populated: filled translucent band
+                border.setWidth(2);
+                QColor fill = col; fill.setAlpha(100);
+                p.setPen(border); p.setBrush(fill);
+            }
+            p.drawRect(bar);
         }
+        p.setBrush(Qt::NoBrush);
     }
 
     // Leaves (and any root when X is not time): a disc, hollow when empty.
@@ -1961,9 +1968,10 @@ int ClusterView::lineageNodeAt(const QPoint& vp, int pxTol)
     };
     auto isRoot = [](const LineageNodeDraw& nd){ return nd.drift && nd.parent < 0; };
 
-    // A drift root's whole ribbon bar is the target (not just its midpoint), so a
-    // right-click anywhere along a region's bar opens that node's menu.
-    if (timeX && std::abs(vp.y() - rootBarY) <= pxTol + 4) {
+    // A drift root's whole ribbon BAND is the target (not just its midpoint): a
+    // right-click anywhere on a region's 2-D bar opens that node's menu.
+    const int barH = 16;
+    if (timeX && vp.y() >= rootBarY - barH / 2 - 4 && vp.y() <= rootBarY + barH / 2 + 4) {
         for (const LineageNodeDraw& nd : lineageDraw_) {
             if (!isRoot(nd)) continue;
             int xa = xAt(nd.a), xb = xAt(nd.b);
