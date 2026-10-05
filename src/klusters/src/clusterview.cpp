@@ -2067,12 +2067,42 @@ std::vector<int64_t> ClusterView::shownClusterSpikes() const
 
 void ClusterView::lineageEdited()
 {
+    lineageStore_.saveWtl();            // auto-persist the new nodes/leaves to the .wtl source
     recomputeLineagePositions();
     pushActiveLineageBands();           // the fold just landed — show its mean±std band now
     drawContentsMode = REFRESH;
     update();
     if (statusBar) statusBar->showMessage(
-        tr("Lineage edited — right-click → Commit lineage to render .mti/.mtf"), 4000);
+        tr("Lineage edit saved — right-click → Undo/Redo, or Commit to render .mti/.mtf"), 4000);
+}
+
+void ClusterView::lineageUndo()
+{
+    if (!lineageStore_.undo()) { if (statusBar) statusBar->showMessage(tr("Nothing to undo"), 2000); return; }
+    lineageStore_.saveWtl();            // persist the reverted state
+    // A reverted edit may have dropped nodes that were marked for the matrices.
+    std::set<int> keep;
+    for (int id : markedNodes_) if (lineageStore_.node(id)) keep.insert(id);
+    markedNodes_.swap(keep);
+    recomputeLineagePositions();
+    pushActiveLineageBands();
+    drawContentsMode = REFRESH;
+    update();
+    if (statusBar) statusBar->showMessage(tr("Undid template edit"), 2000);
+}
+
+void ClusterView::lineageRedo()
+{
+    if (!lineageStore_.redo()) { if (statusBar) statusBar->showMessage(tr("Nothing to redo"), 2000); return; }
+    lineageStore_.saveWtl();
+    std::set<int> keep;
+    for (int id : markedNodes_) if (lineageStore_.node(id)) keep.insert(id);
+    markedNodes_.swap(keep);
+    recomputeLineagePositions();
+    pushActiveLineageBands();
+    drawContentsMode = REFRESH;
+    update();
+    if (statusBar) statusBar->showMessage(tr("Redid template edit"), 2000);
 }
 
 void ClusterView::commitLineageOverlay()
@@ -2203,6 +2233,20 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
     const int nodeId   = (boundary < 0) ? lineageNodeAt(vp) : -1;
     const std::vector<int64_t> sel = shownClusterSpikes();
 
+    // Undo / Redo of template edits live in this menu (Ctrl+Z is the app's own undo),
+    // available from every branch.  addHistory appends them; handledHistory runs the pick.
+    QAction* aUndo = nullptr; QAction* aRedo = nullptr;
+    auto addHistory = [&](QMenu& m){
+        m.addSeparator();
+        aUndo = m.addAction(tr("Undo template edit")); aUndo->setEnabled(lineageStore_.canUndo());
+        aRedo = m.addAction(tr("Redo template edit")); aRedo->setEnabled(lineageStore_.canRedo());
+    };
+    auto handledHistory = [&](const QAction* c)->bool{
+        if (c && c == aUndo) { lineageUndo(); return true; }
+        if (c && c == aRedo) { lineageRedo(); return true; }
+        return false;
+    };
+
     if (nodeId >= 0) {
         const neurofileio::WtlNode* n = lineageStore_.node(nodeId);
         const int cls    = n ? n->classId : -1;
@@ -2215,9 +2259,11 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
         aDrift->setEnabled(canEdit); aAdapt->setEnabled(canEdit); aColl->setEnabled(canEdit);
         menu.addSeparator();
         QAction* aRemove = menu.addAction(tr("Remove node"));
+        addHistory(menu);
         menu.addSeparator();
         QAction* aCommit = menu.addAction(tr("Commit lineage (render .mti/.mtf)"));
         const QAction* c = menu.exec(mapToGlobal(vp));
+        if (handledHistory(c)) return;
         if      (c == aDrift)  { lineageStore_.setRegionSpikes(cls, region, sel);           lineageEdited(); }
         else if (c == aAdapt)  { lineageStore_.addLeaf(cls, region, "adapt-leaf", sel);     lineageEdited(); }
         else if (c == aColl)   { lineageStore_.addLeaf(cls, region, "collision-leaf", sel); lineageEdited(); }
@@ -2227,7 +2273,10 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
     }
     if (boundary >= 0) {
         QAction* aDel = menu.addAction(tr("Delete boundary (merge regions)"));
-        if (menu.exec(mapToGlobal(vp)) == aDel) { lineageStore_.deleteBoundary(boundary); lineageEdited(); }
+        addHistory(menu);
+        const QAction* c = menu.exec(mapToGlobal(vp));
+        if (handledHistory(c)) return;
+        if (c == aDel) { lineageStore_.deleteBoundary(boundary); lineageEdited(); }
         return;
     }
     // Empty space (the click missed a root ribbon and a boundary line).  The root
@@ -2257,9 +2306,11 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
     }
     QAction* aSplit = menu.addAction(tr("Split region here"));
     aSplit->setEnabled(timeX && tsec > 0.0);
+    addHistory(menu);
     menu.addSeparator();
     QAction* aCommit = menu.addAction(tr("Commit lineage (render .mti/.mtf)"));
     const QAction* c = menu.exec(mapToGlobal(vp));
+    if (handledHistory(c)) return;
     // ensureClassTiled makes the (class,region) drift-root exist before a fold, so a
     // body click works even on a class whose ribbon was never explicitly tiled.
     if      (c && c == aDrift) { lineageStore_.ensureClassTiled(acls); lineageStore_.setRegionSpikes(acls, aregion, sel);           lineageEdited(); }

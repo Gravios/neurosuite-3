@@ -607,7 +607,9 @@ private:
     void   clearTemplatePreviewOnViews();
     bool   lineageScaleAbsolute_ = true;      ///< WaveformView template scale: absolute (default, matches the
                                               ///< clusters' data gain) vs best-fit (normalised per template)
-    void   lineageEdited();                   ///< recompute + repaint + "commit to render" hint
+    void   lineageEdited();                   ///< auto-save .wtl + recompute + repaint + hint
+    void   lineageUndo();                     ///< step the template edit history back (store undo + persist + repaint)
+    void   lineageRedo();                     ///< step the template edit history forward
     double timeAtViewport(const QPoint& vp);  ///< viewport X -> seconds (valid when X is time)
     std::vector<int64_t> shownClusterSpikes() const;   ///< displayed clusters' 0-based .spk ids
 

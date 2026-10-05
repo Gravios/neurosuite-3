@@ -24,6 +24,7 @@ bool TemplateLineageStore::load(const std::string& base, int group, const std::s
     forest_.version = 2;
     forest_.nSamples = nSamples_; forest_.nChannels = nChannels_;   // stamp geometry for write/re-grain
     loaded_ = (nSamples_ > 0 && nChannels_ > 0 && !base_.empty());
+    undo_.clear(); redo_.clear();                                   // fresh edit history for the loaded stage
 
     // The SHARED res (spike times, for the drift partition / re-grain).  Take
     // whichever method token wrote it, exactly like generateToFiles.
@@ -101,6 +102,7 @@ bool TemplateLineageStore::removeNode(int nodeId)
 {
     const int i = indexOf(nodeId);
     if (i < 0) return false;
+    snapshot();
     forest_.nodes.erase(forest_.nodes.begin() + i);
     // Orphan any children rather than deleting a subtree silently.
     for (neurofileio::WtlNode& n : forest_.nodes)
@@ -148,6 +150,34 @@ bool TemplateLineageStore::saveWtl()
     if (!loaded_) return false;
     const std::string wtlPath = tg::sessionPath(base_, "wtl", group_, "", stage_);
     return neurofileio::writeWtl(wtlPath, forest_);
+}
+
+void TemplateLineageStore::snapshot()
+{
+    undo_.push_back(Snapshot{forest_, partition_});
+    const std::size_t cap = 100;
+    if (undo_.size() > cap) undo_.erase(undo_.begin());
+    redo_.clear();
+}
+
+bool TemplateLineageStore::undo()
+{
+    if (undo_.empty()) return false;
+    redo_.push_back(Snapshot{forest_, partition_});
+    forest_    = std::move(undo_.back().forest);
+    partition_ = std::move(undo_.back().partition);
+    undo_.pop_back();
+    return true;
+}
+
+bool TemplateLineageStore::redo()
+{
+    if (redo_.empty()) return false;
+    undo_.push_back(Snapshot{forest_, partition_});
+    forest_    = std::move(redo_.back().forest);
+    partition_ = std::move(redo_.back().partition);
+    redo_.pop_back();
+    return true;
 }
 
 tg::Result TemplateLineageStore::commit(std::string* wtlPath, std::string* mtiPath)
@@ -206,8 +236,9 @@ void TemplateLineageStore::setPartition(const dr::Partition& p)
 bool TemplateLineageStore::splitAt(double tSec)
 {
     if (!partitionReady_) return false;
+    snapshot();
     const int r = partition_.regionOf(tSec);
-    if (!dr::splitRegion(partition_, r, tSec)) return false;
+    if (!dr::splitRegion(partition_, r, tSec)) { undo_.pop_back(); return false; }
     retile();
     return true;
 }
@@ -215,7 +246,8 @@ bool TemplateLineageStore::splitAt(double tSec)
 bool TemplateLineageStore::deleteBoundary(int i)
 {
     if (!partitionReady_) return false;
-    if (!dr::mergeRegion(partition_, i)) return false;   // i indexes the interior boundary
+    snapshot();
+    if (!dr::mergeRegion(partition_, i)) { undo_.pop_back(); return false; }   // i indexes the interior boundary
     retile();
     return true;
 }
@@ -228,6 +260,7 @@ bool TemplateLineageStore::moveBoundary(int i, double tSec)
     const double hi = (i + 1 < static_cast<int>(partition_.bounds.size()))
                           ? partition_.bounds[static_cast<std::size_t>(i) + 1] : tEnd_;
     if (!(tSec > lo && tSec < hi)) return false;          // keep strictly ordered / inside
+    snapshot();
     partition_.bounds[static_cast<std::size_t>(i)] = tSec;
     retile();
     return true;
@@ -268,6 +301,7 @@ bool TemplateLineageStore::foldSelection(int idx, const std::vector<int64_t>& in
 int TemplateLineageStore::setRegionSpikes(int classId, int region, const std::vector<int64_t>& spikes)
 {
     if (!partitionReady_ || region < 0 || region >= partition_.nRegions()) return -1;
+    snapshot();
     ensureClassTiled(classId);
     const int rid = regionRootId(classId, region);
     if (rid < 0) return -1;
@@ -281,6 +315,7 @@ int TemplateLineageStore::addLeaf(int classId, int region, const std::string& ki
                                   const std::vector<int64_t>& spikes)
 {
     if (!partitionReady_ || region < 0 || region >= partition_.nRegions()) return -1;
+    snapshot();
     ensureClassTiled(classId);
     const int rid = regionRootId(classId, region);
     if (rid < 0) return -1;

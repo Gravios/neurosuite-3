@@ -144,6 +144,41 @@ int main()
         check(close(m0, 92.5f) && close(m1, 92.5f), "move keeps the region means");
     }
 
+    // ── E. undo / redo of edits ──────────────────────────────────────────────
+    {
+        TemplateLineageStore us;                 // stage "part" is never committed -> loads empty
+        check(us.load(base, group, "part", "standard", "", nsamp, nchan, 1.0), "undo store load ok");
+        check(!us.canUndo() && !us.canRedo(), "fresh store: no history");
+
+        int64_t uc; float um;
+        us.setRegionSpikes(31, 0, {0,1});                        // tile + fold -> mean 100, cnt 2
+        rootSummary(us, 31, 0, &uc, &um); check(uc == 2 && close(um, 100.f), "edit 1 applied");
+        check(us.canUndo() && !us.canRedo(), "after an edit: can undo, cannot redo");
+
+        us.setRegionSpikes(31, 0, {2,3});                        // combine -> mean 150, cnt 4
+        rootSummary(us, 31, 0, &uc, &um); check(uc == 4 && close(um, 150.f), "edit 2 applied");
+
+        check(us.undo(), "undo edit 2");
+        rootSummary(us, 31, 0, &uc, &um); check(uc == 2 && close(um, 100.f), "undo -> edit 1 state (mean 100, cnt 2)");
+        check(us.canRedo(), "redo available after an undo");
+
+        check(us.undo() && us.nodeCount() == 0, "undo edit 1 -> empty forest (the auto-tiled placeholder is gone too)");
+        check(!us.canUndo(), "nothing more to undo");
+
+        check(us.redo() && us.redo(), "redo both edits");
+        rootSummary(us, 31, 0, &uc, &um); check(uc == 4 && close(um, 150.f), "redo -> edit 2 state restored");
+
+        us.setRegionSpikes(31, 0, {4});                          // a fresh edit clears the redo stack
+        check(!us.canRedo(), "a new edit after undo clears the redo stack");
+
+        // Partition edits are on the same history.
+        TemplateLineageStore ps2;
+        check(ps2.load(base, group, "part", "standard", "", nsamp, nchan, 1.0), "undo partition store load");
+        check(ps2.splitAt(50.0) && ps2.partition().nRegions() == 2, "split -> 2 regions");
+        check(ps2.undo() && ps2.partition().nRegions() == 1, "undo split -> 1 region");
+        check(ps2.redo() && ps2.partition().nRegions() == 2, "redo split -> 2 regions");
+    }
+
     // ── D. seed grain + not-ready guard ──────────────────────────────────────
     {
         TemplateLineageStore gs;                  // 90 s session, grain 30 s -> 3 regions

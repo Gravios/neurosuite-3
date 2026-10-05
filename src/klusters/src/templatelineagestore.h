@@ -116,6 +116,15 @@ public:
     neurosuite::templategen::Result commit(std::string* wtlPath = nullptr,
                                            std::string* mtiPath = nullptr);
 
+    // ── undo / redo (template edit history) ─────────────────────────────────────
+    // Each user edit (setRegionSpikes / addLeaf / removeNode / splitAt /
+    // deleteBoundary / moveBoundary) snapshots the forest + partition first, so the
+    // curator can step edits back and forward.  History is cleared on load().
+    bool canUndo() const { return !undo_.empty(); }
+    bool canRedo() const { return !redo_.empty(); }
+    bool undo();      // restore the previous state; false if nothing to undo
+    bool redo();      // re-apply an undone state; false if nothing to redo
+
 private:
     int   indexOf(int nodeId) const;                 // position in forest_.nodes, or -1
     int   nextNodeId() const;                        // max existing id + 1 (0 if empty)
@@ -126,6 +135,11 @@ private:
     // into the node at forest index `idx` (the weighted update).  False on bad
     // geometry / empty selection / read failure.
     bool  foldSelection(int idx, const std::vector<int64_t>& indices);
+
+    // Undo/redo snapshot = the whole editable state (forest + partition).
+    struct Snapshot { neurofileio::WtlForest forest; neurosuite::drift::Partition partition; };
+    void  snapshot();                                // push current state to undo_, clear redo_
+    std::vector<Snapshot> undo_, redo_;
 
     neurofileio::WtlForest forest_;
     std::string base_, stage_, spkVariant_, spkTag_;
