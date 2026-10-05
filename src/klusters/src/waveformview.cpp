@@ -451,8 +451,13 @@ void WaveformView::paintEvent ( QPaintEvent *){
         //reset transformation due to setWindow and setViewport
         painter.resetTransform() ;
 
+        //A pending lasso's review panel sits on top of the preview, in device
+        //coordinates so its text stays a fixed, readable size at any zoom.
+        if(hasResidualPreview_)
+            drawResidualPreviewPanel(painter);
+
         //Draw the cluster Ids below the waveforms if they are not in overlay presentation.
-        if(!overLayPresentation)
+        if(!overLayPresentation && !hasResidualPreview_)
             drawClusterIds(painter);
 
         //Closes the painter on the double buffer
@@ -598,12 +603,14 @@ void WaveformView::setResidualPreview(int nChan, int nSamp,
                                       const std::vector<float>& meanWave,
                                       const std::vector<float>& fit,
                                       const std::vector<float>& resid,
-                                      const QString& verdict){
+                                      const QString& verdict,
+                                      double peakWave, bool canDecollide){
     // Stop any in-flight waveform job so it cannot redraw normal traces over the
     // preview, then show the preview self-contained (no thread/cache needed).
     supersedeRunningThreads();
     rpChan_ = nChan; rpSamp_ = nSamp;
     rpMean_ = meanWave; rpFit_ = fit; rpResid_ = resid; rpVerdict_ = verdict;
+    rpPeakWave_ = peakWave; rpCanDecollide_ = canDecollide;
     hasResidualPreview_ = true;
     dataReady = true;
     updateWindow();                       // world box for the currently-shown clusters
@@ -616,6 +623,7 @@ void WaveformView::clearResidualPreview(){
     hasResidualPreview_ = false;
     rpMean_.clear(); rpFit_.clear(); rpResid_.clear(); rpVerdict_.clear();
     rpChan_ = rpSamp_ = 0;
+    rpPeakWave_ = 0.0; rpCanDecollide_ = false;
     // The cluster waveform cache was never touched, so a plain redraw restores
     // the normal display.
     drawContentsMode = REDRAW;
@@ -627,6 +635,14 @@ void WaveformView::drawResidualPreview(QPainter& painter){
     const int need    = rpChan_ * rpSamp_;
     const int step    = YsizeForMaxAmp + Yspace;
     const int nChShow = std::min(rpChan_, nbchannels);
+    // One common amplitude scale for all three traces, independent of the user's
+    // data gain: the dominant-channel mean fills ~75% of a channel band (like the
+    // template best-fit), so the preview is always readable AND the residual still
+    // reads small relative to the mean (the whole point of the cut judgement).
+    // Falls back to the data gain when no peak was supplied.
+    const double scale = (rpPeakWave_ > 0.0)
+                             ? (0.75 * static_cast<double>(YsizeForMaxAmp) / rpPeakWave_)
+                             : static_cast<double>(Yfactor);
 
     // One column at X0, channel ch's baseline at world-y -(Y0 - pos*step), exactly
     // as drawWaveforms / drawChannelSelection.  drawWaveforms draws
@@ -645,7 +661,7 @@ void WaveformView::drawResidualPreview(QPainter& painter){
             for(int i = 0; i < rpSamp_; ++i){
                 const float v = tr[static_cast<size_t>(ch) * rpSamp_ + i];
                 poly.setPoint(i, static_cast<int>(X0 + x),
-                              static_cast<int>(-Y - static_cast<long>(v * Yfactor)));  // (*) sign
+                              static_cast<int>(-Y - static_cast<long>(v * scale)));  // (*) sign
                 x += Xstep;
             }
             painter.drawPolyline(poly);
@@ -654,6 +670,86 @@ void WaveformView::drawResidualPreview(QPainter& painter){
     drawTrace(rpMean_, QColor(140,140,140));          // mean lassoed waveform (grey)
     if(!rpFit_.empty()) drawTrace(rpFit_, QColor(60,120,220));  // basis fit B·ā (blue)
     drawTrace(rpResid_, QColor(214,40,40));           // residual x̄−B·ā (red, headline)
+}
+
+void WaveformView::drawResidualPreviewPanel(QPainter& painter){
+    if(!hasResidualPreview_) return;
+    const QRect vp = contentsRect();
+    if(vp.width() < 80 || vp.height() < 60) return;      // too small to be legible
+
+    const QColor cMean (140,140,140), cFit(60,120,220), cResid(214,40,40);
+    const bool haveFit = !rpFit_.empty();
+
+    const QFontMetrics fm = painter.fontMetrics();
+    const int lh   = fm.height();
+    const int pad  = 10;
+    const int gap  = 6;
+    const int shh  = qMax(6, lh * 2 / 3);                 // legend swatch height
+    const int sww  = 14;                                  // legend swatch width
+
+    const int boxW  = qMin(vp.width() - 2*pad, 470);
+    const int textW = boxW - 2*pad;
+
+    // Wrap the verdict to the text width so the whole read-out is visible.
+    const QRect vr = fm.boundingRect(QRect(0,0,textW,4000), Qt::TextWordWrap, rpVerdict_);
+    const int verdictH = qMax(lh, vr.height());
+
+    const int boxH = pad + lh                              // title
+                   + gap + verdictH                        // verdict
+                   + gap + lh                              // legend row
+                   + (rpCanDecollide_ ? gap + lh : 0)      // decollide line
+                   + pad;
+
+    const QRect box(vp.left()+pad, vp.top()+pad, boxW, boxH);
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(QColor(90,90,90)));
+    painter.setBrush(QColor(0,0,0,195));
+    painter.drawRoundedRect(box, 6, 6);
+
+    const int x = box.left() + pad;
+    int       y = box.top()  + pad;
+
+    // Title
+    QFont base = painter.font();
+    QFont bold = base; bold.setBold(true);
+    painter.setFont(bold);
+    painter.setPen(QColor(255,255,255));
+    painter.drawText(QRect(x, y, textW, lh), Qt::AlignLeft|Qt::AlignVCenter, tr("Lasso preview"));
+    painter.setFont(base);
+    y += lh + gap;
+
+    // Verdict read-out (wrapped)
+    painter.setPen(QColor(222,222,222));
+    painter.drawText(QRect(x, y, textW, verdictH), Qt::TextWordWrap, rpVerdict_);
+    y += verdictH + gap;
+
+    // Colour legend: swatch + label for each drawn trace, left to right.
+    int lx = x;
+    auto legend = [&](const QColor& c, const QString& label){
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(c);
+        painter.drawRect(lx, y + (lh - shh)/2, sww, shh);
+        lx += sww + 4;
+        painter.setPen(QColor(222,222,222));
+        painter.drawText(QRect(lx, y, textW, lh), Qt::AlignLeft|Qt::AlignVCenter, label);
+        lx += fm.horizontalAdvance(label) + 16;
+    };
+    legend(cMean, tr("mean"));
+    if(haveFit) legend(cFit, tr("fit"));
+    legend(cResid, tr("residual"));
+    y += lh;
+
+    // Controls — the verdict already names Enter/Esc; add decollide only when it is
+    // actually available (a 2-cluster oblique basis is pinned), matching the key handler.
+    if(rpCanDecollide_){
+        y += gap;
+        painter.setPen(QColor(180,180,180));
+        painter.drawText(QRect(x, y, textW, lh), Qt::AlignLeft|Qt::AlignVCenter,
+                         tr("D — decollide against the pinned basis"));
+    }
+    painter.restore();
 }
 
 // ── template preview (plan §11.4) ──────────────────────────────────────────

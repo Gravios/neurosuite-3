@@ -234,12 +234,19 @@ public Q_SLOTS:
      *  cleared: the mean lassoed waveform (grey), the basis reconstruction B·ā
      *  (blue) and the mean residual x̄−B·ā (red), so a cut can be judged before it
      *  is committed.  Arrays are length nChan*nSamp (channel c, sample s at
-     *  c*nSamp+s); @p fit may be empty (own-mean mode). */
+     *  c*nSamp+s); @p fit may be empty (own-mean mode).  @p peakWave is the max
+     *  |mean| across channels: the three traces are drawn at ONE common scale that
+     *  makes it fill ~75% of a channel's height, so the preview is readable at any
+     *  data gain while the residual still reads small relative to the mean.
+     *  @p canDecollide adds the "D — decollide" line to the review panel (true only
+     *  when a 2-cluster oblique basis is pinned, matching the key handler). */
     void setResidualPreview(int nChan, int nSamp,
                             const std::vector<float>& meanWave,
                             const std::vector<float>& fit,
                             const std::vector<float>& resid,
-                            const QString& verdict);
+                            const QString& verdict,
+                            double peakWave = 0.0,
+                            bool canDecollide = false);
     /** Clear the residual preview and return to the normal waveform display. */
     void clearResidualPreview();
     bool hasResidualPreview() const { return hasResidualPreview_; }
@@ -493,6 +500,12 @@ private:
      *  and drawChannelSelection use. */
     void drawResidualPreview(QPainter& painter);
 
+    /** Draw the review panel over the residual preview (device coordinates, after
+     *  the world transform is reset): a titled box with the verdict read-out, a
+     *  colour legend for the three traces, and the accept/reject/decollide keys, so
+     *  the preview says what it is and how to act on it. */
+    void drawResidualPreviewPanel(QPainter& painter);
+
     // Post-lasso residual preview overlay — set by ClusterView through
     // KlustersView, drawn instead of the cluster waveforms while present.
     bool               hasResidualPreview_ = false;
@@ -502,6 +515,8 @@ private:
     std::vector<float> rpFit_;
     std::vector<float> rpResid_;
     QString            rpVerdict_;
+    double             rpPeakWave_     = 0.0;   ///< max |mean| across channels (common trace scale)
+    bool               rpCanDecollide_ = false; ///< a 2-cluster oblique basis is pinned (D enabled)
 
     /** Draw the committed template curves (setTemplatePreview) over the normal
      *  per-channel baseline geometry — front in edit mode, a faint underlay in

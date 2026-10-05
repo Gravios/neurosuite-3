@@ -629,9 +629,13 @@ void ClusterView::applyLassoSelection(const QSet<dataType>& rows, const QList<in
 void ClusterView::showLassoResidualPreview(){
     // Basis = the pinned oblique basis if set; empty => residual to own mean.
     const KlustersDoc::ResidualPreview p = doc.computeResidualPreview(pendingRows_, obliqueBasis);
+    // Decollide (D) is offered only when the pinned basis is exactly two clusters
+    // (matches the key handler in KlustersApp::eventFilter).
+    const bool canDecollide = (obliqueBasis.size() == 2);
     for (ViewWidget* w : view.getViewList())
         if (WaveformView* wv = qobject_cast<WaveformView*>(w))
-            wv->setResidualPreview(p.nChan, p.nSamp, p.meanWave, p.fit, p.resid, p.verdict);
+            wv->setResidualPreview(p.nChan, p.nSamp, p.meanWave, p.fit, p.resid, p.verdict,
+                                   p.peakWave, canDecollide);
 }
 
 void ClusterView::clearPendingLasso(){
