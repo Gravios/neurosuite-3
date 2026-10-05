@@ -796,6 +796,10 @@ void TemplateView::loadLineage()
         lineageStore.load(base.toStdString(), group, tag.toStdString(),
                           variant.toStdString(), spkTag.toStdString(), ns, nc,
                           doc.getSamplingRate(), seedGrainSec);
+        // Fold from the OPEN document's actual .spk (what selectionSpikeIndices'
+        // 0-based ids index into), so Set region drift never misses on a
+        // reconstructed path.
+        lineageStore.setSpkReadPath(doc.origSpkFilePath().toStdString());
         lineageLoaded = lineageStore.ok();
         // Tile every active template class into the partition's regions
         // (placeholders), so each class shows region rows ready to fill.

@@ -41,6 +41,13 @@ public:
               int nSamples, int nChannels, double sr, double seedGrainSec = 0.0);
     bool ok() const { return loaded_; }
 
+    // The .spk a fold reads its waveforms from.  Set this to the OPEN document's
+    // actual .spk path (doc.origSpkFilePath) — the file the selection's 0-based
+    // indices index into — so a fold never misses because a reconstructed
+    // <base>.spk.<variant>.<group>[.<stage>] path doesn't exist.  When empty, the
+    // reconstructed path is used as a fallback.
+    void setSpkReadPath(const std::string& p) { spkReadPath_ = p; }
+
     // ── forest access ─────────────────────────────────────────────────────────
     const neurofileio::WtlForest& forest() const { return forest_; }
     std::size_t nodeCount() const { return forest_.nodes.size(); }
@@ -114,6 +121,7 @@ private:
 
     neurofileio::WtlForest forest_;
     std::string base_, stage_, spkVariant_, spkTag_;
+    std::string spkReadPath_;        // authoritative .spk for folds (open doc's .spk); empty -> reconstruct
     int         group_     = 0;
     int         nSamples_  = 0;
     int         nChannels_ = 0;

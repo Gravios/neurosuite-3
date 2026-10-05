@@ -229,8 +229,12 @@ bool TemplateLineageStore::foldSelection(int idx, const std::vector<int64_t>& in
 {
     if (idx < 0 || idx >= static_cast<int>(forest_.nodes.size()) || indices.empty()) return false;
     if (nSamples_ <= 0 || nChannels_ <= 0) return false;
-    // Read only the selection's records from the group's .spk and summarise them.
-    const std::string spkPath = tg::sessionPath(base_, "spk", group_, spkVariant_, spkTag_);
+    // Read only the selection's records from the OPEN document's .spk (the file the
+    // 0-based indices index into) — not a reconstructed path, which can append a
+    // stage tag the raw .spk doesn't carry and silently miss.
+    const std::string spkPath = spkReadPath_.empty()
+        ? tg::sessionPath(base_, "spk", group_, spkVariant_, spkTag_)
+        : spkReadPath_;
     neurofileio::SpkFile recs = neurofileio::readSpkRecords(spkPath, nSamples_, nChannels_, indices);
     if (!recs.ok) return false;
     const std::size_t recLen = static_cast<std::size_t>(nSamples_) * static_cast<std::size_t>(nChannels_);

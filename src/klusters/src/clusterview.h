@@ -28,6 +28,7 @@
 #include <QList>
 #include <atomic>
 #include <vector>
+#include <map>
 #include <QImage>
 
 
@@ -557,8 +558,13 @@ private:
     bool dimsForced_ = false;                     ///< true while the overlay forced time×amplitude
     // Hit-testing (groundwork for the §11.3 double-left-drag + context menus): map
     // a viewport point to the nearest node / interior partition boundary.
-    int  lineageNodeAt(const QPoint& vp, int pxTol = 8);       ///< nearest node id, or -1
+    int  lineageNodeAt(const QPoint& vp, int pxTol = 8);       ///< node under vp (ribbon bar / leaf disc), or -1
     int  lineageBoundaryAt(const QPoint& vp, int pxTol = 5);   ///< nearest interior boundary index, or -1
+    // Screen position per node, computed exactly as paintLineageOverlay draws them
+    // (drift roots on the top ribbon, leaves stacked below their root; world point
+    // when X is not time).  Shared by the painter and the hit-test so clicks land
+    // where the nodes are actually drawn.
+    std::map<int, QPoint> lineageScreenPositions();
     // Interaction (§11.3): double-left-drag moves a boundary; right-click opens a
     // context menu.  Both gated by lineageOverlay_ and injected as guarded early-
     // returns, so the mode-driven lasso / zoom / pan is untouched when off.

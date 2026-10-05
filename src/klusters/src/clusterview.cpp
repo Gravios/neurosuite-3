@@ -1385,7 +1385,22 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
     // over a boundary; otherwise it falls through to normal selection/zoom.
     if (lineageOverlay_ && (e->button() == Qt::LeftButton)
         && (e->modifiers() & Qt::ShiftModifier)) {
-        const int b = lineageBoundaryAt(e->position().toPoint());
+        const QPoint vp = e->position().toPoint();
+        int b = lineageBoundaryAt(vp, 10);          // generous grab near a boundary line
+        // On the root ribbon but not on a line: grab the NEAREST interior boundary,
+        // so dragging anywhere along a region bar resizes it (the roots are not freely
+        // movable — their extent IS the region between two boundaries).
+        if (b < 0 && dimensionX == timeDimension && lineageStore_.partitionReady()
+            && std::abs(vp.y() - 14) <= 16) {
+            const double sr = doc.getSamplingRate();
+            const std::vector<double>& bb = lineageStore_.partition().bounds;
+            int bestDx = width() + 1;
+            for (std::size_t i = 0; i < bb.size(); ++i) {
+                const int x = worldToViewport(QPoint(static_cast<int>(std::lround(bb[i] * sr)), 0)).x();
+                const int dx = std::abs(x - vp.x());
+                if (dx < bestDx) { bestDx = dx; b = static_cast<int>(i); }
+            }
+        }
         if (b >= 0 && b < static_cast<int>(lineageStore_.partition().bounds.size())) {
             lineageDragBoundary_  = b;
             lineageDragBoundaryT_ = lineageStore_.partition().bounds[static_cast<std::size_t>(b)];
@@ -1744,6 +1759,9 @@ void ClusterView::loadLineageOverlay()
     const int nc = doc.nbOfchannels();
     const double grain = configuration().getProjectionScopeMinutes() * 60.0;
     lineageStore_.load(base, group, tag, variant, spkTag, ns, nc, doc.getSamplingRate(), grain);
+    // Fold from the OPEN document's actual .spk (what the shown-cluster indices
+    // index into), so a populate never misses on a reconstructed path.
+    lineageStore_.setSpkReadPath(doc.origSpkFilePath().toStdString());
 
     // Auto-seed a fresh session: with no prior .wtl the forest loads empty, so
     // start the curator off with ONE template class tiled across every region as
@@ -1775,6 +1793,33 @@ void ClusterView::recomputeLineagePositions()
     }
 }
 
+std::map<int, QPoint> ClusterView::lineageScreenPositions()
+{
+    std::map<int, QPoint> screenOf;
+    if (!lineageOverlay_) return screenOf;
+    const double sr = doc.getSamplingRate();
+    const bool timeX = (dimensionX == timeDimension && lineageStore_.partitionReady());
+    const int rootBarY = 14;                        // keep in sync with paintLineageOverlay
+    auto xAt = [&](double tSec){
+        return worldToViewport(QPoint(static_cast<int>(std::lround(tSec * sr)), 0)).x();
+    };
+    auto isRoot = [](const LineageNodeDraw& nd){ return nd.drift && nd.parent < 0; };
+    std::map<int, int> leafSlot;                    // parent node id -> next stack slot
+    for (const LineageNodeDraw& nd : lineageDraw_) {
+        if (timeX && isRoot(nd)) {
+            screenOf[nd.node] = QPoint((xAt(nd.a) + xAt(nd.b)) / 2, rootBarY);
+        } else if (timeX) {
+            auto itp = screenOf.find(nd.parent);    // file order places the root first
+            const int px = (itp != screenOf.end()) ? itp->second.x() : (xAt(nd.a) + xAt(nd.b)) / 2;
+            const int slot = leafSlot[nd.parent]++;
+            screenOf[nd.node] = QPoint(px, rootBarY + 22 + slot * 16);
+        } else {
+            screenOf[nd.node] = worldToViewport(nd.world);
+        }
+    }
+    return screenOf;
+}
+
 void ClusterView::paintLineageOverlay(QPainter& p)
 {
     if (!lineageOverlay_) return;
@@ -1803,24 +1848,9 @@ void ClusterView::paintLineageOverlay(QPainter& p)
         }
     }
 
-    // Screen position per node: a drift ROOT sits on the top ribbon, centred over
-    // its region's time span; a leaf stacks below its parent root (file order puts
-    // the root first, so its slot is already placed).  No spikes => no feature
-    // centroid, so when X is not time we fall back to the region mid-time world X.
-    std::map<int, QPoint> screenOf;
-    std::map<int, int>    leafSlot;                 // parent node id -> next stack slot
-    for (const LineageNodeDraw& nd : lineageDraw_) {
-        if (timeX && isRoot(nd)) {
-            screenOf[nd.node] = QPoint((xAt(nd.a) + xAt(nd.b)) / 2, rootBarY);
-        } else if (timeX) {
-            auto itp = screenOf.find(nd.parent);
-            const int px = (itp != screenOf.end()) ? itp->second.x() : (xAt(nd.a) + xAt(nd.b)) / 2;
-            const int slot = leafSlot[nd.parent]++;
-            screenOf[nd.node] = QPoint(px, rootBarY + 22 + slot * 16);
-        } else {
-            screenOf[nd.node] = worldToViewport(nd.world);
-        }
-    }
+    // Screen position per node (ribbon roots, stacked leaves) — shared with the
+    // hit-test (lineageScreenPositions) so clicks land where nodes are drawn.
+    std::map<int, QPoint> screenOf = lineageScreenPositions();
 
     // Child edges (parent -> child): a leaf hangs from its region root's ribbon.
     QPen ePen(QColor(200, 200, 200, 150)); ePen.setCosmetic(true);
@@ -1899,11 +1929,32 @@ int ClusterView::bestEnergyLadderDim() const
 int ClusterView::lineageNodeAt(const QPoint& vp, int pxTol)
 {
     if (!lineageOverlay_) return -1;
-    int bestId = -1;
-    int bestD2 = (pxTol + 1) * (pxTol + 1);
+    const double sr = doc.getSamplingRate();
+    const bool timeX = (dimensionX == timeDimension && lineageStore_.partitionReady());
+    const int rootBarY = 14;
+    auto xAt = [&](double tSec){
+        return worldToViewport(QPoint(static_cast<int>(std::lround(tSec * sr)), 0)).x();
+    };
+    auto isRoot = [](const LineageNodeDraw& nd){ return nd.drift && nd.parent < 0; };
+
+    // A drift root's whole ribbon bar is the target (not just its midpoint), so a
+    // right-click anywhere along a region's bar opens that node's menu.
+    if (timeX && std::abs(vp.y() - rootBarY) <= pxTol + 4) {
+        for (const LineageNodeDraw& nd : lineageDraw_) {
+            if (!isRoot(nd)) continue;
+            int xa = xAt(nd.a), xb = xAt(nd.b);
+            if (xb < xa) std::swap(xa, xb);
+            if (vp.x() >= xa - 2 && vp.x() <= xb + 2) return nd.node;
+        }
+    }
+    // Leaves (and every node when X is not time): nearest drawn point.
+    const std::map<int, QPoint> pos = lineageScreenPositions();
+    int bestId = -1, bestD2 = (pxTol + 1) * (pxTol + 1);
     for (const LineageNodeDraw& nd : lineageDraw_) {
-        const QPoint s = worldToViewport(nd.world);
-        const int dx = s.x() - vp.x(), dy = s.y() - vp.y();
+        if (timeX && isRoot(nd)) continue;          // handled by the bar test above
+        auto it = pos.find(nd.node);
+        if (it == pos.end()) continue;
+        const int dx = it->second.x() - vp.x(), dy = it->second.y() - vp.y();
         const int d2 = dx * dx + dy * dy;
         if (d2 <= bestD2) { bestD2 = d2; bestId = nd.node; }
     }
@@ -2030,8 +2081,12 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
 {
     if (!lineageOverlay_) return;
     QMenu menu(this);
-    const int nodeId   = lineageNodeAt(vp);
-    const int boundary = (nodeId < 0) ? lineageBoundaryAt(vp) : -1;
+    // A tight right-click right on a boundary line gets the boundary menu (delete);
+    // anywhere else on a region's ribbon bar gets that root node's menu.  (The bar
+    // spans the whole region, so without this a click near an edge would shadow the
+    // boundary's own menu.)
+    const int boundary = lineageBoundaryAt(vp, 4);
+    const int nodeId   = (boundary < 0) ? lineageNodeAt(vp) : -1;
     const std::vector<int64_t> sel = shownClusterSpikes();
 
     if (nodeId >= 0) {
