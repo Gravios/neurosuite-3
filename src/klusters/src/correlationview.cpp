@@ -167,12 +167,12 @@ void CorrelationView::singleColorUpdate(int clusterId,bool active){
         }
 
         if(drawContentsMode == REFRESH)
-            drawContentsMode = UPDATE;
+            invalidate(UPDATE);
     }
     else{
         //Update drawContentsMode if need it.
         if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)
-            drawContentsMode = REDRAW;
+            invalidate(REDRAW);
     }
 }
 
@@ -181,7 +181,7 @@ void CorrelationView::addClusterToView(int clusterId,bool active){
     isZoomed = false;//Hack because all the tabs share the same data.
 
     //Update drawContentsMode if need it.
-    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
 
     //Create a thread to get the correlation data for all the clusters shown.
     if(active && !view.clusters().isEmpty()){
@@ -196,7 +196,7 @@ void CorrelationView::removeClusterFromView(int clusterId,bool active){
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
 
     //Create a thread to get the correlation data for all the clusters shown.
     if(active && !view.clusters().isEmpty()){
@@ -212,7 +212,7 @@ void CorrelationView::addNewClusterToView(QList<int>& fromClusters,int clusterId
     isZoomed = false;//Hack because all the tabs share the same data.
 
     //Update drawContentsMode if need it.
-    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
 
     if(active && !view.clusters().isEmpty()){
         setCursor(Qt::WaitCursor);
@@ -225,7 +225,7 @@ void CorrelationView::spikesRemovedFromClusters(QList<int>& fromClusters,bool ac
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
 
     //Create a thread to get the correlation data for all the clusters shown.
     if(active && !view.clusters().isEmpty()){
@@ -241,7 +241,7 @@ void CorrelationView::spikesAddedToCluster(int clusterId,bool active){
     isZoomed = false;//Hack because all the tabs share the same data.
 
     //Update drawContentsMode if need it.
-    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
 
     //Create a thread to get the correlation data for all the clusters shown.
     if(active && !view.clusters().isEmpty()){
@@ -382,7 +382,7 @@ void CorrelationView::customEvent(QEvent *event){
             if(!isZoomed)
                 updateWindow();
             else
-                drawContentsMode = REDRAW;
+                invalidate(REDRAW);
 
             dataReady = true;
 
@@ -406,7 +406,7 @@ void CorrelationView::updateWindow()
 
     //update the drawing mode if needed (if UPDATE, no change is need it).
     if(drawContentsMode == REFRESH)
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
 }
 
 void CorrelationView::drawCorrelograms(QPainter& painter,QList<Pair>& pairList){
@@ -741,7 +741,7 @@ void CorrelationView::clustersRenumbered(bool active){
     //The data have to be collected and everything has to be redrawn.
     //If the widget is in the active view, it is done immediately otherswise it will be done
     //when the view willbecome active (updateDrawing will be called).
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     if(!view.clusters().isEmpty() && active){
         setCursor(Qt::WaitCursor);
@@ -790,7 +790,7 @@ void CorrelationView::mouseReleaseEvent(QMouseEvent* e){
 
 
 void CorrelationView::resizeEvent(QResizeEvent* e){
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     if(!view.clusters().isEmpty()){
         Data& clusteringData = doc.data();

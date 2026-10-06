@@ -150,7 +150,7 @@ void WaveformView::singleColorUpdate(int clusterId,bool active){
         // so it will be updated during the next update
         if(drawContentsMode == REFRESH){
             clusterUpdateList.append(clusterId);
-            drawContentsMode = UPDATE;
+            invalidate(UPDATE);
         }
         else if(drawContentsMode == UPDATE)
             clusterUpdateList.append(clusterId);
@@ -159,7 +159,7 @@ void WaveformView::singleColorUpdate(int clusterId,bool active){
         //A template preview is painted over the whole frame and can't be updated
         //incrementally, so force a full redraw (also the non-active case, as before).
         if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)
-            drawContentsMode = REDRAW;
+            invalidate(REDRAW);
     }
 }
 
@@ -219,7 +219,7 @@ void WaveformView::addClusterToView(int clusterId,bool active){
     if(active && overLayPresentation && !hasTemplatePreview_){
         if(drawContentsMode == REFRESH){
             clusterUpdateList.append(clusterId);
-            drawContentsMode = UPDATE;
+            invalidate(UPDATE);
         }
         else if(drawContentsMode == UPDATE)clusterUpdateList.append(clusterId);
 
@@ -230,7 +230,7 @@ void WaveformView::addClusterToView(int clusterId,bool active){
     }
     else if(active){
         //Update drawContentsMode if need it.
-        if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+        if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
 
         syncTemplateBandCluster();          // realign the template overlay to the new selection
 
@@ -242,7 +242,7 @@ void WaveformView::addClusterToView(int clusterId,bool active){
     }
     else{
         //Update drawContentsMode if need it.
-        if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+        if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
     }
 }
 
@@ -250,7 +250,7 @@ void WaveformView::removeClusterFromView(int clusterId,bool active){
     isZoomed = false;//Hack because all the tabs share the same data.
 
     //Update drawContentsMode if need it.
-    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
 
     syncTemplateBandCluster();          // the first shown cluster may have changed
 
@@ -266,7 +266,7 @@ void WaveformView::addNewClusterToView(QList<int>& fromClusters,int clusterId,bo
     isZoomed = false;//Hack because all the tabs share the same data.
 
     //Update drawContentsMode if need it.
-    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
 
     syncTemplateBandCluster();          // the first shown cluster may have changed
 
@@ -282,7 +282,7 @@ void WaveformView::spikesRemovedFromClusters(QList<int>& fromClusters,bool activ
     isZoomed = false;//Hack because all the tabs share the same data.
 
     //Update drawContentsMode if need it.
-    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
 
     syncTemplateBandCluster();          // the current cluster's waveforms changed
 
@@ -305,7 +305,7 @@ void WaveformView::spikesAddedToCluster(int clusterId,bool active){
     supersedeRunningThreads();
 
     //Update drawContentsMode if need it.
-    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)drawContentsMode = REDRAW;
+    if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
 
     syncTemplateBandCluster();          // the current cluster's waveforms changed
 
@@ -356,7 +356,7 @@ void WaveformView::customEvent(QEvent *event){
         if(launchedWithMean || !meanRequested){
             //Each time a cluster is added to the view or modified, the size of the window is recalculated.
             if(!isZoomed) updateWindow();
-            else drawContentsMode = REDRAW;
+            else invalidate(REDRAW);
 
             dataReady = true;
             //setCursor(zoomCursor);
@@ -614,7 +614,7 @@ void WaveformView::setResidualPreview(int nChan, int nSamp,
     hasResidualPreview_ = true;
     dataReady = true;
     updateWindow();                       // world box for the currently-shown clusters
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -626,7 +626,7 @@ void WaveformView::clearResidualPreview(){
     rpPeakWave_ = 0.0; rpCanDecollide_ = false;
     // The cluster waveform cache was never touched, so a plain redraw restores
     // the normal display.
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -778,7 +778,7 @@ void WaveformView::setTemplatePreview(bool editMode, int nChan, int nSamp,
         meanJob->getMean(bandCluster, presentationMode);
     }
     updateWindow();                       // size the world box for the shown clusters
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -793,7 +793,7 @@ void WaveformView::clearTemplatePreview(){
     tpBandCluster_ = -1;
     // The cluster waveform cache was never touched, so a plain redraw restores
     // the normal display.
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -801,7 +801,7 @@ void WaveformView::setTemplatePreviewScaleAbsolute(bool absolute){
     if(tpScaleAbsolute_ == absolute) return;
     tpScaleAbsolute_ = absolute;
     if(hasTemplatePreview_){
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     }
 }
@@ -984,7 +984,7 @@ void WaveformView::updateWindow(){
         window = ZoomWindow(QRect(QPoint(abscissaMin,ordinateMin),QPoint(abscissaMax,ordinateMax)));
 
         //Everything has to be redraw
-        drawContentsMode = REDRAW ;
+        invalidate(REDRAW);
     }
     else{
         abscissaMax = 2 * widthBorder + (nbSamplesInWaveform -1) * Xstep;
@@ -993,7 +993,7 @@ void WaveformView::updateWindow(){
         window = ZoomWindow(QRect(QPoint(abscissaMin,ordinateMin),QPoint(abscissaMax,ordinateMax)));
 
         //update the drawing mode if needed (if UPDATE, no change is need it).
-        if(drawContentsMode == REFRESH)drawContentsMode = REDRAW ;
+        if(drawContentsMode == REFRESH)invalidate(REDRAW);
     }
 }
 
@@ -1001,7 +1001,7 @@ void WaveformView::setMeanPresentation(){
     supersedeRunningThreads();
     meanPresentation = true;
     isZoomed = false;//Hack because all the tabs share the same data.
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     dataReady = false;
     if(!view.clusters().isEmpty()){
@@ -1016,7 +1016,7 @@ void WaveformView::setAllWaveformsPresentation(){
     supersedeRunningThreads();
     meanPresentation = false;
     isZoomed = false;//Hack because all the tabs share the same data.
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     //The data have to be collected if need it and everything has to be redraw
     if(!view.clusters().isEmpty()){
@@ -1030,7 +1030,7 @@ void WaveformView::setSampleMode(){
     supersedeRunningThreads();
     presentationMode = SAMPLE;
     isZoomed = false;//Hack because all the tabs share the same data.
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     //The data have to be collected if need it and everything has to be redraw
     if(!view.clusters().isEmpty()){
@@ -1043,7 +1043,7 @@ void WaveformView::setTimeFrameMode(){
     supersedeRunningThreads();
     presentationMode = TIME_FRAME;
     isZoomed = false;//Hack because all the tabs share the same data.
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     //The data have to be collected if need it and everything has to be redraw
     if(!view.clusters().isEmpty()){
@@ -1059,7 +1059,7 @@ void WaveformView::setTimeFrame(long start, long width){
     if(endTime > maximumTime) endTime = maximumTime;
 
     isZoomed = false;//Hack because all the tabs share the same data.
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     //The data have to be collected if need it and everything has to be redraw
     if(!view.clusters().isEmpty()){
@@ -1072,7 +1072,7 @@ void WaveformView::setDisplayNbSpikes(long nbSpikes){
     supersedeRunningThreads();
     nbSpkToDisplay =  nbSpikes;
     isZoomed = false;//Hack because all the tabs share the same data.
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     //The data have to be collected if need it and everything has to be redraw
     if(!view.clusters().isEmpty()){
@@ -1133,7 +1133,7 @@ void WaveformView::clustersRenumbered(bool active){
     //The data have to be collected and everything has to be redrawn.
     //If the widget is in the active view, it is done immediately otherswise it will be done
     //when the view willbecome active (updateDrawing will be called).
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     if(!view.clusters().isEmpty() && active){
         setCursor(Qt::WaitCursor);
@@ -1192,7 +1192,7 @@ void WaveformView::mouseReleaseEvent(QMouseEvent* e){
             channelSelectionDirty = true;
             // Repaint the shading immediately; the document (and so the
             // matrices) is only told once Ctrl is released.
-            drawContentsMode = REDRAW;
+            invalidate(REDRAW);
             update();
         }
         e->accept();
@@ -1288,7 +1288,7 @@ bool WaveformView::eventFilter(QObject* watched, QEvent* event){
 }
 
 void WaveformView::resizeEvent(QResizeEvent* e){
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     if(!view.clusters().isEmpty()){
         Data& clusteringData = doc.data();
@@ -1453,7 +1453,7 @@ void WaveformView::autoFitAmplitude()
     gain = std::max(-20, std::min(40, newGain));
     Yfactor = static_cast<float>(YsizeForMaxAmp)
             / static_cast<float>(std::pow(0.75, gain) * acquisitionGain);
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 

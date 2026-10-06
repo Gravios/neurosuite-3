@@ -277,7 +277,7 @@ void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator,QString p
         updateCursor();
 
         //Everything has to be redraw
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     }
 }
@@ -311,7 +311,7 @@ void TraceView::dataAvailable(Array<dataType>& times,Array<int>& ids,QObject* in
         updateCursor();
 
         //Everything has to be redraw
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     }
 }
@@ -569,7 +569,7 @@ void TraceView::paintEvent ( QPaintEvent*){
 
     if(resized){
         resized = false;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     }
 }
@@ -587,7 +587,7 @@ void TraceView::setClusterVerticalLines(bool lines){
     verticalLines = lines;
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -603,7 +603,7 @@ void TraceView::setClusterWaveforms(bool waveforms){
     this->waveforms = waveforms;
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -611,7 +611,7 @@ void TraceView::setGreyScale(bool grey){
     greyScaleMode = grey;
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -621,7 +621,7 @@ void TraceView::resetOffsets(const QMap<int,int>& selectedChannelDefaultOffsets)
         channelOffsets[iterator.key()] = iterator.value();
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -638,7 +638,7 @@ void TraceView::resetGains(const QList<int>& selectedChannels){
     computeChannelDisplayGain();
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -730,7 +730,7 @@ void TraceView::setGains(int gain,int acquisitionGain){
     computeChannelDisplayGain();
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 
@@ -773,7 +773,7 @@ void TraceView::increaseAllAmplitude(){
     computeChannelDisplayGain();
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -790,7 +790,7 @@ void TraceView::decreaseAllAmplitude(){
     computeChannelDisplayGain();
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -806,7 +806,7 @@ void TraceView::increaseSelectedChannelsAmplitude(const QList<int>& channelIds){
     computeChannelDisplayGain(channelIds);
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -822,7 +822,7 @@ void TraceView::decreaseSelectedChannelsAmplitude(const QList<int>& channelIds){
     computeChannelDisplayGain(channelIds);
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -973,7 +973,7 @@ void TraceView::updateWindow(){
     computeChannelDisplayGain();
 
     //Everything has to be redraw
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 
@@ -2796,7 +2796,7 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
                     channelOffsets[*channelIterator] += delta;
 
                 previousDragOrdinate = 0;
-                drawContentsMode = REDRAW;
+                invalidate(REDRAW);
                 //Redraw
                 update();
             }
@@ -2849,7 +2849,7 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
             selectedEvent.first.clear();
             selectedEvent.second = 0;
             startEventDragging = true;
-            drawContentsMode = REDRAW;
+            invalidate(REDRAW);
             //Redraw
             update();
         }
@@ -2892,7 +2892,7 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
         BaseFrame::mouseReleaseEvent(event);
 
         computeChannelDisplayGain();
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     }
     if(mode == MEASURE && (event->button() & Qt::LeftButton)){
@@ -3448,7 +3448,7 @@ void TraceView::removeClusterProvider(const QString &name, bool active){
 
     if(raster)
         updateWindow();
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     if(active)
         update();
 }
@@ -3506,7 +3506,7 @@ void TraceView::skipStatusChanged(const QList<int>& skippedChannels){
 void TraceView::clusterColorUpdate(const QString &name,int clusterId,bool active){
     //redraw everything
     if(active){
-        drawContentsMode = REDRAW ;
+        invalidate(REDRAW);
         update();
     }
 }
@@ -3516,7 +3516,7 @@ void TraceView::updateWaveformInformation(int nbSamplesBefore, int nbSamplesAfte
     this->nbSamplesAfter = nbSamplesAfter;
 
     if(active){
-        drawContentsMode = REDRAW ;
+        invalidate(REDRAW);
         update();
     }
 }
@@ -3633,7 +3633,7 @@ void TraceView::removeEventProvider(const QString& name,bool active){
     providerItemColors.remove(name);
     eventsData.remove(name);
 
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     if(active) update();
 }
 
@@ -3657,13 +3657,13 @@ void TraceView::showEvents(QString name,QList<int>& eventsToShow){
         }
         //Redraw
         else{
-            drawContentsMode = REDRAW;
+            invalidate(REDRAW);
             update();
         }
     }
     else{
         selectedEvents.insert(name,events);
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     }
 }
@@ -3698,7 +3698,7 @@ void TraceView::updateNoneBrowsingEventList(QString providerName,const QList<int
 
 void TraceView::eventColorUpdate(QString name,int eventId,bool active){
     if(active){
-        drawContentsMode = REDRAW ;
+        invalidate(REDRAW);
         update();
     }
 }
@@ -4025,7 +4025,7 @@ void TraceView::channelColorUpdate(int channelId,bool active){
             }
             else{
                 //Everything has to be redraw at the next show of the display
-                drawContentsMode = REDRAW ;
+                invalidate(REDRAW);
             }
         }
     }
@@ -4059,7 +4059,7 @@ void TraceView::removeEvent(){
     selectedEvent.first.clear();
     selectedEvent.second = 0;
     startEventDragging = true;
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     //Redraw
     update();
 }

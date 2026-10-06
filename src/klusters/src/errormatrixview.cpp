@@ -101,7 +101,7 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColo
     pairBoxSettleTimer->setSingleShot(true);
     connect(pairBoxSettleTimer, &QTimer::timeout, this, [this]{
         suppressPairBoxes = false;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     });
 
@@ -358,7 +358,7 @@ void ErrorMatrixView::updateMatrixContents(){
         nbPreviousRedo = 0;
 
 
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -644,7 +644,7 @@ void ErrorMatrixView::recomputeCellWidth()
 // transform is layered on top by effCellSize()/effMatrixTopLeft().
 void ErrorMatrixView::updateWindow(){
     recomputeCellWidth();
-    if(drawContentsMode == REFRESH) drawContentsMode = REDRAW;
+    if(drawContentsMode == REFRESH) invalidate(REDRAW);
 }
 
 QPoint ErrorMatrixView::matrixTopLeft() const
@@ -694,7 +694,7 @@ void ErrorMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
     // repaints it once the wheel goes quiet.
     suppressPairBoxes = true;
     pairBoxSettleTimer->start(pairBoxSettleMs);
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
     emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
@@ -702,7 +702,7 @@ void ErrorMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
 void ErrorMatrixView::resetPanZoom()
 {
     vp_.reset();
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
     emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
@@ -938,7 +938,7 @@ void ErrorMatrixView::setTemplateColumns(const std::vector<MatrixTemplateCol>& c
 {
     strip_.setColumns(cols);     // no computeShade: every error cell is solid grey
     updateWindow();              // refit so the region (gap + M cells) is on screen
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -999,7 +999,7 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
             // Suppress the overlay while the drag is live; settle timer restores it.
             suppressPairBoxes = true;
             pairBoxSettleTimer->start(pairBoxSettleMs);
-            drawContentsMode = REDRAW;
+            invalidate(REDRAW);
             update();
             emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
         }
@@ -1162,7 +1162,7 @@ void ErrorMatrixView::setViewState(double newZoom, double px, double py){
     vp_.setState(newZoom, px, py, effZoomMin(), zoomMax);
     suppressPairBoxes = true;
     pairBoxSettleTimer->start(pairBoxSettleMs);
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -1185,7 +1185,7 @@ void ErrorMatrixView::clustersGrouped(QList<int>& groupedClusters, int newCluste
 
     nbActions++;
 
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 void ErrorMatrixView::clusterFeaturesReprojected(int clusterId){
@@ -1207,7 +1207,7 @@ void ErrorMatrixView::clusterFeaturesReprojected(int clusterId){
 
     nbActions++;
 
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 void ErrorMatrixView::clustersDeleted(QList<int>& deletedClusters,int destinationCluster){
@@ -1228,7 +1228,7 @@ void ErrorMatrixView::clustersDeleted(QList<int>& deletedClusters,int destinatio
 
     nbActions++;
 
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 void ErrorMatrixView::removeSpikesFromClusters(QList<int>& fromClusters, int destinationClusterId,QList<int>& emptiedClusters){
@@ -1250,7 +1250,7 @@ void ErrorMatrixView::removeSpikesFromClusters(QList<int>& fromClusters, int des
     deletedMap.insert(destinationClusterId,deletedList);
 
     nbActions++;
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 void ErrorMatrixView::newClusterAdded(QList<int>& fromClusters,int clusterId,QList<int>& emptiedClusters){
@@ -1271,7 +1271,7 @@ void ErrorMatrixView::newClusterAdded(QList<int>& fromClusters,int clusterId,QLi
     deletedMap.insert(clusterId,deletedList);
 
     nbActions++;
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 void ErrorMatrixView::newClustersAdded(QMap<int,int>& fromToNewClusterIds,QList<int>& emptiedClusters){
@@ -1288,7 +1288,7 @@ void ErrorMatrixView::newClustersAdded(QMap<int,int>& fromToNewClusterIds,QList<
     }
 
     nbActions++;
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 
@@ -1319,7 +1319,7 @@ void ErrorMatrixView::newClustersAdded(QList<int>& clustersToRecluster){
     isNotUpToDate = true;
 
     nbActions++;
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 
@@ -1362,7 +1362,7 @@ void ErrorMatrixView::renumber(QMap<int,int>& clusterIdsOldNew){
     }
     nbActions++;
     renumbering.insert(nbActions,true);
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 }
 
 void ErrorMatrixView::undoRenumbering(QMap<int,int>& clusterIdsNewOld){
@@ -1377,7 +1377,7 @@ void ErrorMatrixView::undoRenumbering(QMap<int,int>& clusterIdsNewOld){
             isNotUpToDate = false;
         else
             isNotUpToDate = true;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else{
         if(nbPreviousUndo == 0) {
@@ -1391,7 +1391,7 @@ void ErrorMatrixView::undoRenumbering(QMap<int,int>& clusterIdsNewOld){
             nbPreviousRedo++;
             isNotUpToDate = true;
         }
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1416,7 +1416,7 @@ void ErrorMatrixView::undoAdditionModification(QList<int>& addedClusters,QList<i
             }
         }
 
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else{
         if(nbPreviousUndo == 0){
@@ -1432,7 +1432,7 @@ void ErrorMatrixView::undoAdditionModification(QList<int>& addedClusters,QList<i
             nbPreviousRedo++;
             isNotUpToDate = true;
         }
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1451,7 +1451,7 @@ void ErrorMatrixView::undoAddition(QList<int>& addedClusters){
                 for(iterator2 = deletedList.begin(); iterator2 != deletedList.end(); ++iterator2)
                     modifiedClusterList.removeAll(*iterator2);
 
-                drawContentsMode = REDRAW;
+                invalidate(REDRAW);
             }
         }
     }
@@ -1469,7 +1469,7 @@ void ErrorMatrixView::undoAddition(QList<int>& addedClusters){
             nbPreviousRedo++;
             isNotUpToDate = true;
         }
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1493,7 +1493,7 @@ void ErrorMatrixView::undoModification(QList<int>& updatedClusters){
                 }
             }
         }
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else{
         if(nbPreviousUndo == 0){
@@ -1509,7 +1509,7 @@ void ErrorMatrixView::undoModification(QList<int>& updatedClusters){
             nbPreviousRedo++;
             isNotUpToDate = true;
         }
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1518,13 +1518,13 @@ void ErrorMatrixView::redoRenumbering(QMap<int,int>& clusterIdsOldNew){
     if(nbPreviousRedo == 1){
         nbPreviousRedo--;
         isNotUpToDate = false;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if (nbPreviousRedo > 1){
         nbPreviousRedo--;
         nbPreviousUndo++;
         isNotUpToDate = true;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbActions > 0 || (nbActions == 0 && nbRedo > 0)){
         nbActions++;
@@ -1533,12 +1533,12 @@ void ErrorMatrixView::redoRenumbering(QMap<int,int>& clusterIdsOldNew){
 
         renumbering.insert(nbActions,true);
         hasBeenRenumbered = true;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbPreviousRedo == 0){//there was no previous undo
         isNotUpToDate = true;
         nbPreviousUndo++;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1547,13 +1547,13 @@ void ErrorMatrixView::redoAdditionModification(QList<int>& addedClusters,QList<i
     if(nbPreviousRedo == 1){
         nbPreviousRedo--;
         isNotUpToDate = false;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if (nbPreviousRedo > 1){
         nbPreviousRedo--;
         nbPreviousUndo++;
         isNotUpToDate = true;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbActions > 0 || (nbActions == 0 && nbRedo > 0)){
         nbActions++;
@@ -1571,12 +1571,12 @@ void ErrorMatrixView::redoAdditionModification(QList<int>& addedClusters,QList<i
                 modifiedClusterList.append(*iterator);
             }
 
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbPreviousRedo == 0){//there was no previous undo
         isNotUpToDate = true;
         nbPreviousUndo++;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1585,13 +1585,13 @@ void ErrorMatrixView::redoAddition(QList<int>& addedClusters,QList<int>& deleted
     if(nbPreviousRedo == 1){
         nbPreviousRedo--;
         isNotUpToDate = false;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if (nbPreviousRedo > 1){
         nbPreviousRedo--;
         nbPreviousUndo++;
         isNotUpToDate = true;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbActions > 0 || (nbActions == 0 && nbRedo > 0)){
         nbActions++;
@@ -1616,12 +1616,12 @@ void ErrorMatrixView::redoAddition(QList<int>& addedClusters,QList<int>& deleted
                 modifiedClusterList.append(*iterator);
             }
 
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbPreviousRedo == 0){//there was no previous undo
         isNotUpToDate = true;
         nbPreviousUndo++;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1630,13 +1630,13 @@ void ErrorMatrixView::redoModification(QList<int>& updatedClusters,bool isModifi
     if(nbPreviousRedo == 1){
         nbPreviousRedo--;
         isNotUpToDate = false;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if (nbPreviousRedo > 1){
         nbPreviousRedo--;
         nbPreviousUndo++;
         isNotUpToDate = true;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbActions > 0 || (nbActions == 0 && nbRedo > 0)){
         nbActions++;
@@ -1655,12 +1655,12 @@ void ErrorMatrixView::redoModification(QList<int>& updatedClusters,bool isModifi
                 modifiedClusterList.append(*iterator);
             }
 
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbPreviousRedo == 0){//there was no previous undo
         isNotUpToDate = true;
         nbPreviousUndo++;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1669,13 +1669,13 @@ void ErrorMatrixView::redoDeletion(QList<int>& deletedClusters){
     if(nbPreviousRedo == 1){
         nbPreviousRedo--;
         isNotUpToDate = false;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if (nbPreviousRedo > 1){
         nbPreviousRedo--;
         nbPreviousUndo++;
         isNotUpToDate = true;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbActions > 0 || (nbActions == 0 && nbRedo > 0)){
         nbActions++;
@@ -1688,12 +1688,12 @@ void ErrorMatrixView::redoDeletion(QList<int>& deletedClusters){
                 modifiedClusterList.append(*iterator);
             }
 
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
     else if(nbPreviousRedo == 0){//there was no previous undo
         isNotUpToDate = true;
         nbPreviousUndo++;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
     }
 }
 
@@ -1721,7 +1721,7 @@ void ErrorMatrixView::print(QPainter& printPainter,int width,int height, bool wh
         pal.setColor(backgroundRole(), Qt::white);
         setPalette(pal);
     }
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     repaint();                      // synchronous paintEvent -> refresh doublebuffer
 
     const QRect vp = printPainter.viewport();
@@ -1737,7 +1737,7 @@ void ErrorMatrixView::print(QPainter& printPainter,int width,int height, bool wh
     if(whiteBackground){
         colorLegend = legendTmp;
         setPalette(palTmp);
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         repaint();                  // restore on-screen appearance
     }
 }
