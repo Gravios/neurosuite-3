@@ -1316,7 +1316,11 @@ void ClusterView::setMode(BaseFrame::Mode selectedMode){
     nbSelectionPoints = 0;
     mode = selectedMode;
     applyModeCursor();   // pointer in the lineage overlay, else the tool's cursor
-    drawContentsMode = REFRESH;
+    // A tool switch only needs a REFRESH (cursor + cleared polygon over the cached
+    // scatter), but must not cancel a REDRAW queued earlier this turn: paints coalesce,
+    // so a plain assignment here downgraded the regen and left the scatter at the old
+    // projection on overlay entry (fixed via the monotonic invalidate()).
+    invalidate(REFRESH);
     update();
 }
 

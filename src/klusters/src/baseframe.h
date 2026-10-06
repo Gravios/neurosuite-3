@@ -265,6 +265,16 @@ protected:
     /**Mode giving the way of drawing the contents of the view*/
     DrawContentsMode drawContentsMode;
 
+    /** Raise the pending redraw level, never lower it; the caller still schedules the
+     *  repaint with update() as before.  REFRESH < UPDATE < REDRAW and paint events
+     *  coalesce, so a plain `drawContentsMode = REFRESH` from one method can silently
+     *  cancel a REDRAW another method queued the same turn — the "feature-view scatter
+     *  did not update on overlay entry" bug (setMode's REFRESH clobbered the REDRAW the
+     *  forced projection had queued).  Routing level changes through this keeps the
+     *  level monotonic until paintEvent consumes and resets it.  (Tier 1 of the paint
+     *  refactor — see claude/paint-refactor-plan.md; call sites migrate incrementally.) */
+    void invalidate(DrawContentsMode level){ if(level > drawContentsMode) drawContentsMode = level; }
+
     /**
    * Draw mode (selected by the user via a menu, a button or a shortcut).
    */
