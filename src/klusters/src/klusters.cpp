@@ -2422,7 +2422,7 @@ void KlustersApp::registerActionCommand(const QString& id, const QString& catego
     c.defaultChord = input::chordFromKeySequence(action->shortcut());
     // The command mirrors the QAction: Qt still dispatches the live shortcut, so
     // enabled()/invoke() exist for the (future) Preferences page + cheat-sheet.
-    c.enabled  = [action]{ return action->isEnabled(); };
+    c.enabled  = [action](const input::Ctx&){ return action->isEnabled(); };
     c.invoke   = [action](const input::Ctx&){ if(action->isEnabled()) action->trigger(); };
     input::registry().addCommand(c);
     appActionCommands_.insert(id, action);

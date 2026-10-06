@@ -10,6 +10,8 @@
 // self-contained unit: declare a scope + its commands, and the resolver, Preferences,
 // persistence, conflict-checker and cheat-sheet all discover them.
 
+#include "ctx.h"
+
 #include <QString>
 #include <functional>
 
@@ -29,9 +31,9 @@ enum class Layer : unsigned char {
 };
 
 struct InputScope {
-    QString id;                      // "view.cluster", "mode.newCluster", "transient.pendingLasso", …
+    QString id;                            // "view.cluster", "mode.newCluster", "transient.pendingLasso", …
     Layer   layer = Layer::App;
-    std::function<bool()> active;    // is this scope in effect now?  null == always (the App scope)
+    std::function<bool(const Ctx&)> active; // is this scope in effect for this event?  null == always (App)
 };
 
 }  // namespace input

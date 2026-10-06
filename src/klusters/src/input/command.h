@@ -9,22 +9,12 @@
 // never in a central table — that locality is the whole point of the architecture.
 
 #include "chord.h"
+#include "ctx.h"
 
 #include <QString>
 #include <functional>
 
-class QWidget;
-class QEvent;
-
 namespace input {
-
-// Everything a command needs to run.  Deliberately small for P0; it grows as ports
-// need more (world coordinates, the resolved chord, …) without touching callers that
-// ignore the new fields.
-struct Ctx {
-    QWidget* view  = nullptr;   // the focused view the trigger arrived on
-    QEvent*  event = nullptr;   // the originating QEvent (for position / phase details)
-};
 
 enum class Kind : unsigned char {
     Action,    // atomic: invoke() performs it (a menu action, a key shortcut)
@@ -41,7 +31,7 @@ struct Command {
     Kind    kind = Kind::Action;
     Chord   defaultChord;
 
-    std::function<bool()>           enabled;   // "when" predicate; null == always enabled
+    std::function<bool(const Ctx&)> enabled;   // "when" predicate; null == always enabled
     std::function<void(const Ctx&)> invoke;    // Action: perform; Gesture: begin
 };
 

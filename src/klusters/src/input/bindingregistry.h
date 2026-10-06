@@ -43,15 +43,17 @@ public:
     QList<QPair<QString, Chord>> overrides() const;
 
     // ── resolution ──
-    // Among every scope whose active() reports true, consult them highest-layer first
-    // (Transient → … → App; ties broken so a later-registered scope shadows an earlier
-    // one in the same layer).  Within a scope, the first command whose effective chord
-    // equals `chord` AND whose enabled() is not false wins.  Returns nullptr when
-    // nothing matches, so the caller falls through to Qt / the base handler — this
-    // fall-through is what lets un-ported views keep their current behavior during the
-    // incremental migration.  The returned pointer is owned by the registry and valid
+    // Among every scope whose active(ctx) reports true, consult them highest-layer
+    // first (Transient → … → App; ties broken so a later-registered scope shadows an
+    // earlier one in the same layer).  Within a scope, the first command whose effective
+    // chord equals `chord` AND whose enabled(ctx) is not false wins.  `ctx` carries the
+    // view the event arrived on + the event, so a shared command (e.g. the base zoom)
+    // can gate on the pressed frame's state; it is empty for non-event queries.  Returns
+    // nullptr when nothing matches, so the caller falls through to Qt / the base handler
+    // — this fall-through is what lets un-ported views keep their current behavior during
+    // the incremental migration.  The returned pointer is owned by the registry and valid
     // until the next addCommand / override change.
-    const Command* resolve(const Chord& chord) const;
+    const Command* resolve(const Chord& chord, const Ctx& ctx = {}) const;
 
     // ── introspection (Preferences / cheat-sheet / conflict UI) ──
     const QList<Command>&    commands() const { return commands_; }

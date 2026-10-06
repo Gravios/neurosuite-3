@@ -54,11 +54,11 @@ bool dispatch(QWidget* view, QEvent* ev, const BindingRegistry& reg)
 {
     const Chord c = chordFromEvent(ev);
     if (!c.isValid()) return false;
-    const Command* cmd = reg.resolve(c);
-    if (!cmd) return false;                                // nothing bound -> caller falls through
     Ctx ctx;
     ctx.view  = view;
     ctx.event = ev;
+    const Command* cmd = reg.resolve(c, ctx);             // scopes/enabled gate on this event's ctx
+    if (!cmd) return false;                               // nothing bound -> caller falls through
     if (cmd->invoke) cmd->invoke(ctx);
     return true;
 }

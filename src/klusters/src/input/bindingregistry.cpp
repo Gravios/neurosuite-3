@@ -60,17 +60,17 @@ QList<QPair<QString, Chord>> BindingRegistry::overrides() const
     return out;
 }
 
-const Command* BindingRegistry::resolve(const Chord& chord) const
+const Command* BindingRegistry::resolve(const Chord& chord, const Ctx& ctx) const
 {
     if (!chord.isValid()) return nullptr;
 
     // Collect the indices of every active scope.  A null active() predicate means
-    // "always on" (the App scope).
+    // "always on" (the App scope); otherwise it is asked about this event's ctx.
     QList<int> active;
     active.reserve(scopes_.size());
     for (int i = 0; i < scopes_.size(); ++i) {
         const InputScope& s = scopes_[i];
-        if (!s.active || s.active()) active.append(i);
+        if (!s.active || s.active(ctx)) active.append(i);
     }
 
     // Highest layer first; ties resolved so a later-registered scope shadows an
@@ -87,7 +87,7 @@ const Command* BindingRegistry::resolve(const Chord& chord) const
         for (const Command& c : commands_) {
             if (c.scopeId != sid) continue;
             if (effectiveChord(c.id) != chord) continue;
-            if (c.enabled && !c.enabled()) continue;   // "when" predicate gates the match
+            if (c.enabled && !c.enabled(ctx)) continue;   // "when" predicate gates the match
             return &c;
         }
     }

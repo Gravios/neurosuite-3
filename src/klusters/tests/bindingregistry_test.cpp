@@ -106,14 +106,14 @@ int main()
 
         BindingRegistry reg;
         reg.addScope({ QStringLiteral("app"),   Layer::App,      nullptr });
-        reg.addScope({ QStringLiteral("view"),  Layer::ViewType, []{ return g_viewActive;  } });
-        reg.addScope({ QStringLiteral("mode"),  Layer::ToolMode, []{ return g_modeActive;  } });
-        reg.addScope({ QStringLiteral("trans"), Layer::Transient,[]{ return g_transActive; } });
+        reg.addScope({ QStringLiteral("view"),  Layer::ViewType, [](const Ctx&){ return g_viewActive;  } });
+        reg.addScope({ QStringLiteral("mode"),  Layer::ToolMode, [](const Ctx&){ return g_modeActive;  } });
+        reg.addScope({ QStringLiteral("trans"), Layer::Transient,[](const Ctx&){ return g_transActive; } });
 
         const Chord left = Chord::button(Qt::LeftButton);
 
         auto mk = [](const char* id, const char* scope, Chord ch, int tag,
-                     std::function<bool()> en = nullptr) {
+                     std::function<bool(const Ctx&)> en = nullptr) {
             Command c;
             c.id = QString::fromLatin1(id);
             c.scopeId = QString::fromLatin1(scope);
@@ -127,7 +127,7 @@ int main()
         reg.addCommand(mk("trans.left", "trans", left, 3));
         // An app command gated by enabled() we can turn off.
         reg.addCommand(mk("app.left",   "app",   Chord::button(Qt::LeftButton, Qt::AltModifier), 9,
-                          []{ return g_cmdEnabled; }));
+                          [](const Ctx&){ return g_cmdEnabled; }));
 
         // Only view active -> view wins.
         const Command* r = reg.resolve(left);
