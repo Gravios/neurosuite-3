@@ -59,4 +59,18 @@ if(Qt6_FOUND)
         PRIVATE "${_klu_src}" "${_shared}" "${_core}")
     target_link_libraries(klusters_test_matrixtemplatestrip PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_matrixtemplatestrip COMMAND klusters_test_matrixtemplatestrip)
+
+    # Input binding core (input-remapping plan §3/§4): Chord round-trip + the
+    # BindingRegistry resolver/override/conflict logic.  Compiles the two Qt-light
+    # module sources directly; links Qt6 Core+Gui (QString/Qt flags + QKeySequence
+    # in Chord::displayString).  No widgets, no KlustersDoc.
+    add_executable(klusters_test_bindingregistry
+        bindingregistry_test.cpp
+        "${_klu_src}/input/chord.cpp"
+        "${_klu_src}/input/bindingregistry.cpp")
+    target_compile_features(klusters_test_bindingregistry PRIVATE cxx_std_20)
+    target_include_directories(klusters_test_bindingregistry
+        PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    target_link_libraries(klusters_test_bindingregistry PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME klusters_test_bindingregistry COMMAND klusters_test_bindingregistry)
 endif()

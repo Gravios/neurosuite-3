@@ -15,6 +15,8 @@ set(klusters_SRCS
     autosavethread.cpp
     baseframe.cpp
     bufferedview.cpp
+    input/chord.cpp            # device-agnostic input trigger (input-remapping plan §3)
+    input/bindingregistry.cpp  # command/scope registry + resolver (input-remapping plan §4)
     channellist.cpp
     clusterPalette.cpp
     clusterinformationdialog.cpp
