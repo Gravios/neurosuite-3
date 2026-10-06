@@ -20,6 +20,8 @@
 #include <QString>
 #include <Qt>
 
+class QKeySequence;
+
 namespace input {
 
 enum class Device : unsigned char { None = 0, Key, Button, Wheel };
@@ -74,6 +76,13 @@ struct Chord {
         return { Device::Wheel, dir < 0 ? -1 : 1, normalize(mods), Phase::Wheel };
     }
 };
+
+// Bridge to Qt's QKeySequence, for mirroring the menu/toolbar QActions (which Qt
+// dispatches by shortcut) into the registry.  Only a single key-combo is handled: a
+// one-element QKeySequence <-> a Key Chord.  An empty or multi-element sequence maps
+// to an invalid Chord; a non-Key Chord maps to an empty QKeySequence.
+Chord        chordFromKeySequence(const QKeySequence& seq);
+QKeySequence keySequenceFromChord(const Chord& c);
 
 }  // namespace input
 

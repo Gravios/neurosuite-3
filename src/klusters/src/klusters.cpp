@@ -20,6 +20,9 @@
 #include "config-klusters.h"
 // application specific includes
 #include "klusters.h"
+#include "input/bindingregistry.h"     // app-scope command mirror (input-remapping plan P0c)
+#include "input/inputdispatcher.h"     // input::registry() — the one app-wide registry
+#include "input/chord.h"               // QKeySequence <-> Chord bridge
 #include "mergerecommendview.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
@@ -206,6 +209,11 @@ KlustersApp::KlustersApp()
 
     createMenus();
     createToolBar();
+
+    // Mirror the menu/toolbar actions into the one input::registry() (app scope) and
+    // apply any persisted rebinds.  After the actions + their shortcuts exist; see
+    // the method.  No behavior change when no overrides are stored.
+    registerInputBindings();
 
     //Apply the user settings.
     initializePreferences();
@@ -2397,6 +2405,69 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     }
 
     return QWidget::eventFilter(object,event);    // standard event processing
+}
+
+void KlustersApp::registerActionCommand(const QString& id, const QString& category, QAction* action)
+{
+    if(!action) return;
+    input::Command c;
+    c.id       = id;
+    c.scopeId  = QStringLiteral("app");
+    QString label = action->text();
+    label.remove(QLatin1Char('&'));                 // drop the menu mnemonic
+    if(label.endsWith(QStringLiteral("..."))) label.chop(3);
+    c.label    = label.trimmed();
+    c.category = category;
+    c.kind     = input::Kind::Action;
+    c.defaultChord = input::chordFromKeySequence(action->shortcut());
+    // The command mirrors the QAction: Qt still dispatches the live shortcut, so
+    // enabled()/invoke() exist for the (future) Preferences page + cheat-sheet.
+    c.enabled  = [action]{ return action->isEnabled(); };
+    c.invoke   = [action](const input::Ctx&){ if(action->isEnabled()) action->trigger(); };
+    input::registry().addCommand(c);
+    appActionCommands_.insert(id, action);
+}
+
+void KlustersApp::registerInputBindings()
+{
+    input::BindingRegistry& reg = input::registry();
+    reg.addScope({ QStringLiteral("app"), input::Layer::App, nullptr });
+
+    // Representative slice across categories (input-remapping plan P0c proof); the
+    // remaining actions follow the same one-liner in a later patch.  Default chord =
+    // each action's current shortcut, so nothing changes until the user rebinds.
+    registerActionCommand(QStringLiteral("file.open"),             QStringLiteral("File"),    mOpenAction);
+    registerActionCommand(QStringLiteral("file.save"),             QStringLiteral("File"),    mSaveAction);
+    registerActionCommand(QStringLiteral("file.renumberAndSave"),  QStringLiteral("File"),    mRenumberAndSave);
+    registerActionCommand(QStringLiteral("file.quit"),             QStringLiteral("File"),    mQuitAction);
+    registerActionCommand(QStringLiteral("edit.undo"),             QStringLiteral("Edit"),    mUndo);
+    registerActionCommand(QStringLiteral("edit.redo"),             QStringLiteral("Edit"),    mRedo);
+    registerActionCommand(QStringLiteral("edit.selectAll"),        QStringLiteral("Edit"),    mSelectAllAction);
+    registerActionCommand(QStringLiteral("edit.selectAllExcept"),  QStringLiteral("Edit"),    mSelectAllExceptAction);
+    registerActionCommand(QStringLiteral("action.deleteArtifact"), QStringLiteral("Actions"), mDeleteArtifact);
+    registerActionCommand(QStringLiteral("action.deleteNoisy"),    QStringLiteral("Actions"), mDeleteNoisy);
+    registerActionCommand(QStringLiteral("action.groupClusters"),  QStringLiteral("Actions"), mGroupeClusters);
+
+    // Apply the persisted override diffs (Configuration read them from QSettings at
+    // startup).  Only ids we actually registered and that parse to a valid chord.
+    const QMap<QString,QString> ov = configuration().getInputBindingOverrides();
+    for(QMap<QString,QString>::const_iterator it = ov.constBegin(); it != ov.constEnd(); ++it){
+        const input::Chord c = input::Chord::fromString(it.value());
+        if(c.isValid() && reg.command(it.key())) reg.setOverride(it.key(), c);
+    }
+    applyInputOverridesToActions();
+}
+
+void KlustersApp::applyInputOverridesToActions()
+{
+    input::BindingRegistry& reg = input::registry();
+    for(QHash<QString,QAction*>::const_iterator it = appActionCommands_.constBegin();
+        it != appActionCommands_.constEnd(); ++it){
+        // Only touch actions the user actually rebound; the rest keep the shipped
+        // shortcut the menu set.
+        if(it.value() && reg.hasOverride(it.key()))
+            it.value()->setShortcut(input::keySequenceFromChord(reg.effectiveChord(it.key())));
+    }
 }
 
 void KlustersApp::buildFocusZones()

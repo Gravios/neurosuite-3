@@ -2,6 +2,7 @@
 
 #include "chord.h"
 
+#include <QKeyCombination>
 #include <QKeySequence>
 #include <QStringList>
 
@@ -83,6 +84,21 @@ QString Chord::displayString() const
              + (code < 0 ? QStringLiteral("Wheel down") : QStringLiteral("Wheel up"));
     }
     return QStringLiteral("(unbound)");
+}
+
+Chord chordFromKeySequence(const QKeySequence& seq)
+{
+    if (seq.isEmpty()) return {};
+    const QKeyCombination comb = seq[0];           // first (and, for a shortcut, only) combo
+    const int key = comb.key();
+    if (key == 0 || key == Qt::Key_unknown) return {};
+    return Chord::key(key, comb.keyboardModifiers());
+}
+
+QKeySequence keySequenceFromChord(const Chord& c)
+{
+    if (c.device != Device::Key) return {};        // only key chords map to a QAction shortcut
+    return QKeySequence(QKeyCombination(c.modifiers, static_cast<Qt::Key>(c.code)));
 }
 
 }  // namespace input

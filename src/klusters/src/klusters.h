@@ -37,6 +37,7 @@ class QMenu;
 // include files for Qt
 #include <QList>
 #include <QSet>
+#include <QHash>
 #include <QVector>
 #include <QSpinBox>
 #include <QValidator>
@@ -722,6 +723,22 @@ private:
     void initView();
     void createMenus();
 
+    /** Mirror the menu/toolbar QActions into the one input::registry() as app-scope
+     *  Commands (input-remapping plan P0c): default chord = the action's current
+     *  shortcut, invoke = trigger the action.  Qt still dispatches these by shortcut;
+     *  the registry entry makes them visible in Preferences + the cheat-sheet and
+     *  rebindable (an override is pushed back onto the QAction via setShortcut).
+     *  Called once after the actions are built; loads any persisted overrides from
+     *  Configuration.  Defaults equal today's shortcuts, so no behavior change. */
+    void registerInputBindings();
+    /** Register one QAction as an app-scope Command with id + category (helper for
+     *  registerInputBindings); records id -> QAction* for the override push-back. */
+    void registerActionCommand(const QString& id, const QString& category, QAction* action);
+    /** Push every app-scope override currently in the registry onto its QAction's
+     *  shortcut, so Qt dispatches the rebound key.  Non-overridden actions keep their
+     *  shipped shortcut.  Called at startup and (later) after a Preferences rebind. */
+    void applyInputOverridesToActions();
+
     // Plugins (descriptor discovery; read-only listing in v1).
     PluginRegistry mPluginRegistry;
     QMenu* mPluginsMenu = nullptr;
@@ -1229,6 +1246,9 @@ private:
     QAction *mOpenAction;
     QAction *mRedo;
     QAction *mRenumberAndSave;
+    /** command id -> the mirrored menu/toolbar QAction, for pushing a rebind back
+     *  onto the action's shortcut (input-remapping plan P0c). */
+    QHash<QString, QAction*> appActionCommands_;
     QAction *mUpdateErrorMatrix;
     QAction *mNewResidualMatrix;
     QAction *mNewDriftMatrix;

@@ -14,6 +14,7 @@
 #include "input/bindingregistry.h"
 #include "input/chord.h"
 
+#include <QKeySequence>
 #include <cstdio>
 
 using namespace input;
@@ -200,6 +201,25 @@ int main()
         // Override b onto a different chord -> conflict resolves.
         reg.setOverride(QStringLiteral("app.b"), Chord::key(Qt::Key_D));
         CHECK(reg.conflicts().isEmpty());
+    }
+
+    // ── Chord <-> QKeySequence bridge (mirroring menu/toolbar QActions) ──
+    {
+        // Round-trip common shortcut shapes through a QKeySequence and back.
+        const Chord ctrlS = Chord::key(Qt::Key_S, Qt::ControlModifier);
+        CHECK(chordFromKeySequence(keySequenceFromChord(ctrlS)) == ctrlS);
+        const Chord shiftDel = Chord::key(Qt::Key_Delete, Qt::ShiftModifier);
+        CHECK(chordFromKeySequence(keySequenceFromChord(shiftDel)) == shiftDel);
+        const Chord plainG = Chord::key(Qt::Key_G);
+        CHECK(chordFromKeySequence(keySequenceFromChord(plainG)) == plainG);
+
+        // Parse a real sequence string -> the expected Key chord.
+        CHECK(chordFromKeySequence(QKeySequence(QStringLiteral("Ctrl+A")))
+              == Chord::key(Qt::Key_A, Qt::ControlModifier));
+
+        // Empty sequence -> invalid chord; a non-key chord -> empty sequence.
+        CHECK(!chordFromKeySequence(QKeySequence()).isValid());
+        CHECK(keySequenceFromChord(Chord::button(Qt::LeftButton)).isEmpty());
     }
 
     if (g_fail == 0) std::printf("bindingregistry_test: OK\n");
