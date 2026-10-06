@@ -924,142 +924,94 @@ void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,
     painter.setBrush(Qt::NoBrush);
 }
 
-void ClusterView::paintEvent ( QPaintEvent*){
-    QPainter p(this);
-
+bool ClusterView::paintDirect(QPainter& p){
     // Alternate presentation: the 2-D embedding replaces the scatter wholesale
     // (no world window, no axes, no time HUD -- embedding space is its own).
-    if (tsneMode) {
-        paintTsne(p);
-        if (!wsImage.isNull())      // watershed preview, in embedding space
-            paintWatershedOverlayEmbedded(p);
-        if (tsneComputing)          // a re-embed at a new perplexity
-            paintTsneProgress(p);
-        drawContentsMode = REFRESH;
-        return;
-    }
+    if (!tsneMode) return false;
+    paintTsne(p);
+    if (!wsImage.isNull())      // watershed preview, in embedding space
+        paintWatershedOverlayEmbedded(p);
+    if (tsneComputing)          // a re-embed at a new perplexity
+        paintTsneProgress(p);
+    drawContentsMode = REFRESH; // consume the level: the direct path has painted
+    return true;
+}
 
+void ClusterView::beforeRedraw(){
     // If autoscale is enabled, refit bounds to the current shownClusters
-    // projection before sampling `window` below.  Done only for the
-    // REDRAW path: UPDATE is an incremental paint of just-changed
-    // clusters and must preserve the existing window to avoid jittering
-    // the plot on every cluster-set tweak.
-    if (autoscaleEnabled && drawContentsMode == REDRAW) {
+    // projection before the world window is sampled.  REDRAW only (the base calls
+    // this only then); an UPDATE keeps the existing window to avoid jitter.
+    if (autoscaleEnabled)
         autoscaleToVisibleClusters();
+}
+
+void ClusterView::setupWorldTransform(QPainter& buf){
+    // Window only -- ClusterView draws at the buffer's origin and does NOT inset a
+    // viewport (unlike WaveformView), so it overrides the base default.
+    const QRect r(static_cast<QRect>(window));
+    buf.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
+}
+
+void ClusterView::paintBuffer(QPainter& painter, DrawContentsMode level){
+    if (level == REDRAW){
+        //Reset the variables associated with the polygon on a full redraw.
+        selectionPolygon.resize(0);
+        nbSelectionPoints = 0;
+
+        //Fill the double buffer with the background
+        doublebuffer.fill(palette().color(backgroundRole()));
+
+        //Draw the axes
+        drawAxes(painter);
+
+        //Paint all the clusters in the shownClusters list (in the double buffer)
+        drawClusters(painter,view.clusters());
+    } else if (level == UPDATE){
+        //Paint the clusters to update contained in clusterUpdateList
+        if(!clusterUpdateList.isEmpty())
+            drawClusters(painter,clusterUpdateList);
+
+        //Clear the update list
+        clusterUpdateList.clear();
     }
+}
 
-    //set the window (part of the word I want to show)
-    QRect r((QRect)window);
-    if(drawContentsMode == UPDATE || drawContentsMode == REDRAW){
-        viewport = contentsRect();
-        //Resize the double buffer with the width and the height of the widget(QFrame)
-        if (viewport.size() != doublebuffer.size()) {
-            if(!doublebuffer.isNull()) {
-                QPixmap tmp = QPixmap( viewport.width(),viewport.height() );
-                tmp.fill( Qt::white );
-                QPainter painter2( &tmp );
-                painter2.drawPixmap( 0,0, doublebuffer );
-                painter2.end();
-                doublebuffer = tmp;
-            } else {
-                doublebuffer = QPixmap(viewport.width(),viewport.height());
-            }
-        }
+void ClusterView::paintBufferDeviceLayer(QPainter& painter){
+    //Draw the time axis information if the time is displayed
+    drawTimeInformation(painter);
+}
 
-        //Create a painter to paint on the double buffer
-        QPainter painter;
-        painter.begin(&doublebuffer);
-
-        painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
-
-        if(drawContentsMode == REDRAW){
-            //Reset the variables associates with the polygon
-
-            //Resize selectionPolygon to remove all the last selected area, reinitialize nbSelectionPoints accordingly
-            selectionPolygon.resize(0);
-            nbSelectionPoints = 0;
-
-            //Fill the double buffer with the background
-
-            doublebuffer.fill(palette().color(backgroundRole()));
-
-            //Draw the axes
-            drawAxes(painter);
-
-            //Paint all the clusters in the shownClusters list (in the double buffer)
-            drawClusters(painter,view.clusters());
-        } else if(drawContentsMode == UPDATE){
-
-            //Erase any polygon of selection and reset the associated variables
-
-            //Paint the the clusters to update contain in clusterUpdateList
-            if(!clusterUpdateList.isEmpty())
-                drawClusters(painter,clusterUpdateList);
-
-            //Clear the update list
-            clusterUpdateList.clear();
-        }
-
-        //reset transformation due to setWindow
-        painter.resetTransform() ;
-
-
-        //Draw the time axis information if the time is displayed
-        drawTimeInformation(painter);
-
-        //Closes the painter on the double buffer
-        painter.end();
-
-        //Back to the default
-        drawContentsMode = REFRESH;
-    }
-    //if drawContentsMode == REFRESH, we reuse the double buffer (pixmap)
-
-    //Draw the double buffer (pixmap) by copying it into the paint device.
-    p.drawPixmap(0, 0, doublebuffer);
-
-
-
+void ClusterView::paintWidgetOverlays(QPainter& p){
     // Computing over the scatter: the first embedding of a selection runs with
     // the feature view still showing, and without this the only sign that F did
     // anything is a status line that scrolls away.
     if (tsneComputing)
         paintTsneProgress(p);
 
+    const QRect r(static_cast<QRect>(window));
     if(!selectionPolygon.isEmpty()) {
         const QColor color = selectPolygonColor(mode);
         p.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
         QPen selPen(color);
         // COSMETIC: setWindow above makes the painter's units WORLD units, so a
-        // plain pen width is a width in feature space -- it scales with the zoom
-        // instead of staying the thickness the preference asks for.  Zoomed out
-        // over a session-wide window that is a small fraction of a pixel and the
-        // lasso all but disappears; zoomed into a cluster the same pen draws a
-        // fat band.  A cosmetic pen is measured in device pixels whatever the
-        // transform, which is what a UI overlay wants.
+        // cosmetic pen keeps the lasso a fixed device-pixel width at any zoom.
         selPen.setCosmetic(true);
         selPen.setWidth(selectionLineWidth);
         p.setPen(selPen);
         p.drawPolyline(selectionPolygon);
     }
 
-    // Watershed overlay (Shift+W preview mode).  Drawn last so it sits on
-    // top of points and any selection polygon.  Both the overlay image
-    // and the HUD text are repainted from scratch every paintEvent —
-    // never cached into the doublebuffer — so KlustersApp can re-tune
-    // sigma / threshold without forcing a full cluster redraw.
+    // Watershed overlay (Shift+W preview mode).  Drawn on top of points and any
+    // selection polygon; repainted every event, never cached into the buffer.
     if (!wsImage.isNull())
         paintWatershedOverlay(p, r);
 
-    // DipSplit post-commit HUD (Shift+D confirm window).  Just a text
-    // box at top-left — no scatter overlay, since the split has already
-    // happened and the new clusters are visible via normal rendering.
+    // DipSplit post-commit HUD (Shift+D confirm window).
     if (!dsHud.isEmpty())
         paintDipsplitPostCommitHud(p);
 
-    // Manual-lineage overlay (Shift+E) — median nodes + drift tree + region
-    // boundaries over the scatter.  Drawn last, on top, repainted every event
-    // (never cached into the doublebuffer), like the other live overlays.
+    // Manual-lineage overlay (Shift+E) -- median nodes + drift tree + region
+    // boundaries over the scatter, repainted every event.
     if (lineageOverlay_)
         paintLineageOverlay(p);
 }

@@ -428,7 +428,20 @@ protected:
      *  draws the current selection polygon and any active live-preview
      *  overlay (watershed or dipsplit) on top.
      */
-    void paintEvent ( QPaintEvent*) override;
+    // ── BufferedView hooks (the paint lifecycle lives in the base now) ────────
+    /**t-SNE / oblique embedding: paints the widget wholesale, bypassing the buffer.*/
+    bool paintDirect(QPainter& p) override;
+    /**Autoscale to the visible clusters before a REDRAW samples the world window.*/
+    void beforeRedraw() override;
+    /**Only the world window (no setViewport): the scatter draws at the buffer origin.*/
+    void setupWorldTransform(QPainter& buf) override;
+    /**Cached layer: axes + clusters (REDRAW) / just the changed clusters (UPDATE).*/
+    void paintBuffer(QPainter& painter, DrawContentsMode level) override;
+    /**Device-space content baked into the buffer: the time-axis information.*/
+    void paintBufferDeviceLayer(QPainter& painter) override;
+    /**Live overlays on the widget every paint: embed progress, selection polygon,
+     *  watershed, dipsplit HUD, lineage overlay.*/
+    void paintWidgetOverlays(QPainter& p) override;
     virtual void resizeEvent(QResizeEvent* event) override {
         //Trigger parent event
         ViewWidget::resizeEvent(event);
