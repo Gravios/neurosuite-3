@@ -239,11 +239,20 @@ public Q_SLOTS:
     void print(QPainter& printPainter,int width,int height, bool whiteBackground) override;
 
 protected:
-    /**
-  * Draws the contents of the frame
-  * @param p painter used to draw the contents
-  */
-    void paintEvent ( QPaintEvent *) override;
+    // ── BufferedView hooks (the paint lifecycle lives in the base now) ────────
+    /**Only paint once correlogram data has arrived.*/
+    bool renderReady() const override { return dataReady; }
+    /**Inset the viewport to leave room for the cluster-id legends (margins depend
+     *  on whether the left border is in view after a zoom).*/
+    QRect computeViewport() override;
+    /**The buffer has always been sized a touch larger than the viewport.*/
+    int bufferPad() const override { return 10; }
+    /**Cached layer: the correlograms (REDRAW) / just the changed pairs (UPDATE).*/
+    void paintBuffer(QPainter& painter, DrawContentsMode level) override;
+    /**Device-space content baked into the buffer: the cluster ids.*/
+    void paintBufferDeviceLayer(QPainter& painter) override;
+    /**Restore the zoom cursor after every paint.*/
+    void afterPaint(QPainter& widget) override;
     /**Treat the events sent by the CorrelationThread instances.
   * @param event custom event.
   */

@@ -251,83 +251,42 @@ void CorrelationView::spikesAddedToCluster(int clusterId,bool active){
 }
 
 
-void CorrelationView::paintEvent ( QPaintEvent *){
-    QPainter p(this);
-    if((drawContentsMode == UPDATE || drawContentsMode == REDRAW) && dataReady){
+QRect CorrelationView::computeViewport(){
+    const QRect contentsRec = contentsRect();
+    //Set the window (part of the world I want to show)
+    const QRect r((QRect)window);
+    //If the border is not visible (the user zoomed without taking it in his selection),
+    //the viewport and the contentsRec have the same size.
+    if(r.left() != 0)
+        return QRect(contentsRec.left(),contentsRec.top(),contentsRec.width()-10,contentsRec.height());
+    else
+        return QRect(contentsRec.left() + XMARGIN,contentsRec.top(),contentsRec.width() - XMARGIN,contentsRec.height() - 10);
+}
 
-        QRect contentsRec = contentsRect();
-        //Set the window (part of the world I want to show)
-        QRect r((QRect)window);
+void CorrelationView::paintBuffer(QPainter& painter, DrawContentsMode level){
+    if(level == REDRAW){
+        //Fill the double buffer with the background
+        doublebuffer.fill(palette().color(backgroundRole()));
 
-        //If the border is not visible (the user zoomed without taking it in his selection), the viewport and the contentsRec
-        //have the same size.
-        if(r.left() != 0)
-            viewport = QRect(contentsRec.left(),contentsRec.top(),contentsRec.width()-10,contentsRec.height());
-        else
-            viewport = QRect(contentsRec.left() + XMARGIN,contentsRec.top(),contentsRec.width() - XMARGIN,contentsRec.height() - 10);
-
-
-        //Resize the double buffer with the width and the height of the widget(QFrame)
-
-        if (viewport.size() != doublebuffer.size()) {
-            if(!doublebuffer.isNull()) {
-                QPixmap tmp = QPixmap( viewport.width() + 10,viewport.height() +10 );
-                tmp.fill( Qt::white );
-                QPainter painter2( &tmp );
-                painter2.drawPixmap( 0,0, doublebuffer );
-                painter2.end();
-                doublebuffer = tmp;
-            } else {
-                doublebuffer = QPixmap(viewport.width() + 10,viewport.height() + 10);
-            }
-        }
-
-
-        //Create a painter to paint on the double buffer
-        QPainter painter;
-        painter.begin(&doublebuffer);
-
-        painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
-
-        //Set the viewport (part of the device I want to write on).
-        //By default, the viewport is the same as the device's rectangle (contentsRec), taking a smaller
-        //one will ensure that the legends (cluster ids) will not ovelap a correlogram.
-        painter.setViewport(viewport);
-
-
-        if(drawContentsMode == REDRAW){
-            //Fill the double buffer with the background
-            doublebuffer.fill(palette().color(backgroundRole()));
-
-            //Paint all the correlograms in the pairs list (in the double buffer)
-            drawCorrelograms(painter,pairs);
-
-        }
-        //The update mode applies only when the color of a cluster has changed.
-        else if(drawContentsMode == UPDATE){
-            //Paint the correlograms contained in clusterUpdateList
-            drawCorrelograms(painter,pairUpdateList);
-
-            //Reset the pairUpdateList list for the next call.
-            pairUpdateList.clear();
-        }
-
-        //reset transformation due to setWindow and setViewport
-        painter.resetTransform() ;
-
-        //Draw the cluster Ids along the correlograms.
-        drawClusterIds(painter);
-
-        //Closes the painter on the double buffer
-        painter.end();
-
-        //Back to the default
-        drawContentsMode = REFRESH;
+        //Paint all the correlograms in the pairs list (in the double buffer)
+        drawCorrelograms(painter,pairs);
     }
-    //if drawContentsMode == REFRESH, we reuse the double buffer (pixmap)
-    
-    //Draw the double buffer (pixmap) by copying it into the widget device.
-    p.drawPixmap(0, 0, doublebuffer);
+    //The update mode applies only when the color of a cluster has changed.
+    else if(level == UPDATE){
+        //Paint the correlograms contained in pairUpdateList
+        drawCorrelograms(painter,pairUpdateList);
+
+        //Reset the pairUpdateList list for the next call.
+        pairUpdateList.clear();
+    }
+}
+
+void CorrelationView::paintBufferDeviceLayer(QPainter& painter){
+    //Draw the cluster Ids along the correlograms.
+    drawClusterIds(painter);
+}
+
+void CorrelationView::afterPaint(QPainter&){
     setCursor(zoomCursor);
 }
 

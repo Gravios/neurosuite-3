@@ -8,22 +8,24 @@
 #include "bufferedview.h"
 
 void BufferedView::ensureDoubleBuffer(){
-    // Track the widget's content rectangle and keep the buffer the same size,
-    // preserving the old contents on a resize (so an UPDATE paint over the old
-    // buffer stays valid).  Sized exactly to the viewport — no padding — so the
-    // size-equality check below actually skips the realloc when nothing changed.
-    viewport = contentsRect();
-    if (doublebuffer.size() == viewport.size())
+    // Track the view's viewport rectangle (the content rect by default; a view may
+    // inset it for legends) and keep the buffer that size (+ any historical pad),
+    // preserving the old contents on a resize so an UPDATE over the old buffer stays
+    // valid.  The size-equality check against `want` actually skips the realloc when
+    // nothing changed (even with a pad — comparing to want, not to the bare viewport).
+    viewport = computeViewport();
+    const QSize want(viewport.width() + bufferPad(), viewport.height() + bufferPad());
+    if (doublebuffer.size() == want)
         return;
     if (!doublebuffer.isNull()) {
-        QPixmap tmp(viewport.size());
+        QPixmap tmp(want);
         tmp.fill(Qt::white);
         QPainter p(&tmp);
         p.drawPixmap(0, 0, doublebuffer);
         p.end();
         doublebuffer = tmp;
     } else {
-        doublebuffer = QPixmap(viewport.size());
+        doublebuffer = QPixmap(want);
     }
 }
 

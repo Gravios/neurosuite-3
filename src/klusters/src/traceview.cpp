@@ -447,6 +447,10 @@ void TraceView::showHideLabels(bool show){
     update();
 }
 
+// TraceView keeps its OWN paintEvent (it does not use the BufferedView template): the
+// paint path has an init/resize and event-provider-fetch prelude with early returns,
+// repaints only on REDRAW, and applies correctZoom() — too divergent to fold into the
+// shared lifecycle.  It is still a BufferedView (invalidate() + shared buffer).  (paint-refactor-plan.md)
 void TraceView::paintEvent ( QPaintEvent*){
     bool isInitAndResized = false;
     QPainter p(this);

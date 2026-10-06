@@ -61,6 +61,12 @@ protected:
     virtual bool paintDirect(QPainter& /*widget*/) { return false; }
     /** Run just before a REDRAW samples the world window (e.g. autoscale). */
     virtual void beforeRedraw() {}
+    /** The device rectangle the world is mapped into — the default is the whole
+     *  content rect; a view insets it to leave room for axis/id legends. */
+    virtual QRect computeViewport() { return contentsRect(); }
+    /** Extra pixels added around the buffer pixmap beyond the viewport (one view
+     *  historically oversized its buffer; kept so its layout is preserved exactly). */
+    virtual int bufferPad() const { return 0; }
     /** Install the world→device transform on the buffer painter. */
     virtual void setupWorldTransform(QPainter& buf);
     /** Draw the cached layer: fill the background and paint content on REDRAW;

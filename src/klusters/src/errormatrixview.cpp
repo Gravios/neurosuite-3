@@ -707,6 +707,11 @@ void ErrorMatrixView::resetPanZoom()
     emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
 }
 
+// ErrorMatrixView keeps its OWN paintEvent (it does not use the BufferedView
+// template): it is a device-coordinate matrix with no world window, repaints only on
+// REDRAW, and sizes its buffer to the full widget — a different model from the
+// scatter/waveform views.  It is still a BufferedView, so it gains invalidate() and the
+// shared doublebuffer member; only the template lifecycle does not fit.  (paint-refactor-plan.md)
 void ErrorMatrixView::paintEvent ( QPaintEvent*){
     QPainter p(this);
     if(drawContentsMode == REDRAW){
