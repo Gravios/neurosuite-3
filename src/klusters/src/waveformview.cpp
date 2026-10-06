@@ -492,7 +492,7 @@ void WaveformView::drawWaveforms(QPainter& painter,const QList<int>& clusterList
             QPolygon min;
             for(int i = 0; i < nbSamplesInWaveform; ++i){
                 for(int j = 0; j < nbchannels; ++j){
-                    Y = Y0 - channelPositions[j] * (YsizeForMaxAmp + Yspace);
+                    Y = channelBaselineY(j);
                     long meanValue = waveformIterator->nextMeanValue();
                     //The point is drawn in the QT coordinate system where the Y axis in oriented downwards
                     //The value receive from the iterator is already inverted.
@@ -533,7 +533,7 @@ void WaveformView::drawWaveforms(QPainter& painter,const QList<int>& clusterList
                 QPolygon spike(nbchannels * nbSamplesInWaveform);
                 for(int i = 0; i < nbSamplesInWaveform; ++i){
                     for(int j = 0; j < nbchannels; ++j){
-                        Y = Y0 - channelPositions[j] * (YsizeForMaxAmp + Yspace);
+                        Y = channelBaselineY(j);
                         //The point is drawn in the QT coordinate system where the Y axis in oriented downwards
                         //The value receive from the iterator is already inverted.
                         spike.setPoint((j*nbSamplesInWaveform) + i, X + x,-Y + static_cast<long>(waveformIterator->nextSpike() * Yfactor));
@@ -550,7 +550,7 @@ void WaveformView::drawWaveforms(QPainter& painter,const QList<int>& clusterList
         //Delete the waveform iterator received for the current cluster
         delete waveformIterator;
         //Reinitialize the Y,the starting ordinate
-        Y = Y0 - channelPositions[0] * (YsizeForMaxAmp + Yspace);
+        Y = channelBaselineY(0);
         //Shift X to the starting abscissa of the next cluster if there is not
         //to find the specific position of the next cluster (case treated at the beging of the loop)
         if(!specificPosition)X += clusterShift;
@@ -591,7 +591,6 @@ void WaveformView::clearResidualPreview(){
 void WaveformView::drawResidualPreview(QPainter& painter){
     if(!hasResidualPreview_ || rpChan_ <= 0 || rpSamp_ <= 0) return;
     const int need    = rpChan_ * rpSamp_;
-    const int step    = YsizeForMaxAmp + Yspace;
     const int nChShow = std::min(rpChan_, nbchannels);
     // One common amplitude scale for all three traces, independent of the user's
     // data gain: the dominant-channel mean fills ~75% of a channel band (like the
@@ -611,9 +610,7 @@ void WaveformView::drawResidualPreview(QPainter& painter){
         if(static_cast<int>(tr.size()) < need) return;
         painter.setPen(QPen(color));
         for(int ch = 0; ch < nChShow; ++ch){
-            const int cpos = (ch < static_cast<int>(channelPositions.size()))
-                                 ? channelPositions[ch] : ch;
-            const long Y = Y0 - static_cast<long>(cpos) * step;
+            const long Y = channelBaselineY(ch);
             QPolygon poly(rpSamp_);
             long x = 0;
             for(int i = 0; i < rpSamp_; ++i){
@@ -796,7 +793,7 @@ void WaveformView::drawTemplateBand(QPainter& painter){
     int x = 0;
     for(int i = 0; i < nbSamplesInWaveform; ++i){
         for(int j = 0; j < nbchannels; ++j){
-            const long Y = Y0 - channelPositions[j] * (YsizeForMaxAmp + Yspace);
+            const long Y = channelBaselineY(j);
             const long meanValue = it->nextMeanValue();           // already inverted
             const long stDev     = it->nextStDeviationValue();
             mn.putPoints((j*nbSamplesInWaveform) + i, 1, X + x, -Y + static_cast<long>((meanValue - stDev) * Yfactor));
@@ -822,7 +819,6 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
     // convention as drawResidualPreview (raw negated on the point; if it renders
     // upside-down, flip that sign on the marked line).
     if(tpTemplates_.empty() || tpChan_ <= 0 || tpSamp_ <= 0) return;
-    const int step    = YsizeForMaxAmp + Yspace;
     const int nChShow = std::min(tpChan_, nbchannels);
     const int alpha   = tpEdit_ ? 255 : 90;              // front vs faint underlay
     const int need    = tpChan_ * tpSamp_;
@@ -854,8 +850,7 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
         QPen pen(c); pen.setWidth(tpEdit_ ? 2 : 1);
         painter.setPen(pen);
         for(int ch = 0; ch < nChShow; ++ch){
-            const int cpos = (ch < static_cast<int>(channelPositions.size())) ? channelPositions[ch] : ch;
-            const long Y = Y0 - static_cast<long>(cpos) * step;
+            const long Y = channelBaselineY(ch);
             QPolygon poly(tpSamp_);
             long x = 0;
             for(int i = 0; i < tpSamp_; ++i){
@@ -879,8 +874,7 @@ void WaveformView::drawTemplatePreview(QPainter& painter){
         painter.setPen(Qt::NoPen);
         painter.setBrush(fill);
         for(int ch = 0; ch < nChShow; ++ch){
-            const int cpos = (ch < static_cast<int>(channelPositions.size())) ? channelPositions[ch] : ch;
-            const long Y = Y0 - static_cast<long>(cpos) * step;
+            const long Y = channelBaselineY(ch);
             QPolygon band(2 * tpSamp_);
             long x = 0;
             for(int i = 0; i < tpSamp_; ++i){
@@ -1193,7 +1187,7 @@ int WaveformView::channelAtWorldY(long worldY) const{
     // so worldY + Y0 == channelPositions[j] * step at the baseline.  Round to
     // the nearest band and reject anything past its half-width (the gap
     // between two channels belongs to neither).
-    const int step = YsizeForMaxAmp + Yspace;
+    const int step = channelStep();
     if(step <= 0 || nbchannels <= 0) return -1;
     const long rel = worldY + Y0;
     // Half-open bands: position p owns rel in [p*step - step/2, p*step + step/2),
@@ -1214,7 +1208,7 @@ void WaveformView::drawChannelSelection(QPainter& painter){
     // Shade the full width of each selected channel's band.  Drawn before the
     // waveforms so the traces stay on top.
     const QRect r((QRect)window);
-    const int step = YsizeForMaxAmp + Yspace;
+    const int step = channelStep();
     QColor shade = palette().color(backgroundRole()).lightness() > 127
                        ? QColor(0, 0, 0, 30)      // light background -> darken
                        : QColor(255, 255, 255, 40);   // dark background -> lighten
@@ -1223,7 +1217,7 @@ void WaveformView::drawChannelSelection(QPainter& painter){
     painter.setBrush(shade);
     for(int channel : pendingChannelSelection){
         if(channel < 0 || channel >= nbchannels) continue;
-        const long baseline = -(Y0 - static_cast<long>(channelPositions[channel]) * step);
+        const long baseline = -channelBaselineY(channel);
         painter.drawRect(QRect(r.left(), static_cast<int>(baseline - step / 2),
                                r.width(), step));
     }

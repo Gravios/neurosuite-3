@@ -443,6 +443,21 @@ private:
      * -(Y0 - channelPositions[j] * (YsizeForMaxAmp + Yspace)).*/
     int channelAtWorldY(long worldY) const;
 
+    // ── per-channel layout geometry (Tier 3 of the paint refactor) ───────────
+    // The vertical pitch between channel baselines, and a channel's baseline world
+    // Y, were open-coded identically in every draw method (drawWaveforms,
+    // drawChannelSelection, drawResidualPreview, drawTemplate{Band,Preview}, the
+    // channel-shade pass).  Centralised here so the convention lives in one place;
+    // the fallback (`chan` when it has no explicit position) matches what the
+    // preview paths already did.  Callers still apply their own sign and amplitude
+    // scale (which legitimately differ between the spike, residual and template paths).
+    int  channelStep() const { return YsizeForMaxAmp + Yspace; }
+    long channelBaselineY(int chan) const {
+        const int cpos = (chan >= 0 && chan < static_cast<int>(channelPositions.size()))
+                             ? channelPositions[chan] : chan;
+        return Y0 - static_cast<long>(cpos) * channelStep();
+    }
+
     /**Shade the bands of the channels in pendingChannelSelection.*/
     void drawChannelSelection(QPainter& painter);
 
