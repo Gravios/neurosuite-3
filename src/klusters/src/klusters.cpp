@@ -2226,41 +2226,15 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
-    // ── Shift+O — oblique (template-axis) projection of the selected clusters ─
-    // A modified combo, so it does not collide with the palette type-ahead the
-    // bare F/A block above has to claim, nor with bare O (the overlay toggle).
+    // ── Resolver-dispatched cluster-view keys (plan P0d): Shift+O oblique,
+    //    Shift+E lineage overlay ─────────────────────────────────────────────
+    // These two modified combos moved onto the input registry; tryViewKeyCommand()
+    // resolves them (and consumes exactly when the old branches did — see their
+    // enabled() in registerInputBindings()).  Placed where the inline blocks were, so
+    // ordering relative to the surrounding keys is unchanged.  More eventFilter keys
+    // migrate here over time.
     if(event->type() == QEvent::KeyPress){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_O && ke->modifiers() == Qt::ShiftModifier
-           && doc && !focusIsInTextInput()){
-            if(ClusterView* cv = activeClusterView()){
-                cv->toggleObliquePresentation();
-                return true;
-            }
-        }
-    }
-
-    // ── Shift+E — manual-lineage overlay on the feature scatter (plan §11) ─
-    // A modified combo (bare E stays with the palette type-ahead), dispatched
-    // here so it is reachable from palette focus, like Shift+O above.
-    if(event->type() == QEvent::KeyPress){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_E && ke->modifiers() == Qt::ShiftModifier
-           && doc && !focusIsInTextInput()){
-            if(!configuration().getTemplatesMode()){
-                if(statusBar()) statusBar()->showMessage(
-                    tr("Templates mode is off (Preferences ▸ Display)"), 4000);
-                return true;
-            }
-            if(ClusterView* cv = activeClusterView()){
-                cv->toggleLineageOverlay();
-                // Entering edit mode: a plain left click marks lineage nodes, so any
-                // manual-lasso tool (New Cluster / Split / Delete…) must be off — the
-                // node gesture only arms under the ZOOM tool.  Reset it on entry.
-                if(cv->lineageOverlayActive()) slotZoom();
-                return true;
-            }
-        }
+        if(tryViewKeyCommand(static_cast<QKeyEvent*>(event))) return true;
     }
 
     // ── Enter / Esc — commit or discard a pending lasso's residual preview ─
@@ -2420,8 +2394,10 @@ void KlustersApp::registerActionCommand(const QString& id, const QString& catego
     c.category = category;
     c.kind     = input::Kind::Action;
     c.defaultChord = input::chordFromKeySequence(action->shortcut());
-    // The command mirrors the QAction: Qt still dispatches the live shortcut, so
-    // enabled()/invoke() exist for the (future) Preferences page + cheat-sheet.
+    // The command mirrors the QAction: Qt still dispatches the live shortcut, so it is
+    // external (resolve() skips it, no double-fire); enabled()/invoke() exist for the
+    // (future) Preferences page + cheat-sheet and for pushing a rebind back.
+    c.external = true;
     c.enabled  = [action](const input::Ctx&){ return action->isEnabled(); };
     c.invoke   = [action](const input::Ctx&){ if(action->isEnabled()) action->trigger(); };
     input::registry().addCommand(c);
@@ -2448,6 +2424,58 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("action.deleteNoisy"),    QStringLiteral("Actions"), mDeleteNoisy);
     registerActionCommand(QStringLiteral("action.groupClusters"),  QStringLiteral("Actions"), mGroupeClusters);
 
+    // ── view.cluster scope: resolver-dispatched cluster-view keys (plan P0d) ──
+    // Common gate: a document is open and focus is not in a text field (so the letters
+    // stay typeable in the spin boxes).  Each command's enabled() adds the rest, so the
+    // exact consume semantics of the old eventFilter branches are preserved.  These are
+    // dispatched from eventFilter via tryViewKeyCommand(), NOT by Qt — the first custom
+    // eventFilter keys moved onto the registry (more follow in later patches).
+    reg.addScope({ QStringLiteral("view.cluster"), input::Layer::ViewType,
+        [this](const input::Ctx&){ return doc && !focusIsInTextInput(); } });
+    {   // Shift+O — oblique (template-axis) projection of the selected clusters.
+        // Only claims the key when a cluster view exists (else it falls through, as before).
+        input::Command c;
+        c.id       = QStringLiteral("cluster.obliqueProjection");
+        c.scopeId  = QStringLiteral("view.cluster");
+        c.label    = tr("Oblique projection");
+        c.category = tr("Cluster view");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_O, Qt::ShiftModifier);
+        c.enabled  = [this](const input::Ctx&){ return activeClusterView() != nullptr; };
+        c.invoke   = [this](const input::Ctx&){
+            if(ClusterView* cv = activeClusterView()) cv->toggleObliquePresentation();
+        };
+        reg.addCommand(c);
+    }
+    {   // Shift+E — manual-lineage overlay on the feature scatter (plan §11).  Claims
+        // the key when templates-mode is off (to explain) OR a cluster view exists —
+        // exactly the old branch's consume rule.
+        input::Command c;
+        c.id       = QStringLiteral("cluster.lineageOverlay");
+        c.scopeId  = QStringLiteral("view.cluster");
+        c.label    = tr("Lineage overlay (edit mode)");
+        c.category = tr("Cluster view");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_E, Qt::ShiftModifier);
+        c.enabled  = [this](const input::Ctx&){
+            return !configuration().getTemplatesMode() || activeClusterView() != nullptr;
+        };
+        c.invoke   = [this](const input::Ctx&){
+            if(!configuration().getTemplatesMode()){
+                if(statusBar()) statusBar()->showMessage(
+                    tr("Templates mode is off (Preferences ▸ Display)"), 4000);
+                return;
+            }
+            if(ClusterView* cv = activeClusterView()){
+                cv->toggleLineageOverlay();
+                // Entering edit mode: a plain left click marks lineage nodes, so any
+                // manual-lasso tool must be off — the node gesture only arms under ZOOM.
+                if(cv->lineageOverlayActive()) slotZoom();
+            }
+        };
+        reg.addCommand(c);
+    }
+
     // Apply the persisted override diffs (Configuration read them from QSettings at
     // startup).  Only ids we actually registered and that parse to a valid chord.
     const QMap<QString,QString> ov = configuration().getInputBindingOverrides();
@@ -2468,6 +2496,23 @@ void KlustersApp::applyInputOverridesToActions()
         if(it.value() && reg.hasOverride(it.key()))
             it.value()->setShortcut(input::keySequenceFromChord(reg.effectiveChord(it.key())));
     }
+}
+
+bool KlustersApp::tryViewKeyCommand(QKeyEvent* ke)
+{
+    // Resolve a key press against the registry's resolver-dispatched commands (the
+    // external QAction mirrors are skipped by resolve(), so this never double-fires a
+    // menu shortcut).  ctx.view is the view the command acts on; the commands close
+    // over `this` for their gating + action.  Returns true when a command claims the
+    // key.  Currently stands in for the Shift+O / Shift+E eventFilter branches; more
+    // keys move onto the registry over time (input-remapping plan P0d).
+    input::Ctx ctx;
+    ctx.view  = activeClusterView();
+    ctx.event = ke;
+    const input::Command* cmd = input::registry().resolve(input::chordFromEvent(ke), ctx);
+    if(!cmd) return false;
+    if(cmd->invoke) cmd->invoke(ctx);
+    return true;
 }
 
 void KlustersApp::buildFocusZones()

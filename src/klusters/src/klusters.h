@@ -70,6 +70,7 @@ class ClusterView;     // for watershed live-preview overlay
 class SaveThread;
 class PrefDialog;
 class QShortcut;       // for dipsplit post-commit Esc/Enter shortcuts
+class QKeyEvent;       // for tryViewKeyCommand (input-remapping plan P0d)
 class ProcessWidget;
 class QProgressBar;
 class QRecentFileAction;
@@ -738,6 +739,11 @@ private:
      *  shortcut, so Qt dispatches the rebound key.  Non-overridden actions keep their
      *  shipped shortcut.  Called at startup and (later) after a Preferences rebind. */
     void applyInputOverridesToActions();
+    /** Resolve a key press against the registry's resolver-dispatched commands (skips
+     *  the external QAction mirrors) and invoke the match.  Returns true if a command
+     *  claimed the key.  Called from eventFilter for the ported cluster-view keys
+     *  (Shift+O / Shift+E so far). */
+    bool tryViewKeyCommand(QKeyEvent* ke);
 
     // Plugins (descriptor discovery; read-only listing in v1).
     PluginRegistry mPluginRegistry;

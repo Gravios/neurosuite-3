@@ -31,6 +31,13 @@ struct Command {
     Kind    kind = Kind::Action;
     Chord   defaultChord;
 
+    // A mirror of something Qt already dispatches (a menu/toolbar QAction, whose
+    // shortcut Qt fires directly).  It belongs in the registry so it shows in
+    // Preferences + the cheat-sheet and is rebindable (the override is pushed back
+    // onto the QAction), but it must NOT be resolver-dispatched — resolve() skips it,
+    // so the event path never double-fires it alongside Qt.
+    bool    external = false;
+
     std::function<bool(const Ctx&)> enabled;   // "when" predicate; null == always enabled
     std::function<void(const Ctx&)> invoke;    // Action: perform; Gesture: begin
 };

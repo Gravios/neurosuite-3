@@ -222,6 +222,34 @@ int main()
         CHECK(keySequenceFromChord(Chord::button(Qt::LeftButton)).isEmpty());
     }
 
+    // ── external commands are mirrored but never resolver-dispatched ─────
+    {
+        BindingRegistry reg;
+        reg.addScope({ QStringLiteral("app"), Layer::App, nullptr });
+        Command c;
+        c.id = QStringLiteral("app.ext");
+        c.scopeId = QStringLiteral("app");
+        c.defaultChord = Chord::key(Qt::Key_S, Qt::ControlModifier);
+        c.external = true;                 // Qt dispatches it; resolve() must skip it
+        bool ran = false;
+        c.invoke = [&ran](const Ctx&){ ran = true; };
+        reg.addCommand(c);
+        CHECK(reg.resolve(Chord::key(Qt::Key_S, Qt::ControlModifier)) == nullptr);
+        CHECK(!ran);
+        // ...but it is still in the registry (visible to Preferences / cheat-sheet).
+        CHECK(reg.command(QStringLiteral("app.ext")) != nullptr);
+
+        // A non-external command on the same chord still resolves (it is not shadowed
+        // by the external one — external simply drops out of resolution).
+        Command live;
+        live.id = QStringLiteral("app.live");
+        live.scopeId = QStringLiteral("app");
+        live.defaultChord = Chord::key(Qt::Key_S, Qt::ControlModifier);
+        reg.addCommand(live);
+        const Command* r = reg.resolve(Chord::key(Qt::Key_S, Qt::ControlModifier));
+        CHECK(r && r->id == QStringLiteral("app.live"));
+    }
+
     if (g_fail == 0) std::printf("bindingregistry_test: OK\n");
     return g_fail == 0 ? 0 : 1;
 }
