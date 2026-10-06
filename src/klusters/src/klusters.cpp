@@ -2013,30 +2013,10 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         if(childPanel && childPanel->isVisible() && !editConsolidationLock
            && dispatchHierarchyKey(ke->key(), ke->modifiers()))
             return true;
-        // Ctrl+1 — new cluster mode
-        // Ctrl, not a bare digit: this filter is installed on the application, so
-        // a bare "1"/"2" was swallowed here before the focused widget saw it —
-        // which made those two digits untypeable in the parameter bar's Bin size
-        // and Duration boxes.
-        if(ke->key() == Qt::Key_1 && ctrlHeld
-           && !isInit && doc && activeView() && !editConsolidationLock){
-            slotSingleNew();
-            return true;
-        }
-        // Ctrl+2 — split clusters mode
-        if(ke->key() == Qt::Key_2 && ctrlHeld
-           && !isInit && doc && activeView() && !editConsolidationLock){
-            slotMultipleNew();
-            return true;
-        }
-
-        // "E" — step through the open matrix tabs (Error → Template →
-        // Residual → Drift → Error)
-        if(ke->key() == Qt::Key_E && ke->modifiers() == Qt::NoModifier
-           && !isInit && doc && activeView()){
-            activeView()->toggleMatrixTab();
-            return true;
-        }
+        // (Ctrl+1 new-cluster, Ctrl+2 split-clusters, E next-matrix-tab moved onto the
+        //  input registry — resolved by the dispatch block below.  See tools.newCluster,
+        //  tools.splitClusters and view.matrixTab in registerInputBindings.  ctrlHeld is
+        //  kept: the Left/Right tab-cycle handlers below still use it.)
 
         // ── Tab / Shift+Tab — move focus between windows & fields ───────────
         // Tab advances (Shift+Tab reverses) across the focus-zone ring: cluster
@@ -2149,7 +2129,8 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     // ── Resolver-dispatched keys (plan P0d) ──────────────────────────────────
     // The ported eventFilter keys resolve here — Shift+O (oblique), Shift+E (lineage
     // overlay), F (t-SNE), A (autoscale), T (move selection to end), V (child-scoped
-    // matrices), S (palette toggle).  tryViewKeyCommand() claims the key at
+    // matrices), S (palette toggle), Ctrl+1 / Ctrl+2 (new / split-cluster tools),
+    // E (next matrix tab).  tryViewKeyCommand() claims the key at
     // ShortcutOverride (so the palette's type-ahead and any QAction shortcut cannot eat
     // the bare letters) and invokes it at KeyPress, consuming exactly when the old inline
     // branches did — their gating lives in the commands' enabled() (registerInputBindings).
@@ -2369,6 +2350,44 @@ void KlustersApp::registerInputBindings()
             if(!target) target = clusterPalette;
             if(target) target->toggleCurrentSelection();
         };
+        reg.addCommand(c);
+    }
+    {   // Ctrl+1 — enter the New Cluster tool (no QAction owns this chord)
+        input::Command c;
+        c.id       = QStringLiteral("tools.newCluster");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("New-cluster mode");
+        c.category = tr("Tools");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_1, Qt::ControlModifier);
+        c.enabled  = [this](const input::Ctx&){
+            return !isInit && doc && activeView() && !editConsolidationLock; };
+        c.invoke   = [this](const input::Ctx&){ slotSingleNew(); };
+        reg.addCommand(c);
+    }
+    {   // Ctrl+2 — enter the Split Clusters tool
+        input::Command c;
+        c.id       = QStringLiteral("tools.splitClusters");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Split-clusters mode");
+        c.category = tr("Tools");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_2, Qt::ControlModifier);
+        c.enabled  = [this](const input::Ctx&){
+            return !isInit && doc && activeView() && !editConsolidationLock; };
+        c.invoke   = [this](const input::Ctx&){ slotMultipleNew(); };
+        reg.addCommand(c);
+    }
+    {   // E — step through the open matrix tabs (Error -> Template -> Residual -> Drift)
+        input::Command c;
+        c.id       = QStringLiteral("view.matrixTab");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Next matrix tab");
+        c.category = tr("View");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_E);
+        c.enabled  = [this](const input::Ctx&){ return !isInit && doc && activeView(); };
+        c.invoke   = [this](const input::Ctx&){ if(activeView()) activeView()->toggleMatrixTab(); };
         reg.addCommand(c);
     }
 
