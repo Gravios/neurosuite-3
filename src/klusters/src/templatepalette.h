@@ -59,7 +59,7 @@ public:
 
 Q_SIGNALS:
     void classSelected(int col);                 ///< list row changed -> this class is active/primary
-    void obliqueRequested(const QList<int>& cols);///< `s` on >=1 selected class(es) -> pin oblique basis
+    void obliqueRequested(const QList<int>& cols);///< pin oblique basis (now reached via Actions > Set Oblique Basis...; signal kept for a future palette binding)
     void newClassRequested();                    ///< "New" clicked -> KlustersApp gathers the selection
     void classDeleted(int col);                  ///< a class was tombstoned -> the overlay drops its nodes
     void classesChanged();                       ///< a create/delete here -> the tab should reload
@@ -67,6 +67,9 @@ Q_SIGNALS:
 
 protected:
     void keyPressEvent(QKeyEvent* e) override;
+    /** Intercept `s` on the inner list BEFORE QListWidget's type-ahead swallows it,
+     *  so the primary (★) toggle works while the list has focus. */
+    bool eventFilter(QObject* obj, QEvent* ev) override;
 
 private Q_SLOTS:
     void onRowChanged();
@@ -77,6 +80,7 @@ private Q_SLOTS:
 private:
     void rebuild();
     void updateButtons();
+    void togglePrimary(int col);   ///< mark `col` primary (★), or unmark it if already primary
 
     QLabel*      header_ = nullptr;
     QListWidget* list_   = nullptr;

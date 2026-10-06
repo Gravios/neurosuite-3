@@ -25,11 +25,11 @@ TemplatePalette::TemplatePalette(QWidget* parent)
     v->addWidget(header_);
 
     list_ = new QListWidget(this);
-    list_->setSelectionMode(QAbstractItemView::ExtendedSelection);   // `s` can pin several
-    list_->setToolTip(tr("The template classes (.eap columns).  Select one to make it the "
-                         "active/primary class the Shift+E lineage overlay edits; press s to "
-                         "pin the selected class(es) as the oblique basis.  New builds a class "
-                         "from the shown clusters."));
+    list_->setSelectionMode(QAbstractItemView::ExtendedSelection);   // multi-select navigation
+    list_->installEventFilter(this);   // catch `s` before the list's type-ahead (see eventFilter)
+    list_->setToolTip(tr("The template classes (.eap columns).  Select one and press s (or "
+                         "click it) to mark/unmark it the active/primary class the Shift+E "
+                         "lineage overlay edits.  New builds a class from the shown clusters."));
     v->addWidget(list_, 1);
 
     auto* btns = new QHBoxLayout;
@@ -143,9 +143,15 @@ void TemplatePalette::onRowChanged()
 void TemplatePalette::onItemClicked(QListWidgetItem* item)
 {
     if (!item) return;
-    const int col = item->data(Qt::UserRole).toInt();
-    // Click a non-primary class to MARK it primary (★); click the current primary
-    // again to UNMARK it — no primary means no overlay downstream.
+    togglePrimary(item->data(Qt::UserRole).toInt());
+}
+
+void TemplatePalette::togglePrimary(int col)
+{
+    if (col < 0) return;
+    // Mark a non-primary class primary (★); toggle the current primary again to
+    // UNMARK it — no primary means no overlay downstream.  Shared by the click
+    // (onItemClicked) and the `s` key (keyPressEvent).
     const int newPrimary = (classStore_.primary() == col) ? -1 : col;
     classStore_.setPrimary(newPrimary);
     rebuild();                          // refresh the ★
@@ -191,17 +197,32 @@ void TemplatePalette::onDeleteClicked()
 
 void TemplatePalette::keyPressEvent(QKeyEvent* e)
 {
-    // `s` pins the selected class(es) as the oblique basis (KlustersApp maps the
-    // columns to their provenance clusters and validates).
-    if (loaded_ && (e->key() == Qt::Key_S) && e->modifiers() == Qt::NoModifier) {
-        QList<int> cols;
-        const auto sel = list_->selectedItems();
-        for (const QListWidgetItem* it : sel) {
-            const int c = it->data(Qt::UserRole).toInt();
-            if (!cols.contains(c)) cols.append(c);
-        }
-        if (cols.isEmpty() && selectedClass() >= 0) cols.append(selectedClass());
-        if (!cols.isEmpty()) { Q_EMIT obliqueRequested(cols); e->accept(); return; }
+    // `s` marks/unmarks the selected class as the PRIMARY (★) — the same toggle a
+    // click performs, so it works while the list has focus (where the QListWidget
+    // would otherwise swallow the key for type-ahead).  Oblique-basis pinning, which
+    // `s` used to do, is reached from Actions > Set Oblique Basis... (and the Template
+    // Library's "pin selected").
+    if (loaded_ && (e->key() == Qt::Key_S) && e->modifiers() == Qt::NoModifier
+        && selectedClass() >= 0) {
+        togglePrimary(selectedClass());
+        e->accept();
+        return;
     }
     QWidget::keyPressEvent(e);
+}
+
+bool TemplatePalette::eventFilter(QObject* obj, QEvent* ev)
+{
+    // `s` on the inner list toggles the selected class's PRIMARY (★).  Caught here,
+    // ahead of QListWidget's type-ahead search, so it works while the list has focus
+    // (the usual case — keyPressEvent above covers the rare container-focus case).
+    if (obj == list_ && ev->type() == QEvent::KeyPress) {
+        QKeyEvent* ke = static_cast<QKeyEvent*>(ev);
+        if (loaded_ && ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier
+            && selectedClass() >= 0) {
+            togglePrimary(selectedClass());
+            return true;   // consumed before type-ahead
+        }
+    }
+    return QWidget::eventFilter(obj, ev);
 }
