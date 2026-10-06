@@ -2128,39 +2128,18 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             // for cluster navigation, polygon nudge, etc.
         }
     }
-    // ── S key: palette cluster toggle ──────────────────────────────────────
-    // Qt::Key_S — palette cluster toggle.  When the cluster palette has
-    // focus, S toggles the current selection instead of being routed to
-    // QListWidget's default handler (which would do nothing useful for S).
-    // Intercepting at ShortcutOverride first ensures no future global
-    // QAction with shortcut S could swallow the key before the palette
-    // sees it.
+    // ── G — adaptive-merge claim (child view, palette focus) ────────────────
+    // G is the flat group-clusters QAction globally, but the adaptive merge in the
+    // dual child view when a palette has focus (handled by dispatchHierarchyKey at
+    // KeyPress, above); claim its ShortcutOverride here so the group-clusters QAction
+    // doesn't fire first.  (S — the palette cluster toggle — moved onto the input
+    // registry; resolved by the dispatch block below.  See
+    // clusters.togglePaletteSelection in registerInputBindings.)
     if(event->type() == QEvent::ShortcutOverride){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier
-           && paletteHasFocus()){
-            ke->accept(); // claim the shortcut so the QAction doesn't fire
-            return true;
-        }
-        // G is the flat group-clusters action globally, but the adaptive merge in
-        // the dual child view when a palette has focus; claim it there so the
-        // group-clusters QAction doesn't fire.  (M used to be claimed here for the
-        // merge; it is now left to the mean-presentation toggle.)
         if(ke->key() == Qt::Key_G && ke->modifiers() == Qt::NoModifier
            && childPanel && childPanel->isVisible() && paletteHasFocus()){
             ke->accept();
-            return true;
-        }
-    }
-    if(event->type() == QEvent::KeyPress){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_S && ke->modifiers() == Qt::NoModifier
-           && paletteHasFocus()){
-            // s marks the focused palette's current item: parents in the main
-            // palette, children when the child palette holds focus.
-            ClusterPalette* target = focusedChildPalette();
-            if(!target) target = clusterPalette;
-            target->toggleCurrentSelection();
             return true;
         }
     }
@@ -2170,12 +2149,12 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     // ── Resolver-dispatched keys (plan P0d) ──────────────────────────────────
     // The ported eventFilter keys resolve here — Shift+O (oblique), Shift+E (lineage
     // overlay), F (t-SNE), A (autoscale), T (move selection to end), V (child-scoped
-    // matrices).  tryViewKeyCommand() claims the key at ShortcutOverride (so the
-    // palette's type-ahead and any QAction shortcut cannot eat the bare letters) and
-    // invokes it at KeyPress, consuming exactly when the old inline branches did — their
-    // gating lives in the commands' enabled() (registerInputBindings).  S and the modal
-    // keys (Enter/Esc/D, Up/Down, PageUp/Down) are still inline below/above and migrate
-    // over time; ordering relative to them is unchanged.
+    // matrices), S (palette toggle).  tryViewKeyCommand() claims the key at
+    // ShortcutOverride (so the palette's type-ahead and any QAction shortcut cannot eat
+    // the bare letters) and invokes it at KeyPress, consuming exactly when the old inline
+    // branches did — their gating lives in the commands' enabled() (registerInputBindings).
+    // The modal keys (Enter/Esc/D, Up/Down, PageUp/Down) are still inline below/above and
+    // migrate over time; ordering relative to them is unchanged.
     if(event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress){
         if(tryViewKeyCommand(static_cast<QKeyEvent*>(event),
                              event->type() == QEvent::ShortcutOverride))
@@ -2371,6 +2350,24 @@ void KlustersApp::registerInputBindings()
                                   .arg(doc->matrixScopeParents().size())
                             : tr("Matrices: children of cluster %1.").arg(doc->curatedParent()))
                        : tr("Matrices: all clusters."), 3000);
+        };
+        reg.addCommand(c);
+    }
+    {   // S — toggle the focused palette's current selection (parents in the main
+        // palette, children when a child palette holds focus).  Gated on palette focus,
+        // so the letter stays available to the list's type-ahead otherwise.
+        input::Command c;
+        c.id       = QStringLiteral("clusters.togglePaletteSelection");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Toggle palette selection");
+        c.category = tr("Clusters");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_S);
+        c.enabled  = [this](const input::Ctx&){ return paletteHasFocus(); };
+        c.invoke   = [this](const input::Ctx&){
+            ClusterPalette* target = focusedChildPalette();
+            if(!target) target = clusterPalette;
+            if(target) target->toggleCurrentSelection();
         };
         reg.addCommand(c);
     }
