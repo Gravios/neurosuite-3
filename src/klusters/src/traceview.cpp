@@ -58,10 +58,10 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
                      QList<int>& channelOffsets,QList<int>& gains,const QList<int>& skippedChannels,QWidget* parent, const char* name,const QColor& backgroundColor,
                      QStatusBar* statusBar,
                      int minSize,int maxSize,int windowTopLeft,int windowBottomRight,int border):
-    BaseFrame(10,0,parent,name,backgroundColor,minSize,maxSize,windowTopLeft,windowBottomRight,border),
+    BufferedView(10,0,parent,name,backgroundColor,minSize,maxSize,windowTopLeft,windowBottomRight,border),
     greyScaleMode(greyScale),statusBar(statusBar),tracesProvider(tracesProvider),
     multiColumns(multiColumns),verticalLines(verticalLines),raster(raster),waveforms(waveforms),dataReady(false),data(),
-    channelOffsets(channelOffsets),gains(gains),channelColors(channelColors),groupsChannels(groupsChannels),channelsGroups(channelsGroups),doublebuffer(),
+    channelOffsets(channelOffsets),gains(gains),channelColors(channelColors),groupsChannels(groupsChannels),channelsGroups(channelsGroups),
     acquisitionGain(acquisitionGain),unitGain(unitGain),xMargin(10),yMargin(0),columnDisplayChanged(false),resized(false),groupsChanged(false),previousDragOrdinate(0),lastClickOrdinate(0),
     nbSamplesModified(false),alreadySelected(false),isInit(true),channelforVoltageComputation(0),startingIndex(0),
     showLabels(labelsDisplay),showCalibrationScale(false),downSampling(1),zoomed(false),firstZoom(true),

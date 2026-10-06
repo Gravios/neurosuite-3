@@ -308,11 +308,15 @@ public Q_SLOTS:
     void print(QPainter& printPainter,int width,int height, bool whiteBackground) override;
 
 protected:
-    /**
-  * Draws the contents of the frame.
-  * @param p painter used to draw the contents of the frame.
-  */
-    void paintEvent ( QPaintEvent *) override;
+    // ── BufferedView hooks (the paint lifecycle lives in the base now) ────────
+    /**Only paint once the first waveform data has arrived.*/
+    bool renderReady() const override { return dataReady; }
+    /**Cached layer: fill + draw the waveforms (REDRAW) / repaint changed clusters (UPDATE).*/
+    void paintBuffer(QPainter& painter, DrawContentsMode level) override;
+    /**Device-space content baked into the buffer: the pending-lasso panel and cluster ids.*/
+    void paintBufferDeviceLayer(QPainter& painter) override;
+    /**Restore the zoom cursor after every paint.*/
+    void afterPaint(QPainter& widget) override;
     /**Treat the events sent by the WaveformThread instances*/
     void customEvent(QEvent* event) override;
     /**The view responds to a double click.

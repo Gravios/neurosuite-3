@@ -29,7 +29,7 @@
 #include <QMouseEvent>
 
 //include files for the application
-#include "baseframe.h"
+#include "bufferedview.h"
 #include "tracesprovider.h"
 
 //Inclused files for KDE
@@ -49,7 +49,7 @@ class EventsProvider;
   *@author Lynn Hazan
   */
 
-class TraceView : public BaseFrame  {
+class TraceView : public BufferedView  {
     Q_OBJECT
 public:
     /**Constructor.
@@ -690,9 +690,8 @@ private:
 
     /**
   * Buffer to enable smooth updating, obtain flicker-free drawing.
-  * Prevent from unnecessary redrawing.
+  * Prevent from unnecessary redrawing.  (Moved to BufferedView.)
   */
-    QPixmap doublebuffer;
 
     /**Time in milisseconds corresponding to a step between two points of a given trace.*/
     float timeStep;

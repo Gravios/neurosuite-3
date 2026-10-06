@@ -14,6 +14,7 @@ set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../libklustersshared/src/xcorr")
 set(klusters_SRCS
     autosavethread.cpp
     baseframe.cpp
+    bufferedview.cpp
     channellist.cpp
     clusterPalette.cpp
     clusterinformationdialog.cpp

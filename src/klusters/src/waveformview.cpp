@@ -376,100 +376,58 @@ void WaveformView::customEvent(QEvent *event){
     }
 }
 
-void WaveformView::paintEvent ( QPaintEvent *){
-    QPainter p(this);
-    if((drawContentsMode == UPDATE || drawContentsMode == REDRAW) && dataReady){
-        QRect contentsRec = contentsRect();
-        viewport = QRect(contentsRec.left(),contentsRec.top(),contentsRec.width(),contentsRec.height() /*- 10*/);
+void WaveformView::paintBuffer(QPainter& painter, DrawContentsMode level){
+    if(level == REDRAW){
+        //Fill the double buffer with the background
+        doublebuffer.fill(palette().color(backgroundRole()));
 
-        //Resize the double buffer with the width and the height of the widget(QFrame)
-        if (viewport.size() != doublebuffer.size()) {
-            if(!doublebuffer.isNull()) {
-                QPixmap tmp = QPixmap( viewport.width() +10 ,viewport.height() +10 );
-                tmp.fill( Qt::white );
-                QPainter painter2( &tmp );
-                painter2.drawPixmap( 0,0, doublebuffer );
-                painter2.end();
-                doublebuffer = tmp;
-            } else {
-                doublebuffer = QPixmap(viewport.width() + 10 ,viewport.height() +10);
+        if(hasResidualPreview_){
+            //A lasso is pending confirmation: show its residual preview in
+            //place of the cluster waveforms until it is applied or cancelled.
+            drawResidualPreview(painter);
+        } else {
+            //Shade the selected channels.
+            drawChannelSelection(painter);
+
+            //Review mode: a faint primary-template underlay BEHIND the waveforms.
+            if(hasTemplatePreview_ && !tpEdit_) drawTemplatePreview(painter);
+
+            //Paint all the waveforms in the shownclusters list (in the double buffer).
+            drawWaveforms(painter,view.clusters());
+
+            //Edit mode (lineage overlay): the active template's mean±std band is
+            //overlaid translucently ON TOP of the spikes, with the shown cluster's
+            //own mean±std as a grey reference band — so the curator reads the model
+            //against the actual waveforms instead of the spikes being hidden.
+            if(hasTemplatePreview_ && tpEdit_){
+                drawTemplateBand(painter);
+                drawTemplatePreview(painter);
             }
         }
-
-
-        //Create a painter to paint on the double buffer
-        QPainter painter;
-        painter.begin(&doublebuffer);
-
-        //set the window (part of the world I want to show)
-        QRect r((QRect)window);
-        painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
-
-        //Set the viewport (part of the device I want to write on).
-        //By default, the viewport is the same as the device's rectangle (contentsRec), taking a smaller
-        //one will ensure that the legends (cluster ids) will not ovelap to much a waveform.
-        painter.setViewport(viewport);
-
-        if(drawContentsMode == REDRAW){
-            //Fill the double buffer with the background
-            doublebuffer.fill(palette().color(backgroundRole()));
-
-            if(hasResidualPreview_){
-                //A lasso is pending confirmation: show its residual preview in
-                //place of the cluster waveforms until it is applied or cancelled.
-                drawResidualPreview(painter);
-            } else {
-                //Shade the selected channels.
-                drawChannelSelection(painter);
-
-                //Review mode: a faint primary-template underlay BEHIND the waveforms.
-                if(hasTemplatePreview_ && !tpEdit_) drawTemplatePreview(painter);
-
-                //Paint all the waveforms in the shownclusters list (in the double buffer).
-                drawWaveforms(painter,view.clusters());
-
-                //Edit mode (lineage overlay): the active template's mean±std band is
-                //overlaid translucently ON TOP of the spikes, with the shown cluster's
-                //own mean±std as a grey reference band — so the curator reads the model
-                //against the actual waveforms instead of the spikes being hidden.
-                if(hasTemplatePreview_ && tpEdit_){
-                    drawTemplateBand(painter);
-                    drawTemplatePreview(painter);
-                }
-            }
-        }
-
+    } else if(level == UPDATE){
         //The update mode applies only when the color of a cluster has changed.
-        if(drawContentsMode == UPDATE && !hasResidualPreview_ && !(hasTemplatePreview_ && tpEdit_)){
+        if(!hasResidualPreview_ && !(hasTemplatePreview_ && tpEdit_)){
             //Paint the waveforms for the clusters contained in clusterUpdateList
             drawWaveforms(painter,clusterUpdateList);
 
             //Reset the clusterUpdateList list for the next call
             clusterUpdateList.clear();
         }
-
-        //reset transformation due to setWindow and setViewport
-        painter.resetTransform() ;
-
-        //A pending lasso's review panel sits on top of the preview, in device
-        //coordinates so its text stays a fixed, readable size at any zoom.
-        if(hasResidualPreview_)
-            drawResidualPreviewPanel(painter);
-
-        //Draw the cluster Ids below the waveforms if they are not in overlay presentation.
-        if(!overLayPresentation && !hasResidualPreview_)
-            drawClusterIds(painter);
-
-        //Closes the painter on the double buffer
-        painter.end();
-
-        //Back to the default
-        drawContentsMode = REFRESH;
     }
-    //if drawContentsMode == REFRESH, we reuse the double buffer (pixmap)
+}
 
-    //Draw the double buffer (pixmap) by copying it into the widget device.
-    p.drawPixmap(0, 0, doublebuffer);
+void WaveformView::paintBufferDeviceLayer(QPainter& painter){
+    //A pending lasso's review panel sits on top of the preview, in device
+    //coordinates so its text stays a fixed, readable size at any zoom.
+    if(hasResidualPreview_)
+        drawResidualPreviewPanel(painter);
+
+    //Draw the cluster Ids below the waveforms if they are not in overlay presentation.
+    if(!overLayPresentation && !hasResidualPreview_)
+        drawClusterIds(painter);
+}
+
+void WaveformView::afterPaint(QPainter&){
     setCursor(zoomCursor);
 }
 

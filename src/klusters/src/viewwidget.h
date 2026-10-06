@@ -29,7 +29,7 @@
 #include <QStatusBar>
 
 //include files for the application
-#include "baseframe.h"
+#include "bufferedview.h"
 
 class KlustersDoc;
 class KlustersView;
@@ -42,7 +42,7 @@ class KlustersView;
   * ViewWidget also contains the zoom feature of the views.
   *@author Lynn Hazan
   */
-class ViewWidget : public BaseFrame {
+class ViewWidget : public BufferedView {
 
     Q_OBJECT
 
@@ -197,9 +197,9 @@ public:
 
     /**
   * Buffer to enable smooth updating, obtain flicker-free drawing.
-  * Prevent from unnecessary redrawing.
+  * Prevent from unnecessary redrawing.  (Moved to BufferedView — the paint
+  * lifecycle owns it now.)
   */
-    QPixmap doublebuffer;
 
     /**Reference on the view containing this widget*/
     KlustersView& view;
