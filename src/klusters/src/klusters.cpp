@@ -2479,6 +2479,11 @@ void KlustersApp::registerInputBindings()
         reg.addCommand(c);
     }
 
+    // The shared rubber-band ZOOM, as a resolver participant for every plain BaseFrame
+    // view (plan decision #2 / P0d-z).  ClusterView opts out (managesOwnPrimaryPress), so
+    // its Ctrl-pan / Shift-boundary are tried first; its zoom stays on the base fall-through.
+    BaseFrame::registerInput(reg);
+
     // ClusterView's resolver-dispatched mouse gestures (co-located registration, once).
     ClusterView::registerInput(reg);
 

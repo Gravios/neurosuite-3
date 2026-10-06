@@ -464,6 +464,12 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    /** ClusterView dispatches input at the TOP of mousePressEvent, before its Ctrl-pan /
+     *  Shift-boundary / lasso gestures, so it must keep the shared rubber-band ZOOM out of
+     *  its scope (else an any-modifier Left would preempt those gestures at that early
+     *  dispatch).  Its plain-Left zoom still works via the base's inline fall-through.
+     *  (Input-remapping plan P0d-z.) */
+    bool managesOwnPrimaryPress() const override { return true; }
     void mouseMoveEvent(QMouseEvent* event) override;
     /**Ctrl+wheel zooms toward the cursor (Ctrl+drag pans).  Without Ctrl the
      * event defers to the base ViewWidget/BaseFrame handling.*/

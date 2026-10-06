@@ -17,6 +17,7 @@
 //include files for the application
 #include "baseframe.h"
 #include "input/inputdispatcher.h"
+#include "input/bindingregistry.h"
 
 // include files for Qt
 #include <QPaintDevice>
@@ -101,29 +102,70 @@ bool BaseFrame::dispatchInput(QEvent* e){
     return input::dispatch(this, e);
 }
 
-void BaseFrame::mousePressEvent(QMouseEvent* e){
-    // Funnel the press through the resolver first; if a command claims it, stop.
-    // The base's rubber-band zoom below is thus already a dispatch participant —
-    // when the zoom binding is registered (a later patch) it resolves here.
-    if(dispatchInput(e)) return;
-    if(mode == ZOOM || isRubberBandToBeDrawn){
-        //Test if a selected rectangle exist, if so draw it and delete it.
-        if(e->button() == Qt::LeftButton){
-            //Assign firstClick
+void BaseFrame::beginBaseZoom(const QPoint& pos){
+    //Assign firstClick
+    QRect r((QRect)window);
+    firstClick = pos;
+    if (!mRubberBand)
+        mRubberBand = new KlusterRubberBand(QRubberBand::Rectangle, this);
+    //Construct the rubber starting on the selected point (width = 1 and not 0 because bottomRight = left+width-1, same trick for height ;0))
+    //or using only the abscissa and the ordinate if the top of the window if the rubber band has to
+    //drawn on whole the height of the window.
+    if(isRubberBandToBeDrawn && wholeHeightRectangle)
+        mRubberBand->setGeometry(QRect(firstClick.x(),r.top(),1,1));
+    else
+        mRubberBand->setGeometry(QRect(firstClick.x(),firstClick.y(),1,1));
+    mRubberBand->show();
+}
 
-            QRect r((QRect)window);
-            firstClick = e->position().toPoint();
-            if (!mRubberBand)
-                mRubberBand = new KlusterRubberBand(QRubberBand::Rectangle, this);
-            //Construct the rubber starting on the selected point (width = 1 and not 0 because bottomRight = left+width-1, same trick for height ;0))
-            //or using only the abscissa and the ordinate if the top of the window if the rubber band has to
-            //drawn on whole the height of the window.
-            if(isRubberBandToBeDrawn && wholeHeightRectangle)
-                mRubberBand->setGeometry(QRect(firstClick.x(),r.top(),1,1));
-            else
-                mRubberBand->setGeometry(QRect(firstClick.x(),firstClick.y(),1,1));
-            mRubberBand->show();
-        }
+void BaseFrame::registerInput(input::BindingRegistry& reg){
+    // The frame-wide scope: live for any BaseFrame press EXCEPT a view that manages its
+    // own primary press (that view keeps the base zoom as an inline fall-through so its
+    // Left gestures are tried first — see managesOwnPrimaryPress).  ViewType layer, so a
+    // future tool-mode / transient Left gesture (pan, boundary) shadows the zoom.
+    reg.addScope({ QStringLiteral("view.frame"), input::Layer::ViewType,
+        [](const input::Ctx& c){
+            auto* bf = qobject_cast<BaseFrame*>(c.view);
+            return bf && !bf->managesOwnPrimaryPress();
+        } });
+
+    // The rubber-band ZOOM: a Left press with ANY modifiers begins it.  AtLeast + no
+    // required modifier reproduces the old press gate exactly (the inline branch armed on
+    // button()==LeftButton and ignored modifiers; Shift only matters at release, where it
+    // means shrink).  Gesture kind — invoke() only BEGINS the arm; the drag preview
+    // (mouseMoveEvent) and the zoom commit (mouseReleaseEvent) stay in the base handlers.
+    input::Command cmd;
+    cmd.id       = QStringLiteral("frame.zoomRubberBand");
+    cmd.scopeId  = QStringLiteral("view.frame");
+    cmd.label    = tr("Rubber-band zoom");
+    cmd.category = tr("Zoom");
+    cmd.kind     = input::Kind::Gesture;
+    cmd.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    cmd.enabled  = [](const input::Ctx& c){
+        auto* bf = qobject_cast<BaseFrame*>(c.view);
+        return bf && (bf->mode == ZOOM || bf->isRubberBandToBeDrawn);   // the old inline gate
+    };
+    cmd.invoke   = [](const input::Ctx& c){
+        auto* bf = qobject_cast<BaseFrame*>(c.view);
+        if (bf && c.event)
+            bf->beginBaseZoom(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(cmd);
+}
+
+void BaseFrame::mousePressEvent(QMouseEvent* e){
+    // Funnel the press through the resolver first; if a command claims it, stop.  The
+    // rubber-band ZOOM is now a registered Gesture command (registerInput, plan P0d-z),
+    // so for a view that routes its zoom through the registry the dispatch above has
+    // already armed it and returned.
+    if(dispatchInput(e)) return;
+    // Fall-through arm: reached by a view that manages its own primary press (see
+    // managesOwnPrimaryPress — e.g. ClusterView, where Ctrl-pan / Shift-boundary are
+    // tried first) when nothing else claimed the Left press.  Same gate, same begin body.
+    if(mode == ZOOM || isRubberBandToBeDrawn){
+        if(e->button() == Qt::LeftButton)
+            beginBaseZoom(e->position().toPoint());
     }
 }
 

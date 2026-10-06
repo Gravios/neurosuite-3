@@ -30,6 +30,9 @@
 //include files for the application
 #include "zoomwindow.h"
 
+// The input-binding registry (input-remapping plan): registerInput() populates it.
+namespace input { class BindingRegistry; }
+
 /**
   * Frame base class containing the following features:
   * <ul>
@@ -94,6 +97,14 @@ public:
         Yborder = y;
     }
 
+    // ── Input-binding seam (input-remapping plan P0d-z) ──────────────────────
+    /** Register the shared rubber-band ZOOM as a resolver-dispatched Gesture command, so
+     *  every BaseFrame-derived view inherits a rebindable zoom (plan decision #2).  Called
+     *  once from KlustersApp::registerInputBindings.  The press trigger (Left, any
+     *  modifiers) is bound here; the drag preview (mouseMoveEvent) and the zoom commit
+     *  (mouseReleaseEvent) stay in the base handlers — the plan's "seam". */
+    static void registerInput(input::BindingRegistry& reg);
+
 public Q_SLOTS:
 
     /**Update the information presented in the view if need it.*/
@@ -141,6 +152,20 @@ protected:
      *  (see baseframe.cpp).  No-op today: the registry is empty until the app/view
      *  scopes are registered in later patches. */
     bool dispatchInput(QEvent* event);
+
+    /** A subclass whose own mousePressEvent dispatches input at its TOP — ahead of its
+     *  competing Left-button gestures (pan, boundary, lasso) — returns true here, so the
+     *  shared rubber-band ZOOM command (registerInput) stays OUT of its scope and cannot
+     *  preempt those gestures at that early dispatch.  Such a view still gets the base
+     *  zoom as its fall-through, via the inline arm in BaseFrame::mousePressEvent reached
+     *  when nothing else claims the press.  Plain views (which call the base LAST) leave
+     *  this false and route their zoom through the resolver.  Default false. */
+    virtual bool managesOwnPrimaryPress() const { return false; }
+
+    /** Arm the rubber-band zoom at viewport point @p pos (create/show the band, record
+     *  firstClick).  The begin body, shared by the inline press branch and the
+     *  registerInput ZOOM Gesture command so the two stay identical. */
+    void beginBaseZoom(const QPoint& pos);
 
     /**
   * Translates a point (@p vx, @p vy) on the viewport to a QPoint in the world
