@@ -160,6 +160,12 @@ public:
      *  mouseReleaseEvent — the plan's seam.  Invoked by the cluster.pan Gesture command
      *  (input-remapping plan P0d-4); was inline in the press. */
     void beginCtrlPan(const QPoint& pos);
+    /** Begin a lineage region-boundary drag at viewport point @p vp (record the grabbed
+     *  boundary + its live preview time, clear any half-open polygon, set the resize
+     *  cursor).  The drag preview is in mouseMoveEvent, the commit in mouseReleaseEvent —
+     *  the plan's seam.  Invoked by the cluster.boundaryDrag Gesture command (P0d-4); was
+     *  inline in the press.  Assumes lineageBoundaryGrabAt(vp) >= 0 (enabled() ensured it). */
+    void beginBoundaryDrag(const QPoint& vp);
     /** The template class the lineage overlay edits (auto-seed + new regions).  Set
      *  by the template palette when a class is selected; defaults to 0.  When the
      *  overlay is engaged, switching class tiles that class and repaints. */
@@ -633,6 +639,11 @@ private:
     // a viewport point to the nearest node / interior partition boundary.
     int  lineageNodeAt(const QPoint& vp, int pxTol = 8);       ///< node under vp (ribbon bar / leaf disc), or -1
     int  lineageBoundaryAt(const QPoint& vp, int pxTol = 5);   ///< nearest interior boundary index, or -1
+    /** The full grab test the Shift+Left boundary-drag press uses: a generous hit near a
+     *  boundary line, or — on the root ribbon off any line — the nearest interior boundary.
+     *  Returns a valid boundary index, or -1 when the press grabs none.  Drives both the
+     *  cluster.boundaryDrag command's enabled() (conditional consume) and its begin. */
+    int  lineageBoundaryGrabAt(const QPoint& vp);
     // Screen position per node, computed exactly as paintLineageOverlay draws them
     // (drift roots on the top ribbon, leaves stacked below their root; world point
     // when X is not time).  Shared by the painter and the hit-test so clicks land

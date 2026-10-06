@@ -1323,6 +1323,44 @@ void ClusterView::beginCtrlPan(const QPoint& pos)
     setCursor(Qt::ClosedHandCursor);
 }
 
+int ClusterView::lineageBoundaryGrabAt(const QPoint& vp)
+{
+    // The exact grab test the old Shift+Left press branch used.
+    int b = lineageBoundaryAt(vp, 10);          // generous grab near a boundary line
+    // On the root ribbon but not on a line: grab the NEAREST interior boundary, so
+    // dragging anywhere along a region bar resizes it (the roots are not freely movable —
+    // their extent IS the region between two boundaries).
+    if (b < 0 && dimensionX == timeDimension && lineageStore_.partitionReady()
+        && std::abs(vp.y() - 14) <= 16) {
+        const double sr = doc.getSamplingRate();
+        const std::vector<double>& bb = lineageStore_.partition().bounds;
+        int bestDx = width() + 1;
+        for (std::size_t i = 0; i < bb.size(); ++i) {
+            const int x = worldToViewport(QPoint(static_cast<int>(std::lround(bb[i] * sr)), 0)).x();
+            const int dx = std::abs(x - vp.x());
+            if (dx < bestDx) { bestDx = dx; b = static_cast<int>(i); }
+        }
+    }
+    // lineageBoundaryAt / the ribbon branch only yield b >= 0 when the partition is ready,
+    // so partition().bounds is safe to size-check here (the old final guard, verbatim).
+    if (b >= 0 && b < static_cast<int>(lineageStore_.partition().bounds.size()))
+        return b;
+    return -1;
+}
+
+void ClusterView::beginBoundaryDrag(const QPoint& vp)
+{
+    // Arm the region-boundary drag; mouseMoveEvent live-previews lineageDragBoundaryT_,
+    // mouseReleaseEvent commits.  Body lifted from the old inline press branch (the grab
+    // index is recomputed — enabled() already verified it is >= 0).
+    const int b = lineageBoundaryGrabAt(vp);
+    if (b < 0) return;                          // defensive; enabled() guarantees b >= 0
+    lineageDragBoundary_  = b;
+    lineageDragBoundaryT_ = lineageStore_.partition().bounds[static_cast<std::size_t>(b)];
+    selectionPolygon.resize(0); nbSelectionPoints = 0;   // no half-open polygon
+    setCursor(Qt::SizeHorCursor);
+}
+
 void ClusterView::registerInput(input::BindingRegistry& reg)
 {
     // A scope that is live for any press on a ClusterView (the command's enabled()
@@ -1374,6 +1412,33 @@ void ClusterView::registerInput(input::BindingRegistry& reg)
             cv->beginCtrlPan(static_cast<QMouseEvent*>(c.event)->position().toPoint());
     };
     reg.addCommand(pan);
+
+    // Shift-drag a lineage region boundary: Shift+Left (AtLeast+Shift) begins it, but ONLY
+    // when the overlay is on, the view is in feature space, AND the press actually grabs a
+    // boundary — otherwise the command does not resolve and the press falls through to the
+    // normal selection / zoom handling.  That conditional consume, which the old inline
+    // branch did by not accept()ing when the hit-test missed, is now the enabled() hit-test.
+    // Registered AFTER pan, so a Shift+Ctrl+Left resolves pan first — the old branch order.
+    input::Command bnd;
+    bnd.id       = QStringLiteral("cluster.boundaryDrag");
+    bnd.scopeId  = QStringLiteral("view.cluster.scatter");
+    bnd.label    = tr("Drag region boundary");
+    bnd.category = tr("Lineage overlay");
+    bnd.kind     = input::Kind::Gesture;
+    bnd.defaultChord = input::Chord::button(Qt::LeftButton, Qt::ShiftModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    bnd.enabled  = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        if (!cv || !c.event || cv->isTsneShowing() || !cv->lineageOverlayActive()) return false;
+        const QPoint vp = static_cast<QMouseEvent*>(c.event)->position().toPoint();
+        return cv->lineageBoundaryGrabAt(vp) >= 0;     // only consume when over a boundary
+    };
+    bnd.invoke   = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        if (cv && c.event)
+            cv->beginBoundaryDrag(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(bnd);
 }
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
@@ -1421,36 +1486,13 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
     //  mouseReleaseEvent.  Its precedence over selection / zoom is now carried by that
     //  early dispatch and the AtLeast+Ctrl chord, not by this branch's position.)
 
-    // Shift+Left arms a lineage region-boundary drag (double-left is reset-zoom,
-    // so it can no longer be used).  Only when the overlay is on and the press is
-    // over a boundary; otherwise it falls through to normal selection/zoom.
-    if (lineageOverlay_ && (e->button() == Qt::LeftButton)
-        && (e->modifiers() & Qt::ShiftModifier)) {
-        const QPoint vp = e->position().toPoint();
-        int b = lineageBoundaryAt(vp, 10);          // generous grab near a boundary line
-        // On the root ribbon but not on a line: grab the NEAREST interior boundary,
-        // so dragging anywhere along a region bar resizes it (the roots are not freely
-        // movable — their extent IS the region between two boundaries).
-        if (b < 0 && dimensionX == timeDimension && lineageStore_.partitionReady()
-            && std::abs(vp.y() - 14) <= 16) {
-            const double sr = doc.getSamplingRate();
-            const std::vector<double>& bb = lineageStore_.partition().bounds;
-            int bestDx = width() + 1;
-            for (std::size_t i = 0; i < bb.size(); ++i) {
-                const int x = worldToViewport(QPoint(static_cast<int>(std::lround(bb[i] * sr)), 0)).x();
-                const int dx = std::abs(x - vp.x());
-                if (dx < bestDx) { bestDx = dx; b = static_cast<int>(i); }
-            }
-        }
-        if (b >= 0 && b < static_cast<int>(lineageStore_.partition().bounds.size())) {
-            lineageDragBoundary_  = b;
-            lineageDragBoundaryT_ = lineageStore_.partition().bounds[static_cast<std::size_t>(b)];
-            selectionPolygon.resize(0); nbSelectionPoints = 0;   // no half-open polygon
-            setCursor(Qt::SizeHorCursor);
-            e->accept();
-            return;
-        }
-    }
+    // (Shift+Left drags a lineage region boundary — moved onto the input registry,
+    //  resolved by dispatchInput() at the top of this handler.  See cluster.boundaryDrag
+    //  in ClusterView::registerInput, the grab test lineageBoundaryGrabAt, and the begin
+    //  beginBoundaryDrag; the drag preview is in mouseMoveEvent, the commit in
+    //  mouseReleaseEvent.  The conditional consume is preserved: the command resolves only
+    //  when the press grabs a boundary (enabled()), otherwise the press falls through to
+    //  the selection / zoom handling below exactly as before.)
 
     // (Plain Left in the overlay with the ZOOM tool begins the node-mark / lasso gesture
     //  — moved onto the input registry, resolved by dispatchInput() at the top of this
