@@ -28,6 +28,7 @@
 #include "prefautomerge.h"
 #include "prefwaveformview.h"
 #include "prefclusterview.h"
+#include "prefinput.h"
 #include "channellist.h"
 #include "config-klusters.h"
 #include <qhelpviewer.h>
@@ -105,6 +106,13 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     item = new QPageWidgetItem(prefWaveformView, tr("Waveform view"));
     item->setHeader(tr("Waveform View configuration"));
     item->setIcon(QIcon(":/icons/waveformview"));
+    addPage(item);
+
+    // ── Input (generated: keyboard shortcuts from the binding registry) ─────
+    prefInput = new PrefInput(this);
+    item = new QPageWidgetItem(prefInput, tr("Input"));
+    item->setHeader(tr("Keyboard & Mouse Bindings"));
+    item->setIcon(QIcon(":/shared-icons/folder-open"));
     addPage(item);
 
     // ── Appearance (suite-wide light/dark/system theme) ────────────
@@ -223,6 +231,10 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView, &PrefWaveformView::positionsChanged,      this, &PrefDialog::enableApply);
 
+    // Input bindings: an edited shortcut lights Apply (PrefInput blocks signals
+    // during its programmatic load, so this fires only on real user edits).
+    connect(prefInput, &PrefInput::changed, this, &PrefDialog::enableApply);
+
     // Appearance: activated fires only on user choice (not the programmatic
     // populate in updateDialog), so it lights Apply like the other controls.
     connect(themeCombo, &QComboBox::activated, this, &PrefDialog::enableApply);
@@ -338,6 +350,9 @@ void PrefDialog::updateDialog()
         themeCombo->setCurrentIndex(idx < 0 ? 0 : idx);
     }
 
+    // Input bindings: load the effective chords from the registry into the editors.
+    prefInput->updateFromRegistry();
+
     enableButtonApply(false);
     applyEnable = false;
 }
@@ -441,6 +456,10 @@ void PrefDialog::updateConfiguration()
         neurosuite::applyTheme(t);
     }
 
+    // Input bindings: editors -> registry overrides + the persisted Configuration map.
+    // KlustersApp::applyPreferences() then pushes the QAction shortcuts.
+    prefInput->commitToRegistry();
+
     enableButtonApply(false);
     applyEnable = false;
 }
@@ -531,6 +550,9 @@ void PrefDialog::slotDefault()
     prefclusterView->setShowEapClassMembers(configuration().getShowEapClassMembersDefault());
     prefWaveformView->setGain(configuration().getGainDefault());
     prefWaveformView->resetChannelList(configuration().getNbChannels());
+
+    // Input bindings: every editor back to its command's shipped default.
+    prefInput->restoreDefaults();
 
     enableApply();
 }

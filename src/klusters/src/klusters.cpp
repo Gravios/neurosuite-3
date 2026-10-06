@@ -1729,6 +1729,12 @@ void KlustersApp::executePreferencesDlg(){
 void KlustersApp::applyPreferences() {
     configuration().write();
 
+    // Input bindings: a rebind in the Input preferences page set the registry overrides
+    // (live for resolver-dispatched keys) and the Configuration map (just persisted by
+    // write() above); push the overrides onto the mirrored QActions so Qt dispatches the
+    // rebound menu/toolbar shortcuts too (input-remapping plan §5).
+    applyInputOverridesToActions();
+
     // Templates mode toggled -> show/hide + (re)load the template palette live.
     if (templatePanel) { reloadTemplatePalette(); updateTemplatePanelVisibility(); }
 

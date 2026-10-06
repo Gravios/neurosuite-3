@@ -90,6 +90,7 @@ set(klusters_SRCS
     prefclusterview.cpp
     autoMerge.cpp
     prefdialog.cpp
+    prefinput.cpp              # generated input-binding Preferences page (input-remapping plan §5)
     prefdisplay.cpp
     prefsession.cpp
     prefreclustering.cpp

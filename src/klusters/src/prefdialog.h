@@ -30,6 +30,7 @@ class PrefSorting;
 class PrefAutoMerge;
 class PrefWaveformView;
 class PrefClusterView;
+class PrefInput;
 class QComboBox;
 
 class PrefDialog : public QPageDialog {
@@ -67,6 +68,7 @@ class PrefDialog : public QPageDialog {
 
     PrefWaveformView* prefWaveformView;
     PrefClusterView*  prefclusterView;
+    PrefInput*        prefInput;        // generated input-binding page (input-remapping plan §5)
     QComboBox*        themeCombo;
     bool applyEnable;
 };
