@@ -174,6 +174,23 @@ void Configuration::read() {
     settings.beginGroup("waveformView");
     gain = settings.value("gain",gainDefault).toInt();
     settings.endGroup();
+
+    //read the input-binding overrides (input-remapping plan §5): a thin diff from
+    //the shipped defaults, keyed by command id -> Chord::toString().  The app
+    //applies these to input::registry() at startup; stored as a QSettings array so
+    //no reliance on command-id characters as keys.
+    inputBindingOverrides.clear();
+    settings.beginGroup("inputBindings");
+    const int nOverrides = settings.beginReadArray("overrides");
+    for(int i = 0; i < nOverrides; ++i){
+        settings.setArrayIndex(i);
+        const QString id    = settings.value("id").toString();
+        const QString chord = settings.value("chord").toString();
+        if(!id.isEmpty() && !chord.isEmpty())
+            inputBindingOverrides.insert(id, chord);
+    }
+    settings.endArray();
+    settings.endGroup();
 }
 
 void Configuration::write() const {  
@@ -276,6 +293,22 @@ void Configuration::write() const {
     //write waveform view options
     settings.beginGroup("waveformView");
     settings.setValue("gain",gain);
+    settings.endGroup();
+
+    //write the input-binding overrides (input-remapping plan §5).  remove() drops
+    //any previous array first, so a binding reset to default (removed from the map)
+    //does not linger in the file.
+    settings.beginGroup("inputBindings");
+    settings.remove(QString());
+    settings.beginWriteArray("overrides");
+    int ib = 0;
+    for(QMap<QString,QString>::const_iterator it = inputBindingOverrides.constBegin();
+        it != inputBindingOverrides.constEnd(); ++it, ++ib){
+        settings.setArrayIndex(ib);
+        settings.setValue("id",    it.key());
+        settings.setValue("chord", it.value());
+    }
+    settings.endArray();
     settings.endGroup();
 }
 

@@ -24,6 +24,7 @@
 #include <QColor>
 
 #include <QList>
+#include <QMap>
 
 
 /**
@@ -177,7 +178,16 @@ public:
     void setTemplateThresholdMin(double v) {templateThresholdMin = qBound(0.0, v, 1.0);}
     void setTemplateThresholdMax(double v) {templateThresholdMax = qBound(0.0, v, 1.0);}
     void setTemplateXcorrMetric(int v)     {templateXcorrMetric = qBound(0, v, 5);}
-    
+
+    /** The user's input-binding overrides (input-remapping plan §4/§5): a thin
+     *  diff from the shipped defaults, keyed by command id -> the Chord's exact
+     *  toString() form.  Persisted as data only (the "inputBindings" QSettings
+     *  group); the app syncs it to/from the one input::registry() at startup and
+     *  whenever the Preferences page rebinds a command.  Kept as strings so
+     *  Configuration stays decoupled from the input module. */
+    void setInputBindingOverrides(const QMap<QString,QString>& m){inputBindingOverrides = m;}
+    const QMap<QString,QString>& getInputBindingOverrides() const {return inputBindingOverrides;}
+
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const{return crashRecovery;}
 
@@ -613,6 +623,7 @@ private:
     double templateThresholdMin;
     double templateThresholdMax;
     int templateXcorrMetric = 0;   // 0=cosine 1=pearson 2=raw 3=disatten 4=fastAP
+    QMap<QString,QString> inputBindingOverrides;   // command id -> Chord::toString() (input-remapping plan §5)
 
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;
