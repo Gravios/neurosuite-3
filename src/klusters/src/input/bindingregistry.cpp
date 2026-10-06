@@ -86,9 +86,9 @@ const Command* BindingRegistry::resolve(const Chord& chord, const Ctx& ctx) cons
         const QString& sid = scopes_[si].id;
         for (const Command& c : commands_) {
             if (c.scopeId != sid) continue;
-            if (c.external) continue;                     // Qt dispatches it; never resolve it here
-            if (effectiveChord(c.id) != chord) continue;
-            if (c.enabled && !c.enabled(ctx)) continue;   // "when" predicate gates the match
+            if (c.external) continue;                       // Qt dispatches it; never resolve it here
+            if (!effectiveChord(c.id).matches(chord)) continue;  // binding vs event, per modMatch policy
+            if (c.enabled && !c.enabled(ctx)) continue;     // "when" predicate gates the match
             return &c;
         }
     }

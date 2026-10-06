@@ -10,18 +10,20 @@ namespace input {
 
 QString Chord::toString() const
 {
-    // Exact integer encoding for persistence; see the header.
-    return QStringLiteral("%1/%2/%3/%4")
+    // Exact integer encoding for persistence; see the header.  Five fields since the
+    // modMatch policy was added; fromString still reads the old four-field form.
+    return QStringLiteral("%1/%2/%3/%4/%5")
         .arg(int(device))
         .arg(code)
         .arg(int(modifiers))
-        .arg(int(phase));
+        .arg(int(phase))
+        .arg(int(modMatch));
 }
 
 Chord Chord::fromString(const QString& s)
 {
     const QStringList parts = s.split(QLatin1Char('/'));
-    if (parts.size() != 4) return {};            // malformed -> invalid chord
+    if (parts.size() != 4 && parts.size() != 5) return {};   // malformed -> invalid chord
 
     bool ok0 = false, ok1 = false, ok2 = false, ok3 = false;
     const int dev   = parts[0].toInt(&ok0);
@@ -30,14 +32,23 @@ Chord Chord::fromString(const QString& s)
     const int phase = parts[3].toInt(&ok3);
     if (!(ok0 && ok1 && ok2 && ok3)) return {};
 
+    int mm = int(ModMatch::Exact);                           // old 4-field form -> Exact
+    if (parts.size() == 5) {
+        bool ok4 = false;
+        mm = parts[4].toInt(&ok4);
+        if (!ok4) return {};
+    }
+
     if (dev < int(Device::None) || dev > int(Device::Wheel)) return {};
     if (phase < int(Phase::Press) || phase > int(Phase::Wheel)) return {};
+    if (mm < int(ModMatch::Exact) || mm > int(ModMatch::AtLeast)) return {};
 
     Chord c;
     c.device    = static_cast<Device>(dev);
     c.code      = code;
     c.modifiers = normalize(static_cast<Qt::KeyboardModifiers>(mods));
     c.phase     = static_cast<Phase>(phase);
+    c.modMatch  = static_cast<ModMatch>(mm);
     return c;
 }
 

@@ -32,19 +32,41 @@ enum class Device : unsigned char { None = 0, Key, Button, Wheel };
 // Command implements, not to the trigger the registry binds.
 enum class Phase : unsigned char { Press = 0, DoubleClick, Wheel };
 
+// How a binding's modifiers are matched against an event's modifiers.  Exact is the
+// default (and the only sensible one for a key shortcut: Ctrl+S means Ctrl+S, not
+// Ctrl+Shift+S).  AtLeast matches when the event carries AT LEAST the binding's
+// modifiers (extras allowed) — the mouse gestures need this: the base rubber-band zoom
+// starts on Left with ANY modifiers (encode as AtLeast + NoModifier), Ctrl-pan on Left
+// with Ctrl held regardless of others (AtLeast + Ctrl), Shift-boundary likewise.  This
+// reproduces the old bitwise `modifiers() & Ctrl` press tests exactly.
+enum class ModMatch : unsigned char { Exact = 0, AtLeast = 1 };
+
 struct Chord {
     Device                device    = Device::None;
     int                   code      = 0;            // Qt::Key_* | one Qt::MouseButton | wheel dir (+1 up / -1 down)
     Qt::KeyboardModifiers modifiers = Qt::NoModifier;
     Phase                 phase     = Phase::Press;
+    ModMatch              modMatch  = ModMatch::Exact;
 
     bool isValid() const { return device != Device::None; }
 
+    // Identity (for persistence round-trip + conflict grouping): two chords are equal
+    // only if they agree on the modifier-match policy too.
     bool operator==(const Chord& o) const {
-        return device == o.device && code == o.code
-            && modifiers == o.modifiers && phase == o.phase;
+        return device == o.device && code == o.code && modifiers == o.modifiers
+            && phase == o.phase && modMatch == o.modMatch;
     }
     bool operator!=(const Chord& o) const { return !(*this == o); }
+
+    // Does THIS binding match a concrete event chord `e`?  `e` is always Exact (it came
+    // from a real event); `*this` is the binding, which may be AtLeast.  Device, code
+    // and phase must agree; modifiers per the policy.
+    bool matches(const Chord& e) const {
+        if (device != e.device || code != e.code || phase != e.phase) return false;
+        if (modMatch == ModMatch::AtLeast)
+            return (e.modifiers & modifiers) == modifiers;   // event carries all required mods
+        return modifiers == e.modifiers;                     // Exact
+    }
 
     // Only the four "interesting" modifiers (Shift / Ctrl / Alt / Meta) take part in
     // a binding; Keypad / GroupSwitch and friends are masked so a numpad Enter or an
@@ -69,8 +91,8 @@ struct Chord {
         return { Device::Key, qtKey, normalize(mods), Phase::Press };
     }
     static Chord button(Qt::MouseButton b, Qt::KeyboardModifiers mods = Qt::NoModifier,
-                        Phase ph = Phase::Press) {
-        return { Device::Button, int(b), normalize(mods), ph };
+                        Phase ph = Phase::Press, ModMatch mm = ModMatch::Exact) {
+        return { Device::Button, int(b), normalize(mods), ph, mm };
     }
     static Chord wheel(int dir, Qt::KeyboardModifiers mods = Qt::NoModifier) {
         return { Device::Wheel, dir < 0 ? -1 : 1, normalize(mods), Phase::Wheel };

@@ -250,6 +250,52 @@ int main()
         CHECK(r && r->id == QStringLiteral("app.live"));
     }
 
+    // ── modMatch: Exact vs AtLeast (for the mouse gestures) ──────────────
+    {
+        // Exact: Ctrl+Left matches only Ctrl+Left.
+        const Chord exact = Chord::button(Qt::LeftButton, Qt::ControlModifier);
+        CHECK(exact.matches(Chord::button(Qt::LeftButton, Qt::ControlModifier)));
+        CHECK(!exact.matches(Chord::button(Qt::LeftButton, Qt::ControlModifier | Qt::ShiftModifier)));
+        CHECK(!exact.matches(Chord::button(Qt::LeftButton)));
+
+        // AtLeast + Ctrl: matches Ctrl+Left and Ctrl+Shift+Left, not plain Left.
+        const Chord ctrlish = Chord::button(Qt::LeftButton, Qt::ControlModifier,
+                                            Phase::Press, ModMatch::AtLeast);
+        CHECK(ctrlish.matches(Chord::button(Qt::LeftButton, Qt::ControlModifier)));
+        CHECK(ctrlish.matches(Chord::button(Qt::LeftButton, Qt::ControlModifier | Qt::ShiftModifier)));
+        CHECK(!ctrlish.matches(Chord::button(Qt::LeftButton)));
+
+        // AtLeast + NoModifier: matches ANY modifiers (the base-zoom "any Left").
+        const Chord anyLeft = Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                            Phase::Press, ModMatch::AtLeast);
+        CHECK(anyLeft.matches(Chord::button(Qt::LeftButton)));
+        CHECK(anyLeft.matches(Chord::button(Qt::LeftButton, Qt::ShiftModifier)));
+        CHECK(anyLeft.matches(Chord::button(Qt::LeftButton, Qt::ControlModifier | Qt::AltModifier)));
+        CHECK(!anyLeft.matches(Chord::button(Qt::RightButton)));   // device/code still must agree
+
+        // Round-trip preserves modMatch; the old 4-field form loads as Exact.
+        CHECK(Chord::fromString(ctrlish.toString()) == ctrlish);
+        const Chord fromOld = Chord::fromString(QStringLiteral("2/1/0/0"));  // Button/Left/NoMod/Press
+        CHECK(fromOld.isValid());
+        CHECK(fromOld.modMatch == ModMatch::Exact);
+    }
+
+    // ── resolve() honors AtLeast ─────────────────────────────────────────
+    {
+        BindingRegistry reg;
+        reg.addScope({ QStringLiteral("app"), Layer::App, nullptr });
+        Command pan;
+        pan.id = QStringLiteral("x.pan");
+        pan.scopeId = QStringLiteral("app");
+        pan.defaultChord = Chord::button(Qt::LeftButton, Qt::ControlModifier,
+                                         Phase::Press, ModMatch::AtLeast);
+        reg.addCommand(pan);
+        // The resolver is handed a concrete (Exact) event chord; the AtLeast binding matches.
+        CHECK(reg.resolve(Chord::button(Qt::LeftButton, Qt::ControlModifier)) != nullptr);
+        CHECK(reg.resolve(Chord::button(Qt::LeftButton, Qt::ControlModifier | Qt::ShiftModifier)) != nullptr);
+        CHECK(reg.resolve(Chord::button(Qt::LeftButton)) == nullptr);   // no Ctrl -> no match
+    }
+
     if (g_fail == 0) std::printf("bindingregistry_test: OK\n");
     return g_fail == 0 ? 0 : 1;
 }
