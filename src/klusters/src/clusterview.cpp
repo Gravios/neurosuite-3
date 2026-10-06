@@ -17,6 +17,7 @@
 
 //include files for the application
 #include "clusterview.h"
+#include "input/bindingregistry.h"   // registerInput: the mouse-gesture seam (plan P0d-4)
 #include "klustersview.h"
 #include "klustersdoc.h"
 #include "waveformview.h"          // residual preview is pushed to the sibling view
@@ -1292,7 +1293,60 @@ void ClusterView::applyModeCursor(){
 }
 
 
+bool ClusterView::overlayNodeGestureArmable() const
+{
+    // Exactly the gate the old inline press branch used: overlay on, ZOOM tool, and not
+    // in the t-SNE embedding (there a plain Left is the embedding lasso).
+    return lineageOverlay_ && mode == ZOOM && !tsneMode;
+}
+
+void ClusterView::beginOverlayNodeGesture(const QPoint& pos)
+{
+    // Arm the gesture; mouseMoveEvent grows the rectangle, mouseReleaseEvent toggles the
+    // node under the cursor (a click) or marks every node inside the rectangle (a drag).
+    lineageLassoActive_  = true;
+    lineageLassoDragged_ = false;
+    lineageLassoAnchor_  = pos;
+    lineageLassoRect_    = QRect(pos, pos);
+}
+
+void ClusterView::registerInput(input::BindingRegistry& reg)
+{
+    // A scope that is live for any press on a ClusterView (the command's enabled()
+    // narrows it to the exact overlay/ZOOM state).  Co-located here, registered once.
+    reg.addScope({ QStringLiteral("view.cluster.scatter"), input::Layer::ViewType,
+        [](const input::Ctx& c){ return qobject_cast<ClusterView*>(c.view) != nullptr; } });
+
+    // The overlay node-mark / lasso gesture: plain Left press begins it.  Gesture kind —
+    // invoke() only BEGINS it; the body is in move/release (the plan's seam).
+    input::Command cmd;
+    cmd.id       = QStringLiteral("cluster.overlayNodeMark");
+    cmd.scopeId  = QStringLiteral("view.cluster.scatter");
+    cmd.label    = tr("Mark lineage node / lasso");
+    cmd.category = tr("Lineage overlay");
+    cmd.kind     = input::Kind::Gesture;
+    cmd.defaultChord = input::Chord::button(Qt::LeftButton);
+    cmd.enabled  = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        return cv && cv->overlayNodeGestureArmable();
+    };
+    cmd.invoke   = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        if (cv && c.event)
+            cv->beginOverlayNodeGesture(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(cmd);
+}
+
 void ClusterView::mousePressEvent(QMouseEvent* e){
+    // Resolver-dispatched mouse gestures (input-remapping plan P0d-4): the registered
+    // press trigger (so far the overlay node-mark / lasso, bound to plain Left) resolves
+    // here and BEGINS its gesture; the body stays below in move/release.  Only that exact
+    // state resolves (its enabled() = overlayNodeGestureArmable); every other press —
+    // right-click, Ctrl-pan, Shift-boundary, the tool lassos, SELECT_TIME, base zoom —
+    // finds no command and falls through to the handling below, unchanged.
+    if (dispatchInput(e)) { e->accept(); return; }
+
     // Lineage overlay (§11.3): right-click opens the context menu, unless a
     // selection polygon is mid-draw (there right-click still erases the last line).
     if (lineageOverlay_ && !tsneMode && e->button() == Qt::RightButton && selectionPolygon.isEmpty()) {
@@ -1369,22 +1423,12 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
         }
     }
 
-    // Plain Left in the overlay with the default ZOOM tool starts a NODE gesture,
-    // never a zoom: a click toggles the node under the cursor, a drag rubber-bands a
-    // rectangle that marks every node inside it (resolved in mouseReleaseEvent).
-    // Only here — Ctrl+Left still pans, Shift+Left still grabs a region boundary, the
-    // lasso tools (NEW_CLUSTER, …) keep their left-click, and Ctrl+wheel /
-    // double-click still zoom.  The press is consumed (the base rubber-band zoom is
-    // never started), so the feature view no longer zooms on a left click/drag here.
-    if (lineageOverlay_ && mode == ZOOM && e->button() == Qt::LeftButton
-        && !(e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier))) {
-        lineageLassoActive_  = true;
-        lineageLassoDragged_ = false;
-        lineageLassoAnchor_  = e->position().toPoint();
-        lineageLassoRect_    = QRect(lineageLassoAnchor_, lineageLassoAnchor_);
-        e->accept();
-        return;
-    }
+    // (Plain Left in the overlay with the ZOOM tool begins the node-mark / lasso gesture
+    //  — moved onto the input registry, resolved by dispatchInput() at the top of this
+    //  handler.  See cluster.overlayNodeMark in ClusterView::registerInput and the
+    //  begin in beginOverlayNodeGesture; the drag/commit body is in move/release below.
+    //  Ctrl+Left still pans, Shift+Left still grabs a boundary, the lasso tools keep
+    //  their left-click, and Ctrl+wheel / double-click still zoom.)
 
     //Defining a time window t oupdate the Traceview
     if(mode == SELECT_TIME){

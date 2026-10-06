@@ -2479,6 +2479,9 @@ void KlustersApp::registerInputBindings()
         reg.addCommand(c);
     }
 
+    // ClusterView's resolver-dispatched mouse gestures (co-located registration, once).
+    ClusterView::registerInput(reg);
+
     // Apply the persisted override diffs (Configuration read them from QSettings at
     // startup).  Only ids we actually registered and that parse to a valid chord.
     const QMap<QString,QString> ov = configuration().getInputBindingOverrides();

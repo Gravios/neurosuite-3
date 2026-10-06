@@ -51,6 +51,7 @@
 class KlustersDoc;
 class KlustersView;
 class QCursor;
+namespace input { class BindingRegistry; }   // registerInput (input-remapping plan P0d-4)
 
 /**
   * View displaying spikes in the PCA feature space.
@@ -139,6 +140,21 @@ public:
      *  Shift+E edit mode and direct manipulation are §11.3. */
     void toggleLineageOverlay();
     bool lineageOverlayActive() const { return lineageOverlay_; }
+
+    // ── Input-binding seam (input-remapping plan P0d-4) ──────────────────────
+    /** Register ClusterView's resolver-dispatched mouse GESTURES into the one app-wide
+     *  registry (called once from KlustersApp::registerInputBindings).  The press
+     *  trigger is bound here; the drag/commit body stays in the mouse handlers — the
+     *  plan's "seam". */
+    static void registerInput(input::BindingRegistry& reg);
+    /** True when a plain Left press should BEGIN the overlay node-mark / lasso gesture
+     *  (lineage overlay on, ZOOM tool, not in the t-SNE embedding).  The exact gate the
+     *  old inline mousePressEvent branch used — see beginOverlayNodeGesture. */
+    bool overlayNodeGestureArmable() const;
+    /** Begin the overlay node-mark / lasso gesture at viewport point @p pos (the body —
+     *  rubber-band in mouseMoveEvent, toggle/lasso-commit in mouseReleaseEvent — is
+     *  unchanged).  Invoked by the registered Gesture command; was inline in the press. */
+    void beginOverlayNodeGesture(const QPoint& pos);
     /** The template class the lineage overlay edits (auto-seed + new regions).  Set
      *  by the template palette when a class is selected; defaults to 0.  When the
      *  overlay is engaged, switching class tiles that class and repaints. */
