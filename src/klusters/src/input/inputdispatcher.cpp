@@ -1,0 +1,71 @@
+// input/inputdispatcher.cpp — see input/inputdispatcher.h.
+
+#include "inputdispatcher.h"
+
+#include "bindingregistry.h"
+#include "command.h"
+
+#include <QEvent>
+#include <QKeyEvent>
+#include <QMouseEvent>
+#include <QWheelEvent>
+
+namespace input {
+
+BindingRegistry& registry()
+{
+    static BindingRegistry r;   // the one app-wide instance (Meyers singleton)
+    return r;
+}
+
+Chord chordFromEvent(const QEvent* ev)
+{
+    if (!ev) return {};
+    switch (ev->type()) {
+    case QEvent::KeyPress: {
+        const auto* k = static_cast<const QKeyEvent*>(ev);
+        if (k->isAutoRepeat()) return {};                 // a held key is not a fresh trigger
+        const int key = k->key();
+        if (key == 0 || key == Qt::Key_unknown) return {};
+        return Chord::key(key, k->modifiers());
+    }
+    case QEvent::MouseButtonPress: {
+        const auto* m = static_cast<const QMouseEvent*>(ev);
+        return Chord::button(m->button(), m->modifiers(), Phase::Press);
+    }
+    case QEvent::MouseButtonDblClick: {
+        const auto* m = static_cast<const QMouseEvent*>(ev);
+        return Chord::button(m->button(), m->modifiers(), Phase::DoubleClick);
+    }
+    case QEvent::Wheel: {
+        const auto* w = static_cast<const QWheelEvent*>(ev);
+        const int dy = w->angleDelta().y();
+        if (dy == 0) return {};                           // horizontal-only wheel is not bound
+        return Chord::wheel(dy, w->modifiers());
+    }
+    default:
+        // MouseButtonRelease / MouseMove / everything else: gesture body or non-input,
+        // not a trigger — fall through.
+        return {};
+    }
+}
+
+bool dispatch(QWidget* view, QEvent* ev, const BindingRegistry& reg)
+{
+    const Chord c = chordFromEvent(ev);
+    if (!c.isValid()) return false;
+    const Command* cmd = reg.resolve(c);
+    if (!cmd) return false;                                // nothing bound -> caller falls through
+    Ctx ctx;
+    ctx.view  = view;
+    ctx.event = ev;
+    if (cmd->invoke) cmd->invoke(ctx);
+    return true;
+}
+
+bool dispatch(QWidget* view, QEvent* ev)
+{
+    return dispatch(view, ev, registry());
+}
+
+}  // namespace input

@@ -73,4 +73,19 @@ if(Qt6_FOUND)
         PRIVATE "${_klu_src}" "${_shared}" "${_core}")
     target_link_libraries(klusters_test_bindingregistry PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_bindingregistry COMMAND klusters_test_bindingregistry)
+
+    # Input dispatcher (input-remapping plan decision #1): chordFromEvent's QEvent ->
+    # Chord mapping + dispatch() end-to-end.  Constructs QKeyEvent/QMouseEvent/
+    # QWheelEvent without a QApplication (the view pointer is only stored, never
+    # dereferenced), so it links Qt6 Core+Gui only — no widgets.
+    add_executable(klusters_test_inputdispatcher
+        inputdispatcher_test.cpp
+        "${_klu_src}/input/chord.cpp"
+        "${_klu_src}/input/bindingregistry.cpp"
+        "${_klu_src}/input/inputdispatcher.cpp")
+    target_compile_features(klusters_test_inputdispatcher PRIVATE cxx_std_20)
+    target_include_directories(klusters_test_inputdispatcher
+        PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    target_link_libraries(klusters_test_inputdispatcher PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME klusters_test_inputdispatcher COMMAND klusters_test_inputdispatcher)
 endif()

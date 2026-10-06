@@ -17,6 +17,7 @@ set(klusters_SRCS
     bufferedview.cpp
     input/chord.cpp            # device-agnostic input trigger (input-remapping plan §3)
     input/bindingregistry.cpp  # command/scope registry + resolver (input-remapping plan §4)
+    input/inputdispatcher.cpp  # QEvent->Chord glue + app-wide registry (input-remapping plan decision #1)
     channellist.cpp
     clusterPalette.cpp
     clusterinformationdialog.cpp

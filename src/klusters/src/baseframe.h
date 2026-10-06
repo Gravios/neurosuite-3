@@ -129,6 +129,19 @@ protected:
   * @param event mouse event.
   */
     virtual void mouseDoubleClickEvent(QMouseEvent* event) override;
+
+    /** The single entrypoint that turns a raw input event into a command (input
+     *  remapping plan, decision #1).  Builds the event's Chord and resolves it
+     *  against the one app-wide input::registry(); if a command is bound it is
+     *  invoked and this returns true (the caller should stop).  Returns false when
+     *  nothing is bound, so the caller runs its existing hardcoded handler — the
+     *  fall-through that keeps every un-ported view working while the migration
+     *  lands view by view.  Views funnel their handlers through this one function
+     *  instead of hand-decoding events; the base's own zoom handlers already do
+     *  (see baseframe.cpp).  No-op today: the registry is empty until the app/view
+     *  scopes are registered in later patches. */
+    bool dispatchInput(QEvent* event);
+
     /**
   * Translates a point (@p vx, @p vy) on the viewport to a QPoint in the world
   * @param vx x coordinate of the point in the viewport's coordinates system (relative to the widget).

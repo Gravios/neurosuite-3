@@ -16,6 +16,7 @@
  ***************************************************************************/
 //include files for the application
 #include "baseframe.h"
+#include "input/inputdispatcher.h"
 
 // include files for Qt
 #include <QPaintDevice>
@@ -94,7 +95,17 @@ void BaseFrame::changeBackgroundColor(const QColor& color){
     drawContentsMode = REDRAW;
 }
 
+bool BaseFrame::dispatchInput(QEvent* e){
+    // The one event->command path.  Empty registry (today) -> resolve finds nothing
+    // -> returns false -> callers run their existing behavior unchanged.
+    return input::dispatch(this, e);
+}
+
 void BaseFrame::mousePressEvent(QMouseEvent* e){
+    // Funnel the press through the resolver first; if a command claims it, stop.
+    // The base's rubber-band zoom below is thus already a dispatch participant —
+    // when the zoom binding is registered (a later patch) it resolves here.
+    if(dispatchInput(e)) return;
     if(mode == ZOOM || isRubberBandToBeDrawn){
         //Test if a selected rectangle exist, if so draw it and delete it.
         if(e->button() == Qt::LeftButton){
@@ -207,6 +218,7 @@ void BaseFrame::mouseMoveEvent(QMouseEvent* e){
 }
 
 void BaseFrame::mouseDoubleClickEvent(QMouseEvent* e){
+    if(dispatchInput(e)) return;
     if(mode == ZOOM){
         if ((e->button() == Qt::LeftButton) && !(e->modifiers() & Qt::ShiftModifier)){
             //Reset to the initial window
