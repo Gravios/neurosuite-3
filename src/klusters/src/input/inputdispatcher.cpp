@@ -22,7 +22,11 @@ Chord chordFromEvent(const QEvent* ev)
 {
     if (!ev) return {};
     switch (ev->type()) {
-    case QEvent::KeyPress: {
+    case QEvent::KeyPress:
+    case QEvent::ShortcutOverride: {
+        // ShortcutOverride carries the same key+modifiers as the KeyPress that
+        // follows it; mapping it lets a caller claim the override for a key it will
+        // handle on KeyPress (so QAction shortcuts / list type-ahead do not eat it).
         const auto* k = static_cast<const QKeyEvent*>(ev);
         if (k->isAutoRepeat()) return {};                 // a held key is not a fresh trigger
         const int key = k->key();

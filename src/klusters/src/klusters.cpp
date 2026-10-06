@@ -2192,49 +2192,18 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
-    // ── F / A — feature-view toggles (t-SNE, autoscale) ──────────────────
-    // Both used to live only in ClusterView::keyPressEvent, which made them
-    // unreachable in the normal workflow: ShortcutOverride and KeyPress go to
-    // the FOCUS widget, and this app parks focus in the cluster palette after
-    // essentially every operation, so the scatter never saw the key.  (F was
-    // doubly dead: the repair-nesting QAction held it in the default
-    // WindowShortcut context and fired from any focus; that binding moved to
-    // Shift+N in the previous commit.)  Dispatch both here, like T and V, so
-    // they work from any focus outside a text input — and gate on an actual
-    // cluster view existing, so displays without one leave the keys alone.
-    // Accepted trade-off, same as T and V: the palette's type-ahead search
-    // loses the letters f and a, which only ever matched numeric labels.
-    if(event->type() == QEvent::ShortcutOverride){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if((ke->key() == Qt::Key_F || ke->key() == Qt::Key_A)
-           && ke->modifiers() == Qt::NoModifier
-           && doc && !focusIsInTextInput() && activeClusterView()){
-            ke->accept();
+    // ── Resolver-dispatched cluster-view keys (plan P0d) ─────────────────────
+    // The ported eventFilter keys resolve here — Shift+O (oblique), Shift+E (lineage
+    // overlay), F (t-SNE), A (autoscale).  tryViewKeyCommand() claims the key at
+    // ShortcutOverride (so the palette's type-ahead and any QAction shortcut cannot eat
+    // the bare letters) and invokes it at KeyPress, consuming exactly when the old inline
+    // branches did — their gating lives in the commands' enabled() (registerInputBindings).
+    // Placed where the F/A blocks were, so ordering relative to the still-inline keys
+    // (S, T above; V, PageUp/Down below) is unchanged.  More keys migrate here over time.
+    if(event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress){
+        if(tryViewKeyCommand(static_cast<QKeyEvent*>(event),
+                             event->type() == QEvent::ShortcutOverride))
             return true;
-        }
-    }
-    if(event->type() == QEvent::KeyPress){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if((ke->key() == Qt::Key_F || ke->key() == Qt::Key_A)
-           && ke->modifiers() == Qt::NoModifier
-           && doc && !focusIsInTextInput()){
-            if(ClusterView* cv = activeClusterView()){
-                if(ke->key() == Qt::Key_F) cv->toggleTsnePresentation();
-                else                       cv->toggleAutoscale();
-                return true;
-            }
-        }
-    }
-
-    // ── Resolver-dispatched cluster-view keys (plan P0d): Shift+O oblique,
-    //    Shift+E lineage overlay ─────────────────────────────────────────────
-    // These two modified combos moved onto the input registry; tryViewKeyCommand()
-    // resolves them (and consumes exactly when the old branches did — see their
-    // enabled() in registerInputBindings()).  Placed where the inline blocks were, so
-    // ordering relative to the surrounding keys is unchanged.  More eventFilter keys
-    // migrate here over time.
-    if(event->type() == QEvent::KeyPress){
-        if(tryViewKeyCommand(static_cast<QKeyEvent*>(event))) return true;
     }
 
     // ── Enter / Esc — commit or discard a pending lasso's residual preview ─
@@ -2475,6 +2444,36 @@ void KlustersApp::registerInputBindings()
         };
         reg.addCommand(c);
     }
+    {   // F — toggle the t-SNE alternate presentation of the selection.  A bare letter,
+        // so it is claimed at ShortcutOverride too (tryViewKeyCommand), keeping it from
+        // the palette type-ahead.  Falls through when there is no cluster view.
+        input::Command c;
+        c.id       = QStringLiteral("cluster.tsnePresentation");
+        c.scopeId  = QStringLiteral("view.cluster");
+        c.label    = tr("t-SNE presentation");
+        c.category = tr("Cluster view");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_F);
+        c.enabled  = [this](const input::Ctx&){ return activeClusterView() != nullptr; };
+        c.invoke   = [this](const input::Ctx&){
+            if(ClusterView* cv = activeClusterView()) cv->toggleTsnePresentation();
+        };
+        reg.addCommand(c);
+    }
+    {   // A — toggle autoscale of the feature scatter.  Same bare-letter handling as F.
+        input::Command c;
+        c.id       = QStringLiteral("cluster.autoscale");
+        c.scopeId  = QStringLiteral("view.cluster");
+        c.label    = tr("Auto-scale");
+        c.category = tr("Cluster view");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_A);
+        c.enabled  = [this](const input::Ctx&){ return activeClusterView() != nullptr; };
+        c.invoke   = [this](const input::Ctx&){
+            if(ClusterView* cv = activeClusterView()) cv->toggleAutoscale();
+        };
+        reg.addCommand(c);
+    }
 
     // Apply the persisted override diffs (Configuration read them from QSettings at
     // startup).  Only ids we actually registered and that parse to a valid chord.
@@ -2498,19 +2497,25 @@ void KlustersApp::applyInputOverridesToActions()
     }
 }
 
-bool KlustersApp::tryViewKeyCommand(QKeyEvent* ke)
+bool KlustersApp::tryViewKeyCommand(QKeyEvent* ke, bool shortcutOverride)
 {
-    // Resolve a key press against the registry's resolver-dispatched commands (the
-    // external QAction mirrors are skipped by resolve(), so this never double-fires a
-    // menu shortcut).  ctx.view is the view the command acts on; the commands close
-    // over `this` for their gating + action.  Returns true when a command claims the
-    // key.  Currently stands in for the Shift+O / Shift+E eventFilter branches; more
-    // keys move onto the registry over time (input-remapping plan P0d).
+    // Resolve a key against the registry's resolver-dispatched commands (the external
+    // QAction mirrors are skipped by resolve(), so this never double-fires a menu
+    // shortcut).  ctx.view is the view the command acts on; the commands close over
+    // `this` for their gating + action.  Returns true when a command claims the key.
+    //
+    // Two phases, like the inline eventFilter blocks this replaces: on ShortcutOverride
+    // a matched command only CLAIMS the key (accept + consume) so the palette's
+    // type-ahead and any QAction shortcut do not eat it, and it is then delivered as a
+    // normal KeyPress; on KeyPress the command is invoked.  (Modified combos such as
+    // Shift+O did not need the override claim, but claiming them is harmless — nothing
+    // else binds them.)
     input::Ctx ctx;
     ctx.view  = activeClusterView();
     ctx.event = ke;
     const input::Command* cmd = input::registry().resolve(input::chordFromEvent(ke), ctx);
     if(!cmd) return false;
+    if(shortcutOverride){ ke->accept(); return true; }   // claim; act on the following KeyPress
     if(cmd->invoke) cmd->invoke(ctx);
     return true;
 }

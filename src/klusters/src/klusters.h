@@ -739,11 +739,11 @@ private:
      *  shortcut, so Qt dispatches the rebound key.  Non-overridden actions keep their
      *  shipped shortcut.  Called at startup and (later) after a Preferences rebind. */
     void applyInputOverridesToActions();
-    /** Resolve a key press against the registry's resolver-dispatched commands (skips
-     *  the external QAction mirrors) and invoke the match.  Returns true if a command
-     *  claimed the key.  Called from eventFilter for the ported cluster-view keys
-     *  (Shift+O / Shift+E so far). */
-    bool tryViewKeyCommand(QKeyEvent* ke);
+    /** Resolve a key against the registry's resolver-dispatched commands (skips the
+     *  external QAction mirrors).  On ShortcutOverride a match only claims the key
+     *  (accept), on KeyPress it is invoked.  Returns true if a command claimed the key.
+     *  Called from eventFilter for the ported cluster-view keys (Shift+O/E, F, A). */
+    bool tryViewKeyCommand(QKeyEvent* ke, bool shortcutOverride);
 
     // Plugins (descriptor discovery; read-only listing in v1).
     PluginRegistry mPluginRegistry;

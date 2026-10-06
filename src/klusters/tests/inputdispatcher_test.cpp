@@ -47,6 +47,11 @@ int main()
         // KeyRelease is not a trigger.
         QKeyEvent rel(QEvent::KeyRelease, Qt::Key_S, Qt::NoModifier);
         CHECK(!chordFromEvent(&rel).isValid());
+
+        // ShortcutOverride carries the same chord as the following KeyPress, so a key
+        // can be claimed at the override phase (used by the ported bare-letter keys).
+        QKeyEvent ovr(QEvent::ShortcutOverride, Qt::Key_F, Qt::NoModifier);
+        CHECK(chordFromEvent(&ovr) == Chord::key(Qt::Key_F));
     }
 
     // ── chordFromEvent: mouse buttons ────────────────────────────────────
