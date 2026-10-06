@@ -155,6 +155,11 @@ public:
      *  rubber-band in mouseMoveEvent, toggle/lasso-commit in mouseReleaseEvent — is
      *  unchanged).  Invoked by the registered Gesture command; was inline in the press. */
     void beginOverlayNodeGesture(const QPoint& pos);
+    /** Begin a Ctrl-drag pan at viewport point @p pos (arm the ctrlPan* state, set the
+     *  closed-hand cursor).  The drag body is in mouseMoveEvent and the disarm in
+     *  mouseReleaseEvent — the plan's seam.  Invoked by the cluster.pan Gesture command
+     *  (input-remapping plan P0d-4); was inline in the press. */
+    void beginCtrlPan(const QPoint& pos);
     /** The template class the lineage overlay edits (auto-seed + new regions).  Set
      *  by the template palette when a class is selected; defaults to 0.  When the
      *  overlay is engaged, switching class tiles that class and repaints. */

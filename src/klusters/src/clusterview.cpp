@@ -1310,6 +1310,19 @@ void ClusterView::beginOverlayNodeGesture(const QPoint& pos)
     lineageLassoRect_    = QRect(pos, pos);
 }
 
+void ClusterView::beginCtrlPan(const QPoint& pos)
+{
+    // Arm the pan; mouseMoveEvent crosses the drag threshold and scrolls the window,
+    // mouseReleaseEvent disarms.  Body lifted verbatim from the old inline press branch.
+    ctrlPanArmed       = true;
+    ctrlPanning        = false;
+    ctrlPanAnchorPx    = pos;
+    const QPoint w     = viewportToWorld(pos.x(), pos.y());
+    ctrlPanPressWorldX = w.x();
+    ctrlPanPressWorldY = w.y();
+    setCursor(Qt::ClosedHandCursor);
+}
+
 void ClusterView::registerInput(input::BindingRegistry& reg)
 {
     // A scope that is live for any press on a ClusterView (the command's enabled()
@@ -1336,6 +1349,31 @@ void ClusterView::registerInput(input::BindingRegistry& reg)
             cv->beginOverlayNodeGesture(static_cast<QMouseEvent*>(c.event)->position().toPoint());
     };
     reg.addCommand(cmd);
+
+    // Ctrl-drag pan: Ctrl+Left (AtLeast+Ctrl, so extra modifiers are tolerated) begins it,
+    // in every mode, as long as the view is showing feature space (the embedding has no
+    // feature-world coordinates to pan).  It resolves at the top of mousePressEvent ahead
+    // of node-mark / selection / zoom — exactly the precedence the old inline branch had,
+    // now expressed by the chord + enabled rather than branch order.  Gesture kind: begin
+    // only; the drag body is in mouseMoveEvent, the disarm in mouseReleaseEvent.
+    input::Command pan;
+    pan.id       = QStringLiteral("cluster.pan");
+    pan.scopeId  = QStringLiteral("view.cluster.scatter");
+    pan.label    = tr("Pan the view");
+    pan.category = tr("Navigation");
+    pan.kind     = input::Kind::Gesture;
+    pan.defaultChord = input::Chord::button(Qt::LeftButton, Qt::ControlModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    pan.enabled  = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        return cv && !cv->isTsneShowing();
+    };
+    pan.invoke   = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        if (cv && c.event)
+            cv->beginCtrlPan(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(pan);
 }
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
@@ -1377,20 +1415,11 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
     // All three speak feature-world coordinates, so none of them applies to
     // the embedding.
     if (!tsneMode) {
-    // Ctrl+Left arms a pan and takes precedence over every selection / zoom mode
-    // (it is a navigation gesture).  Don't forward to the base, so no rubber-band
-    // is started.
-    if((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
-        ctrlPanArmed       = true;
-        ctrlPanning        = false;
-        ctrlPanAnchorPx    = e->position().toPoint();
-        const QPoint w     = viewportToWorld(ctrlPanAnchorPx.x(), ctrlPanAnchorPx.y());
-        ctrlPanPressWorldX = w.x();
-        ctrlPanPressWorldY = w.y();
-        setCursor(Qt::ClosedHandCursor);
-        e->accept();
-        return;
-    }
+    // (Ctrl+Left arms a pan — moved onto the input registry, resolved by dispatchInput()
+    //  at the top of this handler.  See cluster.pan in ClusterView::registerInput and the
+    //  begin in beginCtrlPan; the drag body is in mouseMoveEvent, the disarm in
+    //  mouseReleaseEvent.  Its precedence over selection / zoom is now carried by that
+    //  early dispatch and the AtLeast+Ctrl chord, not by this branch's position.)
 
     // Shift+Left arms a lineage region-boundary drag (double-left is reset-zoom,
     // so it can no longer be used).  Only when the overlay is on and the press is
