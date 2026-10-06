@@ -135,7 +135,7 @@ void ClusterView::tsneDropIfActive(){
 void ClusterView::tsneInvalidate(){
     if (!tsneMode) { tsneDropIfActive(); return; }   // in-flight run: drop
     tsneRelabelFromDoc();
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -157,7 +157,7 @@ void ClusterView::exitTsne(const QString& reason){
         tsneMode = false;
         obliqueMode = false;        // obliqueMode implies tsneMode; clear together
         obliqueCond = 0.0;
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     }
     if (!reason.isEmpty() && statusBar) statusBar->showMessage(reason, 3000);
@@ -304,7 +304,7 @@ void ClusterView::startTsne(double perplexityOverride){
     tsneComputing = true;
     const int runId = ++tsneRunId;
     tsneProgressText = tr("t-SNE: starting…");
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
     if (sampled && statusBar)
         statusBar->showMessage(
@@ -404,7 +404,7 @@ void ClusterView::onTsneFinished(int runId, bool ok, const QString& err,
     tsneClusterCount= nClusters;
     tsnePerplexity  = perp;
     tsneMode        = true;
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
     if (statusBar) statusBar->showMessage(
         (tsneChildLayer
@@ -457,7 +457,7 @@ void ClusterView::cancelSelectionPolygon(){
     resetSelectionPolygon();
     // REFRESH re-blits the double buffer without the overlay in the scatter,
     // and repaints the embedding wholesale; neither needs the clusters redrawn.
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
     if (statusBar) statusBar->showMessage(tr("Selection discarded"), 2000);
 }
@@ -466,7 +466,7 @@ void ClusterView::closeSelectionPolygon(){
     if (selectionPolygon.size() <= 2) {
         // Fewer than three vertices is not a polygon; the scatter refreshes and
         // leaves what was drawn, so do exactly that.
-        drawContentsMode = REFRESH;
+        invalidate(REFRESH);
         update();
         if (statusBar) statusBar->clearMessage();
         return;
@@ -485,7 +485,7 @@ void ClusterView::closeSelectionPolygon(){
     else
         QApplication::postEvent(this, getComputeEvent(selectionPolygon));
 
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
     if (statusBar) statusBar->clearMessage();
 }
@@ -529,7 +529,7 @@ void ClusterView::applyTsneLasso(){
     if (rows.isEmpty()) {
         if (statusBar) statusBar->showMessage(tr("t-SNE lasso: no spikes inside"), 3000);
         resetSelectionPolygon();
-        drawContentsMode = REFRESH;
+        invalidate(REFRESH);
         update();
         return;
     }
@@ -554,7 +554,7 @@ void ClusterView::applyTsneLasso(){
               : tr("t-SNE lasso: the selected spikes are no longer in the embedded "
                    "clusters — press F twice to re-embed"), 5000);
         resetSelectionPolygon();
-        drawContentsMode = REFRESH;
+        invalidate(REFRESH);
         update();
         return;
     }
@@ -577,7 +577,7 @@ void ClusterView::applyTsneLasso(){
         pendingNSel_    = nSelected;
         pendingLasso_   = true;
         showLassoResidualPreview();
-        drawContentsMode = REDRAW;            // repaint the projection without the polygon
+        invalidate(REDRAW);            // repaint the projection without the polygon
         update();
         if (statusBar) statusBar->showMessage(
             tr("Oblique lasso: %1 spikes — Enter to apply, Esc to cancel, "
@@ -614,7 +614,7 @@ void ClusterView::applyLassoSelection(const QSet<dataType>& rows, const QList<in
 
     // Positions are untouched by a membership edit, so recolour in place.
     tsneRelabelFromDoc();
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 
     const QString lassoName = obliqueMode ? tr("Oblique lasso") : tr("t-SNE lasso");
@@ -662,7 +662,7 @@ void ClusterView::confirmPendingLasso(){
 void ClusterView::cancelPendingLasso(){
     if (!pendingLasso_) return;
     clearPendingLasso();
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
     if (statusBar) statusBar->showMessage(tr("t-SNE lasso cancelled"), 3000);
 }
@@ -1217,7 +1217,7 @@ void ClusterView::addClusterToUpdate(int clusterId){
     // so it will be updated during the next update
     if(drawContentsMode == REFRESH){
         clusterUpdateList.append(clusterId);
-        drawContentsMode = UPDATE;
+        invalidate(UPDATE);
     }
     else if(drawContentsMode == UPDATE)
         clusterUpdateList.append(clusterId);
@@ -1254,7 +1254,7 @@ void ClusterView::updatedDimensions(int dimensionX, int dimensionY){
     //Update the window in a maner to always see the axis
     window = ZoomWindow(QRect(QPoint(abscissaMin,ordinateMin),QPoint(abscissaMax,ordinateMax)));
 
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
 
     //reset the information on the polygon to enable a mousetrack in mousemovEvent
     polygonClosed = false;
@@ -1294,7 +1294,7 @@ void ClusterView::dimensionExtremaChanged(){
     // Common case: the recompute confirmed the old bounds; skip the repaint.
     if (!recomputeWorldBounds())
         return;
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -1306,7 +1306,7 @@ void ClusterView::clusterFeaturesReprojected(int /*clusterId*/){
     // this one.  With autoscale enabled paintEvent refits anyway and simply
     // overwrites this.
     recomputeWorldBounds();
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
 }
 
@@ -1461,7 +1461,7 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
 
             //Erase the last drawn line by drawing into the buffer
             eraseTheLastDrawnLine();
-            drawContentsMode = REFRESH;
+            invalidate(REFRESH);
             update();
         }
 
@@ -1480,7 +1480,7 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
                 selectionPolygon.putPoints(0, 1, selectedPoint.x(),selectedPoint.y());
             //If the array is not empty, the last point has been put into the array in mouseMoveEvent
             nbSelectionPoints = selectionPolygon.size();
-            drawContentsMode = REFRESH;
+            invalidate(REFRESH);
             update();
         }
     }
@@ -1493,7 +1493,7 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
         applyModeCursor();                       // overlay: back to the pointer
         const double t = timeAtViewport(event->position().toPoint());
         if (t > 0.0 && lineageStore_.moveBoundary(i, t)) lineageEdited();
-        else { recomputeLineagePositions(); drawContentsMode = REFRESH; update(); }  // snap back
+        else { recomputeLineagePositions(); invalidate(REFRESH); update(); }  // snap back
         event->accept();
         return;
     }
@@ -1508,7 +1508,7 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
             const int nodeId = lineageNodeAt(event->position().toPoint());
             if (nodeId >= 0) toggleLineageNodeMark(nodeId);
         }
-        drawContentsMode = REFRESH;
+        invalidate(REFRESH);
         update();
         event->accept();
         return;
@@ -1559,7 +1559,7 @@ void ClusterView::wheelEvent(QWheelEvent* e){
         const double cx = static_cast<double>(p.x()) + Wn * (0.5 - fx);
         const double cy = static_cast<double>(p.y()) + Hn * (0.5 - fy);
         if(window.zoom(factor, static_cast<float>(cx), static_cast<float>(cy))){
-            drawContentsMode = REDRAW;
+            invalidate(REDRAW);
             update();
         }
     }
@@ -1708,7 +1708,7 @@ void ClusterView::setHighlightClass(int col){
             }
         }
     }
-    drawContentsMode = REDRAW;   // repaint with the new (or cleared) member highlight
+    invalidate(REDRAW);   // repaint with the new (or cleared) member highlight
     update();
 }
 
@@ -1789,7 +1789,7 @@ void ClusterView::toggleLineageOverlay()
     // The forced (entry) / restored (exit) feature pair must reach the toolbar spin
     // boxes too — updateDimensions() only drives the ViewWidgets, not the toolbar.
     if (dimsChanged) view.syncToolbarDimensions();
-    if (!dimsChanged) drawContentsMode = REFRESH;   // overlay sits on top; else a REDRAW is already queued
+    if (!dimsChanged) invalidate(REFRESH);   // overlay sits on top; else a REDRAW is already queued
     update();
 }
 
@@ -1850,7 +1850,7 @@ void ClusterView::removeLineageClass(int classId)
     }
     recomputeLineagePositions();
     pushActiveLineageBands();                          // no primary -> clears; else refreshes
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
 }
 
@@ -1866,7 +1866,7 @@ void ClusterView::setLineageActiveClass(int classId)
         // Primary unset: drop the band and leave edit mode (nothing to edit without one).
         if (lineageOverlay_) toggleLineageOverlay();   // off-branch restores the projection + clears the band
         clearTemplatePreviewOnViews();
-        drawContentsMode = REFRESH;
+        invalidate(REFRESH);
         update();
         return;
     }
@@ -1878,7 +1878,7 @@ void ClusterView::setLineageActiveClass(int classId)
         lineageStore_.ensureClassTiled(classId);
     recomputeLineagePositions();
     pushActiveLineageBands();
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
 }
 
@@ -2141,7 +2141,7 @@ void ClusterView::lineageEdited()
     lineageStore_.saveWtl();            // auto-persist the new nodes/leaves to the .wtl source
     recomputeLineagePositions();
     pushActiveLineageBands();           // the fold just landed — show its mean±std band now
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
     if (statusBar) statusBar->showMessage(
         tr("Lineage edit saved — right-click → Undo/Redo, or Commit to render .mti/.mtf"), 4000);
@@ -2158,7 +2158,7 @@ void ClusterView::lineageUndo()
     Q_EMIT lineageMarksChanged();       // the marked templates' data (or set) changed
     recomputeLineagePositions();
     pushActiveLineageBands();
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
     if (statusBar) statusBar->showMessage(tr("Undid template edit"), 2000);
 }
@@ -2173,7 +2173,7 @@ void ClusterView::lineageRedo()
     Q_EMIT lineageMarksChanged();
     recomputeLineagePositions();
     pushActiveLineageBands();
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
     if (statusBar) statusBar->showMessage(tr("Redid template edit"), 2000);
 }
@@ -2187,7 +2187,7 @@ void ClusterView::commitLineageOverlay()
         : tr("Commit failed: %1").arg(QString::fromStdString(R.err)), 6000);
     pushActiveLineageBands();                  // the committed model == the stored means; show its band
     recomputeLineagePositions();
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
 }
 
@@ -2294,7 +2294,7 @@ void ClusterView::overlaySingleNode(int node)
     // caller).  node < 0 restores the full primary-class band.
     lineageSingleNode_ = node;
     pushActiveLineageBands();
-    drawContentsMode = REFRESH;
+    invalidate(REFRESH);
     update();
 }
 
@@ -2402,7 +2402,7 @@ void ClusterView::showLineageContextMenu(const QPoint& vp)
         if      (c == aDrift)  { lineageStore_.setRegionSpikes(cls, region, sel);           lineageEdited(); }
         else if (c == aAdapt)  { lineageStore_.addLeaf(cls, region, "adapt-leaf", sel);     lineageEdited(); }
         else if (c == aColl)   { lineageStore_.addLeaf(cls, region, "collision-leaf", sel); lineageEdited(); }
-        else if (c == aMark)   { toggleLineageNodeMark(nodeId); drawContentsMode = REFRESH; update(); }
+        else if (c == aMark)   { toggleLineageNodeMark(nodeId); invalidate(REFRESH); update(); }
         else if (c == aRemove) { markedNodes_.erase(nodeId); lineageStore_.removeNode(nodeId);
                                  Q_EMIT lineageMarksChanged(); lineageEdited(); }
         else if (c == aCommit)   commitLineageOverlay();
@@ -2698,7 +2698,7 @@ void ClusterView::startOblique(){
     obliqueCond      = cond;
     obliqueMode      = true;
     tsneMode         = true;
-    drawContentsMode = REDRAW;
+    invalidate(REDRAW);
     update();
     if (statusBar) {
         if (usePinned) {
@@ -2729,12 +2729,12 @@ void ClusterView::toggleAutoscale(){
         // behaviour: rebuilding from the extrema restores the room to pan and
         // zoom out, and keeps whatever the user is currently looking at.
         recomputeWorldBounds();
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
     }
     if (autoscaleEnabled) {
         autoscaleToVisibleClusters();
-        drawContentsMode = REDRAW;
+        invalidate(REDRAW);
         update();
         if (statusBar) statusBar->showMessage(tr("Autoscale: on (press A to disable)"), 3000);
     } else {
@@ -2824,7 +2824,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
     // Lineage overlay (§11.3): live-preview a boundary being Shift+left-dragged.
     if (lineageDragBoundary_ >= 0) {
         lineageDragBoundaryT_ = timeAtViewport(e->position().toPoint());
-        drawContentsMode = REFRESH; update();
+        invalidate(REFRESH); update();
         return;
     }
     // Lineage overlay (§11.5): grow the node-lasso rectangle (plain Left drag).  Past
@@ -2837,7 +2837,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
              qAbs(vp.y() - lineageLassoAnchor_.y()) >= 3))
             lineageLassoDragged_ = true;
         lineageLassoRect_ = QRect(lineageLassoAnchor_, vp).normalized();
-        if (lineageLassoDragged_) { drawContentsMode = REFRESH; update(); }
+        if (lineageLassoDragged_) { invalidate(REFRESH); update(); }
         e->accept();
         return;
     }
@@ -2855,7 +2855,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
                 selectionPolygon.putPoints(selectionPolygon.size(), 1, current.x(), current.y());
             else
                 selectionPolygon.setPoint(selectionPolygon.size()-1, current);
-            drawContentsMode = REFRESH;
+            invalidate(REFRESH);
             update();
         }
         return;
@@ -2877,7 +2877,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
             const double newCx = curCx - static_cast<double>(cw.x() - ctrlPanPressWorldX);
             const double newCy = curCy - static_cast<double>(cw.y() - ctrlPanPressWorldY);
             if(window.zoom(1.0f, static_cast<float>(newCx), static_cast<float>(newCy))){
-                drawContentsMode = REDRAW;
+                invalidate(REDRAW);
                 update();
             }
         }
@@ -2921,7 +2921,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
             else{
                 selectionPolygon.setPoint(selectionPolygon.size()-1,current);
             }
-            drawContentsMode = REFRESH;
+            invalidate(REFRESH);
             update();
         }
     }
