@@ -2164,42 +2164,18 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
     }
-    // ── T key: palette move-to-end ─────────────────────────────────────────
-    // T has no global QAction shortcut (the "Time Frame" QAction shortcut
-    // was removed).  Trigger the renumber-to-end whenever the user has a
-    // palette selection, regardless of which view currently holds focus
-    // (cluster view, correlation matrix, error matrix, template matrix —
-    // any of these are normal palette companions).  Only suppress when
-    // focus is in a text-entry control (spinbox / line-edit) so the user
-    // can still type letters.  Earlier the gate required strict
-    // paletteHasFocus(), which silently dropped T after a click on the
-    // correlation matrix — counter-intuitive, since the palette's
-    // selection ring stays visible across that focus change.
-    if(event->type() == QEvent::ShortcutOverride){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_T && ke->modifiers() == Qt::NoModifier
-           && !focusIsInTextInput()){
-            ke->accept();
-            return true;
-        }
-    }
-    if(event->type() == QEvent::KeyPress){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_T && ke->modifiers() == Qt::NoModifier
-           && doc && !focusIsInTextInput()){
-            slotMoveSelectedClustersToEnd();
-            return true;
-        }
-    }
+    // (T — "move selection to end" — moved onto the input registry; resolved by the
+    //  dispatch block below.  See clusters.moveSelectionToEnd in registerInputBindings.)
 
-    // ── Resolver-dispatched cluster-view keys (plan P0d) ─────────────────────
+    // ── Resolver-dispatched keys (plan P0d) ──────────────────────────────────
     // The ported eventFilter keys resolve here — Shift+O (oblique), Shift+E (lineage
-    // overlay), F (t-SNE), A (autoscale).  tryViewKeyCommand() claims the key at
-    // ShortcutOverride (so the palette's type-ahead and any QAction shortcut cannot eat
-    // the bare letters) and invokes it at KeyPress, consuming exactly when the old inline
-    // branches did — their gating lives in the commands' enabled() (registerInputBindings).
-    // Placed where the F/A blocks were, so ordering relative to the still-inline keys
-    // (S, T above; V, PageUp/Down below) is unchanged.  More keys migrate here over time.
+    // overlay), F (t-SNE), A (autoscale), T (move selection to end), V (child-scoped
+    // matrices).  tryViewKeyCommand() claims the key at ShortcutOverride (so the
+    // palette's type-ahead and any QAction shortcut cannot eat the bare letters) and
+    // invokes it at KeyPress, consuming exactly when the old inline branches did — their
+    // gating lives in the commands' enabled() (registerInputBindings).  S and the modal
+    // keys (Enter/Esc/D, Up/Down, PageUp/Down) are still inline below/above and migrate
+    // over time; ordering relative to them is unchanged.
     if(event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress){
         if(tryViewKeyCommand(static_cast<QKeyEvent*>(event),
                              event->type() == QEvent::ShortcutOverride))
@@ -2261,54 +2237,8 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
-    // ── V — toggle the child-scoped matrices ─────────────────────────────
-    // Bare V is unbound elsewhere; the only Qt::Key_V in the tree is Ctrl+V paste
-    // inside SpinBox, which is modifier-guarded and in a text-entry widget, so
-    // focusIsInTextInput() keeps the two apart.  Intercepted at ShortcutOverride
-    // as well as KeyPress for the same reason T is: otherwise the palette's
-    // QListWidget consumes it for type-ahead search.
-    //
-    // Works from anywhere rather than only while a child palette has focus.  The
-    // mode is a statement of intent, and requiring focus would make it
-    // untoggleable in exactly the situation it exists for.
-    if(event->type() == QEvent::ShortcutOverride){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_V && ke->modifiers() == Qt::NoModifier
-           && !focusIsInTextInput()){
-            ke->accept();
-            return true;
-        }
-    }
-    if(event->type() == QEvent::KeyPress){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_V && ke->modifiers() == Qt::NoModifier
-           && doc && !focusIsInTextInput()){
-            // V is the only way INTO child view; every automatic exit below
-            // clears the flag, so this always re-arms deliberately.
-            const bool on = !doc->matrixScopeEnabled();
-            doc->setMatrixScopeEnabled(on);
-            // Under a HELD joint selection the child palette's content follows
-            // this toggle -- V on shows the matrix-built working set (empty at
-            // first), V off falls back to the curated parent's roster -- so the
-            // toggle must repopulate.  In single-parent mode it changes nothing
-            // in the palette, and the rebuild is skipped.
-            if(childPanel && childPanel->isVisible()
-               && doc->curatedParentsList().size() >= 2)
-                repopulateChildPalette(clusterPalette->selectedClusters());
-            if (on && !doc->matrixScopeActive())
-                statusBar()->showMessage(
-                    tr("Matrices: child-scoped — select a parent with children to see it."), 3000);
-            else
-                statusBar()->showMessage(
-                    on ? (doc->matrixScopeParents().size() >= 2
-                            ? tr("Matrices: joint — children of %1 parents; "
-                                 "click matrix cells to pick children.")
-                                  .arg(doc->matrixScopeParents().size())
-                            : tr("Matrices: children of cluster %1.").arg(doc->curatedParent()))
-                       : tr("Matrices: all clusters."), 3000);
-            return true;
-        }
-    }
+    // (V — "child-scoped matrices" — moved onto the input registry; resolved by the
+    //  dispatch block above.  See matrices.childScope in registerInputBindings.)
     // ── PageUp / PageDown — timestamp nudge (±1 sample) ──────────────────
     // Intercept at both ShortcutOverride and KeyPress so the cluster palette
     // QListWidget never receives these keys for its own scroll navigation.
@@ -2392,6 +2322,58 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("action.deleteArtifact"), QStringLiteral("Actions"), mDeleteArtifact);
     registerActionCommand(QStringLiteral("action.deleteNoisy"),    QStringLiteral("Actions"), mDeleteNoisy);
     registerActionCommand(QStringLiteral("action.groupClusters"),  QStringLiteral("Actions"), mGroupeClusters);
+
+    // ── app-scope resolver-dispatched keys (not QActions) ─────────────────────
+    // Bare letters with no QAction behind them, dispatched from eventFilter via
+    // tryViewKeyCommand() (claimed at ShortcutOverride, acted at KeyPress).  They act
+    // on the palette/selection regardless of which view is up, so they live in `app`,
+    // not view.cluster.  enabled() = a document is open and focus is not in a text
+    // field — the old branches' exact gate.
+    {   // T — move the selected clusters to the end (renumber-to-end)
+        input::Command c;
+        c.id       = QStringLiteral("clusters.moveSelectionToEnd");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Move selection to end");
+        c.category = tr("Clusters");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_T);
+        c.enabled  = [this](const input::Ctx&){ return doc && !focusIsInTextInput(); };
+        c.invoke   = [this](const input::Ctx&){ slotMoveSelectedClustersToEnd(); };
+        reg.addCommand(c);
+    }
+    {   // V — toggle the child-scoped matrices (statement of intent; works from anywhere)
+        input::Command c;
+        c.id       = QStringLiteral("matrices.childScope");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Child-scoped matrices");
+        c.category = tr("Matrices");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_V);
+        c.enabled  = [this](const input::Ctx&){ return doc && !focusIsInTextInput(); };
+        c.invoke   = [this](const input::Ctx&){
+            // V is the only way INTO child view; every automatic exit elsewhere clears
+            // the flag, so this always re-arms deliberately.
+            const bool on = !doc->matrixScopeEnabled();
+            doc->setMatrixScopeEnabled(on);
+            // Under a HELD joint selection the child palette's content follows this
+            // toggle, so it must repopulate; single-parent mode changes nothing there.
+            if(childPanel && childPanel->isVisible()
+               && doc->curatedParentsList().size() >= 2)
+                repopulateChildPalette(clusterPalette->selectedClusters());
+            if (on && !doc->matrixScopeActive())
+                statusBar()->showMessage(
+                    tr("Matrices: child-scoped — select a parent with children to see it."), 3000);
+            else
+                statusBar()->showMessage(
+                    on ? (doc->matrixScopeParents().size() >= 2
+                            ? tr("Matrices: joint — children of %1 parents; "
+                                 "click matrix cells to pick children.")
+                                  .arg(doc->matrixScopeParents().size())
+                            : tr("Matrices: children of cluster %1.").arg(doc->curatedParent()))
+                       : tr("Matrices: all clusters."), 3000);
+        };
+        reg.addCommand(c);
+    }
 
     // ── view.cluster scope: resolver-dispatched cluster-view keys (plan P0d) ──
     // Common gate: a document is open and focus is not in a text field (so the letters
