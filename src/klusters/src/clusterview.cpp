@@ -1393,15 +1393,36 @@ void ClusterView::undoSelectionVertex()
 
 void ClusterView::pickSelectionTime(const QPoint& viewportPos)
 {
-    QPoint current = viewportToWorld(viewportPos.x(), viewportPos.y());
-    if(dimensionX == timeDimension){
-        dataType time = static_cast<dataType>(current.x() * samplingInterval / 1000.0);
-        emit moveToTime(time);
+    // Normal-cursor pick: find the nearest SHOWN spike to the click in the current
+    // (dimensionX, dimensionY) projection, then scroll the trace view to that spike's time.
+    // Distance is measured in viewport pixels — worldToViewport(it(dimX,dimY)) is exactly how
+    // drawClusters plots each spike — so the visually-closest point wins regardless of the two
+    // axes' world scales, and it works for ANY projection: the time axis need not be shown,
+    // because the spike's time is read from its time-dimension feature value, not from the
+    // click's position on a time axis (the old behaviour).
+    Data& clusteringData = doc.data();          // the active layer, as drawClusters uses
+    const QList<int> clustersList = view.clusters();
+    double   bestPixelD2  = -1.0;
+    dataType bestTimeValue = 0;
+    bool     found = false;
+    for(int clustId : clustersList){
+        Data::Iterator it = clusteringData.iterator(static_cast<dataType>(clustId));
+        for(; it.hasNext(); it.next()){
+            const QPoint px = worldToViewport(it(dimensionX, dimensionY));
+            const double dx = static_cast<double>(px.x() - viewportPos.x());
+            const double dy = static_cast<double>(px.y() - viewportPos.y());
+            const double d2 = dx * dx + dy * dy;
+            if(!found || d2 < bestPixelD2){
+                bestPixelD2   = d2;
+                bestTimeValue = it(timeDimension);   // this spike's time (recording units)
+                found         = true;
+            }
+        }
     }
-    else if(dimensionY == timeDimension){
-        dataType time = -static_cast<dataType>(current.y() * samplingInterval / 1000.0);
-        emit moveToTime(time);
-    }
+    if(!found) return;
+    // Same recording-units -> ms conversion the old time-axis pick used for the world abscissa.
+    const dataType time = static_cast<dataType>(bestTimeValue * samplingInterval / 1000.0);
+    emit moveToTime(time);
 }
 
 void ClusterView::wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos)
@@ -1455,25 +1476,26 @@ void ClusterView::registerInput(input::BindingRegistry& reg)
     };
     reg.addCommand(cmd);
 
-    // Normal-cursor time pick (Overview redesign step 5): a plain Left press in the no-tool
-    // default (mode == NONE) jumps the trace view to the time under the cursor — the behaviour
-    // that used to need the dedicated Select Time tool.  A discrete pick, not a window (Action
-    // kind), so invoke() does the whole thing.  Enabled only in feature space, with a time axis
-    // shown and the overlay off — so it never shadows the overlay node-mark (plain Left too, but
-    // registered FIRST and gated on the overlay being on, so it wins when the overlay is active),
-    // and a plain click with no time axis simply falls through (NONE does nothing).  Ctrl/Shift
-    // Left are Exact-NoModifier mismatches, so pan / boundary-drag still take those.
+    // Normal-cursor spike pick (Overview redesign step 5): a plain Left press in the no-tool
+    // default (mode == NONE) finds the nearest shown spike in the CURRENT feature projection and
+    // scrolls the trace view to that spike's time.  Works in ANY projection — the time axis need
+    // not be shown (earlier this only picked a time off a time axis).  A discrete pick, not a
+    // window (Action kind), so invoke() does the whole thing.  Enabled in feature space with the
+    // overlay off — so it never shadows the overlay node-mark (plain Left too, but registered
+    // FIRST and gated on the overlay being on, so it wins when the overlay is active).  Ctrl/Shift
+    // Left are Exact-NoModifier mismatches, so pan / boundary-drag still take those.  t-SNE is
+    // excluded: its embedding is not a feature projection, so worldToViewport(it(dimX,dimY))
+    // would not match the drawn points.
     input::Command tp;
     tp.id       = QStringLiteral("cluster.pickTime");
     tp.scopeId  = QStringLiteral("view.cluster.scatter");
-    tp.label    = tr("Pick time for trace view");
+    tp.label    = tr("Scroll trace to nearest spike");
     tp.category = tr("Navigation");
     tp.kind     = input::Kind::Action;
     tp.defaultChord = input::Chord::button(Qt::LeftButton);
     tp.enabled  = [](const input::Ctx& c){
         auto* cv = qobject_cast<ClusterView*>(c.view);
-        return cv && cv->mode == NONE && !cv->tsneMode && !cv->lineageOverlay_
-               && (cv->dimensionX == cv->timeDimension || cv->dimensionY == cv->timeDimension);
+        return cv && cv->mode == NONE && !cv->tsneMode && !cv->lineageOverlay_;
     };
     tp.invoke   = [](const input::Ctx& c){
         auto* cv = qobject_cast<ClusterView*>(c.view);
@@ -1699,11 +1721,12 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
     //  Ctrl+Left still pans, Shift+Left still grabs a boundary, the lasso tools keep
     //  their left-click, and Ctrl+wheel / double-click still zoom.)
 
-    // (The time pick — a plain Left press in the normal cursor (NONE) jumps the trace view to
-    //  that time — is a registry command: cluster.pickTime in view.cluster.scatter, resolved by
-    //  dispatchInput() at the top; the body is in pickSelectionTime.  It is a discrete pick, not
-    //  a window, so nothing is armed here.  The old dedicated Select Time tool was retired in the
-    //  Overview redesign (step 5); this is its body on the normal-cursor click.)
+    // (The spike pick — a plain Left press in the normal cursor (NONE) finds the nearest shown
+    //  spike in the current projection and scrolls the trace view to its time — is a registry
+    //  command: cluster.pickTime in view.cluster.scatter, resolved by dispatchInput() at the top;
+    //  the body is in pickSelectionTime.  It is a discrete pick, not a window, so nothing is armed
+    //  here.  The old dedicated Select Time tool was retired in the Overview redesign (step 5);
+    //  this is its successor on the normal-cursor click.)
 
     //The parent implementation takes care of the mode ZOOM
     //(rubber band and calculation of the firstClick)
