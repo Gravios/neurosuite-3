@@ -7171,6 +7171,36 @@ void KlustersApp::slotShowShortcutHelp()
                 .arg(QString::fromUtf8(kFilterKeys[i].description));
     html += QStringLiteral("</table>");
 
+    // Mouse bindings come straight from the input registry (input-remapping plan §5), so
+    // they reflect any rebinds set in Preferences ▸ Input and never drift from the live
+    // bindings.  Grouped by each command's (human-readable) category; the effective chord
+    // is shown, so an override appears here the moment it is applied.
+    {
+        const input::BindingRegistry& reg = input::registry();
+        QMap<QString, QList<const input::Command*>> byCat;   // category -> button/wheel commands
+        for (const input::Command& c : reg.commands()) {
+            const input::Device d = c.defaultChord.device;
+            if (d == input::Device::Button || d == input::Device::Wheel)
+                byCat[c.category].append(&c);
+        }
+        if (!byCat.isEmpty()) {
+            html += QStringLiteral("<h3>%1</h3>")
+                    .arg(tr("Mouse (editable in Preferences ▸ Input)"));
+            html += QStringLiteral("<p style='margin:0 0 4px 0;color:#b0b0b0'>%1</p>")
+                    .arg(tr("A gesture bound with “any modifiers” also fires with "
+                            "extra modifier keys held."));
+            for (auto it = byCat.constBegin(); it != byCat.constEnd(); ++it) {
+                html += QStringLiteral("<table><tr><th colspan=\"2\">%1</th></tr>")
+                        .arg(it.key().toHtmlEscaped());
+                for (const input::Command* c : it.value())
+                    html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
+                            .arg(reg.effectiveChord(c->id).displayString().toHtmlEscaped())
+                            .arg(c->label.toHtmlEscaped());
+                html += QStringLiteral("</table>");
+            }
+        }
+    }
+
     for (const auto& sec : kSections) {
         html += QStringLiteral("<h3>%1</h3><table>")
                 .arg(QString::fromUtf8(sec.title));
