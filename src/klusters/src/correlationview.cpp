@@ -25,6 +25,7 @@
 #include "itemcolors.h"
 #include "correlationthread.h"
 #include "correlationview.h"
+#include "input/bindingregistry.h"   // registerInput: Ctrl+wheel amplitude scaling (the seam)
 #include "correlationgrid.h"
 
 #include <math.h>
@@ -991,6 +992,55 @@ void  CorrelationView::decreaseAmplitude(){
         setCursor(Qt::WaitCursor);
         askForCorrelograms();
     }
+}
+
+void CorrelationView::registerInput(input::BindingRegistry& reg)
+{
+    // First binding for the auto-correlogram view: a scope live for any CorrelationView, plus
+    // the Ctrl+wheel amplitude scaling (Overview redesign: the amplitude views scale instead of
+    // zoom/pan).  Co-located here, registered once from KlustersApp::registerInputBindings.
+    reg.addScope({ QStringLiteral("view.correlation"), input::Layer::ViewType,
+        [](const input::Ctx& c){ return qobject_cast<CorrelationView*>(c.view) != nullptr; } });
+
+    // Ctrl+wheel up/down increases/decreases the ordinate amplitude — Action kind (one notch is
+    // one step, like the toolbar +/-).  AtLeast+Ctrl: Ctrl held, extras tolerated.
+    input::Command sUp;
+    sUp.id       = QStringLiteral("correlation.scaleUp");
+    sUp.scopeId  = QStringLiteral("view.correlation");
+    sUp.label    = tr("Increase correlogram amplitude");
+    sUp.category = tr("Scale");
+    sUp.kind     = input::Kind::Action;
+    sUp.defaultChord = input::Chord::wheel(+1, Qt::ControlModifier, input::ModMatch::AtLeast);
+    sUp.invoke   = [](const input::Ctx& c){
+        auto* cv = qobject_cast<CorrelationView*>(c.view);
+        if (cv) cv->increaseAmplitude();
+    };
+    reg.addCommand(sUp);
+
+    input::Command sDown;
+    sDown.id       = QStringLiteral("correlation.scaleDown");
+    sDown.scopeId  = QStringLiteral("view.correlation");
+    sDown.label    = tr("Decrease correlogram amplitude");
+    sDown.category = tr("Scale");
+    sDown.kind     = input::Kind::Action;
+    sDown.defaultChord = input::Chord::wheel(-1, Qt::ControlModifier, input::ModMatch::AtLeast);
+    sDown.invoke   = [](const input::Ctx& c){
+        auto* cv = qobject_cast<CorrelationView*>(c.view);
+        if (cv) cv->decreaseAmplitude();
+    };
+    reg.addCommand(sDown);
+}
+
+void CorrelationView::wheelEvent(QWheelEvent* event){
+    // Ctrl+wheel scales the amplitude (registry correlation.scaleUp / ...Down); a plain wheel
+    // defers to the base; a Ctrl+wheel with no vertical delta yields no chord and is swallowed.
+    // CorrelationView had no wheel handler before, so this is purely additive.
+    if(dispatchInput(event)) return;
+    if(!(event->modifiers() & Qt::ControlModifier)){
+        ViewWidget::wheelEvent(event);
+        return;
+    }
+    event->accept();
 }
 
 void  CorrelationView::setShoulderLine(bool b){

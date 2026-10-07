@@ -1147,6 +1147,48 @@ void WaveformView::registerInput(input::BindingRegistry& reg)
         if (wv) wv->beginChannelPick();
     };
     reg.addCommand(pick);
+
+    // Ctrl+wheel scales the waveform amplitude (Overview redesign: the amplitude views scale
+    // instead of zoom/pan).  Action kind — one notch is one gain step, like the toolbar +/-;
+    // Ctrl+wheel up increases.  AtLeast+Ctrl matches Ctrl held with extras tolerated, and a
+    // wheel chord never collides with the channel-pick button gesture (different device).
+    input::Command sUp;
+    sUp.id       = QStringLiteral("waveform.scaleUp");
+    sUp.scopeId  = QStringLiteral("view.waveform");
+    sUp.label    = tr("Increase waveform amplitude");
+    sUp.category = tr("Scale");
+    sUp.kind     = input::Kind::Action;
+    sUp.defaultChord = input::Chord::wheel(+1, Qt::ControlModifier, input::ModMatch::AtLeast);
+    sUp.invoke   = [](const input::Ctx& c){
+        auto* wv = qobject_cast<WaveformView*>(c.view);
+        if (wv) wv->increaseAmplitude();
+    };
+    reg.addCommand(sUp);
+
+    input::Command sDown;
+    sDown.id       = QStringLiteral("waveform.scaleDown");
+    sDown.scopeId  = QStringLiteral("view.waveform");
+    sDown.label    = tr("Decrease waveform amplitude");
+    sDown.category = tr("Scale");
+    sDown.kind     = input::Kind::Action;
+    sDown.defaultChord = input::Chord::wheel(-1, Qt::ControlModifier, input::ModMatch::AtLeast);
+    sDown.invoke   = [](const input::Ctx& c){
+        auto* wv = qobject_cast<WaveformView*>(c.view);
+        if (wv) wv->decreaseAmplitude();
+    };
+    reg.addCommand(sDown);
+}
+
+void WaveformView::wheelEvent(QWheelEvent* event){
+    // Ctrl+wheel scales the amplitude (registry waveform.scaleUp / ...Down); a plain wheel
+    // defers to the base; a Ctrl+wheel with no vertical delta yields no chord and is swallowed.
+    // WaveformView had no wheel handler before, so this is purely additive.
+    if(dispatchInput(event)) return;
+    if(!(event->modifiers() & Qt::ControlModifier)){
+        ViewWidget::wheelEvent(event);
+        return;
+    }
+    event->accept();
 }
 
 void WaveformView::mousePressEvent(QMouseEvent* e){

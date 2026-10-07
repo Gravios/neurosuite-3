@@ -35,6 +35,7 @@
 
 #include <QResizeEvent>
 #include <QMouseEvent>
+#include <QWheelEvent>
 
 #include <memory>
 
@@ -42,6 +43,7 @@
 class KlustersDoc;
 class KlustersView;
 class CorrelationThread;
+namespace input { class BindingRegistry; }   // registerInput (input-remapping plan)
 
 /**
   * View displaying auto- and cross-correlations of all selected clusters.
@@ -99,6 +101,12 @@ public:
   * @return true if a line is drawn, false otherwise.
   */
     bool isShoulderLine() const {return shoulderLine;}
+
+    /** Register this view's resolver-dispatched input (co-located; called once from
+     *  KlustersApp::registerInputBindings).  Adds the `view.correlation` scope and the
+     *  Ctrl+wheel amplitude-scaling commands (Overview redesign: the amplitude views scale
+     *  instead of zoom/pan).  Input-remapping plan ("Keymap profiles" uses the same registry). */
+    static void registerInput(input::BindingRegistry& reg);
 
 public Q_SLOTS:
 
@@ -282,6 +290,9 @@ protected:
   * @param event mouse move event.
   */
     void mouseMoveEvent(QMouseEvent* event) override;
+    /**The view responds to a wheel event: Ctrl+wheel scales the correlogram amplitude (the
+  * registry correlation.scaleUp / scaleDown commands); a plain wheel defers to the base.*/
+    void wheelEvent(QWheelEvent* event) override;
 
 private:
 

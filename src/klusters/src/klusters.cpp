@@ -27,6 +27,7 @@
 #include "clusterview.h"
 #include "waveformview.h"               // WaveformView::registerInput (channel-pick seam)
 #include "traceview.h"                  // TraceView::registerInput (primary-press seam)
+#include "correlationview.h"            // CorrelationView::registerInput (Ctrl+wheel scaling)
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include <neurosuite/core/neurofileio.h> // shared res/clu/spk/fet readers+writers (decollide stage)
@@ -2502,6 +2503,9 @@ void KlustersApp::registerInputBindings()
 
     // WaveformView's Ctrl+Left channel pick (co-located registration, once).
     WaveformView::registerInput(reg);
+
+    // CorrelationView's Ctrl+wheel amplitude scaling (co-located registration, once).
+    CorrelationView::registerInput(reg);
 
     // TraceView's primary mouse press (co-located registration, once).
     TraceView::registerInput(reg);

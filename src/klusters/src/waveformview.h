@@ -26,6 +26,7 @@
 
 #include <QResizeEvent>
 #include <QMouseEvent>
+#include <QWheelEvent>
 
 #include <memory>
 
@@ -345,6 +346,9 @@ protected:
   */
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    /**The view responds to a wheel event: Ctrl+wheel scales the waveform amplitude (the
+  * registry waveform.scaleUp / scaleDown commands); a plain wheel defers to the base.*/
+    void wheelEvent(QWheelEvent* event) override;
     /** WaveformView owns its primary Left press (the Ctrl+Left channel pick resolves at the
      *  top of mousePressEvent), so it keeps the shared rubber-band ZOOM out of its scope — a
      *  Ctrl+Left must arm the pick, not the base's any-modifier-Left zoom.  Its plain-Left
