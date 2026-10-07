@@ -293,6 +293,11 @@ protected:
     /**The view responds to a wheel event: Ctrl+wheel scales the correlogram amplitude (the
   * registry correlation.scaleUp / scaleDown commands); a plain wheel defers to the base.*/
     void wheelEvent(QWheelEvent* event) override;
+    /**Return to the default amplitude for the current scale mode, dropping any manual
+  * Ctrl+wheel / +- scaling — i.e. the default auto scale in the usual scale-by-maximum
+  * mode.  Called when the displayed cluster selection changes so a new selection draws
+  * auto-scaled instead of inheriting the previous one's manual amplitude.*/
+    void resetToDefaultScale();
 
 private:
 

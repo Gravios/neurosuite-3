@@ -180,6 +180,7 @@ void CorrelationView::singleColorUpdate(int clusterId,bool active){
 
 void CorrelationView::addClusterToView(int clusterId,bool active){
     isZoomed = false;//Hack because all the tabs share the same data.
+    resetToDefaultScale();   // a changed cluster selection re-auto-scales
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)invalidate(REDRAW);
@@ -194,6 +195,7 @@ void CorrelationView::addClusterToView(int clusterId,bool active){
 
 void CorrelationView::removeClusterFromView(int clusterId,bool active){
     isZoomed = false;//Hack because all the tabs share the same data.
+    resetToDefaultScale();   // a changed cluster selection re-auto-scales
 
     //Update drawContentsMode if need it.
     if(drawContentsMode == REFRESH || drawContentsMode == UPDATE)
@@ -968,6 +970,16 @@ void  CorrelationView::setShoulderScale(){
         setCursor(Qt::WaitCursor);
         askForCorrelograms();
     }
+}
+
+void  CorrelationView::resetToDefaultScale(){
+    // A changed cluster selection re-auto-scales: drop any manual Ctrl+wheel / +- amplitude
+    // and return Yfactor to the default for the current scale mode (mirrors the constructor).
+    // In the usual scale-by-maximum mode this is the default auto scale; a deliberately-chosen
+    // Raw / Shoulder mode is preserved.  No recompute here — the caller's askForCorrelograms()
+    // redraws with the reset factor.
+    if(scaleMode == Data::RAW) Yfactor = 1;
+    else                       Yfactor = YsizeForMaxAmp;
 }
 
 void  CorrelationView::increaseAmplitude(){
