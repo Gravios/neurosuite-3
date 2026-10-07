@@ -880,6 +880,12 @@ private:
      *  would execute that command instead of being captured. */
     bool globalKeyShortcutsActive() const;
 
+    /** Epoch-ms of the last "plain" Escape that armed the double-Escape
+     *  clear-selection gesture (-1 = not armed).  A second Escape within the
+     *  double-click interval clears the cluster palette selection; a single
+     *  Escape never does, so a stray press cannot wipe the selection. */
+    qint64 lastEscapeClearMs_ = -1;
+
     /**One row per key the application-wide event filter consumes.  The filter
   * runs before the shortcut map and before any widget, so these win outright
   * and anything else claiming the same key is dead.  The table feeds both the

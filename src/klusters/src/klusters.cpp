@@ -2022,6 +2022,30 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
         }
 
+        // Double-Escape clears the cluster palette selection.  A deliberate two-press
+        // (both within the double-click interval) is required, so a single stray Escape
+        // never wipes the selection.  Only reached once the more specific Escape meanings
+        // above (abandon an open selection polygon, return focus from the child palette)
+        // have declined it, and only while the palette actually has a selection — otherwise
+        // Escape keeps falling through to whatever else it means.  The first press arms the
+        // gesture (and falls through, harmless); the second within the interval clears.
+        if(ke->key() == Qt::Key_Escape && ke->modifiers() == Qt::NoModifier
+           && doc && !focusIsInTextInput()
+           && clusterPalette && !clusterPalette->selectedClusters().isEmpty()){
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            if(lastEscapeClearMs_ >= 0
+               && (now - lastEscapeClearMs_) <= QApplication::doubleClickInterval()){
+                lastEscapeClearMs_ = -1;                   // consumed; next Esc re-arms
+                const QList<int> empty;
+                clusterPalette->selectItems(empty);        // clear the palette highlight (no emit)
+                slotUpdateShownClusters(empty);            // propagate: nothing shown / selected
+                slotStatusMsg(tr("Cluster selection cleared."));
+                return true;
+            }
+            lastEscapeClearMs_ = now;                       // first press: arm the double-press
+            // fall through — a single Escape keeps any other meaning it has
+        }
+
         // Hierarchy operations (Ctrl+arrows, G) while the dual child view is up.
         // Runs before the Left/Right tab-cycle handler so Ctrl+Left/Right is
         // claimed for custody transfer when a child pane has focus; otherwise it
