@@ -88,4 +88,19 @@ if(Qt6_FOUND)
         PRIVATE "${_klu_src}" "${_shared}" "${_core}")
     target_link_libraries(klusters_test_inputdispatcher PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_inputdispatcher COMMAND klusters_test_inputdispatcher)
+
+    # Keymap profiles (input-remapping plan "Keymap profiles"): serialize <-> parse
+    # round-trip + capture/apply of the registry's override set.  Compiles the Qt-light
+    # module sources directly; links Qt6 Core+Gui (QString/Qt flags + QKeySequence in
+    # Chord::displayString).  No widgets, no KlustersDoc.
+    add_executable(klusters_test_keymapprofile
+        keymapprofile_test.cpp
+        "${_klu_src}/input/chord.cpp"
+        "${_klu_src}/input/bindingregistry.cpp"
+        "${_klu_src}/input/keymapprofile.cpp")
+    target_compile_features(klusters_test_keymapprofile PRIVATE cxx_std_20)
+    target_include_directories(klusters_test_keymapprofile
+        PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    target_link_libraries(klusters_test_keymapprofile PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME klusters_test_keymapprofile COMMAND klusters_test_keymapprofile)
 endif()
