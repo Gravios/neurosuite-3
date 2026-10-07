@@ -3,6 +3,7 @@
 #include "prefinput.h"
 
 #include "buttonchordedit.h"
+#include "wheelchordedit.h"
 #include "configuration.h"
 #include "input/bindingregistry.h"
 #include "input/inputdispatcher.h"   // input::registry()
@@ -31,6 +32,7 @@ input::Chord PrefInput::rowChord(const Row& r) const
 {
     if (r.edit)       return input::chordFromKeySequence(r.edit->keySequence());
     if (r.buttonEdit) return r.buttonEdit->chord();
+    if (r.wheelEdit)  return r.wheelEdit->chord();
     return r.defaultChord;   // read-only rows keep their default
 }
 
@@ -53,10 +55,10 @@ void PrefInput::build()
     v->setSpacing(2);
 
     auto* intro = new QLabel(
-        tr("Editable keyboard shortcuts and mouse buttons.  For a key, click the field "
-           "and press the new combination; for a mouse button, choose the button and its "
-           "modifiers.  Reset restores the shipped default.  Fields that clash within the "
-           "same context are highlighted."), body);
+        tr("Editable keyboard shortcuts and mouse buttons / wheel.  For a key, click the "
+           "field and press the new combination; for a mouse button or wheel, choose it and "
+           "its modifiers.  Reset restores the shipped default.  Fields that clash within "
+           "the same context are highlighted."), body);
     intro->setWordWrap(true);
     v->addWidget(intro);
 
@@ -104,8 +106,8 @@ void PrefInput::build()
             row.defaultChord = c->defaultChord;
 
             // Pick the editor by device: a key (or as-yet-unbound) chord gets a
-            // QKeySequenceEdit; a button chord gets the ButtonChordEdit; a wheel chord
-            // (none registered yet) falls back to a read-only label.
+            // QKeySequenceEdit; a button chord gets the ButtonChordEdit; a wheel chord gets
+            // the WheelChordEdit; anything else falls back to a read-only label.
             const Device dev = c->defaultChord.device;
             bool editable = true;
             if (dev == Device::Key || dev == Device::None) {
@@ -125,9 +127,17 @@ void PrefInput::build()
                     recomputeConflicts();
                     Q_EMIT changed();
                 });
+            } else if (dev == Device::Wheel) {
+                auto* we = new WheelChordEdit(body);
+                rowLayout->addWidget(we);
+                row.wheelEdit = we;
+                connect(we, &WheelChordEdit::chordChanged, this, [this]{
+                    recomputeConflicts();
+                    Q_EMIT changed();
+                });
             } else {
                 auto* fixed = new QLabel(c->defaultChord.displayString()
-                                         + tr("  (wheel — not editable yet)"), body);
+                                         + tr("  (not editable)"), body);
                 fixed->setEnabled(false);
                 rowLayout->addWidget(fixed);
                 row.fixed = fixed;
@@ -148,6 +158,8 @@ void PrefInput::build()
                         rr.edit->setKeySequence(input::keySequenceFromChord(rr.defaultChord));
                     } else if (rr.buttonEdit) {
                         rr.buttonEdit->setChord(rr.defaultChord);   // self-blocking
+                    } else if (rr.wheelEdit) {
+                        rr.wheelEdit->setChord(rr.defaultChord);    // self-blocking
                     }
                     recomputeConflicts();
                     Q_EMIT changed();
@@ -173,6 +185,8 @@ void PrefInput::updateFromRegistry()
             r.edit->setKeySequence(input::keySequenceFromChord(eff));
         } else if (r.buttonEdit) {
             r.buttonEdit->setChord(eff);    // self-blocking: no chordChanged emitted
+        } else if (r.wheelEdit) {
+            r.wheelEdit->setChord(eff);     // self-blocking: no chordChanged emitted
         }
     }
     recomputeConflicts();
@@ -185,7 +199,7 @@ void PrefInput::commitToRegistry()
     // Editors -> overrides: store a diff only where the chord differs from default;
     // an edit cleared back to the default (or emptied) drops the override.
     for (const Row& r : rows_) {
-        if (!r.edit && !r.buttonEdit) continue;   // read-only rows have nothing to commit
+        if (!r.edit && !r.buttonEdit && !r.wheelEdit) continue;   // read-only rows: nothing to commit
         const input::Chord c = rowChord(r);
         if (!c.isValid() || c == r.defaultChord) reg.clearOverride(r.commandId);
         else                                     reg.setOverride(r.commandId, c);
@@ -207,6 +221,8 @@ void PrefInput::restoreDefaults()
             r.edit->setKeySequence(input::keySequenceFromChord(r.defaultChord));
         } else if (r.buttonEdit) {
             r.buttonEdit->setChord(r.defaultChord);   // self-blocking
+        } else if (r.wheelEdit) {
+            r.wheelEdit->setChord(r.defaultChord);    // self-blocking
         }
     }
     recomputeConflicts();
@@ -221,7 +237,7 @@ void PrefInput::recomputeConflicts()
     QHash<QString, QList<int>> byKey;   // "scope\x1Fchord" -> row indices
     for (int i = 0; i < rows_.size(); ++i) {
         const Row& r = rows_[i];
-        if (!r.edit && !r.buttonEdit) continue;   // read-only rows never conflict
+        if (!r.edit && !r.buttonEdit && !r.wheelEdit) continue;   // read-only rows never conflict
         const input::Chord c = rowChord(r);
         if (!c.isValid()) continue;
         byKey[r.scopeId + QLatin1Char('\x1f') + c.toString()].append(i);
@@ -243,6 +259,8 @@ void PrefInput::recomputeConflicts()
                 : QString());
         } else if (r.buttonEdit) {
             r.buttonEdit->setConflict(conflicted[i]);
+        } else if (r.wheelEdit) {
+            r.wheelEdit->setConflict(conflicted[i]);
         }
     }
 }

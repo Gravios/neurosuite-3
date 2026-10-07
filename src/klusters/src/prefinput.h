@@ -12,8 +12,8 @@
 // Within-scope conflicts are tinted live.
 //
 // Key commands use a QKeySequenceEdit; button commands use a ButtonChordEdit (the
-// button-combo editor).  A wheel command — none registered yet — falls back to a
-// read-only label until a wheel editor lands.
+// button-combo editor); wheel commands use a WheelChordEdit (direction + modifiers).  The
+// read-only label remains only as a fallback for any other device.
 
 #include <QWidget>
 #include <QList>
@@ -25,6 +25,7 @@ class QKeySequenceEdit;
 class QLabel;
 class QToolButton;
 class ButtonChordEdit;
+class WheelChordEdit;
 
 class PrefInput : public QWidget {
     Q_OBJECT
@@ -45,7 +46,8 @@ private:
         input::Chord      defaultChord;
         QKeySequenceEdit* edit       = nullptr;   // key / unbound commands
         ButtonChordEdit*  buttonEdit = nullptr;   // button commands
-        QLabel*           fixed      = nullptr;   // wheel (read-only for now)
+        WheelChordEdit*   wheelEdit  = nullptr;   // wheel commands
+        QLabel*           fixed      = nullptr;   // any other device (read-only fallback)
     };
 
     void build();                ///< construct the UI from the registry (once, in the ctor)
