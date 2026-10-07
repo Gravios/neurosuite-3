@@ -191,6 +191,23 @@ void Configuration::read() {
     }
     settings.endArray();
     settings.endGroup();
+
+    //read the saved keymap layouts (input-remapping plan "Keymap profiles"): a named set
+    //of binding overrides each, stored as the serialized keymap text (name -> text).  The
+    //Preferences ▸ Input layout picker parses them; kept as strings so Configuration stays
+    //decoupled from the input module.
+    inputProfiles.clear();
+    settings.beginGroup("inputProfiles");
+    const int nProfiles = settings.beginReadArray("profiles");
+    for(int i = 0; i < nProfiles; ++i){
+        settings.setArrayIndex(i);
+        const QString name = settings.value("name").toString();
+        const QString text = settings.value("text").toString();
+        if(!name.isEmpty() && !text.isEmpty())
+            inputProfiles.insert(name, text);
+    }
+    settings.endArray();
+    settings.endGroup();
 }
 
 void Configuration::write() const {  
@@ -307,6 +324,21 @@ void Configuration::write() const {
         settings.setArrayIndex(ib);
         settings.setValue("id",    it.key());
         settings.setValue("chord", it.value());
+    }
+    settings.endArray();
+    settings.endGroup();
+
+    //write the saved keymap layouts (input-remapping plan "Keymap profiles").  remove()
+    //drops any previous array first, so a deleted layout does not linger in the file.
+    settings.beginGroup("inputProfiles");
+    settings.remove(QString());
+    settings.beginWriteArray("profiles");
+    int ip = 0;
+    for(QMap<QString,QString>::const_iterator it = inputProfiles.constBegin();
+        it != inputProfiles.constEnd(); ++it, ++ip){
+        settings.setArrayIndex(ip);
+        settings.setValue("name", it.key());
+        settings.setValue("text", it.value());
     }
     settings.endArray();
     settings.endGroup();

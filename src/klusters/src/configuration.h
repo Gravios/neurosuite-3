@@ -188,6 +188,14 @@ public:
     void setInputBindingOverrides(const QMap<QString,QString>& m){inputBindingOverrides = m;}
     const QMap<QString,QString>& getInputBindingOverrides() const {return inputBindingOverrides;}
 
+    /** The user's saved keymap layouts (input-remapping plan "Keymap profiles"): named
+     *  profiles, each the serialized text of its binding-override set (see
+     *  input/keymapprofile.h).  Kept as name -> serialized text so Configuration stays
+     *  decoupled from the input module; the Preferences ▸ Input layout picker parses them
+     *  and writes them back.  Persisted in the "inputProfiles" QSettings group. */
+    void setInputProfiles(const QMap<QString,QString>& m){inputProfiles = m;}
+    const QMap<QString,QString>& getInputProfiles() const {return inputProfiles;}
+
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const{return crashRecovery;}
 
@@ -624,6 +632,7 @@ private:
     double templateThresholdMax;
     int templateXcorrMetric = 0;   // 0=cosine 1=pearson 2=raw 3=disatten 4=fastAP
     QMap<QString,QString> inputBindingOverrides;   // command id -> Chord::toString() (input-remapping plan §5)
+    QMap<QString,QString> inputProfiles;           // layout name -> serialized keymap text (input-remapping "Keymap profiles")
 
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;

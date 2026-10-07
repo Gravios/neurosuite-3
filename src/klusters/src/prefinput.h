@@ -17,13 +17,16 @@
 
 #include <QWidget>
 #include <QList>
+#include <QMap>
 #include <QString>
 
 #include "input/chord.h"
+#include "input/keymapprofile.h"   // KeymapProfile: the saved / bundled keymap layouts
 
 class QKeySequenceEdit;
 class QLabel;
 class QToolButton;
+class QComboBox;
 class ButtonChordEdit;
 class WheelChordEdit;
 
@@ -54,7 +57,28 @@ private:
     void recomputeConflicts();   ///< tint editors that collide within a scope
     input::Chord rowChord(const Row& r) const;   ///< the row's current chord from its editor
 
+    // ── Keymap layouts (profiles) ────────────────────────────────────────────
+    // A layout is a named set of binding overrides (input/keymapprofile.h).  The bar at
+    // the top of the page loads one into the editor rows (Apply), or captures the current
+    // rows as a new user layout (Save As).  Bundled presets (compiled-in, :/keymaps) are
+    // read-only; user layouts persist in Configuration (committed with the bindings on
+    // the dialog's Apply/OK, so the whole page stays transactional).
+    void loadProfiles();                 ///< bundled_ from :/keymaps + userProfiles_ from Configuration
+    void rebuildProfileCombo(const QString& select = QString());
+    void updateProfileButtons();         ///< Rename/Delete enabled only for a user layout
+    void applyProfileToRows(const input::KeymapProfile& p);   ///< load a layout into the editors
+    input::KeymapProfile captureRowsAsProfile(const QString& name) const;  ///< editors -> diff
+    void commitProfiles();               ///< userProfiles_ -> Configuration (serialized)
+
     QList<Row> rows_;
+
+    QComboBox*  profileCombo_   = nullptr;
+    QToolButton* applyProfileBtn_ = nullptr;
+    QToolButton* saveAsBtn_     = nullptr;
+    QToolButton* renameBtn_     = nullptr;
+    QToolButton* deleteBtn_     = nullptr;
+    QList<input::KeymapProfile>         bundled_;       ///< read-only presets (:/keymaps)
+    QMap<QString, input::KeymapProfile> userProfiles_;  ///< name -> user layout
 };
 
 #endif  // PREFINPUT_H

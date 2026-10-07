@@ -7,11 +7,15 @@
 #include "configuration.h"
 #include "input/bindingregistry.h"
 #include "input/inputdispatcher.h"   // input::registry()
+#include "input/keymapprofile.h"     // bundled / saved keymap layouts
 
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>       // conflict tint: QKeySequenceEdit paints through an internal QLineEdit
 #include <QToolButton>
+#include <QComboBox>
+#include <QInputDialog>
+#include <QMessageBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QScrollArea>
@@ -54,6 +58,113 @@ void PrefInput::build()
     auto* v = new QVBoxLayout(body);
     v->setContentsMargins(4, 4, 4, 4);
     v->setSpacing(2);
+
+    // ── Keymap layout (profile) bar ──────────────────────────────────────────
+    // Load a built-in or saved layout into the rows (Apply), or capture the current rows as a
+    // new user layout (Save As).  Everything here is transactional with the bindings below —
+    // nothing persists until the dialog's Apply/OK (commitToRegistry -> commitProfiles).
+    {
+        auto* bar = new QHBoxLayout;
+        bar->addWidget(new QLabel(tr("Keymap layout:"), body));
+        profileCombo_ = new QComboBox(body);
+        profileCombo_->setMinimumWidth(200);
+        profileCombo_->setToolTip(tr("Built-in layouts are read-only; your saved layouts can be "
+                                     "renamed or deleted."));
+        bar->addWidget(profileCombo_);
+        applyProfileBtn_ = new QToolButton(body); applyProfileBtn_->setText(tr("Apply"));
+        applyProfileBtn_->setToolTip(tr("Load the selected layout into the fields below."));
+        saveAsBtn_ = new QToolButton(body);       saveAsBtn_->setText(tr("Save As…"));
+        saveAsBtn_->setToolTip(tr("Save the current fields as a new keymap layout."));
+        renameBtn_ = new QToolButton(body);       renameBtn_->setText(tr("Rename"));
+        deleteBtn_ = new QToolButton(body);       deleteBtn_->setText(tr("Delete"));
+        bar->addWidget(applyProfileBtn_);
+        bar->addWidget(saveAsBtn_);
+        bar->addWidget(renameBtn_);
+        bar->addWidget(deleteBtn_);
+        bar->addStretch(1);
+        v->addLayout(bar);
+
+        connect(profileCombo_, &QComboBox::currentIndexChanged, this,
+                [this](int){ updateProfileButtons(); });
+
+        // Apply: load the selected layout's overrides into the editor rows.
+        connect(applyProfileBtn_, &QToolButton::clicked, this, [this]{
+            const int i = profileCombo_->currentIndex();
+            if (i < 0) return;
+            const QString name    = profileCombo_->itemData(i, Qt::UserRole).toString();
+            const bool    bundled = profileCombo_->itemData(i, Qt::UserRole + 1).toBool();
+            if (bundled) {
+                for (const input::KeymapProfile& b : bundled_)
+                    if (b.name == name) { applyProfileToRows(b); return; }
+            } else {
+                auto it = userProfiles_.constFind(name);
+                if (it != userProfiles_.constEnd()) applyProfileToRows(it.value());
+            }
+        });
+
+        // Save As: capture the current rows (the diff from defaults) as a user layout.
+        connect(saveAsBtn_, &QToolButton::clicked, this, [this]{
+            bool ok = false;
+            const QString name = QInputDialog::getText(this, tr("Save Keymap Layout"),
+                tr("Layout name:"), QLineEdit::Normal, QString(), &ok).trimmed();
+            if (!ok || name.isEmpty()) return;
+            for (const input::KeymapProfile& b : bundled_)
+                if (b.name == name) {
+                    QMessageBox::warning(this, tr("Save Keymap Layout"),
+                        tr("\"%1\" is a built-in layout name; please choose another.").arg(name));
+                    return;
+                }
+            if (userProfiles_.contains(name) &&
+                QMessageBox::question(this, tr("Save Keymap Layout"),
+                    tr("Replace the existing layout \"%1\"?").arg(name)) != QMessageBox::Yes)
+                return;
+            userProfiles_.insert(name, captureRowsAsProfile(name));
+            rebuildProfileCombo(name);
+            Q_EMIT changed();   // persisted on the dialog's Apply/OK
+        });
+
+        // Rename / Delete act on user layouts only (the buttons are disabled for built-ins).
+        connect(renameBtn_, &QToolButton::clicked, this, [this]{
+            const int i = profileCombo_->currentIndex();
+            if (i < 0 || profileCombo_->itemData(i, Qt::UserRole + 1).toBool()) return;
+            const QString oldName = profileCombo_->itemData(i, Qt::UserRole).toString();
+            bool ok = false;
+            const QString name = QInputDialog::getText(this, tr("Rename Keymap Layout"),
+                tr("New name:"), QLineEdit::Normal, oldName, &ok).trimmed();
+            if (!ok || name.isEmpty() || name == oldName) return;
+            for (const input::KeymapProfile& b : bundled_)
+                if (b.name == name) {
+                    QMessageBox::warning(this, tr("Rename Keymap Layout"),
+                        tr("\"%1\" is a built-in layout name; please choose another.").arg(name));
+                    return;
+                }
+            if (userProfiles_.contains(name) &&
+                QMessageBox::question(this, tr("Rename Keymap Layout"),
+                    tr("Replace the existing layout \"%1\"?").arg(name)) != QMessageBox::Yes)
+                return;
+            input::KeymapProfile p = userProfiles_.take(oldName);
+            p.name = name;
+            userProfiles_.insert(name, p);
+            rebuildProfileCombo(name);
+            Q_EMIT changed();
+        });
+        connect(deleteBtn_, &QToolButton::clicked, this, [this]{
+            const int i = profileCombo_->currentIndex();
+            if (i < 0 || profileCombo_->itemData(i, Qt::UserRole + 1).toBool()) return;
+            const QString name = profileCombo_->itemData(i, Qt::UserRole).toString();
+            if (QMessageBox::question(this, tr("Delete Keymap Layout"),
+                    tr("Delete the layout \"%1\"?").arg(name)) != QMessageBox::Yes)
+                return;
+            userProfiles_.remove(name);
+            rebuildProfileCombo();
+            Q_EMIT changed();
+        });
+
+        auto* sep = new QFrame(body);
+        sep->setFrameShape(QFrame::HLine);
+        sep->setFrameShadow(QFrame::Sunken);
+        v->addWidget(sep);
+    }
 
     auto* intro = new QLabel(
         tr("Editable keyboard shortcuts and mouse buttons / wheel.  For a key, click the "
@@ -191,6 +302,11 @@ void PrefInput::updateFromRegistry()
         }
     }
     recomputeConflicts();
+
+    // Refresh the keymap-layout picker (built-in presets + the user's saved layouts) each
+    // time the dialog opens, so an externally-changed config is reflected.
+    loadProfiles();
+    rebuildProfileCombo();
 }
 
 void PrefInput::commitToRegistry()
@@ -212,6 +328,10 @@ void PrefInput::commitToRegistry()
     const QList<QPair<QString, input::Chord>> diffs = reg.overrides();
     for (const auto& kv : diffs) ov.insert(kv.first, kv.second.toString());
     configuration().setInputBindingOverrides(ov);
+
+    // Persist the user's saved keymap layouts alongside the overrides, so the whole page
+    // commits atomically on Apply/OK (and Cancel discards layout edits too).
+    commitProfiles();
 }
 
 void PrefInput::restoreDefaults()
@@ -270,4 +390,101 @@ void PrefInput::recomputeConflicts()
             r.wheelEdit->setConflict(conflicted[i]);
         }
     }
+}
+
+void PrefInput::loadProfiles()
+{
+    // Built-in presets are compiled into the binary (:/keymaps); user layouts come from
+    // Configuration as serialized keymap text (name -> text), parsed back here.
+    bundled_ = input::bundledKeymaps();
+    userProfiles_.clear();
+    const QMap<QString, QString> stored = configuration().getInputProfiles();
+    for (auto it = stored.constBegin(); it != stored.constEnd(); ++it) {
+        bool ok = false;
+        input::KeymapProfile p = input::parseKeymap(it.value(), &ok);
+        p.name = it.key();                       // the stored key is the authoritative name
+        userProfiles_.insert(it.key(), p);
+    }
+}
+
+void PrefInput::rebuildProfileCombo(const QString& select)
+{
+    if (!profileCombo_) return;
+    QSignalBlocker block(profileCombo_);         // repopulating must not fire currentIndexChanged
+    profileCombo_->clear();
+    // Built-in presets first (marked, read-only), then the user's own layouts.  Each item
+    // carries its bare name (UserRole) and an is-built-in flag (UserRole+1).
+    for (const input::KeymapProfile& b : bundled_) {
+        profileCombo_->addItem(b.name + tr(" (built-in)"));
+        const int i = profileCombo_->count() - 1;
+        profileCombo_->setItemData(i, b.name, Qt::UserRole);
+        profileCombo_->setItemData(i, true,   Qt::UserRole + 1);
+    }
+    for (auto it = userProfiles_.constBegin(); it != userProfiles_.constEnd(); ++it) {
+        profileCombo_->addItem(it.key());
+        const int i = profileCombo_->count() - 1;
+        profileCombo_->setItemData(i, it.key(), Qt::UserRole);
+        profileCombo_->setItemData(i, false,    Qt::UserRole + 1);
+    }
+    int sel = 0;
+    if (!select.isEmpty())
+        for (int i = 0; i < profileCombo_->count(); ++i)
+            if (profileCombo_->itemData(i, Qt::UserRole).toString() == select) { sel = i; break; }
+    if (profileCombo_->count() > 0) profileCombo_->setCurrentIndex(sel);
+    updateProfileButtons();
+}
+
+void PrefInput::updateProfileButtons()
+{
+    if (!profileCombo_) return;
+    const int  i       = profileCombo_->currentIndex();
+    const bool haveSel = (i >= 0);
+    const bool isUser  = haveSel && !profileCombo_->itemData(i, Qt::UserRole + 1).toBool();
+    if (applyProfileBtn_) applyProfileBtn_->setEnabled(haveSel);
+    if (renameBtn_)       renameBtn_->setEnabled(isUser);
+    if (deleteBtn_)       deleteBtn_->setEnabled(isUser);
+}
+
+void PrefInput::applyProfileToRows(const input::KeymapProfile& p)
+{
+    // Load the layout into the editors: a command the layout rebinds takes its chord, every
+    // other command falls back to its shipped default (so applying a layout fully defines the
+    // visible state).  Mirrors restoreDefaults, but to the layout's chords.  Signals blocked
+    // on load; the single changed() at the end lights the dialog's Apply.
+    for (Row& r : rows_) {
+        const input::Chord c = p.bindings.value(r.commandId, r.defaultChord);
+        if (r.edit) {
+            QSignalBlocker block(r.edit);
+            r.edit->setKeySequence(input::keySequenceFromChord(c));
+        } else if (r.buttonEdit) {
+            r.buttonEdit->setChord(c);   // self-blocking
+        } else if (r.wheelEdit) {
+            r.wheelEdit->setChord(c);    // self-blocking
+        }
+    }
+    recomputeConflicts();
+    Q_EMIT changed();
+}
+
+input::KeymapProfile PrefInput::captureRowsAsProfile(const QString& name) const
+{
+    // Capture the diff from the shipped defaults — exactly what commitToRegistry decides to
+    // store: an editor left at (or cleared to) its default contributes no binding.
+    input::KeymapProfile p;
+    p.name = name;
+    for (const Row& r : rows_) {
+        if (!r.edit && !r.buttonEdit && !r.wheelEdit) continue;   // read-only rows
+        const input::Chord c = rowChord(r);
+        if (c.isValid() && !(c == r.defaultChord))
+            p.bindings.insert(r.commandId, c);
+    }
+    return p;
+}
+
+void PrefInput::commitProfiles()
+{
+    QMap<QString, QString> stored;
+    for (auto it = userProfiles_.constBegin(); it != userProfiles_.constEnd(); ++it)
+        stored.insert(it.key(), input::serializeKeymap(it.value()));
+    configuration().setInputProfiles(stored);
 }
