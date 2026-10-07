@@ -163,7 +163,6 @@ void KlustersApp::slotStateChanged(const QString& state)
 
         mPurgeSmallClusters->setEnabled(false);
         mUpdateDisplay->setEnabled(false);
-        mZoomAction->setEnabled(false);
         mUpdateErrorMatrix->setEnabled(false);
         mNewCluster->setEnabled(false);
         mSplitClusters->setEnabled(false);
@@ -219,7 +218,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         mCloseAction->setEnabled(true);
         mSelectAllAction->setEnabled(true);
         mSelectAllExceptAction->setEnabled(true);
-        mZoomAction->setEnabled(true);
         newClusterDisplay->setEnabled(true);
         mCloseActiveDisplay->setEnabled(true);
         mNewCluster->setEnabled(true);
@@ -331,7 +329,6 @@ void KlustersApp::slotStateChanged(const QString& state)
 
         mPurgeSmallClusters->setEnabled(true);
     } else if(state == QLatin1String("noClusterViewState")) {
-        mZoomAction->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
         mNewCluster->setEnabled(false);
         mSplitClusters->setEnabled(false);
@@ -339,7 +336,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
 
     } else if(state == QLatin1String("clusterViewState")) {
-        mZoomAction->setEnabled(true);
         mDeleteNoisy->setEnabled(true);
         mNewCluster->setEnabled(true);
         mSplitClusters->setEnabled(true);
@@ -412,7 +408,6 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("groupingAssistantDisplayNotExists")) {
         newGroupingAssistantDisplay->setEnabled(true);
     } else if(state == QLatin1String("reclusterViewState")) {
-        mZoomAction->setEnabled(false);
         mUpdateErrorMatrix->setEnabled(false);
         mNewCluster->setEnabled(false);
         mSplitClusters->setEnabled(false);

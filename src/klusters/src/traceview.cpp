@@ -163,8 +163,10 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     selectCursor = QCursor(QPixmap(":/shared-cursors/select_channels_cursor"),0,0);
     drawLineCursor = QCursor(QPixmap(":/shared-cursors/time_line_cursor"),0,0);
 
-    //Set the cursor shap to a magnifier as the only action allowed on the widget is to zoom.
-    setCursor(zoomCursor);
+    //Default to the normal arrow cursor (mode = NONE); the rubber-band ZOOM tool is retired, so
+    //the view must not open with the stale magnifier cursor (it used to persist until a mode was
+    //toggled, since updateCursor() only ran on a mode change).
+    setCursor(Qt::ArrowCursor);
 
     //Allowed the mouse tracking to write the time in the status bar.
     setMouseTracking(true);

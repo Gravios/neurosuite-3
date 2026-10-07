@@ -1234,7 +1234,6 @@ private:
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;
-    QAction *mZoomAction;
     QAction *mIncreasePointSize;
     QAction *mDecreasePointSize;
     QAction *mNewCluster;

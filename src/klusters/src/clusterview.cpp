@@ -103,8 +103,10 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     deleteNoiseCursor = QCursor(QPixmap(":/cursors/delete_noise_cursor.png"),0,0);
     deleteArtefactCursor = QCursor(QPixmap(":/cursors/delete_artefact_cursor.png"),0,0);
 
-    //The default tool is the zoom.
-    setCursor(zoomCursor);
+    //Default to the normal arrow cursor (mode = NONE); the rubber-band ZOOM tool is retired, so
+    //the view must not open with the stale magnifier cursor (it used to persist until a mode was
+    //toggled, since applyModeCursor() only ran on a mode change).
+    setCursor(Qt::ArrowCursor);
 
     //Allowed the mouse tracking to draw the tracking lines and write the mouse coordinates
     setMouseTracking(true) ;

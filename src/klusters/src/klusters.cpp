@@ -819,17 +819,10 @@ void KlustersApp::createMenus()
 
     //Tools menu
     QMenu *toolsMenu = menuBar()->addMenu(tr("&Tools"));
-    // "Normal Cursor" tool.  The rubber-band ZOOM tool was retired in the Overview redesign;
-    // this action now selects the no-tool normal cursor (mode = NONE) and is the way back to it
-    // from a curation tool.  Kept internally as mZoomAction / slotZoom to avoid a wide rename;
-    // the magnifier icon is retained for now so the toolbar button stays visible (swap for a
-    // pointer icon in a later cleanup).
-    mZoomAction = toolsMenu->addAction(tr("Normal Cursor"));
-    mZoomAction->setIcon(QIcon(":/icons/zoom_tool.png"));
-    mZoomAction->setShortcut(Qt::Key_Z);
-    connect(mZoomAction,&QAction::triggered, this,&KlustersApp::slotZoom);
-
-    toolsMenu->addSeparator();
+    // (The explicit "Normal Cursor" tool action — the repurposed ZOOM action — was removed: the
+    // normal cursor is the default (mode = NONE) and is reached by toggling the active curation
+    // tool off, so a dedicated menu/toolbar entry is redundant.  slotZoom() is kept as a plain
+    // method, still called programmatically to drop back to the normal cursor.)
 
     // The four curation tools are checkable, mutually-exclusive toggles (Overview
     // redesign step 4): selecting one highlights its toolbar/menu button and clears
@@ -1482,8 +1475,6 @@ void KlustersApp::createToolBar()
 
     addToolBar(mActionBar);
 
-    mToolBar->addAction(mZoomAction);
-    mToolBar->addSeparator();
     mToolBar->addAction(mNewCluster);
     mToolBar->addAction(mSplitClusters);
     mToolBar->addSeparator();

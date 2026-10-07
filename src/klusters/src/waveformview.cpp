@@ -107,8 +107,9 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
 
     updateWindow();
 
-    //Set the cursor shap to a magnifier as the only action allowed on the widget is to zoom.
-    setCursor(zoomCursor);
+    //Default to the normal arrow cursor (mode = NONE); the rubber-band ZOOM tool is retired, so
+    //the view must not open with the stale magnifier cursor.
+    setCursor(Qt::ArrowCursor);
 }
 
 WaveformView::~WaveformView(){
