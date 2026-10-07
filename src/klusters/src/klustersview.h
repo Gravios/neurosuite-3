@@ -727,6 +727,13 @@ public:
      * selectClusterFromTrace signal.*/
     void onTraceClusterActivated(long recordingSample, bool extend);
 
+    /**No-selection spike browse (showNextCluster / showPreviousCluster when nothing is
+     * selected): find the next (@p forward) or previous spike in the global res relative to the
+     * trace's current window start, and scroll the trace there via TraceWidget::moveToTime.  No
+     * overlay, no cluster selection — just navigation.  A no-op if there is no trace widget or no
+     * further spike in that direction.*/
+    void browseToAdjacentSpike(bool forward);
+
     /***Update the background color of the views.*/
     void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}
 
@@ -788,11 +795,13 @@ public:
   */
     bool getLabelStatus() const{return labelsDisplay;}
 
-    /**Retrieves the next cluster.*/
-    void showNextCluster(){emit nextCluster();}
+    /**Step the trace to the next spike.  With a cluster selection, browses the selected
+  * clusters' next spike (emits nextCluster).  With NO selection, scrolls the trace to the next
+  * spike in the global res (any cluster) — no overlay, no selection.*/
+    void showNextCluster();
 
-    /**Retrieves the previous cluster.*/
-    void showPreviousCluster(){emit previousCluster();}
+    /**Step the trace to the previous spike (mirror of showNextCluster).*/
+    void showPreviousCluster();
 
 public Q_SLOTS:
 

@@ -841,3 +841,38 @@ int KlustersDoc::clusterOfSpikeNearestTime(long recordingSample, long* outNeares
     if(outScanned)     *outScanned     = scanned;
     return bestCluster;
 }
+
+long KlustersDoc::nextSpikeTimeAfter(long recordingSample) const
+{
+    // Scan the ACTIVE layer's full spike set for the smallest time strictly greater than
+    // recordingSample (time is the feature table's last dimension, recording units).
+    Data& d = data();
+    const int timeDim = d.nbOfDimensions();
+    long best = -1;
+    const QList<dataType> ids = d.clusterIds();
+    for(int c = 0; c < ids.size(); ++c){
+        Data::Iterator it = d.iterator(ids.at(c));
+        for(; it.hasNext(); it.next()){
+            const long t = static_cast<long>(it(timeDim));
+            if(t > recordingSample && (best < 0 || t < best)) best = t;
+        }
+    }
+    return best;
+}
+
+long KlustersDoc::previousSpikeTimeBefore(long recordingSample) const
+{
+    // Mirror of nextSpikeTimeAfter: the largest spike time strictly less than recordingSample.
+    Data& d = data();
+    const int timeDim = d.nbOfDimensions();
+    long best = -1;
+    const QList<dataType> ids = d.clusterIds();
+    for(int c = 0; c < ids.size(); ++c){
+        Data::Iterator it = d.iterator(ids.at(c));
+        for(; it.hasNext(); it.next()){
+            const long t = static_cast<long>(it(timeDim));
+            if(t < recordingSample && t > best) best = t;
+        }
+    }
+    return best;
+}

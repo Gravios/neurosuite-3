@@ -1029,6 +1029,34 @@ void KlustersView::onTraceClusterActivated(long recordingSample, bool extend)
     else        doc.selectFromMatrix(one);
 }
 
+void KlustersView::showNextCluster(){
+    // With a selection, browse the selected clusters' next spike (the provider-backed path in
+    // the trace).  With NO selection, walk the global spike res instead — scroll to the next
+    // spike of any cluster, with no overlay and no selection.
+    if(!clusters().isEmpty()){ emit nextCluster(); return; }
+    browseToAdjacentSpike(true);
+}
+
+void KlustersView::showPreviousCluster(){
+    if(!clusters().isEmpty()){ emit previousCluster(); return; }
+    browseToAdjacentSpike(false);
+}
+
+void KlustersView::browseToAdjacentSpike(bool forward){
+    if(!traceWidget) return;                       // only meaningful with a trace view
+    const double rate = doc.getSamplingRate();
+    if(rate <= 0.0) return;
+    // startTime is the trace window start in ms, kept live by setStartAndDuration; convert to
+    // recording-unit samples to query the global res.  moveToTime positions the window start at
+    // the target, so stepping strictly after / before the current start advances one spike.
+    const long curSample = static_cast<long>(static_cast<double>(startTime) * rate / 1000.0 + 0.5);
+    const long target = forward ? doc.nextSpikeTimeAfter(curSample)
+                                : doc.previousSpikeTimeBefore(curSample);
+    if(target < 0) return;                         // no spike in that direction
+    const long ms = static_cast<long>(static_cast<double>(target) * 1000.0 / rate + 0.5);
+    traceWidget->moveToTime(ms);
+}
+
 void KlustersView::closeEvent(QCloseEvent* e){
 
     // DO NOT CALL QWidget::closeEvent(e) here !!

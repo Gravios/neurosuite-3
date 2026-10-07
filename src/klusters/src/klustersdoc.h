@@ -1230,6 +1230,16 @@ public:
                                   long* outDelta = nullptr,
                                   long* outScanned = nullptr) const;
 
+    /** Next / previous spike time (recording units) relative to @p recordingSample, across ALL
+    * clusters of the ACTIVE layer — the global spike res.  nextSpikeTimeAfter returns the
+    * smallest spike time STRICTLY GREATER than @p recordingSample; previousSpikeTimeBefore the
+    * largest STRICTLY LESS; both return -1 when there is no spike in that direction (or no
+    * spikes at all).  O(nbSpikes) single pass over the in-memory feature table.  Used by the
+    * trace Prev/Next buttons to walk the whole recording's spikes when NO cluster is selected
+    * (no overlay, no selection — just scroll the trace there). */
+    long nextSpikeTimeAfter(long recordingSample) const;
+    long previousSpikeTimeBefore(long recordingSample) const;
+
     class CloseDocumentEvent;
     friend class CloseDocumentEvent;
 

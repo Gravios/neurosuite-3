@@ -605,8 +605,12 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNextSpike->setEnabled(true);
         mPreviousSpike->setEnabled(true);
     } else if(state == QLatin1String("noTraceViewBrowsingState")) {
-        mNextSpike->setEnabled(false);
-        mPreviousSpike->setEnabled(false);
+        // "No selection" no longer disables Prev/Next: with a trace view present they browse the
+        // global spike res even with nothing selected (KlustersView::browseToAdjacentSpike).  They
+        // are disabled only when there is no trace view at all (noTraceViewState, above).
+        const bool hasTrace = activeView() && activeView()->containsTraceView();
+        mNextSpike->setEnabled(hasTrace);
+        mPreviousSpike->setEnabled(hasTrace);
     } else {
         qWarning() <<" State unknown :"<<state;
     }

@@ -953,12 +953,12 @@ void KlustersApp::createMenus()
 
     mNextSpike = traceMenu->addAction(tr("&Next Spike"));
     mNextSpike->setIcon(QIcon(":/icons/forwardCluster"));
-    mNextSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F));
+    mNextSpike->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Right));
     connect(mNextSpike,&QAction::triggered, this,&KlustersApp::slotShowNextCluster);
 
     mPreviousSpike = traceMenu->addAction(tr("&Previous Spike"));
     mPreviousSpike->setIcon(QIcon(":/icons/backCluster"));
-    mPreviousSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B));
+    mPreviousSpike->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Left));
     connect(mPreviousSpike,&QAction::triggered, this,&KlustersApp::slotShowPreviousCluster);
 
 
