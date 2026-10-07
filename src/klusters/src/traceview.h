@@ -534,11 +534,15 @@ public Q_SLOTS:
 
 Q_SIGNALS:
     void channelsSelected(const QList<int>& selectedIds);
-    /** A normal-cursor click landed on (or near) a spike: select that spike's cluster.
-     *  @p extend false → highlight (select only that cluster); true → mark (extend the
-     *  current selection).  Routed by KlustersView to doc.selectFromMatrix / addFromMatrix,
-     *  the same primitives the matrix views use.  (Overview redesign step 6.) */
-    void selectClusterFromTrace(int clusterId, bool extend);
+    /** A normal-cursor click landed in the trace at @p recordingSample (the ABSOLUTE
+     *  recording-unit sample under the cursor).  KlustersView searches the full spike set
+     *  (the feature table's time dimension) across ALL clusters for the spike closest in
+     *  time and selects its cluster — @p extend false → highlight (select only that
+     *  cluster), true → mark (extend) — via doc.selectFromMatrix / addFromMatrix, the same
+     *  primitives the matrix views use.  The trace view is decoupled from the clustering
+     *  document, so it only reports the sample; the search lives where data() does.
+     *  (Overview redesign step 6.) */
+    void selectClusterFromTrace(long recordingSample, bool extend);
     void setStartAndDuration(long time,long duration);
     void eventModified(QString providerName,int selectedEventId,double time,double newTime);
     void eventRemoved(QString providerName,int selectedEventId,double time);
@@ -594,22 +598,12 @@ protected:
      *  Gates the trace.pan command so a Ctrl+click in SELECT still falls through to trace.press. */
     bool ctrlPanArmable() const { return !inTracePress_ && mode != SELECT; }
 
-    /** Cluster id of the shown spike whose peak sample is nearest @p sampleIndex, within a
-     *  ±1 ms tolerance, or -1 if none is that close.  Mirrors the SELECT_EVENT nearest-by-sample
-     *  search over the cluster data (the normal-cursor spike pick, Overview redesign step 6).
-     *  The optional out-params report the GLOBAL nearest shown spike (ignoring the tolerance)
-     *  and how many spikes were scanned — for the on-click diagnostic. */
-    int clusterOfNearestSpike(int sampleIndex,
-                              int* outNearestCluster = nullptr,
-                              int* outNearestSample  = nullptr,
-                              int* outNearestDelta   = nullptr,
-                              int* outSpikesScanned  = nullptr) const;
-
-    /** Normal-cursor spike pick body (Overview redesign step 6): hit-test at @p sampleIndex,
-     *  select the nearest spike's cluster when within tolerance (@p extend false = highlight /
-     *  replace, true = mark / extend), and show a diagnostic in the status bar — clicked vs
-     *  nearest-spike sample + time, plus how many spikes were scanned (0 means the trace has no
-     *  cluster/spike data loaded, i.e. no cluster overlay is enabled in the Traces menu). */
+    /** Normal-cursor spike pick body (Overview redesign step 6): translate the click at
+     *  @p sampleIndex (a full-resolution offset into the current window) into an ABSOLUTE
+     *  recording-unit sample and emit selectClusterFromTrace.  The nearest-spike-in-time
+     *  search across ALL clusters, the cluster selection and the status-bar diagnostic are
+     *  done in KlustersView, which — unlike the trace view — has the clustering document.
+     *  @p extend false = highlight / replace, true = mark / extend. */
     void normalCursorSpikePick(int sampleIndex, bool extend);
 
     /**The view responds to a mouse release.

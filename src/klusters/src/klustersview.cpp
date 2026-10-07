@@ -95,6 +95,8 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
 {
     setObjectName(name);
     setAutoFillBackground(true);
+    // Keep the shared app status bar for the trace spike-pick diagnostic (onTraceClusterActivated).
+    appStatusBar = statusBar;
     shownClusters = initialClusterList;
     removedClusters = new QList<int>();
 
@@ -982,13 +984,45 @@ void KlustersView::onTemplateCellActivated(int clusterId, int node)
     for (ClusterView* cv : cvs) cv->overlaySingleNode(node);
 }
 
-void KlustersView::onTraceClusterActivated(int clusterId, bool extend)
+void KlustersView::onTraceClusterActivated(long recordingSample, bool extend)
 {
-    // A normal-cursor click in the trace view landed on a spike: select its cluster, using the
-    // same scope-aware primitives the matrix views use.  selectFromMatrix REPLACES the shown
-    // selection (highlight); addFromMatrix EXTENDS it (mark).  clusterId < 0 means no spike was
-    // near the click — nothing to do.
-    if (clusterId < 0) return;
+    // A normal-cursor click in a trace view reported the absolute recording-unit sample it landed
+    // on.  Search the FULL spike set — the feature table's time dimension — across ALL clusters
+    // for the spike closest in time (not just the handful overlaid on the current trace window),
+    // and, if it is close enough, select its cluster with the same scope-aware primitives the
+    // matrix views use: selectFromMatrix REPLACES the shown selection (highlight), addFromMatrix
+    // EXTENDS it (mark).
+    long nearestTime = 0, delta = -1, scanned = 0;
+    const int clusterId = doc.clusterOfSpikeNearestTime(recordingSample, &nearestTime, &delta, &scanned);
+
+    // Tolerance: a spike's stored time is its waveform peak, but the user clicks anywhere on the
+    // drawn waveform, so accept a hit within the full waveform footprint (samples before + after
+    // the peak), with a one-sample floor.
+    const long tol = qMax(1L, static_cast<long>(doc.getNbSamplesBeforePeak() + doc.getNbSamplesAfterPeak()));
+    const bool hit = (clusterId >= 0 && delta >= 0 && delta <= tol);
+
+    // Diagnostic: show the clicked sample/time and the nearest spike's sample/time so the two can
+    // be compared (and whether a selection was made).
+    if (appStatusBar) {
+        const double rate = doc.getSamplingRate();
+        const double msPerSample = (rate > 0.0) ? 1000.0 / rate : 0.0;
+        QString msg;
+        if (scanned == 0) {
+            msg = tr("spike-pick: click smp %1 (t≈%2 ms) — the clustering has no spikes")
+                      .arg(recordingSample).arg(recordingSample * msPerSample, 0, 'f', 2);
+        } else {
+            msg = tr("spike-pick: click smp %1 (t≈%2 ms) | %3 spk scanned | nearest clu %4 smp %5 "
+                     "(t≈%6 ms) Δ=%7 smp (≈%8 ms) | tol=%9 smp%10")
+                      .arg(recordingSample).arg(recordingSample * msPerSample, 0, 'f', 2)
+                      .arg(scanned).arg(clusterId).arg(nearestTime)
+                      .arg(nearestTime * msPerSample, 0, 'f', 2)
+                      .arg(delta).arg(delta * msPerSample, 0, 'f', 2)
+                      .arg(tol).arg(hit ? (extend ? tr(" → MARKED") : tr(" → SELECTED")) : QString());
+        }
+        appStatusBar->showMessage(msg, 8000);
+    }
+
+    if (!hit) return;
     QList<int> one;
     one << clusterId;
     if (extend) doc.addFromMatrix(one);

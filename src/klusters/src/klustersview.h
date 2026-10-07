@@ -716,12 +716,16 @@ public:
      * matrix's templateCellActivated signal.*/
     void onTemplateCellActivated(int clusterId, int node);
 
-    /**Handle a normal-cursor spike pick from a TraceView (Overview redesign step 6): select
-     * the spike's cluster in this display.  @p extend false → highlight (replace the selection
-     * with this cluster), true → mark (extend it).  Routes to the same doc primitives the
-     * matrix views use (selectFromMatrix / addFromMatrix).  Connected to the TraceWidget's
+    /**Handle a normal-cursor spike pick from a TraceView (Overview redesign step 6): @p
+     * recordingSample is the absolute recording-unit sample the user clicked.  Searches the
+     * FULL spike set — data()'s time dimension — across ALL clusters for the spike closest in
+     * time (KlustersDoc::clusterOfSpikeNearestTime), and, if it is within a click tolerance of
+     * the waveform footprint, selects its cluster in this display.  @p extend false → highlight
+     * (replace the selection with this cluster), true → mark (extend it); routed through the
+     * same doc primitives the matrix views use (selectFromMatrix / addFromMatrix).  Also posts a
+     * clicked-vs-nearest-spike diagnostic to the status bar.  Connected to the TraceWidget's
      * selectClusterFromTrace signal.*/
-    void onTraceClusterActivated(int clusterId, bool extend);
+    void onTraceClusterActivated(long recordingSample, bool extend);
 
     /***Update the background color of the views.*/
     void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}
@@ -1000,6 +1004,11 @@ private:
 
     /**Reference on the main window.*/
     KlustersApp& mainWindow;
+
+    /**The application status bar (passed to the constructor and shared by every view), kept so
+   * the trace spike-pick (onTraceClusterActivated) can post its clicked-vs-nearest-spike
+   * diagnostic.  Null-safe: the diagnostic is skipped if it was never supplied.*/
+    QStatusBar* appStatusBar = nullptr;
 
     /**Counter for each type of view (ClusterView, WaveformView, CorrelationView and
    * ErrorMatrixView) in the view.*/

@@ -810,3 +810,34 @@ void KlustersDoc::endRealignBatchLog()
     centroidCacheValid   = false;
     centroidCache.clear();
 }
+
+int KlustersDoc::clusterOfSpikeNearestTime(long recordingSample, long* outNearestTime,
+                                           long* outDelta, long* outScanned) const
+{
+    // Search the ACTIVE clustering layer so the returned id is in the same space the selection
+    // primitives (selectFromMatrix / addFromMatrix) expect, and so the spike times read belong to
+    // those clusters.  Time is the feature table's last dimension, stored in recording units.
+    Data& d = data();
+    const int timeDim = d.nbOfDimensions();
+    long bestTime = 0, bestDelta = -1, scanned = 0;
+    int  bestCluster = -1;
+    const QList<dataType> ids = d.clusterIds();
+    for(int c = 0; c < ids.size(); ++c){
+        const dataType cid = ids.at(c);
+        Data::Iterator it = d.iterator(cid);
+        for(; it.hasNext(); it.next()){
+            const long t = static_cast<long>(it(timeDim));
+            const long delta = (t >= recordingSample) ? (t - recordingSample) : (recordingSample - t);
+            ++scanned;
+            if(bestDelta < 0 || delta < bestDelta){
+                bestDelta   = delta;
+                bestTime    = t;
+                bestCluster = static_cast<int>(cid);
+            }
+        }
+    }
+    if(outNearestTime) *outNearestTime = bestTime;
+    if(outDelta)       *outDelta       = bestDelta;
+    if(outScanned)     *outScanned     = scanned;
+    return bestCluster;
+}

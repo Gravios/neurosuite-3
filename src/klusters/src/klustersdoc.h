@@ -1211,6 +1211,25 @@ public:
     */
     long totalNbOfSpikes() const { return clusteringData->totalNbOfSpikes();}
 
+    /** Nearest-spike-in-time lookup for the trace view's normal-cursor pick.  Scans the ACTIVE
+    * clustering layer (data()) across ALL clusters for the spike whose time — the feature
+    * table's last/time dimension, in recording-unit samples — is closest to @p recordingSample,
+    * and returns that spike's cluster id (in the same id space selectFromMatrix / addFromMatrix
+    * expect), or -1 if the layer holds no spikes.  The optional out-params report the nearest
+    * spike's time, the |delta| to the click (samples) and how many spikes were scanned, so the
+    * caller applies its own click tolerance and builds the status-bar diagnostic.  O(nbSpikes)
+    * single pass over the in-memory feature table.
+    * @param recordingSample the clicked time in recording units (samples from recording start).
+    * @param outNearestTime  if non-null, set to the nearest spike's time (recording units).
+    * @param outDelta        if non-null, set to |outNearestTime - recordingSample| (samples), or -1 if no spikes.
+    * @param outScanned      if non-null, set to the number of spikes scanned.
+    * @return the nearest spike's cluster id, or -1 if the active layer has no spikes.
+    */
+    int clusterOfSpikeNearestTime(long recordingSample,
+                                  long* outNearestTime = nullptr,
+                                  long* outDelta = nullptr,
+                                  long* outScanned = nullptr) const;
+
     class CloseDocumentEvent;
     friend class CloseDocumentEvent;
 
