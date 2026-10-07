@@ -175,6 +175,13 @@ public:
     /// cycle, the tabify order and the layout anchor all read it, so they can
     /// never disagree.  Closed docks (QPointer-null) are omitted.
     QList<QDockWidget*> matrixDocks() const;
+
+    /// The docks that share the Overview's right-hand tabbed frame, in canonical
+    /// order: the matrixDocks() followed by the Overview trace dock (so the trace
+    /// tab sits after the Drift matrix).  The "E" cycle, the tabify order and the
+    /// layout anchor read THIS, so the trace tab participates exactly like a matrix.
+    /// Closed docks (QPointer-null) are omitted.
+    QList<QDockWidget*> overviewTabbedDocks() const;
     
     /**List of the names for the different type of view available.*/
     static const QString DisplayTypeNames[];
@@ -1017,6 +1024,10 @@ private:
     QPointer<QDockWidget> overviewTemplateMatrixDock;
     QPointer<QDockWidget> overviewResidualMatrixDock;
     QPointer<QDockWidget> overviewDriftMatrixDock;
+    /// The Overview trace dock: shares the matrices' right-hand tabbed frame as the
+    /// last tab (after Drift) and takes part in the "E" cycle.  QPointer-null when
+    /// no trace tab is open in this Overview.  See overviewTabbedDocks().
+    QPointer<QDockWidget> overviewTraceDock;
 
     //methods
     

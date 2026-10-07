@@ -2925,8 +2925,13 @@ void KlustersApp::initDisplay(){
             widgetAddToDisplay(KlustersView::TEMPLATE_MATRIX);
             widgetAddToDisplay(KlustersView::RESIDUAL_MATRIX);
             widgetAddToDisplay(KlustersView::DRIFT_MATRIX);
+            // A trace tab after the matrices, sharing their right-hand frame
+            // (addView(TRACES) tabifies it in; overviewTabbedDocks() orders it
+            // last so it lands after Drift and "E" cycles to it).  Having both a
+            // cluster and a trace view in the Overview also enables Select Time.
+            widgetAddToDisplay(KlustersView::TRACES);
             // Now arrange the dock layout — splits the left column
-            // vertically and positions the matrices on the right.
+            // vertically and positions the right-hand tabbed frame.
             if (KlustersView* view = activeView()) {
                 view->applyOverviewLayout();
             }

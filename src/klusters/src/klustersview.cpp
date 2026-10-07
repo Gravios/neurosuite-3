@@ -424,26 +424,27 @@ void KlustersView::applyOverviewLayout(){
         addDockWidget(Qt::TopDockWidgetArea, overviewWaveformDock);
     if (overviewCorrelationDock)
         addDockWidget(Qt::TopDockWidgetArea, overviewCorrelationDock);
-    for (QDockWidget* d : matrixDocks())
+    for (QDockWidget* d : overviewTabbedDocks())
         addDockWidget(Qt::TopDockWidgetArea, d);
 
     // Step 2 — carve the right pane (full window height) BEFORE any
-    // vertical splits.  Pick whichever matrix dock exists as the anchor.
-    const QList<QDockWidget*> matrices = matrixDocks();
-    QDockWidget* rightAnchor = matrices.isEmpty() ? nullptr : matrices.first();
+    // vertical splits.  Pick whichever tabbed dock exists as the anchor.
+    const QList<QDockWidget*> tabbed = overviewTabbedDocks();
+    QDockWidget* rightAnchor = tabbed.isEmpty() ? nullptr : tabbed.first();
     if (rightAnchor) {
         splitDockWidget(mainDock, rightAnchor, Qt::Horizontal);
     }
 
-    // Step 3 — tabify the second matrix on top of the first so they
-    // share a single frame with tabs at the bottom.
-    for (int i = 1; i < matrices.size(); ++i)
-        tabifyDockWidget(matrices.first(), matrices.at(i));
-    if (!matrices.isEmpty()) {
-        // Front-tab is the first matrix in canonical order (the Error Matrix
+    // Step 3 — tabify the rest of the right-hand docks on top of the first so
+    // they share a single frame with tabs at the bottom (matrices in canonical
+    // order, then the trace tab last).
+    for (int i = 1; i < tabbed.size(); ++i)
+        tabifyDockWidget(tabbed.first(), tabbed.at(i));
+    if (!tabbed.isEmpty()) {
+        // Front-tab is the first dock in canonical order (the Error Matrix
         // when it is open) — the cluster-quality review workflow reads errors
-        // first, then steps through the rest with "E".
-        matrices.first()->raise();
+        // first, then steps through the rest (including the trace tab) with "E".
+        tabbed.first()->raise();
     }
 
     // Step 4 — stack the left column vertically.  Each call splits the
@@ -473,8 +474,8 @@ void KlustersView::applyOverviewLayout(){
         // close to a typical Klusters window so the relative-weight
         // fallback for the un-allocated space lands on the intended
         // ratio even when child min-sizes consume some of the budget.
-        const QList<QDockWidget*> rMatrices = matrixDocks();
-        QDockWidget* rDock = rMatrices.isEmpty() ? nullptr : rMatrices.first();
+        const QList<QDockWidget*> rTabbed = overviewTabbedDocks();
+        QDockWidget* rDock = rTabbed.isEmpty() ? nullptr : rTabbed.first();
         if (rDock) {
             resizeDocks({mainDock, rDock}, {450, 550}, Qt::Horizontal);
         }
@@ -1234,7 +1235,17 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
 
         traces->installEventFilter(this);//To enable right click popup menu
         traceWidget->installEventFilter(this);
-        addDockWidget(Qt::BottomDockWidgetArea,traces);
+        addDockWidget(Qt::RightDockWidgetArea,traces);
+        overviewTraceDock = traces;
+        // Share the right-hand tabbed frame with the matrices, dropping in as the
+        // last tab (after the Drift matrix) — overviewTabbedDocks() reports it last,
+        // so applyOverviewLayout() re-tabifies it there and "E" cycles to it after
+        // Drift.  Tabify onto whichever matrix already exists and keep it in front;
+        // with no matrix present the trace simply takes the right pane on its own.
+        if (overviewErrorMatrixDock)         { tabifyDockWidget(overviewErrorMatrixDock, traces);    overviewErrorMatrixDock->raise(); }
+        else if (overviewTemplateMatrixDock) { tabifyDockWidget(overviewTemplateMatrixDock, traces); overviewTemplateMatrixDock->raise(); }
+        else if (overviewResidualMatrixDock) { tabifyDockWidget(overviewResidualMatrixDock, traces); overviewResidualMatrixDock->raise(); }
+        else if (overviewDriftMatrixDock)    { tabifyDockWidget(overviewDriftMatrixDock, traces);    overviewDriftMatrixDock->raise(); }
         setConnections(TRACES,traceWidget,traces);
         break;
     case OVERVIEW:
@@ -2205,17 +2216,29 @@ QList<QDockWidget*> KlustersView::matrixDocks() const
     return docks;
 }
 
+QList<QDockWidget*> KlustersView::overviewTabbedDocks() const
+{
+    // The matrices first (canonical order), then the trace tab last so it sits
+    // after the Drift matrix.  matrixDocks() stays matrix-only (connectMatrixZoomSync
+    // keys off the named matrix members); this is the superset the shared right-hand
+    // frame actually holds — the tabify order, the layout anchor and the "E" cycle
+    // all read it, so the trace tab takes part exactly like a matrix.
+    QList<QDockWidget*> docks = matrixDocks();
+    if (overviewTraceDock) docks << overviewTraceDock.data();
+    return docks;
+}
+
 void KlustersView::toggleMatrixTab()
 {
-    // The matrix docks open tabified into a single frame (see
+    // The right-hand docks open tabified into a single frame (see
     // applyOverviewLayout()).  "E" steps through whichever of them are open, in
-    // a fixed order: Error -> Template -> Residual -> Drift -> Error.  The front
-    // tab is the one whose visibleRegion() is non-empty; occluded (back) tabs
-    // have an empty one.  Closed docks are QPointer-null and simply drop out of
-    // the cycle, so "E" keeps working with any subset.  No-op with fewer than
-    // two matrices open (raising a lone dock does nothing visible).
+    // a fixed order: Error -> Template -> Residual -> Drift -> Traces -> Error.
+    // The front tab is the one whose visibleRegion() is non-empty; occluded
+    // (back) tabs have an empty one.  Closed docks are QPointer-null and simply
+    // drop out of the cycle, so "E" keeps working with any subset.  No-op with
+    // fewer than two docks open (raising a lone dock does nothing visible).
     QList<QDockWidget*> docks;
-    for (QDockWidget* d : matrixDocks())
+    for (QDockWidget* d : overviewTabbedDocks())
         if (!d->isHidden()) docks.append(d);
     if (docks.size() < 2)
         return;
