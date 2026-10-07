@@ -298,6 +298,13 @@ void KlustersApp::initView()
     splitter->addWidget(clusterStack);
     splitter->setChildrenCollapsible(false);
     tabsParent = new QExtendTabWidget(this);
+    // The Overview is the main curation frame: hide the top-level display-tab bar
+    // whenever only one display is open, so the Overview shows chrome-free (no tab).
+    // The bar reappears automatically when a second display (Template Library, a
+    // separate Trace / Cluster display, plugin output) is open, so those still tab
+    // alongside it.  Adding a VIEW (matrix / trace / cluster / waveform / correlation)
+    // docks into the current display's internal frame, not a new top-level tab.
+    tabsParent->setTabBarAutoHide(true);
     // Prevent the QTabWidget frame itself from ever holding keyboard focus.
     // Tab/Shift+Tab should cycle our explicit focus zones (buildFocusZones),
     // not get consumed by the tab bar's internal focus chain.
