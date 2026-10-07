@@ -210,10 +210,18 @@ void TracesProvider::computeRecordingLength(){
     if((resolution == 12) | (resolution == 14) | (resolution == 16)) dataSize = 2;
     else if(resolution == 32) dataSize = 4;
 
+    // Recording duration in ms = (samples per channel) / samplingRate * 1000, where
+    //   samples per channel = fileLength / (nbChannels * dataSize).
+    // The whole denominator (nbChannels * dataSize * samplingRate) MUST be grouped: written
+    // without the parentheses, `fileLength / nbChannels * samplingRate * dataSize` divides by
+    // nbChannels and then *multiplies* by samplingRate and dataSize, overestimating the length
+    // by a factor of (samplingRate * dataSize)^2.  That let trace navigation scroll far past
+    // the real end of the .dat, so the read returned no samples and raised the
+    // "data file could not be opened or the file size is incorrect" error.
     length = static_cast<long long>(
-                static_cast<double>(
-                    fileLength / static_cast<double>(nbChannels) * samplingRate * static_cast<double>(dataSize)
-                    ) * 1000
+                (static_cast<double>(fileLength)
+                    / (static_cast<double>(nbChannels) * samplingRate * static_cast<double>(dataSize)))
+                * 1000.0
                 );
 }
 
