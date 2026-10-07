@@ -868,12 +868,22 @@ private:
      *  (S, T, PageUp, PageDown) to decide whether to claim the key. */
     bool paletteHasFocus() const;
 
-    /** Returns true when the currently-focused widget is a text-entry
-     *  control (QAbstractSpinBox or QLineEdit, including their internal
-     *  embedded line-edits).  Used to gate single-letter shortcuts so
-     *  the user can still type letters into spinboxes / line-edits in
-     *  the parameter toolbar without triggering palette actions. */
+    /** Returns true when the currently-focused widget is a text-entry or
+     *  key-capture control (QAbstractSpinBox, QLineEdit — including their
+     *  internal embedded line-edits — or a QKeySequenceEdit, the Preferences
+     *  binding editor).  Used to gate single-letter shortcuts so the user can
+     *  still type letters into spinboxes / line-edits in the parameter toolbar,
+     *  and type a new binding into the Input preferences, without triggering
+     *  palette actions. */
     bool focusIsInTextInput() const;
+
+    /** True when the app-wide single-key / registry shortcuts (F, A, T, V, S,
+     *  Ctrl+1/2, E, H, …) should fire: focus is inside this main window, no modal
+     *  dialog is up, and focus is not in a text / key-capture field.  Keeps those
+     *  shortcuts from firing while the Preferences ▸ Input editors or any dialog
+     *  are capturing keys — otherwise typing a binding already mapped to a command
+     *  would execute that command instead of being captured. */
+    bool globalKeyShortcutsActive() const;
 
     /**One row per key the application-wide event filter consumes.  The filter
   * runs before the shortcut map and before any widget, so these win outright

@@ -112,6 +112,7 @@
 #include <QEvent>
 #include <QKeyEvent>
 #include <QAbstractSpinBox>
+#include <QKeySequenceEdit>   // focusIsInTextInput: the Preferences binding editor captures keys
 #include <QPointer>   // QPointer guard for the Shift+S stale-matrix wait
 #include "spinbox.h"
 
@@ -1975,8 +1976,10 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         const bool ctrlHeld = ke->modifiers() & Qt::ControlModifier;
 
-        // "H" — keyboard shortcut help dialog
-        if(ke->key() == Qt::Key_H && ke->modifiers() == Qt::NoModifier){
+        // "H" — keyboard shortcut help dialog (a bare-letter shortcut, so only when the
+        // key is meant for the main window — not while a dialog / text field captures keys).
+        if(ke->key() == Qt::Key_H && ke->modifiers() == Qt::NoModifier
+           && globalKeyShortcutsActive()){
             slotShowShortcutHelp();
             return true;
         }
@@ -2142,7 +2145,8 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     // branches did — their gating lives in the commands' enabled() (registerInputBindings).
     // The modal keys (Enter/Esc/D, Up/Down, PageUp/Down) are still inline below/above and
     // migrate over time; ordering relative to them is unchanged.
-    if(event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress){
+    if((event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress)
+       && globalKeyShortcutsActive()){   // not while a dialog / text field is capturing keys
         if(tryViewKeyCommand(static_cast<QKeyEvent*>(event),
                              event->type() == QEvent::ShortcutOverride))
             return true;
@@ -2635,10 +2639,24 @@ bool KlustersApp::focusIsInTextInput() const
     // widget; testing only the leaf would miss it for QAbstractSpinBox-
     // derived controls.
     for (QWidget* w = QApplication::focusWidget(); w; w = w->parentWidget()) {
-        if (qobject_cast<QAbstractSpinBox*>(w)) return true;
-        if (qobject_cast<QLineEdit*>(w))       return true;
+        if (qobject_cast<QAbstractSpinBox*>(w))  return true;
+        if (qobject_cast<QLineEdit*>(w))         return true;
+        if (qobject_cast<QKeySequenceEdit*>(w))  return true;   // Preferences binding editor
     }
     return false;
+}
+
+bool KlustersApp::globalKeyShortcutsActive() const
+{
+    // The app-wide single-key / registry shortcuts fire only when the key is "meant for"
+    // the main window: focus is inside this window, no modal dialog is up, and focus is not
+    // in a text / key-capture field.  This keeps them off while a dialog — the Preferences
+    // ▸ Input editors above all — is capturing keys; without it, typing a binding that is
+    // already mapped to a command would execute that command instead of being recorded.
+    QWidget* fw = QApplication::focusWidget();
+    return fw && fw->window() == this
+        && !QApplication::activeModalWidget()
+        && !focusIsInTextInput();
 }
 
 
