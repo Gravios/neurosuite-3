@@ -2069,16 +2069,16 @@ void TraceView::drawTimeLine(int x,bool initialLine,bool eraseLine){
 }
 
 void TraceView::mouseDoubleClickEvent(QMouseEvent* e){
-    BaseFrame::mouseDoubleClickEvent(e);
-
-    // Double-click resets the trace window.  Gated on the normal-cursor default (NONE) now
-    // that the ZOOM tool is retired — keeps double-click-reset (Overview redesign step 3).
-    if(mode == NONE){
-        doubleClick = true;
-        zoomed = true;
-        //update the window
-        window = ZoomWindow(initialWindow);
-    }
+    // Double-click handling is intentionally disabled in the trace view.  It used to reset the
+    // zoom to full extent (both here and in BaseFrame::mouseDoubleClickEvent), but the FIRST
+    // press of a double-click now fires the normal-cursor spike pick — a cluster selection — and
+    // resetting the zoom in the SAME gesture made the trace re-request its cluster/overlay data
+    // against that just-changed selection, which crashed deep in the data path
+    // (std::bad_array_new_length).  Consuming the event here, WITHOUT chaining to
+    // BaseFrame::mouseDoubleClickEvent, suppresses both resets; a single click still picks the
+    // nearest spike's cluster.  Safe because the trace overrides mouseReleaseEvent and does not
+    // use the base isDoubleClick bookkeeping, and no trace command binds a double-click phase.
+    e->accept();
 }
 
 void TraceView::mouseMoveEvent(QMouseEvent* event){
