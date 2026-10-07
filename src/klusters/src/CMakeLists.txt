@@ -142,7 +142,7 @@ if(USE_SYCL)
     list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_sycl.cpp)
 endif()
 
-qt_add_resources(klusters_SRCS klusters-cursors.qrc klusters-icons.qrc)
+qt_add_resources(klusters_SRCS klusters-cursors.qrc klusters-icons.qrc klusters-keymaps.qrc)
 
 set(klusters_UI prefwaveformviewlayout.ui prefdisplaylayout.ui prefsessionlayout.ui prefreclusteringlayout.ui prefrefinementlayout.ui prefautomergelayout.ui prefsortinglayout.ui prefclusterviewlayout.ui)
 qt_wrap_ui(klusters_SRCS ${klusters_UI})

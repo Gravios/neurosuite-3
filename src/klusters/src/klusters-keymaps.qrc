@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>keymaps/Default.keymap</file>
+    </qresource>
+</RCC>

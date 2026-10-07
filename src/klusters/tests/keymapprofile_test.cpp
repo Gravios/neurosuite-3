@@ -17,6 +17,9 @@
 #include "input/bindingregistry.h"
 #include "input/chord.h"
 
+#include <QTemporaryDir>
+#include <QFile>
+#include <QIODevice>
 #include <cstdio>
 
 using namespace input;
@@ -118,6 +121,42 @@ int main()
         applyKeymap(reg, def);
         CHECK(!reg.hasOverride(QStringLiteral("app.prefs")));
         CHECK(reg.overrides().isEmpty());
+    }
+
+    // ── loadKeymapsFromDir: scan a directory, parse the *.keymap files ───
+    {
+        QTemporaryDir tmp;
+        CHECK(tmp.isValid());
+        auto write = [&](const QString& fn, const QString& content) {
+            QFile f(tmp.filePath(fn));
+            CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
+            f.write(content.toUtf8());
+            f.close();
+        };
+        write(QStringLiteral("Default.keymap"),
+              QStringLiteral("name = Default\ndescription = shipped\n"));                 // valid, no bindings
+        write(QStringLiteral("AZERTY.keymap"),
+              QStringLiteral("name = AZERTY\napp.prefs = ")
+                  + Chord::key(Qt::Key_P, Qt::ControlModifier).toString() + QStringLiteral("\n"));  // valid, 1 binding
+        write(QStringLiteral("notes.txt"),
+              QStringLiteral("name = NotAKeymap\n"));                                     // wrong extension -> ignored
+        write(QStringLiteral("broken.keymap"),
+              QStringLiteral("app.prefs = ") + Chord::key(Qt::Key_P).toString() + QStringLiteral("\n")); // no name -> skipped
+
+        const QList<KeymapProfile> loaded = loadKeymapsFromDir(tmp.path());
+        CHECK(loaded.size() == 2);                      // Default + AZERTY only
+        bool haveDefault = false, haveAzerty = false;
+        for (const KeymapProfile& p : loaded) {
+            if (p.name == QStringLiteral("Default")) { haveDefault = true; CHECK(p.bindings.isEmpty()); }
+            if (p.name == QStringLiteral("AZERTY"))  { haveAzerty  = true; CHECK(p.bindings.size() == 1); }
+        }
+        CHECK(haveDefault);
+        CHECK(haveAzerty);
+
+        // A directory with no .keymap files yields an empty list (not an error).
+        QTemporaryDir empty;
+        CHECK(empty.isValid());
+        CHECK(loadKeymapsFromDir(empty.path()).isEmpty());
     }
 
     if (g_fail == 0)

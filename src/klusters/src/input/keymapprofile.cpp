@@ -4,6 +4,8 @@
 #include "bindingregistry.h"
 
 #include <QStringList>
+#include <QDir>
+#include <QFile>
 
 namespace input {
 
@@ -67,6 +69,32 @@ void applyKeymap(BindingRegistry& reg, const KeymapProfile& profile)
     reg.clearAllOverrides();
     for (auto it = profile.bindings.constBegin(); it != profile.bindings.constEnd(); ++it)
         reg.setOverride(it.key(), it.value());
+}
+
+QList<KeymapProfile> loadKeymapsFromDir(const QString& dirPath)
+{
+    QList<KeymapProfile> out;
+    QDir dir(dirPath);
+    // QDir default sort is by name, so the returned order is stable; works identically
+    // for a filesystem directory and for a ":/keymaps" Qt resource directory.
+    const QStringList files = dir.entryList(QStringList{ QStringLiteral("*.keymap") }, QDir::Files);
+    for (const QString& fn : files) {
+        QFile f(dir.filePath(fn));
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const QString text = QString::fromUtf8(f.readAll());
+        f.close();
+        bool ok = false;
+        const KeymapProfile p = parseKeymap(text, &ok);
+        if (ok)                                  // skip a file that carried no name
+            out.append(p);
+    }
+    return out;
+}
+
+QList<KeymapProfile> bundledKeymaps()
+{
+    return loadKeymapsFromDir(QStringLiteral(":/keymaps"));
 }
 
 }  // namespace input

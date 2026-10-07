@@ -72,6 +72,15 @@ KeymapProfile captureKeymap(const BindingRegistry& reg, const QString& name,
 // Preferences page is the caller's job (KlustersApp::applyInputOverridesToActions).
 void applyKeymap(BindingRegistry& reg, const KeymapProfile& profile);
 
+// Load every "*.keymap" file in directory @p dirPath (via parseKeymap), skipping any
+// that carry no name.  @p dirPath may be a filesystem path OR a Qt resource path such as
+// ":/keymaps" — QDir/QFile handle both.  Returned sorted by file name (QDir default).
+QList<KeymapProfile> loadKeymapsFromDir(const QString& dirPath);
+
+// The read-only preset layouts shipped with the build, compiled into the binary from
+// klusters-keymaps.qrc (resource path ":/keymaps").  Thin wrapper over loadKeymapsFromDir.
+QList<KeymapProfile> bundledKeymaps();
+
 }  // namespace input
 
 #endif  // KLUSTERS_INPUT_KEYMAPPROFILE_H
