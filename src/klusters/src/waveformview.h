@@ -40,6 +40,7 @@
 class KlustersDoc;
 class KlustersView;
 class WaveformThread;
+namespace input { class BindingRegistry; }   // registerInput (input-remapping plan)
 
 /**
   * View displaying the waveforms of a subset of the spikes evenly
@@ -80,6 +81,18 @@ public:
      * override that the zero-caller KlustersView::stopAllViewThreads()
      * would invoke. */
     void stopAndClearThreads();
+
+    // ── Input-binding seam (input-remapping plan) ────────────────────────────
+    /** Register WaveformView's resolver-dispatched mouse gesture into the one app-wide
+     *  registry (called once from KlustersApp::registerInputBindings).  The press trigger
+     *  (Ctrl+Left channel pick) is bound here; the toggle body stays in mouseReleaseEvent
+     *  and the batch commit on Ctrl-release stays in eventFilter — the plan's "seam". */
+    static void registerInput(input::BindingRegistry& reg);
+    /** Arm the Ctrl+Left channel pick (the body — channelAtWorldY + the pendingChannelSelection
+     *  toggle — runs in mouseReleaseEvent, and the commit on Ctrl-release in eventFilter).
+     *  Invoked by the waveform.channelPick Gesture command; was the inline Ctrl+Left press
+     *  swallow.  Arming consumes the press so the base never starts a zoom rubber band. */
+    void beginChannelPick(){ channelPickArmed = true; }
 
 public Q_SLOTS:
 
@@ -332,6 +345,11 @@ protected:
   */
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    /** WaveformView owns its primary Left press (the Ctrl+Left channel pick resolves at the
+     *  top of mousePressEvent), so it keeps the shared rubber-band ZOOM out of its scope — a
+     *  Ctrl+Left must arm the pick, not the base's any-modifier-Left zoom.  Its plain-Left
+     *  zoom still works via the base's inline fall-through.  (Input-remapping plan P0d-z.) */
+    bool managesOwnPrimaryPress() const override { return true; }
     /**Watches the application for the Ctrl release that commits a channel
      * selection.  The view hierarchy sets no focus policy, so it never receives
      * key events itself; filtering the application avoids having to give it
@@ -436,6 +454,11 @@ private:
     QList<int> pendingChannelSelection;
     /**True once a Ctrl+click changed pendingChannelSelection; cleared on commit.*/
     bool channelSelectionDirty = false;
+    /**True between the waveform.channelPick press (beginChannelPick) and its release —
+     * the release toggles the clicked channel while armed, then disarms.  Gated on this
+     * flag, not the live modifiers, so a rebind of the trigger keeps working (the same
+     * arm-flag release idiom as ClusterView's Ctrl-pan).*/
+    bool channelPickArmed = false;
 
     /**Group-local channel index drawn at world ordinate @p worldY, or -1 if the
      * point falls outside every channel band.  Inverts the layout used by

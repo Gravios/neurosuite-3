@@ -26,6 +26,7 @@
 #include <QThread>   // msleep for the synchronous job quiesce
 #include "waveformthread.h"
 #include "types.h"
+#include "input/bindingregistry.h"   // registerInput: the channel-pick press trigger (seam)
 
 #include <math.h>
 #include <stdlib.h>
@@ -1118,21 +1119,57 @@ void WaveformView::mouseDoubleClickEvent (QMouseEvent *e){
 }
 
 
+void WaveformView::registerInput(input::BindingRegistry& reg)
+{
+    // A scope live for any press on a WaveformView (the command's chord narrows it to
+    // Ctrl+Left).  Co-located here, registered once from KlustersApp::registerInputBindings.
+    reg.addScope({ QStringLiteral("view.waveform"), input::Layer::ViewType,
+        [](const input::Ctx& c){ return qobject_cast<WaveformView*>(c.view) != nullptr; } });
+
+    // Ctrl+Left channel pick.  Ctrl+Left (AtLeast+Ctrl — Ctrl held, extra modifiers
+    // tolerated, the old bitwise `modifiers() & Ctrl` press test) BEGINS the pick.  Gesture
+    // kind: invoke() only arms it; the toggle (channelAtWorldY + the pendingChannelSelection
+    // add/remove + shading) is the body in mouseReleaseEvent, and the batch commit on
+    // Ctrl-release stays in eventFilter — the plan's seam (abstract the trigger, keep the
+    // multi-phase gesture body in the view).  No enabled() predicate: the old press swallow
+    // was unconditional for Ctrl+Left (the channel hit-test is at release, where a miss just
+    // does nothing), so the command always arms on Ctrl+Left and the release decides.
+    input::Command pick;
+    pick.id       = QStringLiteral("waveform.channelPick");
+    pick.scopeId  = QStringLiteral("view.waveform");
+    pick.label    = tr("Pick channel");
+    pick.category = tr("Channels");
+    pick.kind     = input::Kind::Gesture;
+    pick.defaultChord = input::Chord::button(Qt::LeftButton, Qt::ControlModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    pick.invoke   = [](const input::Ctx& c){
+        auto* wv = qobject_cast<WaveformView*>(c.view);
+        if (wv) wv->beginChannelPick();
+    };
+    reg.addCommand(pick);
+}
+
 void WaveformView::mousePressEvent(QMouseEvent* e){
-    // Ctrl+Left picks channels.  Swallow it here: BaseFrame::mousePressEvent
-    // would otherwise arm a zoom rubber band on the same press.
-    if((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
-        e->accept();
-        return;
-    }
+    // Ctrl+Left picks channels — now a registry Gesture (waveform.channelPick), resolved
+    // here and armed; the toggle body is in mouseReleaseEvent and the batch commit on
+    // Ctrl-release in eventFilter (the plan's seam).  Arming swallows the press so the
+    // base never starts a zoom rubber band on it.  Every other press (plain Left, etc.)
+    // finds no command and falls through to the base, which handles the rubber-band zoom
+    // exactly as before (WaveformView manages its own primary press, so the shared
+    // view.frame zoom scope is out — its plain-Left zoom is the base's inline fall-through).
+    if(dispatchInput(e)){ e->accept(); return; }
     ViewWidget::mousePressEvent(e);
 }
 
 void WaveformView::mouseReleaseEvent(QMouseEvent* e){
-    // Ctrl+Left toggles the clicked channel.  Swallow it before the parent:
-    // BaseFrame::mouseReleaseEvent treats a plain left click in ZOOM mode as
-    // "zoom in by 2", which would fire on every pick.
-    if((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+    // Commit a channel pick.  The press was claimed by the waveform.channelPick gesture
+    // (beginChannelPick armed it, and swallowed the press so the base never started a zoom),
+    // so the release is owned here whenever the gesture is armed — gated on the arm flag,
+    // not the live modifiers, exactly like ClusterView's Ctrl-pan release (a rebind of the
+    // trigger keeps working).  Swallowing it also keeps BaseFrame::mouseReleaseEvent from
+    // treating the release as a "zoom in by 2" left click in ZOOM mode.
+    if(channelPickArmed){
+        channelPickArmed = false;
         const QPoint world = viewportToWorld(e->position().toPoint().x(),
                                              e->position().toPoint().y());
         const int channel = channelAtWorldY(world.y());
