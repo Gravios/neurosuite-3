@@ -318,6 +318,13 @@ public:
         emit modeToSet(selectedMode);
     }
 
+    /**Returns the current tool mode of this display's cluster views, or
+    * BaseFrame::NONE if the display has no cluster view.  Used by the app to
+    * keep the checkable tool toolbar/menu buttons in sync with the active
+    * display (the views never change their own mode — only the app does, via
+    * setMode — so the first cluster view is representative).*/
+    BaseFrame::Mode currentMode() const;
+
     /**Sets the currentViewWidget (not currently used).*/
     void setCurrentViewWidget(ViewWidget* current){currentViewWidget = current;}
 

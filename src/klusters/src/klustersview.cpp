@@ -582,6 +582,15 @@ bool KlustersView::errorMatrixConsolidating() const{
     return false;
 }
 
+BaseFrame::Mode KlustersView::currentMode() const{
+    // All cluster views in a display share one mode (see the mode-inheritance in
+    // the view-creation path), so the first one is representative.
+    for(ViewWidget* w : viewList){
+        if(ClusterView* cv = qobject_cast<ClusterView*>(w)) return cv->getMode();
+    }
+    return BaseFrame::NONE;
+}
+
 void KlustersView::invalidateClusterDisplay(int clusterId)
 {
     if (!shownClusters->contains(clusterId))

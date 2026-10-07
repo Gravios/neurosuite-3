@@ -831,25 +831,34 @@ void KlustersApp::createMenus()
 
     toolsMenu->addSeparator();
 
+    // The four curation tools are checkable, mutually-exclusive toggles (Overview
+    // redesign step 4): selecting one highlights its toolbar/menu button and clears
+    // the others; clicking the active one (or "Normal Cursor") returns to the no-tool
+    // default.  The checked state is driven from the active view's real mode by
+    // updateToolModeActions(); the slots below toggle it.  Keyboard: Ctrl+1..Ctrl+4.
     mNewCluster = toolsMenu->addAction(tr("New Cluster"));
     mNewCluster->setIcon(QIcon(":/icons/new_cluster"));
-    // Shortcut removed; reachable via menu / toolbar / "1" key (slotSingleNew).
+    mNewCluster->setCheckable(true);
+    // Shortcut removed; reachable via menu / toolbar / Ctrl+1 (slotSingleNew).
     connect(mNewCluster,&QAction::triggered, this,&KlustersApp::slotSingleNew);
 
     mSplitClusters = toolsMenu->addAction(tr("&Split Clusters"));
     mSplitClusters->setIcon(QIcon(":/icons/new_clusters"));
+    mSplitClusters->setCheckable(true);
     connect(mSplitClusters,&QAction::triggered, this,&KlustersApp::slotMultipleNew);
 
     toolsMenu->addSeparator();
 
     mDeleteArtifactSpikes = toolsMenu->addAction(tr("Delete &Artifact Spikes"));
     mDeleteArtifactSpikes->setIcon(QIcon(":/icons/delete_artefact_tool"));
-    // Shortcut removed; reachable via menu / toolbar.
+    mDeleteArtifactSpikes->setCheckable(true);
+    // Reachable via menu / toolbar / Ctrl+3.
     connect(mDeleteArtifactSpikes,&QAction::triggered, this,&KlustersApp::slotDeleteArtefact);
 
     mDeleteNoisySpikes = toolsMenu->addAction(tr("Delete &Noisy Spikes"));
     mDeleteNoisySpikes->setIcon(QIcon(":/icons/delete_noise_tool"));
-    // Shortcut removed; reachable via menu / toolbar.
+    mDeleteNoisySpikes->setCheckable(true);
+    // Reachable via menu / toolbar / Ctrl+4.
     connect(mDeleteNoisySpikes,&QAction::triggered, this,&KlustersApp::slotDeleteNoise);
 
     toolsMenu->addSeparator();
@@ -2401,6 +2410,32 @@ void KlustersApp::registerInputBindings()
         c.enabled  = [this](const input::Ctx&){
             return !isInit && doc && activeView() && !editConsolidationLock; };
         c.invoke   = [this](const input::Ctx&){ slotMultipleNew(); };
+        reg.addCommand(c);
+    }
+    {   // Ctrl+3 — enter the Delete Artifact tool (no QAction owns this chord)
+        input::Command c;
+        c.id       = QStringLiteral("tools.deleteArtefact");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Delete-artifact mode");
+        c.category = tr("Tools");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_3, Qt::ControlModifier);
+        c.enabled  = [this](const input::Ctx&){
+            return !isInit && doc && activeView() && !editConsolidationLock; };
+        c.invoke   = [this](const input::Ctx&){ slotDeleteArtefact(); };
+        reg.addCommand(c);
+    }
+    {   // Ctrl+4 — enter the Delete Noise tool
+        input::Command c;
+        c.id       = QStringLiteral("tools.deleteNoise");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Delete-noise mode");
+        c.category = tr("Tools");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_4, Qt::ControlModifier);
+        c.enabled  = [this](const input::Ctx&){
+            return !isInit && doc && activeView() && !editConsolidationLock; };
+        c.invoke   = [this](const input::Ctx&){ slotDeleteNoise(); };
         reg.addCommand(c);
     }
     {   // E — step through the open matrix tabs (Error -> Template -> Residual -> Drift)
@@ -3966,7 +4001,14 @@ void KlustersApp::slotSingleNew(){
     }
 
     KlustersView* view = activeView();
-    view->setMode(ViewWidget::NEW_CLUSTER);
+    if(!view) return;
+    // Toggle: re-selecting the active tool returns to the normal cursor (step 4).
+    // Keyed off the view's real mode so it behaves the same from the toolbar, the
+    // menu, or the Ctrl+1 keyboard command (which call this slot directly).
+    const BaseFrame::Mode m = (view->currentMode() == ViewWidget::NEW_CLUSTER)
+                                  ? BaseFrame::NONE : static_cast<BaseFrame::Mode>(ViewWidget::NEW_CLUSTER);
+    view->setMode(m);
+    updateToolModeActions(m);
     slotStatusMsg(tr("Ready."));
 }
 /**Creates a multiple clusters by selecting an area*/
@@ -3979,7 +4021,11 @@ void KlustersApp::slotMultipleNew(){
     }
 
     KlustersView* view = activeView();
-    view->setMode(ViewWidget::NEW_CLUSTERS);
+    if(!view) return;
+    const BaseFrame::Mode m = (view->currentMode() == ViewWidget::NEW_CLUSTERS)
+                                  ? BaseFrame::NONE : static_cast<BaseFrame::Mode>(ViewWidget::NEW_CLUSTERS);
+    view->setMode(m);
+    updateToolModeActions(m);
     slotStatusMsg(tr("Ready."));
 }
 /**Deletes spikes from a cluster and move them to the cluster (number 1) containing the poorly isolated cells*/
@@ -3992,7 +4038,11 @@ void KlustersApp::slotDeleteNoise(){
     }
 
     KlustersView* view = activeView();
-    view->setMode(ViewWidget::DELETE_NOISE);
+    if(!view) return;
+    const BaseFrame::Mode m = (view->currentMode() == ViewWidget::DELETE_NOISE)
+                                  ? BaseFrame::NONE : static_cast<BaseFrame::Mode>(ViewWidget::DELETE_NOISE);
+    view->setMode(m);
+    updateToolModeActions(m);
     slotStatusMsg(tr("Ready."));
 }
 /**Deletes spikes from a cluster and move them to the cluster (number 0) containing the artifacts*/
@@ -4005,7 +4055,11 @@ void KlustersApp::slotDeleteArtefact(){
     }
 
     KlustersView* view = activeView();
-    view->setMode(ViewWidget::DELETE_ARTEFACT);
+    if(!view) return;
+    const BaseFrame::Mode m = (view->currentMode() == ViewWidget::DELETE_ARTEFACT)
+                                  ? BaseFrame::NONE : static_cast<BaseFrame::Mode>(ViewWidget::DELETE_ARTEFACT);
+    view->setMode(m);
+    updateToolModeActions(m);
     slotStatusMsg(tr("Ready."));
 }
 /**Zooms*/
@@ -4040,8 +4094,21 @@ void KlustersApp::slotZoom(){
     }
 
     KlustersView* view = activeView();
+    if(!view) return;
     view->setMode(BaseFrame::NONE);
+    updateToolModeActions(BaseFrame::NONE);   // clears the four curation-tool buttons
     slotStatusMsg(tr("Ready."));
+}
+
+void KlustersApp::updateToolModeActions(BaseFrame::Mode mode){
+    // Reflect the active view's current tool as the checked toolbar/menu button.
+    // setChecked() emits toggled(), not triggered(), so this does not re-enter the
+    // tool slots; the four are kept mutually exclusive here rather than via a
+    // QActionGroup, so a non-tool mode (NONE / SELECT_TIME / …) clears all four.
+    mNewCluster->setChecked(mode == ViewWidget::NEW_CLUSTER);
+    mSplitClusters->setChecked(mode == ViewWidget::NEW_CLUSTERS);
+    mDeleteArtifactSpikes->setChecked(mode == ViewWidget::DELETE_ARTEFACT);
+    mDeleteNoisySpikes->setChecked(mode == ViewWidget::DELETE_NOISE);
 }
 
 void KlustersApp::slotSelectTime(){
@@ -4053,7 +4120,9 @@ void KlustersApp::slotSelectTime(){
     }
 
     KlustersView* view = activeView();
+    if(!view) return;
     view->setMode(ViewWidget::SELECT_TIME);
+    updateToolModeActions(ViewWidget::SELECT_TIME);   // not one of the four — clears them
 
     slotStatusMsg(tr("Ready."));
 }
@@ -5818,9 +5887,14 @@ void KlustersApp::slotTabChange(int index){
                 featureXLabelAction->setVisible(true);
                 autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
                 autoNFeaturesSpinBoxAction->setVisible(autoSelectFeatures);
+                // Keep the checkable tool buttons in step with this display's real
+                // tool mode (step 4) — each display keeps its own tool selection.
+                updateToolModeActions(activeView->currentMode());
             }
             else{
                 slotStateChanged("noClusterViewState");
+                // No cluster view here: the curation tools are disabled, so clear them.
+                updateToolModeActions(BaseFrame::NONE);
                 dimensionXAction->setVisible(false);
                 dimensionYAction->setVisible(false);
                 featureXLabelAction->setVisible(false);

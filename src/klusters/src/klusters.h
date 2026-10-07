@@ -909,6 +909,14 @@ private:
   * display.  Null when the active display has no cluster view.*/
     ClusterView* activeClusterView() const;
 
+    /**Reflects the active view's current tool as the checked toolbar/menu button.
+  * The four curation tools (New Cluster / Split / Delete Artifact / Delete Noise)
+  * are mutually-exclusive checkable toggles; when @p mode is none of them — the
+  * normal cursor (BaseFrame::NONE), Select Time, etc. — all four read unchecked.
+  * setChecked() emits toggled(), not triggered(), so this never re-enters the
+  * tool slots.  (Overview redesign step 4.)*/
+    void updateToolModeActions(BaseFrame::Mode mode);
+
     /** Shared implementation of slotNudgeTimestampMinus / Plus.  Both
      *  slots only differ in the sign of @p deltaSamples; everything else
      *  (selection guard, busy flag, status messages, palette refocus) is
