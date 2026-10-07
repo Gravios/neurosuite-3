@@ -1886,216 +1886,275 @@ QList< QList<int>* >  KlustersView::getRedoList(){
 void KlustersView::setConnections(DisplayType displayType, QWidget* view,QDockWidget* dockWidget){
     //Connection(s) common to all widgets.
     connect(this, &KlustersView::updateContents, view, [view](){ view->update(); });
-    
-    //Connections common to ClusterView, WaveformView and CorrelationView
-    if((displayType == CLUSTERS) || (displayType == WAVEFORMS) || (displayType == CORRELATIONS)){
-        connect(this, &KlustersView::singleColorUpdated, qobject_cast<ViewWidget*>(view), &ViewWidget::singleColorUpdate);
-        connect(this, &KlustersView::clusterRemovedFromView, qobject_cast<ViewWidget*>(view), &ViewWidget::removeClusterFromView);
-        connect(this, &KlustersView::clusterAddedToView, qobject_cast<ViewWidget*>(view), &ViewWidget::addClusterToView);
-        connect(this, static_cast<void(KlustersView::*)(QList<int>&,int,bool)>(&KlustersView::newClusterAddedToView), qobject_cast<ViewWidget*>(view), static_cast<void(ViewWidget::*)(QList<int>&,int,bool)>(&ViewWidget::addNewClusterToView));
-        connect(this, static_cast<void(KlustersView::*)(int,bool)>(&KlustersView::newClusterAddedToView), qobject_cast<ViewWidget*>(view), static_cast<void(ViewWidget::*)(int,bool)>(&ViewWidget::addNewClusterToView));
-        connect(this, &KlustersView::spikesRemovedFromClusters, qobject_cast<ViewWidget*>(view), &ViewWidget::spikesRemovedFromClusters);
-        connect(this, &KlustersView::modeToSet, qobject_cast<BaseFrame*>(view), &BaseFrame::setMode);
-        connect(this, &KlustersView::spikesAddedToCluster, qobject_cast<ViewWidget*>(view), &ViewWidget::spikesAddedToCluster);
-        connect(this, &KlustersView::modifiedClusters, qobject_cast<ViewWidget*>(view), &ViewWidget::updateClusters);
-        connect(this, &KlustersView::modifiedClustersUndo, qobject_cast<ViewWidget*>(view), &ViewWidget::undoUpdateClusters);
-        connect(this, &KlustersView::updateDrawing, qobject_cast<BaseFrame*>(view), &BaseFrame::updateDrawing);
-        connect(this, &KlustersView::changeBackgroundColor, qobject_cast<BaseFrame*>(view), &BaseFrame::changeBackgroundColor);
-    }
 
-    if(displayType == CLUSTERS){ //Connections for ClusterViews
-        connect(this, &KlustersView::changeTimeInterval, qobject_cast<ClusterView*>(view), static_cast<void(ClusterView::*)(int,bool)>(&ClusterView::setTimeStepInSecond));
-        connect(this, &KlustersView::updatedDimensions, qobject_cast<ClusterView*>(view), &ClusterView::updatedDimensions);
-        connect(this, &KlustersView::emptySelection, qobject_cast<ClusterView*>(view), &ClusterView::emptySelection);
-        // Reprojection moves every point of a cluster, so the feature view must
-        // REDRAW rather than take the incremental update path its other slots use.
-        // Only the error matrix was connected to this signal; the feature view kept
-        // showing pre-shift positions after a nudge or realign while the data
-        // underneath had already moved.
-        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, qobject_cast<ClusterView*>(view), &ClusterView::clusterFeaturesReprojected);
-        // Membership edits that cross cluster 0 (and undo/redo of them)
-        // recompute the extrema on a worker thread; when it lands, refresh
-        // the world so admitted spikes are not clipped at the stale edge and
-        // reset-zoom sees the true extent.  The slot repaints only when the
-        // bounds actually moved.
-        connect(&doc, &KlustersDoc::dimensionExtremaChanged, qobject_cast<ClusterView*>(view), &ClusterView::dimensionExtremaChanged);
-        // Relabels invalidate the t-SNE presentation's cached cluster ids;
-        // membership and feature edits are dropped inside the view's own slots.
-        connect(&doc, &KlustersDoc::renumber, qobject_cast<ClusterView*>(view), &ClusterView::tsneInvalidate);
-        connect(&doc, &KlustersDoc::undoRenumbering, qobject_cast<ClusterView*>(view), &ClusterView::tsneInvalidate);
-        connect(&doc, &KlustersDoc::redoRenumbering, qobject_cast<ClusterView*>(view), &ClusterView::tsneInvalidate);
-        connect(view, &QObject::destroyed, this, &KlustersView::clusterDockClosed);
-
-        //Connect the clusterView to a possible TraceView
-        if(isThereTraceView){
-            connect(qobject_cast<ClusterView*>(view), &ClusterView::moveToTime, traceWidget, &TraceWidget::moveToTime);
-        }
-    } else if(displayType == WAVEFORMS) { //Connections for WaveformViews
-        connect(this, &KlustersView::updatedTimeFrame, qobject_cast<WaveformView*>(view), &WaveformView::setTimeFrame);
-        connect(this, &KlustersView::sampleMode, qobject_cast<WaveformView*>(view), &WaveformView::setSampleMode);
-        connect(this, &KlustersView::timeFrameMode, qobject_cast<WaveformView*>(view), &WaveformView::setTimeFrameMode);
-        connect(this, &KlustersView::meanPresentation, qobject_cast<WaveformView*>(view), &WaveformView::setMeanPresentation);
-        connect(this, &KlustersView::allWaveformsPresentation, qobject_cast<WaveformView*>(view), &WaveformView::setAllWaveformsPresentation);
-        connect(this, &KlustersView::overLayPresentation, qobject_cast<WaveformView*>(view), &WaveformView::setOverLayPresentation);
-        connect(this, &KlustersView::sideBySidePresentation, qobject_cast<WaveformView*>(view), &WaveformView::setSideBySidePresentation);
-        connect(this, &KlustersView::increaseAmplitude, qobject_cast<WaveformView*>(view), &WaveformView::increaseAmplitude);
-        connect(this, &KlustersView::decreaseAmplitude, qobject_cast<WaveformView*>(view), &WaveformView::decreaseAmplitude);
-        connect(this, &KlustersView::updateDisplayNbSpikes, qobject_cast<WaveformView*>(view), &WaveformView::setDisplayNbSpikes);
-        connect(this, &KlustersView::changeGain, qobject_cast<WaveformView*>(view), &WaveformView::setGain);
-        connect(this, &KlustersView::autoFitAmplitude, qobject_cast<WaveformView*>(view), &WaveformView::autoFitAmplitude);
-        connect(this, &KlustersView::changeChannelPositions, qobject_cast<WaveformView*>(view), &WaveformView::setChannelPositions);
-        connect(this, &KlustersView::clustersRenumbered, qobject_cast<WaveformView*>(view), &WaveformView::clustersRenumbered);
-        connect(view, &QObject::destroyed, this, &KlustersView::waveformDockClosed);
-    } else if(displayType == CORRELATIONS){ //Connections for CorrelationViews
-        connect(this, &KlustersView::updatedBinSizeAndTimeFrame, qobject_cast<CorrelationView*>(view), &CorrelationView::setBinSizeAndTimeWindow);
-        connect(this, &KlustersView::noScale, qobject_cast<CorrelationView*>(view), &CorrelationView::setNoScale);
-        connect(this, &KlustersView::maxScale, qobject_cast<CorrelationView*>(view), &CorrelationView::setMaximumScale);
-        connect(this, &KlustersView::shoulderScale, qobject_cast<CorrelationView*>(view), &CorrelationView::setShoulderScale);
-        connect(this, &KlustersView::increaseAmplitudeofCorrelograms, qobject_cast<CorrelationView*>(view), &CorrelationView::increaseAmplitude);
-        connect(this, &KlustersView::decreaseAmplitudeofCorrelograms, qobject_cast<CorrelationView*>(view), &CorrelationView::decreaseAmplitude);
-        connect(this, &KlustersView::setShoulderLine, qobject_cast<CorrelationView*>(view), &CorrelationView::setShoulderLine);
-        connect(this, &KlustersView::clustersRenumbered, qobject_cast<CorrelationView*>(view), &CorrelationView::clustersRenumbered);
-        connect(view, &QObject::destroyed, this, &KlustersView::correlogramDockClosed);
-    } else if(displayType == ERROR_MATRIX){ //Connections for ErrorMatrixViews
-        connect(this, &KlustersView::computeProbabilities, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::updateMatrixContents);
-        connect(view, &QObject::destroyed, this, &KlustersView::errorMatrixDockClosed);
-        //connection with the document
-        connect(&doc, &KlustersDoc::clustersGrouped, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::clustersGrouped);
-        connect(&doc, &KlustersDoc::clustersDeleted, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::clustersDeleted);
-        connect(&doc, &KlustersDoc::removeSpikesFromClusters, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::removeSpikesFromClusters);
-        connect(&doc, &KlustersDoc::newClusterAdded, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::newClusterAdded);
-        connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded), qobject_cast<ErrorMatrixView*>(view), static_cast<void(ErrorMatrixView::*)(QMap<int,int>&,QList<int>&)>(&ErrorMatrixView::newClustersAdded));
-        connect(&doc, &KlustersDoc::renumber, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::renumber);
-        connect(&doc, &KlustersDoc::selectedChannelsChanged, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::selectedChannelsChanged);
-        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::clusterFeaturesReprojected);
-        connect(&doc, &KlustersDoc::undoRenumbering, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::undoRenumbering);
-        connect(&doc, &KlustersDoc::undoAdditionModification, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::undoAdditionModification);
-        connect(&doc, &KlustersDoc::undoAddition, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::undoAddition);
-        connect(&doc, &KlustersDoc::undoModification, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::undoModification);
-        connect(&doc, &KlustersDoc::redoRenumbering, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::redoRenumbering);
-        connect(&doc, &KlustersDoc::redoAdditionModification, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::redoAdditionModification);
-        connect(&doc, &KlustersDoc::redoAddition, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::redoAddition);
-        connect(&doc, &KlustersDoc::redoModification, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::redoModification);
-        connect(&doc, &KlustersDoc::redoDeletion, qobject_cast<ErrorMatrixView*>(view), &ErrorMatrixView::redoDeletion);
-        connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded), qobject_cast<ErrorMatrixView*>(view), static_cast<void(ErrorMatrixView::*)(QList<int>&)>(&ErrorMatrixView::newClustersAdded));
-        connect(this, &KlustersView::changeBackgroundColor, qobject_cast<BaseFrame*>(view), &BaseFrame::changeBackgroundColor);
+    //Each view type's wiring lives in its own helper below, which takes the already-cast
+    //concrete receiver.  Casting once here (instead of re-casting on every connect) makes
+    //every connect inside the helpers a compiler-checked pairing: a receiver of the wrong
+    //type is a build error rather than a silent "connect(..., Unknown)" null-connect.
+    if(displayType == CLUSTERS){
+        ClusterView* clusterView = qobject_cast<ClusterView*>(view);
+        connectSpikeViewCommon(clusterView);
+        connectClusterView(clusterView);
+    } else if(displayType == WAVEFORMS){
+        WaveformView* waveformView = qobject_cast<WaveformView*>(view);
+        connectSpikeViewCommon(waveformView);
+        connectWaveformView(waveformView);
+    } else if(displayType == CORRELATIONS){
+        CorrelationView* correlationView = qobject_cast<CorrelationView*>(view);
+        connectSpikeViewCommon(correlationView);
+        connectCorrelationView(correlationView);
+    } else if(displayType == ERROR_MATRIX){
+        connectErrorMatrixView(qobject_cast<ErrorMatrixView*>(view));
     } else if(displayType == TEMPLATE_MATRIX){
-        TemplateMatrixView* tmv = qobject_cast<TemplateMatrixView*>(view);
-        connect(this, &KlustersView::computeTemplateMatrix, tmv, &TemplateMatrixView::updateMatrixContents);
-        connect(view, &QObject::destroyed, this, &KlustersView::templateMatrixDockClosed);
-        connect(&doc, &KlustersDoc::clustersGrouped,          tmv, &TemplateMatrixView::clustersGrouped);
-        connect(&doc, &KlustersDoc::clustersDeleted,          tmv, &TemplateMatrixView::clustersDeleted);
-        connect(&doc, &KlustersDoc::removeSpikesFromClusters, tmv, &TemplateMatrixView::removeSpikesFromClusters);
-        connect(&doc, &KlustersDoc::newClusterAdded,          tmv, &TemplateMatrixView::newClusterAdded);
-        connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
-                tmv,  static_cast<void(TemplateMatrixView::*)(QMap<int,int>&,QList<int>&)>(&TemplateMatrixView::newClustersAdded));
-        connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
-                tmv,  static_cast<void(TemplateMatrixView::*)(QList<int>&)>(&TemplateMatrixView::newClustersAdded));
-        connect(&doc, &KlustersDoc::renumber,                 tmv, &TemplateMatrixView::renumber);
-        connect(&doc, &KlustersDoc::selectedChannelsChanged,  tmv, &TemplateMatrixView::selectedChannelsChanged);
-        // Undo/redo restore memberships and a nudge/realign rewrites waveforms,
-        // but neither goes through the edit signals above -- the doc raises the
-        // undo*/redo* family and clusterFeaturesReprojected instead, which only
-        // the ERROR matrix heard.  This view then showed pre-undo / pre-nudge
-        // templates with no stale border.  Mark stale on all of them; the
-        // recompute still comes from U, the next edit, or the preference-gated
-        // post-op path, exactly as for the error matrix.
-        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoRenumbering,            tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoAdditionModification,   tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoAddition,               tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoModification,           tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoRenumbering,            tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoAdditionModification,   tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoAddition,               tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoModification,           tmv, &TemplateMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoDeletion,               tmv, &TemplateMatrixView::markStale);
-        connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
-            QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
-            view->setPalette(pal); view->update(); });
+        connectTemplateMatrixView(qobject_cast<TemplateMatrixView*>(view));
     } else if(displayType == RESIDUAL_MATRIX){
-        ResidualMatrixView* rmv = qobject_cast<ResidualMatrixView*>(view);
-        connect(this, &KlustersView::computeResidualMatrix, rmv, &ResidualMatrixView::updateMatrixContents);
-        connect(view, &QObject::destroyed, this, &KlustersView::residualMatrixDockClosed);
-        connect(&doc, &KlustersDoc::clustersGrouped,          rmv, &ResidualMatrixView::clustersGrouped);
-        connect(&doc, &KlustersDoc::clustersDeleted,          rmv, &ResidualMatrixView::clustersDeleted);
-        connect(&doc, &KlustersDoc::removeSpikesFromClusters, rmv, &ResidualMatrixView::removeSpikesFromClusters);
-        connect(&doc, &KlustersDoc::newClusterAdded,          rmv, &ResidualMatrixView::newClusterAdded);
-        connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
-                rmv,  static_cast<void(ResidualMatrixView::*)(QMap<int,int>&,QList<int>&)>(&ResidualMatrixView::newClustersAdded));
-        connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
-                rmv,  static_cast<void(ResidualMatrixView::*)(QList<int>&)>(&ResidualMatrixView::newClustersAdded));
-        connect(&doc, &KlustersDoc::renumber,                 rmv, &ResidualMatrixView::renumber);
-        connect(&doc, &KlustersDoc::selectedChannelsChanged,  rmv, &ResidualMatrixView::selectedChannelsChanged);
-        // Same gap as the template matrix: undo/redo and a nudge/realign change
-        // the waveforms this matrix reads without firing the edit signals above.
-        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoRenumbering,            rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoAdditionModification,   rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoAddition,               rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoModification,           rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoRenumbering,            rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoAdditionModification,   rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoAddition,               rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoModification,           rmv, &ResidualMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoDeletion,               rmv, &ResidualMatrixView::markStale);
-        connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
-            QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
-            view->setPalette(pal); view->update(); });
+        connectResidualMatrixView(qobject_cast<ResidualMatrixView*>(view));
     } else if(displayType == DRIFT_MATRIX){
-        DriftMatrixView* dmv = qobject_cast<DriftMatrixView*>(view);
-        connect(this, &KlustersView::computeDriftMatrix, dmv, &DriftMatrixView::updateMatrixContents);
-        connect(view, &QObject::destroyed, this, &KlustersView::driftMatrixDockClosed);
-        connect(&doc, &KlustersDoc::clustersGrouped,          dmv, &DriftMatrixView::clustersGrouped);
-        connect(&doc, &KlustersDoc::clustersDeleted,          dmv, &DriftMatrixView::clustersDeleted);
-        connect(&doc, &KlustersDoc::removeSpikesFromClusters, dmv, &DriftMatrixView::removeSpikesFromClusters);
-        connect(&doc, &KlustersDoc::newClusterAdded,          dmv, &DriftMatrixView::newClusterAdded);
-        connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
-                dmv,  static_cast<void(DriftMatrixView::*)(QMap<int,int>&,QList<int>&)>(&DriftMatrixView::newClustersAdded));
-        connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
-                dmv,  static_cast<void(DriftMatrixView::*)(QList<int>&)>(&DriftMatrixView::newClustersAdded));
-        connect(&doc, &KlustersDoc::renumber,                 dmv, &DriftMatrixView::renumber);
-        connect(&doc, &KlustersDoc::selectedChannelsChanged,  dmv, &DriftMatrixView::selectedChannelsChanged);
-        // Same gap as the template matrix.  Here the mark also completes the
-        // visibility gate: a hidden drift matrix records the staleness and
-        // showEvent() relaunches the compute when it is next revealed.
-        connect(&doc, &KlustersDoc::clusterFeaturesReprojected, dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoRenumbering,            dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoAdditionModification,   dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoAddition,               dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::undoModification,           dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoRenumbering,            dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoAdditionModification,   dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoAddition,               dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoModification,           dmv, &DriftMatrixView::markStale);
-        connect(&doc, &KlustersDoc::redoDeletion,               dmv, &DriftMatrixView::markStale);
-        connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
-            QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
-            view->setPalette(pal); view->update(); });
-    } else if(displayType == TRACES){ //Connections for TraceViews
-    
-        connect(this, &KlustersView::updateContents, qobject_cast<TraceWidget*>(view), &TraceWidget::updateContents);
-        connect(this, &KlustersView::singleColorUpdated, qobject_cast<TraceWidget*>(view), &TraceWidget::updateDrawing);
-        connect(this, &KlustersView::updateClusters, qobject_cast<TraceWidget*>(view), &TraceWidget::updateClusters);
+        connectDriftMatrixView(qobject_cast<DriftMatrixView*>(view));
+    } else if(displayType == TRACES){
+        connectTraceWidget(qobject_cast<TraceWidget*>(view));
+    }
+}
 
-        connect(this, &KlustersView::updateDrawing, qobject_cast<BaseFrame*>(view), &BaseFrame::updateDrawing);
-        connect(this, &KlustersView::changeBackgroundColor, qobject_cast<BaseFrame*>(view), &BaseFrame::changeBackgroundColor);
-        connect(view, &QObject::destroyed, this, &KlustersView::traceDockClosed);
-        connect(this, &KlustersView::increaseAllAmplitude, qobject_cast<TraceWidget*>(view), &TraceWidget::increaseAllChannelsAmplitude);
-        connect(this, &KlustersView::decreaseAllAmplitude, qobject_cast<TraceWidget*>(view), &TraceWidget::decreaseAllChannelsAmplitude);
-        connect(qobject_cast<TraceWidget*>(view), &TraceWidget::updateStartAndDuration, this, &KlustersView::setStartAndDuration);
-        connect(this, &KlustersView::showLabels, qobject_cast<TraceWidget*>(view), &TraceWidget::showLabels);
-        connect(this,&KlustersView::nextCluster,traceWidget,&TraceWidget::showNextCluster);
-        connect(this,&KlustersView::previousCluster,traceWidget,&TraceWidget::showPreviousCluster);
+//Connections common to ClusterView, WaveformView and CorrelationView.
+void KlustersView::connectSpikeViewCommon(ViewWidget* view){
+    if(!view) return;
+    connect(this, &KlustersView::singleColorUpdated, view, &ViewWidget::singleColorUpdate);
+    connect(this, &KlustersView::clusterRemovedFromView, view, &ViewWidget::removeClusterFromView);
+    connect(this, &KlustersView::clusterAddedToView, view, &ViewWidget::addClusterToView);
+    connect(this, static_cast<void(KlustersView::*)(QList<int>&,int,bool)>(&KlustersView::newClusterAddedToView), view, static_cast<void(ViewWidget::*)(QList<int>&,int,bool)>(&ViewWidget::addNewClusterToView));
+    connect(this, static_cast<void(KlustersView::*)(int,bool)>(&KlustersView::newClusterAddedToView), view, static_cast<void(ViewWidget::*)(int,bool)>(&ViewWidget::addNewClusterToView));
+    connect(this, &KlustersView::spikesRemovedFromClusters, view, &ViewWidget::spikesRemovedFromClusters);
+    connect(this, &KlustersView::modeToSet, view, &BaseFrame::setMode);
+    connect(this, &KlustersView::spikesAddedToCluster, view, &ViewWidget::spikesAddedToCluster);
+    connect(this, &KlustersView::modifiedClusters, view, &ViewWidget::updateClusters);
+    connect(this, &KlustersView::modifiedClustersUndo, view, &ViewWidget::undoUpdateClusters);
+    connect(this, &KlustersView::updateDrawing, view, &BaseFrame::updateDrawing);
+    connect(this, &KlustersView::changeBackgroundColor, view, &BaseFrame::changeBackgroundColor);
+}
 
-        //Connect the TraceView to possible clusterViews
-        if(isThereClusterView){
-            int nbViews = viewList.count();
-            for(int i = 0; i< nbViews; i++) {
-                ViewWidget* viewWidget = viewList.at(i);
-                if(qobject_cast<ClusterView*>(viewWidget)){
-                    connect(qobject_cast<ClusterView*>(viewWidget), &ClusterView::moveToTime, qobject_cast<TraceWidget*>(view), &TraceWidget::moveToTime);
-                }
+//Connections for ClusterViews.
+void KlustersView::connectClusterView(ClusterView* view){
+    if(!view) return;
+    connect(this, &KlustersView::changeTimeInterval, view, static_cast<void(ClusterView::*)(int,bool)>(&ClusterView::setTimeStepInSecond));
+    connect(this, &KlustersView::updatedDimensions, view, &ClusterView::updatedDimensions);
+    connect(this, &KlustersView::emptySelection, view, &ClusterView::emptySelection);
+    // Reprojection moves every point of a cluster, so the feature view must
+    // REDRAW rather than take the incremental update path its other slots use.
+    // Only the error matrix was connected to this signal; the feature view kept
+    // showing pre-shift positions after a nudge or realign while the data
+    // underneath had already moved.
+    connect(&doc, &KlustersDoc::clusterFeaturesReprojected, view, &ClusterView::clusterFeaturesReprojected);
+    // Membership edits that cross cluster 0 (and undo/redo of them)
+    // recompute the extrema on a worker thread; when it lands, refresh
+    // the world so admitted spikes are not clipped at the stale edge and
+    // reset-zoom sees the true extent.  The slot repaints only when the
+    // bounds actually moved.
+    connect(&doc, &KlustersDoc::dimensionExtremaChanged, view, &ClusterView::dimensionExtremaChanged);
+    // Relabels invalidate the t-SNE presentation's cached cluster ids;
+    // membership and feature edits are dropped inside the view's own slots.
+    connect(&doc, &KlustersDoc::renumber, view, &ClusterView::tsneInvalidate);
+    connect(&doc, &KlustersDoc::undoRenumbering, view, &ClusterView::tsneInvalidate);
+    connect(&doc, &KlustersDoc::redoRenumbering, view, &ClusterView::tsneInvalidate);
+    connect(view, &QObject::destroyed, this, &KlustersView::clusterDockClosed);
+
+    //Connect the clusterView to a possible TraceView
+    if(isThereTraceView){
+        connect(view, &ClusterView::moveToTime, traceWidget, &TraceWidget::moveToTime);
+    }
+}
+
+//Connections for WaveformViews.
+void KlustersView::connectWaveformView(WaveformView* view){
+    if(!view) return;
+    connect(this, &KlustersView::updatedTimeFrame, view, &WaveformView::setTimeFrame);
+    connect(this, &KlustersView::sampleMode, view, &WaveformView::setSampleMode);
+    connect(this, &KlustersView::timeFrameMode, view, &WaveformView::setTimeFrameMode);
+    connect(this, &KlustersView::meanPresentation, view, &WaveformView::setMeanPresentation);
+    connect(this, &KlustersView::allWaveformsPresentation, view, &WaveformView::setAllWaveformsPresentation);
+    connect(this, &KlustersView::overLayPresentation, view, &WaveformView::setOverLayPresentation);
+    connect(this, &KlustersView::sideBySidePresentation, view, &WaveformView::setSideBySidePresentation);
+    connect(this, &KlustersView::increaseAmplitude, view, &WaveformView::increaseAmplitude);
+    connect(this, &KlustersView::decreaseAmplitude, view, &WaveformView::decreaseAmplitude);
+    connect(this, &KlustersView::updateDisplayNbSpikes, view, &WaveformView::setDisplayNbSpikes);
+    connect(this, &KlustersView::changeGain, view, &WaveformView::setGain);
+    connect(this, &KlustersView::autoFitAmplitude, view, &WaveformView::autoFitAmplitude);
+    connect(this, &KlustersView::changeChannelPositions, view, &WaveformView::setChannelPositions);
+    connect(this, &KlustersView::clustersRenumbered, view, &WaveformView::clustersRenumbered);
+    connect(view, &QObject::destroyed, this, &KlustersView::waveformDockClosed);
+}
+
+//Connections for CorrelationViews.
+void KlustersView::connectCorrelationView(CorrelationView* view){
+    if(!view) return;
+    connect(this, &KlustersView::updatedBinSizeAndTimeFrame, view, &CorrelationView::setBinSizeAndTimeWindow);
+    connect(this, &KlustersView::noScale, view, &CorrelationView::setNoScale);
+    connect(this, &KlustersView::maxScale, view, &CorrelationView::setMaximumScale);
+    connect(this, &KlustersView::shoulderScale, view, &CorrelationView::setShoulderScale);
+    connect(this, &KlustersView::increaseAmplitudeofCorrelograms, view, &CorrelationView::increaseAmplitude);
+    connect(this, &KlustersView::decreaseAmplitudeofCorrelograms, view, &CorrelationView::decreaseAmplitude);
+    connect(this, &KlustersView::setShoulderLine, view, &CorrelationView::setShoulderLine);
+    connect(this, &KlustersView::clustersRenumbered, view, &CorrelationView::clustersRenumbered);
+    connect(view, &QObject::destroyed, this, &KlustersView::correlogramDockClosed);
+}
+
+//Connections for ErrorMatrixViews.
+void KlustersView::connectErrorMatrixView(ErrorMatrixView* view){
+    if(!view) return;
+    connect(this, &KlustersView::computeProbabilities, view, &ErrorMatrixView::updateMatrixContents);
+    connect(view, &QObject::destroyed, this, &KlustersView::errorMatrixDockClosed);
+    //connection with the document
+    connect(&doc, &KlustersDoc::clustersGrouped, view, &ErrorMatrixView::clustersGrouped);
+    connect(&doc, &KlustersDoc::clustersDeleted, view, &ErrorMatrixView::clustersDeleted);
+    connect(&doc, &KlustersDoc::removeSpikesFromClusters, view, &ErrorMatrixView::removeSpikesFromClusters);
+    connect(&doc, &KlustersDoc::newClusterAdded, view, &ErrorMatrixView::newClusterAdded);
+    connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded), view, static_cast<void(ErrorMatrixView::*)(QMap<int,int>&,QList<int>&)>(&ErrorMatrixView::newClustersAdded));
+    connect(&doc, &KlustersDoc::renumber, view, &ErrorMatrixView::renumber);
+    connect(&doc, &KlustersDoc::selectedChannelsChanged, view, &ErrorMatrixView::selectedChannelsChanged);
+    connect(&doc, &KlustersDoc::clusterFeaturesReprojected, view, &ErrorMatrixView::clusterFeaturesReprojected);
+    connect(&doc, &KlustersDoc::undoRenumbering, view, &ErrorMatrixView::undoRenumbering);
+    connect(&doc, &KlustersDoc::undoAdditionModification, view, &ErrorMatrixView::undoAdditionModification);
+    connect(&doc, &KlustersDoc::undoAddition, view, &ErrorMatrixView::undoAddition);
+    connect(&doc, &KlustersDoc::undoModification, view, &ErrorMatrixView::undoModification);
+    connect(&doc, &KlustersDoc::redoRenumbering, view, &ErrorMatrixView::redoRenumbering);
+    connect(&doc, &KlustersDoc::redoAdditionModification, view, &ErrorMatrixView::redoAdditionModification);
+    connect(&doc, &KlustersDoc::redoAddition, view, &ErrorMatrixView::redoAddition);
+    connect(&doc, &KlustersDoc::redoModification, view, &ErrorMatrixView::redoModification);
+    connect(&doc, &KlustersDoc::redoDeletion, view, &ErrorMatrixView::redoDeletion);
+    connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded), view, static_cast<void(ErrorMatrixView::*)(QList<int>&)>(&ErrorMatrixView::newClustersAdded));
+    connect(this, &KlustersView::changeBackgroundColor, view, &BaseFrame::changeBackgroundColor);
+}
+
+//Connections for TemplateMatrixViews.
+void KlustersView::connectTemplateMatrixView(TemplateMatrixView* view){
+    if(!view) return;
+    connect(this, &KlustersView::computeTemplateMatrix, view, &TemplateMatrixView::updateMatrixContents);
+    connect(view, &QObject::destroyed, this, &KlustersView::templateMatrixDockClosed);
+    connect(&doc, &KlustersDoc::clustersGrouped,          view, &TemplateMatrixView::clustersGrouped);
+    connect(&doc, &KlustersDoc::clustersDeleted,          view, &TemplateMatrixView::clustersDeleted);
+    connect(&doc, &KlustersDoc::removeSpikesFromClusters, view, &TemplateMatrixView::removeSpikesFromClusters);
+    connect(&doc, &KlustersDoc::newClusterAdded,          view, &TemplateMatrixView::newClusterAdded);
+    connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
+            view, static_cast<void(TemplateMatrixView::*)(QMap<int,int>&,QList<int>&)>(&TemplateMatrixView::newClustersAdded));
+    connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
+            view, static_cast<void(TemplateMatrixView::*)(QList<int>&)>(&TemplateMatrixView::newClustersAdded));
+    connect(&doc, &KlustersDoc::renumber,                 view, &TemplateMatrixView::renumber);
+    connect(&doc, &KlustersDoc::selectedChannelsChanged,  view, &TemplateMatrixView::selectedChannelsChanged);
+    // Undo/redo restore memberships and a nudge/realign rewrites waveforms,
+    // but neither goes through the edit signals above -- the doc raises the
+    // undo*/redo* family and clusterFeaturesReprojected instead, which only
+    // the ERROR matrix heard.  This view then showed pre-undo / pre-nudge
+    // templates with no stale border.  Mark stale on all of them; the
+    // recompute still comes from U, the next edit, or the preference-gated
+    // post-op path, exactly as for the error matrix.
+    connect(&doc, &KlustersDoc::clusterFeaturesReprojected, view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoRenumbering,            view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoAdditionModification,   view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoAddition,               view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoModification,           view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoRenumbering,            view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoAdditionModification,   view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoAddition,               view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoModification,           view, &TemplateMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoDeletion,               view, &TemplateMatrixView::markStale);
+    connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
+        QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
+        view->setPalette(pal); view->update(); });
+}
+
+//Connections for ResidualMatrixViews.
+void KlustersView::connectResidualMatrixView(ResidualMatrixView* view){
+    if(!view) return;
+    connect(this, &KlustersView::computeResidualMatrix, view, &ResidualMatrixView::updateMatrixContents);
+    connect(view, &QObject::destroyed, this, &KlustersView::residualMatrixDockClosed);
+    connect(&doc, &KlustersDoc::clustersGrouped,          view, &ResidualMatrixView::clustersGrouped);
+    connect(&doc, &KlustersDoc::clustersDeleted,          view, &ResidualMatrixView::clustersDeleted);
+    connect(&doc, &KlustersDoc::removeSpikesFromClusters, view, &ResidualMatrixView::removeSpikesFromClusters);
+    connect(&doc, &KlustersDoc::newClusterAdded,          view, &ResidualMatrixView::newClusterAdded);
+    connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
+            view, static_cast<void(ResidualMatrixView::*)(QMap<int,int>&,QList<int>&)>(&ResidualMatrixView::newClustersAdded));
+    connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
+            view, static_cast<void(ResidualMatrixView::*)(QList<int>&)>(&ResidualMatrixView::newClustersAdded));
+    connect(&doc, &KlustersDoc::renumber,                 view, &ResidualMatrixView::renumber);
+    connect(&doc, &KlustersDoc::selectedChannelsChanged,  view, &ResidualMatrixView::selectedChannelsChanged);
+    // Same gap as the template matrix: undo/redo and a nudge/realign change
+    // the waveforms this matrix reads without firing the edit signals above.
+    connect(&doc, &KlustersDoc::clusterFeaturesReprojected, view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoRenumbering,            view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoAdditionModification,   view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoAddition,               view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoModification,           view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoRenumbering,            view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoAdditionModification,   view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoAddition,               view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoModification,           view, &ResidualMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoDeletion,               view, &ResidualMatrixView::markStale);
+    connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
+        QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
+        view->setPalette(pal); view->update(); });
+}
+
+//Connections for DriftMatrixViews.
+void KlustersView::connectDriftMatrixView(DriftMatrixView* view){
+    if(!view) return;
+    connect(this, &KlustersView::computeDriftMatrix, view, &DriftMatrixView::updateMatrixContents);
+    connect(view, &QObject::destroyed, this, &KlustersView::driftMatrixDockClosed);
+    connect(&doc, &KlustersDoc::clustersGrouped,          view, &DriftMatrixView::clustersGrouped);
+    connect(&doc, &KlustersDoc::clustersDeleted,          view, &DriftMatrixView::clustersDeleted);
+    connect(&doc, &KlustersDoc::removeSpikesFromClusters, view, &DriftMatrixView::removeSpikesFromClusters);
+    connect(&doc, &KlustersDoc::newClusterAdded,          view, &DriftMatrixView::newClusterAdded);
+    connect(&doc, static_cast<void(KlustersDoc::*)(QMap<int,int>&,QList<int>&)>(&KlustersDoc::newClustersAdded),
+            view, static_cast<void(DriftMatrixView::*)(QMap<int,int>&,QList<int>&)>(&DriftMatrixView::newClustersAdded));
+    connect(&doc, static_cast<void(KlustersDoc::*)(QList<int>&)>(&KlustersDoc::newClustersAdded),
+            view, static_cast<void(DriftMatrixView::*)(QList<int>&)>(&DriftMatrixView::newClustersAdded));
+    connect(&doc, &KlustersDoc::renumber,                 view, &DriftMatrixView::renumber);
+    connect(&doc, &KlustersDoc::selectedChannelsChanged,  view, &DriftMatrixView::selectedChannelsChanged);
+    // Same gap as the template matrix.  Here the mark also completes the
+    // visibility gate: a hidden drift matrix records the staleness and
+    // showEvent() relaunches the compute when it is next revealed.
+    connect(&doc, &KlustersDoc::clusterFeaturesReprojected, view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoRenumbering,            view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoAdditionModification,   view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoAddition,               view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::undoModification,           view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoRenumbering,            view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoAdditionModification,   view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoAddition,               view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoModification,           view, &DriftMatrixView::markStale);
+    connect(&doc, &KlustersDoc::redoDeletion,               view, &DriftMatrixView::markStale);
+    connect(this, &KlustersView::changeBackgroundColor, view, [view](const QColor& c){
+        QPalette pal = view->palette(); pal.setColor(QPalette::Window, c);
+        view->setPalette(pal); view->update(); });
+}
+
+//Connections for TraceWidgets (the trace view's dock wrapper).
+void KlustersView::connectTraceWidget(TraceWidget* view){
+    if(!view) return;
+    connect(this, &KlustersView::updateContents, view, &TraceWidget::updateContents);
+    connect(this, &KlustersView::singleColorUpdated, view, &TraceWidget::updateDrawing);
+    connect(this, &KlustersView::updateClusters, view, &TraceWidget::updateClusters);
+
+    // These two used to cast the TraceWidget wrapper to BaseFrame -- which it is not (it
+    // wraps the inner TraceView) -- so the receiver was null: the "connect(KlustersView,
+    // Unknown): invalid nullptr parameter" warnings, and the trace view never heard either
+    // signal.  TraceWidget forwards both to its inner TraceView.
+    connect(this, &KlustersView::updateDrawing, view, &TraceWidget::updateDrawing);
+    connect(this, &KlustersView::changeBackgroundColor, view, &TraceWidget::changeBackgroundColor);
+    connect(view, &QObject::destroyed, this, &KlustersView::traceDockClosed);
+    connect(this, &KlustersView::increaseAllAmplitude, view, &TraceWidget::increaseAllChannelsAmplitude);
+    connect(this, &KlustersView::decreaseAllAmplitude, view, &TraceWidget::decreaseAllChannelsAmplitude);
+    connect(view, &TraceWidget::updateStartAndDuration, this, &KlustersView::setStartAndDuration);
+    connect(this, &KlustersView::showLabels, view, &TraceWidget::showLabels);
+    connect(this,&KlustersView::nextCluster,traceWidget,&TraceWidget::showNextCluster);
+    connect(this,&KlustersView::previousCluster,traceWidget,&TraceWidget::showPreviousCluster);
+
+    //Connect the TraceView to possible clusterViews
+    if(isThereClusterView){
+        int nbViews = viewList.count();
+        for(int i = 0; i< nbViews; i++) {
+            ViewWidget* viewWidget = viewList.at(i);
+            if(qobject_cast<ClusterView*>(viewWidget)){
+                connect(qobject_cast<ClusterView*>(viewWidget), &ClusterView::moveToTime, view, &TraceWidget::moveToTime);
             }
         }
     }

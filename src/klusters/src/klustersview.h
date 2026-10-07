@@ -46,6 +46,12 @@ class CorrelationView;
 class KlustersDoc;
 class KlustersApp;
 class TraceWidget;
+class ClusterView;         // setConnections per-view helpers (input-wiring refactor)
+class WaveformView;
+class ErrorMatrixView;
+class TemplateMatrixView;
+class ResidualMatrixView;
+class DriftMatrixView;
 
 /** The KlustersView class provides the view widgets for the document instance (KlustersDoc instance) and is displayed
  * as a MDI child window in the main view area of the KlustersApp class instance.
@@ -1115,6 +1121,21 @@ private:
    * @param dockWidget QDockWidget containing the view for which connections will be made.
    */
     void setConnections(DisplayType displayType,QWidget* view,QDockWidget* dockWidget);
+
+    // Per-display-type connection helpers that setConnections dispatches to.  Each takes
+    // the already-cast concrete receiver, so every connect inside is a compiler-checked
+    // pairing: a wrong receiver type is now a build error, not a silent runtime
+    // "connect(..., Unknown): invalid nullptr parameter".  The qobject_cast happens once,
+    // in setConnections, instead of being repeated on every connect.
+    void connectSpikeViewCommon(ViewWidget* view);
+    void connectClusterView(ClusterView* view);
+    void connectWaveformView(WaveformView* view);
+    void connectCorrelationView(CorrelationView* view);
+    void connectErrorMatrixView(ErrorMatrixView* view);
+    void connectTemplateMatrixView(TemplateMatrixView* view);
+    void connectResidualMatrixView(ResidualMatrixView* view);
+    void connectDriftMatrixView(DriftMatrixView* view);
+    void connectTraceWidget(TraceWidget* view);
 
     /// Cross-connect the error and template matrix views so zooming one applies
     /// the same zoom level to the other. Safe to call repeatedly (uses
