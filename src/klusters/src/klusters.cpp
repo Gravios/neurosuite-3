@@ -861,15 +861,9 @@ void KlustersApp::createMenus()
     // Reachable via menu / toolbar / Ctrl+4.
     connect(mDeleteNoisySpikes,&QAction::triggered, this,&KlustersApp::slotDeleteNoise);
 
-    toolsMenu->addSeparator();
-
-    mSelectTime = toolsMenu->addAction(tr("Select Time"));
-    mSelectTime->setIcon(QIcon(":/icons/time_tool"));
-    // Note: Key_W formerly bound here; reassigned to Watershed split.
-    // Select Time can still be invoked via the menu / toolbar icon.
-    connect(mSelectTime,&QAction::triggered, this,&KlustersApp::slotSelectTime);
-
-
+    // (The "Select Time" tool was retired in the Overview redesign — the feature-view
+    //  normal-cursor click now jumps the trace to the picked time; see slotSingleNew's
+    //  sibling cluster.pickTime command.)
 
 
     //Waveforms menu
@@ -1495,8 +1489,6 @@ void KlustersApp::createToolBar()
     mToolBar->addSeparator();
     mToolBar->addAction(mDeleteArtifactSpikes);
     mToolBar->addAction(mDeleteNoisySpikes);
-    mToolBar->addSeparator();
-    mToolBar->addAction(mSelectTime);
     addToolBar(mToolBar);
 
 
@@ -2979,8 +2971,9 @@ void KlustersApp::initDisplay(){
             widgetAddToDisplay(KlustersView::DRIFT_MATRIX);
             // A trace tab after the matrices, sharing their right-hand frame
             // (addView(TRACES) tabifies it in; overviewTabbedDocks() orders it
-            // last so it lands after Drift and "E" cycles to it).  Having both a
-            // cluster and a trace view in the Overview also enables Select Time.
+            // last so it lands after Drift and "E" cycles to it).  With both a
+            // cluster and a trace view present, the feature-view normal-cursor
+            // click can scroll the trace to the picked spike time.
             widgetAddToDisplay(KlustersView::TRACES);
             // Now arrange the dock layout — splits the left column
             // vertically and positions the right-hand tabbed frame.
@@ -4104,28 +4097,13 @@ void KlustersApp::updateToolModeActions(BaseFrame::Mode mode){
     // Reflect the active view's current tool as the checked toolbar/menu button.
     // setChecked() emits toggled(), not triggered(), so this does not re-enter the
     // tool slots; the four are kept mutually exclusive here rather than via a
-    // QActionGroup, so a non-tool mode (NONE / SELECT_TIME / …) clears all four.
+    // QActionGroup, so any non-tool mode (NONE, …) clears all four.
     mNewCluster->setChecked(mode == ViewWidget::NEW_CLUSTER);
     mSplitClusters->setChecked(mode == ViewWidget::NEW_CLUSTERS);
     mDeleteArtifactSpikes->setChecked(mode == ViewWidget::DELETE_ARTEFACT);
     mDeleteNoisySpikes->setChecked(mode == ViewWidget::DELETE_NOISE);
 }
 
-void KlustersApp::slotSelectTime(){
-    slotStatusMsg(tr("Selecting time..."));
-
-    //If we are in delay mode, update the display, if need it, before triggering the tool change
-    if(mDelaySelection->isChecked()){
-        clusterPalette->updateClusters();
-    }
-
-    KlustersView* view = activeView();
-    if(!view) return;
-    view->setMode(ViewWidget::SELECT_TIME);
-    updateToolModeActions(ViewWidget::SELECT_TIME);   // not one of the four — clears them
-
-    slotStatusMsg(tr("Ready."));
-}
 
 
 // ---------------------------------------------------------------------------

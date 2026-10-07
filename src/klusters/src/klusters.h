@@ -318,11 +318,6 @@ private Q_SLOTS:
     void slotIncreasePointSize();
     /**Decreases scatter plot point size (- key).*/
     void slotDecreasePointSize();
-    
-    /**Chooses the selection time tool, enabling the user to select a time frame
-    * for which the traces are going to be displayed in the TraceView. This slot is accessible only if a TraceView and a ClusterView are present
-    * and if one of the dimensions in the ClusterView is the time.*/
-    void slotSelectTime();
 
     /** Run the 2D density-watershed splitter on the currently-shown
      *  clusters in the active scatter view.  Bound to W. */
@@ -912,7 +907,7 @@ private:
     /**Reflects the active view's current tool as the checked toolbar/menu button.
   * The four curation tools (New Cluster / Split / Delete Artifact / Delete Noise)
   * are mutually-exclusive checkable toggles; when @p mode is none of them — the
-  * normal cursor (BaseFrame::NONE), Select Time, etc. — all four read unchecked.
+  * normal cursor (BaseFrame::NONE) or another non-tool mode — all four read unchecked.
   * setChecked() emits toggled(), not triggered(), so this never re-enters the
   * tool slots.  (Overview redesign step 4.)*/
     void updateToolModeActions(BaseFrame::Mode mode);
@@ -1246,7 +1241,6 @@ private:
     QAction *mSplitClusters;
     QAction *mDeleteArtifactSpikes;
     QAction *mDeleteNoisySpikes;
-    QAction *mSelectTime;
     QAction *mWatershed;
     QAction *mSelectAllAction;
     QAction *mSelectAllExceptAction;

@@ -79,10 +79,11 @@ public:
   * <li>DELETE_ARTEFACT Enumeration indicating that the user is in a mode enabling him to delete artefact spikes.</li>
   * <li>NEW_CLUSTER Enumeration indicating that the user is in a mode enabling him to create a new cluster.</li>
   * <li>NEW_CLUSTERS Enumeration indicating that the user is in a mode enabling him to create new clusters.</li>
-  * <li>SELECT_TIME Enumeration indicating that the user is in a mode enabling him to select a time window which will be display in a TraceView.</li>
   * </ul>
+  * (SELECT_TIME was retired in the Overview redesign — the feature-view normal-cursor click
+  *  now jumps the trace to the picked time; see ClusterView::pickSelectionTime.)
   */
-    enum {DELETE_NOISE = ZOOM+1,DELETE_ARTEFACT = ZOOM+2,NEW_CLUSTER = ZOOM+3,NEW_CLUSTERS = ZOOM+4,SELECT_TIME = ZOOM+5};
+    enum {DELETE_NOISE = ZOOM+1,DELETE_ARTEFACT = ZOOM+2,NEW_CLUSTER = ZOOM+3,NEW_CLUSTERS = ZOOM+4};
 
 public Q_SLOTS:
 

@@ -178,8 +178,9 @@ public:
     /** Erase the last selection-polygon line (undo a vertex).  Invoked by
      *  cluster.lassoUndoVertex; no-op on an empty polygon. */
     void undoSelectionVertex();
-    /** Jump the trace view to the time under viewport point @p viewportPos (SELECT_TIME
-     *  mode — a discrete pick, not a rubber-band window).  Invoked by cluster.selectTimePick. */
+    /** Jump the trace view to the time under viewport point @p viewportPos (a discrete pick,
+     *  not a rubber-band window).  Invoked by cluster.pickTime — the normal-cursor plain Left
+     *  click, when a time axis is shown (Overview redesign step 5; was the Select Time tool). */
     void pickSelectionTime(const QPoint& viewportPos);
     /** One Ctrl+wheel zoom step toward the cursor at viewport point @p viewportPos:
      *  @p zoomIn true zooms in by ctrlWheelZoomStep, false zooms out by its inverse.
@@ -852,8 +853,6 @@ private:
             return NEW_CLUSTER_COLOR;
         case ZOOM:
             break; //nothing to do
-        case SELECT_TIME:
-            break; //nothing to do
         }
         //never reach
         return QColor(0,0,0);
@@ -957,8 +956,6 @@ private:
     QCursor newClustersCursor;
     QCursor deleteNoiseCursor;
     QCursor deleteArtefactCursor;
-    /**A cursor to represent the selection of time state.*/
-    QCursor selectTimeCursor;
 
 
     class ComputeEvent;

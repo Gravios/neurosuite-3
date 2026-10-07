@@ -193,8 +193,6 @@ void KlustersApp::slotStateChanged(const QString& state)
 
         shoulderLine->setEnabled(false);
 
-        mSelectTime->setEnabled(false);
-
         mIncreaseAmplitude->setEnabled(false);
         mDecreaseAmplitude->setEnabled(false);
 
@@ -339,7 +337,6 @@ void KlustersApp::slotStateChanged(const QString& state)
         mSplitClusters->setEnabled(false);
         mDeleteNoisy->setEnabled(false);
         mDeleteArtifactSpikes->setEnabled(false);
-        mSelectTime->setEnabled(false);
 
     } else if(state == QLatin1String("clusterViewState")) {
         mZoomAction->setEnabled(true);
@@ -607,7 +604,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNextSpike->setEnabled(false);
         mPreviousSpike->setEnabled(false);
     } else if(state == QLatin1String("traceViewClusterViewState")) {
-        mSelectTime->setEnabled(true);
+        // (Select Time retired in the Overview redesign — the feature-view normal-cursor
+        //  click now scrolls the trace to the picked spike time.  Nothing to toggle here.)
     } else if(state == QLatin1String("traceViewBrowsingState")) {
         mNextSpike->setEnabled(true);
         mPreviousSpike->setEnabled(true);

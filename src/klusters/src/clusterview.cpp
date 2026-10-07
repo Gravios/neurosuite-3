@@ -102,7 +102,6 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     newClustersCursor = QCursor(QPixmap(":/cursors/new_clusters_cursor.png"),0,0);
     deleteNoiseCursor = QCursor(QPixmap(":/cursors/delete_noise_cursor.png"),0,0);
     deleteArtefactCursor = QCursor(QPixmap(":/cursors/delete_artefact_cursor.png"),0,0);
-    selectTimeCursor = QCursor(QPixmap(":/shared-cursors/select_time_cursor"),0,0);
 
     //The default tool is the zoom.
     setCursor(zoomCursor);
@@ -1287,7 +1286,6 @@ void ClusterView::applyModeCursor(){
     case DELETE_ARTEFACT: setCursor(deleteArtefactCursor); break;
     case NEW_CLUSTER:     setCursor(newClusterCursor);     break;
     case NEW_CLUSTERS:    setCursor(newClustersCursor);    break;
-    case SELECT_TIME:     setCursor(selectTimeCursor);     break;
     case NONE:            setCursor(Qt::ArrowCursor);      break;   // normal cursor (default)
     }
 }
@@ -1455,6 +1453,33 @@ void ClusterView::registerInput(input::BindingRegistry& reg)
     };
     reg.addCommand(cmd);
 
+    // Normal-cursor time pick (Overview redesign step 5): a plain Left press in the no-tool
+    // default (mode == NONE) jumps the trace view to the time under the cursor — the behaviour
+    // that used to need the dedicated Select Time tool.  A discrete pick, not a window (Action
+    // kind), so invoke() does the whole thing.  Enabled only in feature space, with a time axis
+    // shown and the overlay off — so it never shadows the overlay node-mark (plain Left too, but
+    // registered FIRST and gated on the overlay being on, so it wins when the overlay is active),
+    // and a plain click with no time axis simply falls through (NONE does nothing).  Ctrl/Shift
+    // Left are Exact-NoModifier mismatches, so pan / boundary-drag still take those.
+    input::Command tp;
+    tp.id       = QStringLiteral("cluster.pickTime");
+    tp.scopeId  = QStringLiteral("view.cluster.scatter");
+    tp.label    = tr("Pick time for trace view");
+    tp.category = tr("Navigation");
+    tp.kind     = input::Kind::Action;
+    tp.defaultChord = input::Chord::button(Qt::LeftButton);
+    tp.enabled  = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        return cv && cv->mode == NONE && !cv->tsneMode && !cv->lineageOverlay_
+               && (cv->dimensionX == cv->timeDimension || cv->dimensionY == cv->timeDimension);
+    };
+    tp.invoke   = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        if (cv && c.event)
+            cv->pickSelectionTime(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(tp);
+
     // Ctrl-drag pan: Ctrl+Left (AtLeast+Ctrl, so extra modifiers are tolerated) begins it,
     // in every mode, as long as the view is showing feature space (the embedding has no
     // feature-world coordinates to pan).  It resolves at the top of mousePressEvent ahead
@@ -1603,31 +1628,10 @@ void ClusterView::registerInput(input::BindingRegistry& reg)
         reg.addCommand(close);
     }
 
-    // ── The SELECT_TIME pick ─────────────────────────────────────────────────────────
-    // A plain Left press jumps the trace view to that time — a discrete pick, not a window
-    // (ClusterView never arms the base rubber band).  Feature space only (in the embedding
-    // SELECT_TIME has no meaning and the press shows a status message instead).  Its own
-    // scope so its Left does not collide with the lasso Left in the conflict view.
-    reg.addScope({ QStringLiteral("view.cluster.timepick"), input::Layer::ToolMode,
-        [](const input::Ctx& c){
-            auto* cv = qobject_cast<ClusterView*>(c.view);
-            return cv && cv->mode == SELECT_TIME && !cv->isTsneShowing();
-        } });
-    {
-        input::Command pick;
-        pick.id       = QStringLiteral("cluster.selectTimePick");
-        pick.scopeId  = QStringLiteral("view.cluster.timepick");
-        pick.label    = tr("Pick time for trace view");
-        pick.category = tr("Time pick");
-        pick.kind     = input::Kind::Action;
-        pick.defaultChord = input::Chord::button(Qt::LeftButton);
-        pick.invoke   = [](const input::Ctx& c){
-            auto* cv = qobject_cast<ClusterView*>(c.view);
-            if (cv && c.event)
-                cv->pickSelectionTime(static_cast<QMouseEvent*>(c.event)->position().toPoint());
-        };
-        reg.addCommand(pick);
-    }
+    // (The former SELECT_TIME tool pick — a dedicated-tool plain Left that jumped the trace
+    //  view to a time — was retired in the Overview redesign (step 5).  Its body now runs on
+    //  the normal-cursor plain Left via cluster.pickTime above, so there is no separate tool
+    //  mode or scope for it any more.)
 }
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
@@ -1635,8 +1639,8 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
     // press trigger (so far the overlay node-mark / lasso, bound to plain Left) resolves
     // here and BEGINS its gesture; the body stays below in move/release.  Only that exact
     // state resolves (its enabled() = overlayNodeGestureArmable); every other press —
-    // right-click, Ctrl-pan, Shift-boundary, the tool lassos, SELECT_TIME, base zoom —
-    // finds no command and falls through to the handling below, unchanged.
+    // right-click, Ctrl-pan, Shift-boundary, the tool lassos, the normal-cursor time pick,
+    // base zoom — finds no command and falls through to the handling below, unchanged.
     if (dispatchInput(e)) { e->accept(); return; }
 
     // Lineage overlay (§11.3): right-click opens the context menu, unless a
@@ -1693,10 +1697,11 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
     //  Ctrl+Left still pans, Shift+Left still grabs a boundary, the lasso tools keep
     //  their left-click, and Ctrl+wheel / double-click still zoom.)
 
-    // (The SELECT_TIME time pick — a plain Left press jumps the trace view to that time —
-    //  moved onto the input registry: cluster.selectTimePick in view.cluster.timepick,
-    //  resolved by dispatchInput() at the top; the body is in pickSelectionTime.  It is a
-    //  discrete pick, not a window, so nothing is armed here.)
+    // (The time pick — a plain Left press in the normal cursor (NONE) jumps the trace view to
+    //  that time — is a registry command: cluster.pickTime in view.cluster.scatter, resolved by
+    //  dispatchInput() at the top; the body is in pickSelectionTime.  It is a discrete pick, not
+    //  a window, so nothing is armed here.  The old dedicated Select Time tool was retired in the
+    //  Overview redesign (step 5); this is its body on the normal-cursor click.)
 
     //The parent implementation takes care of the mode ZOOM
     //(rubber band and calculation of the firstClick)
