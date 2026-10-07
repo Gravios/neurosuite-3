@@ -60,7 +60,7 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
     nbSpkToDisplay(nbSpkToDisplay),isZoomed(false),goingToDie(false){
 
     //Set the default modes
-    mode = ZOOM;
+    mode = NONE;
     if(isTimeFrameMode)
         presentationMode = TIME_FRAME;
     else
@@ -429,7 +429,7 @@ void WaveformView::paintBufferDeviceLayer(QPainter& painter){
 }
 
 void WaveformView::afterPaint(QPainter&){
-    setCursor(zoomCursor);
+    setCursor(Qt::ArrowCursor);   // normal cursor (the rubber-band ZOOM tool is retired)
 }
 
 

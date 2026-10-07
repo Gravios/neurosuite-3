@@ -59,8 +59,10 @@ public:
     typedef int Mode;
 
     /**Enum to be use as a Mode.
-  * The only value provided in this class is ZOOM, indicating that the user is in a mode enabling him to zoom.*/
-    enum {ZOOM = 1};
+  * NONE is the default "normal cursor" (no tool): plain-Left does nothing special, double-click
+  * resets the view.  ZOOM (the old rubber-band zoom tool) is retired — no tool selects it any more
+  * — but the value is kept as the arithmetic base for the derived per-view mode enums (ZOOM+N).*/
+    enum {NONE = 0, ZOOM = 1};
 
     /**
    * Constructs the view.
@@ -316,7 +318,7 @@ protected:
     /**
    * Draw mode (selected by the user via a menu, a button or a shortcut).
    */
-    Mode mode = ZOOM;
+    Mode mode = NONE;
 
     /**A cursor to represent the zoom state.*/
     QCursor zoomCursor;

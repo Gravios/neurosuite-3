@@ -218,8 +218,8 @@ public:
             setCursor(addEventCursor);
             drawRubberBand(false);
         }
-        else if(selectedMode == ZOOM){
-            setCursor(zoomCursor);
+        else if(selectedMode == NONE){
+            setCursor(Qt::ArrowCursor);
             drawRubberBand(false);
         }
         else if(selectedMode == MEASURE){

@@ -261,7 +261,10 @@ void BaseFrame::mouseMoveEvent(QMouseEvent* e){
 
 void BaseFrame::mouseDoubleClickEvent(QMouseEvent* e){
     if(dispatchInput(e)) return;
-    if(mode == ZOOM){
+    // Double-click resets the view to its full extent.  Gated on the normal-cursor default
+    // (NONE) now that the rubber-band ZOOM tool is retired — this is the one behaviour kept
+    // from the old ZOOM tool (Overview redesign step 3).
+    if(mode == NONE){
         if ((e->button() == Qt::LeftButton) && !(e->modifiers() & Qt::ShiftModifier)){
             //Reset to the initial window
             window.reset();

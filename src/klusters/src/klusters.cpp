@@ -819,7 +819,12 @@ void KlustersApp::createMenus()
 
     //Tools menu
     QMenu *toolsMenu = menuBar()->addMenu(tr("&Tools"));
-    mZoomAction = toolsMenu->addAction(tr("Zoom"));
+    // "Normal Cursor" tool.  The rubber-band ZOOM tool was retired in the Overview redesign;
+    // this action now selects the no-tool normal cursor (mode = NONE) and is the way back to it
+    // from a curation tool.  Kept internally as mZoomAction / slotZoom to avoid a wide rename;
+    // the magnifier icon is retained for now so the toolbar button stays visible (swap for a
+    // pointer icon in a later cleanup).
+    mZoomAction = toolsMenu->addAction(tr("Normal Cursor"));
     mZoomAction->setIcon(QIcon(":/icons/zoom_tool.png"));
     mZoomAction->setShortcut(Qt::Key_Z);
     connect(mZoomAction,&QAction::triggered, this,&KlustersApp::slotZoom);
@@ -2456,7 +2461,8 @@ void KlustersApp::registerInputBindings()
             if(ClusterView* cv = activeClusterView()){
                 cv->toggleLineageOverlay();
                 // Entering edit mode: a plain left click marks lineage nodes, so any
-                // manual-lasso tool must be off — the node gesture only arms under ZOOM.
+                // manual-lasso tool must be off — the node gesture only arms with the normal
+                // cursor (mode = NONE), which slotZoom now selects.
                 if(cv->lineageOverlayActive()) slotZoom();
             }
         };
@@ -4023,7 +4029,10 @@ void KlustersApp::slotDecreasePointSize(){
 }
 
 void KlustersApp::slotZoom(){
-    slotStatusMsg(tr("Zooming..."));
+    // Select the normal cursor (mode = NONE).  Named slotZoom for history — it drove the
+    // rubber-band ZOOM tool, retired in the Overview redesign; it now returns the active view
+    // to the no-tool default.
+    slotStatusMsg(tr("Normal cursor..."));
 
     //If we are in delay mode, update the display, if need it, before triggering the tool change
     if(mDelaySelection->isChecked()){
@@ -4031,7 +4040,7 @@ void KlustersApp::slotZoom(){
     }
 
     KlustersView* view = activeView();
-    view->setMode(BaseFrame::ZOOM);
+    view->setMode(BaseFrame::NONE);
     slotStatusMsg(tr("Ready."));
 }
 

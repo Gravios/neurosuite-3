@@ -80,7 +80,7 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     polygonClosed(false)
 {
     //Set the default mode
-    mode = ZOOM;
+    mode = NONE;
     pointSize = 2;
     selectionLineWidth = 1;
     setFocusPolicy(Qt::StrongFocus);
@@ -1287,17 +1287,17 @@ void ClusterView::applyModeCursor(){
     case DELETE_ARTEFACT: setCursor(deleteArtefactCursor); break;
     case NEW_CLUSTER:     setCursor(newClusterCursor);     break;
     case NEW_CLUSTERS:    setCursor(newClustersCursor);    break;
-    case ZOOM:            setCursor(zoomCursor);           break;
     case SELECT_TIME:     setCursor(selectTimeCursor);     break;
+    case NONE:            setCursor(Qt::ArrowCursor);      break;   // normal cursor (default)
     }
 }
 
 
 bool ClusterView::overlayNodeGestureArmable() const
 {
-    // Exactly the gate the old inline press branch used: overlay on, ZOOM tool, and not
-    // in the t-SNE embedding (there a plain Left is the embedding lasso).
-    return lineageOverlay_ && mode == ZOOM && !tsneMode;
+    // Overlay on, the normal cursor (NONE — the default, since the ZOOM tool is retired), and
+    // not in the t-SNE embedding (there a plain Left is the embedding lasso).
+    return lineageOverlay_ && mode == NONE && !tsneMode;
 }
 
 void ClusterView::beginOverlayNodeGesture(const QPoint& pos)

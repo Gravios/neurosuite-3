@@ -88,7 +88,7 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     selectedEvent.second = 0;
 
     //Set the default modes
-    mode = ZOOM;
+    mode = NONE;
 
     startTime = start;
     endTime = start + timeFrameWidth;
@@ -238,8 +238,8 @@ void TraceView::updateCursor()
 {
     if(mode == SELECT)
         setCursor(selectCursor);
-    else if(mode == ZOOM)
-        setCursor(zoomCursor);
+    else if(mode == NONE)
+        setCursor(Qt::ArrowCursor);   // normal cursor (default); ZOOM tool retired
     else if(mode == MEASURE)
         setCursor(measureCursor);
     else if(mode == SELECT_TIME)
@@ -2072,7 +2072,9 @@ void TraceView::drawTimeLine(int x,bool initialLine,bool eraseLine){
 void TraceView::mouseDoubleClickEvent(QMouseEvent* e){
     BaseFrame::mouseDoubleClickEvent(e);
 
-    if(mode == ZOOM){
+    // Double-click resets the trace window.  Gated on the normal-cursor default (NONE) now
+    // that the ZOOM tool is retired — keeps double-click-reset (Overview redesign step 3).
+    if(mode == NONE){
         doubleClick = true;
         zoomed = true;
         //update the window

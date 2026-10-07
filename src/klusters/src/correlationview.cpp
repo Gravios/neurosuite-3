@@ -62,8 +62,8 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
 {
 
 
-    //Set the only mode available.
-    mode = ZOOM;
+    //Default to the normal cursor (the rubber-band ZOOM tool is retired).
+    mode = NONE;
 
     //Set the drawing variables
     nbBins = (binSize > 0) ? timeWindow / binSize : 0;
