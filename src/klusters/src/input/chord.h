@@ -94,8 +94,9 @@ struct Chord {
                         Phase ph = Phase::Press, ModMatch mm = ModMatch::Exact) {
         return { Device::Button, int(b), normalize(mods), ph, mm };
     }
-    static Chord wheel(int dir, Qt::KeyboardModifiers mods = Qt::NoModifier) {
-        return { Device::Wheel, dir < 0 ? -1 : 1, normalize(mods), Phase::Wheel };
+    static Chord wheel(int dir, Qt::KeyboardModifiers mods = Qt::NoModifier,
+                       ModMatch mm = ModMatch::Exact) {
+        return { Device::Wheel, dir < 0 ? -1 : 1, normalize(mods), Phase::Wheel, mm };
     }
 };
 

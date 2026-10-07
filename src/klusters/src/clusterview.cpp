@@ -1404,6 +1404,30 @@ void ClusterView::pickSelectionTime(const QPoint& viewportPos)
     }
 }
 
+void ClusterView::wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos)
+{
+    // Body lifted from the old inline Ctrl+wheel branch; the direction (in/out) now comes
+    // from the command rather than the wheel delta's sign.
+    const float  factor = zoomIn ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
+    const QPoint p  = viewportToWorld(viewportPos.x(), viewportPos.y());
+    const QRect  wr = (QRect)window;
+    const double W = wr.width(), H = wr.height();
+    if(W > 0.0 && H > 0.0){
+        // Cursor's fraction within the current window == its screen fraction.
+        const double fx = (static_cast<double>(p.x()) - wr.left()) / W;
+        const double fy = (static_cast<double>(p.y()) - wr.top())  / H;
+        // New window size; centre that keeps the cursor point at the same fraction.
+        const double Wn = W / static_cast<double>(factor);
+        const double Hn = H / static_cast<double>(factor);
+        const double cx = static_cast<double>(p.x()) + Wn * (0.5 - fx);
+        const double cy = static_cast<double>(p.y()) + Hn * (0.5 - fy);
+        if(window.zoom(factor, static_cast<float>(cx), static_cast<float>(cy))){
+            invalidate(REDRAW);
+            update();
+        }
+    }
+}
+
 void ClusterView::registerInput(input::BindingRegistry& reg)
 {
     // A scope that is live for any press on a ClusterView (the command's enabled()
@@ -1482,6 +1506,39 @@ void ClusterView::registerInput(input::BindingRegistry& reg)
             cv->beginBoundaryDrag(static_cast<QMouseEvent*>(c.event)->position().toPoint());
     };
     reg.addCommand(bnd);
+
+    // Ctrl+wheel zoom-to-cursor — the first Wheel commands.  Two directions (up zooms in,
+    // down zooms out), each an Action: one notch is one discrete zoom step, no drag body.
+    // AtLeast+Ctrl reproduces the old bitwise `modifiers() & Ctrl` wheel gate (Ctrl held,
+    // extras tolerated).  In the scatter scope; a wheel chord never collides with the
+    // button gestures above (different device).
+    input::Command zin;
+    zin.id       = QStringLiteral("cluster.wheelZoomIn");
+    zin.scopeId  = QStringLiteral("view.cluster.scatter");
+    zin.label    = tr("Zoom in toward cursor");
+    zin.category = tr("Zoom");
+    zin.kind     = input::Kind::Action;
+    zin.defaultChord = input::Chord::wheel(+1, Qt::ControlModifier, input::ModMatch::AtLeast);
+    zin.invoke   = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        if (cv && c.event)
+            cv->wheelZoomAtCursor(true, static_cast<QWheelEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(zin);
+
+    input::Command zout;
+    zout.id       = QStringLiteral("cluster.wheelZoomOut");
+    zout.scopeId  = QStringLiteral("view.cluster.scatter");
+    zout.label    = tr("Zoom out from cursor");
+    zout.category = tr("Zoom");
+    zout.kind     = input::Kind::Action;
+    zout.defaultChord = input::Chord::wheel(-1, Qt::ControlModifier, input::ModMatch::AtLeast);
+    zout.invoke   = [](const input::Ctx& c){
+        auto* cv = qobject_cast<ClusterView*>(c.view);
+        if (cv && c.event)
+            cv->wheelZoomAtCursor(false, static_cast<QWheelEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(zout);
 
     // ── The polygon-lasso presses (the four selection modes) ─────────────────────────
     // Shared by the feature scatter and the t-SNE embedding — selectionPoint() handles
@@ -1705,33 +1762,16 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
 // middle.  Without Ctrl the event is handed to the base so existing wheel
 // behaviour is unchanged.
 void ClusterView::wheelEvent(QWheelEvent* e){
-    if (tsneMode) return;
+    if (tsneMode) return;                 // the embedding's wheel is inert
+    // Ctrl+wheel zoom-to-cursor is a registry command (cluster.wheelZoomIn / wheelZoomOut),
+    // resolved here; a plain wheel falls through to the base; a Ctrl+wheel with no vertical
+    // delta yields no chord (chordFromEvent) and is swallowed, as before.
+    if (dispatchInput(e)) return;
     if(!(e->modifiers() & Qt::ControlModifier)){
         ViewWidget::wheelEvent(e);
         return;
     }
-    const int delta = e->angleDelta().y();
-    if(delta == 0){ e->accept(); return; }
-    const float  factor = (delta > 0) ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
-    const QPoint p  = viewportToWorld(e->position().toPoint().x(),
-                                      e->position().toPoint().y());
-    const QRect  wr = (QRect)window;
-    const double W = wr.width(), H = wr.height();
-    if(W > 0.0 && H > 0.0){
-        // Cursor's fraction within the current window == its screen fraction.
-        const double fx = (static_cast<double>(p.x()) - wr.left()) / W;
-        const double fy = (static_cast<double>(p.y()) - wr.top())  / H;
-        // New window size; centre that keeps the cursor point at the same fraction.
-        const double Wn = W / static_cast<double>(factor);
-        const double Hn = H / static_cast<double>(factor);
-        const double cx = static_cast<double>(p.x()) + Wn * (0.5 - fx);
-        const double cy = static_cast<double>(p.y()) + Hn * (0.5 - fy);
-        if(window.zoom(factor, static_cast<float>(cx), static_cast<float>(cy))){
-            invalidate(REDRAW);
-            update();
-        }
-    }
-    e->accept();
+    e->accept();                          // Ctrl+wheel, angleDelta().y()==0
 }
 
 void ClusterView::keyPressEvent(QKeyEvent* e){

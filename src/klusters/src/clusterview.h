@@ -181,6 +181,11 @@ public:
     /** Jump the trace view to the time under viewport point @p viewportPos (SELECT_TIME
      *  mode — a discrete pick, not a rubber-band window).  Invoked by cluster.selectTimePick. */
     void pickSelectionTime(const QPoint& viewportPos);
+    /** One Ctrl+wheel zoom step toward the cursor at viewport point @p viewportPos:
+     *  @p zoomIn true zooms in by ctrlWheelZoomStep, false zooms out by its inverse.
+     *  Invoked by the cluster.wheelZoomIn / cluster.wheelZoomOut Action commands; was inline
+     *  in wheelEvent. */
+    void wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos);
     /** The template class the lineage overlay edits (auto-seed + new regions).  Set
      *  by the template palette when a class is selected; defaults to 0.  When the
      *  overlay is engaged, switching class tiles that class and repaints. */
