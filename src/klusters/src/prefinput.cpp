@@ -10,6 +10,7 @@
 
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QLineEdit>       // conflict tint: QKeySequenceEdit paints through an internal QLineEdit
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -251,9 +252,15 @@ void PrefInput::recomputeConflicts()
     for (int i = 0; i < rows_.size(); ++i) {
         Row& r = rows_[i];
         if (r.edit) {
-            r.edit->setStyleSheet(
-                conflicted[i] ? QStringLiteral("QKeySequenceEdit{background:#e2524a;color:white;}")
-                              : QString());
+            // A QKeySequenceEdit displays through an internal QLineEdit that paints over the
+            // widget's own background, so a stylesheet on the outer widget alone leaves the
+            // visible field uncoloured (the conflict tint never showed).  Tint the internal
+            // line-edit too — that is the control the user actually sees.
+            const QString sheet = conflicted[i]
+                ? QStringLiteral("background:#e2524a;color:white;") : QString();
+            r.edit->setStyleSheet(sheet);
+            if (QLineEdit* le = r.edit->findChild<QLineEdit*>())
+                le->setStyleSheet(sheet);
             r.edit->setToolTip(conflicted[i]
                 ? tr("This combination is already used by another command in the same context.")
                 : QString());
