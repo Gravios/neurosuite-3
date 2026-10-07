@@ -596,8 +596,21 @@ protected:
 
     /** Cluster id of the shown spike whose peak sample is nearest @p sampleIndex, within a
      *  ±1 ms tolerance, or -1 if none is that close.  Mirrors the SELECT_EVENT nearest-by-sample
-     *  search over the cluster data (the normal-cursor spike pick, Overview redesign step 6). */
-    int clusterOfNearestSpike(int sampleIndex) const;
+     *  search over the cluster data (the normal-cursor spike pick, Overview redesign step 6).
+     *  The optional out-params report the GLOBAL nearest shown spike (ignoring the tolerance)
+     *  and how many spikes were scanned — for the on-click diagnostic. */
+    int clusterOfNearestSpike(int sampleIndex,
+                              int* outNearestCluster = nullptr,
+                              int* outNearestSample  = nullptr,
+                              int* outNearestDelta   = nullptr,
+                              int* outSpikesScanned  = nullptr) const;
+
+    /** Normal-cursor spike pick body (Overview redesign step 6): hit-test at @p sampleIndex,
+     *  select the nearest spike's cluster when within tolerance (@p extend false = highlight /
+     *  replace, true = mark / extend), and show a diagnostic in the status bar — clicked vs
+     *  nearest-spike sample + time, plus how many spikes were scanned (0 means the trace has no
+     *  cluster/spike data loaded, i.e. no cluster overlay is enabled in the Traces menu). */
+    void normalCursorSpikePick(int sampleIndex, bool extend);
 
     /**The view responds to a mouse release.
   * @param event mouse event.
