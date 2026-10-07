@@ -64,6 +64,7 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     adjustSize();
 
     connect(&view,&TraceView::channelsSelected,this, &TraceWidget::slotChannelsSelected);
+    connect(&view,&TraceView::selectClusterFromTrace,this, &TraceWidget::selectClusterFromTrace);
     connect(&view,&TraceView::setStartAndDuration,this, &TraceWidget::slotSetStartAndDuration);
     connect(&view,&TraceView::eventModified,this, &TraceWidget::slotEventModified);
     connect(&view,&TraceView::eventRemoved,this, &TraceWidget::slotEventRemoved);

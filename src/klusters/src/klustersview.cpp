@@ -982,6 +982,19 @@ void KlustersView::onTemplateCellActivated(int clusterId, int node)
     for (ClusterView* cv : cvs) cv->overlaySingleNode(node);
 }
 
+void KlustersView::onTraceClusterActivated(int clusterId, bool extend)
+{
+    // A normal-cursor click in the trace view landed on a spike: select its cluster, using the
+    // same scope-aware primitives the matrix views use.  selectFromMatrix REPLACES the shown
+    // selection (highlight); addFromMatrix EXTENDS it (mark).  clusterId < 0 means no spike was
+    // near the click — nothing to do.
+    if (clusterId < 0) return;
+    QList<int> one;
+    one << clusterId;
+    if (extend) doc.addFromMatrix(one);
+    else        doc.selectFromMatrix(one);
+}
+
 void KlustersView::closeEvent(QCloseEvent* e){
 
     // DO NOT CALL QWidget::closeEvent(e) here !!
@@ -2164,6 +2177,7 @@ void KlustersView::connectTraceWidget(TraceWidget* view){
     connect(this, &KlustersView::increaseAllAmplitude, view, &TraceWidget::increaseAllChannelsAmplitude);
     connect(this, &KlustersView::decreaseAllAmplitude, view, &TraceWidget::decreaseAllChannelsAmplitude);
     connect(view, &TraceWidget::updateStartAndDuration, this, &KlustersView::setStartAndDuration);
+    connect(view, &TraceWidget::selectClusterFromTrace, this, &KlustersView::onTraceClusterActivated);
     connect(this, &KlustersView::showLabels, view, &TraceWidget::showLabels);
     connect(this,&KlustersView::nextCluster,traceWidget,&TraceWidget::showNextCluster);
     connect(this,&KlustersView::previousCluster,traceWidget,&TraceWidget::showPreviousCluster);

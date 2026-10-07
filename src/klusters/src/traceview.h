@@ -529,6 +529,11 @@ public Q_SLOTS:
 
 Q_SIGNALS:
     void channelsSelected(const QList<int>& selectedIds);
+    /** A normal-cursor click landed on (or near) a spike: select that spike's cluster.
+     *  @p extend false → highlight (select only that cluster); true → mark (extend the
+     *  current selection).  Routed by KlustersView to doc.selectFromMatrix / addFromMatrix,
+     *  the same primitives the matrix views use.  (Overview redesign step 6.) */
+    void selectClusterFromTrace(int clusterId, bool extend);
     void setStartAndDuration(long time,long duration);
     void eventModified(QString providerName,int selectedEventId,double time,double newTime);
     void eventRemoved(QString providerName,int selectedEventId,double time);
@@ -583,6 +588,11 @@ protected:
      *  not in channel SELECT mode (where Ctrl+Left toggles a channel in/out of the selection).
      *  Gates the trace.pan command so a Ctrl+click in SELECT still falls through to trace.press. */
     bool ctrlPanArmable() const { return !inTracePress_ && mode != SELECT; }
+
+    /** Cluster id of the shown spike whose peak sample is nearest @p sampleIndex, within a
+     *  ±1 ms tolerance, or -1 if none is that close.  Mirrors the SELECT_EVENT nearest-by-sample
+     *  search over the cluster data (the normal-cursor spike pick, Overview redesign step 6). */
+    int clusterOfNearestSpike(int sampleIndex) const;
 
     /**The view responds to a mouse release.
   * @param event mouse event.

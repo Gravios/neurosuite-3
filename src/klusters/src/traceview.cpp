@@ -2537,6 +2537,34 @@ void TraceView::wheelEvent(QWheelEvent* event){
     event->accept();
 }
 
+int TraceView::clusterOfNearestSpike(int sampleIndex) const
+{
+    // 1 ms expressed in the full-resolution sample units that both the cluster data
+    // (currentData(1,i)) and the clicked sampleIndex use; a click further than this from
+    // every shown spike selects nothing.
+    const int tolerance = qMax(1, static_cast<int>(0.5 + tracesProvider.getSamplingRate() * 0.001));
+    int best = -1;
+    int bestDiff = tolerance + 1;
+    // selectedClusters is keyed by cluster-file id; the provider name is its decimal string
+    // (the same mapping the cluster drawing uses).  Each spike column is (peak sample, cluster id).
+    for(QMap<int, QList<int> >::ConstIterator it = selectedClusters.constBegin();
+        it != selectedClusters.constEnd(); ++it){
+        const QList<int>& clusterList = it.value();
+        if(clusterList.isEmpty()) continue;
+        ClusterData* cd = clustersData.value(QString::fromLatin1("%1").arg(it.key()));
+        if(cd == nullptr) continue;
+        Array<dataType>& currentData = cd->getData();
+        const int nbSpikes = currentData.nbOfColumns();
+        for(int i = 1; i <= nbSpikes; ++i){
+            const int clusterId = static_cast<int>(currentData(2,i));
+            if(!clusterList.contains(clusterId)) continue;
+            const int d = qAbs(static_cast<int>(currentData(1,i)) - sampleIndex);
+            if(d <= tolerance && d < bestDiff){ bestDiff = d; best = clusterId; }
+        }
+    }
+    return best;
+}
+
 void TraceView::beginTracePress(QMouseEvent* event){
     // Re-entrancy guard: the body below delegates to BaseFrame::mousePressEvent for ZOOM /
     // MEASURE / SELECT_TIME, which dispatches again — this keeps that inner dispatch from
@@ -2554,7 +2582,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
         int deselectedEventIndex = 0;
         if(!selectedEventPosition.isEmpty()) deselectedEventIndex = selectedEventPosition[0];
 
-        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
+        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE || mode == NONE){
             QRect r((QRect)window);
             QPoint current;
             //If the view was zoomed and the left margin (where the ids and gains of the channels of the first group are displayed) is not
@@ -2661,6 +2689,19 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     previousDragAbscissa = 0;
                     startEventDragging = true;
                 }//end mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)
+                else if(mode == NONE){
+                    // Normal-cursor spike pick (Overview redesign step 6): a plain Left click
+                    // selects the nearest spike's cluster, Shift+Left marks (extends).  Only acts
+                    // in the trace area; a click in the id/label margin does nothing (but still
+                    // does NOT fall through to channel selection).
+                    if(x >= (X0 + groupIndex * Xshift)){
+                        const int clusterId = clusterOfNearestSpike(sampleIndex);
+                        if(clusterId >= 0)
+                            emit selectClusterFromTrace(clusterId, (event->modifiers() & Qt::ShiftModifier) != 0);
+                        else if(statusBar)
+                            statusBar->showMessage(tr("No spike near the click"), 2000);
+                    }
+                }
                 else{
                     QList<int> groupIds = shownGroupsChannels.keys();
                     int groupId = groupIds[static_cast<int>(groupIndex)];
@@ -2829,6 +2870,18 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     }
                     previousDragAbscissa = 0;
                     startEventDragging = true;
+                }
+                else if(mode == NONE){
+                    // Normal-cursor spike pick (Overview redesign step 6) — single-column
+                    // layout.  Plain Left selects the nearest spike's cluster, Shift+Left marks
+                    // (extends).  Only in the trace area; never falls through to channel select.
+                    if(x >= 0){
+                        const int clusterId = clusterOfNearestSpike(sampleIndex);
+                        if(clusterId >= 0)
+                            emit selectClusterFromTrace(clusterId, (event->modifiers() & Qt::ShiftModifier) != 0);
+                        else if(statusBar)
+                            statusBar->showMessage(tr("No spike near the click"), 2000);
+                    }
                 }
                 else{
                     QList<int> groupIds = shownGroupsChannels.keys();

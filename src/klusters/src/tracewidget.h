@@ -500,6 +500,10 @@ public Q_SLOTS:
 Q_SIGNALS:
     void channelsSelected(const QList<int>& selectedIds);
 
+    /**Forwarded from the inner TraceView: a normal-cursor click picked a spike; select its
+  * cluster (@p extend false = highlight/replace, true = mark/extend).  (Overview redesign step 6.)*/
+    void selectClusterFromTrace(int clusterId, bool extend);
+
     /**Informs that the starting time and/or the timeWindow have changed.
   * @param startTime starting time.
   * @param timeWindow time window.

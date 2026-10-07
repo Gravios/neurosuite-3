@@ -716,6 +716,13 @@ public:
      * matrix's templateCellActivated signal.*/
     void onTemplateCellActivated(int clusterId, int node);
 
+    /**Handle a normal-cursor spike pick from a TraceView (Overview redesign step 6): select
+     * the spike's cluster in this display.  @p extend false → highlight (replace the selection
+     * with this cluster), true → mark (extend it).  Routes to the same doc primitives the
+     * matrix views use (selectFromMatrix / addFromMatrix).  Connected to the TraceWidget's
+     * selectClusterFromTrace signal.*/
+    void onTraceClusterActivated(int clusterId, bool extend);
+
     /***Update the background color of the views.*/
     void updateBackgroundColor(const QColor& color) {emit changeBackgroundColor(color);}
 
