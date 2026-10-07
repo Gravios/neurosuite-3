@@ -19,6 +19,8 @@
 //include files for the application
 #include "traceview.h"
 #include <klustersshared/channelcolors.h>
+#include "input/bindingregistry.h"   // registerInput: the primary-press trigger (seam)
+#include <QScopedValueRollback>       // re-entrancy guard for beginTracePress
 
 // include files for QT
 #include <QMap>
@@ -2352,7 +2354,54 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
     BaseFrame::mouseMoveEvent(event);
 }
 
+void TraceView::registerInput(input::BindingRegistry& reg)
+{
+    // A scope live for any press on a TraceView.  Co-located here, registered once from
+    // KlustersApp::registerInputBindings.
+    reg.addScope({ QStringLiteral("view.trace"), input::Layer::ViewType,
+        [](const input::Ctx& c){ return qobject_cast<TraceView*>(c.view) != nullptr; } });
+
+    // The primary press trigger: Left with any modifiers (AtLeast + no required modifier) —
+    // the old handler's whole body was Left-gated and read Shift / Ctrl *inside* (SELECT
+    // mode), so the chord must fire for any-modifier Left.  Gesture kind: invoke() BEGINS the
+    // press; the mode-switched body — channel select / measure / time pick / event select /
+    // add-event / draw-line, with its drag continuations in move/release — is beginTracePress.
+    // enabled = !inTracePress_ so the body's own base-zoom delegation (which re-dispatches)
+    // does not re-resolve this same command.
+    input::Command press;
+    press.id       = QStringLiteral("trace.press");
+    press.scopeId  = QStringLiteral("view.trace");
+    press.label    = tr("Trace primary press");
+    press.category = tr("Traces");
+    press.kind     = input::Kind::Gesture;
+    press.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    press.enabled  = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        return tv && !tv->inTracePress_;
+    };
+    press.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv && c.event) tv->beginTracePress(static_cast<QMouseEvent*>(c.event));
+    };
+    reg.addCommand(press);
+}
+
 void TraceView::mousePressEvent(QMouseEvent* event){
+    // The primary press is a registry Gesture (trace.press — Left, any modifiers): the
+    // resolver invokes beginTracePress(), which holds the whole mode-switched body.  Any
+    // other press (non-Left) finds no command and does nothing, exactly as the old handler
+    // did (its body was entirely Left-gated).  TraceView manages its own primary press, so
+    // the shared view.frame zoom scope is out of the resolver for it — the body's own
+    // base-zoom delegation (ZOOM / MEASURE / SELECT_TIME) handles the rubber band as before.
+    if(dispatchInput(event)) return;
+}
+
+void TraceView::beginTracePress(QMouseEvent* event){
+    // Re-entrancy guard: the body below delegates to BaseFrame::mousePressEvent for ZOOM /
+    // MEASURE / SELECT_TIME, which dispatches again — this keeps that inner dispatch from
+    // re-resolving this same trace.press command (trace.press.enabled is !inTracePress_).
+    QScopedValueRollback<bool> pressGuard(inTracePress_, true);
     if(event->button() == Qt::LeftButton){
         if(mode == ZOOM || mode == MEASURE || mode == SELECT_TIME){
             //The parent implementation takes care of the zoom.

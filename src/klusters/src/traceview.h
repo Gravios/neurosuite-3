@@ -43,6 +43,7 @@ class ChannelColors;
 class ItemColors;
 class ClustersProvider;
 class EventsProvider;
+namespace input { class BindingRegistry; }   // registerInput (input-remapping plan)
 
 /**
   *Class which draws the traces, cluster and event representations.
@@ -439,6 +440,13 @@ public:
   */
     void updateClusters(const QString& name,QList<int>& clustersToShow,ItemColors* clusterColors,bool active);
 
+    // ── Input-binding seam (input-remapping plan) ────────────────────────────
+    /** Register TraceView's primary mouse press into the one app-wide registry (called once
+     *  from KlustersApp::registerInputBindings).  The press *trigger* (Left, any modifiers)
+     *  is bound here; the whole mode-switched body (channel select/measure/time/event/line,
+     *  with its drag continuations in move/release) stays in the view — the plan's "seam". */
+    static void registerInput(input::BindingRegistry& reg);
+
 public Q_SLOTS:
     /**Displays the data that has been retrieved.
   * @param data array of data (number of channels X number of samples).
@@ -551,6 +559,17 @@ protected:
   * @param event mouse release event.
   */
     void mousePressEvent(QMouseEvent* event) override;
+    /** TraceView owns its primary Left press (its whole press body — channel select, measure,
+     *  time pick, event select, add-event, draw-line — resolves through the registry as one
+     *  Gesture), so it keeps the shared rubber-band ZOOM scope (`view.frame`) out: the press
+     *  is routed to beginTracePress(), whose own mode body delegates to the base zoom for
+     *  ZOOM / MEASURE / SELECT_TIME exactly as before.  (Input-remapping plan P0d-z.) */
+    bool managesOwnPrimaryPress() const override { return true; }
+    /** The TraceView primary-press body (the former mousePressEvent, verbatim).  Invoked by
+     *  the `trace.press` Gesture command; a re-entrancy guard (inTracePress_) keeps the body's
+     *  own BaseFrame::mousePressEvent call — the base-zoom delegation for ZOOM/MEASURE/SELECT_TIME
+     *  — from re-resolving this same command.  The drag continuations stay in move/release. */
+    void beginTracePress(QMouseEvent* event);
 
     /**The view responds to a mouse release.
   * @param event mouse event.
@@ -564,6 +583,10 @@ protected:
 
 private:
     void updateCursor();
+    /**Re-entrancy guard for beginTracePress: true while the press body runs, so the body's
+     * own BaseFrame::mousePressEvent (the base-zoom delegation) does not re-resolve the
+     * `trace.press` command.  Set/cleared by a scoped guard in beginTracePress.*/
+    bool inTracePress_ = false;
     /**True if the the colors are in grey-scale*/
     bool greyScaleMode;
 

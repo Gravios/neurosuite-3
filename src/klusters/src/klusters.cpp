@@ -26,6 +26,7 @@
 #include "mergerecommendview.h"
 #include "clusterview.h"
 #include "waveformview.h"               // WaveformView::registerInput (channel-pick seam)
+#include "traceview.h"                  // TraceView::registerInput (primary-press seam)
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include <neurosuite/core/neurofileio.h> // shared res/clu/spk/fet readers+writers (decollide stage)
@@ -2494,6 +2495,9 @@ void KlustersApp::registerInputBindings()
 
     // WaveformView's Ctrl+Left channel pick (co-located registration, once).
     WaveformView::registerInput(reg);
+
+    // TraceView's primary mouse press (co-located registration, once).
+    TraceView::registerInput(reg);
 
     // Apply the persisted override diffs (Configuration read them from QSettings at
     // startup).  Only ids we actually registered and that parse to a valid chord.
