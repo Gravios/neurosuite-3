@@ -2081,6 +2081,29 @@ void TraceView::mouseDoubleClickEvent(QMouseEvent* e){
 }
 
 void TraceView::mouseMoveEvent(QMouseEvent* event){
+    // Ctrl+drag pan (trace.pan gesture): keep the world point grabbed at press under the
+    // cursor by recentring the window (size unchanged — zoom(1.0, c) recentres and clamps).
+    // Runs ahead of the mode logic and consumes the move while a pan is armed.
+    if(ctrlPanArmed && (event->buttons() & Qt::LeftButton) && (event->modifiers() & Qt::ControlModifier)){
+        const QPoint dpx = event->position().toPoint() - ctrlPanAnchorPx;
+        if(!ctrlPanning && (qAbs(dpx.x()) + qAbs(dpx.y()) >= ctrlPanDragThreshold))
+            ctrlPanning = true;
+        if(ctrlPanning){
+            const QPoint cw = navWorldAt(event->position().toPoint());
+            const QRect  wr = (QRect)window;
+            const double curCx = wr.left() + wr.width()  / 2.0;
+            const double curCy = wr.top()  + wr.height() / 2.0;
+            const double newCx = curCx - static_cast<double>(cw.x() - ctrlPanPressWorldX);
+            const double newCy = curCy - static_cast<double>(cw.y() - ctrlPanPressWorldY);
+            if(window.zoom(1.0f, static_cast<float>(newCx), static_cast<float>(newCy))){
+                invalidate(REDRAW);
+                update();
+            }
+        }
+        event->accept();
+        return;
+    }
+
     QString message;
     //Write the current coordinates in the statusbar.
     QRect r((QRect)window);
@@ -2361,6 +2384,64 @@ void TraceView::registerInput(input::BindingRegistry& reg)
     reg.addScope({ QStringLiteral("view.trace"), input::Layer::ViewType,
         [](const input::Ctx& c){ return qobject_cast<TraceView*>(c.view) != nullptr; } });
 
+    // Ctrl-drag pan: Ctrl+Left (AtLeast+Ctrl, so extra modifiers are tolerated) begins it,
+    // in every mode EXCEPT channel SELECT — there Ctrl+Left toggles a channel in/out of the
+    // selection, and ctrlPanArmable() excludes it so the press falls through to trace.press.
+    // Registered BEFORE trace.press so that a Ctrl+Left resolves to pan first (the resolver
+    // returns the first matching, enabled command in a scope); a plain / Shift Left never
+    // matches (Ctrl is required) and still reaches trace.press.  Gesture kind: invoke() only
+    // BEGINS it; the drag body is in mouseMoveEvent and the disarm in mouseReleaseEvent.
+    input::Command pan;
+    pan.id       = QStringLiteral("trace.pan");
+    pan.scopeId  = QStringLiteral("view.trace");
+    pan.label    = tr("Pan the view");
+    pan.category = tr("Navigation");
+    pan.kind     = input::Kind::Gesture;
+    pan.defaultChord = input::Chord::button(Qt::LeftButton, Qt::ControlModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    pan.enabled  = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        return tv && tv->ctrlPanArmable();
+    };
+    pan.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv && c.event)
+            tv->beginCtrlPan(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(pan);
+
+    // Ctrl+wheel zoom-to-cursor (trace.wheelZoomIn / ...Out): one notch is one discrete zoom
+    // step, Action kind, no drag body.  AtLeast+Ctrl matches Ctrl held with extras tolerated.
+    // A wheel chord never collides with the button gestures (different device).  The trace had
+    // no wheel handler before, so these are purely additive.
+    input::Command zin;
+    zin.id       = QStringLiteral("trace.wheelZoomIn");
+    zin.scopeId  = QStringLiteral("view.trace");
+    zin.label    = tr("Zoom in toward cursor");
+    zin.category = tr("Zoom");
+    zin.kind     = input::Kind::Action;
+    zin.defaultChord = input::Chord::wheel(+1, Qt::ControlModifier, input::ModMatch::AtLeast);
+    zin.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv && c.event)
+            tv->wheelZoomAtCursor(true, static_cast<QWheelEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(zin);
+
+    input::Command zout;
+    zout.id       = QStringLiteral("trace.wheelZoomOut");
+    zout.scopeId  = QStringLiteral("view.trace");
+    zout.label    = tr("Zoom out from cursor");
+    zout.category = tr("Zoom");
+    zout.kind     = input::Kind::Action;
+    zout.defaultChord = input::Chord::wheel(-1, Qt::ControlModifier, input::ModMatch::AtLeast);
+    zout.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv && c.event)
+            tv->wheelZoomAtCursor(false, static_cast<QWheelEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(zout);
+
     // The primary press trigger: Left with any modifiers (AtLeast + no required modifier) —
     // the old handler's whole body was Left-gated and read Shift / Ctrl *inside* (SELECT
     // mode), so the chord must fire for any-modifier Left.  Gesture kind: invoke() BEGINS the
@@ -2395,6 +2476,63 @@ void TraceView::mousePressEvent(QMouseEvent* event){
     // the shared view.frame zoom scope is out of the resolver for it — the body's own
     // base-zoom delegation (ZOOM / MEASURE / SELECT_TIME) handles the rubber band as before.
     if(dispatchInput(event)) return;
+}
+
+QPoint TraceView::navWorldAt(const QPoint& viewportPos){
+    // Identical to the adjustment mouseMoveEvent / the SELECT_TIME release apply: when the
+    // window left is 0 the id/gain margin (xMargin) is shown inside the viewport but outside
+    // the world, so the abscissa must be shifted by it before converting to world coordinates.
+    const QRect r((QRect)window);
+    if(r.left() != 0) return viewportToWorld(viewportPos.x(), viewportPos.y());
+    return viewportToWorld(viewportPos.x() - xMargin, viewportPos.y());
+}
+
+void TraceView::beginCtrlPan(const QPoint& pos){
+    // Arm the pan; mouseMoveEvent crosses the drag threshold and recentres the window,
+    // mouseReleaseEvent disarms.  Mirrors ClusterView::beginCtrlPan.
+    ctrlPanArmed       = true;
+    ctrlPanning        = false;
+    ctrlPanAnchorPx    = pos;
+    const QPoint w     = navWorldAt(pos);
+    ctrlPanPressWorldX = w.x();
+    ctrlPanPressWorldY = w.y();
+    setCursor(Qt::ClosedHandCursor);
+}
+
+void TraceView::wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos){
+    // One discrete zoom step that keeps the world point under the cursor at the same screen
+    // fraction.  Mirrors ClusterView::wheelZoomAtCursor; navWorldAt() gives the margin-correct
+    // world point so the first zoom (while the id/gain margin is shown) anchors on the cursor.
+    const float  factor = zoomIn ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
+    const QPoint p  = navWorldAt(viewportPos);
+    const QRect  wr = (QRect)window;
+    const double W = wr.width(), H = wr.height();
+    if(W > 0.0 && H > 0.0){
+        // Cursor's fraction within the current window == its screen fraction.
+        const double fx = (static_cast<double>(p.x()) - wr.left()) / W;
+        const double fy = (static_cast<double>(p.y()) - wr.top())  / H;
+        // New window size; centre that keeps the cursor point at the same fraction.
+        const double Wn = W / static_cast<double>(factor);
+        const double Hn = H / static_cast<double>(factor);
+        const double cx = static_cast<double>(p.x()) + Wn * (0.5 - fx);
+        const double cy = static_cast<double>(p.y()) + Hn * (0.5 - fy);
+        if(window.zoom(factor, static_cast<float>(cx), static_cast<float>(cy))){
+            invalidate(REDRAW);
+            update();
+        }
+    }
+}
+
+void TraceView::wheelEvent(QWheelEvent* event){
+    // Ctrl+wheel zoom-to-cursor is a registry command (trace.wheelZoomIn / ...Out), resolved
+    // here; a plain wheel falls through to the base (unchanged scroll / propagation); a
+    // Ctrl+wheel with no vertical delta yields no chord (chordFromEvent) and is swallowed.
+    if(dispatchInput(event)) return;
+    if(!(event->modifiers() & Qt::ControlModifier)){
+        BufferedView::wheelEvent(event);
+        return;
+    }
+    event->accept();
 }
 
 void TraceView::beginTracePress(QMouseEvent* event){
@@ -2839,6 +2977,16 @@ void TraceView::beginTracePress(QMouseEvent* event){
 
 
 void TraceView::mouseReleaseEvent(QMouseEvent* event){
+    // End a Ctrl+drag pan (trace.pan gesture).  Ctrl+Left is owned by the pan gesture (its
+    // press was intercepted ahead of trace.press, so no mode body ran) — consume the release
+    // whether or not the drag crossed the threshold, and restore the current tool cursor.
+    if(ctrlPanArmed){
+        ctrlPanArmed = false;
+        ctrlPanning  = false;
+        updateCursor();
+        event->accept();
+        return;
+    }
     if(mode == SELECT){
         if(event->button() & Qt::LeftButton && !(event->modifiers() & Qt::ShiftModifier) && !(event->modifiers() & Qt::ControlModifier)){
             //There was a drag of channels

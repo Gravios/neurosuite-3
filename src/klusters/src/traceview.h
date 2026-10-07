@@ -27,6 +27,7 @@
 #include <QList>
 #include <QResizeEvent>
 #include <QMouseEvent>
+#include <QWheelEvent>
 
 //include files for the application
 #include "bufferedview.h"
@@ -570,6 +571,18 @@ protected:
      *  own BaseFrame::mousePressEvent call — the base-zoom delegation for ZOOM/MEASURE/SELECT_TIME
      *  — from re-resolving this same command.  The drag continuations stay in move/release. */
     void beginTracePress(QMouseEvent* event);
+    /** Begin a Ctrl-drag pan at viewport point @p pos (arm the ctrlPan* state, set the
+     *  closed-hand cursor).  The drag body is in mouseMoveEvent and the disarm in
+     *  mouseReleaseEvent — the plan's seam.  Invoked by the trace.pan Gesture command. */
+    void beginCtrlPan(const QPoint& pos);
+    /** One Ctrl+wheel zoom step toward the cursor at viewport point @p viewportPos:
+     *  @p zoomIn true zooms in by ctrlWheelZoomStep, false zooms out by its inverse.
+     *  Invoked by the trace.wheelZoomIn / trace.wheelZoomOut Action commands. */
+    void wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos);
+    /** True when a Ctrl+Left press should begin a pan: not re-entering the press body and
+     *  not in channel SELECT mode (where Ctrl+Left toggles a channel in/out of the selection).
+     *  Gates the trace.pan command so a Ctrl+click in SELECT still falls through to trace.press. */
+    bool ctrlPanArmable() const { return !inTracePress_ && mode != SELECT; }
 
     /**The view responds to a mouse release.
   * @param event mouse event.
@@ -581,12 +594,40 @@ protected:
   */
     void mouseDoubleClickEvent(QMouseEvent* event) override;
 
+    /**The view responds to a wheel event: Ctrl+wheel zooms toward the cursor (the registry
+  * trace.wheelZoom* commands); a plain wheel defers to the base (unchanged scroll /
+  * propagation).  The trace had no wheel handler before, so this is purely additive.
+  * @param event wheel event.
+  */
+    void wheelEvent(QWheelEvent* event) override;
+
 private:
     void updateCursor();
+    /**Margin-correct viewport->world for the Ctrl navigation gestures: when the view is
+     * unzoomed the left id/gain margin (xMargin) sits in the viewport but outside the world,
+     * so the abscissa is shifted by it — the same adjustment mouseMoveEvent applies before
+     * reading world coordinates.*/
+    QPoint navWorldAt(const QPoint& viewportPos);
     /**Re-entrancy guard for beginTracePress: true while the press body runs, so the body's
      * own BaseFrame::mousePressEvent (the base-zoom delegation) does not re-resolve the
      * `trace.press` command.  Set/cleared by a scoped guard in beginTracePress.*/
     bool inTracePress_ = false;
+
+    // ── Ctrl-drag pan / Ctrl+wheel zoom state (trace.pan / trace.wheelZoom*) ──────────
+    /**Ctrl+Left seen; awaiting the drag threshold.*/
+    bool   ctrlPanArmed = false;
+    /**Threshold crossed -> actively panning.*/
+    bool   ctrlPanning = false;
+    /**Viewport pixel where the Ctrl-drag began.*/
+    QPoint ctrlPanAnchorPx;
+    /**World point under the cursor at press, kept fixed so the grab point tracks the cursor.*/
+    long   ctrlPanPressWorldX = 0;
+    long   ctrlPanPressWorldY = 0;
+    /**Pixels of movement before a Ctrl+Left press becomes a pan.*/
+    static constexpr int   ctrlPanDragThreshold = 3;
+    /**Zoom factor applied per Ctrl+wheel notch.*/
+    static constexpr float ctrlWheelZoomStep = 1.25f;
+
     /**True if the the colors are in grey-scale*/
     bool greyScaleMode;
 
