@@ -158,7 +158,6 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     //Create the cursors
 
     measureCursor = QCursor(QPixmap(":/shared-cursors/measure_cursor"),0,0);
-    selectTimeCursor = QCursor(QPixmap(":/shared-cursors/select_time_cursor"),0,0);
     selectEventCursor = QCursor(QPixmap(":/shared-cursors/select_event_cursor"),0,0);
     addEventCursor = QCursor(QPixmap(":/shared-cursors/add_event_cursor"),0,0);
     selectCursor = QCursor(QPixmap(":/shared-cursors/select_channels_cursor"),0,0);
@@ -243,7 +242,7 @@ void TraceView::updateCursor()
     else if(mode == MEASURE)
         setCursor(measureCursor);
     else if(mode == SELECT_TIME)
-        setCursor(selectTimeCursor);
+        setCursor(Qt::ArrowCursor);   // SELECT_TIME retired (step 6b); normal cursor
     else if(mode == SELECT_EVENT)
         setCursor(selectEventCursor);
     else if(mode == ADD_EVENT)
@@ -2476,12 +2475,12 @@ void TraceView::mousePressEvent(QMouseEvent* event){
     // other press (non-Left) finds no command and does nothing, exactly as the old handler
     // did (its body was entirely Left-gated).  TraceView manages its own primary press, so
     // the shared view.frame zoom scope is out of the resolver for it — the body's own
-    // base-zoom delegation (ZOOM / MEASURE / SELECT_TIME) handles the rubber band as before.
+    // base-zoom delegation (ZOOM / MEASURE) handles the rubber band as before.
     if(dispatchInput(event)) return;
 }
 
 QPoint TraceView::navWorldAt(const QPoint& viewportPos){
-    // Identical to the adjustment mouseMoveEvent / the SELECT_TIME release apply: when the
+    // Identical to the adjustment mouseMoveEvent applies: when the
     // window left is 0 the id/gain margin (xMargin) is shown inside the viewport but outside
     // the world, so the abscissa must be shifted by it before converting to world coordinates.
     const QRect r((QRect)window);
@@ -2567,11 +2566,11 @@ int TraceView::clusterOfNearestSpike(int sampleIndex) const
 
 void TraceView::beginTracePress(QMouseEvent* event){
     // Re-entrancy guard: the body below delegates to BaseFrame::mousePressEvent for ZOOM /
-    // MEASURE / SELECT_TIME, which dispatches again — this keeps that inner dispatch from
-    // re-resolving this same trace.press command (trace.press.enabled is !inTracePress_).
+    // MEASURE, which dispatches again — this keeps that inner dispatch from re-resolving this
+    // same trace.press command (trace.press.enabled is !inTracePress_).
     QScopedValueRollback<bool> pressGuard(inTracePress_, true);
     if(event->button() == Qt::LeftButton){
-        if(mode == ZOOM || mode == MEASURE || mode == SELECT_TIME){
+        if(mode == ZOOM || mode == MEASURE){
             //The parent implementation takes care of the zoom.
             BaseFrame::mousePressEvent(event);
         }
@@ -2582,7 +2581,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
         int deselectedEventIndex = 0;
         if(!selectedEventPosition.isEmpty()) deselectedEventIndex = selectedEventPosition[0];
 
-        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE || mode == NONE){
+        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE || mode == NONE){
             QRect r((QRect)window);
             QPoint current;
             //If the view was zoomed and the left margin (where the ids and gains of the channels of the first group are displayed) is not
@@ -3007,7 +3006,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
                         channelforVoltageComputation = selectedChannel;
                         startingIndex = x;
                     }
-                    //mode == SELECT_TIME
+                    //fallthrough (SELECT_TIME retired — step 6b)
                     else startingIndex = x;
                 }//mode != SELECT_EVENT
             }//single column
@@ -3026,7 +3025,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     drawTimeLine(lastClickAbscissa,true);
             }
             previousDragOrdinate = 0;
-        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE
+        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE || mode == NONE
     }//Qt::LeftButton
 }
 
@@ -3155,134 +3154,9 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
         //The parent implementation takes care of the rubber band
         BaseFrame::mouseReleaseEvent(event);
     }
-    if(mode == SELECT_TIME && (event->button() & Qt::LeftButton)){
-        //The parent implementation takes care of the rubber band
-        BaseFrame::mouseReleaseEvent(event);
-        QPoint current;
-        QRect r((QRect)window);
-        if(r.left() != 0) current = viewportToWorld(event->position().toPoint().x(),event->position().toPoint().y());
-        else current = viewportToWorld(event->position().toPoint().x() - xMargin,event->position().toPoint().y());
-        int x = (current.x() - static_cast<int>(borderX));
-
-        //Compute the starting and ending time
-        float relativeStartingTime;
-        float relativeEndingTime;
-        int startingTime;
-        int columnNb = 0;
-        //starting time
-        if(startingIndex < 0){
-            columnNb = 1;
-            relativeStartingTime = 0;
-        }
-        else{
-            if(multiColumns){
-                //left margin is visible
-                if(r.left() == 0){
-                    relativeStartingTime = static_cast<float>(fmod(startingIndex,static_cast<float>(Xshift)))
-                            /  static_cast<float>(Xstep) * timeStep;
-                    if(startingIndex < Xshift) columnNb = 1;
-                    else columnNb = ((startingIndex - (Xshift)) / Xshift) + 2;
-                }
-                //left margin is invisible
-                else{
-                    int nbSamples = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits);
-                    int nbSamplesToDraw = static_cast<int>(floor(0.5 + static_cast<float>(nbSamples)/downSampling));
-                    int shift = (nbSamplesToDraw - 1) * Xstep;
-                    if(startingIndex < shift){
-                        relativeStartingTime = static_cast<float>(startingIndex) / static_cast<float>(Xstep) * timeStep;
-                        columnNb = 1;
-                    }
-                    else{
-                        relativeStartingTime = static_cast<float>(fmod((startingIndex),static_cast<float>(shift + XGroupSpace)))
-                                /  static_cast<float>(Xstep) * timeStep;
-                        columnNb = ((startingIndex - (Xshift - XGroupSpace)) / Xshift) + 2;
-                    }
-                }
-            }
-            //single column
-            else{
-                relativeStartingTime = static_cast<float>(startingIndex) / static_cast<float>(Xstep) * timeStep;
-            }
-            //between columns
-            if(relativeStartingTime > timeFrameWidth) relativeStartingTime = 0;
-        }
-        startingTime = startTime + static_cast<int>(0.5 + relativeStartingTime);
-
-        //ending time
-        if(x < 0){
-            startingTime = startTime;
-            relativeEndingTime = relativeStartingTime;
-            relativeStartingTime = 0;
-        }
-        else{
-            if(multiColumns){
-                //left margin is visible
-                if(r.left() == 0){
-                    relativeEndingTime = static_cast<float>(fmod(x,static_cast<float>(Xshift)))
-                            /  static_cast<float>(Xstep) * timeStep;
-                    int currentColumnNb;
-                    if(x < Xshift) currentColumnNb = 1;
-                    else currentColumnNb = ((x - (Xshift)) / Xshift) + 2;
-                    if(currentColumnNb == columnNb && relativeEndingTime < relativeStartingTime){
-                        startingTime = startTime + static_cast<int>(0.5 + relativeEndingTime);
-                    }
-                    if(currentColumnNb > columnNb && relativeStartingTime != 0) relativeEndingTime = timeFrameWidth;
-                    if(currentColumnNb < columnNb){//the user went backwards
-                        startingTime = startTime;
-                        relativeEndingTime = relativeStartingTime;
-                        relativeStartingTime = 0;
-                    }
-                }
-                //left margin is invisible
-                else{
-                    int nbSamples = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits);
-                    int nbSamplesToDraw = static_cast<int>(floor(0.5 + static_cast<float>(nbSamples)/downSampling));
-                    int shift = (nbSamplesToDraw - 1) * Xstep;
-                    if(x < shift){
-                        relativeEndingTime = static_cast<float>(x) / static_cast<float>(Xstep) * timeStep;
-                        if(columnNb != 1){//the user went backwards
-                            startingTime = startTime;
-                            relativeEndingTime = relativeStartingTime;
-                            relativeStartingTime = 0;
-                        }
-                        if(columnNb == 1 && relativeEndingTime < relativeStartingTime){//the user went backwards on the first column
-                            startingTime = startTime + static_cast<int>(0.5 + relativeEndingTime);
-                        }
-                    }
-                    else{
-                        relativeEndingTime = static_cast<float>(fmod((x),static_cast<float>(shift + XGroupSpace)))
-                                /  static_cast<float>(Xstep) * timeStep;
-
-                        int currentColumnNb = ((x - (Xshift - XGroupSpace)) / Xshift) + 2;
-                        if(currentColumnNb == columnNb && relativeEndingTime < relativeStartingTime){
-                            startingTime = startTime + static_cast<int>(0.5 + relativeEndingTime);
-                        }
-                        if(currentColumnNb > columnNb && relativeStartingTime != 0) relativeEndingTime = timeFrameWidth;
-                        if(currentColumnNb < columnNb){//the user went backwards
-                            startingTime = startTime;
-                            relativeEndingTime = relativeStartingTime;
-                            relativeStartingTime = 0;
-                        }
-                    }
-                }
-            }
-            //single column
-            else{
-                relativeEndingTime = static_cast<float>(x) / static_cast<float>(Xstep) * timeStep;
-                if(relativeEndingTime < relativeStartingTime){
-                    startingTime = startTime + static_cast<int>(0.5 + relativeEndingTime);
-                }
-            }
-            //between columns
-            if(relativeEndingTime > timeFrameWidth) relativeEndingTime = timeFrameWidth;
-        }
-
-        //Compute the duration
-        int duration = abs(static_cast<int>(0.5 + relativeEndingTime) - static_cast<int>(0.5 + relativeStartingTime));
-        //The user drag over another column
-        if(duration > timeFrameWidth) duration = timeFrameWidth;
-        emit setStartAndDuration(startingTime,duration);
-    }
+    // (The SELECT_TIME time-window release pick was retired in the Overview redesign
+    //  (step 6b): the trace-side SELECT_TIME tool is gone — nothing deliberately enters
+    //  it, and the normal-cursor click now selects a spike's cluster, not a time window.)
     if(mode == DRAW_LINE && (event->button() & Qt::LeftButton)){
         //erase the line
         if(!linePositions.isEmpty())

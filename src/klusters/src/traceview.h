@@ -99,6 +99,9 @@ public:
   * <ul>
   * <li>SELECT Enumeration indicating that the user is in a mode enabling him to select traces.</li>
   * </ul>
+  * SELECT_TIME is retired (Overview redesign step 6b) — nothing selects it as a tool and it
+  * has no behaviour left; the value is kept so this enum stays aligned with the ViewWidget
+  * tool-mode values (the app broadcasts one Mode int to both the cluster and trace frames).
   */
     enum {SELECT = ZOOM+1,MEASURE = ZOOM+2,SELECT_TIME = ZOOM+3,SELECT_EVENT = ZOOM+4,ADD_EVENT = ZOOM+5,DRAW_LINE = ZOOM+6};
 
@@ -227,8 +230,10 @@ public:
             setCursor(measureCursor);
         }
         else if(selectedMode == SELECT_TIME){
-            drawRubberBand(true,true);
-            setCursor(selectTimeCursor);
+            // SELECT_TIME retired (step 6b): no rubber band, normal cursor.  The value is
+            // kept only so the trace mode enum stays aligned with the ViewWidget tool values.
+            drawRubberBand(false);
+            setCursor(Qt::ArrowCursor);
         }
         else if(selectedMode == DRAW_LINE){
             setCursor(drawLineCursor);
@@ -566,15 +571,15 @@ protected:
   */
     void mousePressEvent(QMouseEvent* event) override;
     /** TraceView owns its primary Left press (its whole press body — channel select, measure,
-     *  time pick, event select, add-event, draw-line — resolves through the registry as one
-     *  Gesture), so it keeps the shared rubber-band ZOOM scope (`view.frame`) out: the press
-     *  is routed to beginTracePress(), whose own mode body delegates to the base zoom for
-     *  ZOOM / MEASURE / SELECT_TIME exactly as before.  (Input-remapping plan P0d-z.) */
+     *  event select, add-event, draw-line, and the normal-cursor spike pick — resolves through
+     *  the registry as one Gesture), so it keeps the shared rubber-band ZOOM scope (`view.frame`)
+     *  out: the press is routed to beginTracePress(), whose own mode body delegates to the base
+     *  zoom for ZOOM / MEASURE exactly as before.  (Input-remapping plan P0d-z.) */
     bool managesOwnPrimaryPress() const override { return true; }
-    /** The TraceView primary-press body (the former mousePressEvent, verbatim).  Invoked by
-     *  the `trace.press` Gesture command; a re-entrancy guard (inTracePress_) keeps the body's
-     *  own BaseFrame::mousePressEvent call — the base-zoom delegation for ZOOM/MEASURE/SELECT_TIME
-     *  — from re-resolving this same command.  The drag continuations stay in move/release. */
+    /** The TraceView primary-press body (the former mousePressEvent).  Invoked by the
+     *  `trace.press` Gesture command; a re-entrancy guard (inTracePress_) keeps the body's own
+     *  BaseFrame::mousePressEvent call — the base-zoom delegation for ZOOM/MEASURE — from
+     *  re-resolving this same command.  The drag continuations stay in move/release. */
     void beginTracePress(QMouseEvent* event);
     /** Begin a Ctrl-drag pan at viewport point @p pos (arm the ctrlPan* state, set the
      *  closed-hand cursor).  The drag body is in mouseMoveEvent and the disarm in
@@ -860,9 +865,6 @@ private:
 
     /**A cursor to represent the measure state.*/
     QCursor measureCursor;
-
-    /**A cursor to represent the selection of time state.*/
-    QCursor selectTimeCursor;
 
     /**A cursor to represent the selection of an event.*/
     QCursor selectEventCursor;
