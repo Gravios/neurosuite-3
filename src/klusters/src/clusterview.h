@@ -166,6 +166,21 @@ public:
      *  the plan's seam.  Invoked by the cluster.boundaryDrag Gesture command (P0d-4); was
      *  inline in the press.  Assumes lineageBoundaryGrabAt(vp) >= 0 (enabled() ensured it). */
     void beginBoundaryDrag(const QPoint& vp);
+    /** True while the tool is one of the four polygon-selection modes (DELETE_NOISE /
+     *  DELETE_ARTEFACT / NEW_CLUSTER / NEW_CLUSTERS).  Gates the view.cluster.lasso scope. */
+    bool inSelectionMode() const;
+    /** Append a vertex to the selection polygon at viewport point @p viewportPos (and grab
+     *  keyboard focus so Enter/Return closes it).  The lasso presses are Action commands —
+     *  a click does one discrete thing — not drag gestures.  Invoked by cluster.lassoAddVertex
+     *  (input-remapping plan P0d-4); was inline in the press.  selectionPoint() handles both
+     *  the feature-scatter and the t-SNE coordinate spaces, so one body serves both. */
+    void addSelectionVertex(const QPoint& viewportPos);
+    /** Erase the last selection-polygon line (undo a vertex).  Invoked by
+     *  cluster.lassoUndoVertex; no-op on an empty polygon. */
+    void undoSelectionVertex();
+    /** Jump the trace view to the time under viewport point @p viewportPos (SELECT_TIME
+     *  mode — a discrete pick, not a rubber-band window).  Invoked by cluster.selectTimePick. */
+    void pickSelectionTime(const QPoint& viewportPos);
     /** The template class the lineage overlay edits (auto-seed + new regions).  Set
      *  by the template palette when a class is selected; defaults to 0.  When the
      *  overlay is engaged, switching class tiles that class and repaints. */

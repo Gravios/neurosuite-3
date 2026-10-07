@@ -1361,6 +1361,49 @@ void ClusterView::beginBoundaryDrag(const QPoint& vp)
     setCursor(Qt::SizeHorCursor);
 }
 
+bool ClusterView::inSelectionMode() const
+{
+    return mode == DELETE_NOISE || mode == DELETE_ARTEFACT
+        || mode == NEW_CLUSTER  || mode == NEW_CLUSTERS;
+}
+
+void ClusterView::addSelectionVertex(const QPoint& viewportPos)
+{
+    // Ensure this widget has keyboard focus so Enter/Return keyPressEvent is delivered
+    // here and not consumed by a parent widget or dialog.  Body lifted from the old inline
+    // selection-mode press branch (the Left button).
+    setFocus(Qt::MouseFocusReason);
+    QPoint selectedPoint = selectionPoint(viewportPos);
+    if(nbSelectionPoints == 0)
+        selectionPolygon.putPoints(0, 1, selectedPoint.x(), selectedPoint.y());
+    //If the array is not empty, the last point has been put into the array in mouseMoveEvent
+    nbSelectionPoints = selectionPolygon.size();
+    invalidate(REFRESH);
+    update();
+}
+
+void ClusterView::undoSelectionVertex()
+{
+    if(selectionPolygon.isEmpty()) return;
+    //Erase the last drawn line by drawing into the buffer
+    eraseTheLastDrawnLine();
+    invalidate(REFRESH);
+    update();
+}
+
+void ClusterView::pickSelectionTime(const QPoint& viewportPos)
+{
+    QPoint current = viewportToWorld(viewportPos.x(), viewportPos.y());
+    if(dimensionX == timeDimension){
+        dataType time = static_cast<dataType>(current.x() * samplingInterval / 1000.0);
+        emit moveToTime(time);
+    }
+    else if(dimensionY == timeDimension){
+        dataType time = -static_cast<dataType>(current.y() * samplingInterval / 1000.0);
+        emit moveToTime(time);
+    }
+}
+
 void ClusterView::registerInput(input::BindingRegistry& reg)
 {
     // A scope that is live for any press on a ClusterView (the command's enabled()
@@ -1439,6 +1482,95 @@ void ClusterView::registerInput(input::BindingRegistry& reg)
             cv->beginBoundaryDrag(static_cast<QMouseEvent*>(c.event)->position().toPoint());
     };
     reg.addCommand(bnd);
+
+    // ── The polygon-lasso presses (the four selection modes) ─────────────────────────
+    // Shared by the feature scatter and the t-SNE embedding — selectionPoint() handles
+    // both coordinate spaces.  A ToolMode scope live only in those modes, so its plain
+    // Left never collides (in the conflict view) with the scatter scope's node-mark Left:
+    // different scope → no false conflict.  These are Action commands (a click does one
+    // discrete thing), not drag gestures.  Left adds a vertex (always); Right undoes the
+    // last vertex and Middle closes the polygon (both only when a polygon is being drawn —
+    // an empty-polygon Right therefore falls through to the overlay context menu, as before).
+    reg.addScope({ QStringLiteral("view.cluster.lasso"), input::Layer::ToolMode,
+        [](const input::Ctx& c){
+            auto* cv = qobject_cast<ClusterView*>(c.view);
+            return cv && cv->inSelectionMode();
+        } });
+    {
+        input::Command add;
+        add.id       = QStringLiteral("cluster.lassoAddVertex");
+        add.scopeId  = QStringLiteral("view.cluster.lasso");
+        add.label    = tr("Add selection vertex");
+        add.category = tr("Selection lasso");
+        add.kind     = input::Kind::Action;
+        add.defaultChord = input::Chord::button(Qt::LeftButton);
+        add.invoke   = [](const input::Ctx& c){
+            auto* cv = qobject_cast<ClusterView*>(c.view);
+            if (cv && c.event)
+                cv->addSelectionVertex(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(add);
+
+        input::Command undo;
+        undo.id       = QStringLiteral("cluster.lassoUndoVertex");
+        undo.scopeId  = QStringLiteral("view.cluster.lasso");
+        undo.label    = tr("Undo last selection vertex");
+        undo.category = tr("Selection lasso");
+        undo.kind     = input::Kind::Action;
+        undo.defaultChord = input::Chord::button(Qt::RightButton);
+        undo.enabled  = [](const input::Ctx& c){
+            auto* cv = qobject_cast<ClusterView*>(c.view);
+            return cv && !cv->selectionPolygon.isEmpty();   // else Right -> overlay context menu
+        };
+        undo.invoke   = [](const input::Ctx& c){
+            auto* cv = qobject_cast<ClusterView*>(c.view);
+            if (cv) cv->undoSelectionVertex();
+        };
+        reg.addCommand(undo);
+
+        input::Command close;
+        close.id       = QStringLiteral("cluster.lassoClosePolygon");
+        close.scopeId  = QStringLiteral("view.cluster.lasso");
+        close.label    = tr("Close selection polygon");
+        close.category = tr("Selection lasso");
+        close.kind     = input::Kind::Action;
+        close.defaultChord = input::Chord::button(Qt::MiddleButton);
+        close.enabled  = [](const input::Ctx& c){
+            auto* cv = qobject_cast<ClusterView*>(c.view);
+            return cv && !cv->selectionPolygon.isEmpty();
+        };
+        close.invoke   = [](const input::Ctx& c){
+            auto* cv = qobject_cast<ClusterView*>(c.view);
+            if (cv) cv->closeSelectionPolygon();
+        };
+        reg.addCommand(close);
+    }
+
+    // ── The SELECT_TIME pick ─────────────────────────────────────────────────────────
+    // A plain Left press jumps the trace view to that time — a discrete pick, not a window
+    // (ClusterView never arms the base rubber band).  Feature space only (in the embedding
+    // SELECT_TIME has no meaning and the press shows a status message instead).  Its own
+    // scope so its Left does not collide with the lasso Left in the conflict view.
+    reg.addScope({ QStringLiteral("view.cluster.timepick"), input::Layer::ToolMode,
+        [](const input::Ctx& c){
+            auto* cv = qobject_cast<ClusterView*>(c.view);
+            return cv && cv->mode == SELECT_TIME && !cv->isTsneShowing();
+        } });
+    {
+        input::Command pick;
+        pick.id       = QStringLiteral("cluster.selectTimePick");
+        pick.scopeId  = QStringLiteral("view.cluster.timepick");
+        pick.label    = tr("Pick time for trace view");
+        pick.category = tr("Time pick");
+        pick.kind     = input::Kind::Action;
+        pick.defaultChord = input::Chord::button(Qt::LeftButton);
+        pick.invoke   = [](const input::Ctx& c){
+            auto* cv = qobject_cast<ClusterView*>(c.view);
+            if (cv && c.event)
+                cv->pickSelectionTime(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(pick);
+    }
 }
 
 void ClusterView::mousePressEvent(QMouseEvent* e){
@@ -1473,7 +1605,10 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
                    "F to return"), 3000);
             return;
         }
-        // fall through to the shared polygon block below
+        // In a selection mode the lasso presses (Left add vertex, Right undo, Middle close)
+        // are registry commands — view.cluster.lasso, resolved by dispatchInput() at the top
+        // of this handler for both the embedding and the scatter — so there is nothing to do
+        // here; just let the handler return.
     }
 
     // ── Scatter-only preamble: pan, time picking, rubber-band zoom ────────
@@ -1501,56 +1636,22 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
     //  Ctrl+Left still pans, Shift+Left still grabs a boundary, the lasso tools keep
     //  their left-click, and Ctrl+wheel / double-click still zoom.)
 
-    //Defining a time window t oupdate the Traceview
-    if(mode == SELECT_TIME){
-        QPoint current = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
-        if(dimensionX == timeDimension){
-            dataType time = static_cast<dataType>(current.x() * samplingInterval / 1000.0);
-            emit moveToTime(time);
-        }
-        else if(dimensionY == timeDimension){
-            dataType time = -static_cast<dataType>(current.y() * samplingInterval / 1000.0);
-            emit moveToTime(time);
-        }
-    }
+    // (The SELECT_TIME time pick — a plain Left press jumps the trace view to that time —
+    //  moved onto the input registry: cluster.selectTimePick in view.cluster.timepick,
+    //  resolved by dispatchInput() at the top; the body is in pickSelectionTime.  It is a
+    //  discrete pick, not a window, so nothing is armed here.)
 
     //The parent implementation takes care of the mode ZOOM
     //(rubber band and calculation of the firstClick)
     ViewWidget::mousePressEvent(e);
     }   // end scatter-only preamble
 
-    //If there is a polygon to draw (one of the selection modes)
-    if(mode == DELETE_NOISE || mode == DELETE_ARTEFACT || mode == NEW_CLUSTER || mode == NEW_CLUSTERS){
-        //Erase the last line drawn
-        if(e->button() == Qt::RightButton){
-            if(selectionPolygon.isEmpty())
-                return;
-
-            //Erase the last drawn line by drawing into the buffer
-            eraseTheLastDrawnLine();
-            invalidate(REFRESH);
-            update();
-        }
-
-        //Close the polygon of selection and trigger the right action depending on the mode
-        if(e->button() == Qt::MiddleButton && !selectionPolygon.isEmpty()){
-            closeSelectionPolygon();
-        }
-
-        if (e->button() == Qt::LeftButton){
-            // Ensure this widget has keyboard focus so Enter/Return keyPressEvent
-            // is delivered here and not consumed by a parent widget or dialog.
-            setFocus(Qt::MouseFocusReason);
-            QPoint selectedPoint = selectionPoint(e->position().toPoint());
-
-            if(nbSelectionPoints == 0)
-                selectionPolygon.putPoints(0, 1, selectedPoint.x(),selectedPoint.y());
-            //If the array is not empty, the last point has been put into the array in mouseMoveEvent
-            nbSelectionPoints = selectionPolygon.size();
-            invalidate(REFRESH);
-            update();
-        }
-    }
+    // (The selection-mode polygon presses — Left adds a vertex, Right undoes the last one,
+    //  Middle closes the polygon — moved onto the input registry: cluster.lassoAddVertex /
+    //  lassoUndoVertex / lassoClosePolygon in view.cluster.lasso, resolved by dispatchInput()
+    //  at the top of this handler.  The bodies are addSelectionVertex / undoSelectionVertex /
+    //  closeSelectionPolygon.  Undo/close resolve only when a polygon is being drawn, so an
+    //  empty-polygon Right still falls through to the overlay context menu above.)
 }
 
 void ClusterView::mouseReleaseEvent(QMouseEvent* event){
