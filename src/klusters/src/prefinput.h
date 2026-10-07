@@ -11,8 +11,9 @@
 // override.  Per-row Reset and the dialog's global Default restore shipped bindings.
 // Within-scope conflicts are tinted live.
 //
-// Button / wheel commands (none exist until the mouse gestures land) are shown
-// read-only for now; a button-combo editor is a later patch.
+// Key commands use a QKeySequenceEdit; button commands use a ButtonChordEdit (the
+// button-combo editor).  A wheel command — none registered yet — falls back to a
+// read-only label until a wheel editor lands.
 
 #include <QWidget>
 #include <QList>
@@ -23,6 +24,7 @@
 class QKeySequenceEdit;
 class QLabel;
 class QToolButton;
+class ButtonChordEdit;
 
 class PrefInput : public QWidget {
     Q_OBJECT
@@ -41,9 +43,9 @@ private:
         QString           commandId;
         QString           scopeId;
         input::Chord      defaultChord;
-        bool              keyEditable = false;
-        QKeySequenceEdit* edit  = nullptr;   // key commands (editable)
-        QLabel*           fixed = nullptr;   // non-key commands (read-only for now)
+        QKeySequenceEdit* edit       = nullptr;   // key / unbound commands
+        ButtonChordEdit*  buttonEdit = nullptr;   // button commands
+        QLabel*           fixed      = nullptr;   // wheel (read-only for now)
     };
 
     void build();                ///< construct the UI from the registry (once, in the ctor)

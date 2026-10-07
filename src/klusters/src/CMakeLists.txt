@@ -91,6 +91,7 @@ set(klusters_SRCS
     autoMerge.cpp
     prefdialog.cpp
     prefinput.cpp              # generated input-binding Preferences page (input-remapping plan §5)
+    buttonchordedit.cpp        # button-combo editor for the Input page's mouse-button rows
     prefdisplay.cpp
     prefsession.cpp
     prefreclustering.cpp

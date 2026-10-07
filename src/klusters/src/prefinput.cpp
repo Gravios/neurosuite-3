@@ -2,6 +2,7 @@
 
 #include "prefinput.h"
 
+#include "buttonchordedit.h"
 #include "configuration.h"
 #include "input/bindingregistry.h"
 #include "input/inputdispatcher.h"   // input::registry()
@@ -28,9 +29,9 @@ PrefInput::PrefInput(QWidget* parent)
 
 input::Chord PrefInput::rowChord(const Row& r) const
 {
-    if (r.keyEditable && r.edit)
-        return input::chordFromKeySequence(r.edit->keySequence());
-    return r.defaultChord;   // non-editable rows keep their default
+    if (r.edit)       return input::chordFromKeySequence(r.edit->keySequence());
+    if (r.buttonEdit) return r.buttonEdit->chord();
+    return r.defaultChord;   // read-only rows keep their default
 }
 
 void PrefInput::build()
@@ -52,9 +53,10 @@ void PrefInput::build()
     v->setSpacing(2);
 
     auto* intro = new QLabel(
-        tr("Editable keyboard shortcuts.  Click a field and press the new key "
-           "combination; Reset restores the shipped default.  Fields that clash "
-           "within the same context are highlighted."), body);
+        tr("Editable keyboard shortcuts and mouse buttons.  For a key, click the field "
+           "and press the new combination; for a mouse button, choose the button and its "
+           "modifiers.  Reset restores the shipped default.  Fields that clash within the "
+           "same context are highlighted."), body);
     intro->setWordWrap(true);
     v->addWidget(intro);
 
@@ -100,12 +102,13 @@ void PrefInput::build()
             row.commandId    = c->id;
             row.scopeId      = c->scopeId;
             row.defaultChord = c->defaultChord;
-            // A key chord (or an as-yet-unbound command) gets an editable field; a
-            // button/wheel chord is shown read-only until the button editor lands.
-            row.keyEditable  = (c->defaultChord.device == Device::Key
-                                || c->defaultChord.device == Device::None);
 
-            if (row.keyEditable) {
+            // Pick the editor by device: a key (or as-yet-unbound) chord gets a
+            // QKeySequenceEdit; a button chord gets the ButtonChordEdit; a wheel chord
+            // (none registered yet) falls back to a read-only label.
+            const Device dev = c->defaultChord.device;
+            bool editable = true;
+            if (dev == Device::Key || dev == Device::None) {
                 auto* edit = new QKeySequenceEdit(body);
                 edit->setMaximumWidth(220);
                 rowLayout->addWidget(edit);
@@ -114,7 +117,24 @@ void PrefInput::build()
                     recomputeConflicts();
                     Q_EMIT changed();
                 });
+            } else if (dev == Device::Button) {
+                auto* be = new ButtonChordEdit(body);
+                rowLayout->addWidget(be);
+                row.buttonEdit = be;
+                connect(be, &ButtonChordEdit::chordChanged, this, [this]{
+                    recomputeConflicts();
+                    Q_EMIT changed();
+                });
+            } else {
+                auto* fixed = new QLabel(c->defaultChord.displayString()
+                                         + tr("  (wheel — not editable yet)"), body);
+                fixed->setEnabled(false);
+                rowLayout->addWidget(fixed);
+                row.fixed = fixed;
+                editable = false;
+            }
 
+            if (editable) {
                 auto* reset = new QToolButton(body);
                 reset->setText(tr("Reset"));
                 reset->setToolTip(tr("Restore the shipped default for this command."));
@@ -126,16 +146,12 @@ void PrefInput::build()
                     if (rr.edit) {
                         QSignalBlocker block(rr.edit);
                         rr.edit->setKeySequence(input::keySequenceFromChord(rr.defaultChord));
+                    } else if (rr.buttonEdit) {
+                        rr.buttonEdit->setChord(rr.defaultChord);   // self-blocking
                     }
                     recomputeConflicts();
                     Q_EMIT changed();
                 });
-            } else {
-                auto* fixed = new QLabel(c->defaultChord.displayString()
-                                         + tr("  (mouse — not editable yet)"), body);
-                fixed->setEnabled(false);
-                rowLayout->addWidget(fixed);
-                row.fixed = fixed;
             }
 
             v->addLayout(rowLayout);
@@ -151,9 +167,13 @@ void PrefInput::updateFromRegistry()
 {
     const input::BindingRegistry& reg = input::registry();
     for (Row& r : rows_) {
-        if (!r.edit) continue;
-        QSignalBlocker block(r.edit);   // programmatic load must not light Apply
-        r.edit->setKeySequence(input::keySequenceFromChord(reg.effectiveChord(r.commandId)));
+        const input::Chord eff = reg.effectiveChord(r.commandId);
+        if (r.edit) {
+            QSignalBlocker block(r.edit);   // programmatic load must not light Apply
+            r.edit->setKeySequence(input::keySequenceFromChord(eff));
+        } else if (r.buttonEdit) {
+            r.buttonEdit->setChord(eff);    // self-blocking: no chordChanged emitted
+        }
     }
     recomputeConflicts();
 }
@@ -165,7 +185,7 @@ void PrefInput::commitToRegistry()
     // Editors -> overrides: store a diff only where the chord differs from default;
     // an edit cleared back to the default (or emptied) drops the override.
     for (const Row& r : rows_) {
-        if (!r.keyEditable) continue;
+        if (!r.edit && !r.buttonEdit) continue;   // read-only rows have nothing to commit
         const input::Chord c = rowChord(r);
         if (!c.isValid() || c == r.defaultChord) reg.clearOverride(r.commandId);
         else                                     reg.setOverride(r.commandId, c);
@@ -182,9 +202,12 @@ void PrefInput::commitToRegistry()
 void PrefInput::restoreDefaults()
 {
     for (Row& r : rows_) {
-        if (!r.edit) continue;
-        QSignalBlocker block(r.edit);
-        r.edit->setKeySequence(input::keySequenceFromChord(r.defaultChord));
+        if (r.edit) {
+            QSignalBlocker block(r.edit);
+            r.edit->setKeySequence(input::keySequenceFromChord(r.defaultChord));
+        } else if (r.buttonEdit) {
+            r.buttonEdit->setChord(r.defaultChord);   // self-blocking
+        }
     }
     recomputeConflicts();
     Q_EMIT changed();
@@ -198,7 +221,7 @@ void PrefInput::recomputeConflicts()
     QHash<QString, QList<int>> byKey;   // "scope\x1Fchord" -> row indices
     for (int i = 0; i < rows_.size(); ++i) {
         const Row& r = rows_[i];
-        if (!r.edit) continue;
+        if (!r.edit && !r.buttonEdit) continue;   // read-only rows never conflict
         const input::Chord c = rowChord(r);
         if (!c.isValid()) continue;
         byKey[r.scopeId + QLatin1Char('\x1f') + c.toString()].append(i);
@@ -210,14 +233,16 @@ void PrefInput::recomputeConflicts()
             for (int i : it.value()) conflicted[i] = true;
 
     for (int i = 0; i < rows_.size(); ++i) {
-        if (!rows_[i].edit) continue;
-        rows_[i].edit->setStyleSheet(
-            conflicted[i] ? QStringLiteral("QKeySequenceEdit{background:#e2524a;color:white;}")
-                          : QString());
-        if (conflicted[i])
-            rows_[i].edit->setToolTip(tr("This combination is already used by another "
-                                         "command in the same context."));
-        else
-            rows_[i].edit->setToolTip(QString());
+        Row& r = rows_[i];
+        if (r.edit) {
+            r.edit->setStyleSheet(
+                conflicted[i] ? QStringLiteral("QKeySequenceEdit{background:#e2524a;color:white;}")
+                              : QString());
+            r.edit->setToolTip(conflicted[i]
+                ? tr("This combination is already used by another command in the same context.")
+                : QString());
+        } else if (r.buttonEdit) {
+            r.buttonEdit->setConflict(conflicted[i]);
+        }
     }
 }
