@@ -2391,6 +2391,102 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("action.deleteNoisy"),    QStringLiteral("Actions"), mDeleteNoisy);
     registerActionCommand(QStringLiteral("action.groupClusters"),  QStringLiteral("Actions"), mGroupeClusters);
 
+    // The remaining menu actions, so every one is listed and rebindable in Preferences > Input.
+    // registerActionCommand mirrors each QAction using its CURRENT shortcut as the default — which
+    // is empty for the many that ship without one, so they appear as unassigned rows the curator
+    // can bind (no shortcut is invented for them).  Deliberately NOT mirrored: the four curation
+    // tool-mode toggles (New Cluster / Split / Delete Artifact|Noisy Spikes), which already have
+    // app-scope resolver commands (Ctrl+1..4, 0680/0653) — mirroring them would double-list the
+    // same behaviour — and the Settings/view-chrome toggles (Show Toolbar/…, point size, update
+    // mode, Preferences).
+    registerActionCommand(QStringLiteral("file.import"),             QStringLiteral("File"),    mImportFile);
+    registerActionCommand(QStringLiteral("file.saveAs"),            QStringLiteral("File"),    mSaveAsAction);
+    registerActionCommand(QStringLiteral("file.print"),            QStringLiteral("File"),    mPrintAction);
+    registerActionCommand(QStringLiteral("file.close"),            QStringLiteral("File"),    mCloseAction);
+
+    registerActionCommand(QStringLiteral("action.chunkMode"),            QStringLiteral("Actions"), mChunkMode);
+    registerActionCommand(QStringLiteral("action.prevChunk"),            QStringLiteral("Actions"), mPrevChunk);
+    registerActionCommand(QStringLiteral("action.nextChunk"),            QStringLiteral("Actions"), mNextChunk);
+    registerActionCommand(QStringLiteral("action.autoMerge"),            QStringLiteral("Actions"), mAutoMerge);
+    registerActionCommand(QStringLiteral("action.purgeSmallClusters"),   QStringLiteral("Actions"), mPurgeSmallClusters);
+    registerActionCommand(QStringLiteral("action.stripOutliers"),        QStringLiteral("Actions"), mStripOutliers);
+    registerActionCommand(QStringLiteral("action.stripWaveformOutliers"),QStringLiteral("Actions"), mStripWaveformOutliers);
+    registerActionCommand(QStringLiteral("action.setObliqueBasis"),      QStringLiteral("Actions"), mSetObliqueBasis);
+    registerActionCommand(QStringLiteral("action.markAsTemplate"),       QStringLiteral("Actions"), mMarkAsTemplate);
+    registerActionCommand(QStringLiteral("action.generateTemplate"),     QStringLiteral("Actions"), mGenerateTemplate);
+    registerActionCommand(QStringLiteral("action.updateDisplay"),        QStringLiteral("Actions"), mUpdateDisplay);
+    registerActionCommand(QStringLiteral("action.renumberClusters"),     QStringLiteral("Actions"), mRenumberClusters);
+    registerActionCommand(QStringLiteral("action.updateErrorMatrix"),    QStringLiteral("Actions"), mUpdateErrorMatrix);
+    registerActionCommand(QStringLiteral("action.watershed"),            QStringLiteral("Actions"), mWatershed);
+    registerActionCommand(QStringLiteral("action.realignSpikes"),        QStringLiteral("Actions"), mRealignSpikes);
+    registerActionCommand(QStringLiteral("action.partitionByTime"),      QStringLiteral("Actions"), mPartitionByTime);
+    registerActionCommand(QStringLiteral("action.pcaAlignAllClusters"),  QStringLiteral("Actions"), mPcaAlignAllClusters);
+    registerActionCommand(QStringLiteral("action.generateProbeDrift"),   QStringLiteral("Actions"), mGenerateProbeDrift);
+    registerActionCommand(QStringLiteral("action.applyDriftSiblings"),   QStringLiteral("Actions"), mApplyDriftSiblings);
+
+    registerActionCommand(QStringLiteral("sort.bySimilarity"),      QStringLiteral("Sort"), mReorderClustersBySimilarity);
+    registerActionCommand(QStringLiteral("sort.bySpikeCount"),      QStringLiteral("Sort"), mSortClustersBySpikeCount);
+    registerActionCommand(QStringLiteral("sort.byTime"),            QStringLiteral("Sort"), mSortClustersByTime);
+    registerActionCommand(QStringLiteral("sort.byContamination"),   QStringLiteral("Sort"), mSortClustersByContamination);
+    registerActionCommand(QStringLiteral("sort.bySnr"),             QStringLiteral("Sort"), mSortClustersBySnr);
+    registerActionCommand(QStringLiteral("sort.byAmplitude"),       QStringLiteral("Sort"), mSortClustersByAmplitude);
+    registerActionCommand(QStringLiteral("sort.byErrorPval"),       QStringLiteral("Sort"), mSortClustersByErrorPval);
+    registerActionCommand(QStringLiteral("sort.byResidualGated"),   QStringLiteral("Sort"), mSortByResidualGated);
+    registerActionCommand(QStringLiteral("sort.byWaveformNN"),      QStringLiteral("Sort"), mSortByWaveformNN);
+    registerActionCommand(QStringLiteral("sort.byWaveformSpectral"),QStringLiteral("Sort"), mSortByWaveformSpectral);
+
+    registerActionCommand(QStringLiteral("recluster.recluster"),    QStringLiteral("Recluster"), mReCluster);
+    registerActionCommand(QStringLiteral("recluster.median"),       QStringLiteral("Recluster"), mReclusterMedian);
+    registerActionCommand(QStringLiteral("recluster.channelVar"),   QStringLiteral("Recluster"), mReclusterChannelVar);
+    registerActionCommand(QStringLiteral("recluster.splitByKnn"),   QStringLiteral("Recluster"), mSplitByKnn);
+    registerActionCommand(QStringLiteral("recluster.stripByTemplate"), QStringLiteral("Recluster"), mStripByTemplate);
+    registerActionCommand(QStringLiteral("recluster.dipSplit"),     QStringLiteral("Recluster"), mDipSplit);
+
+    registerActionCommand(QStringLiteral("waveforms.timeFrame"),    QStringLiteral("Waveforms"), timeFrameMode);
+    registerActionCommand(QStringLiteral("waveforms.overlay"),      QStringLiteral("Waveforms"), overlayPresentation);
+    registerActionCommand(QStringLiteral("waveforms.meanStd"),      QStringLiteral("Waveforms"), meanPresentation);
+    registerActionCommand(QStringLiteral("waveforms.increaseAmplitude"), QStringLiteral("Waveforms"), mIncreaseAmplitude);
+    registerActionCommand(QStringLiteral("waveforms.decreaseAmplitude"), QStringLiteral("Waveforms"), mDecreaseAmplitude);
+
+    registerActionCommand(QStringLiteral("correlations.scaleByMax"),     QStringLiteral("Correlations"), scaleByMax);
+    registerActionCommand(QStringLiteral("correlations.scaleByAsymptote"), QStringLiteral("Correlations"), scaleByShouler);
+    registerActionCommand(QStringLiteral("correlations.uniformScale"),   QStringLiteral("Correlations"), noScale);
+    registerActionCommand(QStringLiteral("correlations.asymptoteLine"),  QStringLiteral("Correlations"), shoulderLine);
+    registerActionCommand(QStringLiteral("correlations.increaseAmplitude"), QStringLiteral("Correlations"), mIncreaseAmplitudeCorrelation);
+    registerActionCommand(QStringLiteral("correlations.decreaseAmplitude"), QStringLiteral("Correlations"), mDecreaseAmplitudeCorrelation);
+
+    registerActionCommand(QStringLiteral("trace.increaseChannelAmplitudes"), QStringLiteral("Traces"), mIncreaseChannelAmplitudes);
+    registerActionCommand(QStringLiteral("trace.decreaseChannelAmplitudes"), QStringLiteral("Traces"), mDecreaseChannelAmplitudes);
+    registerActionCommand(QStringLiteral("trace.nextSpike"),        QStringLiteral("Traces"), mNextSpike);
+    registerActionCommand(QStringLiteral("trace.previousSpike"),    QStringLiteral("Traces"), mPreviousSpike);
+    registerActionCommand(QStringLiteral("trace.showLabels"),       QStringLiteral("Traces"), showHideLabels);
+
+    registerActionCommand(QStringLiteral("hierarchy.mergeParents"),       QStringLiteral("Hierarchy"), mMergeParents);
+    registerActionCommand(QStringLiteral("hierarchy.promoteChild"),       QStringLiteral("Hierarchy"), mPromoteChild);
+    registerActionCommand(QStringLiteral("hierarchy.groupChildren"),      QStringLiteral("Hierarchy"), mGroupChildren);
+    registerActionCommand(QStringLiteral("hierarchy.dissolveParent"),     QStringLiteral("Hierarchy"), mDissolveParent);
+    registerActionCommand(QStringLiteral("hierarchy.dropChildNoise"),     QStringLiteral("Hierarchy"), mDropChildNoise);
+    registerActionCommand(QStringLiteral("hierarchy.compactIds"),         QStringLiteral("Hierarchy"), mCompactIds);
+    registerActionCommand(QStringLiteral("hierarchy.mergeOrphanChildren"),QStringLiteral("Hierarchy"), mMergeOrphanChildren);
+    registerActionCommand(QStringLiteral("hierarchy.repairNesting"),      QStringLiteral("Hierarchy"), mRepairNesting);
+    registerActionCommand(QStringLiteral("hierarchy.mergeChildren"),      QStringLiteral("Hierarchy"), mMergeChildren);
+    registerActionCommand(QStringLiteral("hierarchy.flatten"),            QStringLiteral("Hierarchy"), mMergeAllChildren);
+    registerActionCommand(QStringLiteral("hierarchy.undoChildEdit"),      QStringLiteral("Hierarchy"), mUndoChildEdit);
+    registerActionCommand(QStringLiteral("hierarchy.redoChildEdit"),      QStringLiteral("Hierarchy"), mRedoChildEdit);
+
+    registerActionCommand(QStringLiteral("display.hierarchicalSession"),  QStringLiteral("Display"), mHierarchicalView);
+    registerActionCommand(QStringLiteral("display.newCluster"),          QStringLiteral("Display"), newClusterDisplay);
+    registerActionCommand(QStringLiteral("display.newWaveform"),         QStringLiteral("Display"), newWaveformDisplay);
+    registerActionCommand(QStringLiteral("display.newCorrelation"),      QStringLiteral("Display"), newCrosscorrelationDisplay);
+    registerActionCommand(QStringLiteral("display.newOverview"),         QStringLiteral("Display"), newOverViewDisplay);
+    registerActionCommand(QStringLiteral("display.newGroupingAssistant"),QStringLiteral("Display"), newGroupingAssistantDisplay);
+    registerActionCommand(QStringLiteral("display.newTrace"),            QStringLiteral("Display"), mNewTraceDisplay);
+    registerActionCommand(QStringLiteral("display.newResidualMatrix"),   QStringLiteral("Display"), mNewResidualMatrix);
+    registerActionCommand(QStringLiteral("display.newDriftMatrix"),      QStringLiteral("Display"), mNewDriftMatrix);
+    registerActionCommand(QStringLiteral("display.newTemplateLibrary"),  QStringLiteral("Display"), mNewTemplateLibrary);
+    registerActionCommand(QStringLiteral("display.renameActive"),        QStringLiteral("Display"), mRenameActiveDisplay);
+    registerActionCommand(QStringLiteral("display.closeActive"),         QStringLiteral("Display"), mCloseActiveDisplay);
+
     // ── app-scope resolver-dispatched keys (not QActions) ─────────────────────
     // Bare letters with no QAction behind them, dispatched from eventFilter via
     // tryViewKeyCommand() (claimed at ShortcutOverride, acted at KeyPress).  They act
