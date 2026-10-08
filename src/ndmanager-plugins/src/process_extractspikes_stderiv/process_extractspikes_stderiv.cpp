@@ -802,6 +802,13 @@ static void help(const char *name)
          << "                  and merge it with the stderiv pass (refractory rule).\n"
          << "                  Each pass thresholds at factor*4 sigma of its own\n"
          << "                  signal (implies -T stderiv; refuses -T sdiff, -R).\n\n"
+         << "Clean-up (detection runs only):\n"
+         << "  -F N            reject a spike if any channel of its raw window has more\n"
+         << "                  than N identical consecutive samples (zero-filled gaps,\n"
+         << "                  stuck lines).  0 = off (default).\n"
+         << "  -U N            after re-centring, drop a spike within N samples of the\n"
+         << "                  previous kept spike of its group (0 = identical positions\n"
+         << "                  only).  -1 = off (default).\n\n"
          << "Re-centring (where each detection is placed before .res is written):\n"
          << "  -C stderiv|raw  stderiv (default, historical) = max summed |stderiv|\n"
          << "                  over the group; raw = max negative deflection of the\n"
@@ -849,6 +856,8 @@ void parseArgs(int argc, char **argv, arguments &a)
     a.recenterHalfWidth        = -1;               // historical window
     a.isThresholdNoiseProvided = false;
     a.hybrid                   = false;
+    a.flatRunMax               = 0;    // off
+    a.dedupSamples             = -1;   // off
     a.isDisableAbs             = true;
     a.isInputFileProvided      = false;
     a.isOutputBaseFileProvided = false;
@@ -876,6 +885,12 @@ void parseArgs(int argc, char **argv, arguments &a)
         case 'a': a.isDisableAbs = false; break;
         case 'R': a.useExistingRes = true; break;  // patch86
         case 'H': a.hybrid = true; break;
+        case 'F': a.flatRunMax = atoi(argv[++i]);
+                  if(a.flatRunMax < 0) { cerr << "error: -F must be >= 0." << endl; exit(1); }
+                  break;
+        case 'U': a.dedupSamples = atoi(argv[++i]);
+                  if(a.dedupSamples < -1) { cerr << "error: -U must be >= -1." << endl; exit(1); }
+                  break;
         case 'n': a.totalChannelNumber = atoi(argv[++i]);
                   a.isTotalChannelNumberProvided = true; break;
         case 'c': a.channelList = argv[++i];
@@ -1249,7 +1264,9 @@ int main(int argc, char *argv[])
              << "recenter     : " << (args.recenterMode == RECENTER_RAW ? "raw" : "stderiv")
              << " halfWidth " << args.recenterHalfWidth
              << (args.recenterHalfWidth < 0 ? " (historical window)" : "") << "\n"
-             << "hybrid       : " << (args.hybrid ? "yes (stderiv + raw arm)" : "no") << "\n";
+             << "hybrid       : " << (args.hybrid ? "yes (stderiv + raw arm)" : "no") << "\n"
+             << "flatRunMax   : " << args.flatRunMax << (args.flatRunMax ? "" : " (off)") << "\n"
+             << "dedup        : " << args.dedupSamples << (args.dedupSamples < 0 ? " (off)" : " samples") << "\n";
         if(args.useExistingRes) cout << "mode         : RE-EXTRACT (-R)\n";
         cout << "\n";
     }
@@ -1945,6 +1962,8 @@ int main(int argc, char *argv[])
     // Per-group rejection sets: origIdx values of waveforms to discard
     // (all-zero or constant channel after stderiv transform).
     vector<unordered_set<int>> rejectedOrigIdx(static_cast<size_t>(nbGroups));
+    vector<int> flatRunRejected(static_cast<size_t>(nbGroups), 0);   // -F
+    vector<int> dupRejected(static_cast<size_t>(nbGroups), 0);       // -U
 
     {
         const int rawLen = args.spikeLength * args.totalChannelNumber;
@@ -1982,6 +2001,19 @@ int main(int argc, char *argv[])
         // isCutoutOrFlat: returns true if any channel of the waveform is
         // all-zero (hardware dropout) or constant (stuck ADC line).
         // Layout: sdWav[t * nCG + ci]  (sample-major, compact group channels)
+        // hasFlatRun: true if any channel holds more than maxRun identical
+        // consecutive samples.  Layout: wav[t * nCG + ci] (raw .fil values).
+        auto hasFlatRun = [](const short *wav, int nCG, int nSamples, int maxRun) -> bool {
+            for (int ci = 0; ci < nCG; ci++) {
+                int run = 1;
+                for (int s = 1; s < nSamples; s++) {
+                    run = (wav[s * nCG + ci] == wav[(s - 1) * nCG + ci]) ? run + 1 : 1;
+                    if (run > maxRun) return true;
+                }
+            }
+            return false;
+        };
+
         auto isCutoutOrFlat = [](const short *wav, int nCG, int nSamples) -> bool {
             for (int ci = 0; ci < nCG; ci++) {
                 bool allZero = true;
@@ -2257,8 +2289,20 @@ int main(int argc, char *argv[])
             // Reject waveforms with all-zero or constant channels.
             // These arise from hardware dropouts or stuck ADC lines and
             // produce degenerate PCA features and corrupt cluster models.
-            if (isCutoutOrFlat(sdWav.data(), nCG, args.spikeLength)) {
+            // -F: also reject a RAW run of more than flatRunMax identical
+            // samples on any channel (a back-filled gap inside the window).
+            const bool flatRun = (args.flatRunMax > 0)
+                && hasFlatRun(rawWav.data(), nCG, args.spikeLength, args.flatRunMax);
+            if (flatRun || isCutoutOrFlat(sdWav.data(), nCG, args.spikeLength)) {
                 rejectedOrigIdx[static_cast<size_t>(grp)].insert(ev.origIdx);
+                if (flatRun) ++flatRunRejected[static_cast<size_t>(grp)];
+                // The streamed .spk must keep one row per spike (origIdx order):
+                // the compaction below reads it back that way and drops rejected
+                // rows.  Skipping the row here shifted every later spike by one.
+                if (!useInMemory[grp]) {
+                    const std::vector<short> zeros(static_cast<size_t>(args.spikeLength * nCG), 0);
+                    fwrite(zeros.data(), sizeof(short), zeros.size(), streamFiles[grp]);
+                }
                 continue;  // do not write this waveform
             }
 
@@ -2296,6 +2340,44 @@ int main(int argc, char *argv[])
         fclose(sf);
     }
 
+    // ── De-duplicate re-centred positions (-U) ─────────────────────────────
+    // Re-centring can move two detections onto the same (or nearly the same)
+    // sample.  Among the surviving spikes of a group, in time order, drop any
+    // whose re-centred position is within dedupSamples of the previous KEPT one;
+    // the earlier spike is kept.  Done here, before compaction, so the dropped
+    // spikes leave .res and .spk together like any other rejection.
+    if(args.dedupSamples >= 0) {
+        for(int grp = 0; grp < nbGroups; grp++) {
+            if(channelNb_grp[grp] == 0) continue;
+            auto &rej = rejectedOrigIdx[static_cast<size_t>(grp)];
+            const vector<int64_t> &ts = resTimestamps[grp];
+            vector<int> order;
+            order.reserve(ts.size());
+            for(int s = 0; s < (int)ts.size(); s++)
+                if(!rej.count(s)) order.push_back(s);
+            std::stable_sort(order.begin(), order.end(),
+                             [&ts](int x, int y){ return ts[(size_t)x] < ts[(size_t)y]; });
+            int64_t last = 0; bool have = false;
+            for(int s : order) {
+                if(have && ts[(size_t)s] - last <= (int64_t)args.dedupSamples) {
+                    rej.insert(s);
+                    ++dupRejected[static_cast<size_t>(grp)];
+                    continue;
+                }
+                last = ts[(size_t)s]; have = true;
+            }
+        }
+    }
+    for(int grp = 0; grp < nbGroups; grp++) {
+        if(channelNb_grp[grp] == 0) continue;
+        if(args.flatRunMax > 0 || args.dedupSamples >= 0)
+            cout << "  Group " << grp+1 << ": removed "
+                 << flatRunRejected[static_cast<size_t>(grp)] << " spike(s) with a flat run > "
+                 << args.flatRunMax << " samples, "
+                 << dupRejected[static_cast<size_t>(grp)] << " duplicate(s) within "
+                 << max(args.dedupSamples, 0) << " samples\n";
+    }
+
     // ── Compact .res and .spk: remove rejected (flat/cutout) spikes ─────────
     // For each group, filter resTimestamps to exclude rejected origIdx values,
     // rewrite .res, and compact the in-memory waveform buffer or rebuild .spk
@@ -2315,7 +2397,7 @@ int main(int argc, char *argv[])
             if(!rej.count(s)) newTs.push_back(resTimestamps[grp][static_cast<size_t>(s)]);
 
         cerr << "  Group " << grp+1 << ": removed " << rej.size()
-             << " flat/cutout spike(s) out of " << resTimestamps[grp].size() << "\n";
+             << " rejected spike(s) (flat/cutout/duplicate) out of " << resTimestamps[grp].size() << "\n";
         totalRejected += static_cast<int>(rej.size());
 
         // Rewrite .res
@@ -2465,7 +2547,7 @@ int main(int argc, char *argv[])
     }
 
     if(totalRejected > 0)
-        cerr << "  Total flat/cutout spikes removed: " << totalRejected << "\n";
+        cerr << "  Total rejected spikes removed: " << totalRejected << "\n";
 
     if(verbose) cout << "\n End of process_extractspikes_sdiff ----->>]\n\n";
 

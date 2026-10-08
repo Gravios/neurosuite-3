@@ -1037,6 +1037,13 @@ programs:
       # - name: detectArms
       #   value: hybrid
       #   status: Optional
+    # flatRunMax / dedupSamples (stderiv only): post-detection clean-up -- see help.
+      # - name: flatRunMax
+      #   value: 5
+      #   status: Optional
+      # - name: dedupSamples
+      #   value: 0
+      #   status: Optional
     help: |-
       Detect spikes on the high-pass filtered .fil file and write the shared
       spike-time .res files.  The engine also emits a .spk in passing (there is no
@@ -1119,6 +1126,19 @@ programs:
       Use with recenterHalfWidth below refractoryPeriod/2 so merged events cannot
       be re-centred onto one sample.  The .res keeps the method name (stderiv);
       the run log records the arms and per-arm counts.
+
+      # flatRunMax
+
+      stderiv engine only: reject a spike whose raw window has more than
+      flatRunMax identical consecutive samples on any channel (zero-filled gaps,
+      stuck lines).  0 or unset = off.  Check the data first -- short per-channel
+      zero runs at zero crossings make 5 remove 31% of spikes on the reference chunk.
+
+      # dedupSamples
+
+      stderiv engine only: after re-centring, drop a spike within dedupSamples
+      samples of the previous kept one (earlier kept).  Unset = 0 (identical
+      positions only); -1 = off.
 
   - name: ndm_extractspikes
     parameters:

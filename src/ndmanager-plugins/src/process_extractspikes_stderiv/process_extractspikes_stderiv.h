@@ -150,6 +150,17 @@ struct arguments {
     // kept event is dropped), then re-centred like any detection.
     bool hybrid;
 
+    // Post-detection clean-up (detection runs only; -R ignores both).
+    //  flatRunMax  (-F N): reject a spike if any channel of its RAW window holds a
+    //              run of more than N identical consecutive samples -- zero-filled
+    //              gaps (a back-filled DAC ring-buffer overrun) or a stuck line.
+    //              0 = off (default).
+    //  dedupSamples (-U N): after re-centring, drop a spike whose position is within
+    //              N samples of the previous kept spike of its group (0 = identical
+    //              positions only).  -1 = off (default).
+    int flatRunMax;
+    int dedupSamples;
+
     // Spatial derivative
     SdiffOrder sdiffOrder;
     bool       isSdiffOrderProvided;

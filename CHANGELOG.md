@@ -7,6 +7,23 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-10-08 — ndm_detectspikes (stderiv): flat-run rejection and duplicate removal
+
+**`flatRunMax`** (engine `-F`, default off) rejects a spike whose raw window has
+more than N identical consecutive samples on any channel (zero-filled gaps,
+stuck lines).  **`dedupSamples`** (engine `-U`, wrapper default 0) drops a spike
+re-centred onto (or within N samples of) the previous kept one — the historical
+re-centring window collapses a few pairs onto one sample.  Also fixed: when the
+waveforms are streamed to disk (larger than `memCapGB`), a rejected spike was
+skipped instead of written as a placeholder row, so the compaction that drops
+rejected rows by index shifted every later waveform by one (8,484 of 8,485
+misaligned under `-F` in a test; latent before, since the stderiv flat-channel
+test practically never fires).  Note: the reference `.fil` has frequent short
+per-channel zero runs at zero crossings; `flatRunMax: 5` removes 31% of spikes
+there — see `doc/ndmanager-plugins/commands/spike-detection.md`.
+
+---
+
 ## 2026-10-08 — custody: `.spk`/`.res` of a `_D` feature-space token resolve to its waveforms
 
 **Shared-artifact resolution.**  `_D<lag><dims>` names a feature space over the

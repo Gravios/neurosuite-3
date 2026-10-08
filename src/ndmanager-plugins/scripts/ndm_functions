@@ -1791,6 +1791,33 @@ ndm_process_spikes()
 			*) echo_error "detectArms must be 'stderiv' or 'hybrid' (got '$detectArms')"
 			   exit $GENERAL_ERROR ;;
 		esac
+
+		# Post-detection clean-up (stderiv engine).  flatRunMax N rejects spikes whose
+		# raw window has more than N identical consecutive samples on any channel
+		# (zero-filled gaps, stuck lines); unset/0 = off.  dedupSamples N drops a
+		# spike re-centred within N samples of the previous kept one; unset = 0
+		# (identical positions only), -1 = off.
+		flatRunMax=$(read_script_parameter $session flatRunMax)
+		dedupSamples=$(read_script_parameter $session dedupSamples)
+		cleanupArg=
+		if [ "$methodFamily" = stderiv ]; then
+			case "$flatRunMax" in
+				'') : ;;
+				*[!0-9]*) echo_error "flatRunMax must be a non-negative integer (got '$flatRunMax')"
+				          exit $GENERAL_ERROR ;;
+				*) [ "$flatRunMax" -gt 0 ] && cleanupArg="-F $flatRunMax" ;;
+			esac
+			dedupSamples=${dedupSamples:-0}
+			case "$dedupSamples" in
+				-1) : ;;
+				''|*[!0-9]*) echo_error "dedupSamples must be an integer >= -1 (got '$dedupSamples')"
+				             exit $GENERAL_ERROR ;;
+				*) cleanupArg="$cleanupArg -U $dedupSamples" ;;
+			esac
+		elif [ -n "$flatRunMax$dedupSamples" ]; then
+			echo_error "flatRunMax/dedupSamples apply to method stderiv only (method is '$method')"
+			exit $GENERAL_ERROR
+		fi
 	fi
 	memCapGB=$(read_script_parameter $session memCapGB)
 
@@ -1864,13 +1891,14 @@ ndm_process_spikes()
 				[ -n "$thresholdNoise" ] && echo_info " Threshold noise base       : $thresholdNoise"
 				[ -n "$recenterArg" ] && echo_info " Re-centring                : ${recenterMode:-stderiv} ${recenterHalfWidth:+(+-$recenterHalfWidth samples)}"
 				[ -n "$hybridArg" ] && echo_info " Detection arms             : stderiv + raw (hybrid)"
+				[ -n "$cleanupArg" ] && echo_info " Clean-up                   : ${flatRunMax:+flat runs > $flatRunMax samples rejected; }duplicates within ${dedupSamples} samples dropped"
 				echo_info " Detecting + extracting spike waveforms"
 				$binary \
 					-n $nChannels -c $electrodeList \
 					-w $samplesInWaveform -p $peakSample \
 					-r $refractoryPeriod -l $peakSearchLength \
 					-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
-					$thresholdNoiseArg $recenterArg $hybridArg \
+					$thresholdNoiseArg $recenterArg $hybridArg $cleanupArg \
 					$sdiffOrderArg $sdiffPairsArg \
 					$tmp
 			else

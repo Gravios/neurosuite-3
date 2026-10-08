@@ -53,6 +53,16 @@
     <value>stderiv</value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>flatRunMax</name>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>dedupSamples</name>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Detect spikes on a high-pass filtered .fil file and write the shared spike-time .res files.
 
@@ -131,6 +141,23 @@ derivative attenuates, but also admits more multi-unit activity.  Use with
 recenterHalfWidth below refractoryPeriod/2 so merged events cannot be
 re-centred onto one sample.  The .res keeps the method name; the run log
 records the arms and per-arm counts.
+
+# flatRunMax
+
+stderiv engine only.  Reject a detected spike if any channel of its raw window
+(nSamples around the re-centred position) holds more than flatRunMax identical
+consecutive samples -- zero-filled gaps (e.g. a back-filled DAC ring-buffer
+overrun) or a stuck line.  0 or unset = off.  Check the data first: a .fil whose
+channels carry short runs of exact zeros (the reference session has ~15 per second
+per channel, 6-17 samples long, at upward zero crossings) loses a large share of
+spikes at 5 (31% on the reference chunk).
+
+# dedupSamples
+
+stderiv engine only.  After re-centring, drop a spike positioned within
+dedupSamples samples of the previous kept spike of its group; the earlier one is
+kept.  Unset = 0 (identical positions only -- re-centring collapses a few pairs
+onto one sample); -1 = off.
 
 METHOD TOKENS
 

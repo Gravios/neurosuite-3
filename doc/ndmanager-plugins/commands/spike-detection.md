@@ -186,6 +186,34 @@ not a drop-in replacement, and expect more clusters to triage.
 The `.res` keeps the method name (`.res.stderiv.<group>`); which arms produced
 it is recorded in the run log only.
 
+### Post-detection clean-up (`flatRunMax`, `dedupSamples`; engine `-F`, `-U`)
+
+Applied in the detection run after re-centring, before the shared `.res` is
+written; rejected spikes leave `.res` and the (discarded) `.spk` together.
+
+| Setting | Default | Effect |
+|---|---|---|
+| `flatRunMax: N` | off | reject a spike if any channel of its **raw** window holds more than N identical consecutive samples — zero-filled gaps (a back-filled DAC ring-buffer overrun) or a stuck line |
+| `dedupSamples: N` | `0` | drop a spike re-centred within N samples of the previous kept spike of its group (earlier kept); `0` = identical positions only, `-1` = off |
+
+The historical re-centring window collapses a few detections onto one sample
+(7 of 12,324 on the reference chunk); `dedupSamples: 0` removes exactly those.
+
+**Check the data before enabling `flatRunMax`.**  On the reference chunk
+(group 6, 36–41 min) each channel carries short runs of exact zeros — about 15
+per second per channel, 6–17 samples long, at upward zero crossings (the trace
+reaches ≈ −100, reads 0 for 0.3–0.5 ms, then reappears at +100–170) — and only
+one 8-sample stretch is flat on all channels at once.  `flatRunMax: 5` removes
+31% of spikes there (3,795 of 12,324).  A back-filled ring-buffer gap zeroes
+every channel; a 1-s injected gap and a 40-sample stuck channel were both
+removed with no window touching either.
+
+Run-time log line:
+
+```
+  Group 6: removed 3795 spike(s) with a flat run > 5 samples, 0 duplicate(s) within 0 samples
+```
+
 
 ---
 
