@@ -21,6 +21,7 @@
 #include <klustersshared/channelcolors.h>
 #include "input/bindingregistry.h"   // registerInput: the primary-press trigger (seam)
 #include <QScopedValueRollback>       // re-entrancy guard for beginTracePress
+#include <cmath>                      // std::log / std::fabs for autoScaleAmplitude
 
 // include files for QT
 #include <QMap>
@@ -203,6 +204,15 @@ void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator){
     dataReady = true;
 
     updateWindow();
+
+    //On the very first data arrival (initial load), fit the amplitude to the data: the historical
+    //default gain is calibrated for a 0.4 mV theta LFP and leaves wide-band/spike traces clipped or
+    //invisible.  One-shot (guarded by amplitudeAutoScaled_) so later paging/panning — which re-enters
+    //this slot with a fresh buffer — never clobbers a gain the user has since set by hand.
+    if(!amplitudeAutoScaled_){
+        amplitudeAutoScaled_ = true;
+        autoScaleAmplitude();
+    }
 
     //The following code was done in case of threads, without thread the trace data arrive always last
     //No clusters or events selected
@@ -799,6 +809,51 @@ void TraceView::decreaseAllAmplitude(){
     //Everything has to be redraw
     invalidate(REDRAW);
     update();
+}
+
+void TraceView::autoScaleAmplitude(){
+    // One-shot amplitude auto-scale, run the first time trace data arrives (see dataAvailable).
+    // drawTraces anchors each channel's lane at its FIRST drawn sample and plots
+    // y = baseline - (value - firstSample) * channelFactor, so the on-screen excursion of a
+    // channel is |value - firstSample| * channelFactor.  Pick a single global gain so the largest
+    // such excursion of any shown channel fills about half a lane (traceVspace/2): a one-sided half
+    // lane can never overflow into a neighbour (lanes are traceVspace apart with a Yspace gap), and
+    // the user can take it from there with Ctrl+Shift+wheel.
+    if(data.nbOfRows() == 0) return;
+
+    const int nbRows = static_cast<int>(data.nbOfRows());
+    const int nbCols = static_cast<int>(data.nbOfColumns());
+
+    double maxDev = 0.0;
+    for(int ch = 0; ch < nbChannels; ++ch){
+        if(!shownChannels.contains(ch)) continue;
+        if(skippedChannels.contains(ch)) continue;
+        const int col = ch + 1;                       // data columns are 1-based, column = channel + 1
+        if(col > nbCols) continue;
+        const dataType baseline = data(1, col);
+        for(int row = 1; row <= nbRows; ++row){
+            const double dev = std::fabs(static_cast<double>(data(row, col) - baseline));
+            if(dev > maxDev) maxDev = dev;
+        }
+    }
+
+    // Flat data, nothing shown, or an unset alpha: leave the historical default gain untouched.
+    if(maxDev <= 0.0 || alpha <= 0.0f) return;
+
+    // factor = alpha * 0.75^gain; solve maxDev * factor == traceVspace/2 for the nearest integer
+    // gain.  0.75 is the same step the manual amplitude controls use, so the auto value lands on the
+    // very ladder the user keeps scrolling along.
+    const double targetFactor = (static_cast<double>(traceVspace) * 0.5) / maxDev;
+    const double gainF = std::log(targetFactor / static_cast<double>(alpha)) / std::log(0.75);
+    const int gain = qBound(-20, qRound(gainF), 20);
+
+    for(int i = 0; i < nbChannels; ++i){
+        gains[i] = gain;
+        channelFactors[i] = static_cast<float>(alpha * pow(0.75, gains[i]));
+    }
+
+    computeChannelDisplayGain();
+    // No invalidate/update here: the caller (dataAvailable) repaints right after this returns.
 }
 
 void TraceView::increaseSelectedChannelsAmplitude(const QList<int>& channelIds){

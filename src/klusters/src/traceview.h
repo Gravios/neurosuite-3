@@ -153,6 +153,12 @@ public:
   */
     void decreaseAllAmplitude();
 
+    /**Fits the amplitude of all channels to the loaded data (one-shot, run on the first data
+  * arrival).  Picks a single global gain so the largest excursion of any shown channel fills
+  * about half its lane; see the .cpp for the rationale.
+  */
+    void autoScaleAmplitude();
+
     /**Increases of the amplitude of the selected channels.
   * @param channelIds ids of the channels for which the amplitude has to be increased.
   */
@@ -796,6 +802,10 @@ private:
   * This factor is computed using the amplitude maximal of theta and the acquisition system gain.
   */
     float alpha;
+
+    /**True once the one-shot amplitude auto-scale (autoScaleAmplitude) has run, so paging/panning
+  * — which re-enters dataAvailable — does not keep overriding the user's manual amplitude.*/
+    bool amplitudeAutoScaled_ = false;
 
     /**List of the gains display next to each drawn channel.
   */
