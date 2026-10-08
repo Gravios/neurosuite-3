@@ -2567,11 +2567,36 @@ void TraceView::registerInput(input::BindingRegistry& reg)
     };
     reg.addCommand(zout);
 
+    // The normal-cursor spike pick (mode == NONE): a plain Left selects the nearest spike's
+    // cluster, Shift+Left marks/extends.  Its own Action command, split out of trace.press.
+    // Registered BEFORE trace.press so it wins the Left press when enabled, but AFTER trace.pan
+    // so a Ctrl+Left in NONE still pans (pan's AtLeast+Ctrl chord claims it first; this
+    // any-modifier Left never sees a Ctrl+Left).  enabled only in NONE, so every other mode
+    // falls through to trace.press.
+    input::Command pick;
+    pick.id       = QStringLiteral("trace.pickSpike");
+    pick.scopeId  = QStringLiteral("view.trace");
+    pick.label    = tr("Pick spike under cursor");
+    pick.category = tr("Traces");
+    pick.kind     = input::Kind::Action;
+    pick.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    pick.enabled  = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        return tv && tv->mode == NONE;
+    };
+    pick.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv && c.event) tv->tracePickSpike(static_cast<QMouseEvent*>(c.event));
+    };
+    reg.addCommand(pick);
+
     // The primary press trigger: Left with any modifiers (AtLeast + no required modifier) —
     // the old handler's whole body was Left-gated and read Shift / Ctrl *inside* (SELECT
     // mode), so the chord must fire for any-modifier Left.  Gesture kind: invoke() BEGINS the
-    // press; the mode-switched body — channel select / measure / time pick / event select /
-    // add-event / draw-line, with its drag continuations in move/release — is beginTracePress.
+    // press; the mode-switched body — channel select / measure / event select / add-event /
+    // draw-line, with its drag continuations in move/release — is beginTracePress.  (The NONE
+    // normal-cursor pick is now the separate trace.pickSpike command, above.)
     // enabled = !inTracePress_ so the body's own base-zoom delegation (which re-dispatches)
     // does not re-resolve this same command.
     input::Command press;
@@ -2764,6 +2789,20 @@ TraceView::TraceClickGeometry TraceView::resolveClickGeometry(const QPoint& view
     return g;
 }
 
+void TraceView::tracePickSpike(QMouseEvent* event){
+    // mode == NONE spike pick, split out of beginTracePress (trace.pickSpike command).  Resolve
+    // the click geometry, then — only when the click is in the trace area, not the id/gain
+    // legend margin — select the nearest spike's cluster (Shift marks/extends).  The two shared
+    // side effects the old inline branch inherited from the press preamble/postamble
+    // (lastClickOrdinate, the previousDragOrdinate reset) are preserved.
+    const TraceClickGeometry g = resolveClickGeometry(event->position().toPoint());
+    lastClickOrdinate = g.current.y();
+    const int threshold = multiColumns ? (X0 + g.groupIndex * Xshift) : 0;
+    if(g.x >= threshold)
+        normalCursorSpikePick(g.sampleIndex, (event->modifiers() & Qt::ShiftModifier) != 0);
+    previousDragOrdinate = 0;
+}
+
 void TraceView::beginTracePress(QMouseEvent* event){
     // Re-entrancy guard: the body below delegates to BaseFrame::mousePressEvent for ZOOM /
     // MEASURE, which dispatches again — this keeps that inner dispatch from re-resolving this
@@ -2781,7 +2820,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
         int deselectedEventIndex = 0;
         if(!selectedEventPosition.isEmpty()) deselectedEventIndex = selectedEventPosition[0];
 
-        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE || mode == NONE){
+        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
             const TraceClickGeometry g = resolveClickGeometry(event->position().toPoint());
             const QPoint current = g.current;
             lastClickOrdinate = current.y();
@@ -2833,15 +2872,6 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     previousDragAbscissa = 0;
                     startEventDragging = true;
                 }//end mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)
-                else if(mode == NONE){
-                    // Normal-cursor spike pick (Overview redesign step 6): a plain Left click
-                    // selects the nearest spike's cluster, Shift+Left marks (extends).  Only acts
-                    // in the trace area; a click in the id/label margin does nothing (but still
-                    // does NOT fall through to channel selection).  The body + diagnostic are in
-                    // normalCursorSpikePick.
-                    if(x >= (X0 + groupIndex * Xshift))
-                        normalCursorSpikePick(sampleIndex, (event->modifiers() & Qt::ShiftModifier) != 0);
-                }
                 else{
                     QList<int> groupIds = shownGroupsChannels.keys();
                     int groupId = groupIds[static_cast<int>(groupIndex)];
@@ -3007,13 +3037,6 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     previousDragAbscissa = 0;
                     startEventDragging = true;
                 }
-                else if(mode == NONE){
-                    // Normal-cursor spike pick (Overview redesign step 6) — single-column
-                    // layout.  Plain Left selects the nearest spike's cluster, Shift+Left marks
-                    // (extends).  Only in the trace area; never falls through to channel select.
-                    if(x >= 0)
-                        normalCursorSpikePick(sampleIndex, (event->modifiers() & Qt::ShiftModifier) != 0);
-                }
                 else{
                     QList<int> groupIds = shownGroupsChannels.keys();
 
@@ -3157,7 +3180,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     drawTimeLine(lastClickAbscissa,true);
             }
             previousDragOrdinate = 0;
-        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE || mode == NONE
+        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE
     }//Qt::LeftButton
 }
 

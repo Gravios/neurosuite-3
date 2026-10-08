@@ -591,6 +591,12 @@ protected:
      *  BaseFrame::mousePressEvent call — the base-zoom delegation for ZOOM/MEASURE — from
      *  re-resolving this same command.  The drag continuations stay in move/release. */
     void beginTracePress(QMouseEvent* event);
+    /** The normal-cursor spike pick (mode == NONE), split out of beginTracePress as the
+     *  trace.pickSpike Action command: resolve the click geometry and, when the click is in the
+     *  trace area (not the id/gain legend margin), select the nearest spike's cluster (Shift
+     *  marks/extends) via normalCursorSpikePick.  The nearest-spike search + selection run in
+     *  KlustersView. */
+    void tracePickSpike(QMouseEvent* event);
     /** Begin a Ctrl-drag pan at viewport point @p pos (arm the ctrlPan* state, set the
      *  closed-hand cursor).  The drag body is in mouseMoveEvent and the disarm in
      *  mouseReleaseEvent — the plan's seam.  Invoked by the trace.pan Gesture command. */
