@@ -1165,6 +1165,14 @@ programs:
       # - name: memCapGB
       #   value: 2
       #   status: Optional
+    # flatRunMax / dedupSamples: post-extraction filter on the new .spk (any method);
+    # dropped spikes leave the shared .res and every aligned per-spike file -- see help.
+      # - name: flatRunMax
+      #   value: 5
+      #   status: Optional
+      # - name: dedupSamples
+      #   value: 0
+      #   status: Optional
     help: |-
       Extract spike waveforms (creates .spk files) at previously-detected spike
       times.  Requires the shared .res written by ndm_detectspikes; it never detects
@@ -1172,6 +1180,26 @@ programs:
       extraction engine (method) may differ from the detection engine, and this step
       may be run several times with different methods/orders, each reusing the same
       .res.  Extraction needs no threshold/window parameters.
+
+      POST-EXTRACTION FILTER
+
+      # flatRunMax
+
+      Drop spikes whose freshly extracted waveform -- in its own transform domain --
+      has more than flatRunMax identical consecutive samples on any channel (zero
+      fill, stuck lines, or a transform that maps a flat stretch to zeros).  0 or
+      unset = off.
+
+      # dedupSamples
+
+      Drop a spike within dedupSamples samples of the previous kept one (earlier
+      kept).  Unset = 0 (identical positions only); -1 = off.
+
+      The .res is SHARED by every waveform variant of the group, so dropped spikes
+      leave the shared .res and every other per-spike file of the group still at the
+      original count (.spk/.fet/.clu/.clc of any method, post-group stages) with the
+      same mask; a file at another count is reported and left alone.  The original
+      spike times are kept once as <res>.prefilter.
 
       OPTIONAL PARAMETERS
 

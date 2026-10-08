@@ -8,6 +8,16 @@
     <value>fil</value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>flatRunMax</name>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>dedupSamples</name>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Extract spike waveforms at previously-detected spike times (this creates .spk files).
 
@@ -23,6 +33,26 @@ Extension of the data file read for extraction, without the leading dot (default
 fil, i.e. &lt;session&gt;.fil). Set it to an alternative, externally-processed source
 (e.g. car.fil or filtered.dat) to extract from that file instead. The source
 must be high-pass filtered like the usual .fil; ndm_extractspikes does not filter it.
+
+# flatRunMax
+
+Post-extraction filter: drop spikes whose freshly extracted waveform -- in its own
+transform domain (standard, sdiff or stderiv) -- has more than flatRunMax identical
+consecutive samples on any channel: zero fill, stuck lines, or a transform that maps
+a flat stretch to zeros.  0 or unset = off.
+
+# dedupSamples
+
+Post-extraction filter: drop a spike within dedupSamples samples of the previous kept
+one (the earlier is kept).  Unset = 0 (identical positions only); -1 = off.
+
+Because the .res is shared by every waveform variant of the group, dropped spikes
+leave the shared .res AND every other per-spike file of the group still at the
+original count -- .spk/.fet/.clu/.clc of any method and post-group stages -- with the
+same mask, so the set stays row-aligned.  A file at the filtered count is left as is;
+a file at any other count is a different spike set and is reported, not touched.
+Symlinked aliases are filtered once.  The original spike times are kept once as
+&lt;res&gt;.prefilter.  Run by process_spikefilter.py.
 
 METHOD TOKENS
 

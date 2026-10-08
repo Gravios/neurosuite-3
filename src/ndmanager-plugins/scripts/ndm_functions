@@ -1845,6 +1845,37 @@ ndm_process_spikes()
 	# ndm_resolve_any locates a group's shared .res (this method first, then any
 	# other method, then untagged).  Copied into the temp slot and left untouched.
 	if [ "$mode" = extract ]; then
+		# Post-extraction filter (process_spikefilter.py): flatRunMax N drops spikes
+		# whose freshly extracted waveform -- in its own transform domain -- has more
+		# than N identical consecutive samples on any channel; dedupSamples N drops a
+		# spike within N samples of the previous kept one.  Dropped rows leave the
+		# SHARED .res and every other per-spike file of the group still at the old
+		# count, so the set stays aligned.  Unset: flatRunMax off, dedupSamples 0
+		# (identical positions only); dedupSamples -1 = off.
+		xFlatRunMax=$(read_script_parameter $session flatRunMax)
+		xDedupSamples=$(read_script_parameter $session dedupSamples)
+		case "$xFlatRunMax" in
+			''|*[!0-9]*) [ -n "$xFlatRunMax" ] && { echo_error "flatRunMax must be a non-negative integer (got '$xFlatRunMax')"; exit $GENERAL_ERROR; }
+			             xFlatRunMax=0 ;;
+		esac
+		xDedupSamples=${xDedupSamples:-0}
+		case "$xDedupSamples" in
+			-1) : ;;
+			''|*[!0-9]*) echo_error "dedupSamples must be an integer >= -1 (got '$xDedupSamples')"
+			             exit $GENERAL_ERROR ;;
+		esac
+		xFilter=0
+		{ [ "$xFlatRunMax" -gt 0 ] || [ "$xDedupSamples" -ge 0 ]; } && xFilter=1
+		if [ "$xFilter" = 1 ]; then
+			check_commands_installed python3
+			SPIKEFILTER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/process_spikefilter.py"
+			[ -f "$SPIKEFILTER" ] || SPIKEFILTER="process_spikefilter.py"
+			xMsg="flat runs > $xFlatRunMax samples"; [ "$xFlatRunMax" -gt 0 ] || xMsg="flat runs off"
+			if [ "$xDedupSamples" -ge 0 ]; then xMsg="$xMsg; duplicates within $xDedupSamples samples"
+			else xMsg="$xMsg; duplicates off"; fi
+			echo_info " Post-extraction filter     : $xMsg"
+		fi
+		declare -a sharedRes=()
 		declare -i i=0
 		for group in $electrodeGroups; do
 			r=$(ndm_resolve_any "$session" res "$group" "$method")
@@ -1855,6 +1886,7 @@ ndm_process_spikes()
 			fi
 			i=$i+1
 			cp "$r" $tmp.res.$i
+			sharedRes[$i]="$r"
 		done
 		echo_info " Re-extracting waveforms at existing spike times (-R)"
 	fi
@@ -1926,7 +1958,16 @@ ndm_process_spikes()
 		else
 			# Reused the shared .res unchanged; produce only the waveform file.
 			rm -f $tmp.res.$i
-			mv $tmp.spk.$i "$(ndm_method_path "$session" spk "$group" "$method")"
+			spkOut="$(ndm_method_path "$session" spk "$group" "$method")"
+			mv $tmp.spk.$i "$spkOut"
+			if [ "$xFilter" = 1 ]; then
+				nGroupCh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel" | wc -w)
+				python3 "$SPIKEFILTER" --base "$session" --group "$group" \
+					--spk "$spkOut" --res "${sharedRes[$i]}" \
+					--nsamples "$samplesInWaveform" --nchannels "$nGroupCh" \
+					--flat-run "$xFlatRunMax" --dedup "$xDedupSamples"
+				check_command_status process_spikefilter.py
+			fi
 		fi
 	done
 }

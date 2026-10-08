@@ -217,6 +217,34 @@ Run-time log line:
 
 ---
 
+## `ndm_extractspikes` post-extraction filter (`flatRunMax`, `dedupSamples`)
+
+The same two filters as detection, applied to each freshly extracted `.spk` in
+its own transform domain (`process_spikefilter.py`, any method), set in the
+`ndm_extractspikes` node:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `flatRunMax: N` | off | drop spikes whose waveform has more than N identical consecutive samples on any channel |
+| `dedupSamples: N` | `0` | drop a spike within N samples of the previous kept one; `-1` = off |
+
+The `.res` is shared by every waveform variant, so a filtered extraction can
+never just rewrite its own `.spk`: one keep-mask is applied to the shared `.res`
+and to every per-spike file of the group still at the original count (other
+`.spk` variants, `.fet`, `.clu`, `.clc`, post-group stages).  Files already at
+the filtered count are left; files at any other count are reported and left
+untouched; a symlinked alias is filtered once.  The original spike times are kept
+as `<res>.prefilter`.  Re-running finds nothing to drop.
+
+On the reference chunk with an injected 1-s zero gap (group 6, 12,269
+detections kept with duplicates), extracting `stderiv_C5` with `flatRunMax: 5`
+dropped 30 flat-run spikes and 7 duplicates: the shared `.res`, `.spk.standard`,
+`.spk.stderiv_C5`, `.fet` and `.clu` all went to 12,232 rows, and both `.spk`
+files were byte-identical to fresh re-extractions at the new `.res`.  The
+transform domain matters: the per-channel zero runs that make detection-time
+`flatRunMax: 5` (raw window) drop 31% leave the stderiv waveform non-flat, so
+extraction-time filtering of a stderiv `.spk` drops far fewer.
+
 ## `ndm_spikecleaner` — drop flat / railed waveforms
 
 Examines every `spikeDetection` group and removes spike waveforms where

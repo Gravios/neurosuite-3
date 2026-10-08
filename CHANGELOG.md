@@ -7,6 +7,22 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-10-08 — ndm_extractspikes: post-extraction flat-run / duplicate filter
+
+**`flatRunMax`, `dedupSamples` in the `ndm_extractspikes` node** (new
+`process_spikefilter.py`, any method).  Each freshly extracted `.spk` is checked
+in its own transform domain: more than N identical consecutive samples on any
+channel, or a position within N samples of the previous kept spike (default 0 =
+identical positions; -1 off).  The `.res` is shared by every waveform variant, so
+the keep-mask is applied to the shared `.res` and every per-spike file of the
+group still at the original count (`.spk`/`.fet`/`.clu`/`.clc` of any method,
+post-group stages); other counts are reported and left; symlinked aliases are
+filtered once; `<res>.prefilter` keeps the original times.  Verified end to end:
+all filtered files equal the original rows under the mask and both `.spk`
+variants are byte-identical to fresh re-extractions at the new `.res`.
+
+---
+
 ## 2026-10-08 — ndm_detectspikes (stderiv): flat-run rejection and duplicate removal
 
 **`flatRunMax`** (engine `-F`, default off) rejects a spike whose raw window has
