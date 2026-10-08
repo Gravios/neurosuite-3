@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "driftmatrixview.h"
+#include "input/inputdispatcher.h"   // input::dispatch — the matrix.drift.pan press trigger
 #include <QDebug>
 #include <QStringList>
 #include "driftshiftthread.h"
@@ -853,12 +854,16 @@ void DriftMatrixView::setViewState(double newZoom, double px, double py)
 void DriftMatrixView::mousePressEvent(QMouseEvent* e)
 {
     emit viewInteracted();
-    if ((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)) {
-        nav_.begin(e->position().toPoint(), vp_);   // no cursor change here (unchanged)
-        e->accept();
-        return;
-    }
+    // Ctrl+Left pan arm is a registry Gesture (matrix.drift.pan), resolved here and armed via
+    // matrixBeginPan(); the drag/commit stay in move/release (the seam).  A plain press
+    // resolves nothing and falls through to the base, as before.
+    if (input::dispatch(this, e)) { e->accept(); return; }
     QWidget::mousePressEvent(e);
+}
+
+void DriftMatrixView::matrixBeginPan(const QPoint& pressPos)
+{
+    nav_.begin(pressPos, vp_);   // Drift sets no cursor on pan (unchanged)
 }
 
 void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)

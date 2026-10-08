@@ -1,4 +1,5 @@
 #include "residualmatrixview.h"
+#include "input/inputdispatcher.h"   // input::dispatch — the matrix.residual.pan press trigger
 #include <QDebug>
 #include <QStringList>
 #include "matrixgrid.h"
@@ -482,13 +483,16 @@ void ResidualMatrixView::drawClusterIds(QPainter& p)
 void ResidualMatrixView::mousePressEvent(QMouseEvent* e)
 {
     emit viewInteracted();
-    if ((e->buttons() & Qt::LeftButton) &&
-        (e->modifiers() & Qt::ControlModifier)) {
-        nav_.begin(e->position().toPoint(), vp_);
-        setCursor(Qt::ClosedHandCursor);
-        e->accept();
-        return;
-    }
+    // Ctrl+Left pan arm is a registry Gesture (matrix.residual.pan), resolved here and armed
+    // via matrixBeginPan(); the drag/commit stay in move/release (the seam).  A plain press
+    // resolves nothing and (as before) does nothing — selection happens on release.
+    if (input::dispatch(this, e)) { e->accept(); return; }
+}
+
+void ResidualMatrixView::matrixBeginPan(const QPoint& pressPos)
+{
+    nav_.begin(pressPos, vp_);
+    setCursor(Qt::ClosedHandCursor);
 }
 
 void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)

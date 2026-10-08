@@ -110,6 +110,10 @@ public:
      *  means and repaints. */
     void setTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
 
+    /**Arms a Ctrl+Left pan at @p pressPos (viewport coords); invoked by the input
+  * registry's matrix.template.pan Gesture.  Drag/commit stay in the mouse handlers.*/
+    void matrixBeginPan(const QPoint& pressPos);
+
     // Stale-marker slots wired from KlustersDoc signals
     void clustersGrouped(QList<int>& groupedClusters, int newClusterId);
     void clustersDeleted(QList<int>& deletedClusters, int destinationCluster);

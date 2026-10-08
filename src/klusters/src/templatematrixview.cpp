@@ -1,4 +1,5 @@
 #include "templatematrixview.h"
+#include "input/inputdispatcher.h"   // input::dispatch — the matrix.template.pan press trigger
 #include <QDebug>
 #include <QStringList>
 #include "matrixgrid.h"
@@ -906,17 +907,17 @@ void TemplateMatrixView::drawClusterIds(QPainter& p)
 
 void TemplateMatrixView::mousePressEvent(QMouseEvent* e)
 {
-    if ((e->buttons() & Qt::LeftButton) &&
-        (e->modifiers() & Qt::ControlModifier)) {
-        // Arm the pan; it engages only once the drag passes the threshold, so
-        // Ctrl + quick-click still reaches the add-clusters path on release.
-        nav_.begin(e->position().toPoint(), vp_);
-        setCursor(Qt::ClosedHandCursor);
-        e->accept();
-        return;
-    }
-    // Pass through to base.  Note: the previous header had this as an
-    // empty {} override, so no behaviour change for non-Ctrl clicks.
+    // Ctrl+Left pan arm is a registry Gesture (matrix.template.pan), resolved here and armed
+    // via matrixBeginPan(); the drag/commit stay in move/release (the seam).  A plain press
+    // resolves nothing and (as before, when this was an empty {} override) does nothing —
+    // the cell selection happens on release.
+    if (input::dispatch(this, e)) { e->accept(); return; }
+}
+
+void TemplateMatrixView::matrixBeginPan(const QPoint& pressPos)
+{
+    nav_.begin(pressPos, vp_);
+    setCursor(Qt::ClosedHandCursor);
 }
 
 void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)

@@ -23,6 +23,7 @@
 #include "input/bindingregistry.h"     // app-scope command mirror (input-remapping plan P0c)
 #include "input/inputdispatcher.h"     // input::registry() — the one app-wide registry
 #include "input/chord.h"               // QKeySequence <-> Chord bridge
+#include <QMouseEvent>                 // registerMatrixNav: the pan command's press position
 #include "mergerecommendview.h"
 #include "clusterview.h"
 #include "waveformview.h"               // WaveformView::registerInput (channel-pick seam)
@@ -2304,6 +2305,39 @@ void KlustersApp::registerActionCommand(const QString& id, const QString& catego
     appActionCommands_.insert(id, action);
 }
 
+namespace {
+// The four curation matrices (error/template/residual/drift) share no base class — by
+// design (matrixgrid.h / matrixviewport.h: ErrorMatrixView is a ViewWidget, the others
+// are QWidgets), so their Ctrl+Left pan is registered through this template rather than a
+// common view scope.  Each view type gets its own ViewType scope + one `<scope>.pan`
+// Gesture (Ctrl+Left, AtLeast+Ctrl — Ctrl held, extras tolerated, the old bitwise press
+// test); invoke() only ARMS the pan via matrixBeginPan(), the drag body staying in each
+// view's mouseMoveEvent and the swallow/commit in mouseReleaseEvent (the seam).  Separate
+// scopes (never simultaneously active — one focused view) so the identical Ctrl+Left chord
+// is not flagged as an in-scope conflict.
+template<class V>
+void registerMatrixNav(input::BindingRegistry& reg, const QString& scopeId, const QString& label)
+{
+    reg.addScope({ scopeId, input::Layer::ViewType,
+        [](const input::Ctx& c){ return qobject_cast<V*>(c.view) != nullptr; } });
+
+    input::Command pan;
+    pan.id       = scopeId + QStringLiteral(".pan");
+    pan.scopeId  = scopeId;
+    pan.label    = label;
+    pan.category = QObject::tr("Navigation");
+    pan.kind     = input::Kind::Gesture;
+    pan.defaultChord = input::Chord::button(Qt::LeftButton, Qt::ControlModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    pan.invoke   = [](const input::Ctx& c){
+        auto* v = qobject_cast<V*>(c.view);
+        if (v && c.event)
+            v->matrixBeginPan(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(pan);
+}
+} // namespace
+
 void KlustersApp::registerInputBindings()
 {
     input::BindingRegistry& reg = input::registry();
@@ -2557,6 +2591,13 @@ void KlustersApp::registerInputBindings()
 
     // TraceView's primary mouse press (co-located registration, once).
     TraceView::registerInput(reg);
+
+    // The four curation matrices' Ctrl+Left pan — one ViewType scope + pan Gesture each,
+    // via the shared template above (they have no common base to host a single scope).
+    registerMatrixNav<ErrorMatrixView>   (reg, QStringLiteral("view.matrix.error"),    tr("Pan the error matrix"));
+    registerMatrixNav<TemplateMatrixView>(reg, QStringLiteral("view.matrix.template"), tr("Pan the template matrix"));
+    registerMatrixNav<ResidualMatrixView>(reg, QStringLiteral("view.matrix.residual"), tr("Pan the residual matrix"));
+    registerMatrixNav<DriftMatrixView>   (reg, QStringLiteral("view.matrix.drift"),    tr("Pan the drift matrix"));
 
     // Apply the persisted override diffs (Configuration read them from QSettings at
     // startup).  Only ids we actually registered and that parse to a valid chord.

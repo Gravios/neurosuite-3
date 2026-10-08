@@ -117,6 +117,10 @@ public:
      * has no spikes in the node's time window.  Recomputed on every slider step.*/
     void setTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
 
+    /**Arms a Ctrl+Left pan at @p pressPos (viewport coords); invoked by the input
+  * registry's matrix.drift.pan Gesture.  Drag/commit stay in the mouse handlers.*/
+    void matrixBeginPan(const QPoint& pressPos);
+
 Q_SIGNALS:
     void viewInteracted();
     void matrixUpdated();

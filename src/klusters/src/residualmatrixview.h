@@ -97,6 +97,10 @@ public:
      * per-cluster means the thread already built (carried in its event).*/
     void setTemplateColumns(const std::vector<MatrixTemplateCol>& cols);
 
+    /**Arms a Ctrl+Left pan at @p pressPos (viewport coords); invoked by the input
+  * registry's matrix.residual.pan Gesture.  Drag/commit stay in the mouse handlers.*/
+    void matrixBeginPan(const QPoint& pressPos);
+
 Q_SIGNALS:
     void viewInteracted();
     void matrixUpdated();

@@ -76,6 +76,10 @@ public:
     /**Signals that the widget is about to be deleted.*/
     void willBeKilled() override;
 
+    /**Arms a Ctrl+Left pan at @p pressPos (viewport coords).  Public because the input
+  * registry's matrix.error.pan Gesture invokes it; the drag/commit stay in the handlers.*/
+    void matrixBeginPan(const QPoint& pressPos);
+
     // ── Read-only accessors used by KlustersApp::slotReorderClustersBySimilarity ──
     // The probability matrix is built by ErrorMatrixThread and stored as
     // a row-major Array<double> indexed 1..nClusters (cluster ID for
@@ -340,6 +344,11 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
+
+    // This view fully handles its own primary press (dispatchInput -> matrix.error.pan,
+    // else nothing), so the shared view.frame rubber-band-zoom scope stays out of its
+    // resolver — matching ClusterView / WaveformView / TraceView.
+    bool managesOwnPrimaryPress() const override { return true; }
 
 private:
     /**Color map use to represent the probabilities of the error matrix.*/

@@ -976,15 +976,18 @@ void ErrorMatrixView::initializeColorMap(){
 }
 
 void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
-    // Ctrl + Left arms a pan.  We don't engage until the cursor moves past the
-    // drag threshold, so a quick Ctrl-click still reaches the Ctrl-add
-    // selection path in mouseReleaseEvent.  A plain press does nothing here;
-    // selection happens on release (as it did with the previous empty press).
-    if((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
-        nav_.begin(e->position().toPoint(), vp_);
-        setCursor(Qt::ClosedHandCursor);
-        e->accept();
-    }
+    // Ctrl+Left arms a pan — now a registry Gesture (matrix.error.pan), resolved here and
+    // armed via matrixBeginPan(); the drag body is in mouseMoveEvent and the swallow/commit
+    // in mouseReleaseEvent (the seam).  A plain press resolves nothing and does what it
+    // always did — nothing here; the cell selection happens on release.  This view manages
+    // its own primary press (managesOwnPrimaryPress()), so the base rubber-band-zoom scope
+    // never sees the press.
+    if(dispatchInput(e)){ e->accept(); return; }
+}
+
+void ErrorMatrixView::matrixBeginPan(const QPoint& pressPos){
+    nav_.begin(pressPos, vp_);
+    setCursor(Qt::ClosedHandCursor);
 }
 
 void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
