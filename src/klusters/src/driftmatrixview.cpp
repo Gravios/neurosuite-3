@@ -854,10 +854,7 @@ void DriftMatrixView::mousePressEvent(QMouseEvent* e)
 {
     emit viewInteracted();
     if ((e->button() == Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)) {
-        panAnchorPx = e->position().toPoint();
-        panAnchorX  = vp_.panX;
-        panAnchorY  = vp_.panY;
-        panning     = false;   // becomes true once past the drag threshold
+        nav_.begin(e->position().toPoint(), vp_);   // no cursor change here (unchanged)
         e->accept();
         return;
     }
@@ -866,12 +863,13 @@ void DriftMatrixView::mousePressEvent(QMouseEvent* e)
 
 void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (panning) {
-        panning = false;
+    if (nav_.isPanning()) {
+        nav_.end(e->position().toPoint());
         setCursor(Qt::ArrowCursor);
         e->accept();
         return;
     }
+    nav_.end(e->position().toPoint());
     setCursor(Qt::ArrowCursor);
 
     // A plain click selects the clicked cell's pair -- row cluster A and column
@@ -912,11 +910,7 @@ void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)
 void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
 {
     if ((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)) {
-        const QPoint d = e->position().toPoint() - panAnchorPx;
-        if (panning || d.manhattanLength() >= panDragThreshold) {
-            panning = true;
-            vp_.panX = panAnchorX + d.x();
-            vp_.panY = panAnchorY + d.y();
+        if (nav_.drag(e->position().toPoint(), vp_, panDragThreshold)) {
             update();
             emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
         }

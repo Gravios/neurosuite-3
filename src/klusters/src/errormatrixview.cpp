@@ -981,11 +981,7 @@ void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
     // selection path in mouseReleaseEvent.  A plain press does nothing here;
     // selection happens on release (as it did with the previous empty press).
     if((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
-        panArmed    = true;
-        panning     = false;
-        panAnchorPx = e->position().toPoint();
-        panAnchorX  = vp_.panX;
-        panAnchorY  = vp_.panY;
+        nav_.begin(e->position().toPoint(), vp_);
         setCursor(Qt::ClosedHandCursor);
         e->accept();
     }
@@ -994,13 +990,8 @@ void ErrorMatrixView::mousePressEvent(QMouseEvent* e){
 void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
     // Pan path (pixel model): Ctrl + Left-drag adds the pixel delta to panX/panY,
     // exactly like TemplateMatrixView.  effMatrixTopLeft() applies it.
-    if(panArmed && (e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
-        const QPoint d = e->position().toPoint() - panAnchorPx;
-        if(!panning && (qAbs(d.x()) + qAbs(d.y()) >= panDragThreshold))
-            panning = true;
-        if(panning){
-            vp_.panX = panAnchorX + d.x();
-            vp_.panY = panAnchorY + d.y();
+    if(nav_.isArmed() && (e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ControlModifier)){
+        if(nav_.drag(e->position().toPoint(), vp_, panDragThreshold)){
             // Suppress the overlay while the drag is live; settle timer restores it.
             suppressPairBoxes = true;
             pairBoxSettleTimer->start(pairBoxSettleMs);
@@ -1028,10 +1019,8 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
     // stationary Ctrl-click (no movement) falls through to the Ctrl-add multi-
     // select path below.  (Wheel-zoom never reaches this handler, so it never
     // changes the selection either.)
-    if(panArmed){
-        const int moved = (e->position().toPoint() - panAnchorPx).manhattanLength();
-        panArmed = false;
-        panning  = false;
+    if(nav_.isArmed()){
+        const int moved = nav_.end(e->position().toPoint());
         unsetCursor();
         if(moved >= selectionSuppressMove){
             e->accept();

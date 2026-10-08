@@ -40,6 +40,7 @@
 #include "klustersjobpool.h"    // KlustersJobToken (shared with the jobs)
 #include "matrixtemplatestrip.h" // MatrixTemplateStrip — shared marked-node template region (§11.5)
 #include "matrixviewport.h"      // MatrixViewport — shared pan/zoom state + per-scope swap
+#include "matrixnavigator.h"     // MatrixNavigator — shared Ctrl+Left-drag pan state machine
 
 #include <memory>
 
@@ -169,10 +170,7 @@ private:
     // effZoomMin(), so it clamps to the plain zoomMin.
     MatrixViewport vp_;
     void swapViewStateForScope(bool scopeActive) { vp_.swapForScope(scopeActive); }
-    bool    panning{false};
-    QPoint  panAnchorPx;
-    double  panAnchorX{0.0};
-    double  panAnchorY{0.0};
+    MatrixNavigator nav_;       // Ctrl+Left-drag pan state (shared helper)
     static constexpr double zoomMin{0.5};
     static constexpr double zoomMax{20.0};
     static constexpr double zoomStep{1.15};

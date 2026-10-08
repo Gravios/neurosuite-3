@@ -908,11 +908,9 @@ void TemplateMatrixView::mousePressEvent(QMouseEvent* e)
 {
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
-        panAnchorPx = e->position().toPoint();
-        panAnchorX  = vp_.panX;
-        panAnchorY  = vp_.panY;
-        // Do NOT set panning yet — wait for move past threshold.
-        // This keeps Ctrl + quick-click → add-clusters working.
+        // Arm the pan; it engages only once the drag passes the threshold, so
+        // Ctrl + quick-click still reaches the add-clusters path on release.
+        nav_.begin(e->position().toPoint(), vp_);
         setCursor(Qt::ClosedHandCursor);
         e->accept();
         return;
@@ -927,14 +925,7 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
     // with Ctrl and we've passed the drag threshold.
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
-        const QPoint d = e->position().toPoint() - panAnchorPx;
-        if (!panning &&
-            (std::abs(d.x()) + std::abs(d.y()) >= panDragThreshold)) {
-            panning = true;
-        }
-        if (panning) {
-            vp_.panX = panAnchorX + d.x();
-            vp_.panY = panAnchorY + d.y();
+        if (nav_.drag(e->position().toPoint(), vp_, panDragThreshold)) {
             update();
             emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
             e->accept();
@@ -969,15 +960,16 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
     // patch80 — if the user just finished a pan drag, swallow the click
     // and reset cursor.  The original click logic (cluster selection /
     // add-clusters) is only reachable when panning was never set.
-    if (panning) {
-        panning = false;
+    if (nav_.isPanning()) {
+        nav_.end(e->position().toPoint());
         unsetCursor();
         e->accept();
         return;
     }
     // If Ctrl was held but we never crossed the drag threshold, the
     // cursor is still ClosedHand — restore it before running the
-    // original click logic.
+    // original click logic.  end() also clears the armed flag.
+    nav_.end(e->position().toPoint());
     if (e->modifiers() & Qt::ControlModifier) {
         unsetCursor();
     }

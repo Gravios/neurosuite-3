@@ -484,9 +484,7 @@ void ResidualMatrixView::mousePressEvent(QMouseEvent* e)
     emit viewInteracted();
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
-        panAnchorPx = e->position().toPoint();
-        panAnchorX  = vp_.panX;
-        panAnchorY  = vp_.panY;
+        nav_.begin(e->position().toPoint(), vp_);
         setCursor(Qt::ClosedHandCursor);
         e->accept();
         return;
@@ -497,12 +495,7 @@ void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)
 {
     if ((e->buttons() & Qt::LeftButton) &&
         (e->modifiers() & Qt::ControlModifier)) {
-        const QPoint d = e->position().toPoint() - panAnchorPx;
-        if (panning ||
-            d.manhattanLength() >= panDragThreshold) {
-            panning = true;
-            vp_.panX = panAnchorX + d.x();
-            vp_.panY = panAnchorY + d.y();
+        if (nav_.drag(e->position().toPoint(), vp_, panDragThreshold)) {
             update();
             emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
         }
@@ -530,12 +523,13 @@ void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)
 
 void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (panning) {
-        panning = false;
+    if (nav_.isPanning()) {
+        nav_.end(e->position().toPoint());
         setCursor(Qt::ArrowCursor);
         e->accept();
         return;
     }
+    nav_.end(e->position().toPoint());
     setCursor(Qt::ArrowCursor);
 
     // A plain click selects the clicked cell's pair -- row cluster A and column
