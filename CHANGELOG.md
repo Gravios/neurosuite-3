@@ -7,6 +7,20 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-10-08 — ndm_pca: a `_D` run adds the lag space to existing features
+
+`ndm_pca --method stderiv_C5_D34` skipped every group whose ordinary
+`.fet.stderiv_C5.N` already existed, so the lag space could not be added to a
+session that had its ordinary features.  A `_D` run now writes only the missing
+outputs: with the ordinary `.fet` present it refits, keeps the stored
+`.fet`/`.pca` (the refit copy goes to a scratch directory), and writes
+`.fet`/`.pca.<token>_D<lag><dims>.N`; it warns when the refit basis differs from
+the kept `.pca`.  With the lag `.fet` present it writes the ordinary pair only;
+with both present the group is skipped as before.  Runs without a `_D` suffix
+are unchanged.
+
+---
+
 ## 2026-10-08 — ndm_extractspikes: post-extraction flat-run / duplicate filter
 
 **`flatRunMax`, `dedupSamples` in the `ndm_extractspikes` node** (new

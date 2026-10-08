@@ -192,9 +192,25 @@ once()
 	# Check input files
 	inputs_missing "$session.$param_ext" "$spkfile" "$resfile" && exit $INPUTS_MISSING
 
-	# Check output files (process_pca derives .pca.<method>.N from each .fet name)
-	outputs_exist "$fetout" && exit $OUTPUTS_EXIST
-	[ -n "$lagfet" ] && outputs_exist "$lagfet" && exit $OUTPUTS_EXIST
+	# Check output files (process_pca derives .pca.<method>.N from each .fet name).
+	# A _D run has two outputs; skip only when BOTH exist, and never overwrite one
+	# that does: an existing ordinary .fet/.pca is kept and the refit's copy goes to
+	# a scratch directory, so a lag space can be added to a session that already has
+	# its ordinary features.
+	local baseOut=$fetout scratch=
+	if [ -z "$lagfet" ]; then
+		outputs_exist "$fetout" && exit $OUTPUTS_EXIST
+	elif [ -f "$lagfet" ]; then
+		if [ -f "$fetout" ]; then
+			outputs_exist "$fetout" "$lagfet" && exit $OUTPUTS_EXIST
+		fi
+		echo_info "Group $electrodeGroup: $(basename $lagfet) exists; writing the ordinary features only."
+		lagfet=
+	elif [ -f "$fetout" ]; then
+		scratch=$(mktemp -d /tmp/ndm_pca_${session##*/}_${electrodeGroup}_XXXXXX)
+		baseOut=$scratch/$(basename "$fetout")
+		echo_info "Group $electrodeGroup: $(basename $fetout) exists and is kept; writing the lag space $(basename $lagfet) only."
+	fi
 
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 	# // Read Parameters
@@ -310,14 +326,25 @@ once()
 	local lagArgs=
 	[ -n "$lagfet" ] && lagArgs="--lag $featLag --lag-pc2 $featPC2 --lag-fet $lagfet.tmp"
 
-	process_pca -g $electrodeGroup -f $fetout.tmp -n $nPca -w $waveformLength -d $nFeatures --pca-method $pcaMethod $lagArgs $options ${@:2} $pcaInput
+	process_pca -g $electrodeGroup -f $baseOut.tmp -n $nPca -w $waveformLength -d $nFeatures --pca-method $pcaMethod $lagArgs $options ${@:2} $pcaInput
 	check_command_status process_pca
 	[ -n "$tmpspk" ] && rm -f "$tmpspk"
 
-	# Merge binary PCA features with binary .res timestamps into final binary .fet
-	process_mergefeatures $fetout.tmp $resfile $fetout
-	check_command_status process_mergefeatures
-	rm $fetout.tmp
+	if [ -n "$scratch" ]; then
+		# The ordinary outputs were kept.  The lag basis is derived from THIS fit, so
+		# say whether it reproduces the stored ordinary basis (same settings) or not.
+		local pcaKept=${fetout%.fet.*}.pca.${fetout##*.fet.}
+		local pcaNew=$scratch/$(basename "$pcaKept")
+		if [ -f "$pcaKept" ] && [ -f "$pcaNew" ] && ! cmp -s "$pcaKept" "$pcaNew"; then
+			echo_warning "Group $electrodeGroup: the refit basis differs from the kept $(basename $pcaKept) (settings changed since it was written); the lag space follows the current settings."
+		fi
+		rm -rf "$scratch"
+	else
+		# Merge binary PCA features with binary .res timestamps into final binary .fet
+		process_mergefeatures $fetout.tmp $resfile $fetout
+		check_command_status process_mergefeatures
+		rm $fetout.tmp
+	fi
 	if [ -n "$lagfet" ]; then
 		process_mergefeatures $lagfet.tmp $resfile $lagfet
 		check_command_status process_mergefeatures

@@ -52,6 +52,12 @@ match fiber-kit's `lag_basis`/`lag_project` applied to the same base basis exact
 `before`/`after` must leave `lag` samples on each side of the window inside the
 waveform, otherwise the run is refused rather than writing a non-lagged file under a
 `_D` name.  To view the lag `.fet` in Klusters set the group's `nFeatures` to `dims`.
+Existing outputs are never overwritten, and only the missing ones are written: with
+`.fet.stderiv_C5.N` already present, a `stderiv_C5_D34` run refits, keeps the
+stored ordinary `.fet`/`.pca`, and writes only the lag pair — warning if the refit
+basis differs from the kept `.pca` (settings changed since it was written; the lag
+space then follows the current settings).  The group is skipped only when both
+`.fet` files exist.
 No `.spk.<token>_D34` copy or link is needed: Klusters resolves the `.spk` of a `_D`
 token to its waveform token's file (see [naming](../formats/naming.md#resolution-rules)).
 
