@@ -1025,6 +1025,14 @@ programs:
       # - name: thresholdNoise
       #   value: stderiv
       #   status: Optional
+    # recenterMode / recenterHalfWidth (stderiv only): where each detection is
+    # placed before .res is written -- see help.
+      # - name: recenterMode
+      #   value: raw
+      #   status: Optional
+      # - name: recenterHalfWidth
+      #   value: 8
+      #   status: Optional
     help: |-
       Detect spikes on the high-pass filtered .fil file and write the shared
       spike-time .res files.  The engine also emits a .spk in passing (there is no
@@ -1074,6 +1082,26 @@ programs:
       is exactly thresholdFactor * 4 sigma; re-pick thresholdFactor when switching
       (~1.33 reproduces the historical 0.8).  The run log prints the effective
       threshold in detection-signal sigma for either choice.
+
+      # recenterMode
+
+      stderiv engine only: where each detection is placed before the shared .res
+      is written.  stderiv (default, historical) = sample of maximum summed
+      |stderiv| over the group.  raw = sample of maximum negative deflection of
+      the group-referenced raw signal (x - group mean), summed over the group in
+      per-channel noise units -- the physical trough; stable for units whose
+      stderiv waveform has several near-equal extrema.  Applied to every spike
+      (mixing anchors within a unit splits it into two alignments).  With raw,
+      the stderiv waveforms extracted later carry their extremum a few samples
+      before peakSampleIndex.
+
+      # recenterHalfWidth
+
+      stderiv engine only: search +-recenterHalfWidth samples around each
+      detection (0 = no re-centring).  Unset keeps the historical window
+      [-(peakSampleIndex-1), peakSearchLength-peakSampleIndex], which can move a
+      detection onto a neighbouring spike.  recenterMode raw with 8 was the best
+      tested setting on the reference session.
 
   - name: ndm_extractspikes
     parameters:

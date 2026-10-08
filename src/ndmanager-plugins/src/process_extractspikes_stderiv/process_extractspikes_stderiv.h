@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <vector>
 #include <sys/types.h>
 
 // Spatial-derivative orders
@@ -80,6 +81,25 @@ enum ThresholdNoise {
     THRNOISE_STDERIV = 1
 };
 
+// Where each detection's final position (written to .res) is placed (-C/-W).
+//
+//  RECENTER_STDERIV  historical: the sample of maximum summed |stderiv| over the
+//                    group.  With the historical window ([-timeBefore,
+//                    peakLength-1-timeBefore] around the detection) this can jump
+//                    onto a neighbouring spike, and units whose stderiv waveform
+//                    has several near-equal extrema are centred inconsistently.
+//  RECENTER_RAW      the sample of maximum negative deflection of the
+//                    group-referenced raw signal (x - group mean), summed over the
+//                    group in per-channel noise units -- the physical spike
+//                    trough.  Stable for multi-extremum stderiv waveforms.
+//                    Applies to EVERY spike: mixing anchors within a unit splits
+//                    it into two alignments (raw trough and stderiv peak sit a
+//                    fixed, unit-specific lag apart).
+enum RecenterMode {
+    RECENTER_STDERIV = 0,  // default (historical)
+    RECENTER_RAW     = 1
+};
+
 struct arguments {
     // I/O
     char *inputFileName;
@@ -114,6 +134,13 @@ struct arguments {
     bool   isThreshSizeBytesProvided;
     ThresholdNoise thresholdNoise;
 
+    // Re-centring of each detection before .res is written (-C / -W).
+    // recenterHalfWidth < 0 keeps the historical asymmetric search window
+    // [-timeBefore, peakLength-1-timeBefore]; >= 0 searches +-halfWidth samples
+    // around the detection (0 = no re-centring).
+    RecenterMode recenterMode;
+    int          recenterHalfWidth;
+
     // Spatial derivative
     SdiffOrder sdiffOrder;
     bool       isSdiffOrderProvided;
@@ -137,7 +164,8 @@ void computeSdiffThresholds(FILE *fp, off_t startByte, off_t sizeByte,
                              int **channelList, int *channelNb_group,
                              SdiffOrder order, double factor,
                              ThresholdNoise noise,
-                             double **outThresholds);
+                             double **outThresholds,
+                             std::vector<std::vector<double>> *outCarSigma = nullptr);
 
 int  getChannelsFromArg(int *channelNb_group, int **channelList,
                          const arguments &args);

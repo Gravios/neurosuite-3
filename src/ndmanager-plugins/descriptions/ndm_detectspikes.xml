@@ -38,6 +38,16 @@
     <value>sdiff</value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>recenterMode</name>
+    <value>stderiv</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>recenterHalfWidth</name>
+    <value></value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Detect spikes on a high-pass filtered .fil file and write the shared spike-time .res files.
 
@@ -85,6 +95,24 @@ sigma of the detection signal (about 1.65x on the reference session: 0.8 gives
 exactly thresholdFactor * 4 sigma, the same convention as ndm_reextractspikes_stderiv.
 Re-pick thresholdFactor when switching (~1.33 reproduces the historical 0.8).
 The run log prints the effective threshold in detection-signal sigma either way.
+
+# recenterMode
+
+stderiv engine only: where each detection is placed before the shared .res is
+written.  stderiv (default, historical) = sample of maximum summed |stderiv| over
+the group.  raw = sample of maximum negative deflection of the group-referenced
+raw signal (x - group mean), summed over the group in per-channel noise units --
+the physical trough; stable for units whose stderiv waveform has several
+near-equal extrema.  Applied to every spike: mixing anchors within a unit splits
+it into two alignments.  With raw, stderiv waveforms extracted later carry their
+extremum a few samples before peakSampleIndex.
+
+# recenterHalfWidth
+
+stderiv engine only: search +-recenterHalfWidth samples around each detection
+(0 = no re-centring).  Empty keeps the historical window, which can move a
+detection by more than 10 samples onto a neighbouring spike.  recenterMode raw
+with recenterHalfWidth 8 was the best tested setting on the reference session.
 
 METHOD TOKENS
 

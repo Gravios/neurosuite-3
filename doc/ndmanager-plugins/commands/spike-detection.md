@@ -88,6 +88,56 @@ Group 6 noise base: sdiff (historical); effective threshold 5.13..5.49 sigma of 
   - {name: thresholdFactor, value: 1.33,   status: Mandatory}
 ```
 
+### Re-centring (`recenterMode`, `recenterHalfWidth`; engine `-C`, `-W`)
+
+After detection, each spike is moved to a refined position and that position
+is what the shared `.res` records (`ndm_extractspikes -R` later extracts exactly
+there; it does not re-centre).  Before 2026-10-08 the engine persisted the
+refined positions only when re-centring reordered a group's spikes or a spike
+was rejected, so older `.res` files may hold un-re-centred detection times for
+some groups.  Both settings live in the `ndm_detectspikes`
+node and apply to the stderiv engine only.
+
+| Setting | Meaning |
+|---|---|
+| `recenterMode: stderiv` (default) | sample of maximum Σ\|stderiv\| over the group |
+| `recenterMode: raw` | sample of maximum negative deflection of the group-referenced raw signal (x − group mean), Σ over the group in per-channel noise units — the physical trough |
+| `recenterHalfWidth: N` | search ±N samples around the detection; `0` = no re-centring |
+| `recenterHalfWidth` unset | historical window `[−(peakSampleIndex−1), peakSearchLength−peakSampleIndex]` |
+
+The historical window is wide (−20…+19 samples at `peakSearchLength` 40): on
+the reference chunk it moves 9.8% of detections by more than 5 samples and 3.4%
+by more than 10 — far enough to land on a neighbouring spike — and collapses a
+few pairs onto one time.  `raw` re-centring helps units whose stderiv waveform
+has several near-equal extrema, where the stderiv maximum is picked
+inconsistently from spike to spike.
+
+Reference chunk (group 6, 36–41 min, all-pairs detection, 21 units; per-unit
+median of ‖w − template‖²/‖template‖², lower is tighter):
+
+| Setting | raw space | stderiv space | unit 26 (stderiv) | unit 28 | unit 17 |
+|---|---|---|---|---|---|
+| historical | 0.187 | 0.485 | 15.2 | 1.19 | 0.49 |
+| stderiv, ±5 | 0.187 | 0.485 | 9.4 | 1.97 | 0.49 |
+| raw, ±5 | 0.195 | 0.531 | 1.64 | 0.62 | 0.66 |
+| raw, ±8 | 0.175 | 0.489 | 1.66 | 0.48 | 0.66 |
+
+The typical unit barely changes; the gain is concentrated in multi-extremum
+units, at a small cost for some others (unit 17).  `raw` with ±8 was the best
+tested setting.  Apply one mode to every spike — switching per spike (raw only
+where the stderiv peak looks ambiguous) was tested and loses most of the gain,
+because the raw trough and the stderiv peak sit a fixed, unit-specific lag
+apart and mixing them splits a unit into two alignments.  Under `raw`, stderiv
+waveforms carry their extremum a few samples before `peakSampleIndex` (the
+steepest fall precedes the trough).
+
+```yaml
+- name: ndm_detectspikes
+  parameters:
+  - {name: recenterMode,      value: raw, status: Optional}
+  - {name: recenterHalfWidth, value: 8,   status: Optional}
+```
+
 
 ---
 

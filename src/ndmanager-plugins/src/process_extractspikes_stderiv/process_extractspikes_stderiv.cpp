@@ -269,6 +269,9 @@ static void fill_sdiff_buffer(const short *raw,
 // rounded + int16-clamped sdiff, then a clamped first difference).  `noise`
 // picks which one sets the threshold; both are reported so a run states the
 // effective threshold on the detection signal either way.
+// When outCarSigma is given, the robust sigma (median|x|/0.6745) of the
+// group-referenced raw signal x[c] - mean_group(x) is also returned per channel
+// (used by raw re-centring).
 void computeSdiffThresholds(FILE          *fp,
                              off_t          startByte,
                              off_t          sizeByte,
@@ -279,7 +282,8 @@ void computeSdiffThresholds(FILE          *fp,
                              SdiffOrder     order,
                              double         factor,
                              ThresholdNoise noise,
-                             double       **outThresholds)
+                             double       **outThresholds,
+                             vector<vector<double>> *outCarSigma)
 {
     if(verbose)
         cout << "  [sdiff thresholds] reading "
@@ -305,9 +309,17 @@ void computeSdiffThresholds(FILE          *fp,
     vector<vector<vector<double>>> absBuf(nGroups);   // |sdiff|   (historical base)
     vector<vector<vector<float>>>  absTd(nGroups);    // |stderiv| (detection signal)
     vector<vector<int>>            prevSd(nGroups);   // last rounded sdiff, per channel
+    vector<vector<vector<float>>>  absCar(nGroups);   // |x - group mean| (if asked)
+    const bool wantCar = (outCarSigma != nullptr);
+    if(wantCar) outCarSigma->assign((size_t)nGroups, vector<double>());
     for(int g = 0; g < nGroups; g++) {
         absBuf[g].resize(channelNb_group[g]);
         absTd[g].resize(channelNb_group[g]);
+        if(wantCar) {
+            absCar[g].resize(channelNb_group[g]);
+            for(int ci = 0; ci < channelNb_group[g]; ci++)
+                absCar[g][ci].reserve((size_t)(nSamples / stride + 1));
+        }
         prevSd[g].assign(channelNb_group[g], 0);
         for(int ci = 0; ci < channelNb_group[g]; ci++) {
             absBuf[g][ci].reserve((size_t)(nSamples / stride + 1));
@@ -336,6 +348,13 @@ void computeSdiffThresholds(FILE          *fp,
             for(int g = 0; g < nGroups; g++) {
                 const int nCG    = channelNb_group[g];
                 const int *cList = channelList[g];
+                if(wantCar && keep && nCG > 0) {
+                    double mean = 0.0;
+                    for(int ci = 0; ci < nCG; ci++) mean += rec[cList[ci]];
+                    mean /= nCG;
+                    for(int ci = 0; ci < nCG; ci++)
+                        absCar[g][ci].push_back((float)fabs(rec[cList[ci]] - mean));
+                }
                 for(int ci = 0; ci < nCG; ci++) {
                     const double v = computeSDiff(rec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g));
                     const int    sdi = clamp16(lround(v));
@@ -387,6 +406,13 @@ void computeSdiffThresholds(FILE          *fp,
                      << "  median|stderiv|=" << medTd
                      << "  thr=" << outThresholds[g][ci]
                      << "  (= " << k << " sigma of the detection signal)" << endl;
+        }
+        if(wantCar) {
+            (*outCarSigma)[g].assign(channelNb_group[g], 1.0);
+            for(int ci = 0; ci < channelNb_group[g]; ci++) {
+                const double s = medianOf(absCar[g][ci]) / 0.6745;
+                (*outCarSigma)[g][ci] = (s > 0) ? s : 1.0;
+            }
         }
         if(channelNb_group[g] > 0)
             cout << "Group " << g+1 << " noise base: "
@@ -735,6 +761,14 @@ static void help(const char *name)
          << "                  whose noise is smaller -- the factor is effectively\n"
          << "                  inflated.  stderiv = the detection signal itself, so\n"
          << "                  factor*4 is the threshold in its noise units.\n\n"
+         << "Re-centring (where each detection is placed before .res is written):\n"
+         << "  -C stderiv|raw  stderiv (default, historical) = max summed |stderiv|\n"
+         << "                  over the group; raw = max negative deflection of the\n"
+         << "                  group-referenced raw signal (x - group mean), summed in\n"
+         << "                  per-channel noise units -- the physical trough.\n"
+         << "  -W halfWidth    search +-halfWidth samples around the detection\n"
+         << "                  (0 = no re-centring).  Unset = historical window\n"
+         << "                  [-(p-1), l-p] samples.\n\n"
          << "Spatial derivative:\n"
          << "  -d order        0=none  1=first-diff  2=Laplacian  3=allpairs (default)\n"
          << "  -P g1:g2:...    custom per-group difference patterns.  Each group is\n"
@@ -770,6 +804,8 @@ void parseArgs(int argc, char **argv, arguments &a)
     a.threshSizeBytes          = 0;
     a.sdiffOrder               = SDIFF_ALLPAIRS; // default
     a.thresholdNoise           = THRNOISE_SDIFF; // historical default
+    a.recenterMode             = RECENTER_STDERIV; // historical default
+    a.recenterHalfWidth        = -1;               // historical window
     a.isDisableAbs             = true;
     a.isInputFileProvided      = false;
     a.isOutputBaseFileProvided = false;
@@ -822,6 +858,20 @@ void parseArgs(int argc, char **argv, arguments &a)
                         exit(1);
                     }
                     break; }
+        case 'C': { const string v = argv[++i];
+                    if(v == "stderiv")  a.recenterMode = RECENTER_STDERIV;
+                    else if(v == "raw") a.recenterMode = RECENTER_RAW;
+                    else {
+                        cerr << "error: -C must be 'stderiv' or 'raw'." << endl;
+                        exit(1);
+                    }
+                    break; }
+        case 'W': { const int w = atoi(argv[++i]);
+                    if(w < 0) {
+                        cerr << "error: -W must be >= 0." << endl;
+                        exit(1);
+                    }
+                    a.recenterHalfWidth = w; break; }
         case 'd': { int o = atoi(argv[++i]);
                     if(o < 0 || o > 3) {
                         cerr << "error: -d must be 0, 1, 2, or 3." << endl;
@@ -1133,7 +1183,10 @@ int main(int argc, char *argv[])
              << "threshSize   : " << args.threshSizeBytes     << " B\n"
              << "sdiffOrder   : " << (int)args.sdiffOrder     << "\n"
              << "noiseBase    : " << (args.thresholdNoise == THRNOISE_STDERIV
-                                      ? "stderiv" : "sdiff") << "\n";
+                                      ? "stderiv" : "sdiff") << "\n"
+             << "recenter     : " << (args.recenterMode == RECENTER_RAW ? "raw" : "stderiv")
+             << " halfWidth " << args.recenterHalfWidth
+             << (args.recenterHalfWidth < 0 ? " (historical window)" : "") << "\n";
         if(args.useExistingRes) cout << "mode         : RE-EXTRACT (-R)\n";
         cout << "\n";
     }
@@ -1160,6 +1213,9 @@ int main(int argc, char *argv[])
     }
 
     // ── per-group thresholds (noise base chosen by -T) ────────────────────
+    // carSigma: per-channel sigma of the group-referenced raw signal, measured
+    // only when raw re-centring needs it.
+    vector<vector<double>> carSigma;
     double **thresList   = new double*[MAX_CHANNO];
     int     *thresNb_grp = new int[MAX_CHANNO];
     for(int i = 0; i < MAX_CHANNO; i++) {
@@ -1173,7 +1229,8 @@ int main(int argc, char *argv[])
                             args.totalChannelNumber,
                             nbGroups, channelList, channelNb_grp,
                             args.sdiffOrder, args.thresholdFactor,
-                            args.thresholdNoise, thresList);
+                            args.thresholdNoise, thresList,
+                            args.recenterMode == RECENTER_RAW ? &carSigma : nullptr);
 
     for(int g = 0; g < nbGroups; g++) thresNb_grp[g] = channelNb_grp[g];
 
@@ -1751,7 +1808,13 @@ int main(int argc, char *argv[])
         // extraction window AND the ±halfSearch offset:  frameLen = spikeLength
         // + 2*halfSearch.  The final extraction copies spikeLength samples
         // starting at the refined peak offset within the wide frame.
-        const int halfSearch = args.peakLength / 2;
+        //
+        // -W sets the search half-width explicitly (then halfSearch == -W, a
+        // symmetric +-W search); unset keeps the historical peakLength/2 frame
+        // margin and asymmetric window.
+        const bool histWindow = (args.recenterHalfWidth < 0);
+        const int halfSearch = histWindow ? args.peakLength / 2
+                                          : args.recenterHalfWidth;
         const int wideSpikeLen = args.spikeLength + 2 * halfSearch;
         const int wideRawLen   = wideSpikeLen * args.totalChannelNumber;
         vector<short> wideFrame(wideRawLen);
@@ -1814,16 +1877,25 @@ int main(int argc, char *argv[])
             // Searching raw amplitudes would land on the raw voltage peak
             // (the inflection point of the derivative), which is near-zero
             // in the stderiv representation and produces flat waveforms.
+            //
+            // -C raw instead centres on the group-referenced raw trough (see
+            // RecenterMode).  The stderiv waveform extracted later at that time
+            // then carries its extremum a few samples BEFORE peakSampleIndex
+            // (the steepest fall precedes the trough) -- a fixed per-unit lag,
+            // inside any PCA window that spans the spike.
             int refinedPeakInWide = halfSearch + args.timeBeforeSpike; // nominal
             double bestAmp = 0.0;
-            const int searchStart = halfSearch;
-            const int searchEnd   = std::min(halfSearch + args.peakLength - 1,
-                                             wideSpikeLen - 1);
+            const int searchStart = histWindow ? halfSearch
+                                               : refinedPeakInWide - halfSearch;
+            const int searchEnd   = histWindow ? std::min(halfSearch + args.peakLength - 1,
+                                                          wideSpikeLen - 1)
+                                               : refinedPeakInWide + halfSearch;
+            const bool rawRecenter = (args.recenterMode == RECENTER_RAW);
             // Compute stderiv amplitude at each candidate time sample.
             // sdiff[t-1] is needed for the temporal difference; carry it
             // across the search window using a running prev buffer.
             std::vector<double> sdPrevSearch(static_cast<size_t>(nCG), 0.0);
-            if(searchStart > 0) {
+            if(!rawRecenter && searchStart > 0) {
                 // Prime sdPrev with the spatial derivative one sample before
                 // the search window so the first temporal diff is correct.
                 const short *frPrev = wideFrame.data()
@@ -1880,6 +1952,20 @@ int main(int argc, char *argv[])
                 double row[64] = {};
                 for(int ci=0; ci<nCG; ci++) row[ci] = fr[cL[ci]];
                 double amp = 0.0;
+                if(rawRecenter) {
+                    // Group-referenced raw deflection in per-channel noise
+                    // units; negative-going only unless -a (abs) was given.
+                    double mean = 0.0;
+                    for(int ci = 0; ci < nCG; ci++) mean += row[ci];
+                    mean /= nCG;
+                    const vector<double> &sg = carSigma[static_cast<size_t>(grp)];
+                    for(int ci = 0; ci < nCG; ci++) {
+                        const double d = (row[ci] - mean) / sg[static_cast<size_t>(ci)];
+                        amp += args.isDisableAbs ? (d < 0.0 ? -d : 0.0) : std::abs(d);
+                    }
+                    if(amp > bestAmp) { bestAmp = amp; refinedPeakInWide = s; }
+                    continue;
+                }
                 for(int ci = 0; ci < nCG; ci++) {
                     double sd = 0.0;
                     switch(args.sdiffOrder) {
@@ -2195,6 +2281,27 @@ int main(int argc, char *argv[])
                 }
             }
         }
+    }
+
+    // ── Persist the re-centred timestamps ─────────────────────────────────
+    // The two passes above rewrite .res only when a spike was rejected or the
+    // re-centring reordered spikes.  With a narrow window (-W) neither need
+    // happen, and .res would keep the PASS-1 detection times while every spike
+    // was re-centred -- so the final, compacted, sorted timestamps are always
+    // written here.  (With the historical wide window a reorder virtually always
+    // occurs, so this matches what those runs already wrote.)
+    for(int grp = 0; grp < nbGroups; grp++) {
+        if(channelNb_grp[grp] == 0) continue;
+        FILE *rf = fopen(resFileNames[static_cast<size_t>(grp)].c_str(), "wb");
+        if(!rf) {
+            fprintf(stderr, "error: cannot write '%s'\n",
+                    resFileNames[static_cast<size_t>(grp)].c_str());
+            exit(1);
+        }
+        if(!resTimestamps[grp].empty())
+            fwrite(resTimestamps[grp].data(), sizeof(int64_t),
+                   resTimestamps[grp].size(), rf);
+        fclose(rf);
     }
 
     if(totalRejected > 0)

@@ -20,6 +20,24 @@ byte-identical `.res`/`.spk` on the reference chunk).  Every run now prints the
 effective threshold in detection-signal σ.  See
 `doc/ndmanager-plugins/commands/spike-detection.md`.
 
+**ndm_detectspikes (stderiv) — `recenterMode`, `recenterHalfWidth`.**  Where
+each detection is placed before the shared `.res` is written: `stderiv`
+(default, historical: max Σ|stderiv|) or `raw` (the group-referenced raw
+trough), over the historical window or ±`recenterHalfWidth` samples (engine
+`-C`, `-W`).  The historical window moves ~10% of detections by >5 samples on
+the reference chunk.  `raw` ±8 sharply tightens units whose stderiv waveform
+has several near-equal extrema (unit 26 stderiv-space dispersion 15.2 → 1.7)
+with the median unit unchanged.  Also fixed: the engine wrote the re-centred
+times to `.res` only when a spike was rejected or the re-centring reordered
+spikes; otherwise `.res` kept the pass-1 detection times while the waveforms
+were cut at the re-centred positions.  The final timestamps are now always
+written.  **Behaviour change for existing sessions:** whether a group's `.res`
+was re-centred depended on whether re-centring happened to reorder that group's
+spikes.  On the reference chunk as one 8-channel group it did (output unchanged
+by this fix); split into two 4-channel groups it did not, and 305 and 1287
+spikes had `.res` ≠ waveform position.  Existing `.res` files may therefore be
+un-re-centred for some groups; re-run detection to make them consistent.
+
 ---
 
 ## 2026-06-08 — Klusters high-cluster-count rendering perf, PCA-Center Align All profiling + setup hoist, cross-cluster GPU-batch design

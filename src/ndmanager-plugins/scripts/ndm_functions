@@ -1744,6 +1744,31 @@ ndm_process_spikes()
 			fi
 			thresholdNoiseArg="-T $thresholdNoise"
 		fi
+
+		# recenterMode / recenterHalfWidth: where each detection is placed before
+		# the shared .res is written (stderiv engine only).  Empty keeps the
+		# engine's historical stderiv-energy search over its historical window.
+		recenterMode=$(read_script_parameter $session recenterMode)
+		recenterHalfWidth=$(read_script_parameter $session recenterHalfWidth)
+		recenterArg=
+		if [ -n "$recenterMode$recenterHalfWidth" ] && [ "$methodFamily" != stderiv ]; then
+			echo_error "recenterMode/recenterHalfWidth apply to method stderiv only (method is '$method')"
+			exit $GENERAL_ERROR
+		fi
+		if [ -n "$recenterMode" ]; then
+			case "$recenterMode" in
+				stderiv|raw) recenterArg="-C $recenterMode" ;;
+				*) echo_error "recenterMode must be 'stderiv' or 'raw' (got '$recenterMode')"
+				   exit $GENERAL_ERROR ;;
+			esac
+		fi
+		if [ -n "$recenterHalfWidth" ]; then
+			case "$recenterHalfWidth" in
+				''|*[!0-9]*) echo_error "recenterHalfWidth must be a non-negative integer (got '$recenterHalfWidth')"
+				             exit $GENERAL_ERROR ;;
+			esac
+			recenterArg="$recenterArg -W $recenterHalfWidth"
+		fi
 	fi
 	memCapGB=$(read_script_parameter $session memCapGB)
 
@@ -1815,13 +1840,14 @@ ndm_process_spikes()
 			if [ "$mode" = detect ]; then
 				echo_info " Threshold factor           : $thresholdFactor"
 				[ -n "$thresholdNoise" ] && echo_info " Threshold noise base       : $thresholdNoise"
+				[ -n "$recenterArg" ] && echo_info " Re-centring                : ${recenterMode:-stderiv} ${recenterHalfWidth:+(+-$recenterHalfWidth samples)}"
 				echo_info " Detecting + extracting spike waveforms"
 				$binary \
 					-n $nChannels -c $electrodeList \
 					-w $samplesInWaveform -p $peakSample \
 					-r $refractoryPeriod -l $peakSearchLength \
 					-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
-					$thresholdNoiseArg \
+					$thresholdNoiseArg $recenterArg \
 					$sdiffOrderArg $sdiffPairsArg \
 					$tmp
 			else
