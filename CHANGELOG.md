@@ -7,6 +7,22 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-10-08 — custody: `.spk`/`.res` of a `_D` feature-space token resolve to its waveforms
+
+**Shared-artifact resolution.**  `_D<lag><dims>` names a feature space over the
+waveforms of the token without it, but `resolve()` fell back
+method → standard → untagged, so Klusters opened on `.clu.stderiv_C5_D34.N`
+read the raw `.spk.standard.N`.  Shared types now try the waveform token
+(`stderiv_C5_D34` → `stderiv_C5`) right after the exact method, and offer that
+path when nothing exists, so a Klusters realign or Save As writes the one real
+`.spk`.  This replaces the `.spk.<…>_D34` copy/link: a link is renamed to
+`.stalebkp` by fiber-kit's de-dup and replaced by an independent copy on a Klusters
+realign save (leaving the `stderiv_C5` waveforms out of step with the updated
+`.res`).  Same rule in `custody.hpp`, `ndm_custody` and `ndm_resolve_io.py`;
+eight new rows in `custody_vectors.tsv` (95 checks, all three runners pass).
+
+---
+
 ## 2026-10-08 — ndm_pca: lagged feature space (`_D<lag><dims>`)
 
 **ndm_pca — `method: <token>_D<lag><dims>`.**  The lagged feature space

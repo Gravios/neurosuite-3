@@ -15,7 +15,7 @@ Naming model::
 Classes::
 
     MethodSpecific  clu fet pca col model klg   strict, no fallback
-    Shared          res spk                     method -> standard -> untagged
+    Shared          res spk                     method -> waveform token -> standard -> untagged
     SessionWide     fil dat xml yaml par ...     <base>.<type>
 
 Kept in lock-step with custody.hpp via the shared conformance vectors
@@ -142,15 +142,32 @@ def resolve(base, type_, group, method):
     if k == "MethodSpecific":
         path = method_path(base, type_, method, group)
         return Resolved(path, method, file_exists(path))
-    # Shared: method -> standard -> untagged.
+    # Shared: method -> its waveform token -> standard -> untagged.  A _D<lag><dims>
+    # token names a feature space over the waveforms of the token without it.
     cands = [method_path(base, type_, method, group)]
+    wave = waveform_token(method)
+    if wave != method and wave != DEFAULT_METHOD:
+        cands.append(method_path(base, type_, wave, group))
     if method != DEFAULT_METHOD:
         cands.append(method_path(base, type_, DEFAULT_METHOD, group))
     cands.append(untagged_path(base, type_, group))
     for c in cands:
         if file_exists(c):
             return Resolved(c, method_of(c), True)
-    return Resolved(cands[0], method, False)
+    # Nothing exists: the waveform token's path, so a writer never makes a _D-named
+    # copy of the waveforms.
+    return Resolved(method_path(base, type_, wave, group), wave, False)
+
+
+def waveform_token(method):
+    """Waveform token of a feature-space token: stderiv_C5_D34 -> stderiv_C5,
+    stderiv_D34 -> stderiv.  Returns `method` unchanged when it carries no
+    well-formed single-digit lag, so an opaque token is never rewritten.  Mirrors
+    waveformToken (custody.hpp) and ndm_waveform_token (ndm_custody)."""
+    s = parse_method_token(method)
+    if not (1 <= s.lag <= 9):
+        return method
+    return s.family + (f"_{s.kind}{s.order}" if s.kind else "")
 
 
 # lag/dims default to 0 so existing unpacking by position keeps working.

@@ -102,10 +102,19 @@ Given a `base`, `type`, `group`, and requested `method`:
 - **MethodSpecific** → `<base>.<type>.<method>.<group>` (exists or not; no
   fallback).
 - **Shared** → the first of these that exists, else the method-tagged path
-  (for the error message):
+  under the waveform token (for writers and the error message):
   1. `<base>.<type>.<method>.<group>`
-  2. `<base>.<type>.standard.<group>` *(only if `method` ≠ `standard`)*
-  3. `<base>.<type>.<group>` *(untagged legacy)*
+  2. `<base>.<type>.<waveform-token>.<group>` *(only if `method` carries a
+     `_D<lag><dims>` feature-space suffix: `stderiv_C5_D34` → `stderiv_C5`)*
+  3. `<base>.<type>.standard.<group>` *(only if `method` ≠ `standard`)*
+  4. `<base>.<type>.<group>` *(untagged legacy)*
+
+  Step 2 exists because `_D` names a *feature space* over the waveforms of the
+  token without it — there is no separate D34 waveform set.  Klusters opened on
+  `.clu.stderiv_C5_D34.N` therefore reads `.spk.stderiv_C5.N` (not the raw
+  `.spk.standard.N`), and a realign or Save As writes back to that one file, so
+  no `_D`-named `.spk` copy or link is needed.  An exact `.spk.<…>_D34.N`, if
+  present, still wins.
 
 **`resolveAny()` — shared artifacts whose writing token is unknown.**
 `resolve()` cannot find a copy written under a *third* method, and no fixed
@@ -120,7 +129,7 @@ any `stderiv_*` token. Deliberately not a `"stderiv"` prefix test, so
 
 ## Method tokens
 
-A method is `<family>[_<kind><order>]`:
+A method is `<family>[_<kind><order>][_D<lag><dims>]`:
 
 | Part | Values | Meaning |
 |---|---|---|
@@ -130,7 +139,11 @@ A method is `<family>[_<kind><order>]`:
 
 Examples: `stderiv_S3` (plain all-pairs, any `sdiffPairs` deliberately unused),
 `stderiv_C4` (custom single-partner pattern), `stderiv_C5` (custom
-reference-set pattern).
+reference-set pattern), `stderiv_C5_D34` (the lagged feature space over the
+`stderiv_C5` waveforms: PC1 at −3/0/+3 samples plus PC2, 4 columns per channel;
+written by `ndm_pca` or fiber-kit).  The waveform token of a `_D` token is the
+token without it (`custody::waveformToken`, `ndm_waveform_token`,
+`waveform_token`).
 
 Rules, enforced by `ndm_check_method_token` and its C++/Python mirrors:
 

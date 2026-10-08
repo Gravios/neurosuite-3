@@ -17,7 +17,9 @@
 //     MethodSpecific (clu, fet, pca, col, model, klg, …) — strict: the file is
 //         exactly <base>.<type>.<method>.<group>, no fallback.
 //     Shared (res, spk) — one physical copy across methods: prefer the
-//         method-tagged path, then .standard, then untagged.  (Spike times are
+//         method-tagged path, then the waveform token's (a _D<lag><dims>
+//         feature-space token reads the waveforms it was computed from),
+//         then .standard, then untagged.  (Spike times are
 //         method-independent; the raw .spk is shared, the stderiv transform
 //         being applied downstream at PCA time rather than stored separately.)
 //     SessionWide (fil, dat, xml, yaml, nrs, par) — <base>.<type>, no method,
@@ -131,6 +133,21 @@ inline MethodSpec parseMethodToken(const std::string& m)
 // family and must not be treated as the transformed domain.
 inline bool isStderivMethod(const std::string& m)
 { return parseMethodToken(m).family == "stderiv"; }
+
+// The WAVEFORM token of a feature-space token: a _D<lag><dims> suffix names a
+// feature space computed over the waveforms of the token without it, so
+// stderiv_C5_D34 -> stderiv_C5 and stderiv_D34 -> stderiv.  Returns @p m itself
+// when it carries no (well-formed, single-digit) lag, so opaque tokens are never
+// rewritten.  Mirrors ndm_waveform_token (ndm_custody) and waveform_token
+// (ndm_resolve_io.py).
+inline std::string waveformToken(const std::string& m)
+{
+    const MethodSpec s = parseMethodToken(m);
+    if (s.lag < 1 || s.lag > 9) return m;
+    std::string w = s.family;
+    if (s.kind != '\0') { w += '_'; w += s.kind; w += std::to_string(s.order); }
+    return w;
+}
 
 // ── type classification ─────────────────────────────────────────────────────
 
@@ -317,8 +334,11 @@ struct Resolved {
 // Resolve an input by class:
 //   SessionWide    -> <base>.<type>            (no method/group)
 //   MethodSpecific -> <base>.<type>.<method>.<grp>   (strict; no fallback)
-//   Shared         -> prefer <method>, then standard, then untagged; first that
-//                     exists (else the method-tagged path, for diagnostics).
+//   Shared         -> prefer <method>, then its waveform token (a _D<lag><dims>
+//                     feature-space token reads the waveforms it was computed
+//                     from: stderiv_C5_D34 -> stderiv_C5), then standard, then
+//                     untagged; first that exists (else the waveform-token path,
+//                     for writers and diagnostics).
 inline Resolved resolve(const std::string& base, const std::string& type,
                         int group, const std::string& method)
 {
@@ -339,6 +359,9 @@ inline Resolved resolve(const std::string& base, const std::string& type,
     default: {
         std::vector<std::string> cands;
         cands.push_back(methodPath(base, type, method, group));
+        const std::string wave = waveformToken(method);
+        if (wave != method && wave != kDefaultMethod())
+            cands.push_back(methodPath(base, type, wave, group));
         if (method != kDefaultMethod())
             cands.push_back(methodPath(base, type, kDefaultMethod(), group));
         cands.push_back(untaggedPath(base, type, group));
@@ -350,8 +373,11 @@ inline Resolved resolve(const std::string& base, const std::string& type,
                 return r;
             }
         }
-        r.path   = cands.front();   // method-tagged, for the error message
-        r.method = method;
+        // Nothing exists: offer the method-tagged path (for writers and the error
+        // message) -- under the WAVEFORM token for a _D feature-space token, so a
+        // writer never creates a second, _D-named copy of the waveforms.
+        r.path   = methodPath(base, type, wave, group);
+        r.method = wave;
         r.found  = false;
         return r;
     }

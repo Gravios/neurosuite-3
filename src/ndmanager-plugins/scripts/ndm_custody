@@ -96,8 +96,13 @@ ndm_resolve()
             NDM_R_METHOD="$method"; echo "$p"; [ -f "$p" ] && NDM_R_FOUND=1
             [ "$NDM_R_FOUND" = 1 ]; return ;;
         Shared)
-            local variant seen_std=0
-            for variant in "$method" "$NDM_DEFAULT_METHOD" ""; do
+            # method, then its waveform token (a _D lag feature space reads the
+            # waveforms it was computed from), then standard, then untagged.
+            local variant seen_std=0 wave
+            local -a cands=("$method")
+            wave="$(ndm_waveform_token "$method")"
+            [ -n "$wave" ] && [ "$wave" != "$method" ] && cands+=("$wave")
+            for variant in "${cands[@]}" "$NDM_DEFAULT_METHOD" ""; do
                 if [ "$variant" = "$NDM_DEFAULT_METHOD" ]; then
                     [ "$seen_std" = 1 ] && continue
                     seen_std=1
@@ -112,8 +117,11 @@ ndm_resolve()
                     return 0
                 fi
             done
-            p="$(ndm_method_path "$base" "$type" "$group" "$method")"
-            NDM_R_METHOD="$method"; echo "$p"; return 1 ;;
+            # Nothing exists: the waveform token's path, so a writer never makes a
+            # _D-named copy of the waveforms.
+            [ -n "$wave" ] || wave="$method"
+            p="$(ndm_method_path "$base" "$type" "$group" "$wave")"
+            NDM_R_METHOD="$wave"; echo "$p"; return 1 ;;
     esac
 }
 
@@ -150,6 +158,24 @@ ndm_parse_method_token() {
         esac
         NDM_M_FAMILY="$rest"
     done
+}
+
+# Waveform token of a feature-space token: _D<lag><dims> names a feature space over the
+# waveforms of the token without it (stderiv_C5_D34 -> stderiv_C5, stderiv_D34 -> stderiv).
+# Echoes the token unchanged when it has no well-formed single-digit lag, so an opaque
+# token is never rewritten.  Leaves NDM_M_* as they were.  Mirrors waveformToken
+# (custody.hpp) and waveform_token (ndm_resolve_io.py).
+ndm_waveform_token() {
+    local m="$1" sF="${NDM_M_FAMILY-}" sK="${NDM_M_KIND-}" sO="${NDM_M_ORDER-}" sL="${NDM_M_LAG-}" sD="${NDM_M_DIMS-}" w
+    ndm_parse_method_token "$m"
+    if [ -n "$NDM_M_LAG" ] && [ "$NDM_M_LAG" -ge 1 ] 2>/dev/null; then
+        w="$NDM_M_FAMILY"
+        [ -n "$NDM_M_KIND" ] && w="${w}_${NDM_M_KIND}${NDM_M_ORDER}"
+    else
+        w="$m"
+    fi
+    NDM_M_FAMILY="$sF"; NDM_M_KIND="$sK"; NDM_M_ORDER="$sO"; NDM_M_LAG="$sL"; NDM_M_DIMS="$sD"
+    echo "$w"
 }
 
 # True for the stderiv family: bare legacy "stderiv" and any stderiv_<kind><order>.

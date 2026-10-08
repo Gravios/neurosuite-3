@@ -43,7 +43,8 @@ inline bool methodIsStderiv(const QString& m) {
 
 // Resolve a per-group artifact through the shared custody policy: method-specific
 // types (.clu/.fet/.pca) resolve strictly to <base>.<type>.<method>.<group>;
-// shared types (.res, raw .spk) fall back method -> standard -> untagged; the
+// shared types (.res, raw .spk) fall back method -> waveform token (a _D lag
+// feature-space token reads its waveforms) -> standard -> untagged; the
 // single source of truth lives in custody.hpp.
 inline QString resolveFeature(const QString& fullBase, const QString& type,
                               const QString& group, const QString& method) {
