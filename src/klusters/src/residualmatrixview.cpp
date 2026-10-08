@@ -746,22 +746,14 @@ void ResidualMatrixView::setViewState(double newZoom, double px, double py)
 
 void ResidualMatrixView::wheelEvent(QWheelEvent* event)
 {
-    // Ctrl+wheel zoom is a registry Action (matrix.residual.wheelZoom{In,Out}); a plain wheel
-    // defers to the base; a Ctrl+wheel with no vertical delta yields no chord and is swallowed.
-    if (input::dispatch(this, event)) { event->accept(); return; }
     if (!(event->modifiers() & Qt::ControlModifier)) {
         QWidget::wheelEvent(event);
         return;
     }
-    event->accept();
-}
-
-void ResidualMatrixView::matrixWheelZoom(QWheelEvent* event)
-{
-    // Continuous model (unchanged): the notch count scales the zoom exponent.
     const double steps = event->angleDelta().y() / 120.0;
-    if (steps == 0.0) return;
+    if (steps == 0.0) { event->accept(); return; }
     zoomAroundPoint(vp_.zoom * std::pow(zoomStep, steps), event->position());
+    event->accept();
 }
 
 void ResidualMatrixView::keyPressEvent(QKeyEvent* event)

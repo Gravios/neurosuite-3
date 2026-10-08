@@ -1087,23 +1087,17 @@ void TemplateMatrixView::setViewState(double newZoom, double px, double py)
 
 void TemplateMatrixView::wheelEvent(QWheelEvent* event)
 {
-    // Ctrl+wheel zoom is a registry Action (matrix.template.wheelZoom{In,Out}); a plain wheel
-    // defers to the base (lets scroll pass through to a parent QScrollArea if ever added); a
-    // Ctrl+wheel with no vertical delta yields no chord and is swallowed.
-    if (input::dispatch(this, event)) { event->accept(); return; }
     if (!(event->modifiers() & Qt::ControlModifier)) {
+        // Without Ctrl, defer to base (lets scroll behaviour pass through
+        // to a parent QScrollArea if one is ever introduced).
         QWidget::wheelEvent(event);
         return;
     }
-    event->accept();
-}
-
-void TemplateMatrixView::matrixWheelZoom(QWheelEvent* event)
-{
     const int delta = event->angleDelta().y();
-    if (delta == 0) return;
+    if (delta == 0) { event->accept(); return; }
     const double factor = (delta > 0) ? zoomStep : 1.0 / zoomStep;
     zoomAroundPoint(vp_.zoom * factor, event->position());
+    event->accept();
 }
 
 // ── slider / apply ────────────────────────────────────────────────────────────

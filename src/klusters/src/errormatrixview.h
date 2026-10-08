@@ -80,10 +80,6 @@ public:
   * registry's matrix.error.pan Gesture invokes it; the drag/commit stay in the handlers.*/
     void matrixBeginPan(const QPoint& pressPos);
 
-    /**Applies a Ctrl+wheel zoom-around-cursor step from @p event.  Public because the input
-  * registry's matrix.error.wheelZoom{In,Out} Actions invoke it.*/
-    void matrixWheelZoom(QWheelEvent* event);
-
     // ── Read-only accessors used by KlustersApp::slotReorderClustersBySimilarity ──
     // The probability matrix is built by ErrorMatrixThread and stored as
     // a row-major Array<double> indexed 1..nClusters (cluster ID for

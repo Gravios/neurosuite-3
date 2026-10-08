@@ -1130,23 +1130,17 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
 }
 
 void ErrorMatrixView::wheelEvent(QWheelEvent* e){
-    // Ctrl+wheel zoom is a registry Action (matrix.error.wheelZoom{In,Out}), resolved here;
-    // a plain wheel defers to the base; a Ctrl+wheel with no vertical delta yields no chord
-    // and is swallowed.
-    if(dispatchInput(e)){ e->accept(); return; }
+    // Ctrl + wheel zooms around the cursor (pixel model, copied from the template
+    // matrix view).  Without Ctrl, defer to the base.
     if(!(e->modifiers() & Qt::ControlModifier)){
         ViewWidget::wheelEvent(e);
         return;
     }
-    e->accept();
-}
-
-void ErrorMatrixView::matrixWheelZoom(QWheelEvent* e){
-    // One discrete step per notch (magnitude ignored), around the cursor — unchanged model.
     const int delta = e->angleDelta().y();
-    if(delta == 0) return;
+    if(delta == 0){ e->accept(); return; }
     const double factor = (delta > 0) ? zoomStep : 1.0 / zoomStep;
     zoomAroundPoint(vp_.zoom * factor, e->position());
+    e->accept();
 }
 
 void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){

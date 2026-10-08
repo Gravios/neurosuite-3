@@ -114,10 +114,6 @@ public:
   * registry's matrix.template.pan Gesture.  Drag/commit stay in the mouse handlers.*/
     void matrixBeginPan(const QPoint& pressPos);
 
-    /**Applies a Ctrl+wheel zoom-around-cursor step from @p event; invoked by the input
-  * registry's matrix.template.wheelZoom{In,Out} Actions.*/
-    void matrixWheelZoom(QWheelEvent* event);
-
     // Stale-marker slots wired from KlustersDoc signals
     void clustersGrouped(QList<int>& groupedClusters, int newClusterId);
     void clustersDeleted(QList<int>& deletedClusters, int destinationCluster);
