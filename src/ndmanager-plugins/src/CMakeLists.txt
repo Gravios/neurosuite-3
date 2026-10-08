@@ -7,6 +7,7 @@
 include_directories(${CMAKE_SOURCE_DIR}/src/libneurosuite-core/src)
 
 add_subdirectory(process)
+add_subdirectory(process_butterworth)
 add_subdirectory(process_extractchannels)
 add_subdirectory(process_extractemg)
 add_subdirectory(process_extractleds)

@@ -5,6 +5,12 @@
 #//
 #//   High-pass filtering (for spikes)
 #//
+#//   filter: butterworth (default) -- zero-phase Butterworth (process_butterworth):
+#//           highPassHz (default 800), lowPassHz (default 0 = none), order
+#//           (default 3; zero phase doubles it), precision (auto|double|single).
+#//   filter: median -- the historical median-subtraction high-pass
+#//           (process_medianfilter, windowHalfLength).
+#//
 #//   copyright       (C) 2007-2010 by Michaël Zugaro
 #//   email           michael.zugaro@college-de-france.fr
 #//
@@ -42,14 +48,38 @@ inputExtension=${inputExtension:-dat}
 outputs_exist $session.fil && exit $OUTPUTS_EXIST
 inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
 
-# Check required programs
-check_commands_installed xpathReader process_medianfilter
+filter=$(read_script_parameter $session filter)
+filter=${filter:-butterworth}
+case "$filter" in
+	butterworth|median) ;;
+	*) echo_error "filter must be butterworth or median (got '$filter')"; exit $GENERAL_ERROR ;;
+esac
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Read Parameters
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
 nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
+check_mandatory_variable $nChannels "missing number of channels"
+
+if [ "$filter" = butterworth ]; then
+	check_commands_installed xpathReader process_butterworth
+	samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
+	check_mandatory_variable $samplingRate "missing sampling rate"
+	highPassHz=$(read_script_parameter $session highPassHz)
+	lowPassHz=$(read_script_parameter $session lowPassHz)
+	order=$(read_script_parameter $session order)
+	precision=$(read_script_parameter $session precision)
+	highPassHz=${highPassHz:-800}; lowPassHz=${lowPassHz:-0}
+	order=${order:-3}; precision=${precision:-auto}
+	echo_info " Butterworth zero-phase     : high-pass $highPassHz Hz$( [ "$lowPassHz" != 0 ] && echo ", low-pass $lowPassHz Hz"), order $order (x2 forward+backward), precision $precision"
+	process_butterworth -n $nChannels -s $samplingRate -l $highPassHz -u $lowPassHz \
+		-o $order -p $precision -v "$session.$inputExtension" $session.fil
+	check_command_status process_butterworth
+	exit $NO_ERROR
+fi
+
+check_commands_installed xpathReader process_medianfilter
 windowHalfLength=$(read_script_parameter $session windowHalfLength)
 # chunkSize: bytes to process per pass (default 64 GiB).
 # Can be overridden per-session in the XML <ndm_hipass> parameters block.
@@ -66,7 +96,6 @@ if [ "$chunkSize" -gt "$maxChunkSize" ] 2>/dev/null; then
     chunkSize=$maxChunkSize
 fi
 
-check_mandatory_variable $nChannels "missing number of channels"
 check_mandatory_variable $windowHalfLength "missing window half-length"
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////

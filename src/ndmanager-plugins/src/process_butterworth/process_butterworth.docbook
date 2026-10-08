@@ -1,0 +1,72 @@
+<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"
+          "http://www.oasis-open.org/docbook/xml/4.1.2/docbookx.dtd">
+<refentry id="process_butterworth">
+
+	<refmeta>
+		<refentrytitle>process_butterworth</refentrytitle>
+		<manvolnum>1</manvolnum>
+	</refmeta>
+
+	<refnamediv>
+		<refname>process_butterworth</refname><refpurpose>zero-phase Butterworth filter for multiplexed int16 data files.</refpurpose>
+	</refnamediv>
+
+	<refsynopsisdiv>
+		<cmdsynopsis>
+		<command>process_butterworth</command>
+		<arg><option>-n</option> <replaceable>nChannels</replaceable></arg>
+		<arg><option>-s</option> <replaceable>rateHz</replaceable></arg>
+		<arg><option>-l</option> <replaceable>highPassHz</replaceable></arg>
+		<arg><option>-u</option> <replaceable>lowPassHz</replaceable></arg>
+		<arg><option>-o</option> <replaceable>order</replaceable></arg>
+		<arg><option>-p</option> <replaceable>auto|double|single</replaceable></arg>
+		<arg><option>-b</option> <replaceable>bytes</replaceable></arg>
+		<arg><option>-B</option> <replaceable>samples</replaceable></arg>
+		<arg><option>-t</option> <replaceable>nThreads</replaceable></arg>
+		<arg><option>-c</option></arg>
+		<arg><option>-v</option></arg>
+		<arg choice="plain"><replaceable>input</replaceable></arg>
+		<arg choice="plain"><replaceable>output</replaceable></arg>
+		</cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>Description</title>
+		<para>
+			<command>process_butterworth</command> filters a multiplexed int16 recording with a Butterworth high-pass (and optionally a low-pass), designed in double precision as second-order sections and applied forward then backward, so the output has no phase distortion. Zero phase squares the magnitude response: each corner is at -6 dB and the effective order is twice the design order. File edges are handled by odd reflection. Work is split into independent channel x block units with a settling margin derived from the filter's impulse response, run with OpenMP or, when built with CUDA and a device is present, on the GPU. In double precision the output equals scipy's sosfiltfilt rounded to int16.
+		</para>
+	</refsect1>
+
+	<refsect1>
+		<title>Options</title>
+		<variablelist>
+			<varlistentry><term><option>-n</option> <replaceable>nChannels</replaceable></term>
+				<listitem><para>number of channels in the file (required)</para></listitem></varlistentry>
+			<varlistentry><term><option>-s</option> <replaceable>rateHz</replaceable></term>
+				<listitem><para>sampling rate in Hz (required)</para></listitem></varlistentry>
+			<varlistentry><term><option>-l</option> <replaceable>highPassHz</replaceable></term>
+				<listitem><para>high-pass corner in Hz (default 800; 0 = none)</para></listitem></varlistentry>
+			<varlistentry><term><option>-u</option> <replaceable>lowPassHz</replaceable></term>
+				<listitem><para>low-pass corner in Hz (default 0 = none)</para></listitem></varlistentry>
+			<varlistentry><term><option>-o</option> <replaceable>order</replaceable></term>
+				<listitem><para>design order of each stage (default 3)</para></listitem></varlistentry>
+			<varlistentry><term><option>-p</option> <replaceable>auto|double|single</replaceable></term>
+				<listitem><para>arithmetic precision; auto (default) is double on the CPU and single on a GPU</para></listitem></varlistentry>
+			<varlistentry><term><option>-b</option> <replaceable>bytes</replaceable></term>
+				<listitem><para>input bytes per chunk (default 256 MiB)</para></listitem></varlistentry>
+			<varlistentry><term><option>-B</option> <replaceable>samples</replaceable></term>
+				<listitem><para>samples per parallel block (default 65536 on the CPU, 8192 on a GPU)</para></listitem></varlistentry>
+			<varlistentry><term><option>-t</option> <replaceable>nThreads</replaceable></term>
+				<listitem><para>CPU threads (default: all cores)</para></listitem></varlistentry>
+			<varlistentry><term><option>-c</option></term>
+				<listitem><para>force the CPU path in a CUDA build</para></listitem></varlistentry>
+			<varlistentry><term><option>-v</option></term>
+				<listitem><para>verbose: design, sections, path and progress</para></listitem></varlistentry>
+		</variablelist>
+	</refsect1>
+
+	<refsect1>
+		<title>See also</title>
+		<para><command>ndm_hipass</command>(1), <command>process_medianfilter</command>(1)</para>
+	</refsect1>
+</refentry>

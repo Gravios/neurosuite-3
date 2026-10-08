@@ -4,9 +4,34 @@
   <name>ndm_hipass</name>
   <parameters>
    <parameter>
+    <name>filter</name>
+    <value>butterworth</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>highPassHz</name>
+    <value>800</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>lowPassHz</name>
+    <value>0</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>order</name>
+    <value>3</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
+    <name>precision</name>
+    <value>auto</value>
+    <status>Optional</status>
+   </parameter>
+   <parameter>
     <name>windowHalfLength</name>
-    <value>10</value>
-    <status>Mandatory</status>
+    <value>16</value>
+    <status>Optional</status>
    </parameter>
    <parameter>
     <name>chunkSize</name>
@@ -21,17 +46,41 @@
   </parameters>
   <help>High-pass filter a .dat file (required for spike extraction).
 
-The program uses a median-based (non-linear) filter to minimize spike waveform distortion.
-
 PARAMETERS
 
-# windowHalfWidth
+# filter
 
-Determines the cutoff frequency
+butterworth (default when unset) or median.  butterworth runs a zero-phase
+Butterworth high-pass (process_butterworth): forward then backward, no phase
+distortion, -6 dB at the corner, effective order 2 x order, linear.  median is the
+historical median-subtraction high-pass (process_medianfilter), which is
+non-linear: its output is exactly 0 wherever the centre sample is the window
+median, and it adds broadband content the .dat does not have.
+
+# highPassHz
+
+butterworth: high-pass corner in Hz (default 800).
+
+# lowPassHz
+
+butterworth: optional low-pass corner in Hz (default 0 = none).
+
+# order
+
+butterworth: design order (default 3; 6 after zero phase).
+
+# precision
+
+butterworth: auto (default; double on the CPU, single on a GPU), double or single.
+
+# windowHalfLength
+
+median: half-length of the median window in samples; 16 at 32.5 kHz gives an
+effective -3 dB corner of about 800 Hz.
 
 # chunkSize
 
-Number of bytes of input processed per pass (default 134217728 = 128 MiB).
+median: number of bytes of input processed per pass (default 134217728 = 128 MiB).
 Reduce it if memory is tight. Capped internally at 512 MiB, so a larger value
 is clamped rather than honoured.
 

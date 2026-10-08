@@ -7,6 +7,44 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-10-08 — ndm_hipass: zero-phase Butterworth filter (new default)
+
+**New `process_butterworth`** (CPU/OpenMP, CUDA when built with it and a device
+is present): Butterworth high-pass and optional low-pass, designed in double
+precision as second-order sections (bilinear transform, pre-warped corners,
+per-section unit passband gain), run forward then backward (zero phase, −6 dB at
+each corner, effective order 2 × `order`), odd-reflected at the file edges.  The
+work is split into independent channel × block units with a settling margin taken
+from the filter's impulse response (start-up error < 1e-3 LSB for any int16
+input; 240 samples at 800 Hz, order 3, 32.5 kHz), so blocks run in parallel and
+the result does not depend on the chunk or block size.  Precision `auto` = double
+on the CPU, single on a GPU; `-p` overrides.
+
+**`ndm_hipass` gains `filter: butterworth|median`, default `butterworth`**, with
+`highPassHz` (800), `lowPassHz` (0 = off), `order` (3), `precision` (auto).
+`filter: median` keeps the old median-subtraction filter; `windowHalfLength` is
+now needed only for it.  Behaviour change: a session whose `ndm_hipass` node
+does not set `filter` now gets the Butterworth `.fil`.
+
+Why: the median high-pass is non-linear — `x[t] − median(window)` is exactly 0
+whenever the centre sample is the window median (about 5% of samples, runs up to
+~17 on spike downstrokes), its effective −3 dB corner at `windowHalfLength: 16`,
+32.5 kHz is ~800 Hz (not ~600 as documented), and it adds broadband content above
+10 kHz that the `.dat` does not contain (coherence 0.01 there).
+
+Verified on the reference `.dat` chunk (group 6, 36–41 min, 8 channels, 300 s):
+double output equals scipy `sosfiltfilt` rounded to int16 on every sample (high-
+pass 800 Hz; band-pass 600–6000 Hz); identical across chunk/block sizes; single
+differs from double on 0.04% of samples by 1 LSB (1 of 59,675 threshold
+detections moved by 1 sample); single and double take the same time on the CPU
+(0.9 s for the chunk on 2 threads).  The CUDA source compiles for sm_86/sm_89
+(clang, device code through ptxas) and the CUDA-enabled binary falls back to the
+CPU without a device; a host emulation of the kernel's unit mapping and scratch
+layout is bit-identical to the CPU single path.  **The kernel has not been run on
+a GPU**, and the Qt6/CMake build was not run in this environment.
+
+---
+
 ## 2026-10-08 — ndm_extractspikes filter: check the raw source window
 
 The post-extraction flat-run test looked only at the extracted `.spk`, so with a

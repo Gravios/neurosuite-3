@@ -334,7 +334,8 @@ Several components use GPU acceleration when the relevant toolkit is present at 
 |---|---|---|
 | `kiloklustakwik` | CUDA / HIP / SYCL | CEM E-step + Phase 1.5 waveform realignment (xcorr) |
 | `klusters` | CUDA / HIP / SYCL | Grouping Assistant, interactive spike realignment (xcorr) |
-| `process_medianfilter` | CUDA | High-pass filter (`ndm_hipass`) |
+| `process_butterworth` | CUDA / OpenMP | Zero-phase Butterworth high-/band-pass (`ndm_hipass`, default) |
+| `process_medianfilter` | CUDA | Median high-pass (`ndm_hipass`, `filter: median`) |
 | `process_medianthreshold` | CUDA | Threshold estimation (`ndm_extractspikes`) |
 | `process_spikegrouper` | CUDA / OpenMP | Coincidence matrix (`ndm_spikegrouper`) |
 

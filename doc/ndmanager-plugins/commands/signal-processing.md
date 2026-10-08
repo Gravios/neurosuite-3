@@ -6,8 +6,35 @@ Short utilities for signal processing.  Each is invoked with the session YAML or
 
 ## `ndm_hipass` — high-pass filter (`.dat` → `.fil`)
 
-Applies a median-subtraction high-pass filter. `windowHalfLength=16` at
-30 kHz ≈ 600 Hz cutoff. Uses CUDA when available, otherwise OpenMP.
+Two filters, chosen with `filter`:
+
+- **`butterworth`** *(default)* — zero-phase Butterworth (`process_butterworth`).
+  Second-order sections designed in double precision, run forward then backward:
+  no phase distortion, magnitude squared (−6 dB at the corner, effective order
+  2 × `order`). Linear, so the `.fil` contains nothing the `.dat` does not.
+  Arithmetic in double on the CPU and single on a GPU (`precision: auto`); in
+  double the output equals scipy's `sosfiltfilt` rounded to int16, and single
+  changes ~0.04% of samples by 1 LSB on the reference data (1 of 59,675
+  threshold detections moved by 1 sample). Uses CUDA when built with it and a
+  device is present, otherwise OpenMP.
+- **`median`** — the historical median-subtraction high-pass
+  (`process_medianfilter`, `windowHalfLength`). Non-linear: the output is
+  `x[t] − median(window)`, which is exactly 0 whenever the centre sample is the
+  window median — at many sign changes and along steep monotonic stretches such as
+  spike downstrokes (about 5% of samples, runs up to ~17). Its effective −3 dB
+  corner at `windowHalfLength: 16` and 32.5 kHz is ~800 Hz (not 600), with a
+  +2.8 dB bump near 1.2–1.5 kHz on pure tones, and it adds broadband content
+  above 10 kHz that the `.dat` does not have.
+
+| Parameter | Default | Filter | Effect |
+|---|---|---|---|
+| `filter` | `butterworth` | — | `butterworth` or `median` |
+| `highPassHz` | 800 | butterworth | high-pass corner (−6 dB after zero phase) |
+| `lowPassHz` | 0 (off) | butterworth | optional low-pass corner → band-pass |
+| `order` | 3 | butterworth | design order per stage (×2 after zero phase) |
+| `precision` | `auto` | butterworth | `auto` (double CPU / single GPU), `double`, `single` |
+| `windowHalfLength` | — | median | median window half-length |
+| `chunkSize` | 128 MiB | median | bytes per pass |
 
 **Input:** `SESSION.dat` (or `SESSION.<inputExtension>`)
 **Output:** `SESSION.fil`
@@ -20,11 +47,11 @@ Applies a median-subtraction high-pass filter. `windowHalfLength=16` at
 ```yaml
 - name: ndm_hipass
   parameters:
-    - name: windowHalfLength
-      value: 16
-      status: Mandatory
-    - name: chunkSize
-      value: 134217728
+    - name: filter
+      value: butterworth
+      status: Optional
+    - name: highPassHz
+      value: 800
       status: Optional
     - name: inputExtension
       value: dat
@@ -37,7 +64,7 @@ Applies a median-subtraction high-pass filter. `windowHalfLength=16` at
 ## `ndm_bandpass` — band-pass filter (`.dat` → `.fil`)
 
 An alternative to `ndm_hipass` that band-passes the wideband `.dat` rather than
-only high-passing it. `ndm_hipass` removes everything **below** ~600 Hz but
+only high-passing it. `ndm_hipass` removes everything **below** its corner (800 Hz by default) but
 leaves the whole upper spectrum (up to Nyquist) in the `.fil`; `ndm_bandpass`
 additionally attenuates everything **above** the spike band, so the signal fed
 to spike detection carries energy only where spikes actually live.

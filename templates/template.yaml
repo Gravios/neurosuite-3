@@ -853,9 +853,24 @@ programs:
 
   - name: ndm_hipass
     parameters:
-      - name: windowHalfLength
-        value: 16
-        status: Mandatory
+      - name: filter
+        value: butterworth
+        status: Optional
+      - name: highPassHz
+        value: 800
+        status: Optional
+      # - name: lowPassHz
+      #   value: 6000
+      #   status: Optional
+      # - name: order
+      #   value: 3
+      #   status: Optional
+      # - name: precision
+      #   value: auto
+      #   status: Optional
+      # - name: windowHalfLength
+      #   value: 16
+      #   status: Optional
       - name: chunkSize
         value: 134217728
         status: Optional
@@ -865,18 +880,50 @@ programs:
     help: |-
       High-pass filter a .dat file (required for spike extraction).
 
-      Uses a median-based (non-linear) filter to minimise spike waveform distortion.
-
       PARAMETERS
+
+      # filter
+
+      butterworth (default when unset) or median.
+
+      butterworth: zero-phase Butterworth (process_butterworth) -- run forward then
+      backward, so there is no phase distortion; the magnitude response is squared
+      (-6 dB at each corner, effective order 2 x order).  Linear, so it adds no
+      content the .dat does not have.  Double precision on the CPU and single on a
+      GPU (auto); in double the .fil equals scipy's sosfiltfilt rounded to int16.
+
+      median: the historical median-subtraction high-pass (process_medianfilter).
+      Non-linear: the output is exactly 0 wherever the centre sample is the window
+      median (about 5% of samples), its effective -3 dB corner is ~800 Hz at
+      windowHalfLength 16 and 32.5 kHz, and it adds broadband content above 10 kHz.
+
+      # highPassHz
+
+      butterworth: high-pass corner in Hz (default 800, matching the median
+      filter's effective corner at windowHalfLength 16).
+
+      # lowPassHz
+
+      butterworth: optional low-pass corner in Hz (default 0 = none), making the
+      filter a band-pass.
+
+      # order
+
+      butterworth: design order of each stage (default 3; 6 after zero phase).
+
+      # precision
+
+      butterworth: auto (default; double on the CPU, single on a GPU), double or
+      single.  Single changes ~0.04% of samples by 1 LSB on the reference data.
 
       # windowHalfLength
 
-      Half-length (samples) of the median filter window; determines the cutoff
-      frequency. At 32 kHz, 16 samples gives approximately a 600 Hz cutoff.
+      median: half-length (samples) of the median window.  16 at 32.5 kHz gives an
+      effective -3 dB corner of about 800 Hz.
 
       # chunkSize
 
-      Bytes of .dat data processed per pass (default 134217728 = 128 MiB).
+      median: bytes of .dat data processed per pass (default 134217728 = 128 MiB).
       Reduce if RAM is limited. Capped internally at 512 MiB to prevent OOM.
 
       OPTIONAL PARAMETERS
