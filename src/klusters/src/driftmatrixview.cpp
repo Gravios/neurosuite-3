@@ -10,7 +10,6 @@
  ***************************************************************************/
 #include "driftmatrixview.h"
 #include "input/inputdispatcher.h"   // input::dispatch — the matrix.drift.pan press trigger
-#include "matrixclick.h"             // matrixResolveClick — shared select-on-release (with residual)
 #include <QDebug>
 #include <QStringList>
 #include "driftshiftthread.h"
@@ -886,17 +885,31 @@ void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)
     // by eye.  A stationary Ctrl-click reaches here with panning == false
     // because the pan only engages past the drag threshold in mouseMoveEvent.
     emit viewInteracted();
-    // Strip-cell / cluster-pair resolution shared with the residual matrix via
-    // matrixResolveClick(); this view applies the result (emit / doc / repaint).
-    const MatrixPairSelection sel = matrixResolveClick(
-        e->position(), e->modifiers() & Qt::ControlModifier, dataReady, clusterList, strip_,
-        effMatrixTopLeft(), effCellSize(),
-        [this](int x){ return cellAtX(x); }, [this](int y){ return cellAtY(y); });
-    if (!sel.valid)
+    if (!dataReady || clusterList.isEmpty())
         return;
-    if (sel.isStripCell) { emit templateCellActivated(sel.clusterId, sel.node); update(); return; }
-    if (sel.extend) doc.addFromMatrix(sel.clustersToShow);
-    else            doc.selectFromMatrix(sel.clustersToShow);
+
+    // Marked-node template region (§11.5): a click on one of the extra template
+    // rows/columns selects that cell's cluster and overlays its node (handled by
+    // KlustersView), before the cluster-pair hit-test below.
+    if (!strip_.empty()) {
+        const MatrixStripHit sh = strip_.hitTest(
+            e->position().x(), e->position().y(),
+            effMatrixTopLeft(), effCellSize(), clusterList);
+        if (sh.ok) { emit templateCellActivated(sh.clusterId, sh.node); update(); return; }
+    }
+
+    const int col = cellAtX(e->position().toPoint().x());
+    const int row = cellAtY(e->position().toPoint().y());
+    if (row < 0 || col < 0)
+        return;
+    QList<int> clustersToShow;
+    clustersToShow.append(clusterList[row]);
+    if (clusterList[col] != clusterList[row])
+        clustersToShow.append(clusterList[col]);
+    if (e->modifiers() & Qt::ControlModifier)
+        doc.addFromMatrix(clustersToShow);
+    else
+        doc.selectFromMatrix(clustersToShow);
 }
 
 void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
