@@ -147,10 +147,11 @@ records the arms and per-arm counts.
 stderiv engine only.  Reject a detected spike if any channel of its raw window
 (nSamples around the re-centred position) holds more than flatRunMax identical
 consecutive samples -- zero-filled gaps (e.g. a back-filled DAC ring-buffer
-overrun) or a stuck line.  0 or unset = off.  Check the data first: a .fil whose
-channels carry short runs of exact zeros (the reference session has ~15 per second
-per channel, 6-17 samples long, at upward zero crossings) loses a large share of
-spikes at 5 (31% on the reference chunk).
+overrun) or a stuck line.  0 or unset = off.  Check the data first: a median-high-passed .fil
+(ndm_hipass) is exactly 0 wherever the centre sample is the window median, giving
+short zero runs (up to ~17 samples) at sign changes and on spike downstrokes; 5
+removes 31% of spikes on the reference chunk, ~20 keeps them and still catches
+dropouts.
 
 # dedupSamples
 

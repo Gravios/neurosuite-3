@@ -17,8 +17,8 @@ mixes a dead channel with its live neighbours and the result is not flat.
 `[t-(peak-1), t-(peak-1)+nSamples)`) on the group's channels, and drops a spike
 that fails either test.  With one channel zeroed for 1 s and one stuck for 0.5 s,
 a `stderiv_C5` extraction caught 0 of the 80 affected spikes in the `.spk` and
-all 80 in the raw window.  Short exact-zero runs at zero crossings in the same
-recording mean `flatRunMax` ≈ 20 is the useful setting (1 other spike dropped,
+all 80 in the raw window.  Short exact-zero runs produced by the median high-pass
+(`ndm_hipass` output is exactly 0 where the centre sample is the window median) mean `flatRunMax` ≈ 20 is the useful setting (1 other spike dropped,
 against ~31% at 5).
 
 ---
@@ -64,8 +64,8 @@ waveforms are streamed to disk (larger than `memCapGB`), a rejected spike was
 skipped instead of written as a placeholder row, so the compaction that drops
 rejected rows by index shifted every later waveform by one (8,484 of 8,485
 misaligned under `-F` in a test; latent before, since the stderiv flat-channel
-test practically never fires).  Note: the reference `.fil` has frequent short
-per-channel zero runs at zero crossings; `flatRunMax: 5` removes 31% of spikes
+test practically never fires).  Note: a median-high-passed `.fil` has frequent short
+per-channel zero runs (filter output, not dropouts); `flatRunMax: 5` removes 31% of spikes
 there — see `doc/ndmanager-plugins/commands/spike-detection.md`.
 
 ---

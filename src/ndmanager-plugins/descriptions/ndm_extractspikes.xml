@@ -40,8 +40,8 @@ Post-extraction filter: drop spikes with more than flatRunMax identical consecut
 samples on any channel, checked in the raw source window (inputExtension) at the
 spike time and in the freshly extracted waveform.  The raw check finds dropped-out
 channels, zero fill and stuck lines, which a spatial derivative hides by mixing the
-dead channel with its neighbours.  ~20 separates channel dropouts from short zero
-runs at zero crossings.  0 or unset = off.
+dead channel with its neighbours.  ~20 separates channel dropouts from the short zero
+runs (up to ~17 samples) a median high-pass (ndm_hipass) leaves in the .fil.  0 or unset = off.
 
 # dedupSamples
 

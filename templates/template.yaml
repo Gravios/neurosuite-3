@@ -1131,8 +1131,9 @@ programs:
 
       stderiv engine only: reject a spike whose raw window has more than
       flatRunMax identical consecutive samples on any channel (zero-filled gaps,
-      stuck lines).  0 or unset = off.  Check the data first -- short per-channel
-      zero runs at zero crossings make 5 remove 31% of spikes on the reference chunk.
+      stuck lines).  0 or unset = off.  The median high-pass (ndm_hipass) leaves
+      short exact-zero runs (up to ~17 samples) that make 5 remove 31% of spikes on
+      the reference chunk; ~20 keeps them and still catches dropouts.
 
       # dedupSamples
 
@@ -1190,8 +1191,8 @@ programs:
       spike time AND in the freshly extracted waveform.  The raw check is what finds
       a dropped-out channel, zero fill or a stuck line: a spatial derivative mixes a
       dead channel with its live neighbours, so it is not flat in a stderiv/sdiff
-      .spk.  Short exact-zero runs at zero crossings are common in some recordings;
-      a threshold of ~20 separates channel dropouts from those.  0 or unset = off.
+      .spk.  The median high-pass (ndm_hipass) leaves short exact-zero runs (up to ~17
+      samples); a threshold of ~20 separates channel dropouts from those.  0 or unset = off.
 
       # dedupSamples
 

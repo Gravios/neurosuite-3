@@ -199,11 +199,15 @@ written; rejected spikes leave `.res` and the (discarded) `.spk` together.
 The historical re-centring window collapses a few detections onto one sample
 (7 of 12,324 on the reference chunk); `dedupSamples: 0` removes exactly those.
 
-**Check the data before enabling `flatRunMax`.**  On the reference chunk
-(group 6, 36–41 min) each channel carries short runs of exact zeros — about 15
-per second per channel, 6–17 samples long, at upward zero crossings (the trace
-reaches ≈ −100, reads 0 for 0.3–0.5 ms, then reappears at +100–170) — and only
-one 8-sample stretch is flat on all channels at once.  `flatRunMax: 5` removes
+**Check the data before enabling `flatRunMax`.**  A `.fil` made by `ndm_hipass`
+(or `ndm_bandpass` before its low-pass) is *centre sample − window median*, which is
+exactly 0 whenever the centre sample is the window median: at many sign changes
+(single zeros between values of ±50 or so) and along steep monotonic stretches
+such as spike downstrokes (runs of up to ~17 zeros).  About 4–5% of `.fil`
+samples are exact zeros for this reason; a median high-pass of clean synthetic
+data reproduces the rate and run lengths, and the reference session's raw `.dat`
+(group 6, 36–41 min) has no constant run longer than 4 samples and no
+single-sample glitch at 8σ.  These zeros are filter output, not dropouts.  `flatRunMax: 5` removes
 31% of spikes there (3,795 of 12,324).  A back-filled ring-buffer gap zeroes
 every channel; a 1-s injected gap and a 40-sample stuck channel were both
 removed with no window touching either.
@@ -249,8 +253,8 @@ files were byte-identical to fresh re-extractions at the new `.res`.
 Choosing N.  With one channel zeroed for 1 s and another stuck for 0.5 s
 (80 spikes with at least 6 dropped samples in their window), a `stderiv_C5`
 extraction flagged 0 of them in the `.spk` and all 80 in the raw window.  The
-same recording also has short exact-zero runs at zero crossings (mostly 1–5
-samples, a few up to ~17), so the raw test at N = 5 drops ~31% of spikes:
+median high-pass that made the `.fil` produces short exact-zero runs (mostly 1–5
+samples, a few up to ~17; see above), so the raw test at N = 5 drops ~31% of spikes:
 
 | `flatRunMax` | injected dropouts caught | other spikes dropped |
 |---|---|---|
@@ -258,7 +262,7 @@ samples, a few up to ~17), so the raw test at N = 5 drops ~31% of spikes:
 | 15 | 80 / 80 | 17 |
 | 20 | 80 / 80 | 1 |
 
-Use N ≈ 20 to remove channel dropouts without the zero-crossing runs.
+Use N ≈ 20 to remove channel dropouts without the median filter's zero runs.
 
 ## `ndm_spikecleaner` — drop flat / railed waveforms
 
