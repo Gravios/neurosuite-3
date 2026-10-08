@@ -138,6 +138,54 @@ steepest fall precedes the trough).
   - {name: recenterHalfWidth, value: 8,   status: Optional}
 ```
 
+### Hybrid detection (`detectArms: hybrid`, engine `-H`)
+
+The spatial derivative removes what neighbouring channels share.  That is the
+point — distant, network-wide activity appears on every channel — but it also
+attenuates a nearby cell whose footprint spans several adjacent sites.  On the
+reference chunk such spikes reach 6–12σ on the raw trace yet only 3.6–5.5σ
+after the all-pairs transform.  `detectArms: hybrid` adds a second detection
+pass on the group-referenced raw signal (x − group mean, no temporal
+difference) and merges the two:
+
+1. Each arm thresholds at `thresholdFactor × 4σ` of **its own** signal, σ from
+   the same noise window (this implies `thresholdNoise: stderiv`; an explicit
+   `sdiff` is refused).
+2. The union is sorted and an event within `refractoryPeriod` samples after a
+   kept event is dropped — the single-pass refractory rule.
+3. Merged events are re-centred like any detection.  Use
+   `recenterHalfWidth` < `refractoryPeriod`/2: the historical window collapsed
+   13 merged pairs onto one sample on the reference chunk (the engine warns).
+
+The run log gives per-arm counts:
+
+```
+Hybrid detection (stderiv + raw arm, refractory 25 samples):
+  Group 1: stderiv 11492, raw 27234 -> merged 28262 (19063 added by the raw arm)
+```
+
+What the extra events are (reference chunk, factor 1.33 ≈ 5.3σ per arm, scored
+against the curated units' templates and refractory periods): about half match
+a unit's template, but for most units they fall within the unit's refractory
+period at chance rate — multi-unit and background activity, which the stderiv
+pass exists to exclude.  The exception was a high-rate unit (26) whose matched
+extra events showed a significant refractory dip (9 observed vs 24 expected),
+i.e. genuinely missed spikes.  Treat the raw arm as a recall tool for curation,
+not a drop-in replacement, and expect more clusters to triage.
+
+```yaml
+- name: ndm_detectspikes
+  parameters:
+  - {name: method,            value: stderiv, status: Optional}
+  - {name: detectArms,        value: hybrid,  status: Optional}
+  - {name: thresholdFactor,   value: 1.33,    status: Mandatory}
+  - {name: recenterMode,      value: raw,     status: Optional}
+  - {name: recenterHalfWidth, value: 8,       status: Optional}
+```
+
+The `.res` keeps the method name (`.res.stderiv.<group>`); which arms produced
+it is recorded in the run log only.
+
 
 ---
 

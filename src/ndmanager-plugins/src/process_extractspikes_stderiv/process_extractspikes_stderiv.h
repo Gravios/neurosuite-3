@@ -140,6 +140,15 @@ struct arguments {
     // around the detection (0 = no re-centring).
     RecenterMode recenterMode;
     int          recenterHalfWidth;
+    bool         isThresholdNoiseProvided;
+
+    // Hybrid detection (-H): a second detection pass on the group-referenced raw
+    // signal x[c] - mean_group(x) (no temporal difference), merged with the
+    // stderiv pass.  Both passes threshold at thresholdFactor * 4 sigma of their
+    // OWN detection signal (forces -T stderiv).  The union is thinned with the
+    // engine's refractory rule (an event within refractoryPeriod samples after a
+    // kept event is dropped), then re-centred like any detection.
+    bool hybrid;
 
     // Spatial derivative
     SdiffOrder sdiffOrder;

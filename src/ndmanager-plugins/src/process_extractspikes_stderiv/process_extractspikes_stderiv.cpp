@@ -260,6 +260,41 @@ static void fill_sdiff_buffer(const short *raw,
 }
 
 // =========================================================================
+// fill_car_buffer  (hybrid detection, raw arm)
+// =========================================================================
+// Shadow buffer of the group-referenced raw signal: out[t, ch] =
+// round(x[t, ch] - mean over the channel's group of x[t, .]), int16-clamped.
+// No temporal difference.  Non-group channels are copied verbatim.
+static void fill_car_buffer(const short *raw,
+                            short       *out,
+                            int          nSamples,
+                            int          nChanTot,
+                            int          nGroups,
+                            int        **channelList,
+                            int         *channelNb_grp)
+{
+    memcpy(out, raw, (size_t)nSamples * (size_t)nChanTot * sizeof(short));
+    for(int t = 0; t < nSamples; t++) {
+        const short *rawRec = raw + (size_t)t * nChanTot;
+              short *outRec = out + (size_t)t * nChanTot;
+        for(int g = 0; g < nGroups; g++) {
+            const int  nCG   = channelNb_grp[g];
+            const int *cList = channelList[g];
+            if(nCG <= 0) continue;
+            double mean = 0.0;
+            for(int ci = 0; ci < nCG; ci++) mean += rawRec[cList[ci]];
+            mean /= nCG;
+            for(int ci = 0; ci < nCG; ci++) {
+                long v = lround(rawRec[cList[ci]] - mean);
+                if(v >  32767) v =  32767;
+                if(v < -32768) v = -32768;
+                outRec[cList[ci]] = (short)v;
+            }
+        }
+    }
+}
+
+// =========================================================================
 // Threshold computation
 // =========================================================================
 // The noise window is read once and two robust noise levels are measured per
@@ -761,6 +796,12 @@ static void help(const char *name)
          << "                  whose noise is smaller -- the factor is effectively\n"
          << "                  inflated.  stderiv = the detection signal itself, so\n"
          << "                  factor*4 is the threshold in its noise units.\n\n"
+         << "Hybrid detection:\n"
+         << "  -H              add a second detection pass on the group-referenced\n"
+         << "                  raw signal (x - group mean, no temporal difference)\n"
+         << "                  and merge it with the stderiv pass (refractory rule).\n"
+         << "                  Each pass thresholds at factor*4 sigma of its own\n"
+         << "                  signal (implies -T stderiv; refuses -T sdiff, -R).\n\n"
          << "Re-centring (where each detection is placed before .res is written):\n"
          << "  -C stderiv|raw  stderiv (default, historical) = max summed |stderiv|\n"
          << "                  over the group; raw = max negative deflection of the\n"
@@ -806,6 +847,8 @@ void parseArgs(int argc, char **argv, arguments &a)
     a.thresholdNoise           = THRNOISE_SDIFF; // historical default
     a.recenterMode             = RECENTER_STDERIV; // historical default
     a.recenterHalfWidth        = -1;               // historical window
+    a.isThresholdNoiseProvided = false;
+    a.hybrid                   = false;
     a.isDisableAbs             = true;
     a.isInputFileProvided      = false;
     a.isOutputBaseFileProvided = false;
@@ -832,6 +875,7 @@ void parseArgs(int argc, char **argv, arguments &a)
         case 'v': verbose = true; break;
         case 'a': a.isDisableAbs = false; break;
         case 'R': a.useExistingRes = true; break;  // patch86
+        case 'H': a.hybrid = true; break;
         case 'n': a.totalChannelNumber = atoi(argv[++i]);
                   a.isTotalChannelNumberProvided = true; break;
         case 'c': a.channelList = argv[++i];
@@ -851,6 +895,7 @@ void parseArgs(int argc, char **argv, arguments &a)
         case 'Z': a.threshSizeBytes = (off_t)atoll(argv[++i]);
                   a.isThreshSizeBytesProvided = true; break;
         case 'T': { const string v = argv[++i];
+                    a.isThresholdNoiseProvided = true;
                     if(v == "sdiff")        a.thresholdNoise = THRNOISE_SDIFF;
                     else if(v == "stderiv") a.thresholdNoise = THRNOISE_STDERIV;
                     else {
@@ -917,6 +962,23 @@ void parseArgs(int argc, char **argv, arguments &a)
         if(!a.isThreshSizeBytesProvided)    { cerr<<"error: missing -Z\n"; ok=false; }
     }
     if(!ok) exit(1);
+
+    if(a.hybrid) {
+        if(a.useExistingRes) {
+            cerr << "error: -H (hybrid detection) cannot be combined with -R.\n"; exit(1);
+        }
+        if(a.isThresholdNoiseProvided && a.thresholdNoise != THRNOISE_STDERIV) {
+            cerr << "error: -H thresholds each arm on its own detection signal; "
+                    "it cannot be combined with -T sdiff.\n";
+            exit(1);
+        }
+        a.thresholdNoise = THRNOISE_STDERIV;
+        if(a.recenterHalfWidth < 0 || 2 * a.recenterHalfWidth >= a.refractoryPeriod)
+            cerr << "warning: -H with " << (a.recenterHalfWidth < 0 ? "the historical re-centring window"
+                                                                     : "a re-centring half-width >= refractory/2")
+                 << ": merged events closer than the window can be re-centred onto the same\n"
+                    "         sample (duplicate .res times).  Use -W < refractoryPeriod/2 (e.g. -C raw -W 8).\n";
+    }
 
     if(!a.isPeakLengthProvided) {
         if(!a.useExistingRes)
@@ -1186,7 +1248,8 @@ int main(int argc, char *argv[])
                                       ? "stderiv" : "sdiff") << "\n"
              << "recenter     : " << (args.recenterMode == RECENTER_RAW ? "raw" : "stderiv")
              << " halfWidth " << args.recenterHalfWidth
-             << (args.recenterHalfWidth < 0 ? " (historical window)" : "") << "\n";
+             << (args.recenterHalfWidth < 0 ? " (historical window)" : "") << "\n"
+             << "hybrid       : " << (args.hybrid ? "yes (stderiv + raw arm)" : "no") << "\n";
         if(args.useExistingRes) cout << "mode         : RE-EXTRACT (-R)\n";
         cout << "\n";
     }
@@ -1214,7 +1277,7 @@ int main(int argc, char *argv[])
 
     // ── per-group thresholds (noise base chosen by -T) ────────────────────
     // carSigma: per-channel sigma of the group-referenced raw signal, measured
-    // only when raw re-centring needs it.
+    // only when raw re-centring or the hybrid raw arm needs it.
     vector<vector<double>> carSigma;
     double **thresList   = new double*[MAX_CHANNO];
     int     *thresNb_grp = new int[MAX_CHANNO];
@@ -1230,7 +1293,8 @@ int main(int argc, char *argv[])
                             nbGroups, channelList, channelNb_grp,
                             args.sdiffOrder, args.thresholdFactor,
                             args.thresholdNoise, thresList,
-                            args.recenterMode == RECENTER_RAW ? &carSigma : nullptr);
+                            (args.recenterMode == RECENTER_RAW || args.hybrid)
+                                ? &carSigma : nullptr);
 
     for(int g = 0; g < nbGroups; g++) thresNb_grp[g] = channelNb_grp[g];
 
@@ -1246,6 +1310,29 @@ int main(int argc, char *argv[])
             cout << thresList[g][ci];
         }
         cout << "\n";
+    }
+
+    // Hybrid: raw-arm thresholds, factor * 4 sigma of the group-referenced raw
+    // signal (sigma measured in the same noise window).
+    vector<vector<double>> carThresStore;
+    vector<double*>        carThresList;
+    if(args.hybrid) {
+        carThresStore.resize((size_t)nbGroups);
+        carThresList.assign((size_t)nbGroups, nullptr);
+        for(int g = 0; g < nbGroups; g++) {
+            const size_t gi = static_cast<size_t>(g);
+            carThresStore[gi].assign((size_t)max(1, channelNb_grp[g]), 0.0);
+            for(int ci = 0; ci < channelNb_grp[g]; ci++)
+                carThresStore[gi][(size_t)ci] = args.thresholdFactor * 4.0 * carSigma[gi][(size_t)ci];
+            carThresList[gi] = carThresStore[gi].data();
+            if(channelNb_grp[g] <= 0) continue;
+            cout << "Group " << g+1 << " raw-arm thresholds: ";
+            for(int ci = 0; ci < channelNb_grp[g]; ci++) {
+                if(ci) cout << ",";
+                cout << carThresList[gi][ci];
+            }
+            cout << "\n";
+        }
     }
 
     // ── buffer allocation ─────────────────────────────────────────────────
@@ -1318,20 +1405,47 @@ int main(int argc, char *argv[])
     if(verbose) cout << "\n<<----- Pass 1: spike detection (sdiff shadow buffer)\n\n";
 
     fseeko(inputFile, 0, SEEK_SET);
-    bool isLastLoop = false;
-    unsigned long long rec_nb = 0, nbLoops = 0;
 
     BlockProgress prog(args.outputBaseFileName);
     long long progTotalSamples = 0;
-    long long progSamplesDone   = 0;
     if(args.isInputFileProvided) {
         off_t cur = ftello(inputFile);
         fseeko(inputFile, 0, SEEK_END);
         progTotalSamples = ftello(inputFile)
             / (args.totalChannelNumber * (long long)sizeof(short));
         fseeko(inputFile, cur, SEEK_SET);
-        prog.beginStage("DETECT", progTotalSamples);
     }
+
+    // One full detection pass over the file on one shadow signal: the stderiv
+    // signal (carArm == false; the historical, and only, pass without -H) or the
+    // group-referenced raw signal (carArm == true; the -H raw arm).  The state
+    // machine below is unchanged; it is wrapped so it can run once per arm, with
+    // its per-group state, carry buffers and reader reset at the start of a pass.
+    auto runDetectPass = [&](bool carArm, double *const *armThr,
+                             vector<vector<int64_t>> &outTs, const char *stage) {
+    for(int g = 0; g < nbGroups; g++) {
+        spkChanId[g]            = -1;
+        prevBuffer_spkChanId[g] = -1;
+        isNegativeMax[g]        = false;
+        prevBuffer_isNegMax[g]  = false;
+        isMaxInCurBuf[g]        = true;
+        maxId[g]                = -1;
+        prevBuffer_maxID[g]     = -1;
+        recInPrevBuffer[g]      = 0;
+        ignoredInNextBuffer[g]  = 0;
+        lastSpikeFullId[g]      = -1;
+        nSpikeTot[g]            = 0;
+    }
+    g_prev_sdiff.clear();
+    memset(prev_buffer, 0, sizeof(short) * buffer_size);
+    memset(sdiff_prev,  0, sizeof(short) * buffer_size);
+    if(!nextRec) nextRec = new short[args.totalChannelNumber];
+
+    fseeko(inputFile, 0, SEEK_SET);
+    bool isLastLoop = false;
+    unsigned long long rec_nb = 0, nbLoops = 0;
+    long long progSamplesDone = 0;
+    if(args.isInputFileProvided) prog.beginStage(stage, progTotalSamples);
 
     // ── Double-buffered reader (file input only) ───────────────────────────
     // Background thread prefetches the next raw block from the .fil into one of
@@ -1419,11 +1533,17 @@ int main(int argc, char *argv[])
         const int nSamplesThisChunk =
             (int)((rec_nb + args.totalChannelNumber - 1) / args.totalChannelNumber);
 
-        fill_sdiff_buffer(cur_buffer, sdiff_cur,
-                           nSamplesThisChunk,
-                           args.totalChannelNumber,
-                           nbGroups, channelList, channelNb_grp,
-                           args.sdiffOrder);
+        if(carArm)
+            fill_car_buffer(cur_buffer, sdiff_cur,
+                            nSamplesThisChunk,
+                            args.totalChannelNumber,
+                            nbGroups, channelList, channelNb_grp);
+        else
+            fill_sdiff_buffer(cur_buffer, sdiff_cur,
+                               nSamplesThisChunk,
+                               args.totalChannelNumber,
+                               nbGroups, channelList, channelNb_grp,
+                               args.sdiffOrder);
 
         // ── detection loop on sdiff buffers (verbatim from process_extractspikes)
 #ifdef _OPENMP
@@ -1434,7 +1554,7 @@ int main(int argc, char *argv[])
 
             const int nChanGrp = channelNb_grp[grp];
             const int *cList   = channelList[grp];
-            const double *thr  = thresList[grp];
+            const double *thr  = armThr[grp];
 
             int i = 0;
             if(nbLoops == 0)
@@ -1562,7 +1682,7 @@ int main(int argc, char *argv[])
                                 if(!(isLastLoop && isMaxInCurBuf[grp] &&
                                      (maxId[grp] + timeAfterSpike *
                                       args.totalChannelNumber) >= (int)rec_nb)) {
-                                    resTimestamps[grp].push_back(
+                                    outTs[grp].push_back(
                                         (int64_t)(maxFullId /
                                                    args.totalChannelNumber));
                                     lastSpikeFullId[grp] = maxFullId;
@@ -1687,6 +1807,46 @@ int main(int argc, char *argv[])
     }
 
     if(args.isInputFileProvided) prog.endStage();
+    }; // runDetectPass
+
+    runDetectPass(false, thresList, resTimestamps, "DETECT");
+
+    if(args.hybrid) {
+        // ── raw arm + merge ───────────────────────────────────────────────
+        vector<unsigned int> nStd(nSpikeTot, nSpikeTot + nbGroups);
+        vector<vector<int64_t>> carTs(nbGroups);
+        runDetectPass(true, carThresList.data(), carTs, "DETECT-RAW");
+        cout << "Hybrid detection (stderiv + raw arm, refractory " << args.refractoryPeriod
+             << " samples):\n";
+        for(int g = 0; g < nbGroups; g++) {
+            if(channelNb_grp[g] == 0) continue;
+            const vector<int64_t> &a = resTimestamps[g];
+            const vector<int64_t> &b = carTs[g];
+            // Union in time order; on equal times the stderiv event comes first.
+            vector<pair<int64_t,int>> u;
+            u.reserve(a.size() + b.size());
+            for(int64_t t : a) u.emplace_back(t, 0);
+            for(int64_t t : b) u.emplace_back(t, 1);
+            sort(u.begin(), u.end());
+            // Keep an event only if it lies more than refractoryPeriod samples after
+            // the last kept one -- the rule the single-signal pass applies.
+            vector<int64_t> merged;
+            merged.reserve(u.size());
+            size_t rawOnly = 0;
+            int64_t last = -1;
+            for(const auto &e : u) {
+                if(last >= 0 && e.first - last <= (int64_t)args.refractoryPeriod) continue;
+                merged.push_back(e.first);
+                last = e.first;
+                if(e.second == 1) rawOnly++;
+            }
+            cout << "  Group " << g+1 << ": stderiv " << nStd[(size_t)g]
+                 << ", raw " << b.size() << " -> merged " << merged.size()
+                 << " (" << rawOnly << " added by the raw arm)\n";
+            resTimestamps[g] = std::move(merged);
+            nSpikeTot[g] = (unsigned int)resTimestamps[g].size();
+        }
+    }
 
     // ── write .res files ──────────────────────────────────────────────────
     for(int g = 0; g < nbGroups; g++) {

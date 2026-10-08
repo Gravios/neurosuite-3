@@ -48,6 +48,11 @@
     <value></value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>detectArms</name>
+    <value>stderiv</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Detect spikes on a high-pass filtered .fil file and write the shared spike-time .res files.
 
@@ -113,6 +118,19 @@ stderiv engine only: search +-recenterHalfWidth samples around each detection
 (0 = no re-centring).  Empty keeps the historical window, which can move a
 detection by more than 10 samples onto a neighbouring spike.  recenterMode raw
 with recenterHalfWidth 8 was the best tested setting on the reference session.
+
+# detectArms
+
+stderiv engine only.  stderiv (default) detects on the stderiv signal alone.
+hybrid adds a second detection pass on the group-referenced raw signal
+(x - group mean, no temporal difference) and merges both with the refractory
+rule.  Each pass thresholds at thresholdFactor * 4 sigma of its own signal
+(implies thresholdNoise stderiv; an explicit sdiff is refused).  It recovers
+spikes whose footprint is shared by neighbouring channels, which the spatial
+derivative attenuates, but also admits more multi-unit activity.  Use with
+recenterHalfWidth below refractoryPeriod/2 so merged events cannot be
+re-centred onto one sample.  The .res keeps the method name; the run log
+records the arms and per-arm counts.
 
 METHOD TOKENS
 

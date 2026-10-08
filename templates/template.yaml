@@ -1033,6 +1033,10 @@ programs:
       # - name: recenterHalfWidth
       #   value: 8
       #   status: Optional
+    # detectArms (stderiv only): stderiv (default) | hybrid -- see help.
+      # - name: detectArms
+      #   value: hybrid
+      #   status: Optional
     help: |-
       Detect spikes on the high-pass filtered .fil file and write the shared
       spike-time .res files.  The engine also emits a .spk in passing (there is no
@@ -1102,6 +1106,19 @@ programs:
       [-(peakSampleIndex-1), peakSearchLength-peakSampleIndex], which can move a
       detection onto a neighbouring spike.  recenterMode raw with 8 was the best
       tested setting on the reference session.
+
+      # detectArms
+
+      stderiv engine only: stderiv (default) detects on the stderiv signal alone.
+      hybrid adds a second detection pass on the group-referenced raw signal
+      (x - group mean, no temporal difference) and merges the two with the
+      refractory rule.  Each pass thresholds at thresholdFactor * 4 sigma of its
+      OWN signal (implies thresholdNoise stderiv; an explicit sdiff is refused).
+      Recovers spikes the spatial derivative attenuates (footprints shared by
+      neighbouring channels), at the cost of admitting more multi-unit activity.
+      Use with recenterHalfWidth below refractoryPeriod/2 so merged events cannot
+      be re-centred onto one sample.  The .res keeps the method name (stderiv);
+      the run log records the arms and per-arm counts.
 
   - name: ndm_extractspikes
     parameters:

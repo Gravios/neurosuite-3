@@ -7,7 +7,7 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
-## 2026-10-08 — stderiv detection: threshold noise base
+## 2026-10-08 — stderiv detection: threshold noise base, re-centring, hybrid arm
 
 **ndm_detectspikes (stderiv) — `thresholdNoise`.**  The stderiv detector
 measured its noise σ on the spatial derivative but thresholded the spatial +
@@ -37,6 +37,15 @@ spikes.  On the reference chunk as one 8-channel group it did (output unchanged
 by this fix); split into two 4-channel groups it did not, and 305 and 1287
 spikes had `.res` ≠ waveform position.  Existing `.res` files may therefore be
 un-re-centred for some groups; re-run detection to make them consistent.
+
+**ndm_detectspikes (stderiv) — `detectArms: hybrid`.**  Optional second
+detection pass on the group-referenced raw signal (engine `-H`), merged with the
+stderiv pass by the refractory rule; each arm thresholds at
+`thresholdFactor × 4σ` of its own signal (implies `thresholdNoise: stderiv`).
+Recovers spikes whose footprint spans adjacent sites, which the spatial
+derivative attenuates; on the reference chunk at ~5.3σ per arm it raises
+detections 11.5k → 28.3k, mostly multi-unit activity, with genuine missed spikes
+for at least one high-rate unit.  Default unchanged (byte-identical).
 
 ---
 

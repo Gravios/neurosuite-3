@@ -1769,6 +1769,28 @@ ndm_process_spikes()
 			esac
 			recenterArg="$recenterArg -W $recenterHalfWidth"
 		fi
+
+		# detectArms: stderiv (default) | hybrid.  hybrid adds a detection pass on
+		# the group-referenced raw signal and merges it with the stderiv pass; each
+		# pass thresholds on its own signal's sigma, so it implies (and conflicts
+		# with an explicit sdiff) thresholdNoise.
+		detectArms=$(read_script_parameter $session detectArms)
+		hybridArg=
+		case "$detectArms" in
+			''|stderiv) : ;;
+			hybrid)
+				if [ "$methodFamily" != stderiv ]; then
+					echo_error "detectArms: hybrid applies to method stderiv only (method is '$method')"
+					exit $GENERAL_ERROR
+				fi
+				if [ "$thresholdNoise" = sdiff ]; then
+					echo_error "detectArms: hybrid measures each arm's threshold on its own signal; remove thresholdNoise: sdiff"
+					exit $GENERAL_ERROR
+				fi
+				hybridArg="-H" ;;
+			*) echo_error "detectArms must be 'stderiv' or 'hybrid' (got '$detectArms')"
+			   exit $GENERAL_ERROR ;;
+		esac
 	fi
 	memCapGB=$(read_script_parameter $session memCapGB)
 
@@ -1841,13 +1863,14 @@ ndm_process_spikes()
 				echo_info " Threshold factor           : $thresholdFactor"
 				[ -n "$thresholdNoise" ] && echo_info " Threshold noise base       : $thresholdNoise"
 				[ -n "$recenterArg" ] && echo_info " Re-centring                : ${recenterMode:-stderiv} ${recenterHalfWidth:+(+-$recenterHalfWidth samples)}"
+				[ -n "$hybridArg" ] && echo_info " Detection arms             : stderiv + raw (hybrid)"
 				echo_info " Detecting + extracting spike waveforms"
 				$binary \
 					-n $nChannels -c $electrodeList \
 					-w $samplesInWaveform -p $peakSample \
 					-r $refractoryPeriod -l $peakSearchLength \
 					-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
-					$thresholdNoiseArg $recenterArg \
+					$thresholdNoiseArg $recenterArg $hybridArg \
 					$sdiffOrderArg $sdiffPairsArg \
 					$tmp
 			else
