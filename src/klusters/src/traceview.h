@@ -636,6 +636,21 @@ private:
      * so the abscissa is shifted by it — the same adjustment mouseMoveEvent applies before
      * reading world coordinates.*/
     QPoint navWorldAt(const QPoint& viewportPos);
+
+    /** Where a trace Left-press landed, resolved once by resolveClickGeometry() and shared by
+     * every press-mode body.  Single-column presses leave the multi-column-only fields at their
+     * defaults (groupIndex 0, labelSelected false). */
+    struct TraceClickGeometry {
+        QPoint current;               ///< click point in world coordinates
+        int    x = 0;                 ///< abscissa relative to borderX
+        int    groupIndex = 0;        ///< multi-column: the clicked column (0 in single-column)
+        int    sampleIndex = 1;       ///< nearest sample along the trace
+        bool   labelSelected = false; ///< multi-column: the click fell on the id/gain legend
+    };
+    /** The shared coordinate preamble of beginTracePress: map the viewport press position
+     * @p viewportPos to the world point + column/sample it selects, for whichever layout
+     * (multi- or single-column) is active.  The per-mode bodies read the returned geometry. */
+    TraceClickGeometry resolveClickGeometry(const QPoint& viewportPos);
     /**Re-entrancy guard for beginTracePress: true while the press body runs, so the body's
      * own BaseFrame::mousePressEvent (the base-zoom delegation) does not re-resolve the
      * `trace.press` command.  Set/cleared by a scoped guard in beginTracePress.*/
