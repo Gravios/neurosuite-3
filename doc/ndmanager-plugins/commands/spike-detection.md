@@ -219,13 +219,17 @@ Run-time log line:
 
 ## `ndm_extractspikes` post-extraction filter (`flatRunMax`, `dedupSamples`)
 
-The same two filters as detection, applied to each freshly extracted `.spk` in
-its own transform domain (`process_spikefilter.py`, any method), set in the
-`ndm_extractspikes` node:
+The same two filters as detection, run after each extraction
+(`process_spikefilter.py`, any method), set in the `ndm_extractspikes` node.
+The flat-run test looks at two windows per spike and drops it if either fails:
+the **raw source window** (`inputExtension`, normally the `.fil`) at the spike
+time, and the extracted `.spk` in its own transform domain.  The raw test is the
+one that catches a dropped-out channel: a spatial derivative mixes the dead channel
+with its live neighbours, so in a `stderiv`/`sdiff` `.spk` it is not flat at all.
 
 | Setting | Default | Effect |
 |---|---|---|
-| `flatRunMax: N` | off | drop spikes whose waveform has more than N identical consecutive samples on any channel |
+| `flatRunMax: N` | off | drop spikes with more than N identical consecutive samples on any channel, in the raw window or the `.spk` |
 | `dedupSamples: N` | `0` | drop a spike within N samples of the previous kept one; `-1` = off |
 
 The `.res` is shared by every waveform variant, so a filtered extraction can
@@ -240,10 +244,21 @@ On the reference chunk with an injected 1-s zero gap (group 6, 12,269
 detections kept with duplicates), extracting `stderiv_C5` with `flatRunMax: 5`
 dropped 30 flat-run spikes and 7 duplicates: the shared `.res`, `.spk.standard`,
 `.spk.stderiv_C5`, `.fet` and `.clu` all went to 12,232 rows, and both `.spk`
-files were byte-identical to fresh re-extractions at the new `.res`.  The
-transform domain matters: the per-channel zero runs that make detection-time
-`flatRunMax: 5` (raw window) drop 31% leave the stderiv waveform non-flat, so
-extraction-time filtering of a stderiv `.spk` drops far fewer.
+files were byte-identical to fresh re-extractions at the new `.res`.
+
+Choosing N.  With one channel zeroed for 1 s and another stuck for 0.5 s
+(80 spikes with at least 6 dropped samples in their window), a `stderiv_C5`
+extraction flagged 0 of them in the `.spk` and all 80 in the raw window.  The
+same recording also has short exact-zero runs at zero crossings (mostly 1–5
+samples, a few up to ~17), so the raw test at N = 5 drops ~31% of spikes:
+
+| `flatRunMax` | injected dropouts caught | other spikes dropped |
+|---|---|---|
+| 10 | 80 / 80 | 282 |
+| 15 | 80 / 80 | 17 |
+| 20 | 80 / 80 | 1 |
+
+Use N ≈ 20 to remove channel dropouts without the zero-crossing runs.
 
 ## `ndm_spikecleaner` — drop flat / railed waveforms
 

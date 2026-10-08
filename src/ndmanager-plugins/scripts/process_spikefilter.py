@@ -3,13 +3,18 @@
 #  process_spikefilter.py — post-extraction spike filter for one spike group.
 #
 #  Called by ndm_extractspikes after a waveform file has been (re-)extracted at
-#  the shared spike times.  Works on the .spk as written, in its own transform
-#  domain (standard, sdiff or stderiv alike), and removes:
+#  the shared spike times, and removes:
 #
-#    flat runs   a spike whose waveform has more than --flat-run identical
-#                consecutive samples on any channel -- zero-filled gaps (a
-#                back-filled DAC ring-buffer overrun), stuck lines, or a
-#                transform that maps a flat stretch to zeros;
+#    flat runs   a spike with more than --flat-run identical consecutive samples
+#                on any channel, checked in TWO places:
+#                  - the raw source window (--source, e.g. the .fil) at the spike
+#                    time: a dropped-out channel, a zero-filled gap (back-filled
+#                    DAC ring-buffer overrun) or a stuck line.  This is the check
+#                    that matters for a transformed .spk -- a spatial derivative
+#                    mixes a dead channel with its live neighbours, so it is NOT
+#                    flat in the stderiv/sdiff domain;
+#                  - the .spk as written, in its own transform domain, for
+#                    stretches the transform itself maps to a constant;
 #    duplicates  a spike positioned within --dedup samples of the previous kept
 #                spike (time order; the earlier one is kept; 0 = identical
 #                positions only).
@@ -77,6 +82,30 @@ def dedup_mask(res, within, exclude):
             continue
         last = t
     return dup
+
+
+def raw_flat_mask(source, total_ch, chans, res, peak, nsamp, max_run, chunk=20000):
+    """True for spikes whose RAW source window has more than max_run identical
+    consecutive samples on any of `chans`.  The window is the one the standard
+    extraction stores for a .res time t: samples [t-(peak-1), t-(peak-1)+nsamp).
+    Windows reaching past either end of the file are not tested."""
+    n = res.size
+    out = np.zeros(n, bool)
+    if max_run <= 0 or nsamp <= max_run:
+        return out, 0
+    src = np.memmap(source, "<i2", "r")
+    src = src[: src.size // total_ch * total_ch].reshape(-1, total_ch)
+    start = res.astype(np.int64) - (peak - 1)
+    ok = (start >= 0) & (start + nsamp <= src.shape[0])
+    ch = np.asarray(chans, np.int64)
+    offs = np.arange(nsamp, dtype=np.int64)
+    idx_ok = np.flatnonzero(ok)
+    for a in range(0, idx_ok.size, chunk):
+        sel = idx_ok[a:a + chunk]
+        rows = start[sel, None] + offs[None, :]                      # (m, nsamp)
+        w = src[rows.ravel()][:, ch].reshape(sel.size, nsamp, ch.size)
+        out[sel] = flat_run_mask(w, max_run)
+    return out, int((~ok).sum())
 
 
 def rows_of(path, typ, nsamp, nchan):
@@ -148,6 +177,11 @@ def main():
     ap.add_argument("--res", required=True, help="the shared .res it was extracted at")
     ap.add_argument("--nsamples", required=True, type=int)
     ap.add_argument("--nchannels", required=True, type=int)
+    ap.add_argument("--source", help="raw source the waveforms were extracted from "
+                    "(e.g. <base>.fil); enables the raw-window flat check")
+    ap.add_argument("--total-channels", type=int, help="channel count of --source")
+    ap.add_argument("--channels", help="the group's channels in --source, comma-separated")
+    ap.add_argument("--peak", type=int, help="peakSampleIndex of the waveform window")
     ap.add_argument("--flat-run", type=int, default=0,
                     help="reject > N identical consecutive samples on any channel (0 = off)")
     ap.add_argument("--dedup", type=int, default=-1,
@@ -167,12 +201,25 @@ def main():
         sys.exit(f"process_spikefilter: {a.spk} has {spk.shape[0]} waveforms but "
                  f"{a.res} has {n} spike times -- refusing to filter a misaligned pair")
 
-    flat = flat_run_mask(spk, a.flat_run)
+    flatSpk = flat_run_mask(spk, a.flat_run)
+    flatRaw = np.zeros(n, bool)
+    if a.source and a.flat_run > 0:
+        if None in (a.total_channels, a.channels, a.peak):
+            sys.exit("process_spikefilter: --source needs --total-channels, --channels and --peak")
+        chans = [int(c) for c in a.channels.replace(" ", ",").split(",") if c != ""]
+        flatRaw, edge = raw_flat_mask(a.source, a.total_channels, chans, res, a.peak,
+                                      a.nsamples, a.flat_run)
+        if edge:
+            print(f"[spikefilter] group {a.group}: {edge} spike(s) too close to a file end "
+                  f"for the raw check (not tested)")
+    flat = flatSpk | flatRaw
     dup = dedup_mask(res, a.dedup, flat)
     keep = ~(flat | dup)
     nkeep = int(keep.sum())
+    src = (f"raw {int(flatRaw.sum())}, .spk {int(flatSpk.sum())}, both {int((flatRaw & flatSpk).sum())}"
+           if a.source and a.flat_run > 0 else ".spk only")
     print(f"[spikefilter] group {a.group}: {n} spikes, {int(flat.sum())} with a flat run "
-          f"> {a.flat_run} samples, {int(dup.sum())} duplicate(s) within "
+          f"> {a.flat_run} samples ({src}), {int(dup.sum())} duplicate(s) within "
           f"{max(a.dedup, 0)} samples -> {nkeep} kept")
     if nkeep == n:
         return 0

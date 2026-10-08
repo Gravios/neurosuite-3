@@ -1961,10 +1961,16 @@ ndm_process_spikes()
 			spkOut="$(ndm_method_path "$session" spk "$group" "$method")"
 			mv $tmp.spk.$i "$spkOut"
 			if [ "$xFilter" = 1 ]; then
-				nGroupCh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel" | wc -w)
+				groupCh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel")
+				nGroupCh=$(echo $groupCh | wc -w)
+				# The raw source is checked as well: a dead channel is mixed with its
+				# live neighbours by a spatial derivative, so it is not flat in the
+				# transformed .spk.
 				python3 "$SPIKEFILTER" --base "$session" --group "$group" \
 					--spk "$spkOut" --res "${sharedRes[$i]}" \
 					--nsamples "$samplesInWaveform" --nchannels "$nGroupCh" \
+					--source "$session.$inputExtension" --total-channels "$nChannels" \
+					--channels "$(echo $groupCh | tr ' ' ',')" --peak "$peakSample" \
 					--flat-run "$xFlatRunMax" --dedup "$xDedupSamples"
 				check_command_status process_spikefilter.py
 			fi

@@ -1185,10 +1185,13 @@ programs:
 
       # flatRunMax
 
-      Drop spikes whose freshly extracted waveform -- in its own transform domain --
-      has more than flatRunMax identical consecutive samples on any channel (zero
-      fill, stuck lines, or a transform that maps a flat stretch to zeros).  0 or
-      unset = off.
+      Drop spikes with more than flatRunMax identical consecutive samples on any
+      channel, checked in the RAW source window (inputExtension, e.g. .fil) at the
+      spike time AND in the freshly extracted waveform.  The raw check is what finds
+      a dropped-out channel, zero fill or a stuck line: a spatial derivative mixes a
+      dead channel with its live neighbours, so it is not flat in a stderiv/sdiff
+      .spk.  Short exact-zero runs at zero crossings are common in some recordings;
+      a threshold of ~20 separates channel dropouts from those.  0 or unset = off.
 
       # dedupSamples
 

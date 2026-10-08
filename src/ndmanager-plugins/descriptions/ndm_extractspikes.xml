@@ -36,10 +36,12 @@ must be high-pass filtered like the usual .fil; ndm_extractspikes does not filte
 
 # flatRunMax
 
-Post-extraction filter: drop spikes whose freshly extracted waveform -- in its own
-transform domain (standard, sdiff or stderiv) -- has more than flatRunMax identical
-consecutive samples on any channel: zero fill, stuck lines, or a transform that maps
-a flat stretch to zeros.  0 or unset = off.
+Post-extraction filter: drop spikes with more than flatRunMax identical consecutive
+samples on any channel, checked in the raw source window (inputExtension) at the
+spike time and in the freshly extracted waveform.  The raw check finds dropped-out
+channels, zero fill and stuck lines, which a spatial derivative hides by mixing the
+dead channel with its neighbours.  ~20 separates channel dropouts from short zero
+runs at zero crossings.  0 or unset = off.
 
 # dedupSamples
 

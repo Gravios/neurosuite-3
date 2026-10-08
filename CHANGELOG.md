@@ -7,6 +7,22 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-10-08 — ndm_extractspikes filter: check the raw source window
+
+The post-extraction flat-run test looked only at the extracted `.spk`, so with a
+`stderiv`/`sdiff` method it missed dropped-out channels: the spatial derivative
+mixes a dead channel with its live neighbours and the result is not flat.
+`process_spikefilter.py` now also tests the raw window of the extraction source
+(`<session>.<inputExtension>`, the standard-extraction window
+`[t-(peak-1), t-(peak-1)+nSamples)`) on the group's channels, and drops a spike
+that fails either test.  With one channel zeroed for 1 s and one stuck for 0.5 s,
+a `stderiv_C5` extraction caught 0 of the 80 affected spikes in the `.spk` and
+all 80 in the raw window.  Short exact-zero runs at zero crossings in the same
+recording mean `flatRunMax` ≈ 20 is the useful setting (1 other spike dropped,
+against ~31% at 5).
+
+---
+
 ## 2026-10-08 — ndm_pca: a `_D` run adds the lag space to existing features
 
 `ndm_pca --method stderiv_C5_D34` skipped every group whose ordinary
