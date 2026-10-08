@@ -2500,6 +2500,41 @@ void TraceView::registerInput(input::BindingRegistry& reg)
     };
     reg.addCommand(pan);
 
+    // Ctrl+Shift+wheel amplitude scale (trace.amplitudeUp / ...Down): wheel up grows the traces,
+    // wheel down shrinks them — the global amplitude controls, one notch per step.  Registered
+    // BEFORE the Ctrl+wheel zoom commands below because both are AtLeast matches and Ctrl+Shift+wheel
+    // also satisfies the zoom chord (Ctrl present, Shift tolerated); resolve() returns the first
+    // matching command in registration order, so the more specific Ctrl+Shift must come first.  A
+    // plain Ctrl+wheel (no Shift) fails this chord's at-least-{Ctrl,Shift} test and falls through to
+    // zoom exactly as before.
+    input::Command ampUp;
+    ampUp.id       = QStringLiteral("trace.amplitudeUp");
+    ampUp.scopeId  = QStringLiteral("view.trace");
+    ampUp.label    = tr("Increase trace amplitude");
+    ampUp.category = tr("Amplitude");
+    ampUp.kind     = input::Kind::Action;
+    ampUp.defaultChord = input::Chord::wheel(+1, Qt::ControlModifier | Qt::ShiftModifier,
+                                            input::ModMatch::AtLeast);
+    ampUp.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv) tv->increaseAllAmplitude();
+    };
+    reg.addCommand(ampUp);
+
+    input::Command ampDown;
+    ampDown.id       = QStringLiteral("trace.amplitudeDown");
+    ampDown.scopeId  = QStringLiteral("view.trace");
+    ampDown.label    = tr("Decrease trace amplitude");
+    ampDown.category = tr("Amplitude");
+    ampDown.kind     = input::Kind::Action;
+    ampDown.defaultChord = input::Chord::wheel(-1, Qt::ControlModifier | Qt::ShiftModifier,
+                                              input::ModMatch::AtLeast);
+    ampDown.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv) tv->decreaseAllAmplitude();
+    };
+    reg.addCommand(ampDown);
+
     // Ctrl+wheel zoom-to-cursor (trace.wheelZoomIn / ...Out): one notch is one discrete zoom
     // step, Action kind, no drag body.  AtLeast+Ctrl matches Ctrl held with extras tolerated.
     // A wheel chord never collides with the button gestures (different device).  The trace had
@@ -2614,9 +2649,10 @@ void TraceView::wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos){
 }
 
 void TraceView::wheelEvent(QWheelEvent* event){
-    // Ctrl+wheel zoom-to-cursor is a registry command (trace.wheelZoomIn / ...Out), resolved
-    // here; a plain wheel falls through to the base (unchanged scroll / propagation); a
-    // Ctrl+wheel with no vertical delta yields no chord (chordFromEvent) and is swallowed.
+    // Ctrl+wheel zoom-to-cursor and Ctrl+Shift+wheel amplitude scale are registry commands
+    // (trace.wheelZoomIn/...Out, trace.amplitudeUp/...Down), resolved here; a plain wheel falls
+    // through to the base (unchanged scroll / propagation); a Ctrl(+Shift)+wheel with no vertical
+    // delta yields no chord (chordFromEvent) and is swallowed.
     if(dispatchInput(event)) return;
     if(!(event->modifiers() & Qt::ControlModifier)){
         BufferedView::wheelEvent(event);
