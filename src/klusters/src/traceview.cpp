@@ -2098,7 +2098,39 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
             const double curCy = wr.top()  + wr.height() / 2.0;
             const double newCx = curCx - static_cast<double>(cw.x() - ctrlPanPressWorldX);
             const double newCy = curCy - static_cast<double>(cw.y() - ctrlPanPressWorldY);
-            if(window.zoom(1.0f, static_cast<float>(newCx), static_cast<float>(newCy))){
+            const bool moved = window.zoom(1.0f, static_cast<float>(newCx), static_cast<float>(newCy));
+
+            // Edge-autoscroll in time: if the recentre clamped horizontally — the viewport can't
+            // follow the grab any further within the loaded [startTime,endTime] — page the time
+            // window in the drag direction so the pan keeps scrolling through the recording.  The
+            // reload is instantaneous (same path as a scrollbar page: emit setStartAndDuration),
+            // so no pre-buffering is needed; the clamp overflow (desired centre minus the clamped
+            // centre, in world X) converts to a time shift via the status read-out's own mapping
+            // ms = worldX / Xstep * timeStep.  Horizontal / time only; the Y (amplitude) clamp is
+            // left alone.  The grab anchor is corrected by the applied world shift so the trace
+            // stays glued under the cursor across the page (the window keeps the same zoom and
+            // timeFrameWidth, so its world mapping is unchanged by the reload).
+            const QRect  aw        = (QRect)window;
+            const double overflowX = newCx - (aw.left() + aw.width() / 2.0);
+            bool         paged     = false;
+            if(qAbs(overflowX) >= 1.0 && Xstep > 0 && timeFrameWidth < recordingLength){
+                const double overflowMs = overflowX / static_cast<double>(Xstep)
+                                                    * static_cast<double>(timeStep);
+                long newStart = startTime + static_cast<long>(overflowMs < 0 ? overflowMs - 0.5
+                                                                             : overflowMs + 0.5);
+                const long maxStart = static_cast<long>(recordingLength) - timeFrameWidth;
+                newStart = qBound(static_cast<long>(0), newStart, maxStart);
+                if(newStart != startTime){
+                    const double appliedWorldX = static_cast<double>(newStart - startTime)
+                                                 / static_cast<double>(timeStep)
+                                                 * static_cast<double>(Xstep);
+                    ctrlPanPressWorldX -= static_cast<long>(appliedWorldX < 0 ? appliedWorldX - 0.5
+                                                                              : appliedWorldX + 0.5);
+                    emit setStartAndDuration(newStart, timeFrameWidth);
+                    paged = true;
+                }
+            }
+            if(moved && !paged){
                 invalidate(REDRAW);
                 update();
             }
