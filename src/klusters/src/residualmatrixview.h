@@ -101,6 +101,10 @@ public:
   * registry's matrix.residual.pan Gesture.  Drag/commit stay in the mouse handlers.*/
     void matrixBeginPan(const QPoint& pressPos);
 
+    /**Applies a Ctrl+wheel zoom-around-cursor step from @p event; invoked by the input
+  * registry's matrix.residual.wheelZoom{In,Out} Actions.*/
+    void matrixWheelZoom(QWheelEvent* event);
+
 Q_SIGNALS:
     void viewInteracted();
     void matrixUpdated();
