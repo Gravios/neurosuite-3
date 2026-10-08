@@ -83,6 +83,24 @@ Orders 4 and 5 are derived from the pattern itself and cannot be requested throu
 methodOrder; a plain "stderiv" keeps the historical behaviour of applying whatever
 sdiffPairs the groups define.
 
+LAGGED FEATURE SPACE (_D&lt;lag&gt;&lt;dims&gt;)
+
+A trailing _D&lt;lag&gt;&lt;dims&gt; on the method, e.g. stderiv_C5_D34, names a feature space
+over the same waveforms: per channel, PC1 sampled at -lag, 0 and +lag samples, plus
+PC2 at 0 when dims is 4 (dims 3 = the three lags only).  The lag triple spans PC1 and
+its first two time derivatives, so sub-sample alignment jitter is represented
+explicitly instead of leaking into a shape component.  ndm_pca then reads the .spk of
+the token without the suffix (stderiv_C5), writes its ordinary .fet/.pca as usual, and
+ALSO writes .fet/.pca.stderiv_C5_D34 from the same fitted (and, with varimax,
+rotated) eigenvectors.  The lag .pca is an ordinary PCAE basis on the PCA window
+widened by lag on each side (centered 0, zero means), so the lag .fet is exactly the
+projection of the .spk through it and Klusters, ndm_refeaturize and fiber-kit read it
+unchanged; it carries no peak (extra) columns.  This is the same feature space
+fiber-kit's fiber-session --feat-lag writes, column for column.  before/after must
+leave lag samples of room on each side of the window (the run is refused
+otherwise).  Choose the lag per session: 3 samples (92 us at 32552 Hz) was the
+optimum on the reference session, not a constant.
+
 # dropLastChannel
 
 The spatial derivative leaves one channel that the reduction drops before PCA, so a

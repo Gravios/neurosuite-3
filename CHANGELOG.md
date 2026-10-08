@@ -7,6 +7,23 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-10-08 — ndm_pca: lagged feature space (`_D<lag><dims>`)
+
+**ndm_pca — `method: <token>_D<lag><dims>`.**  The lagged feature space
+(per channel PC1 at −lag/0/+lag samples, + PC2 when dims is 4) existed only in
+fiber-kit (`fiber-session --feat-lag … --emit-fet --emit-pca`).  `ndm_pca` now
+produces it: a `_D` suffix on the method (e.g. `stderiv_C5_D34`) reads the `.spk` of
+the base token, writes the ordinary `.fet/.pca` as before, and also writes
+`.fet/.pca.<token>_D<lag><dims>` from the same fitted, varimax-rotated
+eigenvectors (`process_pca --lag/--lag-pc2/--lag-fet`).  The lag basis is an
+ordinary PCAE file on the window widened by the lag (centered 0, zero means), so
+the lag `.fet` is the plain projection of the `.spk` through it.  Verified equal,
+value for value, to fiber-kit's `lag_basis`/`lag_project` on the reference chunk;
+without `--lag` the outputs are byte-identical.  See
+`doc/ndmanager-plugins/commands/pca.md`.
+
+---
+
 ## 2026-10-08 — stderiv detection: threshold noise base, re-centring, hybrid arm
 
 **ndm_detectspikes (stderiv) — `thresholdNoise`.**  The stderiv detector

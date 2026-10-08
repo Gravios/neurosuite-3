@@ -31,7 +31,12 @@
 #  (drops the linearly-dependent channel for orders 1 and 3) before PCA.
 #
 #  PARAMETERS (YAML, under program node ndm_pca)
-#    method       standard | sdiff | stderiv   (default standard)
+#    method       standard | sdiff | stderiv   (default standard), optionally
+#                 suffixed _D<lag><dims> (e.g. stderiv_C5_D34): ALSO write the
+#                 lagged feature space -- per channel PC1 at -lag/0/+lag samples
+#                 (+ PC2 when dims is 4) -- as .fet/.pca.<method>.N, beside the
+#                 ordinary .fet/.pca of the waveform method (the token without
+#                 _D...), which is what the .spk is read under.
 #    methodOrder  spatial derivative order, 0-3 (default 3; stderiv only).
 #                 Accepts the deprecated alias `sdiffOrder`.
 #  plus the usual nFeatures / peakSampleIndex / before / after / extra /
@@ -99,6 +104,24 @@ method=$methodOverride
 method=${method:-standard}
 ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
 methodFamily=$NDM_M_FAMILY
+# Lagged feature space: the _D<lag><dims> suffix names a FEATURE space over the same
+# waveforms, so inputs (.spk/.res) and the ordinary basis use the token without it.
+featLag=$NDM_M_LAG
+featDims=$NDM_M_DIMS
+waveMethod=$method
+if [ -n "$featLag" ]; then
+	waveMethod=${method%_D[0-9][0-9]}
+	if [ "$featLag" -lt 1 ]; then
+		echo_error "method '$method': the _D lag must be 1-9 samples"
+		exit $GENERAL_ERROR
+	fi
+	case "$featDims" in
+		3) featPC2=0 ;;
+		4) featPC2=1 ;;
+		*) echo_error "method '$method': _D<lag><dims> needs dims 3 (PC1 at three lags) or 4 (+ PC2)"
+		   exit $GENERAL_ERROR ;;
+	esac
+fi
 methodOrder=$methodOrderOverride
 [ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
 methodOrder=${methodOrder:-3}
@@ -152,22 +175,26 @@ once()
 {
 	local electrodeGroup=$1
 
-	# Method-tagged artifact paths (chain-of-custody).
-	local spkfile=$(ndm_method_path "$session" spk "$electrodeGroup" "$method")
+	# Method-tagged artifact paths (chain-of-custody).  Waveforms and the ordinary
+	# basis are named by the waveform method; a _D lag feature space by the full token.
+	local spkfile=$(ndm_method_path "$session" spk "$electrodeGroup" "$waveMethod")
 	# .res holds method-independent spike times — a Shared artifact owned by the
 	# first extraction run.  Resolve it across all methods (e.g. a standard PCA
 	# run reuses the .res written by an earlier stderiv extraction) instead of
 	# demanding .res.<method>.<group>, which need not exist.  Fall back to the
 	# strict path name only so a missing input reports a meaningful name.
-	local resfile=$(ndm_resolve_any "$session" res "$electrodeGroup" "$method")
-	[ -z "$resfile" ] && resfile=$(ndm_method_path "$session" res "$electrodeGroup" "$method")
-	local fetout=$(ndm_method_path "$session" fet "$electrodeGroup" "$method")
+	local resfile=$(ndm_resolve_any "$session" res "$electrodeGroup" "$waveMethod")
+	[ -z "$resfile" ] && resfile=$(ndm_method_path "$session" res "$electrodeGroup" "$waveMethod")
+	local fetout=$(ndm_method_path "$session" fet "$electrodeGroup" "$waveMethod")
+	local lagfet=
+	[ -n "$featLag" ] && lagfet=$(ndm_method_path "$session" fet "$electrodeGroup" "$method")
 
 	# Check input files
 	inputs_missing "$session.$param_ext" "$spkfile" "$resfile" && exit $INPUTS_MISSING
 
-	# Check output file (process_pca derives .pca.<method>.N from this name)
+	# Check output files (process_pca derives .pca.<method>.N from each .fet name)
 	outputs_exist "$fetout" && exit $OUTPUTS_EXIST
+	[ -n "$lagfet" ] && outputs_exist "$lagfet" && exit $OUTPUTS_EXIST
 
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 	# // Read Parameters
@@ -278,7 +305,12 @@ once()
 		pcaInput=$tmpspk
 	fi
 
-	process_pca -g $electrodeGroup -f $fetout.tmp -n $nPca -w $waveformLength -d $nFeatures --pca-method $pcaMethod $options ${@:2} $pcaInput
+	# Lagged feature space: same fit, extra outputs (no peak columns -- the lag .fet is
+	# exactly the projection of the .spk through its .pca, as fiber-kit writes it).
+	local lagArgs=
+	[ -n "$lagfet" ] && lagArgs="--lag $featLag --lag-pc2 $featPC2 --lag-fet $lagfet.tmp"
+
+	process_pca -g $electrodeGroup -f $fetout.tmp -n $nPca -w $waveformLength -d $nFeatures --pca-method $pcaMethod $lagArgs $options ${@:2} $pcaInput
 	check_command_status process_pca
 	[ -n "$tmpspk" ] && rm -f "$tmpspk"
 
@@ -286,6 +318,12 @@ once()
 	process_mergefeatures $fetout.tmp $resfile $fetout
 	check_command_status process_mergefeatures
 	rm $fetout.tmp
+	if [ -n "$lagfet" ]; then
+		process_mergefeatures $lagfet.tmp $resfile $lagfet
+		check_command_status process_mergefeatures
+		rm $lagfet.tmp
+		echo_info "Group $electrodeGroup lagged features: $(basename $lagfet) (lag $featLag, $featDims per channel; set nFeatures accordingly to view them in Klusters)"
+	fi
 }
 
 if [ -z "$electrodeGroup" ]

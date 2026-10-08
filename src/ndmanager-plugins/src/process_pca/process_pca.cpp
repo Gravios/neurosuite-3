@@ -230,6 +230,12 @@ void help(const char* name)
 	cout << "                      1-3=sdiff{first,laplacian,allpairs}, 4-6=stderiv{...}," << endl;
 	cout << "                      7=stderiv custom pattern, 8=stderiv custom reference-set." << endl;
 	cout << "                      Default: inferred from the output name (.pcaD=>stderiv-allpairs)" << endl;
+	cout << " --lag L         ALSO write the lagged feature space: per channel PC1 at -L, 0, +L" << endl;
+	cout << "                 samples (+ PC2 at 0), the fiber-kit --feat-lag space, as its own" << endl;
+	cout << "                 .fet (--lag-fet) and PCAE basis on a window widened by L each side." << endl;
+	cout << " --lag-pc2 0|1   keep PC2 as a 4th lagged column per channel (default 1)" << endl;
+	cout << " --lag-fet path  output for the lagged features (required with --lag); the basis" << endl;
+	cout << "                 path is derived as for -f (.tmp stripped, .fet. -> .pca.)" << endl;
 	cout << " -v              verbose mode" << endl;
 	cout << " -h              display help" << endl;
 	cout << endl << "All arguments are mandatory except" << endl;
@@ -410,6 +416,9 @@ int main(int argc,char *argv[])
 	arguments.varimaxTol     = 1e-6;
 	arguments.pcaMethod          = -1;     // -1 => infer method from output filename
 	arguments.isPcaMethodProvided = false;
+	arguments.lag               = 0;       // lagged feature space off
+	arguments.lagPC2            = true;
+	arguments.lagOutputFileName = nullptr;
 	
 	parseArgs(argc,argv,arguments); // Parse command-line
 	
@@ -453,6 +462,27 @@ int main(int argc,char *argv[])
 	// Check Input Size
 	if ( !checkInputs(arguments) ) // check arguments value
 		exit(1);
+
+	// The lagged space reads the window shifted by +-lag, so the widened window
+	// [recShift-lag, recShift+data2use+lag) must lie inside the waveform.  Refuse
+	// rather than fall back: the output is NAMED for the lag, and a classic-basis
+	// file under a _D name would be silently wrong.
+	if ( arguments.lag > 0 )
+	{
+		if ( recShift - arguments.lag < 0 || recShift + data2use + arguments.lag > arguments.spikeLength )
+		{
+			cerr << "error: --lag " << arguments.lag << " needs samples ["
+			     << recShift - arguments.lag << ", " << recShift + data2use + arguments.lag
+			     << ") but the waveform has [0, " << arguments.spikeLength
+			     << ").  Narrow the PCA window (before/after) or the lag." << endl;
+			exit(1);
+		}
+		if ( arguments.lagPC2 && arguments.nComponents < 2 )
+		{
+			cerr << "error: --lag with PC2 (dims 4) needs at least 2 principal components (-d)." << endl;
+			exit(1);
+		}
+	}
 	
 	if ( verbose )
 	{
@@ -679,7 +709,7 @@ int main(int argc,char *argv[])
 			} // for k
 		} // for j
 	} // for i
-	delete[] rawData; // free memory
+	if ( arguments.lag <= 0 ) delete[] rawData; // kept for the lagged projection otherwise
 	progress->advance(); // Complete data initialization
 	
 	if ( verbose )
@@ -872,6 +902,98 @@ int main(int argc,char *argv[])
 			cerr << "warning: cannot write .pca file: " << pcaPath << endl;
 		else if (verbose)
 			cout << "Wrote " << pcaPath << endl;
+
+		// ── Lagged feature space (--lag) ────────────────────────────────
+		// Same fitted (and, with --varimax, rotated) eigenvectors as the basis
+		// above.  Per channel: PC1 at window offsets -lag, 0, +lag (+ PC2 at 0),
+		// projected on the RAW (uncentred) window -- the lag basis is written
+		// with centered=0 and zero means, so the .fet is exactly the projection
+		// of the .spk through it.  Column order and basis layout match
+		// fiber-kit's fiber_pca.lag_project / lag_basis.
+		if (arguments.lag > 0)
+		{
+			const int L    = arguments.lag;
+			const int per  = 3 + (arguments.lagPC2 ? 1 : 0);
+			const int wide = data2use + 2 * L;
+			const int nCh  = arguments.nChannels;
+			const size_t spkStride = (size_t)nCh * (size_t)arguments.spikeLength;
+			const int nLagCols = nCh * per;
+
+			std::vector<int64_t> lagBuf((size_t)nSpikes * (size_t)nLagCols);
+#ifdef _OPENMP
+			#pragma omp parallel for schedule(static)
+#endif
+			for (long k = 0; k < (long)nSpikes; ++k)
+			{
+				const short *spk = rawData + (size_t)k * spkStride;
+				int64_t *row = lagBuf.data() + (size_t)k * (size_t)nLagCols;
+				for (int i = 0; i < nCh; ++i)
+				{
+					const gsl_matrix *E = savedEvec[i];
+					for (int c = 0; c < per; ++c)
+					{
+						// c = 0,1,2: PC1 at shift (c-1)*L; c = 3: PC2 at shift 0
+						const int comp  = (c < 3) ? 0 : 1;
+						const int shift = (c < 3) ? (c - 1) * L : 0;
+						double acc = 0.0;
+						if (E)
+							for (int j = 0; j < data2use; ++j)
+								acc += gsl_matrix_get(E, j, comp)
+								     * spk[(size_t)(recShift + shift + j) * nCh + i];
+						row[i * per + c] = (int64_t)llround(acc);
+					}
+				}
+			}
+
+			FILE *lagFile = fopen(arguments.lagOutputFileName, "wb");
+			if (!lagFile) {
+				cerr << "error: cannot open lag output file '" << arguments.lagOutputFileName << "'." << endl;
+				progress->setFailed();
+				delete progress;
+				exit(1);
+			}
+			const int32_t nLag32 = (int32_t)nLagCols;
+			fwrite(&nLag32, sizeof(int32_t), 1, lagFile);
+			fwrite(lagBuf.data(), sizeof(int64_t), lagBuf.size(), lagFile);
+			fclose(lagFile);
+
+			// Lag basis: E'[ch] = [PC1 @0, PC1 @L, PC1 @2L, (PC2 @L)] on the
+			// widened window starting at recShift-L.
+			neurosuite::core::PcaBasis lb;
+			lb.nCh            = nCh;
+			lb.data2use       = wide;
+			lb.nComp          = per;
+			lb.recShift       = recShift - L;
+			lb.centered       = false;
+			lb.method         = basis.method;
+			lb.nInputChannels = basis.nInputChannels;
+			lb.means.assign((size_t)nCh, std::vector<double>((size_t)wide, 0.0));
+			lb.evec.assign((size_t)nCh, std::vector<double>((size_t)wide * per, 0.0));
+			for (int i = 0; i < nCh; ++i) {
+				if (!savedEvec[i]) continue;
+				for (int c = 0; c < per; ++c) {
+					const int comp = (c < 3) ? 0 : 1;
+					const int off  = (c < 3) ? c * L : L;
+					for (int j = 0; j < data2use; ++j)
+						lb.evec[(size_t)i][(size_t)c * wide + (size_t)(off + j)] =
+							gsl_matrix_get(savedEvec[i], j, comp);
+				}
+			}
+			std::string lagPca(arguments.lagOutputFileName);
+			if (lagPca.size() >= tmpSuffix.size() &&
+			    lagPca.compare(lagPca.size()-tmpSuffix.size(), tmpSuffix.size(), tmpSuffix) == 0)
+				lagPca.erase(lagPca.size()-tmpSuffix.size());
+			const size_t lp = lagPca.rfind(fetStr);
+			if (lp != std::string::npos) lagPca.replace(lp, fetStr.size(), pcaStr);
+			else lagPca += ".pca";
+			if (!neurosuite::core::writePca(lagPca, lb))
+				cerr << "warning: cannot write lag .pca file: " << lagPca << endl;
+			cout << "Lagged features (lag " << L << ", " << per << "/channel): "
+			     << nLagCols << " columns -> " << arguments.lagOutputFileName
+			     << ", basis " << lagPca << " (" << wide << " samples, recShift "
+			     << recShift - L << ")" << endl;
+			delete[] rawData;
+		}
 	}
 
 	// Free Memory
@@ -959,6 +1081,25 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 				cerr << "error: --varimax-tol must be > 0" << endl;
 				exit(1);
 			}
+			continue;
+		}
+		if ( !strcmp(argv[i], "--lag") ) {
+			if ( i+1 >= nOptions ) error(argv[0]);
+			arguments.lag = atoi(argv[++i]);
+			if ( arguments.lag < 0 ) {
+				cerr << "error: --lag must be >= 0" << endl;
+				exit(1);
+			}
+			continue;
+		}
+		if ( !strcmp(argv[i], "--lag-pc2") ) {
+			if ( i+1 >= nOptions ) error(argv[0]);
+			arguments.lagPC2 = (atoi(argv[++i]) != 0);
+			continue;
+		}
+		if ( !strcmp(argv[i], "--lag-fet") ) {
+			if ( i+1 >= nOptions ) error(argv[0]);
+			arguments.lagOutputFileName = argv[++i];
 			continue;
 		}
 		if ( !strcmp(argv[i], "--pca-method") ) {
@@ -1121,6 +1262,11 @@ void parseArgs(const int argc,char **argv,arguments &arguments)
 	if ( !arguments.isOutputFileProvided)
 	{
 		cerr << "error: missing output file." << endl;
+		exit(1);
+	}
+	if ( arguments.lag > 0 && !arguments.lagOutputFileName )
+	{
+		cerr << "error: --lag needs --lag-fet <output>." << endl;
 		exit(1);
 	}
 	if( arguments.isBeforeSpikeProvided)

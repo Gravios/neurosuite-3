@@ -1989,6 +1989,11 @@ programs:
     # pattern, order 4 for a single-partner pattern, 5 for a reference-set one
     # (written with '+').  Orders 4 and 5 come from the pattern and cannot be
     # requested through methodOrder.
+    # A trailing _D<lag><dims> (e.g. stderiv_C5_D34) ALSO writes the lagged feature
+    # space -- per channel PC1 at -lag/0/+lag samples (+ PC2 when dims is 4) -- as
+    # .fet/.pca.<method>.<group>, beside the ordinary .fet/.pca of the token without
+    # _D..., which names the .spk read.  Needs before/after narrow enough that the
+    # window shifted by +-lag stays inside the waveform.
       - name: method
         value: standard
         status: Optional

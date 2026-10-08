@@ -90,6 +90,18 @@ struct arguments {
 
 	int    pcaMethod;                 ///< --pca-method: neurosuite::core::Method (see methodValid) tagged into the PCAE basis; -1 => infer from filename
 	bool   isPcaMethodProvided;
+
+	// ─── Lagged feature space (_D<lag><dims>) ───────────────────────────
+	// After the per-channel fit, ALSO emit the lag-expanded feature space:
+	// per channel PC1 at -lag, 0, +lag samples (+ PC2 at 0 when lagPC2), i.e.
+	// the fiber-kit `--feat-lag` space (fiber_pca.lag_basis / lag_project).
+	// It is written as an ordinary PCAE basis on a window widened by lag on
+	// each side (recShift-lag, data2use+2*lag, centered=0, zero means), so the
+	// .fet is exactly the projection of the .spk through that .pca and every
+	// PCAE consumer (Klusters, ndm_refeaturize, fiber-kit) reads it unchanged.
+	int         lag;                  ///< --lag N: 0 = off (default)
+	bool        lagPC2;               ///< --lag-pc2 0|1: keep PC2 as a 4th column (default 1)
+	const char *lagOutputFileName;    ///< --lag-fet PATH: lag .fet (int32 header + int64 rows); .pca derived like -f
 };
 
 
