@@ -947,15 +947,25 @@ void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
 
 void DriftMatrixView::wheelEvent(QWheelEvent* event)
 {
+    // Ctrl+wheel zoom is a registry Action (matrix.drift.wheelZoom{In,Out}); a plain wheel
+    // defers to the base; a Ctrl+wheel with no vertical delta yields no chord and is swallowed.
+    if (input::dispatch(this, event)) { event->accept(); return; }
     if (!(event->modifiers() & Qt::ControlModifier)) {
         QWidget::wheelEvent(event);
         return;
     }
+    event->accept();
+}
+
+void DriftMatrixView::matrixWheelZoom(QWheelEvent* event)
+{
+    // Continuous model (unchanged): viewInteracted first, then the notch count scales the
+    // zoom exponent.  (A zero-delta Ctrl+wheel never resolves a command, so it no longer
+    // marks interaction — a degenerate case the old handler flagged.)
     emit viewInteracted();
     const int steps = event->angleDelta().y() / 120;
-    if (steps == 0) { event->accept(); return; }
+    if (steps == 0) return;
     zoomAroundPoint(vp_.zoom * std::pow(zoomStep, steps), event->position());
-    event->accept();
 }
 
 void DriftMatrixView::keyPressEvent(QKeyEvent* event)
