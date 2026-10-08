@@ -77,6 +77,7 @@ private:
     QToolButton* saveAsBtn_     = nullptr;
     QToolButton* renameBtn_     = nullptr;
     QToolButton* deleteBtn_     = nullptr;
+    QToolButton* resetAllBtn_   = nullptr;   ///< clear every override -> shipped defaults
     QList<input::KeymapProfile>         bundled_;       ///< read-only presets (:/keymaps)
     QMap<QString, input::KeymapProfile> userProfiles_;  ///< name -> user layout
 };

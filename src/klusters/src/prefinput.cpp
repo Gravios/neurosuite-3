@@ -77,15 +77,32 @@ void PrefInput::build()
         saveAsBtn_->setToolTip(tr("Save the current fields as a new keymap layout."));
         renameBtn_ = new QToolButton(body);       renameBtn_->setText(tr("Rename"));
         deleteBtn_ = new QToolButton(body);       deleteBtn_->setText(tr("Delete"));
+        resetAllBtn_ = new QToolButton(body);     resetAllBtn_->setText(tr("Reset all to defaults"));
+        resetAllBtn_->setToolTip(tr("Clear every custom key and mouse binding and restore the "
+                                    "shipped defaults (applied when you press Apply/OK)."));
         bar->addWidget(applyProfileBtn_);
         bar->addWidget(saveAsBtn_);
         bar->addWidget(renameBtn_);
         bar->addWidget(deleteBtn_);
         bar->addStretch(1);
+        bar->addWidget(resetAllBtn_);   // far right, apart from the per-layout controls
         v->addLayout(bar);
 
         connect(profileCombo_, &QComboBox::currentIndexChanged, this,
                 [this](int){ updateProfileButtons(); });
+
+        // Reset all: clear every custom binding back to the shipped defaults.  Reuses the same
+        // restoreDefaults() the dialog's Defaults button triggers (resets every row + emits
+        // changed()); the overrides are actually cleared on the dialog's Apply/OK via
+        // commitToRegistry().  Confirmed first, since it discards all the user's rebindings.
+        connect(resetAllBtn_, &QToolButton::clicked, this, [this]{
+            if (QMessageBox::question(this, tr("Reset Input Bindings"),
+                    tr("Reset every key and mouse binding to its shipped default?  Your custom "
+                       "bindings will be cleared when you apply."))
+                != QMessageBox::Yes)
+                return;
+            restoreDefaults();
+        });
 
         // Apply: load the selected layout's overrides into the editor rows.
         connect(applyProfileBtn_, &QToolButton::clicked, this, [this]{
