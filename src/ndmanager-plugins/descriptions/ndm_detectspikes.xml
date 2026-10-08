@@ -33,6 +33,11 @@
     <value>fil</value>
     <status>Optional</status>
    </parameter>
+   <parameter>
+    <name>thresholdNoise</name>
+    <value>sdiff</value>
+    <status>Optional</status>
+   </parameter>
   </parameters>
   <help>Detect spikes on a high-pass filtered .fil file and write the shared spike-time .res files.
 
@@ -68,6 +73,18 @@ Extension of the data file read for detection, without the leading dot (default
 fil, i.e. &lt;session&gt;.fil). Set it to an alternative, externally-processed source
 (e.g. car.fil or filtered.dat) to detect from that file instead. The source
 must be high-pass filtered like the usual .fil; ndm_detectspikes does not filter it.
+
+# thresholdNoise
+
+stderiv engine only (refused for other methods): the signal the baseline noise
+level is measured on.  sdiff (default, historical) measures the spatial derivative
+before the temporal first-difference, while detection thresholds the differenced
+signal, whose noise is smaller -- so the threshold sits above thresholdFactor * 4
+sigma of the detection signal (about 1.65x on the reference session: 0.8 gives
+~5.3 sigma).  stderiv measures the detection signal itself, so the threshold is
+exactly thresholdFactor * 4 sigma, the same convention as ndm_reextractspikes_stderiv.
+Re-pick thresholdFactor when switching (~1.33 reproduces the historical 0.8).
+The run log prints the effective threshold in detection-signal sigma either way.
 
 METHOD TOKENS
 

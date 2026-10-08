@@ -56,6 +56,38 @@ Four spatial orders are supported:
 Orders 1 and 3 produce a rank-deficient transform (one linearly
 dependent channel), handled automatically by `ndm_pca_stderiv`.
 
+### Threshold noise base (`thresholdNoise`, engine `-T`)
+
+The threshold is `thresholdFactor × 4 × σ`, with σ = median(|x|)/0.6745 over
+the `start`/`duration` noise window.  `thresholdNoise` (set in the
+`ndm_detectspikes` node; stderiv engine only) chooses the signal σ is measured on:
+
+| Value | σ measured on | Threshold on the detection signal |
+|---|---|---|
+| `sdiff` (default) | spatial derivative only, *before* the temporal difference | higher than `factor × 4σ` — the differenced signal is quieter |
+| `stderiv` | the spatial + temporal derivative actually thresholded | exactly `factor × 4σ` |
+
+`sdiff` is the historical behaviour and stays the default so existing sessions
+reproduce.  On the reference session (group 6, 36–41 min) the temporal
+difference has ~0.6× the noise of the spatial derivative, so `thresholdFactor`
+0.8 lands at 5.1–5.5σ of the detection signal rather than 3.2σ.  With
+`stderiv`, re-pick the factor: ~1.33 reproduces the historical level (11.5k vs
+12.3k spikes in that 5-minute window), 1.15 gives ~4.6σ (21.7k), 1.0 gives 4σ
+(40.6k).  `ndm_reextractspikes_stderiv` already uses the `stderiv` convention.
+Every run prints the effective threshold in detection-signal σ, e.g.
+
+```
+Group 6 noise base: sdiff (historical); effective threshold 5.13..5.49 sigma of the detection signal (factor 0.8 x 4 = 3.2)
+```
+
+```yaml
+- name: ndm_detectspikes
+  parameters:
+  - {name: method,         value: stderiv, status: Optional}
+  - {name: thresholdNoise, value: stderiv, status: Optional}
+  - {name: thresholdFactor, value: 1.33,   status: Mandatory}
+```
+
 
 ---
 

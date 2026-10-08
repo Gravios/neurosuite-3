@@ -1020,6 +1020,11 @@ programs:
       # - name: inputExtension
       #   value: fil
       #   status: Optional
+    # thresholdNoise (stderiv only): sdiff (default, historical) | stderiv.  Which
+    # signal the noise sigma behind the threshold is measured on -- see help.
+      # - name: thresholdNoise
+      #   value: stderiv
+      #   status: Optional
     help: |-
       Detect spikes on the high-pass filtered .fil file and write the shared
       spike-time .res files.  The engine also emits a .spk in passing (there is no
@@ -1057,6 +1062,18 @@ programs:
       # inputExtension
 
       Data file extension to read, without the leading dot (default fil).
+
+      # thresholdNoise
+
+      stderiv engine only: the signal the baseline noise sigma is measured on.
+      sdiff (default, historical) measures the spatial derivative BEFORE the
+      temporal first-difference, but detection thresholds the differenced signal,
+      whose noise is smaller -- so the threshold sits higher than
+      thresholdFactor * 4 sigma (about 1.65x on the reference session: 0.8 gives
+      ~5.3 sigma).  stderiv measures the detection signal itself, so the threshold
+      is exactly thresholdFactor * 4 sigma; re-pick thresholdFactor when switching
+      (~1.33 reproduces the historical 0.8).  The run log prints the effective
+      threshold in detection-signal sigma for either choice.
 
   - name: ndm_extractspikes
     parameters:

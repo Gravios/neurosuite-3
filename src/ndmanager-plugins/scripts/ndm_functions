@@ -1726,6 +1726,24 @@ ndm_process_spikes()
 		check_mandatory_variable $duration "missing duration for threshold computation"
 		startInBytes=$(secondsToBytes $start)
 		durationInBytes=$(secondsToBytes $duration)
+
+		# thresholdNoise: which signal the stderiv engine measures sigma on.
+		# Empty keeps the engine default (sdiff, historical).  Only the stderiv
+		# engine implements it; asking for it elsewhere is refused, not ignored.
+		thresholdNoise=$(read_script_parameter $session thresholdNoise)
+		thresholdNoiseArg=
+		if [ -n "$thresholdNoise" ]; then
+			case "$thresholdNoise" in
+				sdiff|stderiv) : ;;
+				*) echo_error "thresholdNoise must be 'sdiff' or 'stderiv' (got '$thresholdNoise')"
+				   exit $GENERAL_ERROR ;;
+			esac
+			if [ "$methodFamily" != stderiv ]; then
+				echo_error "thresholdNoise applies to method stderiv only (method is '$method')"
+				exit $GENERAL_ERROR
+			fi
+			thresholdNoiseArg="-T $thresholdNoise"
+		fi
 	fi
 	memCapGB=$(read_script_parameter $session memCapGB)
 
@@ -1796,12 +1814,14 @@ ndm_process_spikes()
 		sdiff|stderiv)
 			if [ "$mode" = detect ]; then
 				echo_info " Threshold factor           : $thresholdFactor"
+				[ -n "$thresholdNoise" ] && echo_info " Threshold noise base       : $thresholdNoise"
 				echo_info " Detecting + extracting spike waveforms"
 				$binary \
 					-n $nChannels -c $electrodeList \
 					-w $samplesInWaveform -p $peakSample \
 					-r $refractoryPeriod -l $peakSearchLength \
 					-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
+					$thresholdNoiseArg \
 					$sdiffOrderArg $sdiffPairsArg \
 					$tmp
 			else

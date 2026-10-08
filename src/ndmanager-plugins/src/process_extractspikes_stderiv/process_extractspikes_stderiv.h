@@ -64,6 +64,22 @@ enum SdiffOrder {
     SDIFF_CUSTOM_CAR = 5  // per-channel reference SET; s[i]=x[i]-mean(set) (-P "a-b+c...")
 };
 
+// Which signal the noise level (and so the threshold) is measured on (-T).
+//
+//  THRNOISE_SDIFF    historical: median |spatial derivative| — the signal BEFORE
+//                    the temporal first-difference.  Detection then runs on the
+//                    temporally differenced signal, whose noise is smaller (the
+//                    .fil is band-limited, so neighbouring samples are correlated),
+//                    so thresholdFactor is effectively inflated: ~1.65x on the
+//                    reference session (0.8 -> ~5.3 sigma instead of 3.2 sigma).
+//  THRNOISE_STDERIV  median |spatial + temporal derivative| — the signal the
+//                    detector actually thresholds, so thresholdFactor means what
+//                    it says.  Same convention as process_reextractspikes_stderiv.
+enum ThresholdNoise {
+    THRNOISE_SDIFF   = 0,  // default (historical)
+    THRNOISE_STDERIV = 1
+};
+
 struct arguments {
     // I/O
     char *inputFileName;
@@ -89,13 +105,14 @@ struct arguments {
     bool  isTotalChannelNumberProvided;
     bool  isChannelListProvided;
 
-    // Threshold computation (internal, applied to sdiff signal)
+    // Threshold computation (internal; noise measured on the signal chosen by -T)
     double thresholdFactor;
     off_t  threshStartByte;
     off_t  threshSizeBytes;
     bool   isThresholdFactorProvided;
     bool   isThreshStartByteProvided;
     bool   isThreshSizeBytesProvided;
+    ThresholdNoise thresholdNoise;
 
     // Spatial derivative
     SdiffOrder sdiffOrder;
@@ -119,6 +136,7 @@ void computeSdiffThresholds(FILE *fp, off_t startByte, off_t sizeByte,
                              int nChanTot, int nGroups,
                              int **channelList, int *channelNb_group,
                              SdiffOrder order, double factor,
+                             ThresholdNoise noise,
                              double **outThresholds);
 
 int  getChannelsFromArg(int *channelNb_group, int **channelList,

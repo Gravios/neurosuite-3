@@ -262,16 +262,24 @@ static void fill_sdiff_buffer(const short *raw,
 // =========================================================================
 // Threshold computation
 // =========================================================================
-void computeSdiffThresholds(FILE       *fp,
-                             off_t       startByte,
-                             off_t       sizeByte,
-                             int         nChanTot,
-                             int         nGroups,
-                             int       **channelList,
-                             int        *channelNb_group,
-                             SdiffOrder  order,
-                             double      factor,
-                             double    **outThresholds)
+// The noise window is read once and two robust noise levels are measured per
+// channel: median|sdiff| (spatial derivative only, the historical threshold
+// base) and median|stderiv| (spatial + temporal first-difference — the signal
+// the detector thresholds, built exactly as fill_sdiff_buffer builds it:
+// rounded + int16-clamped sdiff, then a clamped first difference).  `noise`
+// picks which one sets the threshold; both are reported so a run states the
+// effective threshold on the detection signal either way.
+void computeSdiffThresholds(FILE          *fp,
+                             off_t          startByte,
+                             off_t          sizeByte,
+                             int            nChanTot,
+                             int            nGroups,
+                             int          **channelList,
+                             int           *channelNb_group,
+                             SdiffOrder     order,
+                             double         factor,
+                             ThresholdNoise noise,
+                             double       **outThresholds)
 {
     if(verbose)
         cout << "  [sdiff thresholds] reading "
@@ -294,12 +302,22 @@ void computeSdiffThresholds(FILE       *fp,
     const int       chunkSz  = 65536; // samples per I/O chunk
     vector<short>   chunk((size_t)chunkSz * nChanTot);
 
-    vector<vector<vector<double>>> absBuf(nGroups);
+    vector<vector<vector<double>>> absBuf(nGroups);   // |sdiff|   (historical base)
+    vector<vector<vector<float>>>  absTd(nGroups);    // |stderiv| (detection signal)
+    vector<vector<int>>            prevSd(nGroups);   // last rounded sdiff, per channel
     for(int g = 0; g < nGroups; g++) {
         absBuf[g].resize(channelNb_group[g]);
-        for(int ci = 0; ci < channelNb_group[g]; ci++)
+        absTd[g].resize(channelNb_group[g]);
+        prevSd[g].assign(channelNb_group[g], 0);
+        for(int ci = 0; ci < channelNb_group[g]; ci++) {
             absBuf[g][ci].reserve((size_t)(nSamples / stride + 1));
+            absTd[g][ci].reserve((size_t)(nSamples / stride + 1));
+        }
     }
+
+    auto clamp16 = [](long v) -> int {
+        return (int)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
+    };
 
     long long samplesRead = 0, samplesSeen = 0;
     while(samplesRead < nSamples) {
@@ -309,30 +327,49 @@ void computeSdiffThresholds(FILE       *fp,
         long long gotSamples = (long long)got / nChanTot;
 
         for(long long t = 0; t < gotSamples; t++, samplesSeen++) {
-            if(samplesSeen % stride != 0) continue;
+            // The temporal difference needs EVERY sample's sdiff, so the
+            // derivative is carried on all samples; only the kept (strided)
+            // samples enter the medians.
+            const bool keep  = (samplesSeen % stride == 0);
+            const bool hasTd = (samplesSeen > 0);
             const short *rec = chunk.data() + t * nChanTot;
             for(int g = 0; g < nGroups; g++) {
                 const int nCG    = channelNb_group[g];
                 const int *cList = channelList[g];
-                for(int ci = 0; ci < nCG; ci++)
-                    absBuf[g][ci].push_back(
-                        fabs(computeSDiff(rec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g))));
+                for(int ci = 0; ci < nCG; ci++) {
+                    const double v = computeSDiff(rec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g));
+                    const int    sdi = clamp16(lround(v));
+                    if(keep) {
+                        absBuf[g][ci].push_back(fabs(v));
+                        if(hasTd)
+                            absTd[g][ci].push_back((float)abs(clamp16((long)sdi - prevSd[g][ci])));
+                    }
+                    prevSd[g][ci] = sdi;
+                }
             }
         }
         samplesRead += gotSamples;
         if(gotSamples < toRead) break;
     }
 
+    auto medianOf = [](auto &v) -> double {
+        nth_element(v.begin(), v.begin() + (long)(v.size() / 2), v.end());
+        return (double)v[v.size() / 2];
+    };
+
     for(int g = 0; g < nGroups; g++) {
+        double minK = 1e300, maxK = 0.0;
         for(int ci = 0; ci < channelNb_group[g]; ci++) {
             auto &v = absBuf[g][ci];
-            if(v.empty()) {
+            if(v.empty() || absTd[g][ci].empty()) {
                 cerr << "error: no data for group " << g+1
                      << " channel index " << ci << endl;
                 exit(1);
             }
             sort(v.begin(), v.end());
-            const double med = v[v.size() / 2];
+            const double medSd = v[v.size() / 2];
+            const double medTd = medianOf(absTd[g][ci]);
+            const double med   = (noise == THRNOISE_STDERIV) ? medTd : medSd;
             // Quiroga (2004) threshold: thr = factor × 4 × σ_n
             // where σ_n = median(|x|) / 0.6745  (robust noise-amplitude estimate;
             // 0.6745 = Φ⁻¹(0.75) for a unit Gaussian).
@@ -340,12 +377,23 @@ void computeSdiffThresholds(FILE       *fp,
             // combined with 4 it matches process_medianthreshold's convention of
             // "threshold = factor × 4 × sigma_n".
             outThresholds[g][ci] = factor * 4.0 * med / 0.6745;
+            // Effective threshold in noise units OF THE DETECTION SIGNAL.
+            const double k = (medTd > 0) ? outThresholds[g][ci] / (medTd / 0.6745) : 0.0;
+            minK = min(minK, k); maxK = max(maxK, k);
             if(verbose)
-                cout << "  [sdiff] g=" << g+1
+                cout << "  [noise] g=" << g+1
                      << " ch=" << channelList[g][ci]
-                     << "  median|sdiff|=" << med
-                     << "  thr=" << outThresholds[g][ci] << endl;
+                     << "  median|sdiff|=" << medSd
+                     << "  median|stderiv|=" << medTd
+                     << "  thr=" << outThresholds[g][ci]
+                     << "  (= " << k << " sigma of the detection signal)" << endl;
         }
+        if(channelNb_group[g] > 0)
+            cout << "Group " << g+1 << " noise base: "
+                 << (noise == THRNOISE_STDERIV ? "stderiv" : "sdiff (historical)")
+                 << "; effective threshold " << minK << ".." << maxK
+                 << " sigma of the detection signal (factor " << factor
+                 << " x 4 = " << factor * 4.0 << ")\n";
     }
 }
 
@@ -677,10 +725,16 @@ static void help(const char *name)
          << "  -p peakSample   position of peak within waveform (1-based)\n"
          << "  -r refractPer   minimum samples between spikes\n"
          << "  -l peakSearch   peak-search window length in samples\n\n"
-         << "Threshold (computed internally from sdiff signal):\n"
+         << "Threshold (computed internally from the noise window):\n"
          << "  -f factor       threshold = factor * 4*sigma  (Quiroga 2004)\n"
          << "  -B startByte    byte offset into .fil for noise window\n"
-         << "  -Z sizeBytes    byte length of noise window\n\n"
+         << "  -Z sizeBytes    byte length of noise window\n"
+         << "  -T sdiff|stderiv  signal sigma is measured on.  sdiff (default,\n"
+         << "                  historical) = spatial derivative only, although the\n"
+         << "                  detector thresholds the temporally differenced signal,\n"
+         << "                  whose noise is smaller -- the factor is effectively\n"
+         << "                  inflated.  stderiv = the detection signal itself, so\n"
+         << "                  factor*4 is the threshold in its noise units.\n\n"
          << "Spatial derivative:\n"
          << "  -d order        0=none  1=first-diff  2=Laplacian  3=allpairs (default)\n"
          << "  -P g1:g2:...    custom per-group difference patterns.  Each group is\n"
@@ -715,6 +769,7 @@ void parseArgs(int argc, char **argv, arguments &a)
     a.threshStartByte          = 0;
     a.threshSizeBytes          = 0;
     a.sdiffOrder               = SDIFF_ALLPAIRS; // default
+    a.thresholdNoise           = THRNOISE_SDIFF; // historical default
     a.isDisableAbs             = true;
     a.isInputFileProvided      = false;
     a.isOutputBaseFileProvided = false;
@@ -759,6 +814,14 @@ void parseArgs(int argc, char **argv, arguments &a)
                   a.isThreshStartByteProvided = true; break;
         case 'Z': a.threshSizeBytes = (off_t)atoll(argv[++i]);
                   a.isThreshSizeBytesProvided = true; break;
+        case 'T': { const string v = argv[++i];
+                    if(v == "sdiff")        a.thresholdNoise = THRNOISE_SDIFF;
+                    else if(v == "stderiv") a.thresholdNoise = THRNOISE_STDERIV;
+                    else {
+                        cerr << "error: -T must be 'sdiff' or 'stderiv'." << endl;
+                        exit(1);
+                    }
+                    break; }
         case 'd': { int o = atoi(argv[++i]);
                     if(o < 0 || o > 3) {
                         cerr << "error: -d must be 0, 1, 2, or 3." << endl;
@@ -1068,7 +1131,9 @@ int main(int argc, char *argv[])
              << "threshFactor : " << args.thresholdFactor     << "\n"
              << "threshStart  : " << args.threshStartByte     << " B\n"
              << "threshSize   : " << args.threshSizeBytes     << " B\n"
-             << "sdiffOrder   : " << (int)args.sdiffOrder     << "\n";
+             << "sdiffOrder   : " << (int)args.sdiffOrder     << "\n"
+             << "noiseBase    : " << (args.thresholdNoise == THRNOISE_STDERIV
+                                      ? "stderiv" : "sdiff") << "\n";
         if(args.useExistingRes) cout << "mode         : RE-EXTRACT (-R)\n";
         cout << "\n";
     }
@@ -1094,7 +1159,7 @@ int main(int argc, char *argv[])
         return rc;
     }
 
-    // ── per-group thresholds (sdiff domain) ───────────────────────────────
+    // ── per-group thresholds (noise base chosen by -T) ────────────────────
     double **thresList   = new double*[MAX_CHANNO];
     int     *thresNb_grp = new int[MAX_CHANNO];
     for(int i = 0; i < MAX_CHANNO; i++) {
@@ -1107,7 +1172,8 @@ int main(int argc, char *argv[])
                             args.threshStartByte, args.threshSizeBytes,
                             args.totalChannelNumber,
                             nbGroups, channelList, channelNb_grp,
-                            args.sdiffOrder, args.thresholdFactor, thresList);
+                            args.sdiffOrder, args.thresholdFactor,
+                            args.thresholdNoise, thresList);
 
     for(int g = 0; g < nbGroups; g++) thresNb_grp[g] = channelNb_grp[g];
 
@@ -1117,7 +1183,7 @@ int main(int argc, char *argv[])
     }
 
     for(int g = 0; g < nbGroups; g++) {
-        cout << "Group " << g+1 << " sdiff thresholds: ";
+        cout << "Group " << g+1 << " thresholds: ";
         for(int ci = 0; ci < channelNb_grp[g]; ci++) {
             if(ci) cout << ",";
             cout << thresList[g][ci];

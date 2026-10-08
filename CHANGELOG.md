@@ -7,6 +7,21 @@ most recent at top.  Deep per-topic technical notes live in
 
 ---
 
+## 2026-10-08 — stderiv detection: threshold noise base
+
+**ndm_detectspikes (stderiv) — `thresholdNoise`.**  The stderiv detector
+measured its noise σ on the spatial derivative but thresholded the spatial +
+temporal derivative, whose noise is ~0.6× smaller on the reference session, so
+`thresholdFactor` 0.8 meant ~5.3σ of the detection signal instead of 3.2σ.
+New optional `thresholdNoise: stderiv` (engine `-T stderiv`) measures σ on the
+signal actually thresholded — the convention `ndm_reextractspikes_stderiv`
+already used.  Default `sdiff` keeps the historical behaviour (default run
+byte-identical `.res`/`.spk` on the reference chunk).  Every run now prints the
+effective threshold in detection-signal σ.  See
+`doc/ndmanager-plugins/commands/spike-detection.md`.
+
+---
+
 ## 2026-06-08 — Klusters high-cluster-count rendering perf, PCA-Center Align All profiling + setup hoist, cross-cluster GPU-batch design
 
 A performance session focused on sessions with thousands of clusters: the
