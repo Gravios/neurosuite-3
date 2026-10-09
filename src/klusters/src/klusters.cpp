@@ -2040,16 +2040,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
                 return true;
             }
         }
-        // Ctrl+Shift+Left/Right cycles the same focus ring (kept as an
-        // alternative; Ctrl+Left/Right is the hierarchy custody transfer, so
-        // plain Tab is now the primary focus mover).  Placed before the
-        // Left/Right tab-display handler so it is not swallowed as a tab switch.
-        if((ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right)
-           && (ke->modifiers() & Qt::ControlModifier)
-           && (ke->modifiers() & Qt::ShiftModifier)){
-            cycleHierarchyFocus(ke->key() == Qt::Key_Right);
-            return true;
-        }
+        // (Ctrl+Shift+Left/Right no longer cycles the focus ring.  That chord now belongs
+        //  exclusively to trace Next / Previous Spike — the mNextSpike / mPreviousSpike
+        //  QActions bound to it in 0698 — so this focus-ring alternative, which only ever
+        //  fired when no trace view was up (otherwise those QActions shadowed it), is
+        //  retired.  Plain Tab / Shift+Tab remains the focus-ring mover.)
 
         // ── Left / Right (plain or Ctrl) — cycle display tabs ───────────────
         // Plain Left/Right switches tabs ONLY when focus is on the tab bar
@@ -2061,7 +2056,15 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         //
         // Ctrl+Left/Right works from anywhere: from outside the tab area,
         // first jumps to Overview; from inside the tab bar, cycles tabs.
+        //
+        // Shift is excluded so Ctrl+Shift+Left/Right belongs solely to trace
+        // Next/Previous Spike (the mNextSpike / mPreviousSpike QActions, 0698): without
+        // this, removing the old Ctrl+Shift+arrow focus-ring handler above would let a
+        // Ctrl+Shift+Left with no trace view up (spike QAction disabled) fall into the
+        // Ctrl-held "jump to Overview" branch here.  Plain Shift+arrow likewise is not a
+        // tab switch.
         if((ke->key() == Qt::Key_Left || ke->key() == Qt::Key_Right) &&
+           !(ke->modifiers() & Qt::ShiftModifier) &&
            tabsParent && tabsParent->isVisible() && tabsParent->count() > 0){
 
             QWidget* focused = QApplication::focusWidget();
