@@ -353,7 +353,9 @@ void NeuroscopeApp::initActions()
 
     mSkipChannels = channelsMenu->addAction(tr("&Skip Channels"));
     mSkipChannels->setIcon(QIcon(":/icons/skip"));
-    mSkipChannels->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
+    // No keyboard shortcut: Ctrl+Shift+S is Save As (QKeySequence::SaveAs) on this platform,
+    // so binding it here shadowed one of the two (input-overhaul audit, S1c — the shortcut
+    // stays on file.saveAs).  Skip Channels remains available from the Channels menu.
     connect(mSkipChannels, &QAction::triggered, this, &NeuroscopeApp::slotSkipChannels);
     channelsMenu->addSeparator();
 
@@ -500,7 +502,9 @@ void NeuroscopeApp::initActions()
 
     traceMenu->addSeparator();
     autocenterChannels = traceMenu->addAction(tr("Autocenter Channels"));
-    autocenterChannels->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
+    // No keyboard shortcut: Ctrl+Shift+A already belongs to "Select All except 0 and 1"
+    // (edit.selectAllExcept01), so binding it here shadowed one of the two (input-overhaul
+    // audit, S1c — the shortcut stays on the first action).  Available from the Trace menu.
     autocenterChannels->setCheckable(true);
     connect(autocenterChannels, &QAction::triggered, this, &NeuroscopeApp::slotAutocenterChannels);
 
