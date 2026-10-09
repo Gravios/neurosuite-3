@@ -31,6 +31,7 @@
 #include <QEvent>
 #include <QVector>
 #include <QDebug>
+#include <QRegularExpression>
 
 AnatomyPage::AnatomyPage(QWidget* parent)
     : AnatomyLayout(parent),

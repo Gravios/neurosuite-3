@@ -28,6 +28,7 @@
 //include files for QT
 #include <QFile> 
 #include <QString> 
+#include <QDateTime>
 
 using namespace neuroscope;
 

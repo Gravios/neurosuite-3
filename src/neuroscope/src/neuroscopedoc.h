@@ -27,6 +27,7 @@
 #include <QList>
 
 #include <QEvent>
+#include <QDateTime>
 
 #include <memory>
 

@@ -59,6 +59,7 @@
 #include <QUrl>
 #include <QRegularExpression>
 #include <QTextStream>
+#include <QFileInfo>
 
 // application specific includes
 #include "processwidget.h"

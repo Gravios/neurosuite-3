@@ -29,6 +29,7 @@
 #include <QList>
 #include <QWheelEvent>
 #include <QDropEvent>
+#include <QMimeData>
 
 /**Utilitary class used to build the channel palettes (anatomical and spike).
   *@author Lynn Hazan

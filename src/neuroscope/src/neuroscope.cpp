@@ -57,6 +57,7 @@
 #include "spectralinspector.h"
 #include "spectralview.h"
 #include <QShortcut>
+#include <QFileInfo>
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration
 #include "propertiesdialog.h"

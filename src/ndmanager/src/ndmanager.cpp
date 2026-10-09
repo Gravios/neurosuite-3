@@ -44,6 +44,9 @@
 
 #include <klustersshared/theme.h>
 #include <QDialog>
+#include <QRegularExpression>
+#include <QFileInfo>
+#include <QDir>
 #include <qrecentfileaction.h>
 #include "queryinputdialog.h"
 #include "queryoutputdialog.h"

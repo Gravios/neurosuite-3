@@ -30,6 +30,8 @@
 #include <QFileDialog>
 #include <QApplication>
 #include <QMessageBox>
+#include <QFileInfo>
+#include <QDateTime>
 
 // application specific includes
 #include "neuroscopedoc.h"

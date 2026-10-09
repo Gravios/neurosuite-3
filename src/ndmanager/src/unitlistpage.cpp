@@ -34,6 +34,7 @@
 #include <QEvent>
 #include <QVector>
 #include <QHeaderView>
+#include <QRegularExpression>
 
 UnitListPage::UnitListPage(QWidget* parent) :
     UnitListLayout(parent),isIncorrect(false),incorrectRow(0),modified(false)

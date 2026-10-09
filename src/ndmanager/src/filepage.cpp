@@ -32,6 +32,7 @@
 #include <QVector>
 #include <QList>
 #include <QTableWidgetItem>
+#include <QRegularExpression>
 
 FilePage::FilePage(QWidget *parent)
     : FileLayout(parent),

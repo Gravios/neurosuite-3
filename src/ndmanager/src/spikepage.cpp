@@ -33,6 +33,7 @@
 #include <QVector>
 #include <QList>
 #include <QDebug>
+#include <QRegularExpression>
 
 using namespace ndmanager;
 

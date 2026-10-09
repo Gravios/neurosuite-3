@@ -25,6 +25,7 @@
 #include <QString> 
 #include <QDomDocument>
 #include <QDebug>
+#include <QDateTime>
 
 using namespace neuroscope;
 

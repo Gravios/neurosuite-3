@@ -16,6 +16,7 @@
  ***************************************************************************/
 
 #include "channelmimedata.h"
+#include <QMimeData>
 
 static const char* s_mimetype = "application/x-channelinformation";
 

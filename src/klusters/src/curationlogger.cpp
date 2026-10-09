@@ -14,6 +14,7 @@
 #include <QDir>
 #include <QUuid>
 #include <QtMath>
+#include <QStringConverter>
 #include <cmath>
 
 // ---------------------------------------------------------------------------

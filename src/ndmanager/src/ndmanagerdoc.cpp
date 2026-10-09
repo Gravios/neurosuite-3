@@ -39,6 +39,7 @@
 #include <klustersshared/parameteryamlreader_probes.h>
 
 #include <QStandardPaths>
+#include <QDir>
 
 
 

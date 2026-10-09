@@ -37,6 +37,7 @@
 #include <QStandardPaths>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QSignalBlocker>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Construction

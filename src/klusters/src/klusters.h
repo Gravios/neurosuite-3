@@ -56,6 +56,7 @@ class QMenu;
 #include <QTableWidget>
 #include <QProcess>
 #include <QTimer>
+#include <QElapsedTimer>   // Qt 6.9/6.10 no longer pull this in transitively; declared member lastNudgeTimer needs it
 #include <QThread>
 #include <vector>          // decollideCommit takes std::vector<decollide::Decomp>
 

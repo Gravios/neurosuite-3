@@ -44,6 +44,7 @@
 #include <QSplitter>
 #include <QTextStream>
 #include <QVBoxLayout>
+#include <QSignalBlocker>
 
 #include <yaml-cpp/yaml.h>
 

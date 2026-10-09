@@ -292,3 +292,4 @@ void QRecentFileAction::fileSelected(QAction *action)
 }
 
 #include "moc_qrecentfileaction.cpp"
+#include <QFileInfo>

@@ -46,6 +46,7 @@
 #include <QVBoxLayout>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QDir>
 #include "ndmanagerutils.h"
 
 

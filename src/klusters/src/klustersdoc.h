@@ -47,6 +47,7 @@
 #include <QFile>
 #include <QEvent>
 #include <QDebug>
+#include <QTextStream>
 #include <vector>
 #include <memory>
 

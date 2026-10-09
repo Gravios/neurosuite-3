@@ -24,6 +24,7 @@
 #include "parameteryamlreader_probes.h"
 #include <yaml-cpp/yaml.h>
 #include <QDebug>
+#include <QRegularExpression>
 
 // ---------------------------------------------------------------------------
 // Helpers

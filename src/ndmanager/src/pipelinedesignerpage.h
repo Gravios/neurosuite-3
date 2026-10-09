@@ -28,6 +28,7 @@
 #include <QList>
 #include <QPair>
 #include <QString>
+#include <QPainterPath>
 
 #include <klustersshared/programinformation.h>
 
