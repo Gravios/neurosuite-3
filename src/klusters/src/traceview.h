@@ -605,6 +605,10 @@ protected:
      *  sample (one position per shown column in multi-column layout) and draw it; an
      *  out-of-trace-area click sets startingIndex, as the old channel-else fallthrough did. */
     void traceDrawLinePress(QMouseEvent* event);
+    /** The SELECT_EVENT press (trace.selectEvent command): select the shown event nearest the
+     *  clicked sample and arm its drag, redrawing the previously- and newly-selected events; an
+     *  out-of-trace-area click sets startingIndex, as the old channel-else fallthrough did. */
+    void traceSelectEventPress(QMouseEvent* event);
     /** Begin a Ctrl-drag pan at viewport point @p pos (arm the ctrlPan* state, set the
      *  closed-hand cursor).  The drag body is in mouseMoveEvent and the disarm in
      *  mouseReleaseEvent — the plan's seam.  Invoked by the trace.pan Gesture command. */
