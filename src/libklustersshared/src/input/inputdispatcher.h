@@ -14,6 +14,7 @@
 // forward-declared pointers), so the binding core stays testable without a GUI.
 
 #include "chord.h"
+#include "libklustersshared_export.h"
 
 class QEvent;
 class QWidget;
@@ -26,7 +27,7 @@ class BindingRegistry;
 // against — the "one source of truth" (plan §4).  Populated by the per-view
 // registerInput() calls as views are ported; read by dispatch().  A function-local
 // static, so it is constructed on first use and shared process-wide.
-BindingRegistry& registry();
+KLUSTERSSHARED_EXPORT BindingRegistry& registry();
 
 // Build a Chord from a Qt input event.  Returns an invalid Chord for anything that is
 // not a trigger — mouse move / release, auto-repeat keys, non-input events — so the
@@ -37,14 +38,14 @@ BindingRegistry& registry();
 // fresh trigger, so by default it maps to an invalid Chord (callers fall through).  Pass
 // allowAutoRepeat=true to map it anyway — for the app key dispatch, which then consults the
 // matched command's Repeat policy to decide whether a held key re-fires.
-Chord chordFromEvent(const QEvent* ev, bool allowAutoRepeat = false);
+KLUSTERSSHARED_EXPORT Chord chordFromEvent(const QEvent* ev, bool allowAutoRepeat = false);
 
 // Resolve `ev` for `view` against `reg`; if a command matches, invoke it (Action:
 // perform; Gesture: begin; Locked: perform) and return true (handled).  Otherwise
 // return false so the caller runs its existing handler — the fall-through that lets
 // un-ported views keep working while the migration lands view by view.
-bool dispatch(QWidget* view, QEvent* ev, const BindingRegistry& reg);
-bool dispatch(QWidget* view, QEvent* ev);   // uses registry()
+KLUSTERSSHARED_EXPORT bool dispatch(QWidget* view, QEvent* ev, const BindingRegistry& reg);
+KLUSTERSSHARED_EXPORT bool dispatch(QWidget* view, QEvent* ev);   // uses registry()
 
 }  // namespace input
 

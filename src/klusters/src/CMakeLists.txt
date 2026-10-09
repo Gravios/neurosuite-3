@@ -15,10 +15,9 @@ set(klusters_SRCS
     autosavethread.cpp
     baseframe.cpp
     bufferedview.cpp
-    input/chord.cpp            # device-agnostic input trigger (input-remapping plan §3)
-    input/bindingregistry.cpp  # command/scope registry + resolver (input-remapping plan §4)
-    input/inputdispatcher.cpp  # QEvent->Chord glue + app-wide registry (input-remapping plan decision #1)
-    input/keymapprofile.cpp    # named binding-override profiles / keymaps (input-remapping plan "Keymap profiles")
+    # input binding core moved to libklustersshared (src/libklustersshared/src/input)
+    # in the neuroscope input-overhaul S0 — klusters now links it via
+    # KlustersShared::klustersshared.  See claude/neuroscope-input-plan.md.
     channellist.cpp
     clusterPalette.cpp
     clusterinformationdialog.cpp

@@ -36,7 +36,14 @@ set(_srcs
     klustersshared/parameteryamlmodifier.cpp
     klustersshared/parameteryamlwriter.cpp
     klustersshared/parameteryamlreader_probes.cpp
-    klustersshared/theme.cpp)
+    klustersshared/theme.cpp
+    # input binding core (relocated from src/klusters/src/input in the neuroscope
+    # input-overhaul S0 — now shared by klusters + neuroscope; see
+    # claude/neuroscope-input-plan.md and src/klusters/docs/INPUT_SYSTEM.md)
+    input/chord.cpp
+    input/bindingregistry.cpp
+    input/inputdispatcher.cpp
+    input/keymapprofile.cpp)
 
 set(_hdrs
     libklustersshared_export.h

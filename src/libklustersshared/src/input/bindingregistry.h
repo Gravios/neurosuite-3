@@ -17,6 +17,7 @@
 #include "chord.h"
 #include "command.h"
 #include "inputscope.h"
+#include "libklustersshared_export.h"
 
 #include <QHash>
 #include <QList>
@@ -26,7 +27,7 @@
 
 namespace input {
 
-class BindingRegistry {
+class KLUSTERSSHARED_EXPORT BindingRegistry {
 public:
     // ── registration (co-located with the view / mode that owns the behavior) ──
     // Re-adding an id replaces the previous entry (so a view can re-register idempotently).

@@ -13,6 +13,11 @@ add_executable(klusters_test_spikeassignment spikeassignment_test.cpp)
 add_executable(klusters_test_pcarowprojection pcarowprojection_test.cpp)
 
 set(_core "${CMAKE_CURRENT_SOURCE_DIR}/../../libneurosuite-core/src")
+# Input binding core now lives in libklustersshared (moved there in the neuroscope
+# input-overhaul S0).  The three input unit tests still compile its Qt-light sources
+# directly (standalone, no libklustersshared link), so they point at the new location
+# and define KLUSTERSSHARED_STATICLIB to neutralise the export macro in a direct build.
+set(_shared_root "${CMAKE_CURRENT_SOURCE_DIR}/../../libklustersshared/src")
 
 foreach(_t klusters_test_selectiongrid2d klusters_test_spikeassignment
           klusters_test_pcarowprojection)
@@ -66,11 +71,12 @@ if(Qt6_FOUND)
     # in Chord::displayString).  No widgets, no KlustersDoc.
     add_executable(klusters_test_bindingregistry
         bindingregistry_test.cpp
-        "${_klu_src}/input/chord.cpp"
-        "${_klu_src}/input/bindingregistry.cpp")
+        "${_shared_root}/input/chord.cpp"
+        "${_shared_root}/input/bindingregistry.cpp")
     target_compile_features(klusters_test_bindingregistry PRIVATE cxx_std_20)
+    target_compile_definitions(klusters_test_bindingregistry PRIVATE KLUSTERSSHARED_STATICLIB)
     target_include_directories(klusters_test_bindingregistry
-        PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+        PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_core}")
     target_link_libraries(klusters_test_bindingregistry PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_bindingregistry COMMAND klusters_test_bindingregistry)
 
@@ -80,12 +86,13 @@ if(Qt6_FOUND)
     # dereferenced), so it links Qt6 Core+Gui only — no widgets.
     add_executable(klusters_test_inputdispatcher
         inputdispatcher_test.cpp
-        "${_klu_src}/input/chord.cpp"
-        "${_klu_src}/input/bindingregistry.cpp"
-        "${_klu_src}/input/inputdispatcher.cpp")
+        "${_shared_root}/input/chord.cpp"
+        "${_shared_root}/input/bindingregistry.cpp"
+        "${_shared_root}/input/inputdispatcher.cpp")
     target_compile_features(klusters_test_inputdispatcher PRIVATE cxx_std_20)
+    target_compile_definitions(klusters_test_inputdispatcher PRIVATE KLUSTERSSHARED_STATICLIB)
     target_include_directories(klusters_test_inputdispatcher
-        PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+        PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_core}")
     target_link_libraries(klusters_test_inputdispatcher PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_inputdispatcher COMMAND klusters_test_inputdispatcher)
 
@@ -95,12 +102,13 @@ if(Qt6_FOUND)
     # Chord::displayString).  No widgets, no KlustersDoc.
     add_executable(klusters_test_keymapprofile
         keymapprofile_test.cpp
-        "${_klu_src}/input/chord.cpp"
-        "${_klu_src}/input/bindingregistry.cpp"
-        "${_klu_src}/input/keymapprofile.cpp")
+        "${_shared_root}/input/chord.cpp"
+        "${_shared_root}/input/bindingregistry.cpp"
+        "${_shared_root}/input/keymapprofile.cpp")
     target_compile_features(klusters_test_keymapprofile PRIVATE cxx_std_20)
+    target_compile_definitions(klusters_test_keymapprofile PRIVATE KLUSTERSSHARED_STATICLIB)
     target_include_directories(klusters_test_keymapprofile
-        PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+        PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_core}")
     target_link_libraries(klusters_test_keymapprofile PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_keymapprofile COMMAND klusters_test_keymapprofile)
 endif()

@@ -17,6 +17,8 @@
 //   displayString()            one-way, human-readable label for the Preferences page
 //                              and cheat-sheet.  Does NOT round-trip.
 
+#include "libklustersshared_export.h"
+
 #include <QString>
 #include <Qt>
 
@@ -41,7 +43,7 @@ enum class Phase : unsigned char { Press = 0, DoubleClick, Wheel };
 // reproduces the old bitwise `modifiers() & Ctrl` press tests exactly.
 enum class ModMatch : unsigned char { Exact = 0, AtLeast = 1 };
 
-struct Chord {
+struct KLUSTERSSHARED_EXPORT Chord {
     Device                device    = Device::None;
     int                   code      = 0;            // Qt::Key_* | one Qt::MouseButton | wheel dir (+1 up / -1 down)
     Qt::KeyboardModifiers modifiers = Qt::NoModifier;
@@ -104,8 +106,8 @@ struct Chord {
 // dispatches by shortcut) into the registry.  Only a single key-combo is handled: a
 // one-element QKeySequence <-> a Key Chord.  An empty or multi-element sequence maps
 // to an invalid Chord; a non-Key Chord maps to an empty QKeySequence.
-Chord        chordFromKeySequence(const QKeySequence& seq);
-QKeySequence keySequenceFromChord(const Chord& c);
+KLUSTERSSHARED_EXPORT Chord        chordFromKeySequence(const QKeySequence& seq);
+KLUSTERSSHARED_EXPORT QKeySequence keySequenceFromChord(const Chord& c);
 
 }  // namespace input
 

@@ -21,6 +21,7 @@
 // the Preferences UI are layered on top in later patches and are NOT part of this core.
 
 #include "chord.h"
+#include "libklustersshared_export.h"
 
 #include <QString>
 #include <QMap>
@@ -51,18 +52,18 @@ struct KeymapProfile {
 // line is a binding (command ids are namespaced — "cluster.pan", "app.prefs" — so they
 // never collide with the reserved keys).  Bindings are written sorted by command id
 // (QMap order) for a stable, diffable file.
-QString serializeKeymap(const KeymapProfile& profile);
+KLUSTERSSHARED_EXPORT QString serializeKeymap(const KeymapProfile& profile);
 
 // Parse the text form.  Robust by design: blank lines and `#` comments are skipped; a
 // binding line whose value is not a valid Chord::toString(), or that references nothing
 // meaningful, is skipped rather than failing the whole profile (so a preset mentioning a
 // command this build lacks, or an encoding a newer build changed, is ignored).  If
 // `ok` is non-null it is set false when the text carried no `name`.
-KeymapProfile parseKeymap(const QString& text, bool* ok = nullptr);
+KLUSTERSSHARED_EXPORT KeymapProfile parseKeymap(const QString& text, bool* ok = nullptr);
 
 // Snapshot the registry's CURRENT override set into a profile — the user's changes from
 // the shipped defaults.  Commands left at their default are not included.
-KeymapProfile captureKeymap(const BindingRegistry& reg, const QString& name,
+KLUSTERSSHARED_EXPORT KeymapProfile captureKeymap(const BindingRegistry& reg, const QString& name,
                             const QString& description = QString());
 
 // Replace the registry's overrides with the profile's: clearAllOverrides(), then
@@ -70,16 +71,16 @@ KeymapProfile captureKeymap(const BindingRegistry& reg, const QString& name,
 // therefore restores every command to its shipped default.  This touches only the
 // registry's override layer; pushing the result to QAction shortcuts / refreshing the
 // Preferences page is the caller's job (KlustersApp::applyInputOverridesToActions).
-void applyKeymap(BindingRegistry& reg, const KeymapProfile& profile);
+KLUSTERSSHARED_EXPORT void applyKeymap(BindingRegistry& reg, const KeymapProfile& profile);
 
 // Load every "*.keymap" file in directory @p dirPath (via parseKeymap), skipping any
 // that carry no name.  @p dirPath may be a filesystem path OR a Qt resource path such as
 // ":/keymaps" — QDir/QFile handle both.  Returned sorted by file name (QDir default).
-QList<KeymapProfile> loadKeymapsFromDir(const QString& dirPath);
+KLUSTERSSHARED_EXPORT QList<KeymapProfile> loadKeymapsFromDir(const QString& dirPath);
 
 // The read-only preset layouts shipped with the build, compiled into the binary from
 // klusters-keymaps.qrc (resource path ":/keymaps").  Thin wrapper over loadKeymapsFromDir.
-QList<KeymapProfile> bundledKeymaps();
+KLUSTERSSHARED_EXPORT QList<KeymapProfile> bundledKeymaps();
 
 }  // namespace input
 
