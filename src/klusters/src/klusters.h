@@ -1278,6 +1278,9 @@ private:
     QAction *mNewTemplateLibrary;
     QAction *mReorderClustersBySimilarity;
     QAction *mPreferenceAction;
+    /** Help ▸ Keyboard Shortcuts (bare "H").  A member so registerInputBindings() can
+     *  mirror it as the `help.shortcuts` command; Qt still dispatches its Key_H shortcut. */
+    QAction *mShortcutsHelp;
 
     QAction *mViewStatusBar;
     /**Spine box enabling to choose the abscissa dimension*/

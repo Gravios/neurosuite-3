@@ -1206,9 +1206,9 @@ void KlustersApp::createMenus()
 
     QMenu *helpMenu = menuBar()->addMenu(tr("Help"));
 
-    QAction *shortcuts = helpMenu->addAction(tr("Keyboard Shortcuts…"));
-    shortcuts->setShortcut(Qt::Key_H);
-    connect(shortcuts, &QAction::triggered, this, &KlustersApp::slotShowShortcutHelp);
+    mShortcutsHelp = helpMenu->addAction(tr("Keyboard Shortcuts…"));
+    mShortcutsHelp->setShortcut(Qt::Key_H);
+    connect(mShortcutsHelp, &QAction::triggered, this, &KlustersApp::slotShowShortcutHelp);
     helpMenu->addSeparator();
     QAction *handbook = helpMenu->addAction(tr("Handbook"));
     handbook->setShortcut(Qt::Key_F1);
@@ -1985,13 +1985,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         const bool ctrlHeld = ke->modifiers() & Qt::ControlModifier;
 
-        // "H" — keyboard shortcut help dialog (a bare-letter shortcut, so only when the
-        // key is meant for the main window — not while a dialog / text field captures keys).
-        if(ke->key() == Qt::Key_H && ke->modifiers() == Qt::NoModifier
-           && globalKeyShortcutsActive()){
-            slotShowShortcutHelp();
-            return true;
-        }
+        // ("H" — keyboard-shortcut help — now dispatched solely by its Help-menu QAction
+        //  (mShortcutsHelp, Key_H), mirrored as help.shortcuts in registerInputBindings.
+        //  The former inline branch here was redundant: the QAction's shortcut fires and
+        //  consumes H before this KeyPress-only branch could run, and it yields to text
+        //  fields / modals exactly as the old globalKeyShortcutsActive() gate did.)
 
         // Esc discards a part-drawn selection polygon, in the scatter and in
         // the embedding alike -- the one key that was missing from the shared
@@ -2486,6 +2484,14 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("display.newTemplateLibrary"),  QStringLiteral("Display"), mNewTemplateLibrary);
     registerActionCommand(QStringLiteral("display.renameActive"),        QStringLiteral("Display"), mRenameActiveDisplay);
     registerActionCommand(QStringLiteral("display.closeActive"),         QStringLiteral("Display"), mCloseActiveDisplay);
+
+    // Help ▸ Keyboard Shortcuts (bare "H").  A plain menu QAction with a bare-letter
+    // shortcut, dispatched by Qt like the other bare-letter menu actions (R/U/M/I/L/P);
+    // mirroring it here lists H in Preferences ▸ Input + the cheat-sheet and makes it
+    // rebindable.  The redundant inline eventFilter H branch (shadowed by this QAction —
+    // the shortcut fires and consumes the key before the KeyPress-only branch ran) is
+    // retired in the same patch, so this is now H's single source of truth.
+    registerActionCommand(QStringLiteral("help.shortcuts"),              QStringLiteral("Help"),    mShortcutsHelp);
 
     // ── app-scope resolver-dispatched keys (not QActions) ─────────────────────
     // Bare letters with no QAction behind them, dispatched from eventFilter via
@@ -7310,7 +7316,12 @@ const KlustersApp::FilterKey KlustersApp::kFilterKeys[] = {
     {Qt::Key_Up,     Qt::NoModifier, "Up",     "While the t-SNE view is showing: raise the perplexity and recompute"},
     {Qt::Key_Down,   Qt::NoModifier, "Down",   "While the t-SNE view is showing: lower the perplexity and recompute"},
     {Qt::Key_Escape, Qt::NoModifier, "Esc",    "Discard the selection polygon being drawn; otherwise leave the child palette"},
-    {Qt::Key_H,      Qt::NoModifier, "H",      "Show the keyboard shortcut reference"},
+    // ("H" — the keyboard-shortcut reference — is no longer a filter key: it is now
+    //  dispatched by its Help-menu QAction (mShortcutsHelp, Key_H) and mirrored as the
+    //  help.shortcuts registry command.  It therefore belongs to the menu/shortcut map,
+    //  not this filter-ownership table, so auditKeyBindings() no longer flags the
+    //  Keyboard-Shortcuts action as shadowed and the help dialog's Single-keys list no
+    //  longer carries it — H is discoverable via the Help menu and Preferences ▸ Input.)
 };
 const int KlustersApp::kFilterKeyCount =
     static_cast<int>(sizeof(kFilterKeys) / sizeof(kFilterKeys[0]));
