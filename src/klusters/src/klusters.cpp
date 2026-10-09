@@ -1940,69 +1940,10 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
-    // ── Watershed live-preview mode ─────────────────────────────────────────
-    // When wsPreviewActive is true, four arrow keys + Enter + Esc are claimed
-    // exclusively; any other key is swallowed silently to prevent the
-    // user from triggering an unrelated action mid-tune.  This block runs
-    // before everything else so even ShortcutOverride'd keys can't
-    // sneak past.
-    if (wsPreviewActive &&
-        (event->type() == QEvent::ShortcutOverride ||
-         event->type() == QEvent::KeyPress))
-    {
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        const int key  = ke->key();
-        const auto mod = ke->modifiers();
-        const bool shift = (mod & Qt::ShiftModifier) != 0;
-        // Strip Shift from the modifier set for the equality test —
-        // arrows with or without Shift are both wanted.
-        const bool plainOrShifted = (mod == Qt::NoModifier) ||
-                                    (mod == Qt::ShiftModifier);
-
-        // Always claim the override so QActions don't fire.
-        if (event->type() == QEvent::ShortcutOverride) {
-            ke->accept();
-            return true;
-        }
-
-        if (ke->isAutoRepeat()) {
-            // Suppress autorepeat — the kernel costs ~50 ms per run, so
-            // queued autorepeats would feel sluggish and fire long after
-            // the key was released.
-            return true;
-        }
-
-        if (plainOrShifted) {
-            const int step = shift ? 5 : 1;
-            switch (key) {
-            case Qt::Key_Left:
-                wsSigmaCells = qBound(1, wsSigmaCells - step, 32);
-                wsRecompute();
-                return true;
-            case Qt::Key_Right:
-                wsSigmaCells = qBound(1, wsSigmaCells + step, 32);
-                wsRecompute();
-                return true;
-            case Qt::Key_Up:
-                wsThreshPct = qBound(0, wsThreshPct + step, 50);
-                wsRecompute();
-                return true;
-            case Qt::Key_Down:
-                wsThreshPct = qBound(0, wsThreshPct - step, 50);
-                wsRecompute();
-                return true;
-            case Qt::Key_Return:
-            case Qt::Key_Enter:
-                wsExit(/*commit=*/true);
-                return true;
-            case Qt::Key_Escape:
-                wsExit(/*commit=*/false);
-                return true;
-            }
-        }
-        // Any other key while preview is active: swallow.
-        return true;
-    }
+    // (The watershed live-preview modal now lives on the registry as the Exclusive
+    //  `transient.watershed` scope — see registerInputBindings().  Its keys are claimed,
+    //  acted on and swallowed by the general modal-capture block above, so the former
+    //  hand-written block that stood here is gone.)
 
     // ── Key navigation ──────────────────────────────────────────────────────
     if(event->type() == QEvent::KeyPress){
@@ -2329,6 +2270,22 @@ void KlustersApp::registerActionCommand(const QString& id, const QString& catego
 }
 
 namespace {
+// The watershed-preview modal's modifier gate, lifted verbatim from the old eventFilter
+// block: its keys act only on a plain or Shift-modified press, and Shift makes the step
+// coarse (×5).  Any other modifier combination returns act=false — the command still
+// resolves (so the Exclusive scope consumes the key) but does nothing, exactly as the old
+// block's "swallow, do nothing" branch.  `c.event` is always the KeyPress the capture
+// dispatch resolved against.
+struct WsKeyMod { bool act; int step; };
+WsKeyMod wsKeyMod(const input::Ctx& c)
+{
+    if (!c.event) return { false, 0 };
+    const Qt::KeyboardModifiers mod = static_cast<QKeyEvent*>(c.event)->modifiers();
+    const bool plainOrShifted = (mod == Qt::NoModifier) || (mod == Qt::ShiftModifier);
+    if (!plainOrShifted) return { false, 0 };
+    return { true, (mod & Qt::ShiftModifier) ? 5 : 1 };
+}
+
 // The four curation matrices (error/template/residual/drift) share no base class — by
 // design (matrixgrid.h / matrixviewport.h: ErrorMatrixView is a ViewWidget, the others
 // are QWidgets), so their Ctrl navigation is registered through this template rather than a
@@ -2758,6 +2715,60 @@ void KlustersApp::registerInputBindings()
     registerMatrixNav<TemplateMatrixView>(reg, QStringLiteral("view.matrix.template"), tr("template matrix"));
     registerMatrixNav<ResidualMatrixView>(reg, QStringLiteral("view.matrix.residual"), tr("residual matrix"));
     registerMatrixNav<DriftMatrixView>   (reg, QStringLiteral("view.matrix.drift"),    tr("drift matrix"));
+
+    // ── transient.watershed: the live watershed-preview modal (first capturing scope) ──
+    // While the preview is up this scope OWNS the keyboard (Capture::Exclusive, resolved
+    // by the modal-capture block at the top of eventFilter): the arrows tune the two
+    // parameters (Shift = coarse ×5), Enter / keypad-Enter commits, Esc cancels, and every
+    // other key is swallowed — the behaviour of the former hand-written watershed block,
+    // now declared here instead.  The commands are Locked (modal: shown read-only in
+    // Preferences, not rebindable).  Each is bound to its key with AtLeast+NoModifier so a
+    // plain OR Shift press resolves it; wsKeyMod() reads the live event for the step and
+    // reproduces the old plain/Shift-only gate (any other modifier resolves the command
+    // but no-ops, and the Exclusive scope consumes it regardless).
+    {
+        input::InputScope ws;
+        ws.id      = QStringLiteral("transient.watershed");
+        ws.layer   = input::Layer::Transient;
+        ws.active  = [this](const input::Ctx&){ return wsPreviewActive; };
+        ws.capture = input::Capture::Exclusive;
+        reg.addScope(ws);
+    }
+    {
+        const QString wsScope = QStringLiteral("transient.watershed");
+        const QString wsCat   = tr("Watershed preview");
+        auto anyModKey = [](int k){
+            return input::Chord{ input::Device::Key, k, Qt::NoModifier,
+                                 input::Phase::Press, input::ModMatch::AtLeast };
+        };
+        auto wsCmd = [&](const QString& id, const QString& label, int key,
+                         std::function<void(const input::Ctx&)> fn){
+            input::Command c;
+            c.id = id; c.scopeId = wsScope; c.label = label; c.category = wsCat;
+            c.kind = input::Kind::Locked;
+            c.defaultChord = anyModKey(key);
+            c.invoke = std::move(fn);
+            reg.addCommand(c);
+        };
+        wsCmd(QStringLiteral("ws.sigmaDown"), tr("Smoothing − (σ cells)"), Qt::Key_Left,
+              [this](const input::Ctx& c){ const WsKeyMod m = wsKeyMod(c);
+                  if(m.act){ wsSigmaCells = qBound(1, wsSigmaCells - m.step, 32); wsRecompute(); } });
+        wsCmd(QStringLiteral("ws.sigmaUp"), tr("Smoothing + (σ cells)"), Qt::Key_Right,
+              [this](const input::Ctx& c){ const WsKeyMod m = wsKeyMod(c);
+                  if(m.act){ wsSigmaCells = qBound(1, wsSigmaCells + m.step, 32); wsRecompute(); } });
+        wsCmd(QStringLiteral("ws.threshUp"), tr("Threshold +"), Qt::Key_Up,
+              [this](const input::Ctx& c){ const WsKeyMod m = wsKeyMod(c);
+                  if(m.act){ wsThreshPct = qBound(0, wsThreshPct + m.step, 50); wsRecompute(); } });
+        wsCmd(QStringLiteral("ws.threshDown"), tr("Threshold −"), Qt::Key_Down,
+              [this](const input::Ctx& c){ const WsKeyMod m = wsKeyMod(c);
+                  if(m.act){ wsThreshPct = qBound(0, wsThreshPct - m.step, 50); wsRecompute(); } });
+        wsCmd(QStringLiteral("ws.commit"), tr("Apply watershed split"), Qt::Key_Return,
+              [this](const input::Ctx& c){ if(wsKeyMod(c).act) wsExit(/*commit=*/true); });
+        wsCmd(QStringLiteral("ws.commitKeypad"), tr("Apply watershed split (keypad Enter)"), Qt::Key_Enter,
+              [this](const input::Ctx& c){ if(wsKeyMod(c).act) wsExit(/*commit=*/true); });
+        wsCmd(QStringLiteral("ws.cancel"), tr("Cancel watershed preview"), Qt::Key_Escape,
+              [this](const input::Ctx& c){ if(wsKeyMod(c).act) wsExit(/*commit=*/false); });
+    }
 
     // Apply the persisted override diffs (Configuration read them from QSettings at
     // startup).  Only ids we actually registered and that parse to a valid chord.

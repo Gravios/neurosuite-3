@@ -239,7 +239,19 @@ void PrefInput::build()
             // the WheelChordEdit; anything else falls back to a read-only label.
             const Device dev = c->defaultChord.device;
             bool editable = true;
-            if (dev == Device::Key || dev == Device::None) {
+            if (c->kind == Kind::Locked) {
+                // Modal commands (a live watershed / lasso capture) are shown for
+                // discoverability but cannot be rebound — their trigger is fixed by the
+                // mode.  Reuse the read-only label path.
+                const QString disp = c->defaultChord.displayString();
+                auto* fixed = new QLabel(
+                    (disp.isEmpty() ? tr("(modal)") : disp) + tr("  (modal — not rebindable)"),
+                    body);
+                fixed->setEnabled(false);
+                rowLayout->addWidget(fixed);
+                row.fixed = fixed;
+                editable = false;
+            } else if (dev == Device::Key || dev == Device::None) {
                 auto* edit = new QKeySequenceEdit(body);
                 edit->setMaximumWidth(220);
                 rowLayout->addWidget(edit);
