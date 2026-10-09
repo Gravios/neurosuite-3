@@ -7438,60 +7438,36 @@ void KlustersApp::slotStripByTemplate()
 
 
 // ---------------------------------------------------------------------------
-// Key bindings: what the application filter owns
+// Key-binding audit — derived from the input registry
 //
-// Three mechanisms dispatch keys in this app -- QAction shortcuts, this
-// filter, and the views' own keyPressEvent -- and they are checked in that
-// order of surprise rather than of intent.  The filter sees a key BEFORE the
-// shortcut map and before any widget, so anything listed here wins outright,
-// and a QAction or a view handler that also claims the key is simply dead.
-// That is not hypothetical: the t-SNE toggle was bound to T for one release
-// and could never fire, because this filter takes bare T for palette
-// move-to-end; and autoscale sat on F, which the repair-nesting QAction held
-// in Qt's default window context, so it worked only with the scatter focused.
-//
-// The table is the single statement of that ownership.  It feeds the audit
-// below, which says at startup when an action is unreachable, and the help
-// dialog, which can no longer drift from the bindings because it is built
-// from the same rows.  Adding a filter key means adding a row here.
+// Three mechanisms dispatch keys -- QAction shortcuts, the app event filter
+// (now the input::registry() via tryViewKeyCommand), and the views' own
+// keyPressEvent.  A resolver-dispatched (non-external) key command is claimed
+// by the filter BEFORE the shortcut map, so any QAction bound to the same
+// sequence is dead from the keyboard.  This audit reports those once at startup.
+// It reads the registry, so it cannot drift from the live bindings -- there is
+// no hand-maintained ownership table any more (the former kFilterKeys[]).
 // ---------------------------------------------------------------------------
-const KlustersApp::FilterKey KlustersApp::kFilterKeys[] = {
-    {Qt::Key_T,      Qt::NoModifier, "T",      "Move selected cluster(s) to end of palette"},
-    {Qt::Key_V,      Qt::NoModifier, "V",      "Curation matrices: parent view / child view of the selected parent"},
-    {Qt::Key_E,      Qt::NoModifier, "E",      "Cycle the matrix tabs (Error, Template, Residual, Drift)"},
-    {Qt::Key_F,      Qt::NoModifier, "F",      "Toggle the t-SNE embedding of the selected clusters"},
-    {Qt::Key_O,      Qt::ShiftModifier, "Shift+O", "Toggle the oblique (template-axis) projection — onto the selected clusters, or onto a pinned basis (Actions ▸ Set Oblique Basis…) to examine a third"},
-    {Qt::Key_E,      Qt::ShiftModifier, "Shift+E", "Toggle the manual-lineage overlay — drift roots ride a ribbon above the scatter spanning each region, leaves hang below; right-click a node/boundary for its menu, Shift+left-drag a boundary to move it (needs Templates mode, Preferences ▸ Display)"},
-    {Qt::Key_A,      Qt::NoModifier, "A",      "Toggle autoscale in the feature view"},
-    {Qt::Key_Up,     Qt::NoModifier, "Up",     "While the t-SNE view is showing: raise the perplexity and recompute"},
-    {Qt::Key_Down,   Qt::NoModifier, "Down",   "While the t-SNE view is showing: lower the perplexity and recompute"},
-    {Qt::Key_Escape, Qt::NoModifier, "Esc",    "Discard the selection polygon being drawn; otherwise leave the child palette"},
-    // ("H" — the keyboard-shortcut reference — is no longer a filter key: it is now
-    //  dispatched by its Help-menu QAction (mShortcutsHelp, Key_H) and mirrored as the
-    //  help.shortcuts registry command.  It therefore belongs to the menu/shortcut map,
-    //  not this filter-ownership table, so auditKeyBindings() no longer flags the
-    //  Keyboard-Shortcuts action as shadowed and the help dialog's Single-keys list no
-    //  longer carries it — H is discoverable via the Help menu and Preferences ▸ Input.)
-};
-const int KlustersApp::kFilterKeyCount =
-    static_cast<int>(sizeof(kFilterKeys) / sizeof(kFilterKeys[0]));
-
 void KlustersApp::auditKeyBindings() const
 {
-    // Every action whose shortcut this filter would swallow first.  Reported
-    // once at startup rather than discovered when a menu item quietly does
-    // nothing.  Warn only: which of the two should win is a design decision,
-    // not something to resolve by silently unbinding one of them.
-    for (int i = 0; i < kFilterKeyCount; ++i) {
-        const QKeySequence owned(kFilterKeys[i].modifiers | kFilterKeys[i].key);
-        const QList<QAction*> actions = findChildren<QAction*>();
+    const input::BindingRegistry& reg = input::registry();
+    const QList<QAction*> actions = findChildren<QAction*>();
+
+    // A non-external key command swallows its chord before the shortcut map, so a
+    // QAction on the same sequence can never fire.  Warn only: which should win is a
+    // design decision, not something to resolve by silently unbinding one.
+    for (const input::Command& c : reg.commands()) {
+        if (c.external) continue;                                   // Qt dispatches these; they don't shadow
+        const input::Chord ch = reg.effectiveChord(c.id);
+        if (ch.device != input::Device::Key) continue;
+        const QKeySequence owned = input::keySequenceFromChord(ch);
+        if (owned.isEmpty()) continue;
         for (QAction* a : actions) {
             if (a->shortcut().isEmpty() || a->shortcut() != owned)
                 continue;
-            qWarning("key binding: \"%s\" is consumed by the application filter "
-                     "(%s), so the menu action \"%s\" can never fire from the "
-                     "keyboard",
-                     kFilterKeys[i].label, kFilterKeys[i].description,
+            qWarning("key binding: \"%s\" is consumed by the input command \"%s\", so the "
+                     "menu action \"%s\" can never fire from the keyboard",
+                     qPrintable(ch.displayString()), qPrintable(c.id),
                      qPrintable(a->text().remove(QLatin1Char('&'))));
         }
     }
@@ -7499,7 +7475,6 @@ void KlustersApp::auditKeyBindings() const
     // Two actions on one sequence: the second is unreachable and Qt says
     // nothing about it.
     QHash<QString, QString> seen;
-    const QList<QAction*> actions = findChildren<QAction*>();
     for (QAction* a : actions) {
         if (a->shortcut().isEmpty())
             continue;
@@ -7521,82 +7496,18 @@ void KlustersApp::slotShowShortcutHelp()
 {
     struct Entry { const char* key; const char* desc; };
     struct Section { const char* title; std::initializer_list<Entry> entries; };
+    // Fixed navigation keys that stay in the event filter as localized bodies \u2014 not
+    // rebindable, so not registry commands (see claude/input-remapping-plan.md).  Every
+    // other keyboard + mouse binding below is generated from input::registry(), so it never
+    // drifts from the live bindings.  This small table is the one hand-maintained remnant.
     static const Section kSections[] = {
-        {"Cluster palette", {
-            {"Arrow keys",     "Navigate cluster palette"},
-            {"S",              "Toggle current selection (palette focus)"},
-            {"Page Up / Page Down", "Nudge selected cluster timestamps \u00b11 sample"},
-        }},
-        {"Display tabs", {
-            {"\u2190 / \u2192",           "Cycle display tabs \u2014 only while the tab bar itself has focus (click a tab handle); inside a view the arrows stay cluster navigation"},
-            {"Ctrl+\u2190 / Ctrl+\u2192",   "From inside a view: jump to the Overview tab.  From the tab bar: cycle tabs (prev / next, wrapping)"},
-            {"Tab / Shift+Tab", "Move focus between the cluster palette and the toolbar fields (Ctrl+Shift+\u2190/\u2192 does the same ring)"},
-            {"E",              "Switch between the Error Matrix and Template Matrix tabs (matrix panel)"},
-        }},
-        {"Cluster operations", {
-            {"Ctrl+1",         "New Cluster mode \u2014 draw selection polygon"},
-            {"Ctrl+2",         "Split Clusters mode \u2014 draw selection polygon"},
-            {"Shift+D",        "DipSplit (live preview \u2014 Enter apply, Esc cancel)"},
-            {"Shift+W",        "Watershed split (live preview \u2014 \u2190/\u2192 \u03c3, \u2191/\u2193 thr, Enter apply, Esc cancel)"},
-            {"G",              "Group selected clusters"},
-            {"R",              "Renumber clusters"},
-            {"Shift+R",        "Recluster selected (KlustaKwik)"},
-            {"Shift+L",        "Realign spikes for selected cluster"},
-            {"Delete",         "Delete noisy cluster (move whole cluster to 1)"},
-            {"Shift+Delete",   "Delete artefact cluster (move whole cluster to 0)"},
-            {"Z",              "Zoom mode"},
-            {"U",              "Update error matrix (+ template matrix if open)"},
-            {"A",              "Toggle autoscale in cluster view (works from any focus)"},
-            {"F",              "Toggle t-SNE embedding of the selected clusters (works from any focus; F again returns, cancels while computing)"},
-            {"\u2191 / \u2193",           "While the t-SNE view is showing: raise / lower perplexity by the Preferences step and recompute"},
-            {"Left / Right / Middle click", "In the t-SNE view: add lasso vertex / undo vertex / close and apply the active mode (Enter also closes, Esc discards)"},
-            {"Enter / Return", "Close selection polygon (New / Split modes)"},
-            {"Shift+P",        "PCA-center align all clusters (top-N channels)"},
-            {"Shift+F",        "Apply drift to sibling sessions"},
-        }},
-        {"File", {
-            {"Ctrl+O",         "Open"},
-            {"Ctrl+S",         "Save"},
-            {"Ctrl+Shift+S",   "Renumber and save"},
-            {"Ctrl+I",         "Import file"},
-            {"Ctrl+P",         "Print"},
-            {"Ctrl+Q",         "Quit"},
-        }},
-        {"Edit / Selection", {
-            {"Ctrl+Z",         "Undo"},
-            {"Ctrl+Y",         "Redo"},
-            {"Ctrl+A",         "Select all clusters"},
-            {"Ctrl+Shift+A",   "Select all except 0/1 (artefact / noise)"},
-        }},
-        {"Waveform display", {
-            {"O",              "Overlay presentation"},
-            {"M",              "Mean and standard deviation"},
-            {"I / D",          "Increase / decrease waveform amplitude"},
-            {"Ctrl+Shift+I / Ctrl+Shift+D",
-                               "Increase / decrease per-channel amplitudes"},
-            {"L",              "Show shoulder-line"},
-            {"Shift+M / Shift+A / Shift+U",
-                               "Scale by max / shoulder / no scale"},
-        }},
-        {"Correlograms", {
-            {"(no shortcuts)", "Use Correlations menu to adjust amplitude"},
-            {"Ctrl+Shift+F / Ctrl+Shift+B",
-                               "Next / previous spike (in trace view)"},
-        }},
-        {"Hierarchical view (.clc child layer)", {
-            {"Tab / Shift+Tab", "Cycle focus: parent palette \u2192 child palette \u2192 toolbar fields"},
-            {"Ctrl+Shift+\u2190 / Ctrl+Shift+\u2192", "Cycle focus (alternative to Tab)"},
-            {"S",              "Mark focused palette's item (parent or child)"},
-            {"Esc",            "Return focus from the child palette to the parent"},
-            {"G",              "Merge (adaptive): children \u2192 one child; else fold parent / parents"},
-            {"Ctrl+\u2191",        "New parent from selected children"},
-            {"Ctrl+\u2193",        "Group selected parent parents"},
-            {"Ctrl+Shift+\u2193",  "Dissolve selected parent into its children"},
-            {"Esc",            "Discard the selection polygon being drawn (feature or t-SNE view)"},
-            {"Shift+T",        "Partition the selected cluster into time blocks from the session origin"},
-            {"Shift+B",        "Merge a parent's orphan children by median-waveform match"},
-            {"Shift+N",        "Repair nesting (re-cut atoms onto parents)"},
-            {"Ctrl+Shift+Z / Ctrl+Shift+Y", "Undo / redo atom (child-layer) edit"},
+        {"Navigation (fixed keys)", {
+            {"Tab / Shift+Tab",           "Cycle focus: cluster palette \u2192 child palette \u2192 toolbar fields"},
+            {"\u2190 / \u2192",           "Switch display tabs (focus on the tab bar); inside a view the arrows stay cluster navigation"},
+            {"Ctrl+\u2190 / Ctrl+\u2192", "Jump to the Overview tab (from a view); cycle tabs (from the tab bar)"},
+            {"Arrow keys",                "Navigate the cluster palette (when it has focus)"},
+            {"Page Up / Page Down",       "Nudge the selected cluster's timestamps \u00b11 sample"},
+            {"Esc",                       "Discard a part-drawn selection polygon; leave the child palette; Esc-Esc clears the selection"},
         }},
     };
 
@@ -7609,17 +7520,31 @@ void KlustersApp::slotShowShortcutHelp()
             "td{padding:3px 12px;border-bottom:1px solid #3a3a3a}"
             "td:first-child{font-family:monospace;font-weight:bold;white-space:nowrap;min-width:140px}"
             "</style>");
-    // The application filter's keys come from the binding table, not from a
-    // second hand-written list: a reference that is edited separately from the
-    // bindings is wrong the first time someone forgets, and this one had
-    // already drifted twice.  These work from any focus outside a text field.
-    html += QStringLiteral("<h3>%1</h3><table>")
-            .arg(tr("Single keys (work from any focus outside a text field)"));
-    for (int i = 0; i < kFilterKeyCount; ++i)
-        html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
-                .arg(QString::fromUtf8(kFilterKeys[i].label))
-                .arg(QString::fromUtf8(kFilterKeys[i].description));
-    html += QStringLiteral("</table>");
+    // Keyboard bindings come straight from the input registry, not from a second
+    // hand-written list: a reference edited separately from the bindings is wrong the
+    // first time someone forgets, and this one had already drifted twice.  Grouped by
+    // each command's (human-readable) category; the effective chord is shown, so a
+    // rebind set in Preferences ▸ Input appears here the moment it is applied.
+    {
+        const input::BindingRegistry& reg = input::registry();
+        QMap<QString, QList<const input::Command*>> byCat;   // category -> key commands
+        for (const input::Command& c : reg.commands())
+            if (reg.effectiveChord(c.id).device == input::Device::Key)
+                byCat[c.category].append(&c);
+        if (!byCat.isEmpty()) {
+            html += QStringLiteral("<h3>%1</h3>")
+                    .arg(tr("Keyboard (editable in Preferences ▸ Input)"));
+            for (auto it = byCat.constBegin(); it != byCat.constEnd(); ++it) {
+                html += QStringLiteral("<table><tr><th colspan=\"2\">%1</th></tr>")
+                        .arg(it.key().toHtmlEscaped());
+                for (const input::Command* c : it.value())
+                    html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
+                            .arg(reg.effectiveChord(c->id).displayString().toHtmlEscaped())
+                            .arg(c->label.toHtmlEscaped());
+                html += QStringLiteral("</table>");
+            }
+        }
+    }
 
     // Mouse bindings come straight from the input registry (input-remapping plan §5), so
     // they reflect any rebinds set in Preferences ▸ Input and never drift from the live

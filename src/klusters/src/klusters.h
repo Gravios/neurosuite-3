@@ -887,23 +887,11 @@ private:
      *  Escape never does, so a stray press cannot wipe the selection. */
     qint64 lastEscapeClearMs_ = -1;
 
-    /**One row per key the application-wide event filter consumes.  The filter
-  * runs before the shortcut map and before any widget, so these win outright
-  * and anything else claiming the same key is dead.  The table feeds both the
-  * startup audit and the shortcut reference, so neither can drift from the
-  * other.*/
-    struct FilterKey {
-        int                     key;
-        Qt::KeyboardModifiers   modifiers;
-        const char*             label;
-        const char*             description;
-    };
-    static const FilterKey kFilterKeys[];
-    static const int       kFilterKeyCount;
-
-    /**Warns about bindings that cannot fire: a menu action whose shortcut the
-  * filter swallows first, and two actions sharing one sequence.  Diagnostic
-  * only -- which of two claimants should win is a design decision.*/
+    /**Warns about bindings that cannot fire: a menu action whose shortcut a
+  * resolver-dispatched (non-external) registry key command swallows first, and
+  * two actions sharing one sequence.  Derived from input::registry(), so it never
+  * drifts from the live bindings.  Diagnostic only -- which of two claimants
+  * should win is a design decision.*/
     void auditKeyBindings() const;
 
     /**Returns the cluster (feature) view the single-letter feature-view keys
