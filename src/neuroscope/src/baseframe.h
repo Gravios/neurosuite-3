@@ -149,6 +149,14 @@ protected:
   */
     virtual void mouseDoubleClickEvent(QMouseEvent* event) override;
 
+    /** Seam to the shared input registry (neuroscope input overhaul S2; see
+  * claude/neuroscope-input-plan.md).  Resolves @p ev against input::registry() for this
+  * view; if a command matches it is invoked and true (handled) is returned, otherwise
+  * false so the caller runs its existing handler -- the fall-through that keeps un-ported
+  * views working.  No view/mode commands are registered yet, so this is currently always
+  * false (inert). */
+    bool dispatchInput(QEvent* ev);
+
     /**
   * Translates a point (@p vx, @p vy) on the viewport to a QPoint in the world
   * @param vx x coordinate of the point in the viewport's coordinates system (relative to the widget).

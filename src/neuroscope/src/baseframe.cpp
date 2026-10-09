@@ -28,6 +28,8 @@
 #include <QRubberBand>
 #include <QDebug>
 
+#include "input/inputdispatcher.h"   // input::dispatch — the view seam (input overhaul S2)
+
 BaseFrame:: BaseFrame(int Xborder,int Yborder,QWidget* parent,const QString &name,const QColor& backgroundColor,
                       int minSize,int maxSize ,int windowTopLeft ,int windowBottomRight,int border):
     QFrame(parent),
@@ -79,6 +81,14 @@ void BaseFrame::changeColor(const QColor & color)
 void BaseFrame::changeBackgroundColor(const QColor& color){
     changeColor(color);
     drawContentsMode = REDRAW;
+}
+
+bool BaseFrame::dispatchInput(QEvent* ev){
+    // The one place a neuroscope view turns a raw QEvent into a registry command.  Inert
+    // until the view/mode commands are registered (S4/S5): input::dispatch() resolves the
+    // event's chord against the active scopes and returns false when nothing is bound, so
+    // the caller falls through to its existing handler.
+    return input::dispatch(this, ev);
 }
 
 void BaseFrame::mousePressEvent(QMouseEvent* e){

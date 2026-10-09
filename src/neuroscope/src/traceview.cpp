@@ -2865,6 +2865,11 @@ void TraceView::resizeEvent(QResizeEvent *event)
 }
 
 void TraceView::mousePressEvent(QMouseEvent* event){
+    // Input seam (neuroscope input overhaul S2): consult the shared registry before the
+    // mode-switched body below.  Inert until the trace press modes are ported (S5) — with
+    // no view/mode commands registered, dispatchInput() returns false and the existing
+    // handler runs unchanged.
+    if(dispatchInput(event)) return;
     if (event->button() == Qt::LeftButton){
 
         if (mode == ZOOM || mode == MEASURE || mode == SELECT_TIME){
