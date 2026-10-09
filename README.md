@@ -312,7 +312,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list of fixes and improvements.
 
 ## Documentation
 
-Per-component documentation is in `doc/`:
+**Working on the code?** Start with the **[Developer Guide](DEVELOPER_GUIDE.md)** — the
+index of internals references (input system, plugin API, architecture, and more).
+
+Per-component (user & pipeline) documentation is in `doc/`:
 
 - [doc/libklustersshared/](doc/libklustersshared/README.md)
 - [doc/ndmanager/](doc/ndmanager/README.md)
