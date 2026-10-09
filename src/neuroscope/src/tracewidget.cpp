@@ -19,6 +19,11 @@
 #include "spectralview.h"
 #include "freqbandslider.h"
 
+// Shared input registry (neuroscope input overhaul S3 — claude/neuroscope-input-plan.md).
+#include "input/bindingregistry.h"
+#include "input/inputdispatcher.h"   // input::registry()
+#include "input/chord.h"
+
 #include <QShortcut>
 // Qt6 PMF connect requires complete type for ItemColors* in eventsAvailable signal signature
 #include "itemcolors.h"
@@ -40,6 +45,49 @@
 /// Added by M.Zugaro to enable automatic forward paging
 #include <QTimer>
 
+namespace {
+// Register the trace view's resolver-dispatched key commands once (neuroscope input
+// overhaul S3).  A "view.trace" ViewType scope — active whenever the event's view is a
+// TraceWidget — carries the +/- time-window keys.  Each command acts on ctx.view (the
+// TraceWidget that received the key), so one registration serves every display.  The
+// chords are AtLeast+NoModifier on Key_Plus/Key_Minus, matching the former switch, which
+// fired on those keys regardless of modifiers (numpad "+" or Shift-based "+").
+void registerTraceInputOnce()
+{
+    static bool done = false;
+    if(done) return;
+    done = true;
+
+    input::BindingRegistry& reg = input::registry();
+
+    input::InputScope s;
+    s.id     = QStringLiteral("view.trace");
+    s.layer  = input::Layer::ViewType;
+    s.active = [](const input::Ctx& c){ return qobject_cast<TraceWidget*>(c.view) != nullptr; };
+    reg.addScope(s);
+
+    auto anyMod = [](int key){
+        return input::Chord{ input::Device::Key, key, Qt::NoModifier,
+                             input::Phase::Press, input::ModMatch::AtLeast };
+    };
+    auto add = [&](const QString& id, const QString& label, int key, void (TraceWidget::*fn)()){
+        input::Command c;
+        c.id       = id;
+        c.scopeId  = QStringLiteral("view.trace");
+        c.label    = label;
+        c.category = TraceWidget::tr("Trace view");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = anyMod(key);
+        c.invoke   = [fn](const input::Ctx& ctx){
+            if(auto* tw = qobject_cast<TraceWidget*>(ctx.view)) (tw->*fn)();
+        };
+        reg.addCommand(c);
+    };
+    add(QStringLiteral("trace.durationDouble"), TraceWidget::tr("Double the time window"), Qt::Key_Plus,  &TraceWidget::doubleTimeWindow);
+    add(QStringLiteral("trace.durationHalve"),  TraceWidget::tr("Halve the time window"),  Qt::Key_Minus, &TraceWidget::halveTimeWindow);
+}
+}  // namespace
+
 TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvider& tracesProvider,bool multiColumns,bool verticalLines,
                          bool raster,bool waveforms,bool labelsDisplay,QList<int>& channelsToDisplay,int gain,int acquisitionGain,
                          ChannelColors* channelColors,QMap<int, QList<int> >* groupsChannels,
@@ -58,6 +106,7 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     updateView(true),
     statusBar(statusBar)
 {
+    registerTraceInputOnce();   // input overhaul S3: the +/- duration commands (once, process-wide)
 
     QVBoxLayout *lay = new QVBoxLayout;
     setLayout(lay);
@@ -318,20 +367,33 @@ void TraceWidget::samplingRateModified(qlonglong length)
     slotSetStartAndDuration(0,50);
 }
 
+void TraceWidget::doubleTimeWindow()
+{
+    timeWindow = timeWindow * 2;
+    duration->setText(QString::number(timeWindow));
+    slotDurationUpdated();
+}
+
+void TraceWidget::halveTimeWindow()
+{
+    timeWindow = timeWindow / 2;
+    duration->setText(QString::number(timeWindow));
+    slotDurationUpdated();
+}
+
 void TraceWidget::keyPressEvent(QKeyEvent* event)
 {
-    switch(event->key()){
-    case Qt::Key_Plus:                               // double the duration
-        timeWindow = timeWindow * 2;
-        duration->setText(QString::number(timeWindow));
-        slotDurationUpdated();
-        break;
-    case Qt::Key_Minus:                              // reduce the duration of an half
-        timeWindow = timeWindow / 2;
-        duration->setText(QString::number(timeWindow));
-        slotDurationUpdated();
-        break;
-    }
+    // Dispatch through the shared input registry (neuroscope input overhaul S3): the +/-
+    // duration keys are now the view.trace commands trace.durationDouble / trace.durationHalve
+    // (rebindable + discoverable).  allowAutoRepeat so a held key keeps stepping, as the
+    // original switch did.  Keys bound to nothing are left alone — exactly as the former
+    // switch, which had no default and did not chain to the base handler.
+    input::Ctx ctx;
+    ctx.view  = this;
+    ctx.event = event;
+    if(const input::Command* cmd =
+           input::registry().resolve(input::chordFromEvent(event, /*allowAutoRepeat=*/true), ctx))
+        if(cmd->invoke) cmd->invoke(ctx);
 }
 
 void TraceWidget::slotDurationUpdated()

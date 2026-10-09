@@ -105,6 +105,12 @@ public:
         return timeWindow;
     }
 
+    /**Doubles / halves the displayed time window.  These are the bodies of the former
+  * +/- key handler, now invoked by the trace.durationDouble / trace.durationHalve input
+  * commands (neuroscope input overhaul S3; see claude/neuroscope-input-plan.md).*/
+    void doubleTimeWindow();
+    void halveTimeWindow();
+
     /**Returns the start time of the time frame used by the TraceView.
  */
     long timeFrameStart() const {
