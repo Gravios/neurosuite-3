@@ -2864,6 +2864,94 @@ void TraceView::resizeEvent(QResizeEvent *event)
     resized = true;
 }
 
+TraceView::TraceClickGeometry TraceView::resolveClickGeometry(const QPoint& viewportPos){
+    // Lifted verbatim from the former mousePressEvent preamble (neuroscope input overhaul S5):
+    // the world-coordinate + column/sample resolution shared by every trace press mode.  Pure —
+    // no side effects (the press side effects such as lastClickOrdinate stay in the handler).
+    TraceClickGeometry g;
+    QRect r((QRect)window);
+    QPoint current;
+    //If the view was zoomed and the left margin (where the ids and gains of the channels of the first group are displayed) is not
+    //shown (r.left() != 0), the coordinates have to be adjusted. Indeed, this margin is outside the world but in the viewport and included in the
+    //values return par the event.
+    if (r.left() != 0)
+        current = viewportToWorld(viewportPos.x(),viewportPos.y());
+    else
+        current = viewportToWorld(viewportPos.x() - xMargin,viewportPos.y());
+    g.current = current;
+    int x = (current.x() - static_cast<int>(borderX));
+    g.x = x;
+
+    if (multiColumns){
+        //determine the group
+        int groupIndex;
+        int sampleIndex;
+        bool labelSelected = false;
+        //on the left side of the display.
+        if (x <= 0){
+            sampleIndex = 1;
+            groupIndex = 0;
+            labelSelected = true;
+        }
+        //left margin is visible
+        else if (r.left() == 0){
+            if (x <= (Xshift - XGroupSpace)){
+                groupIndex = 0;
+                sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(x) / static_cast<float>(Xstep)) * downSampling);
+            }
+            else{
+                groupIndex = ((x - (Xshift - XGroupSpace)) / Xshift) + 1;
+                int samplePart = x - (groupIndex * Xshift);
+                if (samplePart <= 0){
+                    sampleIndex = 1;
+                    labelSelected = true;
+                }
+                else sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(samplePart) / static_cast<float>(Xstep)) * downSampling);
+            }
+        }
+        //left margin is invisible
+        else{
+            int nbSamples = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits);
+            int nbSamplesToDraw = static_cast<int>(floor(0.5 + static_cast<float>(nbSamples)/downSampling));
+            int shift = (nbSamplesToDraw - 1) * Xstep;
+            //Click on the first column
+
+            //The limit between 2 traces is half the distance between them except when the legend (text containing the id and the gain)
+            // is larger. In that case an adjustment is computed to give the ability to the user to click on the legend to select the trace.
+            int overlap = viewportToWorldWidth(xMargin) - (XGroupSpace / 2);
+
+            if (overlap < 0) overlap = 0;
+            if (x <= (shift + (XGroupSpace / 2) - overlap)){
+                groupIndex = 0;
+                if (x >= shift) sampleIndex = nbSamples;
+                else sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(x) / static_cast<float>(Xstep)) * downSampling);
+            }
+            else{
+                groupIndex = ((x - (shift + (XGroupSpace / 2) - overlap)) / Xshift) + 1;
+                int samplePart = x - (groupIndex * Xshift);
+                if (samplePart <= 0){
+                    sampleIndex = 1;
+                    labelSelected = true;
+                }
+                else sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(samplePart) / static_cast<float>(Xstep)) * downSampling);
+                if (sampleIndex > nbSamples) sampleIndex = nbSamplesToDraw;
+            }
+        }
+        g.groupIndex = groupIndex;
+        g.sampleIndex = sampleIndex;
+        g.labelSelected = labelSelected;
+    }
+    else{//single column
+        int sampleIndex;
+        //on the left side of the display.
+        if (x <= 0) sampleIndex = 1;
+        //take the last sample of the downSampling one at the same abscissa
+        else sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(x) / static_cast<float>(Xstep)) * downSampling);
+        g.sampleIndex = sampleIndex;
+    }
+    return g;
+}
+
 void TraceView::mousePressEvent(QMouseEvent* event){
     // Input seam (neuroscope input overhaul S2): consult the shared registry before the
     // mode-switched body below.  Inert until the trace press modes are ported (S5) — with
@@ -2894,73 +2982,20 @@ void TraceView::mousePressEvent(QMouseEvent* event){
         //    -Wparentheses warnings and the intent was hard to verify
         //    by inspection.  Behaviour unchanged.
         if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
-            QRect r((QRect)window);
-            QPoint current;
-            //If the view was zoomed and the left margin (where the ids and gains of the channels of the first group are displayed) is not
-            //shown (r.left() != 0), the coordinates have to be adjusted. Indeed, this margin is outside the world but in the viewport and included in the
-            //values return par the event.
-            if (r.left() != 0)
-                current = viewportToWorld(event->position().toPoint().x(),event->position().toPoint().y());
-            else
-                current = viewportToWorld(event->position().toPoint().x() - xMargin,event->position().toPoint().y());
+            // S5: the click-geometry preamble (world point + column/sample it selects) is now
+            // resolved once by resolveClickGeometry(); the per-mode bodies below read the shared
+            // result.  `current` keeps its old name and lastClickOrdinate (a press side effect)
+            // stays here, so the mode-action code is unchanged.
+            const TraceClickGeometry g = resolveClickGeometry(event->position().toPoint());
+            const QPoint current = g.current;
             lastClickOrdinate = current.y();
 
             if (multiColumns){
-                //determine the group
-                int groupIndex;
-                int sampleIndex;
-                bool labelSelected = false;
-                int x = (current.x() - static_cast<int>(borderX));
-                //on the left side of the display.
-                if (x <= 0){
-                    sampleIndex = 1;
-                    groupIndex = 0;
-                    labelSelected = true;
-                }
-                //left margin is visible
-                else if (r.left() == 0){
-                    if (x <= (Xshift - XGroupSpace)){
-                        groupIndex = 0;
-                        sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(x) / static_cast<float>(Xstep)) * downSampling);
-                    }
-                    else{
-                        groupIndex = ((x - (Xshift - XGroupSpace)) / Xshift) + 1;
-                        int samplePart = x - (groupIndex * Xshift);
-                        if (samplePart <= 0){
-                            sampleIndex = 1;
-                            labelSelected = true;
-                        }
-                        else sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(samplePart) / static_cast<float>(Xstep)) * downSampling);
-                    }
-                }
-                //left margin is invisible
-                else{
-                    int nbSamples = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits);
-                    int nbSamplesToDraw = static_cast<int>(floor(0.5 + static_cast<float>(nbSamples)/downSampling));
-                    int shift = (nbSamplesToDraw - 1) * Xstep;
-                    //Click on the first column
-
-                    //The limit between 2 traces is half the distance between them except when the legend (text containing the id and the gain)
-                    // is larger. In that case an adjustment is computed to give the ability to the user to click on the legend to select the trace.
-                    int overlap = viewportToWorldWidth(xMargin) - (XGroupSpace / 2);
-
-                    if (overlap < 0) overlap = 0;
-                    if (x <= (shift + (XGroupSpace / 2) - overlap)){
-                        groupIndex = 0;
-                        if (x >= shift) sampleIndex = nbSamples;
-                        else sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(x) / static_cast<float>(Xstep)) * downSampling);
-                    }
-                    else{
-                        groupIndex = ((x - (shift + (XGroupSpace / 2) - overlap)) / Xshift) + 1;
-                        int samplePart = x - (groupIndex * Xshift);
-                        if (samplePart <= 0){
-                            sampleIndex = 1;
-                            labelSelected = true;
-                        }
-                        else sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(samplePart) / static_cast<float>(Xstep)) * downSampling);
-                        if (sampleIndex > nbSamples) sampleIndex = nbSamplesToDraw;
-                    }
-                }
+                //geometry resolved by resolveClickGeometry (S5); keep the old local names.
+                int groupIndex = g.groupIndex;
+                int sampleIndex = g.sampleIndex;
+                bool labelSelected = g.labelSelected;
+                int x = g.x;
 
                 if (mode == DRAW_LINE && x >= (X0 + groupIndex * Xshift)){
                     linePositions.clear();
@@ -3142,12 +3177,9 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                 }//!(mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift))
             }//end multicolumns
             else{//single column
-                int x = (current.x() - static_cast<int>(borderX));
-                int sampleIndex;
-                //on the left side of the display.
-                if (x <= 0) sampleIndex = 1;
-                //take the last sample of the downSampling one at the same abscissa
-                else sampleIndex = static_cast<int>(floor(0.5 +static_cast<float>(x) / static_cast<float>(Xstep)) * downSampling);
+                //geometry resolved by resolveClickGeometry (S5); keep the old local names.
+                int x = g.x;
+                int sampleIndex = g.sampleIndex;
 
                 if (mode == DRAW_LINE && x >= 0){
                     linePositions.clear();

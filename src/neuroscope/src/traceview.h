@@ -561,6 +561,22 @@ protected:
   * @param event mouse event.
   */
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+
+    /** Where a trace Left-press landed, resolved once by resolveClickGeometry() and shared by
+     * every press-mode body (neuroscope input overhaul S5).  Single-column presses leave the
+     * multi-column-only fields at their defaults (groupIndex 0, labelSelected false). */
+    struct TraceClickGeometry {
+        QPoint current;               ///< click point in world coordinates
+        int    x = 0;                 ///< abscissa relative to borderX
+        int    groupIndex = 0;        ///< multi-column: the clicked column (0 in single-column)
+        int    sampleIndex = 1;       ///< nearest sample along the trace
+        bool   labelSelected = false; ///< multi-column: the click fell on the id/gain legend
+    };
+    /** The shared coordinate preamble of the press handler: map the viewport press position
+     * @p viewportPos to the world point + column/sample it selects, for whichever layout
+     * (multi- or single-column) is active.  Pure — no side effects; the per-mode bodies read
+     * the returned geometry.  Lifted verbatim from the former inline mousePressEvent preamble. */
+    TraceClickGeometry resolveClickGeometry(const QPoint& viewportPos);
 private:
 
     /**
