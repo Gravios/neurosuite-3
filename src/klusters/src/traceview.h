@@ -580,18 +580,14 @@ protected:
   * @param event mouse release event.
   */
     void mousePressEvent(QMouseEvent* event) override;
-    /** TraceView owns its primary Left press (its whole press body — channel select, measure,
-     *  event select, add-event, draw-line, and the normal-cursor spike pick — resolves through
-     *  the registry as one Gesture), so it keeps the shared rubber-band ZOOM scope (`view.frame`)
-     *  out: the press is routed to beginTracePress(), whose own mode body delegates to the base
-     *  zoom for ZOOM / MEASURE exactly as before.  (Input-remapping plan P0d-z.) */
+    /** TraceView owns its primary Left press — its whole press surface resolves through the
+     *  registry as per-mode commands (tracePickSpike / traceAddEventPress / traceDrawLinePress /
+     *  traceSelectEventPress / traceMeasurePress / traceChannelSelectPress), so the shared
+     *  rubber-band ZOOM scope (`view.frame`) stays out; the MEASURE command still delegates to
+     *  the base press to arm the measure rubber band, exactly as the old handler did.
+     *  (Input-remapping plan P0d-z; per-mode decomposition.) */
     bool managesOwnPrimaryPress() const override { return true; }
-    /** The TraceView primary-press body (the former mousePressEvent).  Invoked by the
-     *  `trace.press` Gesture command; a re-entrancy guard (inTracePress_) keeps the body's own
-     *  BaseFrame::mousePressEvent call — the base-zoom delegation for ZOOM/MEASURE — from
-     *  re-resolving this same command.  The drag continuations stay in move/release. */
-    void beginTracePress(QMouseEvent* event);
-    /** The normal-cursor spike pick (mode == NONE), split out of beginTracePress as the
+    /** The normal-cursor spike pick (mode == NONE), split out of the old press body as the
      *  trace.pickSpike Action command: resolve the click geometry and, when the click is in the
      *  trace area (not the id/gain legend margin), select the nearest spike's cluster (Shift
      *  marks/extends) via normalCursorSpikePick.  The nearest-spike search + selection run in
@@ -609,6 +605,13 @@ protected:
      *  clicked sample and arm its drag, redrawing the previously- and newly-selected events; an
      *  out-of-trace-area click sets startingIndex, as the old channel-else fallthrough did. */
     void traceSelectEventPress(QMouseEvent* event);
+    /** The MEASURE press (trace.measure command): delegate to the base press to arm the measure
+     *  rubber band (guarded against re-entrant resolution), then record the measured channel +
+     *  start abscissa.  The drag/commit stay in move/release. */
+    void traceMeasurePress(QMouseEvent* event);
+    /** The SELECT press (trace.channelSelect command): pick the nearest channel and apply the
+     *  selection (plain = replace, Ctrl = toggle, Shift = range), redrawing the changed traces. */
+    void traceChannelSelectPress(QMouseEvent* event);
     /** Begin a Ctrl-drag pan at viewport point @p pos (arm the ctrlPan* state, set the
      *  closed-hand cursor).  The drag body is in mouseMoveEvent and the disarm in
      *  mouseReleaseEvent — the plan's seam.  Invoked by the trace.pan Gesture command. */
@@ -669,9 +672,13 @@ private:
      * @p viewportPos to the world point + column/sample it selects, for whichever layout
      * (multi- or single-column) is active.  The per-mode bodies read the returned geometry. */
     TraceClickGeometry resolveClickGeometry(const QPoint& viewportPos);
-    /**Re-entrancy guard for beginTracePress: true while the press body runs, so the body's
-     * own BaseFrame::mousePressEvent (the base-zoom delegation) does not re-resolve the
-     * `trace.press` command.  Set/cleared by a scoped guard in beginTracePress.*/
+    /** The nearest-drawn-channel hit-test shared by the SELECT and MEASURE presses: the id of the
+     * non-skipped channel whose trace at g.sampleIndex is closest to the click ordinate. */
+    int nearestChannelAt(const TraceClickGeometry& g);
+    /**Re-entrancy guard for the MEASURE press (traceMeasurePress): true while it runs, so its own
+     * BaseFrame::mousePressEvent (the base-zoom / measure-rubber-band delegation, which
+     * re-dispatches) does not re-resolve the trace.measure command.  trace.measure.enabled is
+     * !inTracePress_, and trace.pan's ctrlPanArmable() also reads it.*/
     bool inTracePress_ = false;
 
     // ── Ctrl-drag pan / Ctrl+wheel zoom state (trace.pan / trace.wheelZoom*) ──────────
