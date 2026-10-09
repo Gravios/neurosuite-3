@@ -2011,13 +2011,12 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             // fall through — a single Escape keeps any other meaning it has
         }
 
-        // Hierarchy operations (Ctrl+arrows, G) while the dual child view is up.
-        // Runs before the Left/Right tab-cycle handler so Ctrl+Left/Right is
-        // claimed for custody transfer when a child pane has focus; otherwise it
-        // returns false and the tab handler keeps Ctrl+Left/Right.
-        if(childPanel && childPanel->isVisible() && !editConsolidationLock
-           && dispatchHierarchyKey(ke->key(), ke->modifiers()))
-            return true;
+        // (Hierarchy operations — Ctrl+arrows + G adaptive-merge, while the dual child view
+        //  is up — now live on the registry as the `mode.hierarchy` scope; see
+        //  registerInputBindings().  The body stays in dispatchHierarchyKey(), which the
+        //  commands invoke; Ctrl+Left/Right custody transfer is retired there, so those keys
+        //  reach the Left/Right tab-cycle handler below exactly as they did when this block
+        //  returned false for them.)
         // (Ctrl+1 new-cluster, Ctrl+2 split-clusters, E next-matrix-tab moved onto the
         //  input registry — resolved by the dispatch block below.  See tools.newCluster,
         //  tools.splitClusters and view.matrixTab in registerInputBindings.  ctrlHeld is
@@ -2113,21 +2112,12 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             // for cluster navigation, polygon nudge, etc.
         }
     }
-    // ── G — adaptive-merge claim (child view, palette focus) ────────────────
-    // G is the flat group-clusters QAction globally, but the adaptive merge in the
-    // dual child view when a palette has focus (handled by dispatchHierarchyKey at
-    // KeyPress, above); claim its ShortcutOverride here so the group-clusters QAction
-    // doesn't fire first.  (S — the palette cluster toggle — moved onto the input
-    // registry; resolved by the dispatch block below.  See
-    // clusters.togglePaletteSelection in registerInputBindings.)
-    if(event->type() == QEvent::ShortcutOverride){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if(ke->key() == Qt::Key_G && ke->modifiers() == Qt::NoModifier
-           && childPanel && childPanel->isVisible() && paletteHasFocus()){
-            ke->accept();
-            return true;
-        }
-    }
+    // (G — adaptive-merge in the dual child view — moved onto the registry as
+    //  hierarchy.adaptiveMerge in the `mode.hierarchy` scope, which claims G's
+    //  ShortcutOverride while a palette has focus so the group-clusters QAction does not fire
+    //  first; see registerInputBindings().  The separate claim block that stood here is gone.
+    //  S — the palette cluster toggle — likewise lives on the registry as
+    //  clusters.togglePaletteSelection.)
     // (T — "move selection to end" — moved onto the input registry; resolved by the
     //  dispatch block below.  See clusters.moveSelectionToEnd in registerInputBindings.)
 
@@ -2825,6 +2815,52 @@ void KlustersApp::registerInputBindings()
         };
         embCmd(QStringLiteral("tsne.perplexityUp"),   tr("Perplexity +"), Qt::Key_Up,   +1);
         embCmd(QStringLiteral("tsne.perplexityDown"), tr("Perplexity −"), Qt::Key_Down, -1);
+    }
+
+    // ── mode.hierarchy: the dual child-view custody keys (Ctrl+arrows, G) ────────────────
+    // Active while the child (.clc) panel is open and not mid-consolidation; the body stays
+    // in dispatchHierarchyKey() (selection logic, status messages — the seam), each command
+    // just invokes it with its key.  Ctrl+Up = new parent from children, Ctrl+Down = group
+    // parents, Ctrl+Shift+Down = dissolve parent, G = adaptive merge.  enabled =
+    // paletteHasFocus() — the exact gate the old inline block + the separate G
+    // ShortcutOverride-claim used, so porting G here SUBSUMES that claim: while a palette has
+    // focus the command claims G's override (no group-clusters QAction), and dispatchHierarchyKey
+    // no-ops when there is nothing to merge; without palette focus the command is inactive and
+    // G falls through to the group-clusters QAction as before.  Repeat::Fire matches the old
+    // inline handling (it fired on every KeyPress incl. auto-repeat).  Ctrl+Down and
+    // Ctrl+Shift+Down are distinct Exact chords, so group vs dissolve never collide.
+    {
+        input::InputScope hier;
+        hier.id     = QStringLiteral("mode.hierarchy");
+        hier.layer  = input::Layer::ToolMode;
+        hier.active = [this](const input::Ctx&){
+            return childPanel && childPanel->isVisible() && !editConsolidationLock;
+        };
+        reg.addScope(hier);   // Passive: non-hierarchy keys pass through while the child view is open
+    }
+    {
+        const QString hierScope = QStringLiteral("mode.hierarchy");
+        const QString hierCat   = tr("Hierarchy (child view)");
+        auto hierCmd = [&](const QString& id, const QString& label, const input::Chord& chord,
+                           int key, Qt::KeyboardModifiers mods){
+            input::Command c;
+            c.id = id; c.scopeId = hierScope; c.label = label; c.category = hierCat;
+            c.kind   = input::Kind::Action;          // rebindable
+            c.repeat = input::Repeat::Fire;          // matches the old inline (fired on auto-repeat)
+            c.defaultChord = chord;
+            c.enabled = [this](const input::Ctx&){ return paletteHasFocus(); };
+            c.invoke  = [this, key, mods](const input::Ctx&){ dispatchHierarchyKey(key, mods); };
+            reg.addCommand(c);
+        };
+        hierCmd(QStringLiteral("hierarchy.promoteChildren"), tr("New parent from children"),
+                input::Chord::key(Qt::Key_Up, Qt::ControlModifier), Qt::Key_Up, Qt::ControlModifier);
+        hierCmd(QStringLiteral("hierarchy.groupParents"), tr("Group selected parents"),
+                input::Chord::key(Qt::Key_Down, Qt::ControlModifier), Qt::Key_Down, Qt::ControlModifier);
+        hierCmd(QStringLiteral("hierarchy.dissolveParent"), tr("Dissolve parent into children"),
+                input::Chord::key(Qt::Key_Down, Qt::ControlModifier | Qt::ShiftModifier),
+                Qt::Key_Down, Qt::ControlModifier | Qt::ShiftModifier);
+        hierCmd(QStringLiteral("hierarchy.adaptiveMerge"), tr("Adaptive merge"),
+                input::Chord::key(Qt::Key_G), Qt::Key_G, Qt::NoModifier);
     }
 
     // Apply the persisted override diffs (Configuration read them from QSettings at
