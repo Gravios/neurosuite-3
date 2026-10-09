@@ -118,6 +118,13 @@ public Q_SLOTS:
   * pressed view is in that mode.  See claude/neuroscope-input-plan.md.*/
     BaseFrame::Mode currentMode() const { return mode; }
 
+    /**Begins the rubber-band zoom/selection: (lazily) creates the band and anchors it at
+  * @p pos (viewport coordinates of the press).  Extracted from the former mousePressEvent
+  * body (neuroscope input overhaul S5) so the inline fall-through and the registry zoom
+  * Gesture (trace.zoomRubberBand, mode.zoom scope) share one begin path.  The drag preview
+  * (mouseMoveEvent) and the zoom commit (mouseReleaseEvent) stay in the base handlers.*/
+    void beginBaseZoom(const QPoint& pos);
+
 Q_SIGNALS:
     /*s*Signals that the enclosing dockwidget is being closed
    * @param viewWidget pointer on the the current object.

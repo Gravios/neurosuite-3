@@ -91,27 +91,33 @@ bool BaseFrame::dispatchInput(QEvent* ev){
     return input::dispatch(this, ev);
 }
 
+void BaseFrame::beginBaseZoom(const QPoint& pos){
+    // Begin the rubber band and anchor it at the press point.  Lifted verbatim from the
+    // former mousePressEvent body (neuroscope input overhaul S5); the only change is taking
+    // the press position as a parameter instead of reading it from the event, so the registry
+    // zoom Gesture (which has only the Ctx, not the raw handler) can share this path.
+    if (!mRubberBand)
+        mRubberBand = new KlusterRubberBand(QRubberBand::Rectangle, this);
+
+    //Assign firstClick
+    QRect r((QRect)window);
+
+    firstClick = pos;
+
+    //Construct the rubber starting on the selected point (width = 1 and not 0 because bottomRight = left+width-1, same trick for height ;0))
+    //or using only the abscissa and the ordinate if the top of the window if the rubber band has to
+    //drawn on whole the height of the window.
+    if(isRubberBandToBeDrawn && wholeHeightRectangle)
+        mRubberBand->setGeometry(QRect(firstClick.x(),r.top(),1,1));
+    else
+        mRubberBand->setGeometry(QRect(firstClick.x(),firstClick.y(),1,1));
+    mRubberBand->show();
+}
+
 void BaseFrame::mousePressEvent(QMouseEvent* e){
     if(mode == ZOOM || isRubberBandToBeDrawn){
-        if(e->button() == Qt::LeftButton){
-            if (!mRubberBand)
-                mRubberBand = new KlusterRubberBand(QRubberBand::Rectangle, this);
-
-            //Assign firstClick
-            QRect r((QRect)window);
-
-            firstClick = e->position().toPoint();
-
-            //Construct the rubber starting on the selected point (width = 1 and not 0 because bottomRight = left+width-1, same trick for height ;0))
-            //or using only the abscissa and the ordinate if the top of the window if the rubber band has to
-            //drawn on whole the height of the window.
-            if(isRubberBandToBeDrawn && wholeHeightRectangle)
-                mRubberBand->setGeometry(QRect(firstClick.x(),r.top(),1,1));
-            else
-                mRubberBand->setGeometry(QRect(firstClick.x(),firstClick.y(),1,1));
-            mRubberBand->show();
-
-        }
+        if(e->button() == Qt::LeftButton)
+            beginBaseZoom(e->position().toPoint());
     }
 }
 

@@ -38,6 +38,7 @@
 #include <QList>
 #include <QLabel>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QDebug>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -128,6 +129,31 @@ void registerTraceInputOnce()
     modeScope(QStringLiteral("mode.selectEvent"),    TraceView::SELECT_EVENT);
     modeScope(QStringLiteral("mode.addEvent"),       TraceView::ADD_EVENT);
     modeScope(QStringLiteral("mode.drawLine"),       TraceView::DRAW_LINE);
+
+    // S5 — first ToolMode gesture: the rubber-band ZOOM press.  A Left press (any modifiers)
+    // in ZOOM mode begins the band.  Gesture kind — invoke() only BEGINS it; the drag preview
+    // (BaseFrame::mouseMoveEvent) and the zoom commit (BaseFrame::mouseReleaseEvent) stay in
+    // the base handlers, reached because dispatch() maps only the press (release/move fall
+    // through).  AtLeast+NoModifier on LeftButton reproduces the former inline gate exactly:
+    // TraceView::mousePressEvent delegated mode==ZOOM to BaseFrame::mousePressEvent on any Left
+    // press, ignoring modifiers at press (Shift only means "shrink" at the release commit).
+    // Resolves only in ZOOM via the mode.zoom scope, so the other modes still fall through.
+    {
+        input::Command z;
+        z.id       = QStringLiteral("trace.zoomRubberBand");
+        z.scopeId  = QStringLiteral("mode.zoom");
+        z.label    = TraceView::tr("Rubber-band zoom");
+        z.category = TraceView::tr("Zoom");
+        z.kind     = input::Kind::Gesture;
+        z.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                              input::Phase::Press, input::ModMatch::AtLeast);
+        z.invoke   = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            if(v && c.event)
+                v->beginBaseZoom(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(z);
+    }
 }
 }  // namespace
 

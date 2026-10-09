@@ -2872,7 +2872,11 @@ void TraceView::mousePressEvent(QMouseEvent* event){
     if(dispatchInput(event)) return;
     if (event->button() == Qt::LeftButton){
 
-        if (mode == ZOOM || mode == MEASURE || mode == SELECT_TIME){
+        // S5: ZOOM is now a registry Gesture (trace.zoomRubberBand on the mode.zoom scope),
+        // armed by the dispatchInput() seam above — a ZOOM press is handled there and has
+        // already returned, so it never reaches here.  MEASURE / SELECT_TIME still begin the
+        // base rubber band inline (their presses are ported in later S5 patches).
+        if (mode == MEASURE || mode == SELECT_TIME){
             //The parent implementation takes care of the zoom.
             BaseFrame::mousePressEvent(event);
         }
