@@ -2591,6 +2591,27 @@ void TraceView::registerInput(input::BindingRegistry& reg)
     };
     reg.addCommand(pick);
 
+    // The ADD_EVENT press: in add-event mode a Left click records a new event at the clicked
+    // sample.  Split out of trace.press; any-modifier Left, enabled only in ADD_EVENT, before
+    // trace.press (and after trace.pan, so a Ctrl+Left still pans).
+    input::Command addev;
+    addev.id       = QStringLiteral("trace.addEvent");
+    addev.scopeId  = QStringLiteral("view.trace");
+    addev.label    = tr("Add event at cursor");
+    addev.category = tr("Traces");
+    addev.kind     = input::Kind::Action;
+    addev.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    addev.enabled  = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        return tv && tv->mode == ADD_EVENT;
+    };
+    addev.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv && c.event) tv->traceAddEventPress(static_cast<QMouseEvent*>(c.event));
+    };
+    reg.addCommand(addev);
+
     // The primary press trigger: Left with any modifiers (AtLeast + no required modifier) —
     // the old handler's whole body was Left-gated and read Shift / Ctrl *inside* (SELECT
     // mode), so the chord must fire for any-modifier Left.  Gesture kind: invoke() BEGINS the
@@ -2803,6 +2824,22 @@ void TraceView::tracePickSpike(QMouseEvent* event){
     previousDragOrdinate = 0;
 }
 
+void TraceView::traceAddEventPress(QMouseEvent* event){
+    // mode == ADD_EVENT, split from beginTracePress (trace.addEvent command).  Record the
+    // sample at the click as the new event position (added on release).  An out-of-trace-area
+    // click (x below the trace-area threshold) instead sets startingIndex, reproducing the old
+    // channel-else fallthrough (`else startingIndex = x`) that a below-threshold click of a
+    // non-channel mode landed on.  Shared pre/postamble side effects preserved.
+    const TraceClickGeometry g = resolveClickGeometry(event->position().toPoint());
+    lastClickOrdinate = g.current.y();
+    const int threshold = multiColumns ? (X0 + g.groupIndex * Xshift) : 0;
+    if(g.x >= threshold)
+        newEventPosition = g.sampleIndex;
+    else
+        startingIndex = g.x;
+    previousDragOrdinate = 0;
+}
+
 void TraceView::beginTracePress(QMouseEvent* event){
     // Re-entrancy guard: the body below delegates to BaseFrame::mousePressEvent for ZOOM /
     // MEASURE, which dispatches again — this keeps that inner dispatch from re-resolving this
@@ -2820,7 +2857,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
         int deselectedEventIndex = 0;
         if(!selectedEventPosition.isEmpty()) deselectedEventIndex = selectedEventPosition[0];
 
-        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
+        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == DRAW_LINE){
             const TraceClickGeometry g = resolveClickGeometry(event->position().toPoint());
             const QPoint current = g.current;
             lastClickOrdinate = current.y();
@@ -2839,9 +2876,6 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     for(int i = 0; i<nbGroups;++i){
                         linePositions.append(X0 + i * Xshift + static_cast<int>(0.5 + (static_cast<float>(sampleIndex) / downSampling)));
                     }
-                }
-                else if(mode == ADD_EVENT && x >= (X0 + groupIndex * Xshift)){
-                    newEventPosition = sampleIndex;
                 }
                 else if(mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)){
                     lastClickAbscissa = x;
@@ -3005,9 +3039,6 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     previousDragAbscissa = 0;
                     lastClickAbscissa = x;
                     linePositions.append(static_cast<int>(0.5 + (static_cast<float>(sampleIndex) / downSampling)));
-                }
-                else if(mode == ADD_EVENT && x >= 0){
-                    newEventPosition = sampleIndex;
                 }
                 else if(mode == SELECT_EVENT && x >= 0){
                     lastClickAbscissa = x;
@@ -3180,7 +3211,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
                     drawTimeLine(lastClickAbscissa,true);
             }
             previousDragOrdinate = 0;
-        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE
+        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == DRAW_LINE
     }//Qt::LeftButton
 }
 

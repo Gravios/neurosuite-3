@@ -597,6 +597,10 @@ protected:
      *  marks/extends) via normalCursorSpikePick.  The nearest-spike search + selection run in
      *  KlustersView. */
     void tracePickSpike(QMouseEvent* event);
+    /** The ADD_EVENT press (trace.addEvent command): record the clicked sample as the new
+     *  event position (committed on release); an out-of-trace-area click sets startingIndex
+     *  instead, as the old channel-else fallthrough did. */
+    void traceAddEventPress(QMouseEvent* event);
     /** Begin a Ctrl-drag pan at viewport point @p pos (arm the ctrlPan* state, set the
      *  closed-hand cursor).  The drag body is in mouseMoveEvent and the disarm in
      *  mouseReleaseEvent — the plan's seam.  Invoked by the trace.pan Gesture command. */
