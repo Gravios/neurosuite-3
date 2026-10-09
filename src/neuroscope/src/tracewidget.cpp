@@ -104,6 +104,30 @@ void registerTraceInputOnce()
     };
     addExternal(QStringLiteral("trace.scrollLeft"),  TraceWidget::tr("Scroll left (quarter window)"),  Qt::Key_Left);
     addExternal(QStringLiteral("trace.scrollRight"), TraceWidget::tr("Scroll right (quarter window)"), Qt::Key_Right);
+
+    // Tool-mode scopes (neuroscope input overhaul S4): one per TraceView interaction mode,
+    // active when the *pressed* trace view is in that mode (read via BaseFrame::currentMode()).
+    // Inert for now — no commands — so the S2 seam still falls through to TraceView's
+    // mode-switched mouse handler.  S5 hangs each mode's press gesture off its scope, retiring
+    // the monolith one mode at a time.  ToolMode layer, Passive (a mode binding nothing falls
+    // through).
+    auto modeScope = [&](const QString& id, int modeValue){
+        input::InputScope sc;
+        sc.id     = id;
+        sc.layer  = input::Layer::ToolMode;
+        sc.active = [modeValue](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            return v && v->currentMode() == modeValue;
+        };
+        reg.addScope(sc);
+    };
+    modeScope(QStringLiteral("mode.zoom"),           BaseFrame::ZOOM);
+    modeScope(QStringLiteral("mode.selectChannels"), TraceView::SELECT);
+    modeScope(QStringLiteral("mode.measure"),        TraceView::MEASURE);
+    modeScope(QStringLiteral("mode.selectTime"),     TraceView::SELECT_TIME);
+    modeScope(QStringLiteral("mode.selectEvent"),    TraceView::SELECT_EVENT);
+    modeScope(QStringLiteral("mode.addEvent"),       TraceView::ADD_EVENT);
+    modeScope(QStringLiteral("mode.drawLine"),       TraceView::DRAW_LINE);
 }
 }  // namespace
 

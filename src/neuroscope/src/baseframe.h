@@ -113,6 +113,11 @@ public Q_SLOTS:
   */
     virtual void setMode(BaseFrame::Mode selectedMode){mode = selectedMode;}
 
+    /**Returns the current drawing/interaction mode.  Read by the input registry's ToolMode
+  * scopes (neuroscope input overhaul S4) so a per-mode command resolves only when the
+  * pressed view is in that mode.  See claude/neuroscope-input-plan.md.*/
+    BaseFrame::Mode currentMode() const { return mode; }
+
 Q_SIGNALS:
     /*s*Signals that the enclosing dockwidget is being closed
    * @param viewWidget pointer on the the current object.
