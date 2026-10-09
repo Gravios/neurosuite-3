@@ -2612,6 +2612,27 @@ void TraceView::registerInput(input::BindingRegistry& reg)
     };
     reg.addCommand(addev);
 
+    // The DRAW_LINE press: in draw-line mode a Left click places the measurement line at the
+    // clicked sample.  Split out of trace.press; any-modifier Left, enabled only in DRAW_LINE,
+    // before trace.press (after trace.pan).
+    input::Command drawln;
+    drawln.id       = QStringLiteral("trace.drawLine");
+    drawln.scopeId  = QStringLiteral("view.trace");
+    drawln.label    = tr("Place measurement line");
+    drawln.category = tr("Traces");
+    drawln.kind     = input::Kind::Action;
+    drawln.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    drawln.enabled  = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        return tv && tv->mode == DRAW_LINE;
+    };
+    drawln.invoke   = [](const input::Ctx& c){
+        auto* tv = qobject_cast<TraceView*>(c.view);
+        if (tv && c.event) tv->traceDrawLinePress(static_cast<QMouseEvent*>(c.event));
+    };
+    reg.addCommand(drawln);
+
     // The primary press trigger: Left with any modifiers (AtLeast + no required modifier) —
     // the old handler's whole body was Left-gated and read Shift / Ctrl *inside* (SELECT
     // mode), so the chord must fire for any-modifier Left.  Gesture kind: invoke() BEGINS the
@@ -2840,6 +2861,36 @@ void TraceView::traceAddEventPress(QMouseEvent* event){
     previousDragOrdinate = 0;
 }
 
+void TraceView::traceDrawLinePress(QMouseEvent* event){
+    // mode == DRAW_LINE, split from beginTracePress (trace.drawLine command).  A Left click sets
+    // the measurement line at the clicked sample — one position per shown column in multi-column
+    // layout, a single position otherwise — cleared and repopulated each press; the drag
+    // continuation stays in mouseMoveEvent.  An out-of-trace-area click sets startingIndex, as
+    // the old channel-else fallthrough did.  The time-line redraw ran for any x in the old
+    // postamble (so a margin click redraws the existing line), as does it here.  Shared
+    // pre/postamble side effects preserved.
+    const TraceClickGeometry g = resolveClickGeometry(event->position().toPoint());
+    lastClickOrdinate = g.current.y();
+    const int threshold = multiColumns ? (X0 + g.groupIndex * Xshift) : 0;
+    if(g.x >= threshold){
+        linePositions.clear();
+        previousDragAbscissa = 0;
+        lastClickAbscissa = g.x;
+        if(multiColumns){
+            int nbGroups = shownGroupsChannels.count();
+            for(int i = 0; i<nbGroups;++i)
+                linePositions.append(X0 + i * Xshift + static_cast<int>(0.5 + (static_cast<float>(g.sampleIndex) / downSampling)));
+        }
+        else
+            linePositions.append(static_cast<int>(0.5 + (static_cast<float>(g.sampleIndex) / downSampling)));
+    }
+    else
+        startingIndex = g.x;
+    if(!linePositions.isEmpty())
+        drawTimeLine(lastClickAbscissa,true);
+    previousDragOrdinate = 0;
+}
+
 void TraceView::beginTracePress(QMouseEvent* event){
     // Re-entrancy guard: the body below delegates to BaseFrame::mousePressEvent for ZOOM /
     // MEASURE, which dispatches again — this keeps that inner dispatch from re-resolving this
@@ -2857,7 +2908,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
         int deselectedEventIndex = 0;
         if(!selectedEventPosition.isEmpty()) deselectedEventIndex = selectedEventPosition[0];
 
-        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == DRAW_LINE){
+        if(mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT){
             const TraceClickGeometry g = resolveClickGeometry(event->position().toPoint());
             const QPoint current = g.current;
             lastClickOrdinate = current.y();
@@ -2868,16 +2919,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
                 const int sampleIndex = g.sampleIndex;
                 const bool labelSelected = g.labelSelected;
 
-                if(mode == DRAW_LINE && x >= (X0 + groupIndex * Xshift)){
-                    linePositions.clear();
-                    previousDragAbscissa = 0;
-                    lastClickAbscissa = x;
-                    int nbGroups = shownGroupsChannels.count();
-                    for(int i = 0; i<nbGroups;++i){
-                        linePositions.append(X0 + i * Xshift + static_cast<int>(0.5 + (static_cast<float>(sampleIndex) / downSampling)));
-                    }
-                }
-                else if(mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)){
+                if(mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)){
                     lastClickAbscissa = x;
                     int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
                     QMap<QString, QList<int> >::Iterator iterator;
@@ -3034,13 +3076,7 @@ void TraceView::beginTracePress(QMouseEvent* event){
                 const int x = g.x;
                 const int sampleIndex = g.sampleIndex;
 
-                if(mode == DRAW_LINE && x >= 0){
-                    linePositions.clear();
-                    previousDragAbscissa = 0;
-                    lastClickAbscissa = x;
-                    linePositions.append(static_cast<int>(0.5 + (static_cast<float>(sampleIndex) / downSampling)));
-                }
-                else if(mode == SELECT_EVENT && x >= 0){
+                if(mode == SELECT_EVENT && x >= 0){
                     lastClickAbscissa = x;
                     int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
                     QMap<QString, QList<int> >::Iterator iterator;
@@ -3206,12 +3242,8 @@ void TraceView::beginTracePress(QMouseEvent* event){
                 if(!selectedEvent.first.isEmpty())
                     drawEvent(selectedEvent.first,selectedEvent.second,selectedEventPosition[0],true);
             }
-            if(mode == DRAW_LINE){
-                if(!linePositions.isEmpty())
-                    drawTimeLine(lastClickAbscissa,true);
-            }
             previousDragOrdinate = 0;
-        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT || mode == DRAW_LINE
+        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_EVENT
     }//Qt::LeftButton
 }
 
