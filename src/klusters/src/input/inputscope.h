@@ -30,10 +30,27 @@ enum class Layer : unsigned char {
     Transient    = 4    // an in-progress interaction (pendingLasso / boundaryDrag / …)
 };
 
+// A scope's capture policy decides what happens to an event the scope is active for but
+// none of its own commands match.  Passive — the behavior every scope has had so far —
+// falls through to the next scope and ultimately to Qt / the base handler (the
+// fall-through that keeps un-ported views working).  Exclusive makes the scope OWN the
+// input while it is active: a bound command still fires, but anything it does not bind is
+// SWALLOWED (consumed, never passed to a lower scope or to Qt).  That is exactly a modal
+// state — a live watershed-preview, a pending-lasso confirmation — which must claim the
+// keyboard until it ends, rather than being expressed as a hand-ordered pile of ifs at
+// the top of the app event filter.  See BindingRegistry::resolveEx.
+enum class Capture : unsigned char {
+    Passive,     // no match here -> fall through to the next scope (default)
+    Exclusive    // active -> own the input; no match -> swallow the event and stop
+};
+
 struct InputScope {
     QString id;                            // "view.cluster", "mode.newCluster", "transient.pendingLasso", …
     Layer   layer = Layer::App;
     std::function<bool(const Ctx&)> active; // is this scope in effect for this event?  null == always (App)
+    // Declared last so existing positional { id, layer, active } aggregates are unchanged
+    // and every current scope keeps the Passive (fall-through) behavior by default.
+    Capture capture = Capture::Passive;
 };
 
 }  // namespace input

@@ -60,12 +60,13 @@ QList<QPair<QString, Chord>> BindingRegistry::overrides() const
     return out;
 }
 
-const Command* BindingRegistry::resolve(const Chord& chord, const Ctx& ctx) const
+BindingRegistry::Resolution BindingRegistry::resolveEx(const Chord& chord, const Ctx& ctx) const
 {
-    if (!chord.isValid()) return nullptr;
-
     // Collect the indices of every active scope.  A null active() predicate means
-    // "always on" (the App scope); otherwise it is asked about this event's ctx.
+    // "always on" (the App scope); otherwise it is asked about this event's ctx.  Note
+    // the chord may be INVALID here (a held-key auto-repeat the dispatcher deliberately
+    // does not treat as a fresh trigger); we still evaluate scopes, so an Exclusive scope
+    // can swallow that repeat instead of letting it leak to a lower scope / the palette.
     QList<int> active;
     active.reserve(scopes_.size());
     for (int i = 0; i < scopes_.size(); ++i) {
@@ -82,17 +83,33 @@ const Command* BindingRegistry::resolve(const Chord& chord, const Ctx& ctx) cons
         return a > b;                   // later registration shadows earlier
     });
 
+    const bool validChord = chord.isValid();
     for (int si : active) {
-        const QString& sid = scopes_[si].id;
-        for (const Command& c : commands_) {
-            if (c.scopeId != sid) continue;
-            if (c.external) continue;                       // Qt dispatches it; never resolve it here
-            if (!effectiveChord(c.id).matches(chord)) continue;  // binding vs event, per modMatch policy
-            if (c.enabled && !c.enabled(ctx)) continue;     // "when" predicate gates the match
-            return &c;
+        const InputScope& s = scopes_[si];
+        if (validChord) {
+            for (const Command& c : commands_) {
+                if (c.scopeId != s.id) continue;
+                if (c.external) continue;                       // Qt dispatches it; never resolve it here
+                if (!effectiveChord(c.id).matches(chord)) continue;  // binding vs event, per modMatch policy
+                if (c.enabled && !c.enabled(ctx)) continue;     // "when" predicate gates the match
+                return { &c, true };                            // matched -> invoke + consume
+            }
         }
+        // An active Exclusive scope owns the keyboard: once its own commands have been
+        // consulted without a match (or the chord was not resolvable at all), the event is
+        // swallowed here rather than offered to a lower scope or to Qt.
+        if (s.capture == Capture::Exclusive)
+            return { nullptr, true };
     }
-    return nullptr;
+    return { nullptr, false };   // nothing matched, nothing captured -> fall through
+}
+
+const Command* BindingRegistry::resolve(const Chord& chord, const Ctx& ctx) const
+{
+    // Convenience form: the command only.  An invalid chord with no Exclusive scope
+    // active resolves to {nullptr,false} -> nullptr, exactly as the old resolve() did;
+    // capture only ever changes the consume flag, which this form discards.
+    return resolveEx(chord, ctx).command;
 }
 
 const Command* BindingRegistry::command(const QString& id) const

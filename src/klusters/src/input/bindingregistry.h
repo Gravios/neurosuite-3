@@ -43,15 +43,31 @@ public:
     QList<QPair<QString, Chord>> overrides() const;
 
     // ── resolution ──
-    // Among every scope whose active(ctx) reports true, consult them highest-layer
-    // first (Transient → … → App; ties broken so a later-registered scope shadows an
-    // earlier one in the same layer).  Within a scope, the first command whose effective
-    // chord equals `chord` AND whose enabled(ctx) is not false wins.  `ctx` carries the
-    // view the event arrived on + the event, so a shared command (e.g. the base zoom)
-    // can gate on the pressed frame's state; it is empty for non-event queries.  Returns
-    // nullptr when nothing matches, so the caller falls through to Qt / the base handler
-    // — this fall-through is what lets un-ported views keep their current behavior during
-    // the incremental migration.  The returned pointer is owned by the registry and valid
+    // The full result: the Command to invoke (null if none) AND whether the event must
+    // be CONSUMED regardless.  consume is true when a command matched, OR when an active
+    // Exclusive scope captured the event — it owns the input and swallows everything it
+    // does not bind, including a held-key auto-repeat the dispatcher reports as an invalid
+    // chord.  When consume is false and command is null, nothing is active that wants the
+    // event and the caller falls through to Qt / the base handler.
+    struct Resolution {
+        const Command* command = nullptr;
+        bool           consume = false;
+    };
+
+    // Among every scope whose active(ctx) reports true, consult them highest-layer first
+    // (Transient → … → App; ties broken so a later-registered scope shadows an earlier one
+    // in the same layer).  Within a scope, the first command whose effective chord matches
+    // `chord` AND whose enabled(ctx) is not false wins.  A scope with Capture::Exclusive
+    // stops the search once reached: its own commands are consulted, then the event is
+    // swallowed rather than offered to a lower scope.  `ctx` carries the view the event
+    // arrived on + the event, so a shared command (e.g. the base zoom) can gate on the
+    // pressed frame's state; it is empty for non-event queries.
+    Resolution resolveEx(const Chord& chord, const Ctx& ctx = {}) const;
+
+    // Convenience form for callers that do not implement capture: the resolved Command, or
+    // nullptr when nothing matches (so they fall through to Qt / the base handler — the
+    // fall-through that lets un-ported views keep their current behavior).  Equivalent to
+    // resolveEx(...).command.  The returned pointer is owned by the registry and valid
     // until the next addCommand / override change.
     const Command* resolve(const Chord& chord, const Ctx& ctx = {}) const;
 

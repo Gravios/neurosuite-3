@@ -30,6 +30,8 @@ static bool g_modeActive  = false;
 static bool g_transActive = false;
 static bool g_cmdEnabled  = true;
 static int  g_lastInvoked = 0;   // which command's invoke() last ran
+static bool g_exclActive  = false;   // the Exclusive (modal-capture) scope's active() gate
+static bool g_lowerActive = true;    // a lower Passive scope sitting under the modal one
 
 int main()
 {
@@ -294,6 +296,75 @@ int main()
         CHECK(reg.resolve(Chord::button(Qt::LeftButton, Qt::ControlModifier)) != nullptr);
         CHECK(reg.resolve(Chord::button(Qt::LeftButton, Qt::ControlModifier | Qt::ShiftModifier)) != nullptr);
         CHECK(reg.resolve(Chord::button(Qt::LeftButton)) == nullptr);   // no Ctrl -> no match
+    }
+
+    // ── resolveEx: Exclusive scope captures the keyboard (modal mechanism) ─
+    {
+        g_exclActive = false; g_lowerActive = true;
+        BindingRegistry reg;
+        reg.addScope({ QStringLiteral("app"), Layer::App, nullptr });
+        // A lower Passive view scope binds X; a higher Transient scope binds only Enter
+        // and (below) is flipped between Exclusive and Passive capture.
+        reg.addScope({ QStringLiteral("view"), Layer::ViewType,
+                       [](const Ctx&){ return g_lowerActive; } });
+        InputScope modal;
+        modal.id      = QStringLiteral("modal");
+        modal.layer   = Layer::Transient;
+        modal.active  = [](const Ctx&){ return g_exclActive; };
+        modal.capture = Capture::Exclusive;
+        reg.addScope(modal);
+
+        const Chord enter = Chord::key(Qt::Key_Return);
+        const Chord x     = Chord::key(Qt::Key_X);
+        Command vx; vx.id = QStringLiteral("view.x"); vx.scopeId = QStringLiteral("view");
+        vx.defaultChord = x; reg.addCommand(vx);
+        Command me; me.id = QStringLiteral("modal.enter"); me.scopeId = QStringLiteral("modal");
+        me.defaultChord = enter; reg.addCommand(me);
+
+        // Modal inactive -> ordinary resolution: X resolves + consumes; an unbound key
+        // falls through (consume == false), exactly as before capture existed.
+        {
+            BindingRegistry::Resolution r = reg.resolveEx(x);
+            CHECK(r.command && r.command->id == QStringLiteral("view.x") && r.consume);
+            BindingRegistry::Resolution f = reg.resolveEx(Chord::key(Qt::Key_F12));
+            CHECK(f.command == nullptr && !f.consume);
+        }
+
+        // Modal active + Exclusive -> it owns the keyboard.
+        g_exclActive = true;
+        {
+            // Its own Enter fires.
+            BindingRegistry::Resolution e = reg.resolveEx(enter);
+            CHECK(e.command && e.command->id == QStringLiteral("modal.enter") && e.consume);
+            // X is bound in the lower view scope, but the Exclusive modal shadows it:
+            // no command, yet CONSUMED -> the view never sees it.
+            BindingRegistry::Resolution sx = reg.resolveEx(x);
+            CHECK(sx.command == nullptr && sx.consume);
+            // An arbitrary unbound key is swallowed too.
+            BindingRegistry::Resolution su = reg.resolveEx(Chord::key(Qt::Key_F12));
+            CHECK(su.command == nullptr && su.consume);
+            // A held-key auto-repeat reaches the resolver as an INVALID chord; the modal
+            // still swallows it rather than leaking it to the view / palette below.
+            BindingRegistry::Resolution sr = reg.resolveEx(Chord{});
+            CHECK(sr.command == nullptr && sr.consume);
+            // Back-compat: resolve() reports only the command, so the swallow cases look
+            // like "nothing" to callers that ignore consume — their behavior is unchanged.
+            CHECK(reg.resolve(x) == nullptr);
+            CHECK(reg.resolve(enter) != nullptr);
+        }
+
+        // Same scope active but Passive capture -> X falls back through to the view,
+        // proving the swallow is the capture policy, not merely a transient scope existing.
+        {
+            InputScope passiveModal = modal;
+            passiveModal.capture = Capture::Passive;
+            reg.addScope(passiveModal);                 // addScope replaces by id
+            BindingRegistry::Resolution sx = reg.resolveEx(x);
+            CHECK(sx.command && sx.command->id == QStringLiteral("view.x") && sx.consume);
+            BindingRegistry::Resolution su = reg.resolveEx(Chord::key(Qt::Key_F12));
+            CHECK(su.command == nullptr && !su.consume);
+        }
+        g_exclActive = false;
     }
 
     if (g_fail == 0) std::printf("bindingregistry_test: OK\n");
