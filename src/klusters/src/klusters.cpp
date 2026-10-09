@@ -2155,24 +2155,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     //  through the normal tryViewKeyCommand dispatch below, after the Esc meanings above,
     //  exactly as this block did when it sat here.)
 
-    // ── Up / Down — t-SNE perplexity, ONLY while the embedding is showing ─
-    // Gated on isTsneActive() so the arrows keep their normal meaning
-    // (palette navigation) everywhere else: a modal binding, live exactly as
-    // long as the alternate presentation is.  Each press recomputes at the
-    // new value using the step from Preferences > Cluster view; the previous
-    // embedding stays on screen meanwhile.
-    if(event->type() == QEvent::KeyPress){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if((ke->key() == Qt::Key_Up || ke->key() == Qt::Key_Down)
-           && ke->modifiers() == Qt::NoModifier
-           && doc && !focusIsInTextInput()){
-            ClusterView* cv = activeClusterView();
-            if(cv && cv->isTsneActive()){
-                cv->adjustTsnePerplexity(ke->key() == Qt::Key_Up ? +1 : -1);
-                return true;
-            }
-        }
-    }
+    // (Up / Down — t-SNE perplexity, live only while the embedding is showing — now live
+    //  on the registry as the Passive `transient.embedding` scope; see
+    //  registerInputBindings().  They resolve through the normal tryViewKeyCommand dispatch
+    //  above, with Repeat::Fire so a held arrow keeps stepping the perplexity as this inline
+    //  block did, and Focus::Default so the arrows stay palette navigation in a text field.)
 
     // (V — "child-scoped matrices" — moved onto the input registry; resolved by the
     //  dispatch block above.  See matrices.childScope in registerInputBindings.)
@@ -2801,6 +2788,43 @@ void KlustersApp::registerInputBindings()
                                        "(Actions > Set Oblique Basis), then Enter=cut, D=decollide."));
                   }
               });
+    }
+
+    // ── transient.embedding: t-SNE perplexity tuning while the embedding is showing ──────
+    // Up / Down step the perplexity and recompute, live only while the alternate t-SNE
+    // presentation is up (active = isTsneActive()); elsewhere the arrows stay palette
+    // navigation.  Not swallow-all — other shortcuts still work during the embedding — so a
+    // Passive Transient scope resolved through the normal path, NOT the modal-capture block.
+    // Repeat::Fire: a held arrow keeps stepping (as the old inline block did, which fired on
+    // every KeyPress incl. auto-repeat).  Focus::Default: the arrows yield to a focused text
+    // field.  Exact + NoModifier: only a plain Up/Down resolves (Shift/Ctrl+arrow falls
+    // through, matching the old `modifiers()==NoModifier` gate).  Locked (modal, read-only).
+    {
+        input::InputScope emb;
+        emb.id     = QStringLiteral("transient.embedding");
+        emb.layer  = input::Layer::Transient;
+        emb.active = [this](const input::Ctx&){
+            ClusterView* cv = activeClusterView();
+            return cv && cv->isTsneActive();
+        };
+        reg.addScope(emb);   // Passive: other keys pass through while the embedding is shown
+    }
+    {
+        const QString embScope = QStringLiteral("transient.embedding");
+        const QString embCat   = tr("t-SNE embedding");
+        auto embCmd = [&](const QString& id, const QString& label, int key, int delta){
+            input::Command c;
+            c.id = id; c.scopeId = embScope; c.label = label; c.category = embCat;
+            c.kind   = input::Kind::Locked;
+            c.repeat = input::Repeat::Fire;          // a held arrow keeps stepping
+            c.defaultChord = input::Chord::key(key); // Exact + NoModifier: plain press only
+            c.invoke = [this, delta](const input::Ctx&){
+                if(ClusterView* cv = activeClusterView()) cv->adjustTsnePerplexity(delta);
+            };
+            reg.addCommand(c);
+        };
+        embCmd(QStringLiteral("tsne.perplexityUp"),   tr("Perplexity +"), Qt::Key_Up,   +1);
+        embCmd(QStringLiteral("tsne.perplexityDown"), tr("Perplexity −"), Qt::Key_Down, -1);
     }
 
     // Apply the persisted override diffs (Configuration read them from QSettings at
