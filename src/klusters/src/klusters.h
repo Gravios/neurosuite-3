@@ -872,13 +872,14 @@ private:
      *  palette actions. */
     bool focusIsInTextInput() const;
 
-    /** True when the app-wide single-key / registry shortcuts (F, A, T, V, S,
-     *  Ctrl+1/2, E, H, …) should fire: focus is inside this main window, no modal
-     *  dialog is up, and focus is not in a text / key-capture field.  Keeps those
-     *  shortcuts from firing while the Preferences ▸ Input editors or any dialog
-     *  are capturing keys — otherwise typing a binding already mapped to a command
-     *  would execute that command instead of being captured. */
-    bool globalKeyShortcutsActive() const;
+    /** True when the app-wide registry key dispatch should run: focus is inside this
+     *  main window and no modal dialog is up.  Keeps it off while the Preferences ▸ Input
+     *  editors or any dialog are capturing keys — otherwise typing a binding already
+     *  mapped to a command would execute it instead of being captured.  Whether a matched
+     *  command also yields to a focused (non-modal) text field is per-command
+     *  (input::Focus, checked in tryViewKeyCommand): Default yields; Always — the
+     *  navigation keys (Tab, PageUp/Down, focus-ring) — fires from the toolbar fields. */
+    bool windowKeyShortcutsActive() const;
 
     /** Epoch-ms of the last "plain" Escape that armed the double-Escape
      *  clear-selection gesture (-1 = not armed).  A second Escape within the

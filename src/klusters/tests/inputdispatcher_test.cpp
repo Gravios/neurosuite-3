@@ -39,10 +39,14 @@ int main()
         CHECK(c.isValid());
         CHECK(c == Chord::key(Qt::Key_S, Qt::ControlModifier));
 
-        // Auto-repeat is not a fresh trigger -> invalid.
+        // Auto-repeat is not a fresh trigger -> invalid by default...
         QKeyEvent repeat(QEvent::KeyPress, Qt::Key_S, Qt::ControlModifier,
                          QString(), /*autorep=*/true);
         CHECK(!chordFromEvent(&repeat).isValid());
+        // ...but a caller can opt in (the app key dispatch does, then consults the matched
+        // command's Repeat policy): the held key maps to the same chord as a fresh press.
+        CHECK(chordFromEvent(&repeat, /*allowAutoRepeat=*/true)
+              == Chord::key(Qt::Key_S, Qt::ControlModifier));
 
         // KeyRelease is not a trigger.
         QKeyEvent rel(QEvent::KeyRelease, Qt::Key_S, Qt::NoModifier);

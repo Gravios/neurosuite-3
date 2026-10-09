@@ -18,7 +18,7 @@ BindingRegistry& registry()
     return r;
 }
 
-Chord chordFromEvent(const QEvent* ev)
+Chord chordFromEvent(const QEvent* ev, bool allowAutoRepeat)
 {
     if (!ev) return {};
     switch (ev->type()) {
@@ -28,7 +28,7 @@ Chord chordFromEvent(const QEvent* ev)
         // follows it; mapping it lets a caller claim the override for a key it will
         // handle on KeyPress (so QAction shortcuts / list type-ahead do not eat it).
         const auto* k = static_cast<const QKeyEvent*>(ev);
-        if (k->isAutoRepeat()) return {};                 // a held key is not a fresh trigger
+        if (k->isAutoRepeat() && !allowAutoRepeat) return {};   // a held key is not a fresh trigger (unless the caller opts in)
         const int key = k->key();
         if (key == 0 || key == Qt::Key_unknown) return {};
         return Chord::key(key, k->modifiers());

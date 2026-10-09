@@ -33,7 +33,11 @@ BindingRegistry& registry();
 // caller falls through to its existing handler.  Only the PRESS (or double-click, or
 // wheel notch) that BEGINS an interaction is a trigger; the drag / release body stays
 // in the view (the plan's "seam").
-Chord chordFromEvent(const QEvent* ev);
+// Map a Qt event to the Chord it would trigger.  A held-key auto-repeat is normally NOT a
+// fresh trigger, so by default it maps to an invalid Chord (callers fall through).  Pass
+// allowAutoRepeat=true to map it anyway — for the app key dispatch, which then consults the
+// matched command's Repeat policy to decide whether a held key re-fires.
+Chord chordFromEvent(const QEvent* ev, bool allowAutoRepeat = false);
 
 // Resolve `ev` for `view` against `reg`; if a command matches, invoke it (Action:
 // perform; Gesture: begin; Locked: perform) and return true (handled).  Otherwise

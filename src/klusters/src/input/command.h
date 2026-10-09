@@ -22,6 +22,29 @@ enum class Kind : unsigned char {
     Locked     // modal, shown in the UI but not rebindable (Enter / Esc / D confirmations)
 };
 
+// Whether a command may fire while a text / key-capture field holds focus.  The app-level
+// key dispatch already yields to a focused field for Default commands (so a letter typed
+// into a spin box is text, not a shortcut).  Always is for the structural navigation keys
+// — Tab, PageUp/Down, the focus-ring cycle — that must work FROM those toolbar fields: the
+// focus ring includes them, so the key has to move focus out rather than be swallowed as
+// text.  Either way the key is still gated to this window and blocked while a modal dialog
+// is up (so a Preferences binding editor records the key instead of firing it).
+enum class Focus : unsigned char {
+    Default,   // yield to a focused text / key-capture field (the common case)
+    Always     // fire even in a text field (still window-scoped, never through a modal)
+};
+
+// Whether a command fires again on a held-key auto-repeat.  FallThrough — the default and
+// today's behavior for every command — does NOT re-fire: the auto-repeat is let through
+// (the dispatcher treats a held key as not a fresh trigger).  Fire re-invokes on each
+// auto-repeat, for the keys whose whole point is to repeat while held (t-SNE perplexity
+// step, a focus-ring cycle).  A command that does re-fire also consumes the repeat, so it
+// never leaks to the widget beneath.
+enum class Repeat : unsigned char {
+    FallThrough,   // auto-repeat neither re-fires nor is consumed (default)
+    Fire           // auto-repeat re-fires (and is consumed)
+};
+
 struct Command {
     QString id;          // globally unique, e.g. "cluster.lasso", "app.prefs"
     QString scopeId;     // the InputScope that owns it (see inputscope.h)
@@ -29,6 +52,8 @@ struct Command {
     QString category;    // grouping within the page
 
     Kind    kind = Kind::Action;
+    Focus   focus = Focus::Default;     // may it fire while a text field has focus? (keys only)
+    Repeat  repeat = Repeat::FallThrough; // does it re-fire on a held-key auto-repeat? (keys only)
     Chord   defaultChord;
 
     // A mirror of something Qt already dispatches (a menu/toolbar QAction, whose

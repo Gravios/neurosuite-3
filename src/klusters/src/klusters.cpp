@@ -1954,7 +1954,7 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         //  (mShortcutsHelp, Key_H), mirrored as help.shortcuts in registerInputBindings.
         //  The former inline branch here was redundant: the QAction's shortcut fires and
         //  consumes H before this KeyPress-only branch could run, and it yields to text
-        //  fields / modals exactly as the old globalKeyShortcutsActive() gate did.)
+        //  fields / modals exactly as that branch's focus gate did.)
 
         // Esc discards a part-drawn selection polygon, in the scatter and in
         // the embedding alike -- the one key that was missing from the shared
@@ -2139,10 +2139,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     // ShortcutOverride (so the palette's type-ahead and any QAction shortcut cannot eat
     // the bare letters) and invokes it at KeyPress, consuming exactly when the old inline
     // branches did — their gating lives in the commands' enabled() (registerInputBindings).
-    // The modal keys (Enter/Esc/D, Up/Down, PageUp/Down) are still inline below/above and
-    // migrate over time; ordering relative to them is unchanged.
+    // Gated only to this window + no modal here; the per-command Focus policy decides
+    // whether a command also yields to a focused text field (Default) or fires from it
+    // (Always — the navigation keys), and the Repeat policy whether a held key re-fires.
     if((event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress)
-       && globalKeyShortcutsActive()){   // not while a dialog / text field is capturing keys
+       && windowKeyShortcutsActive()){   // in this window, no modal dialog up
         if(tryViewKeyCommand(static_cast<QKeyEvent*>(event),
                              event->type() == QEvent::ShortcutOverride))
             return true;
@@ -2837,11 +2838,28 @@ bool KlustersApp::tryViewKeyCommand(QKeyEvent* ke, bool shortcutOverride)
     // normal KeyPress; on KeyPress the command is invoked.  (Modified combos such as
     // Shift+O did not need the override claim, but claiming them is harmless — nothing
     // else binds them.)
+    //
+    // The caller has already gated to this window + no modal.  Two per-command policies
+    // refine from there (both default to today's behavior, so the un-ported commands are
+    // unchanged):
+    //   Focus::Default  — yield to a focused text / key-capture field (don't fire, don't
+    //                     claim), so the letter stays typeable; Focus::Always fires even
+    //                     there (the navigation keys that must work from the toolbar fields).
+    //   Repeat::FallThrough — a held-key auto-repeat neither re-fires nor is consumed (it
+    //                     passes through); Repeat::Fire re-fires + consumes on auto-repeat.
+    // chordFromEvent is asked to map auto-repeats (allowAutoRepeat) so a Fire command can
+    // see them; the FallThrough guard below then reproduces the old "held key is not a
+    // trigger" drop for every other command.
     input::Ctx ctx;
     ctx.view  = activeClusterView();
     ctx.event = ke;
-    const input::Command* cmd = input::registry().resolve(input::chordFromEvent(ke), ctx);
+    const input::Command* cmd =
+        input::registry().resolve(input::chordFromEvent(ke, /*allowAutoRepeat=*/true), ctx);
     if(!cmd) return false;
+    if(cmd->focus != input::Focus::Always && focusIsInTextInput())
+        return false;                                    // Default command yields to the text field
+    if(ke->isAutoRepeat() && cmd->repeat != input::Repeat::Fire)
+        return false;                                    // FallThrough: let the held-key repeat pass through
     if(shortcutOverride){ ke->accept(); return true; }   // claim; act on the following KeyPress
     if(cmd->invoke) cmd->invoke(ctx);
     return true;
@@ -2957,17 +2975,19 @@ bool KlustersApp::focusIsInTextInput() const
     return false;
 }
 
-bool KlustersApp::globalKeyShortcutsActive() const
+bool KlustersApp::windowKeyShortcutsActive() const
 {
-    // The app-wide single-key / registry shortcuts fire only when the key is "meant for"
-    // the main window: focus is inside this window, no modal dialog is up, and focus is not
-    // in a text / key-capture field.  This keeps them off while a dialog — the Preferences
-    // ▸ Input editors above all — is capturing keys; without it, typing a binding that is
-    // already mapped to a command would execute that command instead of being recorded.
+    // The app-wide registry key dispatch runs only when the key is "meant for" the main
+    // window: focus is inside this window and no modal dialog is up.  This keeps it off
+    // while a dialog — the Preferences ▸ Input editors above all — is capturing keys;
+    // without it, typing a binding already mapped to a command would execute the command
+    // instead of recording it.  Whether a matched command ALSO yields to a focused
+    // (non-modal) text field is now per-command (input::Focus): Default yields,
+    // tryViewKeyCommand() checks focusIsInTextInput() for it; Always (the navigation keys)
+    // fires from the toolbar fields too.
     QWidget* fw = QApplication::focusWidget();
     return fw && fw->window() == this
-        && !QApplication::activeModalWidget()
-        && !focusIsInTextInput();
+        && !QApplication::activeModalWidget();
 }
 
 
