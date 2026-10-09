@@ -4106,12 +4106,24 @@ void KlustersApp::closeEvent(QCloseEvent *event)
     settings.endGroup();
     settings.sync();
 
-    // Disconnect ALL signals to/from this object and every KlustersView
-    // BEFORE QMainWindow::closeEvent triggers widget destruction.
-    // This must happen here — by the time ~KlustersApp runs, Qt's
-    // destruction machinery has already begun.
-    NS3_DIAG() << "[closeEvent] disconnecting all";
-    disconnect();
+    // Sever the doc<->view signal mesh BEFORE QMainWindow::closeEvent triggers
+    // widget destruction, so no stale signal fires into a half-destroyed object
+    // mid-teardown (the "corrupted double-linked list" SIGABRT this guards against).
+    //
+    // We intentionally do NOT call this->disconnect() (a wildcard on KlustersApp).
+    // KlustersApp declares no signals of its own and nothing connects to it as a
+    // sender, so that blanket call severed nothing of ours; its only effect was to
+    // tear down the internal hooks Qt places on KlustersApp::destroyed() to auto-
+    // clean the functor/context connect()s elsewhere in this class
+    // (connect(doc, &KlustersDoc::sig, this, [this]{ … }), etc.).  Removing those
+    // hooks is exactly what Qt 6.8+ flags —
+    //   QObject::disconnect: wildcard call disconnects from destroyed signal of
+    //   KlustersApp::Klusters
+    // — because it defeats Qt's own connection lifetime bookkeeping.  Incoming
+    // signals (doc/view -> KlustersApp) are this-as-receiver and were never touched
+    // by a this-as-sender disconnect anyway; the per-view disconnects below are what
+    // actually prevent the teardown crash.
+    NS3_DIAG() << "[closeEvent] disconnecting doc<->view mesh";
     if (doc) {
         // Disconnect all doc<->view and doc<->view-child connections.
         const QList<KlustersView*> views = doc->viewListCopy();
