@@ -74,13 +74,20 @@ BindingRegistry::Resolution BindingRegistry::resolveEx(const Chord& chord, const
         if (!s.active || s.active(ctx)) active.append(i);
     }
 
-    // Highest layer first; ties resolved so a later-registered scope shadows an
-    // earlier one in the same layer.  stable_sort keeps the comparator total/stable.
+    // Order the active scopes for consultation.  An active Exclusive scope OWNS input, so
+    // it ranks ahead of every non-Exclusive scope regardless of layer or registration —
+    // otherwise a Passive scope that happens to be active at the same time (e.g. the t-SNE
+    // embedding while a watershed preview is up) and was registered later would shadow the
+    // modal and steal its keys.  Below that: higher layer first, then a later-registered
+    // scope shadows an earlier one in the same layer.  stable_sort keeps it total/stable.
     std::stable_sort(active.begin(), active.end(), [this](int a, int b) {
+        const bool ea = scopes_[a].capture == Capture::Exclusive;
+        const bool eb = scopes_[b].capture == Capture::Exclusive;
+        if (ea != eb) return ea;        // an active Exclusive scope owns input -> first
         const int la = int(scopes_[a].layer);
         const int lb = int(scopes_[b].layer);
-        if (la != lb) return la > lb;   // inner layer wins
-        return a > b;                   // later registration shadows earlier
+        if (la != lb) return la > lb;   // else inner layer wins
+        return a > b;                   // else later registration shadows earlier
     });
 
     const bool validChord = chord.isValid();

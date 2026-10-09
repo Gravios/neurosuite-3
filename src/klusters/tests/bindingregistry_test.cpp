@@ -370,6 +370,42 @@ int main()
         g_exclActive = false;
     }
 
+    // ── resolveEx: an active Exclusive scope outranks a later-registered Passive one ──
+    // Regression for the watershed-vs-t-SNE bug: both are Transient scopes active at once,
+    // and the Passive embedding scope was registered LATER, so the "later shadows earlier"
+    // tie-break let it steal Up/Down from the Exclusive watershed modal.  An active
+    // Exclusive scope must own input regardless of registration order.
+    {
+        BindingRegistry reg;
+        reg.addScope({ QStringLiteral("app"), Layer::App, nullptr });
+        // Exclusive modal registered FIRST, same layer as...
+        InputScope modal;
+        modal.id      = QStringLiteral("modal");
+        modal.layer   = Layer::Transient;
+        modal.active  = [](const Ctx&){ return true; };
+        modal.capture = Capture::Exclusive;
+        reg.addScope(modal);
+        // ...a Passive scope registered LATER, also active.
+        reg.addScope({ QStringLiteral("passive"), Layer::Transient,
+                       [](const Ctx&){ return true; } });   // Passive (default)
+
+        const Chord up = Chord::key(Qt::Key_Up);
+        Command mUp;   mUp.id   = QStringLiteral("modal.up");     mUp.scopeId   = QStringLiteral("modal");
+        mUp.defaultChord = up;                        reg.addCommand(mUp);
+        Command pUp;   pUp.id   = QStringLiteral("passive.up");   pUp.scopeId   = QStringLiteral("passive");
+        pUp.defaultChord = up;                        reg.addCommand(pUp);     // SAME chord, later scope
+        Command pDown; pDown.id = QStringLiteral("passive.down"); pDown.scopeId = QStringLiteral("passive");
+        pDown.defaultChord = Chord::key(Qt::Key_Down); reg.addCommand(pDown);
+
+        // The Exclusive modal wins the shared chord, though the Passive scope registered later.
+        BindingRegistry::Resolution ru = reg.resolveEx(up);
+        CHECK(ru.command && ru.command->id == QStringLiteral("modal.up") && ru.consume);
+        // A chord only the Passive scope binds is still SWALLOWED by the Exclusive modal —
+        // it owns the keyboard, so the Passive scope is never consulted.
+        BindingRegistry::Resolution rd = reg.resolveEx(Chord::key(Qt::Key_Down));
+        CHECK(rd.command == nullptr && rd.consume);
+    }
+
     if (g_fail == 0) std::printf("bindingregistry_test: OK\n");
     return g_fail == 0 ? 0 : 1;
 }
