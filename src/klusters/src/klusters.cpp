@@ -1924,8 +1924,8 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     // commands in registerInputBindings(), with no edit here (plan: capturing scopes,
     // replacing the hand-written modal key blocks).  Like those blocks, this claims the
     // ShortcutOverride (so no QAction shortcut fires) and acts on the following KeyPress.
-    // No Exclusive scope is registered yet, so hasActiveCapture() is always false here and
-    // this is inert — the watershed block below still handles its keys until it is ported.
+    // The watershed live-preview (transient.watershed) is the Exclusive scope dispatched
+    // here; see src/klusters/docs/INPUT_SYSTEM.md for the recipe to add another.
     if(event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress){
         QKeyEvent* ke = static_cast<QKeyEvent*>(event);
         input::Ctx ctx;
