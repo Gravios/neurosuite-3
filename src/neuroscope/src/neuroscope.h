@@ -710,6 +710,7 @@ private:
     QAction* viewToolBar;
     QAction* greyScale;
     QAction* mSpectralView;
+    QAction* mSpectralCommit;   // "u" commits a pending spectral update (was a QShortcut; QAction in input-overhaul S3b)
     QAction* displayMode;
     QAction* clusterVerticalLines;
     QAction* clusterRaster;

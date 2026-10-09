@@ -719,9 +719,17 @@ void NeuroscopeApp::initItemPanel(){
     // shortcut would silently miss. Routed to the active display's view, so it
     // follows whichever spectrogram is in front. Text fields reclaim "u" via the
     // shortcut-override they already send, so typing is unaffected.
-    QShortcut* spectralCommit = new QShortcut(QKeySequence(Qt::Key_U), this);
-    spectralCommit->setContext(Qt::WindowShortcut);
-    connect(spectralCommit, &QShortcut::activated, this, [this]{
+    //
+    // Input overhaul S3b: this was a standalone QShortcut; it is now a QAction so it is
+    // registry-visible + rebindable like every other shortcut (mirrored as spectral.commit
+    // in registerInputBindings()).  WindowShortcut + addAction reproduce the former
+    // QShortcut's window-wide reach exactly; a QAction shortcut honours the same
+    // shortcut-override, so text fields still reclaim "u".
+    mSpectralCommit = new QAction(tr("Commit spectral update"), this);
+    mSpectralCommit->setShortcut(QKeySequence(Qt::Key_U));
+    mSpectralCommit->setShortcutContext(Qt::WindowShortcut);
+    addAction(mSpectralCommit);
+    connect(mSpectralCommit, &QAction::triggered, this, [this]{
         NeuroscopeView* v = activeView();
         if(v && v->isSpectralMode() && v->spectralView())
             v->spectralView()->commitNow();
@@ -826,6 +834,10 @@ void NeuroscopeApp::registerInputBindings()
 
     // Help
     registerActionCommand(QStringLiteral("help.handbook"), tr("Help"), handbook);
+
+    // Spectral — the window-scoped "u" commit key, retired from a standalone QShortcut to a
+    // QAction in S3b (created in initItemPanel(), which runs before this).
+    registerActionCommand(QStringLiteral("spectral.commit"), tr("View"), mSpectralCommit);
 }
 
 void NeuroscopeApp::auditKeyBindings() const

@@ -25,6 +25,7 @@
 #include "input/chord.h"
 
 #include <QShortcut>
+#include <QAction>
 // Qt6 PMF connect requires complete type for ItemColors* in eventsAvailable signal signature
 #include "itemcolors.h"
 #include <QScrollBar>
@@ -85,6 +86,24 @@ void registerTraceInputOnce()
     };
     add(QStringLiteral("trace.durationDouble"), TraceWidget::tr("Double the time window"), Qt::Key_Plus,  &TraceWidget::doubleTimeWindow);
     add(QStringLiteral("trace.durationHalve"),  TraceWidget::tr("Halve the time window"),  Qt::Key_Minus, &TraceWidget::halveTimeWindow);
+
+    // External mirrors of the Left/Right quarter-window scroll QActions (S3b).  Qt dispatches
+    // those via their WidgetWithChildrenShortcut; registering them here makes them discoverable
+    // + conflict-checked.  external => resolve() skips them, so TraceWidget::keyPressEvent never
+    // double-scrolls.
+    auto addExternal = [&](const QString& id, const QString& label, int key){
+        input::Command c;
+        c.id       = id;
+        c.scopeId  = QStringLiteral("view.trace");
+        c.label    = label;
+        c.category = TraceWidget::tr("Trace view");
+        c.kind     = input::Kind::Action;
+        c.external = true;
+        c.defaultChord = input::Chord::key(key);
+        reg.addCommand(c);
+    };
+    addExternal(QStringLiteral("trace.scrollLeft"),  TraceWidget::tr("Scroll left (quarter window)"),  Qt::Key_Left);
+    addExternal(QStringLiteral("trace.scrollRight"), TraceWidget::tr("Scroll right (quarter window)"), Qt::Key_Right);
 }
 }  // namespace
 
@@ -118,12 +137,21 @@ TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvi
     // Scoped to this widget and its children; text fields keep the keys for
     // cursor movement (they accept the shortcut override), so only the data
     // views and scroll bar are affected.
-    QShortcut* scrollLeft  = new QShortcut(QKeySequence(Qt::Key_Left),  this);
-    QShortcut* scrollRight = new QShortcut(QKeySequence(Qt::Key_Right), this);
-    scrollLeft->setContext(Qt::WidgetWithChildrenShortcut);
-    scrollRight->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(scrollLeft,  &QShortcut::activated, this, [this]() { scrollByQuarterWindow(-1); });
-    connect(scrollRight, &QShortcut::activated, this, [this]() { scrollByQuarterWindow(+1); });
+    // Input overhaul S3b: Left/Right were standalone QShortcuts; they are now QActions so
+    // they are registry-visible + rebindable (mirrored as external trace.scrollLeft /
+    // trace.scrollRight in registerTraceInputOnce()).  WidgetWithChildrenShortcut + addAction
+    // reproduce the former QShortcuts' reach exactly (fire while this widget or a child has
+    // focus), and a QAction shortcut honours the same override, so text fields keep the arrows.
+    QAction* scrollLeft  = new QAction(tr("Scroll left"),  this);
+    QAction* scrollRight = new QAction(tr("Scroll right"), this);
+    scrollLeft->setShortcut(QKeySequence(Qt::Key_Left));
+    scrollRight->setShortcut(QKeySequence(Qt::Key_Right));
+    scrollLeft->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    scrollRight->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    addAction(scrollLeft);
+    addAction(scrollRight);
+    connect(scrollLeft,  &QAction::triggered, this, [this]() { scrollByQuarterWindow(-1); });
+    connect(scrollRight, &QAction::triggered, this, [this]() { scrollByQuarterWindow(+1); });
     recordingLength = tracesProvider.recordingLength();
 
     selectionWidgets = new QWidget(this);
