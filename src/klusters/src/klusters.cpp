@@ -1916,6 +1916,30 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         }
     }
 
+    // ── Modal capture: a scope that OWNS the keyboard ───────────────────────
+    // While any Capture::Exclusive scope is active, it claims every key: its bound
+    // commands fire and everything else — including an auto-repeat — is swallowed, so no
+    // QAction or later handler runs mid-mode.  The glue asks the registry only "is a
+    // capture scope active?", so a new modal mode is just an Exclusive scope + its
+    // commands in registerInputBindings(), with no edit here (plan: capturing scopes,
+    // replacing the hand-written modal key blocks).  Like those blocks, this claims the
+    // ShortcutOverride (so no QAction shortcut fires) and acts on the following KeyPress.
+    // No Exclusive scope is registered yet, so hasActiveCapture() is always false here and
+    // this is inert — the watershed block below still handles its keys until it is ported.
+    if(event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress){
+        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+        input::Ctx ctx;
+        ctx.view  = activeClusterView();
+        ctx.event = ke;
+        if(input::registry().hasActiveCapture(ctx)){
+            if(event->type() == QEvent::ShortcutOverride){ ke->accept(); return true; }
+            const input::BindingRegistry::Resolution r =
+                input::registry().resolveEx(input::chordFromEvent(ke), ctx);
+            if(r.command && r.command->invoke) r.command->invoke(ctx);
+            return true;                       // Exclusive scope swallows all it did not bind
+        }
+    }
+
     // ── Watershed live-preview mode ─────────────────────────────────────────
     // When wsPreviewActive is true, four arrow keys + Enter + Esc are claimed
     // exclusively; any other key is swallowed silently to prevent the

@@ -112,6 +112,14 @@ const Command* BindingRegistry::resolve(const Chord& chord, const Ctx& ctx) cons
     return resolveEx(chord, ctx).command;
 }
 
+bool BindingRegistry::hasActiveCapture(const Ctx& ctx) const
+{
+    for (const InputScope& s : scopes_)
+        if (s.capture == Capture::Exclusive && (!s.active || s.active(ctx)))
+            return true;
+    return false;
+}
+
 const Command* BindingRegistry::command(const QString& id) const
 {
     auto it = commandIndex_.constFind(id);

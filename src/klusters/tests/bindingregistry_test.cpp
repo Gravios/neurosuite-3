@@ -324,6 +324,7 @@ int main()
         // Modal inactive -> ordinary resolution: X resolves + consumes; an unbound key
         // falls through (consume == false), exactly as before capture existed.
         {
+            CHECK(!reg.hasActiveCapture());   // no Exclusive scope is active
             BindingRegistry::Resolution r = reg.resolveEx(x);
             CHECK(r.command && r.command->id == QStringLiteral("view.x") && r.consume);
             BindingRegistry::Resolution f = reg.resolveEx(Chord::key(Qt::Key_F12));
@@ -333,6 +334,7 @@ int main()
         // Modal active + Exclusive -> it owns the keyboard.
         g_exclActive = true;
         {
+            CHECK(reg.hasActiveCapture());    // the Exclusive modal is now active
             // Its own Enter fires.
             BindingRegistry::Resolution e = reg.resolveEx(enter);
             CHECK(e.command && e.command->id == QStringLiteral("modal.enter") && e.consume);
@@ -359,6 +361,7 @@ int main()
             InputScope passiveModal = modal;
             passiveModal.capture = Capture::Passive;
             reg.addScope(passiveModal);                 // addScope replaces by id
+            CHECK(!reg.hasActiveCapture());             // active, but no longer Exclusive
             BindingRegistry::Resolution sx = reg.resolveEx(x);
             CHECK(sx.command && sx.command->id == QStringLiteral("view.x") && sx.consume);
             BindingRegistry::Resolution su = reg.resolveEx(Chord::key(Qt::Key_F12));

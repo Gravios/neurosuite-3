@@ -71,6 +71,12 @@ public:
     // until the next addCommand / override change.
     const Command* resolve(const Chord& chord, const Ctx& ctx = {}) const;
 
+    // True when at least one Capture::Exclusive scope is active for `ctx` — a modal mode
+    // currently owns the keyboard.  The event glue checks this to route EVERY key into
+    // resolveEx (firing the mode's commands, swallowing the rest) ahead of any other
+    // handler, without the glue needing to know which modes exist.
+    bool hasActiveCapture(const Ctx& ctx = {}) const;
+
     // ── introspection (Preferences / cheat-sheet / conflict UI) ──
     const QList<Command>&    commands() const { return commands_; }
     const QList<InputScope>& scopes()   const { return scopes_; }
