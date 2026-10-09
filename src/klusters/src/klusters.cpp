@@ -2148,41 +2148,11 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
             return true;
     }
 
-    // ── Enter / Esc — commit or discard a pending lasso's residual preview ─
-    // Live ONLY while a create-mode embedding lasso is awaiting confirmation
-    // (hasPendingLasso), so the keys keep their normal meaning everywhere else.
-    if(event->type() == QEvent::KeyPress){
-        QKeyEvent* ke = static_cast<QKeyEvent*>(event);
-        if((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter
-            || ke->key() == Qt::Key_Escape || ke->key() == Qt::Key_D)
-           && ke->modifiers() == Qt::NoModifier && doc && !focusIsInTextInput()){
-            if(ClusterView* cv = activeClusterView()){
-                if(cv->hasPendingLasso()){
-                    if(ke->key() == Qt::Key_Escape) {
-                        cv->cancelPendingLasso();
-                    } else if(ke->key() == Qt::Key_D) {
-                        // D = decollide the lassoed spikes against the pinned basis
-                        // pair (instead of Enter's new-cluster cut).  Defer off the
-                        // key-event stack: the commit closes+reopens the document,
-                        // which must not run while this view is handling its event.
-                        const QList<int> basis = cv->obliqueBasisClusters();
-                        if(basis.size() == 2) {
-                            const QList<int> rows = cv->pendingRows();
-                            cv->cancelPendingLasso();
-                            QTimer::singleShot(0, this, [this, rows, basis]() {
-                                decollideLassoAgainstBasis(rows, basis); });
-                        } else {
-                            slotStatusMsg(tr("Decollide: pin a 2-cluster oblique basis first "
-                                             "(Actions > Set Oblique Basis), then Enter=cut, D=decollide."));
-                        }
-                    } else {
-                        cv->confirmPendingLasso();
-                    }
-                    return true;
-                }
-            }
-        }
-    }
+    // (The pending-lasso confirm / decollide / discard keys — Enter / D / Esc while a
+    //  create-mode embedding lasso awaits confirmation — now live on the registry as the
+    //  Passive `transient.pendingLasso` scope; see registerInputBindings().  They resolve
+    //  through the normal tryViewKeyCommand dispatch below, after the Esc meanings above,
+    //  exactly as this block did when it sat here.)
 
     // ── Up / Down — t-SNE perplexity, ONLY while the embedding is showing ─
     // Gated on isTsneActive() so the arrows keep their normal meaning
@@ -2768,6 +2738,68 @@ void KlustersApp::registerInputBindings()
               [this](const input::Ctx& c){ if(wsKeyMod(c).act) wsExit(/*commit=*/true); });
         wsCmd(QStringLiteral("ws.cancel"), tr("Cancel watershed preview"), Qt::Key_Escape,
               [this](const input::Ctx& c){ if(wsKeyMod(c).act) wsExit(/*commit=*/false); });
+    }
+
+    // ── transient.pendingLasso: confirm / decollide / discard a create-mode embedding
+    //    lasso awaiting confirmation ───────────────────────────────────────────────────
+    // A pending lasso is a completed residual preview: Enter cuts a new cluster, D
+    // decollides the lassoed spikes against the pinned oblique basis, Esc discards.  Unlike
+    // the watershed modal this is NOT swallow-all — every other shortcut still works while a
+    // lasso is pending — so it is a *Passive* Transient scope of Locked commands gated on
+    // hasPendingLasso(), dispatched by the normal resolver path (tryViewKeyCommand), not the
+    // modal-capture block.  Claiming D's ShortcutOverride while a lasso is pending is what
+    // makes D reliably decollide rather than reach the "decrease amplitude" QAction that also
+    // owns Key_D; outside a pending lasso the commands are inactive and D decreases amplitude
+    // exactly as before.  Enter carries a keypad-Enter alias (a distinct Qt key code).  The
+    // bodies are lifted verbatim from the former inline eventFilter block.
+    {
+        input::InputScope pl;
+        pl.id     = QStringLiteral("transient.pendingLasso");
+        pl.layer  = input::Layer::Transient;
+        pl.active = [this](const input::Ctx&){
+            ClusterView* cv = activeClusterView();
+            return cv && cv->hasPendingLasso();
+        };
+        reg.addScope(pl);   // Passive (default): other keys pass through while pending
+    }
+    {
+        const QString plScope = QStringLiteral("transient.pendingLasso");
+        const QString plCat   = tr("Pending lasso");
+        auto plCmd = [&](const QString& id, const QString& label, int key,
+                         std::function<void(const input::Ctx&)> fn){
+            input::Command c;
+            c.id = id; c.scopeId = plScope; c.label = label; c.category = plCat;
+            c.kind = input::Kind::Locked;
+            c.defaultChord = input::Chord::key(key);   // Exact + NoModifier: plain press only
+            c.invoke = std::move(fn);
+            reg.addCommand(c);
+        };
+        auto confirm = [this](const input::Ctx&){
+            if(ClusterView* cv = activeClusterView()) cv->confirmPendingLasso();
+        };
+        plCmd(QStringLiteral("lasso.confirm"),       tr("Confirm lasso (cut new cluster)"), Qt::Key_Return, confirm);
+        plCmd(QStringLiteral("lasso.confirmKeypad"), tr("Confirm lasso (keypad Enter)"),    Qt::Key_Enter,  confirm);
+        plCmd(QStringLiteral("lasso.cancel"),        tr("Discard lasso"),                   Qt::Key_Escape,
+              [this](const input::Ctx&){ if(ClusterView* cv = activeClusterView()) cv->cancelPendingLasso(); });
+        plCmd(QStringLiteral("lasso.decollide"),     tr("Decollide lasso against oblique basis"), Qt::Key_D,
+              [this](const input::Ctx&){
+                  ClusterView* cv = activeClusterView();
+                  if(!cv) return;
+                  // D = decollide the lassoed spikes against the pinned basis pair (instead
+                  // of Enter's new-cluster cut).  Defer off the key-event stack: the commit
+                  // closes+reopens the document, which must not run while this view is
+                  // handling its event.
+                  const QList<int> basis = cv->obliqueBasisClusters();
+                  if(basis.size() == 2){
+                      const QList<int> rows = cv->pendingRows();
+                      cv->cancelPendingLasso();
+                      QTimer::singleShot(0, this, [this, rows, basis]() {
+                          decollideLassoAgainstBasis(rows, basis); });
+                  } else {
+                      slotStatusMsg(tr("Decollide: pin a 2-cluster oblique basis first "
+                                       "(Actions > Set Oblique Basis), then Enter=cut, D=decollide."));
+                  }
+              });
     }
 
     // Apply the persisted override diffs (Configuration read them from QSettings at
