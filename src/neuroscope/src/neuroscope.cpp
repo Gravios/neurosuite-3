@@ -65,6 +65,12 @@
 #include "eventsprovider.h"
 #include "qhelpviewer.h"
 
+// Shared input binding registry (neuroscope input overhaul — claude/neuroscope-input-plan.md).
+// Relocated into libklustersshared in S0; resolves via that lib's PUBLIC include dir.
+#include "input/bindingregistry.h"
+#include "input/inputdispatcher.h"   // input::registry()
+#include "input/chord.h"             // chordFromKeySequence
+
 
 NeuroscopeApp::NeuroscopeApp()
     :QMainWindow(0)
@@ -106,6 +112,11 @@ NeuroscopeApp::NeuroscopeApp()
 
     initActions();
 
+    // Mirror the menu/toolbar QAction shortcuts into the shared input registry and audit
+    // for shortcut collisions (neuroscope input overhaul S1).  Must run after initActions()
+    // so every action exists; a passive mirror, so Qt still dispatches every live shortcut.
+    registerInputBindings();
+    auditKeyBindings();
 
     //Disable some actions at startup
     slotStateChanged("initState");
@@ -572,7 +583,7 @@ void NeuroscopeApp::initActions()
 
     //Help menu
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
-    QAction *handbook = helpMenu->addAction(tr("Handbook"));
+    handbook = helpMenu->addAction(tr("Handbook"));
     handbook->setShortcut(Qt::Key_F1);
     connect(handbook, &QAction::triggered, this, &NeuroscopeApp::slotHanbook);
 
@@ -716,6 +727,123 @@ void NeuroscopeApp::initItemPanel(){
             v->spectralView()->commitNow();
     });
 }
+
+// ---------------------------------------------------------------------------
+// Input binding registry — mirror the app's QAction shortcuts (neuroscope input
+// overhaul S1; see claude/neuroscope-input-plan.md and src/klusters/docs/INPUT_SYSTEM.md).
+// Passive mirror: Qt keeps dispatching the live QAction shortcuts and the mirrored commands
+// are `external`, so the resolver skips them (no double-fire).  It gives the (later)
+// Preferences ▸ Input page + cheat-sheet their data and lets the startup audit flag
+// shortcut collisions.  Later phases add the view/mode scopes, the resolver-dispatched
+// commands, and a dispatch seam.
+// ---------------------------------------------------------------------------
+void NeuroscopeApp::registerActionCommand(const QString& id, const QString& category, QAction* action)
+{
+    if(!action) return;
+    input::Command c;
+    c.id       = id;
+    c.scopeId  = QStringLiteral("app");
+    QString label = action->text();
+    label.remove(QLatin1Char('&'));                 // drop the menu mnemonic
+    if(label.endsWith(QStringLiteral("..."))) label.chop(3);
+    c.label    = label.trimmed();
+    c.category = category;
+    c.kind     = input::Kind::Action;
+    c.defaultChord = input::chordFromKeySequence(action->shortcut());
+    c.external = true;                               // Qt dispatches it; resolve() skips it
+    c.enabled  = [action](const input::Ctx&){ return action->isEnabled(); };
+    c.invoke   = [action](const input::Ctx&){ if(action->isEnabled()) action->trigger(); };
+    input::registry().addCommand(c);
+}
+
+void NeuroscopeApp::registerInputBindings()
+{
+    input::BindingRegistry& reg = input::registry();
+
+    // The always-active application scope (active == null).  Every global menu/toolbar
+    // shortcut is mirrored into it; later phases add the view (trace / position / spectral),
+    // tool-mode and transient scopes and the resolver-dispatched commands.
+    input::InputScope app;
+    app.id    = QStringLiteral("app");
+    app.layer = input::Layer::App;
+    reg.addScope(app);
+
+    // File
+    registerActionCommand(QStringLiteral("file.open"),   tr("File"), mOpenAction);
+    registerActionCommand(QStringLiteral("file.save"),   tr("File"), mSaveAction);
+    registerActionCommand(QStringLiteral("file.saveAs"), tr("File"), mSaveAsAction);
+    registerActionCommand(QStringLiteral("file.print"),  tr("File"), mPrintAction);
+    registerActionCommand(QStringLiteral("file.quit"),   tr("File"), mQuitAction);
+
+    // Edit / selection
+    registerActionCommand(QStringLiteral("edit.undo"),              tr("Edit"), mUndo);
+    registerActionCommand(QStringLiteral("edit.redo"),              tr("Edit"), mRedo);
+    registerActionCommand(QStringLiteral("edit.selectAll"),         tr("Edit"), mSelectAll);
+    registerActionCommand(QStringLiteral("edit.selectAllExcept01"), tr("Edit"), mSelectAllExcept0And1);
+    registerActionCommand(QStringLiteral("edit.deselectAll"),       tr("Edit"), mDeselectAll);
+    registerActionCommand(QStringLiteral("edit.editMode"),          tr("Edit"), editMode);
+
+    // Tools (interaction modes — these set BaseFrame::Mode today)
+    registerActionCommand(QStringLiteral("tool.zoom"),           tr("Tools"), mZoomTool);
+    registerActionCommand(QStringLiteral("tool.selectChannels"), tr("Tools"), mSelectTool);
+    registerActionCommand(QStringLiteral("tool.measure"),        tr("Tools"), mMeasureTool);
+    registerActionCommand(QStringLiteral("tool.selectTime"),     tr("Tools"), mTimeTool);
+    registerActionCommand(QStringLiteral("tool.selectEvent"),    tr("Tools"), mEventTool);
+    registerActionCommand(QStringLiteral("tool.drawTimeLine"),   tr("Tools"), mDrawTimeLine);
+
+    // Channels
+    registerActionCommand(QStringLiteral("channels.show"),            tr("Channels"), mShowChannel);
+    registerActionCommand(QStringLiteral("channels.hide"),            tr("Channels"), mHideChannel);
+    registerActionCommand(QStringLiteral("channels.moveToNewGroup"),  tr("Channels"), mMoveToNewGroup);
+    registerActionCommand(QStringLiteral("channels.removeFromGroup"), tr("Channels"), mRemoveChannelFromGroup);
+    registerActionCommand(QStringLiteral("channels.discard"),         tr("Channels"), mDiscardChannels);
+    registerActionCommand(QStringLiteral("channels.keep"),            tr("Channels"), mKeepChannels);
+    registerActionCommand(QStringLiteral("channels.skip"),            tr("Channels"), mSkipChannels);
+
+    // View — amplitude / height / navigation
+    registerActionCommand(QStringLiteral("view.increaseHeight"), tr("View"), mIncreaseHeight);
+    registerActionCommand(QStringLiteral("view.decreaseHeight"), tr("View"), mDecreaseHeight);
+    registerActionCommand(QStringLiteral("view.nextSpike"),      tr("View"), mNextSpike);
+    registerActionCommand(QStringLiteral("view.previousSpike"),  tr("View"), mPreviousSpike);
+    registerActionCommand(QStringLiteral("view.nextEvent"),      tr("View"), mNextEvent);
+    registerActionCommand(QStringLiteral("view.previousEvent"),  tr("View"), mPreviousEvent);
+    registerActionCommand(QStringLiteral("event.remove"),        tr("View"), mRemoveEvent);
+    registerActionCommand(QStringLiteral("view.spectral"),       tr("View"), mSpectralView);
+    registerActionCommand(QStringLiteral("view.increaseAllAmp"), tr("View"), mIncreaseAllChannelAmplitudes);
+    registerActionCommand(QStringLiteral("view.decreaseAllAmp"), tr("View"), mDecreaseAllChannelAmplitudes);
+    registerActionCommand(QStringLiteral("view.increaseSelAmp"), tr("View"), mIncreaseSelectedChannelAmplitude);
+    registerActionCommand(QStringLiteral("view.decreaseSelAmp"), tr("View"), mDecreaseSelectedChannelAmplitude);
+    registerActionCommand(QStringLiteral("view.autocenter"),     tr("View"), autocenterChannels);
+    registerActionCommand(QStringLiteral("view.showHideLabels"), tr("View"), showHideLabels);
+    registerActionCommand(QStringLiteral("view.page"),           tr("View"), mPage);
+    registerActionCommand(QStringLiteral("view.accelerate"),     tr("View"), mAccelerate);
+    registerActionCommand(QStringLiteral("view.decelerate"),     tr("View"), mDecelerate);
+
+    // Displays
+    registerActionCommand(QStringLiteral("display.new"),    tr("Display"), mNewDisplay);
+    registerActionCommand(QStringLiteral("display.rename"), tr("Display"), mRenameActiveDisplay);
+    registerActionCommand(QStringLiteral("display.close"),  tr("Display"), mCloseActiveDisplay);
+
+    // Help
+    registerActionCommand(QStringLiteral("help.handbook"), tr("Help"), handbook);
+}
+
+void NeuroscopeApp::auditKeyBindings() const
+{
+    // Shortcut collisions, reported once at startup.  Two app-scope commands on the same
+    // effective chord mean two QActions share a QKeySequence — Qt fires at most one and the
+    // other is silently shadowed.  Diagnostic only; resolving each collision is a design
+    // decision (claude/neuroscope-input-plan.md S1c), handled in a later patch.
+    const QList<input::BindingRegistry::Conflict> conflicts = input::registry().conflicts();
+    for(const input::BindingRegistry::Conflict& c : conflicts)
+        qWarning("neuroscope key binding: \"%s\" is shared by %d commands in scope \"%s\" (%s) "
+                 "- Qt fires at most one; the rest are shadowed",
+                 qPrintable(c.chord.displayString()),
+                 int(c.commandIds.size()),
+                 qPrintable(c.scopeId),
+                 qPrintable(c.commandIds.join(QStringLiteral(", "))));
+}
+
 void NeuroscopeApp::executePreferencesDlg(){
     if(prefDialog == nullptr){
         prefDialog = new PrefDialog(this);

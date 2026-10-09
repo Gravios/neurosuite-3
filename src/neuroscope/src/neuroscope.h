@@ -269,6 +269,18 @@ public Q_SLOTS:
 protected:
     /** initializes the KActions of the application */
     void initActions();
+    /** Neuroscope input overhaul (S1): mirror the menu/toolbar QActions into the shared
+     *  input registry as external commands, under one always-active "app" scope.  The
+     *  registry is a passive mirror here — Qt still dispatches the live shortcuts — and is
+     *  the foundation for the Preferences page, cheat-sheet and rebinding added in later
+     *  phases.  See claude/neuroscope-input-plan.md.  Called at the end of initActions(). */
+    void registerInputBindings();
+    /** Mirror one QAction as an external input::Command in the "app" scope (id + category
+     *  are the command's identity; the default chord is taken from the action's shortcut). */
+    void registerActionCommand(const QString& id, const QString& category, QAction* action);
+    /** Report shortcut collisions once at startup (from input::registry().conflicts()),
+     *  rather than leaving a shadowed menu item to silently do nothing.  Diagnostic only. */
+    void auditKeyBindings() const;
     /** sets up the statusbar for the main window by initialzing a statuslabel.
      */
     void initStatusBar();
@@ -705,6 +717,7 @@ private:
     QAction* editMode;
     QAction* autocenterChannels;
     QAction* showHideLabels;
+    QAction* handbook;      // Help ▸ Handbook (F1) — promoted to a member in input-overhaul S1 so registerInputBindings() can mirror it
     QAction* calibrationBar;
     QMenu* addEventPopup;
     QAction* addEventToolBarAction;
