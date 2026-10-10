@@ -183,6 +183,42 @@ for at least one high-rate unit.  Default unchanged (byte-identical).
 
 ---
 
+## 2026-10-10 — Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation
+
+**Input system — one engine, both GUIs.** The keyboard/mouse binding engine (the
+`input::` registry: device-agnostic chords, self-describing scopes in a tiered
+stack, Passive/Exclusive capture, and the gesture "seam" that keeps a drag/commit
+body in the view while the registry owns the trigger) now lives in
+`libklustersshared` and drives **both** Klusters and NeuroScope through one
+process-wide `input::registry()`. In NeuroScope every menu/tool shortcut, the
+TraceView tool gestures (zoom, select-channels, measure, select-time, select-event,
+add-event, draw-line) and the Position/Spectral frame zoom resolve through the
+registry; the old ~470-line `TraceView::mousePressEvent` switch is gone. Users get
+a generated **Preferences ▸ Input** page (rebind any key or mouse binding, clash
+highlighting, reset), saveable **keymap layouts** with a bundled read-only
+*Default*, a registry-generated **Help ▸ Keyboard Shortcuts** cheat-sheet, and a
+per-display active-tool indicator. References: `src/klusters/docs/INPUT_SYSTEM.md`
+(the engine) and `src/neuroscope/docs/INPUT_SYSTEM.md` (NeuroScope's adoption).
+
+**Qt 6.4–6.12 compatibility.** A static audit plus a real 6.4.2 build and a 6.10
+check: the code uses only low-churn Qt modules and no API removed within the Qt 6
+series, so it is compatible across the span. Fixed the one real break (reduced
+transitive includes on Qt 6.9/6.10 — include what we use), a Qt 6.8+ teardown
+warning (wildcard `disconnect` of `destroyed()`), retired `qAsConst` for
+`std::as_const` (deprecated in 6.6), declared the **Qt 6.4 floor** in the
+`find_package` calls, and bumped the stale `cmake_minimum_required(2.8.6)` in
+`ndmanager-plugins/matlab`. Remaining: a CI build matrix for 6.4 / 6.10 / 6.12.
+
+**Documentation.** Developer references for the input system (above) and
+user-handbook sections (Preferences ▸ Input, keymap layouts, the shortcuts
+cheat-sheet, the active-tool indicator) in `src/neuroscope/doc/en/index.docbook`.
+Plus a prototype modern documentation system (`doc/site/`) — MkDocs + Material +
+pandoc — that converts the DocBook handbook with a toolchain that installs
+anywhere (replacing the retired KDE meinproc path), unifies it with the developer
+docs, and publishes to GitHub Pages; see `doc/site/README.md`.
+
+---
+
 ## 2026-06-08 — Klusters high-cluster-count rendering perf, PCA-Center Align All profiling + setup hoist, cross-cluster GPU-batch design
 
 A performance session focused on sessions with thousands of clusters: the
@@ -1552,3 +1588,6 @@ for the full detail of the recent plugin patch series.
 | Hardware / OS tuning recipe | `doc/design/optimization.md` |
 | Modeling comparison (Layer 1/2 vs BOTM) | `doc/design/modeling-l1-vs-botm.md` |
 | KK prior operational workflow | `doc/workflows/empirical-priors.md` |
+| Input binding system — the shared engine (Klusters) | `src/klusters/docs/INPUT_SYSTEM.md` |
+| Input binding system — NeuroScope adoption | `src/neuroscope/docs/INPUT_SYSTEM.md` |
+| Documentation system prototype (MkDocs + pandoc) | `doc/site/README.md` |
