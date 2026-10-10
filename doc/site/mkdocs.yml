@@ -3,6 +3,15 @@ site_description: User handbook and developer references for neurosuite-3
 docs_dir: docs
 use_directory_urls: true
 
+# GitHub integration: header link back to the repo. The per-page "edit" button is
+# disabled on purpose (edit_uri: "") — the handbook pages are generated from the
+# DocBook source and the developer pages are symlinks, so an in-site edit link
+# would point at the wrong file. In production, point edit_uri at the real
+# sources (and/or split authored vs generated pages).
+repo_url: https://github.com/Gravios/neurosuite-3
+repo_name: Gravios/neurosuite-3
+edit_uri: ""
+
 # The handbook's own links are verified at generation time (split_rewrite.py
 # hard-fails on a broken anchor), so link checking here is informational. The
 # messages that remain come from the developer docs, which are symlinked in

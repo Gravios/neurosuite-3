@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------------------
+# Documentation site — build and publish to GitHub Pages.
+#
+# "Two birds, one stone": the project's docs are authored once as Markdown (the
+# developer guide and src/*/docs references) plus the DocBook handbook, and that
+# single source feeds everything —
+#   * GitHub renders the Markdown natively in the repo file browser; and
+#   * this workflow runs doc/site/gen.sh (the SAME pandoc pipeline that produces
+#     NeuroScope's in-app F1 handbook) to convert the DocBook, then builds the
+#     MkDocs + Material site and deploys it to Pages.
+# So one conversion pipeline serves both the app's built-in help and the public
+# documentation site.
+#
+# One-time repo setup: Settings ▸ Pages ▸ "Build and deployment" ▸ Source =
+# "GitHub Actions".
+# ---------------------------------------------------------------------------
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'doc/site/**'
+      - 'src/neuroscope/doc/en/**'
+      - 'src/*/docs/**'
+      - 'DEVELOPER_GUIDE.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deploy; don't cancel an in-progress run (let it finish).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    name: build + deploy (GitHub Pages)
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the conversion + site toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pandoc libxml2-utils
+          python3 -m pip install -r doc/site/requirements.txt
+
+      - name: Convert the DocBook handbook and build the site
+        working-directory: doc/site
+        run: |
+          ./gen.sh
+          mkdocs build --strict --site-dir site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc/site/site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

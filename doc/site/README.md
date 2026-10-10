@@ -105,12 +105,31 @@ being Latin-1, so the pipeline is:
 - **Generated files are committed** for a runnable demo; a production setup would
   generate them in CI instead.
 
+## GitHub integration (two birds, one stone)
+
+The docs are authored once as Markdown (the developer guide and `src/*/docs`
+references) plus the DocBook handbook, and that single source feeds both GitHub
+surfaces:
+
+- **In-repo** — GitHub renders the Markdown natively in its file browser, so the
+  developer docs are already readable on GitHub with no build. `mkdocs.yml` sets
+  `repo_url`, so the site header links back to the repository.
+- **Published site** — `.github/workflows/docs.yml` runs `gen.sh` (the *same*
+  pandoc pipeline that builds NeuroScope's in-app F1 handbook) to convert the
+  DocBook, then `mkdocs build --strict`, and deploys to **GitHub Pages** on every
+  push to `main` that touches the docs. One conversion pipeline, two outputs:
+  the app's built-in help and the public site.
+
+One-time repo setup: **Settings ▸ Pages ▸ Source = "GitHub Actions"**. After
+that, the site publishes to `https://gravios.github.io/neurosuite-3/`. (The
+per-page "Edit" button is intentionally off — see the note in `mkdocs.yml`.)
+
 ## Cutting over
 
 1. Point the install in `src/neuroscope/doc/CMakeLists.txt` at the pandoc output
    (`gen.sh` / the `handbook_inapp_html` target) instead of the pre-built
    `en/html/`, and have the app keep opening `index.html`.
-2. Publish the MkDocs site (e.g. GitHub Pages: `mkdocs gh-deploy`, or an Actions
-   workflow running `pip install -r doc/site/requirements.txt && mkdocs build`).
+2. Enable the Pages workflow above (the one-time Source setting); it already
+   builds and deploys on push.
 3. Once happy, the DocBook source can either stay as the authoring format (pandoc
    keeps converting it) or be converted to Markdown once and retired.
