@@ -33,16 +33,19 @@ reference.
 - **[Component & pipeline docs](doc/README.md)** — ✅ — user- and pipeline-facing documentation for every component (build, usage, the sorting pipeline, file formats).
 
 ### klusters internals
-- **[Input system](src/klusters/docs/INPUT_SYSTEM.md)** — ✅ — the keyboard + mouse binding architecture: the `input::` registry, scopes and the tiered scope stack, chords, the capture / focus / repeat policies, the seam, and recipes for adding bindings and modal modes.
+- **[Input system](src/klusters/docs/INPUT_SYSTEM.md)** — ✅ — the keyboard + mouse binding architecture: the `input::` registry, scopes and the tiered scope stack, chords, the capture / focus / repeat policies, the seam, and recipes for adding bindings and modal modes. The engine lives in `libklustersshared` and is **shared with NeuroScope** (see below).
 - **[Plugin API](src/klusters/docs/PLUGIN_API.md)** — ✅ — the external plugin descriptor format, parameter dialog, and process runner.
 - **View system** — 🚧 — `BaseFrame` / `ViewWidget`, the view types (cluster, waveform, trace, correlograms, the curation matrices), and how they share state without a common base class.
 - **Document model** — 🚧 — `KlustersDoc`: cluster / spike storage, the undo/redo stack, and file I/O.
 - **Curation tools & workflows** — 🚧 — how a tool mode is wired end to end: new-cluster, split, watershed, hierarchy (child view), and templates.
 - **Curation matrices** — 🚧 — the error / template / residual / drift matrices and the shared navigator + click helpers.
-- **Preferences & persistence** — 🚧 — the generated Preferences pages (including Preferences ▸ Input), QSettings storage, and keymap profiles.
+- **Preferences & persistence** — 🚧 — the generated Preferences pages, QSettings storage, and keymap profiles. (The Preferences ▸ Input page, keymap profiles, and `InputPrefsStore` persistence are covered by the Input system references.)
+
+### neuroscope internals
+- **[Input system](src/neuroscope/docs/INPUT_SYSTEM.md)** — ✅ — how NeuroScope adopts the shared `input::` engine: the registration sites, the TraceView mouse decomposition (the seven tool gestures), the `BaseFrame` frame-zoom seam (`managesOwnPrimaryPress`), `InputPrefsStore`/`Configuration` persistence, the bundled Default keymap, and the derived cheat-sheet + active-tool indicator. Read the [Klusters Input system](src/klusters/docs/INPUT_SYSTEM.md) first for the engine itself.
 
 ### Other components
-- **kiloklustakwik · ndmanager-plugins · neuroscope · ndmanager · libklustersshared** — 🚧 — internals references as they are written; component **usage** docs already live in [`doc/`](doc/README.md).
+- **kiloklustakwik · ndmanager-plugins · ndmanager · libklustersshared** — 🚧 — internals references as they are written; component **usage** docs already live in [`doc/`](doc/README.md).
 - **fiber-kit** — 🚧 — the sibling library (separate repo: `github.com/Gravios/fiber-kit`) and how it relates to neurosuite-3.
 
 ### Working on the code

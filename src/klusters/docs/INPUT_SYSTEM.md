@@ -1,13 +1,23 @@
 # The Klusters input system
 
 A developer reference for the keyboard + mouse binding architecture in
-`src/klusters/src/input/`. Read this before modifying or extending input
+`src/libklustersshared/src/input/`. Read this before modifying or extending input
 handling — adding a view, a tool mode, a modal preview, or a new rebindable
 shortcut.
 
+> **Shared engine.** This engine began in Klusters and now lives in
+> `libklustersshared` (the `neurosuite-qt` shared library), where **NeuroScope**
+> links the same code and the same process-wide `input::registry()`. Everything
+> in this document — the types, the scope stack, capture, the resolver, the seam
+> — is the shared core and applies to both apps. What is specific to each app is
+> *which* scopes and commands it registers; NeuroScope's are documented in
+> [the NeuroScope input system](../../neuroscope/docs/INPUT_SYSTEM.md). (An older
+> copy of the core under `src/klusters/src/input/` no longer exists.)
+
 > **Companion documents.** `claude/input-remapping-plan.md` is the design
 > rationale and the migration history (why the architecture is shaped this way,
-> and the patch-by-patch record of moving the old `eventFilter` onto it). *This*
+> and the patch-by-patch record of moving the old `eventFilter` onto it);
+> `claude/neuroscope-input-plan.md` records the NeuroScope adoption. *This*
 > document is the living reference for the system as it stands. When they
 > disagree, the code wins; fix this doc.
 
@@ -62,6 +72,9 @@ flowchart LR
     reg -.-> conf
 ```
 
+The core files below live under `src/libklustersshared/src/input/` (shared by
+both apps); `klusters.cpp` is the Klusters-only wiring.
+
 | File | Role |
 |------|------|
 | `input/chord.h/.cpp` | `Chord` — a device-agnostic trigger (key / button / wheel + modifiers). |
@@ -71,8 +84,9 @@ flowchart LR
 | `input/bindingregistry.h/.cpp` | The one registry: storage, override layer, and the resolver (`resolveEx`). |
 | `input/inputdispatcher.h/.cpp` | Qt-event glue: `chordFromEvent()`, `registry()`, `dispatch()`. |
 | `input/keymapprofile.h/.cpp` | Saveable/shippable named binding layouts. |
-| `klusters.cpp` | `registerInputBindings()` (all the app's scopes + commands), the `eventFilter` dispatch paths, `tryViewKeyCommand()`. |
-| `prefinput.cpp` | The generated Preferences ▸ Input page. |
+| `input/prefinput.cpp` | The generated Preferences ▸ Input page (shared — both apps show it). |
+| `input/inputprefsstore.h` | `InputPrefsStore` — the interface each app's `Configuration` implements so the shared page persists through it. |
+| `klusters.cpp` | `registerInputBindings()` (all of Klusters' scopes + commands), the `eventFilter` dispatch paths, `tryViewKeyCommand()`. |
 
 The `input/` core pulls **no QtWidgets** headers (only `QWidget`/`QEvent`
 forward-declared pointers), so it is unit-tested standalone by
