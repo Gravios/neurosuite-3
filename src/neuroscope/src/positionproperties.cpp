@@ -91,7 +91,7 @@ void PositionProperties::updateDisplayedImage()
 
 void PositionProperties::updateBackgroundImage()
 {
-    const QString image = QFileDialog::getOpenFileName(this, tr("Select the background image..."));
+    const QString image = QFileDialog::getOpenFileName(this, tr("Select the background image…"));
     if(!image.isEmpty())
         setBackgroundImage(image);
 }

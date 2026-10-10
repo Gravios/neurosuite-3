@@ -192,7 +192,7 @@ void KlustersApp::slotDipSplit()
     const float valleyThresh = static_cast<float>(configuration().getDipSplitValleyThresh());
 
     // ── Run the decision ─────────────────────────────────────────────────
-    slotStatusMsg(tr("Running DipSplit..."));
+    slotStatusMsg(tr("Running DipSplit…"));
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const KlustersDoc::DipSplitDecision D =
         doc->dipSplitDecide(clusterId, minSize, bloatFactor, valleyThresh);
@@ -231,7 +231,7 @@ void KlustersApp::slotDipSplit()
     }
 
     // ── Commit the decision ──────────────────────────────────────────────
-    slotStatusMsg(tr("Applying DipSplit..."));
+    slotStatusMsg(tr("Applying DipSplit…"));
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const KlustersDoc::DipSplitResult R =
         doc->dipSplitApply(D, minSize, bloatFactor, valleyThresh);
@@ -335,7 +335,7 @@ void KlustersApp::dipPostCommitUndo()
     if (!dipPostCommitActive) return;
     dipDismissPostCommitHud();
     if (doc) {
-        slotStatusMsg(tr("Reverting DipSplit..."));
+        slotStatusMsg(tr("Reverting DipSplit…"));
         QApplication::setOverrideCursor(Qt::WaitCursor);
         doc->undoDispatch();
         QApplication::restoreOverrideCursor();

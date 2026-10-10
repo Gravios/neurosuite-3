@@ -156,7 +156,7 @@ void NeuroscopeApp::initActions()
 
     //File Menu
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
-    mOpenAction = fileMenu->addAction(tr("&Open..."));
+    mOpenAction = fileMenu->addAction(tr("&Open…"));
     mOpenAction->setShortcut(QKeySequence::Open);
     mOpenAction->setIcon(QPixmap(":/shared-icons/document-open"));
     connect(mOpenAction, &QAction::triggered, this, &NeuroscopeApp::slotFileOpen);
@@ -169,21 +169,21 @@ void NeuroscopeApp::initActions()
     connect(mFileOpenRecent, &QRecentFileAction::recentFileSelected, this, &NeuroscopeApp::slotFileOpenRecent);
     connect(mFileOpenRecent, &QRecentFileAction::recentFileListChanged, this, &NeuroscopeApp::slotSaveRecentFiles);
 
-    mLoadClusterFiles = fileMenu->addAction(tr("Load Cl&uster File(s)..."));
+    mLoadClusterFiles = fileMenu->addAction(tr("Load Cl&uster File(s)…"));
     connect(mLoadClusterFiles, &QAction::triggered, this, &NeuroscopeApp::slotLoadClusterFiles);
 
-    mLoadEventFiles = fileMenu->addAction(tr("Load &Event File(s)..."));
+    mLoadEventFiles = fileMenu->addAction(tr("Load &Event File(s)…"));
     connect(mLoadEventFiles, &QAction::triggered, this, &NeuroscopeApp::slotLoadEventFiles);
 
-    mCreateEventFile = fileMenu->addAction(tr("Create Event &File..."));
+    mCreateEventFile = fileMenu->addAction(tr("Create Event &File…"));
     connect(mCreateEventFile, &QAction::triggered, this, &NeuroscopeApp::slotCreateEventFile);
 
-    mLoadPositionFile = fileMenu->addAction(tr("Load Posi&tion File..."));
+    mLoadPositionFile = fileMenu->addAction(tr("Load Posi&tion File…"));
     connect(mLoadPositionFile, &QAction::triggered, this, &NeuroscopeApp::slotLoadPositionFile);
 
     // Overlay trace file (dat / lfp / eeg with same channel layout as
     // the base recording — painted on top using a contrasting colour)
-    mLoadOverlayFile = fileMenu->addAction(tr("Load &Overlay Trace File..."));
+    mLoadOverlayFile = fileMenu->addAction(tr("Load &Overlay Trace File…"));
     mLoadOverlayFile->setToolTip(tr(
         "Add a dat/lfp/eeg file with the same channel layout as the base "
         "recording, drawn on top of each channel in a contrasting colour."));
@@ -192,12 +192,12 @@ void NeuroscopeApp::initActions()
     fileMenu->addSeparator();
 
 
-    mSaveAction = fileMenu->addAction(tr("Save..."));
+    mSaveAction = fileMenu->addAction(tr("Save…"));
     mSaveAction->setIcon(QPixmap(":/shared-icons/document-save"));
     mSaveAction->setShortcut(QKeySequence::Save);
     connect(mSaveAction, &QAction::triggered, this, &NeuroscopeApp::saveSession);
 
-    mSaveAsAction = fileMenu->addAction(tr("&Save As..."));
+    mSaveAsAction = fileMenu->addAction(tr("&Save As…"));
     mSaveAsAction->setIcon(QPixmap(":/shared-icons/document-save-as"));
     mSaveAsAction->setShortcut(QKeySequence::SaveAs);
     connect(mSaveAsAction, &QAction::triggered, this, &NeuroscopeApp::slotSessionSaveAs);
@@ -783,7 +783,7 @@ void NeuroscopeApp::registerActionCommand(const QString& id, const QString& cate
     c.scopeId  = QStringLiteral("app");
     QString label = action->text();
     label.remove(QLatin1Char('&'));                 // drop the menu mnemonic
-    if(label.endsWith(QStringLiteral("..."))) label.chop(3);
+    if(label.endsWith(QStringLiteral("…"))) label.chop(3);
     c.label    = label.trimmed();
     c.category = category;
     c.kind     = input::Kind::Action;
@@ -1249,7 +1249,7 @@ void NeuroscopeApp::initDisplay(QList<int>* channelsToDisplay,bool autocenterCha
 
 void NeuroscopeApp::openDocumentFile(const QString& url)
 {
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
     filePath = url;
     QFileInfo file(filePath);
 
@@ -1550,10 +1550,10 @@ bool NeuroscopeApp::queryClose()
 
 void NeuroscopeApp::slotFileOpen()
 {
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
 
     QSettings settings;
-    const QString url=QFileDialog::getOpenFileName(this, tr("Open File..."), settings.value("CurrentDirectory").toString(),
+    const QString url=QFileDialog::getOpenFileName(this, tr("Open File…"), settings.value("CurrentDirectory").toString(),
                                                    tr("Data File (*.dat *.lfp *.eeg *.fil);;All files (*.*)") );
     if(!url.isEmpty())
     {
@@ -1566,10 +1566,10 @@ void NeuroscopeApp::slotFileOpen()
 }
 
 void NeuroscopeApp::slotLoadClusterFiles(){
-    slotStatusMsg(tr("Loading cluster file(s)..."));
+    slotStatusMsg(tr("Loading cluster file(s)…"));
 
     QSettings settings;
-    const QStringList urls=QFileDialog::getOpenFileNames(this, tr("Open Cluster Files..."), settings.value("CurrentDirectory").toString(),
+    const QStringList urls=QFileDialog::getOpenFileNames(this, tr("Open Cluster Files…"), settings.value("CurrentDirectory").toString(),
                                                          tr("Cluster File (*.clu.*)"));
     if(!urls.isEmpty())
     {
@@ -1583,10 +1583,10 @@ void NeuroscopeApp::slotLoadClusterFiles(){
 
 
 void NeuroscopeApp::slotLoadEventFiles(){
-    slotStatusMsg(tr("Loading event file(s)..."));
+    slotStatusMsg(tr("Loading event file(s)…"));
 
     QSettings settings;
-    const QStringList urls=QFileDialog::getOpenFileNames(this, tr("Open Event Files..."), settings.value("CurrentDirectory").toString(),
+    const QStringList urls=QFileDialog::getOpenFileNames(this, tr("Open Event Files…"), settings.value("CurrentDirectory").toString(),
                                                          tr("Event File (*.evt*)"));
     if(!urls.isEmpty())
     {
@@ -1599,10 +1599,10 @@ void NeuroscopeApp::slotLoadEventFiles(){
 }
 
 void NeuroscopeApp::slotLoadPositionFile(){
-    slotStatusMsg(tr("Loading position file..."));
+    slotStatusMsg(tr("Loading position file…"));
 
     QSettings settings;
-    QString url=QFileDialog::getOpenFileName(this, tr("Open position File..."), settings.value("CurrentDirectory").toString(),
+    QString url=QFileDialog::getOpenFileName(this, tr("Open position File…"), settings.value("CurrentDirectory").toString(),
                                              tr("All Files (*.*)") );
     if(!url.isEmpty())
     {
@@ -1623,7 +1623,7 @@ void NeuroscopeApp::slotLoadOverlayFile()
         return;
     }
 
-    slotStatusMsg(tr("Loading overlay trace file..."));
+    slotStatusMsg(tr("Loading overlay trace file…"));
 
     QSettings settings;
     // Filters mirror the file types the base loader accepts.  We accept
@@ -1635,7 +1635,7 @@ void NeuroscopeApp::slotLoadOverlayFile()
         tr("Trace files (*.dat *.eeg *.lfp);;All files (*)");
 
     const QString path = QFileDialog::getOpenFileName(
-        this, tr("Open Overlay Trace File..."),
+        this, tr("Open Overlay Trace File…"),
         settings.value("CurrentDirectory").toString(),
         filters);
 
@@ -1665,13 +1665,13 @@ void NeuroscopeApp::slotLoadOverlayFile()
 }
 
 void NeuroscopeApp::slotCreateEventFile(){
-    slotStatusMsg(tr("Creating an event file..."));
+    slotStatusMsg(tr("Creating an event file…"));
     const QString& docUrl = doc->url();
     const QString baseName = doc->documentBaseName();
     const QString eventUrl = docUrl  +QDir::separator() + baseName;
 
     QFileDialog dialog(this,tr("CreateEvent"),eventUrl,tr("Event file (*.evt, *.evt.*)"));
-    dialog.setWindowTitle(tr("Create Event File as..."));
+    dialog.setWindowTitle(tr("Create Event File as…"));
     if(!dialog.exec())
         return;
 
@@ -1711,7 +1711,7 @@ void NeuroscopeApp::slotCreateEventFile(){
 }
 
 void NeuroscopeApp::slotFileOpenRecent(const QString& url){
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
 
     openDocumentFile(url);
 
@@ -1852,7 +1852,7 @@ void NeuroscopeApp::slotFileClose(){
 
 void NeuroscopeApp::slotFilePrint()
 {
-    slotStatusMsg(tr("Printing..."));
+    slotStatusMsg(tr("Printing…"));
 
     QPrinter printer;
     printer.setPageOrientation(QPageLayout::Landscape);
@@ -1880,7 +1880,7 @@ void NeuroscopeApp::slotFilePrint()
 
 void NeuroscopeApp::slotFileQuit()
 {
-    slotStatusMsg(tr("Exiting..."));
+    slotStatusMsg(tr("Exiting…"));
     if (!queryClose()) {
         slotStatusMsg(tr("Ready."));
         return;
@@ -1890,7 +1890,7 @@ void NeuroscopeApp::slotFileQuit()
 
 void NeuroscopeApp::slotViewMainToolBar()
 {
-    slotStatusMsg(tr("Toggle the main toolbar..."));
+    slotStatusMsg(tr("Toggle the main toolbar…"));
 
     mMainToolBar->setVisible(viewMainToolBar->isChecked());
 
@@ -1899,7 +1899,7 @@ void NeuroscopeApp::slotViewMainToolBar()
 
 void NeuroscopeApp::slotViewToolBar()
 {
-    slotStatusMsg(tr("Toggle the tools..."));
+    slotStatusMsg(tr("Toggle the tools…"));
 
     mToolBar->setVisible(viewToolBar->isChecked());
     slotStatusMsg(tr("Ready."));
@@ -1907,7 +1907,7 @@ void NeuroscopeApp::slotViewToolBar()
 
 void NeuroscopeApp::slotViewStatusBar()
 {
-    slotStatusMsg(tr("Toggle the statusbar..."));
+    slotStatusMsg(tr("Toggle the statusbar…"));
     ///////////////////////////////////////////////////////////////////
     //turn Statusbar on or off
     statusBar()->setVisible(mViewStatusBar->isChecked());
@@ -1939,7 +1939,7 @@ void NeuroscopeApp::slotStatusMsg(const QString &text)
 
 
 void NeuroscopeApp::slotZoom(){
-    slotStatusMsg(tr("Zooming..."));
+    slotStatusMsg(tr("Zooming…"));
 
     NeuroscopeView* view = activeView();
     view->setMode(BaseFrame::ZOOM,true);
@@ -1950,7 +1950,7 @@ void NeuroscopeApp::slotZoom(){
 }
 
 void NeuroscopeApp::slotSelect(){
-    slotStatusMsg(tr("Selecting..."));
+    slotStatusMsg(tr("Selecting…"));
 
     select = true;
     NeuroscopeView* view = activeView();
@@ -1968,7 +1968,7 @@ void NeuroscopeApp::slotSelect(){
 }
 
 void NeuroscopeApp::slotMeasure(){
-    slotStatusMsg(tr("Measuring..."));
+    slotStatusMsg(tr("Measuring…"));
 
     NeuroscopeView* view = activeView();
     view->setMode(TraceView::MEASURE,true);
@@ -1979,7 +1979,7 @@ void NeuroscopeApp::slotMeasure(){
 }
 
 void NeuroscopeApp::slotSelectTime(){
-    slotStatusMsg(tr("Selecting time..."));
+    slotStatusMsg(tr("Selecting time…"));
 
     NeuroscopeView* view = activeView();
     view->setMode(TraceView::SELECT_TIME,true);
@@ -1990,7 +1990,7 @@ void NeuroscopeApp::slotSelectTime(){
 }
 
 void NeuroscopeApp::slotSelectEvent(){
-    slotStatusMsg(tr("Selecting event..."));
+    slotStatusMsg(tr("Selecting event…"));
 
     NeuroscopeView* view = activeView();
     view->setMode(TraceView::SELECT_EVENT,true);
@@ -2001,7 +2001,7 @@ void NeuroscopeApp::slotSelectEvent(){
 }
 
 void NeuroscopeApp::slotDrawTimeLine(){
-    slotStatusMsg(tr("Drawing a line..."));
+    slotStatusMsg(tr("Drawing a line…"));
     NeuroscopeView* view = activeView();
     view->setMode(TraceView::DRAW_LINE,true);
 
@@ -2750,7 +2750,7 @@ void NeuroscopeApp::slotApplySpikeColor(){
 void NeuroscopeApp::slotDisplayClose(){
     DockArea* current;
 
-    slotStatusMsg(tr("Closing display..."));
+    slotStatusMsg(tr("Closing display…"));
     //Get the active tab
     if(tabsParent->count()>1){
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
@@ -3114,7 +3114,7 @@ void NeuroscopeApp::slotSessionSaveAs(){
         else eventsModified = false;
     }
     //Save the session
-    QString url=QFileDialog::getSaveFileName(this, tr("Save as..."),doc->sessionPath(),
+    QString url=QFileDialog::getSaveFileName(this, tr("Save as…"),doc->sessionPath(),
                                              tr("All files (*.*)") );
     if(!url.isEmpty()){
         int saveStatus = doc->saveSession(url);
@@ -3562,7 +3562,7 @@ void NeuroscopeApp::slotEventModified(const QString &providerName, int selectedE
 
 void NeuroscopeApp::slotUndo()
 {
-    slotStatusMsg(tr("Reverting last action..."));
+    slotStatusMsg(tr("Reverting last action…"));
 
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     currentNbUndo = 0;
@@ -3579,7 +3579,7 @@ void NeuroscopeApp::slotUndo()
 
 void NeuroscopeApp::slotRedo()
 {
-    slotStatusMsg(tr("Reverting last undo action..."));
+    slotStatusMsg(tr("Reverting last undo action…"));
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     currentNbUndo = 1;
     currentNbRedo = 0;
@@ -3632,7 +3632,7 @@ void NeuroscopeApp::slotAddEventAboutToShow(){
     }
 
     //Add at the bottom an entry to create a new event description
-    actNewEvent = addEventPopup->addAction(tr("New Event ..."));
+    actNewEvent = addEventPopup->addAction(tr("New Event …"));
 
     if(!found)
         eventLabelToCreate.clear();

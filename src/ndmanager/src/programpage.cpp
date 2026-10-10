@@ -94,7 +94,7 @@ ProgramPage::ProgramPage(bool expertMode,QWidget *parent, const QString& name)
     frameLayout->addWidget(buttons);
 
     if(expertMode){
-        saveParametersButton = new QPushButton(tr("Save Plugin Description As ..."),buttons);
+        saveParametersButton = new QPushButton(tr("Save Plugin Description As …"),buttons);
 
         QSizePolicy policy(QSizePolicy::Fixed,QSizePolicy::Fixed);
         policy.setHorizontalStretch(0);
@@ -106,7 +106,7 @@ ProgramPage::ProgramPage(bool expertMode,QWidget *parent, const QString& name)
         saveParametersButton->setMaximumSize(QSize(300,32767));
         gridLayout->addWidget(saveParametersButton,0,1);
 
-        saveScriptButton = new QPushButton(tr("Save Plugin As ..."),buttons);
+        saveScriptButton = new QPushButton(tr("Save Plugin As …"),buttons);
         policy = QSizePolicy(QSizePolicy::Fixed,QSizePolicy::Fixed);
         policy.setHorizontalStretch(0);
         policy.setVerticalStretch(0);
@@ -186,9 +186,9 @@ bool ProgramPage::saveProgramScript(){
     QString scriptUrl;
 
     if(!path.isNull())
-        scriptUrl = QFileDialog::getSaveFileName( this, tr("Save as..."),path,QLatin1String("*.*"));
+        scriptUrl = QFileDialog::getSaveFileName( this, tr("Save as…"),path,QLatin1String("*.*"));
     else
-        scriptUrl = QFileDialog::getSaveFileName(this, tr("Save as..."),QString(),QLatin1String("*.*"));
+        scriptUrl = QFileDialog::getSaveFileName(this, tr("Save as…"),QString(),QLatin1String("*.*"));
 
     if(!scriptUrl.isEmpty()){
         path = scriptUrl;
@@ -231,10 +231,10 @@ void ProgramPage::saveProgramParameters(){
         QString name = parameters->getProgramName();
         name.append(".xml");
         descriptionUrlTmp += QDir::separator() + name;
-        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as..."),descriptionUrlTmp,tr("YAML Files (*.yaml)"));
+        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as…"),descriptionUrlTmp,tr("YAML Files (*.yaml)"));
     }
     else{
-        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as..."),descriptionUrl,tr("YAML Files (*.yaml)"));
+        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as…"),descriptionUrl,tr("YAML Files (*.yaml)"));
     }
     //a location has been chosen
     if(!descriptionUrl.isEmpty()){

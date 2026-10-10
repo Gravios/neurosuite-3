@@ -120,7 +120,7 @@ public:
     
 private Q_SLOTS:
     void updateTraceBackgroundImage(){
-        const QString image = QFileDialog::getOpenFileName(this, tr("Select the background image..."));
+        const QString image = QFileDialog::getOpenFileName(this, tr("Select the background image…"));
 
         if(!image.isEmpty()) setTraceBackgroundImage(image);
     }

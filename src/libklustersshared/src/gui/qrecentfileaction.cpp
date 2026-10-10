@@ -136,7 +136,7 @@ void QRecentFileActionPrivate::removeAction(const QString &file)
 QRecentFileAction::QRecentFileAction(QObject *parent)
     : QAction(parent), d(new QRecentFileActionPrivate(this))
 {
-    setText(tr("Recent Files..."));
+    setText(tr("Recent Files…"));
 }
 
 /*!

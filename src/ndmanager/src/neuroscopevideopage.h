@@ -170,7 +170,7 @@ public:
 
 private slots:
     void updateBackgroundImage(){
-        QString image = QFileDialog::getOpenFileName(this, tr("Select the background image..."));
+        QString image = QFileDialog::getOpenFileName(this, tr("Select the background image…"));
 
         if(!image.isEmpty())
             setBackgroundImage(image);

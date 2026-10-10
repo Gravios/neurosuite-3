@@ -250,7 +250,7 @@ QList<MergeGroup> computeProposals(
     if (spkPath.isEmpty() || nPts <= 0) return result;
 
     QProgressDialog progress(
-        QObject::tr("Auto-Merge: reading waveforms..."),
+        QObject::tr("Auto-Merge: reading waveforms…"),
         QObject::tr("Cancel"),
         0, 2 * nClusters + 2, parent);
     progress.setWindowModality(Qt::WindowModal);
@@ -392,7 +392,7 @@ QList<MergeGroup> computeProposals(
     if (progress.wasCanceled()) return result;
 
     // ── 4. Pairwise normalised xcorr; collect pairs at or above threshold.
-    progress.setLabelText(QObject::tr("Auto-Merge: scoring pairs..."));
+    progress.setLabelText(QObject::tr("Auto-Merge: scoring pairs…"));
     progress.setValue(nClusters);
     QApplication::processEvents();
 

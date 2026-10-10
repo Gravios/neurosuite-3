@@ -331,7 +331,7 @@ void KlustersApp::createMenus()
 {
     //File Menu
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
-    mOpenAction = fileMenu->addAction(tr("&Open..."));
+    mOpenAction = fileMenu->addAction(tr("&Open…"));
     mOpenAction->setIcon(QPixmap(":/shared-icons/document-open"));
     mOpenAction->setShortcut(QKeySequence::Open);
     connect(mOpenAction, &QAction::triggered, this, &KlustersApp::slotFileOpen);
@@ -350,12 +350,12 @@ void KlustersApp::createMenus()
 
     fileMenu->addSeparator();
 
-    mSaveAction = fileMenu->addAction(tr("Save..."));
+    mSaveAction = fileMenu->addAction(tr("Save…"));
     mSaveAction->setIcon(QPixmap(":/shared-icons/document-save"));
     mSaveAction->setShortcut(QKeySequence::Save);
     connect(mSaveAction, &QAction::triggered, this, &KlustersApp::slotFileSave);
 
-    mSaveAsAction = fileMenu->addAction(tr("&Save As..."));
+    mSaveAsAction = fileMenu->addAction(tr("&Save As…"));
     mSaveAsAction->setIcon(QPixmap(":/shared-icons/document-save-as"));
     connect(mSaveAsAction, &QAction::triggered, this, &KlustersApp::slotFileSaveAs);
 
@@ -451,7 +451,7 @@ void KlustersApp::createMenus()
     // Uses the same template-cross-correlation mechanism as KKE; settings
     // come from the Auto-Merge preferences tab (patch 0068).  Shortcut Shift+G
     // by analogy with G for Group.
-    mAutoMerge = actionMenu->addAction(tr("&Auto-Merge Similar Clusters..."));
+    mAutoMerge = actionMenu->addAction(tr("&Auto-Merge Similar Clusters…"));
     mAutoMerge->setIcon(QIcon(":/icons/auto_merge_tool"));
     mAutoMerge->setShortcut(Qt::SHIFT | Qt::Key_G);
     connect(mAutoMerge, &QAction::triggered, this, &KlustersApp::slotAutoMerge);
@@ -2205,7 +2205,7 @@ void KlustersApp::registerActionCommand(const QString& id, const QString& catego
     c.scopeId  = QStringLiteral("app");
     QString label = action->text();
     label.remove(QLatin1Char('&'));                 // drop the menu mnemonic
-    if(label.endsWith(QStringLiteral("..."))) label.chop(3);
+    if(label.endsWith(QStringLiteral("…"))) label.chop(3);
     c.label    = label.trimmed();
     c.category = category;
     c.kind     = input::Kind::Action;
@@ -3444,7 +3444,7 @@ void KlustersApp::createDisplay(KlustersView::DisplayType type)
 
 void KlustersApp::openDocumentFile(const QString& url)
 {    
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
 
     filePath = url;
     QFileInfo file(filePath);
@@ -3642,7 +3642,7 @@ void KlustersApp::openDocumentFile(const QString& url)
 
 void KlustersApp::importDocumentFile(const QString& url)
 {
-    slotStatusMsg(tr("Importing file..."));
+    slotStatusMsg(tr("Importing file…"));
 
     //If no document is open already open the document ask.
     if(!mainDock){
@@ -3803,10 +3803,10 @@ void KlustersApp::customEvent (QEvent* event){
 
 void KlustersApp::slotFileOpen()
 {
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
 
     QSettings settings;
-    const QString url=QFileDialog::getOpenFileName(this, tr("Open File..."), settings.value("CurrentDirectory").toString(),
+    const QString url=QFileDialog::getOpenFileName(this, tr("Open File…"), settings.value("CurrentDirectory").toString(),
                                              tr("Feature File (*.fet.*);;Cluster File (*.clu.*);;Cluster Children File (*.clc.*);;Spike File (*.spk.*);;Specific Parameter File (*.par.*);;All files (*.*)"));
     if(!url.isEmpty())
     {
@@ -3875,10 +3875,10 @@ void KlustersApp::slotFileClose(){
 }
 
 void KlustersApp::slotFileImport(){
-    slotStatusMsg(tr("Importing file..."));
+    slotStatusMsg(tr("Importing file…"));
 
     QSettings settings;
-    const QString url=QFileDialog::getOpenFileName(this, tr("Import File..."), settings.value("CurrentDirectory").toString(),
+    const QString url=QFileDialog::getOpenFileName(this, tr("Import File…"), settings.value("CurrentDirectory").toString(),
                                              tr("All files (*.*)"));
     if(!url.isEmpty())
     {
@@ -3892,7 +3892,7 @@ void KlustersApp::slotFileImport(){
 
 void KlustersApp::slotFileOpenRecent(const QString& url)
 {
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
 
     openDocumentFile(url);
 
@@ -3901,14 +3901,14 @@ void KlustersApp::slotFileOpenRecent(const QString& url)
 
 void KlustersApp::slotFileSave()
 {
-    slotStatusMsg(tr("Saving file..."));
+    slotStatusMsg(tr("Saving file…"));
 
     slotStateChanged("SavingState");
     saveThread->save(doc->url(),doc,false);
 }
 
 void KlustersApp::slotFileRenumberAndSave(){
-    slotStatusMsg(tr("Renumbering and saving..."));
+    slotStatusMsg(tr("Renumbering and saving…"));
     slotStateChanged("SavingState");
     doc->renumberClusters();
     slotFileSave();
@@ -3916,8 +3916,8 @@ void KlustersApp::slotFileRenumberAndSave(){
 
 void KlustersApp::slotFileSaveAs()
 {
-    slotStatusMsg(tr("Saving file with a new filename..."));
-    QString url=QFileDialog::getSaveFileName(this,tr("Save as..."),QDir::currentPath(),
+    slotStatusMsg(tr("Saving file with a new filename…"));
+    QString url=QFileDialog::getSaveFileName(this,tr("Save as…"),QDir::currentPath(),
                                              tr("All files (*.*)") );
     if(!url.isEmpty()){
         slotStateChanged("SavingState");
@@ -3929,7 +3929,7 @@ void KlustersApp::slotDisplayClose()
 {
     DockArea* current = static_cast<DockArea*>(tabsParent->currentWidget());
 
-    slotStatusMsg(tr("Closing display..."));
+    slotStatusMsg(tr("Closing display…"));
 
     //Get the active tab
     if(tabsParent->count()>1){
@@ -4047,7 +4047,7 @@ void KlustersApp::slotDisplayClose()
 
 void KlustersApp::slotFilePrint()
 {
-    slotStatusMsg(tr("Printing..."));
+    slotStatusMsg(tr("Printing…"));
     QPrinter printer;
     printer.setPageOrientation(QPageLayout::Landscape);
     printer.setColorMode(QPrinter::Color);
@@ -4074,7 +4074,7 @@ void KlustersApp::slotFilePrint()
 
 void KlustersApp::slotFileQuit()
 {
-    slotStatusMsg(tr("Exiting..."));
+    slotStatusMsg(tr("Exiting…"));
 
     if (!queryClose()) {
         slotStatusMsg(tr("Ready."));
@@ -4169,12 +4169,12 @@ void KlustersApp::runUndoOrRedo(void (KlustersDoc::*op)(),
 
 void KlustersApp::slotUndo()
 {
-    runUndoOrRedo(&KlustersDoc::undoDispatch,  tr("Reverting last action..."));
+    runUndoOrRedo(&KlustersDoc::undoDispatch,  tr("Reverting last action…"));
 }
 
 void KlustersApp::slotRedo()
 {
-    runUndoOrRedo(&KlustersDoc::redoDispatch,  tr("Reverting last undo action..."));
+    runUndoOrRedo(&KlustersDoc::redoDispatch,  tr("Reverting last undo action…"));
 }
 
 void KlustersApp::slotUpdateUndoNb(int undoNb){
@@ -4199,7 +4199,7 @@ void KlustersApp::slotUpdateRedoNb(int redoNb){
 
 void KlustersApp::slotViewMainToolBar()
 {
-    slotStatusMsg(tr("Toggle the main toolbar..."));
+    slotStatusMsg(tr("Toggle the main toolbar…"));
 
     mMainToolBar->setVisible(viewMainToolBar->isChecked());
     slotStatusMsg(tr("Ready."));
@@ -4207,7 +4207,7 @@ void KlustersApp::slotViewMainToolBar()
 
 void KlustersApp::slotViewActionBar(){
 
-    slotStatusMsg(tr("Toggle the action..."));
+    slotStatusMsg(tr("Toggle the action…"));
 
     // turn Toolbar on or off
 
@@ -4216,7 +4216,7 @@ void KlustersApp::slotViewActionBar(){
 }
 
 void KlustersApp::slotViewParameterBar(){
-    slotStatusMsg(tr("Toggle the parameters..."));
+    slotStatusMsg(tr("Toggle the parameters…"));
     // turn Toolbar on or off
     if(!viewParameterBar->isChecked())
     {
@@ -4232,7 +4232,7 @@ void KlustersApp::slotViewParameterBar(){
 
 void KlustersApp::slotViewToolBar()
 {
-    slotStatusMsg(tr("Toggle the tools..."));
+    slotStatusMsg(tr("Toggle the tools…"));
 
     // turn Toolbar on or off
     mToolBar->setVisible(viewToolBar->isChecked());
@@ -4242,7 +4242,7 @@ void KlustersApp::slotViewToolBar()
 
 void KlustersApp::slotViewStatusBar()
 {
-    slotStatusMsg(tr("Toggle the statusbar..."));
+    slotStatusMsg(tr("Toggle the statusbar…"));
     ///////////////////////////////////////////////////////////////////
     //turn Statusbar on or off
     statusBar()->setVisible(mViewStatusBar->isChecked());
@@ -4251,7 +4251,7 @@ void KlustersApp::slotViewStatusBar()
 }
 
 void KlustersApp::slotViewClusterInfo(){
-    slotStatusMsg(tr("Toggle the presentation of the cluster information in the cluster palette..."));
+    slotStatusMsg(tr("Toggle the presentation of the cluster information in the cluster palette…"));
 
     // turn the user cluster information on or off
     if(!viewClusterInfo->isChecked())
@@ -4270,7 +4270,7 @@ void KlustersApp::slotViewClusterInfo(){
 
 void KlustersApp::slotWindowNewClusterDisplay()
 {
-    slotStatusMsg(tr("Opening a new cluster view..."));
+    slotStatusMsg(tr("Opening a new cluster view…"));
 
     createDisplay(KlustersView::CLUSTERS);
     slotStatusMsg(tr("Ready."));
@@ -4278,7 +4278,7 @@ void KlustersApp::slotWindowNewClusterDisplay()
 
 void KlustersApp::slotWindowNewWaveformDisplay()
 {
-    slotStatusMsg(tr("Opening a new waveform view..."));
+    slotStatusMsg(tr("Opening a new waveform view…"));
 
     createDisplay(KlustersView::WAVEFORMS);
     slotStatusMsg(tr("Ready."));
@@ -4286,7 +4286,7 @@ void KlustersApp::slotWindowNewWaveformDisplay()
 
 void KlustersApp::slotWindowNewCrosscorrelationDisplay()
 {
-    slotStatusMsg(tr("Opening a new correlation view..."));
+    slotStatusMsg(tr("Opening a new correlation view…"));
 
     createDisplay(KlustersView::CORRELATIONS);
     slotStatusMsg(tr("Ready."));
@@ -4294,7 +4294,7 @@ void KlustersApp::slotWindowNewCrosscorrelationDisplay()
 
 void KlustersApp::slotWindowNewOverViewDisplay()
 {
-    slotStatusMsg(tr("Opening a new over view..."));
+    slotStatusMsg(tr("Opening a new over view…"));
 
     createDisplay(KlustersView::OVERVIEW);
     slotStatusMsg(tr("Ready."));
@@ -4302,7 +4302,7 @@ void KlustersApp::slotWindowNewOverViewDisplay()
 
 void KlustersApp::slotWindowNewGroupingAssistantDisplay()
 {
-    slotStatusMsg(tr("Opening a new grouping assistant view..."));
+    slotStatusMsg(tr("Opening a new grouping assistant view…"));
 
     createDisplay(KlustersView::GROUPING_ASSISTANT_VIEW);
     slotStateChanged("groupingAssistantDisplayExists");
@@ -4312,7 +4312,7 @@ void KlustersApp::slotWindowNewGroupingAssistantDisplay()
 }
 
 void KlustersApp::slotNewTraceDisplay(){
-    slotStatusMsg(tr("Opening a new grouping assistant view..."));
+    slotStatusMsg(tr("Opening a new grouping assistant view…"));
 
     createDisplay(KlustersView::TRACES);
 
@@ -4320,7 +4320,7 @@ void KlustersApp::slotNewTraceDisplay(){
 }
 
 void KlustersApp::slotWindowNewTemplateLibraryDisplay(){
-    slotStatusMsg(tr("Opening the template library..."));
+    slotStatusMsg(tr("Opening the template library…"));
 
     createDisplay(KlustersView::TEMPLATE_LIBRARY);
 
@@ -4340,7 +4340,7 @@ void KlustersApp::slotStatusMsg(const QString &text)
 /*Slots for the actions menu*/
 /**Creates a single cluster by selecting an area*/
 void KlustersApp::slotSingleNew(){
-    slotStatusMsg(tr("Create new cluster..."));
+    slotStatusMsg(tr("Create new cluster…"));
 
     //If we are in delay mode, update the display, if need it, before triggering the tool change
     if(mDelaySelection->isChecked()){
@@ -4360,7 +4360,7 @@ void KlustersApp::slotSingleNew(){
 }
 /**Creates a multiple clusters by selecting an area*/
 void KlustersApp::slotMultipleNew(){
-    slotStatusMsg(tr("Split clusters..."));
+    slotStatusMsg(tr("Split clusters…"));
 
     //If we are in delay mode, update the display, if need it, before triggering the tool change
     if(mDelaySelection->isChecked()){
@@ -4377,7 +4377,7 @@ void KlustersApp::slotMultipleNew(){
 }
 /**Deletes spikes from a cluster and move them to the cluster (number 1) containing the poorly isolated cells*/
 void KlustersApp::slotDeleteNoise(){
-    slotStatusMsg(tr("Delete noise..."));
+    slotStatusMsg(tr("Delete noise…"));
 
     //If we are in delay mode, update the display, if need it, before triggering the tool change
     if(mDelaySelection->isChecked()){
@@ -4394,7 +4394,7 @@ void KlustersApp::slotDeleteNoise(){
 }
 /**Deletes spikes from a cluster and move them to the cluster (number 0) containing the artifacts*/
 void KlustersApp::slotDeleteArtefact(){
-    slotStatusMsg(tr("Delete artifact..."));
+    slotStatusMsg(tr("Delete artifact…"));
 
     //If we are in delay mode, update the display, if need it, before triggering the tool change
     if(mDelaySelection->isChecked()){
@@ -4433,7 +4433,7 @@ void KlustersApp::slotZoom(){
     // Select the normal cursor (mode = NONE).  Named slotZoom for history — it drove the
     // rubber-band ZOOM tool, retired in the Overview redesign; it now returns the active view
     // to the no-tool default.
-    slotStatusMsg(tr("Normal cursor..."));
+    slotStatusMsg(tr("Normal cursor…"));
 
     //If we are in delay mode, update the display, if need it, before triggering the tool change
     if(mDelaySelection->isChecked()){
@@ -4740,7 +4740,7 @@ void KlustersApp::wsExit(bool commit)
     if (cfg.minPeakHeight < 1e-6) cfg.minPeakHeight = 0;
     cfg.minBasinSize  = 0;     // auto
 
-    slotStatusMsg(tr("Applying watershed split..."));
+    slotStatusMsg(tr("Applying watershed split…"));
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     int nNew = 0;
     if (onEmbedding) {
@@ -5297,7 +5297,7 @@ void KlustersApp::updateChunkStatus(){
 }
 
 void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
-    slotStatusMsg(tr("Grouping clusters..."));
+    slotStatusMsg(tr("Grouping clusters…"));
     KlustersView* view = activeView();
 
     // Merge CHILDREN when the child palette is the one being worked in.
@@ -5398,7 +5398,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
 // ---------------------------------------------------------------------------
 void KlustersApp::slotAutoMerge()
 {
-    slotStatusMsg(tr("Auto-merge: computing proposals..."));
+    slotStatusMsg(tr("Auto-merge: computing proposals…"));
 
     AutoMerge::Settings s;
     s.algorithm          = configuration().getAutoMergeAlgorithm();
@@ -5689,13 +5689,13 @@ void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClu
 void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters)
 {
     moveSelectedClustersToReservedId(selectedClusters, /*noise=*/1,
-                                      tr("Delete &noisy cluster(s)..."));
+                                      tr("Delete &noisy cluster(s)…"));
 }
 
 void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters)
 {
     moveSelectedClustersToReservedId(selectedClusters, /*artefact=*/0,
-                                      tr("Delete &artifact cluster(s)..."));
+                                      tr("Delete &artifact cluster(s)…"));
 }
 
 // ---------------------------------------------------------------------------
@@ -5746,7 +5746,7 @@ void KlustersApp::slotPurgeSmallClusters()
     if (box.exec() != QMessageBox::Yes) return;
 
     moveSelectedClustersToReservedId(small, /*noise=*/1,
-        tr("Purging %1 small cluster(s) into noise...").arg(small.size()));
+        tr("Purging %1 small cluster(s) into noise…").arg(small.size()));
 }
 
 // ---------------------------------------------------------------------------

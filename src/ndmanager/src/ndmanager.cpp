@@ -110,13 +110,13 @@ void ndManager::setupActions()
     //File Menu
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
 
-    mNewAction = fileMenu->addAction(tr("&New..."));
+    mNewAction = fileMenu->addAction(tr("&New…"));
     mNewAction->setIcon(QPixmap(":/shared-icons/document-new"));
     mNewAction->setShortcut(QKeySequence::New);
     connect(mNewAction, &QAction::triggered, this, &ndManager::slotNewFile);
 
 
-    mOpenAction = fileMenu->addAction(tr("&Open..."));
+    mOpenAction = fileMenu->addAction(tr("&Open…"));
     mOpenAction->setIcon(QPixmap(":/shared-icons/document-open"));
     mOpenAction->setShortcut(QKeySequence::Open);
     connect(mOpenAction, &QAction::triggered, this, &ndManager::slotFileOpen);
@@ -128,16 +128,16 @@ void ndManager::setupActions()
     connect(mFileOpenRecent, &QRecentFileAction::recentFileSelected, this, &ndManager::slotFileOpenRecent);
     connect(mFileOpenRecent, &QRecentFileAction::recentFileListChanged, this, &ndManager::slotSaveRecentFiles);
 
-    mUseTemplateAction = fileMenu->addAction(tr("Use &Template..."));
+    mUseTemplateAction = fileMenu->addAction(tr("Use &Template…"));
     connect(mUseTemplateAction, &QAction::triggered, this, &ndManager::slotImport);
 
     fileMenu->addSeparator();
-    mSaveAction = fileMenu->addAction(tr("Save..."));
+    mSaveAction = fileMenu->addAction(tr("Save…"));
     mSaveAction->setIcon(QPixmap(":/shared-icons/document-save"));
     mSaveAction->setShortcut(QKeySequence::Save);
     connect(mSaveAction, &QAction::triggered, this, &ndManager::slotSave);
 
-    mSaveAsAction = fileMenu->addAction(tr("&Save As..."));
+    mSaveAsAction = fileMenu->addAction(tr("&Save As…"));
     mSaveAsAction->setIcon(QPixmap(":/shared-icons/document-save-as"));
     mSaveAsAction->setShortcut(QKeySequence::SaveAs);
     connect(mSaveAsAction, &QAction::triggered, this, &ndManager::slotSaveAs);
@@ -280,7 +280,7 @@ void ndManager::slotStatusMsg(const QString &text)
 
 void ndManager::slotViewMainToolBar()
 {
-    slotStatusMsg(tr("Toggle the main toolbar..."));
+    slotStatusMsg(tr("Toggle the main toolbar…"));
     mMainToolBar->setVisible(viewMainToolBar->isChecked());
     slotStatusMsg(tr("Ready."));
 }
@@ -288,7 +288,7 @@ void ndManager::slotViewMainToolBar()
 
 void ndManager::slotViewStatusBar()
 {
-    slotStatusMsg(tr("Toggle the statusbar..."));
+    slotStatusMsg(tr("Toggle the statusbar…"));
     ///////////////////////////////////////////////////////////////////
     //turn Statusbar on or off
     statusBar()->setVisible(viewStatusBar->isChecked());
@@ -299,10 +299,10 @@ void ndManager::slotViewStatusBar()
 
 void ndManager::slotFileOpen()
 {
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
 
     QSettings settings;
-    const QString url=QFileDialog::getOpenFileName(this, tr("Open File..."),settings.value("CurrentDirectory").toString(),
+    const QString url=QFileDialog::getOpenFileName(this, tr("Open File…"),settings.value("CurrentDirectory").toString(),
                                                    tr("Parameter File (*.xml *.yaml *.yml);;XML files (*.xml);;YAML files (*.yaml *.yml);;All files (*.*)") );
     if(!url.isEmpty()) {
         QDir CurrentDir;
@@ -314,7 +314,7 @@ void ndManager::slotFileOpen()
 }
 
 void ndManager::slotFileOpenRecent(const QString& url){
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
 
     openDocumentFile(url);
 
@@ -322,7 +322,7 @@ void ndManager::slotFileOpenRecent(const QString& url){
 }
 
 void ndManager::slotNewFile(){
-    slotStatusMsg(tr("Initializing new file..."));
+    slotStatusMsg(tr("Initializing new file…"));
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
 
     //If no document is open already, create a new parameter file.
@@ -353,7 +353,7 @@ void ndManager::slotNewFile(){
 
 void ndManager::openDocumentFile(const QString& url)
 {
-    slotStatusMsg(tr("Opening file..."));
+    slotStatusMsg(tr("Opening file…"));
 
     filePath = url;
     QFileInfo file(filePath);
@@ -452,11 +452,11 @@ void ndManager::createParameterView(QMap<int, QList<int> >& anatomicalGroups,QMa
 }
 
 void ndManager::slotImport(){
-    slotStatusMsg(tr("importing file as model..."));
+    slotStatusMsg(tr("importing file as model…"));
     importedFile = true;
 
     QSettings settings;
-    const QString url = QFileDialog::getOpenFileName(this, tr("Import file as model..."),settings.value("CurrentDirectory").toString(),
+    const QString url = QFileDialog::getOpenFileName(this, tr("Import file as model…"),settings.value("CurrentDirectory").toString(),
                                                      tr("Parameter File (*.xml *.yaml *.yml);;XML files (*.xml);;YAML files (*.yaml *.yml);;All files (*.*)") );
     if(!url.isEmpty()) {
         QDir CurrentDir;
@@ -600,7 +600,7 @@ bool ndManager::queryClose()
 }
 
 void ndManager::slotSave(){
-    slotStatusMsg(tr("Saving..."));
+    slotStatusMsg(tr("Saving…"));
     //if  the current file is new or was initially imported, it has to be saved under a new name
     if(importedFile || newFile){
         QString initialPath;
@@ -611,7 +611,7 @@ void ndManager::slotSave(){
             initialPath = QFileInfo(currentUrl).absolutePath();
         }
 
-        const QString url=QFileDialog::getSaveFileName( this, tr("Save as..."),initialPath,tr("XML files (*.xml);;YAML files (*.yaml);;All files (*)"));
+        const QString url=QFileDialog::getSaveFileName( this, tr("Save as…"),initialPath,tr("XML files (*.xml);;YAML files (*.yaml);;All files (*)"));
         if(!url.isEmpty()){
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             int saveStatus = doc->saveAs(url);
@@ -640,10 +640,10 @@ void ndManager::slotSave(){
 }
 
 void ndManager::slotSaveAs(){
-    slotStatusMsg(tr("Saving as..."));
+    slotStatusMsg(tr("Saving as…"));
 
     //Save the parameter file
-    QString url=QFileDialog::getSaveFileName(this, tr("Save as..."),doc->url(),tr("All files (*.*)"));
+    QString url=QFileDialog::getSaveFileName(this, tr("Save as…"),doc->url(),tr("All files (*.*)"));
     if(!url.isEmpty()){
         int saveStatus = doc->saveAs(url);
         if(saveStatus == ndManagerDoc::SAVE_ERROR){
@@ -667,7 +667,7 @@ void ndManager::resetState(){
 }
 
 void ndManager::slotSaveDefault(){
-    slotStatusMsg(tr("Saving as default..."));
+    slotStatusMsg(tr("Saving as default…"));
     int saveStatus = doc->saveDefault();
     if(saveStatus == ndManagerDoc::SAVE_ERROR){
         QMessageBox::critical(this, tr("IO Error!"),tr("The current file could not be saved as the default parameter file."));
@@ -711,7 +711,7 @@ void ndManager::slotLoadPipeline(){
 }
 
 void ndManager::slotReload(){
-    slotStatusMsg(tr("reloading..."));
+    slotStatusMsg(tr("reloading…"));
 
     //Get the current active page index
     int currentPage = parameterView->currentPage();
@@ -758,7 +758,7 @@ void ndManager::slotReload(){
 
 void ndManager::slotQuery(){
 #ifdef Q_OS_UNIX
-    slotStatusMsg(tr("Processing query..."));
+    slotStatusMsg(tr("Processing query…"));
     QPointer<QueryInputDialog> queryInputDialog = new QueryInputDialog();
     if(queryInputDialog->exec() == QDialog::Accepted)
     {

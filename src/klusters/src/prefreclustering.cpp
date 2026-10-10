@@ -28,6 +28,6 @@ bool    PrefReclustering::getReclusterMedianWaveformResidual() const { return re
 
 void PrefReclustering::updateReclusteringExecutable()
 {
-    const QString executable = QFileDialog::getOpenFileName(this, tr("Select the Reclustering executable..."));
+    const QString executable = QFileDialog::getOpenFileName(this, tr("Select the Reclustering executable…"));
     if (!executable.isEmpty()) setReclusteringExecutable(executable);
 }

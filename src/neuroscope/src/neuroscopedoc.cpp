@@ -304,7 +304,7 @@ int NeuroscopeDoc::openDocument(const QString& url)
             QString filter(tr("Data File (*.dat *.lfp *.eeg *.fil);;All files (*.*)"));
             //filter.append(baseName + ".*");
 
-            const QString openUrl = QFileDialog::getOpenFileName(parent, tr("Open Data File..."),startUrl,filter);
+            const QString openUrl = QFileDialog::getOpenFileName(parent, tr("Open Data File…"),startUrl,filter);
             if(!openUrl.isEmpty()) {
                 docUrl = openUrl;
             } else{

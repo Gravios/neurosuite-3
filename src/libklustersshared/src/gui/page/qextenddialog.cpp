@@ -922,7 +922,7 @@ void QExtendDialog::setHelp( const QString &anchor, const QString &appname )
 QString QExtendDialog::helpLinkText() const
 {
     Q_D(const QExtendDialog);
-  return ( d->mHelpLinkText.isEmpty() ? tr( "Get help..." ) : d->mHelpLinkText );
+  return ( d->mHelpLinkText.isEmpty() ? tr( "Get help…" ) : d->mHelpLinkText );
 }
 
 void QExtendDialog::updateGeometry()

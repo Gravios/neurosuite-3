@@ -65,7 +65,7 @@ ProgramsPage::ProgramsPage(bool expertMode,QWidget *parent)
         addButton->setMaximumSize(QSize(104,32767));
         gridLayout->addWidget(addButton,0,1);
 
-        loadButton = new QPushButton(tr("Load..."),buttons);
+        loadButton = new QPushButton(tr("Load…"),buttons);
         //loadButton->setSizePolicy(QSizePolicy((QSizePolicy::Policy)0,(QSizePolicy::Policy)0,0,0,loadButton->sizePolicy().hasHeightForWidth()));
         loadButton->setMinimumSize(QSize(104,0));
         loadButton->setMaximumSize(QSize(104,32767));
@@ -89,7 +89,7 @@ ProgramsPage::ProgramsPage(bool expertMode,QWidget *parent)
         connect(addButton, &QAbstractButton::clicked, this, &ProgramsPage::addProgram);
         connect(discoverButton, &QAbstractButton::clicked, this, &ProgramsPage::discover);
     } else {
-        loadButton = new QPushButton(tr("Load..."),buttons);
+        loadButton = new QPushButton(tr("Load…"),buttons);
         //loadButton->setSizePolicy(QSizePolicy((QSizePolicy::Policy)0,(QSizePolicy::Policy)0,0,0,loadButton->sizePolicy().hasHeightForWidth()));
         loadButton->setMinimumSize(QSize(104,0));
         loadButton->setMaximumSize(QSize(104,32767));
@@ -114,7 +114,7 @@ ProgramsPage::~ProgramsPage(){}
 
 void ProgramsPage::loadProgram(){
 
-    const QStringList programUrls=QFileDialog::getOpenFileNames(this, tr("Select the Plugin(s) to load..."));
+    const QStringList programUrls=QFileDialog::getOpenFileNames(this, tr("Select the Plugin(s) to load…"));
     if(!programUrls.isEmpty()){
         for (const QString &programUrl : programUrls) {
             QString filePath = programUrl;

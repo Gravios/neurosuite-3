@@ -458,7 +458,7 @@ void SpectralView::paintEvent(QPaintEvent*)
         painter.drawImage(plot, image);
     } else {
         painter.setPen(Qt::gray);
-        painter.drawText(plot, Qt::AlignCenter, tr("computing..."));
+        painter.drawText(plot, Qt::AlignCenter, tr("computing…"));
     }
 
     drawAxes(painter, plot);
