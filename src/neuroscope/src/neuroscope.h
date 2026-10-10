@@ -290,6 +290,11 @@ protected:
      *  gestures, grouped by category, showing each command's EFFECTIVE chord, so a rebinding set
      *  in Preferences ▸ Input appears here immediately and no second list can drift. */
     void showKeyboardShortcuts();
+    /** Check the Tool menu/toolbar action matching the ACTIVE display's current mode
+     *  (input-overhaul S4b).  Tools are per-display, so this is called whenever the active
+     *  display changes (slotTabChange) as well as after a tool is picked, keeping the
+     *  mutually-exclusive checkmark on the tool that is actually in effect. */
+    void syncToolChecks();
     /** sets up the statusbar for the main window by initialzing a statuslabel.
      */
     void initStatusBar();
@@ -758,6 +763,7 @@ private:
     QAction* mTimeTool;
     QAction* mEventTool;
     QAction* mDrawTimeLine;
+    QActionGroup* mToolGroup;   // S4b: the 7 tools as mutually-exclusive checkable toggles
     QAction* mPage;
     QAction* mAccelerate;
     QAction* mDecelerate;

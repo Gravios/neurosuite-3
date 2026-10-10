@@ -263,6 +263,11 @@ public:
    */
     bool isSelectionTool() const {return selectMode;}
 
+    /** The display's current interaction mode (input-overhaul S4b): the last mode set via
+   * setMode().  NeuroscopeApp reads this to keep the Tool menu/toolbar checkmark on the
+   * active display's tool (tools are per-display). */
+    BaseFrame::Mode currentMode() const {return mToolMode;}
+
     /**Changes the color of a channel.
    * @param channelId id of the channel to redraw.
    * @param active true if the view is the active one, false otherwise.
@@ -840,6 +845,8 @@ private:
 
     /**True if the selected tool is the selection one, false otherwise.*/
     bool selectMode;
+    /**S4b: the display's current interaction mode (the last one passed to setMode); ZOOM at start.*/
+    BaseFrame::Mode mToolMode = BaseFrame::ZOOM;
 
     /**Whether channels should be centered around their offset.*/
     bool autocenterChannels;

@@ -78,6 +78,7 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QMap>
+#include <QActionGroup>              // S4b: mutually-exclusive checkable tool toggles
 
 
 NeuroscopeApp::NeuroscopeApp()
@@ -321,6 +322,19 @@ void NeuroscopeApp::initActions()
     addEventToolBarAction->setMenu(addEventPopup);
     connect(addEventPopup, &QMenu::aboutToShow, this, &NeuroscopeApp::slotAddEventAboutToShow);
     connect(addEventPopup, &QMenu::triggered, this, &NeuroscopeApp::slotAddEventButtonActivated);
+
+    // S4b: the seven tools are mutually-exclusive checkable toggles, so the menu/toolbar shows
+    // which tool is active.  Tools are per-display; syncToolChecks() keeps the mark on the active
+    // display's mode (called from slotTabChange), and each tool's existing slot sets the mode.
+    mToolGroup = new QActionGroup(this);
+    mToolGroup->setExclusive(true);
+    const QList<QAction*> toolActions = { mZoomTool, mSelectTool, mMeasureTool, mTimeTool,
+                                          mEventTool, mDrawTimeLine, addEventToolBarAction };
+    for(QAction* a : toolActions){
+        a->setCheckable(true);
+        mToolGroup->addAction(a);
+    }
+    mZoomTool->setChecked(true);   // ZOOM is the mode a new display starts in
 
     //Channels Menu
     QMenu *channelsMenu = menuBar()->addMenu(tr("&Channels"));
@@ -1992,6 +2006,26 @@ void NeuroscopeApp::slotDrawTimeLine(){
     slotStatusMsg(tr("Ready."));
 }
 
+void NeuroscopeApp::syncToolChecks(){
+    // S4b: reflect the ACTIVE display's current tool in the exclusive Tool group.  setChecked()
+    // fires toggled(), not triggered(), so it does not re-invoke the tool slots (no loop); the
+    // exclusive group unchecks the others.
+    NeuroscopeView* view = activeView();
+    if(!view) return;
+    QAction* a = nullptr;
+    switch(view->currentMode()){
+        case BaseFrame::ZOOM:         a = mZoomTool;             break;
+        case TraceView::SELECT:       a = mSelectTool;           break;
+        case TraceView::MEASURE:      a = mMeasureTool;          break;
+        case TraceView::SELECT_TIME:  a = mTimeTool;             break;
+        case TraceView::SELECT_EVENT: a = mEventTool;            break;
+        case TraceView::ADD_EVENT:    a = addEventToolBarAction; break;
+        case TraceView::DRAW_LINE:    a = mDrawTimeLine;         break;
+        default: break;
+    }
+    if(a) a->setChecked(true);
+}
+
 NeuroscopeView* NeuroscopeApp::activeView(){
 
     DockArea* area = tabsParent->currentDockArea();
@@ -2585,6 +2619,7 @@ void NeuroscopeApp::slotTabChange(int index){
     displayMode->setChecked(activeView->getMultiColumns());
     mSpectralView->setChecked(activeView->isSpectralMode());
     select = activeView->isSelectionTool();
+    syncToolChecks();   // S4b: move the Tool checkmark to the newly-active display's mode
     const QList<int> selectedChannels = activeView->getSelectedChannels();
 
 	 /// Added by M.Zugaro to enable automatic forward paging

@@ -563,6 +563,7 @@ void NeuroscopeView::selectChannels(const QList<int>& selectedIds)
 
 void NeuroscopeView::setMode(BaseFrame::Mode selectedMode,bool active)
 {
+    mToolMode = selectedMode;   // S4b: remember the display's tool for the Tool-menu checkmark sync
     if(selectedMode == 2)
         selectMode = true;
     else
