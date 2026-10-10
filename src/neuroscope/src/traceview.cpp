@@ -3197,316 +3197,181 @@ void TraceView::beginMeasurePress(const QPoint& viewportPos){
     previousDragOrdinate = 0;
 }
 
-void TraceView::mousePressEvent(QMouseEvent* event){
-    // Input seam (neuroscope input overhaul S2): consult the shared registry before the
-    // mode-switched body below.  Inert until the trace press modes are ported (S5) — with
-    // no view/mode commands registered, dispatchInput() returns false and the existing
-    // handler runs unchanged.
-    if(dispatchInput(event)) return;
-    if (event->button() == Qt::LeftButton){
+void TraceView::beginSelectChannelsPress(const QPoint& viewportPos, Qt::KeyboardModifiers modifiers){
+    // SELECT (channel-selection) press, split out of the mouse-press monolith (neuroscope input
+    // overhaul S5, mode 7/7 — the last).  No rubber band.  Picks the nearest channel and updates
+    // the selection (plain = replace, Ctrl = toggle, Shift = range); the channel drag (SELECT
+    // branch of mouseMoveEvent) and the release stay inline.  Faithful to the former inline
+    // branch: the big-block `!shownChannels.isEmpty()` gate and the single-column empty-groups
+    // guard (nearestChannelAt == -1) both bail before any state change; the per-layout Shift range
+    // reads channelIds+labelSelected (multi) or shownChannels+g.x (single); lastClickOrdinate /
+    // previousDragOrdinate resets and the drawTraces postamble are preserved.  modifiers replaces
+    // the former event->modifiers().
+    if (shownChannels.isEmpty()) return;
+    const TraceClickGeometry g = resolveClickGeometry(viewportPos);
+    lastClickOrdinate = g.current.y();
+    const int selectedChannel = nearestChannelAt(g);
+    if (selectedChannel < 0) return;
 
-        // S5: ZOOM, SELECT_TIME and MEASURE are now registry Gestures, armed by the
-        // dispatchInput() seam above — those presses are handled there and have already returned,
-        // so they never reach here.  SELECT is the last mode still inline (ported next).
-        QList<int> currentlySelectedChannels;
-        QList<int> deselectedChannels;
+    QList<int> currentlySelectedChannels;
+    QList<int> deselectedChannels;
 
-        // S5: only SELECT remains in this block now (all other modes are Gestures).  The final
-        // `else startingIndex = x` tail below is dead (kept until the SELECT port collapses the
-        // whole block).
-        if (mode == SELECT && !shownChannels.isEmpty()){
-            // S5: the click-geometry preamble (world point + column/sample it selects) is now
-            // resolved once by resolveClickGeometry(); the per-mode bodies below read the shared
-            // result.  `current` keeps its old name and lastClickOrdinate (a press side effect)
-            // stays here, so the mode-action code is unchanged.
-            const TraceClickGeometry g = resolveClickGeometry(event->position().toPoint());
-            const QPoint current = g.current;
-            lastClickOrdinate = current.y();
+    if (multiColumns){
+        // the clicked group's channels (the hit-test's channelIds), re-derived for the Shift range
+        QList<int> groupIds = shownGroupsChannels.keys();
+        QList<int> channelIds = shownGroupsChannels[groupIds[static_cast<int>(g.groupIndex)]];
+        int currentNbChannels = channelIds.size();
+        int channelId = 0;
 
-            if (multiColumns){
-                //geometry resolved by resolveClickGeometry (S5); keep the old local names.
-                int groupIndex = g.groupIndex;
-                int sampleIndex = g.sampleIndex;
-                bool labelSelected = g.labelSelected;
-                int x = g.x;
-
-                // S5: SELECT_EVENT press is a Gesture (trace.selectEventPress) handled via the
-                // seam; the nearest-channel pick below now runs unconditionally for SELECT/MEASURE.
-                {
-                    QList<int> groupIds = shownGroupsChannels.keys();
-                    int groupId = groupIds[static_cast<int>(groupIndex)];
-                    QList<int> channelIds = shownGroupsChannels[groupId];
-                    int currentNbChannels = channelIds.size();
-                    int y = Y0;
-                    int channelId = channelIds[0];
-                    int channelIndex = 1;
-                    //look up for the first channel which is not skipped
-                    // ── Bug fix (audit 2026-04-29): two bugs in this loop.
-                    //    (a) `skippedChannels.contains(i)` was checking
-                    //    whether the *index* i was in the skipped list,
-                    //    rather than `channelIds[i]` (the actual channel
-                    //    id).  Picked wrong "first non-skipped" channel.
-                    //    (b) the `y -= Yshift` ran AFTER the if-test, so
-                    //    when the loop broke at index i, `y` was still
-                    //    at channelIds[i-1]'s ordinate but channelId had
-                    //    advanced to channelIds[i] — one-channel y
-                    //    offset error in the subsequent position
-                    //    calculation.  Single-column branch below has
-                    //    the test correct (channelIds[i]) and the shift
-                    //    in the right order; this version is now
-                    //    consistent with it.
-                    if (skippedChannels.contains(channelId)){
-                        for(int i = 1; i < currentNbChannels; ++i){
-                            y -= Yshift;
-                            if (!skippedChannels.contains(channelIds[i])){
-                                channelId = channelIds[i];
-                                channelIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    int position = -y + channelOffsets[channelId] - static_cast<long>(data(sampleIndex,channelId + 1) * channelFactors[channelId]);
-                    int difference = abs(current.y() - position);
-                    int selectedChannel = channelId;
-                    y -= Yshift;
-
-                    for(int i = channelIndex; i < currentNbChannels; ++i){
-                        channelId = channelIds[i];
-                        position = -y + channelOffsets[channelId] - static_cast<long>(data(sampleIndex,channelId + 1) * channelFactors[channelId]);
-
-                        if (abs(current.y() - position) < difference && !skippedChannels.contains(channelId)){
-                            difference = abs(current.y() - position);
-                            selectedChannel = channelId;
-                        }
-                        y -= Yshift;
-                    }
-
-                    if (mode == SELECT){
-                        //If there is not modificator key and mSelectedChannels does not already contain the selectedChannel
-                        //deselect all the channels (clear mSelectedChannels) otherwise remove selectedChannel from the list.
-                        //if the channel is skipped,there is a special treatment: deselect all the channels (clear mSelectedChannels)
-                        if (!(event->modifiers() & Qt::ShiftModifier) && !(event->modifiers() & Qt::ControlModifier)){
-                            //if the channel is skipped, deselect all the channels (clear mSelectedChannels)
-                            if (!mSelectedChannels.contains(selectedChannel) || skippedChannels.contains(selectedChannel)){
-                                alreadySelected = false;
-                                QList<int>::iterator it;
-                                for(it = mSelectedChannels.begin();it != mSelectedChannels.end();++it)
-                                    deselectedChannels.append(*it);
-                                mSelectedChannels.clear();
-                            }
-                            else{
-                                mSelectedChannels.removeAll(selectedChannel);
-                                if (!mSelectedChannels.isEmpty())
-                                    alreadySelected = true;
-                            }
-                        }
-
-                        //Check the modificator keys
-                        if (event->modifiers() & Qt::ControlModifier){
-                            //if the channel is skipped, do not do anything
-                            if (!skippedChannels.contains(selectedChannel)){
-                                if (mSelectedChannels.contains(selectedChannel)){
-                                    mSelectedChannels.removeAll(selectedChannel);
-                                    deselectedChannels.append(selectedChannel);
-                                } else {
-                                    mSelectedChannels.append(selectedChannel);
-                                    currentlySelectedChannels.append(selectedChannel);
-                                }
-                            }
-                        }
-                        else if ((event->modifiers() & Qt::ShiftModifier) && !mSelectedChannels.isEmpty()){
-                            //take all the channels, not skipped of groupId with a label ordinate in the range defined by the label ordinate of the last
-                            //selected channel and the one of the currently selected channel.
-                            if (labelSelected){
-                                int previousChannelId = mSelectedChannels[mSelectedChannels.size() - 1];
-                                //If the prevously selected channel is not in the same group, only select the currently selected.
-                                //No cross group selection is done.
-                                if (!channelIds.contains(previousChannelId)){
-                                    if (!skippedChannels.contains(selectedChannel)){
-                                        mSelectedChannels.append(selectedChannel);
-                                        currentlySelectedChannels.append(selectedChannel);
-                                    }
-                                } else {
-                                    int previousOrdinate = channelsStartingOrdinate[previousChannelId];
-                                    int currentOrdinate = channelsStartingOrdinate[selectedChannel];
-                                    int min = previousOrdinate;
-                                    int max = currentOrdinate;
-                                    if (currentOrdinate < previousOrdinate){
-                                        min = currentOrdinate;
-                                        max = previousOrdinate;
-                                    }
-
-                                    for(int i = 0; i < currentNbChannels; ++i){
-                                        channelId = channelIds[i];
-                                        int ordinate = channelsStartingOrdinate[channelId];
-                                        if (ordinate>= min && ordinate <= max && !mSelectedChannels.contains(channelId)){
-                                            if (!skippedChannels.contains(selectedChannel)){
-                                                mSelectedChannels.append(channelId);
-                                                currentlySelectedChannels.append(channelId);
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                //TO DO
-                            }
-                        }
-                        else{
-                            if (!skippedChannels.contains(selectedChannel)){
-                                mSelectedChannels.append(selectedChannel);
-                                currentlySelectedChannels.append(selectedChannel);
-                            }
-                        }
-                        emit channelsSelected(mSelectedChannels);
-                    }//end of mode == SELECT
-                    // S5: MEASURE press is a Gesture (trace.measurePress).  This tail is now dead
-                    // (only SELECT reaches the block); kept until the SELECT port removes it.
-                    else startingIndex = x;
-                }//nearest-channel pick (multi-column)
-            }//end multicolumns
-            else{//single column
-                //geometry resolved by resolveClickGeometry (S5); keep the old local names.
-                int x = g.x;
-                int sampleIndex = g.sampleIndex;
-
-                // S5: SELECT_EVENT press is a Gesture handled via the seam; the nearest-channel
-                // pick below now runs unconditionally for SELECT/MEASURE.
-                {
-                    QList<int> groupIds = shownGroupsChannels.keys();
-
-                    if (shownGroupsChannels.isEmpty() )
-                       return;
-                    QList<int> firstGroup = shownGroupsChannels[groupIds[0]];
-                    int y = Y0;
-                    int channelId = firstGroup[0];
-                    int channelIndex = 1;
-                    int startingGroupIndex = 0;
-                    //look up for the first channel which is not skipped.
-                    if (skippedChannels.contains(channelId)){
-                        for(int j = 0; j<groupIds.size();++j){
-                            QList<int> channelIds = shownGroupsChannels[groupIds[j]];
-                            int currentNbChannels = channelIds.size();
-                            for(int i = 0; i < currentNbChannels; ++i){
-                                if (!skippedChannels.contains(channelIds[i])){
-                                    channelId = channelIds[i];
-                                    channelIndex = i + 1;
-                                    startingGroupIndex = j;
-                                    break;
-                                }
-                                y -= Yshift;
-                            }
-                            if (!skippedChannels.contains(channelId))  break;
-                        }
-                    }
-
-                    int position = -y + channelOffsets[channelId] - static_cast<long>(data(sampleIndex,channelId + 1) * channelFactors[channelId]);
-                    int difference = abs(current.y() - position);
-                    int selectedChannel = channelId;
-                    y -= Yshift;
-
-                    for(int j = startingGroupIndex; j<groupIds.size();++j){
-                        QList<int> channelIds = shownGroupsChannels[groupIds[j]];
-                        int currentNbChannels = channelIds.size();
-                        int i = 0;
-                        if (j == startingGroupIndex) i = channelIndex;
-                        for(; i < currentNbChannels; ++i){
-                            channelId = channelIds[i];
-                            position = -y + channelOffsets[channelId] - static_cast<long>(data(sampleIndex,channelId + 1) * channelFactors[channelId]);
-
-                            if (abs(current.y() - position) < difference && !skippedChannels.contains(channelId)){
-                                difference = abs(current.y() - position);
-                                selectedChannel = channelId;
-                            }
-                            y -= Yshift;
-                        }
-                        y -= YGroupSpace;
-                    }
-
-                    if (mode == SELECT){
-                        //If there is not modificator key and mSelectedChannels does not already contain the selectedChannel
-                        //deselect all the channels (clear mSelectedChannels) otherwise remove selectedChannel from the list.
-                        //if the channel is skipped,there is a special treatment: deselect all the channels (clear mSelectedChannels)
-                        if (!(event->modifiers() & Qt::ShiftModifier) && !(event->modifiers() & Qt::ControlModifier)){
-                            //if the channel is skipped, deselect all the channels (clear mSelectedChannels)
-                            if (!mSelectedChannels.contains(selectedChannel) || skippedChannels.contains(selectedChannel)){
-                                alreadySelected = false;
-                                QList<int>::iterator it;
-                                for(it = mSelectedChannels.begin();it != mSelectedChannels.end();++it)
-                                    deselectedChannels.append(*it);
-                                mSelectedChannels.clear();
-                            }
-                            else{
-                                mSelectedChannels.removeAll(selectedChannel);
-                                if (!mSelectedChannels.isEmpty()) alreadySelected = true;
-                            }
-                        }
-
-                        if (event->modifiers() & Qt::ControlModifier){
-                            //if the channel is skipped, do not do anything
-                            if (!skippedChannels.contains(selectedChannel)){
-                                if (mSelectedChannels.contains(selectedChannel)){
-                                    mSelectedChannels.removeAll(selectedChannel);
-                                    deselectedChannels.append(selectedChannel);
-                                }
-                                else{
-                                    mSelectedChannels.append(selectedChannel);
-                                    currentlySelectedChannels.append(selectedChannel);
-                                }
-                            }
-                        }
-                        else if ((event->modifiers() & Qt::ShiftModifier) && mSelectedChannels.size() != 0){
-                            //take all the channels of groupId with a label ordinate in the range defined by the label ordinate of the last
-                            //selected channel and the one of the currently selected channel.
-                            if (x < 0){
-                                int previousChannelId = mSelectedChannels[mSelectedChannels.size() - 1];
-                                int previousOrdinate = channelsStartingOrdinate[previousChannelId];
-                                int currentOrdinate = channelsStartingOrdinate[selectedChannel];
-                                int min = previousOrdinate;
-                                int max = currentOrdinate;
-                                if (currentOrdinate < previousOrdinate){
-                                    min = currentOrdinate;
-                                    max = previousOrdinate;
-                                }
-                                int currentNbChannels = shownChannels.size();
-                                for(int i = 0; i < currentNbChannels; ++i){
-                                    channelId = shownChannels[i];
-                                    int ordinate = channelsStartingOrdinate[channelId];
-                                    if (ordinate>= min && ordinate <= max && !mSelectedChannels.contains(channelId)){
-                                        if (!skippedChannels.contains(selectedChannel)){
-                                            mSelectedChannels.append(channelId);
-                                            currentlySelectedChannels.append(channelId);
-                                        }
-                                    }
-                                }
-                            }
-                            else{
-                                //TO DO
-                            }
-                        }
-                        else{
-                            if (!skippedChannels.contains(selectedChannel)){
-                                mSelectedChannels.append(selectedChannel);
-                                currentlySelectedChannels.append(selectedChannel);
-                            }
-                        }
-                        emit channelsSelected(mSelectedChannels);
-                    }//end of mode == SELECT
-                    // S5: MEASURE press is a Gesture (trace.measurePress).  This tail is now dead
-                    // (only SELECT reaches the block); kept until the SELECT port removes it.
-                    else
-                        startingIndex = x;
-                }//nearest-channel pick (single column)
-            }//single column
-            if (mode == SELECT){
-                drawTraces(currentlySelectedChannels,true);
-                drawTraces(deselectedChannels,false);
+        //If there is not modificator key and mSelectedChannels does not already contain the selectedChannel
+        //deselect all the channels (clear mSelectedChannels) otherwise remove selectedChannel from the list.
+        if (!(modifiers & Qt::ShiftModifier) && !(modifiers & Qt::ControlModifier)){
+            if (!mSelectedChannels.contains(selectedChannel) || skippedChannels.contains(selectedChannel)){
+                alreadySelected = false;
+                QList<int>::iterator it;
+                for(it = mSelectedChannels.begin();it != mSelectedChannels.end();++it)
+                    deselectedChannels.append(*it);
+                mSelectedChannels.clear();
             }
-            // S5: the SELECT_EVENT and DRAW_LINE postambles moved into their press Gesture bodies
-            // (beginSelectEventPress / beginDrawLinePress); those modes no longer reach here.
-            previousDragOrdinate = 0;
-        }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE
-    }//Qt::LeftButton
+            else{
+                mSelectedChannels.removeAll(selectedChannel);
+                if (!mSelectedChannels.isEmpty())
+                    alreadySelected = true;
+            }
+        }
+
+        //Check the modificator keys
+        if (modifiers & Qt::ControlModifier){
+            if (!skippedChannels.contains(selectedChannel)){
+                if (mSelectedChannels.contains(selectedChannel)){
+                    mSelectedChannels.removeAll(selectedChannel);
+                    deselectedChannels.append(selectedChannel);
+                } else {
+                    mSelectedChannels.append(selectedChannel);
+                    currentlySelectedChannels.append(selectedChannel);
+                }
+            }
+        }
+        else if ((modifiers & Qt::ShiftModifier) && !mSelectedChannels.isEmpty()){
+            //take all the not-skipped channels of groupId with a label ordinate in the range
+            //between the last selected channel's and the currently selected channel's.
+            if (g.labelSelected){
+                int previousChannelId = mSelectedChannels[mSelectedChannels.size() - 1];
+                //No cross-group selection: if the previous channel is not in this group, only select the current.
+                if (!channelIds.contains(previousChannelId)){
+                    if (!skippedChannels.contains(selectedChannel)){
+                        mSelectedChannels.append(selectedChannel);
+                        currentlySelectedChannels.append(selectedChannel);
+                    }
+                } else {
+                    int previousOrdinate = channelsStartingOrdinate[previousChannelId];
+                    int currentOrdinate = channelsStartingOrdinate[selectedChannel];
+                    int min = previousOrdinate;
+                    int max = currentOrdinate;
+                    if (currentOrdinate < previousOrdinate){
+                        min = currentOrdinate;
+                        max = previousOrdinate;
+                    }
+
+                    for(int i = 0; i < currentNbChannels; ++i){
+                        channelId = channelIds[i];
+                        int ordinate = channelsStartingOrdinate[channelId];
+                        if (ordinate>= min && ordinate <= max && !mSelectedChannels.contains(channelId)){
+                            if (!skippedChannels.contains(selectedChannel)){
+                                mSelectedChannels.append(channelId);
+                                currentlySelectedChannels.append(channelId);
+                            }
+                        }
+                    }
+                }
+            } else {
+                //TO DO
+            }
+        }
+        else{
+            if (!skippedChannels.contains(selectedChannel)){
+                mSelectedChannels.append(selectedChannel);
+                currentlySelectedChannels.append(selectedChannel);
+            }
+        }
+        emit channelsSelected(mSelectedChannels);
+    }
+    else{//single column
+        int channelId = 0;
+
+        if (!(modifiers & Qt::ShiftModifier) && !(modifiers & Qt::ControlModifier)){
+            if (!mSelectedChannels.contains(selectedChannel) || skippedChannels.contains(selectedChannel)){
+                alreadySelected = false;
+                QList<int>::iterator it;
+                for(it = mSelectedChannels.begin();it != mSelectedChannels.end();++it)
+                    deselectedChannels.append(*it);
+                mSelectedChannels.clear();
+            }
+            else{
+                mSelectedChannels.removeAll(selectedChannel);
+                if (!mSelectedChannels.isEmpty()) alreadySelected = true;
+            }
+        }
+
+        if (modifiers & Qt::ControlModifier){
+            if (!skippedChannels.contains(selectedChannel)){
+                if (mSelectedChannels.contains(selectedChannel)){
+                    mSelectedChannels.removeAll(selectedChannel);
+                    deselectedChannels.append(selectedChannel);
+                }
+                else{
+                    mSelectedChannels.append(selectedChannel);
+                    currentlySelectedChannels.append(selectedChannel);
+                }
+            }
+        }
+        else if ((modifiers & Qt::ShiftModifier) && mSelectedChannels.size() != 0){
+            if (g.x < 0){
+                int previousChannelId = mSelectedChannels[mSelectedChannels.size() - 1];
+                int previousOrdinate = channelsStartingOrdinate[previousChannelId];
+                int currentOrdinate = channelsStartingOrdinate[selectedChannel];
+                int min = previousOrdinate;
+                int max = currentOrdinate;
+                if (currentOrdinate < previousOrdinate){
+                    min = currentOrdinate;
+                    max = previousOrdinate;
+                }
+                int currentNbChannels = shownChannels.size();
+                for(int i = 0; i < currentNbChannels; ++i){
+                    channelId = shownChannels[i];
+                    int ordinate = channelsStartingOrdinate[channelId];
+                    if (ordinate>= min && ordinate <= max && !mSelectedChannels.contains(channelId)){
+                        if (!skippedChannels.contains(selectedChannel)){
+                            mSelectedChannels.append(channelId);
+                            currentlySelectedChannels.append(channelId);
+                        }
+                    }
+                }
+            }
+            else{
+                //TO DO
+            }
+        }
+        else{
+            if (!skippedChannels.contains(selectedChannel)){
+                mSelectedChannels.append(selectedChannel);
+                currentlySelectedChannels.append(selectedChannel);
+            }
+        }
+        emit channelsSelected(mSelectedChannels);
+    }
+    drawTraces(currentlySelectedChannels,true);
+    drawTraces(deselectedChannels,false);
+    previousDragOrdinate = 0;
+}
+
+void TraceView::mousePressEvent(QMouseEvent* event){
+    // All TraceView press interactions are now registry Gesture commands (neuroscope input
+    // overhaul S5): the dispatchInput() seam resolves whichever mode's press is active and
+    // returns.  Every mode is ported, so there is no inline fall-through body left — the S2
+    // seam is the whole handler.  (The drag/release bodies stay in mouseMoveEvent /
+    // mouseReleaseEvent; each reads the state its mode's press Gesture set.)
+    if(dispatchInput(event)) return;
 }
 
 

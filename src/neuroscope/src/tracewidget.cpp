@@ -261,6 +261,30 @@ void registerTraceInputOnce()
         };
         reg.addCommand(me);
     }
+
+    // S5 mode 7/7 — the SELECT (channel-selection) press, the last mode.  A Left press in SELECT
+    // mode picks the nearest channel and updates the selection; Shift/Ctrl modify the selection,
+    // so invoke() passes the event's modifiers.  No rubber band.  AtLeast+NoModifier-on-Left so it
+    // fires for plain and modified Left presses alike; resolves only in SELECT via the
+    // mode.selectChannels scope.
+    {
+        input::Command sc;
+        sc.id       = QStringLiteral("trace.selectChannelsPress");
+        sc.scopeId  = QStringLiteral("mode.selectChannels");
+        sc.label    = TraceView::tr("Select channels");
+        sc.category = TraceView::tr("Select channels");
+        sc.kind     = input::Kind::Gesture;
+        sc.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                              input::Phase::Press, input::ModMatch::AtLeast);
+        sc.invoke   = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            if(v && c.event){
+                auto* me = static_cast<QMouseEvent*>(c.event);
+                v->beginSelectChannelsPress(me->position().toPoint(), me->modifiers());
+            }
+        };
+        reg.addCommand(sc);
+    }
 }
 }  // namespace
 

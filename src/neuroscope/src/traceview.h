@@ -242,6 +242,11 @@ public:
      * sample for the voltage/time measurement; the drag and the measurement commit stay in the
      * mouse*Event handlers.  Invoked by the trace.measurePress Gesture on the mode.measure scope. */
     void beginMeasurePress(const QPoint& viewportPos);
+    /** The SELECT (channel-selection) press body (mode 7/7, the last): pick the nearest channel
+     * and update the selection — plain replaces, Ctrl toggles, Shift extends the range.  Needs the
+     * press modifiers.  The channel drag and release stay in the mouse*Event handlers.  Invoked by
+     * the trace.selectChannelsPress Gesture on the mode.selectChannels scope. */
+    void beginSelectChannelsPress(const QPoint& viewportPos, Qt::KeyboardModifiers modifiers);
 
     /**Selects the channels .
   *@param selectedIds ids of the selected channels.
