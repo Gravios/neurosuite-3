@@ -22,6 +22,9 @@
 #include <QString>
 #include <qfont.h>
 #include <QColor>
+#include <QMap>
+
+#include "input/inputprefsstore.h"   // S6: Configuration is the app's InputPrefsStore for PrefInput
 
 /**
   * This is the one and only configuration object.
@@ -30,7 +33,7 @@
   *@author Lynn Hazan
 */
 
-class Configuration {
+class Configuration : public input::InputPrefsStore {
 public:
     /** Reads the configuration data from the application config file.
     * If a property does not already exist in the config file it will be
@@ -38,6 +41,15 @@ public:
     void read();
     /** Writes the configuration data to the application config file.*/
     void write() const;
+
+    // ── Input bindings (neuroscope input overhaul S6) ─────────────────────────────────────
+    // The InputPrefsStore seam the shared PrefInput page reads/writes: the per-command binding
+    // overrides and the user's saved keymap layouts, both as plain string maps (read()/write()
+    // persist them under the "Input" QSettings group).
+    const QMap<QString,QString>& getInputBindingOverrides() const override {return inputBindingOverrides;}
+    void setInputBindingOverrides(const QMap<QString,QString>& m) override {inputBindingOverrides = m;}
+    const QMap<QString,QString>& getInputProfiles() const override {return inputProfiles;}
+    void setInputProfiles(const QMap<QString,QString>& m) override {inputProfiles = m;}
 
     /**Sets the screen gain in milivolts by centimeters used to display the field potentiels.
     */
@@ -296,6 +308,9 @@ public:
     void setUseWhiteColorDuringPrinting(bool b) { useWhiteColorDuringPrinting = b; }
 
 private:
+    /**S6 input bindings: commandId -> Chord::toString() override, and profileName -> serialized keymap.*/
+    QMap<QString,QString> inputBindingOverrides;
+    QMap<QString,QString> inputProfiles;
     /**Screen gain in milivolts by centimeters used to display the field potentiels.*/
     float screenGain;
     /**Voltage range of the acquisition system in volts.*/

@@ -281,6 +281,10 @@ protected:
     /** Report shortcut collisions once at startup (from input::registry().conflicts()),
      *  rather than leaving a shadowed menu item to silently do nothing.  Diagnostic only. */
     void auditKeyBindings() const;
+    /** Push the registry's current (overridden) chords onto the mirrored QActions so the menus
+     *  show the user's rebindings (input-overhaul S6).  Only touches actions actually rebound;
+     *  the rest keep the shipped shortcut the menu set.  Called at startup and after Apply. */
+    void applyInputOverridesToActions();
     /** sets up the statusbar for the main window by initialzing a statuslabel.
      */
     void initStatusBar();
@@ -720,6 +724,9 @@ private:
     QAction* showHideLabels;
     QAction* handbook;      // Help ▸ Handbook (F1) — promoted to a member in input-overhaul S1 so registerInputBindings() can mirror it
     QAction* calibrationBar;
+    /** input-overhaul S6: commandId -> the mirrored QAction, so applyInputOverridesToActions()
+     *  can push a rebound chord onto the live menu/toolbar shortcut (populated in registerActionCommand). */
+    QHash<QString,QAction*> mActionCommands;
     QMenu* addEventPopup;
     QAction* addEventToolBarAction;
     QAction* positionViewToggle;

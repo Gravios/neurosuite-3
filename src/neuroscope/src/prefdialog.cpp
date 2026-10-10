@@ -34,6 +34,7 @@
 #include "configuration.h"          // class Configuration and Config()
 #include "prefgeneral.h"            // class PrefGeneral
 #include "prefdefaults.h" // class prefDefaults
+#include "input/prefinput.h"        // S6: the shared Input-bindings page (libklustersshared)
 #include "positionproperties.h"
 #include "clusterproperties.h"
 #include "qhelpviewer.h"
@@ -119,6 +120,16 @@ PrefDialog::PrefDialog(QWidget *parent)
     // so populating the combo in updateDialog() will not light up Apply.
     connect(themeCombo, &QComboBox::activated, this, &PrefDialog::enableApply);
 
+    //adding page "Input" (neuroscope input overhaul S6): the shared registry-driven page.  It
+    //builds its rows from input::registry() and persists through neuroscope's Configuration (its
+    //InputPrefsStore).  A binding edit lights Apply via the page's changed() signal.
+    prefInput = new PrefInput(configuration(), this);
+    QPageWidgetItem* inputItem = new QPageWidgetItem(prefInput, tr("Input"));
+    inputItem->setHeader(tr("Keyboard & Mouse Bindings"));
+    inputItem->setIcon(QIcon(":/shared-icons/folder-open"));
+    addPage(inputItem);
+    connect(prefInput, &PrefInput::changed, this, &PrefDialog::enableApply);
+
     // connect interactive widgets and selfmade signals to the enableApply slotDefault
     connect(prefGeneral->headerCheckBox, &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefGeneral->backgroundColorButton,SIGNAL(colorChanged(QColor)),this,SLOT(enableApply()));
@@ -192,6 +203,8 @@ void PrefDialog::updateDialog() {
         themeCombo->setCurrentIndex(idx < 0 ? 0 : idx);
     }
 
+    prefInput->updateFromRegistry();   // S6: load the effective chords into the Input page's editors
+
     enableButtonApply(false);   // disable apply button
     applyEnable = false;
 }
@@ -230,6 +243,8 @@ void PrefDialog::updateConfiguration(){
         neurosuite::applyTheme(t);
     }
 
+    prefInput->commitToRegistry();   // S6: editors -> registry overrides + Configuration (profiles too)
+
     enableButtonApply(false);   // disable apply button
     applyEnable = false;
 }
@@ -262,6 +277,8 @@ void PrefDialog::slotDefault() {
         positionProperties->setRotation(configuration().getRotationDefault());
         positionProperties->setFlip(configuration().getFlipDefault());
         positionProperties->setPositionsBackground(configuration().getPositionsBackgroundDefault());
+
+        prefInput->restoreDefaults();   // S6: every binding editor -> its command's shipped default
 
         enableApply();   // enable apply button
     }

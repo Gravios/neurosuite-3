@@ -52,7 +52,7 @@ set(_srcs
     prefgenerallayout.cpp
     propertieslayout.cpp)
 
-qt_add_resources(_srcs neuroscope-icons.qrc)
+qt_add_resources(_srcs neuroscope-icons.qrc neuroscope-keymaps.qrc)   # S6: bundled :/keymaps presets
 
 # Spectral DSP core (Qt-free static library; used by the spectral view).
 add_subdirectory(spectral)

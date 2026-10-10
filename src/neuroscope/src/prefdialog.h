@@ -25,6 +25,7 @@
 
 class PrefGeneral;
 class PrefDefaults;
+class PrefInput;              // S6: the shared Input-bindings page (libklustersshared)
 class PositionProperties;
 class ClusterProperties;
 class QComboBox;
@@ -66,6 +67,7 @@ Q_SIGNALS:
 private:
     PrefGeneral* prefGeneral;
     PrefDefaults* prefDefaults;
+    PrefInput* prefInput;        // S6: the shared registry-driven Input page
     PositionProperties* positionProperties;
     ClusterProperties* clusterProperties;
     QComboBox* themeCombo;

@@ -1,0 +1,16 @@
+# NeuroScope keymap profile  (neuroscope input overhaul S6: "Keymap profiles")
+#
+# "Default" is the shipped keyboard + mouse layout.  It carries NO binding lines, so
+# applying it clears every user override and restores NeuroScope's built-in bindings.
+#
+# This file is also the authoring template for a new bundled layout:
+#   1. In NeuroScope, open Preferences > Input and set the keys / mouse buttons you want.
+#   2. Use "Save As ..." to capture them as a named profile, then export it (or copy the
+#      profile out of your config) to a "<Name>.keymap" file in THIS form: a "name =" line,
+#      an optional "description =" line, then one "<commandId> = <chord>" line per rebound
+#      command (only the commands you changed — everything else follows the default).
+#   3. Drop "<Name>.keymap" into src/neuroscope/src/keymaps/ and add a matching
+#      <file>keymaps/<Name>.keymap</file> line to neuroscope-keymaps.qrc, then rebuild.
+# See claude/neuroscope-input-plan.md for the full input model and the command ids.
+name = Default
+description = NeuroScope's built-in keyboard & mouse bindings

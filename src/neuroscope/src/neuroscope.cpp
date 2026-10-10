@@ -767,6 +767,7 @@ void NeuroscopeApp::registerActionCommand(const QString& id, const QString& cate
     c.enabled  = [action](const input::Ctx&){ return action->isEnabled(); };
     c.invoke   = [action](const input::Ctx&){ if(action->isEnabled()) action->trigger(); };
     input::registry().addCommand(c);
+    mActionCommands.insert(id, action);   // S6: so applyInputOverridesToActions() can rebind the live shortcut
 }
 
 void NeuroscopeApp::registerInputBindings()
@@ -843,6 +844,27 @@ void NeuroscopeApp::registerInputBindings()
     // Spectral — the window-scoped "u" commit key, retired from a standalone QShortcut to a
     // QAction in S3b (created in initItemPanel(), which runs before this).
     registerActionCommand(QStringLiteral("spectral.commit"), tr("View"), mSpectralCommit);
+
+    // S6: apply the persisted override diffs (Configuration read them from QSettings at startup).
+    // Only ids we actually registered and that parse to a valid chord; then push the overridden
+    // chords onto the live menu/toolbar actions so the UI reflects the user's rebindings.
+    const QMap<QString,QString> ov = configuration().getInputBindingOverrides();
+    for(QMap<QString,QString>::const_iterator it = ov.constBegin(); it != ov.constEnd(); ++it){
+        const input::Chord c = input::Chord::fromString(it.value());
+        if(c.isValid() && reg.command(it.key())) reg.setOverride(it.key(), c);
+    }
+    applyInputOverridesToActions();
+}
+
+void NeuroscopeApp::applyInputOverridesToActions()
+{
+    input::BindingRegistry& reg = input::registry();
+    for(QHash<QString,QAction*>::const_iterator it = mActionCommands.constBegin();
+        it != mActionCommands.constEnd(); ++it){
+        // Only touch actions the user actually rebound; the rest keep the shipped shortcut.
+        if(it.value() && reg.hasOverride(it.key()))
+            it.value()->setShortcut(input::keySequenceFromChord(reg.effectiveChord(it.key())));
+    }
 }
 
 void NeuroscopeApp::auditKeyBindings() const
@@ -882,6 +904,10 @@ void NeuroscopeApp::executePreferencesDlg(){
 
 void NeuroscopeApp::applyPreferences() {
     configuration().write();
+
+    // S6: the Input page committed any rebindings to the registry + Configuration; push the
+    // overridden chords onto the live menu/toolbar shortcuts so they take effect immediately.
+    applyInputOverridesToActions();
 
     if(backgroundColor != configuration().getBackgroundColor()){
         backgroundColor = configuration().getBackgroundColor();
