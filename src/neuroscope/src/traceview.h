@@ -216,6 +216,15 @@ public:
   */
     void setMode(BaseFrame::Mode selectedMode,bool active);
 
+    // ── S5 tool-mode press bodies ─────────────────────────────────────────────────────────
+    // Public because the registry Gesture commands (registered in tracewidget.cpp) invoke them
+    // on the pressed TraceView.  Each begins its mode's press interaction; the drag/release
+    // bodies stay in the mouse*Event handlers.  See claude/neuroscope-input-plan.md (S5).
+    /** The SELECT_TIME press body (mode 2/7): begin the full-height selection rubber band and
+     * record the drag's starting abscissa (+ the lastClickOrdinate / previousDragOrdinate press
+     * resets).  Invoked by the trace.selectTimePress Gesture on the mode.selectTime scope. */
+    void beginSelectTimePress(const QPoint& viewportPos);
+
     /**Selects the channels .
   *@param selectedIds ids of the selected channels.
   */

@@ -154,6 +154,29 @@ void registerTraceInputOnce()
         };
         reg.addCommand(z);
     }
+
+    // S5 mode 2/7 — the SELECT_TIME press.  A Left press (any modifiers) in SELECT_TIME mode
+    // begins a full-height selection band and records the drag's starting abscissa.  Gesture
+    // kind — invoke() only begins it; the drag preview (BaseFrame::mouseMoveEvent) and the
+    // time-range commit (TraceView::mouseReleaseEvent) stay inline (dispatch maps only the
+    // press).  Same AtLeast+NoModifier-on-Left gate the old inline branch used; resolves only
+    // in SELECT_TIME via the mode.selectTime scope.
+    {
+        input::Command st;
+        st.id       = QStringLiteral("trace.selectTimePress");
+        st.scopeId  = QStringLiteral("mode.selectTime");
+        st.label    = TraceView::tr("Begin time-range selection");
+        st.category = TraceView::tr("Select time");
+        st.kind     = input::Kind::Gesture;
+        st.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                              input::Phase::Press, input::ModMatch::AtLeast);
+        st.invoke   = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            if(v && c.event)
+                v->beginSelectTimePress(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(st);
+    }
 }
 }  // namespace
 

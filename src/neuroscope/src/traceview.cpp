@@ -2952,6 +2952,22 @@ TraceView::TraceClickGeometry TraceView::resolveClickGeometry(const QPoint& view
     return g;
 }
 
+void TraceView::beginSelectTimePress(const QPoint& viewportPos){
+    // SELECT_TIME press, split out of the mouse-press monolith (neuroscope input overhaul S5,
+    // mode 2/7).  Faithful to the former inline path for SELECT_TIME: begin the full-height
+    // selection rubber band, record lastClickOrdinate, set the drag's starting abscissa, and
+    // reset the drag ordinate.  (The old branch also ran the nearest-channel hit-test, whose
+    // result SELECT_TIME never used, so it is dropped here.)  The drag preview
+    // (BaseFrame::mouseMoveEvent) and the time-range commit (the SELECT_TIME branch of
+    // TraceView::mouseReleaseEvent, which reads startingIndex) stay inline — dispatch maps only
+    // the press.
+    beginBaseZoom(viewportPos);     // isRubberBandToBeDrawn + wholeHeightRectangle => full-height band
+    const TraceClickGeometry g = resolveClickGeometry(viewportPos);
+    lastClickOrdinate = g.current.y();
+    startingIndex = g.x;
+    previousDragOrdinate = 0;
+}
+
 void TraceView::mousePressEvent(QMouseEvent* event){
     // Input seam (neuroscope input overhaul S2): consult the shared registry before the
     // mode-switched body below.  Inert until the trace press modes are ported (S5) — with
@@ -2960,11 +2976,11 @@ void TraceView::mousePressEvent(QMouseEvent* event){
     if(dispatchInput(event)) return;
     if (event->button() == Qt::LeftButton){
 
-        // S5: ZOOM is now a registry Gesture (trace.zoomRubberBand on the mode.zoom scope),
-        // armed by the dispatchInput() seam above — a ZOOM press is handled there and has
-        // already returned, so it never reaches here.  MEASURE / SELECT_TIME still begin the
-        // base rubber band inline (their presses are ported in later S5 patches).
-        if (mode == MEASURE || mode == SELECT_TIME){
+        // S5: ZOOM and SELECT_TIME are now registry Gestures (trace.zoomRubberBand,
+        // trace.selectTimePress), armed by the dispatchInput() seam above — those presses are
+        // handled there and have already returned, so they never reach here.  MEASURE still
+        // begins the base rubber band inline (ported in a later S5 patch).
+        if (mode == MEASURE){
             //The parent implementation takes care of the zoom.
             BaseFrame::mousePressEvent(event);
         }
@@ -2981,7 +2997,10 @@ void TraceView::mousePressEvent(QMouseEvent* event){
         //    C++ rules (&& binds tighter than ||) but compiler emits
         //    -Wparentheses warnings and the intent was hard to verify
         //    by inspection.  Behaviour unchanged.
-        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
+        // S5: SELECT_TIME dropped from this list — its press is a Gesture (above) that returns
+        // via the seam before reaching here.  The final `else startingIndex = x` tail below is
+        // kept: it still serves ADD_EVENT/DRAW_LINE/SELECT_EVENT when their x-guard fails.
+        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
             // S5: the click-geometry preamble (world point + column/sample it selects) is now
             // resolved once by resolveClickGeometry(); the per-mode bodies below read the shared
             // result.  `current` keeps its old name and lastClickOrdinate (a press side effect)
