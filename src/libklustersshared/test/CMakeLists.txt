@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # test_scrollview — internal scrollview test (not installed)
 # ---------------------------------------------------------------------------
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
 
 add_executable(test_scrollview
     main.cpp listview.cpp mainview.cpp scrollarea.cpp itemgroupview.cpp)

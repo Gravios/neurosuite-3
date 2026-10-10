@@ -133,7 +133,7 @@ if(USE_SYCL)
     endif()
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
 
 # In a monorepo add_subdirectory build the alias target is already present;
 # only call find_package when building klusters standalone.
