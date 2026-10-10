@@ -1,0 +1,5 @@
+# Documentation site toolchain (prototype).
+# Install into a venv:  python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+mkdocs-material>=9.5,<10
+# Content conversion from the DocBook source additionally needs the system tools
+# pandoc, xmllint (libxml2-utils) and iconv — see gen.sh.

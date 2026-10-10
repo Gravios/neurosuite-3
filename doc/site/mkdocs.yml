@@ -1,0 +1,67 @@
+site_name: neurosuite-3 documentation
+site_description: User handbook and developer references for neurosuite-3
+docs_dir: docs
+use_directory_urls: true
+
+# The handbook's own links are verified at generation time (split_rewrite.py
+# hard-fails on a broken anchor), so link checking here is informational. The
+# messages that remain come from the developer docs, which are symlinked in
+# as-is and still carry repo-relative links/anchors (to ARCHITECTURE.md, other
+# src/*/docs files, GitHub-style numbered anchors) — see README.md "Known gaps".
+validation:
+  links:
+    not_found: info
+    anchors: info
+    absolute_links: info
+    unrecognized_links: info
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - toc.follow
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - attr_list          # honour {#id} heading/anchor ids from the converter
+  - md_in_html         # honour the injected <a id="..."> anchors
+  - def_list           # the Settings / Menu-Entries definition lists
+  - admonition         # the "!!! note" callouts converted from DocBook <note>
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - User Handbook:
+      - Introduction: handbook/01-introduction.md
+      - Using NeuroScope: handbook/02-using-neuroscope.md
+      - Settings: handbook/03-settings.md
+      - File Formats: handbook/04-file-formats.md
+      - Menu Entries: handbook/05-menu-entries.md
+      - Credits & License: handbook/06-credits-and-license.md
+      - Installation: handbook/07-installation.md
+  - Developer Guide:
+      - Overview: developer/developer-guide.md
+      - Input system — Klusters: developer/klusters-input-system.md
+      - Input system — NeuroScope: developer/neuroscope-input-system.md
+      - Plugin API: developer/plugin-api.md

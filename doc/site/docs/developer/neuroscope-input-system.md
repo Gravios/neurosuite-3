@@ -1,0 +1,1 @@
+../../../../src/neuroscope/docs/INPUT_SYSTEM.md

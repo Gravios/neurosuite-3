@@ -1,0 +1,1 @@
+../../../../src/klusters/docs/PLUGIN_API.md

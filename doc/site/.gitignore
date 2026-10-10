@@ -1,0 +1,6 @@
+# Generated in-app HTML (regenerate with gen.sh / the CMake target)
+/build/
+# mkdocs build output
+/site/
+# local virtualenv
+/.venv/

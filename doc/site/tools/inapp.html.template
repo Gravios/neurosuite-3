@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>$title$</title>
+<style type="text/css">
+/* QTextBrowser-safe only: HTML4 + a CSS 2.1 subset. No flexbox, grid or JS, so
+   this renders identically in neuroscope's in-app Handbook viewer and a browser. */
+body   { font-family: sans-serif; font-size: 10pt; color: #000; background: #fff; margin: 12px; }
+h1     { font-size: 17pt; color: #223; border-bottom: 2px solid #557; padding-bottom: 3px; }
+h2     { font-size: 14pt; color: #223; border-bottom: 1px solid #aab; padding-bottom: 2px; }
+h3     { font-size: 12pt; color: #224; }
+a      { color: #1a5db5; text-decoration: none; }
+code, pre { font-family: monospace; }
+pre    { background: #f3f3f5; border: 1px solid #ccd; padding: 6px; }
+table  { border-collapse: collapse; }
+td, th { border: 1px solid #bbc; padding: 3px 6px; }
+th     { background: #eef; }
+img    { border: 1px solid #ccd; }
+div.note { background: #fbfbe8; border: 1px solid #ddc; padding: 6px 10px; }
+div.toc  { background: #f6f6fa; border: 1px solid #dde; padding: 6px 14px; }
+</style>
+</head>
+<body>
+<h1>$title$</h1>
+$if(toc)$<div class="toc"><p><b>Contents</b></p>$toc$</div>$endif$
+$body$
+</body>
+</html>
