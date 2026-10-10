@@ -233,6 +233,11 @@ public:
      * the mouse*Event handlers.  Invoked by the trace.drawLinePress Gesture on the mode.drawLine
      * scope. */
     void beginDrawLinePress(const QPoint& viewportPos);
+    /** The SELECT_EVENT press body (mode 5/7): pick the nearest selected event to the click (for
+     * the drag to move) and redraw the previously- and newly-selected events; the drag and the
+     * modified-event commit stay in the mouse*Event handlers.  Invoked by the
+     * trace.selectEventPress Gesture on the mode.selectEvent scope. */
+    void beginSelectEventPress(const QPoint& viewportPos);
 
     /**Selects the channels .
   *@param selectedIds ids of the selected channels.

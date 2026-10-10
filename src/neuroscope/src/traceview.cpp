@@ -3026,6 +3026,66 @@ void TraceView::beginDrawLinePress(const QPoint& viewportPos){
     previousDragOrdinate = 0;
 }
 
+void TraceView::beginSelectEventPress(const QPoint& viewportPos){
+    // SELECT_EVENT press, split out of the mouse-press monolith (neuroscope input overhaul S5,
+    // mode 5/7).  No rubber band.  A click inside the trace area picks the nearest selected event
+    // (so a drag can move it); the drag (SELECT_EVENT branch of mouseMoveEvent) and the
+    // modified-event commit (mouseReleaseEvent) stay inline.  Faithful to the former inline path:
+    // the deselectedEvent snapshot is taken before the pick so the postamble can redraw the old
+    // event deselected and the new one selected; selectedEventPosition's abscissa is per-layout;
+    // the x-guard miss falls through to startingIndex = g.x (shared else tail, its unused
+    // nearest-channel hit-test dropped); lastClickOrdinate / previousDragOrdinate resets kept.
+    const QPair<QString,int> deselectedEvent(selectedEvent.first,selectedEvent.second);
+    int deselectedEventIndex = 0;
+    if (!selectedEventPosition.isEmpty())
+        deselectedEventIndex = selectedEventPosition.at(0);
+
+    const TraceClickGeometry g = resolveClickGeometry(viewportPos);
+    lastClickOrdinate = g.current.y();
+    const int xGuard = multiColumns ? (X0 + g.groupIndex * Xshift) : 0;
+    if (g.x >= xGuard){
+        lastClickAbscissa = g.x;
+        int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
+        QMap<QString, QList<int> >::Iterator iterator;
+        for(iterator = selectedEvents.begin(); iterator != selectedEvents.end(); ++iterator){
+            QList<int> eventList = iterator.value();
+            QString providerName = iterator.key();
+
+            if (eventList.isEmpty() || eventsData[providerName] == 0)
+                continue;
+            Array<dataType>& currentData = static_cast<EventData*>(eventsData[providerName])->getTimes();
+            Array<int>& currentIds = static_cast<EventData*>(eventsData[providerName])->getIds();
+            int nbEvents = currentData.nbOfColumns();
+            for(int i = 1; i <= nbEvents;++i){
+                dataType index = currentData(1,i);
+                int eventId = currentIds(1,i);
+                if (eventList.contains(eventId) && abs(index - g.sampleIndex) <= difference){
+                    difference = abs(index - g.sampleIndex);
+                    selectedEvent.first = providerName;
+                    selectedEvent.second = eventId;
+                    selectedEventPosition.clear();
+                    selectedEventPosition.append(index);
+                    //The abscissa takes into account the abscissa of the current group (multi-column)
+                    if (multiColumns)
+                        selectedEventPosition.append(X0 + g.groupIndex * Xshift + static_cast<int>(0.5 + (static_cast<float>(index) / downSampling)));
+                    else
+                        selectedEventPosition.append(static_cast<int>(0.5 + (static_cast<float>(index) / downSampling)));
+                }
+            }
+        }
+        previousDragAbscissa = 0;
+        startEventDragging = true;
+    } else {
+        startingIndex = g.x;
+    }
+    // SELECT_EVENT postamble (was the shared postamble's `else if (mode == SELECT_EVENT)` block).
+    if (!deselectedEvent.first.isEmpty())
+        drawEvent(deselectedEvent.first,deselectedEvent.second,deselectedEventIndex,false);
+    if (!selectedEvent.first.isEmpty())
+        drawEvent(selectedEvent.first,selectedEvent.second,selectedEventPosition[0],true);
+    previousDragOrdinate = 0;
+}
+
 void TraceView::mousePressEvent(QMouseEvent* event){
     // Input seam (neuroscope input overhaul S2): consult the shared registry before the
     // mode-switched body below.  Inert until the trace press modes are ported (S5) — with
@@ -3045,20 +3105,15 @@ void TraceView::mousePressEvent(QMouseEvent* event){
         QList<int> currentlySelectedChannels;
         QList<int> deselectedChannels;
 
-        QPair<QString,int> deselectedEvent(selectedEvent.first,selectedEvent.second);
-        int deselectedEventIndex = 0;
-        if (!selectedEventPosition.isEmpty())
-            deselectedEventIndex = selectedEventPosition.at(0);
-
         // ── Audit 2026-04-29: parentheses added to make the &&/||
         //    precedence explicit.  Original code parsed correctly under
         //    C++ rules (&& binds tighter than ||) but compiler emits
         //    -Wparentheses warnings and the intent was hard to verify
         //    by inspection.  Behaviour unchanged.
-        // S5: SELECT_TIME, ADD_EVENT and DRAW_LINE dropped from this list — their presses are
-        // Gestures that return via the seam before reaching here.  The final `else startingIndex
-        // = x` tail below is kept: it still serves SELECT_EVENT when its x-guard fails.
-        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_EVENT){
+        // S5: SELECT_TIME, ADD_EVENT, DRAW_LINE and SELECT_EVENT dropped from this list — their
+        // presses are Gestures that return via the seam before reaching here.  Only SELECT and
+        // MEASURE remain (ported next); the nearest-channel pick below now runs unconditionally.
+        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE){
             // S5: the click-geometry preamble (world point + column/sample it selects) is now
             // resolved once by resolveClickGeometry(); the per-mode bodies below read the shared
             // result.  `current` keeps its old name and lastClickOrdinate (a press side effect)
@@ -3074,38 +3129,9 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                 bool labelSelected = g.labelSelected;
                 int x = g.x;
 
-                // S5: DRAW_LINE and ADD_EVENT presses are Gestures handled via the seam.
-                if (mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)){
-                    lastClickAbscissa = x;
-                    int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
-                    QMap<QString, QList<int> >::Iterator iterator;
-                    for(iterator = selectedEvents.begin(); iterator != selectedEvents.end(); ++iterator){
-                        QList<int> eventList = iterator.value();
-                        QString providerName = iterator.key();
-
-                        if (eventList.isEmpty() || eventsData[providerName] == 0)
-                            continue;
-                        Array<dataType>& currentData = static_cast<EventData*>(eventsData[providerName])->getTimes();
-                        Array<int>& currentIds = static_cast<EventData*>(eventsData[providerName])->getIds();
-                        int nbEvents = currentData.nbOfColumns();
-                        for(int i = 1; i <= nbEvents;++i){
-                            dataType index = currentData(1,i);
-                            int eventId = currentIds(1,i);
-                            if (eventList.contains(eventId) && abs(index - sampleIndex) <= difference){
-                                difference = abs(index - sampleIndex);
-                                selectedEvent.first = providerName;
-                                selectedEvent.second = eventId;
-                                selectedEventPosition.clear();
-                                selectedEventPosition.append(index);
-                                //The abscissa takes into account the abscissa of the current group
-                                selectedEventPosition.append(X0 + groupIndex * Xshift + static_cast<int>(0.5 + (static_cast<float>(index) / downSampling)));
-                            }
-                        }
-                    }
-                    previousDragAbscissa = 0;
-                    startEventDragging = true;
-                }//end mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)
-                else{
+                // S5: SELECT_EVENT press is a Gesture (trace.selectEventPress) handled via the
+                // seam; the nearest-channel pick below now runs unconditionally for SELECT/MEASURE.
+                {
                     QList<int> groupIds = shownGroupsChannels.keys();
                     int groupId = groupIds[static_cast<int>(groupIndex)];
                     QList<int> channelIds = shownGroupsChannels[groupId];
@@ -3247,36 +3273,9 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                 int x = g.x;
                 int sampleIndex = g.sampleIndex;
 
-                // S5: DRAW_LINE and ADD_EVENT presses are Gestures handled via the seam.
-                if (mode == SELECT_EVENT && x >= 0){
-                    lastClickAbscissa = x;
-                    int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
-                    QMap<QString, QList<int> >::Iterator iterator;
-                    for(iterator = selectedEvents.begin(); iterator != selectedEvents.end(); ++iterator){
-                        QList<int> eventList = iterator.value();
-                        QString providerName = iterator.key();
-
-                        if (eventList.size() == 0 || eventsData[providerName] == 0) continue;
-                        Array<dataType>& currentData = static_cast<EventData*>(eventsData[providerName])->getTimes();
-                        Array<int>& currentIds = static_cast<EventData*>(eventsData[providerName])->getIds();
-                        int nbEvents = currentData.nbOfColumns();
-                        for(int i = 1; i <= nbEvents;++i){
-                            dataType index = currentData(1,i);
-                            int eventId = currentIds(1,i);
-                            if (eventList.contains(eventId) && abs(index - sampleIndex) <= difference){
-                                difference = abs(index - sampleIndex);
-                                selectedEvent.first = providerName;
-                                selectedEvent.second = eventId;
-                                selectedEventPosition.clear();
-                                selectedEventPosition.append(index);
-                                selectedEventPosition.append(static_cast<int>(0.5 + (static_cast<float>(index) / downSampling)));
-                            }
-                        }
-                    }
-                    previousDragAbscissa = 0;
-                    startEventDragging = true;
-                }
-                else{
+                // S5: SELECT_EVENT press is a Gesture handled via the seam; the nearest-channel
+                // pick below now runs unconditionally for SELECT/MEASURE.
+                {
                     QList<int> groupIds = shownGroupsChannels.keys();
 
                     if (shownGroupsChannels.isEmpty() )
@@ -3410,14 +3409,8 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                 drawTraces(currentlySelectedChannels,true);
                 drawTraces(deselectedChannels,false);
             }
-            else if (mode == SELECT_EVENT){
-                if (!deselectedEvent.first.isEmpty())
-                    drawEvent(deselectedEvent.first,deselectedEvent.second,deselectedEventIndex,false);
-                if (!selectedEvent.first.isEmpty())
-                    drawEvent(selectedEvent.first,selectedEvent.second,selectedEventPosition[0],true);
-            }
-            // S5: the DRAW_LINE postamble (arm the drag on the seeded linePositions) moved into
-            // beginDrawLinePress; DRAW_LINE no longer reaches here.
+            // S5: the SELECT_EVENT and DRAW_LINE postambles moved into their press Gesture bodies
+            // (beginSelectEventPress / beginDrawLinePress); those modes no longer reach here.
             previousDragOrdinate = 0;
         }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE
     }//Qt::LeftButton

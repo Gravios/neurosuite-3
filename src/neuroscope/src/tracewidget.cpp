@@ -219,6 +219,27 @@ void registerTraceInputOnce()
         };
         reg.addCommand(dl);
     }
+
+    // S5 mode 5/7 — the SELECT_EVENT press.  A Left press (any modifiers) in SELECT_EVENT mode
+    // picks the nearest selected event under the click so a drag can move it; invoke() does the
+    // press, the drag/commit stay inline.  No rubber band.  Same AtLeast+NoModifier-on-Left gate;
+    // resolves only in SELECT_EVENT via the mode.selectEvent scope.
+    {
+        input::Command se;
+        se.id       = QStringLiteral("trace.selectEventPress");
+        se.scopeId  = QStringLiteral("mode.selectEvent");
+        se.label    = TraceView::tr("Pick an event");
+        se.category = TraceView::tr("Select event");
+        se.kind     = input::Kind::Gesture;
+        se.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                              input::Phase::Press, input::ModMatch::AtLeast);
+        se.invoke   = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            if(v && c.event)
+                v->beginSelectEventPress(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(se);
+    }
 }
 }  // namespace
 
