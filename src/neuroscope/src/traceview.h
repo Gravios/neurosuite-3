@@ -228,6 +228,11 @@ public:
      * click lands in the trace area (the release creates it).  No rubber band, no drag.  Invoked
      * by the trace.addEventPress Gesture on the mode.addEvent scope. */
     void beginAddEventPress(const QPoint& viewportPos);
+    /** The DRAW_LINE press body (mode 4/7): seed linePositions (one per group in multi-column,
+     * one in single-column) and arm the line drag; the drag preview and release commit stay in
+     * the mouse*Event handlers.  Invoked by the trace.drawLinePress Gesture on the mode.drawLine
+     * scope. */
+    void beginDrawLinePress(const QPoint& viewportPos);
 
     /**Selects the channels .
   *@param selectedIds ids of the selected channels.

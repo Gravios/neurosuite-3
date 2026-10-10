@@ -198,6 +198,27 @@ void registerTraceInputOnce()
         };
         reg.addCommand(ae);
     }
+
+    // S5 mode 4/7 — the DRAW_LINE press.  A Left press (any modifiers) in DRAW_LINE mode seeds the
+    // line positions and arms the drag; invoke() does the press, the drag/commit stay inline.  No
+    // rubber band.  Same AtLeast+NoModifier-on-Left gate; resolves only in DRAW_LINE via the
+    // mode.drawLine scope.
+    {
+        input::Command dl;
+        dl.id       = QStringLiteral("trace.drawLinePress");
+        dl.scopeId  = QStringLiteral("mode.drawLine");
+        dl.label    = TraceView::tr("Begin drawing a line");
+        dl.category = TraceView::tr("Draw line");
+        dl.kind     = input::Kind::Gesture;
+        dl.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                              input::Phase::Press, input::ModMatch::AtLeast);
+        dl.invoke   = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            if(v && c.event)
+                v->beginDrawLinePress(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(dl);
+    }
 }
 }  // namespace
 

@@ -2989,6 +2989,43 @@ void TraceView::beginAddEventPress(const QPoint& viewportPos){
     previousDragOrdinate = 0;
 }
 
+void TraceView::beginDrawLinePress(const QPoint& viewportPos){
+    // DRAW_LINE press, split out of the mouse-press monolith (neuroscope input overhaul S5,
+    // mode 4/7).  No rubber band (setMode => drawRubberBand(false)).  A click inside the trace
+    // area seeds linePositions (one entry per group in multi-column, one in single-column) and
+    // arms the line drag; the drag preview (DRAW_LINE branch of mouseMoveEvent) and the release
+    // commit stay inline, reading linePositions / previousDragAbscissa / lastClickAbscissa /
+    // initialDragLine.  Faithful to the former inline press branch + the DRAW_LINE postamble,
+    // including the x-guard-miss fall-through (startingIndex = g.x, the shared else tail, its
+    // unused nearest-channel hit-test dropped) and the stale-linePositions postamble behaviour
+    // (a margin click leaves linePositions as they were, so the postamble still arms on them).
+    const TraceClickGeometry g = resolveClickGeometry(viewportPos);
+    lastClickOrdinate = g.current.y();
+    const int xGuard = multiColumns ? (X0 + g.groupIndex * Xshift) : 0;
+    if (g.x >= xGuard){
+        linePositions.clear();
+        previousDragAbscissa = 0;
+        lastClickAbscissa = g.x;
+        if (multiColumns){
+            int nbGroups = shownGroupsChannels.count();
+            for(int i = 0; i<nbGroups;++i){
+                linePositions.append(X0 + i * Xshift + static_cast<int>(0.5 + (static_cast<float>(g.sampleIndex) / downSampling)));
+            }
+        } else {
+            linePositions.append(static_cast<int>(0.5 + (static_cast<float>(g.sampleIndex) / downSampling)));
+        }
+    } else {
+        startingIndex = g.x;
+    }
+    // DRAW_LINE postamble (was the shared postamble's `else if (mode == DRAW_LINE)` block).
+    if (!linePositions.isEmpty()) {
+        previousDragAbscissa = lastClickAbscissa;
+        initialDragLine = true;
+        update();
+    }
+    previousDragOrdinate = 0;
+}
+
 void TraceView::mousePressEvent(QMouseEvent* event){
     // Input seam (neuroscope input overhaul S2): consult the shared registry before the
     // mode-switched body below.  Inert until the trace press modes are ported (S5) — with
@@ -3018,10 +3055,10 @@ void TraceView::mousePressEvent(QMouseEvent* event){
         //    C++ rules (&& binds tighter than ||) but compiler emits
         //    -Wparentheses warnings and the intent was hard to verify
         //    by inspection.  Behaviour unchanged.
-        // S5: SELECT_TIME and ADD_EVENT dropped from this list — their presses are Gestures that
-        // return via the seam before reaching here.  The final `else startingIndex = x` tail
-        // below is kept: it still serves DRAW_LINE/SELECT_EVENT when their x-guard fails.
-        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_EVENT || mode == DRAW_LINE){
+        // S5: SELECT_TIME, ADD_EVENT and DRAW_LINE dropped from this list — their presses are
+        // Gestures that return via the seam before reaching here.  The final `else startingIndex
+        // = x` tail below is kept: it still serves SELECT_EVENT when its x-guard fails.
+        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_EVENT){
             // S5: the click-geometry preamble (world point + column/sample it selects) is now
             // resolved once by resolveClickGeometry(); the per-mode bodies below read the shared
             // result.  `current` keeps its old name and lastClickOrdinate (a press side effect)
@@ -3037,17 +3074,8 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                 bool labelSelected = g.labelSelected;
                 int x = g.x;
 
-                if (mode == DRAW_LINE && x >= (X0 + groupIndex * Xshift)){
-                    linePositions.clear();
-                    previousDragAbscissa = 0;
-                    lastClickAbscissa = x;
-                    int nbGroups = shownGroupsChannels.count();
-                    for(int i = 0; i<nbGroups;++i){
-                        linePositions.append(X0 + i * Xshift + static_cast<int>(0.5 + (static_cast<float>(sampleIndex) / downSampling)));
-                    }
-                }
-                // S5: ADD_EVENT press is a Gesture (trace.addEventPress) handled via the seam.
-                else if (mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)){
+                // S5: DRAW_LINE and ADD_EVENT presses are Gestures handled via the seam.
+                if (mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)){
                     lastClickAbscissa = x;
                     int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
                     QMap<QString, QList<int> >::Iterator iterator;
@@ -3219,14 +3247,8 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                 int x = g.x;
                 int sampleIndex = g.sampleIndex;
 
-                if (mode == DRAW_LINE && x >= 0){
-                    linePositions.clear();
-                    previousDragAbscissa = 0;
-                    lastClickAbscissa = x;
-                    linePositions.append(static_cast<int>(0.5 + (static_cast<float>(sampleIndex) / downSampling)));
-                }
-                // S5: ADD_EVENT press is a Gesture (trace.addEventPress) handled via the seam.
-                else if (mode == SELECT_EVENT && x >= 0){
+                // S5: DRAW_LINE and ADD_EVENT presses are Gestures handled via the seam.
+                if (mode == SELECT_EVENT && x >= 0){
                     lastClickAbscissa = x;
                     int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
                     QMap<QString, QList<int> >::Iterator iterator;
@@ -3394,13 +3416,8 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                 if (!selectedEvent.first.isEmpty())
                     drawEvent(selectedEvent.first,selectedEvent.second,selectedEventPosition[0],true);
             }
-            else if (mode == DRAW_LINE){
-                if (!linePositions.isEmpty()) {
-                    previousDragAbscissa = lastClickAbscissa;
-                    initialDragLine = true;
-                    update();
-                }
-            }
+            // S5: the DRAW_LINE postamble (arm the drag on the seeded linePositions) moved into
+            // beginDrawLinePress; DRAW_LINE no longer reaches here.
             previousDragOrdinate = 0;
         }//mode == SELECT && shownChannels.size() != 0 || mode == MEASURE || mode == SELECT_TIME || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE
     }//Qt::LeftButton
