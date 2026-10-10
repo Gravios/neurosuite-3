@@ -43,7 +43,7 @@ three sites:
 
 | Registration site | File | Registers |
 |---|---|---|
-| `NeuroscopeApp::registerInputBindings()` | `neuroscope.cpp` | the **App-layer QAction mirrors** (46 of them, all `external`), then calls `BaseFrame::registerInput(reg)`, then applies the persisted overrides |
+| `NeuroscopeApp::registerInputBindings()` | `neuroscope.cpp` | calls `BaseFrame::registerInput(reg)`, registers the **App-layer QAction mirrors** (46 of them, all `external`), then applies the persisted overrides |
 | `registerTraceInputOnce()` | `tracewidget.cpp` | the `view.trace` scope, the `+` / `-` duration commands, the two `external` scroll mirrors, the **seven `mode.*` ToolMode scopes**, and the **seven trace Gesture commands** |
 | `BaseFrame::registerInput()` | `baseframe.cpp` | the `view.frame` scope and the one `frame.zoomRubberBand` Gesture |
 
@@ -149,10 +149,10 @@ mode). If `view.frame` and the trace `mode.*` scopes both bound `Left` for the
 trace view they would collide. The guard:
 
 ```cpp
-// baseframe.h
-virtual bool BaseFrame::managesOwnPrimaryPress() const { return false; }
-// traceview.h
-bool TraceView::managesOwnPrimaryPress() const override { return true; }
+// baseframe.h  (in class BaseFrame)
+virtual bool managesOwnPrimaryPress() const { return false; }
+// traceview.h  (in class TraceView)
+bool managesOwnPrimaryPress() const override { return true; }
 ```
 
 `view.frame`'s `active()` predicate is `bf && !bf->managesOwnPrimaryPress()`, so
@@ -172,10 +172,10 @@ The shared `PrefInput` page cannot know about `neuroscope::Configuration`. The
 seam is **`input::InputPrefsStore`**, an abstract interface with four accessors:
 
 ```cpp
-virtual QMap<QString,QString> getInputBindingOverrides() const = 0;   // commandId -> chord string
-virtual void                  setInputBindingOverrides(const QMap<QString,QString>&) = 0;
-virtual QMap<QString,QString> getInputProfiles() const = 0;           // saved keymap layouts
-virtual void                  setInputProfiles(const QMap<QString,QString>&) = 0;
+virtual const QMap<QString,QString>& getInputBindingOverrides() const = 0;   // commandId -> chord string
+virtual void                          setInputBindingOverrides(const QMap<QString,QString>&) = 0;
+virtual const QMap<QString,QString>& getInputProfiles() const = 0;           // saved keymap layouts
+virtual void                          setInputProfiles(const QMap<QString,QString>&) = 0;
 ```
 
 `neuroscope::Configuration` (like `klusters::Configuration`) **inherits**
@@ -209,8 +209,9 @@ or scope surfaces with no edit here:
 
 - **Help ▸ Keyboard Shortcuts…** (`showKeyboardShortcuts()`, `neuroscope.cpp`) —
   a read-only cheat-sheet dialog titled *Keyboard Shortcuts*, built by walking
-  the registry grouped by scope then category, each row showing the command's
-  **effective** chord.
+  the registry: split into a **Keyboard** section and a **Mouse** section and,
+  within each, grouped by category (the menu or tool a command belongs to). Each
+  row shows the command's **effective** chord.
 - **Preferences ▸ Input** — the shared `PrefInput`, the editable mirror of the
   same iteration (the keymap-layout bar + one rebind row per command).
 - **The active-tool indicator** — the seven tool `QAction`s are checkable members
