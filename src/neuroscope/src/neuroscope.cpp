@@ -1347,7 +1347,7 @@ void NeuroscopeApp::openDocumentFile(const QString& url)
             filePath = path;
 
             if (!QProcess::startDetached("neuroscope", QStringList()<<url)) {
-                QMessageBox::critical(this, tr("Neuroscope"),tr("neuroscope can be launch"));
+                QMessageBox::critical(this, tr("NeuroScope"),tr("NeuroScope could not be launched."));
             }
             QApplication::restoreOverrideCursor();
         }
@@ -4029,7 +4029,7 @@ void NeuroscopeApp::slotStateChanged(const QString& state)
 
 void NeuroscopeApp::slotAbout()
 {
-    QMessageBox::about(this,tr("Neuroscope"),tr("Viewer for Local Field Potentials, spikes, events and positional data\nCopyright (c) 2004-2007 Lynn Hazan"));
+    QMessageBox::about(this,tr("NeuroScope"),tr("Viewer for Local Field Potentials, spikes, events and positional data\nCopyright (c) 2004-2007 Lynn Hazan"));
 
 }
 
