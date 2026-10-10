@@ -91,6 +91,7 @@ For task-oriented walkthroughs that span multiple programs, see
 | [`.loc.N`](formats/loc.md) | Per-spike source locations |
 | [`.probe`](formats/probe.md) | Probe configuration |
 | [`.evt`](formats/evt.md) | Timestamped event labels (text) |
+| [`.pos`](formats/pos.md) | Video tracking positions (read by NeuroScope) |
 
 ---
 

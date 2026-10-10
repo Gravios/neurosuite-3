@@ -28,7 +28,7 @@ This is the sibling of the cluster/spike document reference, [DOCUMENT_MODEL.md]
 | `.wti(.N)` | text | ASCII, version-tagged | `readWti` · `writeWti` | template index; row *i* ↔ `.wtf` record *i* |
 | `.wtf(.N)` | binary | `int16` | **`readSpk`/`readSpkRecords`** (no dedicated fn) | median template-waveform stack (`.spk` layout) |
 | `.wtl(.N)` | text | ASCII, version-tagged | `readWtl` · `writeWtl` | manual template-lineage forest |
-| `.pos` | text | ASCII x/y | **none — doc-only** | position tracking (handbook only; §6) |
+| `.pos` | text | ASCII, whitespace-separated | NeuroScope `PositionsProvider` (**not** `neurofileio`) | video tracking positions (adjacent) |
 | `.pca(.N)` | binary | float basis | `neurosuite::core::loadPca` (**not** `neurofileio`) | PCA eigenvector basis (adjacent) |
 | `.mti` / `.mtf` | text / binary | reuse `.wti` / `.spk` | `writeWti`/`writeSpk` via klusters (**not** `neurofileio`) | final committed template model (adjacent) |
 
@@ -215,10 +215,11 @@ Then `nRecords` × 60 B records (`ts i64, spikeIdx i32, best_single_unit i32, be
 
 > **`.col` is binary, not YAML.** The authoritative reader parses a **binary** format with a `{'C','O','L',0x01}` magic (`neurofileio.cpp:363-391`); `STANDARDIZATION.md` §3.3 ("32B + 32B params | template table + record table") and — since the 2026-10-10 reconciliation — `col.md` both describe this layout. An earlier `col.md` draft sketched a `collisions:`/`spikes:` YAML document that no in-repo reader consumed; it has been rewritten to the binary layout (§6).
 
-### 4.7 Adjacent: `.pca`, `.mti`/`.mtf`
+### 4.7 Adjacent: `.pca`, `.mti`/`.mtf`, `.pos`
 
 - **`.pca`** (binary eigenvector basis, `pca.md`) is **not** parsed by `neurofileio`; it is read by `neurosuite::core::loadPca` (`klustersdoc_realign.cpp:386`). Its validity/geometry bound is discussed in §6 (the §6.6 item).
 - **`.mti` / `.mtf`** are the curator's *final committed model* files. They **reuse the `.wti` v2 and `.spk` on-disk schemas** (`writeWti`/`writeSpk`) and are written by klusters' `renderLineageToFiles`, not by a dedicated `neurofileio` function (`claude/template-curation-plan.md` §10: "`.mti`/`.mtf` reuse the `.wti` v2 / `.spk` on-disk schema … the distinction is role/lifecycle, not format"). Downstream consumers of the *final* templates should read `.mti`/`.mtf`; the distinction from the auto-generated `.wti`/`.wtf` library is lifecycle, not byte layout. **(unverified)** — no `.mti`/`.mtf` path is in `neurofileio`.
+- **`.pos`** (ASCII video-tracking positions) is **not** a `neurofileio` format; NeuroScope reads it with `PositionsProvider` (`positionsprovider.cpp:48-124`) via File ▸ "Load Position File" (`neuroscopedoc.cpp:2055`). Format spec in [`pos.md`](../../../doc/ndmanager-plugins/formats/pos.md); user-facing description in the handbook §Position File.
 
 ---
 
@@ -245,9 +246,9 @@ fiber-kit is a **separate repository** (`github.com/Gravios/fiber-kit`) and is *
 | 5 | `.spk` sample width | (prior concern: "doc may say 32-bit") | `int16` everywhere | `neurofileio.cpp:282,293-294`; `neurofileio.h:133` | None — no doc claims 32-bit; `spk.md` and §3.3 already say `int16`. |
 | 6 | `.wtfinfo` | — | does not exist (0 hits repo-wide) | n/a | Do not create or document it. |
 | 7 | `.wtl` / `.evt` doc home | — | real `neurofileio` formats with **no `formats/` entry** (`wtl.md`, `evt.md` absent) | `neurofileio.cpp:506-600` (wtl), `:820-851` (evt) | Add `formats/wtl.md` and `formats/evt.md`, or cross-link the header/handbook. |
-| 8 | `.pos` | handbook describes an ASCII x/y position file | **no reader/writer** anywhere (only unrelated GUI `QPointF pos`) | handbook `04-file-formats.md` (position-file section); no code path | Label `.pos` doc-only, or implement a reader if NeuroScope is meant to load it. |
+| 8 | `.pos` | handbook describes an ASCII x/y position file | **matches** — read by NeuroScope's `PositionsProvider` (not `neurofileio`); the handbook is accurate | `positionsprovider.cpp:48-124`, `neuroscopedoc.cpp:2055`; handbook `04-file-formats.md` §Position File | **Not a discrepancy** (the original audit searched only `neurofileio` + the `QPointF pos` GUI symbol). Documented in `formats/pos.md`. |
 
-**Status (reconciled 2026-10-10).** The doc-side fixes above have been applied in the companion patches — §3.3 `.fet`/`.fetD` body corrected to `int64` (item 1); `col.md` rewritten to the binary `COL\x01` layout (item 2); §3.2 rewritten and §6.4 corrected to the two-peak-field, no-±1 reality (item 3); §6.6 marked resolved (item 4); and `formats/wtl.md` + `formats/evt.md` added and indexed (item 7). Items 5–6 needed no change. **Item 8 (`.pos`) is the lone residual** — a missing code path, not a doc error, so it is left as-is. The table above records the pre-fix state as the audit trail.
+**Status (reconciled 2026-10-10).** The doc-side fixes above have been applied in the companion patches — §3.3 `.fet`/`.fetD` body corrected to `int64` (item 1); `col.md` rewritten to the binary `COL\x01` layout (item 2); §3.2 rewritten and §6.4 corrected to the two-peak-field, no-±1 reality (item 3); §6.6 marked resolved (item 4); and `formats/wtl.md` + `formats/evt.md` added and indexed (item 7). Items 5–6 needed no change. **Item 8 was a false flag** — `.pos` *is* read, by NeuroScope's `PositionsProvider` (`positionsprovider.cpp`); the original audit searched only `neurofileio` and the `QPointF pos` GUI symbol and missed it. The handbook is accurate and the format is now documented in `formats/pos.md`. **No residual remains.** The table above records the as-found audit, including that correction.
 
 ---
 
@@ -272,5 +273,5 @@ fiber-kit is a **separate repository** (`github.com/Gravios/fiber-kit`) and is *
 3. **Two peak fields, two bases.** Session `peakSampleIndex`/`peakPositionInWaveform` is 1-based (`0` = missing) and must round-trip unchanged; `.wti peakSample` is a 0-based window index with `-1` = unknown. Do not "fix" one into the other, and do not reintroduce a ±1 at the YAML boundary.
 4. **`growEap`/`initEap` own the 32 B header.** `readEap` seeks exactly `pad[12]` after four `u32`s; a writer that emits a 28 B header (as the original 0558 writer did) silently corrupts every consumer. Keep the 32 B assertion.
 5. **`writeWti` chooses v1/v2 by content, `writeWtl` always writes v2.** Preserve `writeWti`'s "v2 only if some `parent ≥ 0`" rule so clu-keyed libraries stay byte-identical to pre-v2; and remember fiber-kit's `.wtl` reader still expects v1 (§5) — coordinate any `.wtl` change with the separate fiber-kit patch.
-6. **`.pos` is doc-only and `.eeg` is `.lfp`.** Don't cite a `.pos` reader that doesn't exist; `.eeg`/`.lfp`/`.fil` all go through `datSampleCount`/`readDatWindow`, with extension recognition in the apps (`custody.hpp:149-152`, `neuroscope.cpp:1557`), not in `neurofileio`.
+6. **`.pos` is read by NeuroScope, not `neurofileio`; `.eeg` is `.lfp`.** The position file is parsed by NeuroScope's `PositionsProvider` (`positionsprovider.cpp`) — see `formats/pos.md` — so it is adjacent (§4.7), not absent. `.eeg`/`.lfp`/`.fil` all go through `datSampleCount`/`readDatWindow`, with extension recognition in the apps (`custody.hpp:149-152`, `neuroscope.cpp:1557`), not in `neurofileio`.
 7. **`.pca` is not a `neurofileio` format.** Its reader and the (now relative) channel-count sanity bound live in `klustersdoc_realign.cpp`/`core::loadPca`; `neurofileio`'s `.fet` reader intentionally imposes no channel cap.
