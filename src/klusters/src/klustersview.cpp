@@ -16,6 +16,7 @@
  ***************************************************************************/
 
 
+#include <utility>        // std::as_const (replaces qAsConst, deprecated in Qt 6.6)
 #include <QList>
 #include <QPixmap>
 #include <QMouseEvent>
@@ -276,7 +277,7 @@ KlustersView::~KlustersView()
     // child-widget disconnect in the loop below).
     disconnect();
     // Also disconnect every sub-view ViewWidget from all senders.
-    for (ViewWidget* w : qAsConst(viewList))
+    for (ViewWidget* w : std::as_const(viewList))
         if (w) w->disconnect();
 
     // Sever the destroyed() → *DockClosed() connections on every sub-view
@@ -286,7 +287,7 @@ KlustersView::~KlustersView()
     // those touch mainWindow — which is already mid-destruction when the
     // application exits.  The resulting use-after-free corrupts the heap and
     // produces the "corrupted double-linked list" SIGABRT.
-    for (ViewWidget* w : qAsConst(viewList))
+    for (ViewWidget* w : std::as_const(viewList))
         if (w) QObject::disconnect(w, &QObject::destroyed, this, nullptr);
     if (traceWidget)
         QObject::disconnect(traceWidget, &QObject::destroyed, this, nullptr);
@@ -783,7 +784,7 @@ void KlustersView::driftMatrixDockClosed(QObject*){
 }
 
 void KlustersView::updateTemplateMatrixSliderRange(){
-    for(ViewWidget* w : qAsConst(viewList)) {
+    for(ViewWidget* w : std::as_const(viewList)) {
         TemplateMatrixView* tmv = qobject_cast<TemplateMatrixView*>(w);
         if(tmv) { tmv->updateSliderRange(); return; }
     }
@@ -2382,7 +2383,7 @@ void KlustersView::updateTimeFrame(long start,long timeFrameWidth)
 
 void KlustersView::focusClusterView()
 {
-    for (ViewWidget* w : qAsConst(viewList))
+    for (ViewWidget* w : std::as_const(viewList))
         if (qobject_cast<ClusterView*>(w)) {
             w->setFocus(Qt::OtherFocusReason);
             return;
@@ -2391,6 +2392,6 @@ void KlustersView::focusClusterView()
 
 void KlustersView::disconnectAllChildren()
 {
-    for (ViewWidget* w : qAsConst(viewList))
+    for (ViewWidget* w : std::as_const(viewList))
         if (w) w->disconnect();
 }

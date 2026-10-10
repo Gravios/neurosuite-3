@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <utility>          // std::as_const (replaces qAsConst, deprecated in Qt 6.6)
 #include <functional>
 #include <numeric>
 #include <cmath>
@@ -117,7 +118,7 @@ KlustersDoc::~KlustersDoc(){
     // and deleted later by the parent-child hierarchy; if doc signals are
     // still connected when those deletions run, Qt dispatches into a dead
     // object and asserts "class destructor may have already run".
-    for (KlustersView* v : qAsConst(*viewList)) {
+    for (KlustersView* v : std::as_const(*viewList)) {
         if (v) {
             QObject::disconnect(this, nullptr, v, nullptr);
             QObject::disconnect(v,    nullptr, this, nullptr);

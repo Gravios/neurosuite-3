@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <utility>        // std::as_const (replaces qAsConst, deprecated in Qt 6.6)
 #include <QApplication>
 #include <QThread>        // msleep for the synchronous job quiesce
 #include <QMutexLocker>
@@ -411,7 +412,7 @@ void CorrelationView::drawCorrelograms(QPainter& painter,QList<Pair>& pairList){
         std::sort(shownClusters.begin(), shownClusters.end());
     }
 
-    for (const Pair& pair : qAsConst(pairList)) {
+    for (const Pair& pair : std::as_const(pairList)) {
         int cluster1 = pair.first;
         int cluster2 = pair.second;
 
