@@ -818,6 +818,9 @@ The shortcut keys described above will not work if the focus is in one of the te
 <para>
 &neuroscope; provides a set of tools to help you efficiently browse and edit your data. Whichever tool you select, when the cursor is located within the display, the time below the pointer (counted from the beginning of the data) is indicated in the <guilabel>Status Bar</guilabel>.
 </para>
+<para>
+Only one tool is active at a time: choosing a tool replaces the previous one, and the active tool stays highlighted on the toolbar. Each tool can be selected from the <guimenu>Tools</guimenu> menu, from the toolbar, or with its keyboard shortcut: <keycap>Z</keycap> (Zoom), <keycap>C</keycap> (Select Channels), <keycap>V</keycap> (Measure), <keycap>T</keycap> (Select Time), <keycap>E</keycap> (Select Event) and <keycap>L</keycap> (Draw Time Line); Add Event is chosen from its toolbar drop-down. When several displays are open, the active tool is remembered for each display, so the toolbar highlight follows the display you are working in. All of these shortcuts can be listed or changed as described in <link linkend="shortcuts">Keyboard and Mouse Shortcuts</link>.
+</para>
 
 <sect2>
 <title>Zoom</title>
@@ -1325,6 +1328,62 @@ In a typical session, you open a data file, browse the local field potentials, m
 </para>
 </sect1>
 
+<sect1 id="shortcuts">
+<title>Keyboard and Mouse Shortcuts</title>
+<para>
+Every menu command, tool and mouse gesture in &neuroscope; is driven by one central list of bindings. You can see the whole list at any time, and you can change almost any of them to suit your habits.
+</para>
+
+<sect2 id="shortcuts-viewing">
+<title>Viewing the Shortcuts</title>
+<para>
+Select <menuchoice> <guimenu>Help</guimenu> <guimenuitem>Keyboard Shortcuts...</guimenuitem> </menuchoice> to open a read-only list of every command together with the key, mouse button or wheel action currently assigned to it. The commands are grouped by the context in which they apply (the application as a whole, the trace view, and each tool), so a command that only works with a particular tool appears under that tool.
+</para>
+</sect2>
+
+<sect2 id="shortcuts-customizing">
+<title>Customizing the Shortcuts</title>
+<para>
+To change a binding, open <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuroscope</guimenuitem> </menuchoice> and select the <guilabel>Input</guilabel> page. Each command is shown on its own row with its current binding:
+</para>
+<itemizedlist>
+<listitem><para>
+For a <emphasis>keyboard</emphasis> command, click the field and press the new key combination.
+</para></listitem>
+<listitem><para>
+For a <emphasis>mouse</emphasis> command, choose the button (or wheel direction) and any modifier keys from the controls on the row.
+</para></listitem>
+</itemizedlist>
+<para>
+If two commands that apply in the same context are given the same binding, both fields are highlighted so you can resolve the clash. A few bindings belong to a temporary mode and are shown read-only.
+</para>
+<para>
+Each row has a <guibutton>Reset</guibutton> that restores that command's shipped default. To undo all of your changes at once, use <guibutton>Reset all to defaults</guibutton> at the top of the page. Changes take effect when you click <guibutton>Apply</guibutton> or <guibutton>OK</guibutton>, and are remembered across sessions.
+</para>
+</sect2>
+
+<sect2 id="shortcuts-layouts">
+<title>Keymap Layouts</title>
+<para>
+The top of the <guilabel>Input</guilabel> page carries a <guilabel>Keymap layout</guilabel> bar that lets you keep several named sets of bindings and switch between them:
+</para>
+<itemizedlist>
+<listitem><para>
+Pick a layout from the list and click <guibutton>Apply</guibutton> to load it into the rows below.
+</para></listitem>
+<listitem><para>
+<guibutton>Save As...</guibutton> captures your current bindings as a new, named layout.
+</para></listitem>
+<listitem><para>
+<guibutton>Rename</guibutton> and <guibutton>Delete</guibutton> act on your own saved layouts. Built-in layouts are read-only and cannot be renamed or deleted.
+</para></listitem>
+</itemizedlist>
+<para>
+&neuroscope; ships with one built-in layout, <guilabel>Default</guilabel>, which holds the program's original keyboard and mouse bindings. Applying it is a convenient way to return to the shipped configuration (the same effect as <guibutton>Reset all to defaults</guibutton>). As with individual edits, a change of layout is only stored when you click <guibutton>Apply</guibutton> or <guibutton>OK</guibutton>.
+</para>
+</sect2>
+</sect1>
+
 </chapter>
 
 
@@ -1475,6 +1534,13 @@ Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuros
 </listitem>
 </itemizedlist>
 
+</listitem>
+</varlistentry>
+
+<varlistentry id="settings-input">
+<term><guilabel>Input</guilabel></term>
+<listitem>
+<para>In this page, you can view and change the keyboard shortcuts and mouse bindings used throughout &neuroscope;, and keep named <link linkend="shortcuts-layouts">keymap layouts</link>. See <link linkend="shortcuts">Keyboard and Mouse Shortcuts</link> for details.</para>
 </listitem>
 </varlistentry>
 </variablelist>
@@ -2286,6 +2352,13 @@ The session file is where &neuroscope; stores information related to the working
 <guimenuitem>neuroscope Handbook</guimenuitem>
 </menuchoice></term>
 <listitem><para>Opens this user manual in the <guilabel>Help Center</guilabel>.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice>
+<guimenu>Help</guimenu>
+<guimenuitem>Keyboard Shortcuts...</guimenuitem>
+</menuchoice></term>
+<listitem><para>Opens a list of all keyboard shortcuts and mouse bindings and the commands they trigger. See <link linkend="shortcuts">Keyboard and Mouse Shortcuts</link>.</para></listitem>
 </varlistentry>
 <varlistentry>
 <term><menuchoice>
