@@ -56,7 +56,7 @@ amplification factor, and ADC offset.
 
 **Electrode groups** — which channels belong to each anatomical and spike-detection group.
 Each group carries its waveform window length (`nSamples`), peak sample index, and the number
-of PCA features per channel (`nFeatures`). Channels can be colour-coded; those colours
+of PCA features per channel (`nFeatures`). Channels can be color-coded; those colors
 propagate to neuroscope's trace display.
 
 **Probes** — which physical probes are connected, what `.probe` configuration file each uses,
@@ -229,7 +229,7 @@ from the command line — the dispatcher reads `session.ndm.default.pipeline` di
 **Apply Pipeline** only when you want the change to reflect in the Plugins tab and the
 session YAML.
 
-### Runtime behaviour: `ndm_start` reads its own program list
+### Runtime behavior: `ndm_start` reads its own program list
 
 The `ndm_start` bash chooses its source of plugin order in this priority:
 

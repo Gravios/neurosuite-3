@@ -1,7 +1,7 @@
 ## neuroscope — cluster raster / overlay stall fixes (2026-04-20, rev 2)
 
 Three real bugs fixed in the NeuroScope trace-view path that together
-eliminate the "gets stuck a bit" behaviour observed during cluster
+eliminate the "gets stuck a bit" behavior observed during cluster
 overlay and raster display.  An initially-diagnosed fourth bug
 (Bug 1 — synchronous signal re-entry) turned out to not be a real
 issue once Bug 2 was fixed; see below.
@@ -58,7 +58,7 @@ becomes true but providers 2..N are still false from Pass 1.
 scheduled — no reentrant paint.  Only provider N's emit (when
 everyone has status=true) triggers the single repaint.
 
-**Conclusion:** the connections are reverted to direct.  The behaviour
+**Conclusion:** the connections are reverted to direct.  The behavior
 that was *blamed* on re-entrancy (flicker, stale-data paints, stuck
 wait-cursor) was entirely caused by Bug 2's broken readiness logic,
 which made `allProvidersReady()`-style checks silently return true
@@ -126,12 +126,12 @@ call it (trivial change — the member was always a pure getter).
 pan, very occasionally a crash.
 
 **Root cause.**  `ClustersProvider::retrieveData` declared
-`startIndex` / `endIndex` uninitialised, then populated them via an
+`startIndex` / `endIndex` uninitialized, then populated them via an
 `if/else-if` ladder that depended on cached `previousStartTime` /
 `previousEndTime` values.  These cached values have no invariant
 check — a prior crash or a sibling method updating sampling rate
 could leave them inconsistent (e.g. `previousEndTime < previousStartTime`).
-Falling out of the ladder with uninitialised indices, then feeding
+Falling out of the ladder with uninitialized indices, then feeding
 those indices into the dichotomy search, read off the end of the
 `Array<dataType> clusters` which is 1-indexed and not bounds-checked.
 
@@ -144,7 +144,7 @@ condition re-checks.
 
 **Fix.**
 
-  1. Default-initialise `startIndex = 1, endIndex = nbSpikes` at top
+  1. Default-initialize `startIndex = 1, endIndex = nbSpikes` at top
      of `retrieveData` (covers any fall-out-of-ladder case with a
      conservative full-range search).
   2. Post-ladder clamp: `startIndex ∈ [1, nbSpikes]`,
@@ -216,7 +216,7 @@ environment).  Changes were verified for:
 
 Please verify on a real session by opening a recording with 3+ cluster
 groups, enabling the raster, and observing pan responsiveness.  The
-"stuck a bit" behaviour should be gone.
+"stuck a bit" behavior should be gone.
 
 ### Files changed
 

@@ -49,10 +49,10 @@ and therefore need no change.
 
 ## Correctness fixes
 
-### `ConsiderDeletion`: uninitialised `candidateClass`
+### `ConsiderDeletion`: uninitialized `candidateClass`
 
-The original code used `candidateClass` without initialisation, causing undefined
-behaviour on the deletion path. Initialised to `-1` with an early-exit guard
+The original code used `candidateClass` without initialization, causing undefined
+behavior on the deletion path. Initialized to `-1` with an early-exit guard
 before use.
 
 ### `Cholesky` / `TriSolve`: heap allocation in inner loop
@@ -64,7 +64,7 @@ per run.
 
 ---
 
-## C++17 modernisation
+## C++17 modernization
 
 ### Source portability
 
@@ -81,7 +81,7 @@ cleanly under `-std=c++17 -Wall -Wextra`.
 | `operator[]` const overload returned non-const `T&` | Fixed |
 | `Array2` used pointer-to-pointer heap layout | Replaced with single flat allocation (row-major, cache-friendly) |
 | `abort()` on bounds violation | Changed to `std::runtime_error` (catchable) |
-| `SetSize` left allocation uninitialised | Now zero-initialises via `new T[n]()` |
+| `SetSize` left allocation uninitialized | Now zero-initializes via `new T[n]()` |
 
 ### `Error()`, `snprintf`, `[[noreturn]]`
 
@@ -99,16 +99,16 @@ builds from the same file; OpenMP detected automatically via `find_package(OpenM
 
 **Parameter:** `-InitMethod farthest` (default)
 
-Replaces random cluster initialisation. Seeds are chosen periphery-inward:
+Replaces random cluster initialization. Seeds are chosen periphery-inward:
 
-1. Centre 0 is the global centroid of the data.
-2. Each subsequent centre is the data point with the largest minimum Mahalanobis
+1. Center 0 is the global centroid of the data.
+2. Each subsequent center is the data point with the largest minimum Mahalanobis
    distance from the current set.
 
 This places seeds at the natural spatial boundaries between clusters rather than
 allowing multiple seeds to compete for the same dense region. In practice this
 reduces the number of EM iterations required to converge by 60-75% on typical
-tetrode data. The original random initialisation is still available with
+tetrode data. The original random initialization is still available with
 `-InitMethod random`.
 
 ---
@@ -137,7 +137,7 @@ can be separated or merged appropriately.
 Designed for long recordings (hours) where electrode drift causes a unit's
 waveform to shift progressively through PCA space. A single global Gaussian must
 then span the entire drift trajectory, inflating covariance and reducing separation
-from neighbouring units.
+from neighboring units.
 
 ### Phase 0 — temporal partition
 
@@ -169,7 +169,7 @@ d_sym(A, B) = 0.5 * [mahal(mean_A, cov_B) + mahal(mean_B, cov_A)]
 ```
 
 Only immediately adjacent chunk boundaries are evaluated; clusters from
-non-neighbouring chunks are never compared directly. Longer-range connections
+non-neighboring chunks are never compared directly. Longer-range connections
 arise through Union-Find transitivity: A-B and B-C edges imply A and C are in
 the same global component without a direct A-C comparison.
 
@@ -192,7 +192,7 @@ rather than a bloated spherical approximation. In practice this converges in
 
 ## New parameter: `-SaveIntermediates`
 
-**Default: `1`** (original behaviour)
+**Default: `1`** (original behavior)
 
 When `1`, the `.clu` file is written to disk every time the outer cluster-count
 loop finds a new best score — up to `MaxClusters - MinClusters + 1` writes per
@@ -210,7 +210,7 @@ network storage where repeated `open`/`close` round-trips are expensive.
 completely silently and produces no `.klg` log file. All `std::cout` calls that
 previously bypassed the `Screen`/`Log` flags have been routed through `Output()`.
 
-To restore verbose behaviour:
+To restore verbose behavior:
 
 ```bash
 KlustaKwik session 1 -Screen 1 -Log 1 -Verbose 1
@@ -297,7 +297,7 @@ operations — not worth GPU dispatch overhead).
 **Requires:** chunked CEM mode (`-ChunkMinutes > 0`)
 
 After Phase 1 per-chunk EM has assigned stable cluster labels, each spike's
-waveform is realigned to its chunk-cluster mean using normalised circular
+waveform is realigned to its chunk-cluster mean using normalized circular
 cross-correlation across all channels simultaneously. The aligned waveforms
 are written back to the `.spk` file in-place before Phase 2 model matching.
 
@@ -365,7 +365,7 @@ the global best-score tracking during parallel execution.
 | `KK.cpp` | Modified | EM engine: all algorithm changes live here |
 | `KK.h` | Modified | KK class definition; per-instance Cholesky, `suppressBestSave`, `RealignChunkWaveforms` |
 | `KlustaSave.h` | Modified | Removed `pChol`/`pBestChol` (moved to `KK` for thread safety) |
-| `Array.h` | Modified | See C++17 modernisation above |
+| `Array.h` | Modified | See C++17 modernization above |
 | `param.c` / `param.h` | Unchanged | Parameter parsing (original) |
 | `CMakeLists.txt` | New | Replaces `makefile`; CPU/CUDA/HIP/SYCL targets; yaml-cpp wiring |
 | `KK_cuda.cu` | New | CUDA kernels for E/M/C-step |
@@ -377,5 +377,5 @@ the global best-score tracking during parallel execution.
 | `README.md` | New | User-facing documentation |
 | `CHANGES.md` | New | This file |
 | `ReleaseNotes.txt` | Retained | Original v1.5-v1.7 release notes |
-| `../shared/xcorr/` | New | Shared normalised cross-correlation library (OMP/CUDA/HIP/SYCL) |
+| `../shared/xcorr/` | New | Shared normalized cross-correlation library (OMP/CUDA/HIP/SYCL) |
 

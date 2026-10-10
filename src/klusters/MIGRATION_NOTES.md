@@ -107,7 +107,7 @@ Pipeline:
 2. Build per-cluster template — mean (all spikes) or median (up to K
    sampled spikes, fixed RNG seed for reproducible previews).
 3. Optional Hann taper to suppress edge-discontinuity xcorr contributions.
-4. Pairwise normalised xcorr with bounded shift; pairs scoring at or
+4. Pairwise normalized xcorr with bounded shift; pairs scoring at or
    above the user threshold are merge-edge candidates.
 5. Union-find on the score graph → connected components of size ≥ 2 are
    merge groups.

@@ -4,7 +4,7 @@ ndmanager-plugins is a collection of command-line tools that convert
 raw acquisition data into the formats required for spike sorting, and
 then carry those outputs through secondary analyses (drift estimation,
 collision decomposition, spike subtraction, re-extraction, source
-localisation). It consists of C++ processing binaries (some with
+localization). It consists of C++ processing binaries (some with
 optional CUDA acceleration), Python post-sorting analysis modules, and
 Bash pipeline scripts that orchestrate them.
 
@@ -54,7 +54,7 @@ For task-oriented walkthroughs that span multiple programs, see
 | [`ndm_redetectspikes`](commands/ndm_redetectspikes.md) | Second-round detection on cleaned `.dat` |
 | [`process_initeap`](commands/process_initeap.md) | Pre-construct the EAP template-class layer (`.eap.N` / `.tcl.N`) |
 | [`ndm_decomposecollisions`](commands/ndm_decomposecollisions.md) | Collision decomposition (`.col.N`; also fills the `.eap.N` / `.tcl.N` layer) |
-| [`ndm_localise`](commands/ndm_localise.md) | Per-spike source localisation (`.loc.N`) |
+| [`ndm_localise`](commands/ndm_localize.md) | Per-spike source localization (`.loc.N`) |
 | [`ndm_estimatedrift`](commands/ndm_estimatedrift.md) | Spatial probe drift estimation (`.drift`) |
 | [`ndm_applydrift`](commands/ndm_applydrift.md) | Propagate curated drift to sibling shanks |
 
@@ -132,7 +132,7 @@ one physical copy per group whatever token wrote it (resolve it with
 `ndm_resolve_any`, not `ndm_resolve`). `.spk` is classed shared too, but it is
 **domain-carrying**: the stderiv transform is applied at EXTRACTION, so
 `.spk.standard.N` and `.spk.stderiv.N` hold different data. The old `.spkD` /
-`.fetD` / `.pcaD` naming is retired in favour of the dotted form.
+`.fetD` / `.pcaD` naming is retired in favor of the dotted form.
 
 Within a single session, groups can freely mix methods. Every
 downstream tool that reads waveforms or features auto-detects both

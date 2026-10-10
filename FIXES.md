@@ -5,10 +5,10 @@ This drop addresses six issues raised in the last round.
 ## 1. Segfault on undo after dipsplit
 
 **Root cause:** `KlustersDoc::commitClusterCreation` registered the new
-cluster's colour BEFORE calling `prepareUndo`.  `prepareUndo` deep-copies
+cluster's color BEFORE calling `prepareUndo`.  `prepareUndo` deep-copies
 the current `clusterColorList` for the undo snapshot, so both the
 snapshot AND the new "current" list contain the new cluster.  After the
-user undoes the action, the colour list rolls back to a state that
+user undoes the action, the color list rolls back to a state that
 *still* has the new cluster — but `Data::undo` rolls the spike table
 back to a state where that cluster has no spikes.  The palette renders
 an icon for a cluster that doesn't exist in `Data`; clicking it
@@ -39,9 +39,9 @@ view has focus).
 **Implementation:**
 
 - `ItemColors::moveItemToEnd(int itemId)` — `takeAt` + `append` on the
-  internal `itemList`.  Preserves colour, label, isChanged.
+  internal `itemList`.  Preserves color, label, isChanged.
 - `KlustersDoc::moveClusterToEnd(int clusterId)` — calls
-  `prepareUndo()` (no-arg → empty data lists, snapshots colour list)
+  `prepareUndo()` (no-arg → empty data lists, snapshots color list)
   before invoking `moveItemToEnd`.  Refreshes the palette and preserves
   the active view's selection.  Logged to the curation log as
   `REORDER_PALETTE`.

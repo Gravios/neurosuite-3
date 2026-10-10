@@ -49,7 +49,7 @@ When a prior is found, the script prints:
 
 If `kk_resolve_prior.py` is missing, returns no match, or returns a
 hash-mismatch error, the script falls through to its built-in defaults
-exactly as before. **Behaviour with no priors is unchanged.**
+exactly as before. **Behavior with no priors is unchanged.**
 
 The remaining 23 KiloKlustaKwik parameters share resolution with
 [`ndm_klustakwik`](ndm_klustakwik.md) — see that page for the full

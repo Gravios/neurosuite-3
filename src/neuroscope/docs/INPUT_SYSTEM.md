@@ -113,7 +113,7 @@ interaction; the drag preview (`mouseMoveEvent`) and the commit
 reference describes.
 
 Two **pure helpers** feed the gesture bodies (extracted so several modes reuse
-the identical hit-test; each extraction was verified behaviour-preserving by a
+the identical hit-test; each extraction was verified behavior-preserving by a
 normalized token diff against the old inline code):
 
 - `resolveClickGeometry(viewportPos)` → `TraceClickGeometry { current, x, groupIndex, sampleIndex, labelSelected }`

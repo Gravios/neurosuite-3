@@ -146,7 +146,7 @@ threshold doesn't re-fire on existing spikes' flanks.
 When invoked with no positional argument, ndmanager searches the
 current working directory for `*.yaml` / `*.yml` parameter files:
 
-- 0 candidates: open empty GUI (unchanged from legacy behaviour)
+- 0 candidates: open empty GUI (unchanged from legacy behavior)
 - 1 candidate: open it, log the path
 - N candidates: open empty, print the list so the user picks
 
@@ -178,7 +178,7 @@ Shadow-clustering group 1  (32 samples × 8 channels)
 
 Additional change to `../../src/ndmanager/src/probepage.{cpp,h}`.
 
-**Behaviour change in the Probes tab:**
+**Behavior change in the Probes tab:**
 
 Before:
   1. Click `+` → inserts an empty row
@@ -494,7 +494,7 @@ For each group in a session (or a specific one if passed):
 4. **Remap & merge**: rewrite the live `.clu.N` with sub-cluster
    IDs `(unmatched_id + 1) .. (unmatched_id + K)` where K is the
    number of non-noise sub-clusters KlustaKwik found.  Rows that
-   KlustaKwik labelled as noise (cluster 1 in its convention) stay
+   KlustaKwik labeled as noise (cluster 1 in its convention) stay
    tagged with `unmatched_id` so the residual bin is still visible
    in Klusters.
 5. **Backup**: the pre-subcluster `.clu.N` is saved to
@@ -590,7 +590,7 @@ wrong inside a page where arrows are needed for cluster navigation.
 
 The gate now checks specifically for a `QTabBar` ancestor via
 `qobject_cast<QTabBar*>` rather than walking up to the `QTabWidget`
-(which includes tab pages).  Behaviour:
+(which includes tab pages).  Behavior:
 
 - Focus **inside** a tab page + Left/Right → falls through to the
   page's own handler (no tab switch)
@@ -637,7 +637,7 @@ When autoscale is ON:
 
 When autoscale is OFF:
 - Status bar shows `Autoscale: off`
-- View reverts to manual-zoom behaviour; existing bounds persist
+- View reverts to manual-zoom behavior; existing bounds persist
   until the user zooms or changes dimensions
 
 The fit geometry matches `updatedDimensions()`:
@@ -701,7 +701,7 @@ Rebuild `klusters` to pick up.
 
 Brace balance verified on all three files.  Cannot `g++
 -fsyntax-only` offline (needs Qt headers + klusters internals); rely
-on your build.  Behaviour test plan:
+on your build.  Behavior test plan:
 
 1. Open a session, click into ClusterView, press Right arrow →
    cluster palette cycles to next cluster (no tab switch).
@@ -775,7 +775,7 @@ every other preference.
 
 ### Backward compatibility
 
-Existing users pick up the default 5.0, matching rev-9 behaviour
+Existing users pick up the default 5.0, matching rev-9 behavior
 exactly.  No data-file format change; QSettings migrations not
 needed.
 
@@ -788,7 +788,7 @@ needed.
 - Identifier cross-ref: the three new names appear in 3–5 files each,
   matching the expected wiring topology.
 
-Behaviour test (once built):
+Behavior test (once built):
 
 1. Preferences → General → find "Autoscale margin" in the Marker
    size / Selection line width row.  Adjust to e.g. 10.0 % → Apply.

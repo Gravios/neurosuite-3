@@ -130,7 +130,7 @@ sudo mount /data
 ```
 
 `noatime` suppresses access-time writes on every read.  `data=writeback`
-maximises write throughput (use `data=ordered` for stronger power-loss
+maximizes write throughput (use `data=ordered` for stronger power-loss
 guarantees if you later add a UPS).
 
 ### 3.2  `/data` mount options if staying on NTFS temporarily

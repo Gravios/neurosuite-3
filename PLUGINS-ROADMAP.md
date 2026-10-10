@@ -104,7 +104,7 @@ Replicate to other plugins that run per-group in parallel:
 - `process_refeaturize`, `process_refeaturize_stderiv`
 - `process_shadowcluster`
 - `process_subcluster_unmatched` (already in memory entries as built but
-  not group-labelled)
+  not group-labeled)
 
 Each gets a `-g N` CLI option, the wrapper passes `-g $electrodeGroup`,
 the bar shows `[<step>-<N>]`.  Mechanical sweep, ~10 plugins × 5 minutes
@@ -220,7 +220,7 @@ against XML/YAML metadata, channel-count mismatch).  Useful as a
 pre-flight check before long pipelines.  Decision needed: is data
 corruption a real problem in your acquisition flow, or extremely rare?
 
-**`process_concat` modernisation.**
+**`process_concat` modernization.**
 The existing `ndm_concatenate` wraps no current C++ binary; it does
 shell-level `cat` of `.dat` files.  Works but can't validate channel
 ordering or sample rate consistency between inputs.  A C++ binary that
@@ -234,7 +234,7 @@ duplicated across `ndm_pca`, `ndm_pca_stderiv`, `ndm_extractspikes_*`,
 `ndm_refeaturize_*`, `ndm_reextractspikes_*`.  Five+ copies of nearly
 identical code.  A `parallel_per_group` shell function in `ndm_functions`
 that takes a command template would reduce duplication and make
-parallelism behaviour change-able in one place.  Decision needed: worth
+parallelism behavior change-able in one place.  Decision needed: worth
 the refactor, or leave-as-is given it works?
 
 **GPU acceleration of `process_pca`.**
@@ -245,10 +245,10 @@ adds CUDA dependency to the plugins (currently only KiloKlustaKwik depends
 on CUDA), changes deployment story.  Decision needed: is the speedup
 worth the deployment complexity?
 
-**`process_localise.py` → spatial localisation as first-class.**
-Spike localisation (estimating x/y/z spike origin from amplitude
+**`process_localise.py` → spatial localization as first-class.**
+Spike localization (estimating x/y/z spike origin from amplitude
 across channels) is currently Python-only and standalone.  If
-localisation features become part of the clustering feature space (some
+localization features become part of the clustering feature space (some
 modern sorters use spatial position as a feature), this plugin would
 become integral and deserve C++ implementation + integration with the
 PCA path.  Decision needed: research direction first, then engineering.
@@ -265,7 +265,7 @@ worth doing in a consolidated pass:
 1. **Bash strict mode adoption.**  Scripts that `source ndm_functions`
    inherit whatever shell options the user has.  Adding `set -euo pipefail`
    to `ndm_functions` would catch many silent failures.  Risk: may break
-   existing scripts that rely on lenient behaviour.  Audit needed before
+   existing scripts that rely on lenient behavior.  Audit needed before
    adoption.
 
 2. **Quoting consistency.**  Many wrappers don't quote `$variable` uses,
@@ -309,7 +309,7 @@ goes through `ProgressBar`, not stderr.
 
 ### ✅ Modern progressbar across `ndm_pca` / `ndm_pca_stderiv` *(this session)*
 
-Six-iteration progressbar modernisation: `/dev/tty` output channel
+Six-iteration progressbar modernization: `/dev/tty` output channel
 (bypasses shell redirections), minimalist `━`/`─` horizontal-line style,
 green ✓ / red ✗ completion markers, group-numbered labels (`[PCA-7]`),
 `\x1b[2K\r` erase-line redraw prefix to handle parallel-execution text
@@ -344,7 +344,7 @@ clamping uses per-template projection coefficient distributions
 Considered: each parallel `process_pca` group draws its progress bar at a
 fixed line offset using ANSI cursor-position escapes.  Visually elegant
 but ~50 LOC of fragile coordination across processes that don't share
-state.  **Dropped** in favour of single-line `\x1b[2K`-prefixed shared
+state.  **Dropped** in favor of single-line `\x1b[2K`-prefixed shared
 display — matches what apt and brew do, robust across terminal emulators,
 acceptable visual cost.
 

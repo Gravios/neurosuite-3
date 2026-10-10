@@ -12,7 +12,7 @@ re-extracted waveforms after a spike realignment.
 - **`pca.standard.N`** — basis for the raw-domain `fet.standard.N`.
 - **`pca.stderiv.N`** — basis for the stderiv-domain `fet.stderiv.N`.
 
-The old `.pcaD.N` is retired in favour of `.pca.stderiv.N`. Klusters and
+The old `.pcaD.N` is retired in favor of `.pca.stderiv.N`. Klusters and
 `spikerealign` pick the basis whose method matches the loaded feature
 variant, so realigned features are re-projected through the correct one.
 

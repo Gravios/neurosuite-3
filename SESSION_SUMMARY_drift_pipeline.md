@@ -25,7 +25,7 @@ The half-built `shiftprobe_{cuda,hip,sycl}` kernels (currently disabled via `shi
 
 ### 1.2 `ndm_driftcorrect` is `.clu`-blind by design
 
-The correction is purely geometric. Whether a spike was labelled cluster 0 (artifact), cluster 1 (MUA), or assigned to a real unit makes no difference: the recorded waveform is the same physical signal, and so is the corrected waveform.
+The correction is purely geometric. Whether a spike was labeled cluster 0 (artifact), cluster 1 (MUA), or assigned to a real unit makes no difference: the recorded waveform is the same physical signal, and so is the corrected waveform.
 
 This decoupling is what makes the iterative refinement loop work. A shank whose `.clu` contains nothing but 0/1 in iteration N can recover real units in iteration N+1 after refeaturization with the **propagated probe-level drift signal** from a curated sibling shank. Refeaturization doesn't gate on the (provisional) cluster labels.
 

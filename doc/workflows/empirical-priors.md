@@ -175,7 +175,7 @@ full priority order is now:
 If no prior matches (different probe, no curation logs yet for this
 shank), the resolver returns nothing and the script falls through
 to its built-in defaults — exactly as before. **No prior == old
-behaviour preserved.**
+behavior preserved.**
 
 ---
 
@@ -320,7 +320,7 @@ Most likely the prior was built from a session at higher amplitude
 threshold (compact, well-isolated clusters → low d_eff → low merge
 threshold). Building from a lower-threshold curation pass will
 naturally raise `MergeThresh` because residual clusters are more
-diffuse — that's correct behaviour. Override per-session via
+diffuse — that's correct behavior. Override per-session via
 `extraInfos` if you want to clamp it for one run.
 
 **Friendly name didn't apply, got hex hash instead.**

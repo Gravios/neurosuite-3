@@ -1,6 +1,6 @@
 # klusters — Spike Sorting GUI
 
-Klusters is an interactive manual spike-sorting application. It loads feature vectors, cluster assignments, spike waveforms, and session parameters for one electrode group at a time, and lets the researcher inspect, split, merge, and reassign clusters across multiple synchronised views. All editing operations are fully undoable, and a background autosave thread writes crash-recovery copies on a configurable schedule.
+Klusters is an interactive manual spike-sorting application. It loads feature vectors, cluster assignments, spike waveforms, and session parameters for one electrode group at a time, and lets the researcher inspect, split, merge, and reassign clusters across multiple synchronized views. All editing operations are fully undoable, and a background autosave thread writes crash-recovery copies on a configurable schedule.
 
 > **XML support has been removed.** Legacy `.xml` parameter files must be converted with `ndm_xml2yaml` (from ndmanager-plugins) before opening a session in klusters-3.
 
@@ -104,15 +104,15 @@ klusters auto-detects the format by reading the first 4 bytes. Values 48–57 (A
 
 The window is divided into:
 
-- **Left — Cluster palette**: coloured buttons, one per cluster ID. Shows/hides clusters, drives per-cluster colour editing, and optionally shows cluster metadata.
-- **Centre — Display tabs**: one tab per open view. The default opening tab is the **Overview Display** (cluster scatter + waveform side by side).
+- **Left — Cluster palette**: colored buttons, one per cluster ID. Shows/hides clusters, drives per-cluster color editing, and optionally shows cluster metadata.
+- **Center — Display tabs**: one tab per open view. The default opening tab is the **Overview Display** (cluster scatter + waveform side by side).
 - **Top — Toolbars**: Main toolbar (tools), Parameters bar (axis selectors, waveform/correlogram controls), Actions bar (recluster toggle, auto-select features), Cluster bar (next/previous spike).
 
 ---
 
 ## Cluster palette
 
-Each cluster is represented by a coloured icon button. The palette drives everything: clicking buttons selects which clusters appear in the views.
+Each cluster is represented by a colored icon button. The palette drives everything: clicking buttons selects which clusters appear in the views.
 
 ### Selection
 
@@ -128,9 +128,9 @@ Each cluster is represented by a coloured icon button. The palette drives everyt
 
 The `S` key (S-pin) is specifically designed to accumulate a working set without requiring Ctrl+click in the palette. The set of S-pinned clusters is unioned with the current visual selection; all views respond to the combined set.
 
-### Colours
+### Colors
 
-Double-click a cluster button to open a colour picker. Colours are saved to the YAML parameter file under the `units` section on save.
+Double-click a cluster button to open a color picker. Colors are saved to the YAML parameter file under the `units` section on save.
 
 ### Cluster information panel
 
@@ -144,7 +144,7 @@ Double-click a cluster button to open a colour picker. Colours are saved to the 
 | **Quality** | Sorting quality rating (e.g. `1`, `2`, `3`) |
 | **Notes** | Free-form text |
 
-Double-click a cluster button (when the info panel is visible) to edit any field via a dialog. Metadata is persisted in the YAML parameter file's `units` section alongside cluster colours.
+Double-click a cluster button (when the info panel is visible) to edit any field via a dialog. Metadata is persisted in the YAML parameter file's `units` section alongside cluster colors.
 
 ### Focus handling after batch operations
 
@@ -188,7 +188,7 @@ Multiple views can be open simultaneously as tabs. Each view type can be opened 
 | Template Matrix | Displays → New Template Matrix Display | Pairwise waveform cross-correlation matrix |
 | Trace Display | Displays → New Trace Display | Raw signal with spike overlays |
 
-All views are synchronised: selecting a cluster in any view highlights it in all others.
+All views are synchronized: selecting a cluster in any view highlights it in all others.
 
 ### Cluster Display (scatter plot)
 
@@ -212,7 +212,7 @@ Shows spike waveforms for the selected clusters on all channels of the electrode
 |---|---|---|
 | Sample mode (default) | — | Shows the N most-recent spikes per cluster (N set in Parameters bar) |
 | Time Frame mode | `T` | Shows all spikes from a time window set in the Parameters bar (start + duration in seconds) |
-| Overlay | `O` | All clusters drawn in the same colour space on top of each other |
+| Overlay | `O` | All clusters drawn in the same color space on top of each other |
 | Mean ± SD | `M` | Shows the cluster mean waveform with ±1 SD envelope; hides individual spikes |
 
 **Amplitude controls** (Waveforms menu):
@@ -224,12 +224,12 @@ Shows spike waveforms for the selected clusters on all channels of the electrode
 | Increase selected channel amplitudes | `Ctrl+Shift+I` |
 | Decrease selected channel amplitudes | `Ctrl+Shift+D` |
 
-**Scale modes** affect how the y-axis is normalised across channels:
+**Scale modes** affect how the y-axis is normalized across channels:
 
 | Scale | Key | Description |
 |---|---|---|
-| Scale by Maximum | `Shift+M` | Each channel normalised to its global maximum across all displayed clusters |
-| Scale by Asymptote | `Shift+A` | Each channel normalised to its asymptotic noise level (shoulder) |
+| Scale by Maximum | `Shift+M` | Each channel normalized to its global maximum across all displayed clusters |
+| Scale by Asymptote | `Shift+A` | Each channel normalized to its asymptotic noise level (shoulder) |
 | Uniform Scale | `Shift+U` | All channels share the same fixed scale |
 | Shoulder Line | `L` | Toggles a dotted reference line at the shoulder level |
 
@@ -255,9 +255,9 @@ Shows auto-correlograms (diagonal) and cross-correlograms (off-diagonal) for sel
 
 | Scale | Description |
 |---|---|
-| Scale by Maximum | Normalise each correlogram to its own peak |
-| Scale by Asymptote | Normalise to the flat baseline (shoulder) |
-| Uniform Scale (Raw) | No normalisation — raw counts |
+| Scale by Maximum | Normalize each correlogram to its own peak |
+| Scale by Asymptote | Normalize to the flat baseline (shoulder) |
+| Uniform Scale (Raw) | No normalization — raw counts |
 
 Correlograms are computed on a background thread and update asynchronously. `Actions → Update Display` forces a recompute.
 
@@ -278,7 +278,7 @@ Entry (r, c) is the mean posterior probability that a spike from cluster r was a
 
 ### Template Matrix Display
 
-Pairwise waveform similarity matrix for the currently-shown clusters. Each cell (r, c) shows the normalised cross-correlation between the mean waveform of cluster r and the mean waveform of cluster c, summed across all channels of the electrode group.
+Pairwise waveform similarity matrix for the currently-shown clusters. Each cell (r, c) shows the normalized cross-correlation between the mean waveform of cluster r and the mean waveform of cluster c, summed across all channels of the electrode group.
 
 - **High off-diagonal xcorr** (dark cells close to the diagonal value) identifies clusters whose mean waveforms are almost identical — strong merge candidates.
 - **Selection highlighting is asymmetric**: clicking cell (r, c) highlights only that one cell, not the mirror cell (c, r). This lets you trace the direction of a putative merge (for example, when you suspect cluster r is a sub-population of cluster c).
@@ -301,7 +301,7 @@ M(i, j) = gap / (meanVar[i] + gap)      ∈ [0, 1)
   the clusters are hard to tell apart: a **merge candidate**.
 - **Near 1** (blue) — distinct given the noise.
 - The scale is absolute (`[0, 1]`), so distinct pairs saturate near 1
-  instead of stretching the colour map; the diagonal holds each cluster's
+  instead of stretching the color map; the diagonal holds each cluster's
   own waveform variance (drawn separately, hover-only).
 - **Click a cell to select clusters**: a plain click shows the pair
   (row cluster and column cluster) in the scatter/waveform views;
@@ -313,7 +313,7 @@ M(i, j) = gap / (meanVar[i] + gap)      ∈ [0, 1)
 
 ### Trace Display
 
-Shows raw or high-pass filtered signal (`session.dat` or `session.fil`). Spike timestamps from the current electrode group are overlaid as coloured tick marks.
+Shows raw or high-pass filtered signal (`session.dat` or `session.fil`). Spike timestamps from the current electrode group are overlaid as colored tick marks.
 
 - Navigate with the start / duration fields in the Parameters toolbar.
 - **Next Spike** (`Ctrl+Shift+F`) and **Previous Spike** (`Ctrl+Shift+B`) scroll the trace to the next or previous spike of the selected clusters.
@@ -374,12 +374,12 @@ when the test is clear. The pipeline:
 #### Live-preview mode
 
 Pressing `Shift+D` enters a **live-preview overlay**: the algorithm
-runs once, the proposed partition is rendered as coloured discs on
+runs once, the proposed partition is rendered as colored discs on
 top of the active scatter view, and the user decides whether to keep
 the split. Each candidate spike appears as a translucent disc — blue
 for the left-half (will be retained by the source cluster on commit),
 red for the right-half (will become the new cluster). The decision
-boundary is implicit where the two colours meet. A small HUD at the
+boundary is implicit where the two colors meet. A small HUD at the
 top-left of the view shows the per-side spike counts, the best PC,
 the valley depth, and ΔBIC.
 
@@ -399,7 +399,7 @@ new preferences. If the algorithm rejects the cluster (too small, no
 valley, BIC worse, etc.) the status bar shows the reason and no
 overlay appears — there's no boundary to preview.
 
-#### Commit behaviour
+#### Commit behavior
 
 If the user commits, the right-half spikes go to a new cluster ID at
 the tail of the palette and the source (now holding the left-half
@@ -453,7 +453,7 @@ Pipeline:
    *median* across up to K sampled waveforms (Median mode uses a fixed
    RNG seed so previews are reproducible on the same data).
 3. Optional Hann taper on each template before scoring.
-4. Pairwise normalised cross-correlation `score = max_lag |xcorr| /
+4. Pairwise normalized cross-correlation `score = max_lag |xcorr| /
    sqrt(|a|² · |b|²)` with bounded sample shift (0 = auto = nSamp/4
    matching KKE's `WithinChunkTemplateMatch`).
 5. Union-find on score ≥ threshold pairs → connected components of size
@@ -479,7 +479,7 @@ All defaults match KKE flag defaults:
 | Preview before apply | On | (safer default) |
 
 The Median K row is only enabled when the Median algorithm is selected
-(greyed out otherwise so the UI doesn't suggest the value applies in
+(grayed out otherwise so the UI doesn't suggest the value applies in
 Mean mode).
 
 #### Two scope modes
@@ -531,14 +531,14 @@ Spikes that fall outside any basin (on the histogram floor of zero
 density after smoothing, or rejected by the min-basin-size filter)
 are routed into a **residual cluster** that lands at the tail of the
 palette alongside the other new basin-clusters. The source clusters
-are fully dissolved — the same renumber-to-tail behaviour as a
+are fully dissolved — the same renumber-to-tail behavior as a
 recluster (KiloKlustaKwik) action.
 
 Pressing `Shift+W` enters a **live-preview overlay mode**. The selected
 clusters' (X, Y) feature points are extracted once, the kernel runs
 against the active scatter view's current X/Y dimensions, and the
-basin partition is rendered as a translucent coloured overlay
-directly on top of the scatter — one colour per basin, transparent
+basin partition is rendered as a translucent colored overlay
+directly on top of the scatter — one color per basin, transparent
 where no basin claimed a cell. A small HUD at the top-left of the
 view shows the current parameters and the per-basin spike counts.
 
@@ -605,10 +605,10 @@ in-memory ring buffer).
 
 ### Deferred-flush lifecycle
 
-The on-disk log only contains finalised records. While an action is
+The on-disk log only contains finalized records. While an action is
 still undoable, its records live in an in-memory ring buffer of
 capacity equal to the user's max-undo preference (default 50). The
-ring's behaviour:
+ring's behavior:
 
 - **Each user action** appends a tentative entry with
   `status = "good"`. If the buffer overflows, the oldest entry is
@@ -630,9 +630,9 @@ Consequences worth knowing:
 - Undoing past the ring's bottom (i.e. undoing 51+ actions in a row
   with default capacity 50) reverts the data state but cannot
   retroactively re-status the corresponding on-disk records — they
-  were finalised at overflow time.
+  were finalized at overflow time.
 - Manual J / K / X annotation shortcuts no longer exist; the
-  `"good"` / `"bad"` status is inferred from undo behaviour.
+  `"good"` / `"bad"` status is inferred from undo behavior.
 
 ### Top-level record schema
 
@@ -650,7 +650,7 @@ Consequences worth knowing:
 | `feat_var_dims` | Per-PCA-dim within-cluster variance |
 | `feat_var_frobenius`, `feat_var_top3_mean`, `feat_var_mean` | Aggregate variance stats |
 | `l_ratio`, `isolation_dist` | Isolation metrics |
-| `nearest_centroid_dist_norm` | Mahalanobis distance to nearest neighbouring cluster |
+| `nearest_centroid_dist_norm` | Mahalanobis distance to nearest neighboring cluster |
 | `waveform_snr`, `waveform_chan_spread`, `waveform_width_samp` | Waveform morphology |
 | `isi_cv` | Inter-spike interval coefficient of variation |
 
@@ -717,7 +717,7 @@ each parameter to a 0 sentinel that requests auto-tuning from the
 data; the resolved values capture what the kernel actually ran with.
 `num_peaks` (pre-merge peak count) vs. `num_basins` (post-merge)
 distinguishes "watershed found 12 peaks but `min_basin_size` collapsed
-8 into neighbours" from "watershed only found 4 peaks total".
+8 into neighbors" from "watershed only found 4 peaks total".
 
 When the input has too few spikes (< 50) or the watershed finds only
 one basin, the action is silently skipped — no records are written
@@ -780,7 +780,7 @@ When **Auto-select features** is enabled in the Preferences (and the **N feat** 
 3. The **N feat** spinbox sets a ceiling on the number of features passed.
 4. A variance drop-off threshold (5 % of the top feature's variance) trims features that have fallen to noise level — if only 4 of the requested 10 carry meaningful information, only those 4 are passed.
 5. At least one feature is always selected.
-6. The timestamp dimension (last column) is **off by default** — including the normalised timestamp as a clustering feature makes the reclusterer over-fit within-session drift (spikes get separated by *when* they fired rather than by waveform shape). The **time** checkbox next to the **N feat** spinbox lets you include it when you want it; it shares the spinbox's visibility and its state is persisted in the configuration.
+6. The timestamp dimension (last column) is **off by default** — including the normalized timestamp as a clustering feature makes the reclusterer over-fit within-session drift (spikes get separated by *when* they fired rather than by waveform shape). The **time** checkbox next to the **N feat** spinbox lets you include it when you want it; it shares the spinbox's visibility and its state is persisted in the configuration.
 
 When no clusters are selected or auto-select is disabled, klusters falls back to passing all PCA feature dimensions **with** the timestamp (the historical manual default). The **time** checkbox affects only the auto-select path, not this fallback.
 
@@ -854,7 +854,7 @@ detection peak (for example, after a spike-sorter converted template
 lag from milliseconds with slight rounding).
 
 Nudge is a lighter-weight variant of realign: instead of doing
-normalised cross-correlation, it applies a uniform known shift to every
+normalized cross-correlation, it applies a uniform known shift to every
 spike in the cluster, re-extracts the shifted waveform from `.fil`,
 reprojects through the PCA basis (using the same variant-aware logic as
 realign), and writes the update into the `.pending` files. The Apply /

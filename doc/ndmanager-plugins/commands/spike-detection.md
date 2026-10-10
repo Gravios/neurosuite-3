@@ -49,7 +49,7 @@ Four spatial orders are supported:
 | Order | Name | Formula |
 |---|---|---|
 | `0` | SDIFF_NONE | `s[i] = x[i]` (temporal first-difference only) |
-| `1` | SDIFF_FIRST | `s[i] = x[i] − x[i+1]` (nearest-neighbour) |
+| `1` | SDIFF_FIRST | `s[i] = x[i] − x[i+1]` (nearest-neighbor) |
 | `2` | SDIFF_LAPLACIAN | `s[i] = x[i] − 0.5 × (x[i-1] + x[i+1])` (discrete Laplacian) |
 | `3` | SDIFF_ALLPAIRS | `s[i] = n × x[i] − Σⱼ x[j]` (default; no probe-order requirement) |
 

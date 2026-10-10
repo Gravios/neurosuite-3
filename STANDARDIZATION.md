@@ -9,7 +9,7 @@ made.  Read it first before designing or shipping any change.
 
 ## 1. Project map
 
-`neurosuite-3` is a Qt6/C++20 modernisation of the Neurosuite electrophysiology
+`neurosuite-3` is a Qt6/C++20 modernization of the Neurosuite electrophysiology
 toolchain.  The repo contains six tightly-coupled subsystems:
 
 | Subsystem | Path | Role |
@@ -81,7 +81,7 @@ don't introduce regressions.
 - `Data::nextFreeClusterId() = highestClusterId() + 1` is canonical.  Don't
   invent your own gap-finding strategy.
 
-### 2.4 Cluster colours
+### 2.4 Cluster colors
 
 Hue formula: `hue = (clusterId * 7) mod 36) * 10`, `sat = 200`, `val = 255`.
 Don't change this; the visual continuity across sessions depends on it.
@@ -90,7 +90,7 @@ Don't change this; the visual continuity across sessions depends on it.
 
 `KlustersDoc::applyClusterRename(partial, fullOptional)` is the single
 primitive for renumbering operations.  All curation actions
-(dipsplit, watershed, basin labelling, undo/redo) go through it or
+(dipsplit, watershed, basin labeling, undo/redo) go through it or
 its siblings (`prepareReclusteringUndo`, `addNewClustersToView`,
 `emit newClustersAdded(emptiedClusters)`).  **Never pre-mutate
 `clusterInfoMap`** before `prepareUndo` — it pollutes the undo
@@ -198,7 +198,7 @@ Don't off-by-one.
   default `200` is catastrophically large for typical feature dimensionality.
 - `UseFeatures` default is `"all"`; the legacy fixed-length default string
   caused session duration to compute as 0, bypassing chunked CEM entirely.
-- `probabilities` must be initialised to `nullptr` in the constructor to
+- `probabilities` must be initialized to `nullptr` in the constructor to
   avoid spurious delete on garbage pointer at first thread completion.
 - GPU shared memory: query `sharedMemPerBlock` at allocate time; fall back
   to global atomics kernel when shared buffer would overflow.  RTX 5070 Ti
@@ -209,7 +209,7 @@ Don't off-by-one.
 
 ### 3.5 NTFS / fuseblk caveat
 
-`HDF5_USE_FILE_LOCKING=FALSE` must be set **before HDF5 library initialisation**
+`HDF5_USE_FILE_LOCKING=FALSE` must be set **before HDF5 library initialization**
 — before `H5Eset_auto2`, not at `H5Fopen` call.  Reference data path
 `/data` is on a Samsung 9100 PRO 8TB at NTFS/fuseblk; locking will fail
 otherwise.
@@ -269,8 +269,8 @@ Maintain a fresh clone alongside the working copy:
   used for auditing / diff baselines.
 - `/home/claude/release/<topic>/` — working copy, where changes are staged.
 
-When verifying that a change preserves behaviour, diff the working copy's
-file against the fresh clone's, ideally after normalising whitespace and
+When verifying that a change preserves behavior, diff the working copy's
+file against the fresh clone's, ideally after normalizing whitespace and
 the things the change is supposed to alter.
 
 ### 4.4 Tone and density
@@ -333,7 +333,7 @@ Plus: **dead-code analyzer pass** (`scripts/audit/find_dead_and_dupes.py`),
 manually triaged.  Likely false positives: Qt SLOT/SIGNAL string macros,
 function pointer captures, template instantiations.  Likely true positives:
 static helpers, getters added speculatively against schemas that didn't
-materialise.
+materialize.
 
 ---
 
@@ -432,7 +432,7 @@ sources does, and must be build-tested per backend.
 ### 7.1 Analyzer scripts
 
 - `scripts/audit/find_dead_and_dupes.py` — AST-based dead-code and
-  clone analyser.  Tree-sitter-cpp, ~600 LOC.  Set `ROOT` to the
+  clone analyzer.  Tree-sitter-cpp, ~600 LOC.  Set `ROOT` to the
   scope you want.  Outputs to stdout.  Caveats are documented in
   the report header (Qt SLOT/SIGNAL invisibility, template
   instantiation gaps, etc.).
@@ -486,7 +486,7 @@ to match real codebase structure.
   multiple consumers.
 - For plugin additions: read a sibling plugin's `CMakeLists.txt`,
   argument-parsing block, and main flow.  Don't invent a new pattern.
-- For ProgressBar additions: the modernised version (post-audit) is
+- For ProgressBar additions: the modernized version (post-audit) is
   in `src/libklustersshared/src/klustersshared/progressbar.{h,cpp}`.
   Use bare member names, `/dev/tty` output channel, the `setFailed()`
   API for failure marking.
@@ -516,7 +516,7 @@ Before shipping any tarball, verify:
 
 ## 10. End-of-session recap pattern
 
-When wrapping up, summarise:
+When wrapping up, summarize:
 - What shipped (tarball name, file count, replaces previous version if any).
 - What changed (concrete bullets).
 - What was deferred (with reasons).

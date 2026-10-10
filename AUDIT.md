@@ -36,7 +36,7 @@ member names (no `m_` prefix), as established across `src/klusters/`
 where ~30K LOC has zero `m_` usage on actual class members.  The
 parameteryaml family in libklustersshared had been using `m_` —
 inconsistent with the rest of the codebase — and was stripped.  The
-progressbar files (recently rewritten in the modernisation drop) had
+progressbar files (recently rewritten in the modernization drop) had
 also used `m_`; same treatment.
 
 Stripped from 8 files:

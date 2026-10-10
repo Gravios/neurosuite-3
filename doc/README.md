@@ -1,6 +1,6 @@
 # Neurosuite-3 Documentation
 
-A modernised, Qt6-compatible fork of the Neurosuite electrophysiology
+A modernized, Qt6-compatible fork of the Neurosuite electrophysiology
 toolchain. All components compile under **C++20** with Qt 6 on Ubuntu
 24.04, Debian 12, and WSL2. GPU acceleration is available for
 compute-intensive steps via CUDA (NVIDIA), HIP (AMD ROCm), and SYCL
@@ -54,7 +54,7 @@ post-sorting analysis pipeline:
 - **Drift estimation & application** — `ndm_estimatedrift` infers probe
   drift from curated spike sorting; `ndm_applydrift` propagates drift
   to sibling shanks via adaptive chunk boundaries.
-- **Collision decomposition & source localisation** — `ndm_decomposecollisions`
+- **Collision decomposition & source localization** — `ndm_decomposecollisions`
   and `ndm_localise` for post-hoc analysis of multi-unit events and
   spike source positions.
 
@@ -86,7 +86,7 @@ and reassignment.
 
 Integrates with KiloKlustaKwik for in-app automatic reclustering, with
 automatic feature selection (variance-ranked, noise-floor trimmed,
-multi-cluster aware). Interactive spike realignment via normalised
+multi-cluster aware). Interactive spike realignment via normalized
 cross-correlation and per-sample timestamp nudging are also available
 — both use a transactional pending-file model so edits can be
 accepted or rolled back in one atomic step. Variant-aware: resolves every file through the shared method-tagged
@@ -96,7 +96,7 @@ Supports **hierarchical (two-level) sessions** — fibers assembled from an
 over-split atom layer (`.clu` + `.clc` + `.clp`) — a **residual
 separability matrix** view, and a range of **cluster sorting/reordering**
 methods (similarity seriation, feature-space, and waveform
-nearest-neighbour / spectral). See
+nearest-neighbor / spectral). See
 [Hierarchical clustering](klusters/hierarchical-clustering.md) and
 [Cluster sorting and reordering](klusters/cluster-sorting.md).
 
@@ -131,7 +131,7 @@ runs / items), yaml-cpp. CUDA / ROCm / oneAPI optional.
 
 Standalone batch waveform realignment tool. Reads binary
 `.spk/.res/.clu/.fet` files, aligns each spike to the cluster mean
-template via normalised cross-correlation, and writes corrected data
+template via normalized cross-correlation, and writes corrected data
 back in-place. Shares the GPU backend selection with KiloKlustaKwik. The
 same algorithm runs as Phase 1.5 of chunked KiloKlustaKwik sorting and as
 the interactive realignment inside klusters.

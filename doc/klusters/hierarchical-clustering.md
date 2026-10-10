@@ -102,7 +102,7 @@ warns and reports the save as failed.
 Under the hood the child layer is a second `Data` (`childData`) built over
 the **same** `.fet`/`.spk`/parameters as the parent but with the `.clc` as
 its cluster file (following the parent's active `.spk`, including a
-realigned pending file). It has its own colour list (same HSV scheme) and
+realigned pending file). It has its own color list (same HSV scheme) and
 its own scope set. `activeData` switches between the parent
 (`clusteringData`) and the child (`childData`) as focus moves, so the
 existing single-layer editing/undo code works against "the active layer"

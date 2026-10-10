@@ -10,7 +10,7 @@ tool re-reading `.fil` at `.res` offsets) requires:
 .spk[i] peak  ≡  .fil at file-sample .res[i]
 ```
 
-Before this fix, alignspikes wrote new `.spk.N` content centred on the true
+Before this fix, alignspikes wrote new `.spk.N` content centered on the true
 peak but left `.res.N` unchanged (still pointing at the detection
 threshold-crossing). Any tool that subsequently re-extracted from `.fil`
 at the `.res` position would land `shift[i]` samples off, producing
@@ -23,7 +23,7 @@ so the original detection timestamps can be recovered.
 ## Recovery for the existing session
 
 The data already on disk for jg05-20120316 was aligned under the old
-behaviour, so `.res` and `.spk` are out of sync.  To fix:
+behavior, so `.res` and `.spk` are out of sync.  To fix:
 
 ```bash
 # 1. Restore an unaligned baseline.  Use canonical extractspikes output

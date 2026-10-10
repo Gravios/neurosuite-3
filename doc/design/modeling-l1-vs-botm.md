@@ -1,7 +1,7 @@
 # Modeling options for spike removal — a practical comparison
 
 Context: this document compares the current `process_subtractspikes`
-Layer 1/2 modelling against Bayes Optimal Template Matching (BOTM) as
+Layer 1/2 modeling against Bayes Optimal Template Matching (BOTM) as
 described in Proepper 2015 (TU Berlin PhD thesis, §3.4), in light of
 what you actually need from spike subtraction in the neurosuite-3
 pipeline.  It concludes with three concrete, scoped upgrade options
@@ -16,7 +16,7 @@ you can choose between.
 
 ## What the current code does
 
-`process_subtractspikes` has three modelling layers plus the new raw
+`process_subtractspikes` has three modeling layers plus the new raw
 mode:
 
 - **Raw (new in this patch series)** — subtract the `.spk.N` waveform
@@ -38,7 +38,7 @@ mode:
   other spike are excluded from template estimation when enough
   clean spikes remain; falls back to trimmed-mean otherwise.
 
-- **Neighbour cleaning at projection**: before projecting a stripped
+- **Neighbor cleaning at projection**: before projecting a stripped
   spike, templates of overlapping spikes from *other* clusters are
   subtracted from the observation at the overlap region.
 
@@ -60,7 +60,7 @@ From this generative model the Bayes-optimal decision is
 d(i, t) = x(t)ᵀ C⁻¹ ξⁱ + cⁱ + ln p(i, t | sⁱ(t))
 ```
 
-with normalisation constant `cⁱ = -½ ξⁱᵀ C⁻¹ ξⁱ`.  Three pieces
+with normalization constant `cⁱ = -½ ξⁱᵀ C⁻¹ ξⁱ`.  Three pieces
 of this are missing from the current code:
 
 1. **Noise covariance `C` is never estimated**.  The current
@@ -85,19 +85,19 @@ of this are missing from the current code:
    high variance, not the directions along which the waveform
    actually changes.
 
-3. **The normalisation term `-½ ξⁱᵀ C⁻¹ ξⁱ` is not computed**.
+3. **The normalization term `-½ ξⁱᵀ C⁻¹ ξⁱ` is not computed**.
    Current per-spike scaling is a heuristic `clip(projection, 0, 3)`
    plus a percentile-based PC1-score clamp.  In a Bayes-derived
-   framework, the amplitude that minimises expected residual
+   framework, the amplitude that minimizes expected residual
    energy is the Bayes-weighted ratio
    `(x(t)ᵀ C⁻¹ ξⁱ) / (ξⁱᵀ C⁻¹ ξⁱ)`, and it doesn't need clamping
    under the model.
 
 ## Where overlap handling sits
 
-The current code's "neighbour cleaning before projection" approach
-handles neighbour overlap *once, at the projection step, using mean
-templates of neighbour clusters*.  BOTM's equivalent is the
+The current code's "neighbor cleaning before projection" approach
+handles neighbor overlap *once, at the projection step, using mean
+templates of neighbor clusters*.  BOTM's equivalent is the
 **Subtractive Interference Cancellation (SIC) iteration**:
 
 1. Compute all discriminants `d(i, t)` over the data.
@@ -168,7 +168,7 @@ Keep the current Layer 1/2 structure.  Estimate `C` and apply
 (the ~30% model-mode residual you're seeing on clean spikes should
 drop substantially, because PC1 will align with waveform-shape
 variance rather than noise-variance directions).  Contamination-
-aware training and neighbour cleaning stay as they are.
+aware training and neighbor cleaning stay as they are.
 
 **Scope**: ~100 lines of Python inside `process_subtractspikes`.
 New optional parameter `useWhitening: true|false`.  No API change
@@ -178,7 +178,7 @@ affect raw mode.
 
 **Limitation**: still per-spike, still operates at the
 observation → template projection level.  Overlap handling remains
-the current "subtract neighbour means from observation first"
+the current "subtract neighbor means from observation first"
 approach.  No change to the iterative workflow.
 
 ### Option B — Add `botm` as a third subtraction mode
@@ -187,7 +187,7 @@ Alongside `model` (Layer 1/2) and `raw`, add `botm`.  In this mode:
 
 - Build templates and `C` at load time, same as Option A.
 - Compute per-template matched filter `fⁱ = C⁻¹ ξⁱ` and
-  normalisation `cⁱ = -½ ξⁱᵀ C⁻¹ ξⁱ`.
+  normalization `cⁱ = -½ ξⁱᵀ C⁻¹ ξⁱ`.
 - For each stripped spike, use Bayes-weighted amplitude
   (no clamp): `a = (x(t)ᵀ fⁱ − cⁱ) / (ξⁱᵀ fⁱ)` — this is the
   optimal scale under the model.
@@ -253,7 +253,7 @@ Option C is best left for when the whole pipeline gets revisited
 
 The existing **`raw` subtraction mode is already the right answer
 for the iterative workflow.**  The entire conversation about
-whether to upgrade the modelling is really about model-mode:
+whether to upgrade the modeling is really about model-mode:
 whether `subtractionMode: "model"` should produce LFP-quality
 residuals or not.  If it doesn't need to, you can defer all of
 this indefinitely and use raw for everything.

@@ -23,7 +23,7 @@ diagnostic indicating why.
 After: binary-format aware auto-detecting reader, matching the pattern
 already established by `process_estimatedrift`, `process_localise`,
 `process_mergespikes`, and `collision_viewer.py`.  Legacy text format
-still works as a fallback.  All cluster modelling layers now actually
+still works as a fallback.  All cluster modeling layers now actually
 run on modern sessions.
 
 ### Cluster-id filter (enables strip-good-re-detect workflow)
@@ -43,7 +43,7 @@ each group's spec string specifying which clusters to subtract:
   - `@path`:        read one integer cluster id per line from file
 
 Cluster models are still built for every cluster that appears in the
-`.clu` file — `clean_obs_waveform` uses models of neighbouring
+`.clu` file — `clean_obs_waveform` uses models of neighboring
 non-stripped clusters when cleaning overlap contamination from
 stripped spikes' observation windows.  Only the outer "actually
 subtract this spike" step is guarded.
@@ -90,7 +90,7 @@ benefit proportionally more.
   `ExponentialWaveformModel.__init__` — once to extract the fitted
   evaluation and a second time just to test whether `popt is None`
   for the log message.  `curve_fit` is expensive; capturing `popt`
-  from the first call saves one nonlinear optimisation per channel
+  from the first call saves one nonlinear optimization per channel
   per cluster (a noticeable win on sessions with many clusters).
 
 - When `scipy` is absent, `_fit_exp_1ch` returned `None` silently,
@@ -98,7 +98,7 @@ benefit proportionally more.
   templates — cluster-aware subtraction silently degraded to
   near-nothing.  The pipeline now emits a loud 7-line warning at
   startup when scipy is missing and burst-correction or Layer 2
-  modelling was requested, so the degradation is visible.
+  modeling was requested, so the degradation is visible.
 
 ### `ndm_stripdat` changes
 
@@ -130,7 +130,7 @@ maintenance between rounds.
 
 1. If `<session>.strip.<g>` exists (explicit operator override), it
    wins and is passed verbatim to `process_subtractspikes` as
-   `@path`.  Unchanged behaviour.
+   `@path`.  Unchanged behavior.
 2. Else, if `autoStrip=true` (default) and the YAML `units:` block
    has at least one entry for group `g`, the list is built from
    entries whose `quality` field matches (case-insensitively, after
@@ -140,7 +140,7 @@ maintenance between rounds.
    inspect what fed the current run.  Regenerated every run so
    the list always reflects current YAML curation.
 3. Else, the global `stripClusters` parameter is used (previously
-   existing behaviour).
+   existing behavior).
 4. Else, the built-in default (strip every non-0/1 cluster).
 
 **Two new YAML parameters** in the `ndm_stripdat` block:
@@ -161,9 +161,9 @@ falls back to `stripClusters`).
 
 The Klusters `quality` field is implemented as a free-text
 `QLineEdit` so labs can and do use varying capitalisation and
-surrounding whitespace.  Both are normalised before matching.
+surrounding whitespace.  Both are normalized before matching.
 
-Seven unit tests confirm the expected behaviour (mixed
+Seven unit tests confirm the expected behavior (mixed
 curation → correct subset; all-bad curation → empty list; no
 curation → fallback signal; custom tag sets; case-insensitive match;
 whitespace-trimmed labels; missing YAML → fallback).
@@ -175,7 +175,7 @@ New flag selects between two distinct subtraction strategies:
 - **`model`** (previous default, still available): cluster-aware
   Layer 1 (per-cluster mean template + ISI burst correction) or
   Layer 2 (exponential PC1 shape model) with contamination-aware
-  neighbour cleaning and drift compensation.  Preserves the noise
+  neighbor cleaning and drift compensation.  Preserves the noise
   baseline at subtracted spike windows — residual looks like
   surrounding noise rather than a hole in the trace.  Appropriate
   when the cleaned `.dat` will feed into LFP extraction or other
@@ -242,7 +242,7 @@ Closes the "implicit white-noise" gap in `model` mode:
 a_i(x) = (x^T · f^i) / (ξ^i^T · f^i)
 ```
 
-No clamp — the denominator already normalises template energy under
+No clamp — the denominator already normalizes template energy under
 the whitened metric.  Subtract `a_i · ξ^i` from the buffer.  No drift
 compensation and no burst correction in this version (deferred).
 
@@ -288,7 +288,7 @@ or shape variability is needed.
   reconstructing C^(-1)·ξ for each shift.  Expensive but tractable.
 
 - **Pre-whitening for Layer 2 PCA** (Option A from the original
-  modelling-recommendations document).  Superseded by BOTM for the
+  modeling-recommendations document).  Superseded by BOTM for the
   main use case; still worth adding to improve Layer 2 if `model`
   mode remains in use for any pipeline.
 

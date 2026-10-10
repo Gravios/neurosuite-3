@@ -247,7 +247,7 @@ The <guilabel>Cluster</guilabel>, <guilabel>Waveform</guilabel> and <guilabel>Co
 <sect2>
 <title>The Cluster View</title>
 <para>
-This view displays a two-dimensional projection of the data in the <acronym>PCA</acronym> feature space. The <guilabel>x</guilabel> and <guilabel>y</guilabel> dimensions can be selected in the <guilabel>Features</guilabel> spin boxes in the <guilabel>Parameter Bar</guilabel>. The <guilabel>x</guilabel> and <guilabel>y</guilabel> axes are drawn as thin grey lines.
+This view displays a two-dimensional projection of the data in the <acronym>PCA</acronym> feature space. The <guilabel>x</guilabel> and <guilabel>y</guilabel> dimensions can be selected in the <guilabel>Features</guilabel> spin boxes in the <guilabel>Parameter Bar</guilabel>. The <guilabel>x</guilabel> and <guilabel>y</guilabel> axes are drawn as thin gray lines.
 </para>
 <para>
 The highest dimension corresponds to time. Displaying clusters across time is very useful to assess cell isolation drift. When time is selected as one of the projection dimensions, thin lines are drawn at regular time intervals (60&nbsp;s by default, but this can be <link linkend="settings-clusters">configured</link>).
@@ -603,7 +603,7 @@ If the cluster contains artefacts, delete it by selecting <menuchoice> <guimenu>
 	  <textobject>
 	    <phrase>Delete artefact.</phrase>
 	  </textobject>
-</inlinemediaobject></guiicon>. This will move all the spikes to cluster&nbsp;0 (which by convention contains all artefacts). If the cluster contains noise, delete it by selecting <menuchoice> <guimenu>Action</guimenu> <guimenuitem>Delete Noise Cluster(s)</guimenuitem> </menuchoice> or by clicking on the grey trash icon <guiicon>
+</inlinemediaobject></guiicon>. This will move all the spikes to cluster&nbsp;0 (which by convention contains all artefacts). If the cluster contains noise, delete it by selecting <menuchoice> <guimenu>Action</guimenu> <guimenuitem>Delete Noise Cluster(s)</guimenuitem> </menuchoice> or by clicking on the gray trash icon <guiicon>
  	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/delete_noise.png" format="PNG"/>
@@ -620,7 +620,7 @@ If the cluster contains artefacts, delete it by selecting <menuchoice> <guimenu>
 Once the bad clusters have been removed, you may wish to renumber the remaining clusters in sequence: to do this, select <menuchoice> <guimenu>Actions</guimenu> <guimenuitem>Renumber Clusters</guimenuitem></menuchoice>.
 </para>
 <important><para>
-All these operations can be undone: simply select <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Undo</guimenuitem> </menuchoice> to revert to the previous state. Conversely, after cancelling an operation selecting <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Redo</guimenuitem> </menuchoice> will apply the changes again. To set the number of operations that can be undone, see the <link linkend="settings-general">General Settings</link>.
+All these operations can be undone: simply select <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Undo</guimenuitem> </menuchoice> to revert to the previous state. Conversely, after canceling an operation selecting <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Redo</guimenuitem> </menuchoice> will apply the changes again. To set the number of operations that can be undone, see the <link linkend="settings-general">General Settings</link>.
 </para></important>
 <important>
 <para>
@@ -725,7 +725,7 @@ To group all currently displayed clusters, select <menuchoice> <guimenu>Actions<
 Once you are done, you may wish to renumber the clusters in sequence: this can be done by selecting <menuchoice> <guimenu>Actions</guimenu> <guimenuitem>Renumber Clusters</guimenuitem></menuchoice>.
 </para>
 <important><para>
-All these operations can be undone: simply select <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Undo</guimenuitem> </menuchoice> to revert to the previous state. Conversely, after cancelling an operation selecting <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Redo</guimenuitem> </menuchoice> will apply the changes again. To set the number of operations that can be undone, see the <link linkend="settings-general">General Settings</link>.
+All these operations can be undone: simply select <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Undo</guimenuitem> </menuchoice> to revert to the previous state. Conversely, after canceling an operation selecting <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Redo</guimenuitem> </menuchoice> will apply the changes again. To set the number of operations that can be undone, see the <link linkend="settings-general">General Settings</link>.
 </para></important>
 </sect1>
 
@@ -815,7 +815,7 @@ Besides the ability to <link linkend="grouping-reshaping">manually reshape</link
 Select <menuchoice> <guimenu>Actions</guimenu> <guimenuitem>Recluster</guimenuitem> </menuchoice>. This will open a new tab displaying all the messages output by the reclustering program. Error messages are displayed in red, and normal output is displayed in blue. Depending on the reclustering program, output messages may also be saved to <link linkend="reclustering-log">log files</link> on the disk.
 </para>
 <para>
-When reclustering completes, a dialog box pops up to inform you of the IDs of the newly created clusters. If you are unsatisfied with the results, as with any other operation reclustering can be cancelled by selecting <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Undo</guimenuitem> </menuchoice>.
+When reclustering completes, a dialog box pops up to inform you of the IDs of the newly created clusters. If you are unsatisfied with the results, as with any other operation reclustering can be canceled by selecting <menuchoice> <guimenu>Edit</guimenu> <guimenuitem>Undo</guimenuitem> </menuchoice>.
 </para>
 <para>
 If for any reason you want to abort reclustering, simply select <menuchoice> <guimenu>Actions</guimenu> <guimenuitem>Abort Reclustering</guimenuitem> </menuchoice>.

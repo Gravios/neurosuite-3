@@ -125,7 +125,7 @@ Channels can be moved from one group to another group by simply dragging and dro
 
 !!! note
 
-    Note that the channels cannot be dropped on top of another channel (if you attempt this, the pointer will turn into a "forbidden" cursor and the operation will be cancelled). Instead, they must be dropped on an empty space.
+    Note that the channels cannot be dropped on top of another channel (if you attempt this, the pointer will turn into a "forbidden" cursor and the operation will be canceled). Instead, they must be dropped on an empty space.
 
 
 ### Reordering Channels within a Group {#reordering-channels}
@@ -326,7 +326,7 @@ NeuroScope provides three different graphical representations for spikes. You ca
 
 -   Rasters: spikes are represented as small vertical segments below the local field potential traces, grouped by unit. In the display, the total height devoted to the rasters (vs the traces) can be adjusted by selecting [Units \> Increase Height]{.menuchoice} or [Units \> Decrease Height]{.menuchoice}.
 
--   Waveforms: spike waveforms are highlighted on their respective traces (for instance, since the `.clu.5` file describes the clusters of spike group 5, selecting a cluster from this group will cause NeuroScope to draw the corresponding waveforms on the traces listed in the spike group 5). Highlighting is rendered even more visible if the traces are drawn using shades of grey instead of colors. This can be obtained by selecting [Traces \> Grey-Scale]{.menuchoice}.
+-   Waveforms: spike waveforms are highlighted on their respective traces (for instance, since the `.clu.5` file describes the clusters of spike group 5, selecting a cluster from this group will cause NeuroScope to draw the corresponding waveforms on the traces listed in the spike group 5). Highlighting is rendered even more visible if the traces are drawn using shades of gray instead of colors. This can be obtained by selecting [Traces \> Grey-Scale]{.menuchoice}.
 
 !!! note
 
@@ -398,7 +398,7 @@ New event types can also be created, by selecting [New Event...]{.menuchoice} un
 
 #### Undo and Redo
 
-To undo the last operation (addition, deletion, or timestamp change), select [Edit \> Undo]{.menuchoice}. Conversely, after cancelling an operation, selecting [Edit \> Redo]{.menuchoice} will apply the changes again.
+To undo the last operation (addition, deletion, or timestamp change), select [Edit \> Undo]{.menuchoice}. Conversely, after canceling an operation, selecting [Edit \> Redo]{.menuchoice} will apply the changes again.
 
 #### Creating a New Event File
 
@@ -408,7 +408,7 @@ A new event file can be created by selecting [File \> Create Event File...]{.men
 
 In certain behavioral experiments, e.g. when studying place cells or head direction cells, it is necessary to record brain signals as well as the ongoing position and orientation of the animal. The latter is usually stored in a file listing the positions across time of one or more small lights (spots) attached to the head of the animal (see [File Formats](./04-file-formats.md#position-file)). NeuroScope has the ability to simultaneously display brain signals and the successive positions of the animal during the same episode.
 
-To open a position file, select [File \> Load Position File...]{.menuchoice}. A new view is added in the display, showing the successive positions recorded during the current time window. The spots are represented as colored circles linked by grey lines (e.g., a segment for two spots, a triangle for three spots, etc.) The front spot is drawn in red, and all the other spots in green. Also, the last position in the current time window is highlighted: the circles are larger, and the lines are white. This helps determine the direction of movement.
+To open a position file, select [File \> Load Position File...]{.menuchoice}. A new view is added in the display, showing the successive positions recorded during the current time window. The spots are represented as colored circles linked by gray lines (e.g., a segment for two spots, a triangle for three spots, etc.) The front spot is drawn in red, and all the other spots in green. Also, the last position in the current time window is highlighted: the circles are larger, and the lines are white. This helps determine the direction of movement.
 
 <a id="fig-positions"></a> Positions.
 

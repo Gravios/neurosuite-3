@@ -5,12 +5,12 @@
 Replace the current post-Phase-2 logic in `KK::RunChunkedCEM` (Phases 3, 4,
 and parts of 5) with a refinement loop that combines:
 
-1. ISI-conditional within-cluster waveform-adaptation modelling (rank-2
+1. ISI-conditional within-cluster waveform-adaptation modeling (rank-2
    per-cluster: rested mean + adaptation shape × scalar × time-constant).
 2. Waveform-space KNN splitting/reassignment in ISI-residual space.
 3. xcorr-based cluster-pair merging with sub-sample peak refinement and
    amplitude-scaled residual-energy scoring.
-4. A randomised scheduler that alternates between split and merge passes
+4. A randomized scheduler that alternates between split and merge passes
    to escape local optima.
 
 `process_drifttracker`'s machinery (time-windowed mean templates with
@@ -110,11 +110,11 @@ not duplicated inside KKE.
 | Feature-space KNN graph   | `feat_knn.{h,cpp}`       | Causal-windowed brute-force KNN in feature space, OMP-parallel|
 | Proxy-ISI                 | `proxy_isi.{h,cpp}`      | Per-spike "time since most recent same-unit-ish spike"        |
 | Adaptation model          | `adapt_model.{h,cpp}`    | Per-cluster (w₀, v, α, τ) fit via alternating least squares   |
-| Cluster quality           | `clust_quality.{h,cpp}`  | CV-normalised intra-cluster residual variance                 |
+| Cluster quality           | `clust_quality.{h,cpp}`  | CV-normalized intra-cluster residual variance                 |
 | Improved xcorr matcher    | `xcorr_match.{h,cpp}`    | Time-domain xcorr + parabolic sub-sample refinement +         |
 |                           |                          | amplitude-scaled residual-energy score                        |
 | Waveform-KNN split        | `wave_knn_split.{h,cpp}` | KKE port of klusters' `splitClusterByKnnVsReferences`         |
-| Refinement scheduler      | `refine_loop.{h,cpp}`    | Randomised choice between split/merge/refit with SA cooling   |
+| Refinement scheduler      | `refine_loop.{h,cpp}`    | Randomized choice between split/merge/refit with SA cooling   |
 | Phase-4 orchestrator      | (inlined in `KK.cpp`)    | Glue: drives the loop, owns the data, calls modules           |
 
 Each module is independently testable with its own small test driver under
@@ -125,7 +125,7 @@ Each module is independently testable with its own small test driver under
 All modules assume the following layout, matching existing KKE conventions:
 
 - **Features**: `Data` array, `[nPoints × nDims]`, point-major. Last dim
-  (`nDims - 1`) is the normalised timestamp. For algorithms that need
+  (`nDims - 1`) is the normalized timestamp. For algorithms that need
   spatial features only, use `[0, nDims - 2)`.
 - **Timestamps**: raw timestamps in seconds reconstructed via
   `t_raw = Data[p*nDims + (nDims-1)] * (timeRawMax - timeRawMin) + timeRawMin`.
@@ -156,7 +156,7 @@ These are tagged for explicit decision before each module is implemented:
    **Decision: single exponential v1; two-exponential as v2.**
 
 4. **τ_c search.** Grid search over {5, 10, 20, 50} ms vs. continuous
-   optimisation. Grid is robust and fast; continuous is more precise
+   optimization. Grid is robust and fast; continuous is more precise
    but adds nonlinearity to the alternating-LS fit.
    **Decision: 4-point grid + parabolic interpolation around best.**
 
@@ -186,7 +186,7 @@ These are tagged for explicit decision before each module is implemented:
 ## Validation plan
 
 1. **Unit tests per module** (in `test/`):
-   - `feat_knn`: synthetic 2D Gaussians, verify recovered neighbour
+   - `feat_knn`: synthetic 2D Gaussians, verify recovered neighbor
      ordering matches scipy.spatial.cKDTree on a saved fixture.
    - `proxy_isi`: synthetic Poisson process with known rate, verify
      proxy-ISI distribution matches expected exponential.

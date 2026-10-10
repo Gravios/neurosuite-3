@@ -93,7 +93,7 @@ clicks the root). The category is intentionally not in `catOrder`
 - `populateInspector()` hides the **Enabled** checkbox when the
   root node is selected (since the flag is meaningless for it).
 
-The accent colour is the only signal added to the *border*
+The accent color is the only signal added to the *border*
 treatment — selection still uses the existing blue border so
 `ndm_start` looks consistent with other nodes when chosen.
 
@@ -224,7 +224,7 @@ fi
 
 ---
 
-## Round-trip behaviour
+## Round-trip behavior
 
 | Action | Result |
 |---|---|
@@ -262,7 +262,7 @@ CHANGELOG.md                                    (dated entry)
 - **Per-session vs per-directory classification is hard-coded.** A
   plugin's phase is bash-internal. To make it user-configurable
   would require a new field in `NdmScriptDef` (e.g. `phase: "session"
-  | "directory"`) and a YAML serialisation of it. Not a hard
+  | "directory"`) and a YAML serialization of it. Not a hard
   change but not worth doing speculatively — every existing
   ndm_* plugin already has a clear phase.
 
@@ -353,7 +353,7 @@ pipeline file the first time.
 
 ### Save / Save As / Load actions
 
-| Action | Where | Shortcut | Behaviour |
+| Action | Where | Shortcut | Behavior |
 |---|---|---|---|
 | Save Pipeline | File menu, page toolbar | Ctrl+Alt+P | Overwrite `<session>.ndm.default.pipeline` |
 | Save Pipeline As… | File menu, page toolbar | Ctrl+Alt+Shift+P | Prompt for `<n>`, write `<session>.ndm.<n>.pipeline`, confirm overwrite if file exists |

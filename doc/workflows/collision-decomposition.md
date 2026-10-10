@@ -54,7 +54,7 @@ percentiles, the u1-fixed/u2-shifted convention), see
 collision_viewer.py session.col.N
 ```
 
-Stacked Klusters-style display: raw event in grey, candidate
+Stacked Klusters-style display: raw event in gray, candidate
 templates in dashed blue/orange, and the sum (model fit) in green.
 Channel order is inverted (lowest channel at top) to match Klusters.
 Keyboard shortcuts: A=accept, R=reject, N=next, P=prev, I=info,
@@ -91,7 +91,7 @@ Collision decomposition is most impactful when:
   spike attributed correctly.
 
 It's rarely worth the time for analyses at coarser timescales (firing
-rates over seconds, behavioural correlates) — the small fraction of
+rates over seconds, behavioral correlates) — the small fraction of
 collided events doesn't shift those statistics.
 
 ## See also

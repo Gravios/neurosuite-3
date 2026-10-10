@@ -36,7 +36,7 @@ The per-chunk block (Stage 2.x) is independent per chunk; the global block
 | **2.9** | DipSplit | Bimodality splitter (post re-CEM). |
 | **2.10** | k-NN split | Klusters-faithful WaveKnn splitter. |
 | **2.11** | Split↔merge loop | Alternating WaveKnn/FullCem split + within-chunk template merge (incl. mean-waveform `harvest`, `split`, `realign` sub-steps). |
-| **2.12** | Neighbourhood-remix split | Pool neighbouring clusters and re-split. |
+| **2.12** | Neighborhood-remix split | Pool neighboring clusters and re-split. |
 | **2.13** | Variance-targeted split | Split clusters with high residual/signal variance ratio. |
 | **3.1** | Cross-chunk merge | Stitch per-chunk clusters into global units (overlap-vote + edge-xcorr; `Pass2` = eigen-residual gate). |
 | **3.2** | Global warm-start EM | EM over the merged global solution (`GlobalMergeIter`). |
@@ -211,7 +211,7 @@ Spatial-only EM followed by a short merge pass that reintroduces the
 time dimension:
 
 - **Phase 1** — spatial-only EM using all feature dimensions except the
-  last (time). Centres seeded with the farthest-point heuristic
+  last (time). Centers seeded with the farthest-point heuristic
   (`InitCentresFarthestPoint`), which gives better initial separation
   than random assignment.
 - **Phase 2** — short merge pass (`TimeMergeIter` iterations) with time
@@ -221,7 +221,7 @@ time dimension:
 | Parameter | Default | Description |
 |---|---|---|
 | `-TimeMergeIter N` | `30` | Phase 2 merge iterations (set `0` to disable two-phase mode entirely) |
-| `-InitMethod STR` | `farthest` | Initialisation method (`farthest` or `random`) |
+| `-InitMethod STR` | `farthest` | Initialization method (`farthest` or `random`) |
 
 ### Chunked CEM (active when `ChunkMinutes > 0`, default)
 
@@ -248,7 +248,7 @@ override it.
 ### Phase 1.5: per-chunk realignment + re-featurization
 
 After all per-chunk runs complete, Phase 1.5 realigns waveforms at the
-peak sample using normalised cross-correlation against the per-cluster
+peak sample using normalized cross-correlation against the per-cluster
 mean template, re-extracts the shifted waveform from the raw `.fil` (or
 circular-shifts from `.spk` if `.fil` is not present), reprojects through
 the saved `.pca.<method>.N` eigenvectors, and writes a transactional
@@ -267,7 +267,7 @@ See `src/kiloklustakwik/CHANGES.md` for algorithm details and the
 Phase 2 iteratively matches per-chunk cluster models across chunk
 boundaries using three criteria: (i) vote matching via shared
 overlap-window spikes, (ii) per-dimension Mahalanobis distance, and (iii)
-normalised cross-correlation of the per-cluster mean waveforms. A
+normalized cross-correlation of the per-cluster mean waveforms. A
 cross-chunk match causes a `Union()` operation between the two packed
 cluster IDs. The loop iterates until no new unions occur or
 `TemplateMatchIters` is exceeded.
@@ -281,7 +281,7 @@ cluster IDs. The loop iterates until no new unions occur or
 ### Phase 2.5: subspace reclustering (optional)
 
 Every per-chunk cluster is projected into the top-`SubspaceDims`
-eigenvectors of its own covariance, normalised by the eigenvalues
+eigenvectors of its own covariance, normalized by the eigenvalues
 (whitening), and re-run through a shallow CEM with splits enabled. New
 child clusters that survive are grafted back into `perChunkClass`.
 
@@ -309,7 +309,7 @@ with similar PCA footprints but different waveform shapes).
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-StartCluFile PATH` | — | Initialise from an existing `.clu` file. Cluster IDs are renumbered; `0` and `1` retain their noise/artefact meaning. |
+| `-StartCluFile PATH` | — | Initialize from an existing `.clu` file. Cluster IDs are renumbered; `0` and `1` retain their noise/artefact meaning. |
 
 ---
 
@@ -324,7 +324,7 @@ with similar PCA footprints but different waveform shapes).
 `ChunkPreseedFraction` of all spikes are sampled globally and fed
 through a fast CEM to produce a pre-seeded cluster set. Each per-chunk
 Phase 1 then starts from this global seed rather than a farthest-point
-initialisation over local spikes, which helps align per-chunk cluster
+initialization over local spikes, which helps align per-chunk cluster
 identities at chunk boundaries.
 
 Set `ChunkPreseedFraction 0` to disable.

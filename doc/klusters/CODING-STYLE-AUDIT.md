@@ -96,7 +96,7 @@ noise without clarity.
 ### F. `T` palette-focus event filter and `Z` zoom: documented elsewhere
 
 The four characters `T`, `S`, `PageUp`, `PageDown` have palette-
-context-only behaviour intercepted in the qApp event filter rather
+context-only behavior intercepted in the qApp event filter rather
 than as QAction shortcuts.  This is documented at the intercept
 site and again in `doc/klusters/README.md`.  Naming-wise,
 `paletteHasFocus()` is a clear predicate.  No action needed.
@@ -239,7 +239,7 @@ unsigned reinterpretation in arithmetic).
   types anywhere in `*.cpp`.
 - The targeted types include all primitive-type spellings; `(void*)`-
   style casts in C-API interop are not in this scope and remain.
-- No behavioural change: `static_cast<T>(expr)` and `(T)expr` produce
+- No behavioral change: `static_cast<T>(expr)` and `(T)expr` produce
   identical machine code for primitive type conversions.
 
 ## Phase 5: AST-based dead-code & duplicate-code analysis (completed)
@@ -321,7 +321,7 @@ clearly-mergeable refactors applied:
   the right shape to express that.
 - `slotWindowNewClusterDisplay` / `Waveform` / `Crosscorrelation` /
   `OverView` / `TraceDisplay` (46 nodes ×5) — five entry points, one
-  per display kind; could be parameterised but the explicit verbs are
+  per display kind; could be parameterized but the explicit verbs are
   more discoverable as menu actions.
 - `slotShowNextCluster` / `Previous` (41 nodes) — two-line directional
   delta that's clearer kept as twin slots.
@@ -340,8 +340,8 @@ clearly-mergeable refactors applied:
 - All `dipSplitCluster` references purged (declaration, definition,
   three doc-comment references in `klustersdoc.{h,cpp}`).
 - Three new helper declarations + definitions all resolve.
-- Expected behavioural identity: helpers are exact inlines of the
-  original bodies parameterised by the single varying input.
+- Expected behavioral identity: helpers are exact inlines of the
+  original bodies parameterized by the single varying input.
 
 ### Tooling left in tree
 

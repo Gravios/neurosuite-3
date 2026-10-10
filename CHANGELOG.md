@@ -229,19 +229,19 @@ progresses.
 **Klusters — template matrix rendered as one image.** `TemplateMatrixView::drawMatrix`
 filled every cell with its own `fillRect` (≈9 M calls at 3000 clusters) on every
 paint — the same hotspot already fixed in the error matrix.  It now builds an
-8-bit indexed `QImage` (one pixel per cell, `NB_COLORS` colour table, diagonal →
+8-bit indexed `QImage` (one pixel per cell, `NB_COLORS` color table, diagonal →
 black) by scanline and blits it once with `drawImage` scaled to the matrix rect
 (smoothing off).  The white at/above-threshold outlines are kept as a separate
 cheap scan pass (per-cell score compare, `drawRect` only for cells above
-threshold) and the yellow selected-pair outlines are unchanged; colour maths is
+threshold) and the yellow selected-pair outlines are unchanged; color maths is
 identical.  Rendering change — worth a visual confirm on a real session.
 
-**Klusters — palette colour swatches cached.** The palette rebuild created a
-fresh `QPixmap` + `QPainter` per cluster just to produce a solid colour swatch
+**Klusters — palette color swatches cached.** The palette rebuild created a
+fresh `QPixmap` + `QPainter` per cluster just to produce a solid color swatch
 (filling with `backgroundColor` then overpainting the whole 12×12 with the
-cluster colour).  Cluster colours cycle a small fixed palette, so the swatch is
+cluster color).  Cluster colors cycle a small fixed palette, so the swatch is
 now cached in a `QHash<QRgb,QPixmap>` and reused — a rebuild creates only as many
-pixmaps as there are distinct colours.  `QPixmap` is implicitly shared, so reuse
+pixmaps as there are distinct colors.  `QPixmap` is implicitly shared, so reuse
 is free; visually identical.
 
 **Klusters — PCA-Center Align All: opt-in per-phase timing.** Investigation
@@ -269,7 +269,7 @@ session) showed the realign itself is ~2 ms/cluster; the flat ~130 ms per cluste
 and the steadily growing inter-cluster gap were both the curation snapshot.
 `snapshotClusters()` — invoked by `logBefore` *and* `logAfter`, so twice per
 cluster — runs `computeAllCentroids()`, a full O(all-spikes × dims) pass over the
-entire session, only to populate the snapshot's nearest-neighbour field.  Over
+entire session, only to populate the snapshot's nearest-neighbor field.  Over
 ~1000 clusters that is ~2000 whole-dataset scans.  Fixed by logging the whole
 Align-All as a single curation action: `beginRealignBatchLog(clusters)` takes one
 "before" snapshot, the complete/abort paths take one "after" snapshot, and
@@ -295,13 +295,13 @@ the *compute* phase only, not disk I/O or the writeback/sort path.  See
 
 
 A maintenance + investigation session spanning Klusters interaction bugs, a
-threading race, build-system optimisation hygiene, and the first piece of the
+threading race, build-system optimization hygiene, and the first piece of the
 cluster data-model rework.
 
 **Klusters — cluster palette Up/Down skipped rows.** Up/Down navigation chose
 the geometrically nearest item by *column* first, breaking ties by row.  Because
 palette items are cluster-number labels of differing widths on a free-flow grid,
-their visual-rect centres do not align into columns, so a single keystroke could
+their visual-rect centers do not align into columns, so a single keystroke could
 jump several rows.  Reworked to pick the adjacent *row* first, then the nearest
 column within it — movement is now provably one row.  Left/Right (list order)
 and the wrap-around path are unchanged.
@@ -319,7 +319,7 @@ tables directly (they use the mutex-guarded dict + status-flag protocol).
 **Klusters — redundant `minMaxThread` wait-loops.** The eleven
 `while(!minMaxThread->wait()){}` join sites in `data.cpp` were dead loops around
 a blocking `QThread::wait()` (Forever deadline never returns false); replaced
-with a plain `wait()`.  Behaviour-preserving.
+with a plain `wait()`.  Behavior-preserving.
 
 **Build system — `-ffast-math` / `-march=native` made explicit per-target
 opt-ins.** Investigation found the global flag block in
@@ -345,7 +345,7 @@ mechanism is documented in `ROADMAP.md` and left unfixed pending a portability
 decision.
 
 **Roadmap — performance and data-model debt recorded.**  Added a
-performance/optimisation section (profiling-first plan, memory-bandwidth
+performance/optimization section (profiling-first plan, memory-bandwidth
 reduction via `float`-where-safe and pass fusion, V-cache blocking for
 reuse-heavy drift/PCA math, GPU feed path, OpenMP scaling, PGO) and a Klusters
 data-model debt entry.
@@ -356,7 +356,7 @@ Cluster reassignment is currently O(total spikes): every edit rebuilds the whole
 a header-only, Qt-free `SpikeAssignment` (`clusterOf[]` label array == the `.clu`
 column, packed per-cluster `members` sparse set, `slotOf[]` back-index) giving
 O(spikes moved) edits and delta-based O(moved) undo/redo, plus a standalone test
-(randomised equivalence vs an independent reference, invariant checks,
+(randomized equivalence vs an independent reference, invariant checks,
 undo-depth trimming, and an O(moved)-vs-O(N) perf demonstration: ~50× at 5M
 spikes vs a conservative full-copy baseline).  Built alongside the existing
 model; integration into `Data` (replacing the table and the reader-thread
@@ -376,7 +376,7 @@ documented in-header.
 **Klusters — error matrix now highlights selected pairs.** `ErrorMatrixView`
 already supported multi-pair selection (Ctrl-click to add/remove), but
 `drawMatrix` drew no highlight, so the selected cells were invisible against the
-probability colours — making it hard to see and curate pairs on a dense matrix.
+probability colors — making it hard to see and curate pairs on a dense matrix.
 Added a yellow cosmetic-pen outline for every pair in `selectedPairs`, placed by
 the same world-coordinate cell layout the matrix uses (column = `pair.first`,
 row = `pair.second`); a cosmetic pen keeps the outline a constant 2 px at any
@@ -432,7 +432,7 @@ several fixes:
   every user builds from source — so compiling for the host ISA is the right
   default; pass `-DNS_NATIVE_ARCH=OFF` for a portable/cross build.  This also
   retired the dead `set(CMAKE_<LANG>_FLAGS_<CFG> … CACHE … FORCE)` block (a
-  verified no-op) in favour of a working `add_compile_options()` (C/CXX,
+  verified no-op) in favor of a working `add_compile_options()` (C/CXX,
   Release/RelWithDebInfo, GNU/Clang-family).  `-ffast-math` stays opt-in via
   `ns_fast_math` (it perturbs results, not just portability).
 - **Optional converter plugins degrade gracefully.**  `process_extractleds`
@@ -461,7 +461,7 @@ kiloklustakwik subproject.  Factored into a new `cmake/GpuBackends.cmake` module
 (`ns_gpu_find_cuda_compiler`, `ns_gpu_select_cuda_arch`,
 `ns_gpu_select_sycl_compiler` + `NS_GPU_CUDA_ARCH_FALLBACK`, `NS_GPU_SYCL_HINTS`);
 the two consumers shed ~110 net lines, with the logic extracted verbatim so
-behaviour is unchanged.  (klusters was subsequently folded in too — see below.)
+behavior is unchanged.  (klusters was subsequently folded in too — see below.)
 The GPU-enabled probe branches (nvcc found, native-arch, icpx compiler switch)
 are not exercised in a toolkit-less sandbox and should be verified on a GPU
 toolchain.
@@ -522,7 +522,7 @@ nudge.
 whole-document batch hardcoded `--topchannels 2`, ignoring the
 `realignTopChanSpinBox` value the single-cluster realign already uses (via
 `buildRealignArgs`).  It now reads the spin box (0 = all channels); `--pca-refine`
-stays forced since the action is defined as PCA-centred.  Menu label, tooltip,
+stays forced since the action is defined as PCA-centered.  Menu label, tooltip,
 confirmation dialog and batch log header reflect the dynamic count.
 
 **Klusters — parallelised the CPU realign fallback.**  The PCA-refine CPU path
@@ -537,22 +537,22 @@ absent or per-thread handles can't open.  `OpenMP::OpenMP_CXX` was already linke
 to the klusters target; no CMake change.
 
 **Klusters — overlap-aware denominator in template / auto-merge xcorr.**  The
-normalised template xcorr (`tmNormXcorr`, and its verbatim duplicate `normXcorr`
+normalized template xcorr (`tmNormXcorr`, and its verbatim duplicate `normXcorr`
 in `autoMerge.cpp`) divided every lag by the full-length norms
 `√(Σa²·Σb²)` computed once.  At nonzero lags the edge samples are dropped from
 the numerator, so the dot product summed over fewer terms than the denominator
-assumed — systematically under-counting off-centre alignments.  Both copies now
+assumed — systematically under-counting off-center alignments.  Both copies now
 accumulate the dot product and both squared norms over the same overlapping
 window inside the lag loop, so each lag is a true cosine over the overlap.  Lag 0
 and identical waveforms still give 1.0.  Note: this shifts matrix values at
-off-centre peaks, so auto-merge thresholds calibrated on the old metric may need
+off-center peaks, so auto-merge thresholds calibrated on the old metric may need
 re-checking.
 
 **Klusters — optional Pearson (mean-subtracted) template xcorr.**  An opt-in
 Display-prefs checkbox (`templateXcorrPearson`, default off, persisted) switches
-the normalised xcorr from cosine similarity to Pearson correlation: each
-waveform's overlap-window mean is removed before normalising (single pass via the
-centring identity), so a shared DC offset no longer inflates the score.
+the normalized xcorr from cosine similarity to Pearson correlation: each
+waveform's overlap-window mean is removed before normalizing (single pass via the
+centering identity), so a shared DC offset no longer inflates the score.
 `meanSubtract=false` is byte-identical to the cosine path.  All three consumers
 (template matrix, pair-xcorr, auto-merge) read the flag once and pass it through,
 so the matrix, pairwise xcorr and auto-merge stay consistent.
@@ -593,9 +593,9 @@ on `nBits` and is a separate, higher-blast-radius change.
 
 **Klusters — error-matrix wheel zoom anchors the cursor.**  `ErrorMatrixView::
 wheelEvent` passed the world point under the cursor straight to `ZoomWindow::
-zoom(factor, centre)`, whose second argument is the new window *centre* — so each
+zoom(factor, center)`, whose second argument is the new window *center* — so each
 Ctrl+wheel notch recentred the view on the cursor, jumping whatever was under the
-pointer to the middle of the view.  Compute the centre that keeps the pivot fixed
+pointer to the middle of the view.  Compute the center that keeps the pivot fixed
 (`cNew = pivot − (1/factor)·(pivot − cOld)`) so the point under the cursor stays
 put; `correctWindow()` still clamps to the matrix bounds.  Panning was already
 correct.  (The sister TemplateMatrixView already did cursor-anchored zoom.)
@@ -616,9 +616,9 @@ flag vector indexed by cluster index and test it in O(1).
 `drawContents` issued one `painter.drawRect()` per cell (≈9M calls at 3000
 clusters) on every REDRAW, i.e. on every pan move and zoom notch — the dominant
 cost behind the matrix feeling slow at high cluster counts.  Fill an 8-bit
-indexed `QImage` (one pixel per cell, `colorMap` as the colour table,
+indexed `QImage` (one pixel per cell, `colorMap` as the color table,
 diagonal/ignored → black) by scanline and blit it once with `drawImage` scaled to
-the matrix world rect (`SmoothPixmapTransform` off for crisp cells).  Colour
+the matrix world rect (`SmoothPixmapTransform` off for crisp cells).  Color
 computation is unchanged, so the matrix is visually identical; the red
 out-of-date border and yellow selected-pair outlines are still drawn over it.
 
@@ -641,7 +641,7 @@ metrics.
 
 **Root causes — three independent.**
 
-1. **Template never centred before xcorr** (patch64).
+1. **Template never centered before xcorr** (patch64).
    `RunPhase2bMode3Chunk` built the per-cluster mean template, then
    ran xcorr of each spike against it — but never shifted the mean
    so its peak landed on `PeakSampleIndex`.  xcorr therefore pushed
@@ -688,13 +688,13 @@ Two `AlignPcaCenter` modes were added on top of the xcorr loop
 (patches 83–84) to address residual dispersion that xcorr alone
 couldn't reach:
 
-- Mode 1: post-xcorr PCA-centring refine pass.  After the iter loop
+- Mode 1: post-xcorr PCA-centering refine pass.  After the iter loop
   converges, for each spike sweep shifts in `[-maxShift, +maxShift]`
-  and minimise the squared distance from the spike's PCA
+  and minimize the squared distance from the spike's PCA
   representation to the cluster mean's PCA centroid.  Writes
   `m_cumShift[]`, so the disk commit captures it.
 
-- Mode 2: in-memory circular-shift PCA-centring replacement.
+- Mode 2: in-memory circular-shift PCA-centering replacement.
   Replaces the entire xcorr iter loop with a circular-shift sweep,
   picking each spike's argmin distance directly.  Does NOT write
   `m_cumShift[]` — purely diagnostic / corrective in memory.
@@ -752,7 +752,7 @@ addressed UX issues surfaced by the alignment debugging work:
 - Session YAML is now staged at the recluster temp basename
   (patch81) — `KlustaKwikYaml.cpp` was looking up `<tempBase>.yaml`
   which never exists, silently defaulting `SamplingRate` to 20000.
-- A PCA-projection-energy-maximising alignment refine pass was added
+- A PCA-projection-energy-maximizing alignment refine pass was added
   to `realignSpikes` (patch82), opt-in via a checkbox in the realign
   dialog.  Per-spike fresh `.fil` re-extract per candidate shift,
   argmax of energy in the basis.
@@ -786,7 +786,7 @@ addressed UX issues surfaced by the alignment debugging work:
 
 KKExp recognises:
 
-- `-AlignPcaCenter <0|1|2>` — 0 disables PCA-centring (xcorr only);
+- `-AlignPcaCenter <0|1|2>` — 0 disables PCA-centering (xcorr only);
   1 adds it as a refine pass after xcorr (writes `m_cumShift`); 2
   replaces xcorr entirely with in-memory circular shifts (no
   `m_cumShift` writes).
@@ -827,7 +827,7 @@ badge in the header. The legacy seven flag parameters (`wideband`,
 on the root node's params for backward-compat fallback.
 
 **2. Pipeline files in their own format.** The graph is no longer
-serialised inside the session YAML's `programs:` block — instead it
+serialized inside the session YAML's `programs:` block — instead it
 lives in a sibling file:
 
 ```
@@ -881,7 +881,7 @@ walkthrough.
 ## 2026-04-27 — ndm_start as the graph root (replaced)
 
 *Replaced by the entry above on the same day.* This earlier draft
-serialised pipelines inside the session YAML's `programs:` block;
+serialized pipelines inside the session YAML's `programs:` block;
 the final design moved them to separate `<session>.ndm.<n>.pipeline`
 files so the graph is independent of the session schema and named
 variants can coexist.
@@ -891,7 +891,7 @@ variants can coexist.
 ## 2026-04-26 — graphical Pipeline tab in ndmanager (superseded)
 
 *Superseded by the 2026-04-27 entry above.* The toggle-only view
-shipped here was rolled back in favour of the editable node-graph
+shipped here was rolled back in favor of the editable node-graph
 designer that already existed in the repo (commit `4e0de6e`),
 extended with sticky-root semantics for `ndm_start`. The
 `PipelinePage` class introduced by this entry was deleted; the
@@ -969,7 +969,7 @@ as `probe_signature_hash` for fail-loud verification.
 
 **Best-effort everywhere.** Missing resolver, missing prior file, or
 hash mismatch all fall through cleanly to script-builtin defaults.
-The behaviour with no priors built is exactly the previous behaviour.
+The behavior with no priors built is exactly the previous behavior.
 
 See `doc/design/kk-prior.md` for the full design and
 `doc/workflows/empirical-priors.md` for the operational
@@ -1024,7 +1024,7 @@ parent; typically 1-3 parents trip the cap per group, so the overhead
 is negligible relative to the main assignment loop (nFeatDim × nEligible
 distance evaluations per spike).  Verbose output now reports both
 accepted and demoted counts per parent and a total-demoted summary.
-Setting either knob to 0 disables the guard (preserves v1.0 behaviour
+Setting either knob to 0 disables the guard (preserves v1.0 behavior
 bit-for-bit).
 
 **2. Tighter default `chi2P`.**  0.9999 → 0.999.  `d²=54.234` vs
@@ -1102,7 +1102,7 @@ templates/template.yaml
 
 - `process_shadowcluster` without `--inflationRatio`/`--inflationCap`
   on the command line defaults to `5.0`/`500` (guard active).  Sessions
-  that must preserve exact v1.0 behaviour should set
+  that must preserve exact v1.0 behavior should set
   `reextractInflationRatio: 0` (or `reextractInflationCap: 0`) in the
   session YAML.
 - `read_kk_param` without `-b` preserves the prior three-tier order
@@ -1115,7 +1115,7 @@ templates/template.yaml
 - `.clu.N` cluster-id convention (shadow-offset and unmatched-bin id)
   is unchanged.
 
-### Expected post-fix behaviour for the `jg05-20120316` g7 case
+### Expected post-fix behavior for the `jg05-20120316` g7 case
 
 - `clu 6` shadow capped at `max(500, 5 × 1868) = 9340` new spikes
   (down from 108 912; the other ~99 572 are demoted to the unmatched
@@ -1204,7 +1204,7 @@ are unaffected.
 - `src/ndmanager-plugins/src/process_reextractspikes_stderiv/process_reextractspikes_stderiv.h`
   — docstring corrected
 - `src/ndmanager-plugins/scripts/ndm_reextractspikes_stderiv`
-  — header and inline comments corrected (no behavioural change in
+  — header and inline comments corrected (no behavioral change in
   bash; the binary carries the fix)
 
 ---
@@ -1399,8 +1399,8 @@ their shift from chunk k (the chunk where they naturally live).
 For each shifted spike, re-extracts the aligned waveform from the `.fil` broadband file
 at `(rawTs − shift − PeakSampleIndex)`, selecting only the group's channels via
 `GroupChannelIds`.  Projects through the saved PCA eigenvectors (PCAE format,
-`.pca.N`), re-normalises using the per-dimension min/range from `LoadData()`, updates
-`Data[]` and corrects the normalised timestamp before Phase 2.
+`.pca.N`), re-normalizes using the per-dimension min/range from `LoadData()`, updates
+`Data[]` and corrects the normalized timestamp before Phase 2.
 Falls back to circular shift from `.spk` (with wrap-around caveat) when `.fil` is not
 available (e.g. after `ndm_stripdat`).
 
@@ -1427,7 +1427,7 @@ All three can be overridden on the command line.
 
 - `CEM(nullptr, 0)` → `CEM(nullptr, 1)` in the split trial: the split candidate
   CEM now runs with `enableSplits=true`, letting `TrySplits` find the best
-  multi-cluster solution rather than a single random initialisation.
+  multi-cluster solution rather than a single random initialization.
 - Split trial `nStartingClusters` raised from 3 → 13 (noise + 12 real), giving
   the split CEM sufficient starting clusters to explore the full structure of each
   candidate cluster.
@@ -1435,14 +1435,14 @@ All three can be overridden on the command line.
   Split trials at depth > `SplitRecurseDepth` use `CEM(nullptr, 0)` (no further
   recursion). Safe for OMP parallel regions.
 - New `-SplitRecurseDepth N` (default 1): how many levels of recursive splitting
-  `TrySplits` explores.  `0` = original behaviour; `1` = one level; `2` = two.
+  `TrySplits` explores.  `0` = original behavior; `1` = one level; `2` = two.
 
 ### Phase 2.5 SubspaceReclusterPerChunk: 3-phase parallel rewrite
 
 Refactored from a single OMP parallel-for-over-chunks to a three-phase model:
 
 - **Phase A (serial):** For each `(chunk, cluster)` pair, compute cluster mean,
-  covariance, top-k eigenvectors, project into whitened k-space, normalise,
+  covariance, top-k eigenvectors, project into whitened k-space, normalize,
   compute null score. Produces a flat `WorkItem` list.
 - **Phase B (parallel OMP):** Each work item runs `nRuns` × `startK=2..maxSubK`
   restarts of `CEMTwoPhase` (splits enabled via depth saturation) in a local `KK`
@@ -1508,7 +1508,7 @@ inside KlustaKwik (see top of this file).
   each `spikeDetection.channelGroups` entry so all downstream consumers
   (KlustaKwik, `process_estimatedrift`, `process_localise`) can resolve electrode
   geometry without re-loading the probe file.
-- `probes[].id` normalised to `probes[].probeId` on write.
+- `probes[].id` normalized to `probes[].probeId` on write.
 
 ### process_estimatedrift.py
 
@@ -1525,7 +1525,7 @@ inside KlustaKwik (see top of this file).
 - `amplitude_com()` masks `NaN`-depth sites.
 - `xcorr_shift()` filters `NaN` from depths before computing inter-site spacing.
 
-### process_localise.py
+### process_localize.py
 
 - `site_positions_from_yaml()` reads inline `sitePositions_um` first; only falls back
   to probe-file lookup when the field is absent or has fewer entries than `n_sites`.

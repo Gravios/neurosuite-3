@@ -61,7 +61,7 @@ defined a top-level parameter named `ndm_decomposecollisions`.
 After: the redundant positional argument is removed.
 `read_script_parameter` defaults to `$program` (the current script's
 basename), which is already "ndm_decomposecollisions" at this call
-site.  Behaviour on valid sessions is unchanged; behaviour on
+site.  Behavior on valid sessions is unchanged; behavior on
 adversarial YAML is now correct.
 
 ### Fix 4 — Pre-flight and overwrite checks accept `.spkD.N`

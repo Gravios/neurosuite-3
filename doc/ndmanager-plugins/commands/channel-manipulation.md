@@ -46,7 +46,7 @@ order.
 
 ## `ndm_recolorchannels`
 
-Legacy cosmetic tool — updates channel colour attributes in the YAML. Has no
+Legacy cosmetic tool — updates channel color attributes in the YAML. Has no
 effect on signal processing; provided for compatibility with older
 NeuroScope-driven workflows.
 

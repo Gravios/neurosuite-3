@@ -165,12 +165,12 @@ Phases 2/4/5 found nothing actionable — the codebase was already in
 markedly better shape than klusters had been.  Shipped:
 `libshared-audit.tar.gz` (12 files including AUDIT.md).
 
-### ✅ progressbar modernisation *(this session)*
+### ✅ progressbar modernization *(this session)*
 
 Six iterations from 80-char hard-width Unicode block bar to minimalist
 horizontal-line bar with `/dev/tty` output channel, eraseline-prefixed
 redraws, green ✓ / red ✗ completion markers, group-numbered labels
-(`[PCA-7]`), and parallel-execution friendly behaviour.  Bash helper
+(`[PCA-7]`), and parallel-execution friendly behavior.  Bash helper
 `print_group_failed STEP GROUP` in `ndm_functions` plus wrapper-script
 integration in `ndm_pca` and `ndm_pca_stderiv`.  Suppressed noisy
 `process_pca_stderiv: transformed N spikes` stderr line.  Shipped:
@@ -206,8 +206,8 @@ relitigate.)
 
 ### ❌ Multi-line cursor-positioning ProgressBar for parallel groups
 
-Considered during progressbar modernisation: each parallel group gets its own
-row, ANSI cursor-position escapes coordinate writes.  **Dropped** in favour
+Considered during progressbar modernization: each parallel group gets its own
+row, ANSI cursor-position escapes coordinate writes.  **Dropped** in favor
 of single-line shared `/dev/tty` with `\x1b[2K` erase-line prefix.
 Rationale: the simpler approach matches what apt and brew do; it works
 reliably across terminal emulators; the visual cost (occasional flicker
@@ -260,7 +260,7 @@ These don't fit the time-horizon structure but are worth tracking.
 
 - `MergeThresh` default uncalibrated for typical feature dimensionality
 - `UseFeatures` default string causing session duration = 0
-- `probabilities` initialisation order
+- `probabilities` initialization order
 - `_RunChunkedCEMFromPoints` body duplicated
 - Multiple sweep regimes not yet baselined
 

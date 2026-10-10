@@ -22,7 +22,7 @@ Subtracts spike waveforms from the raw `.dat` to produce
 - **LFP analysis** — removes spike contamination from the LFP band.
 - **Iterative refinement** — feed the cleaned `.dat` to
   `ndm_redetectspikes` to find spikes that were masked by larger
-  neighbours in the first pass.
+  neighbors in the first pass.
 
 ## Subtraction modes
 

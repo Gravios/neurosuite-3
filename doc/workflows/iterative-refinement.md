@@ -7,7 +7,7 @@ feature space — particularly useful when two units share a channel
 and their waveforms partially cancel during detection.
 
 Use this *after* a first round of curation, not before — the strip
-needs templates from labelled clusters.
+needs templates from labeled clusters.
 
 ## Steps
 

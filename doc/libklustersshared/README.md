@@ -104,7 +104,7 @@ These are separate from the main classes to avoid altering their API.
 > field name `id`, and `readProbesSection` / `writeProbesSection` read and
 > write the YAML key `id`. The Python helper `process_setupgroups.py` and
 > the downstream Python tools (`process_estimatedrift.py`,
-> `process_localise.py`) normalise on the YAML key `probeId` and accept
+> `process_localise.py`) normalize on the YAML key `probeId` and accept
 > either on read. For interoperability, hand-written YAML should use
 > `probeId` — `ndm_setupgroups` will rewrite `id` to `probeId` on first
 > run. Both reads work, only one key is written per writer.
@@ -134,7 +134,7 @@ Call `readProbesSection` / `writeProbesSection` from `ndmanagerdoc.cpp` after th
 
 | Type | Description |
 |---|---|
-| `ChannelColorEntry` | Three display colours (`color`, `groupColor`, `spikeGroupColor`) plus channel id |
+| `ChannelColorEntry` | Three display colors (`color`, `groupColor`, `spikeGroupColor`) plus channel id |
 | `GeneralInformation` | `date`, `experimenters`, `description`, `notes` |
 | `FileInformation` | Extension, sampling rate, and optional channel mapping for one derived file |
 | `NeuroscopeVideoInfo` | `rotation`, `flip`, `trajectory`, `backgroundImage` |

@@ -45,7 +45,7 @@ The deeper problem: **FullCEM is the wrong tool for the user's data**. The user 
 
 ### 2.2 The QualityWeightedSplit dispatcher routes 0 → CEM on clean recordings
 
-Surfaced this session as a diagnostic finding (no fix yet — see §7). The dispatcher routes each candidate cluster to CEM (high ISI contamination) or WaveKnn (high waveform variance) by comparing `max(contamN, wavVarN)` after min-max normalisation across the pool. On a clean recording with near-zero refractory violations across all clusters, `contam` collapses to all-zeros → after min-max the contamN range is 0 → the single cluster that would have routed to CEM (the one with min wavVar) gets dropped by the top-N filter. Result: 0 → CEM, structurally, every iteration.
+Surfaced this session as a diagnostic finding (no fix yet — see §7). The dispatcher routes each candidate cluster to CEM (high ISI contamination) or WaveKnn (high waveform variance) by comparing `max(contamN, wavVarN)` after min-max normalization across the pool. On a clean recording with near-zero refractory violations across all clusters, `contam` collapses to all-zeros → after min-max the contamN range is 0 → the single cluster that would have routed to CEM (the one with min wavVar) gets dropped by the top-N filter. Result: 0 → CEM, structurally, every iteration.
 
 For the user's diffuse-cluster data this is *correct* (no contam signal → CEM has nothing to do), but it's worth being explicit about: the dispatcher independently arrived at the same conclusion that motivated Phase 8.
 
@@ -160,7 +160,7 @@ Five new 32×32 RGB PNGs in `src/klusters/src/icons/`, matching the existing `cl
 - `display.png` — 2×2 color palette
 - `session.png` — cyan circular arrow (undo / recovery)
 - `reclustering.png` — three colored dots with cyan grouping arc
-- `refinement.png` — silver/grey gear
+- `refinement.png` — silver/gray gear
 - `automerge.png` — red + blue blobs merging with white inward arrows
 
 Generated with PIL (script preserved in the patch commit message for reproducibility). All five registered in `klusters-icons.qrc`.
@@ -194,7 +194,7 @@ Same template-cross-correlation algorithm KKE uses in `WithinChunkTemplateMatch`
 1. Filter candidate clusters (skip 0 = artefact, 1 = noise, anything below `minClusterSize`).
 2. Per cluster, build a template — *mean* of all member waveforms, or *median* across up to `medianK` sampled waveforms. Median mode uses a fixed RNG seed (`0x4d525142`) so previews are reproducible across runs on the same data.
 3. Optional Hann taper on each template (suppresses edge-discontinuity contributions to xcorr; matches KKE's `TemplateMatchTaperHannSamples`).
-4. Pairwise normalised xcorr `score = max_lag |xcorr| / sqrt(|a|² · |b|²)` with bounded `maxShift` (defaults to `nSamp/4` when set to 0, matching KKE's `WithinChunkTemplateMatch`).
+4. Pairwise normalized xcorr `score = max_lag |xcorr| / sqrt(|a|² · |b|²)` with bounded `maxShift` (defaults to `nSamp/4` when set to 0, matching KKE's `WithinChunkTemplateMatch`).
 5. Union-find on score ≥ threshold pairs → connected components of size ≥ 2 are the merge groups.
 6. If preview is enabled, modal dialog listing groups with a checkbox per group. OK applies checked subset; Cancel applies none.
 7. Apply each accepted group via `doc->groupClusters(g.clusters, *view)` — the existing merge path. Integrates with klusters' undo/redo automatically.
@@ -290,7 +290,7 @@ Ordered by likely value-per-effort, with rough scope estimates and design ration
 
 **Problem:** Phase 4c parallelizes over chunks (~30 of 36 active after disjointness drops), so on a 64-core box ~34 cores idle by construction. Within each chunk, the per-chunk allowlist of sources is processed serially. A single chunk with a fat pool blocks completion.
 
-**Scope:** ~80 lines. Build a flat `vector<(ck, lc, pool)>` list from the allowlist map, sort by descending pool size for longest-processing-time scheduling, parallelize over the flat list with `#pragma omp parallel for schedule(dynamic, 1)`. Per-pool synchronisation needed because pools from different chunks already touch different `perChunkClass`/`perChunkModels` slots — the existing per-chunk model refresh is already source-local within Phase 4c, so it should generalize cleanly. The only shared state is the result accumulators which need atomic adds or per-thread accumulation + final reduce.
+**Scope:** ~80 lines. Build a flat `vector<(ck, lc, pool)>` list from the allowlist map, sort by descending pool size for longest-processing-time scheduling, parallelize over the flat list with `#pragma omp parallel for schedule(dynamic, 1)`. Per-pool synchronization needed because pools from different chunks already touch different `perChunkClass`/`perChunkModels` slots — the existing per-chunk model refresh is already source-local within Phase 4c, so it should generalize cleanly. The only shared state is the result accumulators which need atomic adds or per-thread accumulation + final reduce.
 
 **Why it matters:** unblocks 64-core utilization on Phase 4c when sources are few-per-chunk but many in aggregate (the exact pattern that bit us this session). Pairs naturally with 7.1 — once you can see per-source timing, you'll want to make the slow sources parallelize.
 

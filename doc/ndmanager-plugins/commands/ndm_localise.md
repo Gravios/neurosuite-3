@@ -1,4 +1,4 @@
-# `ndm_localise` — per-spike source localisation (`.loc.N`)
+# `ndm_localise` — per-spike source localization (`.loc.N`)
 
 Fits a monopole (point-source) extracellular potential model per spike:
 

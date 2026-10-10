@@ -6,7 +6,7 @@ This directory is a full copy of `src/klustakwik/` with one additional
 algorithmic feature: **post-split shift-probe refeaturization**.  The change
 touches the hottest clustering inner loop (`TrySplits`) and two per-chunk
 split passes (`SubspaceReclusterPerChunk`, `RefractorySplitPerChunk`).
-Because the behaviour of `TrySplits` affects every CEM run regardless of
+Because the behavior of `TrySplits` affects every CEM run regardless of
 mode, keeping this work in a parallel build target avoids destabilising
 the canonical spike sorter while the approach is evaluated.
 
@@ -51,7 +51,7 @@ shift-probe: `TimeShiftAlignPhase` iterates alive clusters and runs
 `TimeShiftAlignCluster` on each, doing per-spike min-Mahalanobis² alignment
 against the cluster's own Gaussian.  This is the feature-space analogue of
 xcorr realignment — per-spike shift selection weighted by the cluster's
-Cholesky factor, which automatically favours the discriminative dimensions
+Cholesky factor, which automatically favors the discriminative dimensions
 that dominate the spike's identity.
 
 Phase 1.5 and Phase 4 are sequential stages of the same pipeline: 1.5
@@ -138,8 +138,8 @@ After every accepted split:
    pre-shifted eigenvector bases in a single pass — one dot product per δ,
    all three accumulators stepping through the same raw samples.
 3. For each candidate δ, sum per-spatial-dim variance across the child.
-4. Pick the δ that MAXIMISES total variance, then commit by writing the
-   trial features into `Data[]`, shifting the normalised timestamp column,
+4. Pick the δ that MAXIMIZES total variance, then commit by writing the
+   trial features into `Data[]`, shifting the normalized timestamp column,
    and accumulating `m_cumShift[p] += δ`.
 5. Call `MStep()` + `EStep()` so the next split trial sees the refreshed
    model.
@@ -159,7 +159,7 @@ candidates.  No modulo, no branching — vectorises naturally on CPU, maps
 one thread per (channel × PC) on GPU.
 
 The max-variance criterion is the OPPOSITE of standard realignment.
-Standard realignment minimises within-cluster variance (sharpens the
+Standard realignment minimizes within-cluster variance (sharpens the
 Gaussian).  Here we want to SPREAD any residual mixture structure along
 whichever axis can expose it — so the next `TrySplits` call operates on
 features where mixtures are maximally revealed rather than hidden.
@@ -176,7 +176,7 @@ contributes nothing to the projection.  Avoiding `.fil` reads and in-place
   |cluster| × 3 × O(pca_projection), fully RAM-resident after a single
   `.spk` read per spike);
 - makes the probe reversible in memory (no on-disk state to roll back);
-- matches the specification: only `.res` (via the normalised time column
+- matches the specification: only `.res` (via the normalized time column
   of `Data[]`) and `.fet` (the PCA feature columns of `Data[]`) are
   updated in memory during the probe.
 
@@ -234,7 +234,7 @@ int  ShiftProbeAndCommitSpikes (const std::vector<int>& globalSpikeIndices,
 void FinalizeShiftProbe(int nChan, int nSamplesPerSpike);
 ```
 
-No change to the command-line interface or the YAML schema.  Behaviour
+No change to the command-line interface or the YAML schema.  Behavior
 is automatic when `Phase15Iters > 0`, `NbChannels > 0`,
 `NbSamplesPerSpike > 0`, `.pca.N` exists, and `.spk.N` is readable.
 Any of those missing disables the probe (runtime-equivalent to canonical
@@ -526,7 +526,7 @@ fopen failed, or the rewrite was partial.
   `WritePhase15Checkpoint`.
 
 
-## [2026-05-16d] patch84 — `AlignPcaCenter=2`: circular-shift PCA-centring (no `m_cumShift`)
+## [2026-05-16d] patch84 — `AlignPcaCenter=2`: circular-shift PCA-centering (no `m_cumShift`)
 
 Replaces the existing xcorr iter loop in `RunPhase2bMode3Chunk`
 when `AlignPcaCenter == 2` is set: instead of iterating xcorr-based
@@ -566,7 +566,7 @@ scratch[((t + s) % N + N) % N * nChan + c] = wave[t * nChan + c]
 | Use case | Fix existing dispersion | Diagnose / pristine work |
 
 Mode 2 is purely diagnostic: it shows whether circular-shift
-PCA-centring CAN bring the in-memory features into alignment.  It
+PCA-centering CAN bring the in-memory features into alignment.  It
 does not modify disk state.  Pristine-data workflows that want the
 benefit on disk should use mode 1 (with patch85 applied) instead.
 
@@ -576,7 +576,7 @@ benefit on disk should use mode 1 (with patch85 applied) instead.
   we're not re-extracting.
 - patch73 pre-refresh of `waveBuf` from prior `m_cumShift` —
   irrelevant; we don't read prior `m_cumShift`.
-- patch83 PCA-centring refine — superseded by the mode 2 path.
+- patch83 PCA-centering refine — superseded by the mode 2 path.
 - patch74 monotonicity warning — `m_cumShift` is untouched, so no
   crossings can be introduced.
 
@@ -598,11 +598,11 @@ m_cumShift NOT modified (mode 2)
   registered by patch83.
 
 
-## [2026-05-16c] patch83 — `AlignPcaCenter=1`: post-xcorr PCA-centring refine pass
+## [2026-05-16c] patch83 — `AlignPcaCenter=1`: post-xcorr PCA-centering refine pass
 
 Adds an opt-in refine pass that runs after the xcorr iter loop in
 `RunPhase2bMode3Chunk`.  For each spike, sweep candidate shifts in
-`[-maxShift, +maxShift]` and pick the one that minimises the squared
+`[-maxShift, +maxShift]` and pick the one that minimizes the squared
 distance from the spike's PCA representation to the cluster mean's
 PCA centroid.  Writes `m_cumShift[]` so the disk-commit path
 captures it.
@@ -615,10 +615,10 @@ reasonable but not perfect — they're built from spikes that have
 themselves been imperfectly aligned.  A spike whose true peak is
 1 sample off the mean's peak will get a 0-lag from xcorr (it's
 already at the closest grid point to the noisy mean) but a non-zero
-shift from PCA-centring (which uses all PCA dimensions, not just
+shift from PCA-centering (which uses all PCA dimensions, not just
 peak overlap).
 
-The PCA-centring refine therefore catches sub-xcorr-resolution
+The PCA-centering refine therefore catches sub-xcorr-resolution
 residual dispersion that the iter loop leaves on the table.
 
 ### Algorithm
@@ -738,7 +738,7 @@ passed — iterate over chunk spikes and, for any spike with
 `(rawTs + prevCum - PeakSampleIndex)` and overwrite `waveBuf[iLocal]`.
 Iter 0's mean is then built from already-shifted content.
 
-Bounds checking, stderiv handling, and fallback behaviour match the
+Bounds checking, stderiv handling, and fallback behavior match the
 iter-loop body — spikes that fail any check stay in their `.spk`
 state, same as the iter loop's fallback.
 
@@ -777,7 +777,7 @@ Does NOT modify `.res` or `m_cumShift`.
 
 Two issues, shipped together because they were discovered together.
 
-### Issue 1: Cluster-mean template never centred before xcorr
+### Issue 1: Cluster-mean template never centered before xcorr
 
 `RunPhase2bMode3Chunk` built the per-cluster mean template, then
 xcorr'd each spike against it — but the template was used as-is,
@@ -789,7 +789,7 @@ xcorr then pushed every spike toward the mean's actual peak rather
 than toward the configured `PeakSampleIndex`.  Spikes whose required
 shift exceeded `m_timeShiftMaxAbs` (default 3) were rejected outright
 at line 9249 — they stayed at their original positions while
-neighbours got aligned.  Net effect: cluster spikes left scattered
+neighbors got aligned.  Net effect: cluster spikes left scattered
 up to ±5 samples around the cluster mean.
 
 Fix: mirror Klusters' interactive `spikerealign.cpp` pre-alignment
@@ -859,7 +859,7 @@ The conjunction warning is removed.  The metrics line itself stays:
 
 — gini and maxFrac are still useful informational diagnostics.  An
 expert reading the log can interpret a 42% maxFrac with full context
-(channel count, expected unit composition, drift behaviour).  But the
+(channel count, expected unit composition, drift behavior).  But the
 automated warning that conflates biology with failure is gone.
 
 `condMax > 1e6` warning stays — borderline-singular covariance is a
@@ -964,10 +964,10 @@ Two issues:
 seeding (centroid of refractory-violators vs centroid of clean spikes)
 can put both centroids at the same place when contamination is
 feature-uniform (every spike in the cluster is a violator with respect
-to its temporal neighbour, but their feature distribution doesn't
+to its temporal neighbor, but their feature distribution doesn't
 separate violators from clean).  CEM then gets a degenerate two-seed
 start.  A more robust approach is farthest-point seeding from the
-mean — same as Phase 0/1.  Documented for evaluation; no behaviour
+mean — same as Phase 0/1.  Documented for evaluation; no behavior
 change here.
 
 ## [2026-04-28c] Subcluster routines — silent-failure diagnostics + off-by-one fix
@@ -1090,7 +1090,7 @@ queue for Stage 2.
 ## [2026-04-28b] Audit cleanup pass — Stage 1
 
 Six items from the KKE audit folded into one cumulative patch.  No
-algorithmic behaviour change for default invocations; users opt in to
+algorithmic behavior change for default invocations; users opt in to
 new features (`-InitMethod kmeans++`) or see new diagnostic output
 (per-phase quality lines).
 
@@ -1150,7 +1150,7 @@ cluster alignment despite the documentation saying the canonical xcorr
 realignment was replaced by the shift-probe.  The slot comment was
 accurate about the *intent* but the wire-in was missing.
 
-This patch does NOT auto-wire it — that would change runtime behaviour
+This patch does NOT auto-wire it — that would change runtime behavior
 on existing users' sessions.  Each call site now has a clear status
 comment plus an "uncomment to enable" snippet:
 
@@ -1207,20 +1207,20 @@ now use the constant.  The runtime guard at the top of MStep references
 number.  Bonus: added a previously-missing `nSpatialDims > kMaxStackDims`
 guard to the first `mahalDist` lambda in `MergeChunkModels`.
 
-### §7.4 K-means++ centre seeding
+### §7.4 K-means++ center seeding
 
 New `InitCentresKMeansPP(nCentres, nSpatialDims)`, opt-in via
 `-InitMethod kmeans++` (alongside the existing `farthest` and `random`).
 D²-weighted random sampling per Arthur & Vassilvitskii 2007.
 
-| seeding           | randomised | outlier-robust | guarantee     |
+| seeding           | randomized | outlier-robust | guarantee     |
 |-------------------|------------|----------------|---------------|
 | farthest (default)| no         | no (picks them)| —             |
 | kmeans++          | yes        | yes (stochastic)| O(log k) E[cost]|
 | random (canonical)| yes        | yes            | none          |
 
 Useful when running with `-nRuns >1`: farthest-point produces identical
-seeds across runs (same data → same centres), so the only "diversity"
+seeds across runs (same data → same centers), so the only "diversity"
 across runs comes from CEM's later random pieces.  K-means++ diversifies
 the seeds themselves.  Cost is identical to farthest-point.
 
@@ -1291,7 +1291,7 @@ Gaussian to two well-separated modes — the inflated covariance keeps
 testing the wrong thing for this failure mode.
 
 **Fix.** Add a parallel gate driven by the cluster's covariance shape
-itself.  Compute the top-3 eigenvalues of the cluster's centred
+itself.  Compute the top-3 eigenvalues of the cluster's centered
 covariance (cheaply, via the same power iteration that already runs for
 the dip-test PCs) and check whether the top eigenvalue dominates the
 median by a wide margin.  Two well-separated modes inflate the top
@@ -1360,7 +1360,7 @@ paths).  Removed entirely.
 Stderiv mode detection now lives solely on `m_timeShiftBasis.isStderiv`
 where it belongs — the basis struct owns its own metadata.
 
-No behavioural change; just less code to maintain.
+No behavioral change; just less code to maintain.
 
 ## [2026-04-23f] Time-shift Phase 4 stderiv disk-commit
 
@@ -1560,7 +1560,7 @@ mean in raw-waveform space.  The shift-probe's pre-shifted PCA basis
 already spans the same shift range δ ∈ {-N,…,+N}; doing the alignment in
 feature space via Cholesky-weighted Mahalanobis² naturally weights the
 discriminative dimensions (dimensions that differentiate this cluster
-from neighbours) over noise-dominated ones.  Also avoids xcorr's circular-
+from neighbors) over noise-dominated ones.  Also avoids xcorr's circular-
 shift wrap-around corruption — Phase 4 commits by re-extracting from .fil.
 
 **New API**:
@@ -1593,13 +1593,13 @@ shift wrap-around corruption — Phase 4 commits by re-extracting from .fil.
   definition, and `INT_PARAM` registration.  Updated `Phase15Iters`
   docstring to reflect new semantics.
 
-## [2026-04-23] Parameterised shift range + merge-step probe
+## [2026-04-23] Parameterized shift range + merge-step probe
 
 Three new parameters expose and extend the probe:
 
 | parameter                    | default | range | description |
 |------------------------------|---------|-------|-------------|
-| `MaxShiftProbe`              | 1       | 0–5   | half-width `N` of the pre-shifted basis fan.  The probe builds `(2N+1)` pre-shifted copies of the PCA basis (one per δ ∈ {−N,…,+N}) and tests them all in a single fanned inner loop.  `N=0` disables the probe entirely (falls back to canonical KlustaKwik behaviour).  Larger `N` catches wider mis-alignments at `(2N+1)/3×` cost per probe call. |
+| `MaxShiftProbe`              | 1       | 0–5   | half-width `N` of the pre-shifted basis fan.  The probe builds `(2N+1)` pre-shifted copies of the PCA basis (one per δ ∈ {−N,…,+N}) and tests them all in a single fanned inner loop.  `N=0` disables the probe entirely (falls back to canonical KlustaKwik behavior).  Larger `N` catches wider mis-alignments at `(2N+1)/3×` cost per probe call. |
 | `ShiftProbeReplacesPhase15`  | 1       | 0/1   | When `1`, skip the canonical Phase 1.5 xcorr realignment path in `KK::CEM` — the shift-probe's accumulated `m_cumShift[]` owns Phase 1.5 and `FinalizeShiftProbe` handles the single `.fil` re-extract pass.  Set to `0` to run both (diagnostic / A-B comparison). |
 | `ShiftProbeMergeProbe`       | 1       | 0/1   | When `1`, apply a min-Mahalanobis shift probe to each batch of spikes reassigned during `ConsiderDeletion` (cluster deletion / implicit merge).  Each reassigned spike picks INDEPENDENTLY the δ that best fits its receiving cluster's Gaussian.  Set to `0` to disable just the merge hook while keeping split-probe active. |
 
@@ -1673,7 +1673,7 @@ Bounded by the "hopeless candidate" gate.
 #### Stage 2: per-spike post-merge tightener
 
 Runs after stage 1's cluster-wide commit and the reassignment.  Each
-reassigned spike independently picks the δ ∈ {−N,…,+N} that minimises
+reassigned spike independently picks the δ ∈ {−N,…,+N} that minimizes
 its Mahalanobis² to its new home, bounded by `m_shiftProbeMaxShiftAbs`.
 No χ² threshold applied — residual per-spike misalignments are expected
 to be small and a tightened fit is always preferable.
@@ -1688,7 +1688,7 @@ governs single-call probes.
 |                   | split (max-var)           | merge decision (χ²-gated min-Mahal)  | merge tightener (min-Mahal)       |
 |-------------------|---------------------------|--------------------------------------|-----------------------------------|
 | Scope             | per cluster               | per destination sub-batch            | per spike                         |
-| Objective         | **maximise** Σ var(fᵢ)   | **minimise** Σ mahal²(x,μ_dest)     | **minimise** mahal²(x,μ_dest)     |
+| Objective         | **maximize** Σ var(fᵢ)   | **minimize** Σ mahal²(x,μ_dest)     | **minimize** mahal²(x,μ_dest)     |
 | Threshold         | any improvement           | χ²(nDims,0.95) × sub_batch_size      | any improvement (bounded by clamp)|
 | When              | inside split-accept       | inside ConsiderDeletion (before)     | inside ConsiderDeletion (after)   |
 | Rationale         | expose mixture            | accept temporally-duplicated merges  | polish per-spike fits             |

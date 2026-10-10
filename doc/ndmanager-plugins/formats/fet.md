@@ -18,7 +18,7 @@ standard variants are:
   through `process_pca_stderiv` into the PCA step; pairs with
   `pca.stderiv.N`.
 
-The old `.fetD.N` is retired in favour of `.fet.stderiv.N`.
+The old `.fetD.N` is retired in favor of `.fet.stderiv.N`.
 
 
 ---

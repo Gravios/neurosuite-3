@@ -1,4 +1,4 @@
-# KiloKlustaKwik — C++17 Modernisation & GPU Analysis
+# KiloKlustaKwik — C++17 Modernization & GPU Analysis
 
 ## Summary of changes from v1.7
 
@@ -15,12 +15,12 @@
 | `operator[]` const method returned non-const `T&` | Added proper `const T&` overload |
 | `Array2` used pointer-to-pointer heap (`Array<T>**`) | Replaced with single flat allocation (row-major, cache-friendly) |
 | `abort()` on bounds error | `std::runtime_error` thrown (catchable in main) |
-| `SetSize` left memory uninitialised | Now value-initialises to zero (`new T[n]()`) |
+| `SetSize` left memory uninitialized | Now value-initializes to zero (`new T[n]()`) |
 
 ### KK.cpp / KlustaKwik.cpp
 | Issue | Fix |
 |---|---|
-| `CandidateClass` used uninitialised in `ConsiderDeletion` | Initialised to -1, guarded before use |
+| `CandidateClass` used uninitialized in `ConsiderDeletion` | Initialized to -1, guarded before use |
 | `Cholesky()` allocated two temporary `Array<float>` objects per cluster per EStep | Rewrote to work on raw `float*` directly — ~2 heap allocs × nClusters × nIter eliminated |
 | `TriSolve()` same | Direct pointer arithmetic, no allocations |
 | `sprintf` with `STRLEN`-sized buffers | Replaced with `snprintf(..., STRLEN, ...)` |

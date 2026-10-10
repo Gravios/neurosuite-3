@@ -202,7 +202,7 @@
 
 [Traces \> Grey-Scale]{.menuchoice}
 
-:   Displays the channels in grey-scale.
+:   Displays the channels in gray-scale.
 
 [Traces \> Increase All Channel Amplitudes]{.menuchoice}
 

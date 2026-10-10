@@ -1,4 +1,4 @@
-# progressbar dedupe + modernisation
+# progressbar dedupe + modernization
 
 ## Files in this drop
 

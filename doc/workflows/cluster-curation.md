@@ -137,12 +137,12 @@ for the schema.
 ### Drift across the recording
 
 If clusters appear to "tilt" over time in the scatter plot (a
-spike-cloud whose centre drifts), this is electrode drift.
+spike-cloud whose center drifts), this is electrode drift.
 DipSplit, splitting, and merging won't fix this. After curation,
 run [drift correction](drift-correction.md) to compute a probe-wide
 drift trajectory and apply it to sibling shanks.
 
-### One cluster contaminating its neighbour
+### One cluster contaminating its neighbor
 
 The
 [Grouping Assistant Display](../klusters/README.md#grouping-assistant-display)

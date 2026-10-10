@@ -23,7 +23,7 @@ near-simultaneous spikes. Never modifies the original `.clu.N` /
 `.res.N` / `.spk.N` files. Requires curated `.clu.N` files.
 
 **Algorithm:** (1) Build mean templates from curated clusters.
-(2) Flag candidates with normalised cross-correlation below
+(2) Flag candidates with normalized cross-correlation below
 `corrThreshold`. (3) Fit all same-shank pairwise template combinations
 with shifts up to `maxShiftSamp`. (4) Accept when residual RMS fraction
 < `residualThreshold`.

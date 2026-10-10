@@ -1,7 +1,7 @@
 # Error-matrix compute — profiling and optimization roadmap
 
 The error matrix is a purely qualitative aid for visual curation: each cell
-`(i,j)` is the mean, over cluster *i*'s spikes, of the row-normalised posterior
+`(i,j)` is the mean, over cluster *i*'s spikes, of the row-normalized posterior
 of that spike under cluster *j*. Nothing downstream is derived from it. This note
 records where the full-recompute time actually goes (measured, not assumed) and
 the remaining levers, so the next change is chosen from data.
@@ -39,7 +39,7 @@ Arc: ~8.4 s originally →
 ## Why `alloc` dominates, and why removing `fillWithZeros` barely helped
 
 `new Array<double>(nSpikes, nClusters)` allocates ~14.8 GB and, via
-`make_unique<T[]>`, **value-initialises** it (zeroes). The dropped
+`make_unique<T[]>`, **value-initializes** it (zeroes). The dropped
 `fillWithZeros()` was a *second* zeroing pass — but over pages the constructor
 had already faulted in and made resident, so it ran at memory bandwidth
 (~120 ms), not the ~1.2 s guessed.

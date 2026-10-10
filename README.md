@@ -1,6 +1,6 @@
 # neurosuite-3
 
-A modernised, Qt6-compatible fork of the Neurosuite electrophysiology toolchain. All components compile under C++20 with Qt 6 on Ubuntu 24.04, Debian 12, and WSL2. GPU acceleration is available for compute-intensive steps via CUDA, ROCm/HIP, and SYCL.
+A modernized, Qt6-compatible fork of the Neurosuite electrophysiology toolchain. All components compile under C++20 with Qt 6 on Ubuntu 24.04, Debian 12, and WSL2. GPU acceleration is available for compute-intensive steps via CUDA, ROCm/HIP, and SYCL.
 
 ---
 
@@ -264,11 +264,11 @@ See [libklustersshared — YAML schema reference](doc/libklustersshared/README.m
 
 - **Three-tier KiloKlustaKwik parameter system** — `ndm_klustakwik` now resolves every parameter through three priority levels: (1) per-group `spikeDetection.channelGroups[g].kiloklustakwik` block (highest — probe-type-calibrated, written by `ndm_aom2dat`), (2) global `programs[ndm_klustakwik].parameters` block (session-level override), (3) built-in bash defaults. `MergeThresh` is calibrated to χ²(`nCh×3`, 0.9999) per group, `MaxClusters` is scaled by probe type (linear: 40, tetrode: 20, single: 5), and `GlobalMergeIter` / `TimeMergeIter` scale with √(`nSpatialDims`/24).
 - **KiloKlustaKwik chunked CEM** — three-phase temporal chunking for long recordings: Phase 0 global pre-seed (`ChunkPreseedFraction`), Phase 1 per-chunk CEM, Phase 2 overlap-vote cross-chunk merge (`ChunkOverlapMinutes`), Phase 3 global warm-start refinement. All parameters exposed in `ndm_klustakwik` and the session YAML.
-- **KiloKlustaKwik bug fixes** — chunk boundary normalisation (spikes at recording start no longer misassigned), sentinel initialisation (unwritten spikes no longer mapped to cluster 0), `MergeThresh` range warning, `UseFeatures` length-mismatch warning (now defaults to `"all"`), GPU shared-memory overflow fallback for pre-Blackwell hardware.
+- **KiloKlustaKwik bug fixes** — chunk boundary normalization (spikes at recording start no longer misassigned), sentinel initialization (unwritten spikes no longer mapped to cluster 0), `MergeThresh` range warning, `UseFeatures` length-mismatch warning (now defaults to `"all"`), GPU shared-memory overflow fallback for pre-Blackwell hardware.
 
 ### LFP and post-sorting pipeline
 
-- **`ndm_stripdat`** — subtracts spike waveforms from the raw `.dat` to produce `SESSION-spkclean.dat`. Uses per-cluster template modelling when `.clu.N` files are present (projection-based amplitude scaling, ISI-driven burst shape compensation). The original `.dat` is never modified.
+- **`ndm_stripdat`** — subtracts spike waveforms from the raw `.dat` to produce `SESSION-spkclean.dat`. Uses per-cluster template modeling when `.clu.N` files are present (projection-based amplitude scaling, ISI-driven burst shape compensation). The original `.dat` is never modified.
 - **`ndm_redetectspikes`** — second-round spike detection on the spike-cleaned `.dat`. Detects spikes missed in the first pass, then merges them into the existing `.res`/`.spk`/`.clu` files via `process_mergespikes`. Re-run `ndm_pca` and `ndm_klustakwik` afterwards.
 
 ### Qt6 / C++20
@@ -302,7 +302,7 @@ See [libklustersshared — YAML schema reference](doc/libklustersshared/README.m
 
 - **yaml-cpp 0.8 const `operator[]` crash** in `ParameterYamlReader` (13 chained subscripts patched).
 - **Null-value emission** fix in `ParameterYamlWriter` (empty strings now emit `~`).
-- **klusters undo/redo segfault** — three interacting bugs fixed: `undoRedoInProcess` not reset in normal path, `nbUndoChangedCleaning` clearing wrong list, `deletedClusters` uninitialised in `openDocument`.
+- **klusters undo/redo segfault** — three interacting bugs fixed: `undoRedoInProcess` not reset in normal path, `nbUndoChangedCleaning` clearing wrong list, `deletedClusters` uninitialized in `openDocument`.
 - **klusters empty `.clu` placeholder seeding** — opening a raw `.fet.N` file before any sorting no longer fails.
 - **ndmanager `channelcolorspage` segfault on save** — null table cells and half-row-removal loop fixed.
 

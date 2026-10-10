@@ -62,7 +62,7 @@ Separate the **substrate** (spike-indexed, shared) from the **labeling**
 - **`SpikeStore`** — one copy of `features`, the per-dimension extents
   (`dimensionMaxima`/`dimensionMinima`), sample geometry (nSamp/peak/sr), the
   `.spk` filename + on-demand waveform reader, and the par/electrode metadata.
-- **`ClusterLayer`** — a labeling (`spikesByCluster` + `clusterInfoMap` + colours)
+- **`ClusterLayer`** — a labeling (`spikesByCluster` + `clusterInfoMap` + colors)
   bound to a `SpikeStore`. One layer per clustering.
 
 Under this model a clustering is `SpikeStore + ClusterLayer`, and:
@@ -104,7 +104,7 @@ Working split:
 | Class | Members |
 |---|---|
 | Substrate | `features`, `dimensionMaxima`/`dimensionMinima`, `spkFileName` + `.spk` reader, `nbSpikes`, sample geometry, par/electrode metadata |
-| Labeling | `spikesByCluster`, `clusterInfoMap`, colour list |
+| Labeling | `spikesByCluster`, `clusterInfoMap`, color list |
 | Derived / cache | waveform sample/mean/stdev tables, correlograms |
 
 The output is a written contract of which members move. It settles the boundary
@@ -115,7 +115,7 @@ before any edit and de-risks Phase 1.
 Move the substrate members into a `SpikeStore` that `Data` still owns **by value**.
 Route `features(...)`, the dim extents, and the spk accessor through it. Parent and
 child still hold independent stores — nothing semantic changes. This isolates the
-large-but-mechanical member move ("identical behaviour") from the small-but-semantic
+large-but-mechanical member move ("identical behavior") from the small-but-semantic
 ownership change in Phase 2. Verify with the syntax proxy plus a feature-accessor
 equivalence run.
 

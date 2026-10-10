@@ -35,7 +35,7 @@ neurosuite-3 checkout.
 
 **Symptom.** Any session opened at `resolution = 32` reads garbage
 into the trace buffer — every other byte from the file plus 6 bytes
-of uninitialised memory per sample.  Traces would render as noise
+of uninitialized memory per sample.  Traces would render as noise
 (or a uniform line, depending on the offset and the residual stack
 contents).
 
@@ -174,7 +174,7 @@ not get the same treatment.  Same crash class (read past end of
 ### 6. `traceview.h` — typo in `paintEvent` parameter name
 
 `void paintEvent ( QPaintEvent*ainter) override;` — the parameter
-name is `ainter` (missing 'p').  Harmless to behaviour (parameter
+name is `ainter` (missing 'p').  Harmless to behavior (parameter
 name is irrelevant in declaration) but obviously a slip.  The
 implementation in `traceview.cpp` already has an unnamed parameter,
 so just match: `void paintEvent ( QPaintEvent*) override;`.
@@ -187,7 +187,7 @@ so just match: `void paintEvent ( QPaintEvent*) override;`.
 if (mode == SELECT && !shownChannels.isEmpty() || mode == MEASURE || ... ) {
 ```
 
-C++ correctly parses `&&` tighter than `||`, so behaviour is what was
+C++ correctly parses `&&` tighter than `||`, so behavior is what was
 intended (SELECT requires shownChannels non-empty; other modes don't).
 But `-Wparentheses` flags this and a hurried reader can misread it.
 Wrap explicitly: `(mode == SELECT && !shownChannels.isEmpty()) || ...`.
@@ -236,7 +236,7 @@ operator[] which inserts a default-constructed (null) value when the
 key is missing.  Over time this grows the hash with stale null
 entries; the iterator paths then have to skip them.  Replaced with
 `hash.value(key)` (returns default but does not insert) and added an
-explicit null check.  No behavioural change; eliminates a slow leak.
+explicit null check.  No behavioral change; eliminates a slow leak.
 
 ---
 
@@ -353,7 +353,7 @@ Please verify on the `jg05-20120316` reference session at group 7
 with raster + verticalLines enabled, several selected cluster
 groups, and the spike-browse forward/backward shortcuts.  The
 "channel select picks wrong channel when the topmost is skipped"
-behaviour is the easiest to confirm — open a session, mark the
+behavior is the easiest to confirm — open a session, mark the
 top-of-group channel as skipped, click in that group, observe that
 the click lands on the second (not third) visible channel.
 

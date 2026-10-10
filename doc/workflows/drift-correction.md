@@ -3,7 +3,7 @@
 Estimates probe drift from one carefully curated shank, then
 propagates the drift trajectory to sibling shanks on the same probe.
 Use this for chronic recordings spanning hours where electrode drift
-is visible as cluster centres shifting over time.
+is visible as cluster centers shifting over time.
 
 The two-step structure (estimate from one shank, apply to all) means
 you only have to fully curate one shank's drift — the others inherit

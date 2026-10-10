@@ -40,7 +40,7 @@ NeuroScope searches the same directory for all companion files (`.lfp`, `.fil`, 
 
 | File | Content |
 |---|---|
-| `session.yaml` | Parameter file — channel count, sampling rates, electrode groups, display colours |
+| `session.yaml` | Parameter file — channel count, sampling rates, electrode groups, display colors |
 | `session.dat` | Wideband signal (int16, channel-interleaved, no header) |
 | `session.lfp` | LFP signal (same binary format as `.dat`, lower sampling rate) |
 | `session.fil` | High-pass filtered signal (same binary format as `.dat`) |
@@ -49,7 +49,7 @@ NeuroScope searches the same directory for all companion files (`.lfp`, `.fil`, 
 | `session.clu.N` | Cluster assignments for electrode group N (binary: int32 nClusters header + int32 cluster IDs; legacy text format still accepted) |
 | `session.evt` / `session.evt.abc` | Event file — millisecond timestamps + text labels |
 | `session.pos` | Animal position — binary x,y pairs at video sampling rate |
-| `session.nrs` | NeuroScope session file — saved viewer state (open files, display config, colours) |
+| `session.nrs` | NeuroScope session file — saved viewer state (open files, display config, colors) |
 
 All raw signal files (`.dat`, `.lfp`, `.fil`, `.spk.N`) are int16, channel-interleaved, with no header. The number of channels and sampling rates come from the parameter file.
 
@@ -60,8 +60,8 @@ All raw signal files (`.dat`, `.lfp`, `.fil`, `.spk.N`) are int16, channel-inter
 The main window has three areas:
 
 - **Left dock — Channel panel**: two tabs, *Display* and *Spike*. Lists channels organised by anatomical group (Display tab) or electrode group (Spike tab). Checkboxes show/hide individual channels.
-- **Centre — Trace view**: the scrollable signal canvas with all overlaid data layers.
-- **Right dock — Cluster and Event palettes**: collapsible panels, one per loaded cluster file and one per loaded event file, showing coloured unit/event buttons.
+- **Center — Trace view**: the scrollable signal canvas with all overlaid data layers.
+- **Right dock — Cluster and Event palettes**: collapsible panels, one per loaded cluster file and one per loaded event file, showing colored unit/event buttons.
 
 ---
 
@@ -111,7 +111,7 @@ Cluster files are loaded via **File → Load Cluster File(s)…** A cluster file
 | `session.res.N` | Spike timestamps (sample indices) | Yes — inferred from `.clu.N` path |
 | `session.spk.N` | Waveform snippets for each spike | No — enables waveform display mode |
 
-Multiple cluster files can be loaded simultaneously (e.g. groups 1–8 at once). Each gets its own panel in the right-hand cluster palette, with independently selectable and coloured units.
+Multiple cluster files can be loaded simultaneously (e.g. groups 1–8 at once). Each gets its own panel in the right-hand cluster palette, with independently selectable and colored units.
 
 ### Error conditions
 
@@ -126,7 +126,7 @@ Three rendering modes are available from the **Units** menu and can be combined 
 | Mode | Menu item | Description |
 |---|---|---|
 | **Raster** (default on) | Units → Raster | Vertical tick marks at each spike timestamp, one row per cluster, rendered as a strip above or below the traces |
-| **Vertical lines** | Units → Vertical Lines | Full-height coloured vertical lines at each spike timestamp |
+| **Vertical lines** | Units → Vertical Lines | Full-height colored vertical lines at each spike timestamp |
 | **Waveforms** | Units → Waveforms | Waveform snippets from `.spk.N` drawn in-place at each spike timestamp |
 
 Raster row height is adjustable with `Ctrl++` / `Ctrl+-`.
@@ -135,7 +135,7 @@ The position of the raster/line/waveform strip relative to the traces is set in 
 
 ### Cluster palette
 
-The right-hand palette shows one coloured button per cluster ID. Clicking selects that cluster (used for Next/Previous Spike navigation). Double-click opens a colour picker. Right-click provides show/hide options.
+The right-hand palette shows one colored button per cluster ID. Clicking selects that cluster (used for Next/Previous Spike navigation). Double-click opens a color picker. Right-click provides show/hide options.
 
 | Action | Shortcut |
 |---|---|
@@ -143,7 +143,7 @@ The right-hand palette shows one coloured button per cluster ID. Clicking select
 | Select All except 0 and 1 | `Ctrl+Shift+A` (excludes noise/MUA) |
 | Deselect All | `Ctrl+U` |
 
-Cluster colour assignments are saved to the session file and restored on reload.
+Cluster color assignments are saved to the session file and restored on reload.
 
 ### Closing a cluster file
 
@@ -153,7 +153,7 @@ Cluster colour assignments are saved to the session file and restored on reload.
 
 ## Waveform display
 
-When Waveforms mode is enabled and `.spk.N` is present, neuroscope draws the snippet for each visible spike centred on the spike timestamp. Two parameters control the window:
+When Waveforms mode is enabled and `.spk.N` is present, neuroscope draws the snippet for each visible spike centered on the spike timestamp. Two parameters control the window:
 
 - **nbSamples** — total number of samples in the waveform snippet
 - **peakIndex** — sample index (0-based) of the spike peak within that window
@@ -185,7 +185,7 @@ Multiple event files can be loaded simultaneously, distinguished by their file s
 
 ### Loading event files
 
-**File → Load Event File(s)…** opens a multi-file picker. Each loaded `.evt` file gets its own panel in the event palette, with a distinct colour per event description (label).
+**File → Load Event File(s)…** opens a multi-file picker. Each loaded `.evt` file gets its own panel in the event palette, with a distinct color per event description (label).
 
 ### Creating a new event file
 
@@ -251,7 +251,7 @@ Both palettes support click/Ctrl+click selection, checkboxes, and right-click co
 | Discard channels (mark dead) | `Delete` |
 | Keep channels (un-discard) | `Ctrl+Shift+K` |
 | Skip channels | `Ctrl+Shift+S` |
-| Synchronise display and spike groups | Channels → Synchronise Groups |
+| Synchronize display and spike groups | Channels → Synchronize Groups |
 
 ### Amplitude and offset controls
 
@@ -267,12 +267,12 @@ Both palettes support click/Ctrl+click selection, checkboxes, and right-click co
 | Zero all default offsets | Traces → Set Default Offsets to Zero |
 | Autocenter channels (subtract window mean) | `Ctrl+Shift+A` (toggle) |
 
-### Colour modes
+### Color modes
 
-- **Colour by Anatomical Groups** — channels in the same anatomical group share a colour (Channels menu).
-- **Colour by Spike Groups** — channels are coloured by electrode group (Channels menu).
+- **Color by Anatomical Groups** — channels in the same anatomical group share a color (Channels menu).
+- **Color by Spike Groups** — channels are colored by electrode group (Channels menu).
 
-Both modes propagate to the left channel panel colouring.
+Both modes propagate to the left channel panel coloring.
 
 ---
 
@@ -281,7 +281,7 @@ Both modes propagate to the left channel panel colouring.
 | Option | Menu / Shortcut | Notes |
 |---|---|---|
 | Multiple columns | Traces → Multiple Columns | Splits channels across two horizontal columns |
-| Grey-scale | Traces → Grey-Scale | Renders traces in greyscale — useful for printing |
+| Gray-scale | Traces → Gray-Scale | Renders traces in grayscale — useful for printing |
 | Show labels | Traces → Show Labels (`Ctrl+L`) | Channel name labels on the left edge of the trace view |
 | Display calibration | Settings → Display Calibration | Draws a scale bar overlay |
 | Background image | File → Properties | Static image behind all traces |
@@ -308,7 +308,7 @@ Each **Display** tab has its own independent time position, zoom level, visible 
 
 ## Session file (`.nrs`)
 
-**File → Save** / **Save As** writes a `session.nrs` YAML file capturing the full viewer state. On next open, neuroscope restores the loaded files, colours, channel positions, and time window for every display tab.
+**File → Save** / **Save As** writes a `session.nrs` YAML file capturing the full viewer state. On next open, neuroscope restores the loaded files, colors, channel positions, and time window for every display tab.
 
 Structure:
 
@@ -391,7 +391,7 @@ neuroscope:
 
 | Setting | Description |
 |---|---|
-| Background colour | Trace view canvas background |
+| Background color | Trace view canvas background |
 | Default nbSamples | Waveform window length when not specified in parameter file |
 | Default peakIndex | Waveform peak sample position |
 | Cluster position | Raster/line strip placement: between traces, at top, or at bottom |

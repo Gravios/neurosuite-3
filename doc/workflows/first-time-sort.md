@@ -82,7 +82,7 @@ neuroscope recording_001.yaml
 ```
 
 Look for clusters whose firing pattern lines up with expected event
-markers (LFP ripples, behavioural events, optogenetic stimulations).
+markers (LFP ripples, behavioral events, optogenetic stimulations).
 Suspect anything that fires uniformly without modulation — likely
 noise or MUA.
 

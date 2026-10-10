@@ -85,7 +85,7 @@ KiloKlustaKwik jg05-20120316 7 \
 
 KiloKlustaKwik uses a two-phase algorithm by default:
 
-- **Phase 1** — spatial-only EM using all feature dimensions except the last (time). Centres are seeded with the farthest-point heuristic (`InitCentresFarthestPoint`), which gives better initial separation than random assignment.
+- **Phase 1** — spatial-only EM using all feature dimensions except the last (time). Centers are seeded with the farthest-point heuristic (`InitCentresFarthestPoint`), which gives better initial separation than random assignment.
 - **Phase 2** — short merge pass (`TimeMergeIter` iterations) that reintroduces the time dimension. This allows temporally drifting clusters to be identified without allowing time to dominate the spatial clustering phase.
 
 | Parameter | Default | Description |
@@ -117,8 +117,8 @@ For long recordings (> ~30 min) where electrode drift causes a cluster to appear
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-StartCluFile PATH` | — | Initialise from an existing `.clu` file |
-| `-InitMethod STR` | `"random"` | Initialisation method (`"random"` or `"farthest"`) |
+| `-StartCluFile PATH` | — | Initialize from an existing `.clu` file |
+| `-InitMethod STR` | `"random"` | Initialization method (`"random"` or `"farthest"`) |
 
 ---
 
