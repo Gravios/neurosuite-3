@@ -72,6 +72,13 @@
 #include "input/inputdispatcher.h"   // input::registry()
 #include "input/chord.h"             // chordFromKeySequence
 
+#include <QDialog>                   // S7: the Keyboard Shortcuts cheat-sheet dialog
+#include <QScrollArea>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QMap>
+
 
 NeuroscopeApp::NeuroscopeApp()
     :QMainWindow(0)
@@ -592,6 +599,10 @@ void NeuroscopeApp::initActions()
     handbook->setShortcut(Qt::Key_F1);
     connect(handbook, &QAction::triggered, this, &NeuroscopeApp::slotHanbook);
 
+    // Help ▸ Keyboard Shortcuts… — the registry-generated cheat-sheet (input-overhaul S7).
+    mShortcutsHelp = helpMenu->addAction(tr("Keyboard Shortcuts…"));
+    connect(mShortcutsHelp, &QAction::triggered, this, &NeuroscopeApp::showKeyboardShortcuts);
+
     QAction *about = helpMenu->addAction(tr("About"));
     connect(about, &QAction::triggered, this, &NeuroscopeApp::slotAbout);
 
@@ -881,6 +892,68 @@ void NeuroscopeApp::auditKeyBindings() const
                  int(c.commandIds.size()),
                  qPrintable(c.scopeId),
                  qPrintable(c.commandIds.join(QStringLiteral(", "))));
+}
+
+void NeuroscopeApp::showKeyboardShortcuts()
+{
+    // The cheat-sheet is generated entirely from input::registry() — there is no second,
+    // hand-written list to drift out of sync (the failure the input overhaul exists to prevent).
+    // Each row shows the EFFECTIVE chord, so a rebind set in Preferences ▸ Input shows up here the
+    // moment it is applied.  Keyboard and mouse are split by the command's device; within each,
+    // commands are grouped by their (human-readable) category.
+    const input::BindingRegistry& reg = input::registry();
+
+    QString html = QStringLiteral(
+        "<style>"
+        "body{font-family:sans-serif}"
+        "h3{margin:14px 0 4px 0;color:#a0c0ff;font-size:11pt}"
+        "table{border-collapse:collapse;min-width:520px;margin:0 0 4px 0}"
+        "th{background:#2a2a2a;color:#e0e0e0;padding:5px 12px;text-align:left}"
+        "td{padding:3px 12px;border-bottom:1px solid #3a3a3a}"
+        "td:first-child{font-family:monospace;font-weight:bold;white-space:nowrap;min-width:140px}"
+        "</style>");
+
+    // One section builder, run for the keyboard devices then the mouse devices.
+    auto section = [&](const QString& heading, const QString& note, auto deviceWanted){
+        QMap<QString, QList<const input::Command*>> byCat;   // category -> commands of this device class
+        for (const input::Command& c : reg.commands())
+            if (deviceWanted(reg.effectiveChord(c.id).device))
+                byCat[c.category].append(&c);
+        if (byCat.isEmpty()) return;
+        html += QStringLiteral("<h3>%1</h3>").arg(heading);
+        if (!note.isEmpty())
+            html += QStringLiteral("<p style='margin:0 0 4px 0;color:#b0b0b0'>%1</p>").arg(note);
+        for (auto it = byCat.constBegin(); it != byCat.constEnd(); ++it) {
+            html += QStringLiteral("<table><tr><th colspan=\"2\">%1</th></tr>").arg(it.key().toHtmlEscaped());
+            for (const input::Command* c : it.value())
+                html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>")
+                        .arg(reg.effectiveChord(c->id).displayString().toHtmlEscaped())
+                        .arg(c->label.toHtmlEscaped());
+            html += QStringLiteral("</table>");
+        }
+    };
+
+    section(tr("Keyboard (editable in Preferences ▸ Input)"), QString(),
+            [](input::Device d){ return d == input::Device::Key; });
+    section(tr("Mouse (editable in Preferences ▸ Input)"),
+            tr("A gesture bound with “any modifiers” also fires with extra modifier keys held."),
+            [](input::Device d){ return d == input::Device::Button || d == input::Device::Wheel; });
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Keyboard Shortcuts"));
+    dlg.resize(640, 720);
+    QVBoxLayout* vl = new QVBoxLayout(&dlg);
+    QScrollArea* scroll = new QScrollArea(&dlg);
+    QLabel* lbl = new QLabel(html);
+    lbl->setTextFormat(Qt::RichText);
+    lbl->setMargin(8);
+    scroll->setWidget(lbl);
+    scroll->setWidgetResizable(true);
+    vl->addWidget(scroll);
+    QDialogButtonBox* bb = new QDialogButtonBox(QDialogButtonBox::Ok, &dlg);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    vl->addWidget(bb);
+    dlg.exec();
 }
 
 void NeuroscopeApp::executePreferencesDlg(){

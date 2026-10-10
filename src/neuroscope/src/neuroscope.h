@@ -285,6 +285,11 @@ protected:
      *  show the user's rebindings (input-overhaul S6).  Only touches actions actually rebound;
      *  the rest keep the shipped shortcut the menu set.  Called at startup and after Apply. */
     void applyInputOverridesToActions();
+    /** Show the Help ▸ Keyboard Shortcuts cheat-sheet (input-overhaul S7): a read-only dialog
+     *  generated entirely from input::registry() — keyboard commands and the ported mouse
+     *  gestures, grouped by category, showing each command's EFFECTIVE chord, so a rebinding set
+     *  in Preferences ▸ Input appears here immediately and no second list can drift. */
+    void showKeyboardShortcuts();
     /** sets up the statusbar for the main window by initialzing a statuslabel.
      */
     void initStatusBar();
@@ -723,6 +728,7 @@ private:
     QAction* autocenterChannels;
     QAction* showHideLabels;
     QAction* handbook;      // Help ▸ Handbook (F1) — promoted to a member in input-overhaul S1 so registerInputBindings() can mirror it
+    QAction* mShortcutsHelp; // Help ▸ Keyboard Shortcuts… — the registry-driven cheat-sheet (S7)
     QAction* calibrationBar;
     /** input-overhaul S6: commandId -> the mirrored QAction, so applyInputOverridesToActions()
      *  can push a rebound chord onto the live menu/toolbar shortcut (populated in registerActionCommand). */
