@@ -238,6 +238,10 @@ public:
      * modified-event commit stay in the mouse*Event handlers.  Invoked by the
      * trace.selectEventPress Gesture on the mode.selectEvent scope. */
     void beginSelectEventPress(const QPoint& viewportPos);
+    /** The MEASURE press body (mode 6/7): begin the measure rubber band and record the channel +
+     * sample for the voltage/time measurement; the drag and the measurement commit stay in the
+     * mouse*Event handlers.  Invoked by the trace.measurePress Gesture on the mode.measure scope. */
+    void beginMeasurePress(const QPoint& viewportPos);
 
     /**Selects the channels .
   *@param selectedIds ids of the selected channels.
@@ -600,6 +604,13 @@ protected:
      * (multi- or single-column) is active.  Pure — no side effects; the per-mode bodies read
      * the returned geometry.  Lifted verbatim from the former inline mousePressEvent preamble. */
     TraceClickGeometry resolveClickGeometry(const QPoint& viewportPos);
+    /** The nearest-drawn-channel hit-test shared by the SELECT and MEASURE presses (neuroscope
+     * input overhaul S5): the id of the non-skipped channel whose trace at g.sampleIndex is
+     * closest to the click ordinate.  Lifted verbatim from the two inline press blocks (multi-
+     * and single-column).  Returns -1 when the single-column layout has no shown groups (the
+     * former `if (shownGroupsChannels.isEmpty()) return;` guard); the multi-column path always
+     * returns a valid channel. */
+    int nearestChannelAt(const TraceClickGeometry& g);
 private:
 
     /**

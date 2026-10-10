@@ -3086,6 +3086,117 @@ void TraceView::beginSelectEventPress(const QPoint& viewportPos){
     previousDragOrdinate = 0;
 }
 
+int TraceView::nearestChannelAt(const TraceClickGeometry& g){
+    // The nearest-drawn-channel hit-test shared by the SELECT and MEASURE presses (S5).  Lifted
+    // verbatim from the two inline press blocks; reads g.groupIndex / g.sampleIndex / g.current.
+    if (multiColumns){
+        QList<int> groupIds = shownGroupsChannels.keys();
+        int groupId = groupIds[static_cast<int>(g.groupIndex)];
+        QList<int> channelIds = shownGroupsChannels[groupId];
+        int currentNbChannels = channelIds.size();
+        int y = Y0;
+        int channelId = channelIds[0];
+        int channelIndex = 1;
+        //look up for the first channel which is not skipped (audit-2026-04-29 fixed form)
+        if (skippedChannels.contains(channelId)){
+            for(int i = 1; i < currentNbChannels; ++i){
+                y -= Yshift;
+                if (!skippedChannels.contains(channelIds[i])){
+                    channelId = channelIds[i];
+                    channelIndex = i + 1;
+                    break;
+                }
+            }
+        }
+
+        int position = -y + channelOffsets[channelId] - static_cast<long>(data(g.sampleIndex,channelId + 1) * channelFactors[channelId]);
+        int difference = abs(g.current.y() - position);
+        int selectedChannel = channelId;
+        y -= Yshift;
+
+        for(int i = channelIndex; i < currentNbChannels; ++i){
+            channelId = channelIds[i];
+            position = -y + channelOffsets[channelId] - static_cast<long>(data(g.sampleIndex,channelId + 1) * channelFactors[channelId]);
+
+            if (abs(g.current.y() - position) < difference && !skippedChannels.contains(channelId)){
+                difference = abs(g.current.y() - position);
+                selectedChannel = channelId;
+            }
+            y -= Yshift;
+        }
+        return selectedChannel;
+    }
+    else{//single column
+        QList<int> groupIds = shownGroupsChannels.keys();
+
+        if (shownGroupsChannels.isEmpty())
+           return -1;
+        QList<int> firstGroup = shownGroupsChannels[groupIds[0]];
+        int y = Y0;
+        int channelId = firstGroup[0];
+        int channelIndex = 1;
+        int startingGroupIndex = 0;
+        //look up for the first channel which is not skipped.
+        if (skippedChannels.contains(channelId)){
+            for(int j = 0; j<groupIds.size();++j){
+                QList<int> channelIds = shownGroupsChannels[groupIds[j]];
+                int currentNbChannels = channelIds.size();
+                for(int i = 0; i < currentNbChannels; ++i){
+                    if (!skippedChannels.contains(channelIds[i])){
+                        channelId = channelIds[i];
+                        channelIndex = i + 1;
+                        startingGroupIndex = j;
+                        break;
+                    }
+                    y -= Yshift;
+                }
+                if (!skippedChannels.contains(channelId))  break;
+            }
+        }
+
+        int position = -y + channelOffsets[channelId] - static_cast<long>(data(g.sampleIndex,channelId + 1) * channelFactors[channelId]);
+        int difference = abs(g.current.y() - position);
+        int selectedChannel = channelId;
+        y -= Yshift;
+
+        for(int j = startingGroupIndex; j<groupIds.size();++j){
+            QList<int> channelIds = shownGroupsChannels[groupIds[j]];
+            int currentNbChannels = channelIds.size();
+            int i = 0;
+            if (j == startingGroupIndex) i = channelIndex;
+            for(; i < currentNbChannels; ++i){
+                channelId = channelIds[i];
+                position = -y + channelOffsets[channelId] - static_cast<long>(data(g.sampleIndex,channelId + 1) * channelFactors[channelId]);
+
+                if (abs(g.current.y() - position) < difference && !skippedChannels.contains(channelId)){
+                    difference = abs(g.current.y() - position);
+                    selectedChannel = channelId;
+                }
+                y -= Yshift;
+            }
+            y -= YGroupSpace;
+        }
+        return selectedChannel;
+    }
+}
+
+void TraceView::beginMeasurePress(const QPoint& viewportPos){
+    // MEASURE press, split out of the mouse-press monolith (neuroscope input overhaul S5,
+    // mode 6/7).  Begin the measure rubber band (setMode => drawRubberBand(true); the gesture
+    // fires only on Left, so the old BaseFrame::mousePressEvent delegation reduces to this call),
+    // then resolve the click and the nearest channel, and record them for the measurement.  The
+    // drag preview (MEASURE branch of mouseMoveEvent) and the measurement commit
+    // (mouseReleaseEvent) stay inline, reading channelforVoltageComputation / startingIndex.
+    beginBaseZoom(viewportPos);
+    const TraceClickGeometry g = resolveClickGeometry(viewportPos);
+    lastClickOrdinate = g.current.y();
+    const int selectedChannel = nearestChannelAt(g);
+    if (selectedChannel < 0) return;   // single-column + no shown groups: the former empty-return
+    channelforVoltageComputation = selectedChannel;
+    startingIndex = g.x;
+    previousDragOrdinate = 0;
+}
+
 void TraceView::mousePressEvent(QMouseEvent* event){
     // Input seam (neuroscope input overhaul S2): consult the shared registry before the
     // mode-switched body below.  Inert until the trace press modes are ported (S5) — with
@@ -3094,26 +3205,16 @@ void TraceView::mousePressEvent(QMouseEvent* event){
     if(dispatchInput(event)) return;
     if (event->button() == Qt::LeftButton){
 
-        // S5: ZOOM and SELECT_TIME are now registry Gestures (trace.zoomRubberBand,
-        // trace.selectTimePress), armed by the dispatchInput() seam above — those presses are
-        // handled there and have already returned, so they never reach here.  MEASURE still
-        // begins the base rubber band inline (ported in a later S5 patch).
-        if (mode == MEASURE){
-            //The parent implementation takes care of the zoom.
-            BaseFrame::mousePressEvent(event);
-        }
+        // S5: ZOOM, SELECT_TIME and MEASURE are now registry Gestures, armed by the
+        // dispatchInput() seam above — those presses are handled there and have already returned,
+        // so they never reach here.  SELECT is the last mode still inline (ported next).
         QList<int> currentlySelectedChannels;
         QList<int> deselectedChannels;
 
-        // ── Audit 2026-04-29: parentheses added to make the &&/||
-        //    precedence explicit.  Original code parsed correctly under
-        //    C++ rules (&& binds tighter than ||) but compiler emits
-        //    -Wparentheses warnings and the intent was hard to verify
-        //    by inspection.  Behaviour unchanged.
-        // S5: SELECT_TIME, ADD_EVENT, DRAW_LINE and SELECT_EVENT dropped from this list — their
-        // presses are Gestures that return via the seam before reaching here.  Only SELECT and
-        // MEASURE remain (ported next); the nearest-channel pick below now runs unconditionally.
-        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE){
+        // S5: only SELECT remains in this block now (all other modes are Gestures).  The final
+        // `else startingIndex = x` tail below is dead (kept until the SELECT port collapses the
+        // whole block).
+        if (mode == SELECT && !shownChannels.isEmpty()){
             // S5: the click-geometry preamble (world point + column/sample it selects) is now
             // resolved once by resolveClickGeometry(); the per-mode bodies below read the shared
             // result.  `current` keeps its old name and lastClickOrdinate (a press side effect)
@@ -3259,14 +3360,10 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                         }
                         emit channelsSelected(mSelectedChannels);
                     }//end of mode == SELECT
-                    //mode == MEASURE
-                    else if (mode == MEASURE){
-                        channelforVoltageComputation = selectedChannel;
-                        startingIndex = x;
-                    }
-                    //mode == MEASURE
+                    // S5: MEASURE press is a Gesture (trace.measurePress).  This tail is now dead
+                    // (only SELECT reaches the block); kept until the SELECT port removes it.
                     else startingIndex = x;
-                }//!(mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift))
+                }//nearest-channel pick (multi-column)
             }//end multicolumns
             else{//single column
                 //geometry resolved by resolveClickGeometry (S5); keep the old local names.
@@ -3395,15 +3492,11 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                         }
                         emit channelsSelected(mSelectedChannels);
                     }//end of mode == SELECT
-                    //mode == MEASURE
-                    else if (mode == MEASURE){
-                        channelforVoltageComputation = selectedChannel;
-                        startingIndex = x;
-                    }
-                    //mode == SELECT_TIME
+                    // S5: MEASURE press is a Gesture (trace.measurePress).  This tail is now dead
+                    // (only SELECT reaches the block); kept until the SELECT port removes it.
                     else
                         startingIndex = x;
-                }//mode != SELECT_EVENT
+                }//nearest-channel pick (single column)
             }//single column
             if (mode == SELECT){
                 drawTraces(currentlySelectedChannels,true);

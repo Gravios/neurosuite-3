@@ -240,6 +240,27 @@ void registerTraceInputOnce()
         };
         reg.addCommand(se);
     }
+
+    // S5 mode 6/7 — the MEASURE press.  A Left press (any modifiers) in MEASURE mode begins the
+    // measure band and records the channel + sample under the click; invoke() does the press, the
+    // drag/commit stay inline.  Same AtLeast+NoModifier-on-Left gate; resolves only in MEASURE via
+    // the mode.measure scope.
+    {
+        input::Command me;
+        me.id       = QStringLiteral("trace.measurePress");
+        me.scopeId  = QStringLiteral("mode.measure");
+        me.label    = TraceView::tr("Begin a measurement");
+        me.category = TraceView::tr("Measure");
+        me.kind     = input::Kind::Gesture;
+        me.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                              input::Phase::Press, input::ModMatch::AtLeast);
+        me.invoke   = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            if(v && c.event)
+                v->beginMeasurePress(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(me);
+    }
 }
 }  // namespace
 
