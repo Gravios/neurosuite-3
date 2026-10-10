@@ -2,7 +2,7 @@
 
 Every per-group artifact in neurosuite-3 is named with an explicit
 **method** (a.k.a. **variant**) tag. This is the single naming convention
-shared by all programs — Klusters, Neuroscope, the `ndm_*` plugins, and
+shared by all programs — Klusters, NeuroScope, the `ndm_*` plugins, and
 fiber-kit — and it replaces the older `.spk`/`.spkD`, `.fet`/`.fetD`,
 `.pca`/`.pcaD` "D-suffix" scheme.
 

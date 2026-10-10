@@ -1,6 +1,6 @@
 # Installation
 
-## How to obtain Neuroscope {#getting-neuroscope}
+## How to obtain NeuroScope {#getting-neuroscope}
 
 NeuroScope can be found on <http://neuroscope.sourceforge.net>.
 

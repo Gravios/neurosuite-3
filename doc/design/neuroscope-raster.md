@@ -1,6 +1,6 @@
 ## neuroscope — cluster raster / overlay stall fixes (2026-04-20, rev 2)
 
-Three real bugs fixed in the Neuroscope trace-view path that together
+Three real bugs fixed in the NeuroScope trace-view path that together
 eliminate the "gets stuck a bit" behaviour observed during cluster
 overlay and raster display.  An initially-diagnosed fourth bug
 (Bug 1 — synchronous signal re-entry) turned out to not be a real
