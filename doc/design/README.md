@@ -32,6 +32,9 @@ the time-ordered index; the design docs are the durable reference.
 | [`ndm-start-root.md`](ndm-start-root.md) | ndmanager Pipeline tab — editable node graph with `ndm_start` as sticky root, plus YAML-driven dispatcher |
 | [`optimization.md`](optimization.md) | Hardware and OS tuning recipe |
 | [`substrate-labeling-refactor.md`](substrate-labeling-refactor.md) | Split the spike substrate from cluster labeling; unify flat + hierarchical as an N-layer model |
+| [`errormatrix-compute-optimization.md`](errormatrix-compute-optimization.md) | Error-matrix compute — profiling and optimization roadmap |
+| [`realign-gpu-batch.md`](realign-gpu-batch.md) | Cross-cluster GPU-batched PCA-Center "Align All" (design; hardware-only) |
+| [`probe-maker.md`](probe-maker.md) | Probe Maker — interactive probe design and editing |
 
 ## Related
 
