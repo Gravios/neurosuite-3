@@ -1,5 +1,5 @@
 project(ndmanager-plugins-matlab)
-cmake_minimum_required(VERSION 2.8.6)
+cmake_minimum_required(VERSION 3.16)
 
 # Install matlab functions
 set(program spots2pos)
