@@ -224,6 +224,10 @@ public:
      * record the drag's starting abscissa (+ the lastClickOrdinate / previousDragOrdinate press
      * resets).  Invoked by the trace.selectTimePress Gesture on the mode.selectTime scope. */
     void beginSelectTimePress(const QPoint& viewportPos);
+    /** The ADD_EVENT press body (mode 3/7): record the sample position for a new event when the
+     * click lands in the trace area (the release creates it).  No rubber band, no drag.  Invoked
+     * by the trace.addEventPress Gesture on the mode.addEvent scope. */
+    void beginAddEventPress(const QPoint& viewportPos);
 
     /**Selects the channels .
   *@param selectedIds ids of the selected channels.

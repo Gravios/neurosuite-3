@@ -177,6 +177,27 @@ void registerTraceInputOnce()
         };
         reg.addCommand(st);
     }
+
+    // S5 mode 3/7 — the ADD_EVENT press.  A Left press (any modifiers) in ADD_EVENT mode records
+    // the clicked sample position for a new event; the release creates it.  No rubber band, no
+    // drag — invoke() does the whole press.  Same AtLeast+NoModifier-on-Left gate as the old
+    // inline branch; resolves only in ADD_EVENT via the mode.addEvent scope.
+    {
+        input::Command ae;
+        ae.id       = QStringLiteral("trace.addEventPress");
+        ae.scopeId  = QStringLiteral("mode.addEvent");
+        ae.label    = TraceView::tr("Place a new event");
+        ae.category = TraceView::tr("Add event");
+        ae.kind     = input::Kind::Gesture;
+        ae.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                              input::Phase::Press, input::ModMatch::AtLeast);
+        ae.invoke   = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            if(v && c.event)
+                v->beginAddEventPress(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(ae);
+    }
 }
 }  // namespace
 

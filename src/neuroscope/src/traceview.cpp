@@ -2968,6 +2968,27 @@ void TraceView::beginSelectTimePress(const QPoint& viewportPos){
     previousDragOrdinate = 0;
 }
 
+void TraceView::beginAddEventPress(const QPoint& viewportPos){
+    // ADD_EVENT press, split out of the mouse-press monolith (neuroscope input overhaul S5,
+    // mode 3/7).  No rubber band (setMode => drawRubberBand(false)) and no drag: a click records
+    // the sample position, and the release (ADD_EVENT branch of mouseReleaseEvent, which reads
+    // only newEventPosition) creates the event.  Faithful to the former inline branch, x-guard
+    // included: only a click inside the trace area (x past the group's left edge; x>=0 in single
+    // column) updates newEventPosition.  Outside it, the old code fell through to the shared
+    // `else startingIndex = x` tail — its nearest-channel hit-test was unused by ADD_EVENT and
+    // side-effect-free, and the ADD_EVENT release never reads startingIndex, so reproducing just
+    // `startingIndex = g.x` leaves newEventPosition untouched exactly as before (a margin click
+    // after a valid one still re-fires on the old position at release, preserving that quirk).
+    const TraceClickGeometry g = resolveClickGeometry(viewportPos);
+    lastClickOrdinate = g.current.y();
+    const int xGuard = multiColumns ? (X0 + g.groupIndex * Xshift) : 0;
+    if (g.x >= xGuard)
+        newEventPosition = g.sampleIndex;
+    else
+        startingIndex = g.x;
+    previousDragOrdinate = 0;
+}
+
 void TraceView::mousePressEvent(QMouseEvent* event){
     // Input seam (neuroscope input overhaul S2): consult the shared registry before the
     // mode-switched body below.  Inert until the trace press modes are ported (S5) — with
@@ -2997,10 +3018,10 @@ void TraceView::mousePressEvent(QMouseEvent* event){
         //    C++ rules (&& binds tighter than ||) but compiler emits
         //    -Wparentheses warnings and the intent was hard to verify
         //    by inspection.  Behaviour unchanged.
-        // S5: SELECT_TIME dropped from this list — its press is a Gesture (above) that returns
-        // via the seam before reaching here.  The final `else startingIndex = x` tail below is
-        // kept: it still serves ADD_EVENT/DRAW_LINE/SELECT_EVENT when their x-guard fails.
-        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_EVENT || mode == ADD_EVENT || mode == DRAW_LINE){
+        // S5: SELECT_TIME and ADD_EVENT dropped from this list — their presses are Gestures that
+        // return via the seam before reaching here.  The final `else startingIndex = x` tail
+        // below is kept: it still serves DRAW_LINE/SELECT_EVENT when their x-guard fails.
+        if ((mode == SELECT && !shownChannels.isEmpty()) || mode == MEASURE || mode == SELECT_EVENT || mode == DRAW_LINE){
             // S5: the click-geometry preamble (world point + column/sample it selects) is now
             // resolved once by resolveClickGeometry(); the per-mode bodies below read the shared
             // result.  `current` keeps its old name and lastClickOrdinate (a press side effect)
@@ -3025,9 +3046,7 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                         linePositions.append(X0 + i * Xshift + static_cast<int>(0.5 + (static_cast<float>(sampleIndex) / downSampling)));
                     }
                 }
-                else if (mode == ADD_EVENT && x >= (X0 + groupIndex * Xshift)){
-                    newEventPosition = sampleIndex;
-                }
+                // S5: ADD_EVENT press is a Gesture (trace.addEventPress) handled via the seam.
                 else if (mode == SELECT_EVENT && x >= (X0 + groupIndex * Xshift)){
                     lastClickAbscissa = x;
                     int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
@@ -3206,9 +3225,7 @@ void TraceView::mousePressEvent(QMouseEvent* event){
                     lastClickAbscissa = x;
                     linePositions.append(static_cast<int>(0.5 + (static_cast<float>(sampleIndex) / downSampling)));
                 }
-                else if (mode == ADD_EVENT && x >= 0){
-                    newEventPosition = sampleIndex;
-                }
+                // S5: ADD_EVENT press is a Gesture (trace.addEventPress) handled via the seam.
                 else if (mode == SELECT_EVENT && x >= 0){
                     lastClickAbscissa = x;
                     int difference = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits); //nbSamples as a starting point
