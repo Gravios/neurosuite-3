@@ -114,7 +114,8 @@ standard shape:
   CMakeLists.txt          # build entry (+ cmake/ modules, config-*.cmake.in)
   src/                    # ALL C/C++ sources and headers
   test/                   # unit tests, if any
-  doc/                    # subproject docs, if any
+  doc/                    # user- & packaging-facing docs (DocBook handbook under doc/en/), if any
+  docs/                   # developer code references in Markdown, next to the code, if any
   <packaging>             # postinst, postrm, description, AUTHORS, COPYING, …
 ```
 
@@ -126,6 +127,15 @@ standard shape:
 - The Qt apps build via `add_subdirectory(src)`; `src/CMakeLists.txt`
   lists sources relative to `src/` and sets the include path to `src/`.
   libklustersshared keeps its public headers under `src/klustersshared/`.
+- **`doc/` vs `docs/` are distinct, and both are standard.** `doc/` holds the
+  user- and packaging-facing documentation that is built and installed — the
+  DocBook handbook lives under `doc/en/` (klusters, ndmanager, neuroscope).
+  `docs/` holds developer code references in Markdown that live *next to the
+  code* and are read on GitHub / in an editor, not built —
+  `klusters/docs/INPUT_SYSTEM.md` and `PLUGIN_API.md`,
+  `neuroscope/docs/INPUT_SYSTEM.md`. This is the "references live next to the
+  code" split the [Developer Guide](DEVELOPER_GUIDE.md) uses; §2.8 covers the
+  project-wide doc homes (`doc/design/`, `doc/workflows/`).
 - **Never keep a file at both `<sub>/X` and `<sub>/src/X`.**  See §6.8.
 
 ### 2.8 Documentation and changelog layout
