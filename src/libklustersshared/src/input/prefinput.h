@@ -20,8 +20,10 @@
 #include <QMap>
 #include <QString>
 
+#include "libklustersshared_export.h"
 #include "input/chord.h"
-#include "input/keymapprofile.h"   // KeymapProfile: the saved / bundled keymap layouts
+#include "input/keymapprofile.h"      // KeymapProfile: the saved / bundled keymap layouts
+#include "input/inputprefsstore.h"    // InputPrefsStore: the app's persistence seam
 
 class QKeySequenceEdit;
 class QLabel;
@@ -30,10 +32,12 @@ class QComboBox;
 class ButtonChordEdit;
 class WheelChordEdit;
 
-class PrefInput : public QWidget {
+class KLUSTERSSHARED_EXPORT PrefInput : public QWidget {
     Q_OBJECT
 public:
-    explicit PrefInput(QWidget* parent = nullptr);
+    // @p store is the app's persistence seam (its Configuration): the page reads/writes binding
+    // overrides and saved keymap layouts through it, so one page serves every app.
+    explicit PrefInput(input::InputPrefsStore& store, QWidget* parent = nullptr);
 
     void updateFromRegistry();   ///< effective chords -> editors (on dialog open)
     void commitToRegistry();     ///< editors -> registry overrides + Configuration map
@@ -70,6 +74,7 @@ private:
     input::KeymapProfile captureRowsAsProfile(const QString& name) const;  ///< editors -> diff
     void commitProfiles();               ///< userProfiles_ -> Configuration (serialized)
 
+    input::InputPrefsStore& store_;   ///< the app's persistence seam (binding overrides + profiles)
     QList<Row> rows_;
 
     QComboBox*  profileCombo_   = nullptr;

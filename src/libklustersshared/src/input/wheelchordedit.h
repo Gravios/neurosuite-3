@@ -11,12 +11,13 @@
 
 #include <QWidget>
 
+#include "libklustersshared_export.h"
 #include "input/chord.h"
 
 class QComboBox;
 class QCheckBox;
 
-class WheelChordEdit : public QWidget {
+class KLUSTERSSHARED_EXPORT WheelChordEdit : public QWidget {
     Q_OBJECT
 public:
     explicit WheelChordEdit(QWidget* parent = nullptr);

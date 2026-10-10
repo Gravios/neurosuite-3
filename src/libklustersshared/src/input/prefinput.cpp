@@ -4,7 +4,6 @@
 
 #include "buttonchordedit.h"
 #include "wheelchordedit.h"
-#include "configuration.h"
 #include "input/bindingregistry.h"
 #include "input/inputdispatcher.h"   // input::registry()
 #include "input/keymapprofile.h"     // bundled / saved keymap layouts
@@ -26,8 +25,11 @@
 
 #include <algorithm>
 
-PrefInput::PrefInput(QWidget* parent)
-    : QWidget(parent)
+// Out-of-line anchor for the InputPrefsStore vtable (exported polymorphic base).
+input::InputPrefsStore::~InputPrefsStore() = default;
+
+PrefInput::PrefInput(input::InputPrefsStore& store, QWidget* parent)
+    : QWidget(parent), store_(store)
 {
     build();
     updateFromRegistry();
@@ -356,7 +358,7 @@ void PrefInput::commitToRegistry()
     QMap<QString, QString> ov;
     const QList<QPair<QString, input::Chord>> diffs = reg.overrides();
     for (const auto& kv : diffs) ov.insert(kv.first, kv.second.toString());
-    configuration().setInputBindingOverrides(ov);
+    store_.setInputBindingOverrides(ov);
 
     // Persist the user's saved keymap layouts alongside the overrides, so the whole page
     // commits atomically on Apply/OK (and Cancel discards layout edits too).
@@ -427,7 +429,7 @@ void PrefInput::loadProfiles()
     // Configuration as serialized keymap text (name -> text), parsed back here.
     bundled_ = input::bundledKeymaps();
     userProfiles_.clear();
-    const QMap<QString, QString> stored = configuration().getInputProfiles();
+    const QMap<QString, QString> stored = store_.getInputProfiles();
     for (auto it = stored.constBegin(); it != stored.constEnd(); ++it) {
         bool ok = false;
         input::KeymapProfile p = input::parseKeymap(it.value(), &ok);
@@ -515,5 +517,5 @@ void PrefInput::commitProfiles()
     QMap<QString, QString> stored;
     for (auto it = userProfiles_.constBegin(); it != userProfiles_.constEnd(); ++it)
         stored.insert(it.key(), input::serializeKeymap(it.value()));
-    configuration().setInputProfiles(stored);
+    store_.setInputProfiles(stored);
 }

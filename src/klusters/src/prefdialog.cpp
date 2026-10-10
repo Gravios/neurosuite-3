@@ -28,7 +28,7 @@
 #include "prefautomerge.h"
 #include "prefwaveformview.h"
 #include "prefclusterview.h"
-#include "prefinput.h"
+#include "input/prefinput.h"   // S6: relocated to libklustersshared
 #include "channellist.h"
 #include "config-klusters.h"
 #include <qhelpviewer.h>
@@ -109,7 +109,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     addPage(item);
 
     // ── Input (generated: keyboard shortcuts from the binding registry) ─────
-    prefInput = new PrefInput(this);
+    prefInput = new PrefInput(configuration(), this);   // S6: pass the app's InputPrefsStore
     item = new QPageWidgetItem(prefInput, tr("Input"));
     item->setHeader(tr("Keyboard & Mouse Bindings"));
     item->setIcon(QIcon(":/shared-icons/folder-open"));

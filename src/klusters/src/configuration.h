@@ -26,6 +26,8 @@
 #include <QList>
 #include <QMap>
 
+#include "input/inputprefsstore.h"   // S6: Configuration is the app's InputPrefsStore for PrefInput
+
 
 /**
   * This is the one and only configuration object.
@@ -34,7 +36,7 @@
   *@author Lynn Hazan
 */
 
-class Configuration {
+class Configuration : public input::InputPrefsStore {
 public:
     /** Reads the configuration data from the application config file.
     * If a property does not already exist in the config file it will be

@@ -43,7 +43,12 @@ set(_srcs
     input/chord.cpp
     input/bindingregistry.cpp
     input/inputdispatcher.cpp
-    input/keymapprofile.cpp)
+    input/keymapprofile.cpp
+    # input Preferences UI (relocated from src/klusters/src in neuroscope input-overhaul S6 —
+    # now shared by klusters + neuroscope behind input/inputprefsstore.h)
+    input/prefinput.cpp         # the registry-driven Input Preferences page
+    input/buttonchordedit.cpp   # button-combo editor for its mouse-button rows
+    input/wheelchordedit.cpp)   # wheel-combo editor for its mouse-wheel rows
 
 set(_hdrs
     libklustersshared_export.h
