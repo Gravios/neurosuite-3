@@ -807,6 +807,10 @@ void NeuroscopeApp::registerInputBindings()
     app.layer = input::Layer::App;
     reg.addScope(app);
 
+    // S8: the frame-wide rubber-band ZOOM for the plain BaseFrame views (Position, Spectral),
+    // as a view.frame Gesture.  TraceView manages its own primary press, so it is excluded.
+    BaseFrame::registerInput(reg);
+
     // File
     registerActionCommand(QStringLiteral("file.open"),   tr("File"), mOpenAction);
     registerActionCommand(QStringLiteral("file.save"),   tr("File"), mSaveAction);

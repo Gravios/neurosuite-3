@@ -30,6 +30,8 @@
 //include files for the application
 #include "zoomwindow.h"
 
+namespace input { class BindingRegistry; }   // S8: BaseFrame::registerInput (view.frame zoom)
+
 /**
   * Frame base class containing the following features:
   * <ul>
@@ -124,6 +126,20 @@ public Q_SLOTS:
   * Gesture (trace.zoomRubberBand, mode.zoom scope) share one begin path.  The drag preview
   * (mouseMoveEvent) and the zoom commit (mouseReleaseEvent) stay in the base handlers.*/
     void beginBaseZoom(const QPoint& pos);
+
+    /** Register the frame-wide rubber-band ZOOM as a resolver-dispatched Gesture (neuroscope
+   * input overhaul S8), once, process-wide.  A `view.frame` ViewType scope — live for any
+   * BaseFrame press EXCEPT a view that manages its own primary press (see
+   * managesOwnPrimaryPress) — carries `frame.zoomRubberBand`.  This brings the zoom of the
+   * secondary BaseFrame views (Position, Spectral) onto the registry; TraceView keeps its own
+   * mode.zoom gesture.  Call from NeuroscopeApp::registerInputBindings. */
+    static void registerInput(input::BindingRegistry& reg);
+
+    /** True for a view that drives its own primary (Left) press through its own seam and scopes
+   * (TraceView), so the shared `view.frame` ZOOM gesture stays OUT of its scope and cannot
+   * double-fire.  The default (Position, Spectral, any plain BaseFrame) is false — they use the
+   * frame zoom. */
+    virtual bool managesOwnPrimaryPress() const { return false; }
 
 Q_SIGNALS:
     /*s*Signals that the enclosing dockwidget is being closed

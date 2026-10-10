@@ -216,6 +216,10 @@ public:
   */
     void setMode(BaseFrame::Mode selectedMode,bool active);
 
+    /** S8: TraceView drives its own primary press (its mousePressEvent seam + the per-mode
+   *  scopes), so the shared view.frame ZOOM gesture must stay out of its scope. */
+    bool managesOwnPrimaryPress() const override { return true; }
+
     // ── S5 tool-mode press bodies ─────────────────────────────────────────────────────────
     // Public because the registry Gesture commands (registered in tracewidget.cpp) invoke them
     // on the pressed TraceView.  Each begins its mode's press interaction; the drag/release

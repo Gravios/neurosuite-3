@@ -29,6 +29,7 @@
 #include <QDebug>
 
 #include "input/inputdispatcher.h"   // input::dispatch — the view seam (input overhaul S2)
+#include "input/bindingregistry.h"   // registerInput: the frame-wide ZOOM gesture (S8)
 
 BaseFrame:: BaseFrame(int Xborder,int Yborder,QWidget* parent,const QString &name,const QColor& backgroundColor,
                       int minSize,int maxSize ,int windowTopLeft ,int windowBottomRight,int border):
@@ -114,7 +115,46 @@ void BaseFrame::beginBaseZoom(const QPoint& pos){
     mRubberBand->show();
 }
 
+void BaseFrame::registerInput(input::BindingRegistry& reg){
+    // S8: the frame-wide rubber-band ZOOM, as a Gesture, for the BaseFrame views that do not
+    // manage their own primary press (Position, Spectral — TraceView keeps its own mode.zoom).
+    // The scope is live for any such BaseFrame press; the command's gate reproduces the old inline
+    // one (mode==ZOOM || isRubberBandToBeDrawn), and invoke() only BEGINS the band — the drag
+    // (mouseMoveEvent) and commit (mouseReleaseEvent) stay in the base handlers (dispatch maps
+    // only the press).
+    reg.addScope({ QStringLiteral("view.frame"), input::Layer::ViewType,
+        [](const input::Ctx& c){
+            auto* bf = qobject_cast<BaseFrame*>(c.view);
+            return bf && !bf->managesOwnPrimaryPress();
+        } });
+
+    input::Command cmd;
+    cmd.id       = QStringLiteral("frame.zoomRubberBand");
+    cmd.scopeId  = QStringLiteral("view.frame");
+    cmd.label    = tr("Rubber-band zoom");
+    cmd.category = tr("Zoom");
+    cmd.kind     = input::Kind::Gesture;
+    cmd.defaultChord = input::Chord::button(Qt::LeftButton, Qt::NoModifier,
+                                            input::Phase::Press, input::ModMatch::AtLeast);
+    cmd.enabled  = [](const input::Ctx& c){
+        auto* bf = qobject_cast<BaseFrame*>(c.view);
+        return bf && (bf->mode == ZOOM || bf->isRubberBandToBeDrawn);   // the old inline gate
+    };
+    cmd.invoke   = [](const input::Ctx& c){
+        auto* bf = qobject_cast<BaseFrame*>(c.view);
+        if (bf && c.event)
+            bf->beginBaseZoom(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+    };
+    reg.addCommand(cmd);
+}
+
 void BaseFrame::mousePressEvent(QMouseEvent* e){
+    // S8: funnel the press through the resolver first (the frame.zoomRubberBand Gesture on the
+    // view.frame scope).  A view that manages its own primary press (TraceView) overrides
+    // mousePressEvent and never reaches here; for the plain BaseFrame views (Position, Spectral)
+    // the dispatch above arms the zoom and returns.  The inline block remains as the fall-through
+    // for anything that reaches here without the gesture claiming it.
+    if(dispatchInput(e)) return;
     if(mode == ZOOM || isRubberBandToBeDrawn){
         if(e->button() == Qt::LeftButton)
             beginBaseZoom(e->position().toPoint());
