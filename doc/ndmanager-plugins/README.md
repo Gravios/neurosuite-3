@@ -85,10 +85,12 @@ For task-oriented walkthroughs that span multiple programs, see
 | [`.tcl.N`](formats/tcl.md) | Template-class registry (method-less, stage-independent) |
 | [`.wti.N`](formats/wti.md) | Template-waveform index (method-less) |
 | [`.wtf.<method>.N`](formats/wtf.md) | Template-waveform stack (method-tagged) |
+| [`.wtl.N`](formats/wtl.md) | Manual template-lineage forest (curator-authored) |
 | [`.drift`](formats/drift.md) | Probe drift trajectories |
 | [`.chunks.N`](formats/chunks.md) | Adaptive KiloKlustaKwik chunk boundaries |
 | [`.loc.N`](formats/loc.md) | Per-spike source locations |
 | [`.probe`](formats/probe.md) | Probe configuration |
+| [`.evt`](formats/evt.md) | Timestamped event labels (text) |
 
 ---
 
