@@ -448,7 +448,7 @@ Every menu command, tool and mouse gesture in NeuroScope is driven by one centra
 
 ### Viewing the Shortcuts {#shortcuts-viewing}
 
-Select [Help \> Keyboard Shortcuts...]{.menuchoice} to open a read-only list of every command together with the key, mouse button or wheel action currently assigned to it. The commands are grouped by the context in which they apply (the application as a whole, the trace view, and each tool), so a command that only works with a particular tool appears under that tool.
+Select [Help \> Keyboard Shortcuts...]{.menuchoice} to open a read-only list of every command together with the key, mouse button or wheel action currently assigned to it. The list is split into a Keyboard section and a Mouse section, and within each the commands are grouped by category: the menu or tool they belong to.
 
 ### Customizing the Shortcuts {#shortcuts-customizing}
 
