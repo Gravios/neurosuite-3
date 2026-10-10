@@ -172,13 +172,19 @@ authoritative timestamp.
 
 ### 3.2 Peak position indexing
 
-`peakPositionInWaveform` is **1-based internal**, **0-based YAML**.
-Conversion sites:
-- YAML reader subtracts 1 on load
-- YAML writer adds 1 on save
-- Internal code uses 1-based throughout
+Two **distinct** peak fields exist, and **neither is converted** at the I/O
+boundary:
 
-Don't off-by-one.
+- **Session `peakSampleIndex`** (the `peakPositionInWaveform` of the parameter
+  file) round-trips through YAML **verbatim** — the reader does not subtract 1,
+  the writer does not add 1 (`parameteryamlreader.cpp`, `parameteryamlwriter.cpp`).
+  A value of `0` means "missing/invalid" (`data.cpp`), so the on-disk value is
+  itself used **1-based**.
+- **`.wti` `peakSample`** (the extraction window index in `neurofileio`) is
+  **0-based**, with `-1` = unknown; it too is stored verbatim.
+
+Don't reintroduce a ±1 at the YAML boundary, and don't conflate the two fields.
+See `src/libneurosuite-core/docs/FILE_FORMATS.md` §3.6.
 
 ### 3.3 File formats (binary, little-endian)
 
@@ -188,8 +194,8 @@ Don't off-by-one.
 | `.spk.N` | none | int16 sample-major waveforms |
 | `.spkD.N` | none | int16, full nCG channels (stderiv in-place, no channel dropped) |
 | `.clu.N` | int32 (count) | int32 cluster IDs |
-| `.fet.N` | int32 (nCols) | int32 features, row-major |
-| `.fetD.N` | int32 (nCols) | int32 features, `(nChan-1)*nComp+1` cols (last linearly-dependent channel dropped before PCA in `process_pca_stderiv`) |
+| `.fet.N` | int32 (nCols) | int64 features, row-major |
+| `.fetD.N` | int32 (nCols) | int64 features, `(nChan-1)*nComp+1` cols (last linearly-dependent channel dropped before PCA in `process_pca_stderiv`) |
 | `.col.N` | 32B + 32B params | template table + record table |
 
 ### 3.4 KiloKlustaKwik gotchas
@@ -382,11 +388,13 @@ When a curation creates >1 cluster, emit `newClustersAdded(QList<int>&)` once,
 not `newClusterAdded(int)` multiple times.  This caused the second
 dipsplit-postcommit-v1 bug (view inconsistency).
 
-### 6.4 `peakPositionInWaveform` off-by-one
+### 6.4 `peakPositionInWaveform` indexing
 
-Internal code uses 1-based; YAML uses 0-based.  Conversion is at the I/O
-boundary.  Easy to forget; sanity-check with a sample value when introducing
-new code that touches this.
+**Correction (see §3.2).** The session `peakSampleIndex` is **not** converted
+at the YAML boundary — it round-trips verbatim and is used 1-based (`0` =
+missing). The separate `.wti` `peakSample` is 0-based with `-1` = unknown. The
+real trap is adding a phantom ±1 "to match the file," or conflating the two
+fields; the current reader/writer do neither.
 
 ### 6.5 ndmanager-plugins parent CMakeLists
 
@@ -395,11 +403,14 @@ touched when a working copy already has functional `process_*` builds.
 Don't add new `add_subdirectory()` calls there as part of an unrelated
 change.
 
-### 6.6 `pca.nCh <= 64` reader bound
+### 6.6 `pca.nCh` reader bound
 
-In `klustersdoc.cpp`, the PCA basis reader silently invalidates basis
-when `nCh > 64`.  This breaks Neuropixels-class probes.  Known issue,
-not yet fixed; don't replicate the bound in new code.
+**Resolved.** The fixed `nCh > 64` rejection is gone. The PCA-basis sanity
+check in `klustersdoc_realign.cpp` now bounds `nCh` against the group's own
+`nChan` (a valid per-group basis has `nCh == nChan`, or `nChan-1` for stderiv)
+and caps only `nComp > 64`, so Neuropixels-class probes are no longer rejected
+on channel count. `neurofileio`'s `.fet` reader imposes no channel cap, and the
+basis is read by `core::loadPca`, not `neurofileio`.
 
 ### 6.7 Scope creep in audits
 
