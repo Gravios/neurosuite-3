@@ -213,7 +213,7 @@ in.seekg(nTemplates * 24, std::ios::cur);  // ColTemplate[] (24 B each)
 
 Then `nRecords` × 60 B records (`ts i64, spikeIdx i32, best_single_unit i32, best_single_corr f32, flags u32, resid_norm f32`, then two components each `u i32, sh i32, sf f32, a i32→f32`), parsed at `neurofileio.cpp:376-391`. **Only records with `REC_FLAG_ACCEPTED` (flags bit 0)** are returned, as `(spikeIndex, u1/sh1/a1, u2/sh2/a2)` — the decollide engine's input (`neurofileio.cpp:374,383-389`). Bad magic / short file → empty. The binary writer is `process_decomposecollisions.cpp` (it emits the `COL\x01` magic).
 
-> **Discrepancy — `.col` is binary, not YAML.** `col.md` documents `.col.<method>.N` as a **YAML** file (`collisions:`/`spikes:` mapping). The authoritative reader parses a **binary** format with a `{'C','O','L',0x01}` magic (`neurofileio.cpp:363-391`), and `STANDARDIZATION.md` §3.3 (`STANDARDIZATION.md:194`) agrees ("32B + 32B params | template table + record table"). The code and §3.3 win; `col.md` is the outlier and describes a format no in-repo reader consumes (§6).
+> **`.col` is binary, not YAML.** The authoritative reader parses a **binary** format with a `{'C','O','L',0x01}` magic (`neurofileio.cpp:363-391`); `STANDARDIZATION.md` §3.3 ("32B + 32B params | template table + record table") and — since the 2026-10-10 reconciliation — `col.md` both describe this layout. An earlier `col.md` draft sketched a `collisions:`/`spikes:` YAML document that no in-repo reader consumed; it has been rewritten to the binary layout (§6).
 
 ### 4.7 Adjacent: `.pca`, `.mti`/`.mtf`
 
@@ -247,6 +247,8 @@ fiber-kit is a **separate repository** (`github.com/Gravios/fiber-kit`) and is *
 | 7 | `.wtl` / `.evt` doc home | — | real `neurofileio` formats with **no `formats/` entry** (`wtl.md`, `evt.md` absent) | `neurofileio.cpp:506-600` (wtl), `:820-851` (evt) | Add `formats/wtl.md` and `formats/evt.md`, or cross-link the header/handbook. |
 | 8 | `.pos` | handbook describes an ASCII x/y position file | **no reader/writer** anywhere (only unrelated GUI `QPointF pos`) | handbook `04-file-formats.md` (position-file section); no code path | Label `.pos` doc-only, or implement a reader if NeuroScope is meant to load it. |
 
+**Status (reconciled 2026-10-10).** The doc-side fixes above have been applied in the companion patches — §3.3 `.fet`/`.fetD` body corrected to `int64` (item 1); `col.md` rewritten to the binary `COL\x01` layout (item 2); §3.2 rewritten and §6.4 corrected to the two-peak-field, no-±1 reality (item 3); §6.6 marked resolved (item 4); and `formats/wtl.md` + `formats/evt.md` added and indexed (item 7). Items 5–6 needed no change. **Item 8 (`.pos`) is the lone residual** — a missing code path, not a doc error, so it is left as-is. The table above records the pre-fix state as the audit trail.
+
 ---
 
 ## 7. Cross-check against `STANDARDIZATION.md`
@@ -256,16 +258,16 @@ fiber-kit is a **separate repository** (`github.com/Gravios/fiber-kit`) and is *
 | §3.3 `.res.N` = `int64` timestamps, no header | **Holds** | `neurofileio.cpp:135-156` (size %8, `n=bytes/8`) |
 | §3.3 `.spk.N` = `int16` sample-major, no header | **Holds** | `neurofileio.cpp:282,293-294`; order `neurofileio.h:123-127` |
 | §3.3 `.clu.N` = `int32` count + `int32` ids | **Holds** | `neurofileio.cpp:51-56,83-93` |
-| §3.3 `.fet.N` body = "int32 features" | **Stale** — body is `int64` | `neurofileio.cpp:237,266-267`; `neurofileio.h:108` |
-| §3.3 `.col.N` = binary (32 B hdr + 32 B params + tables) | **Holds** (and contradicts `col.md`'s YAML) | `neurofileio.cpp:363-391` |
+| §3.3 `.fet.N` body width | **Holds** — corrected 2026-10-10 to `int64` | `neurofileio.cpp:237,266-267`; `neurofileio.h:108` |
+| §3.3 `.col.N` = binary (32 B hdr + 32 B params + tables) | **Holds** (`col.md` rewritten to match, 2026-10-10) | `neurofileio.cpp:363-391` |
 | §3.3 little-endian throughout | **Holds** (all binary readers use native `reinterpret_cast` reads on LE targets) | e.g. `neurofileio.cpp:84,130,245,358-361` |
 | §3.1 spike invariant `.spk[i]` peak ≡ `.fil` at `.res[i]` | **Consistent** with the window-offset model (`spike_extract.hpp` derives the timestamp as `sample − peakSample`) | `spike_extract.hpp:86`; (realign preservation is a klusters concern, see [DOCUMENT_MODEL.md](../../klusters/docs/DOCUMENT_MODEL.md) §7.4) |
-| §3.2/§6.4 peak "0-based YAML, ±1 at I/O" | **Does not hold** — verbatim round-trip; two distinct peak fields | item 3, §6 |
-| §6.6 `nCh ≤ 64` PCA bound in `klustersdoc.cpp` | **No longer holds** — lifted/reshaped, now relative to `nChan` | `klustersdoc_realign.cpp:382-396` |
+| §3.2/§6.4 peak position | **Holds** — §3.2/§6.4 rewritten 2026-10-10: verbatim round-trip, two distinct peak fields | item 3, §6 |
+| §6.6 `nCh` PCA bound | **Holds** — §6.6 marked resolved 2026-10-10 (bound now relative to `nChan`) | `klustersdoc_realign.cpp:382-396` |
 
 ### Cautions for future editors
 
-1. **The code is the format spec; `col.md` and §3.3's `.fet` row are wrong.** A binary `.col` with a `COL\x01` magic and an `int64`-bodied `.fet` are what ship. Fix the docs toward the code, never the reverse.
+1. **The code is the format spec.** A binary `.col` with a `COL\x01` magic and an `int64`-bodied `.fet` are what ship; the former `col.md` YAML sketch and §3.3's `.fet` "int32" row were reconciled to the code on 2026-10-10. When a doc and the code drift again, fix the doc toward the code, never the reverse.
 2. **`.wtf` has no reader of its own** — it is a `.spk` by another name, read with `readSpk`/`readSpkRecords`. Do not add a parallel `readWtf`; keep `.wti.rows.size() == readSpk(wtf).nSpikes` as the invariant.
 3. **Two peak fields, two bases.** Session `peakSampleIndex`/`peakPositionInWaveform` is 1-based (`0` = missing) and must round-trip unchanged; `.wti peakSample` is a 0-based window index with `-1` = unknown. Do not "fix" one into the other, and do not reintroduce a ±1 at the YAML boundary.
 4. **`growEap`/`initEap` own the 32 B header.** `readEap` seeks exactly `pad[12]` after four `u32`s; a writer that emits a 28 B header (as the original 0558 writer did) silently corrupts every consumer. Keep the 32 B assertion.
