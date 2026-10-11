@@ -3,18 +3,18 @@
 How a change lands in this repository: the coding standards it must meet, the
 patch-series form it is delivered in, the verification gates it passes before
 shipping, and where the change gets recorded. The conventions below are the
-operational summary; [`STANDARDIZATION.md`](STANDARDIZATION.md) is the
+operational summary; [`STANDARDIZATION.md`](../doc/dev/STANDARDIZATION.md) is the
 authority, and where the two differ it wins.
 
 ---
 
 ## 1. Before you start
 
-- Read the [Developer Guide](DEVELOPER_GUIDE.md) for the map of the codebase,
+- Read the [Developer Guide](../doc/dev/DEVELOPER_GUIDE.md) for the map of the codebase,
   and the reference under `src/<component>/docs/` for the subsystem you are
-  touching (e.g. [`src/klusters/docs/DOCUMENT_MODEL.md`](src/klusters/docs/DOCUMENT_MODEL.md)
+  touching (e.g. [`src/klusters/docs/DOCUMENT_MODEL.md`](../src/klusters/docs/DOCUMENT_MODEL.md)
   before a curation change).
-- Read [`STANDARDIZATION.md`](STANDARDIZATION.md) §2 (hard conventions) and §3
+- Read [`STANDARDIZATION.md`](../doc/dev/STANDARDIZATION.md) §2 (hard conventions) and §3
   (domain invariants) — the two sections a reviewer will hold the change to.
 - **The code is the source of truth.** When a reference doc and the code
   disagree, trust the code and fix the doc in the same change.
@@ -23,7 +23,7 @@ authority, and where the two differ it wins.
 
 ## 2. Coding standards
 
-The full set is [`STANDARDIZATION.md`](STANDARDIZATION.md) §2–§3; the rules that
+The full set is [`STANDARDIZATION.md`](../doc/dev/STANDARDIZATION.md) §2–§3; the rules that
 most often trip up a change:
 
 - **No `m_` member prefix** (§2.1). Members are bare; `this->` disambiguates
@@ -32,7 +32,7 @@ most often trip up a change:
   order: `QMap` iterates ascending; `Data::Iterator` already negates the
   ordinate (do not re-flip Y downstream); new cluster ids come from
   `nextFreeClusterId()` (§2.3; see
-  [`src/klusters/docs/DOCUMENT_MODEL.md`](src/klusters/docs/DOCUMENT_MODEL.md)).
+  [`src/klusters/docs/DOCUMENT_MODEL.md`](../src/klusters/docs/DOCUMENT_MODEL.md)).
 - **Curation goes through the primitives** (§2.5). Build fresh temp tables and
   hand them to `prepareUndo`; **never pre-mutate** `clusterInfoMap` /
   `spikesByCluster` before the snapshot (§6.2) — it makes undo unable to return
@@ -48,10 +48,10 @@ most often trip up a change:
   files, PCA, or the template library, re-check the relevant invariant still
   holds — the spike-file invariant (§3.1), peak-position indexing (§3.2), the
   binary formats (§3.3; see
-  [`src/libneurosuite-core/docs/FILE_FORMATS.md`](src/libneurosuite-core/docs/FILE_FORMATS.md)).
+  [`src/libneurosuite-core/docs/FILE_FORMATS.md`](../src/libneurosuite-core/docs/FILE_FORMATS.md)).
 
 Background work (new threads/jobs) must follow the contributor rules in
-[`src/klusters/docs/CONCURRENCY.md`](src/klusters/docs/CONCURRENCY.md) §8:
+[`src/klusters/docs/CONCURRENCY.md`](../src/klusters/docs/CONCURRENCY.md) §8:
 snapshot the epoch at enqueue, honor the cancellation token, and deliver results
 only by a queued event under the post fence.
 
@@ -103,7 +103,7 @@ git am patches/*.patch
 
 Follow the documentation layout in `STANDARDIZATION.md` §2.8:
 
-- **User-visible changes go in [`CHANGELOG.md`](CHANGELOG.md)** — the single,
+- **User-visible changes go in [`CHANGELOG.md`](../CHANGELOG.md)** — the single,
   canonical, date-ordered project changelog. There is no root `CHANGES.md`.
 - **Deep per-topic technical notes** go in `doc/design/<topic>.md`, indexed from
   `doc/design/README.md` and the reference table at the end of `CHANGELOG.md`.
@@ -114,7 +114,7 @@ Follow the documentation layout in `STANDARDIZATION.md` §2.8:
   changelog references but does not absorb them.
 - **Keep the references in step with the code.** If you change a subsystem,
   update its `src/<component>/docs/` reference and the matching entry in
-  [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md) in the same change. The guide has a
+  [`DEVELOPER_GUIDE.md`](../doc/dev/DEVELOPER_GUIDE.md) in the same change. The guide has a
   mirror in the project knowledge base for reading inside Claude — keep the two
   in step when you change either (`DEVELOPER_GUIDE.md` "Maintaining this guide").
 - Vendored third-party changelogs (e.g. libsamplerate) are never touched.
@@ -138,7 +138,7 @@ shipping the series:
    PCA, re-read the change against the relevant §3 invariant — read the change,
    not just the test suite.
 4. **Tests.** If a `test/` suite covers the area, build with `-DNS_BUILD_TESTS=ON`
-   and run `ctest` (see [`BUILD.md`](BUILD.md) §6).
+   and run `ctest` (see [`BUILD.md`](../doc/BUILD.md) §6).
 5. **Docs.** The CHANGELOG entry, `doc/design/` note, and any affected
    `src/<component>/docs/` reference and `DEVELOPER_GUIDE.md` marker are present
    and accurate.
@@ -147,7 +147,7 @@ shipping the series:
 
 ## 7. Continuous integration
 
-Two workflows gate `main` and pull requests (see [`BUILD.md`](BUILD.md) §8):
+Two workflows gate `main` and pull requests (see [`BUILD.md`](../doc/BUILD.md) §8):
 
 - **`ci.yml`** builds the whole monorepo on `ubuntu-24.04` with the GPU backends
   off and `-Wall -Wextra -Wshadow` surfaced (non-fatal). Reproduce a failure

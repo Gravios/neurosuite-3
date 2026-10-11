@@ -1,1 +1,1 @@
-../../../../DEVELOPER_GUIDE.md
+../../../dev/DEVELOPER_GUIDE.md

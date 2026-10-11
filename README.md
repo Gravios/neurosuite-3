@@ -12,10 +12,10 @@ neurosuite-3 takes you from a raw recording to sorted single units: convert and 
 | If you want to… | Go to |
 |---|---|
 | **Sort your first recording** | [First-time spike sort](doc/workflows/first-time-sort.md) — the end-to-end walkthrough |
-| **Install / build it** | [Quick start](#quick-start) below, then [BUILD.md](BUILD.md) for options & platforms |
+| **Install / build it** | [Quick start](#quick-start) below, then [BUILD.md](doc/BUILD.md) for options & platforms |
 | **Learn the apps** | [User & pipeline docs](doc/README.md) · [NeuroScope handbook](doc/site/docs/handbook/01-introduction.md) — also built into the apps: **Help ▸ Handbook** (F1) |
-| **Look up a term** | [Glossary](GLOSSARY.md) |
-| **Work on the code** | [Developer Guide](DEVELOPER_GUIDE.md) · [Contributing](CONTRIBUTING.md) |
+| **Look up a term** | [Glossary](doc/GLOSSARY.md) |
+| **Work on the code** | [Developer Guide](doc/dev/DEVELOPER_GUIDE.md) · [Contributing](.github/CONTRIBUTING.md) |
 
 The full documentation is also published online: **https://gravios.github.io/neurosuite-3/**
 
@@ -33,7 +33,7 @@ cmake --build build --parallel
 cmake --install build
 ```
 
-`-DNS_INSTALL_DEPS=ON` installs the required packages for you (apt / Homebrew / vcpkg); drop it if you'd rather manage them yourself. Choosing a build type, picking or disabling GPU backends, skipping a component (e.g. `-DNS_SKIP_KILOKLUSTAKWIK=ON`), the macOS Qt path and the Windows/vcpkg setup, a sanitizer build, and reproducing CI — all live in **[BUILD.md](BUILD.md)**.
+`-DNS_INSTALL_DEPS=ON` installs the required packages for you (apt / Homebrew / vcpkg); drop it if you'd rather manage them yourself. Choosing a build type, picking or disabling GPU backends, skipping a component (e.g. `-DNS_SKIP_KILOKLUSTAKWIK=ON`), the macOS Qt path and the Windows/vcpkg setup, a sanitizer build, and reproducing CI — all live in **[BUILD.md](doc/BUILD.md)**.
 
 ---
 
@@ -76,7 +76,7 @@ Optional and auto-detected — a CPU/OpenMP build is always produced, so no GPU 
 | `ndm_hipass` | CUDA / OpenMP | zero-phase Butterworth filter (default; the CUDA kernel is not yet validated on hardware) · median filter |
 | `ndm_extractspikes` · `ndm_spikegrouper` | CUDA | thresholding, channel grouping |
 
-Toolkit setup (CUDA including Blackwell / sm_120, AMD ROCm, Intel oneAPI/SYCL): [BUILD.md §4](BUILD.md) and [doc/gpu/](doc/gpu/README.md).
+Toolkit setup (CUDA including Blackwell / sm_120, AMD ROCm, Intel oneAPI/SYCL): [BUILD.md §4](doc/BUILD.md) and [doc/gpu/](doc/gpu/README.md).
 
 ---
 
@@ -94,7 +94,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Contributing & license
 
-Patch discipline, coding standards, and the build/verify workflow are in **[CONTRIBUTING.md](CONTRIBUTING.md)**; the architecture and internals in **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)**.
+Patch discipline, coding standards, and the build/verify workflow are in **[CONTRIBUTING.md](.github/CONTRIBUTING.md)**; the architecture and internals in **[DEVELOPER_GUIDE.md](doc/dev/DEVELOPER_GUIDE.md)**.
 
 neurosuite-3 is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License, version 3 or (at your option) any later version** — see [LICENSE](LICENSE). It comes with no warranty.
 

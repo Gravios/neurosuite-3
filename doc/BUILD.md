@@ -2,13 +2,13 @@
 
 The developer build reference: every CMake option, the GPU backends, the test
 suite, the sanitizer build, and how to reproduce CI locally. For a first build
-from a clean machine, start with the [Quick start](README.md#quick-start) and
-[Dependencies](README.md#dependencies) in the README — this page assumes the
+from a clean machine, start with the [Quick start](../README.md#quick-start) and
+[Dependencies](../README.md#dependencies) in the README — this page assumes the
 dependencies are installed and goes into the knobs you reach for while working
 on the code.
 
 The authoritative source for all of this is the top-level
-[`CMakeLists.txt`](CMakeLists.txt); when this page and it disagree, the
+[`CMakeLists.txt`](../CMakeLists.txt); when this page and it disagree, the
 `CMakeLists.txt` wins and this page should be fixed.
 
 ---
@@ -80,7 +80,7 @@ The three GPU backends are **optional and auto-detected** — a build with none
 of them present falls back to the CPU/OpenMP path, which is the path CI
 exercises (and which every GPU kernel has a scalar equivalent of). OpenMP is
 itself optional and degrades to single-threaded if absent (see
-[`src/klusters/docs/CONCURRENCY.md`](src/klusters/docs/CONCURRENCY.md) §6).
+[`src/klusters/docs/CONCURRENCY.md`](../src/klusters/docs/CONCURRENCY.md) §6).
 
 - **CUDA** (`USE_CUDA`, the primary backend) — the top-level `CMakeLists.txt`
   probes for `nvcc` *before* `project()` so the CUDA language is only enabled
@@ -149,7 +149,7 @@ ctest --test-dir build --output-on-failure
 
 `NS_BUILD_TESTS=ON` calls `enable_testing()` and builds both the C++ unit tests
 under each subproject's `test/` directory and the build-system invariant checks
-under the top-level [`tests/`](tests/). Run them with `ctest`.
+under the top-level [`tests/`](../tests/). Run them with `ctest`.
 
 ---
 
@@ -188,7 +188,7 @@ rationale is in the `NS_ASAN` block of `CMakeLists.txt`.
 ## 8. Continuous integration parity
 
 Two workflows run on `main` and on pull requests
-([`.github/workflows/`](.github/workflows/)):
+([`.github/workflows/`](../.github/workflows/)):
 
 - **`ci.yml`** — the CPU build gate on `ubuntu-24.04`. It configures with the
   GPU backends **off** and warnings **on but non-fatal**, exercising the
@@ -204,7 +204,7 @@ Two workflows run on `main` and on pull requests
 
   Reproduce a CI failure locally by configuring exactly this way. `-Wshadow` is
   surfaced but not enforced: klusters and libklustersshared are shadow-clean
-  (see [`STANDARDIZATION.md`](STANDARDIZATION.md)), while kiloklustakwik,
+  (see [`STANDARDIZATION.md`](dev/STANDARDIZATION.md)), while kiloklustakwik,
   ndmanager and neuroscope have not been shadow-audited, so promoting it to
   `-Werror=shadow` must wait for a green baseline there.
 
@@ -235,6 +235,6 @@ install`" for a Linux build.
 
 ---
 
-See also: [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md) (the internals map),
-[`CONTRIBUTING.md`](CONTRIBUTING.md) (patch and verification discipline), and
-[`STANDARDIZATION.md`](STANDARDIZATION.md) (coding and layout standards).
+See also: [`DEVELOPER_GUIDE.md`](dev/DEVELOPER_GUIDE.md) (the internals map),
+[`CONTRIBUTING.md`](../.github/CONTRIBUTING.md) (patch and verification discipline), and
+[`STANDARDIZATION.md`](dev/STANDARDIZATION.md) (coding and layout standards).

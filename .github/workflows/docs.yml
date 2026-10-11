@@ -23,7 +23,7 @@ on:
       - 'doc/site/**'
       - 'src/neuroscope/doc/en/**'
       - 'src/*/docs/**'
-      - 'DEVELOPER_GUIDE.md'
+      - 'doc/dev/DEVELOPER_GUIDE.md'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 

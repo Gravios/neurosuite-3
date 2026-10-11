@@ -276,6 +276,15 @@ for backward compatibility; they always save YAML.
 ```
 doc/
 ├── README.md                       ← this file
+├── BUILD.md                        ← build options, platforms, GPU, CI parity
+├── GLOSSARY.md                     ← terms used across the docs
+├── dev/                            ← for contributors
+│   ├── DEVELOPER_GUIDE.md          ← index of internals references
+│   ├── ARCHITECTURE.md
+│   ├── STANDARDIZATION.md          ← conventions + verification gates
+│   ├── ROADMAP.md
+│   └── PLUGINS-ROADMAP.md
+├── history/                        ← past fix-bundle and session notes (archival)
 ├── workflows/                      ← task-oriented recipes
 │   ├── first-time-sort.md
 │   ├── cluster-curation.md

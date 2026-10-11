@@ -6,7 +6,7 @@ so you don't cold-start into drift or re-litigate decisions already settled.
 
 ## Read first, in order
 
-1. **[`STANDARDIZATION.md`](STANDARDIZATION.md)** — the session-start checklist and
+1. **[`STANDARDIZATION.md`](doc/dev/STANDARDIZATION.md)** — the session-start checklist and
    reference: project map, hard conventions, domain invariants, workflow, the
    5-phase audit playbook, known anti-patterns, and the verification gates that
    must pass before shipping. This is the primary document; treat everything below
@@ -14,12 +14,12 @@ so you don't cold-start into drift or re-litigate decisions already settled.
 2. **[`doc/klusters/CODING-STYLE-AUDIT.md`](doc/klusters/CODING-STYLE-AUDIT.md)** —
    the naming/clarity audit for `src/klusters/` + `src/libklustersshared/`. Read
    before renaming identifiers in those trees.
-3. **[`ROADMAP.md`](ROADMAP.md)** + **[`PLUGINS-ROADMAP.md`](PLUGINS-ROADMAP.md)** —
+3. **[`ROADMAP.md`](doc/dev/ROADMAP.md)** + **[`PLUGINS-ROADMAP.md`](doc/dev/PLUGINS-ROADMAP.md)** —
    active / next / planned / considered / dropped work. Check before starting
    something new so you build the right thing and don't repeat a dropped item.
 
 Architecture and change history live in
-[`ARCHITECTURE.md`](ARCHITECTURE.md) and [`CHANGELOG.md`](CHANGELOG.md).
+[`ARCHITECTURE.md`](doc/dev/ARCHITECTURE.md) and [`CHANGELOG.md`](CHANGELOG.md).
 
 ## The conventions agents break most (full set in STANDARDIZATION.md §2, §6)
 

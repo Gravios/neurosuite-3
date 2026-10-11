@@ -11,13 +11,13 @@ final word.
 
 | Term | Meaning |
 |---|---|
-| **klusters** | The interactive spike-sorting / cluster-curation GUI (the primary app). Internals: [`src/klusters/docs/`](src/klusters/docs/). |
-| **NeuroScope** | The signal/trace and event viewer (binary `neuroscope`). Shares the `input::` engine with klusters ([`src/neuroscope/docs/INPUT_SYSTEM.md`](src/neuroscope/docs/INPUT_SYSTEM.md)). |
+| **klusters** | The interactive spike-sorting / cluster-curation GUI (the primary app). Internals: [`src/klusters/docs/`](../src/klusters/docs/). |
+| **NeuroScope** | The signal/trace and event viewer (binary `neuroscope`). Shares the `input::` engine with klusters ([`src/neuroscope/docs/INPUT_SYSTEM.md`](../src/neuroscope/docs/INPUT_SYSTEM.md)). |
 | **ndmanager** | Session/parameter manager — edits the YAML parameter file and launches the pipeline. |
 | **ndmanager-plugins** | The headless preprocessing pipeline: the `ndm_*` / `process_*` command-line tools (filtering, PCA, spike extraction, collision decomposition). No Qt. |
 | **kiloklustakwik** | The standalone spike sorter — the shift-probe refeaturization engine, formerly the experimental KlustaKwikExp fork, now the canonical and only sorter. See `src/kiloklustakwik/CHANGES.md`. |
 | **libklustersshared** (**neurosuite-qt**) | The shared Qt6 library (the `input::` engine, shared GUI widgets such as `DockArea`, xcorr). Target renamed `neurosuite-qt`; still exported as `KlustersShared::klustersshared`. |
-| **libneurosuite-core** (**Neurosuite::core**) | The Qt-free core library; home of `neurofileio`, the authoritative on-disk format reader/writer ([`src/libneurosuite-core/docs/FILE_FORMATS.md`](src/libneurosuite-core/docs/FILE_FORMATS.md)). |
+| **libneurosuite-core** (**Neurosuite::core**) | The Qt-free core library; home of `neurofileio`, the authoritative on-disk format reader/writer ([`src/libneurosuite-core/docs/FILE_FORMATS.md`](../src/libneurosuite-core/docs/FILE_FORMATS.md)). |
 | **nphys-data** | MIME types and desktop icons; builds with no compiler. |
 | **fiber-kit** | Sibling repository (`github.com/Gravios/fiber-kit`). Its `neuro_io` mirrors `neurofileio`'s on-disk contract byte-for-byte (FILE_FORMATS §5). |
 | **KlustaKwik** | The *upstream* engine (Kenneth Harris'); distinct from this fork's **KiloKlustaKwik**. Standalone "KlustaKwik" usually means the upstream tool. |
@@ -52,7 +52,7 @@ final word.
 
 ## On-disk formats
 
-Authoritative spec: [`src/libneurosuite-core/docs/FILE_FORMATS.md`](src/libneurosuite-core/docs/FILE_FORMATS.md). Binary formats are little-endian.
+Authoritative spec: [`src/libneurosuite-core/docs/FILE_FORMATS.md`](../src/libneurosuite-core/docs/FILE_FORMATS.md). Binary formats are little-endian.
 
 | Ext | What |
 |---|---|
@@ -110,6 +110,6 @@ Authoritative spec: [`src/libneurosuite-core/docs/FILE_FORMATS.md`](src/libneuro
 
 ---
 
-See [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md) for the full internals map,
-[`BUILD.md`](BUILD.md) for building, and [`STANDARDIZATION.md`](STANDARDIZATION.md)
+See [`DEVELOPER_GUIDE.md`](dev/DEVELOPER_GUIDE.md) for the full internals map,
+[`BUILD.md`](BUILD.md) for building, and [`STANDARDIZATION.md`](dev/STANDARDIZATION.md)
 for the coding and layout standards.

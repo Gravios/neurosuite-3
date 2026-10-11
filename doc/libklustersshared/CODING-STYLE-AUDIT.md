@@ -107,7 +107,7 @@ src/libklustersshared/src/klustersshared/parameteryamlmodifier.h (Phase 3)
 src/libklustersshared/src/klustersshared/parameteryamlmodifier.cpp (Phase 3)
 src/libklustersshared/src/klustersshared/progressbar.h           (Phase 3)
 src/libklustersshared/src/klustersshared/progressbar.cpp         (Phase 3)
-AUDIT.md                                                         (this file)
+doc/libklustersshared/CODING-STYLE-AUDIT.md                      (this file)
 ```
 
 ## Verification commands after extraction
