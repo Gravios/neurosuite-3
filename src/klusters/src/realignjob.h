@@ -40,7 +40,7 @@ class KlustersDoc;
 class RealignJob : public Job
 {
 public:
-    using FinishedFn = std::function<void(bool ok, int nShifted, int nSwapped,
+    using FinishedFn = std::function<void(bool ok, int nShifted, int nClamped,
                                           QVector<float> meanBefore,
                                           QVector<float> meanAfter,
                                           QString backupBase, int nChan, int nSamp)>;
@@ -101,11 +101,11 @@ public:
         // the queue.  done() is intentionally the last statement.
         FinishedFn ff = finishedFn;
         QObject::connect(worker, &RealignWorker::finished, context,
-            [ff, thread, done](bool ok, int nShifted, int nSwapped,
+            [ff, thread, done](bool ok, int nShifted, int nClamped,
                                QVector<float> meanBefore, QVector<float> meanAfter,
                                QString backupBase, int nChan, int nSamp) {
                 if (ff)
-                    ff(ok, nShifted, nSwapped, meanBefore, meanAfter,
+                    ff(ok, nShifted, nClamped, meanBefore, meanAfter,
                        backupBase, nChan, nSamp);
                 thread->quit();
                 thread->wait(2000);

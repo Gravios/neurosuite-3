@@ -103,7 +103,7 @@ void RealignWorker::run()
             emit clusterDone(k + 1, total, id, ok, nsh);
         }
         // finished payload in batch mode: ok=true unless cancelled before any
-        // work (shutdown); nShifted carries the batch total, nSwapped carries the
+        // work (shutdown); nShifted carries the batch total, nClamped carries the
         // accepted count.  The GUI finaliser uses its own accumulated counters.
         emit finished(!cancelRequested || accepted > 0, shiftedTotal, accepted,
                       {}, {}, QString(), nChan, nSamp);
@@ -116,13 +116,13 @@ void RealignWorker::run()
 
     QString logOut;
     int nShifted = 0;
-    int nSwapped = 0;
+    int nClamped = 0;
     bool ok = false;
     QVector<float> meanBefore, meanAfter;
     QString backupBase;
 
     try {
-        ok = doc->realignSpikes(clusterId, logOut, nShifted, nSwapped,
+        ok = doc->realignSpikes(clusterId, logOut, nShifted, nClamped,
             [this](const QString& line, bool isError) {
                 // Errors always surface to stderr; detail only when verbose.
                 if (isError || verbose)
@@ -150,5 +150,5 @@ void RealignWorker::run()
         }
     }
 
-    emit finished(ok, nShifted, nSwapped, meanBefore, meanAfter, backupBase, nChan, nSamp);
+    emit finished(ok, nShifted, nClamped, meanBefore, meanAfter, backupBase, nChan, nSamp);
 }

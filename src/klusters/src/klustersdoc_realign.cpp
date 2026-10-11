@@ -138,6 +138,7 @@ using klustersdoc_internal::stripFeatureSuffix;
 
 #include "realign_xcorr.h"   // XcorrDispatch lives here via the dispatch TU
 #include "realign_center.h"  // realign_center::circularRecenterShift (shared)
+#include "spikeorder.h"      // spikeorder::clampToNeighbours — no spike crosses a neighbour
 #include "channelmask.h"
 #include "pca_refine_dispatch.h"
 
@@ -471,7 +472,7 @@ KlustersDoc::RealignBasis KlustersDoc::resolveRealignBasis(
     return out;
 }
 
-bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nSwapped,
+bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nClamped,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
                                 QVector<float>* meanBefore,
@@ -479,7 +480,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                                 QString* backupBase)
 {
     nShifted = 0;
-    nSwapped = 0;
+    nClamped = 0;
     logOut.clear();
 
     // Pipeline (follow the ── section banners below): refuse early only if features
@@ -1575,6 +1576,58 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                            spkElems, peakSamp0, rMin, log, emitFlush);
 
     // -----------------------------------------------------------------------
+    // Keep file order: no spike may cross its neighbour in .res.
+    // -----------------------------------------------------------------------
+    // Row i of .res, of every method's .spk/.fet and of the .clu is the same
+    // spike; that shared index is what lets one .clu be viewed through another
+    // method's features, so realign never permutes rows.  Each spike's final
+    // timestamp is clamped between its file neighbours (spikeorder.h): a
+    // neighbour from another cluster is a hard wall, a neighbour that also moves
+    // here splits the gap.  A clamped spike's wavBuf row is rolled back by the
+    // same amount (same convention as the xcorr loop) so the diagnostics and the
+    // no-.fil fallback stay consistent with its timestamp, and it is always
+    // re-extracted from .fil below.
+    std::vector<uint8_t> orderClamped(static_cast<size_t>(N), 0);
+    {
+        std::vector<int64_t> proposed(static_cast<size_t>(N));
+        for (int64_t i = 0; i < N; ++i)
+            proposed[static_cast<size_t>(i)] = clusterTs[static_cast<size_t>(i)]
+                                             + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+        const std::vector<int64_t> wanted(proposed);
+        const int64_t nTotal = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+        nClamped = static_cast<int>(spikeorder::clampToNeighbours(
+            gidx, clusterTs, proposed, nTotal,
+            [&](int64_t p) {   // in-memory timestamps track the pending .res exactly
+                return static_cast<int64_t>(clusteringData->featureValue(
+                    static_cast<dataType>(p + 1), static_cast<int>(timeDim)));
+            }));
+        if (nClamped > 0) {
+            std::vector<int16_t> tmp(static_cast<size_t>(spkElems));
+            for (int64_t i = 0; i < N; ++i) {
+                const int delta = static_cast<int>(proposed[static_cast<size_t>(i)]
+                                                 - wanted[static_cast<size_t>(i)]);
+                if (delta == 0) continue;
+                orderClamped[static_cast<size_t>(i)] = 1;
+                cumShift[static_cast<size_t>(i)] += delta;
+                int16_t* w = wavBuf.data()
+                    + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+                for (int t = 0; t < nSamp; ++t) {
+                    const int src = ((t + delta) % nSamp + nSamp) % nSamp;
+                    for (int ch = 0; ch < nChan; ++ch)
+                        tmp[static_cast<size_t>(ch * nSamp + t)] =
+                            w[static_cast<size_t>(ch * nSamp + src)];
+                }
+                std::copy(tmp.begin(), tmp.end(), w);
+            }
+            nShifted = 0;
+            for (int64_t i = 0; i < N; ++i)
+                if (cumShift[static_cast<size_t>(i)] != 0) ++nShifted;
+            log << nClamped << " spike(s) held back so they do not cross a neighbouring spike.\n";
+            emitFlush();
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Score / shift statistics
     // -----------------------------------------------------------------------
     {
@@ -1716,54 +1769,15 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     //             the raw-source .spk-match verification below; it is NOT a
     //             separate value persisted to .res.
     //
-    // Sorting is done by extTs so spikes stay in temporal order after any shift
-    // of their window position.
-    std::vector<int64_t> newTs(static_cast<size_t>(N));   // = extTs (for sort + re-extract)
+    // No reordering: the clamp above keeps every extTs strictly between its
+    // file neighbours, so each spike is written back to its own row (gidx) and
+    // .res stays in file order for every method's .spk/.fet and the .clc.
+    std::vector<int64_t> newTs(static_cast<size_t>(N));   // = extTs (re-extract window + timestamp)
     std::vector<int64_t> resTs(static_cast<size_t>(N));   // current .res value (seeds extTs + verification)
     for (int64_t i = 0; i < N; ++i) {
         resTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)];
         newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
             + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
-    }
-
-    // sortedOrder[j] = which cluster spike goes to sorted position j
-    std::vector<int64_t> sortedOrder(static_cast<size_t>(N));
-    std::iota(sortedOrder.begin(), sortedOrder.end(), int64_t{0});
-    std::stable_sort(sortedOrder.begin(), sortedOrder.end(),
-        [&](int64_t a, int64_t b) {
-            return newTs[static_cast<size_t>(a)]
-                 < newTs[static_cast<size_t>(b)];
-        });
-
-    // The cluster's file positions, sorted ascending, are the destination slots
-    std::vector<int64_t> targetPos(gidx.begin(), gidx.end());
-    std::sort(targetPos.begin(), targetPos.end());
-
-    for (int64_t j = 0; j < N; ++j) {
-        if (gidx[static_cast<size_t>(sortedOrder[static_cast<size_t>(j)])]
-                != targetPos[static_cast<size_t>(j)])
-            ++nSwapped;
-    }
-    if (nSwapped > 0)
-        log << nSwapped << " spike(s) reordered.\n";
-
-    // A reorder permutes the per-spike rows WITHIN this cluster's own file slots.  The .clu survives
-    // that (every slot carries the same cluster id), but the .clc does NOT: child ids vary inside a
-    // parent, so the child layer would silently de-align from the spikes it labels.  Nothing permutes
-    // it -- the .clc is not part of the pending set (spk/res/fet/clu), it is only rewritten when the
-    // child layer happens to be loaded, and the in-memory mirror further down follows features and
-    // timestamps but not child ids.
-    //
-    // This should be unreachable: maxShift is +-peakSamp0/2 (+-10 samples for a 21-sample peak) while
-    // two spikes of one cluster are refractory-separated (~65 samples at 32.5 kHz), so their
-    // timestamps cannot cross.  A reorder therefore means the cluster is badly contaminated, or the
-    // shift cap has been raised.  Say so loudly rather than corrupt the hierarchy in silence.
-    if (nSwapped > 0 && !clcSiblingPath.isEmpty()) {
-        log << "WARNING: hierarchical session -- the .clc child layer cannot follow this\n"
-               "         permutation and is now stale for this cluster.  Re-cut its children.\n";
-        qWarning() << "[realign] .clc de-aligned:" << nSwapped
-                   << "spike(s) reordered in cluster" << clusterId
-                   << "-- the child layer does not follow the permutation (no .clc.pending).";
     }
 
     // -----------------------------------------------------------------------
@@ -1986,8 +2000,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     //pinned before this batch never see them.
     QHash<qint64, std::shared_ptr<const QByteArray>> overlayBatch;
     for (int64_t j = 0; j < N; ++j) {
-        const int64_t csIdx = sortedOrder[static_cast<size_t>(j)];
-        const int64_t dest  = targetPos[static_cast<size_t>(j)];
+        const int64_t csIdx = j;                              // no reorder: each spike keeps its row
+        const int64_t dest  = gidx[static_cast<size_t>(j)];
         const int64_t ts = newTs[static_cast<size_t>(csIdx)]; // extTs: re-extraction window AND .res/.fet/in-memory timestamp (kept consistent)
 
         int16_t* w = wavBuf.data()
@@ -2009,7 +2023,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
 
         // Re-extract waveform from .fil/.dat at the new timestamp.
         std::vector<int16_t> spkRow(static_cast<size_t>(spkElems));
-        if (filF && cumShift[static_cast<size_t>(csIdx)] != 0) {
+        // A spike held back by the order clamp is re-extracted even when its net
+        // shift came to 0: its wavBuf row was rolled, not read at this window.
+        if (filF && (cumShift[static_cast<size_t>(csIdx)] != 0
+                     || orderClamped[static_cast<size_t>(csIdx)])) {
             const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
             if (startSample >= 0 && startSample + nSamp <= totalSamples) {
                 const off_t rawOff = static_cast<off_t>(startSample)
@@ -2139,8 +2156,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ true);
     if (childData) childData->applySpkOverlayBatch(overlayBatch, /*revertible*/ true);
 
-    log << "Done. " << nShifted << " shifted, " << nSwapped
-        << " reordered. (pending save)\n";
+    log << "Done. " << nShifted << " shifted, " << nClamped
+        << " held back at a neighbour. (pending save)\n";
 
     // Capture after-mean for the review dialog.
     if (meanAfter) {

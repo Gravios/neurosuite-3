@@ -639,7 +639,7 @@ private Q_SLOTS:
      * invalidation, view refresh, and the deferred post-merge step).  Handed to
      * RealignJob as its finished callback; the job owns the worker/thread
      * teardown.*/
-    void applyRealignResult(bool ok, int nShifted, int nSwapped,
+    void applyRealignResult(bool ok, int nShifted, int nClamped,
                             QVector<float> meanBefore, QVector<float> meanAfter,
                             QString backupBase, int nChan, int nSamp);
 
@@ -653,7 +653,7 @@ private Q_SLOTS:
     /**Called when the single batch worker finishes the whole cluster list.
      * Does the one-time batch finalise (centroid-cache teardown, deferred
      * refresh flush, summary, UI unlock).*/
-    void slotRealignBatchFinished(bool ok, int nShifted, int nSwapped,
+    void slotRealignBatchFinished(bool ok, int nShifted, int nClamped,
                                   QVector<float> meanBefore, QVector<float> meanAfter,
                                   QString backupBase, int nChan, int nSamp);
 

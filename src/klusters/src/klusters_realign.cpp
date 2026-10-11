@@ -224,11 +224,11 @@ void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
     auto* job = new RealignJob(
         this, doc, clusterId, args,
         // onFinished: clear the UI-lock flag, then run the result-handling body.
-        [this](bool ok, int nShifted, int nSwapped,
+        [this](bool ok, int nShifted, int nClamped,
                QVector<float> meanBefore, QVector<float> meanAfter,
                QString backupBase, int nChan, int nSamp) {
             realignRunning = false;
-            applyRealignResult(ok, nShifted, nSwapped, meanBefore, meanAfter,
+            applyRealignResult(ok, nShifted, nClamped, meanBefore, meanAfter,
                                backupBase, nChan, nSamp);
         });
     job->setVerbose(configuration().getRealignVerbose());
@@ -287,7 +287,7 @@ void KlustersApp::slotRealignClusterDone(int pos, int /*total*/, int clusterId,
 
 // One-time finalise when the single batch worker has processed the whole list.
 void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
-                                           int /*nSwapped*/,
+                                           int /*nClamped*/,
                                            QVector<float> /*meanBefore*/,
                                            QVector<float> /*meanAfter*/,
                                            QString /*backupBase*/,
@@ -668,7 +668,7 @@ void KlustersApp::slotPcaAlignAllClusters()
     startRealignBatchWorker(clusters, realignBatchArgs);
 }
 
-void KlustersApp::applyRealignResult(bool ok, int nShifted, int nSwapped,
+void KlustersApp::applyRealignResult(bool ok, int nShifted, int nClamped,
                                      QVector<float> meanBefore,
                                      QVector<float> meanAfter,
                                      QString backupBase,
