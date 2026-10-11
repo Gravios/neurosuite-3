@@ -176,6 +176,9 @@ Shadow-clustering group 1  (32 samples × 8 channels)
 
 ## Addendum — probe file copy-into-session (2026-04-21 rev 5)
 
+<details>
+<summary>Details</summary>
+
 Additional change to `../../src/ndmanager/src/probepage.{cpp,h}`.
 
 **Behavior change in the Probes tab:**
@@ -226,9 +229,14 @@ is shown and no row is added / the existing row is left unchanged.
 
 No schema or YAML changes.  ndmanager rebuild required to pick up.
 
+</details>
+
 ---
 
 ## Addendum — sdiff rank-deficiency support + decomposecollisions stderiv (2026-04-21 rev 6)
+
+<details>
+<summary>Details</summary>
 
 Two related changes addressing stderiv pipeline support:
 
@@ -381,9 +389,14 @@ No C++ rebuild required.
   effective nCh=7 → `nFeatDim = 21`, `baseDim = 21` → `extraFeat`
   auto-detects to false (matches your YAML's `extra: false`)
 
+</details>
+
 ---
 
 ## Addendum — Pass 2 commit counter + clearer summary (2026-04-21 rev 7)
+
+<details>
+<summary>Details</summary>
 
 Both re-extract scripts now print a richer summary line distinguishing
 three distinct per-group outcomes:
@@ -459,9 +472,14 @@ files would have accumulated between runs.
 
 No C++ changes; no rebuild required.
 
+</details>
+
 ---
 
 ## Addendum — sub-cluster the unmatched bin (2026-04-21 rev 8)
+
+<details>
+<summary>Details</summary>
 
 New script: `../../src/ndmanager-plugins/scripts/ndm_subcluster_unmatched`.
 
@@ -575,9 +593,14 @@ your real jg05-20120316 data to verify; cannot run here.
 
 No C++ changes.
 
+</details>
+
 ---
 
 ## Addendum — Klusters focus & autoscale (2026-04-21 rev 9)
+
+<details>
+<summary>Details</summary>
 
 Three related UX improvements in Klusters.
 
@@ -714,9 +737,14 @@ on your build.  Behavior test plan:
    re-fits automatically.  Press F again → status bar says "off";
    view stops auto-fitting on subsequent redraws.
 
+</details>
+
 ---
 
 ## Addendum — autoscale margin preference (2026-04-21 rev 10)
+
+<details>
+<summary>Details</summary>
 
 The F-key autoscale introduced in rev 9 used a hard-coded 5 % margin
 per side.  Rev 10 exposes that value as a new general preference so
@@ -808,9 +836,14 @@ Behavior test (once built):
 - `../../src/klusters/src/prefdialog.cpp`
 - `../../src/klusters/src/clusterview.cpp`
 
+</details>
+
 ---
 
 ## Addendum — CMake install list (2026-04-21 rev 11)
+
+<details>
+<summary>Details</summary>
 
 `make install` now copies the new bash scripts alongside the rest of
 the ndmanager-plugins tooling.
@@ -871,9 +904,14 @@ which ndm_subcluster_unmatched            # sanity check
 
 - `../../src/ndmanager-plugins/scripts/CMakeLists.txt`
 
+</details>
+
 ---
 
 ## Addendum — KlustaKwik accepts .fetD directly (2026-04-21 rev 12)
+
+<details>
+<summary>Details</summary>
 
 `KlustaKwik stem N` now transparently consumes the stderiv feature
 file `stem.fetD.N` when the canonical `stem.fet.N` is absent, removing
@@ -982,3 +1020,5 @@ by any pre-rev-12 KlustaKwik build.  Safe to leave as-is.
 - `../../src/ndmanager-plugins/scripts/ndm_subcluster_unmatched`
   — bash-side `.fetD` detection (redundant after this rev but kept
   for compatibility with pre-rev-12 KlustaKwik builds)
+
+</details>

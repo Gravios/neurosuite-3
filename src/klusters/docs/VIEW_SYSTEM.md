@@ -2,7 +2,12 @@
 
 A developer reference for the on-screen view layer of Klusters — the frame/zoom base chain, the per-document container, and the four curation matrices. Every structural claim below cites `file:line`; files under `src/klusters/src/` are named bare, and the shared `DockArea` base is cited by its path under `src/libklustersshared/`. Anything not read directly out of the code is marked **(unverified)**.
 
-> **Source note.** This reference was written against the base chain (`baseframe.h`/`.cpp`, `bufferedview.h`/`.cpp`, `viewwidget.h`/`.cpp`), the concrete views (`clusterview.h`, `waveformview.h`, `correlationview.h`, `errormatrixview.h`/`.cpp`, `traceview.h`, `tracewidget.h`, `templateview.h`, `templatematrixview.h`/`.cpp`, `residualmatrixview.h`/`.cpp`, `driftmatrixview.h`/`.cpp`, `mergerecommendview.h`), the container (`klustersview.h`/`.cpp`) and its creation site in `klusters.cpp`, the matrix helpers (`matrixviewport.h`, `matrixnavigator.h`, `matrixtemplatestrip.h`/`.cpp`, `matrixtemplatecols.h`, `matrixgrid.h`, `matrixbadge.h`, `matrixclick.h`), and the shared `src/libklustersshared/src/gui/dockarea.h`/`.cpp`. Cross-references to `STANDARDIZATION.md` use its section numbers; the document layer is covered by [DOCUMENT_MODEL.md](DOCUMENT_MODEL.md) and the input engine by [INPUT_SYSTEM.md](INPUT_SYSTEM.md).
+<details>
+<summary>Sources this reference was written against</summary>
+
+**Source note.** This reference was written against the base chain (`baseframe.h`/`.cpp`, `bufferedview.h`/`.cpp`, `viewwidget.h`/`.cpp`), the concrete views (`clusterview.h`, `waveformview.h`, `correlationview.h`, `errormatrixview.h`/`.cpp`, `traceview.h`, `tracewidget.h`, `templateview.h`, `templatematrixview.h`/`.cpp`, `residualmatrixview.h`/`.cpp`, `driftmatrixview.h`/`.cpp`, `mergerecommendview.h`), the container (`klustersview.h`/`.cpp`) and its creation site in `klusters.cpp`, the matrix helpers (`matrixviewport.h`, `matrixnavigator.h`, `matrixtemplatestrip.h`/`.cpp`, `matrixtemplatecols.h`, `matrixgrid.h`, `matrixbadge.h`, `matrixclick.h`), and the shared `src/libklustersshared/src/gui/dockarea.h`/`.cpp`. Cross-references to `STANDARDIZATION.md` use its section numbers; the document layer is covered by [DOCUMENT_MODEL.md](DOCUMENT_MODEL.md) and the input engine by [INPUT_SYSTEM.md](INPUT_SYSTEM.md).
+
+</details>
 
 ---
 
@@ -292,6 +297,9 @@ Grounded in what the base classes actually require:
 
 ## 8. Cross-check against `STANDARDIZATION.md`
 
+<details>
+<summary>Audit trail</summary>
+
 | Claim | Verdict | Evidence |
 |---|---|---|
 | §1 `DockArea` is a shared `libklustersshared` widget | Holds | `DockArea : QScrollArea`, `src/libklustersshared/src/gui/dockarea.h:50` |
@@ -308,3 +316,5 @@ Grounded in what the base classes actually require:
 4. **The three plain-`QWidget` matrices are not in `viewList`** (`QList<ViewWidget*>`, `klustersview.h:1008`); the document reaches them only through Qt signals, never the `for v : *viewList` method-call loop.
 5. **Both `newClustersAdded` overloads exist on `KlustersDoc` and on every matrix view** — always disambiguate the member-function pointer in `connect` (`klustersview.cpp:2107,2120,2133-2136`).
 6. **`matrixResolveClick` (`matrixclick.h`) is used only by residual + drift.** Error and template keep their own richer release on purpose; do not "unify" them onto it.
+
+</details>

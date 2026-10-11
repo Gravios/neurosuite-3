@@ -307,6 +307,9 @@ goes through `ProgressBar`, not stderr.
 
 (Recent completions, kept for ~1 quarter.)
 
+<details>
+<summary>Completed items</summary>
+
 ### ✅ Modern progressbar across `ndm_pca` / `ndm_pca_stderiv` *(this session)*
 
 Six-iteration progressbar modernization: `/dev/tty` output channel
@@ -335,9 +338,14 @@ clamping uses per-template projection coefficient distributions
 
 ### ✅ `ndm_decomposecollisions`, `ndm_reextractspikes`, `ndm_reextractspikes_stderiv`, `ndm_subcluster_unmatched` added to `install(PROGRAMS …)` in `scripts/CMakeLists.txt`.
 
+</details>
+
 ---
 
 ## Dropped
+
+<details>
+<summary>Dropped items and why</summary>
 
 ### ❌ Multi-line bar dance for parallel groups
 
@@ -381,3 +389,5 @@ or get re-scoped as work progresses.  Update the date below when you
 make changes.*
 
 *Last updated: 2026-04-30.*
+
+</details>

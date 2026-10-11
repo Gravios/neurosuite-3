@@ -294,6 +294,9 @@ silently.
 
 ## Troubleshooting
 
+<details>
+<summary>Symptoms and fixes</summary>
+
 **"No matching prior found" but I built one for this probe.**
 Compare the probe ids:
 
@@ -336,3 +339,5 @@ Currently only `ndm_subcluster_unmatched` consumes priors. The shape
 of `ndm_klustakwik`'s parameter resolution is similar; extending it to
 read priors is a straightforward follow-on. Open an issue if you'd
 like this added.
+
+</details>

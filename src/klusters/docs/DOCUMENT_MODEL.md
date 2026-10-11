@@ -4,15 +4,20 @@ A developer reference for the cluster/spike document layer of Klusters. Every
 structural claim below cites `file:line` in `src/klusters/src/`. Anything not
 directly read out of the code is marked **(unverified)**.
 
-> **Source note.** This reference was written against `klustersdoc.h`, the
-> `klustersdoc_*.cpp` family (`klustersdoc.cpp`, `_edit`, `_io`, `_undo`,
-> `_renumber`, `_hierarchy`, `_recluster`, `_watershed`, `_dipsplit`,
-> `_realign`, `_strip`), `data.h`/`data.cpp`, and
-> `../../libklustersshared/src/klustersshared/types.h`.
-> There is **no** `klustersdoc_sort.cpp`; the sort UI lives in `klusters_sort.cpp`
-> (the `klusters_*` app family, not the document). The rename/renumber primitive
-> lives in `klustersdoc_renumber.cpp` and the undo stack in `klustersdoc_undo.cpp`.
-> Cross-references to `STANDARDIZATION.md` use its section numbers.
+<details>
+<summary>Sources this reference was written against</summary>
+
+**Source note.** This reference was written against `klustersdoc.h`, the
+`klustersdoc_*.cpp` family (`klustersdoc.cpp`, `_edit`, `_io`, `_undo`,
+`_renumber`, `_hierarchy`, `_recluster`, `_watershed`, `_dipsplit`,
+`_realign`, `_strip`), `data.h`/`data.cpp`, and
+`../../libklustersshared/src/klustersshared/types.h`.
+There is **no** `klustersdoc_sort.cpp`; the sort UI lives in `klusters_sort.cpp`
+(the `klusters_*` app family, not the document). The rename/renumber primitive
+lives in `klustersdoc_renumber.cpp` and the undo stack in `klustersdoc_undo.cpp`.
+Cross-references to `STANDARDIZATION.md` use its section numbers.
+
+</details>
 
 ---
 
@@ -425,6 +430,9 @@ not the original `.res` (`klustersdoc_realign.cpp:3219-3222`).
 
 ## 8. Cross-check against `STANDARDIZATION.md`
 
+<details>
+<summary>Audit trail</summary>
+
 | Claim | Verdict | Evidence |
 |---|---|---|
 | §2.3 iterator returns `QPoint` with ordinate negated | **Holds** — cited `data.h:405-409` is stale | real location `data.h:707-711` |
@@ -444,3 +452,5 @@ not the original `.res` (`klustersdoc_realign.cpp:3219-3222`).
 3. **`clusterInfoMap` is a `Data` member**, not a `KlustersDoc` field.
 4. `newClustersAdded` has **two** overloads; always disambiguate the
    member-function pointer in `connect`.
+
+</details>

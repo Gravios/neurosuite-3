@@ -2,7 +2,12 @@
 
 A developer reference for how Klusters runs curation-adjacent compute off the GUI thread: the shared worker pools, the per-view cancellation token, the snapshot-and-retire worker pattern, the serial realign lane, and the legacy save threads. Every structural claim below cites `file:line`. Paths are under `src/klusters/src/` unless noted (the `CMakeLists.txt` cites are at the app root `src/klusters/` and `src/klusters/src/`). Anything not read directly out of the code is marked **(unverified)**.
 
-> **Source note.** Written against `klustersjobpool.h`/`.cpp`, `klustersjobtoken` (defined in `klustersjobpool.h`), `requestticket.h`, `serialjobqueue.h`, `realignjob.h`, `realignworker.h`/`.cpp`, `autosavethread.h`/`.cpp`, `savethread.h`/`.cpp`, the `*thread.h`/`.cpp` worker family (`waveformthread`, `correlationthread`, `errormatrixthread`, `minmaxthread`, `pairxcorrthread`, `templatematrixthread`, `residualmatrixthread`, `driftmatrixthread`, `driftshiftthread`, `mergerecommendthread`), the view-side stop/supersede methods in `klustersview.cpp`/`.h`, `waveformview.cpp`, `residualmatrixview.cpp`, `errormatrixview.cpp`, the quiesce call sites in `klustersdoc_undo.cpp` and `klustersdoc_realign.cpp`, the pool-drain sites in `klustersdoc.cpp`/`klustersdoc_io.cpp`, `klusters_realign.cpp`, and the OpenMP wiring in `../CMakeLists.txt` and `CMakeLists.txt`. Cross-references to `STANDARDIZATION.md` use its section numbers. See also [DOCUMENT_MODEL.md](DOCUMENT_MODEL.md) (the `Data` epoch/snapshot substrate the workers pin) and [VIEW_SYSTEM.md](VIEW_SYSTEM.md) (the views that own the tokens and receive completion events).
+<details>
+<summary>Sources this reference was written against</summary>
+
+**Source note.** Written against `klustersjobpool.h`/`.cpp`, `klustersjobtoken` (defined in `klustersjobpool.h`), `requestticket.h`, `serialjobqueue.h`, `realignjob.h`, `realignworker.h`/`.cpp`, `autosavethread.h`/`.cpp`, `savethread.h`/`.cpp`, the `*thread.h`/`.cpp` worker family (`waveformthread`, `correlationthread`, `errormatrixthread`, `minmaxthread`, `pairxcorrthread`, `templatematrixthread`, `residualmatrixthread`, `driftmatrixthread`, `driftshiftthread`, `mergerecommendthread`), the view-side stop/supersede methods in `klustersview.cpp`/`.h`, `waveformview.cpp`, `residualmatrixview.cpp`, `errormatrixview.cpp`, the quiesce call sites in `klustersdoc_undo.cpp` and `klustersdoc_realign.cpp`, the pool-drain sites in `klustersdoc.cpp`/`klustersdoc_io.cpp`, `klusters_realign.cpp`, and the OpenMP wiring in `../CMakeLists.txt` and `CMakeLists.txt`. Cross-references to `STANDARDIZATION.md` use its section numbers. See also [DOCUMENT_MODEL.md](DOCUMENT_MODEL.md) (the `Data` epoch/snapshot substrate the workers pin) and [VIEW_SYSTEM.md](VIEW_SYSTEM.md) (the views that own the tokens and receive completion events).
+
+</details>
 
 ---
 
@@ -351,6 +356,9 @@ Both pre-date the pool and remain simple one-shot `QThread`s that call into `Dat
 
 ## 9. Cross-check against `STANDARDIZATION.md`
 
+<details>
+<summary>Audit trail</summary>
+
 | Claim | Verdict | Evidence |
 |---|---|---|
 | §3.4 `probabilities` must init to `nullptr` to avoid a spurious `delete` on garbage at first thread completion | **Holds** | `ErrorMatrixThread` ctor initializes `probabilities(nullptr)` (`errormatrixthread.cpp:40`); event frees it (`errormatrixthread.h:79`) |
@@ -365,3 +373,5 @@ Both pre-date the pool and remain simple one-shot `QThread`s that call into `Dat
 3. **Two worker flavors exist.** Data-snapshot workers (waveform/correlation/matrix/pairxcorr) pin `currentSnapshot()`; value-copy workers (`mergerecommend`, `driftshift`) copy everything on the GUI thread and must **not** read `Data`. A new job must be clearly one or the other.
 4. **`KlustersJobToken::active` is an atomic count, not a flag**, and the death fence is `postMutex`+`viewDead` (`klustersjobpool.h:88-101`). `active == 0` is the quiesce contract the drain and the views' stop methods rely on.
 5. **`ErrorMatrixThread` picks its lane at runtime** (`seedOnly ? Background : Batch`, `errormatrixthread.cpp:64-65`) and its view holds **two** tokens (display + warmer, `errormatrixview.cpp:160-161`). Grep for its priority accordingly.
+
+</details>

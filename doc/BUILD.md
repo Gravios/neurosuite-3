@@ -156,6 +156,9 @@ under the top-level [`tests/`](../tests/). Run them with `ctest`.
 
 ## 7. AddressSanitizer
 
+<details>
+<summary>Sanitizer build (for debugging memory errors)</summary>
+
 `NS_ASAN=ON` instruments **host** code (C, C++, and the host side of `.cu`
 translation units) to catch heap/stack overflows and use-after-free *at the bad
 access*, with a symbolized stack trace — the tool to reach for when a crash
@@ -184,9 +187,14 @@ reproduces only with the GPU active, configure a second tree with
 `-DUSE_CUDA=OFF -DNS_ASAN=ON` to rule the CUDA host stubs in or out. The full
 rationale is in the `NS_ASAN` block of `CMakeLists.txt`.
 
+</details>
+
 ---
 
 ## 8. Continuous integration parity
+
+<details>
+<summary>Reproducing CI locally</summary>
 
 Two workflows run on `main` and on pull requests
 ([`.github/workflows/`](../.github/workflows/)):
@@ -220,6 +228,8 @@ Two workflows run on `main` and on pull requests
 
 The CI dependency list (in `ci.yml`) is the canonical "what to `apt-get
 install`" for a Linux build.
+
+</details>
 
 ---
 

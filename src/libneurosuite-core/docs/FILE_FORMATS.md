@@ -4,7 +4,12 @@ A developer reference for every on-disk format neurosuite-3 reads and writes. Ev
 
 This is the sibling of the cluster/spike document reference, [DOCUMENT_MODEL.md](../../klusters/docs/DOCUMENT_MODEL.md); cross-references to `STANDARDIZATION.md` use its section numbers (§3.1, §3.2, §3.3, §6.4, §6.6).
 
-> **Source note.** Written against `neurofileio.h` and `neurofileio.cpp` (the authoritative readers/writers), with cross-checks against `spike_extract.hpp`, `template_generate.hpp` and `custody.hpp` (same directory); the on-disk format docs under `doc/ndmanager-plugins/formats/` (`clu.md`, `res.md`, `fet.md`, `spk.md`, `col.md`, `eap.md`, `tcl.md`, `wti.md`, `wtf.md`, `naming.md`, `dat.md`); the NeuroScope handbook `doc/site/docs/handbook/04-file-formats.md`; the consumers `src/klusters/src/{data,klustersdoc_realign,templatelineagestore,clusterview}.cpp`, `src/libklustersshared/src/klustersshared/parameteryaml{reader,writer}.cpp`, `src/neuroscope/src/neuroscope.cpp`, and `src/ndmanager-plugins/src/process_decomposecollisions/process_decomposecollisions.cpp`; and the design notes `claude/eap-template-class-design.md` and `claude/template-curation-plan.md`. `.pca`, `.mti`/`.mtf` and the signal-file *extension recognition* live outside `neurofileio` and are flagged as such. fiber-kit is a separate repo (`github.com/Gravios/fiber-kit`) and is **not** checked out here; its `neuro_io` specifics are marked **(unverified)** (§5).
+<details>
+<summary>Sources this reference was written against</summary>
+
+**Source note.** Written against `neurofileio.h` and `neurofileio.cpp` (the authoritative readers/writers), with cross-checks against `spike_extract.hpp`, `template_generate.hpp` and `custody.hpp` (same directory); the on-disk format docs under `doc/ndmanager-plugins/formats/` (`clu.md`, `res.md`, `fet.md`, `spk.md`, `col.md`, `eap.md`, `tcl.md`, `wti.md`, `wtf.md`, `naming.md`, `dat.md`); the NeuroScope handbook `doc/site/docs/handbook/04-file-formats.md`; the consumers `src/klusters/src/{data,klustersdoc_realign,templatelineagestore,clusterview}.cpp`, `src/libklustersshared/src/klustersshared/parameteryaml{reader,writer}.cpp`, `src/neuroscope/src/neuroscope.cpp`, and `src/ndmanager-plugins/src/process_decomposecollisions/process_decomposecollisions.cpp`; and the design notes `claude/eap-template-class-design.md` and `claude/template-curation-plan.md`. `.pca`, `.mti`/`.mtf` and the signal-file *extension recognition* live outside `neurofileio` and are flagged as such. fiber-kit is a separate repo (`github.com/Gravios/fiber-kit`) and is **not** checked out here; its `neuro_io` specifics are marked **(unverified)** (§5).
+
+</details>
 
 ---
 
@@ -237,6 +242,9 @@ fiber-kit is a **separate repository** (`github.com/Gravios/fiber-kit`) and is *
 
 ## 6. Doc-vs-code discrepancies (consolidated)
 
+<details>
+<summary>Audit trail</summary>
+
 | # | Item | What the doc says | What the code does | `file:line` (code) | Recommended fix |
 |---|---|---|---|---|---|
 | 1 | `.fet` binary body width | §3.3 table: "int32 features, row-major" (`STANDARDIZATION.md:191`) | `int64` values; `int32` header only | `neurofileio.cpp:237,245-246,266-267`; `neurofileio.h:108` | Correct §3.3 to `int64` body (matches `fet.md`). |
@@ -250,9 +258,14 @@ fiber-kit is a **separate repository** (`github.com/Gravios/fiber-kit`) and is *
 
 **Status (reconciled 2026-10-10).** The doc-side fixes above have been applied in the companion patches — §3.3 `.fet`/`.fetD` body corrected to `int64` (item 1); `col.md` rewritten to the binary `COL\x01` layout (item 2); §3.2 rewritten and §6.4 corrected to the two-peak-field, no-±1 reality (item 3); §6.6 marked resolved (item 4); and `formats/wtl.md` + `formats/evt.md` added and indexed (item 7). Items 5–6 needed no change. **Item 8 was a false flag** — `.pos` *is* read, by NeuroScope's `PositionsProvider` (`positionsprovider.cpp`); the original audit searched only `neurofileio` and the `QPointF pos` GUI symbol and missed it. The handbook is accurate and the format is now documented in `formats/pos.md`. **No residual remains.** The table above records the as-found audit, including that correction.
 
+</details>
+
 ---
 
 ## 7. Cross-check against `STANDARDIZATION.md`
+
+<details>
+<summary>Audit trail</summary>
 
 | Claim | Verdict | Evidence |
 |---|---|---|
@@ -275,3 +288,5 @@ fiber-kit is a **separate repository** (`github.com/Gravios/fiber-kit`) and is *
 5. **`writeWti` chooses v1/v2 by content, `writeWtl` always writes v2.** Preserve `writeWti`'s "v2 only if some `parent ≥ 0`" rule so clu-keyed libraries stay byte-identical to pre-v2; and remember fiber-kit's `.wtl` reader still expects v1 (§5) — coordinate any `.wtl` change with the separate fiber-kit patch.
 6. **`.pos` is read by NeuroScope, not `neurofileio`; `.eeg` is `.lfp`.** The position file is parsed by NeuroScope's `PositionsProvider` (`positionsprovider.cpp`) — see `formats/pos.md` — so it is adjacent (§4.7), not absent. `.eeg`/`.lfp`/`.fil` all go through `datSampleCount`/`readDatWindow`, with extension recognition in the apps (`custody.hpp:149-152`, `neuroscope.cpp:1557`), not in `neurofileio`.
 7. **`.pca` is not a `neurofileio` format.** Its reader and the (now relative) channel-count sanity bound live in `klustersdoc_realign.cpp`/`core::loadPca`; `neurofileio`'s `.fet` reader intentionally imposes no channel cap.
+
+</details>

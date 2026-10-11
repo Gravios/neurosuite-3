@@ -273,6 +273,9 @@ for backward compatibility; they always save YAML.
 
 ## Documentation map
 
+<details>
+<summary>Full directory tree</summary>
+
 ```
 doc/
 ├── README.md                       ← this file
@@ -315,6 +318,8 @@ doc/
 ├── gpu/README.md
 └── <component>/install/<platform>.md
 ```
+
+</details>
 
 ---
 

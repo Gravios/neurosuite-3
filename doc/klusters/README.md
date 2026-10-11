@@ -82,6 +82,9 @@ than reading a separate stderiv waveform file (the old `.spkD.N`).
 
 ### Feature file format (`.fet.<method>.N`)
 
+<details>
+<summary>Binary layout</summary>
+
 Binary format (neurosuite-3 default):
 ```
 int32_t  nDimensions          (4-byte header)
@@ -97,6 +100,8 @@ feat_0 feat_1 … feat_n-1 timestamp
 ```
 
 klusters auto-detects the format by reading the first 4 bytes. Values 48–57 (ASCII digits) indicate text format; other values indicate binary. The last column in both formats is always the spike timestamp; only the preceding columns are used as clustering features.
+
+</details>
 
 ---
 
@@ -494,12 +499,17 @@ Mean mode).
 
 #### Performance
 
+<details>
+<summary>Details</summary>
+
 Currently synchronous on the GUI thread with a modal progress dialog;
 `QApplication::processEvents()` between clusters keeps Cancel responsive.
 For *Selected* mode this is instant; for *All active* on big sessions
 expect seconds to tens of seconds for the waveform-read phase. A future
 async `QThread` variant (mirroring `TemplateMatrixThread`) is on the
 roadmap.
+
+</details>
 
 ### Watershed split — density-based 2D segmentation
 
@@ -602,6 +612,9 @@ emit `ACTION_DETAIL` records carrying algorithm-specific metadata
 `"good"` (the user kept the action) or `"bad"` (the user reverted
 it via Ctrl+Z and never restored it before the action left the
 in-memory ring buffer).
+
+<details>
+<summary>Log lifecycle, record schema and action types</summary>
 
 ### Deferred-flush lifecycle
 
@@ -735,6 +748,8 @@ emits an `ANNOTATE` event that gates which clusters are eligible for
 prior training. **Annotate as you go** — the prior pipeline filters
 out un-annotated clusters by default.
 
+</details>
+
 ---
 
 ## Saving
@@ -822,6 +837,9 @@ file — it re-projects through whichever basis the resolved method selects.
 
 ### Transactional pending-file model
 
+<details>
+<summary>Details</summary>
+
 All edits from realign and nudge go into `.pending` sidecar files
 (`spk.<method>.N.pending`, `fet.<method>.N.pending`, etc.) rather than the live
 session files. The session files are updated atomically on save:
@@ -842,6 +860,8 @@ After realignment completes, the **Realignment Review Dialog** shows before/afte
 **Actions → Abort Realignment** cancels realignment in progress.
 
 Realignment parameters (maxShift, minScore) are set in **Settings → Preferences → Refinement → Realignment** (was Preferences → General → Realignment before the patch 0067 tab split).
+
+</details>
 
 ---
 
@@ -874,6 +894,9 @@ On opening a session, klusters detects orphaned autosave files and offers to res
 ---
 
 ## Keyboard shortcuts reference
+
+<details>
+<summary>All shortcuts, by menu</summary>
 
 ### File
 
@@ -988,6 +1011,8 @@ menu only — no keyboard shortcuts are bound.
 | Increase point size | `=` or `Shift+=` |
 | Decrease point size | `-` |
 | Preferences | `P` |
+
+</details>
 
 ---
 

@@ -193,6 +193,9 @@ Same as neuroscope — unaudited, fruit unknown.  Estimate: 1-2 sessions.
 (Recent completions, kept for reference.  Items here move to
 git history / `CHANGELOG.md` after roughly a quarter.)
 
+<details>
+<summary>Completed items</summary>
+
 ### ✅ NeuroScope input system on the shared engine *(2026-10-09 → 10-10)*
 
 The `input::` engine moved from Klusters into `libklustersshared` and now
@@ -290,12 +293,17 @@ Shipped: `klusters-dipsplit-postcommit-v3.tar.gz` (8 files).
 dead-code triage) that's now reused for libklustersshared and queued for
 KiloKlustaKwik.
 
+</details>
+
 ---
 
 ## Dropped
 
 (Considered and rejected, with rationale.  Kept indefinitely so we don't
 relitigate.)
+
+<details>
+<summary>Dropped items and why</summary>
 
 ### ❌ Multi-line cursor-positioning ProgressBar for parallel groups
 
@@ -321,6 +329,8 @@ homogenisation" before Gravio corrected.  **Dropped** because the project
 convention is bare names (no prefix) — klusters has zero `m_` on members
 across ~30K LOC.  The audit direction is **strip**, not add.  Re-recorded
 in `STANDARDIZATION.md` §6.1 as a known Claude failure mode.
+
+</details>
 
 ---
 
