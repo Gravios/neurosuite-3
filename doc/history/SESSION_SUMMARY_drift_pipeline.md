@@ -1,5 +1,8 @@
 # Drift-Estimation Pipeline — Session Summary
 
+> **Archival.** A record of the May 2026 drift-estimation pipeline session, kept for reference. It describes the code as it was then
+> and may not match the current tree; file names follow the naming of the time. Current docs: [Drift correction workflow](../workflows/drift-correction.md).
+
 **Date range:** May 2026 working session
 **Reference data:** `jg05-20120316` (Buzsaki64L) + A32 linear sessions
 **Commits landed (oldest → newest):**

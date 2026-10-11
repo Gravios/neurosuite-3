@@ -1,5 +1,8 @@
 # Klusters fix-bundle — summary
 
+> **Archival.** A record of a Klusters fix bundle (six issues, including the DipSplit undo segfault), kept for reference. It describes the code as it was then
+> and may not match the current tree; file names follow the naming of the time. Current docs: [klusters](../klusters/README.md).
+
 This drop addresses six issues raised in the last round.
 
 ## 1. Segfault on undo after dipsplit

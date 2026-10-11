@@ -1,5 +1,8 @@
 # progressbar dedupe + modernization
 
+> **Archival.** A record of the progressbar de-duplication and modernisation drop, kept for reference. It describes the code as it was then
+> and may not match the current tree; file names follow the naming of the time. Current docs: [libklustersshared](../libklustersshared/README.md).
+
 ## Files in this drop
 
 Replacing in place:

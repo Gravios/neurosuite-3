@@ -1,5 +1,8 @@
 # ndm_alignspikes .res-update fix — usage & recovery
 
+> **Archival.** A record of the `ndm_alignspikes` `.res`-update fix (usage and recovery for sessions aligned before it), kept for reference. It describes the code as it was then
+> and may not match the current tree; file names follow the naming of the time. Current docs: [spike-detection commands](../ndmanager-plugins/commands/spike-detection.md).
+
 ## What changed
 
 `process_alignspikes` now updates `.res.N` so `.res[i] = originalTs[i] + shift[i]`

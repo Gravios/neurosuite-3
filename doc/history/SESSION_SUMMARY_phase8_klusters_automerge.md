@@ -1,5 +1,8 @@
 # Phase 8 + Klusters Auto-Merge — Session Summary
 
+> **Archival.** A record of the 2026-05-29 KiloKlustaKwik Phase 8 + Klusters Auto-Merge session, kept for reference. It describes the code as it was then
+> and may not match the current tree; file names follow the naming of the time. Current docs: [kiloklustakwik](../kiloklustakwik/README.md) · [klusters → Auto-Merge](../klusters/README.md#auto-merge-action).
+
 **Date:** 2026-05-29
 **Reference data:** `sirotaA-jg-000005-20120312` group 6, stderiv pipeline, 64-core box
 **Commits landed (oldest → newest):**

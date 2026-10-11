@@ -330,6 +330,8 @@ doc/
 - [`../CHANGELOG.md`](../CHANGELOG.md) — top-level consolidated
   changelog. Dated entries from most recent at top, each linking to
   a `doc/design/<topic>.md` for the design discussion.
+- [`history/`](history/README.md) — archival notes from past fix bundles and
+  working sessions (may not match the current tree).
 - [`design/`](design/README.md) — durable design references.
   Indexed in the changelog by date; indexed by topic in
   [`design/README.md`](design/README.md).
