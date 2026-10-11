@@ -553,15 +553,17 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
         "res", electrodeGroupID, sessionMethod);
     origFetPath = fetFileUrl;
-    // Feature space: the .clu's own method is loaded (see switchFeatureSpace).
-    originMethod  = sessionMethod;
-    activeMethod  = sessionMethod;
-    activeFetPath = origFetPath;
-    activeSpkPath = origSpkPath;
     // clu original == docUrl (set above); clu pending set in initPendingFiles.
     if (!initPendingFiles()) {
         qWarning() << "[openDocument] could not create pending files";
     }
+    // Feature space: the .clu's own method is loaded (see switchFeatureSpace),
+    // read from the pending copies when they exist (initPendingFiles pointed the
+    // reader there), so a rollback to it restores exactly what is loaded now.
+    originMethod  = sessionMethod;
+    activeMethod  = sessionMethod;
+    activeFetPath = QFileInfo::exists(pendingFetPath) ? pendingFetPath : origFetPath;
+    activeSpkPath = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
 
     // ── Curation logger ─────────────────────────────────────────────────
     {
@@ -705,7 +707,9 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         // republishing (epoch-snapshot step 2) — invalidating the shared
         // reader would also redirect any older epoch a job still holds,
         // which must keep reading its own pinned file version instead.
-        if (!isBorrowedSpace()) {          // a borrowed reader's file did not change
+        // Rebind whenever the reader reads the file just rebuilt — the .clu
+        // space, or a borrowed space sharing its waveforms (a _D lag space).
+        if (clusteringData->getSpkFileName() == reTarget) {
             clusteringData->reopenSpkReader();
             if (childData) childData->reopenSpkReader();
         }
@@ -897,6 +901,16 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     if (!commitAndRenewPending(&commitError)) {
         lastSaveErrorMessage = commitError;
         return SAVE_ERROR;
+    }
+
+    // Save As may name another method (saMethod): the .clu now belongs to it,
+    // and its pending copies were re-seeded by commitAndRenewPending.  Only
+    // reachable from the .clu's own space (Save As is refused while borrowed).
+    if (isSaveAs) {
+        originMethod  = saMethod;
+        activeMethod  = saMethod;
+        activeFetPath = QFileInfo::exists(pendingFetPath) ? pendingFetPath : origFetPath;
+        activeSpkPath = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
     }
 
     modified=false;

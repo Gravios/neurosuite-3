@@ -35,6 +35,8 @@ qint64 fetRowCount(const QString& path)
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) return -1;
     qint32 nDims = 0;
+    // reinterpret_cast: QIODevice::read fills raw bytes; the .fet header is a
+    // native-endian int32, read straight into it (as neurofileio does).
     if (f.read(reinterpret_cast<char*>(&nDims), sizeof(nDims)) != sizeof(nDims) || nDims < 2)
         return -1;                                   // need a feature column besides time
     const qint64 body = f.size() - static_cast<qint64>(sizeof(qint32));
@@ -90,6 +92,11 @@ QList<KlustersDoc::FeatureSpace> KlustersDoc::availableFeatureSpaces() const
                 stem.toStdString(), "spk", group, m.toStdString());
             s.spkPath   = QString::fromStdString(spk.path);
             s.spkMethod = QString::fromStdString(spk.method);
+            // A space that reads the .clu space's own waveforms (a _D lag space
+            // over the same token, or the standard fallback) must read its live
+            // pending copy, which carries this session's realign / nudge.
+            if (s.spkPath == origSpkPath && QFileInfo::exists(pendingSpkPath))
+                s.spkPath = pendingSpkPath;
             if (!spk.found) {
                 s.reason = tr("no .spk waveform file for %1").arg(m);
                 spaces << s;
@@ -147,9 +154,13 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
     if (!clusteringData->replaceFeatureSpace(target.fetPath, target.spkPath, errorInformation))
         return false;
     if (childData && !childData->replaceFeatureSpace(target.fetPath, target.spkPath, errorInformation)) {
-        // Keep both layers in one space: put the parent back.
-        QString ignored;
-        clusteringData->replaceFeatureSpace(prevFet, prevSpk, ignored);
+        // Keep both layers in one space: put the parent back (the active paths
+        // are exactly what was loaded, pending copies included).
+        QString rollbackError;
+        if (!clusteringData->replaceFeatureSpace(prevFet, prevSpk, rollbackError))
+            errorInformation += tr("\nRestoring the %1 space also failed: %2  "
+                                   "Close and reopen the document.")
+                                    .arg(activeMethod, rollbackError);
         return false;
     }
     activeMethod  = method;
