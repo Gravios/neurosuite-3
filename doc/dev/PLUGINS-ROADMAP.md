@@ -11,6 +11,8 @@ in the project roadmap; here we focus on **plugin functionality**.
 Status indicators match the project ROADMAP convention:
 **🔥 active**, **🎯 next**, **📋 planned**, **💭 considered**, **✅ done**, **❌ dropped**.
 
+**Contents:** [Pipeline overview](#pipeline-overview) · [Now](#now) · [Soon](#soon) · [Later](#later) · [Cross-cutting](#cross-cutting) · [Done](#done) · [Dropped](#dropped)
+
 ---
 
 ## Pipeline overview

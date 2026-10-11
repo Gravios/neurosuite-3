@@ -9,6 +9,8 @@ A developer reference for the on-screen view layer of Klusters — the frame/zoo
 
 </details>
 
+**Contents:** [1. The view class hierarchy](#1-the-view-class-hierarchy) · [2. What each base layer provides](#2-what-each-base-layer-provides) · [3. `KlustersView` — the per-document container — and `DockArea`](#3-klustersview--the-per-document-container--and-dockarea) · [4. `setConnections` — wiring document signals to each view](#4-setconnections--wiring-document-signals-to-each-view) · [5. The matrix-view support classes](#5-the-matrix-view-support-classes) · [6. The input seam](#6-the-input-seam) · [7. Adding a new view — checklist](#7-adding-a-new-view--checklist) · [8. Cross-check against `STANDARDIZATION.md`](#8-cross-check-against-standardizationmd)
+
 ---
 
 ## 1. The view class hierarchy

@@ -1,5 +1,7 @@
 # KlustaKwik — Changes from v1.7
 
+**Contents:** [Overview](#overview) · [2026-04-22 — `.fetD`/`.spkD`/`.pcaD` fallback propagated to every session-file open](#2026-04-22--fetdspkdpcad-fallback-propagated-to-every-session-file-open) · [Correctness fixes](#correctness-fixes) · [C++17 modernization](#c17-modernization) · [New algorithm: farthest-point seeding](#new-algorithm-farthest-point-seeding) · [New algorithm: two-phase CEM](#new-algorithm-two-phase-cem) · [New algorithm: three-phase temporal chunking](#new-algorithm-three-phase-temporal-chunking) · [New parameter: `-SaveIntermediates`](#new-parameter--saveintermediates) · [Logging defaults changed](#logging-defaults-changed) · [Startup banner and parallelism diagnostics](#startup-banner-and-parallelism-diagnostics) · [CUDA backend](#cuda-backend) · [Phase 1.5: waveform realignment](#phase-15-waveform-realignment) · [YAML auto-detect for spike-group parameters](#yaml-auto-detect-for-spike-group-parameters) · [Thread safety: Cholesky storage moved to KK instance](#thread-safety-cholesky-storage-moved-to-kk-instance) · [File inventory](#file-inventory)
+
 ## Overview
 
 This fork modernises the v1.7 codebase (last updated June 2004) to compile under

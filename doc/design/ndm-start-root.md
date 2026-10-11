@@ -11,6 +11,8 @@ list from the YAML and dispatch in graph order.
 For the operational walkthrough, see
 [`../ndmanager/README.md` → Pipeline tab](../ndmanager/README.md#pipeline-tab--editable-node-graph).
 
+**Contents:** [Why](#why) · [C++ — sticky-root semantics in PipelineDesignerPage](#c--sticky-root-semantics-in-pipelinedesignerpage) · [Bash — `ndm_start` as YAML-driven dispatcher](#bash--ndm_start-as-yaml-driven-dispatcher) · [Round-trip behavior](#round-trip-behavior) · [Files touched](#files-touched) · [Limitations & follow-ons](#limitations--follow-ons) · [Pipeline files (`<session>.ndm.<n>.pipeline`)](#pipeline-files-sessionndmnpipeline)
+
 ---
 
 ## Why

@@ -4,6 +4,8 @@ Klusters is an interactive manual spike-sorting application. It loads feature ve
 
 > **XML support has been removed.** Legacy `.xml` parameter files must be converted with `ndm_xml2yaml` (from ndmanager-plugins) before opening a session in klusters-3.
 
+**Contents:** [Dependencies](#dependencies) · [Launching](#launching) · [Files read and written](#files-read-and-written) · [Interface layout](#interface-layout) · [Cluster palette](#cluster-palette) · [Hierarchical clustering (fibers and atoms)](#hierarchical-clustering-fibers-and-atoms) · [Views](#views) · [Cluster editing operations](#cluster-editing-operations) · [Curation logging](#curation-logging) · [Saving](#saving) · [Update modes](#update-modes) · [Automatic reclustering (KiloKlustaKwik)](#automatic-reclustering-kiloklustakwik) · [Spike realignment](#spike-realignment) · [Timestamp nudge](#timestamp-nudge) · [Autosave and crash recovery](#autosave-and-crash-recovery) · [Keyboard shortcuts reference](#keyboard-shortcuts-reference) · [Parameters toolbar reference](#parameters-toolbar-reference) · [Printing](#printing) · [GPU acceleration](#gpu-acceleration) · [Installation](#installation)
+
 ---
 
 ## Dependencies

@@ -24,6 +24,8 @@ src/neuroscope/src/traceview.h            |  +1  -1
 No schema, build, or signal-API changes.  Drop-in over an existing
 neurosuite-3 checkout.
 
+**Contents:** [P0 — Real bugs (data corruption / wrong results)](#p0--real-bugs-data-corruption--wrong-results) · [P1 — Real bugs (functional / robustness)](#p1--real-bugs-functional--robustness) · [P2 — Hot-path optimisations applied](#p2--hot-path-optimisations-applied) · [P3 — Recommendations not applied (would benefit from focused passes)](#p3--recommendations-not-applied-would-benefit-from-focused-passes) · [Testing](#testing) · [Files changed](#files-changed)
+
 ---
 
 ## P0 — Real bugs (data corruption / wrong results)

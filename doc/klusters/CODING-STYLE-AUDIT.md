@@ -9,6 +9,8 @@ leave alone.
 **Method.** Pattern-matched declarations and identifiers across all
 17 source files; counted occurrences; grouped by issue class.
 
+**Contents:** [Findings](#findings) · [Action plan for this audit pass](#action-plan-for-this-audit-pass) · [Phase 2: `m_` prefix homogenisation (completed)](#phase-2-m_-prefix-homogenisation-completed) · [Phase 3: function-and-class doc-comment audit (completed)](#phase-3-function-and-class-doc-comment-audit-completed) · [Phase 4: C-style cast → static_cast sweep (completed)](#phase-4-c-style-cast--static_cast-sweep-completed) · [Phase 5: AST-based dead-code & duplicate-code analysis (completed)](#phase-5-ast-based-dead-code--duplicate-code-analysis-completed)
+
 ## Findings
 
 ### A. Member-prefix inconsistency (HIGH severity, MEDIUM effort)

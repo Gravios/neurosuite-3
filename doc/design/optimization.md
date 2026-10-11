@@ -4,6 +4,8 @@ Hardware profile: AMD Ryzen 7 9800X3D · NVIDIA RTX 5070 Ti (Blackwell) ·
 64 GiB DDR5-6000 (Kingston KF560C30-32, EXPO enabled) ·
 Samsung 990 PRO 2 TB (OS/root) · Samsung 9100 PRO 8 TB (`/data`)
 
+**Contents:** [1  BIOS](#1--bios) · [2  Operating System](#2--operating-system) · [3  Storage  ⚡ *highest single impact for large recordings*](#3--storage---highest-single-impact-for-large-recordings) · [4  Build system](#4--build-system) · [5  `process_subtractspikes` chunk loop  *(already applied)*](#5--process_subtractspikes-chunk-loop--already-applied) · [6  CUDA / Blackwell (RTX 5070 Ti, sm_120)](#6--cuda--blackwell-rtx-5070-ti-sm_120) · [7  Python (`process_subtractspikes`)](#7--python-process_subtractspikes) · [8  Priority summary](#8--priority-summary)
+
 ---
 
 ## 1  BIOS

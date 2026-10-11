@@ -13,6 +13,8 @@ multi-hour extracellular recordings with electrode drift. On shorter
 recordings, setting `-ChunkMinutes 0` reduces the pipeline to the original
 two-phase CEM.
 
+**Contents:** [Pipeline stages](#pipeline-stages) · [Dependencies](#dependencies) · [Usage](#usage) · [File extension resolution](#file-extension-resolution) · [Parameters](#parameters) · [Pipeline phases in detail](#pipeline-phases-in-detail) · [CEM algorithm](#cem-algorithm) · [GPU dispatch](#gpu-dispatch) · [Inline drift estimation (disabled by default)](#inline-drift-estimation-disabled-by-default) · [Installation](#installation)
+
 
 ---
 

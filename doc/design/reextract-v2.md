@@ -172,6 +172,8 @@ Shadow-clustering group 1  (32 samples × 8 channels)
   [... merge log ...]
 ```
 
+**Contents:** [Addendum — probe file copy-into-session (2026-04-21 rev 5)](#addendum--probe-file-copy-into-session-2026-04-21-rev-5) · [Addendum — sdiff rank-deficiency support + decomposecollisions stderiv (2026-04-21 rev 6)](#addendum--sdiff-rank-deficiency-support--decomposecollisions-stderiv-2026-04-21-rev-6) · [Addendum — Pass 2 commit counter + clearer summary (2026-04-21 rev 7)](#addendum--pass-2-commit-counter--clearer-summary-2026-04-21-rev-7) · [Addendum — sub-cluster the unmatched bin (2026-04-21 rev 8)](#addendum--sub-cluster-the-unmatched-bin-2026-04-21-rev-8) · [Addendum — Klusters focus & autoscale (2026-04-21 rev 9)](#addendum--klusters-focus--autoscale-2026-04-21-rev-9) · [Addendum — autoscale margin preference (2026-04-21 rev 10)](#addendum--autoscale-margin-preference-2026-04-21-rev-10) · [Addendum — CMake install list (2026-04-21 rev 11)](#addendum--cmake-install-list-2026-04-21-rev-11) · [Addendum — KlustaKwik accepts .fetD directly (2026-04-21 rev 12)](#addendum--klustakwik-accepts-fetd-directly-2026-04-21-rev-12)
+
 ---
 
 ## Addendum — probe file copy-into-session (2026-04-21 rev 5)

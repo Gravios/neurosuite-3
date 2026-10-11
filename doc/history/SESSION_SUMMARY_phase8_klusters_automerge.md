@@ -13,6 +13,8 @@ b1d4f7e  klusters/Auto-Merge: populate settings tab + Configuration round-trip  
 
 (Hashes are the in-tree IDs at the time this doc was written. `git log --oneline | head` for the current truth.)
 
+**Contents:** [1. What landed this session](#1-what-landed-this-session) · [2. Background — what these patches address](#2-background--what-these-patches-address) · [3. Phase 8 — variance-targeted knn-split (KKE)](#3-phase-8--variance-targeted-knn-split-kke) · [4. Klusters preferences refactor (patch 0067)](#4-klusters-preferences-refactor-patch-0067) · [5. Klusters Auto-Merge action (patches 0068 + 0069)](#5-klusters-auto-merge-action-patches-0068--0069) · [6. Recommended starting configuration](#6-recommended-starting-configuration) · [7. Outstanding / promising ideas — next session work](#7-outstanding--promising-ideas--next-session-work) · [8. File map — where each feature lives](#8-file-map--where-each-feature-lives) · [9. Build + smoke-test sequence (next session)](#9-build--smoke-test-sequence-next-session) · [10. Diagnostic findings worth recording](#10-diagnostic-findings-worth-recording) · [11. Reference: phase ordering today](#11-reference-phase-ordering-today)
+
 ---
 
 ## 1. What landed this session

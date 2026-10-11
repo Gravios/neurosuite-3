@@ -19,6 +19,8 @@ Cross-references to `STANDARDIZATION.md` use its section numbers.
 
 </details>
 
+**Contents:** [1. Roles and ownership](#1-roles-and-ownership) · [2. The `Data` store — spikes, features, waveforms](#2-the-data-store--spikes-features-waveforms) · [3. Epochs and snapshots (the `Data`-level undo substrate)](#3-epochs-and-snapshots-the-data-level-undo-substrate) · [4. Curation primitives and the undo rule](#4-curation-primitives-and-the-undo-rule) · [5. Undo/redo stack mechanics (`KlustersDoc`)](#5-undoredo-stack-mechanics-klustersdoc) · [6. Document → view signals](#6-document--view-signals) · [7. File load and save](#7-file-load-and-save) · [8. Cross-check against `STANDARDIZATION.md`](#8-cross-check-against-standardizationmd)
+
 ---
 
 ## 1. Roles and ownership

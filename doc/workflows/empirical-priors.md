@@ -13,6 +13,8 @@ descriptions in [ndmanager-plugins README](../ndmanager-plugins/README.md).
 For the CHANGES log entry, see
 [`../design/kk-prior.md`](../design/kk-prior.md).
 
+**Contents:** [Concepts](#concepts) · [Search paths](#search-paths) · [Phase 1 — first-time bootstrap](#phase-1--first-time-bootstrap) · [Phase 2 — build the first prior](#phase-2--build-the-first-prior) · [Phase 3 — reuse the prior automatically](#phase-3--reuse-the-prior-automatically) · [Phase 4 — lower-threshold re-extract](#phase-4--lower-threshold-re-extract) · [Phase 5 — onboarding a new animal on the same probe](#phase-5--onboarding-a-new-animal-on-the-same-probe) · [Phase 6 — refreshing priors](#phase-6--refreshing-priors) · [Verifying a prior is being used](#verifying-a-prior-is-being-used) · [Troubleshooting](#troubleshooting)
+
 ---
 
 ## Concepts

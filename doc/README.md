@@ -6,6 +6,8 @@ toolchain. All components compile under **C++20** with Qt 6 on Ubuntu
 compute-intensive steps via CUDA (NVIDIA), HIP (AMD ROCm), and SYCL
 (Intel Arc/oneAPI).
 
+**Contents:** [Programs](#programs) · [Pipeline variants — raw vs stderiv](#pipeline-variants--raw-vs-stderiv) · [GPU Acceleration](#gpu-acceleration) · [Build order](#build-order) · [Typical workflow](#typical-workflow) · [Parameter file format](#parameter-file-format) · [Documentation map](#documentation-map) · [Changelog and migration notes](#changelog-and-migration-notes)
+
 ---
 
 ## Programs

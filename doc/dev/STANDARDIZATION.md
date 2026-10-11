@@ -5,6 +5,8 @@ working on `github.com/Gravios/neurosuite-3.git`.  It's a checklist + reference
 that prevents drift, miscalibration, and re-litigation of decisions already
 made.  Read it first before designing or shipping any change.
 
+**Contents:** [1. Project map](#1-project-map) · [2. Hard conventions](#2-hard-conventions) · [3. Domain invariants](#3-domain-invariants) · [4. Workflow](#4-workflow) · [5. Audit playbook (5-phase)](#5-audit-playbook-5-phase) · [6. Things I get wrong (anti-patterns to avoid)](#6-things-i-get-wrong-anti-patterns-to-avoid) · [7. Tooling](#7-tooling) · [8. Reading the repo first](#8-reading-the-repo-first) · [9. Verification gates before shipping](#9-verification-gates-before-shipping) · [10. End-of-session recap pattern](#10-end-of-session-recap-pattern)
+
 ---
 
 ## 1. Project map

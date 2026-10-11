@@ -2,6 +2,8 @@
 
 Short utilities for spike detection.  Each is invoked with the session YAML or basename as its single argument.
 
+**Contents:** [`ndm_extractspikes` — raw threshold detection](#ndm_extractspikes--raw-threshold-detection) · [`ndm_extractspikes_sdiff` — spatial-Laplacian detection (legacy variant)](#ndm_extractspikes_sdiff--spatial-laplacian-detection-legacy-variant) · [`ndm_extractspikes_stderiv` — spatial + temporal derivative detection](#ndm_extractspikes_stderiv--spatial--temporal-derivative-detection) · [`ndm_extractspikes` post-extraction filter (`flatRunMax`, `dedupSamples`)](#ndm_extractspikes-post-extraction-filter-flatrunmax-dedupsamples) · [`ndm_spikecleaner` — drop flat / railed waveforms](#ndm_spikecleaner--drop-flat--railed-waveforms) · [`ndm_denoiseuniform` — remove uniform-noise events](#ndm_denoiseuniform--remove-uniform-noise-events) · [Custom difference patterns and alignment](#custom-difference-patterns-and-alignment)
+
 ---
 
 ## `ndm_extractspikes` — raw threshold detection

@@ -9,6 +9,8 @@ pipeline — either step by step or as a full batch.
 > longer reads XML directly** — legacy XML files should be converted to YAML with
 > `ndm_xml2yaml` before running the pipeline. ndmanager always saves YAML.
 
+**Contents:** [Dependencies](#dependencies) · [Launching](#launching) · [What ndmanager manages](#what-ndmanager-manages) · [The Probes tab](#the-probes-tab) · [Running the preprocessing pipeline](#running-the-preprocessing-pipeline) · [Pipeline tab — editable node graph](#pipeline-tab--editable-node-graph) · [Built-in session templates](#built-in-session-templates) · [Parameter file format](#parameter-file-format) · [Installation](#installation)
+
 ---
 
 ## Dependencies

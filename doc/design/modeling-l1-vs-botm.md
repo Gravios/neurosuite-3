@@ -14,6 +14,8 @@ you can choose between.
 > (PMC / bioRxiv / institutional PDF), I can fold it into a
 > revision of this document.
 
+**Contents:** [What the current code does](#what-the-current-code-does) · [What's structurally missing vs BOTM](#whats-structurally-missing-vs-botm) · [Where overlap handling sits](#where-overlap-handling-sits) · [Concrete upgrade options](#concrete-upgrade-options) · [Recommendation](#recommendation) · [Key references](#key-references)
+
 ## What the current code does
 
 `process_subtractspikes` has three modeling layers plus the new raw

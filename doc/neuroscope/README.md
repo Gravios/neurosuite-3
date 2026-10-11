@@ -4,6 +4,8 @@ NeuroScope is a Qt6 viewer for multi-channel electrophysiology data. It displays
 
 > **XML support has been removed.** Legacy `.xml` parameter files must be converted with `ndm_xml2yaml` (from ndmanager-plugins) before opening in neuroscope-3.
 
+**Contents:** [Dependencies](#dependencies) · [Launching](#launching) · [Files consumed](#files-consumed) · [Interface overview](#interface-overview) · [Navigation](#navigation) · [Signal layers](#signal-layers) · [Loading cluster files](#loading-cluster-files) · [Waveform display](#waveform-display) · [Event files](#event-files) · [Position file (`.pos`)](#position-file-pos) · [Channel panel and amplitude controls](#channel-panel-and-amplitude-controls) · [Display options](#display-options) · [Multiple display tabs](#multiple-display-tabs) · [Printing](#printing) · [Session file (`.nrs`)](#session-file-nrs) · [YAML parameter file — neuroscope section](#yaml-parameter-file--neuroscope-section) · [Preferences](#preferences) · [Installation](#installation)
+
 ---
 
 ## Dependencies

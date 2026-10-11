@@ -11,6 +11,8 @@ The authoritative source for all of this is the top-level
 [`CMakeLists.txt`](../CMakeLists.txt); when this page and it disagree, the
 `CMakeLists.txt` wins and this page should be fixed.
 
+**Contents:** [1. Toolchain](#1-toolchain) · [2. Configure, build, install](#2-configure-build-install) · [3. Build options](#3-build-options) · [4. GPU backends](#4-gpu-backends) · [5. The build graph and skip flags](#5-the-build-graph-and-skip-flags) · [6. Tests](#6-tests) · [7. AddressSanitizer](#7-addresssanitizer) · [8. Continuous integration parity](#8-continuous-integration-parity) · [9. Troubleshooting](#9-troubleshooting)
+
 ---
 
 ## 1. Toolchain

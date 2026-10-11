@@ -11,6 +11,8 @@ This is the sibling of the cluster/spike document reference, [DOCUMENT_MODEL.md]
 
 </details>
 
+**Contents:** [1. Formats at a glance](#1-formats-at-a-glance) · [2. Signal files — `.dat` / `.lfp` / `.fil` / `.eeg`](#2-signal-files--dat--lfp--fil--eeg) · [3. The spike-sorting quintet — `.res`, `.clu`, `.fet`, `.spk`, `.evt`](#3-the-spike-sorting-quintet--res-clu-fet-spk-evt) · [4. The template-library family — `.eap`, `.tcl`, `.wti`, `.wtf`, `.wtl`](#4-the-template-library-family--eap-tcl-wti-wtf-wtl) · [5. fiber-kit mirroring](#5-fiber-kit-mirroring) · [6. Doc-vs-code discrepancies (consolidated)](#6-doc-vs-code-discrepancies-consolidated) · [7. Cross-check against `STANDARDIZATION.md`](#7-cross-check-against-standardizationmd)
+
 ---
 
 ## 1. Formats at a glance

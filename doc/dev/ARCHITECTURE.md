@@ -10,6 +10,8 @@ keeps the tree buildable at every step. It is deliberately incremental: no
 big-bang rewrite, because the interactive apps (klusters especially) are daily
 tools and the GPU/Qt build cannot be exercised in every environment.
 
+**Contents:** [0. Where we are (progress to date)](#0-where-we-are-progress-to-date) · [1. Current structure](#1-current-structure) · [2. Target architecture](#2-target-architecture) · [3. Migration plan (staged, each step independently buildable)](#3-migration-plan-staged-each-step-independently-buildable) · [4. Conventions to standardize during the move](#4-conventions-to-standardize-during-the-move) · [5. Dead-code disposition (tracked, not yet actioned)](#5-dead-code-disposition-tracked-not-yet-actioned)
+
 ---
 
 ## 0. Where we are (progress to date)

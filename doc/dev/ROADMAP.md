@@ -14,6 +14,8 @@ sections, get retired, or get re-scoped.  The status indicators are:
 - **❌ dropped** — considered and rejected, with rationale (kept indefinitely
   so we don't relitigate)
 
+**Contents:** [Now](#now) · [Soon](#soon) · [Later](#later) · [Done](#done) · [Dropped](#dropped) · [Cross-cutting concerns](#cross-cutting-concerns)
+
 ---
 
 ## Now

@@ -9,6 +9,8 @@ A developer reference for how Klusters runs curation-adjacent compute off the GU
 
 </details>
 
+**Contents:** [1. The two worker pools — `KlustersJobPool`](#1-the-two-worker-pools--klustersjobpool) · [2. The cancellation/completion token — `KlustersJobToken`](#2-the-cancellationcompletion-token--klustersjobtoken) · [3. The pool-worker pattern](#3-the-pool-worker-pattern) · [4. Retiring an in-flight job — supersede vs stop](#4-retiring-an-in-flight-job--supersede-vs-stop) · [5. The result handle — `RequestTicket`](#5-the-result-handle--requestticket) · [6. OpenMP is optional — skip, don't break](#6-openmp-is-optional--skip-dont-break) · [7. The serial lane and the save threads](#7-the-serial-lane-and-the-save-threads) · [8. Contributor rules — invariants a new background job must respect](#8-contributor-rules--invariants-a-new-background-job-must-respect) · [9. Cross-check against `STANDARDIZATION.md`](#9-cross-check-against-standardizationmd)
+
 ---
 
 ## 1. The two worker pools — `KlustersJobPool`
