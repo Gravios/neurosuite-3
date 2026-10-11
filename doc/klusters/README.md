@@ -82,6 +82,35 @@ and `pca.standard.N` are used. Because the raw `.spk` is shared across
 variants, a stderiv session applies the transform on re-extraction rather
 than reading a separate stderiv waveform file (the old `.spkD.N`).
 
+### Feature spaces — one `.clu` through another method
+
+A group often has several method **spaces** on disk — `standard`,
+`stderiv_C5`, a `_D` lag space such as `stderiv_C5_D34` — each with its own
+`.fet` (and `.spk`, `.pca`) over the **same spikes in the same order**. The
+**Space** box at the far right of the Parameters toolbar shows the space
+whose features and waveforms are loaded and lists every space the group has.
+Pick another to load its `.fet` and `.spk` under the clusters you are
+curating, to compare how the same clusters separate in a different feature
+space; pick the `(.clu)` entry to go back.
+
+- Your cluster assignment, unsaved edits and undo history are kept; only the
+  feature values, the scatter and the waveforms change. A space whose `.fet`
+  or `.spk` does not match the open spike count is listed greyed out, with the
+  reason as its tooltip.
+- **Save** always writes the `.clu` under the method it was opened with,
+  whichever space is shown.
+- While another space is shown, operations that write the `.clu` space's own
+  files are off — **realign**, **Align All**, **nudge**, **Save As**,
+  **decollide** and **template generation** (the automatic post-edit realign
+  is skipped). Switch back to use them. **Recluster** works, using the shown
+  space's features.
+- Switching is refused while a realignment is unsaved (save or undo it first),
+  and the box is locked while saving, realigning or reclustering.
+
+This works because every file of a group is indexed by the same spike row,
+and Klusters keeps it that way: realign and nudge never move a spike past its
+neighbour in `.res`.
+
 ### Feature file format (`.fet.<method>.N`)
 
 <details>
@@ -816,7 +845,7 @@ For each spike in the selected clusters:
 1. The cluster mean waveform is computed.
 2. The spike's waveform is cross-correlated against the mean template at each lag within ±maxShift samples.
 3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the eigenvector basis matching the session method (`pca.stderiv.N` when the method is stderiv, else `pca.standard.N`).
-4. If a timestamp shift would violate chronological order, the affected `.res`/`.spk`/`.clu`/`.fet` rows are swapped.
+4. No spike is moved past its neighbour in `.res`: a shift that would cross one is limited to stop just short (a neighbour that is also moving splits the gap). Rows are never reordered, so every method's `.spk`/`.fet` and the `.clu` stay aligned; the log reports how many spikes were held back.
 
 ### Pipeline variant awareness
 
@@ -857,7 +886,7 @@ session files. The session files are updated atomically on save:
   by upstream scripts (reextract, subcluster) give an independent
   rollback option.
 
-After realignment completes, the **Realignment Review Dialog** shows before/after mean waveforms and reports the number of spikes shifted and timestamps reordered. The result can be **accepted** (pending files renamed; changes persisted) or **rejected** (pending files discarded).
+After realignment completes, the **Realignment Review Dialog** shows before/after mean waveforms and reports the number of spikes shifted and how many were held back at a neighbouring spike. The result can be **accepted** (pending files renamed; changes persisted) or **rejected** (pending files discarded).
 
 **Actions → Abort Realignment** cancels realignment in progress.
 
@@ -881,6 +910,10 @@ spike in the cluster, re-extracts the shifted waveform from `.fil`,
 reprojects through the PCA basis (using the same variant-aware logic as
 realign), and writes the update into the `.pending` files. The Apply /
 Reject cycle is the same as realign — nothing is committed until save.
+
+A spike never passes its neighbour in `.res`: if the shift would carry it
+past another spike, it stops one sample short, and the status bar says how
+many spikes were held back.
 
 Focus returns to the cluster palette after nudge completes, so you can
 immediately step to the next cluster with the arrow keys.
@@ -1032,6 +1065,7 @@ The **Parameters** toolbar (Settings → Show Parameters) shows context-sensitiv
 | Half duration (ms) | Correlogram View | Half-width of the correlogram time window |
 | N feat | All (when auto-select is on) | Maximum number of features passed to KiloKlustaKwik |
 | time (checkbox) | Next to **N feat** (when auto-select is on) | Include the spike timestamp as a clustering feature (off by default; time over-fits within-session drift) |
+| Space | Always (far right, document open) | Method space whose features and waveforms are loaded; pick another to view the same clusters in it — see [Feature spaces](#feature-spaces--one-clu-through-another-method) |
 
 ---
 

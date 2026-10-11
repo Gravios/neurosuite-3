@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-11 | [Klusters: view one .clu through another method's feature space; spikes never change order](#2026-10-11--klusters-view-one-clu-through-another-methods-feature-space-spikes-never-change-order) |
 | 2026-10-10 | [Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation](#2026-10-10--input-binding-overhaul-completed-across-klusters-and-neuroscope-qt-64612-compatibility-documentation) |
 | 2026-10-09 | [NeuroScope: two silently dead shortcuts fixed](#2026-10-09--neuroscope-two-silently-dead-shortcuts-fixed) |
 | 2026-10-08 | [ndm_hipass: zero-phase Butterworth filter (new default)](#2026-10-08--ndm_hipass-zero-phase-butterworth-filter-new-default) |
@@ -37,6 +38,43 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-11 — Klusters: view one .clu through another method's feature space; spikes never change order
+
+<details>
+<summary>Details</summary>
+
+**Feature-space switcher.** A **Space** box at the far right of the Klusters
+Parameters toolbar shows the method space whose features and waveforms are
+loaded and lists every space the open group has on disk (`standard`,
+`stderiv_C5`, a `_D` lag space, …). Picking another loads that space's `.fet`
+and `.spk` under the clusters being curated — cluster assignment, unsaved edits
+and undo history are kept — so one curation can be compared across feature
+spaces. Save always writes the `.clu` under its original method. While another
+space is shown, the operations that write the `.clu` space's own files are off
+(realign, Align All, nudge, Save As, decollide, template generation; the
+post-edit auto-realign is skipped); recluster works on the shown features.
+Spaces whose `.fet`/`.spk` do not match the open spike count are listed greyed
+out with the reason. Reference: `doc/klusters/README.md` → Feature spaces.
+
+**Spikes never change order.** The switcher relies on every file of a group
+being indexed by the same spike row, so realign and nudge no longer reorder
+spikes. Each spike's shift is clamped between its neighbours in `.res`
+(`spikeorder.h`: a neighbour from another cluster is a hard wall; a neighbour
+that also moves splits the gap). Realign's old reorder step — it permuted a
+cluster's rows by new timestamp, and could leave `.res` out of order against
+other clusters' spikes — is removed; the log and the nudge status bar report how
+many spikes were held back. New unit test `klusters_test_spikeorder`
+(fixed cases plus a randomized never-reorders property check).
+
+**Not yet verified in a build.** No Qt6 toolchain was available, so the Klusters
+changes were checked by review only (the `spikeorder` test was built and passes).
+Needs a workstation build and a pass on the reference session: switch spaces
+and back with unsaved edits, Save while another space is shown, realign/nudge
+held-back counts, and a recluster from a `_D` space (its feature mask uses the
+YAML's features-per-channel).
+
+</details>
 
 ## 2026-10-10 — Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation
 

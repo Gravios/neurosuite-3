@@ -20,7 +20,7 @@ The realignment runs once per cluster:
    - (b) Re-extract the shifted waveform from the `.fil` (or `.dat`) file at the new timestamp.
    - (c) Write the new waveform back to the `.spk` file at the same slot.
    - (d) Re-project the new waveform through the saved PCA eigenvectors (`.pca.<method>.N`, matching the session method) and update the `.fet.<method>.N` rows.
-   - (e) If the updated timestamp is now out of chronological order with a neighbor, swap all on-disk records (`.res`, `.spk`, `.clu`) and the in-memory `spikesByCluster` row.
+   - (e) The shift is limited so the spike never passes its neighbour in `.res` (it stops just short); rows are never reordered, so every method's files stay aligned.
 
 Sign convention (consistent with `realign_xcorr.h`): a positive shift `τ` means the spike peak is *late* by `τ` samples relative to the template. Correcting by `newTimestamp = oldTimestamp + τ` moves the spike earlier in the waveform window so its peak aligns with the template.
 
@@ -33,7 +33,7 @@ Sign convention (consistent with `realign_xcorr.h`): a positive shift `τ` means
 | `base.xml` / `base.yaml` | read | Session parameters (nChannels, nSamples, peakSampleIndex) |
 | `base.spk.N` | read/write | Raw waveforms — shifted in place |
 | `base.res.N` | read/write | Timestamps — updated after shifting |
-| `base.clu.N` | read/write | Cluster IDs — reordered if timestamp sort order changes |
+| `base.clu.N` | read | Cluster IDs — never reordered (shifts stop short of a neighbouring spike) |
 | `base.fet.N` | read/write | Features — reprojected via PCA if `.spk.N.evec` is available |
 | `base.spk.N.evec` | read | PCA eigenvectors written by `process_pca` |
 
@@ -44,7 +44,7 @@ Sign convention (consistent with `realign_xcorr.h`): a positive shift `τ` means
 After realignment completes, klusters shows a `RealignReviewDialog` with:
 
 - Before/after mean waveform plots for the realigned cluster.
-- Counts of spikes shifted and timestamps reordered.
+- Counts of spikes shifted and of spikes held back at a neighbouring spike.
 - Accept or Reject buttons (keyboard: Left/Right arrows to navigate, Enter to confirm).
 
 Rejecting the review restores the previous cluster state from an in-memory backup without touching disk.
