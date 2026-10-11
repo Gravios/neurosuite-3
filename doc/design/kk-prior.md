@@ -1,4 +1,4 @@
-# CHANGES — per-probe empirical KiloKlustaKwik priors
+# Per-probe empirical KiloKlustaKwik priors — design
 
 Adds the `kk_build_prior.py` / `kk_resolve_prior.py` pair and wires
 them into `ndm_subcluster_unmatched`. Lets you train empirical

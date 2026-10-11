@@ -7,6 +7,7 @@ ndm_redetectspikes [session.yaml]
 ```
 
 **Input:** `session-spkclean.dat` (produced by `ndm_stripdat`)
+
 **Output:** updated `session.res.N`, `session.spk.N`, `session.clu.N`; `.fet.N` is deleted (spike order changed)
 
 ## Description

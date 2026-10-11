@@ -11,6 +11,7 @@ the session basename. When `group` is omitted, all groups run
 sequentially.
 
 **Input:** `session.fet.<method>.N` per spike group (variant selected by `--method`)
+
 **Output:** `session.clu.N` per spike group
 
 ## Description

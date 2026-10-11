@@ -17,6 +17,7 @@ The former `ndm_reextractspikes_stderiv` is folded in as `--method
 stderiv`.
 
 **Input:** `session.fil`, `session.res.<method>.N`, `session.clu.<method>.N`, `session.fet.<method>.N`, `session.pca.<method>.N` (`.res` is resolved across methods)
+
 **Output:** updated `session.res.<method>.N`, `session.spk.<method>.N`, `session.clu.<method>.N`, `session.fet.<method>.N`; a `session.shadowmark.<method>.N` sidecar; per-group backups (`*.bak`)
 
 ## Description

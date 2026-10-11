@@ -10,6 +10,7 @@ Converts Neuralynx Continuously Sampled files to interleaved int16 `.dat`
 format.
 
 **Input:** `../SESSION-nlx/SESSION-nlx.ncs` (one file per channel)
+
 **Output:** `SESSION-nlx.dat`, `SESSION-nlx.sync`
 
 ```yaml
@@ -25,6 +26,7 @@ format.
 ## `ndm_smr2dat` — CED/Spike2 `.smr` → `.dat`
 
 **Input:** `../SESSION-smr/SESSION-smr.smr`
+
 **Output:** `SESSION-smr.dat`
 
 

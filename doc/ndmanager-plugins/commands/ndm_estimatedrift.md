@@ -7,6 +7,7 @@ ndm_estimatedrift [session.yaml]
 ```
 
 **Input:** `session.res.N`, `session.clu.N`, optionally `session.spk.N`; per-group geometry from session YAML (`probeId`, `shankIndex`, `sitePositions_um`)
+
 **Output:** `session.drift` (YAML; see [`.drift` format](../formats/drift.md))
 
 ## Description

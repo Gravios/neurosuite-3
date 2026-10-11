@@ -7,6 +7,7 @@ ndm_stripdat [session.yaml]
 ```
 
 **Input:** `session.dat`, `session.res.N`, `session.spk.N`, `session.clu.N` (optional, for `model`/`botm` modes)
+
 **Output:** `session-spkclean.dat`
 
 The original `.dat` is **never modified**. `session-spkclean.dat` is

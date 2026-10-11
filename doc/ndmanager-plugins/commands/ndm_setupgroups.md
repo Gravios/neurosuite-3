@@ -7,6 +7,7 @@ ndm_setupgroups [session.yaml]
 ```
 
 **Input:** `probes:` section of session YAML, plus referenced `.probe` files from the probe library
+
 **Output:** in-place edits to session YAML's `anatomicalDescription.channelGroups` and `spikeDetection.channelGroups`
 
 Must be run **before** `ndm_extractspikes{,_sdiff,_stderiv}`. For

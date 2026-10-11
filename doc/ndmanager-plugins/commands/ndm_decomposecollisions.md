@@ -7,6 +7,7 @@ ndm_decomposecollisions [session.yaml]
 ```
 
 **Input:** `session.clu.<method>.N`, `session.res.<method>.N`, `session.spk.<method>.N`
+
 **Output:**
 - `session.col.N` per spike group (binary; see [`.col.N` format](../formats/col.md))
 - the EAP template-class layer — [`session.eap.N`](../formats/eap.md) (membership

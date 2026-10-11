@@ -16,11 +16,11 @@ The realignment runs once per cluster:
 2. Compute the cluster mean template (per sample, per channel). Pre-shift the template so its amplitude peak (summed across all channels) lands at the expected peak position. Without this step the template is misaligned and the cross-correlation would shift every spike *away* from the true peak.
 3. Pack all waveforms and the template into channel-major buffers and compute the optimal shift for every spike simultaneously using normalized circular cross-correlation summed across **all channels** via `XcorrDispatch` (routes to CUDA → HIP → SYCL → OpenMP depending on runtime availability).
 4. For each spike where the optimal shift is non-zero:
-   a. Advance the timestamp by the shift and update the `.res` file.
-   b. Re-extract the shifted waveform from the `.fil` (or `.dat`) file at the new timestamp.
-   c. Write the new waveform back to the `.spk` file at the same slot.
-   d. Re-project the new waveform through the saved PCA eigenvectors (`.pca.<method>.N`, matching the session method) and update the `.fet.<method>.N` rows.
-   e. If the updated timestamp is now out of chronological order with a neighbor, swap all on-disk records (`.res`, `.spk`, `.clu`) and the in-memory `spikesByCluster` row.
+   - (a) Advance the timestamp by the shift and update the `.res` file.
+   - (b) Re-extract the shifted waveform from the `.fil` (or `.dat`) file at the new timestamp.
+   - (c) Write the new waveform back to the `.spk` file at the same slot.
+   - (d) Re-project the new waveform through the saved PCA eigenvectors (`.pca.<method>.N`, matching the session method) and update the `.fet.<method>.N` rows.
+   - (e) If the updated timestamp is now out of chronological order with a neighbor, swap all on-disk records (`.res`, `.spk`, `.clu`) and the in-memory `spikesByCluster` row.
 
 Sign convention (consistent with `realign_xcorr.h`): a positive shift `τ` means the spike peak is *late* by `τ` samples relative to the template. Correcting by `newTimestamp = oldTimestamp + τ` moves the spike earlier in the waveform window so its peak aligns with the template.
 

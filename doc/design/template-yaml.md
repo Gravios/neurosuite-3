@@ -1,4 +1,4 @@
-## templates/template.yaml — parameter block refresh (2026-04-20)
+# templates/template.yaml — parameter block refresh (2026-04-20)
 
 Default session-template updated so three plugins whose parameter
 surface grew over the recent patch series (`ndm_reextractspikes{,_stderiv}`,

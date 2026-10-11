@@ -37,6 +37,7 @@ Two filters, chosen with `filter`:
 | `chunkSize` | 128 MiB | median | bytes per pass |
 
 **Input:** `SESSION.dat` (or `SESSION.<inputExtension>`)
+
 **Output:** `SESSION.fil`
 
 - **`inputExtension`** *(optional, default `dat`)* — the file to filter, without
@@ -117,6 +118,7 @@ dominates the cost, still runs on the GPU; the low-pass itself is a cheap short
 FIR.
 
 **Input:** `SESSION.dat` (or `SESSION.<inputExtension>`)
+
 **Output:** `SESSION.fil`
 
 ```yaml
@@ -149,6 +151,7 @@ Automatically uses `SESSION-spkclean.dat` (from `ndm_stripdat`) when it is
 present.
 
 **Input:** `SESSION.dat`, `SESSION-spkclean.dat`, or `SESSION.<inputExtension>`
+
 **Output:** `SESSION.lfp`
 
 ### Parameters
@@ -203,6 +206,7 @@ binary. The source is opened read-only and never modified, so slicing is always
 safe to re-run.
 
 **Input:** `SESSION.<inputExtension>` (default `lfp`)
+
 **Output:** `SESSION.<inputExtension>.slice.<tag>` plus a six-field `.info` sidecar
 
 Use it to pull one shank, one anatomical group, or a handful of reference

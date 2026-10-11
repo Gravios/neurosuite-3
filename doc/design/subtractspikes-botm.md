@@ -1,4 +1,4 @@
-## ndmanager-plugins — process_subtractspikes fixes (2026-04-19, rev 3 2026-04-20)
+# ndmanager-plugins — process_subtractspikes fixes (2026-04-19, rev 3 2026-04-20)
 
 Nine fixes/features for the spike-subtraction pipeline.  Since the
 initial 2026-04-19 revision, adds auto-generation of per-group strip

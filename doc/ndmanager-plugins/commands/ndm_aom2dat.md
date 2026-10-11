@@ -7,6 +7,7 @@ ndm_aom2dat [session.yaml]
 ```
 
 **Input:** `matFile` (path to AlphaOmega `.mat` file, HDF5 v7.3)
+
 **Output:** `session.dat`, `session.yaml`
 
 ## Description

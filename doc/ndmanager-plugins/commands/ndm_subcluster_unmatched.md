@@ -11,6 +11,7 @@ the session basename. When `group` is omitted, all groups are
 processed sequentially.
 
 **Input:** `session.clu.<method>.N`, `session.fet.<method>.N`, `session.spk.<method>.N`, `session.res.<method>.N`
+
 **Output:** updated `session.clu.N` (with new IDs above the prior maximum), backup of the original
 
 ## Description
