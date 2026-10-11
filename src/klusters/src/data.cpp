@@ -37,6 +37,7 @@
 //Qt include files
 #include <QTextStream>
 #include <QStringList>
+#include <QFileInfo>
 #include <QString>
 #include <QRegularExpression>
 
@@ -85,6 +86,53 @@ void Data::setSpkFileName(const QString& path){
     //The layer reads a different FILE now: that is an epoch change even
     //though the membership is unchanged.
     publishSnapshot();
+}
+
+bool Data::replaceFeatureSpace(const QString& fetPath, const QString& spkPath,
+                               QString& errorInformation){
+    //Let a running extrema recompute finish: it reads the feature table.
+    if(minMaxThread) minMaxThread->wait();
+
+    const neurofileio::FetBinaryFile fet = neurofileio::readFetBinary(fetPath.toStdString());
+    if(!fet.ok || fet.nFeatures < 2 || fet.nFeatures > 65536){
+        errorInformation = QObject::tr("Invalid, missing, or unreadable feature file: %1").arg(fetPath);
+        return false;
+    }
+    if(fet.nSpikes != static_cast<int64_t>(nbSpikes)){
+        errorInformation = QObject::tr("Spike count mismatch: %1 has %2 spikes, the open .clu has %3.")
+                           .arg(fetPath).arg(fet.nSpikes).arg(nbSpikes);
+        return false;
+    }
+    const qint64 sampleSize = isTwoBytesRecording ? 2 : 4;
+    const qint64 expectedSpk = static_cast<qint64>(nbSpikes) * nbChannels
+                             * nbSamplesInWaveform * sampleSize;
+    const qint64 spkSize = QFileInfo(spkPath).size();
+    if(spkSize != expectedSpk){
+        errorInformation = QObject::tr("Waveform file %1 does not match this group: %2 bytes, "
+                                       "expected %3 (%4 spikes x %5 channels x %6 samples).")
+                           .arg(spkPath).arg(spkSize).arg(expectedSpk).arg(nbSpikes)
+                           .arg(nbChannels).arg(nbSamplesInWaveform);
+        return false;
+    }
+
+    nbDimensions = fet.nFeatures;
+    features.setSize(nbSpikes, nbDimensions);
+    const int64_t total = static_cast<int64_t>(nbSpikes) * nbDimensions;
+    for(int64_t i = 0; i < total; ++i)
+        features[static_cast<size_t>(i)] = static_cast<dataType>(fet.values[static_cast<size_t>(i)]);
+
+    //The extrema bookkeeping is sized per dimension and only (re)sized when
+    //empty: clear it so the rescan below starts from the new dimension count.
+    rowsGivingMinimum.clear();
+    rowsGivingMaximum.clear();
+
+    //Overlay records and cluster templates were computed from the old .spk.
+    clearSpkOverlay();
+    invalidateAllClusterTemplates();
+    setSpkFileName(spkPath);            //fresh reader + republish: no cache carries over
+
+    minMaxDimensionCalculation(QList<int>());
+    return true;
 }
 
 void Data::reopenSpkReader(){

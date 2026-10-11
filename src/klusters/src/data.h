@@ -1009,6 +1009,25 @@ public:
     void setSpkFileName(const QString& path);
     QString getSpkFileName() const { return spkFileName; }
 
+    /**Swaps in another method space's features and waveforms while keeping the
+    * cluster assignment.  Row i of every method's .fet and .spk is the same
+    * spike (realign and nudge never reorder rows), so spikesByCluster,
+    * clusterInfoMap and the undo snapshots — which index feature rows — stay
+    * valid unchanged.  Replaces the feature table (whose dimension count may
+    * differ: a _D lag space has its own), installs a fresh .spk reader, drops
+    * the SpkOverlay and cluster templates keyed to the old file, and recomputes
+    * the per-dimension extrema.
+    *
+    * Validates before touching anything: the .fet must hold exactly nbSpikes
+    * rows and at least one feature column besides the timestamp, and the .spk
+    * must be exactly nbSpikes records of this group's geometry.  On failure it
+    * returns false with @p errorInformation set and the data unchanged.
+    *
+    * The caller must first stop every job that reads the feature table or the
+    * .spk (KlustersView::stopAllViewThreads): the table is reallocated.*/
+    bool replaceFeatureSpace(const QString& fetPath, const QString& spkPath,
+                             QString& errorInformation);
+
     /**Rebinds the reader to whatever inode now sits behind the CURRENT
     * spkFileName and republishes.  For writers that replace the file in
     * place by rename (the re-extract): the old epochs keep the old inode,
