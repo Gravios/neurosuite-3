@@ -49,11 +49,6 @@ few Qt slot signature sites that need it; don't blanket-disable.  Also
 outstanding from the Qt 6.4–6.12 work: a CI build matrix for 6.4 / 6.10 /
 6.12.  Estimate: half a session per component.
 
-**Fix `pca.nCh <= 64` reader bound in `klustersdoc.cpp`.**
-Real bug.  Reader silently invalidates PCA bases when nCh > 64; breaks
-Neuropixels-class probes.  Raise the bound and audit dependent code paths.
-Estimate: 1 session including verification.
-
 ---
 
 ## Soon
@@ -85,9 +80,10 @@ Estimate: 1-2 sessions including analysis writeup.
 
 **KiloKlustaKwik 5-phase audit.**
 Run the same audit pipeline that hit klusters and libklustersshared over
-`src/kiloklustakwik/`.  Expected high yield: legacy code with known issues
-(`MergeThresh` calibration, `UseFeatures` default string, `probabilities`
-init).  Estimate: 2-3 sessions.
+`src/kiloklustakwik/`.  Expected yield: legacy code paths.  (The
+`MergeThresh` and `UseFeatures` default issues once listed here are fixed:
+`MergeThresh 0` auto-calibrates to χ², `UseFeatures` defaults to `"all"`.)
+Estimate: 2-3 sessions.
 
 **Refactor duplicated `_RunChunkedCEMFromPoints` body in KiloKlustaKwik.**
 From memory entries, this is duplicated.  Standalone refactor; doesn't
@@ -144,12 +140,6 @@ Half-merged probe migration polluting dead-code analysis (`getShankIndex`,
 or revert the partial state.  Decision needed: does Gravio plan to land it
 soon, or table it longer?
 
-**`klustakwikExp` → `klustakwik` merge — DONE.**
-Resolved by making the Exp tree the trunk: it was renamed to KiloKlustaKwik
-(`src/kiloklustakwik/`) and the old canonical `klustakwik` was retired. With a
-single engine tree the cross-tree declaration pollution that caused
-false-positive dead code is also gone.
-
 **Resolve `Validator::fixup` analyzer false positives.**
 Build base-class table from `class X : public Y` declarations; exempt
 matched virtual override names from dead-code reports.  ~30 lines of
@@ -197,6 +187,19 @@ git history / `CHANGELOG.md` after roughly a quarter.)
 
 <details>
 <summary>Completed items</summary>
+
+### ✅ PCA-basis reader accepts more than 64 channels
+
+The fixed `nCh > 64` rejection in the Klusters `.pca` reader is gone: the
+bound is now the group's own channel count (`klustersdoc_realign.cpp`), so
+Neuropixels-class probes load their PCA bases.  See `STANDARDIZATION.md` §6.6.
+
+### ✅ `klustakwikExp` → `klustakwik` merge
+
+Resolved by making the Exp tree the trunk: it was renamed to KiloKlustaKwik
+(`src/kiloklustakwik/`) and the old canonical `klustakwik` was retired. With a
+single engine tree the cross-tree declaration pollution that caused
+false-positive dead code is also gone.
 
 ### ✅ NeuroScope input system on the shared engine *(2026-10-09 → 10-10)*
 
@@ -367,9 +370,6 @@ These don't fit the time-horizon structure but are worth tracking.
 
 ### Algorithmic debt (KiloKlustaKwik)
 
-- `MergeThresh` default uncalibrated for typical feature dimensionality
-- `UseFeatures` default string causing session duration = 0
-- `probabilities` initialization order
 - `_RunChunkedCEMFromPoints` body duplicated
 - Multiple sweep regimes not yet baselined
 
