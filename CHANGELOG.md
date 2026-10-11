@@ -219,6 +219,172 @@ docs, and publishes to GitHub Pages; see `doc/site/README.md`.
 
 ---
 
+## 2026-10-09 — NeuroScope: two silently dead shortcuts fixed
+
+Mirroring NeuroScope's menu shortcuts into the shared input registry (above) let a
+startup conflict audit see them for the first time, and it found two keys bound
+twice. Qt treats a shortcut claimed by two main-window actions as ambiguous, so
+**neither action fired reliably**:
+
+- **Ctrl+Shift+A** — *Select All except 0 and 1* and *Autocenter Channels*.
+- **Ctrl+Shift+S** — *Save As* (`QKeySequence::SaveAs`) and *Skip Channels*. Only
+  on Linux/Windows, where the standard Save As sequence is Ctrl+Shift+S.
+
+Each chord now stays on its first-listed action (**Select All except 0 and 1**,
+**Save As**). **Autocenter Channels** and **Skip Channels** keep their menu entries
+but no longer have a default shortcut; bind one in Preferences ▸ Input if wanted.
+The startup audit now reports no conflicts. The Ctrl+Shift+S collision was
+confirmed live on Qt 6.10 (it is invisible in a headless build, where
+`QKeySequence::SaveAs` resolves empty).
+
+---
+
+## 2026-10-08 — Klusters: rebindable keyboard + mouse, and the Overview interaction redesign
+
+Work from 2026-10-06 to 10-08 that put every Klusters key, mouse button and wheel
+binding on the `input::` registry (the engine the 2026-10-10 entry describes) and,
+on top of it, redesigned how the Overview Display is navigated. Reference:
+`src/klusters/docs/INPUT_SYSTEM.md`.
+
+**What changes for the curator:**
+
+- **Navigation is uniform.** Ctrl+wheel zooms and Ctrl+left-drag pans in the
+  feature, trace and matrix views. On the waveforms and the auto-correlogram
+  Ctrl+wheel scales **amplitude** instead; on the trace, Ctrl+Shift+wheel scales
+  amplitude. The trace Ctrl-pan scrolls on through the recording at the window edge,
+  and trace amplitude auto-fits the data on first load.
+- **No default tool.** The rubber-band Zoom tool is retired; the data views open
+  with a plain pointer.
+- **The four curation tools are toggles.** New Cluster (Ctrl+1), Split (Ctrl+2),
+  Delete Artifact (Ctrl+3, new) and Delete Noise (Ctrl+4, new) are
+  mutually-exclusive checkable toolbar/menu buttons; selecting the active one again
+  returns to the pointer. Each display keeps its own tool and the toolbar tracks the
+  active display.
+- **A plain click picks.** In the feature view it scrolls the trace to the nearest
+  spike, in any projection; the Select Time tool is gone. In the trace, a click
+  selects the nearest spike's cluster from **all** clusters, and Shift+click adds it
+  to the selection.
+- **Smaller changes.** Trace double-click is disabled (it crashed after a click had
+  changed the selection). A double Escape clears the cluster-palette selection.
+  Trace Prev/Next spike is Ctrl+Shift+Right/Left and steps through the whole
+  recording when no cluster is selected.
+
+**Preferences ▸ Input** is generated from the registry. Every command is listed,
+including menu actions that ship without a shortcut, with a key, mouse-button or
+wheel editor per row, conflict highlighting, per-row reset and "Reset all to
+defaults". **Keymap layouts** save and reuse a whole binding set, with a bundled
+read-only *Default*. **Help ▸ Keyboard Shortcuts** gains a registry-generated Mouse
+section.
+
+**Internals.**
+- The TraceView press monolith is split into one command per tool mode on a shared
+  click-geometry preamble (`resolveClickGeometry`, `nearestChannelAt`).
+- The four curation matrices share their Ctrl navigation by composition
+  (`MatrixNavigator`, `registerMatrixNav<V>()`, `matrixResolveClick()`), not a
+  common base class.
+- Four structural key handlers (the Esc family, Left/Right tab switching,
+  Tab/Backtab, PageUp/Down) stay inline in `eventFilter` by design;
+  INPUT_SYSTEM.md explains why.
+
+**Live-pass status.** Confirmed on the workstation: the Preferences focus and
+conflict-tint fixes, the waveform Ctrl+click channel pick, and the trace
+Ctrl-zoom/pan. Everything else is behaviour-preserving by construction but still
+wants a live pass. If a binding seems to have regressed, check Preferences ▸ Input
+first: a stale saved override can mask a binding and look exactly like a code bug.
+
+---
+
+## 2026-10-06 — Klusters: paint-structure refactor
+
+A staged refactor of the classic views' 2003-era paint machinery (ClusterView,
+WaveformView, CorrelationView, ErrorMatrixView, TraceView), so overlays and new
+views are cheap to add. Reference: `src/klusters/docs/VIEW_SYSTEM.md` §2.2.
+
+- **Monotonic `invalidate(level)`.** All 150 call sites that raised the shared
+  `drawContentsMode` flag now go through `BaseFrame::invalidate`, which only ever
+  raises it toward a full redraw. A later refresh can no longer cancel a queued
+  redraw within the same paint; that was the cause of the lineage overlay sometimes
+  not drawing on entry, now fixed. The one legitimate lowering, each `paintEvent`'s
+  terminal reset, stays direct.
+- **`BufferedView` base** (`BaseFrame → BufferedView → {ViewWidget, TraceView}`). It
+  owns the double buffer and a template-method `paintEvent`. WaveformView,
+  ClusterView and CorrelationView are migrated. ErrorMatrixView and TraceView keep
+  their own `paintEvent` by design (device-coordinate matrix; init/resize prelude),
+  with a comment saying why. Incidental fix: the buffer is now sized to the
+  viewport; it used to be 10 px larger, which rebuilt it on every paint.
+- **Shared geometry.** WaveformView's per-channel baseline math (six open-coded
+  copies) goes through `channelStep()` / `channelBaselineY()`.
+
+No behaviour change intended beyond the redraw fix. Optional follow-ups (a
+coordinate-space RAII guard, an overlay registry, folding the newer matrices onto a
+shared base) are listed in `doc/dev/ROADMAP.md`.
+
+---
+
+## 2026-10-05 — Klusters: template curation in the feature space
+
+The curator now builds each template class by hand in Klusters, instead of
+`fiber-template` inventing the drift/adaptation binning. The class is a lineage
+tree: one drift root per session time region, with lower-amplitude
+(adaptation) and locked-pair collision leaves. Native generation becomes the final
+refinement step. Covers work from 2026-10-05 to 10-06. File references:
+`doc/ndmanager-plugins/formats/wtl.md`, `wti.md`, `wtf.md`.
+
+**Model and files.**
+- **A node is a running `{mean, std, count}` summary, not a spike list.** Folding a
+  selection combines summaries exactly with the parallel-variance formula. The
+  **mean** is used, not the median, because it recombines exactly from summaries.
+  Guarded by `core_test_running_stats`.
+- **Separate files.** `.wtl` (v2) is the editable lineage source. `.wti`/`.wtf`
+  (v2: a `parent` column and a `collision` link kind) remain the auto-generated
+  library. The committed model renders to its own **`.mti`/`.mtf`**, using the same
+  on-disk schema as `.wti`/`.spk`. This fixes a commit of an all-placeholder lineage
+  overwriting the real library; such commits are now refused.
+- **Native generation.** `template_generate.hpp` in neurosuite-core is a
+  byte-validated port of `fiber_template.py`'s `generate()` and can run per cluster;
+  the external plugin is now a fallback.
+
+**Editing (Shift+E, in the feature view).**
+- **Preferences ▸ Display ▸ Templates mode** is the master switch (on by default).
+- The overlay forces time × the best energy axis and draws each region's root as a
+  ribbon above the scatter, with leaves below. A fresh session is auto-seeded with
+  empty placeholders.
+- Shift+left-drag moves a region boundary. Right-click anywhere in a region adds
+  drift/adapt/collision nodes, splits or commits. Edits auto-save and have their own
+  Undo/Redo in that menu.
+- A left-column **Template palette** lists the classes: ★ marks the primary, which
+  `s` or a click toggles; New and Delete; an absolute/best-fit scale checkbox
+  (absolute by default).
+- The primary class's **mean±std band** draws over the live waveforms, in review
+  mode too, and tracks amplitude scaling and cluster changes.
+
+**Matrices.** Marking nodes (click, rectangle lasso, or right-click) adds
+cluster×template rows/columns, in time order, to all four curation matrices:
+- Template, Drift and Residual show their own statistic.
+- Error is all grey; it has no template equivalent.
+- Cells where the cluster has no spikes in the node's window are dimmed, not hidden.
+- Clicking a template cell selects that cluster and overlays only that node.
+
+The template strip now honours all six scoring modes, and the raw metric is
+normalised in log space so pairs are distinguishable. The matrices' shared code was
+consolidated into `MatrixTemplateStrip` and `MatrixViewport`, with a geometry unit
+test.
+
+**Fixes found in live runs.**
+- A Sort-Clusters event filter swallowed every right-click before the lineage menu
+  could open.
+- Folding a selection read a non-existent stage-tagged `.spk` path, so regions never
+  filled.
+- Deleting a class left its ribbon on the scatter.
+- Palette `s` was bound to oblique-basis pinning and eaten by list type-ahead.
+- A per-node waveform stagger was tried and reverted.
+
+**Open.** Most GUI items are compile + link verified and want a live run. The
+Template Library tab is still present as the advanced-CRUD fallback. fiber-kit's
+`.wtl` reader still speaks v1 and needs a separate fiber-kit patch.
+
+---
+
 ## 2026-06-08 — Klusters high-cluster-count rendering perf, PCA-Center Align All profiling + setup hoist, cross-cluster GPU-batch design
 
 A performance session focused on sessions with thousands of clusters: the
