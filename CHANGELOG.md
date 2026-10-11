@@ -1,13 +1,109 @@
-# CHANGES — neurosuite-3
+# Changelog — neurosuite-3
 
 Top-level changelog for this fork, consolidating every change relative
 to the original Neurosuite toolchain.  Entries are grouped by date from
 most recent at top.  Deep per-topic technical notes live in
 `doc/design/<topic>.md`, indexed at the end.
 
+Each entry is folded — click **Details** to expand it. Newest first.
+
+| Date | Change |
+|---|---|
+| 2026-10-10 | [Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation](#2026-10-10--input-binding-overhaul-completed-across-klusters-and-neuroscope-qt-64612-compatibility-documentation) |
+| 2026-10-09 | [NeuroScope: two silently dead shortcuts fixed](#2026-10-09--neuroscope-two-silently-dead-shortcuts-fixed) |
+| 2026-10-08 | [ndm_hipass: zero-phase Butterworth filter (new default)](#2026-10-08--ndm_hipass-zero-phase-butterworth-filter-new-default) |
+| 2026-10-08 | [ndm_extractspikes filter: check the raw source window](#2026-10-08--ndm_extractspikes-filter-check-the-raw-source-window) |
+| 2026-10-08 | [ndm_pca: a `_D` run adds the lag space to existing features](#2026-10-08--ndm_pca-a-_d-run-adds-the-lag-space-to-existing-features) |
+| 2026-10-08 | [ndm_extractspikes: post-extraction flat-run / duplicate filter](#2026-10-08--ndm_extractspikes-post-extraction-flat-run--duplicate-filter) |
+| 2026-10-08 | [ndm_detectspikes (stderiv): flat-run rejection and duplicate removal](#2026-10-08--ndm_detectspikes-stderiv-flat-run-rejection-and-duplicate-removal) |
+| 2026-10-08 | [custody: `.spk`/`.res` of a `_D` feature-space token resolve to its waveforms](#2026-10-08--custody-spkres-of-a-_d-feature-space-token-resolve-to-its-waveforms) |
+| 2026-10-08 | [ndm_pca: lagged feature space (`_D<lag><dims>`)](#2026-10-08--ndm_pca-lagged-feature-space-_dlagdims) |
+| 2026-10-08 | [stderiv detection: threshold noise base, re-centring, hybrid arm](#2026-10-08--stderiv-detection-threshold-noise-base-re-centring-hybrid-arm) |
+| 2026-10-08 | [Klusters: rebindable keyboard + mouse, and the Overview interaction redesign](#2026-10-08--klusters-rebindable-keyboard--mouse-and-the-overview-interaction-redesign) |
+| 2026-10-06 | [Klusters: paint-structure refactor](#2026-10-06--klusters-paint-structure-refactor) |
+| 2026-10-05 | [Klusters: template curation in the feature space](#2026-10-05--klusters-template-curation-in-the-feature-space) |
+| 2026-06-08 | [Klusters high-cluster-count rendering perf, PCA-Center Align All profiling + setup hoist, cross-cluster GPU-batch design](#2026-06-08--klusters-high-cluster-count-rendering-perf-pca-center-align-all-profiling--setup-hoist-cross-cluster-gpu-batch-design) |
+| 2026-05-16 | [Cluster-mean alignment stack + .res/.spk/.fet consistency](#2026-05-16--cluster-mean-alignment-stack--resspkfet-consistency) |
+| 2026-04-27 | [ndm_start root + `.ndm.<n>.pipeline` files + empty-graph default](#2026-04-27--ndm_start-root--ndmnpipeline-files--empty-graph-default) |
+| 2026-04-27 | [ndm_start as the graph root (replaced)](#2026-04-27--ndm_start-as-the-graph-root-replaced) |
+| 2026-04-26 | [graphical Pipeline tab in ndmanager (superseded)](#2026-04-26--graphical-pipeline-tab-in-ndmanager-superseded) |
+| 2026-04-26 | [graphical Pipeline tab in ndmanager (original)](#2026-04-26--graphical-pipeline-tab-in-ndmanager-original) |
+| 2026-04-25 | [per-probe empirical KlustaKwik priors](#2026-04-25--per-probe-empirical-klustakwik-priors) |
+| 2026-04-22 | [process_shadowcluster inflation guard + dedicated KK tier for sub-clustering](#2026-04-22--process_shadowcluster-inflation-guard--dedicated-kk-tier-for-sub-clustering) |
+| 2026-04-22 | [process_reextractspikes_stderiv writes transformed .spkD (correctness)](#2026-04-22--process_reextractspikes_stderiv-writes-transformed-spkd-correctness) |
+| 2026-04-22 | [fetD completion, klusters focus fixes, Pipeline C nudge correctness](#2026-04-22--fetd-completion-klusters-focus-fixes-pipeline-c-nudge-correctness) |
+| earlier | [KlustaKwik](#earlier-changes--klustakwik) |
+| earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
+| earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
 ---
 
+## 2026-10-10 — Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation
+
+<details>
+<summary>Details</summary>
+
+**Input system — one engine, both GUIs.** The keyboard/mouse binding engine (the
+`input::` registry: device-agnostic chords, self-describing scopes in a tiered
+stack, Passive/Exclusive capture, and the gesture "seam" that keeps a drag/commit
+body in the view while the registry owns the trigger) now lives in
+`libklustersshared` and drives **both** Klusters and NeuroScope through one
+process-wide `input::registry()`. In NeuroScope every menu/tool shortcut, the
+TraceView tool gestures (zoom, select-channels, measure, select-time, select-event,
+add-event, draw-line) and the Position/Spectral frame zoom resolve through the
+registry; the old ~470-line `TraceView::mousePressEvent` switch is gone. Users get
+a generated **Preferences ▸ Input** page (rebind any key or mouse binding, clash
+highlighting, reset), saveable **keymap layouts** with a bundled read-only
+*Default*, a registry-generated **Help ▸ Keyboard Shortcuts** cheat-sheet, and a
+per-display active-tool indicator. References: `src/klusters/docs/INPUT_SYSTEM.md`
+(the engine) and `src/neuroscope/docs/INPUT_SYSTEM.md` (NeuroScope's adoption).
+
+**Qt 6.4–6.12 compatibility.** A static audit plus a real 6.4.2 build and a 6.10
+check: the code uses only low-churn Qt modules and no API removed within the Qt 6
+series, so it is compatible across the span. Fixed the one real break (reduced
+transitive includes on Qt 6.9/6.10 — include what we use), a Qt 6.8+ teardown
+warning (wildcard `disconnect` of `destroyed()`), retired `qAsConst` for
+`std::as_const` (deprecated in 6.6), declared the **Qt 6.4 floor** in the
+`find_package` calls, and bumped the stale `cmake_minimum_required(2.8.6)` in
+`ndmanager-plugins/matlab`. Remaining: a CI build matrix for 6.4 / 6.10 / 6.12.
+
+**Documentation.** Developer references for the input system (above) and
+user-handbook sections (Preferences ▸ Input, keymap layouts, the shortcuts
+cheat-sheet, the active-tool indicator) in `src/neuroscope/doc/en/index.docbook`.
+Plus a prototype modern documentation system (`doc/site/`) — MkDocs + Material +
+pandoc — that converts the DocBook handbook with a toolchain that installs
+anywhere (replacing the retired KDE meinproc path), unifies it with the developer
+docs, and publishes to GitHub Pages; see `doc/site/README.md`.
+
+</details>
+
+## 2026-10-09 — NeuroScope: two silently dead shortcuts fixed
+
+<details>
+<summary>Details</summary>
+
+Mirroring NeuroScope's menu shortcuts into the shared input registry (above) let a
+startup conflict audit see them for the first time, and it found two keys bound
+twice. Qt treats a shortcut claimed by two main-window actions as ambiguous, so
+**neither action fired reliably**:
+
+- **Ctrl+Shift+A** — *Select All except 0 and 1* and *Autocenter Channels*.
+- **Ctrl+Shift+S** — *Save As* (`QKeySequence::SaveAs`) and *Skip Channels*. Only
+  on Linux/Windows, where the standard Save As sequence is Ctrl+Shift+S.
+
+Each chord now stays on its first-listed action (**Select All except 0 and 1**,
+**Save As**). **Autocenter Channels** and **Skip Channels** keep their menu entries
+but no longer have a default shortcut; bind one in Preferences ▸ Input if wanted.
+The startup audit now reports no conflicts. The Ctrl+Shift+S collision was
+confirmed live on Qt 6.10 (it is invisible in a headless build, where
+`QKeySequence::SaveAs` resolves empty).
+
+</details>
+
 ## 2026-10-08 — ndm_hipass: zero-phase Butterworth filter (new default)
+
+<details>
+<summary>Details</summary>
 
 **New `process_butterworth`** (CPU/OpenMP, CUDA when built with it and a device
 is present): Butterworth high-pass and optional low-pass, designed in double
@@ -43,9 +139,12 @@ CPU without a device; a host emulation of the kernel's unit mapping and scratch
 layout is bit-identical to the CPU single path.  **The kernel has not been run on
 a GPU**, and the Qt6/CMake build was not run in this environment.
 
----
+</details>
 
 ## 2026-10-08 — ndm_extractspikes filter: check the raw source window
+
+<details>
+<summary>Details</summary>
 
 The post-extraction flat-run test looked only at the extracted `.spk`, so with a
 `stderiv`/`sdiff` method it missed dropped-out channels: the spatial derivative
@@ -59,9 +158,12 @@ all 80 in the raw window.  Short exact-zero runs produced by the median high-pas
 (`ndm_hipass` output is exactly 0 where the centre sample is the window median) mean `flatRunMax` ≈ 20 is the useful setting (1 other spike dropped,
 against ~31% at 5).
 
----
+</details>
 
 ## 2026-10-08 — ndm_pca: a `_D` run adds the lag space to existing features
+
+<details>
+<summary>Details</summary>
 
 `ndm_pca --method stderiv_C5_D34` skipped every group whose ordinary
 `.fet.stderiv_C5.N` already existed, so the lag space could not be added to a
@@ -73,9 +175,12 @@ the kept `.pca`.  With the lag `.fet` present it writes the ordinary pair only;
 with both present the group is skipped as before.  Runs without a `_D` suffix
 are unchanged.
 
----
+</details>
 
 ## 2026-10-08 — ndm_extractspikes: post-extraction flat-run / duplicate filter
+
+<details>
+<summary>Details</summary>
 
 **`flatRunMax`, `dedupSamples` in the `ndm_extractspikes` node** (new
 `process_spikefilter.py`, any method).  Each freshly extracted `.spk` is checked
@@ -89,9 +194,12 @@ filtered once; `<res>.prefilter` keeps the original times.  Verified end to end:
 all filtered files equal the original rows under the mask and both `.spk`
 variants are byte-identical to fresh re-extractions at the new `.res`.
 
----
+</details>
 
 ## 2026-10-08 — ndm_detectspikes (stderiv): flat-run rejection and duplicate removal
+
+<details>
+<summary>Details</summary>
 
 **`flatRunMax`** (engine `-F`, default off) rejects a spike whose raw window has
 more than N identical consecutive samples on any channel (zero-filled gaps,
@@ -106,9 +214,12 @@ test practically never fires).  Note: a median-high-passed `.fil` has frequent s
 per-channel zero runs (filter output, not dropouts); `flatRunMax: 5` removes 31% of spikes
 there — see `doc/ndmanager-plugins/commands/spike-detection.md`.
 
----
+</details>
 
 ## 2026-10-08 — custody: `.spk`/`.res` of a `_D` feature-space token resolve to its waveforms
+
+<details>
+<summary>Details</summary>
 
 **Shared-artifact resolution.**  `_D<lag><dims>` names a feature space over the
 waveforms of the token without it, but `resolve()` fell back
@@ -122,9 +233,12 @@ realign save (leaving the `stderiv_C5` waveforms out of step with the updated
 `.res`).  Same rule in `custody.hpp`, `ndm_custody` and `ndm_resolve_io.py`;
 eight new rows in `custody_vectors.tsv` (95 checks, all three runners pass).
 
----
+</details>
 
 ## 2026-10-08 — ndm_pca: lagged feature space (`_D<lag><dims>`)
+
+<details>
+<summary>Details</summary>
 
 **ndm_pca — `method: <token>_D<lag><dims>`.**  The lagged feature space
 (per channel PC1 at −lag/0/+lag samples, + PC2 when dims is 4) existed only in
@@ -139,9 +253,12 @@ value for value, to fiber-kit's `lag_basis`/`lag_project` on the reference chunk
 without `--lag` the outputs are byte-identical.  See
 `doc/ndmanager-plugins/commands/pca.md`.
 
----
+</details>
 
 ## 2026-10-08 — stderiv detection: threshold noise base, re-centring, hybrid arm
+
+<details>
+<summary>Details</summary>
 
 **ndm_detectspikes (stderiv) — `thresholdNoise`.**  The stderiv detector
 measured its noise σ on the spatial derivative but thresholded the spatial +
@@ -181,65 +298,12 @@ derivative attenuates; on the reference chunk at ~5.3σ per arm it raises
 detections 11.5k → 28.3k, mostly multi-unit activity, with genuine missed spikes
 for at least one high-rate unit.  Default unchanged (byte-identical).
 
----
-
-## 2026-10-10 — Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation
-
-**Input system — one engine, both GUIs.** The keyboard/mouse binding engine (the
-`input::` registry: device-agnostic chords, self-describing scopes in a tiered
-stack, Passive/Exclusive capture, and the gesture "seam" that keeps a drag/commit
-body in the view while the registry owns the trigger) now lives in
-`libklustersshared` and drives **both** Klusters and NeuroScope through one
-process-wide `input::registry()`. In NeuroScope every menu/tool shortcut, the
-TraceView tool gestures (zoom, select-channels, measure, select-time, select-event,
-add-event, draw-line) and the Position/Spectral frame zoom resolve through the
-registry; the old ~470-line `TraceView::mousePressEvent` switch is gone. Users get
-a generated **Preferences ▸ Input** page (rebind any key or mouse binding, clash
-highlighting, reset), saveable **keymap layouts** with a bundled read-only
-*Default*, a registry-generated **Help ▸ Keyboard Shortcuts** cheat-sheet, and a
-per-display active-tool indicator. References: `src/klusters/docs/INPUT_SYSTEM.md`
-(the engine) and `src/neuroscope/docs/INPUT_SYSTEM.md` (NeuroScope's adoption).
-
-**Qt 6.4–6.12 compatibility.** A static audit plus a real 6.4.2 build and a 6.10
-check: the code uses only low-churn Qt modules and no API removed within the Qt 6
-series, so it is compatible across the span. Fixed the one real break (reduced
-transitive includes on Qt 6.9/6.10 — include what we use), a Qt 6.8+ teardown
-warning (wildcard `disconnect` of `destroyed()`), retired `qAsConst` for
-`std::as_const` (deprecated in 6.6), declared the **Qt 6.4 floor** in the
-`find_package` calls, and bumped the stale `cmake_minimum_required(2.8.6)` in
-`ndmanager-plugins/matlab`. Remaining: a CI build matrix for 6.4 / 6.10 / 6.12.
-
-**Documentation.** Developer references for the input system (above) and
-user-handbook sections (Preferences ▸ Input, keymap layouts, the shortcuts
-cheat-sheet, the active-tool indicator) in `src/neuroscope/doc/en/index.docbook`.
-Plus a prototype modern documentation system (`doc/site/`) — MkDocs + Material +
-pandoc — that converts the DocBook handbook with a toolchain that installs
-anywhere (replacing the retired KDE meinproc path), unifies it with the developer
-docs, and publishes to GitHub Pages; see `doc/site/README.md`.
-
----
-
-## 2026-10-09 — NeuroScope: two silently dead shortcuts fixed
-
-Mirroring NeuroScope's menu shortcuts into the shared input registry (above) let a
-startup conflict audit see them for the first time, and it found two keys bound
-twice. Qt treats a shortcut claimed by two main-window actions as ambiguous, so
-**neither action fired reliably**:
-
-- **Ctrl+Shift+A** — *Select All except 0 and 1* and *Autocenter Channels*.
-- **Ctrl+Shift+S** — *Save As* (`QKeySequence::SaveAs`) and *Skip Channels*. Only
-  on Linux/Windows, where the standard Save As sequence is Ctrl+Shift+S.
-
-Each chord now stays on its first-listed action (**Select All except 0 and 1**,
-**Save As**). **Autocenter Channels** and **Skip Channels** keep their menu entries
-but no longer have a default shortcut; bind one in Preferences ▸ Input if wanted.
-The startup audit now reports no conflicts. The Ctrl+Shift+S collision was
-confirmed live on Qt 6.10 (it is invisible in a headless build, where
-`QKeySequence::SaveAs` resolves empty).
-
----
+</details>
 
 ## 2026-10-08 — Klusters: rebindable keyboard + mouse, and the Overview interaction redesign
+
+<details>
+<summary>Details</summary>
 
 Work from 2026-10-06 to 10-08 that put every Klusters key, mouse button and wheel
 binding on the `input::` registry (the engine the 2026-10-10 entry describes) and,
@@ -292,9 +356,12 @@ Ctrl-zoom/pan. Everything else is behaviour-preserving by construction but still
 wants a live pass. If a binding seems to have regressed, check Preferences ▸ Input
 first: a stale saved override can mask a binding and look exactly like a code bug.
 
----
+</details>
 
 ## 2026-10-06 — Klusters: paint-structure refactor
+
+<details>
+<summary>Details</summary>
 
 A staged refactor of the classic views' 2003-era paint machinery (ClusterView,
 WaveformView, CorrelationView, ErrorMatrixView, TraceView), so overlays and new
@@ -319,9 +386,12 @@ No behaviour change intended beyond the redraw fix. Optional follow-ups (a
 coordinate-space RAII guard, an overlay registry, folding the newer matrices onto a
 shared base) are listed in `doc/dev/ROADMAP.md`.
 
----
+</details>
 
 ## 2026-10-05 — Klusters: template curation in the feature space
+
+<details>
+<summary>Details</summary>
 
 The curator now builds each template class by hand in Klusters, instead of
 `fiber-template` inventing the drift/adaptation binning. The class is a lineage
@@ -383,9 +453,12 @@ test.
 Template Library tab is still present as the advanced-CRUD fallback. fiber-kit's
 `.wtl` reader still speaks v1 and needs a separate fiber-kit patch.
 
----
+</details>
 
 ## 2026-06-08 — Klusters high-cluster-count rendering perf, PCA-Center Align All profiling + setup hoist, cross-cluster GPU-batch design
+
+<details>
+<summary>Details</summary>
 
 A performance session focused on sessions with thousands of clusters: the
 remaining per-cell matrix render hotspot, palette rebuild cost, and an
@@ -788,9 +861,12 @@ the matrix world rect (`SmoothPixmapTransform` off for crisp cells).  Color
 computation is unchanged, so the matrix is visually identical; the red
 out-of-date border and yellow selected-pair outlines are still drawn over it.
 
----
+</details>
 
 ## 2026-05-16 — Cluster-mean alignment stack + .res/.spk/.fet consistency
+
+<details>
+<summary>Details</summary>
 
 Consolidates patches 64, 69–87, spanning several weeks of work on
 post-clustering spike alignment and the disk-commit pipeline that
@@ -979,9 +1055,12 @@ design).
   with the vanilla pipeline.  sdiff users must export
   `KKEXP_REEXTRACT_TOOL=process_extractspikes_sdiff`.
 
----
+</details>
 
-## 2026-04-27 — ndm_start root + .ndm.<n>.pipeline files + empty-graph default
+## 2026-04-27 — ndm_start root + `.ndm.<n>.pipeline` files + empty-graph default
+
+<details>
+<summary>Details</summary>
 
 Restores the editable Pipeline Designer (rolled back the toggle-only
 view shipped on 2026-04-26) and finishes the design with three changes:
@@ -1042,9 +1121,12 @@ See `doc/design/ndm-start-root.md` for the full design and
 `doc/ndmanager/README.md#pipeline-tab` for the operational
 walkthrough.
 
----
+</details>
 
 ## 2026-04-27 — ndm_start as the graph root (replaced)
+
+<details>
+<summary>Details</summary>
 
 *Replaced by the entry above on the same day.* This earlier draft
 serialized pipelines inside the session YAML's `programs:` block;
@@ -1052,9 +1134,12 @@ the final design moved them to separate `<session>.ndm.<n>.pipeline`
 files so the graph is independent of the session schema and named
 variants can coexist.
 
----
+</details>
 
 ## 2026-04-26 — graphical Pipeline tab in ndmanager (superseded)
+
+<details>
+<summary>Details</summary>
 
 *Superseded by the 2026-04-27 entry above.* The toggle-only view
 shipped here was rolled back in favor of the editable node-graph
@@ -1064,9 +1149,12 @@ extended with sticky-root semantics for `ndm_start`. The
 parameter-page signal additions (`parameterValueChanged`,
 `setParameterValue`) were retained for potential future use.
 
----
+</details>
 
 ## 2026-04-26 — graphical Pipeline tab in ndmanager (original)
+
+<details>
+<summary>Details</summary>
 
 New **Pipeline** entry in ndmanager's parameter tree showing
 `ndm_start` and its seven dispatch branches (`wideband`, `events`,
@@ -1097,9 +1185,12 @@ See `doc/design/pipeline-tab.md` for the full design and
 `doc/ndmanager/README.md#pipeline-tab` for the operational
 walkthrough.
 
----
+</details>
 
 ## 2026-04-25 — per-probe empirical KlustaKwik priors
+
+<details>
+<summary>Details</summary>
 
 Adds `kk_build_prior.py` / `kk_resolve_prior.py` and wires them into
 `ndm_subcluster_unmatched`. Lets you train empirical KlustaKwik
@@ -1141,9 +1232,12 @@ See `doc/design/kk-prior.md` for the full design and
 `doc/workflows/empirical-priors.md` for the operational
 walkthrough.
 
----
+</details>
 
 ## 2026-04-22 — process_shadowcluster inflation guard + dedicated KK tier for sub-clustering
+
+<details>
+<summary>Details</summary>
 
 **Symptom.** `ndm_reextractspikes_stderiv` on `jg05-20120316` group 7:
 
@@ -1297,9 +1391,12 @@ templates/template.yaml
   low-amplitude units instead of one giant green shadow attached to
   cluster 6.
 
----
+</details>
 
 ## 2026-04-22 — process_reextractspikes_stderiv writes transformed .spkD (correctness)
+
+<details>
+<summary>Details</summary>
 
 **Value-space mismatch** between `.spkD` files produced by the main
 pipeline and those produced by the re-extract pipeline:
@@ -1373,9 +1470,12 @@ are unaffected.
   — header and inline comments corrected (no behavioral change in
   bash; the binary carries the fix)
 
----
+</details>
 
 ## 2026-04-22 — fetD completion, klusters focus fixes, Pipeline C nudge correctness
+
+<details>
+<summary>Details</summary>
 
 Committed as `f2e7fd4 bugfix(klusters) fix focus issue after spike realignment`.
 Despite the commit-message framing, this change set closes out three
@@ -1533,9 +1633,12 @@ now correct.
 - `src/ndmanager-plugins/scripts/ndm_subcluster_unmatched` —
   full-parity sandbox KK invocation
 
----
+</details>
 
 ## Earlier changes — KlustaKwik
+
+<details>
+<summary>Details</summary>
 
 ### nRuns flag (new)
 
@@ -1662,9 +1765,12 @@ shims at the KlustaKwik entry point.
 The 2026-04-22 commit completes the propagation to every other session-file open
 inside KlustaKwik (see top of this file).
 
----
+</details>
 
 ## Earlier changes — ndmanager-plugins
+
+<details>
+<summary>Details</summary>
 
 ### process_setupgroups.py
 
@@ -1719,9 +1825,12 @@ See `doc/design/reextractspikes-v1.md`, `doc/design/reextract-v2.md`,
 `doc/design/decomposecollisions.md`, `doc/design/subtractspikes-botm.md`
 for the full detail of the recent plugin patch series.
 
----
+</details>
 
 ## Earlier changes — jg05-20120316.yaml (sample session)
+
+<details>
+<summary>Details</summary>
 
 - All 13 `spikeDetection.channelGroups` entries annotated with `probeId`,
   `shankIndex`, and `sitePositions_um` (inline electrode site geometry).
@@ -1734,7 +1843,7 @@ for the full detail of the recent plugin patch series.
   files).
 - Probe 1 entry corrected to reference `A1x32-6mm-50-177.probe`.
 
----
+</details>
 
 ## Deep technical references
 
