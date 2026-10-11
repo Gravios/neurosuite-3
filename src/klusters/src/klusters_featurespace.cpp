@@ -15,7 +15,6 @@
 #include "klusters.h"
 #include "klustersdoc.h"
 #include "klustersview.h"
-#include "configuration.h"
 #include "data.h"
 
 #include <QApplication>
@@ -115,7 +114,9 @@ void KlustersApp::refreshAfterFeatureSpaceSwitch(int oldNbDimensions)
         int nx = remap(x), ny = remap(y);
         if (nx == 0) nx = 1;
         if (ny == 0) ny = (nx == 2 || newDims < 3) ? 1 : 2;
-        if (nx != x || ny != y) v->updateDimensions(nx, ny);
+        // Always: rebuilds the scatter from the new features and resets its
+        // world to the new space's extrema (the old zoom means nothing here).
+        v->updateDimensions(nx, ny);
     }
 
     // Spin boxes: new range, values of the active display (no re-trigger).
@@ -128,19 +129,24 @@ void KlustersApp::refreshAfterFeatureSpaceSwitch(int oldNbDimensions)
     }
     isInit = false;
 
-    // Every cluster's features and waveforms changed (membership did not):
-    // the same per-cluster refresh the batch realign uses.  Correlograms depend
-    // only on spike times, which every space shares, so they stay.
+    // Every cluster's features changed (membership did not).  The reprojection
+    // notice marks each cluster changed for the error matrix, stales the
+    // template / residual / drift matrices and drops a t-SNE embedding.
     const QList<dataType> ids = doc->data().clusterIds();
-    for (dataType id : ids) {
-        doc->invalidateWaveformCache(static_cast<int>(id));
-        doc->notifyClusterFeaturesReprojected(static_cast<int>(id));
-    }
     for (dataType id : ids)
-        doc->forceClusterRefresh(static_cast<int>(id));
+        doc->notifyClusterFeaturesReprojected(static_cast<int>(id));
 
-    if (configuration().getAutoUpdateMatricesAfterMerge())
-        slotUpdateErrorMatrix();
+    // Waveforms come from the newly installed .spk: reload every display's
+    // waveform and correlogram views in one pass (the active display now, the
+    // others when they are next shown).  The data layer's caches were already
+    // emptied by the reader change.
+    KlustersView* active = activeView();
+    for (KlustersView* v : doc->viewListCopy())
+        if (v) v->reloadWaveformsAndCorrelograms(v == active);
+
+    // Refresh automatically on a swap, whatever the "auto-update matrices after
+    // edits" preference says: every matrix value depends on the space.
+    slotUpdateErrorMatrix();
     scheduleRefreshMergeRecommendations();
 }
 

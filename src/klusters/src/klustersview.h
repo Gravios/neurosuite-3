@@ -242,6 +242,17 @@ public:
     void updateViewContents(){
         emit updateDrawing();    }
 
+    /**Reload every shown cluster's waveforms and correlograms from the data
+    * layer — after a feature-space switch installed another .spk.  Reuses the
+    * full-redraw signal the renumber path emits (WaveformView / CorrelationView
+    * mark REDRAW and re-request all shown clusters; a non-active view does it
+    * when it next becomes active).
+    * @param active true if the view is the active one, false otherwise.
+    */
+    void reloadWaveformsAndCorrelograms(bool active){
+        emit clustersRenumbered(active);
+    }
+
     /**Updates the view only for one cluster for which the color has been changed.
     * @param clusterId the cluster id for which the color has been changed.
     * @param active true if the view is the active one, false otherwise.
