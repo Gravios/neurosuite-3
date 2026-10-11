@@ -90,8 +90,12 @@ void Data::setSpkFileName(const QString& path){
 
 bool Data::replaceFeatureSpace(const QString& fetPath, const QString& spkPath,
                                QString& errorInformation){
-    //Let a running extrema recompute finish: it reads the feature table.
+    //Let a running extrema recompute finish: it reads the feature table.  Then
+    //clear the cluster-0 flag, as restartDimensionExtrema does: a stale value
+    //(e.g. left by an empty createNewCluster) would make the rescan below
+    //return early and keep extrema sized for the OLD dimension count.
     if(minMaxThread) minMaxThread->wait();
+    clusterZeroJustModified = false;
 
     const neurofileio::FetBinaryFile fet = neurofileio::readFetBinary(fetPath.toStdString());
     if(!fet.ok || fet.nFeatures < 2 || fet.nFeatures > 65536){
@@ -115,11 +119,21 @@ bool Data::replaceFeatureSpace(const QString& fetPath, const QString& spkPath,
         return false;
     }
 
+    //Spike times are method-independent (one shared .res), and only the .clu
+    //space's .fet follows a realign/nudge.  Keep the times the session already
+    //holds — the in-memory time column tracks the pending .res — rather than
+    //the incoming file's, which may predate this session's nudges.
+    std::vector<dataType> times(static_cast<size_t>(nbSpikes));
+    for(long s = 1; s <= nbSpikes; ++s)
+        times[static_cast<size_t>(s - 1)] = features(s, nbDimensions);
+
     nbDimensions = fet.nFeatures;
     features.setSize(nbSpikes, nbDimensions);
     const int64_t total = static_cast<int64_t>(nbSpikes) * nbDimensions;
     for(int64_t i = 0; i < total; ++i)
         features[static_cast<size_t>(i)] = static_cast<dataType>(fet.values[static_cast<size_t>(i)]);
+    for(long s = 1; s <= nbSpikes; ++s)
+        features(s, nbDimensions) = times[static_cast<size_t>(s - 1)];
 
     //The extrema bookkeeping is sized per dimension and only (re)sized when
     //empty: clear it so the rescan below starts from the new dimension count.

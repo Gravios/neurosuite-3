@@ -1014,7 +1014,8 @@ public:
     * spike (realign and nudge never reorder rows), so spikesByCluster,
     * clusterInfoMap and the undo snapshots — which index feature rows — stay
     * valid unchanged.  Replaces the feature table (whose dimension count may
-    * differ: a _D lag space has its own), installs a fresh .spk reader, drops
+    * differ: a _D lag space has its own) — keeping the session's spike times in
+    * the last column, since times belong to the shared .res — installs a fresh .spk reader, drops
     * the SpkOverlay and cluster templates keyed to the old file, and recomputes
     * the per-dimension extrema.
     *
