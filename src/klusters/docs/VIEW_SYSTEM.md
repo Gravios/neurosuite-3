@@ -1,5 +1,7 @@
 # The Klusters view system
 
+*Part of the [Developer Guide](../../../doc/dev/DEVELOPER_GUIDE.md), the index of internals references.*
+
 A developer reference for the on-screen view layer of Klusters — the frame/zoom base chain, the per-document container, and the four curation matrices. Every structural claim below cites `file:line`; files under `src/klusters/src/` are named bare, and the shared `DockArea` base is cited by its path under `src/libklustersshared/`. Anything not read directly out of the code is marked **(unverified)**.
 
 <details>

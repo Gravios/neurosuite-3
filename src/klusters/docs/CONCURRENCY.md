@@ -1,5 +1,7 @@
 # Klusters background-job and threading architecture
 
+*Part of the [Developer Guide](../../../doc/dev/DEVELOPER_GUIDE.md), the index of internals references.*
+
 A developer reference for how Klusters runs curation-adjacent compute off the GUI thread: the shared worker pools, the per-view cancellation token, the snapshot-and-retire worker pattern, the serial realign lane, and the legacy save threads. Every structural claim below cites `file:line`. Paths are under `src/klusters/src/` unless noted (the `CMakeLists.txt` cites are at the app root `src/klusters/` and `src/klusters/src/`). Anything not read directly out of the code is marked **(unverified)**.
 
 <details>

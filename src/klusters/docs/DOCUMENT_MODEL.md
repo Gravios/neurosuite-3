@@ -1,5 +1,7 @@
 # The Klusters document model (`KlustersDoc`)
 
+*Part of the [Developer Guide](../../../doc/dev/DEVELOPER_GUIDE.md), the index of internals references.*
+
 A developer reference for the cluster/spike document layer of Klusters. Every
 structural claim below cites `file:line` in `src/klusters/src/`. Anything not
 directly read out of the code is marked **(unverified)**.
