@@ -116,6 +116,7 @@ extern int nbUndo;
 
 void KlustersApp::slotRealignSpikes()
 {
+    if (refuseInBorrowedSpace(tr("Realign"))) return;
 
     // Don't allow a second realignment while one is running.
     if (realignRunning) {
@@ -373,6 +374,9 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
 void KlustersApp::startPostOpRealign(const QList<int>& parents, bool setChanged)
 {
     if (parents.isEmpty()) return;
+    // The automatic post-edit realign is skipped, without a message, while
+    // another method's feature space is loaded (it writes the .clu space).
+    if (refuseInBorrowedSpace(tr("Realign"), /*silent=*/true)) return;
     // Refresh the saved-mode args (top-ch gate + --pca-refine) like the
     // single-cluster and Align-All paths, then derive the batch args: strip any
     // top-ch / pca-refine tokens and re-add for the current top-channel count.
@@ -525,6 +529,7 @@ void KlustersApp::flushRealignBatchRefresh()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotPcaAlignAllClusters()
 {
+    if (refuseInBorrowedSpace(tr("Align All"))) return;
 
     if (realignRunning) {
         // Status bar, not a modal.

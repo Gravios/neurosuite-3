@@ -585,6 +585,7 @@ void KlustersApp::slotApplyDriftSiblings()
 void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
 {
     if (nudgeInProgress || isInit || !activeView()) return;
+    if (refuseInBorrowedSpace(tr("Nudge"))) return;
     const QList<int>& shown = activeView()->clusters();
     if (shown.size() != 1) {
         statusBar()->showMessage(

@@ -276,12 +276,14 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("delaySelectionState")) {
         mUpdateDisplay->setEnabled(true);
     } else if(state == QLatin1String("SavingState")) {
+        if (featureSpaceCombo) featureSpaceCombo->setEnabled(false);
         mSaveAction->setEnabled(false);
         mSaveAsAction->setEnabled(false);
         mRenumberAndSave->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
     } else if(state == QLatin1String("SavingDoneState")) {
+        if (featureSpaceCombo) featureSpaceCombo->setEnabled(true);
         mSaveAction->setEnabled(true);
         mSaveAsAction->setEnabled(true);
         mRenumberAndSave->setEnabled(true);
@@ -451,6 +453,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mRedo->setEnabled(false);
 
     } else if(state == QLatin1String("reclusterState")) {
+        if (featureSpaceCombo) featureSpaceCombo->setEnabled(false);
         mUndo->setEnabled(false);
         mRedo->setEnabled(false);
         mNewCluster->setEnabled(false);
@@ -480,6 +483,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mIncreaseAmplitudeCorrelation->setEnabled(false);
         mDecreaseAmplitudeCorrelation->setEnabled(false);
     } else if(state == QLatin1String("noReclusterState")) {
+        if (featureSpaceCombo) featureSpaceCombo->setEnabled(true);
         mReCluster->setEnabled(true);
         mReclusterMedian->setEnabled(true);
         mReclusterChannelVar->setEnabled(true);
@@ -490,6 +494,7 @@ void KlustersApp::slotStateChanged(const QString& state)
 
     // ── Realignment states — mirror reclusterState locks exactly ─────────────
     } else if(state == QLatin1String("realignState")) {
+        if (featureSpaceCombo) featureSpaceCombo->setEnabled(false);
         // Lock all editing actions for the duration of the realignment job.
         mUndo->setEnabled(false);
         mRedo->setEnabled(false);
@@ -539,6 +544,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         if (mRedoChildEdit)  mRedoChildEdit->setEnabled(false);
 
     } else if(state == QLatin1String("noRealignState")) {
+        if (featureSpaceCombo) featureSpaceCombo->setEnabled(true);
         // Restore all actions that realignState locked.
         mRealignSpikes->setEnabled(true);
         mPcaAlignAllClusters->setEnabled(true);
@@ -615,4 +621,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         qWarning() <<" State unknown :"<<state;
     }
 
+    // Whatever the transition re-enabled, the writers of the .clu space's own
+    // files stay off while another method's feature space is loaded.
+    applyFeatureSpaceLocks();
 }

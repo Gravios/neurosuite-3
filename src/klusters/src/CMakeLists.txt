@@ -70,6 +70,7 @@ set(klusters_SRCS
     oblique_embed.cpp           # oblique dual-basis projection (feature view's template-axis presentation)
     klusters_hierarchy.cpp      # KlustersApp hierarchical (.clc child) view + child-palette slots (split from klusters.cpp)
     klusters_dipdrift.cpp       # KlustersApp dip-split / probe-drift / timestamp-nudge (split from klusters.cpp)
+    klusters_featurespace.cpp   # KlustersApp feature-space switcher (Parameters toolbar combo)
     klusters_sort.cpp           # KlustersApp cluster sorting / reordering + sort progress bar (split from klusters.cpp)
     klustersdoc.cpp
     klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)

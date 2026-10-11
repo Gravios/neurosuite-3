@@ -69,6 +69,7 @@ class TemplatePalette;
 class MergeRecommendView;
 class ClusterView;     // for watershed live-preview overlay
 class SaveThread;
+class QComboBox;
 class PrefDialog;
 class QShortcut;       // for dipsplit post-commit Esc/Enter shortcuts
 class QKeyEvent;       // for tryViewKeyCommand (input-remapping plan P0d)
@@ -448,6 +449,9 @@ private Q_SLOTS:
     void slotUpdateIncludeTimeFeature(bool on);
     void slotUpdateRealignTopChan(int n);
     void slotDipSplit();
+    /** The Parameters-toolbar feature-space combo was used: load that method
+     *  space's .fet/.spk under the open .clu (KlustersDoc::switchFeatureSpace). */
+    void slotFeatureSpaceActivated(int index);
     /** Shift timestamps of the selected cluster by ±1 sample. */
     void slotNudgeTimestampMinus();
     void slotNudgeTimestampPlus();
@@ -913,6 +917,23 @@ private:
      *  (selection guard, busy flag, status messages, palette refocus) is
      *  identical so it lives here. */
     void nudgeSelectedSingleCluster(int deltaSamples);
+
+    // ── Feature-space switcher (Parameters toolbar, far right) ───────────────
+    /** Refill the combo from KlustersDoc::availableFeatureSpaces(), select the
+     *  loaded space, disable unusable entries (tooltip says why). */
+    void populateFeatureSpaceCombo();
+    /** After a switch: re-range the dimension spin boxes, keep every display's
+     *  axes valid (a time axis stays on time), and refresh views and matrices. */
+    void refreshAfterFeatureSpaceSwitch(int oldNbDimensions);
+    /** While another method's space is loaded, keep the actions that write the
+     *  .clu space's own files disabled (realign, align-all, nudge, Save As).
+     *  Called at the end of every slotStateChanged so no transition re-enables
+     *  them. */
+    void applyFeatureSpaceLocks();
+    /** Entry guard for writers without a single action (decollide, template
+     *  generation, post-edit realign): true (and a status message unless
+     *  @p silent) when another space is loaded. */
+    bool refuseInBorrowedSpace(const QString& what, bool silent = false);
 
     /** Shared implementation of slotMoveClustersToNoise / ToArtefact.
      *  Both slots delete the selected clusters into a reserved ID
@@ -1804,6 +1825,12 @@ private:
 
     QAction *nudgeMinusAction;  ///< shift timestamps −1 sample
     QAction *nudgePlusAction;   ///< shift timestamps +1 sample
+
+    QComboBox *featureSpaceCombo = nullptr;          ///< loaded method space (far right)
+    QLabel    *featureSpaceLabel = nullptr;
+    QAction   *featureSpaceSpacerAction = nullptr;   ///< expanding spacer pushing it right
+    QAction   *featureSpaceLabelAction = nullptr;
+    QAction   *featureSpaceComboAction = nullptr;
     QAction *startLabelAction;
     QAction *startAction;
     QAction *durationLabelAction;

@@ -117,6 +117,8 @@
 #include <QEvent>
 #include <QKeyEvent>
 #include <QAbstractSpinBox>
+#include <QComboBox>
+#include <QSizePolicy>
 #include <QKeySequenceEdit>   // focusIsInTextInput: the Preferences binding editor captures keys
 #include <QPointer>   // QPointer guard for the Shift+S stale-matrix wait
 #include "spinbox.h"
@@ -1705,6 +1707,30 @@ void KlustersApp::initSelectionBoxes(){
     //  undone action as "bad" and any retained action as "good" without
     //  user intervention — see CurationLogger header doc-comment.)
 
+    // ── Feature space (far right) ─────────────────────────────────────────
+    // Shows the method space whose .fet/.spk are loaded and lists every space
+    // the group has on disk; picking another loads it under the same .clu
+    // (slotFeatureSpaceActivated).  An expanding spacer pushes it to the end.
+    auto* featureSpaceSpacer = new QWidget(paramBar);
+    featureSpaceSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    featureSpaceSpacerAction = paramBar->addWidget(featureSpaceSpacer);
+    featureSpaceLabel = new QLabel(tr("Space "), paramBar);
+    featureSpaceLabel->setFrameStyle(QFrame::StyledPanel|QFrame::Plain);
+    featureSpaceLabel->setFont(font);
+    featureSpaceCombo = new QComboBox(paramBar);
+    featureSpaceCombo->setObjectName("featureSpace");
+    featureSpaceCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    featureSpaceCombo->setFocusPolicy(Qt::ClickFocus);
+    featureSpaceCombo->setToolTip(tr("Feature space (method) whose features and waveforms are "
+                                     "loaded.  The .clu is always saved under its own method."));
+    featureSpaceLabelAction = paramBar->addWidget(featureSpaceLabel);
+    featureSpaceComboAction = paramBar->addWidget(featureSpaceCombo);
+    featureSpaceSpacerAction->setVisible(false);
+    featureSpaceLabelAction->setVisible(false);
+    featureSpaceComboAction->setVisible(false);
+    // activated() fires on user choice only, never on the programmatic refill.
+    connect(featureSpaceCombo, &QComboBox::activated,
+            this, &KlustersApp::slotFeatureSpaceActivated);
 }
 
 void KlustersApp::executePreferencesDlg(){
@@ -3143,6 +3169,11 @@ void KlustersApp::initDisplay(){
     //Set the range value of the spine boxes
     dimensionX->setRange(1,doc->nbDimensions());
     dimensionY->setRange(1,doc->nbDimensions());
+    //Feature-space switcher: list this group's method spaces.
+    populateFeatureSpaceCombo();
+    featureSpaceSpacerAction->setVisible(true);
+    featureSpaceLabelAction->setVisible(true);
+    featureSpaceComboAction->setVisible(true);
     maximumTime = doc->maxTime();
     start->setRange(0,maximumTime);
     validator.setRange(0,maximumTime);
@@ -3916,6 +3947,7 @@ void KlustersApp::slotFileRenumberAndSave(){
 
 void KlustersApp::slotFileSaveAs()
 {
+    if (refuseInBorrowedSpace(tr("Save As"))) return;
     slotStatusMsg(tr("Saving file with a new filename…"));
     QString url=QFileDialog::getSaveFileName(this,tr("Save as…"),QDir::currentPath(),
                                              tr("All files (*.*)") );
@@ -6532,6 +6564,10 @@ void KlustersApp::resetState(){
     correlogramsHalfDurationLabelAction->setVisible(false);
     binSizeBoxAction->setVisible(false);
     binSizeLabelAction->setVisible(false);
+    featureSpaceSpacerAction->setVisible(false);
+    featureSpaceLabelAction->setVisible(false);
+    featureSpaceComboAction->setVisible(false);
+    featureSpaceCombo->clear();
     shoulderLine->setChecked(true);
     binSize = DEFAULT_BIN_SIZE.toInt();
     correlogramTimeFrame = INITIAL_CORRELOGRAMS_HALF_TIME_FRAME.toInt() * 2 + 1;
@@ -6645,9 +6681,17 @@ void KlustersApp::slotUpdateParameterBar(){
     correlogramsHalfDurationLabelAction->setVisible(false);
     binSizeBoxAction->setVisible(false);
     binSizeLabelAction->setVisible(false);
+    featureSpaceSpacerAction->setVisible(false);
+    featureSpaceLabelAction->setVisible(false);
+    featureSpaceComboAction->setVisible(false);
 
     if(mainDock != nullptr){
         KlustersView* currentView = activeView();
+
+        // The feature space belongs to the document, not the display type.
+        featureSpaceSpacerAction->setVisible(true);
+        featureSpaceLabelAction->setVisible(true);
+        featureSpaceComboAction->setVisible(true);
 
         if(currentView->containsClusterView()){
             dimensionXAction->setVisible(true);
@@ -8122,6 +8166,7 @@ void KlustersApp::runTemplateGeneration()
 // session the native reader cannot satisfy — no behavioural regression.
 void KlustersApp::runTemplateGenerationForUnits(const QList<int>& idsIn)
 {
+    if (refuseInBorrowedSpace(tr("Template generation"))) return;
     if (!configuration().getTemplatesMode())             // template features switched off
         return;
     if (idsIn.isEmpty())
@@ -8370,6 +8415,7 @@ void KlustersApp::slotTemplateClassesChanged()
 // ---------------------------------------------------------------------------
 void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList<int>& basis)
 {
+    if (refuseInBorrowedSpace(tr("Decollide"))) return;
     using namespace neurofileio;
     namespace dc = neurosuite::decollide;
 
@@ -8458,6 +8504,7 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
 // from the document), so the lasso fit and the batch .col path share it.
 void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decomp>& decomps)
 {
+    if (refuseInBorrowedSpace(tr("Decollide"))) return;
     using namespace neurofileio;
     namespace dc = neurosuite::decollide;
     if (decomps.empty() || !doc || doc->url().isEmpty()) return;
