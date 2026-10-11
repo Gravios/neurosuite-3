@@ -483,6 +483,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     nClamped = 0;
     logOut.clear();
 
+    // Realign rewrites the .clu space's .spk/.fet/.pca and the shared .res; it is
+    // not run from another method's feature space.
+    if (isBorrowedSpace()) {
+        logOut = tr("Realign works in the %1 feature space of the open .clu; "
+                    "switch back to it first (the %2 space is loaded).\n")
+                     .arg(originMethod, activeMethod);
+        if (liveLog) liveLog(logOut, true);
+        return false;
+    }
+
     // Pipeline (follow the ── section banners below): refuse early only if features
     // cannot be reprojected; restrict to the active channels; cross-correlate each
     // spike against the cluster template and circularly roll it to the template peak;
@@ -2550,6 +2560,13 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 {
     if (!clusteringData) return false;
     if (deltaSamples == 0) return true;
+    // Like realign, the nudge rewrites the .clu space's files and the shared .res.
+    if (isBorrowedSpace()) {
+        if (auto* sb = app() ? app()->statusBar() : nullptr)
+            sb->showMessage(tr("Nudge works in the %1 feature space; switch back to it first.")
+                                .arg(originMethod), 6000);
+        return false;
+    }
 
     logBefore(CurationLogger::ActionType::NUDGE, QList<int>{ clusterId });
 

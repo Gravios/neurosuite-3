@@ -79,6 +79,7 @@ set(klusters_SRCS
     klustersdoc_renumber.cpp    # KlustersDoc cluster renumber/reorder (split from klustersdoc.cpp)
     klustersdoc_io.cpp          # KlustersDoc document lifecycle / file I/O (split from klustersdoc.cpp)
     klustersdoc_realign.cpp     # KlustersDoc spike realignment / nudge (split from klustersdoc.cpp)
+    klustersdoc_featurespace.cpp # KlustersDoc feature-space switching (load another method's .fet/.spk)
     klustersdoc_dipsplit.cpp    # KlustersDoc bimodality / KNN splitting (split from klustersdoc.cpp)
     klustersdoc_strip.cpp       # KlustersDoc template strip (kernel-weighted residual)
     klustersdoc_watershed.cpp   # KlustersDoc 2D density-watershed split (split from klustersdoc.cpp)

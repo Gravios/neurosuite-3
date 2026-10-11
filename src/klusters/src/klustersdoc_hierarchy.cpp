@@ -275,6 +275,13 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
         delete childData; childData = nullptr;
         return false;
     }
+    // The child initialises from the .clu space's siblings; if another feature
+    // space is loaded, bring the child into it so both layers match.
+    if (isBorrowedSpace()
+        && !childData->replaceFeatureSpace(activeFetPath, activeSpkPath, errorInformation)){
+        delete childData; childData = nullptr;
+        return false;
+    }
     // Colour list for the child clusters (same HSV scheme as the parent build).
     childColorList = new ItemColors();
     const QList<dataType> kids = childData->clusterIds();

@@ -193,9 +193,12 @@ public:
     QList<KlustersView*> viewListCopy() const
     { return viewList ? *viewList : QList<KlustersView*>(); }
     bool isStderivSession() const
-        { return neurosuite::custody::isStderivMethod(
-                     neurosuite::custody::methodOf(origSpkPath.toStdString()))
-              || origSpkPath.contains(QStringLiteral(".spkD.")); }
+        { // The LOADED space decides (a borrowed standard space is not stderiv
+          // even when the .clu is).
+          const QString& spk = isBorrowedSpace() ? activeSpkPath : origSpkPath;
+          return neurosuite::custody::isStderivMethod(
+                     neurosuite::custody::methodOf(spk.toStdString()))
+              || spk.contains(QStringLiteral(".spkD.")); }
 
     /**Returns the reference on the list of ClusterColor objects.
     * @return ItemColors containing the information on the clusters and their associated color.
@@ -1491,6 +1494,43 @@ public:
     /** True when realignment results are waiting to be written to disk. */
     bool hasPendingRealign() const { return !pendingRealign.empty(); }
 
+    // ── Feature spaces ───────────────────────────────────────────────────
+    // A group can carry several method "spaces" (standard, stderiv_C5, a _D lag
+    // space, ...): each its own .fet (and .spk, .pca) over the SAME spikes in
+    // the same row order.  The document can load another space's .fet/.spk while
+    // keeping its cluster assignment, so one curation can be inspected through
+    // several feature spaces.  The .clu (and Save) always stays with the method
+    // it was opened under — cluMethod().
+
+    /** One method space found on disk for the open group. */
+    struct FeatureSpace {
+        QString method;        ///< e.g. "standard", "stderiv_C5", "stderiv_C5_D34"
+        QString fetPath;       ///< the .fet to load
+        QString spkPath;       ///< the .spk its waveforms come from (custody-resolved)
+        QString spkMethod;     ///< token the .spk was found under (may differ: _D, fallback)
+        bool    usable = false;
+        QString reason;        ///< why it is not usable (tooltip text)
+    };
+    /** Every <base>.fet.<method>.<group> next to the document, the .clu's own
+     *  method first, each checked against the open spike count and waveform
+     *  geometry.  The .clu's own entry points at the pending copies, so it carries
+     *  any unsaved realign / nudge. */
+    QList<FeatureSpace> availableFeatureSpaces() const;
+    /** Method the .clu was opened (and is saved) under. */
+    const QString& cluMethod() const { return originMethod; }
+    /** Method whose .fet/.spk are currently loaded. */
+    const QString& activeFeatureMethod() const { return activeMethod; }
+    /** True while another method's space is loaded.  File writers that belong
+     *  to the .clu's own space (realign, nudge, Save As, decollide, template
+     *  generation) refuse in this state. */
+    bool isBorrowedSpace() const { return activeMethod != originMethod; }
+    /** Load @p method's .fet and .spk into both data layers, keeping the cluster
+     *  assignment and undo history.  Stops the view jobs first (the feature table
+     *  is reallocated).  Refused while an unsaved realign is pending, because
+     *  undoing it would write the .clu space's rows into the loaded features.
+     *  On failure nothing changes and @p errorInformation says why. */
+    bool switchFeatureSpace(const QString& method, QString& errorInformation);
+
     /** Discards the most recent pending realignment and restores the
      *  in-memory Data to its state before that realignment was run.
      *  Called when the user hits Reject in the review dialog. */
@@ -1849,6 +1889,14 @@ public Q_SLOTS:
     void launchAutoSave();
 
 private:
+
+    /** Feature-space state (see switchFeatureSpace): the method the .clu was
+     *  opened under, the method currently loaded, and the loaded space's .fet /
+     *  .spk.  Set at open, reset at close. */
+    QString originMethod;
+    QString activeMethod;
+    QString activeFetPath;
+    QString activeSpkPath;
 
     /** Cluster ids currently masked (hidden from the active list and the view
      *  foreground).  Stored here, not in Data, so the data model and global id

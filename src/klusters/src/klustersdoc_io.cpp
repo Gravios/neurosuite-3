@@ -134,6 +134,10 @@ void KlustersDoc::closeDocument(){
     viewList->clear();
     docUrl = QString();
     baseName.clear();
+    originMethod.clear();
+    activeMethod.clear();
+    activeFetPath.clear();
+    activeSpkPath.clear();
     parameterFile.clear();
     qDeleteAll(clusterColorListUndoList);
     clusterColorListUndoList.clear();
@@ -549,6 +553,11 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
         "res", electrodeGroupID, sessionMethod);
     origFetPath = fetFileUrl;
+    // Feature space: the .clu's own method is loaded (see switchFeatureSpace).
+    originMethod  = sessionMethod;
+    activeMethod  = sessionMethod;
+    activeFetPath = origFetPath;
+    activeSpkPath = origSpkPath;
     // clu original == docUrl (set above); clu pending set in initPendingFiles.
     if (!initPendingFiles()) {
         qWarning() << "[openDocument] could not create pending files";
@@ -665,6 +674,15 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // Determine whether this is a Save (same URL) or SaveAs (new URL).
     const bool isSaveAs = (docUrl != saveUrl);
 
+    // Save As re-resolves and moves the .clu space's .spk/.res/.fet; with another
+    // method's space loaded it would re-seed the readers under the wrong
+    // features.  Plain Save is fine: it writes only the .clu space's files.
+    if (isSaveAs && isBorrowedSpace()) {
+        lastSaveErrorMessage = tr("Switch back to the %1 feature space before Save As.")
+                               .arg(originMethod);
+        return SAVE_ERROR;
+    }
+
     // Optional (Refinement preferences): rebuild the current group's .spk from the
     // raw .fil at every spike's current timestamp before committing, so the .spk
     // stays consistent with the .res/.fet (e.g. after nudging / realigning).  Off
@@ -676,15 +694,21 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     if (!isSaveAs && clusteringData
         && configuration().getReextractSpikesOnSave()) {
         QString reLog;
-        const bool reOk =
-            reextractAllSpikesFromFil(clusteringData->getSpkFileName(), reLog);
+        // Always the .clu space's own .spk (its pending copy when one is live),
+        // never a borrowed space's file the reader may be pointing at.
+        const QString reTarget = isBorrowedSpace()
+            ? (QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath)
+            : clusteringData->getSpkFileName();
+        const bool reOk = reextractAllSpikesFromFil(reTarget, reLog);
         // The re-extract installs the rebuilt .spk with rename(): a NEW inode.
         // Rebind each layer to it by installing a FRESH reader and
         // republishing (epoch-snapshot step 2) — invalidating the shared
         // reader would also redirect any older epoch a job still holds,
         // which must keep reading its own pinned file version instead.
-        clusteringData->reopenSpkReader();
-        if (childData) childData->reopenSpkReader();
+        if (!isBorrowedSpace()) {          // a borrowed reader's file did not change
+            clusteringData->reopenSpkReader();
+            if (childData) childData->reopenSpkReader();
+        }
         qWarning().noquote()
             << "[saveDocument]" << (reOk ? "re-extract:" : "re-extract FAILED:")
             << reLog;
