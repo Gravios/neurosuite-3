@@ -221,7 +221,7 @@ These are two separate actions:
   to the session YAML's `programs:` block. Use this when you want the session YAML to
   reflect the graph (so the legacy `programs:`-driven Run All path uses the new order).
 
-- **Save Pipeline** (new) — writes the graph itself (positions, edges, params) to a
+- **Save Pipeline** — writes the graph itself (positions, edges, params) to a
   `.pipeline` file. Doesn't touch the session YAML, doesn't change anything in the Plugins
   tab. The runtime `ndm_start` reads this file directly without going through the Plugins
   flow.

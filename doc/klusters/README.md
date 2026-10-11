@@ -432,14 +432,14 @@ original ID, both halves still split); the second Ctrl+Z reverts the
 split (source recovers all spikes).
 
 Preferences live under **Settings → Preferences → Refinement** (DipSplit
-group; was Preferences → General before the patch 0067 tab split):
+group):
 
 | Preference | Default | Effect |
 |---|---|---|
 | `DipSplit min size` | 30 | Minimum cluster size to consider |
 | `DipSplit bloat factor` | 0 | χ²(d, 0.9) bloat gate; `0` skips it |
 | `DipSplit valley depth` | 0.3 | KDE valley depth threshold (0–1) |
-| `Autoscale margin` | 5% | Whitespace around per-cluster autoscale (`F` key) — *moved to Preferences → Display in patch 0067* |
+| `Autoscale margin` | 5% | Whitespace around per-cluster autoscale (`F` key) — set in **Preferences → Display** |
 
 DipSplit is intentionally conservative — it errs toward not splitting.
 Manual lasso split (`S`) remains the primary tool for ambiguous cases.
@@ -784,7 +784,7 @@ Klusters can launch KiloKlustaKwik on the current electrode group:
 4. When KiloKlustaKwik finishes, klusters reloads the `.clu.N` file automatically and all views update.
 5. **Actions → Abort Reclustering** cancels a running KiloKlustaKwik process.
 
-KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Reclustering** (was Preferences → KiloKlustaKwik before the patch 0067 tab split).
+KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Reclustering**.
 
 ### Automatic feature selection
 
@@ -861,7 +861,7 @@ After realignment completes, the **Realignment Review Dialog** shows before/afte
 
 **Actions → Abort Realignment** cancels realignment in progress.
 
-Realignment parameters (maxShift, minScore) are set in **Settings → Preferences → Refinement → Realignment** (was Preferences → General → Realignment before the patch 0067 tab split).
+Realignment parameters (maxShift, minScore) are set in **Settings → Preferences → Refinement → Realignment**.
 
 </details>
 
@@ -889,7 +889,7 @@ immediately step to the next cluster with the arrow keys.
 
 ## Autosave and crash recovery
 
-A background thread periodically saves `session.#.clu.N` files (where `#` is a rotating index) to protect against crashes. The autosave interval is configured in **Settings → Preferences → Session** (was Preferences → General before the patch 0067 tab split).
+A background thread periodically saves `session.#.clu.N` files (where `#` is a rotating index) to protect against crashes. The autosave interval is configured in **Settings → Preferences → Session**.
 
 On opening a session, klusters detects orphaned autosave files and offers to restore from the most recent one.
 
