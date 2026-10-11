@@ -1,322 +1,42 @@
-# klustakwikExp — experimental fork of KlustaKwik
-
-## Why a separate fork
-
-This directory is a full copy of `src/klustakwik/` with one additional
-algorithmic feature: **post-split shift-probe refeaturization**.  The change
-touches the hottest clustering inner loop (`TrySplits`) and two per-chunk
-split passes (`SubspaceReclusterPerChunk`, `RefractorySplitPerChunk`).
-Because the behavior of `TrySplits` affects every CEM run regardless of
-mode, keeping this work in a parallel build target avoids destabilising
-the canonical spike sorter while the approach is evaluated.
-
-Both binaries coexist in the build tree:
-
-| target          | source dir              | binary                   |
-|-----------------|-------------------------|--------------------------|
-| `KlustaKwik`    | `src/klustakwik/`       | `KlustaKwik` (or `_cpu`) |
-| `KiloKlustaKwik` | `src/klustakwikExp/`    | `KiloKlustaKwik` (or `_cpu`) |
-
-The canonical binary is unaffected by anything in this directory.
-
-## Workflow & phase notation (current)
-
-The shift-probe is a cross-cutting mechanism that hooks into the main
-clustering phases.  Each hook reads `.spk` once, projects under the
-pre-shifted PCA basis fan of width `(2·MaxTimeShift + 1)`, applies a
-stage-specific selection criterion, and commits shifts to `Data[]` +
-`m_cumShift[]` in memory.  Only Phase 4 touches disk.
-
-| Phase     | Action                                                          | Hooks                                     |
-|-----------|-----------------------------------------------------------------|-------------------------------------------|
-| 0         | Preseed (chunked mode)                                          | —                                         |
-| 1         | Per-chunk CEM clustering                                        | time-shift split (inside `TrySplits` accept) |
-| **1.5**   | **Cluster alignment** — per-spike min-Mahalanobis² into own cluster | `TimeShiftAlignPhase`                 |
-| 2         | Subspace reclustering + refractory split (per-chunk)            | time-shift split (inside accept hooks)    |
-| 4         | Mean waveform harvest (templates)                               | —                                         |
-| 5         | Within-chunk xcorr template matching                            | —                                         |
-| 6         | Cross-chunk model matching (overlap-vote + Mahal + xcorr)       | —                                         |
-| 7         | Global warm-start EM                                            | merge-decision + merge-tighten (`ConsiderDeletion`) |
-| 8         | **DipSplit** — bimodal-cluster detection & split                | `DipSplitPhase`                           |
-| (post)    | **Shift commit**: re-extract `.fil` → `.spk`/`.fet`/`.res`      | `TimeShiftFinalize`                       |
-
-Phase numbers 3 (between Phase 2 and Phase 4) and decimal sub-phases
-older than 1.5 are historical — the runtime jumps from Phase 2 directly
-to Phase 4.  The sequence is what is actually printed at runtime; this
-table now matches stderr and can be cross-referenced when debugging.
-
-Phase 1.5 is no longer the legacy xcorr stage — canonical xcorr realignment
-(`RealignChunkWaveforms`) has been removed.  The slot is now owned by the
-shift-probe: `TimeShiftAlignPhase` iterates alive clusters and runs
-`TimeShiftAlignCluster` on each, doing per-spike min-Mahalanobis² alignment
-against the cluster's own Gaussian.  This is the feature-space analogue of
-xcorr realignment — per-spike shift selection weighted by the cluster's
-Cholesky factor, which automatically favors the discriminative dimensions
-that dominate the spike's identity.
-
-Phase 1.5 and Phase 4 are sequential stages of the same pipeline: 1.5
-accumulates in-memory shifts into `m_cumShift[]`; 4 writes them to disk.
-
-### Log prefix convention
-
-- `[Phase N]` — top-level phase entry, one fprintf per phase invocation
-- `[probe-split]` — split-probe trace inside Phase 1 / 2.5
-- `[probe-merge-decision]` — cluster-wide χ²-gated merge-decision trace inside Phase 3
-- `[probe-merge-tighten]` — per-spike post-merge tightener trace inside Phase 3
-
-### Public API (`KK` class)
-
-```cpp
-// Init/finalize
-bool InitTimeShift(int nChan, int nSamp, int N_halfWidth);
-void CloseTimeShift();
-void TimeShiftFinalize(int nChan, int nSamp);            // Phase 4
-
-// Split stage (max-variance, cluster-wide)
-int  TimeShiftSplit(const std::vector<int>& idxs, int nChan, int nSamp);
-int  TimeShiftSplitCluster(int clusterId, int nChan, int nSamp);
-
-// Cluster alignment (Phase 1.5 — replaces legacy xcorr realignment)
-int  TimeShiftAlignCluster(int clusterId, int nChan, int nSamp);
-int  TimeShiftAlignPhase(int nChan, int nSamp);   // iterates all alive clusters
-
-// Merge decision (cluster-wide per-destination, χ²-gated min-Mahal²)
-struct TimeShiftMergePlan { ... };
-bool TimeShiftMergeEvaluate(int victim, int nChan, int nSamp,
-                              TimeShiftMergePlan& plan);
-void TimeShiftMergeCommit(const TimeShiftMergePlan& plan);
-
-// Merge tightener (per-spike min-Mahal², no threshold)
-int  TimeShiftMergeTighten(const std::vector<int>& idxs, int nChan, int nSamp,
-                             const float* destMean, const float* destChol);
-```
-
-Naming convention: `TimeShift<Stage><Action>`.  `<Stage>` is one of
-`Split` / `Merge` / (session-level) and `<Action>` describes what the
-method does at that stage (`Evaluate`, `Commit`, `Cluster`, `Tighten`,
-`Finalize`).  All methods are no-ops on `KK` instances where
-`m_shiftProbeReady == false`, so callers don't need to check explicitly.
-
-### Parameter reference
-
-| parameter                    | default | meaning |
-|------------------------------|---------|---------|
-| `MaxTimeShift`               | 1       | basis fan half-width N (0–5); time-shift search tests δ ∈ {-N,…,+N} samples.  N=0 disables all time-shift stages. |
-| `TimeShiftAlignIter`         | 1       | Phase 1.5 cluster-alignment passes. 0 = skip alignment; N = run N passes, calling `MStep()` between passes so each pass sees updated cluster means.  Early exit on convergence (zero-shift pass). |
-| `TimeShiftMergeEnable`       | 1       | enable Phase 3's merge-decision + merge-tighten time-shift stages.  Set to 0 to keep only the split-stage and cluster-alignment stages active. |
-
-**Migration notes** (2026-04-23c):
-
-- `-MaxShiftProbe` → `-MaxTimeShift`
-- `-ShiftProbeAlignIter` → `-TimeShiftAlignIter`
-- `-ShiftProbeMergeProbe` → `-TimeShiftMergeEnable`
-
-Old names removed — no backward-compat aliases.  Existing scripts need a
-straight text substitution.  The API rename is part of a broader effort to
-disambiguate "probe" (now: recording hardware only) from "time-shift
-search" (the pre-shifted PCA basis + candidate selection machinery).
-
-## Algorithm
-
-### Problem
-
-Phase 1.5 of the canonical pipeline xcorr-aligns each spike to its current
-cluster mean-waveform template and re-extracts from `.fil`.  It runs ONCE,
-after Phase 2.5's splitting passes.  If a cluster is still a mixture at
-the moment Phase 1.5 fires, the template mean sits between the two
-subpopulations' true peaks — alignment then drags unit A toward unit B's
-peak and vice versa, reducing the sub-sample alignment signal that would
-have separated them.  Subsequent splits see features smeared together by
-the very alignment that was meant to help.
-
-### Approach — pre-shifted PCA bases, three candidates per spike
-
-After every accepted split:
-
-1. For each new child cluster, test δ ∈ {−1, 0, +1}.
-2. For each spike, read its `.spk` waveform once and project against THREE
-   pre-shifted eigenvector bases in a single pass — one dot product per δ,
-   all three accumulators stepping through the same raw samples.
-3. For each candidate δ, sum per-spatial-dim variance across the child.
-4. Pick the δ that MAXIMIZES total variance, then commit by writing the
-   trial features into `Data[]`, shifting the normalized timestamp column,
-   and accumulating `m_cumShift[p] += δ`.
-5. Call `MStep()` + `EStep()` so the next split trial sees the refreshed
-   model.
-
-### Pre-shifted bases (no modulo in the hot loop)
-
-Circularly shifting a spike's waveform by δ is equivalent to index-shifting
-the eigenvector row by −δ, with zero-padding at the tail.  Since PCs of
-biological spike waveforms taper to zero at the window edges by
-construction, the dropped/padded entry contributes negligibly at ±1 sample.
-
-At `InitTimeShift` time we build three contiguous basis tensors
-`E_{−1}, E_0, E_{+1}` (and three shifted means `μ_{−1}, μ_0, μ_{+1}`).  At
-projection time the inner loop is a single pass over `j` with three
-accumulators; every raw sample is loaded exactly once and feeds all three
-candidates.  No modulo, no branching — vectorises naturally on CPU, maps
-one thread per (channel × PC) on GPU.
-
-The max-variance criterion is the OPPOSITE of standard realignment.
-Standard realignment minimizes within-cluster variance (sharpens the
-Gaussian).  Here we want to SPREAD any residual mixture structure along
-whichever axis can expose it — so the next `TrySplits` call operates on
-features where mixtures are maximally revealed rather than hidden.
-
-### Why circular shift, not `.fil` re-extraction
-
-At ±1 sample the wrap-around is negligible: on a typical waveform window
-(`nSamplesPerSpike` ≈ 32–64) with `data2use` ≈ 0.9 × window, the one
-wrapped sample almost always falls outside the PCA basis's support and
-contributes nothing to the projection.  Avoiding `.fil` reads and in-place
-`.spk` writes during the probe:
-
-- eliminates disk I/O on the inner split loop (per-call cost ≈
-  |cluster| × 3 × O(pca_projection), fully RAM-resident after a single
-  `.spk` read per spike);
-- makes the probe reversible in memory (no on-disk state to roll back);
-- matches the specification: only `.res` (via the normalized time column
-  of `Data[]`) and `.fet` (the PCA feature columns of `Data[]`) are
-  updated in memory during the probe.
-
-`.fil` re-extraction is deferred to exactly ONE final pass.
-
-### Finalization
-
-After all CEM completes and `SaveOutput` has written the final `.clu`:
-
-```
-K1.FinalizeShiftProbe(NbChannels, NbSamplesPerSpike);
-```
-
-This hands the accumulated `m_cumShift[]` vector to the existing
-`RefeaturizeFromShifts` + `WritePhase15Checkpoint` path.
-`RefeaturizeFromShifts` re-extracts from `.fil` at
-`rawTs + cumShift − PeakSampleIndex` for every spike whose cumulative
-shift is non-zero (entries of 0 are skipped).  `WritePhase15Checkpoint`
-atomically rewrites `.spk` and `.fet` via `.pending` files, scoped to
-exactly those spikes whose final committed shift is non-zero.
-
-### Three integration points
-
-| site                                  | semantics |
-|---------------------------------------|-----------|
-| `TrySplits` accept                    | After `newScore < Score` commits the split, probe both children; MStep/EStep before the next iteration. |
-| `SubspaceReclusterPerChunk` accept    | Between `cls[]` update and ChunkModel mean/cov build — ensures Phase 2 matching sees refined features. |
-| `RefractorySplitPerChunk` accept      | Same pattern as above. |
-
-Each hook is gated: skip if the smaller child has < 20 spikes, or if it is
-< 10% of the parent (cost/benefit not worth it for near-trivial carve-offs).
-
-### Global ceiling
-
-`m_shiftProbeMaxShiftAbs` (default 1) hard-clamps |cumulative shift|.
-A candidate δ that would push a spike beyond this ceiling silently falls
-back to the no-shift features for that spike only — other spikes in the
-same cluster can still accept the winning δ.  This prevents a cluster
-from iteratively wandering off over many splits.
-
-## New public API (KK.h)
-
-```cpp
-struct ShiftProbePcaBasis { ... };
-ShiftProbePcaBasis m_shiftPcaBasis;
-std::vector<int>   m_cumShift;
-bool               m_shiftProbeReady;
-int                m_shiftProbeMaxShiftAbs;   // default 1
-
-bool InitTimeShift(int nChan, int nSamplesPerSpike);
-void CloseTimeShift();
-int  ShiftProbeAndCommitCluster(int clusterId, int nChan, int nSamplesPerSpike);
-int  ShiftProbeAndCommitSpikes (const std::vector<int>& globalSpikeIndices,
-                                int nChan, int nSamplesPerSpike);
-void FinalizeShiftProbe(int nChan, int nSamplesPerSpike);
-```
-
-No change to the command-line interface or the YAML schema.  Behavior
-is automatic when `Phase15Iters > 0`, `NbChannels > 0`,
-`NbSamplesPerSpike > 0`, `.pca.N` exists, and `.spk.N` is readable.
-Any of those missing disables the probe (runtime-equivalent to canonical
-KlustaKwik).
-
-## Build
-
-```
-cmake -B build && cmake --build build --target KiloKlustaKwik_cpu
-```
-
-Both binaries can be built together by running `cmake --build build` with
-no target argument.  Disable the fork entirely with:
-
-```
-cmake -B build -DNS_SKIP_KLUSTAKWIKEXP=ON
-```
-
-## Build string
-
-The startup banner identifies this binary as:
-
-```
-KiloKlustaKwik  SESSION.fet.N  [build 2026-04-22 shift-probe]
-```
-
-## GPU backends
-
-The three-accumulator projection maps cleanly onto one thread per
-(channel × PC) in a work-group of one spike.  Kernels exist for all three
-supported backends:
-
-| backend | file                   | launch            | smem used               |
-|---------|------------------------|-------------------|-------------------------|
-| CUDA    | `shiftprobe_cuda.cu`   | `<<<nMem, nPCA>>>`| `nChan × nSamp × int16` |
-| HIP     | `shiftprobe_hip.cpp`   | `hipLaunchKernelGGL` (nMem × nPCA, wavefront-rounded) | same |
-| SYCL    | `shiftprobe_sycl.cpp`  | `parallel_for` over `nd_range` with `local_accessor` | same |
-
-Dispatch: the CPU hot path is always present.  When a GPU context is
-available AND the cluster has ≥ 128 spikes, the kernel dispatcher runs
-the projection on-device and `memcpy`s trial features back for the
-variance-selection step.  Below that threshold the CPU path wins on
-latency, so the dispatcher skips the kernel entirely.  If a GPU call
-returns failure (e.g. transient alloc, smem limit) the code falls through
-to the CPU path — no user-visible error.
-
-After a commit that changes `Data[]`, a full `gpu_upload_data` re-upload
-happens before the next MStep/EStep so the device view stays consistent.
-A scatter-upload would be cheaper; a full upload is simpler and still
-much cheaper than the EM steps that follow it.
-
-Build strings that select a backend:
-
-```
-cmake -B build -DUSE_CUDA=ON                # Blackwell (RTX 5070 Ti etc.)
-cmake -B build -DUSE_HIP=ON                 # ROCm (RDNA/CDNA)
-cmake -B build -DUSE_SYCL=ON                # Intel Arc/Xe, oneAPI
-```
-
-The CPU target `KiloKlustaKwik_cpu` is always built.
-
-## File diff summary versus `src/klustakwik/`
-
-```
- CMakeLists.txt           — project/target/lib names renamed for coexistence
- KK.h                     — +~60 lines: ShiftProbePcaBasis (pre-shifted),
-                            accumulator, GPU ctx forward decl, API
- KK.cpp                   — +~400 lines: four new functions + three hook
-                            sites; GPU dispatch in _AndCommitSpikes
- KlustaKwik.cpp           — +~12 lines: Init/Finalize calls + banner
- shiftprobe_cuda.cu       — new: CUDA three-accumulator kernel + host wrappers
- shiftprobe_hip.cpp       — new: HIP mirror of CUDA kernel
- shiftprobe_sycl.cpp      — new: SYCL mirror of CUDA kernel
- CHANGES.md               — this file (new)
-```
-
-The inherited canonical changelog is preserved as
-`CHANGES-inherited-from-canonical.md` for historical reference.
-
-All other files are byte-identical to their canonical counterparts.
+# KiloKlustaKwik — internal change log
+
+Patch-level notes for the KiloKlustaKwik engine (`src/kiloklustakwik/`), which began as the
+`klustakwikExp` fork of KlustaKwik and is now the only engine tree.  The last entry here is
+2026-05-29; later KiloKlustaKwik changes are recorded in the top-level
+[CHANGELOG.md](../../CHANGELOG.md).  User documentation:
+[doc/kiloklustakwik/README.md](../../doc/kiloklustakwik/README.md).
+
+Each entry is folded — click **Details** to expand it.  Newest first.
+
+| Date | Change |
+|---|---|
+| 2026-05-29 | [patch0070 — Phase 8: variance-targeted knn-split (diffuse-cluster cleanup)](#2026-05-29-patch0070--phase-8-variance-targeted-knn-split-diffuse-cluster-cleanup) |
+| 2026-05 | [patch86 — Refresh `.spk(D)` from `.fil` (`-R`) after TimeShiftFinalize](#2026-05-patch86--refresh-spkd-from-fil--r-after-timeshiftfinalize) |
+| 2026-05-16e | [patch85 — Rewrite .res alongside .spk/.fet in WritePhase15Checkpoint](#2026-05-16e-patch85--rewrite-res-alongside-spkfet-in-writephase15checkpoint) |
+| 2026-05-16d | [patch84 — `AlignPcaCenter=2`: circular-shift PCA-centering (no `m_cumShift`)](#2026-05-16d-patch84--alignpcacenter2-circular-shift-pca-centering-no-m_cumshift) |
+| 2026-05-16c | [patch83 — `AlignPcaCenter=1`: post-xcorr PCA-centering refine pass](#2026-05-16c-patch83--alignpcacenter1-post-xcorr-pca-centering-refine-pass) |
+| 2026-05-16b | [patches 71–74 — Phase 2b m3 alignment hardening](#2026-05-16b-patches-7174--phase-2b-m3-alignment-hardening) |
+| 2026-05-16a | [patch64 — Template pre-alignment + xcorr API sync](#2026-05-16a-patch64--template-pre-alignment--xcorr-api-sync) |
+| 2026-05-05 | [RefineExisting — curate a hand-edited / prior-sort .clu](#2026-05-05-refineexisting--curate-a-hand-edited--prior-sort-clu) |
+| 2026-04-28e | [Quality warning removed — mass distribution can't detect failures](#2026-04-28e-quality-warning-removed--mass-distribution-cant-detect-failures) |
+| 2026-04-28d | [Diagnostics polish — Gini false-alarm + MergeThresh auto-trigger](#2026-04-28d-diagnostics-polish--gini-false-alarm--mergethresh-auto-trigger) |
+| 2026-04-28c | [Subcluster routines — silent-failure diagnostics + off-by-one fix](#2026-04-28c-subcluster-routines--silent-failure-diagnostics--off-by-one-fix) |
+| 2026-04-28b | [Audit cleanup pass — Stage 1](#2026-04-28b-audit-cleanup-pass--stage-1) |
+| 2026-04-28 | [DipSplit — elongation gate for absorbed-bimodal clusters](#2026-04-28-dipsplit--elongation-gate-for-absorbed-bimodal-clusters) |
+| 2026-04-23g | [Dead-code cleanup: remove unused .fil mmap infrastructure](#2026-04-23g-dead-code-cleanup-remove-unused-fil-mmap-infrastructure) |
+| 2026-04-23f | [Time-shift Phase 4 stderiv disk-commit](#2026-04-23f-time-shift-phase-4-stderiv-disk-commit) |
+| 2026-04-23e | [Time-shift probe: stderiv support + mmap-guard fix](#2026-04-23e-time-shift-probe-stderiv-support--mmap-guard-fix) |
+| 2026-04-23d | [DipSplit — bimodal-cluster splitter (Phase 1.8)](#2026-04-23d-dipsplit--bimodal-cluster-splitter-phase-18) |
+| 2026-04-23b | [Removed canonical xcorr realignment; Phase 1.5 is now cluster alignment](#2026-04-23b-removed-canonical-xcorr-realignment-phase-15-is-now-cluster-alignment) |
+| 2026-04-23 | [Parameterized shift range + merge-step probe](#2026-04-23-parameterized-shift-range--merge-step-probe) |
+| — | [Reference: fork rationale, phase notation, algorithm, API, build, GPU (historical)](#reference-historical) |
+
+---
 
 ## [2026-05-29] patch0070 — Phase 8: variance-targeted knn-split (diffuse-cluster cleanup)
+
+<details>
+<summary>Details</summary>
 
 New phase that iterates Phase 4b's WaveKnn-split machinery on the
 high-variance clusters only.  Repurposes the Phase 8 slot (legacy global
@@ -412,9 +132,12 @@ warning message if `MaxTimeShift = 0`.
 warnings.  Live run on `sirotaA-jg-000005-20120312` group 6 converged in
 2-3 iterations with recommended defaults.
 
----
+</details>
 
+## [2026-05] patch86 — Refresh `.spk(D)` from `.fil` (`-R`) after TimeShiftFinalize
 
+<details>
+<summary>Details</summary>
 
 After `WritePhase15Checkpoint` commits the `.res`/`.spk`/`.fet`
 rewrites, `TimeShiftFinalize` now invokes the appropriate
@@ -481,8 +204,12 @@ flag expects 1-based, so the invocation adds 1.
 
 Requires patch86.
 
+</details>
 
 ## [2026-05-16e] patch85 — Rewrite .res alongside .spk/.fet in WritePhase15Checkpoint
+
+<details>
+<summary>Details</summary>
 
 Pre-patch, `WritePhase15Checkpoint` rewrote `.spk` content (shifted
 by `m_cumShift`) and rewrote `.fet`'s last column (shifted
@@ -525,8 +252,12 @@ fopen failed, or the rewrite was partial.
 - `src/klustakwikExp/KK.cpp`: 1 hunk, ~178 lines added in
   `WritePhase15Checkpoint`.
 
+</details>
 
 ## [2026-05-16d] patch84 — `AlignPcaCenter=2`: circular-shift PCA-centering (no `m_cumShift`)
+
+<details>
+<summary>Details</summary>
 
 Replaces the existing xcorr iter loop in `RunPhase2bMode3Chunk`
 when `AlignPcaCenter == 2` is set: instead of iterating xcorr-based
@@ -597,8 +328,12 @@ m_cumShift NOT modified (mode 2)
 - `src/klustakwikExp/KlustaKwik.cpp`: `AlignPcaCenter` already
   registered by patch83.
 
+</details>
 
 ## [2026-05-16c] patch83 — `AlignPcaCenter=1`: post-xcorr PCA-centering refine pass
+
+<details>
+<summary>Details</summary>
 
 Adds an opt-in refine pass that runs after the xcorr iter loop in
 `RunPhase2bMode3Chunk`.  For each spike, sweep candidate shifts in
@@ -664,8 +399,12 @@ Per-chunk:
   registered at line 302.
 - `src/klustakwikExp/KK.h`: `AlignPcaCenter` declared.
 
+</details>
 
 ## [2026-05-16b] patches 71–74 — Phase 2b m3 alignment hardening
+
+<details>
+<summary>Details</summary>
 
 A four-patch series that turned `RunPhase2bMode3Chunk`'s post-CEM
 alignment from a single-pass best-effort into a verifiable iterative
@@ -772,8 +511,12 @@ Does NOT modify `.res` or `m_cumShift`.
 - `src/klustakwikExp/KK.cpp`: all four patches modify
   `RunPhase2bMode3Chunk`.  Combined ~600 lines.
 
+</details>
 
 ## [2026-05-16a] patch64 — Template pre-alignment + xcorr API sync
+
+<details>
+<summary>Details</summary>
 
 Two issues, shipped together because they were discovered together.
 
@@ -821,8 +564,129 @@ to the shared header's `XcorrDispatch::compute` signature.
   call in `RunPhase2bMode3Chunk`.
 - `src/libklustersshared/src/xcorr/realign_xcorr.h`: signature.
 
+</details>
+
+## [2026-05-05] RefineExisting — curate a hand-edited / prior-sort .clu
+
+<details>
+<summary>Details</summary>
+
+`KK::RefineExistingClustering` is a new entry point that loads an existing
+`.clu.<g>`, fits full-Gaussian models from those assignments via `MStep`,
+and runs a curated three-phase pass instead of the standard CEM.  The
+motivation: a curated `.clu` encodes the operator's manual splits / merges
+and the previous KK run's K-sweep, all of which a fresh CEM would discard.
+Refinement preserves that work and only changes assignments where the
+existing model says they are inconsistent.
+
+### Phases
+
+```
+A. REASSIGN  RunEMLoop with splits disabled, capped at -RefineIters
+             (default 5).  K is conserved.  Boundary spikes move to
+             whichever existing parent fits better under full-Gaussian
+             Mahalanobis; the gating is just EStep + CStep — no special
+             machinery.
+
+B. SPLIT     DipSplitPhase on each surviving cluster with the user-
+             controllable -RefineSplitMinDepth (default 0.4) overriding
+             DipSplitValleyThresh.  May grow K.  Runs the same BIC + k-
+             means + valley-depth gates as the inline DipSplit invocation
+             at end of CEM — the seed clusters from the loaded .clu just
+             replace whatever CEM would have converged to.
+
+C. MERGE     Pairwise Mahalanobis × BIC over the post-split cluster set.
+             Distance is min(mahal(a→b), mahal(b→a)) under each cluster's
+             own Σ; pairs below an effective threshold are then BIC-tested
+             with dipsplit::bic_two_vs_one (k=1 vs k=2 over the spatial
+             dims).  Closest-first with single-merge-per-cluster-per-pass
+             so consecutive merges see fresh stats.  Iterates until no
+             pair passes both gates.
+
+  Drift-aware merge gate.  When -ChunkFile is provided, per-cluster
+  temporal occupancy is computed by histogramming Data[timeDim] into the
+  chunk boundaries.  Bhattacharyya overlap b = Σ √(p·q) over chunks
+  yields a multiplier in [1.0, 1.5]: pairs whose occupancy lies in
+  disjoint chunks get a relaxed threshold (matches the "drifting unit
+  the original sort split into two non-overlapping clusters" case);
+  co-occurring pairs get the base threshold.  Same gating philosophy as
+  RunChunkedCEM Phase 2's overlap-vote machinery, applied here at the
+  pair level instead of via union-find.
+
+  A final REASSIGN pass runs after split/merge to clean up boundary
+  spikes against the new model set.
+```
+
+### Lock convention for clusters 0 / 1
+
+Under the neurosuite convention, cluster 0 is the artefact bin and
+cluster 1 is the MUA bin.  By default (`-RefineLockNoiseClu 1`),
+RefineExisting never moves spikes into or out of clusters 0 / 1, and
+those clusters are excluded from the split and merge candidate sets.
+This matches what an operator expects when running refinement after a
+triage pass that put bad spikes in 0 / 1.  Pass `--unlock-noise` to the
+`KlustaKwikRefine` wrapper (or `-RefineLockNoiseClu 0` to the binary
+directly) to override.
+
+### Parameters
+
+| flag                       | default | meaning                                              |
+|----------------------------|---------|------------------------------------------------------|
+| `-RefineExisting <path>`   | unset   | seed `.clu`; presence triggers the refinement path  |
+| `-RefineMode <m>`          | full    | `off` / `reassign` / `split` / `merge` / `full`     |
+| `-RefineIters N`           | 5       | iteration cap for Phase A and the final tidy        |
+| `-RefineMergeThresh F`     | 0       | 0 = inherit `MergeThresh` (which defaults to χ²)    |
+| `-RefineSplitMinDepth F`   | 0.4     | DipSplit valley depth threshold during Phase B      |
+| `-RefineLockNoiseClu N`    | 1       | non-zero locks clusters 0 / 1                       |
+
+When both `-RefineMergeThresh` and `-MergeThresh` are zero, KlustaKwik
+auto-calibrates to χ²(d, 0.99) via Wilson-Hilferty (matches the chunked-
+CEM convention for `MergeThresh` auto-calibration).
+
+### Drift-file consumption
+
+The `.drift` file itself is not read directly — it is consumed by
+`ndm_applydrift` to produce `.chunks.<g>` (the chunk-boundary file in
+seconds).  KlustaKwik reads the chunks file via the existing `-ChunkFile`
+flag.  This is the same plumbing the chunked-CEM mode already uses; the
+refinement path just adds a new consumer.
+
+### Wrapper script
+
+`KlustaKwikRefine <session> <group>` auto-detects `<session>.clu.<g>`
+as seed and `<session>.chunks.<g>` as the drift-chunks file, backs up
+the seed to `.clu.<g>.bak-refine`, and invokes the binary.  Supports
+`--mode`, `--iters`, `--mergethresh`, `--splitdepth`, `--chunks`,
+`--no-drift`, `--unlock-noise`, `--force`, `--dry-run`, plus a `--`
+escape for arbitrary forwarded KK flags.
+
+### Implementation reuse
+
+RefineExisting reuses these pre-existing pieces verbatim:
+
+- `LoadClu` (auto-detects binary vs text .clu format)
+- `MStep` (full-Gaussian E/M)
+- `RunEMLoop` (with `enableSplits=false` for Phase A and the tidy)
+- `DipSplitPhase` (with valley-depth threshold rebound)
+- `Cholesky` / `TriSolve` (Mahalanobis distance under each cluster's Σ)
+- `dipsplit::bic_two_vs_one` (Phase C BIC gate)
+
+The only genuinely new code is the per-cluster temporal-occupancy
+histogram and the Bhattacharyya overlap calculation; everything else is
+glue.
+
+### Recovery
+
+The wrapper backs up the seed `.clu.<g>` to `.clu.<g>.bak-refine` on
+first run and refuses to clobber an existing backup unless `--force`
+is passed.  To revert: `mv -f *.clu.*.bak-refine *.clu.*`.
+
+</details>
 
 ## [2026-04-28e] Quality warning removed — mass distribution can't detect failures
+
+<details>
+<summary>Details</summary>
 
 The `gini > 0.7 && maxFrac > 0.4` warning introduced in 2026-04-28d was
 firing on healthy interneuron biology.
@@ -882,7 +746,12 @@ candidate as `not-flagged`, that's the cluster confirming itself as a
 real unit; when they accept and DipSplit splits it, the failure has
 already been corrected by the time the user sees the result.
 
+</details>
+
 ## [2026-04-28d] Diagnostics polish — Gini false-alarm + MergeThresh auto-trigger
+
+<details>
+<summary>Details</summary>
 
 Three fixes for issues surfaced by running the Stage 1 + subspace-fix
 build on jg05-20120316 group 6.
@@ -970,7 +839,12 @@ start.  A more robust approach is farthest-point seeding from the
 mean — same as Phase 0/1.  Documented for evaluation; no behavior
 change here.
 
+</details>
+
 ## [2026-04-28c] Subcluster routines — silent-failure diagnostics + off-by-one fix
+
+<details>
+<summary>Details</summary>
 
 User-reported symptom: "the subcluster routine seems to be completing too
 quickly, may be failing silently."
@@ -1087,7 +961,12 @@ by EM convergence anyway) but reproducibility across runs is broken.
 Replacing `srand`/`rand` with a thread-local `std::mt19937` is on the
 queue for Stage 2.
 
+</details>
+
 ## [2026-04-28b] Audit cleanup pass — Stage 1
+
+<details>
+<summary>Details</summary>
 
 Six items from the KKE audit folded into one cumulative patch.  No
 algorithmic behavior change for default invocations; users opt in to
@@ -1273,7 +1152,12 @@ inspection in Klusters.
   driver dispatch and stderr mode message updated.
 - `CHANGES.md`: this entry.
 
+</details>
+
 ## [2026-04-28] DipSplit — elongation gate for absorbed-bimodal clusters
+
+<details>
+<summary>Details</summary>
 
 **Problem.** Cluster 3 of jg05-20120316 group 6 contained ~20.5k spikes
 (~50% of all spikes in the recording) with clearly distinct waveform
@@ -1346,7 +1230,12 @@ The "gate=elong" tag identifies splits that the bloat gate alone would
 have missed — these are the absorbed-bimodal cases the new gate is
 designed to catch.
 
+</details>
+
 ## [2026-04-23g] Dead-code cleanup: remove unused .fil mmap infrastructure
+
+<details>
+<summary>Details</summary>
 
 The `.fil` mmap plumbing added during stderiv development (members
 `m_timeShiftFilMap`, `m_timeShiftFilLen`, `m_timeShiftFilSamples`,
@@ -1362,7 +1251,12 @@ where it belongs — the basis struct owns its own metadata.
 
 No behavioral change; just less code to maintain.
 
+</details>
+
 ## [2026-04-23f] Time-shift Phase 4 stderiv disk-commit
+
+<details>
+<summary>Details</summary>
 
 Completes stderiv support end-to-end.  Prior commit (2026-04-23e) made the
 in-memory probe work for stderiv sessions; this commit makes the disk
@@ -1428,7 +1322,12 @@ content; at Phase 4 we spend the extra CPU to re-derive exactly from
 `.fil` for the final disk commit.  Best of both worlds — fast clustering,
 correct output.
 
+</details>
+
 ## [2026-04-23e] Time-shift probe: stderiv support + mmap-guard fix
+
+<details>
+<summary>Details</summary>
 
 Critical fix plus stderiv support rolled together.
 
@@ -1470,7 +1369,12 @@ transform there since the shifts are not too large".
 - `KK.cpp`: new helper + rewrote three projection paths to use it +
   relaxed guards in three places.
 
+</details>
+
 ## [2026-04-23d] DipSplit — bimodal-cluster splitter (Phase 1.8)
+
+<details>
+<summary>Details</summary>
 
 **Summary**: new phase that detects and splits "flat" clusters — CEM failure
 mode where a cluster contains two sub-populations separated in some 2D
@@ -1547,7 +1451,12 @@ When a split is accepted:
 No output when no splits are accepted — DipSplit runs silently to keep
 logs clean.
 
+</details>
+
 ## [2026-04-23b] Removed canonical xcorr realignment; Phase 1.5 is now cluster alignment
+
+<details>
+<summary>Details</summary>
 
 **Summary**: `RealignChunkWaveforms` and its call sites are deleted.  The
 Phase 1.5 slot is now owned by `TimeShiftAlignPhase`, which runs per-spike
@@ -1593,7 +1502,12 @@ shift wrap-around corruption — Phase 4 commits by re-extracting from .fil.
   definition, and `INT_PARAM` registration.  Updated `Phase15Iters`
   docstring to reflect new semantics.
 
+</details>
+
 ## [2026-04-23] Parameterized shift range + merge-step probe
+
+<details>
+<summary>Details</summary>
 
 Three new parameters expose and extend the probe:
 
@@ -1705,115 +1619,331 @@ probe's accumulated `m_cumShift[]`.  Rationale: running both paths would
 let the canonical xcorr overwrite the probe's committed shifts with
 newly-computed xcorr values, wasting the probe's work.
 
+</details>
 
-## [2026-05-05] RefineExisting — curate a hand-edited / prior-sort .clu
+## Reference (historical)
 
-`KK::RefineExistingClustering` is a new entry point that loads an existing
-`.clu.<g>`, fits full-Gaussian models from those assignments via `MStep`,
-and runs a curated three-phase pass instead of the standard CEM.  The
-motivation: a curated `.clu` encodes the operator's manual splits / merges
-and the previous KK run's K-sweep, all of which a fresh CEM would discard.
-Refinement preserves that work and only changes assignments where the
-existing model says they are inconsistent.
+Written when this tree was the `klustakwikExp` fork alongside the canonical `src/klustakwik/`
+(since retired).  The phase notation here predates the current Stage numbering in
+[doc/kiloklustakwik/README.md](../../doc/kiloklustakwik/README.md).
 
-### Phases
+<details>
+<summary>Fork rationale, phase notation, algorithm, public API, build, GPU backends</summary>
+
+### Why a separate fork
+
+This directory is a full copy of `src/klustakwik/` with one additional
+algorithmic feature: **post-split shift-probe refeaturization**.  The change
+touches the hottest clustering inner loop (`TrySplits`) and two per-chunk
+split passes (`SubspaceReclusterPerChunk`, `RefractorySplitPerChunk`).
+Because the behavior of `TrySplits` affects every CEM run regardless of
+mode, keeping this work in a parallel build target avoids destabilising
+the canonical spike sorter while the approach is evaluated.
+
+Both binaries coexist in the build tree:
+
+| target          | source dir              | binary                   |
+|-----------------|-------------------------|--------------------------|
+| `KlustaKwik`    | `src/klustakwik/`       | `KlustaKwik` (or `_cpu`) |
+| `KiloKlustaKwik` | `src/klustakwikExp/`    | `KiloKlustaKwik` (or `_cpu`) |
+
+The canonical binary is unaffected by anything in this directory.
+
+### Workflow & phase notation (current)
+
+The shift-probe is a cross-cutting mechanism that hooks into the main
+clustering phases.  Each hook reads `.spk` once, projects under the
+pre-shifted PCA basis fan of width `(2·MaxTimeShift + 1)`, applies a
+stage-specific selection criterion, and commits shifts to `Data[]` +
+`m_cumShift[]` in memory.  Only Phase 4 touches disk.
+
+| Phase     | Action                                                          | Hooks                                     |
+|-----------|-----------------------------------------------------------------|-------------------------------------------|
+| 0         | Preseed (chunked mode)                                          | —                                         |
+| 1         | Per-chunk CEM clustering                                        | time-shift split (inside `TrySplits` accept) |
+| **1.5**   | **Cluster alignment** — per-spike min-Mahalanobis² into own cluster | `TimeShiftAlignPhase`                 |
+| 2         | Subspace reclustering + refractory split (per-chunk)            | time-shift split (inside accept hooks)    |
+| 4         | Mean waveform harvest (templates)                               | —                                         |
+| 5         | Within-chunk xcorr template matching                            | —                                         |
+| 6         | Cross-chunk model matching (overlap-vote + Mahal + xcorr)       | —                                         |
+| 7         | Global warm-start EM                                            | merge-decision + merge-tighten (`ConsiderDeletion`) |
+| 8         | **DipSplit** — bimodal-cluster detection & split                | `DipSplitPhase`                           |
+| (post)    | **Shift commit**: re-extract `.fil` → `.spk`/`.fet`/`.res`      | `TimeShiftFinalize`                       |
+
+Phase numbers 3 (between Phase 2 and Phase 4) and decimal sub-phases
+older than 1.5 are historical — the runtime jumps from Phase 2 directly
+to Phase 4.  The sequence is what is actually printed at runtime; this
+table now matches stderr and can be cross-referenced when debugging.
+
+Phase 1.5 is no longer the legacy xcorr stage — canonical xcorr realignment
+(`RealignChunkWaveforms`) has been removed.  The slot is now owned by the
+shift-probe: `TimeShiftAlignPhase` iterates alive clusters and runs
+`TimeShiftAlignCluster` on each, doing per-spike min-Mahalanobis² alignment
+against the cluster's own Gaussian.  This is the feature-space analogue of
+xcorr realignment — per-spike shift selection weighted by the cluster's
+Cholesky factor, which automatically favors the discriminative dimensions
+that dominate the spike's identity.
+
+Phase 1.5 and Phase 4 are sequential stages of the same pipeline: 1.5
+accumulates in-memory shifts into `m_cumShift[]`; 4 writes them to disk.
+
+#### Log prefix convention
+
+- `[Phase N]` — top-level phase entry, one fprintf per phase invocation
+- `[probe-split]` — split-probe trace inside Phase 1 / 2.5
+- `[probe-merge-decision]` — cluster-wide χ²-gated merge-decision trace inside Phase 3
+- `[probe-merge-tighten]` — per-spike post-merge tightener trace inside Phase 3
+
+#### Public API (`KK` class)
+
+```cpp
+// Init/finalize
+bool InitTimeShift(int nChan, int nSamp, int N_halfWidth);
+void CloseTimeShift();
+void TimeShiftFinalize(int nChan, int nSamp);            // Phase 4
+
+// Split stage (max-variance, cluster-wide)
+int  TimeShiftSplit(const std::vector<int>& idxs, int nChan, int nSamp);
+int  TimeShiftSplitCluster(int clusterId, int nChan, int nSamp);
+
+// Cluster alignment (Phase 1.5 — replaces legacy xcorr realignment)
+int  TimeShiftAlignCluster(int clusterId, int nChan, int nSamp);
+int  TimeShiftAlignPhase(int nChan, int nSamp);   // iterates all alive clusters
+
+// Merge decision (cluster-wide per-destination, χ²-gated min-Mahal²)
+struct TimeShiftMergePlan { ... };
+bool TimeShiftMergeEvaluate(int victim, int nChan, int nSamp,
+                              TimeShiftMergePlan& plan);
+void TimeShiftMergeCommit(const TimeShiftMergePlan& plan);
+
+// Merge tightener (per-spike min-Mahal², no threshold)
+int  TimeShiftMergeTighten(const std::vector<int>& idxs, int nChan, int nSamp,
+                             const float* destMean, const float* destChol);
+```
+
+Naming convention: `TimeShift<Stage><Action>`.  `<Stage>` is one of
+`Split` / `Merge` / (session-level) and `<Action>` describes what the
+method does at that stage (`Evaluate`, `Commit`, `Cluster`, `Tighten`,
+`Finalize`).  All methods are no-ops on `KK` instances where
+`m_shiftProbeReady == false`, so callers don't need to check explicitly.
+
+#### Parameter reference
+
+| parameter                    | default | meaning |
+|------------------------------|---------|---------|
+| `MaxTimeShift`               | 1       | basis fan half-width N (0–5); time-shift search tests δ ∈ {-N,…,+N} samples.  N=0 disables all time-shift stages. |
+| `TimeShiftAlignIter`         | 1       | Phase 1.5 cluster-alignment passes. 0 = skip alignment; N = run N passes, calling `MStep()` between passes so each pass sees updated cluster means.  Early exit on convergence (zero-shift pass). |
+| `TimeShiftMergeEnable`       | 1       | enable Phase 3's merge-decision + merge-tighten time-shift stages.  Set to 0 to keep only the split-stage and cluster-alignment stages active. |
+
+**Migration notes** (2026-04-23c):
+
+- `-MaxShiftProbe` → `-MaxTimeShift`
+- `-ShiftProbeAlignIter` → `-TimeShiftAlignIter`
+- `-ShiftProbeMergeProbe` → `-TimeShiftMergeEnable`
+
+Old names removed — no backward-compat aliases.  Existing scripts need a
+straight text substitution.  The API rename is part of a broader effort to
+disambiguate "probe" (now: recording hardware only) from "time-shift
+search" (the pre-shifted PCA basis + candidate selection machinery).
+
+### Algorithm
+
+#### Problem
+
+Phase 1.5 of the canonical pipeline xcorr-aligns each spike to its current
+cluster mean-waveform template and re-extracts from `.fil`.  It runs ONCE,
+after Phase 2.5's splitting passes.  If a cluster is still a mixture at
+the moment Phase 1.5 fires, the template mean sits between the two
+subpopulations' true peaks — alignment then drags unit A toward unit B's
+peak and vice versa, reducing the sub-sample alignment signal that would
+have separated them.  Subsequent splits see features smeared together by
+the very alignment that was meant to help.
+
+#### Approach — pre-shifted PCA bases, three candidates per spike
+
+After every accepted split:
+
+1. For each new child cluster, test δ ∈ {−1, 0, +1}.
+2. For each spike, read its `.spk` waveform once and project against THREE
+   pre-shifted eigenvector bases in a single pass — one dot product per δ,
+   all three accumulators stepping through the same raw samples.
+3. For each candidate δ, sum per-spatial-dim variance across the child.
+4. Pick the δ that MAXIMIZES total variance, then commit by writing the
+   trial features into `Data[]`, shifting the normalized timestamp column,
+   and accumulating `m_cumShift[p] += δ`.
+5. Call `MStep()` + `EStep()` so the next split trial sees the refreshed
+   model.
+
+#### Pre-shifted bases (no modulo in the hot loop)
+
+Circularly shifting a spike's waveform by δ is equivalent to index-shifting
+the eigenvector row by −δ, with zero-padding at the tail.  Since PCs of
+biological spike waveforms taper to zero at the window edges by
+construction, the dropped/padded entry contributes negligibly at ±1 sample.
+
+At `InitTimeShift` time we build three contiguous basis tensors
+`E_{−1}, E_0, E_{+1}` (and three shifted means `μ_{−1}, μ_0, μ_{+1}`).  At
+projection time the inner loop is a single pass over `j` with three
+accumulators; every raw sample is loaded exactly once and feeds all three
+candidates.  No modulo, no branching — vectorises naturally on CPU, maps
+one thread per (channel × PC) on GPU.
+
+The max-variance criterion is the OPPOSITE of standard realignment.
+Standard realignment minimizes within-cluster variance (sharpens the
+Gaussian).  Here we want to SPREAD any residual mixture structure along
+whichever axis can expose it — so the next `TrySplits` call operates on
+features where mixtures are maximally revealed rather than hidden.
+
+#### Why circular shift, not `.fil` re-extraction
+
+At ±1 sample the wrap-around is negligible: on a typical waveform window
+(`nSamplesPerSpike` ≈ 32–64) with `data2use` ≈ 0.9 × window, the one
+wrapped sample almost always falls outside the PCA basis's support and
+contributes nothing to the projection.  Avoiding `.fil` reads and in-place
+`.spk` writes during the probe:
+
+- eliminates disk I/O on the inner split loop (per-call cost ≈
+  |cluster| × 3 × O(pca_projection), fully RAM-resident after a single
+  `.spk` read per spike);
+- makes the probe reversible in memory (no on-disk state to roll back);
+- matches the specification: only `.res` (via the normalized time column
+  of `Data[]`) and `.fet` (the PCA feature columns of `Data[]`) are
+  updated in memory during the probe.
+
+`.fil` re-extraction is deferred to exactly ONE final pass.
+
+#### Finalization
+
+After all CEM completes and `SaveOutput` has written the final `.clu`:
 
 ```
-A. REASSIGN  RunEMLoop with splits disabled, capped at -RefineIters
-             (default 5).  K is conserved.  Boundary spikes move to
-             whichever existing parent fits better under full-Gaussian
-             Mahalanobis; the gating is just EStep + CStep — no special
-             machinery.
-
-B. SPLIT     DipSplitPhase on each surviving cluster with the user-
-             controllable -RefineSplitMinDepth (default 0.4) overriding
-             DipSplitValleyThresh.  May grow K.  Runs the same BIC + k-
-             means + valley-depth gates as the inline DipSplit invocation
-             at end of CEM — the seed clusters from the loaded .clu just
-             replace whatever CEM would have converged to.
-
-C. MERGE     Pairwise Mahalanobis × BIC over the post-split cluster set.
-             Distance is min(mahal(a→b), mahal(b→a)) under each cluster's
-             own Σ; pairs below an effective threshold are then BIC-tested
-             with dipsplit::bic_two_vs_one (k=1 vs k=2 over the spatial
-             dims).  Closest-first with single-merge-per-cluster-per-pass
-             so consecutive merges see fresh stats.  Iterates until no
-             pair passes both gates.
-
-  Drift-aware merge gate.  When -ChunkFile is provided, per-cluster
-  temporal occupancy is computed by histogramming Data[timeDim] into the
-  chunk boundaries.  Bhattacharyya overlap b = Σ √(p·q) over chunks
-  yields a multiplier in [1.0, 1.5]: pairs whose occupancy lies in
-  disjoint chunks get a relaxed threshold (matches the "drifting unit
-  the original sort split into two non-overlapping clusters" case);
-  co-occurring pairs get the base threshold.  Same gating philosophy as
-  RunChunkedCEM Phase 2's overlap-vote machinery, applied here at the
-  pair level instead of via union-find.
-
-  A final REASSIGN pass runs after split/merge to clean up boundary
-  spikes against the new model set.
+K1.FinalizeShiftProbe(NbChannels, NbSamplesPerSpike);
 ```
 
-### Lock convention for clusters 0 / 1
+This hands the accumulated `m_cumShift[]` vector to the existing
+`RefeaturizeFromShifts` + `WritePhase15Checkpoint` path.
+`RefeaturizeFromShifts` re-extracts from `.fil` at
+`rawTs + cumShift − PeakSampleIndex` for every spike whose cumulative
+shift is non-zero (entries of 0 are skipped).  `WritePhase15Checkpoint`
+atomically rewrites `.spk` and `.fet` via `.pending` files, scoped to
+exactly those spikes whose final committed shift is non-zero.
 
-Under the neurosuite convention, cluster 0 is the artefact bin and
-cluster 1 is the MUA bin.  By default (`-RefineLockNoiseClu 1`),
-RefineExisting never moves spikes into or out of clusters 0 / 1, and
-those clusters are excluded from the split and merge candidate sets.
-This matches what an operator expects when running refinement after a
-triage pass that put bad spikes in 0 / 1.  Pass `--unlock-noise` to the
-`KlustaKwikRefine` wrapper (or `-RefineLockNoiseClu 0` to the binary
-directly) to override.
+#### Three integration points
 
-### Parameters
+| site                                  | semantics |
+|---------------------------------------|-----------|
+| `TrySplits` accept                    | After `newScore < Score` commits the split, probe both children; MStep/EStep before the next iteration. |
+| `SubspaceReclusterPerChunk` accept    | Between `cls[]` update and ChunkModel mean/cov build — ensures Phase 2 matching sees refined features. |
+| `RefractorySplitPerChunk` accept      | Same pattern as above. |
 
-| flag                       | default | meaning                                              |
-|----------------------------|---------|------------------------------------------------------|
-| `-RefineExisting <path>`   | unset   | seed `.clu`; presence triggers the refinement path  |
-| `-RefineMode <m>`          | full    | `off` / `reassign` / `split` / `merge` / `full`     |
-| `-RefineIters N`           | 5       | iteration cap for Phase A and the final tidy        |
-| `-RefineMergeThresh F`     | 0       | 0 = inherit `MergeThresh` (which defaults to χ²)    |
-| `-RefineSplitMinDepth F`   | 0.4     | DipSplit valley depth threshold during Phase B      |
-| `-RefineLockNoiseClu N`    | 1       | non-zero locks clusters 0 / 1                       |
+Each hook is gated: skip if the smaller child has < 20 spikes, or if it is
+< 10% of the parent (cost/benefit not worth it for near-trivial carve-offs).
 
-When both `-RefineMergeThresh` and `-MergeThresh` are zero, KlustaKwik
-auto-calibrates to χ²(d, 0.99) via Wilson-Hilferty (matches the chunked-
-CEM convention for `MergeThresh` auto-calibration).
+#### Global ceiling
 
-### Drift-file consumption
+`m_shiftProbeMaxShiftAbs` (default 1) hard-clamps |cumulative shift|.
+A candidate δ that would push a spike beyond this ceiling silently falls
+back to the no-shift features for that spike only — other spikes in the
+same cluster can still accept the winning δ.  This prevents a cluster
+from iteratively wandering off over many splits.
 
-The `.drift` file itself is not read directly — it is consumed by
-`ndm_applydrift` to produce `.chunks.<g>` (the chunk-boundary file in
-seconds).  KlustaKwik reads the chunks file via the existing `-ChunkFile`
-flag.  This is the same plumbing the chunked-CEM mode already uses; the
-refinement path just adds a new consumer.
+### New public API (KK.h)
 
-### Wrapper script
+```cpp
+struct ShiftProbePcaBasis { ... };
+ShiftProbePcaBasis m_shiftPcaBasis;
+std::vector<int>   m_cumShift;
+bool               m_shiftProbeReady;
+int                m_shiftProbeMaxShiftAbs;   // default 1
 
-`KlustaKwikRefine <session> <group>` auto-detects `<session>.clu.<g>`
-as seed and `<session>.chunks.<g>` as the drift-chunks file, backs up
-the seed to `.clu.<g>.bak-refine`, and invokes the binary.  Supports
-`--mode`, `--iters`, `--mergethresh`, `--splitdepth`, `--chunks`,
-`--no-drift`, `--unlock-noise`, `--force`, `--dry-run`, plus a `--`
-escape for arbitrary forwarded KK flags.
+bool InitTimeShift(int nChan, int nSamplesPerSpike);
+void CloseTimeShift();
+int  ShiftProbeAndCommitCluster(int clusterId, int nChan, int nSamplesPerSpike);
+int  ShiftProbeAndCommitSpikes (const std::vector<int>& globalSpikeIndices,
+                                int nChan, int nSamplesPerSpike);
+void FinalizeShiftProbe(int nChan, int nSamplesPerSpike);
+```
 
-### Implementation reuse
+No change to the command-line interface or the YAML schema.  Behavior
+is automatic when `Phase15Iters > 0`, `NbChannels > 0`,
+`NbSamplesPerSpike > 0`, `.pca.N` exists, and `.spk.N` is readable.
+Any of those missing disables the probe (runtime-equivalent to canonical
+KlustaKwik).
 
-RefineExisting reuses these pre-existing pieces verbatim:
+### Build
 
-- `LoadClu` (auto-detects binary vs text .clu format)
-- `MStep` (full-Gaussian E/M)
-- `RunEMLoop` (with `enableSplits=false` for Phase A and the tidy)
-- `DipSplitPhase` (with valley-depth threshold rebound)
-- `Cholesky` / `TriSolve` (Mahalanobis distance under each cluster's Σ)
-- `dipsplit::bic_two_vs_one` (Phase C BIC gate)
+```
+cmake -B build && cmake --build build --target KiloKlustaKwik_cpu
+```
 
-The only genuinely new code is the per-cluster temporal-occupancy
-histogram and the Bhattacharyya overlap calculation; everything else is
-glue.
+Both binaries can be built together by running `cmake --build build` with
+no target argument.  Disable the fork entirely with:
 
-### Recovery
+```
+cmake -B build -DNS_SKIP_KLUSTAKWIKEXP=ON
+```
 
-The wrapper backs up the seed `.clu.<g>` to `.clu.<g>.bak-refine` on
-first run and refuses to clobber an existing backup unless `--force`
-is passed.  To revert: `mv -f *.clu.*.bak-refine *.clu.*`.
+### Build string
+
+The startup banner identifies this binary as:
+
+```
+KiloKlustaKwik  SESSION.fet.N  [build 2026-04-22 shift-probe]
+```
+
+### GPU backends
+
+The three-accumulator projection maps cleanly onto one thread per
+(channel × PC) in a work-group of one spike.  Kernels exist for all three
+supported backends:
+
+| backend | file                   | launch            | smem used               |
+|---------|------------------------|-------------------|-------------------------|
+| CUDA    | `shiftprobe_cuda.cu`   | `<<<nMem, nPCA>>>`| `nChan × nSamp × int16` |
+| HIP     | `shiftprobe_hip.cpp`   | `hipLaunchKernelGGL` (nMem × nPCA, wavefront-rounded) | same |
+| SYCL    | `shiftprobe_sycl.cpp`  | `parallel_for` over `nd_range` with `local_accessor` | same |
+
+Dispatch: the CPU hot path is always present.  When a GPU context is
+available AND the cluster has ≥ 128 spikes, the kernel dispatcher runs
+the projection on-device and `memcpy`s trial features back for the
+variance-selection step.  Below that threshold the CPU path wins on
+latency, so the dispatcher skips the kernel entirely.  If a GPU call
+returns failure (e.g. transient alloc, smem limit) the code falls through
+to the CPU path — no user-visible error.
+
+After a commit that changes `Data[]`, a full `gpu_upload_data` re-upload
+happens before the next MStep/EStep so the device view stays consistent.
+A scatter-upload would be cheaper; a full upload is simpler and still
+much cheaper than the EM steps that follow it.
+
+Build strings that select a backend:
+
+```
+cmake -B build -DUSE_CUDA=ON                # Blackwell (RTX 5070 Ti etc.)
+cmake -B build -DUSE_HIP=ON                 # ROCm (RDNA/CDNA)
+cmake -B build -DUSE_SYCL=ON                # Intel Arc/Xe, oneAPI
+```
+
+The CPU target `KiloKlustaKwik_cpu` is always built.
+
+### File diff summary versus `src/klustakwik/`
+
+```
+ CMakeLists.txt           — project/target/lib names renamed for coexistence
+ KK.h                     — +~60 lines: ShiftProbePcaBasis (pre-shifted),
+                            accumulator, GPU ctx forward decl, API
+ KK.cpp                   — +~400 lines: four new functions + three hook
+                            sites; GPU dispatch in _AndCommitSpikes
+ KlustaKwik.cpp           — +~12 lines: Init/Finalize calls + banner
+ shiftprobe_cuda.cu       — new: CUDA three-accumulator kernel + host wrappers
+ shiftprobe_hip.cpp       — new: HIP mirror of CUDA kernel
+ shiftprobe_sycl.cpp      — new: SYCL mirror of CUDA kernel
+ CHANGES.md               — this file (new)
+```
+
+The inherited canonical changelog is preserved as
+`CHANGES-inherited-from-canonical.md` for historical reference.
+
+All other files are byte-identical to their canonical counterparts.
+
+</details>
