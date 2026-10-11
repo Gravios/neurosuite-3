@@ -7,5 +7,5 @@ and **kiloklustakwik** (for Phase 1.5 batch realignment after chunked CEM sortin
 To get GPU-accelerated realignment, build klusters and/or kiloklustakwik with the
 appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-- **klusters:** [../../klusters/install/windows-cpu.md](../../klusters/install/windows-cpu.md)
-- **klustakwik:** [../../kiloklustakwik/install/windows-cpu.md](../../kiloklustakwik/install/windows-cpu.md)
+- **klusters:** [../../klusters/install/windows.md](../../klusters/install/windows.md)
+- **KiloKlustaKwik:** [../../kiloklustakwik/README.md](../../kiloklustakwik/README.md) (platform table; the CUDA/HIP/SYCL guides build a CPU fallback too)

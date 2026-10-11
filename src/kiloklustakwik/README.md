@@ -153,13 +153,13 @@ Chunk sub-objects in chunked CEM always run on the CPU (the main sort object hol
 
 | Platform | GPU | Guide |
 |---|---|---|
-| Linux (Ubuntu / Debian) | CPU / OpenMP only | [install/linux-cpu.md](install/linux-cpu.md) |
-| Linux (Ubuntu / Debian) | NVIDIA CUDA | [install/linux-cuda.md](install/linux-cuda.md) |
-| Linux (Ubuntu / Debian) | AMD ROCm / HIP | [install/linux-hip.md](install/linux-hip.md) |
-| Linux (Ubuntu / Debian) | Intel Arc / SYCL | [install/linux-sycl.md](install/linux-sycl.md) |
-| Linux — WSL2 | Intel Arc / SYCL | [install/wsl2-sycl.md](install/wsl2-sycl.md) |
-| Windows (native) | CPU / OpenMP | [install/windows-cpu.md](install/windows-cpu.md) |
-| Windows (native) | NVIDIA CUDA | [install/windows-cuda.md](install/windows-cuda.md) |
-| Windows (native) | AMD HIP | [install/windows-hip.md](install/windows-hip.md) |
-| Windows (native) | Intel Arc / SYCL | [install/windows-sycl.md](install/windows-sycl.md) |
-| macOS | CPU / OpenMP only | [install/macos.md](install/macos.md) |
+| Linux (Ubuntu / Debian) | CPU / OpenMP only | [install/linux-cpu.md](../../doc/kiloklustakwik/install/linux-cpu.md) |
+| Linux (Ubuntu / Debian) | NVIDIA CUDA | [install/linux-cuda.md](../../doc/kiloklustakwik/install/linux-cuda.md) |
+| Linux (Ubuntu / Debian) | AMD ROCm / HIP | [install/linux-hip.md](../../doc/kiloklustakwik/install/linux-hip.md) |
+| Linux (Ubuntu / Debian) | Intel Arc / SYCL | [install/linux-sycl.md](../../doc/kiloklustakwik/install/linux-sycl.md) |
+| Linux — WSL2 | Intel Arc / SYCL | [install/wsl2-sycl.md](../../doc/kiloklustakwik/install/wsl2-sycl.md) |
+| Windows (native) | CPU / OpenMP | see [doc/kiloklustakwik/README.md](../../doc/kiloklustakwik/README.md) |
+| Windows (native) | NVIDIA CUDA | [install/windows-cuda.md](../../doc/kiloklustakwik/install/windows-cuda.md) |
+| Windows (native) | AMD HIP | [install/windows-hip.md](../../doc/kiloklustakwik/install/windows-hip.md) |
+| Windows (native) | Intel Arc / SYCL | [install/windows-sycl.md](../../doc/kiloklustakwik/install/windows-sycl.md) |
+| macOS | CPU / OpenMP only | [install/macos.md](../../doc/kiloklustakwik/install/macos.md) |

@@ -54,7 +54,7 @@ For task-oriented walkthroughs that span multiple programs, see
 | [`ndm_redetectspikes`](commands/ndm_redetectspikes.md) | Second-round detection on cleaned `.dat` |
 | [`process_initeap`](commands/process_initeap.md) | Pre-construct the EAP template-class layer (`.eap.N` / `.tcl.N`) |
 | [`ndm_decomposecollisions`](commands/ndm_decomposecollisions.md) | Collision decomposition (`.col.N`; also fills the `.eap.N` / `.tcl.N` layer) |
-| [`ndm_localise`](commands/ndm_localize.md) | Per-spike source localization (`.loc.N`) |
+| [`ndm_localise`](commands/ndm_localise.md) | Per-spike source localization (`.loc.N`) |
 | [`ndm_estimatedrift`](commands/ndm_estimatedrift.md) | Spatial probe drift estimation (`.drift`) |
 | [`ndm_applydrift`](commands/ndm_applydrift.md) | Propagate curated drift to sibling shanks |
 

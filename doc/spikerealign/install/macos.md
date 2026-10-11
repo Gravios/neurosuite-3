@@ -8,4 +8,4 @@ To get GPU-accelerated realignment, build klusters and/or kiloklustakwik with th
 appropriate GPU backend enabled. Follow the corresponding platform guide:
 
 - **klusters:** [../../klusters/install/macos.md](../../klusters/install/macos.md)
-- **klustakwik:** [../../kiloklustakwik/install/macos.md](../../kiloklustakwik/install/macos.md)
+- **KiloKlustaKwik:** [../../kiloklustakwik/install/macos.md](../../kiloklustakwik/install/macos.md)

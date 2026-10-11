@@ -976,9 +976,9 @@ by any pre-rev-12 KlustaKwik build.  Safe to leave as-is.
 
 ### Files
 
-- `../../src/klustakwik/KlustaKwik.h`   — `pickInputPath` declaration
-- `../../src/klustakwik/KlustaKwik.cpp` — `pickInputPath` implementation
-- `../../src/klustakwik/KK.cpp`         — `LoadData` uses `pickInputPath`
+- `../../src/kiloklustakwik/src/KlustaKwik.h`   — `pickInputPath` declaration
+- `../../src/kiloklustakwik/src/KlustaKwik.cpp` — `pickInputPath` implementation
+- `../../src/kiloklustakwik/src/KK.cpp`         — `LoadData` uses `pickInputPath`
 - `../../src/ndmanager-plugins/scripts/ndm_subcluster_unmatched`
   — bash-side `.fetD` detection (redundant after this rev but kept
   for compatibility with pre-rev-12 KlustaKwik builds)

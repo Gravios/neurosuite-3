@@ -228,6 +228,8 @@ surfaces everywhere with no edits.
 
 ---
 
+<a id="4-the-scope-stack"></a>
+
 ## 4. The scope stack — tiered view modes
 
 `Layer` is the tiering. When several scopes are active at once, the resolver

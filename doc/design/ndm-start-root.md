@@ -9,7 +9,7 @@ graph, then rewrites `ndm_start` the bash to read its own program
 list from the YAML and dispatch in graph order.
 
 For the operational walkthrough, see
-[`../ndmanager/README.md#pipeline-tab`](../ndmanager/README.md#pipeline-tab).
+[`../ndmanager/README.md` → Pipeline tab](../ndmanager/README.md#pipeline-tab--editable-node-graph).
 
 ---
 

@@ -268,7 +268,7 @@ present it takes precedence over looking up the geometry from the `.probe` file.
 (`~`) mark missing or disabled sites.
 
 The `klustakwik:` sub-block is the top tier of the three-tier parameter resolution used by
-`ndm_klustakwik` (see [ndmanager-plugins](../ndmanager-plugins/README.md#ndm_klustakwik) for
+`ndm_klustakwik` (see [ndmanager-plugins](../ndmanager-plugins/commands/ndm_klustakwik.md) for
 details). Values here override `programs[ndm_klustakwik].parameters.*` and the script's
 built-in defaults.
 
@@ -337,4 +337,4 @@ libklustersshared
     └── klusters
 ```
 
-See the [install guide](install/) for platform-specific build instructions.
+See [BUILD.md](../BUILD.md) for build options, platforms and GPU backends.

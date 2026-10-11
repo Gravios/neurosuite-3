@@ -2,9 +2,9 @@
 
 The developer build reference: every CMake option, the GPU backends, the test
 suite, the sanitizer build, and how to reproduce CI locally. For a first build
-from a clean machine, start with the [Quick start](../README.md#quick-start) and
-[Dependencies](../README.md#dependencies) in the README — this page assumes the
-dependencies are installed and goes into the knobs you reach for while working
+from a clean machine, start with the [Quick start](../README.md#quick-start) in the README (it can
+install the dependencies for you) — this page assumes the dependencies are
+installed and goes into the knobs you reach for while working
 on the code.
 
 The authoritative source for all of this is the top-level
@@ -25,7 +25,8 @@ The authoritative source for all of this is the top-level
 
 The reference CI toolchain is **Ubuntu 24.04 with the distribution Qt6** (see
 §8). macOS (Homebrew `qt@6`) and Windows (vcpkg + the Qt Online Installer) are
-supported for configuration; the install details are in the README.
+supported for configuration; per-platform prerequisites are in each component's
+install pages, e.g. [`doc/klusters/install/`](klusters/install/linux.md).
 
 Let CMake install the system dependencies for you with `-DNS_INSTALL_DEPS=ON`
 (apt on Linux, Homebrew on macOS, vcpkg on Windows); the package lists are in

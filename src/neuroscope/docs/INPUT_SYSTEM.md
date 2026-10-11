@@ -137,6 +137,8 @@ have to call them. The two geometry helpers stay `protected`.
 
 ---
 
+<a id="4-the-primary-press-seam"></a>
+
 ## 4. The primary-press seam: `managesOwnPrimaryPress`
 
 `BaseFrame` funnels **its own** `mousePressEvent` through `dispatchInput()` as

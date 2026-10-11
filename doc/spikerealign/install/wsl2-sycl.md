@@ -7,5 +7,5 @@ and **kiloklustakwik** (for Phase 1.5 batch realignment after chunked CEM sortin
 To get GPU-accelerated realignment, build klusters and/or kiloklustakwik with the
 appropriate GPU backend enabled. Follow the corresponding platform guide:
 
-- **klusters:** [../../klusters/install/wsl2-sycl.md](../../klusters/install/wsl2-sycl.md)
-- **klustakwik:** [../../kiloklustakwik/install/wsl2-sycl.md](../../kiloklustakwik/install/wsl2-sycl.md)
+- **klusters:** [../../klusters/install/linux.md](../../klusters/install/linux.md)
+- **KiloKlustaKwik:** [../../kiloklustakwik/install/wsl2-sycl.md](../../kiloklustakwik/install/wsl2-sycl.md)
