@@ -73,7 +73,6 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
         return;
     }
 
-    const bool wasBorrowed = doc->isBorrowedSpace();
     const int  oldDims     = doc->nbDimensions();
     QString err;
     QApplication::setOverrideCursor(Qt::WaitCursor);
@@ -88,15 +87,8 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
     refreshAfterFeatureSpaceSwitch(oldDims);
     populateFeatureSpaceCombo();
 
-    // Leaving a borrowed space: switching is only possible while idle (no save,
-    // realign or recluster running), so "enabled" is these actions' state now.
-    if (wasBorrowed && !doc->isBorrowedSpace()) {
-        mRealignSpikes->setEnabled(true);
-        mPcaAlignAllClusters->setEnabled(true);
-        nudgeMinusAction->setEnabled(true);
-        nudgePlusAction->setEnabled(true);
-        mSaveAsAction->setEnabled(true);
-    }
+    // Locks on (borrowed) or each action back to what the state machine last
+    // asked for (leaving a borrowed space).
     applyFeatureSpaceLocks();
 
     slotStatusMsg(doc->isBorrowedSpace()
@@ -154,10 +146,25 @@ void KlustersApp::refreshAfterFeatureSpaceSwitch(int oldNbDimensions)
 
 void KlustersApp::applyFeatureSpaceLocks()
 {
-    if (!doc || !doc->isBorrowedSpace()) return;
-    for (QAction* a : { mRealignSpikes, mPcaAlignAllClusters,
-                        nudgeMinusAction, nudgePlusAction, mSaveAsAction })
-        if (a) a->setEnabled(false);
+    const QList<QAction*> actions{ mRealignSpikes, mPcaAlignAllClusters,
+                                   nudgeMinusAction, nudgePlusAction, mSaveAsAction };
+    if (!featureSpaceTracking) {
+        // First call (startup, initState): from now on record every enable /
+        // disable the state machine makes, so the lock can be undone exactly.
+        featureSpaceTracking = true;
+        for (QAction* a : actions) {
+            if (!a) continue;
+            featureSpaceDesiredEnabled.insert(a, a->isEnabled());
+            connect(a, &QAction::changed, this, [this, a]() {
+                if (!featureSpaceLocking) featureSpaceDesiredEnabled[a] = a->isEnabled();
+            });
+        }
+    }
+    const bool borrowed = doc && doc->isBorrowedSpace();
+    featureSpaceLocking = true;
+    for (QAction* a : actions)
+        if (a) a->setEnabled(!borrowed && featureSpaceDesiredEnabled.value(a, a->isEnabled()));
+    featureSpaceLocking = false;
 }
 
 bool KlustersApp::refuseInBorrowedSpace(const QString& what, bool silent)

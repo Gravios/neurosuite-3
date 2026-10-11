@@ -926,9 +926,9 @@ private:
      *  axes valid (a time axis stays on time), and refresh views and matrices. */
     void refreshAfterFeatureSpaceSwitch(int oldNbDimensions);
     /** While another method's space is loaded, keep the actions that write the
-     *  .clu space's own files disabled (realign, align-all, nudge, Save As).
-     *  Called at the end of every slotStateChanged so no transition re-enables
-     *  them. */
+     *  .clu space's own files disabled (realign, align-all, nudge, Save As);
+     *  otherwise give each the state the state machine last asked for.  Called
+     *  at the end of every slotStateChanged and after each switch. */
     void applyFeatureSpaceLocks();
     /** Entry guard for writers without a single action (decollide, template
      *  generation, post-edit realign): true (and a status message unless
@@ -1831,6 +1831,12 @@ private:
     QAction   *featureSpaceSpacerAction = nullptr;   ///< expanding spacer pushing it right
     QAction   *featureSpaceLabelAction = nullptr;
     QAction   *featureSpaceComboAction = nullptr;
+    /** What the state machine last asked of each action applyFeatureSpaceLocks
+     *  controls, so leaving a borrowed space restores it exactly (tracked via
+     *  QAction::changed, ignoring the lock's own setEnabled calls). */
+    QHash<QAction*, bool> featureSpaceDesiredEnabled;
+    bool featureSpaceTracking = false;   ///< changed() connections made
+    bool featureSpaceLocking  = false;   ///< inside applyFeatureSpaceLocks
     QAction *startLabelAction;
     QAction *startAction;
     QAction *durationLabelAction;

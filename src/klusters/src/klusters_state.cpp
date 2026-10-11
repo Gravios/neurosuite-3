@@ -284,6 +284,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         nudgePlusAction->setEnabled(false);
     } else if(state == QLatin1String("SavingDoneState")) {
         if (featureSpaceCombo) featureSpaceCombo->setEnabled(true);
+        populateFeatureSpaceCombo();     // Save As may have changed the .clu's method
         mSaveAction->setEnabled(true);
         mSaveAsAction->setEnabled(true);
         mRenumberAndSave->setEnabled(true);
