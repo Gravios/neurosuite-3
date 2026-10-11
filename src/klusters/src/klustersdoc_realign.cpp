@@ -3224,6 +3224,41 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     int64_t nReadBefore = 0;
     if (dumpMean) nReadBefore = computeMean(meanBefore);
 
+    // ── Keep file order ──────────────────────────────────────────────────
+    // A nudge translates the whole cluster by deltaSamples, but no spike may
+    // pass its neighbour in .res: row i of .res, of every method's .spk/.fet
+    // and of the .clu is the same spike, and that shared index must never need
+    // reordering (spikeorder.h).  Each spike's target is clamped between its
+    // file neighbours -- a spike of another cluster is a hard wall, a
+    // neighbour from this cluster splits the gap -- so most spikes move the
+    // full delta and the few that would cross stop just short.  Timestamps
+    // are read from .res.pending, the authority the main loop also uses.
+    std::vector<int64_t> nudgeTarget(static_cast<size_t>(N));
+    int64_t orderClampCount = 0;
+    {
+        FILE* rr = fopen(pendingResPath.toLocal8Bit().constData(), "rb");
+        auto resAt = [&](int64_t p) -> int64_t {
+            int64_t v = 0;
+            if (rr && fseeko(rr, static_cast<off_t>(p) * static_cast<off_t>(sizeof(int64_t)),
+                             SEEK_SET) == 0
+                   && fread(&v, sizeof(int64_t), 1, rr) == 1)
+                return v;
+            return static_cast<int64_t>(clusteringData->featureValue(
+                static_cast<dataType>(p + 1), timeDim));
+        };
+        std::vector<int64_t> rows(static_cast<size_t>(N)), cur(static_cast<size_t>(N));
+        for (int64_t i = 0; i < N; ++i) {
+            rows[static_cast<size_t>(i)] = static_cast<int64_t>(
+                spkTable(1, static_cast<dataType>(i + 1))) - 1;
+            cur[static_cast<size_t>(i)]         = resAt(rows[static_cast<size_t>(i)]);
+            nudgeTarget[static_cast<size_t>(i)] = cur[static_cast<size_t>(i)] + deltaSamples;
+        }
+        orderClampCount = spikeorder::clampToNeighbours(
+            rows, cur, nudgeTarget,
+            static_cast<int64_t>(clusteringData->totalNbOfSpikes()), resAt);
+        if (rr) fclose(rr);
+    }
+
     //Overlay batch for the nudge's rewritten records (epoch-snapshot
     //step 7); published after the loop.  Not revertible: the nudge has no
     //reject path (pendingRealign never learns of it).
@@ -3246,7 +3281,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             oldTs64 = static_cast<int64_t>(clusteringData->featureValue(row, timeDim));
         }
         const dataType oldTs = static_cast<dataType>(oldTs64);
-        dataType newTs = oldTs + static_cast<dataType>(deltaSamples);
+        // Order-clamped target (see "Keep file order" above): oldTs + delta,
+        // stopped short of a neighbouring spike where it would cross one.
+        dataType newTs = static_cast<dataType>(nudgeTarget[static_cast<size_t>(i)]);
         if (newTs < 0) newTs = 0;
         if (maxValidTs > 0 && newTs > static_cast<dataType>(maxValidTs))
             newTs = static_cast<dataType>(maxValidTs);
@@ -3539,6 +3576,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                << " delta=" << deltaSamples
                << " N=" << N
                << " boundarySkip=" << boundarySkip
+               << " orderClamp=" << orderClampCount
                << " spatialClamp=" << spatialClampCount
                << " temporalClamp=" << temporalClampCount
                << " temporalZero=" << temporalZeroCount
@@ -3577,6 +3615,21 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         qInfo().noquote() << "[nudge]" << msg;
         if (auto* sb = app() ? app()->statusBar() : nullptr)
             sb->showMessage(msg, 8000);
+    }
+
+    // Surface the order clamp the same way: these spikes moved less than the
+    // requested delta because a full move would have passed a neighbour.
+    if (orderClampCount > 0) {
+        QString msg = QString(
+            "Nudge: cluster %1 — %2 of %3 spike(s) stopped short of a "
+            "neighbouring spike (spikes never change order).")
+            .arg(clusterId)
+            .arg(static_cast<long long>(orderClampCount))
+            .arg(static_cast<long long>(N));
+        qInfo().noquote() << "[nudge]" << msg;
+        if (boundarySkip == 0)          // don't overwrite the boundary message
+            if (auto* sb = app() ? app()->statusBar() : nullptr)
+                sb->showMessage(msg, 8000);
     }
 
     // Recompute per-dimension min/max so the scatter view world-window
