@@ -24,17 +24,28 @@ sections, get retired, or get re-scoped.  The status indicators are:
 
 ### 🎯 next
 
-**Land `STANDARDIZATION.md` + `CLAUDE.md` at repo root.**
-Drop-in for the standardization work just produced.  Adds `STANDARDIZATION.md`
-at root and a thin `CLAUDE.md` pointing to it plus
-`doc/klusters/CODING-STYLE-AUDIT.md`.  Eliminates cold-start drift on future
-sessions.  Estimate: trivial.
+**Workstation live pass over the compile-verified GUI work.**
+Much of the October GUI work (template curation, the paint refactor, the
+Klusters input/Overview redesign, NeuroScope's input adoption) is
+behaviour-preserving by construction but was only compile + link verified
+in the cloud build.  One pass on the reference session, following the
+"Live-pass status" / "Open" notes in the 2026-10-05 → 10-09 `CHANGELOG.md`
+entries: the lineage overlay (right-click menu, fold, band, ribbon, delete,
+amplitude tracking), the four matrix template strips + click-to-overlay,
+each repainted view after the paint refactor, and the Klusters + NeuroScope
+mouse gestures and Preferences ▸ Input rebind/persist/keymap round-trip.
+Check Preferences ▸ Input / Reset all before suspecting a regression (a
+stale saved override reads exactly like one).  Estimate: 1 session.
 
-**CI gate on `-Wshadow -Wall -Wextra`.**
-GitHub Actions matrix entry, ~30 lines YAML.  Locks in the m_-prefix audit
-gains; catches regressions silently.  Selectively `#pragma GCC diagnostic
-ignored "-Wunused-parameter"` on the few Qt slot signature sites that need
-it; don't blanket-disable.  Estimate: half a session.
+**Make the CI `-Wshadow` warnings a hard gate.**
+CI exists (`.github/workflows/ci.yml`, ubuntu-24.04, CPU, Qt6) and builds
+with `-Wall -Wextra -Wshadow`, but warnings are non-fatal: klusters and
+libklustersshared are shadow-clean, the other components are not yet
+audited.  Promote to `-Werror=shadow` per component as each is cleaned.
+Selectively `#pragma GCC diagnostic ignored "-Wunused-parameter"` on the
+few Qt slot signature sites that need it; don't blanket-disable.  Also
+outstanding from the Qt 6.4–6.12 work: a CI build matrix for 6.4 / 6.10 /
+6.12.  Estimate: half a session per component.
 
 **Fix `pca.nCh <= 64` reader bound in `klustersdoc.cpp`.**
 Real bug.  Reader silently invalidates PCA bases when nCh > 64; breaks
@@ -80,7 +91,49 @@ init).  Estimate: 2-3 sessions.
 From memory entries, this is duplicated.  Standalone refactor; doesn't
 require the full audit.  Estimate: half a session.
 
+**Drop the Template Library tab.**
+The last planned step of template curation.  The left-column Template
+palette replaced it as the editing surface; the tab
+(`DisplayType::TEMPLATE_LIBRARY`, `createDisplay`, the auto-show pref) is
+kept only as the advanced-CRUD fallback (merge / rename / update /
+regenerate) until the palette has proven out in the live pass above.
+Move or retire that CRUD first.  Estimate: 1 session.
+
+**fiber-kit `.wtl` v2 (and `.mti`/`.mtf`) reader mirror.**
+ns3 writes `.wtl` v2 (running mean/std/count per node); fiber-kit's
+`neuro_io.read_wtl`/`write_wtl` still speak v1 (spike lists), so fiber-kit
+cannot read current lineage files.  A separate fiber-kit patch, never
+cross-applied from ns3.  Estimate: half a session.
+
 ### 💭 considered
+
+**Template curation — open UX questions.**
+From the template-curation live runs, none blocking:
+- how to return from a single-node overlay to the full class band in
+  review mode, without changing primary or toggling edit mode;
+- node / class labels on the matrices' extra template cells;
+- exact per-spike out-of-window shading vs the current cheap range-overlap;
+- whether the template matrices should also gate under Templates mode;
+- a per-node cue (shade / alpha, or roots only) so a class's overlaid node
+  means are distinguishable (the circular-shift stagger was rejected);
+- showing a class's unit mean±std on bare class-select, before any fold;
+- the oblique-basis scope still reads `.wti`; consumers of the *final*
+  templates should read `.mti`/`.mtf`.
+
+**Input system — remaining options.**
+The Klusters and NeuroScope migrations are complete.  Optional:
+cross-active-scope conflict reporting (only within-scope clashes are
+flagged today); the policy on an in-scope conflict (block vs steal); and
+user-droppable keymap presets (an `install(DIRECTORY keymaps/ …)` rule plus
+a second `loadKeymapsFromDir` scan — presets are compiled in only).
+
+**Paint structure — optional polish.**
+The three refactor tiers are done.  Only if they clearly pay: a world/device
+coordinate RAII guard (instead of manual `resetTransform`), an overlay
+registry (register overlay objects instead of overriding
+`paintWidgetOverlays`, worthwhile only if the overlay set grows), and
+folding the Residual/Drift/Template matrices from `MatrixViewport` onto a
+shared base.
 
 **Probe-tab branch merge.**
 Half-merged probe migration polluting dead-code analysis (`getShankIndex`,
@@ -111,22 +164,6 @@ forget it exists.  Decision: is this becoming routine or staying offline?
 
 ## Later
 
-### 📋 planned
-
-**Test infrastructure scaffold.**
-Currently zero unit tests.  Minimal scaffold: round-trip tests for binary
-formats (`.res`, `.spk`, `.fet`, `.col`) and golden-file tests for
-`ParameterYamlReader` against known-good session YAMLs.  Catches
-regressions invisible to visual inspection.  Estimate: 1-2 sessions to
-build the scaffold; ongoing maintenance thereafter.
-
-**File format documentation.**
-Add `doc/formats/` with one `.md` per binary format.  `.col.N` particularly
-needs this (32B header + 32B params + template table + record table layout
-currently lives only in C++ comments).  Makes the project legible to future
-contributors and to external tooling (NWB conversion, custom analysis
-scripts).  Estimate: 1 session.
-
 ### 💭 considered
 
 **Branching discipline review.**
@@ -154,7 +191,63 @@ Same as neuroscope — unaudited, fruit unknown.  Estimate: 1-2 sessions.
 ## Done
 
 (Recent completions, kept for reference.  Items here move to
-git history / `doc/CHANGES.md` after roughly a quarter.)
+git history / `CHANGELOG.md` after roughly a quarter.)
+
+### ✅ NeuroScope input system on the shared engine *(2026-10-09 → 10-10)*
+
+The `input::` engine moved from Klusters into `libklustersshared` and now
+drives NeuroScope too: every menu shortcut is mirrored into the registry
+with a startup conflict audit, the TraceView mouse monolith is decomposed
+into per-tool-mode commands, the Position/Spectral zoom goes through the
+registry, and NeuroScope gets the shared Preferences ▸ Input page, keymap
+layouts, cheat-sheet and an active-tool indicator.  The audit's first
+catch: two silently dead shortcuts (Ctrl+Shift+A, Ctrl+Shift+S), now
+resolved.  Palette navigation stays inline by design.  Reference:
+`src/neuroscope/docs/INPUT_SYSTEM.md`.
+
+### ✅ Klusters input-binding architecture + Overview redesign *(2026-10-06 → 10-08)*
+
+Every key, mouse button and wheel binding on the registry and rebindable in
+a generated Preferences ▸ Input page (key / button / wheel editors, conflict
+tint, reset-all), with keymap layouts and a registry-driven cheat-sheet.
+The Overview Display now navigates uniformly (Ctrl+wheel zoom, Ctrl-drag
+pan), defaults to a plain pointer, has the four curation tools as Ctrl+1–4
+toggles, and picks on a normal click.  Decided along the way: full
+command/scope/resolver from the start; modifier gestures rebindable via
+`ModMatch::AtLeast`; modal keys are `Locked` (read-only in Preferences);
+matrices share navigation by composition, not a base class; TraceView's
+press split per mode.  The four structural inline key handlers are the
+documented ceiling, not unfinished work.  Reference:
+`src/klusters/docs/INPUT_SYSTEM.md`.
+
+### ✅ Klusters paint-structure refactor *(2026-10-06)*
+
+Monotonic `invalidate()` across all five classic views (150 sites); a
+`BufferedView` base owning the double buffer (Waveform / Cluster /
+Correlation migrated; ErrorMatrix and Trace bespoke by design); WaveformView
+channel-geometry helpers.  Kills the "coalesced paint dropped my redraw"
+bug class.  Reference: `src/klusters/docs/VIEW_SYSTEM.md`.
+
+### ✅ Template curation in the feature space *(2026-10-05 → 10-06)*
+
+Hand-built template lineages (drift roots + adapt/collision leaves) edited on
+the feature scatter (Shift+E), nodes as running mean/std/count summaries,
+`.wtl` v2 + separate `.mti`/`.mtf` model files, native generation in
+neurosuite-core, a Template palette, a mean±std band over the waveforms,
+and cluster×template strips on all four curation matrices.  Follow-ups
+(drop the Template Library tab, fiber-kit `.wtl` v2 mirror, open UX
+questions) are under Soon.
+
+### ✅ Project docs: standardization, formats, tests, CI
+
+`STANDARDIZATION.md` and a thin `CLAUDE.md` landed (the former now in
+`doc/dev/`), ending cold-start drift.  Per-format references exist in
+`doc/ndmanager-plugins/formats/` (including `.col`) and
+`src/libneurosuite-core/docs/FILE_FORMATS.md`.  A ctest suite (format I/O
+for `.spk` / `.wti` / `.wtl`, custody conformance, the input registry,
+template lineage, …) and a CI build (`.github/workflows/ci.yml`) are in
+place.  Still uncovered by tests: `.res` / `.fet` / `.col` round-trips and
+golden-file tests for `ParameterYamlReader` (see Test debt).
 
 ### ✅ libklustersshared 5-phase audit + dead-code triage *(this session)*
 
@@ -237,18 +330,22 @@ These don't fit the time-horizon structure but are worth tracking.
 
 ### Documentation debt
 
-- `doc/formats/` doesn't exist yet (planned, see Later)
-- `CHANGELOG.md` not updated since last few features
-- Klusters internal architecture doc is good (`doc/klusters/CODING-STYLE-AUDIT.md`),
-  but no equivalents for KiloKlustaKwik, ndmanager, neuroscope
-- `STANDARDIZATION.md` exists but not yet at repo root (queued, see Next)
+- Klusters has internals references (`src/klusters/docs/`: input, view,
+  document model, concurrency, plugin API) and NeuroScope an input-system
+  reference; KiloKlustaKwik and ndmanager have no equivalents yet
+- No format reference yet for the `.mti` / `.mtf` model files (they reuse
+  the `.wti` / `.spk` schema; a short note in `doc/ndmanager-plugins/formats/`
+  would do)
 
 ### Test debt
 
-- Zero unit tests checked in (planned to address, see Later)
-- All verification depends on running against `jg05-20120316` group 7 or
+- No round-trip tests for `.res` / `.fet` / `.col`, and no golden-file tests
+  for `ParameterYamlReader`
+- The GUI work is untestable in the cloud build; behaviour depends on the
+  workstation live pass (see Next) against `jg05-20120316` group 7 or
   `eb05-20251118` group 25
-- No CI build matrix yet (planned to address, see Next)
+- CI builds one configuration (Qt6, CPU) with non-fatal warnings; no
+  -Wshadow gate or Qt-version matrix yet (see Next)
 
 ### Schema debt
 
@@ -330,5 +427,5 @@ measurement that identifies the actual bottleneck.
 
 ---
 
-*Last updated: 2026-06-07.  Update this date whenever items shift between
+*Last updated: 2026-10-11.  Update this date whenever items shift between
 sections, complete, or are added.*
