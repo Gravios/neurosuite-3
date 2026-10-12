@@ -104,6 +104,10 @@ public:
     void setShowEapClassMembers(bool b);        ///< ring the selected class's .eap members
     bool getShowEapClassMembers() const;
 
+    // Density heatmap (Shift+H): Gaussian smoothing kernel sigma, screen pixels.
+    void setDensitySigmaPx(double v);
+    double getDensitySigmaPx() const;
+
 };
 
 #endif

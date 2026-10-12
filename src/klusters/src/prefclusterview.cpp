@@ -77,6 +77,10 @@ PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent
     showCollisionsCheckBox->setToolTip(tr(
         "Overlay a ring on feature-view spikes whose .eap row has two or more template\n"
         "classes set (collisions) — so multi-membership is visible over the .clu colours."));
+    densitySigmaSpinBox->setToolTip(tr(
+        "Width (sigma) of the Gaussian kernel that smooths the density heatmap, in screen\n"
+        "pixels.  Small values keep fine structure; larger ones merge nearby points into\n"
+        "smooth basins.  0 shows the raw 2-pixel binned counts."));
     showClassMembersCheckBox->setToolTip(tr(
         "Ring the .eap members of the template class selected in the template-library\n"
         "view — a class's membership footprint across the feature view, over .clu colours."));
@@ -238,4 +242,12 @@ void PrefClusterView::setShowEapClassMembers(bool b){
 
 bool PrefClusterView::getShowEapClassMembers() const{
     return showClassMembersCheckBox->isChecked();
+}
+
+void PrefClusterView::setDensitySigmaPx(double v){
+    densitySigmaSpinBox->setValue(v);
+}
+
+double PrefClusterView::getDensitySigmaPx() const{
+    return densitySigmaSpinBox->value();
 }

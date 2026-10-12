@@ -393,6 +393,38 @@
        </layout>
       </widget>
      </item>
+     <item row="3" column="1">
+      <widget class="QGroupBox" name="densityGroupBox">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="title">
+        <string>Density heatmap (Shift+H)</string>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_density">
+        <item row="0" column="0">
+         <widget class="QLabel" name="densitySigmaLabel">
+          <property name="text"><string>Smoothing kernel σ</string></property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QDoubleSpinBox" name="densitySigmaSpinBox">
+          <property name="minimumSize"><size><width>90</width><height>0</height></size></property>
+          <property name="maximumSize"><size><width>120</width><height>16777215</height></size></property>
+          <property name="suffix"><string> px</string></property>
+          <property name="decimals"><number>1</number></property>
+          <property name="minimum"><double>0.0</double></property>
+          <property name="maximum"><double>30.0</double></property>
+          <property name="singleStep"><double>0.5</double></property>
+          <property name="value"><double>3.0</double></property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
     </layout>
    </item>
   </layout>

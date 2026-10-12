@@ -115,6 +115,7 @@ void Configuration::read() {
     projectionOutOfScopeHidden = settings.value("projectionOutOfScopeHidden", false).toBool();
     showEapCollisions          = settings.value("showEapCollisions",          false).toBool();
     showEapClassMembers        = settings.value("showEapClassMembers",        false).toBool();
+    setDensitySigmaPx(settings.value("densitySigmaPx", 3.0).toDouble());
     knnK         = settings.value("knnK",         10).toInt();
     knnThreshold = settings.value("knnThreshold", 0.50).toDouble();
     knnMinNew    = settings.value("knnMinNew",    5).toInt();
@@ -265,6 +266,7 @@ void Configuration::write() const {
     settings.setValue("projectionOutOfScopeHidden", projectionOutOfScopeHidden);
     settings.setValue("showEapCollisions",          showEapCollisions);
     settings.setValue("showEapClassMembers",        showEapClassMembers);
+    settings.setValue("densitySigmaPx",             densitySigmaPx);
     settings.setValue("knnK",         knnK);
     settings.setValue("knnThreshold", knnThreshold);
     settings.setValue("knnMinNew",    knnMinNew);

@@ -651,6 +651,7 @@ private:
     QImage                       densityImage_;
     QRect                        densityRect_;   ///< widget rect the image covers
     QString                      densityKey_;    ///< embedding signature the image was built for
+    double                       densitySigmaUsed_ = -1.0;   ///< kernel sigma (px) the image was built with
     void paintDensityOverlay(QPainter& p, bool embedding);   ///< device coordinates
     void buildDensityImage(const QRect& area, bool embedding);
     int                          lineageActiveClass_ = -1;  ///< the PRIMARY template class (palette ★); -1 = none.

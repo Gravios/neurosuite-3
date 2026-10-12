@@ -1043,6 +1043,12 @@ void ClusterView::paintDensityOverlay(QPainter& p, bool embedding)
     const QRect area = embedding ? contentsRect() : rect();
     if (area.width() < 2 || area.height() < 2) return;
 
+    // A new smoothing kernel from the preferences invalidates either cache.
+    if (densitySigmaUsed_ != configuration().getDensitySigmaPx()) {
+        densityDirty_ = true;
+        densityKey_.clear();
+    }
+
     if (embedding) {
         // The embedding repaints wholesale on every event, so rebuild only when what
         // it shows changed: the coordinates, their bounds, the widget size, or the
@@ -1113,24 +1119,30 @@ void ClusterView::buildDensityImage(const QRect& area, bool embedding)
         }
     }
 
-    // Separable Gaussian smoothing (sigma 1.5 cells), so isolated spikes read as
-    // soft spots rather than single cells.
-    constexpr int radius = 4;
-    constexpr double sigma = 1.5;
-    float kernel[2 * radius + 1];
-    float ksum = 0.0f;
-    for (int k = -radius; k <= radius; ++k) {
-        kernel[k + radius] = static_cast<float>(std::exp(-0.5 * k * k / (sigma * sigma)));
-        ksum += kernel[k + radius];
+    // Separable Gaussian smoothing, so isolated spikes read as soft spots rather
+    // than single cells.  The kernel width is the Cluster View preference, in
+    // screen pixels (converted to cells here); 0 leaves the binned counts as they
+    // are.  The kernel is cut at 3 sigma.
+    densitySigmaUsed_ = configuration().getDensitySigmaPx();
+    const double sigma = densitySigmaUsed_ / cell;
+    const int radius = sigma > 0.0 ? qMax(1, static_cast<int>(std::ceil(3.0 * sigma))) : 0;
+    std::vector<float> kernel(static_cast<size_t>(2 * radius + 1), 1.0f);
+    if (radius > 0) {
+        float ksum = 0.0f;
+        for (int k = -radius; k <= radius; ++k) {
+            kernel[static_cast<size_t>(k + radius)] =
+                static_cast<float>(std::exp(-0.5 * k * k / (sigma * sigma)));
+            ksum += kernel[static_cast<size_t>(k + radius)];
+        }
+        for (float& k : kernel) k /= ksum;
     }
-    for (float& k : kernel) k /= ksum;
     std::vector<float> tmp(grid.size(), 0.0f);
     for (int y = 0; y < gh; ++y)
         for (int x = 0; x < gw; ++x) {
             float acc = 0.0f;
             for (int k = -radius; k <= radius; ++k) {
                 const int xx = qBound(0, x + k, gw - 1);
-                acc += kernel[k + radius] * grid[static_cast<size_t>(y) * gw + xx];
+                acc += kernel[static_cast<size_t>(k + radius)] * grid[static_cast<size_t>(y) * gw + xx];
             }
             tmp[static_cast<size_t>(y) * gw + x] = acc;
         }
@@ -1140,7 +1152,7 @@ void ClusterView::buildDensityImage(const QRect& area, bool embedding)
             float acc = 0.0f;
             for (int k = -radius; k <= radius; ++k) {
                 const int yy = qBound(0, y + k, gh - 1);
-                acc += kernel[k + radius] * tmp[static_cast<size_t>(yy) * gw + x];
+                acc += kernel[static_cast<size_t>(k + radius)] * tmp[static_cast<size_t>(yy) * gw + x];
             }
             grid[static_cast<size_t>(y) * gw + x] = acc;
             maxD = qMax(maxD, acc);

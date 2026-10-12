@@ -1808,6 +1808,11 @@ void KlustersApp::applyPreferences() {
     // Templates mode toggled -> show/hide + (re)load the template palette live.
     if (templatePanel) { reloadTemplatePalette(); updateTemplatePanelVisibility(); }
 
+    // A new density-heatmap kernel: repaint the views showing the heatmap; each
+    // notices the changed sigma and rebuilds its image.
+    for (ClusterView* cv : findChildren<ClusterView*>())
+        if (cv->densityOverlayActive()) cv->update();
+
     int newNbUndo = configuration().getNbUndo();
     if(nbUndo != newNbUndo){
         if(mainDock)
