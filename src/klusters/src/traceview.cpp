@@ -54,17 +54,17 @@
 const int TraceView::XMARGIN = 50;
 const int TraceView::YMARGIN = 0;
 
-TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiColumns,bool verticalLines,
-                     bool raster,bool waveforms,bool labelsDisplay,QList<int>& channelsToDisplay,int unitGain,int acquisitionGain,long start,long timeFrameWidth,
-                     ChannelColors* channelColors,QMap<int, QList<int> >* groupsChannels,QMap<int,int>* channelsGroups,
-                     QList<int>& channelOffsets,QList<int>& gains,const QList<int>& skippedChannels,QWidget* parent, const char* name,const QColor& backgroundColor,
-                     QStatusBar* statusBar,
+TraceView::TraceView(TracesProvider& provider,bool greyScale,bool multiCol,bool vertLines,
+                     bool showRaster,bool showWaveforms,bool labelsDisplay,QList<int>& channelsToDisplay,int uGain,int acqGain,long start,long frameWidth,
+                     ChannelColors* colors,QMap<int, QList<int> >* grpChannels,QMap<int,int>* chGroups,
+                     QList<int>& offsets,QList<int>& chGains,const QList<int>& skipped,QWidget* parent, const char* name,const QColor& backgroundColor,
+                     QStatusBar* bar,
                      int minSize,int maxSize,int windowTopLeft,int windowBottomRight,int border):
     BufferedView(10,0,parent,name,backgroundColor,minSize,maxSize,windowTopLeft,windowBottomRight,border),
-    greyScaleMode(greyScale),statusBar(statusBar),tracesProvider(tracesProvider),
-    multiColumns(multiColumns),verticalLines(verticalLines),raster(raster),waveforms(waveforms),dataReady(false),data(),
-    channelOffsets(channelOffsets),gains(gains),channelColors(channelColors),groupsChannels(groupsChannels),channelsGroups(channelsGroups),
-    acquisitionGain(acquisitionGain),unitGain(unitGain),xMargin(10),yMargin(0),columnDisplayChanged(false),resized(false),groupsChanged(false),previousDragOrdinate(0),lastClickOrdinate(0),
+    greyScaleMode(greyScale),statusBar(bar),tracesProvider(provider),
+    multiColumns(multiCol),verticalLines(vertLines),raster(showRaster),waveforms(showWaveforms),dataReady(false),data(),
+    channelOffsets(offsets),gains(chGains),channelColors(colors),groupsChannels(grpChannels),channelsGroups(chGroups),
+    acquisitionGain(acqGain),unitGain(uGain),xMargin(10),yMargin(0),columnDisplayChanged(false),resized(false),groupsChanged(false),previousDragOrdinate(0),lastClickOrdinate(0),
     nbSamplesModified(false),alreadySelected(false),isInit(true),channelforVoltageComputation(0),startingIndex(0),
     showLabels(labelsDisplay),showCalibrationScale(false),downSampling(1),zoomed(false),firstZoom(true),
     doubleClick(false),zoomFactor(0),maxZoomReached(false),zoomOut(false),printState(false),
@@ -74,7 +74,7 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     for(channelsToShowIterator = channelsToDisplay.begin(); channelsToShowIterator != channelsToDisplay.end(); ++channelsToShowIterator)
         shownChannels.append(*channelsToShowIterator);
 
-    skipStatusChanged(skippedChannels);
+    skipStatusChanged(skipped);
 
     //Determine the screen resolution in pixel by centimeters
     QPrinter printer;
@@ -91,13 +91,13 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     mode = NONE;
 
     startTime = start;
-    endTime = start + timeFrameWidth;
-    this->timeFrameWidth = timeFrameWidth;
-    recordingLength = tracesProvider.recordingLength();
+    endTime = start + frameWidth;
+    this->timeFrameWidth = frameWidth;
+    recordingLength = provider.recordingLength();
 
     //Set the drawing variables
-    nbChannels = tracesProvider.getNbChannels();
-    double samplingRate = tracesProvider.getSamplingRate();
+    nbChannels = provider.getNbChannels();
+    double samplingRate = provider.getSamplingRate();
 
     updateShownGroupsChannels(shownChannels);
 
@@ -118,29 +118,29 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     X0 = borderX;
 
     //The initial offset for each channel is set to zero.
-    if(channelOffsets.isEmpty()) {
+    if(offsets.isEmpty()) {
         for(int i = 0; i < nbChannels; ++i) {
-            channelOffsets.append(0);
+            offsets.append(0);
         }
     }
 
     //The initial amplitude and factor for each channel.
-    if(gains.isEmpty()) {
-        setGains(unitGain,acquisitionGain);
+    if(chGains.isEmpty()) {
+        setGains(uGain,acqGain);
     }else{
         //Compute alpha: (3.traceVspace) / (Utheta . acquisitionGain)
         //Utheta: amplitude maximal of theta in milivolts, 0.4 mv
         alpha =  static_cast<float>(static_cast<float>(3 * traceVspace) /
-                                    static_cast<float>(0.4 *  static_cast<float>(acquisitionGain)));
+                                    static_cast<float>(0.4 *  static_cast<float>(acqGain)));
         //factor = alpha * (4/3)^gain
         for(int i = 0; i < nbChannels; ++i){
-            float Yfactor = static_cast<float>(alpha * pow(0.75,gains[i]));
+            float Yfactor = static_cast<float>(alpha * pow(0.75,chGains[i]));
             channelFactors.append(Yfactor);
         }
     }
 
     //Set Connection(s).
-    connect(&tracesProvider, &TracesProvider::dataReady, this,
+    connect(&provider, &TracesProvider::dataReady, this,
         static_cast<void(TraceView::*)(Array<dataType>&,QObject*)>(&TraceView::dataAvailable));
 
     //Set the display of the labels, the default is to hide them, if need it change that.
@@ -152,7 +152,7 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
 
     //compute the size of the window if the display is not on multicolumns,
     //in that case the viewport needs to be compute before.
-    if(!multiColumns)
+    if(!multiCol)
         updateWindow();
 
     //Create the cursors
@@ -172,7 +172,7 @@ TraceView::TraceView(TracesProvider& tracesProvider,bool greyScale,bool multiCol
     setMouseTracking(true);
 
     //Get the data.
-    tracesProvider.requestData(startTime,endTime,this,startTimeInRecordingUnits);
+    provider.requestData(startTime,endTime,this,startTimeInRecordingUnits);
 }
 
 
@@ -185,11 +185,11 @@ TraceView::~TraceView()
 
 }
 
-void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator){
+void TraceView::dataAvailable(Array<dataType>& newData,QObject* initiator){
     //If another widget was the initiator of the request, ignore the data.
     if(initiator != this) return;
 
-    if(data.nbOfRows() == 0){
+    if(newData.nbOfRows() == 0){
         QApplication::restoreOverrideCursor();
 
         QMessageBox::critical(this,QObject::tr("IO Error"), QObject::tr("An error has occured, the data file could not be opened or the file size is incorrect."));
@@ -198,7 +198,7 @@ void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator){
         return;
     }
 
-    this->data = data;
+    this->data = newData;
     dataReady = true;
 
     updateWindow();
@@ -262,13 +262,13 @@ void TraceView::updateCursor()
 
 }
 
-void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator,QString providerName){
+void TraceView::dataAvailable(Array<dataType>& newData,QObject* initiator,QString providerName){
     //If another widget was the initiator of the request, ignore the data.
     if(initiator != this) return;
 
     ClusterData* clusterData = clustersData[providerName];
     clusterData->setStatus(true);
-    clusterData->setData(data);
+    clusterData->setData(newData);
 
     //The following code was done in case of threads, without thread the trace data arrive always last
     bool ready = false;
@@ -367,12 +367,12 @@ void TraceView::updateClusterData(bool active){
 
 }
 
-void TraceView::displayTimeFrame(long start,long timeFrameWidth){
+void TraceView::displayTimeFrame(long start,long frameWidth){
 
     startTime = start;
-    endTime = start + timeFrameWidth;
-    if(this->timeFrameWidth != timeFrameWidth) nbSamplesModified = true;
-    this->timeFrameWidth = timeFrameWidth;
+    endTime = start + frameWidth;
+    if(this->timeFrameWidth != frameWidth) nbSamplesModified = true;
+    this->timeFrameWidth = frameWidth;
 
     //Request the data
     dataReady = false;
@@ -513,7 +513,7 @@ void TraceView::paintEvent ( QPaintEvent*){
 
     if(drawContentsMode == REDRAW && dataReady){
         QRect contentsRec = contentsRect();
-        QRect r((QRect)window);
+        QRect r(static_cast<QRect>(window));
 
         //If the left margin is not visible (the user zoomed without taking it in his selection), the viewport and the contentsRec
         //have the same size.
@@ -606,16 +606,16 @@ void TraceView::setClusterVerticalLines(bool lines){
     update();
 }
 
-void TraceView::setClusterRaster(bool raster){
-    this->raster = raster;
+void TraceView::setClusterRaster(bool showRaster){
+    this->raster = showRaster;
 
     //Everything has to be redraw
     updateWindow();
     update();
 }
 
-void TraceView::setClusterWaveforms(bool waveforms){
-    this->waveforms = waveforms;
+void TraceView::setClusterWaveforms(bool showWaveforms){
+    this->waveforms = showWaveforms;
 
     //Everything has to be redraw
     invalidate(REDRAW);
@@ -641,11 +641,11 @@ void TraceView::resetOffsets(const QMap<int,int>& selectedChannelDefaultOffsets)
 }
 
 
-void TraceView::resetGains(const QList<int>& selectedChannels){
+void TraceView::resetGains(const QList<int>& channelIds){
     //factor = alpha * (4/3)^gain, gain equals 0 at the begining
 
     QList<int>::const_iterator iterator;
-    for(iterator = selectedChannels.begin(); iterator != selectedChannels.end(); ++iterator){
+    for(iterator = channelIds.begin(); iterator != channelIds.end(); ++iterator){
         gains[*iterator] = 0;
         channelFactors[*iterator] = alpha;
     }
@@ -724,14 +724,14 @@ void TraceView::groupsModified(bool active){
     if(active) update();
 }
 
-void TraceView::setGains(int gain,int acquisitionGain){
+void TraceView::setGains(int gain,int acqGain){
     unitGain = gain;
-    this->acquisitionGain = acquisitionGain;
+    this->acquisitionGain = acqGain;
 
     //Compute alpha: (3.traceVspace) / (Utheta . acquisitionGain)
     //Utheta: amplitude maximal of theta in milivolts, 0.4 mv
     alpha =  static_cast<float>(static_cast<float>(3 * traceVspace) /
-                                static_cast<float>(0.4 *  static_cast<float>(acquisitionGain)));
+                                static_cast<float>(0.4 *  static_cast<float>(acqGain)));
 
     //factor = alpha * (4/3)^gain, gain equals 0 at the begining
     gains.clear();
@@ -751,7 +751,7 @@ void TraceView::setGains(int gain,int acquisitionGain){
 
 void TraceView::computeChannelDisplayGain(){
     // Those gains are computed as (unitGain.alpha / screenResolution) .(world-viewport height ratio) .channelFactor).
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     float heightRatio = static_cast<float>(static_cast<float>(viewport.height()) / static_cast<float>(r.height()));
     float beta = static_cast<float>((static_cast<float>(unitGain) * alpha)/ static_cast<float>(screenResolution)) * heightRatio;
 
@@ -765,7 +765,7 @@ void TraceView::computeChannelDisplayGain(){
 
 void TraceView::computeChannelDisplayGain(const QList<int>& channelIds){
     // Those gains are computed as (unitGain.alpha / screenResolution) .(world-viewport height ratio) .0.75^gain[i]).
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     float heightRatio = static_cast<float>(static_cast<float>(viewport.height()) / static_cast<float>(r.height()));
     float beta = static_cast<float>((static_cast<float>(unitGain) * alpha)/ static_cast<float>(screenResolution)) * heightRatio;
 
@@ -986,10 +986,10 @@ void TraceView::updateWindow(){
 
             //Compute the maximum number of clusters which will be drawn beneath a group
             QList<int> groupIds = shownGroupsChannels.keys();
-            QList<int>::iterator iterator;
-            for(iterator = groupIds.begin(); iterator != groupIds.end(); ++iterator){
+            QList<int>::iterator groupIterator;
+            for(groupIterator = groupIds.begin(); groupIterator != groupIds.end(); ++groupIterator){
                 int currentNbClusters = 0;
-                QList<int> clusterFileList = (*groupClusterFiles)[*iterator];
+                QList<int> clusterFileList = (*groupClusterFiles)[*groupIterator];
                 QList<int>::iterator spikeGroupIterator;
                 for(spikeGroupIterator = clusterFileList.begin(); spikeGroupIterator != clusterFileList.end(); ++spikeGroupIterator){
                     if(selectedClusters.contains(*spikeGroupIterator)){
@@ -1209,7 +1209,7 @@ void TraceView::drawTrace(QPainter& painter,int limit,int basePosition,int X,int
 }
 
 void TraceView::drawTraces(const QList<int> &channels,bool highlight){
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
 
     //Create a painter to paint on the double buffer
     QPainter painter;
@@ -1354,32 +1354,32 @@ void TraceView::drawTraces(const QList<int> &channels,bool highlight){
                     dataType clusterId = currentData(2,i);
 
                     if(clusterList.contains(clusterId)){
-                        QColor color = colors->color(clusterId);
+                        QColor clusterColor = colors->color(clusterId);
                         for(int j = currentIndex; j <= nbSamples;++j){
                             if(firstIndex > traceInfo(1,j)) continue;//case 1
                             else if(firstIndex == traceInfo(1,j)){//case 2
-                                QPolygon trace(nbWaveformSamples);
+                                QPolygon waveform(nbWaveformSamples);
                                 int pos = 0;
                                 for(int k = firstIndex;k<= lastIndex;++k){
-                                    trace.setPoint(pos,traceInfo(2,k),traceInfo(3,k));
+                                    waveform.setPoint(pos,traceInfo(2,k),traceInfo(3,k));
                                     pos++;
                                 }
                                 if(highlight){
-                                    QPen pen(color,2);
+                                    QPen pen(clusterColor,2);
                                     pen.setCosmetic(true);
                                     painter.setPen(pen);
-                                    painter.drawPolyline(trace);
+                                    painter.drawPolyline(waveform);
                                 }
                                 else{
                                     QPen pen(palette().color(backgroundRole()),2);
                                     pen.setCosmetic(true);
                                     painter.setPen(pen);
-                                    painter.drawPolyline(trace);
-                                    pen.setColor(color);
+                                    painter.drawPolyline(waveform);
+                                    pen.setColor(clusterColor);
                                     pen.setWidth(1);
                                     pen.setCosmetic(true);
                                     painter.setPen(pen);
-                                    painter.drawPolyline(trace);
+                                    painter.drawPolyline(waveform);
                                 }
                                 currentIndex = firstIndex;
                                 break;
@@ -1401,23 +1401,23 @@ void TraceView::drawTraces(const QList<int> &channels,bool highlight){
         QPen pen(colorLegend);
         pen.setCosmetic(true);
         painter.setPen(pen); //set the color for the legends.
-        QRect windowRectangle((QRect)window);
+        QRect windowRectangle(static_cast<QRect>(window));
         for(iterator = channels.begin();iterator != channels.end();++iterator){
             //if the channel is skipped, do no draw it
             if(skippedChannels.contains(*iterator)) continue;
 
             int position = channelsStartingOrdinate[*iterator];
             int abscissa = channelsStartingAbscissa[*iterator];
-            QRect r;
+            QRect labelRect;
             QRect rHighlight;
             //If the view was zoomed and the left margin (where the ids and gains of the channels of the first group are displayed) is not
             //shown (r.left() != 0), the coordinates have to be adjusted. Indeed, this margin is outside the world but in the viewport.
             if(windowRectangle.left() != 0){
-                r = QRect(worldToViewport(abscissa,position).x() - xMargin,worldToViewport(abscissa,position).y(),xMargin - 4,worldToViewportHeight(traceVspace + Yspace));
+                labelRect = QRect(worldToViewport(abscissa,position).x() - xMargin,worldToViewport(abscissa,position).y(),xMargin - 4,worldToViewportHeight(traceVspace + Yspace));
                 rHighlight = QRect(worldToViewport(abscissa,position).x() - xMargin,worldToViewport(abscissa,position).y(),xMargin - 4,12);
             }
             else{
-                r = QRect(worldToViewport(abscissa,position).x() + 4,worldToViewport(abscissa,position).y(),xMargin - 4,worldToViewportHeight(traceVspace + Yspace));
+                labelRect = QRect(worldToViewport(abscissa,position).x() + 4,worldToViewport(abscissa,position).y(),xMargin - 4,worldToViewportHeight(traceVspace + Yspace));
                 rHighlight = QRect(worldToViewport(abscissa,position).x() + 4,worldToViewport(abscissa,position).y(),xMargin - 4,12);
             }
             float gain = channelDisplayGains[*iterator];
@@ -1425,7 +1425,7 @@ void TraceView::drawTraces(const QList<int> &channels,bool highlight){
                 painter.fillRect(rHighlight,palette().highlight());
             else
                 painter.fillRect(rHighlight,palette().color(backgroundRole()));
-            painter.drawText(r,Qt::AlignHCenter | Qt::AlignTop,QString::fromLatin1("%1 x%2").arg(*iterator).arg(gain,0,'f',2));
+            painter.drawText(labelRect,Qt::AlignHCenter | Qt::AlignTop,QString::fromLatin1("%1 x%2").arg(*iterator).arg(gain,0,'f',2));
         }
     }
 
@@ -1468,15 +1468,15 @@ void TraceView::drawTraces(QPainter& painter){
 
             //Draw events
             if(!selectedEvents.isEmpty()){
-                QRect windowRectangle((QRect)window);
+                QRect windowRectangle(static_cast<QRect>(window));
                 int top = windowRectangle.top();
                 int bottom = windowRectangle.bottom();
                 QPen pen(Qt::DotLine);
 
-                QMap<QString, QList<int> >::Iterator iterator;
-                for(iterator = selectedEvents.begin(); iterator != selectedEvents.end(); ++iterator){
-                    QList<int> eventList = iterator.value();
-                    QString providerName = iterator.key();
+                QMap<QString, QList<int> >::Iterator eventIterator;
+                for(eventIterator = selectedEvents.begin(); eventIterator != selectedEvents.end(); ++eventIterator){
+                    QList<int> eventList = eventIterator.value();
+                    QString providerName = eventIterator.key();
                     if(eventList.size() == 0 || eventsData[providerName] == 0) continue;
                     ItemColors* colors = providerItemColors[providerName];
                     Array<dataType>& currentData = static_cast<EventData*>(eventsData[providerName])->getTimes();
@@ -1497,7 +1497,7 @@ void TraceView::drawTraces(QPainter& painter){
                 }
             }//events
             if(verticalLines && nbClusters != 0){
-                QRect windowRectangle((QRect)window);
+                QRect windowRectangle(static_cast<QRect>(window));
                 int top = windowRectangle.top();
                 int bottom = windowRectangle.bottom();
                 QList<int> clusterFileList = (*groupClusterFiles)[*iterator];
@@ -1584,8 +1584,8 @@ void TraceView::drawTraces(QPainter& painter){
                     if(!waveforms || (waveforms && !areClustersToDraw) || (waveforms && areClustersToDraw && !selectedClusters.contains(clusterFileId))){
                         QPolygon trace(nbSamples);
                         for(int i = 0; i < nbSamples;++i){
-                            int y = positions.at(j) - static_cast<long>(data(i + 1,channelId + 1) * channelFactors[channelId]);
-                            trace.setPoint(i,X + x,y);
+                            int sampleY = positions.at(j) - static_cast<long>(data(i + 1,channelId + 1) * channelFactors[channelId]);
+                            trace.setPoint(i,X + x,sampleY);
                             x += Xstep;
                         }
                         painter.drawPolyline(trace);
@@ -1595,11 +1595,11 @@ void TraceView::drawTraces(QPainter& painter){
                         Array<dataType> traceInfo(3,nbSamples);
                         QPolygon trace(nbSamples);
                         for(int i = 1; i <= nbSamples;++i){
-                            int y = positions.at(j) - static_cast<long>(data(i,channelId + 1) * channelFactors[channelId]);
-                            trace.setPoint(i - 1,X + x,y);
+                            int sampleY = positions.at(j) - static_cast<long>(data(i,channelId + 1) * channelFactors[channelId]);
+                            trace.setPoint(i - 1,X + x,sampleY);
                             traceInfo(1,i) = i;
                             traceInfo(2,i) = X + x;
-                            traceInfo(3,i) = y;
+                            traceInfo(3,i) = sampleY;
                             x += Xstep;
                         }
                         painter.drawPolyline(trace);
@@ -1619,23 +1619,23 @@ void TraceView::drawTraces(QPainter& painter){
                             dataType clusterId = currentData(2,i);
 
                             if(clusterList.contains(clusterId)){
-                                QColor color = colors->color(clusterId);
-                                QPen pen(color,1);
-                                pen.setCosmetic(true);
+                                QColor clusterColor = colors->color(clusterId);
+                                QPen clusterPen(clusterColor,1);
+                                clusterPen.setCosmetic(true);
                                 if(selectedChannels.contains(channelId))
-                                    pen.setWidth(2);
-                                painter.setPen(pen);
+                                    clusterPen.setWidth(2);
+                                painter.setPen(clusterPen);
 
-                                for(int j = currentIndex; j <= nbSamples;++j){
-                                    if(firstIndex > traceInfo(1,j)) continue;//case 1
-                                    else if(firstIndex == traceInfo(1,j)){//case 2
-                                        QPolygon trace(nbWaveformSamples);
+                                for(int sampleIndex = currentIndex; sampleIndex <= nbSamples;++sampleIndex){
+                                    if(firstIndex > traceInfo(1,sampleIndex)) continue;//case 1
+                                    else if(firstIndex == traceInfo(1,sampleIndex)){//case 2
+                                        QPolygon waveform(nbWaveformSamples);
                                         int pos = 0;
                                         for(int k = firstIndex;k<= lastIndex;++k){
-                                            trace.setPoint(pos,traceInfo(2,k),traceInfo(3,k));
+                                            waveform.setPoint(pos,traceInfo(2,k),traceInfo(3,k));
                                             pos++;
                                         }
-                                        painter.drawPolyline(trace);
+                                        painter.drawPolyline(waveform);
                                         currentIndex = firstIndex;
                                         break;
                                     }
@@ -1648,7 +1648,7 @@ void TraceView::drawTraces(QPainter& painter){
 
             //Loop on all the selected clusters (first on the cluster files containing selected clusters) if the raster is asked.
             if(raster && nbClusters != 0){
-                int y = Y0Raster;
+                int rasterY = Y0Raster;
 
                 QList<int> clusterFileList = (*groupClusterFiles)[*iterator];
 
@@ -1667,22 +1667,22 @@ void TraceView::drawTraces(QPainter& painter){
                     for(clusterIterator = clusterList.begin(); clusterIterator != clusterList.end(); ++clusterIterator){
                         QString identifier = QString("%1-%2").arg(providerName).arg(*clusterIterator);
                         clustersOrder.append(identifier);
-                        rasterOrdinates.append(-y);
+                        rasterOrdinates.append(-rasterY);
                         rasterAbscisses.append(X);
                         QColor color = colors->color(*clusterIterator);
                         QPen pen(color);
                         pen.setCosmetic(true);
                         painter.setPen(pen);
-                        int bottom = y - rasterHeight;
+                        int bottom = rasterY - rasterHeight;
                         for(int i = 1; i <= nbSpikes;++i){
                             dataType index = currentData(1,i);
                             dataType clusterId = currentData(2,i);
                             if(clusterId == *clusterIterator){
                                 int abscissa = X + static_cast<int>(0.5 + (static_cast<float>(index) / downSampling));
-                                painter.drawLine(abscissa,-y,abscissa,-bottom);
+                                painter.drawLine(abscissa,-rasterY,abscissa,-bottom);
                             }
                         }
-                        y -= (rasterHeight + YRasterSpace);
+                        rasterY -= (rasterHeight + YRasterSpace);
                     }
                 }
             }//raster
@@ -1693,7 +1693,7 @@ void TraceView::drawTraces(QPainter& painter){
     else{
         //Draw events
         if(!selectedEvents.isEmpty()){
-            QRect windowRectangle((QRect)window);
+            QRect windowRectangle(static_cast<QRect>(window));
             int top = windowRectangle.top();
             int bottom = windowRectangle.bottom();
             QPen pen(Qt::DotLine);
@@ -1724,7 +1724,7 @@ void TraceView::drawTraces(QPainter& painter){
 
         //Draw clusters on vertical lines
         if(verticalLines && nbClusters != 0){
-            QRect windowRectangle((QRect)window);
+            QRect windowRectangle(static_cast<QRect>(window));
             int top = windowRectangle.top();
             int bottom = windowRectangle.bottom();
             QHashIterator<QString, ClusterData*> iterator(clustersData);
@@ -1813,8 +1813,8 @@ void TraceView::drawTraces(QPainter& painter){
                     if(!waveforms || (waveforms && !areClustersToDraw) || (waveforms && areClustersToDraw && !selectedClusters.contains(clusterFileId))){
                         QPolygon trace(nbSamples);
                         for(int i = 0; i < nbSamples;++i){
-                            int y = positions[j] - static_cast<long>(data(i + 1,channelId + 1) * channelFactors[channelId]);
-                            trace.setPoint(i,X,y);
+                            int sampleY = positions[j] - static_cast<long>(data(i + 1,channelId + 1) * channelFactors[channelId]);
+                            trace.setPoint(i,X,sampleY);
                             X += Xstep;
                         }
                         painter.drawPolyline(trace);
@@ -1824,11 +1824,11 @@ void TraceView::drawTraces(QPainter& painter){
                         Array<dataType> traceInfo(3,nbSamples);
                         QPolygon trace(nbSamples);
                         for(int i = 1; i <= nbSamples;++i){
-                            int y = positions[j] - static_cast<long>(data(i,channelId + 1) * channelFactors[channelId]);
-                            trace.setPoint(i - 1,X,y);
+                            int sampleY = positions[j] - static_cast<long>(data(i,channelId + 1) * channelFactors[channelId]);
+                            trace.setPoint(i - 1,X,sampleY);
                             traceInfo(1,i) = i;
                             traceInfo(2,i) = X;
-                            traceInfo(3,i) = y;
+                            traceInfo(3,i) = sampleY;
                             X += Xstep;
                         }
                         painter.drawPolyline(trace);
@@ -1849,22 +1849,22 @@ void TraceView::drawTraces(QPainter& painter){
                             dataType clusterId = currentData(2,i);
 
                             if(clusterList.contains(clusterId)){
-                                QColor color = colors->color(clusterId);
-                                QPen pen(color,1);
-                                if(selectedChannels.contains(channelId)) pen.setWidth(2);
-                                pen.setCosmetic(true);
-                                painter.setPen(pen);
+                                QColor clusterColor = colors->color(clusterId);
+                                QPen clusterPen(clusterColor,1);
+                                if(selectedChannels.contains(channelId)) clusterPen.setWidth(2);
+                                clusterPen.setCosmetic(true);
+                                painter.setPen(clusterPen);
 
-                                for(int j = currentIndex; j <= nbSamples;++j){
-                                    if(firstIndex > traceInfo(1,j)) continue;//case 1
-                                    else if(firstIndex == traceInfo(1,j)){//case 2
-                                        QPolygon trace(nbWaveformSamples);
+                                for(int sampleIndex = currentIndex; sampleIndex <= nbSamples;++sampleIndex){
+                                    if(firstIndex > traceInfo(1,sampleIndex)) continue;//case 1
+                                    else if(firstIndex == traceInfo(1,sampleIndex)){//case 2
+                                        QPolygon waveform(nbWaveformSamples);
                                         int pos = 0;
                                         for(int k = firstIndex;k<= lastIndex;++k){
-                                            trace.setPoint(pos,traceInfo(2,k),traceInfo(3,k));
+                                            waveform.setPoint(pos,traceInfo(2,k),traceInfo(3,k));
                                             pos++;
                                         }
-                                        painter.drawPolyline(trace);
+                                        painter.drawPolyline(waveform);
                                         currentIndex = firstIndex;
                                         break;
                                     }
@@ -1888,11 +1888,11 @@ void TraceView::drawTraces(QPainter& painter){
         if(raster && nbClusters != 0){
             Y = Y0Raster;
 
-            QMap<int,QList<int> >::Iterator iterator;
-            for(iterator = selectedClusters.begin(); iterator != selectedClusters.end(); ++iterator){
-                QList<int> clusterList = iterator.value();
+            QMap<int,QList<int> >::Iterator clusterFileIterator;
+            for(clusterFileIterator = selectedClusters.begin(); clusterFileIterator != selectedClusters.end(); ++clusterFileIterator){
+                QList<int> clusterList = clusterFileIterator.value();
                 if(clusterList.size() == 0) continue;
-                QString providerName = QString::fromLatin1("%1").arg(iterator.key());
+                QString providerName = QString::fromLatin1("%1").arg(clusterFileIterator.key());
                 ItemColors* colors = providerItemColors[providerName];
                 Array<dataType>& currentData = static_cast<ClusterData*>(clustersData[providerName])->getData();
                 int nbSpikes = currentData.nbOfColumns();
@@ -1928,7 +1928,7 @@ void TraceView::drawChannelIdsAndGain(QPainter& painter){
     QPen pen(colorLegend);
     pen.setCosmetic(true);
     painter.setPen(pen); //set the color for the legends.
-    QRect windowRectangle((QRect)window);
+    QRect windowRectangle(static_cast<QRect>(window));
 
     if(!multiColumns && (windowRectangle.left() >= xMargin)){
     }
@@ -1995,7 +1995,7 @@ void TraceView::drawTimeLine(int x,bool initialLine,bool eraseLine){
     QPainter painter;
     painter.begin(this);
     //set the window (part of the world I want to show)
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
 
     painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
     painter.setViewport(viewport);
@@ -2145,7 +2145,7 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
             ctrlPanning = true;
         if(ctrlPanning){
             const QPoint cw = navWorldAt(event->position().toPoint());
-            const QRect  wr = (QRect)window;
+            const QRect  wr = static_cast<QRect>(window);
             const double curCx = wr.left() + wr.width()  / 2.0;
             const double curCy = wr.top()  + wr.height() / 2.0;
             const double newCx = curCx - static_cast<double>(cw.x() - ctrlPanPressWorldX);
@@ -2162,7 +2162,7 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
             // left alone.  The grab anchor is corrected by the applied world shift so the trace
             // stays glued under the cursor across the page (the window keeps the same zoom and
             // timeFrameWidth, so its world mapping is unchanged by the reload).
-            const QRect  aw        = (QRect)window;
+            const QRect  aw        = static_cast<QRect>(window);
             const double overflowX = newCx - (aw.left() + aw.width() / 2.0);
             bool         paged     = false;
             if(qAbs(overflowX) >= 1.0 && Xstep > 0 && timeFrameWidth < recordingLength){
@@ -2193,7 +2193,7 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
 
     QString message;
     //Write the current coordinates in the statusbar.
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     QPoint current;
     //If the view was zoomed and the left margin (where the ids and gains of the channels of the first group are displayed) is not
     //shown (r.left() != 0), the coordinates have to be adjusted. Indeed, this margin is outside the world but in the viewport and included in the
@@ -2287,9 +2287,9 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
         QPainter painter;
         painter.begin(this);
         //set the window (part of the world I want to show)
-        QRect r((QRect)window);
+        QRect windowRect(static_cast<QRect>(window));
 
-        painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
+        painter.setWindow(windowRect.left(),windowRect.top(),windowRect.width()-1,windowRect.height()-1);//hack because Qt QRect is used differently in this function
         painter.setViewport(viewport);
         QPen pen(Qt::color0,1);
         pen.setCosmetic(true);
@@ -2356,17 +2356,17 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
         QPainter painter;
         painter.begin(this);
         //set the window (part of the world I want to show)
-        QRect r((QRect)window);
+        QRect windowRect(static_cast<QRect>(window));
 
-        painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
+        painter.setWindow(windowRect.left(),windowRect.top(),windowRect.width()-1,windowRect.height()-1);//hack because Qt QRect is used differently in this function
         painter.setViewport(viewport);
         QPen pen(Qt::color0,1);
         pen.setCosmetic(true);
         painter.setPen(pen);
 
         painter.setBrush(Qt::NoBrush);
-        int top = r.top();
-        int bottom = r.bottom();
+        int top = windowRect.top();
+        int bottom = windowRect.bottom();
         int nbSamples = tracesProvider.getNbSamples(startTime,endTime,startTimeInRecordingUnits);
         int nbSamplesToDraw = static_cast<int>(floor(0.5 + static_cast<float>(nbSamples)/downSampling));
         int delta = x - lastClickAbscissa;
@@ -2377,7 +2377,7 @@ void TraceView::mouseMoveEvent(QMouseEvent* event){
         int min = borderX;
         if(multiColumns){
             //left margin is visible
-            if(r.left() == 0){
+            if(windowRect.left() == 0){
                 if(lastClickAbscissa <= (Xshift - XGroupSpace)) groupIndex = 0;
                 else groupIndex = ((lastClickAbscissa - (Xshift - XGroupSpace)) / Xshift) + 1;
             }
@@ -2714,7 +2714,7 @@ QPoint TraceView::navWorldAt(const QPoint& viewportPos){
     // Identical to the adjustment mouseMoveEvent applies: when the
     // window left is 0 the id/gain margin (xMargin) is shown inside the viewport but outside
     // the world, so the abscissa must be shifted by it before converting to world coordinates.
-    const QRect r((QRect)window);
+    const QRect r(static_cast<QRect>(window));
     if(r.left() != 0) return viewportToWorld(viewportPos.x(), viewportPos.y());
     return viewportToWorld(viewportPos.x() - xMargin, viewportPos.y());
 }
@@ -2737,7 +2737,7 @@ void TraceView::wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos){
     // world point so the first zoom (while the id/gain margin is shown) anchors on the cursor.
     const float  factor = zoomIn ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
     const QPoint p  = navWorldAt(viewportPos);
-    const QRect  wr = (QRect)window;
+    const QRect  wr = static_cast<QRect>(window);
     const double W = wr.width(), H = wr.height();
     if(W > 0.0 && H > 0.0){
         // Cursor's fraction within the current window == its screen fraction.
@@ -2791,7 +2791,7 @@ void TraceView::normalCursorSpikePick(int sampleIndex, bool extend)
 
 TraceView::TraceClickGeometry TraceView::resolveClickGeometry(const QPoint& viewportPos){
     TraceClickGeometry g;
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     QPoint current;
     //If the view was zoomed and the left margin (where the ids and gains of the channels of the first group are displayed) is not
     //shown (r.left() != 0), the coordinates have to be adjusted. Indeed, this margin is outside the world but in the viewport and included in the
@@ -3373,12 +3373,12 @@ void TraceView::mouseReleaseEvent(QMouseEvent* event){
     if(mode == ZOOM && (event->button() & Qt::LeftButton)){
         //Zoom out
         if(event->modifiers() & Qt::ShiftModifier){
-            previousWindow = (QRect)window;
+            previousWindow = static_cast<QRect>(window);
             zoomOut = true;
             zoomed = true;
         }
         else if(!doubleClick){
-            if(!maxZoomReached) previousWindow = (QRect)window;
+            if(!maxZoomReached) previousWindow = static_cast<QRect>(window);
             zoomed = true;
         }
 
@@ -3773,7 +3773,7 @@ void TraceView::correctZoom(QRect& r){
 
 void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString name,ItemColors* clusterColors,bool active,
                                    QList<int>& clustersToShow,QMap<int, QList<int> >* displayGroupsClusterFile,QMap<int,int>* channelsSpikeGroups,
-                                   int nbSamplesBefore,int nbSamplesAfter,const QList<int>& clustersToSkip){
+                                   int samplesBefore,int samplesAfter,const QList<int>& clustersToSkip){
     //Set Connection
     connect(clustersProvider, &ClustersProvider::dataReady, this,
         static_cast<void(TraceView::*)(Array<dataType>&,QObject*,QString)>(&TraceView::dataAvailable));
@@ -3805,8 +3805,8 @@ void TraceView::addClusterProvider(ClustersProvider* clustersProvider,QString na
 
     groupClusterFiles = displayGroupsClusterFile;
     channelClusterFiles = channelsSpikeGroups;
-    this->nbSamplesBefore = nbSamplesBefore;
-    this->nbSamplesAfter = nbSamplesAfter;
+    this->nbSamplesBefore = samplesBefore;
+    this->nbSamplesAfter = samplesAfter;
 }
 
 void TraceView::removeClusterProvider(const QString &name, bool active){
@@ -3865,10 +3865,10 @@ void TraceView::updateNoneBrowsingClusterList(const QString &providerName,const 
     clustersNotUsedForBrowsing.insert(providerName,clusters);
 }
 
-void TraceView::skipStatusChanged(const QList<int>& skippedChannels){
+void TraceView::skipStatusChanged(const QList<int>& skipped){
     this->skippedChannels.clear();
     QList<int>::const_iterator iterator;
-    for(iterator = skippedChannels.begin(); iterator != skippedChannels.end(); ++iterator){
+    for(iterator = skipped.begin(); iterator != skipped.end(); ++iterator){
         this->skippedChannels.append(*iterator);
     }
 }
@@ -3881,9 +3881,9 @@ void TraceView::clusterColorUpdate(const QString &name,int clusterId,bool active
     }
 }
 
-void TraceView::updateWaveformInformation(int nbSamplesBefore, int nbSamplesAfter,bool active){
-    this->nbSamplesBefore = nbSamplesBefore;
-    this->nbSamplesAfter = nbSamplesAfter;
+void TraceView::updateWaveformInformation(int samplesBefore, int samplesAfter,bool active){
+    this->nbSamplesBefore = samplesBefore;
+    this->nbSamplesAfter = samplesAfter;
 
     if(active){
         invalidate(REDRAW);
@@ -3897,7 +3897,7 @@ void TraceView::print(QPainter& printPainter,int width,int height, bool whiteBac
 
     //If the left margin is not visible (the user zoomed without taking it in his selection), the viewport and the printer
     //have the same size.
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     if(r.left() != 0) viewport = QRect(printPainter.viewport().left(),printPainter.viewport().top(),printPainter.viewport().width(),printPainter.viewport().height());
     else viewport = QRect(printPainter.viewport().left() + xMargin,printPainter.viewport().top(),printPainter.viewport().width() - xMargin,printPainter.viewport().height());
 
@@ -3905,7 +3905,7 @@ void TraceView::print(QPainter& printPainter,int width,int height, bool whiteBac
     //This will suppress any zoom.
     printState = true;
     updateWindow();
-    r = ((QRect)window);
+    r = (static_cast<QRect>(window));
 
     //Set the window (part of the world I want to show)
     printPainter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
@@ -4195,17 +4195,17 @@ void TraceView::nextEventDataAvailable(Array<dataType>& times,Array<int>& ids,QO
 
     //if the new start time is equals to the current startTime do not do anything
     if(ready && nextEventProvider.second != startTime && nextEventProvider.second < recordingLength){
-        long timeFrameWidth = endTime - startTime;
-        if((nextEventProvider.second + timeFrameWidth > recordingLength)){
+        long frameWidth = endTime - startTime;
+        if((nextEventProvider.second + frameWidth > recordingLength)){
             //new start time =  recordingLength - timeFrameWidth
             //update the traceWidget time widgets and retrieve the data for the new start time for all the providers.
             eventProviderToSkip.clear();
-            emit setStartAndDuration(recordingLength - timeFrameWidth,timeFrameWidth);
+            emit setStartAndDuration(recordingLength - frameWidth,frameWidth);
         }
         else{
             eventProviderToSkip = nextEventProvider.first;
             //update the traceWidget time widgets and retreive the data for the new start time for all the providers except the one containing the data for the new start time.
-            emit setStartAndDuration(nextEventProvider.second,timeFrameWidth);
+            emit setStartAndDuration(nextEventProvider.second,frameWidth);
         }
     }
     else if(ready && (nextEventProvider.second == startTime || nextEventProvider.second > recordingLength)){
@@ -4245,15 +4245,15 @@ void TraceView::previousEventDataAvailable(Array<dataType>& times,Array<int>& id
     }
 
     if(ready && previousEventProvider.second != startTime && previousEventProvider.second < recordingLength){
-        long timeFrameWidth = endTime - startTime;
-        if(previousEventProvider.second + timeFrameWidth > recordingLength){
+        long frameWidth = endTime - startTime;
+        if(previousEventProvider.second + frameWidth > recordingLength){
             eventProviderToSkip.clear();
-            emit setStartAndDuration(recordingLength - timeFrameWidth,timeFrameWidth);
+            emit setStartAndDuration(recordingLength - frameWidth,frameWidth);
         }
         else{
             eventProviderToSkip = previousEventProvider.first;
             //update the traceWidget time widgets and retreive the data for the new start time for all the providers except the one containing the data for the new start time.
-            emit setStartAndDuration(previousEventProvider.second,timeFrameWidth);
+            emit setStartAndDuration(previousEventProvider.second,frameWidth);
         }
     }
     //if the new start time is equals to the current one or superior to the recording lenght do not do anything
@@ -4262,14 +4262,14 @@ void TraceView::previousEventDataAvailable(Array<dataType>& times,Array<int>& id
 
     }
     else if(ready && previousEventProvider.second > recordingLength){
-        long timeFrameWidth = endTime - startTime;
+        long frameWidth = endTime - startTime;
         previousEventProvider.first.clear();
         previousEventProvider.second = 0;
-        QHashIterator<QString, EventData*> iterator(eventsData);
-        while (iterator.hasNext()) {
-            iterator.next();
-            QList<int> selectedIds = selectedEvents[iterator.key()];
-            static_cast<EventsProvider*>(eventProviders[iterator.key()])->requestPreviousEventData(startTime,timeFrameWidth,selectedIds,this);
+        QHashIterator<QString, EventData*> providerIterator(eventsData);
+        while (providerIterator.hasNext()) {
+            providerIterator.next();
+            QList<int> selectedIds = selectedEvents[providerIterator.key()];
+            static_cast<EventsProvider*>(eventProviders[providerIterator.key()])->requestPreviousEventData(startTime,frameWidth,selectedIds,this);
         }
     }
 }
@@ -4279,7 +4279,7 @@ void TraceView::drawEvent(QString providerName,int selectedEventId,dataType sele
     QPainter painter;
     painter.begin(&doublebuffer);
     //set the window (part of the world I want to show)
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
 
     painter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
     painter.setViewport(viewport);
@@ -4530,7 +4530,7 @@ void TraceView::showPreviousCluster(){
     }
 }
 
-void TraceView::nextClusterDataAvailable(Array<dataType>& data,QObject* initiator,QString providerName,long startingTime,long startingTimeInRecordingUnits){
+void TraceView::nextClusterDataAvailable(Array<dataType>& newData,QObject* initiator,QString providerName,long startingTime,long startingTimeInRecordingUnits){
     //If another widget was the initiator of the request, ignore the data.
     if(initiator != this) return;
 
@@ -4538,7 +4538,7 @@ void TraceView::nextClusterDataAvailable(Array<dataType>& data,QObject* initiato
     ClusterData* clusterData = clustersData[providerName];
     if(startingTime != startTime && startingTime < recordingLength){
         clusterData->setStatus(true);
-        clusterData->setData(data);
+        clusterData->setData(newData);
     }
     else clusterData->setStatus(true);
 
@@ -4559,17 +4559,17 @@ void TraceView::nextClusterDataAvailable(Array<dataType>& data,QObject* initiato
 
     //if the new start time is equals to the current startTime (in recording unit) do not do anything
     if(ready && startTimeInRecordingUnits != previousStartTimeInRecordingUnits && nextClusterProvider.second < recordingLength){
-        long timeFrameWidth = endTime - startTime;
-        if(nextClusterProvider.second + timeFrameWidth > recordingLength){
+        long frameWidth = endTime - startTime;
+        if(nextClusterProvider.second + frameWidth > recordingLength){
             //new start time =  recordingLength - timeFrameWidth
             //update the traceWidget time widgets and retrieve the data for the new start time for all the providers.
             clusterProviderToSkip.clear();
-            emit setStartAndDuration(recordingLength - timeFrameWidth,timeFrameWidth);
+            emit setStartAndDuration(recordingLength - frameWidth,frameWidth);
         }
         else{
             clusterProviderToSkip = nextClusterProvider.first;
             //update the traceWidget time widgets and retrieve the data for the new start time for all the providers except the one containing the data for the new start time.
-            emit setStartAndDuration(nextClusterProvider.second,timeFrameWidth);
+            emit setStartAndDuration(nextClusterProvider.second,frameWidth);
         }
     }
     else if(ready && (startTimeInRecordingUnits == previousStartTimeInRecordingUnits || nextClusterProvider.second > recordingLength)){
@@ -4578,7 +4578,7 @@ void TraceView::nextClusterDataAvailable(Array<dataType>& data,QObject* initiato
     }
 }
 
-void TraceView::previousClusterDataAvailable(Array<dataType>& data,QObject* initiator,QString providerName,long startingTime,long startingTimeInRecordingUnits){
+void TraceView::previousClusterDataAvailable(Array<dataType>& newData,QObject* initiator,QString providerName,long startingTime,long startingTimeInRecordingUnits){
     //If another widget was the initiator of the request, ignore the data.
     if(initiator != this) return;
 
@@ -4588,7 +4588,7 @@ void TraceView::previousClusterDataAvailable(Array<dataType>& data,QObject* init
     ClusterData* clusterData = clustersData[providerName];
     if(startingTime != startTime && startingTime < recordingLength){
         clusterData->setStatus(true);
-        clusterData->setData(data);
+        clusterData->setData(newData);
     }
     else clusterData->setStatus(true);
 
@@ -4611,16 +4611,16 @@ void TraceView::previousClusterDataAvailable(Array<dataType>& data,QObject* init
     }
 
     if(ready && startTimeInRecordingUnits != previousStartTimeInRecordingUnits && previousClusterProvider.second < recordingLength){
-        long timeFrameWidth = endTime - startTime;
-        if(previousClusterProvider.second + timeFrameWidth > recordingLength){
+        long frameWidth = endTime - startTime;
+        if(previousClusterProvider.second + frameWidth > recordingLength){
             clusterProviderToSkip.clear();
 
-            emit setStartAndDuration(recordingLength - timeFrameWidth,timeFrameWidth);
+            emit setStartAndDuration(recordingLength - frameWidth,frameWidth);
         }
         else{
             clusterProviderToSkip = previousClusterProvider.first;
             //update the traceWidget time widgets and retrieve the data for the new start time for all the providers except the one containing the data for the new start time.
-            emit setStartAndDuration(previousClusterProvider.second,timeFrameWidth);
+            emit setStartAndDuration(previousClusterProvider.second,frameWidth);
         }
     }
     //if the new start time (in recording unit) is equals to the current one do not do anything
@@ -4630,14 +4630,14 @@ void TraceView::previousClusterDataAvailable(Array<dataType>& data,QObject* init
     //if the new start time is superior to the recording lenght, look up in all the files at the last timeFrameWidth of the data file
     else if(ready && previousClusterProvider.second > recordingLength){
         clusterProviderToSkip.clear();
-        long timeFrameWidth = endTime - startTime;
+        long frameWidth = endTime - startTime;
         previousClusterProvider.first.clear();
         previousClusterProvider.second = 0;
-        QHashIterator<QString, ClusterData*> iterator(clustersData);
-        while (iterator.hasNext()) {
-            iterator.next();
-            QList<int> selectedIds = selectedClusters[iterator.key().toInt()];
-            static_cast<ClustersProvider*>(clusterProviders[iterator.key()])->requestPreviousClusterData(startTime,timeFrameWidth,selectedIds,this,previousStartTimeInRecordingUnits);
+        QHashIterator<QString, ClusterData*> providerIterator(clustersData);
+        while (providerIterator.hasNext()) {
+            providerIterator.next();
+            QList<int> selectedIds = selectedClusters[providerIterator.key().toInt()];
+            static_cast<ClustersProvider*>(clusterProviders[providerIterator.key()])->requestPreviousClusterData(startTime,frameWidth,selectedIds,this,previousStartTimeInRecordingUnits);
         }
     }
 }

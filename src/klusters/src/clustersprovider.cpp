@@ -28,11 +28,11 @@
 #include <neurosuite/core/custody.hpp>   // shared anchor parser (clu/clc/...)
 
 
-ClustersProvider::ClustersProvider(const QString& fileUrl,double samplingRate,double currentSamplingRate,Data& clusteringData,dataType dataFileMaxTime)
+ClustersProvider::ClustersProvider(const QString& fileUrl,double rate,double currentSamplingRate,Data& clData,dataType maxTime)
     : DataProvider(fileUrl),
-      samplingRate(samplingRate),
-      clusteringData(clusteringData),
-      dataFileMaxTime(dataFileMaxTime)
+      samplingRate(rate),
+      clusteringData(clData),
+      dataFileMaxTime(maxTime)
 {
 
     clusterPosition = 0.25;
@@ -40,20 +40,20 @@ ClustersProvider::ClustersProvider(const QString& fileUrl,double samplingRate,do
     //Name the provider by its electrode group.  Parse via the shared custody
     //anchor (handles <X>.clu.<grp>, <X>.clc.<method>.<grp>[.<suffix>], legacy
     //<X>.<grp>.clu) instead of a hand-rolled "clu" search that would miss .clc.
-    QString fileName = fileUrl;
+    QString urlName = fileUrl;
     const neurosuite::custody::Anchor a =
-        neurosuite::custody::parseAnchor(fileName.toStdString());
+        neurosuite::custody::parseAnchor(urlName.toStdString());
     if (a.ok) {
         name = QString::number(a.group);
     } else {
-        int startingIndex = fileName.lastIndexOf("clu");
-        if (startingIndex < 0) startingIndex = fileName.lastIndexOf("clc");
-        if (startingIndex == static_cast<int>(fileName.length()) - 3) {//X.n.clu
-            int nBStartingIndex = fileName.lastIndexOf(".",startingIndex - 2);
-            name = fileName.mid(nBStartingIndex + 1,(startingIndex - 1) - (nBStartingIndex + 1));
+        int startingIndex = urlName.lastIndexOf("clu");
+        if (startingIndex < 0) startingIndex = urlName.lastIndexOf("clc");
+        if (startingIndex == static_cast<int>(urlName.length()) - 3) {//X.n.clu
+            int nBStartingIndex = urlName.lastIndexOf(".",startingIndex - 2);
+            name = urlName.mid(nBStartingIndex + 1,(startingIndex - 1) - (nBStartingIndex + 1));
         } else {//X.clu.n
-            const int nBStartingIndex = fileName.lastIndexOf(".");
-            name = fileName.right(static_cast<int>(fileName.length()) - (nBStartingIndex + 1));
+            const int nBStartingIndex = urlName.lastIndexOf(".");
+            name = urlName.right(static_cast<int>(urlName.length()) - (nBStartingIndex + 1));
         }
     }
 

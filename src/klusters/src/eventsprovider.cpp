@@ -36,23 +36,23 @@
 #include "timer.h"
 
 
-EventsProvider::EventsProvider(const QString& fileUrl,double currentSamplingRate,int position)
+EventsProvider::EventsProvider(const QString& fileUrl,double rate,int position)
     : DataProvider(fileUrl),nbEvents(0),
     eventPosition(static_cast<float>(position) / 100.0),modified(false){
 
-    this->currentSamplingRate = currentSamplingRate / 1000.0;
+    this->currentSamplingRate = rate / 1000.0;
 
     //Find the event file identifier and use it as the name for the provider
     //the file name is X.id.evt (id is a 3 character identifier)
-    QString fileName = fileUrl;
-    int startingIndex = fileName.lastIndexOf("evt");
-    if(startingIndex == static_cast<int>(fileName.length()) - 3){//X.id.evt
-        const int nBStartingIndex = fileName.lastIndexOf(".",startingIndex - 2);
-        name = fileName.mid(nBStartingIndex + 1,(startingIndex - 1) - (nBStartingIndex + 1));
+    QString urlName = fileUrl;
+    int startingIndex = urlName.lastIndexOf("evt");
+    if(startingIndex == static_cast<int>(urlName.length()) - 3){//X.id.evt
+        const int nBStartingIndex = urlName.lastIndexOf(".",startingIndex - 2);
+        name = urlName.mid(nBStartingIndex + 1,(startingIndex - 1) - (nBStartingIndex + 1));
     }
     else{//X.evt.id
-        const int nBStartingIndex = fileName.lastIndexOf(".");
-        name = fileName.right(static_cast<int>(fileName.length()) - (nBStartingIndex + 1));
+        const int nBStartingIndex = urlName.lastIndexOf(".");
+        name = urlName.right(static_cast<int>(urlName.length()) - (nBStartingIndex + 1));
     }
 }
 
@@ -63,15 +63,15 @@ int EventsProvider::loadData(){
     RestartTimer();
 
 
-    int nbEvents = 0;
+    int nbEventsRead = 0;
     QFile file(fileName);
     if(file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         while (!file.atEnd()) {
             file.readLine();
-            ++nbEvents;
+            ++nbEventsRead;
         }
     }
-    if(nbEvents==0){
+    if(nbEventsRead==0){
         initializeEmptyProvider();
         return OK;
     }
@@ -84,13 +84,13 @@ int EventsProvider::loadData(){
     }
 
     //Set the size of the Arrays containing the time and ids of the events.
-    events.setSize(1,nbEvents);
-    timeStamps.setSize(1,nbEvents);
+    events.setSize(1,nbEventsRead);
+    timeStamps.setSize(1,nbEventsRead);
 
     QTextStream fileStream(&eventFile);
     QString line;
     int lineCounter = 0;
-    for(line = fileStream.readLine(); !line.isNull() && lineCounter< nbEvents;line = fileStream.readLine()){
+    for(line = fileStream.readLine(); !line.isNull() && lineCounter< nbEventsRead;line = fileStream.readLine()){
         line = line.trimmed();
 
         int index1 = line.indexOf(QRegularExpression("\\s"));
@@ -110,7 +110,7 @@ int EventsProvider::loadData(){
 
 
     //The number of events read has to be coherent with the number of events read.
-    if(lineCounter != nbEvents){
+    if(lineCounter != nbEventsRead){
         events.setSize(0,0);
         timeStamps.setSize(0,0);
         return INCORRECT_CONTENT;
@@ -147,8 +147,8 @@ int EventsProvider::loadData(){
     //Initialize the variables
     previousStartTime = 0;
     previousStartIndex = 1;
-    previousEndIndex = nbEvents;
-    previousEndTime = static_cast<long>(floor(0.5 + timeStamps(1,nbEvents)));
+    previousEndIndex = nbEventsRead;
+    previousEndTime = static_cast<long>(floor(0.5 + timeStamps(1,nbEventsRead)));
     fileMaxTime = previousEndTime;
 
     return OK;

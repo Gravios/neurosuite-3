@@ -28,12 +28,12 @@
 
 #include <QFile>
 
-TracesProvider::TracesProvider(const QString& fileUrl,int nbChannels,int resolution,double samplingRate,int offset):
+TracesProvider::TracesProvider(const QString& fileUrl,int nbChan,int res,double rate,int off):
     DataProvider(fileUrl),
-    nbChannels(nbChannels),
-    resolution(resolution),
-    samplingRate(samplingRate),
-    offset(offset)
+    nbChannels(nbChan),
+    resolution(res),
+    samplingRate(rate),
+    offset(off)
 {
     computeRecordingLength();
 }

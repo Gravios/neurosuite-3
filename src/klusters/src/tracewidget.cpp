@@ -32,16 +32,16 @@
 
 #include <stdlib.h>
 
-TraceWidget::TraceWidget(long startTime,long duration,bool greyScale,TracesProvider& tracesProvider,bool multiColumns,bool verticalLines,
+TraceWidget::TraceWidget(long start,long dur,bool greyScale,TracesProvider& tracesProvider,bool multiColumns,bool verticalLines,
                          bool raster,bool waveforms,bool labelsDisplay,QList<int>& channelsToDisplay,int gain,int acquisitionGain,
                          ChannelColors* channelColors,QMap<int, QList<int> >* groupsChannels,
                          QMap<int,int>* channelsGroups,QList<int>& channelOffsets,QList<int>& gains,const QList<int>& skippedChannels,QWidget* parent,
                          const char* name,const QColor& backgroundColor,QStatusBar* statusBar,
                          int minSize,int maxSize,int windowTopLeft,int windowBottomRight,int border):
-    QWidget(parent),timeWindow(duration),
+    QWidget(parent),timeWindow(dur),
     view(tracesProvider,greyScale,multiColumns,verticalLines,raster,waveforms,labelsDisplay,channelsToDisplay,gain,acquisitionGain,
-         startTime,timeWindow,channelColors,groupsChannels,channelsGroups,channelOffsets,gains,skippedChannels,this,name,
-         backgroundColor,statusBar,minSize,maxSize,windowTopLeft,windowBottomRight,border),startTime(startTime),
+         start,timeWindow,channelColors,groupsChannels,channelsGroups,channelOffsets,gains,skippedChannels,this,name,
+         backgroundColor,statusBar,minSize,maxSize,windowTopLeft,windowBottomRight,border),startTime(start),
     validator(this),isInit(true),updateView(true){
 
     QVBoxLayout *layout = new QVBoxLayout;
@@ -522,7 +522,7 @@ void TraceWidget::moveToTime(long time){
     }
 }
 
-void TraceWidget::slotSetStartAndDuration(long time,long duration){
+void TraceWidget::slotSetStartAndDuration(long time,long newDuration){
     if(!isInit && updateView){
         //Test if we go over the time of the recording
         if(time > recordingLength) return;
@@ -534,9 +534,9 @@ void TraceWidget::slotSetStartAndDuration(long time,long duration){
 
         //Duration
         //Test if the time window is inferior to 1 ms, if so fix set it to the minimum 1.
-        if(duration < 1) duration = 1;
-        this->duration->setText(QString::fromLatin1("%1").arg(duration));
-        timeWindow = duration;
+        if(newDuration < 1) newDuration = 1;
+        this->duration->setText(QString::fromLatin1("%1").arg(newDuration));
+        timeWindow = newDuration;
 
         //Test if we go over the time of the recording if so keep the time window and move back in time
         if((startTime + timeWindow) > recordingLength) correctStartTime();
