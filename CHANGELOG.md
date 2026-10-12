@@ -75,6 +75,14 @@ once. It needs a saved document, swaps all files in together
 (rolling back on any failure), and reopens the document. `.eap` membership is
 reported, not reordered, and any other file naming the group is listed.
 
+**Every space in memory.** Klusters now holds every usable feature space's
+`.fet` table and `.spk` waveforms in memory, loaded at open and refreshed after
+each switch, sync and Save (a file is re-read only when it changed). Switching
+reads nothing from disk, Sync Feature Spaces works from the held tables, and
+waveform reads come from memory (`SpkMemoryCache`; a file too large to hold
+falls back to reading from disk). Realign and nudge edits are still read
+through the overlay; at Save the readers are reloaded before it is cleared.
+
 **Follow-ups.**
 - Realign and nudge apply the session's `sdiffPairs` pattern only when the
   method token allows it (`_C<n>` or bare `stderiv`; not `_S<n>`), the same

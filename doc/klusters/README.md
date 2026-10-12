@@ -106,6 +106,12 @@ space; pick the `(.clu)` entry to go back.
   space's features.
 - Switching is refused while a realignment is unsaved (save or undo it first),
   and the box is locked while saving, realigning or reclustering.
+- Every space is held in memory: its `.fet` table and its `.spk` waveforms are
+  loaded when the document opens (and refreshed after a switch, a sync or a
+  Save, reading only files that changed), so switching, syncing and waveform
+  display never wait on the disk. The status bar says how much is held. This
+  costs memory: roughly the size of each space's `.fet` plus each distinct
+  `.spk` (a `_D` space shares its waveform token's).
 
 This works because every file of a group is indexed by the same spike row,
 and Klusters keeps it that way: realign and nudge rewrite each spike in its own
