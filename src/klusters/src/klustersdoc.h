@@ -1545,10 +1545,14 @@ public:
      *  copied, timestamp column from the session).  Writes go to that space's
      *  ".pending" working copies: the switcher loads them, Save commits them,
      *  closing without saving — or undoing a realignment — discards them.  If the
-     *  space is the one shown, it is reloaded.  @p logOut gets a summary. */
+     *  space is the one shown, it is reloaded.  Every other space reading the
+     *  same re-extracted .spk is re-projected in the same pass (Save commits the
+     *  .spk for all of them), and nothing is written unless all of them can be.
+     *  @p logOut gets a summary. */
     bool syncFeatureSpace(const QString& method, QString& logOut);
     /** syncFeatureSpace for every usable space except the .clu's own; a .spk
-     *  shared by several spaces is re-extracted once. */
+     *  shared by several spaces is re-extracted once.  Spaces that cannot be
+     *  loaded anyway are listed as skipped, not counted as failures. */
     bool syncAllFeatureSpaces(QString& logOut);
     /** Delete every synced working copy and forget it. */
     void discardSyncedFeatureSpaces();
@@ -1922,9 +1926,9 @@ private:
     /** Synced working copies of other spaces (syncFeatureSpace): committed
      *  path -> its ".pending" copy.  Committed by Save, removed at close. */
     QHash<QString, QString> syncedPending;
-    /** One space's sync; @p spkDone holds .spk paths already re-extracted in this
-     *  pass so a shared waveform file is rebuilt once. */
-    bool syncOneSpace(const QString& method, QSet<QString>& spkDone, QString& logOut);
+    /** One space's sync, with every space sharing its .spk; @p methodsDone holds
+     *  the methods already synced in this pass so a shared .spk is rebuilt once. */
+    bool syncOneSpace(const QString& method, QSet<QString>& methodsDone, QString& logOut);
 
     /** Cluster ids currently masked (hidden from the active list and the view
      *  foreground).  Stored here, not in Data, so the data model and global id

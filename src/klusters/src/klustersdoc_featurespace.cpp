@@ -186,142 +186,199 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
 // session's spike times, into that space's .pending working copies.
 // ─────────────────────────────────────────────────────────────────────────────
 
-bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& spkDone, QString& logOut)
+bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone, QString& logOut)
 {
     QTextStream log(&logOut);
-    if (method == originMethod) return true;          // realign/nudge keep it current
+    // Realign / nudge keep the .clu's own space current; a space sharing a .spk
+    // with one synced earlier in this pass was synced with it.
+    if (method == originMethod || methodsDone.contains(method)) return true;
 
-    FeatureSpace target;
-    bool found = false;
-    for (const FeatureSpace& s : availableFeatureSpaces())
-        if (s.method == method) { target = s; found = true; break; }
-    if (!found) { log << method << ": no feature file in this group.\n"; return false; }
-    if (!target.usable) { log << method << ": skipped — " << target.reason << ".\n"; return false; }
+    const QList<FeatureSpace> spaces = availableFeatureSpaces();
+    const FeatureSpace* target = nullptr;
+    for (const FeatureSpace& s : spaces)
+        if (s.method == method) { target = &s; break; }
+    if (!target) { log << method << ": no feature file in this group.\n"; return false; }
+    if (!target->usable) { log << method << ": skipped — " << target->reason << ".\n"; return false; }
 
     const QString dir   = QFileInfo(docUrl).absolutePath();
-    const QString stem  = dir + QDir::separator() + baseName;
+    const std::string stem = (dir + QDir::separator() + baseName).toStdString();
     const int     group = electrodeGroupID.toInt();
-    const QString fetCommitted = QString::fromStdString(neurosuite::custody::methodPath(
-        stem.toStdString(), "fet", method.toStdString(), group));
-    const neurosuite::custody::Resolved spkRes = neurosuite::custody::resolve(
-        stem.toStdString(), "spk", group, method.toStdString());
-    const QString spkCommitted = QString::fromStdString(spkRes.path);
+    const int     nChan = clusteringData->nbOfChannels();
+    const int     nSamp = clusteringData->nbSamplesPerWaveform();
+    auto committedSpkOf = [&](const QString& m) {
+        return QString::fromStdString(
+            neurosuite::custody::resolve(stem, "spk", group, m.toStdString()).path);
+    };
+    const QString spkCommitted = committedSpkOf(method);
+    const bool    ownWaveforms = (spkCommitted == origSpkPath);
+
+    // ── Who is synced together ───────────────────────────────────────────
+    // A re-extracted .spk replaces the committed one at Save for EVERY space
+    // reading it, so every usable space over it is re-projected in the same
+    // pass; otherwise a space left out would pair its old .fet with new
+    // waveforms.  A space over the .clu's own waveforms reads the live pending
+    // copy, which realign / nudge keep current, so it is synced alone.
+    struct Plan {
+        QString method, fetSource, fetCommitted, pcaPath;
+        neurosuite::core::PcaBasis pca;
+        int32_t nDims = 0;
+    };
+    std::vector<Plan> plans;
+    for (const FeatureSpace& s : spaces) {
+        if (s.method == originMethod || !s.usable) continue;
+        if (s.method != method && (ownWaveforms || committedSpkOf(s.method) != spkCommitted))
+            continue;
+        Plan p;
+        p.method       = s.method;
+        p.fetSource    = s.fetPath;
+        p.fetCommitted = QString::fromStdString(neurosuite::custody::methodPath(
+            stem, "fet", s.method.toStdString(), group));
+        p.pcaPath      = QString::fromStdString(neurosuite::custody::methodPath(
+            stem, "pca", s.method.toStdString(), group));
+        if (s.method == method) plans.insert(plans.begin(), p);
+        else                    plans.push_back(p);
+    }
+
+    // ── Checks first: nothing is written unless every space can be ────────
+    const bool spkIsStderiv = neurosuite::custody::isStderivMethod(
+        neurosuite::custody::methodOf(spkCommitted.toStdString()));
+    for (Plan& p : plans) {
+        const QString who = p.method == method
+            ? method
+            : tr("%1 (it shares %2 with %3)").arg(method, QFileInfo(spkCommitted).fileName(), p.method);
+        const QString pcaName = QFileInfo(p.pcaPath).fileName();
+        if (!neurosuite::core::loadPca(p.pcaPath.toStdString(), p.pca) || !p.pca.valid()) {
+            log << who << ": not synced — no readable basis " << pcaName << ".\n";
+            return false;
+        }
+        if (p.pca.nCh > nChan || p.pca.recShift < 0 || p.pca.recShift + p.pca.data2use > nSamp) {
+            log << who << ": not synced — basis " << pcaName << " does not fit this group's "
+                << "waveforms (" << p.pca.nCh << " ch, window " << p.pca.recShift << "+"
+                << p.pca.data2use << " of " << nSamp << " samples).\n";
+            return false;
+        }
+        // The basis must have been trained in the waveform file's domain: a
+        // stderiv basis projects stderiv waveforms, a standard one raw ones.
+        if (neurosuite::core::hasTemporalDiff(p.pca.method) != spkIsStderiv) {
+            log << who << ": not synced — basis " << pcaName << " and waveform file "
+                << QFileInfo(spkCommitted).fileName() << " are in different domains.\n";
+            return false;
+        }
+        QFile f(p.fetSource);
+        // reinterpret_cast: QIODevice::read fills raw bytes (native-endian int32 header).
+        if (!f.open(QIODevice::ReadOnly)
+            || f.read(reinterpret_cast<char*>(&p.nDims), sizeof(p.nDims)) != sizeof(p.nDims)) {
+            log << who << ": not synced — cannot read " << QFileInfo(p.fetSource).fileName() << ".\n";
+            return false;
+        }
+        const int nPca = p.pca.nCh * p.pca.nComp;
+        if (p.nDims - 1 - nPca < 0) {                 // last column is the timestamp
+            log << who << ": not synced — the basis yields " << nPca
+                << " features but the .fet has " << (p.nDims - 1) << ".\n";
+            return false;
+        }
+    }
+
+    // The shown space's files are about to be replaced: every job reading the
+    // feature table or the .spk must be gone before any rename.
+    bool showsSynced = false;
+    for (const Plan& p : plans) showsSynced = showsSynced || p.method == activeMethod;
+    if (showsSynced && viewList)
+        for (KlustersView* v : *viewList) v->stopAllViewThreads();
+
+    // On any later failure, fall the whole set back to its committed files:
+    // a partial set would pair waveforms and features from different times.
+    const QString spkPending = spkCommitted + QStringLiteral(".pending");
+    auto rollBack = [&]() {
+        if (!ownWaveforms) {
+            QFile::remove(spkPending);
+            syncedPending.remove(spkCommitted);
+        }
+        for (const Plan& p : plans) {
+            QFile::remove(p.fetCommitted + QStringLiteral(".pending"));
+            syncedPending.remove(p.fetCommitted);
+        }
+        log << method << ": nothing synced; the saved files stay in use.\n";
+    };
 
     // ── Waveforms ────────────────────────────────────────────────────────
-    // A space over the .clu's own waveform file reads its live pending copy,
-    // which realign / nudge already keep current.  Otherwise rebuild the
-    // space's own .spk from .fil at the session's timestamps.
     QString spkSource;
-    if (spkCommitted == origSpkPath) {
+    if (ownWaveforms) {
         spkSource = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
     } else {
-        const QString spkPending = spkCommitted + QStringLiteral(".pending");
-        if (!spkDone.contains(spkCommitted)) {
-            QString reLog;
-            if (!reextractAllSpikesFromFil(spkPending, reLog)) {
-                log << method << ": waveforms not re-extracted — " << reLog << "\n";
-                return false;
-            }
-            spkDone.insert(spkCommitted);
-            syncedPending.insert(spkCommitted, spkPending);
-            log << method << ": " << reLog << "\n";
+        QString reLog;
+        if (!reextractAllSpikesFromFil(spkPending, reLog)) {
+            log << method << ": waveforms not re-extracted — " << reLog << "\n";
+            rollBack();
+            return false;
         }
+        syncedPending.insert(spkCommitted, spkPending);
+        log << method << ": " << reLog << "\n";
         spkSource = spkPending;
     }
 
     // ── Features ─────────────────────────────────────────────────────────
-    // Project every waveform through the space's own basis.  A _D lag space's
+    // Project every waveform through each space's own basis.  A _D lag space's
     // basis is an ordinary PCAE basis on a widened window, so the same kernel
     // serves it.  Extra non-PCA columns are carried over from the current .fet.
-    const QString pcaPath = QString::fromStdString(neurosuite::custody::methodPath(
-        stem.toStdString(), "pca", method.toStdString(), group));
-    neurosuite::core::PcaBasis pca;
-    const int nChan = clusteringData->nbOfChannels();
-    const int nSamp = clusteringData->nbSamplesPerWaveform();
-    if (!neurosuite::core::loadPca(pcaPath.toStdString(), pca) || !pca.valid()) {
-        log << method << ": features not regenerated — no readable basis "
-            << QFileInfo(pcaPath).fileName() << ".\n";
-        return false;
-    }
-    if (pca.nCh > nChan || pca.recShift < 0 || pca.recShift + pca.data2use > nSamp) {
-        log << method << ": features not regenerated — basis " << QFileInfo(pcaPath).fileName()
-            << " does not fit this group's waveforms (" << pca.nCh << " ch, window "
-            << pca.recShift << "+" << pca.data2use << " of " << nSamp << " samples).\n";
-        return false;
-    }
-
-    std::FILE* oldFet = std::fopen(target.fetPath.toLocal8Bit().constData(), "rb");
-    std::FILE* spkIn  = std::fopen(spkSource.toLocal8Bit().constData(), "rb");
-    int32_t nDims = 0;
-    if (!oldFet || !spkIn || std::fread(&nDims, sizeof(nDims), 1, oldFet) != 1) {
-        if (oldFet) std::fclose(oldFet);
-        if (spkIn)  std::fclose(spkIn);
-        log << method << ": cannot read " << QFileInfo(target.fetPath).fileName()
-            << " / " << QFileInfo(spkSource).fileName() << ".\n";
-        return false;
-    }
-    const int nPca   = pca.nCh * pca.nComp;
-    const int nExtra = nDims - 1 - nPca;              // last column is the timestamp
-    if (nExtra < 0) {
-        std::fclose(oldFet); std::fclose(spkIn);
-        log << method << ": features not regenerated — the basis yields " << nPca
-            << " features but the .fet has " << (nDims - 1) << ".\n";
-        return false;
-    }
-
-    const QString fetPending = fetCommitted + QStringLiteral(".pending");
-    const QString fetTmp     = fetPending + QStringLiteral(".tmp");
-    std::FILE* out = std::fopen(fetTmp.toLocal8Bit().constData(), "wb");
-    if (!out) {
-        std::fclose(oldFet); std::fclose(spkIn);
-        log << method << ": cannot write " << fetTmp << ".\n";
-        return false;
-    }
-
     const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
     const int     timeDim = clusteringData->timeDimension();
-    std::vector<int16_t> wav(static_cast<size_t>(nChan) * static_cast<size_t>(nSamp));
-    std::vector<int64_t> row(static_cast<size_t>(nDims));
-    bool ok = std::fwrite(&nDims, sizeof(nDims), 1, out) == 1;
-    for (int64_t i = 0; ok && i < nSpikes; ++i) {
-        ok = std::fread(wav.data(), sizeof(int16_t), wav.size(), spkIn) == wav.size()
-          && std::fread(row.data(), sizeof(int64_t), row.size(), oldFet) == row.size();
-        if (!ok) break;
-        // .spk records are sample-major [s * nChan + ch]; a stderiv .spk already
-        // holds the transformed waveform, projected as-is (as realign does).
-        klusters::projectSpikeOntoPca(
-            pca,
-            [&](int ch, int j) {
-                return static_cast<double>(
-                    wav[static_cast<size_t>((pca.recShift + j) * nChan + ch)]);
-            },
-            row.data());
-        // row[nPca .. nPca+nExtra) keeps the old extra columns.
-        row[static_cast<size_t>(nDims - 1)] = static_cast<int64_t>(
-            clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
-        ok = std::fwrite(row.data(), sizeof(int64_t), row.size(), out) == row.size();
+    for (const Plan& p : plans) {
+        const QString fetPending = p.fetCommitted + QStringLiteral(".pending");
+        const QString fetTmp     = fetPending + QStringLiteral(".tmp");
+        std::FILE* oldFet = std::fopen(p.fetSource.toLocal8Bit().constData(), "rb");
+        std::FILE* spkIn  = std::fopen(spkSource.toLocal8Bit().constData(), "rb");
+        std::FILE* out    = std::fopen(fetTmp.toLocal8Bit().constData(), "wb");
+        std::vector<int16_t> wav(static_cast<size_t>(nChan) * static_cast<size_t>(nSamp));
+        std::vector<int64_t> row(static_cast<size_t>(p.nDims));
+        int32_t nDims = 0;
+        bool ok = oldFet && spkIn && out
+               && std::fread(&nDims, sizeof(nDims), 1, oldFet) == 1 && nDims == p.nDims
+               && std::fwrite(&nDims, sizeof(nDims), 1, out) == 1;
+        for (int64_t i = 0; ok && i < nSpikes; ++i) {
+            ok = std::fread(wav.data(), sizeof(int16_t), wav.size(), spkIn) == wav.size()
+              && std::fread(row.data(), sizeof(int64_t), row.size(), oldFet) == row.size();
+            if (!ok) break;
+            // .spk records are sample-major [s * nChan + ch]; a stderiv .spk
+            // already holds the transformed waveform, projected as-is (as
+            // realign does).
+            klusters::projectSpikeOntoPca(
+                p.pca,
+                [&](int ch, int j) {
+                    return static_cast<double>(
+                        wav[static_cast<size_t>((p.pca.recShift + j) * nChan + ch)]);
+                },
+                row.data());
+            // row[nPca .. nDims-1) keeps the old extra columns.
+            row[static_cast<size_t>(nDims - 1)] = static_cast<int64_t>(
+                clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+            ok = std::fwrite(row.data(), sizeof(int64_t), row.size(), out) == row.size();
+        }
+        if (oldFet) std::fclose(oldFet);
+        if (spkIn)  std::fclose(spkIn);
+        if (out && std::fclose(out) != 0) ok = false;
+        if (!ok || std::rename(fetTmp.toLocal8Bit().constData(),
+                               fetPending.toLocal8Bit().constData()) != 0) {
+            QFile::remove(fetTmp);
+            log << p.method << ": writing the regenerated features failed.\n";
+            rollBack();
+            return false;
+        }
+        syncedPending.insert(p.fetCommitted, fetPending);
+        log << p.method << ": " << nSpikes << " feature rows re-projected through "
+            << QFileInfo(p.pcaPath).fileName() << ".\n";
     }
-    std::fclose(oldFet);
-    std::fclose(spkIn);
-    if (std::fclose(out) != 0) ok = false;
-    if (!ok || std::rename(fetTmp.toLocal8Bit().constData(),
-                           fetPending.toLocal8Bit().constData()) != 0) {
-        QFile::remove(fetTmp);
-        log << method << ": writing the regenerated features failed; nothing changed.\n";
-        return false;
-    }
-    syncedPending.insert(fetCommitted, fetPending);
-    log << method << ": " << nSpikes << " feature rows re-projected through "
-        << QFileInfo(pcaPath).fileName() << ".\n";
+    for (const Plan& p : plans) methodsDone.insert(p.method);
     setModified(true);
 
-    // The space being shown reads the old copies: reload it.
-    if (method == activeMethod) {
+    // The space being shown read the old copies: reload it.
+    if (showsSynced) {
+        const QString shown = activeMethod;
         QString err;
         activeMethod.clear();                        // force the reload
-        if (!switchFeatureSpace(method, err)) {
-            activeMethod = method;
-            log << method << ": synced, but reloading it failed — " << err << "\n";
+        if (!switchFeatureSpace(shown, err)) {
+            activeMethod = shown;
+            log << shown << ": synced, but reloading it failed — " << err << "\n";
             return false;
         }
     }
@@ -330,17 +387,22 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& spkDone, QS
 
 bool KlustersDoc::syncFeatureSpace(const QString& method, QString& logOut)
 {
-    QSet<QString> spkDone;
-    return syncOneSpace(method, spkDone, logOut);
+    QSet<QString> methodsDone;
+    return syncOneSpace(method, methodsDone, logOut);
 }
 
 bool KlustersDoc::syncAllFeatureSpaces(QString& logOut)
 {
-    QSet<QString> spkDone;
+    QSet<QString> methodsDone;
     bool allOk = true;
-    for (const FeatureSpace& s : availableFeatureSpaces())
-        if (s.method != originMethod)
-            allOk = syncOneSpace(s.method, spkDone, logOut) && allOk;
+    for (const FeatureSpace& s : availableFeatureSpaces()) {
+        if (s.method == originMethod) continue;
+        if (!s.usable) {                             // cannot be loaded anyway: not a sync failure
+            QTextStream(&logOut) << s.method << ": skipped — " << s.reason << ".\n";
+            continue;
+        }
+        allOk = syncOneSpace(s.method, methodsDone, logOut) && allOk;
+    }
     return allOk;
 }
 
