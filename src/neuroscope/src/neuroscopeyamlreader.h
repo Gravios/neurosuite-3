@@ -54,6 +54,7 @@ public:
     int    getVoltageRange()   const { return reader.getVoltageRange(); }
     int    getAmplification()  const { return reader.getAmplification(); }
     int    getOffset()         const { return reader.getOffset(); }
+    bool   hasOffset()         const { return reader.hasOffset(); }
 
     // ---- Field potentials ----
     double getLfpInformation() const { return reader.getLfpSamplingRate(); }

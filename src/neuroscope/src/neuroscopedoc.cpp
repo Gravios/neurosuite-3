@@ -2314,7 +2314,9 @@ void NeuroscopeDoc::loadDocumentInformation(NeuroscopeYamlReader reader){
     if(reader.getVoltageRange() != 0) voltageRange = reader.getVoltageRange();
     //Neuroscope for the moment uses a unique amplification for all the channels
     if(reader.getAmplification() != 0) amplification = reader.getAmplification();
-    if(reader.getOffset() != 0) initialOffset = reader.getOffset();
+    // offset 0 is a real value, not "absent": testing != 0 let a non-zero
+    // offset preference replace it, and the save on close wrote that back.
+    if(reader.hasOffset()) initialOffset = reader.getOffset();
 
     acquisitionGain = static_cast<int>(0.5 +
                                        static_cast<float>(pow(static_cast<double>(2),static_cast<double>(resolution))

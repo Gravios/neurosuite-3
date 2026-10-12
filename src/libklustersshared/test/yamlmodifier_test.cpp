@@ -47,7 +47,7 @@ acquisitionSystem:
   nChannels: 8
   samplingRate: 20000
   voltageRange: 20
-  amplification: 1000
+  amplification: 192.5
   offset: 0
 neuroscope:
   channels:
@@ -243,6 +243,32 @@ int main()
         chk(str(c["offsets"][0]["defaultOffset"]) == "20", "known offset updated");
         chk(str(c["offsets"][3]["defaultOffset"]) == "50", "unknown channel keeps the file offset");
         chk(str(c["offsets"][5]["defaultOffset"]) == "0", "absent offset defaults to 0");
+    }
+
+    std::printf("acquisition: fractional amplification, zero offset:\n");
+    writeSession(path);
+    {
+        ParameterYamlReader rd;
+        chk(rd.parseFile(path), "reader parses");
+        chk(rd.getAmplification() == 193, "fractional amplification read, not 0");
+        chk(rd.hasOffset() && rd.getOffset() == 0, "offset 0 reads as present");
+        rd.closeFile();
+
+        // What NeuroScope passes back after loading those values.
+        ParameterYamlModifier mod;
+        chk(mod.parseFile(path), "parseFile");
+        mod.setAcquisitionSystemInformation(16, 8, 20000.0, 20, 193, 0);
+        chk(mod.writeToFile(path), "writeToFile");
+        const YAML::Node a = YAML::LoadFile(path.toStdString())["acquisitionSystem"];
+        chk(str(a["amplification"]) == "192.5", "file's amplification left as written");
+        chk(str(a["samplingRate"]) == "20000", "unchanged samplingRate left as written");
+
+        ParameterYamlModifier mod2;
+        chk(mod2.parseFile(path), "parseFile");
+        mod2.setAcquisitionSystemInformation(16, 8, 20000.0, 20, 400, 0);
+        chk(mod2.writeToFile(path), "writeToFile");
+        chk(str(YAML::LoadFile(path.toStdString())["acquisitionSystem"]["amplification"]) == "400",
+            "a real change is still written");
     }
 
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

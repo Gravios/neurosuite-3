@@ -163,6 +163,7 @@ public:
     int    getVoltageRange() const;
     int    getAmplification() const;
     int    getOffset()       const;
+    bool   hasOffset()       const;   ///< offset present (0 is a real offset)
 
     // ----------------------------------------------------------------
     // Field potentials

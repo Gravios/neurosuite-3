@@ -11,6 +11,7 @@
 #include <QDir>
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -180,12 +181,28 @@ bool ParameterYamlModifier::setAcquisitionSystemInformation(
         int voltageRange, int amplification, int offset)
 {
     auto acq = ensureMap("acquisitionSystem");
-    acq["nBits"]         = resolution;
-    acq["nChannels"]     = nbChannels;
-    acq["samplingRate"]  = samplingRate;
-    acq["voltageRange"]  = voltageRange;
-    acq["amplification"] = amplification;
-    acq["offset"]        = offset;
+    // The caller models these as ints (samplingRate as a double).  A value the
+    // file already holds that denotes the same number -- 1000.0 for 1000, or a
+    // fractional amplification NeuroScope rounded on load -- is left as written
+    // rather than replaced by the caller's coarser copy.
+    auto put = [&acq](const char* key, double value, bool rounded) {
+        const YAML::Node old = acq[key];
+        if (old && old.IsScalar()) {
+            try {
+                const double d = old.as<double>();
+                if (rounded ? std::lround(d) == std::lround(value) : d == value)
+                    return;
+            } catch (...) {}
+        }
+        if (rounded) acq[key] = static_cast<int>(std::lround(value));
+        else         acq[key] = value;
+    };
+    put("nBits",         resolution,    true);
+    put("nChannels",     nbChannels,    true);
+    put("samplingRate",  samplingRate,  false);
+    put("voltageRange",  voltageRange,  true);
+    put("amplification", amplification, true);
+    put("offset",        offset,        true);
     return true;
 }
 

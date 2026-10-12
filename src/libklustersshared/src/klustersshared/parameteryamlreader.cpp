@@ -4,6 +4,8 @@
 
 #include "parameteryamlreader.h"
 
+#include <cmath>
+
 #include <QDebug>
 #include <QObject>
 #include <QStringList>
@@ -137,14 +139,32 @@ QString ParameterYamlReader::getNotes() const
 // Acquisition system
 // ---------------------------------------------------------------------------
 
+// An integer acquisition value.  The file is hand-edited and written by other
+// tools, so "1000.0" is as likely as "1000"; a strict int read rejects it and
+// returns the "absent" 0, and NeuroScope then substitutes its preference default
+// -- which its save-on-close writes back over the real value.  A non-integral
+// number rounds to the nearest integer instead.
+static int acquisitionInt(const YAML::Node& root, const char* key)
+{
+    const YAML::Node n = safeGet2(root, "acquisitionSystem", key);
+    if (!n || !n.IsScalar()) return 0;
+    try { return n.as<int>(); } catch (...) {}
+    try {
+        const double d = n.as<double>();
+        if (std::isfinite(d) && std::fabs(d) < 2.0e9)
+            return static_cast<int>(std::lround(d));
+    } catch (...) {}
+    return 0;
+}
+
 int ParameterYamlReader::getResolution() const
 {
-    return nodeAs<int>(safeGet2(root, "acquisitionSystem", "nBits"), 0);
+    return acquisitionInt(root, "nBits");
 }
 
 int ParameterYamlReader::getNbChannels() const
 {
-    return nodeAs<int>(safeGet2(root, "acquisitionSystem", "nChannels"), 0);
+    return acquisitionInt(root, "nChannels");
 }
 
 double ParameterYamlReader::getSamplingRate() const
@@ -154,17 +174,23 @@ double ParameterYamlReader::getSamplingRate() const
 
 int ParameterYamlReader::getVoltageRange() const
 {
-    return nodeAs<int>(safeGet2(root, "acquisitionSystem", "voltageRange"), 0);
+    return acquisitionInt(root, "voltageRange");
 }
 
 int ParameterYamlReader::getAmplification() const
 {
-    return nodeAs<int>(safeGet2(root, "acquisitionSystem", "amplification"), 0);
+    return acquisitionInt(root, "amplification");
 }
 
 int ParameterYamlReader::getOffset() const
 {
-    return nodeAs<int>(safeGet2(root, "acquisitionSystem", "offset"), 0);
+    return acquisitionInt(root, "offset");
+}
+
+bool ParameterYamlReader::hasOffset() const
+{
+    const YAML::Node n = safeGet2(root, "acquisitionSystem", "offset");
+    return n && n.IsScalar();
 }
 
 // ---------------------------------------------------------------------------
