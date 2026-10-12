@@ -54,7 +54,9 @@ shows the density of the points the view draws (the shown clusters, with the
 same out-of-scope filter), binned at screen resolution so it follows zoom and
 pan, log-scaled and drawn semi-transparently: dense cores read warm, sparse
 regions stay clear so their points remain visible. The key is rebindable
-(`cluster.densityOverlay`).
+(`cluster.densityOverlay`). The smoothing kernel is a Cluster View preference
+(**Density heatmap ▸ Smoothing kernel σ**, 0–30 px, default 3 px; 0 shows the
+raw binned counts).
 
 </details>
 
