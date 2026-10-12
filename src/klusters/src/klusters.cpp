@@ -798,6 +798,15 @@ void KlustersApp::createMenus()
     connect(mSyncFeatureSpaces, &QAction::triggered,
             this, &KlustersApp::slotSyncFeatureSpaces);
 
+    mSortSpikesByTime = actionMenu->addAction(tr("Sort Spikes by &Time"));
+    mSortSpikesByTime->setToolTip(tr(
+        "Realign and nudge keep each spike in its own row, so the .res can drift "
+        "out of time order.  This sorts the saved .res by time and moves the same "
+        "rows in every method's .spk and .fet and in the .clu and .clc, then "
+        "reopens the document.  Save first; undo history is cleared."));
+    connect(mSortSpikesByTime, &QAction::triggered,
+            this, &KlustersApp::slotSortSpikesByTime);
+
     mDipSplit = reclusterMenu->addAction(tr("&DipSplit Selected Cluster"));
     mDipSplit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
     mDipSplit->setToolTip(
@@ -7977,7 +7986,7 @@ void KlustersApp::integratePluginResult()
     box.exec();
 }
 
-void KlustersApp::reopenCurrentDocument()
+void KlustersApp::reopenCurrentDocument(const QString& reason)
 {
     const QString url = doc ? doc->url() : QString();
     if (url.isEmpty())
@@ -7997,11 +8006,14 @@ void KlustersApp::reopenCurrentDocument()
         openDocumentFile(url);
         statusBar()->showMessage(
             tr("Reloaded \"%1\" after %2.")
-                .arg(QFileInfo(url).fileName(), mRunningPlugin.name), 5000);
+                .arg(QFileInfo(url).fileName(),
+                     reason.isEmpty() ? mRunningPlugin.name : reason), 5000);
     } else {
-        statusBar()->showMessage(
-            tr("\"%1\" finished; reopen \"%2\" to see the reloaded clustering.")
-                .arg(mRunningPlugin.name, QFileInfo(url).fileName()), 8000);
+        statusBar()->showMessage(reason.isEmpty()
+            ? tr("\"%1\" finished; reopen \"%2\" to see the reloaded clustering.")
+                  .arg(mRunningPlugin.name, QFileInfo(url).fileName())
+            : tr("Reopen \"%1\" to see it after %2.")
+                  .arg(QFileInfo(url).fileName(), reason), 8000);
     }
 }
 

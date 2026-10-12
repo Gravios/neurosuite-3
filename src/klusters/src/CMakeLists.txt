@@ -71,6 +71,7 @@ set(klusters_SRCS
     klusters_hierarchy.cpp      # KlustersApp hierarchical (.clc child) view + child-palette slots (split from klusters.cpp)
     klusters_dipdrift.cpp       # KlustersApp dip-split / probe-drift / timestamp-nudge (split from klusters.cpp)
     klusters_featurespace.cpp   # KlustersApp feature-space switcher (Parameters toolbar combo)
+    klusters_timesort.cpp       # KlustersApp Sort Spikes by Time (confirm, rewrite, reopen)
     klusters_sort.cpp           # KlustersApp cluster sorting / reordering + sort progress bar (split from klusters.cpp)
     klustersdoc.cpp
     klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)
@@ -81,6 +82,7 @@ set(klusters_SRCS
     klustersdoc_io.cpp          # KlustersDoc document lifecycle / file I/O (split from klustersdoc.cpp)
     klustersdoc_realign.cpp     # KlustersDoc spike realignment / nudge (split from klustersdoc.cpp)
     klustersdoc_featurespace.cpp # KlustersDoc feature-space switching (load another method's .fet/.spk)
+    klustersdoc_timesort.cpp    # KlustersDoc full time sort (one row permutation over .res/.spk/.fet/.clu/.clc)
     klustersdoc_dipsplit.cpp    # KlustersDoc bimodality / KNN splitting (split from klustersdoc.cpp)
     klustersdoc_strip.cpp       # KlustersDoc template strip (kernel-weighted residual)
     klustersdoc_watershed.cpp   # KlustersDoc 2D density-watershed split (split from klustersdoc.cpp)

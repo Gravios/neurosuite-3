@@ -33,6 +33,7 @@
 #include <QObject>
 #include <QVector>
 #include <QString>
+#include <QStringList>
 #include <QPoint>
 #include <QFileInfo>
 #include <functional>
@@ -1553,6 +1554,32 @@ public:
     bool syncAllFeatureSpaces(QString& logOut);
     /** Delete every synced working copy and forget it. */
     void discardSyncedFeatureSpaces();
+
+    // ── Full time sort (klustersdoc_timesort.cpp) ──────────────────────────
+    /** One row-indexed file of the group and its layout: @c header bytes, then
+     *  one @c record of bytes per spike row. */
+    struct RowFile {
+        QString path;
+        qint64  header = 0;
+        qint64  record = 0;
+    };
+    /** What a full time sort would do.  @c order[k] is the 0-based row that
+     *  moves to row k (a stable sort of the .res by time). */
+    struct TimeSortPlan {
+        std::vector<int64_t> order;
+        qint64       nOutOfOrder = 0;   ///< rows whose time is below the previous row's
+        std::vector<RowFile> files;     ///< every file permuted together
+        QStringList  skipped;           ///< group files without this spike count (left as is)
+        QStringList  notReordered;      ///< row-indexed files this cannot permute (.eap)
+    };
+    /** Read the saved .res and list every row-indexed file of this group: each
+     *  method's .res/.spk/.fet and every .clu/.clc (stage-tagged copies too).
+     *  Reads the saved files, so the document must be saved first. */
+    bool planTimeSort(TimeSortPlan& plan, QString& errorInformation) const;
+    /** Apply @p plan: write each file with its rows in time order, then swap all
+     *  of them in; on any failure every file is left as it was.  The open
+     *  document still holds the old order: reopen it afterwards. */
+    bool applyTimeSort(const TimeSortPlan& plan, QString& logOut);
 
     /** Discards the most recent pending realignment and restores the
      *  in-memory Data to its state before that realignment was run.

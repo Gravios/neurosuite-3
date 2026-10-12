@@ -455,6 +455,9 @@ private Q_SLOTS:
     /** Actions > Sync Feature Spaces: re-extract and re-project every other
      *  method space at this session's spike times (KlustersDoc::syncAllFeatureSpaces). */
     void slotSyncFeatureSpaces();
+    /** Actions > Sort Spikes by Time: put the group's spike rows back in time
+     *  order in every row-indexed file, then reopen (KlustersDoc::planTimeSort). */
+    void slotSortSpikesByTime();
     /** Shift timestamps of the selected cluster by ±1 sample. */
     void slotNudgeTimestampMinus();
     void slotNudgeTimestampPlus();
@@ -776,8 +779,9 @@ private:
      *  recluster-integrate / none). */
     void integratePluginResult();
     /** Reload the (externally rewritten) session from disk via the proven
-     *  slotFileClose() + openDocumentFile() path (hierarchy-reload). */
-    void reopenCurrentDocument();
+     *  slotFileClose() + openDocumentFile() path (hierarchy-reload).  @p reason
+     *  names what rewrote it in the status message (default: the plugin run). */
+    void reopenCurrentDocument(const QString& reason = QString());
     /** Session-dir files written/updated since the run started (prefix-matched to
      *  the session base); used to report what an analysis/export plugin produced. */
     QStringList pluginProducedFiles() const;
@@ -1252,6 +1256,7 @@ private:
      *  whole.*/
     QAction *mPcaAlignAllClusters;
     QAction *mSyncFeatureSpaces = nullptr;   ///< Actions > Sync Feature Spaces
+    QAction *mSortSpikesByTime  = nullptr;   ///< Actions > Sort Spikes by Time
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;
