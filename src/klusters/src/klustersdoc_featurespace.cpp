@@ -103,8 +103,9 @@ QList<KlustersDoc::FeatureSpace> KlustersDoc::availableFeatureSpaces() const
             // Synced this session (syncFeatureSpace): read the working copies.
             const auto syncedFet = syncedPending.constFind(s.fetPath);
             if (syncedFet != syncedPending.constEnd() && QFileInfo::exists(syncedFet.value())) {
-                s.fetPath = syncedFet.value();
-                s.synced  = true;
+                s.syncStale = syncedGeneration.value(s.fetPath) != spikeTimesGeneration;
+                s.fetPath   = syncedFet.value();
+                s.synced    = true;
             }
             const auto syncedSpk = syncedPending.constFind(s.spkPath);
             if (syncedSpk != syncedPending.constEnd() && QFileInfo::exists(syncedSpk.value()))
@@ -297,6 +298,7 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
         for (const Plan& p : plans) {
             QFile::remove(p.fetCommitted + QStringLiteral(".pending"));
             syncedPending.remove(p.fetCommitted);
+            syncedGeneration.remove(p.fetCommitted);
         }
         log << method << ": nothing synced; the saved files stay in use.\n";
     };
@@ -365,6 +367,7 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
             return false;
         }
         syncedPending.insert(p.fetCommitted, fetPending);
+        syncedGeneration.insert(p.fetCommitted, spikeTimesGeneration);
         log << p.method << ": " << nSpikes << " feature rows re-projected through "
             << QFileInfo(p.pcaPath).fileName() << ".\n";
     }
@@ -411,4 +414,5 @@ void KlustersDoc::discardSyncedFeatureSpaces()
     for (auto it = syncedPending.constBegin(); it != syncedPending.constEnd(); ++it)
         QFile::remove(it.value());
     syncedPending.clear();
+    syncedGeneration.clear();
 }

@@ -2105,6 +2105,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // spkFileName already points to pendingSpkPath (set on open and kept
     // permanently) — no redirect needed here.
     pendingRealign.push_back(std::move(pending));
+    ++spikeTimesGeneration;          // synced feature spaces are now stale
 
     //Publish the overlay batch (revertible: rejectLastRealign pairs with it).
     //Both Data layers read the same pending .spk, so both get the batch —
@@ -2424,11 +2425,13 @@ void KlustersDoc::rejectLastRealign()
 {
     if (pendingRealign.empty()) return;
 
-    // Spaces synced since this realign carry its timestamps, which are about to
-    // be undone: drop their working copies (they fall back to their committed
-    // files; re-sync after the undo if wanted).  Switching is refused while a
-    // realign is pending, so none of them is the space shown.
+    // The undo re-seeds the .clu space's working copies from the saved files
+    // (initPendingFiles below), so every synced copy -- made at times that are
+    // no longer on disk -- is dropped with them and the other spaces fall back
+    // to their saved files too; sync again after the undo if wanted.  Switching
+    // is refused while a realign is pending, so none of them is the space shown.
     discardSyncedFeatureSpaces();
+    ++spikeTimesGeneration;
 
     const PendingRealign& p = pendingRealign.back();
 
@@ -3605,6 +3608,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // pushes NO Data-undo entry, so the ring must not pair it with one.
     logAfterNotUndoable(QList<int>{ clusterId });
 
+    ++spikeTimesGeneration;          // synced feature spaces are now stale
     return true;
 }
 

@@ -607,6 +607,7 @@ void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
         const QString sign = (deltaSamples >= 0) ? QStringLiteral("+") : QStringLiteral("");
         statusBar()->showMessage(
             tr("Cluster %1: %2%3 sample.").arg(id).arg(sign).arg(deltaSamples), 2000);
+        populateFeatureSpaceCombo();     // synced spaces are now stale (tooltip)
     } else {
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
     }

@@ -1512,6 +1512,7 @@ public:
         QString spkMethod;     ///< token the .spk was found under (may differ: _D, fallback)
         bool    usable = false;
         bool    synced = false;  ///< reads working copies synced this session
+        bool    syncStale = false; ///< synced, but spike times changed since (sync again)
         QString reason;        ///< why it is not usable (tooltip text)
     };
     /** Every <base>.fet.<method>.<group> next to the document, the .clu's own
@@ -1950,6 +1951,11 @@ private:
     /** Synced working copies of other spaces (syncFeatureSpace): committed
      *  path -> its ".pending" copy.  Committed by Save, removed at close. */
     QHash<QString, QString> syncedPending;
+    /** Spike-times generation each synced .fet was made at (committed .fet path
+     *  -> spikeTimesGeneration then); a mismatch means the copy is stale. */
+    QHash<QString, quint64> syncedGeneration;
+    /** Bumped whenever spike times change (realign, nudge, undoing a realign). */
+    quint64 spikeTimesGeneration = 0;
     /** One space's sync, with every space sharing its .spk; @p methodsDone holds
      *  the methods already synced in this pass so a shared .spk is rebuilt once. */
     bool syncOneSpace(const QString& method, QSet<QString>& methodsDone, QString& logOut);

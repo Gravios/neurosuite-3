@@ -47,7 +47,11 @@ void KlustersApp::populateFeatureSpaceCombo()
             ? tr("Features: %1\nWaveforms: %2")
                   .arg(QFileInfo(s.fetPath).fileName(), QFileInfo(s.spkPath).fileName())
             : tr("Not available: %1").arg(s.reason);
-        if (s.synced) tip += tr("\nSynced to the current spike times this session (written by Save).");
+        if (s.synced)
+            tip += s.syncStale
+                ? tr("\nSynced this session, but spike times have changed since: "
+                     "sync again (Actions > Sync Feature Spaces).")
+                : tr("\nSynced to the current spike times this session (written by Save).");
         featureSpaceCombo->setItemData(row, tip, Qt::ToolTipRole);
         if (!s.usable && model)
             if (QStandardItem* item = model->item(row)) item->setEnabled(false);
