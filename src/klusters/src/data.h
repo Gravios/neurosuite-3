@@ -1728,6 +1728,8 @@ private:
              timeEndIndex(index),
              timeStart(startTime),
              timeEnd(endTime),
+             nbSampleSpikes(nbSampleSpikes),       // were left uninitialized (cppcheck)
+             nbTimeFrameSpikes(nbTimeFrameSpikes),
              nbPtsBySpike(data.nbChannels * data.nbSamplesInWaveform),
              nbSpikesAsked(0){
         }
