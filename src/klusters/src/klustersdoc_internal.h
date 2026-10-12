@@ -32,10 +32,13 @@ namespace klustersdoc_internal {
 // A session's ".pending" working copy names the same method: custody::methodOf
 // requires the group to be the LAST token, so it returns "" for
 // "x.spk.stderiv_C5.7.pending" -- which read a stderiv pending .spk as standard
-// (re-extract-on-save rebuilt it raw).  Strip the suffix first.
+// (re-extract-on-save rebuilt it raw).  Strip the suffix first, and a sync's
+// staging suffix (".pending.sync") before it.
 inline QString featureMethod(const QString& path) {
+    static const QString syncSuffix    = QStringLiteral(".sync");
     static const QString pendingSuffix = QStringLiteral(".pending");
-    const QString p = path.endsWith(pendingSuffix) ? path.chopped(pendingSuffix.size()) : path;
+    QString p = path.endsWith(syncSuffix) ? path.chopped(syncSuffix.size()) : path;
+    if (p.endsWith(pendingSuffix)) p.chop(pendingSuffix.size());
     const std::string m = neurosuite::custody::methodOf(p.toStdString());
     return m.empty() ? QStringLiteral("standard") : QString::fromStdString(m);
 }

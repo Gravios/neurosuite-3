@@ -52,6 +52,19 @@ void SpkMemoryCache::markWritten(const QString& path)
     if (it != entries.end()) it->size = -1;      // never matches: re-read on next get()
 }
 
+void SpkMemoryCache::moved(const QString& from, const QString& to)
+{
+    QMutexLocker lk(&mutex);
+    const auto it = entries.find(from);
+    if (it == entries.end()) return;
+    Entry e = it.value();
+    entries.erase(it);
+    const QFileInfo info(to);
+    if (info.size() != e.size) return;          // not the same file after all
+    e.modified = info.lastModified();
+    entries.insert(to, e);
+}
+
 void SpkMemoryCache::keepOnly(const QStringList& paths)
 {
     QMutexLocker lk(&mutex);

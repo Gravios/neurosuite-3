@@ -40,6 +40,10 @@ public:
     * have; their rewritten rows come from the SpkOverlay.*/
     void markWritten(const QString& path);
 
+    /**The file at @p from was renamed to @p to: hold the same bytes under
+    * the new name (a rename keeps size and modification time).*/
+    void moved(const QString& from, const QString& to);
+
     /**Drop every entry whose path is not in @p paths.*/
     void keepOnly(const QStringList& paths);
 

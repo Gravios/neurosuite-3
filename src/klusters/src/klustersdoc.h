@@ -53,6 +53,7 @@
 #include <QTextStream>
 #include <vector>
 #include <memory>
+#include <atomic>
 
 
 
@@ -1964,7 +1965,7 @@ private:
      *  -> spikeTimesGeneration then); a mismatch means the copy is stale. */
     QHash<QString, quint64> syncedGeneration;
     /** Bumped whenever spike times change (realign, nudge, undoing a realign). */
-    quint64 spikeTimesGeneration = 0;
+    std::atomic<quint64> spikeTimesGeneration{0};   // bumped on the realign worker thread
     /** Feature tables held in memory (preloadFeatureSpaces), by .fet path, each
      *  for one file version.  The .clu space's live table is kept here while
      *  another space is shown. */
@@ -2063,7 +2064,10 @@ private:
      *  left untouched.  Writes a temp file and renames it over the target
      *  (crash-safe, independent of the pending/commit path).  Returns false and
      *  leaves the .spk unchanged on any error. */
-    bool reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut);
+    /** @p fallbackBasis gives the spatial order when the .spk's own token has
+     *  no readable basis (a space that exists only as _D: sync passes its own). */
+    bool reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut,
+                                   const neurosuite::core::PcaBasis* fallbackBasis = nullptr);
 
     /** Seed all four .pending files from their originals.
      *  Redirects spkFileName and tmpCluFile to the pending paths.

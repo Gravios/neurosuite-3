@@ -109,7 +109,7 @@ QList<KlustersDoc::FeatureSpace> KlustersDoc::availableFeatureSpaces() const
             // Synced this session (syncFeatureSpace): read the working copies.
             const auto syncedFet = syncedPending.constFind(s.fetPath);
             if (syncedFet != syncedPending.constEnd() && QFileInfo::exists(syncedFet.value())) {
-                s.syncStale = syncedGeneration.value(s.fetPath) != spikeTimesGeneration;
+                s.syncStale = syncedGeneration.value(s.fetPath) != spikeTimesGeneration.load();
                 s.fetPath   = syncedFet.value();
                 s.synced    = true;
             }
@@ -302,27 +302,16 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
         }
     }
 
-    // The shown space's files are about to be replaced: every job reading the
-    // feature table or the .spk must be gone before any rename.
-    bool showsSynced = false;
-    for (const Plan& p : plans) showsSynced = showsSynced || p.method == activeMethod;
-    if (showsSynced && viewList)
-        for (KlustersView* v : *viewList) v->stopAllViewThreads();
-
-    // On any later failure, fall the whole set back to its committed files:
-    // a partial set would pair waveforms and features from different times.
+    // Everything is built under staging names first (".pending.sync"); the
+    // working copies are replaced only once every file of the set is ready, so
+    // a failure leaves the previous state -- committed files or an earlier
+    // sync -- exactly as it was.
     const QString spkPending = spkCommitted + QStringLiteral(".pending");
-    auto rollBack = [&]() {
-        if (!ownWaveforms) {
-            QFile::remove(spkPending);
-            syncedPending.remove(spkCommitted);
-        }
-        for (const Plan& p : plans) {
-            QFile::remove(p.fetCommitted + QStringLiteral(".pending"));
-            syncedPending.remove(p.fetCommitted);
-            syncedGeneration.remove(p.fetCommitted);
-        }
-        log << method << ": nothing synced; the saved files stay in use.\n";
+    const QString stage      = QStringLiteral(".sync");
+    std::vector<QString> staged;                    // staging files written so far
+    auto dropStaged = [&]() {
+        for (const QString& f : staged) QFile::remove(f);
+        log << method << ": nothing synced; the files in use are unchanged.\n";
     };
 
     // ── Waveforms ────────────────────────────────────────────────────────
@@ -330,15 +319,18 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
     if (ownWaveforms) {
         spkSource = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
     } else {
+        // The space's own basis gives the spatial order if the .spk's waveform
+        // token has none of its own (a space that exists only as _D).
         QString reLog;
-        if (!reextractAllSpikesFromFil(spkPending, reLog)) {
+        const QString spkStage = spkPending + stage;
+        staged.push_back(spkStage);
+        if (!reextractAllSpikesFromFil(spkStage, reLog, &plans.front().pca)) {
             log << method << ": waveforms not re-extracted — " << reLog << "\n";
-            rollBack();
+            dropStaged();
             return false;
         }
-        syncedPending.insert(spkCommitted, spkPending);
         log << method << ": " << reLog << "\n";
-        spkSource = spkPending;
+        spkSource = spkStage;
     }
 
     // ── Features ─────────────────────────────────────────────────────────
@@ -347,24 +339,23 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
     // serves it.  Extra non-PCA columns are carried over from the current .fet.
     const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
     const int     timeDim = clusteringData->timeDimension();
-    // The waveforms, held in memory: a re-extracted file is read once here and
-    // stays held for the switcher; the .clu space's pending copy is the live one.
-    const size_t spikeElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
-    const std::shared_ptr<const QByteArray> spk = SpkMemoryCache::instance().get(spkSource);
+    const size_t  spikeElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    std::shared_ptr<const QByteArray> spk = SpkMemoryCache::instance().get(spkSource);
     if (!spk || static_cast<qint64>(spk->size())
                     != nSpikes * static_cast<qint64>(spikeElems * sizeof(int16_t))) {
         log << method << ": cannot hold " << QFileInfo(spkSource).fileName()
             << " in memory, or it does not match this group.\n";
-        rollBack();
+        dropStaged();
         return false;
     }
     // reinterpret_cast: the held bytes are the .spk's native-endian int16 records.
     const int16_t* waveforms = reinterpret_cast<const int16_t*>(spk->constData());
+    std::vector<std::shared_ptr<neurofileio::FetBinaryFile>> tables;
     for (const Plan& p : plans) {
-        const QString fetPending = p.fetCommitted + QStringLiteral(".pending");
-        const QString fetTmp     = fetPending + QStringLiteral(".tmp");
-        const size_t  nDims      = static_cast<size_t>(p.nDims);
+        const size_t nDims = static_cast<size_t>(p.nDims);
         auto out = std::make_shared<neurofileio::FetBinaryFile>();
+        const QString fetStage = p.fetCommitted + QStringLiteral(".pending") + stage;
+        staged.push_back(fetStage);
         bool ok = p.oldFet->nSpikes == nSpikes;
         if (ok) {
             out->nFeatures = p.nDims;
@@ -389,35 +380,76 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
             }
         }
         // Written for Save (the working copy); the table itself stays in memory.
-        if (!ok || !neurofileio::writeFetBinary(fetTmp.toStdString(), out->nFeatures, out->values)
-            || std::rename(fetTmp.toLocal8Bit().constData(),
-                           fetPending.toLocal8Bit().constData()) != 0) {
-            QFile::remove(fetTmp);
+        if (!ok || !neurofileio::writeFetBinary(fetStage.toStdString(), out->nFeatures, out->values)) {
             log << p.method << ": writing the regenerated features failed.\n";
-            rollBack();
+            dropStaged();
             return false;
         }
-        holdFeatures(fetPending, std::move(out));
+        tables.push_back(std::move(out));
+    }
+
+    // ── Swap the set in ──────────────────────────────────────────────────
+    // The shown space's files are about to be replaced: every job reading the
+    // feature table or the .spk must be gone before any rename.
+    bool showsSynced = false;
+    for (const Plan& p : plans) showsSynced = showsSynced || p.method == activeMethod;
+    if (showsSynced && viewList)
+        for (KlustersView* v : *viewList) v->stopAllViewThreads();
+
+    auto promote = [](const QString& from, const QString& to) {
+        QFile::remove(to);
+        return std::rename(from.toLocal8Bit().constData(), to.toLocal8Bit().constData()) == 0;
+    };
+    bool promoted = true;
+    if (!ownWaveforms) {
+        promoted = promote(spkPending + stage, spkPending);
+        if (promoted) {
+            syncedPending.insert(spkCommitted, spkPending);
+            SpkMemoryCache::instance().moved(spkPending + stage, spkPending);   // keep it held
+        }
+    }
+    for (size_t k = 0; promoted && k < plans.size(); ++k) {
+        const Plan&   p          = plans[k];
+        const QString fetPending = p.fetCommitted + QStringLiteral(".pending");
+        promoted = promote(fetPending + stage, fetPending);
+        if (!promoted) break;
+        holdFeatures(fetPending, tables[k]);
         syncedPending.insert(p.fetCommitted, fetPending);
-        syncedGeneration.insert(p.fetCommitted, spikeTimesGeneration);
+        syncedGeneration.insert(p.fetCommitted, spikeTimesGeneration.load());
         log << p.method << ": " << nSpikes << " feature rows re-projected through "
             << QFileInfo(p.pcaPath).fileName() << ".\n";
     }
-    for (const Plan& p : plans) methodsDone.insert(p.method);
-    setModified(true);
+    if (!promoted) {
+        // A rename failed part-way (a file-system error): no consistent set
+        // remains, so the whole set goes back to its committed files.
+        for (const QString& f : staged) QFile::remove(f);
+        if (!ownWaveforms) { QFile::remove(spkPending); syncedPending.remove(spkCommitted); }
+        for (const Plan& p : plans) {
+            QFile::remove(p.fetCommitted + QStringLiteral(".pending"));
+            syncedPending.remove(p.fetCommitted);
+            syncedGeneration.remove(p.fetCommitted);
+        }
+        log << method << ": replacing the working copies failed; the space is back on its "
+                         "saved files.\n";
+    }
+    if (promoted) {
+        for (const Plan& p : plans) methodsDone.insert(p.method);
+        setModified(true);
+    }
 
-    // The space being shown read the old copies: reload it.
+    // The space being shown read the old copies (or, after a failed swap, the
+    // ones just removed): reload it.  A reload failure does not undo the sync.
     if (showsSynced) {
         const QString shown = activeMethod;
         QString err;
         activeMethod.clear();                        // force the reload
         if (!switchFeatureSpace(shown, err)) {
             activeMethod = shown;
-            log << shown << ": synced, but reloading it failed — " << err << "\n";
-            return false;
+            log << shown << ": synced, but reloading it failed — " << err
+                << "  Switch to another space and back.\n";
         }
     }
-    return true;
+    return promoted;
 }
 
 bool KlustersDoc::syncFeatureSpace(const QString& method, QString& logOut)

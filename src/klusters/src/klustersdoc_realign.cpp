@@ -3662,7 +3662,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 // plain order ("_S<n>"), which the pattern must not override.  Writes a temp file + rename so a
 // crash can never leave a half-written .spk.
 // ─────────────────────────────────────────────────────────────────────────────
-bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut)
+bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut,
+                                             const neurosuite::core::PcaBasis* fallbackBasis)
 {
     logOut.clear();
     if (!clusteringData) return false;
@@ -3719,6 +3720,11 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
             && neurosuite::core::loadPca(pcaPath.toStdString(), pca)
             && neurosuite::core::hasTemporalDiff(pca.method))
             order = neurosuite::core::spatialOrder(pca.method);
+        else if (fallbackBasis && neurosuite::core::hasTemporalDiff(fallbackBasis->method))
+            order = neurosuite::core::spatialOrder(fallbackBasis->method);   // e.g. only a _D basis
+        else
+            log << "re-extract: no basis for " << spkMethod
+                << "; using the all-pairs spatial derivative\n";
         // The .spk's token says whether the session pattern applies.
         const SdiffPattern sp = sdiffPatternForMethod(parameterFile, grpId, nChan,
                                                       totalNbChan, spkMethod);
