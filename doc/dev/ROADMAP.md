@@ -97,6 +97,14 @@ kept only as the advanced-CRUD fallback (merge / rename / update /
 regenerate) until the palette has proven out in the live pass above.
 Move or retire that CRUD first.  Estimate: 1 session.
 
+**Templates for every feature space.**
+Template generation writes a `.wtf` per `.spk` variant, but the variants other
+than the `.clu`'s own can be stale after realign / nudge.  Build them at the
+time of the median-waveform computation for every `.spk` type, from waveforms
+synced to the current spike times (Actions → Sync Feature Spaces provides the
+synced `.spk`).  Design first — when to trigger, and how the per-variant
+`.wtf` relate to the method-less `.wti`.  Estimate: 1–2 sessions.
+
 **fiber-kit `.wtl` v2 (and `.mti`/`.mtf`) reader mirror.**
 ns3 writes `.wtl` v2 (running mean/std/count per node); fiber-kit's
 `neuro_io.read_wtl`/`write_wtl` still speak v1 (spike lists), so fiber-kit

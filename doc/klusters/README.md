@@ -111,6 +111,19 @@ This works because every file of a group is indexed by the same spike row,
 and Klusters keeps it that way: realign and nudge never move a spike past its
 neighbour in `.res`.
 
+**Keeping spaces in sync.** Realign and nudge rewrite only the `.clu` space's
+`.spk` and `.fet`, so the other spaces' waveforms and features stay at the old
+spike times. **Actions → Sync Feature Spaces** brings every other space up to
+date: it re-extracts each space's `.spk` from the `.fil` at the current spike
+times and re-projects its `.fet` through that space's own `.pca` basis (lag
+`_D` spaces included). To do this automatically, turn on **Preferences →
+Refinement → Sync a feature space to the current spike times when switching to
+it**; each switch then costs one `.fil` pass over the group. Synced files are
+working copies: **Save** writes them, closing without saving discards them,
+and undoing a realignment drops them (re-sync afterwards). A space that cannot
+be synced — no `.pca` basis, or a basis that does not fit the waveforms — is
+reported and keeps its existing files.
+
 ### Feature file format (`.fet.<method>.N`)
 
 <details>

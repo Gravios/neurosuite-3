@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-12 | [Klusters: sync other feature spaces to the current spike times](#2026-10-12--klusters-sync-other-feature-spaces-to-the-current-spike-times) |
 | 2026-10-11 | [Klusters: view one .clu through another method's feature space; spikes never change order](#2026-10-11--klusters-view-one-clu-through-another-methods-feature-space-spikes-never-change-order) |
 | 2026-10-10 | [Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation](#2026-10-10--input-binding-overhaul-completed-across-klusters-and-neuroscope-qt-64612-compatibility-documentation) |
 | 2026-10-09 | [NeuroScope: two silently dead shortcuts fixed](#2026-10-09--neuroscope-two-silently-dead-shortcuts-fixed) |
@@ -38,6 +39,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-12 — Klusters: sync other feature spaces to the current spike times
+
+<details>
+<summary>Details</summary>
+
+**Sync.** Realign and nudge rewrite only the `.clu` space's `.spk`/`.fet`, so
+the group's other method spaces drift from the shared `.res`. **Actions → Sync
+Feature Spaces** re-extracts each other space's `.spk` from `.fil` at the
+session's spike times (same window cutting and stderiv transform as the
+pipeline; a `.spk` shared by several spaces is rebuilt once) and re-projects
+its `.fet` through its own `.pca` basis with the kernel realign uses — a `_D`
+lag basis is an ordinary PCAE basis on a widened window, so lag spaces are
+covered; extra non-PCA columns are carried over. A preference (Refinement →
+*Sync a feature space … when switching to it*, off by default) does it for the
+target space on every switch. Results are `.pending` working copies: the Space
+box loads them, Save commits them, closing without saving, Save As or undoing a
+realignment discards them. Reference: `doc/klusters/README.md` → Feature spaces.
+
+**Fix.** A session working copy such as `x.spk.stderiv_C5.7.pending` was read
+as the *standard* method (`custody::methodOf` needs the group as the last
+token), so re-extract-on-save rebuilt a stderiv `.spk` as raw waveforms.
+
+**Not yet verified in a build** (no Qt6 here): needs a workstation build and a
+pass on the reference session — sync after a realign, switch, check the scatter
+and waveforms line up; Save, reopen, switch again.
+
+</details>
 
 ## 2026-10-11 — Klusters: view one .clu through another method's feature space; spikes never change order
 
