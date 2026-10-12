@@ -83,6 +83,17 @@ waveform reads come from memory (`SpkMemoryCache`; a file too large to hold
 falls back to reading from disk). Realign and nudge edits are still read
 through the overlay; at Save the readers are reloaded before it is cleared.
 
+**Realign and nudge from any feature space.** A Refinement preference (on by
+default) lets realign, Align All, nudge and the post-edit realign run while
+another space is shown: Klusters swaps to the `.clu`'s own space, runs them,
+and swaps back. Afterwards every other space follows the moved spikes only —
+each is re-extracted from `.fil` into every other waveform file in that
+space's domain (shared cutting with the full re-extract, `spikeCutSpecFor`)
+and re-projected into every space's held table and `.pending` `.fet`. Each
+space records the spike-times generation it is current to, so one that was
+already behind gets a full sync instead of a partial patch. Switching is no
+longer refused while a realignment is unsaved.
+
 **Follow-ups.**
 - Realign and nudge apply the session's `sdiffPairs` pattern only when the
   method token allows it (`_C<n>` or bare `stderiv`; not `_S<n>`), the same

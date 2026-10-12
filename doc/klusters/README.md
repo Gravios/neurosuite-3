@@ -99,13 +99,21 @@ space; pick the `(.clu)` entry to go back.
   reason as its tooltip.
 - **Save** always writes the `.clu` under the method it was opened with,
   whichever space is shown.
-- While another space is shown, operations that write the `.clu` space's own
-  files are off — **realign**, **Align All**, **nudge**, **Save As**,
-  **decollide** and **template generation** (the automatic post-edit realign
-  is skipped). Switch back to use them. **Recluster** works, using the shown
-  space's features.
-- Switching is refused while a realignment is unsaved (save or undo it first),
-  and the box is locked while saving, realigning or reclustering.
+- **Realign**, **Align All**, **nudge** and the automatic post-edit realign
+  work from any space (Preferences → Refinement → *Realign and nudge from any
+  feature space; keep every space aligned*, on by default). They run in the
+  `.clu`'s own space — Klusters swaps to it and back — and every other space
+  then follows the spikes that moved: each moved spike is re-extracted from
+  the `.fil` into every other waveform file, in that space's own domain, and
+  re-projected into every space's features. Only the moved spikes are touched;
+  a space that was already behind gets a full sync instead. The results are
+  working copies, written by **Save**. This costs a `.fil` read of the moved
+  spikes and a rewrite of them in each space per realign or nudge; with the
+  preference off, these operations are off while another space is shown and
+  the other spaces keep their old spike times until synced.
+- **Save As**, **decollide** and **template generation** still need the
+  `.clu`'s own space. **Recluster** works, using the shown space's features.
+- The box is locked while saving, realigning or reclustering.
 - Every space is held in memory: its `.fet` table and its `.spk` waveforms are
   loaded when the document opens (and refreshed after a switch, a sync or a
   Save, reading only files that changed), so switching, syncing and waveform
