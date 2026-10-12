@@ -3970,6 +3970,9 @@ void KlustersApp::slotFileSaveAs()
     QString url=QFileDialog::getSaveFileName(this,tr("Save as…"),QDir::currentPath(),
                                              tr("All files (*.*)") );
     if(!url.isEmpty()){
+        // Synced feature-space copies belong to the old location; drop them
+        // here, on the GUI thread that reads them, before the save thread runs.
+        doc->discardSyncedFeatureSpaces();
         slotStateChanged("SavingState");
         saveThread->save(url,doc,true);
     }

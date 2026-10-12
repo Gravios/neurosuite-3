@@ -886,7 +886,9 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     if (isSaveAs) {
         // Synced working copies belong to the old location's spaces; Save As
         // does not carry them (and is only reachable from the .clu's own space).
-        discardSyncedFeatureSpaces();
+        // slotFileSaveAs already dropped them on the GUI thread; this covers any
+        // other caller and is a no-op otherwise.
+        if (!syncedPending.isEmpty()) discardSyncedFeatureSpaces();
         QFileInfo newInfo(docUrl);
         // Re-resolve at the new location, pinned to the method parsed from the
         // SaveAs target (chain-of-custody).
