@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-12 | [NeuroScope: closing a session no longer deletes or overwrites parameter-file values](#2026-10-12--neuroscope-closing-a-session-no-longer-deletes-or-overwrites-parameter-file-values) |
 | 2026-10-12 | [ndm_plx2dat: Plexon .plx / .pl2 → .dat + .evt with header metadata in the session YAML](#2026-10-12--ndm_plx2dat-plexon-plx--pl2--dat--evt-with-header-metadata-in-the-session-yaml) |
 | 2026-10-12 | [Klusters: sync other feature spaces to the current spike times](#2026-10-12--klusters-sync-other-feature-spaces-to-the-current-spike-times) |
 | 2026-10-11 | [Klusters: view one .clu through another method's feature space; spikes never change order](#2026-10-11--klusters-view-one-clu-through-another-methods-feature-space-spikes-never-change-order) |
@@ -40,6 +41,41 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-12 — NeuroScope: closing a session no longer deletes or overwrites parameter-file values
+
+<details>
+<summary>Details</summary>
+
+NeuroScope saves the session's parameter YAML on every close, modified or not,
+through `ParameterYamlModifier`. Several of its setters rebuilt their section
+from only the keys NeuroScope models, so opening and closing a session
+silently deleted keys written by other tools:
+
+- **Spike groups:** `sdiffPairs` (the stderiv custom-difference channel
+  algebra), `probeId`, `shankIndex` and any other per-group key were dropped.
+  An earlier fix kept only `nSamples`/`peakSampleIndex`/`nFeatures` by name.
+  Group nodes are now carried across whole, paired by channel set and then by
+  position.
+- **`files:`:** ndmanager's per-file `channelMapping` was dropped. Entries are
+  now updated in place, matched by extension.
+- **Anatomical groups, channel colours and offsets:** extra keys were dropped,
+  and a channel NeuroScope had no value for got the default instead of the
+  file's value. The display trash (group 0) was also saved as an ordinary
+  group, so it read back as group 1 and shifted every real group. The trash is
+  no longer saved; the reader rebuilds it from the unlisted channels, as the
+  XML reader did.
+- **Acquisition:** `offset: 0`, and a non-integer `amplification` or
+  `voltageRange` (e.g. `192.5`, `1000.0`), read as absent. NeuroScope then
+  substituted its preference default and saved it over the file. A value that
+  already denotes the same number is now left as written.
+- **No-op saves:** a save that changes nothing no longer rewrites the file, so
+  comments, formatting and mtime survive a plain open/close.
+
+`klustersshared_yamlmodifier_test` (`NS_BUILD_TESTS`) round-trips a session
+holding these keys through the same setters NeuroScope's `saveSession()` uses.
+
+</details>
 
 ## 2026-10-12 — ndm_plx2dat: Plexon .plx / .pl2 → .dat + .evt with header metadata in the session YAML
 
