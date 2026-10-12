@@ -34,6 +34,12 @@ public:
     * the file is missing, unreadable or too large to hold.*/
     std::shared_ptr<const QByteArray> get(const QString& path);
 
+    /**@p path was rewritten in place (realign / nudge): the next get()
+    * reads it again even if its size and modification time look unchanged
+    * (a coarse file-system clock).  Installed readers keep the bytes they
+    * have; their rewritten rows come from the SpkOverlay.*/
+    void markWritten(const QString& path);
+
     /**Drop every entry whose path is not in @p paths.*/
     void keepOnly(const QStringList& paths);
 

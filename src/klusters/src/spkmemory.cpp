@@ -45,6 +45,13 @@ std::shared_ptr<const QByteArray> SpkMemoryCache::get(const QString& path)
     return e.bytes;
 }
 
+void SpkMemoryCache::markWritten(const QString& path)
+{
+    QMutexLocker lk(&mutex);
+    const auto it = entries.find(path);
+    if (it != entries.end()) it->size = -1;      // never matches: re-read on next get()
+}
+
 void SpkMemoryCache::keepOnly(const QStringList& paths)
 {
     QMutexLocker lk(&mutex);

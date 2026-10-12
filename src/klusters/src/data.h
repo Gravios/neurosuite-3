@@ -1542,7 +1542,7 @@ private:
     * one.  Callers that changed which FILE the layer reads republish
     * afterwards (setSpkFileName / reopenSpkReader); initialize() relies on
     * its own later publication.*/
-    void installSpkReader(const QString& path);
+    void installSpkReader(const QString& path, bool inMemory = true);
 
     /**Publishes the re-adopted tables as a new epoch, taking @p source's
     * waveform and correlogram stores with them when @p source's byte

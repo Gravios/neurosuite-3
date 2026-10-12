@@ -72,18 +72,22 @@ Data::Data()
     publishSnapshot();
 }
 
-void Data::installSpkReader(const QString& path){
+void Data::installSpkReader(const QString& path, bool inMemory){
     auto reader = std::make_shared<SpkReader>();
     reader->setPath(path);
-    //The whole file is held in memory (SpkMemoryCache): reads never touch the
-    //disk, and the bytes are this file version's for every snapshot pinning
-    //the reader.  If it cannot be held, fall back to the descriptor: the
-    //eager open binds the reader to the inode behind the path NOW, so
+    //The eager open binds the reader to the inode behind the path NOW, so
     //snapshots that pin it keep this file version across later renames.
-    if (std::shared_ptr<const QByteArray> bytes = SpkMemoryCache::instance().get(path))
-        reader->setMemory(std::move(bytes));
-    else
-        reader->prime();
+    reader->prime();
+    //While SpkMemoryCache holds this file version, reads come from memory.
+    //The reader only watches those bytes (weakly): once the cache moves to a
+    //newer version, an older reader -- kept alive by an undo snapshot, say --
+    //falls back to its descriptor instead of pinning a whole stale copy.
+    if (inMemory)
+        if (std::shared_ptr<const QByteArray> bytes = SpkMemoryCache::instance().get(path))
+            reader->setMemory(bytes);
+    //Under the mutex: the save thread installs readers (commit, re-extract)
+    //while the GUI thread publishes snapshots that read this member.
+    QMutexLocker lk(&mutex);
     spkReaderInstance = std::move(reader);
 }
 
@@ -115,12 +119,8 @@ std::shared_ptr<neurofileio::FetBinaryFile> Data::featureTableCopy() const{
 
 bool Data::replaceFeatureSpace(const neurofileio::FetBinaryFile& fet, const QString& fetPath,
                                const QString& spkPath, QString& errorInformation){
-    //Let a running extrema recompute finish: it reads the feature table.  Then
-    //clear the cluster-0 flag, as restartDimensionExtrema does: a stale value
-    //(e.g. left by an empty createNewCluster) would make the rescan below
-    //return early and keep extrema sized for the OLD dimension count.
+    //Let a running extrema recompute finish: it reads the feature table.
     if(minMaxThread) minMaxThread->wait();
-    clusterZeroJustModified = false;
 
     if(!fet.ok || fet.nFeatures < 2 || fet.nFeatures > 65536){
         errorInformation = QObject::tr("Invalid, missing, or unreadable feature file: %1").arg(fetPath);
@@ -142,6 +142,13 @@ bool Data::replaceFeatureSpace(const neurofileio::FetBinaryFile& fet, const QStr
                            .arg(nbChannels).arg(nbSamplesInWaveform);
         return false;
     }
+
+    //Validated: from here on the layer changes.  Clear the cluster-0 flag, as
+    //restartDimensionExtrema does: a stale value (e.g. left by an empty
+    //createNewCluster) would make the rescan below return early and keep
+    //extrema sized for the OLD dimension count.  Only now, so a refused
+    //switch leaves the flag as it was.
+    clusterZeroJustModified = false;
 
     //Spike times are method-independent (one shared .res), and only the .clu
     //space's .fet follows a realign/nudge.  Keep the times the session already
@@ -204,11 +211,13 @@ void Data::publishSnapshot(){
     //they belong to computations running in the previous epoch, whose owners
     //complete them there.
     std::shared_ptr<const ClusteringSnapshot> prev;
+    std::shared_ptr<SpkReader> currentReader;
     {
         QMutexLocker lk(&mutex);
         prev = snapshot;
+        currentReader = spkReaderInstance;
     }
-    if(prev && prev->spk == spkReaderInstance){
+    if(prev && prev->spk == currentReader){
         //Fast path: the tables themselves are unchanged (a republish after a
         //metadata-only change), so every settled entry carries.
         //RULE: no committer may mutate a published table in place — both
@@ -2094,7 +2103,9 @@ void Data::resyncClusterInfoMapFromRowTable()
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
     this->spkFileName = spkFileName;
-    installSpkReader(spkFileName);
+    //Descriptor only: the document redirects to its pending copy right after
+    //opening, and that is the version worth holding in memory.
+    installSpkReader(spkFileName, /*inMemory*/ false);
     if(!configure(parXFile, parFile,errorInformation))
         return false;
 
@@ -2106,7 +2117,9 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,c
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
     this->spkFileName = spkFileName;
-    installSpkReader(spkFileName);
+    //Descriptor only: the document redirects to its pending copy right after
+    //opening, and that is the version worth holding in memory.
+    installSpkReader(spkFileName, /*inMemory*/ false);
 
     if(!configure(parFile,electrodeGroupID,errorInformation))
         return false;
@@ -2168,7 +2181,9 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,QString& errorInform
 
 bool Data::initialize(QFile& featureFile,long spkFileLength,const QString &spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
     this->spkFileName = spkFileName;
-    installSpkReader(spkFileName);
+    //Descriptor only: the document redirects to its pending copy right after
+    //opening, and that is the version worth holding in memory.
+    installSpkReader(spkFileName, /*inMemory*/ false);
     if(!configure(parXFile, parFile,errorInformation))
         return false;
     if(!initialize(featureFile,spkFileLength,errorInformation)){
@@ -2180,7 +2195,9 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,const QString &spkFi
 
 bool Data::initialize(QFile& featureFile,long spkFileLength,const QString& spkFileName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
     this->spkFileName = spkFileName;
-    installSpkReader(spkFileName);
+    //Descriptor only: the document redirects to its pending copy right after
+    //opening, and that is the version worth holding in memory.
+    installSpkReader(spkFileName, /*inMemory*/ false);
 
     if(!configure(parFile,electrodeGroupID,errorInformation))
         return false;

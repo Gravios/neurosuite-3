@@ -71,9 +71,9 @@ bool SpkReader::ensureOpen()
 bool SpkReader::read(void* dst, qint64 bytes, qint64 offset)
 {
     if (bytes <= 0 || offset < 0) return false;
-    if (memory) {                                  // the file, held in memory
-        if (offset + bytes > memory->size()) return false;
-        std::memcpy(dst, memory->constData() + offset, static_cast<size_t>(bytes));
+    if (const std::shared_ptr<const QByteArray> m = memory.lock()) {   // held in memory
+        if (offset + bytes > m->size()) return false;
+        std::memcpy(dst, m->constData() + offset, static_cast<size_t>(bytes));
         return true;
     }
     if (!ensureOpen()) return false;

@@ -98,7 +98,8 @@
 #include <neurosuite/core/custody.hpp>     // shared chain-of-custody policy
 #include <neurosuite/core/spike_extract.hpp>
 #include "klustersdoc_internal.h"
-#include "pca_row_projection.h"   // the single PCA projection kernel  // shared custody path helpers (split TUs)
+#include "pca_row_projection.h"   // the single PCA projection kernel
+#include "spkmemory.h"           // SpkMemoryCache::markWritten after in-place .spk writes
 
 extern int nbUndo;
 
@@ -2121,6 +2122,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     fclose(spkW);
     fclose(resW);
     fclose(fetW);
+    SpkMemoryCache::instance().markWritten(pendingSpkPath);   // rows rewritten in place
     if (filF) fclose(filF);
     _rtWwriteMs = _rtmr.elapsed();
 
@@ -2299,6 +2301,13 @@ bool KlustersDoc::initPendingFiles()
         // reads pending (aligned) while children keep reading the original (shifted/scattered).
         if (childData) childData->setSpkFileName(pendingSpkPath);
         tmpCluFile = pendingCluPath;
+        // With the .clu's own space shown (always so for a late seed: realign
+        // and nudge are refused in another space), what is loaded is now these
+        // copies; switchFeatureSpace holds and restores the space by them.
+        if (activeMethod == originMethod) {
+            activeFetPath = pendingFetPath;
+            activeSpkPath = pendingSpkPath;
+        }
     } else {
         // Leave NO half-state.  The four paths are assigned above, BEFORE the copies, so on failure
         // they pointed at files that were never seeded: saveDocument would still target
@@ -3479,6 +3488,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     fclose(spkW); fclose(resW); fclose(fetW);
     if (filF) fclose(filF);
+    SpkMemoryCache::instance().markWritten(pendingSpkPath);   // rows rewritten in place
 
     //Publish the nudge's overlay batch (see the realign's twin above).
     clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ false);

@@ -56,9 +56,11 @@ public:
     void prime() { ensureOpen(); }
 
     /**Serve reads from @p bytes (the whole file, held in memory by
-    * SpkMemoryCache) instead of the descriptor.  Call once, at install,
-    * before the reader is shared.*/
-    void setMemory(std::shared_ptr<const QByteArray> bytes) { memory = std::move(bytes); }
+    * SpkMemoryCache) while the cache still holds them, and from the
+    * descriptor afterwards.  The reader keeps only a weak reference, so a
+    * reader pinned by an old snapshot never keeps a stale copy alive.
+    * Call once, at install, before the reader is shared.*/
+    void setMemory(const std::shared_ptr<const QByteArray>& bytes) { memory = bytes; }
 
     /**Thread-safe positioned read: @p bytes at @p offset into @p dst.
     * Returns false on open failure (path unset, file missing) or short read;
@@ -73,7 +75,7 @@ private:
     QMutex           mutex;          // guards open/close and the path; the
                                      // read path is lock-free once open
     std::atomic<int> fdAtomic{-1};
-    std::shared_ptr<const QByteArray> memory;   // set once at install; read-only after
+    std::weak_ptr<const QByteArray> memory;     // set once at install; read-only after
 };
 
 #endif // SPKREADER_H
