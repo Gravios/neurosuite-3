@@ -551,14 +551,14 @@ static bool smallInverse(std::vector<double>& A, int K) {
         const double piv = A[static_cast<size_t>(c) * K + c];
         if (std::fabs(piv) < 1e-12) return false;
         const double inv = 1.0 / piv;
-        for (int j = 0; j < K; ++j) { A[(size_t)c*K+j] *= inv; I[(size_t)c*K+j] *= inv; }
+        for (int j = 0; j < K; ++j) { A[static_cast<size_t>(c)*K+j] *= inv; I[static_cast<size_t>(c)*K+j] *= inv; }
         for (int r = 0; r < K; ++r) {
             if (r == c) continue;
-            const double f = A[(size_t)r*K+c];
+            const double f = A[static_cast<size_t>(r)*K+c];
             if (f == 0.0) continue;
             for (int j = 0; j < K; ++j) {
-                A[(size_t)r*K+j] -= f * A[(size_t)c*K+j];
-                I[(size_t)r*K+j] -= f * I[(size_t)c*K+j];
+                A[static_cast<size_t>(r)*K+j] -= f * A[static_cast<size_t>(c)*K+j];
+                I[static_cast<size_t>(r)*K+j] -= f * I[static_cast<size_t>(c)*K+j];
             }
         }
     }
@@ -618,11 +618,11 @@ KlustersDoc::computeResidualPreview(const QSet<dataType>& featureRows,
             for (int b = 0; b < K; ++b) {
                 double s = 0.0;
                 for (int p = 0; p < P; ++p) s += B[a][p] * B[b][p];
-                G[(size_t)a*K+b] = s;
+                G[static_cast<size_t>(a)*K+b] = s;
                 if (a == b) trace += s;
             }
         const double ridge = 1e-6 * (trace / std::max(1, K)) + 1e-9;
-        for (int a = 0; a < K; ++a) G[(size_t)a*K+a] += ridge;
+        for (int a = 0; a < K; ++a) G[static_cast<size_t>(a)*K+a] += ridge;
         if (smallInverse(G, K)) Ginv = std::move(G);
     }
     const bool basisOK = (K >= 1) && !Ginv.empty();
@@ -640,12 +640,12 @@ KlustersDoc::computeResidualPreview(const QSet<dataType>& featureRows,
         for (long i = 0; i < nL; i += lstep) {
             const long row = static_cast<long>(rows[static_cast<size_t>(i)]);
             if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
-            for (int p = 0; p < P; ++p) sx[(size_t)p] += wav[(size_t)p];
+            for (int p = 0; p < P; ++p) sx[static_cast<size_t>(p)] += wav[static_cast<size_t>(p)];
             ++u;
         }
         if (u < 1) { R.verdict = tr("Residual preview: no readable waveforms."); return R; }
         ownMean.resize(static_cast<size_t>(P));
-        for (int p = 0; p < P; ++p) ownMean[(size_t)p] = sx[(size_t)p] / static_cast<double>(u);
+        for (int p = 0; p < P; ++p) ownMean[static_cast<size_t>(p)] = sx[static_cast<size_t>(p)] / static_cast<double>(u);
     }
 
     std::vector<double> sumX(P,0.0), sumFit(P,0.0), sumR(P,0.0), sumR2(P,0.0);
@@ -659,24 +659,24 @@ KlustersDoc::computeResidualPreview(const QSet<dataType>& featureRows,
             std::vector<double> bt(static_cast<size_t>(K), 0.0);
             for (int k = 0; k < K; ++k) {
                 double s = 0.0;
-                for (int p = 0; p < P; ++p) s += B[k][p] * wav[(size_t)p];
-                bt[(size_t)k] = s;
+                for (int p = 0; p < P; ++p) s += B[k][p] * wav[static_cast<size_t>(p)];
+                bt[static_cast<size_t>(k)] = s;
             }
             for (int k = 0; k < K; ++k) {
                 double a = 0.0;
-                for (int j = 0; j < K; ++j) a += Ginv[(size_t)k*K+j] * bt[(size_t)j];
-                for (int p = 0; p < P; ++p) fit[(size_t)p] += a * B[k][p];
+                for (int j = 0; j < K; ++j) a += Ginv[static_cast<size_t>(k)*K+j] * bt[static_cast<size_t>(j)];
+                for (int p = 0; p < P; ++p) fit[static_cast<size_t>(p)] += a * B[k][p];
             }
         } else {
             double num = 0.0, den = 0.0;
-            for (int p = 0; p < P; ++p) { num += ownMean[(size_t)p]*wav[(size_t)p]; den += ownMean[(size_t)p]*ownMean[(size_t)p]; }
+            for (int p = 0; p < P; ++p) { num += ownMean[static_cast<size_t>(p)]*wav[static_cast<size_t>(p)]; den += ownMean[static_cast<size_t>(p)]*ownMean[static_cast<size_t>(p)]; }
             const double a = (den > 0.0) ? num/den : 0.0;
-            for (int p = 0; p < P; ++p) fit[(size_t)p] = a * ownMean[(size_t)p];
+            for (int p = 0; p < P; ++p) fit[static_cast<size_t>(p)] = a * ownMean[static_cast<size_t>(p)];
         }
         double rn2 = 0.0;
         for (int p = 0; p < P; ++p) {
-            const double x = wav[(size_t)p], r = x - fit[(size_t)p];
-            sumX[(size_t)p]+=x; sumFit[(size_t)p]+=fit[(size_t)p]; sumR[(size_t)p]+=r; sumR2[(size_t)p]+=r*r;
+            const double x = wav[static_cast<size_t>(p)], r = x - fit[static_cast<size_t>(p)];
+            sumX[static_cast<size_t>(p)]+=x; sumFit[static_cast<size_t>(p)]+=fit[static_cast<size_t>(p)]; sumR[static_cast<size_t>(p)]+=r; sumR2[static_cast<size_t>(p)]+=r*r;
             rn2 += r*r;
         }
         rnorms.push_back(std::sqrt(rn2));
@@ -689,16 +689,16 @@ KlustersDoc::computeResidualPreview(const QSet<dataType>& featureRows,
     R.resid.resize(static_cast<size_t>(P));
     R.residRms.resize(static_cast<size_t>(P));
     for (int p = 0; p < P; ++p) {
-        R.meanWave[(size_t)p] = static_cast<float>(sumX[(size_t)p]  / nUsed);
-        R.fit[(size_t)p]      = static_cast<float>(sumFit[(size_t)p] / nUsed);
-        R.resid[(size_t)p]    = static_cast<float>(sumR[(size_t)p]  / nUsed);
-        R.residRms[(size_t)p] = static_cast<float>(std::sqrt(sumR2[(size_t)p] / nUsed));
+        R.meanWave[static_cast<size_t>(p)] = static_cast<float>(sumX[static_cast<size_t>(p)]  / nUsed);
+        R.fit[static_cast<size_t>(p)]      = static_cast<float>(sumFit[static_cast<size_t>(p)] / nUsed);
+        R.resid[static_cast<size_t>(p)]    = static_cast<float>(sumR[static_cast<size_t>(p)]  / nUsed);
+        R.residRms[static_cast<size_t>(p)] = static_cast<float>(std::sqrt(sumR2[static_cast<size_t>(p)] / nUsed));
     }
     std::sort(rnorms.begin(), rnorms.end());
     R.medResidNorm = rnorms[rnorms.size() / 2];
     for (int p = 0; p < P; ++p) {
-        R.peakWave  = std::max(R.peakWave,  std::fabs(static_cast<double>(R.meanWave[(size_t)p])));
-        R.peakResid = std::max(R.peakResid, std::fabs(static_cast<double>(R.resid[(size_t)p])));
+        R.peakWave  = std::max(R.peakWave,  std::fabs(static_cast<double>(R.meanWave[static_cast<size_t>(p)])));
+        R.peakResid = std::max(R.peakResid, std::fabs(static_cast<double>(R.resid[static_cast<size_t>(p)])));
     }
     R.ok = true; R.nChan = nCh; R.nSamp = nSamp; R.nUsed = nUsed;
     for (int bc : basisClusters) if (bc > 1 && basisOK) R.basis.append(bc);

@@ -66,9 +66,9 @@ public:
 
     /**
    * Constructs the view.
-   * @param Xborder border on the left and right sides inside the window (QRect corresponding
+   * @param xBorder border on the left and right sides inside the window (QRect corresponding
    * to the part of the drawing which will actually be drawn onto the widget).
-   * @param Yborder border on the top and bottom sides inside the window (QRect corresponding
+   * @param yBorder border on the top and bottom sides inside the window (QRect corresponding
    * to the part of the drawing which will actually be drawn onto the widget).
    * @param parent the parent QWidget.
    * @param name name of the widget (can be used for introspection).
@@ -81,7 +81,7 @@ public:
    * to the part of the drawing which will actually be drawn onto the widget).
    * @param border size of the border between the frame and the contents.
    */
-    BaseFrame(int Xborder,int Yborder,QWidget* parent=nullptr, const QString &name = QString(),const QColor &backgroundColor = Qt::black,
+    BaseFrame(int xBorder,int yBorder,QWidget* parent=nullptr, const QString &name = QString(),const QColor &backgroundColor = Qt::black,
               int minSize = 500, int maxSize = 4000, int windowTopLeft = -500,int windowBottomRight = 1001, int border = 0);
     ~BaseFrame();
 
@@ -225,7 +225,7 @@ protected:
   * @return width in the viewport's coordinates system.
   */
     long worldToViewportWidth(long width){
-        float widthRatio = (static_cast<float>(viewport.width())/static_cast<float>(((QRect)window).width()));
+        float widthRatio = (static_cast<float>(viewport.width())/static_cast<float>((static_cast<QRect>(window)).width()));
         return static_cast<long>(width * widthRatio);
     }
 
@@ -235,7 +235,7 @@ protected:
   * @return height in the viewport's coordinates system.
   */
     long worldToViewportHeight(long height){
-        float heightRatio = (static_cast<float>(viewport.height())/static_cast<float>(((QRect)window).height()));
+        float heightRatio = (static_cast<float>(viewport.height())/static_cast<float>((static_cast<QRect>(window)).height()));
         return static_cast<long>(height * heightRatio);
     }
 
@@ -245,7 +245,7 @@ protected:
   * @return width in the viewport's coordinates system.
   */
     long viewportToWorldWidth(long width){
-        float widthRatio = (static_cast<float>(((QRect)window).width())/static_cast<float>(viewport.width()));
+        float widthRatio = (static_cast<float>((static_cast<QRect>(window)).width())/static_cast<float>(viewport.width()));
         return static_cast<long>(width * widthRatio);
     }
 
@@ -255,7 +255,7 @@ protected:
   * @return height in the viewport's coordinates system.
   */
     long viewportToWorldHeight(long height){
-        float heightRatio = (static_cast<float>(((QRect)window).height())/static_cast<float>(viewport.height()));
+        float heightRatio = (static_cast<float>((static_cast<QRect>(window)).height())/static_cast<float>(viewport.height()));
         return static_cast<long>(height * heightRatio);
     }
 

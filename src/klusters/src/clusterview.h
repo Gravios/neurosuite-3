@@ -65,7 +65,7 @@ class ClusterView : public ViewWidget  {
     Q_OBJECT
 
 public:
-    ClusterView(KlustersDoc& doc, KlustersView& view, const QColor &backgroundColor, int timeInterval, QStatusBar* statusBar, QWidget* parent=nullptr, const char* name=nullptr,
+    ClusterView(KlustersDoc& klustersDoc, KlustersView& klustersView, const QColor &backgroundColor, int timeInterval, QStatusBar* statusBarWidget, QWidget* parent=nullptr, const char* name=nullptr,
                 int minSize = 50, int maxSize = 4000,
                 int windowTopLeft = -500, int windowBottomRight = 1001, int border = 0);
     ~ClusterView();
@@ -340,7 +340,7 @@ public Q_SLOTS:
   * @param dimensionX
   * @param dimensionY
   */
-    virtual void updatedDimensions(int dimensionX, int dimensionY) override;
+    virtual void updatedDimensions(int dimX, int dimY) override;
 
     /**Updates the view only for one cluster for which the color has been changed
   * @param clusterId cluster Id for which the color have changed.
@@ -841,8 +841,8 @@ private:
   * be use to draw the polygon of selection.
   * @return color to be used
   */
-    QColor selectPolygonColor(Mode mode){
-        switch(mode){
+    QColor selectPolygonColor(Mode selMode){
+        switch(selMode){
         case DELETE_NOISE:
             return DELETE_NOISE_COLOR;
         case DELETE_ARTEFACT:

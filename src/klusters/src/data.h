@@ -729,11 +729,11 @@ public:
         bool hasNext(){return (lastIndex >= index);}
 
     private:
-        Iterator(dataType clusterId, const Data& d):data(d),clusterId(clusterId){
+        Iterator(dataType cluster, const Data& d):data(d),clusterId(cluster){
             // value() (not operator[]) so an unknown cluster id is not inserted
             // into the map; combined with ClusterInfo's zero-init default this
             // yields an empty, crash-safe span for ids absent from this Data.
-            ClusterInfo clusterInfo = data.clusterInfoMap->value(clusterId);
+            ClusterInfo clusterInfo = data.clusterInfoMap->value(cluster);
             index = clusterInfo.firstSpikePosition();
             lastIndex = index + clusterInfo.nbSpikes() - 1;
         }
@@ -1465,13 +1465,13 @@ private:
     public:
         explicit ClusterInfo(const QString& pStructure = QString(), const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
             :structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
-        ClusterInfo(dataType position, dataType nb,const QString& pStructure = QString(),const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
-            :position(position),spikeNb(nb),structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
+        ClusterInfo(dataType pos, dataType nb,const QString& pStructure = QString(),const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
+            :position(pos),spikeNb(nb),structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
         ~ClusterInfo(){}
          dataType firstSpikePosition() const {return position;}
          dataType nbSpikes() const {return spikeNb;}
          void setNbSpikes(dataType nbSpikes){spikeNb = nbSpikes;}
-         void setFirstSpikePosition(dataType position){this->position = position;}
+         void setFirstSpikePosition(dataType pos){this->position = pos;}
 
          QString getStructure() const { return structure; }
          QString getType() const { return type; }
@@ -1639,8 +1639,8 @@ private:
      */
     class WaveformStatus{
     public:
-        explicit WaveformStatus(Status sample = NOT_AVAILABLE,Status timeFrame = NOT_AVAILABLE,Status sampleMean = NOT_AVAILABLE,Status timeFrameMean = NOT_AVAILABLE )
-            :sample(sample),timeFrame(timeFrame),sampleMean(sampleMean),timeFrameMean(timeFrameMean){}
+        explicit WaveformStatus(Status sampleSt = NOT_AVAILABLE,Status timeFrameSt = NOT_AVAILABLE,Status sampleMeanSt = NOT_AVAILABLE,Status timeFrameMeanSt = NOT_AVAILABLE )
+            :sample(sampleSt),timeFrame(timeFrameSt),sampleMean(sampleMeanSt),timeFrameMean(timeFrameMeanSt){}
         WaveformStatus(const WaveformStatus& s):sample(s.sample),timeFrame(s.timeFrame),sampleMean(s.sampleMean),timeFrameMean(s.timeFrameMean){}
         ~WaveformStatus(){}
         void setSampleStatus(Status status){sample = status;}
@@ -1723,13 +1723,13 @@ private:
         virtual void calculateMean(WaveformMode waveformMode) = 0;
 
     protected:
-        Waveforms(Data& d,dataType nbSampleSpikes = 0,dataType nbTimeFrameSpikes = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0)
+        Waveforms(Data& d,dataType nbSample = 0,dataType nbTimeFrame = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0)
             :data(d),
              timeEndIndex(index),
              timeStart(startTime),
              timeEnd(endTime),
-             nbSampleSpikes(nbSampleSpikes),       // were left uninitialized (cppcheck)
-             nbTimeFrameSpikes(nbTimeFrameSpikes),
+             nbSampleSpikes(nbSample),       // were left uninitialized (cppcheck)
+             nbTimeFrameSpikes(nbTimeFrame),
              nbPtsBySpike(data.nbChannels * data.nbSamplesInWaveform),
              nbSpikesAsked(0){
         }
@@ -1760,8 +1760,8 @@ private:
     class WaveformData : public Waveforms {
 
     public:
-        explicit WaveformData(Data& d,dataType nbSampleSpikes = 0,dataType nbTimeFrameSpikes = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0):
-            Waveforms(d,nbSampleSpikes,nbTimeFrameSpikes,index,startTime,endTime){
+        explicit WaveformData(Data& d,dataType nbSample = 0,dataType nbTimeFrame = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0):
+            Waveforms(d,nbSample,nbTimeFrame,index,startTime,endTime){
             // std::vector members are default-constructed empty
         }
         ~WaveformData(){

@@ -30,7 +30,7 @@
 //include files for c/c++ libraries
 #include <math.h>
 
-BaseFrame::BaseFrame(int Xborder,int Yborder,QWidget* parent,const QString &name,const QColor& backgroundColor,
+BaseFrame::BaseFrame(int xBorder,int yBorder,QWidget* parent,const QString &name,const QColor& backgroundColor,
                       int minSize,int maxSize ,int windowTopLeft ,int windowBottomRight,int border):
     QFrame(parent),
     MIN_SIZE(minSize),
@@ -43,8 +43,8 @@ BaseFrame::BaseFrame(int Xborder,int Yborder,QWidget* parent,const QString &name
     firstClick(0,0),
     isDoubleClick(false),
     drawContentsMode(REDRAW),
-    Xborder(Xborder),
-    Yborder(Yborder),
+    Xborder(xBorder),
+    Yborder(yBorder),
     isRubberBandToBeDrawn(false),
     wholeHeightRectangle(false),
     mRubberBand(nullptr)
@@ -104,7 +104,7 @@ bool BaseFrame::dispatchInput(QEvent* e){
 
 void BaseFrame::beginBaseZoom(const QPoint& pos){
     //Assign firstClick
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     firstClick = pos;
     if (!mRubberBand)
         mRubberBand = new KlusterRubberBand(QRubberBand::Rectangle, this);
@@ -188,7 +188,7 @@ void BaseFrame::mouseReleaseEvent(QMouseEvent* e){
 
             //Calculate the selected point in world coordinates
             QPoint secondClick;
-            QRect r((QRect)window);
+            QRect r(static_cast<QRect>(window));
             QPoint firstClickOffset;
             if (r.left() != 0) {
                 firstClickOffset = QPoint(firstClick.x(),firstClick.y() - Yborder);
@@ -308,8 +308,8 @@ QPoint BaseFrame::viewportToWorld(int vx, int vy){
     //windowX = viewportX * (windowWidth/viewportWidth)
     //windowY = viewportY * (windowHeight/viewportHeight)
 
-    windowX = viewportX * (static_cast<float>(((QRect)window).width())/static_cast<float>(viewport.width()));
-    windowY = viewportY * (static_cast<float>(((QRect)window).height())/static_cast<float>(viewport.height()));
+    windowX = viewportX * (static_cast<float>((static_cast<QRect>(window)).width())/static_cast<float>(viewport.width()));
+    windowY = viewportY * (static_cast<float>((static_cast<QRect>(window)).height())/static_cast<float>(viewport.height()));
 
     //The final step is to translate the window's coordinates to world's coordinates
     //For that, we need the world's coordinates of the window center of coordinates (WindowCoordinatesCenter):
@@ -318,8 +318,8 @@ QPoint BaseFrame::viewportToWorld(int vx, int vy){
     //The transformation is done by using the following formula:
     //worldX = WindowCoordinatesCenterX + windowX
     //worldY = WindowCoordinatesCenterY + windowY
-    worldX = ((QRect)window).left() + windowX;
-    worldY = ((QRect)window).top() + windowY;
+    worldX = (static_cast<QRect>(window)).left() + windowX;
+    worldY = (static_cast<QRect>(window)).top() + windowY;
 
     return QPoint(static_cast<int>(worldX),static_cast<int>(worldY));
 }
@@ -349,16 +349,16 @@ QPoint BaseFrame::worldToViewport(int wx, int wy){
     //The transformation is done by using the following formula:
     //windowX = worldX - WindowCoordinatesCenterX
     //windowY = worldY - WindowCoordinatesCenterY
-    windowX = worldX - ((QRect)window).left();
-    windowY = worldY - ((QRect)window).top();
+    windowX = worldX - (static_cast<QRect>(window)).left();
+    windowY = worldY - (static_cast<QRect>(window)).top();
 
     //We have now to translate the window's coordinates to viewport's coordinates
     //NB: the window is the part of the world which is drawn in the viewport.
     //The transformation is done by using the following formula:
     //viewportX = windowX * (viewportWidth/windowWidth)
     //viewportY = windowY * (viewportHeight/windowHeight)
-    viewportX = windowX * (static_cast<float>(viewport.width())/static_cast<float>(((QRect)window).width()));
-    viewportY = windowY * (static_cast<float>(viewport.height())/static_cast<float>(((QRect)window).height()));
+    viewportX = windowX * (static_cast<float>(viewport.width())/static_cast<float>((static_cast<QRect>(window)).width()));
+    viewportY = windowY * (static_cast<float>(viewport.height())/static_cast<float>((static_cast<QRect>(window)).height()));
 
 
     //The coordinates of a point take the frame width into account so we have to substract
@@ -383,13 +383,13 @@ long BaseFrame::worldToViewportAbscissa(long wx){
     //WindowCoordinatesCenterX = ((QRect)window).left()
     //The transformation is done by using the following formula:
     //windowX = worldX - WindowCoordinatesCenterX
-    windowX = worldX - ((QRect)window).left();
+    windowX = worldX - (static_cast<QRect>(window)).left();
 
     //We have now to translate the window's coordinate to viewport's coordinate
     //NB: the window is the part of the world which is drawn in the viewport.
     //The transformation is done by using the following formula:
     //viewportX = windowX * (viewportWidth/windowWidth)
-    viewportX = windowX * (static_cast<float>(viewport.width())/static_cast<float>(((QRect)window).width()));
+    viewportX = windowX * (static_cast<float>(viewport.width())/static_cast<float>((static_cast<QRect>(window)).width()));
 
     //The coordinates of a point take the frame width into account so we have to substract
     //it from the coordinates to have the position inside the viewport (viewport: rectangle inside the frame).
@@ -412,13 +412,13 @@ long BaseFrame::worldToViewportOrdinate(long wy){
     //WindowCoordinatesCenterY = ((QRect)window).top()
     //The transformation is done by using the following formula:
     //windowY = worldY - WindowCoordinatesCenterY
-    windowY = worldY - ((QRect)window).top();
+    windowY = worldY - (static_cast<QRect>(window)).top();
 
     //We have now to translate the window's coordinate to viewport's coordinate
     //NB: the window is the part of the world which is drawn in the viewport.
     //The transformation is done by using the following formula:
     //viewportY = windowY * (viewportHeight/windowHeight)
-    viewportY = windowY * (static_cast<float>(viewport.height())/static_cast<float>(((QRect)window).height()));
+    viewportY = windowY * (static_cast<float>(viewport.height())/static_cast<float>((static_cast<QRect>(window)).height()));
 
 
     //The coordinates of a point take the frame width into account so we have to substract

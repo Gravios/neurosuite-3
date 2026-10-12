@@ -2101,11 +2101,11 @@ void Data::resyncClusterInfoMapFromRowTable()
 }
 
 
-bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
-    this->spkFileName = spkFileName;
+bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkName,QFile& parXFile,QFile& parFile,QString& errorInformation){
+    this->spkFileName = spkName;
     //Descriptor only: the document redirects to its pending copy right after
     //opening, and that is the version worth holding in memory.
-    installSpkReader(spkFileName, /*inMemory*/ false);
+    installSpkReader(spkName, /*inMemory*/ false);
     if(!configure(parXFile, parFile,errorInformation))
         return false;
 
@@ -2115,11 +2115,11 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,c
     return true;
 }
 
-bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkFileName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
-    this->spkFileName = spkFileName;
+bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,const QString& spkName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
+    this->spkFileName = spkName;
     //Descriptor only: the document redirects to its pending copy right after
     //opening, and that is the version worth holding in memory.
-    installSpkReader(spkFileName, /*inMemory*/ false);
+    installSpkReader(spkName, /*inMemory*/ false);
 
     if(!configure(parFile,electrodeGroupID,errorInformation))
         return false;
@@ -2179,11 +2179,11 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,QString& errorInform
     return true;
 }
 
-bool Data::initialize(QFile& featureFile,long spkFileLength,const QString &spkFileName,QFile& parXFile,QFile& parFile,QString& errorInformation){
-    this->spkFileName = spkFileName;
+bool Data::initialize(QFile& featureFile,long spkFileLength,const QString& spkName,QFile& parXFile,QFile& parFile,QString& errorInformation){
+    this->spkFileName = spkName;
     //Descriptor only: the document redirects to its pending copy right after
     //opening, and that is the version worth holding in memory.
-    installSpkReader(spkFileName, /*inMemory*/ false);
+    installSpkReader(spkName, /*inMemory*/ false);
     if(!configure(parXFile, parFile,errorInformation))
         return false;
     if(!initialize(featureFile,spkFileLength,errorInformation)){
@@ -2193,11 +2193,11 @@ bool Data::initialize(QFile& featureFile,long spkFileLength,const QString &spkFi
     return true;
 }
 
-bool Data::initialize(QFile& featureFile,long spkFileLength,const QString& spkFileName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
-    this->spkFileName = spkFileName;
+bool Data::initialize(QFile& featureFile,long spkFileLength,const QString& spkName,QFile& parFile,int electrodeGroupID,QString& errorInformation){
+    this->spkFileName = spkName;
     //Descriptor only: the document redirects to its pending copy right after
     //opening, and that is the version worth holding in memory.
-    installSpkReader(spkFileName, /*inMemory*/ false);
+    installSpkReader(spkName, /*inMemory*/ false);
 
     if(!configure(parFile,electrodeGroupID,errorInformation))
         return false;
@@ -2691,29 +2691,29 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
             int oldCluster = keys[i];
             int clusterToCreate = fromToClusterIds[oldCluster];
 
-            int newClusterId = clusterToCreate - shift;
-            fromToNewClusterIds.insert(oldCluster,newClusterId);
+            int renumberedId = clusterToCreate - shift;
+            fromToNewClusterIds.insert(oldCluster,renumberedId);
             ClusterInfo clusterInfo = clusterInfoMapTemp[clusterToCreate];
             dataType firstSpikePosition = clusterInfo.firstSpikePosition();
             dataType nbSpikesOfCluster = clusterInfo.nbSpikes();
 
             clusterInfoMapTemp2->remove(clusterToCreate);
-            clusterInfoMapTemp2->insert(newClusterId,clusterInfo);
+            clusterInfoMapTemp2->insert(renumberedId,clusterInfo);
 
             //For the new cluster, only the row index has been inserted in spikesByClusterTemp,
             //now the cluster number is updated at once for all the spikes of the new cluster
-            for(dataType i = 0; i<nbSpikesOfCluster;++i)
-                (*spikesByClusterTemp)(2,firstSpikePosition + i) = newClusterId;
+            for(dataType s = 0; s<nbSpikesOfCluster;++s)
+                (*spikesByClusterTemp)(2,firstSpikePosition + s) = renumberedId;
         }
 
 
         //Sort the spikes of the newly created clusters, the information to do so have been store in the 2 lists
         //firstPositions and nbOfspikes by increasing Id of the cluster of origin.
         //NB: the iterator iterates on the items sorted by their key, here from fromToNewClusterIds
-        QMap<int,int>::Iterator iterator;
+        QMap<int,int>::Iterator newIdIterator;
         int i = 0;
-        for(iterator = fromToNewClusterIds.begin(); iterator != fromToNewClusterIds.end(); ++iterator){
-            sortCluster(clusterInfoMapTemp2,spikesByClusterTemp,iterator.value(),firstPositions[i],nbOfspikes[i],-1);
+        for(newIdIterator = fromToNewClusterIds.begin(); newIdIterator != fromToNewClusterIds.end(); ++newIdIterator){
+            sortCluster(clusterInfoMapTemp2,spikesByClusterTemp,newIdIterator.value(),firstPositions[i],nbOfspikes[i],-1);
             ++i;
         }
 
@@ -3459,8 +3459,8 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
             dataType newNbSpikesOfCluster = nbSpikesOfCluster;
             dataType lastPosition =  firstSpikePosition - 1;
 
-            for(dataType i = firstSpikePosition + nbSpikesOfCluster - 1; i > lastPosition;--i){
-                dataType featuresRowIndex = (*spikesByCluster)(1,i);
+            for(dataType spikePos = firstSpikePosition + nbSpikesOfCluster - 1; spikePos > lastPosition;--spikePos){
+                dataType featuresRowIndex = (*spikesByCluster)(1,spikePos);
                 if(selectionContains(selection,featuresRowIndex)){
                     //Add the spike to the new cluster <=> add the row index at the end of spikesByCluster at the lowerInsertionIndex
                     (*spikesByClusterTemp)(1,upperInsertionIndex) = featuresRowIndex;
@@ -3473,10 +3473,10 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
                     //Keep the spike in the current cluster <=> add the row index and the cluster number at the bottom of spikesByCluster at the lowerInsertionIndex
                     --lowerInsertionIndex;
                     (*spikesByClusterTemp)(1,lowerInsertionIndex) = featuresRowIndex;
-                    (*spikesByClusterTemp)(2,lowerInsertionIndex) = (*spikesByCluster)(2,i);
+                    (*spikesByClusterTemp)(2,lowerInsertionIndex) = (*spikesByCluster)(2,spikePos);
                 }
 
-                if(i == (firstSpikePosition)){
+                if(spikePos == (firstSpikePosition)){
                     if(newNbSpikesOfCluster < nbSpikesOfCluster){
                         //Store the last spike position for the current cluster
                         positions.append(nbSpikesInNewCluster);
@@ -3712,7 +3712,7 @@ void Data::moveClustersToNoise(QList<int>& clustersToDelete){
     //For the new cluster 1, only the row index has been inserted in spikesByClusterTemp,
     //now the cluster number is updated at once for all the new spikes of the new cluster 1
     dataType nbNewSpikesInClusterOne = nbSpikesInNewClusterOne - nbSpikesInCurrentClusterOne;
-    for(dataType i = 0; i<nbNewSpikesInClusterOne;++i) (*spikesByClusterTemp)(2,lastSpikePositionForCurrentClusterOnePlus1 + i) = 1;
+    for(dataType s = 0; s<nbNewSpikesInClusterOne;++s) (*spikesByClusterTemp)(2,lastSpikePositionForCurrentClusterOnePlus1 + s) = 1;
 
     //Update the new clusterInfoMap for the cluster 1
     ClusterInfo clusterOneInfo = (*clusterInfoMapTemp)[1];
@@ -6139,8 +6139,8 @@ long Data::findSpikePosition(double time,SortableTable& spikesOfCluster){
     long i = step + 1;
 
     for(; i <= clusterNbSpikes; i += step){
-        double currentTime = spikeTime(spikesOfCluster,i);
-        if(currentTime < time) continue;
+        double candidateTime = spikeTime(spikesOfCluster,i);
+        if(candidateTime < time) continue;
         else{
             if(step != 1){
                 i -= step;
@@ -6158,8 +6158,8 @@ long Data::findSpikePosition(double time,SortableTable& spikesOfCluster){
         i -= step;
         step = smallStep;
         for(; i <= clusterNbSpikes; i += step){
-            double currentTime = spikeTime(spikesOfCluster,i);
-            if(currentTime < time) continue;
+            double candidateTime = spikeTime(spikesOfCluster,i);
+            if(candidateTime < time) continue;
             else{
                 if(step != 1){
                     i -= step;
@@ -6174,8 +6174,8 @@ long Data::findSpikePosition(double time,SortableTable& spikesOfCluster){
     //loop with a step of 1
     i -= step;
     for(;i <= clusterNbSpikes; ++i){
-        double currentTime = spikeTime(spikesOfCluster,i);
-        if(currentTime < time) continue;
+        double candidateTime = spikeTime(spikesOfCluster,i);
+        if(candidateTime < time) continue;
         else{
             return i;
         }
@@ -6960,7 +6960,7 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
         return 1;
 }
 
-void Data::getClusterUserInformation (int pGroup,QMap<int,ClusterUserInformation>& clusterUserInformationMap)const{
+void Data::getClusterUserInformation (int pGroup,QMap<int,ClusterUserInformation>& userInfoMap)const{
     // This method is called from SaveThread (off the main thread) while the main
     // thread may concurrently modify clusterInfoMap via undo/redo/clustering.
     // Take a snapshot of the map under the mutex to avoid a use-after-free.
@@ -6982,7 +6982,7 @@ void Data::getClusterUserInformation (int pGroup,QMap<int,ClusterUserInformation
 
         ClusterUserInformation currentClusterUserInformation = ClusterUserInformation(pGroup,clusterId,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes());
 
-        clusterUserInformationMap.insert(clusterId,currentClusterUserInformation);
+        userInfoMap.insert(clusterId,currentClusterUserInformation);
     }
 }
 
@@ -6995,7 +6995,7 @@ bool Data::updateFeatureRow(dataType spikeIndex, const QList<dataType>& newValue
 {
     if (spikeIndex < 1 || spikeIndex > nbSpikes) return false;
     int nFeat = nbDimensions - 1; // exclude timestamp column
-    for (qsizetype d = 0; d < (qsizetype)nFeat && d < newValues.size(); ++d)
+    for (qsizetype d = 0; d < static_cast<qsizetype>(nFeat) && d < newValues.size(); ++d)
         features(spikeIndex, d + 1) = newValues[d];
     return true;
 }

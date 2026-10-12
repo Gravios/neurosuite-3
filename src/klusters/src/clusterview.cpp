@@ -72,9 +72,9 @@ const QColor ClusterView::NEW_CLUSTER_COLOR(Qt::green);
 const QColor ClusterView::DELETE_NOISE_COLOR(220,220,220);
 const QColor ClusterView::DELETE_ARTEFACT_COLOR(Qt::red);
 
-ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backgroundColor,int timeInterval,QStatusBar * statusBar,QWidget* parent, const char* name,
+ClusterView::ClusterView(KlustersDoc& klustersDoc,KlustersView& klustersView,const QColor& backgroundColor,int timeInterval,QStatusBar * statusBarWidget,QWidget* parent, const char* name,
                          int minSize, int maxSize, int windowTopLeft ,int windowBottomRight, int border) :
-    ViewWidget(doc,view,backgroundColor,statusBar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border),
+    ViewWidget(klustersDoc,klustersView,backgroundColor,statusBarWidget,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border),
     selectionPolygon(0),
     nbSelectionPoints(0),
     polygonClosed(false)
@@ -86,8 +86,8 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     setFocusPolicy(Qt::StrongFocus);
 
     //Initialize internal variables
-    timeDimension = doc.data().timeDimension();
-    samplingInterval = doc.data().intervalOfSampling();
+    timeDimension = klustersDoc.data().timeDimension();
+    samplingInterval = klustersDoc.data().intervalOfSampling();
     setTimeStepInSecond(timeInterval);
     loadEapCollisions();                 // precompute the .eap collision set for this stage
 
@@ -96,7 +96,7 @@ ClusterView::ClusterView(KlustersDoc& doc,KlustersView& view,const QColor& backg
     //own constructor, so dispatch can't reach a further override anyway — making
     //the static binding explicit documents that and silences the virtual-call-
     //in-constructor warning.
-    ClusterView::updatedDimensions(view.abscissaDimension(),view.ordinateDimension());
+    ClusterView::updatedDimensions(klustersView.abscissaDimension(),klustersView.ordinateDimension());
 
     newClusterCursor = QCursor(QPixmap(":/cursors/new_cluster_cursor.png"),0,0);
     newClustersCursor = QCursor(QPixmap(":/cursors/new_clusters_cursor.png"),0,0);
@@ -1199,9 +1199,9 @@ void ClusterView::worldBoundsFromExtrema(long& aMin, long& aMax,
     oMax = static_cast<long>(qMin(oMax,1000000L)); // below -(this limit), Qt crashes
 }
 
-void ClusterView::updatedDimensions(int dimensionX, int dimensionY){
-    this->dimensionX = dimensionX;
-    this->dimensionY = dimensionY;
+void ClusterView::updatedDimensions(int dimX, int dimY){
+    this->dimensionX = dimX;
+    this->dimensionY = dimY;
 
     worldBoundsFromExtrema(abscissaMin, abscissaMax, ordinateMin, ordinateMax);
 
@@ -1431,7 +1431,7 @@ void ClusterView::wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos)
     // from the command rather than the wheel delta's sign.
     const float  factor = zoomIn ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
     const QPoint p  = viewportToWorld(viewportPos.x(), viewportPos.y());
-    const QRect  wr = (QRect)window;
+    const QRect  wr = static_cast<QRect>(window);
     const double W = wr.width(), H = wr.height();
     if(W > 0.0 && H > 0.0){
         // Cursor's fraction within the current window == its screen fraction.
@@ -3109,7 +3109,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
         if(ctrlPanning){
             const QPoint cw = viewportToWorld(e->position().toPoint().x(),
                                               e->position().toPoint().y());
-            const QRect  wr = (QRect)window;
+            const QRect  wr = static_cast<QRect>(window);
             const double curCx = wr.left() + wr.width()  / 2.0;
             const double curCy = wr.top()  + wr.height() / 2.0;
             const double newCx = curCx - static_cast<double>(cw.x() - ctrlPanPressWorldX);
@@ -3169,7 +3169,7 @@ void ClusterView::customEvent(QEvent* event){
     if(event->type() == QEvent::User + 700){
         QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
 
-        ComputeEvent* computeEvent = (ComputeEvent*) event;
+        ComputeEvent* computeEvent = static_cast<ComputeEvent*>(event);
         //Get the polygon
         QPolygon polygon = computeEvent->polygon();
         QRegion selectionArea;
@@ -3255,7 +3255,7 @@ void ClusterView::drawTimeInformation(QPainter& painter){
         QFont f("Helvetica",9);
         painter.setFont(f);
         long time = 0;
-        QRect r((QRect)window);
+        QRect r(static_cast<QRect>(window));
         long legendOrdinate = worldToViewportOrdinate(r.top()) + 20;
 
 
@@ -3275,7 +3275,7 @@ void ClusterView::drawTimeInformation(QPainter& painter){
             QFont f("Helvetica",9);
             painter.setFont(f);
             long time = 0;
-            QRect r((QRect)window);
+            QRect r(static_cast<QRect>(window));
             long legendAbsciss = worldToViewportAbscissa(r.left());
 
 
@@ -3302,7 +3302,7 @@ void ClusterView::print(QPainter& printPainter,int width,int height, bool whiteB
 
     viewport = QRect(printPainter.viewport().left(),printPainter.viewport().top(),printPainter.viewport().width(),printPainter.viewport().height());
 
-    QRect r = ((QRect)window);
+    QRect r = (static_cast<QRect>(window));
 
     //Set the window (part of the world I want to show)
     printPainter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function

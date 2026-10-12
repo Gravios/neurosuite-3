@@ -41,11 +41,11 @@ public:
     /** Same signature as BaseFrame, forwarded verbatim: BufferedView is a
      *  transparent intermediate, so ViewWidget and TraceView call this in place
      *  of BaseFrame in their initialiser lists with the identical arguments. */
-    BufferedView(int Xborder, int Yborder, QWidget* parent = nullptr,
+    BufferedView(int xBorder, int yBorder, QWidget* parent = nullptr,
                  const QString& name = QString(), const QColor& backgroundColor = Qt::black,
                  int minSize = 500, int maxSize = 4000,
                  int windowTopLeft = -500, int windowBottomRight = 1001, int border = 0)
-        : BaseFrame(Xborder, Yborder, parent, name, backgroundColor,
+        : BaseFrame(xBorder, yBorder, parent, name, backgroundColor,
                     minSize, maxSize, windowTopLeft, windowBottomRight, border) {}
 
 protected:
