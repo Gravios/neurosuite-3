@@ -41,6 +41,7 @@
  *                          every other stream with data except SPKC, the
  *                          spike-filtered copy of WB), "all", "none", or a
  *                          comma list of stream prefixes (e.g. "AI,FP").
+ *       --no-spikes        Do not export Plexon's online spikes.
  *   -e, --evt-id ID        3-character event-file id (default plx →
  *                          output_basename.plx.evt; NeuroScope requires 3
  *                          characters, not all digits).
@@ -55,6 +56,11 @@
  *   output_basename.px<stream>   one per extra stream (e.g. .pxai, .pxfp): the
  *                                .dat layout at that stream's own rate, on its
  *                                own sample grid, aligned to the .dat start.
+ *   output_basename.pxres.N      Plexon's online spikes of spike channel N: .dat
+ *   output_basename.pxclu.N      sample times (text, as .res), cluster ids (text,
+ *   output_basename.pxspk.N      Plexon unit + 1, as .clu) and waveforms (int16,
+ *                                as .spk).  Own types: .res is shared across
+ *                                method tokens, so these never shadow it.
  *   output_basename.<id>.evt     NeuroScope events: every digital event (ms from
  *                                .dat sample 0, time-sorted) plus "gap start" /
  *                                "gap end" around zero-filled pauses.
@@ -99,6 +105,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -362,6 +369,9 @@ struct Recording {
     vector<std::map<uint32_t, uint64_t>> unitCounts;   // per spike channel
     vector<uint64_t> eventCounts;                      // per event channel
     vector<Event> events;                              // every event, file order
+    /** Set for the spike-export walk: (spike channel, tick, unit, waveform
+     *  points as stored, points per waveform, waveforms per spike). */
+    std::function<void(size_t, uint64_t, uint16_t, const int16_t*, uint32_t, uint32_t)> onSpike;
 };
 
 string streamPrefix(const string& name) {
@@ -544,7 +554,15 @@ void walkPlx(Reader& r, Recording& rec) {
             }
         } else if (type == 1) {
             auto it = rec.spikeByKey.find({0u, ch});
-            if (it != rec.spikeByKey.end()) ++rec.unitCounts[it->second][unit];
+            if (it != rec.spikeByKey.end()) {
+                ++rec.unitCounts[it->second][unit];
+                if (rec.onSpike && npts) {
+                    vector<int16_t> wave(npts);
+                    std::memcpy(wave.data(), r.at(pos + 16, 2 * npts), 2 * npts);
+                    rec.onSpike(it->second, ts, unit, wave.data(), static_cast<uint32_t>(nwords),
+                                static_cast<uint32_t>(nwf));
+                }
+            }
         } else {
             auto it = rec.eventByKey.find({0u, ch});
             uint32_t idx = kNoChannel;
@@ -830,6 +848,14 @@ void walkPl2(Reader& r, Recording& rec) {
                 vector<uint16_t> units(n);
                 r.readExact(p + 16 + 8ull * n, units.data(), 2ull * n);
                 for (uint16_t u : units) ++rec.unitCounts[it->second][u];
+                if (rec.onSpike && wf) {
+                    vector<uint64_t> ts(n);
+                    vector<int16_t> waves(static_cast<size_t>(n) * wf);
+                    r.readExact(p + 16, ts.data(), 8ull * n);
+                    r.readExact(p + 16 + 10ull * n, waves.data(), 2ull * n * wf);
+                    for (uint32_t k = 0; k < n; ++k)
+                        rec.onSpike(it->second, ts[k], units[k], waves.data() + static_cast<size_t>(k) * wf, wf, 1);
+                }
             }
         } else if (kind == kRecEvents) {
             const uint32_t n = rd<uint16_t>(b + 6);
@@ -1150,6 +1176,181 @@ void writeDat(Reader& r, const Recording& rec, const Layout& L, const fs::path& 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Online spikes → .pxres.N / .pxclu.N / .pxspk.N
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Plexon's online spikes, one group per spike channel, in the byte formats of
+ * .res (text), .clu (text) and .spk (int16, sample-major, channel fastest) but
+ * under their own types, so no neurosuite resolver mistakes them for the
+ * pipeline's files (.res is Shared across method tokens).  Times are .dat
+ * sample indices; spikes outside the .dat are counted, not written (a
+ * negative .res time would also break neurofileio's text/binary probe).
+ * Cluster id = Plexon unit + 1: unsorted 0 → 1 (the MUA id of the .clu
+ * convention), unit a → 2, …
+ */
+class SpikeExporter {
+public:
+    SpikeExporter(const Recording& recording, const Layout& layout, string basename)
+        : rec(recording), L(layout), base(std::move(basename)), groups(recording.spikeChannels.size()) {
+        std::map<int64_t, int> uses;
+        vector<int64_t> num(groups.size(), 0);
+        for (size_t i = 0; i < groups.size(); ++i) {
+            const Value ch = mapGet(rec.spikeChannels[i], "channel");
+            if (auto v = std::get_if<int64_t>(&ch.v)) num[i] = *v;
+            ++uses[num[i]];
+        }
+        // Group = the header's channel number when every spike channel has a
+        // distinct positive one (OmniPlex: SPK01 → 1); otherwise header order
+        // for all of them, so a fallback can never collide with a real number.
+        bool distinct = true;
+        for (size_t i = 0; i < groups.size(); ++i) distinct = distinct && num[i] > 0 && uses[num[i]] == 1;
+        for (size_t i = 0; i < groups.size(); ++i)
+            groups[i].number = distinct ? num[i] : static_cast<int64_t>(i + 1);
+    }
+
+    /** Paths that will be written: groups whose channel holds spikes. */
+    vector<fs::path> plannedOutputs() const {
+        vector<fs::path> out;
+        for (size_t i = 0; i < groups.size(); ++i) {
+            uint64_t n = 0;
+            for (const auto& kv : rec.unitCounts[i]) n += kv.second;
+            if (!n) continue;
+            for (const char* t : {"pxres", "pxclu", "pxspk"}) out.push_back(path(i, t));
+        }
+        return out;
+    }
+
+    void add(size_t i, uint64_t ts, uint16_t unit, const int16_t* wave, uint32_t points, uint32_t waves) {
+        Group& g = groups[i];
+        const double x = (static_cast<double>(ts) - static_cast<double>(L.t0)) / L.tps;
+        const int64_t sample = std::llround(x);
+        if (sample < 0) { ++g.beforeDat; return; }
+        if (static_cast<uint64_t>(sample) >= L.nSamples) { ++g.afterDat; return; }
+        if (!g.open) {
+            g.points = points;
+            g.waves = waves;
+            g.res.open(path(i, "pxres"), std::ios::trunc);
+            g.spk.open(path(i, "pxspk"), std::ios::binary | std::ios::trunc);
+            if (!g.res || !g.spk) throw std::runtime_error("cannot create " + path(i, "pxres").string());
+            g.open = true;
+        }
+        if (points != g.points || waves != g.waves) { ++g.geometryMismatch; return; }
+        // Plexon stores a spike's waveforms one after the other (waveform-major);
+        // .spk is sample-major, channel fastest.
+        g.frame.resize(static_cast<size_t>(points) * waves);
+        for (uint32_t t = 0; t < points; ++t)
+            for (uint32_t c = 0; c < waves; ++c)
+                g.frame[static_cast<size_t>(t) * waves + c] = wave[static_cast<size_t>(c) * points + t];
+        g.spk.write(reinterpret_cast<const char*>(g.frame.data()),   // int16 frame → bytes
+                    static_cast<std::streamsize>(g.frame.size() * sizeof(int16_t)));
+        g.res << sample << '\n';
+        g.sorted = g.sorted && (g.samples.empty() || sample >= g.samples.back());
+        g.samples.push_back(sample);
+        g.units.push_back(unit);
+    }
+
+    /** Close the files (re-sorting a group whose spikes were out of time order),
+     *  write the .pxclu files, and return the metadata block and findings. */
+    Map finish(vector<string>& findings) {
+        List gl;
+        for (size_t i = 0; i < groups.size(); ++i) {
+            Group& g = groups[i];
+            const string name = std::get<string>(mapGet(rec.spikeChannels[i], "name").v);
+            if (g.beforeDat || g.afterDat)
+                findings.push_back(name + ": " + std::to_string(g.beforeDat) + " spikes before and " +
+                                   std::to_string(g.afterDat) + " after the .dat not exported "
+                                   "(padToZero keeps the early ones)");
+            if (g.geometryMismatch)
+                findings.push_back(name + ": " + std::to_string(g.geometryMismatch) +
+                                   " spikes with a different waveform length dropped");
+            if (!g.open) continue;
+            g.res.close();
+            g.spk.close();
+            if (!g.sorted) {
+                reorder(i);
+                findings.push_back(name + ": spikes were out of time order in the file; re-sorted");
+            }
+            int64_t maxId = 1;
+            for (uint16_t u : g.units) maxId = std::max<int64_t>(maxId, int64_t{u} + 1);
+            {
+                std::ofstream clu(path(i, "pxclu"), std::ios::trunc);
+                clu << maxId + 1 << '\n';
+                for (uint16_t u : g.units) clu << (int64_t{u} + 1) << '\n';
+                if (!clu) throw std::runtime_error("write error on " + path(i, "pxclu").string());
+            }
+            Map units;
+            for (const auto& [u, n] : rec.unitCounts[i]) units.push_back({std::to_string(u), n});
+            gl.push_back(Map{{"group", g.number}, {"name", name},
+                             {"channel", mapGet(rec.spikeChannels[i], "channel")},
+                             {"nSpikes", static_cast<uint64_t>(g.samples.size())},
+                             {"nSamples", g.points}, {"nChannels", g.waves},
+                             {"uvPerCount", mapGet(rec.spikeChannels[i], "uvPerCount")},
+                             {"threshold_counts", mapGet(rec.spikeChannels[i], "threshold_counts")},
+                             {"plexonUnitCounts", units},
+                             {"skippedBeforeDat", g.beforeDat}, {"skippedAfterDat", g.afterDat},
+                             {"reordered", !g.sorted}});
+        }
+        return Map{{"files", base + ".pxres.N / .pxclu.N / .pxspk.N (N = group)"},
+                   {"timeBase", ".dat samples: round((tick - firstSampleTimestamp_ticks) / ticksPerSample)"},
+                   {"clusterIds", "Plexon unit + 1 (unsorted 0 -> 1, unit a -> 2, ...); first .pxclu line = max id + 1"},
+                   {"waveformLayout", "int16, nSamples x nChannels per spike, sample-major, channel fastest; raw counts"},
+                   {"groups", gl}};
+    }
+
+private:
+    struct Group {
+        int64_t number = 0;
+        bool open = false, sorted = true;
+        uint32_t points = 0, waves = 0;
+        std::ofstream res, spk;
+        vector<int64_t> samples;
+        vector<uint16_t> units;
+        vector<int16_t> frame;
+        uint64_t beforeDat = 0, afterDat = 0, geometryMismatch = 0;
+    };
+
+    fs::path path(size_t i, const char* type) const {
+        return base + "." + type + "." + std::to_string(groups[i].number);
+    }
+
+    void reorder(size_t i) {
+        Group& g = groups[i];
+        vector<size_t> perm(g.samples.size());
+        for (size_t k = 0; k < perm.size(); ++k) perm[k] = k;
+        std::stable_sort(perm.begin(), perm.end(),
+                         [&](size_t a, size_t b) { return g.samples[a] < g.samples[b]; });
+        const size_t frame = static_cast<size_t>(g.points) * g.waves;
+        vector<int16_t> all(perm.size() * frame), out(all.size());
+        {
+            std::ifstream in(path(i, "pxspk"), std::ios::binary);
+            in.read(reinterpret_cast<char*>(all.data()),   // whole .pxspk back into memory
+                    static_cast<std::streamsize>(all.size() * sizeof(int16_t)));
+        }
+        vector<int64_t> s2(perm.size());
+        vector<uint16_t> u2(perm.size());
+        for (size_t k = 0; k < perm.size(); ++k) {
+            std::memcpy(&out[k * frame], &all[perm[k] * frame], frame * sizeof(int16_t));
+            s2[k] = g.samples[perm[k]];
+            u2[k] = g.units[perm[k]];
+        }
+        g.samples.swap(s2);
+        g.units.swap(u2);
+        std::ofstream spk(path(i, "pxspk"), std::ios::binary | std::ios::trunc);
+        spk.write(reinterpret_cast<const char*>(out.data()),   // int16 → bytes
+                  static_cast<std::streamsize>(out.size() * sizeof(int16_t)));
+        std::ofstream res(path(i, "pxres"), std::ios::trunc);
+        for (int64_t x : g.samples) res << x << '\n';
+        if (!spk || !res) throw std::runtime_error("write error re-sorting group " + std::to_string(g.number));
+    }
+
+    const Recording& rec;
+    const Layout& L;
+    string base;
+    vector<Group> groups;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // .evt writer
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1277,7 +1478,7 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
                     const fs::path& input, const string& datName,
                     const std::optional<EvtSummary>& evt,
                     const List& extraStreams, const List& sessionFiles,
-                    const vector<string>& extraFindings) {
+                    const vector<string>& extraFindings, const std::optional<Map>& onlineSpikes) {
     List spk, evtList, chans, streamsList, gaps;
     vector<string> countFindings;
     for (size_t i = 0; i < rec.spikeChannels.size(); ++i) {
@@ -1393,6 +1594,7 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
              {"export", ex},
              {"streams", streamsList},
              {"extraStreams", extraStreams},
+             {"onlineSpikes", onlineSpikes ? Value(*onlineSpikes) : Value()},
              {"spikeChannels", spk},
              {"eventChannels", evtList}};
     if (evt)
@@ -1482,6 +1684,7 @@ void usage(std::ostream& o) {
          "  -c, --chunk N          output samples per write chunk (default 2^21 / nChannels)\n"
          "  -m, --meta FILE        metadata output (default output_basename.plexon.yaml)\n"
          "  -x, --extra-streams S  other streams to own files: auto (all but SPKC), all, none, or AI,FP,...\n"
+         "      --no-spikes        do not export Plexon's online spikes (.pxres/.pxclu/.pxspk)\n"
          "  -e, --evt-id ID        3-character event-file id (default plx -> output_basename.plx.evt)\n"
          "      --no-evt           do not write the event file\n"
          "  -f, --force            overwrite an existing output_basename.dat\n"
@@ -1501,7 +1704,7 @@ bool parseBool(const string& s) {
 
 int main(int argc, char** argv) {
     string stream, channelSpec, metaPath, evtId = "plx", extraSpec = "auto";
-    bool writeEvents = true;
+    bool writeEvents = true, exportSpikes = true;
     bool keepEmpty = true, padToZero = false, force = false, dryRun = false;
     uint64_t chunk = 0;   // 0 = auto: ~4 MB of output per chunk
     vector<string> pos;
@@ -1520,6 +1723,7 @@ int main(int argc, char** argv) {
             else if (a == "-m" || a == "--meta") metaPath = next();
             else if (a == "-e" || a == "--evt-id") evtId = next();
             else if (a == "--no-evt") writeEvents = false;
+            else if (a == "--no-spikes") exportSpikes = false;
             else if (a == "-x" || a == "--extra-streams") extraSpec = next();
             else if (a == "-f" || a == "--force") force = true;
             else if (a == "-d" || a == "--dry-run") dryRun = true;
@@ -1674,6 +1878,11 @@ int main(int argc, char** argv) {
         vector<fs::path> outputs{dat};
         if (writeEvents) outputs.push_back(evtPath);
         for (const auto& kv : extraOut) outputs.push_back(kv.second);
+        std::unique_ptr<SpikeExporter> spikes;
+        if (exportSpikes) {
+            spikes = std::make_unique<SpikeExporter>(rec, L, pos[1]);
+            for (const fs::path& o : spikes->plannedOutputs()) outputs.push_back(o);
+        }
         for (const fs::path& o : outputs) {
             if (fs::exists(o) && !force) {
                 std::cerr << "error: " << o.string() << " exists (use --force)\n";
@@ -1727,9 +1936,28 @@ int main(int argc, char** argv) {
                                         std::to_string(L.chans.size()) + " — not listed under files: "
                                         "(NeuroScope reads extra files with the session's channel count)");
         }
+        // Online spikes: one more walk with the exporter attached (the .dat
+        // and extra streams are written, so no analog blocks are indexed).
+        std::optional<Map> spikeMeta;
+        if (spikes && !spikes->plannedOutputs().empty()) {
+            for (auto& c : rec.analog) c.indexed = false;
+            rec.onSpike = [&](size_t i, uint64_t ts, uint16_t unit, const int16_t* w,
+                              uint32_t pts, uint32_t nw) { spikes->add(i, ts, unit, w, pts, nw); };
+            rec.header = headerBeforeWalk;
+            walk();
+            rec.onSpike = nullptr;
+            spikeMeta = spikes->finish(extraFindings);
+            uint64_t ng = 0, ns = 0;
+            for (const Value& g : *std::get<std::shared_ptr<List>>(mapGet(*spikeMeta, "groups").v)) {
+                ++ng;
+                ns += std::get<uint64_t>(mapGet(*std::get<std::shared_ptr<Map>>(g.v), "nSpikes").v);
+            }
+            std::cout << "  wrote " << ns << " online spikes in " << ng
+                      << " groups (.pxres/.pxclu/.pxspk)\n";
+        }
         const fs::path meta = metaPath.empty() ? fs::path(pos[1] + ".plexon.yaml") : fs::path(metaPath);
         writeMetadata(meta, buildMetadata(rec, chosen, L, input, dat.filename().string(), evt,
-                                          extraMeta, sessionFiles, extraFindings));
+                                          extraMeta, sessionFiles, extraFindings, spikeMeta));
         std::cout << "  wrote " << dat.string() << "\n  metadata: " << meta.string() << "\n";
         return 0;
     } catch (const std::exception& e) {

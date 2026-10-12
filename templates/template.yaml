@@ -360,6 +360,9 @@ programs:
       - name: extraStreams
         value: auto
         status: Optional
+      - name: exportSpikes
+        value: 'true'
+        status: Optional
       - name: chunkSamples
         value: ~
         status: Optional
@@ -423,6 +426,14 @@ programs:
       with data except SPKC, the spike-filtered copy of WB), all, none, or a
       comma list such as AI,FP.  Files with the .dat's channel count are
       added to the files: list so NeuroScope opens them at the right rate.
+
+      # exportSpikes
+
+      Export Plexon's online spikes (default = true): per spike channel N,
+      SESSION.pxres.N (.dat sample times, text like .res), SESSION.pxclu.N
+      (cluster id = Plexon unit + 1, text like .clu: unsorted -> 1, unit a ->
+      2) and SESSION.pxspk.N (raw int16 waveforms like .spk).  Own types, so
+      they never shadow the pipeline's .res/.clu/.spk.
 
       # evtId
 

@@ -1,4 +1,4 @@
-# `ndm_plx2dat` — Plexon `.plx` / `.pl2` → `.dat` + `.evt` + extra streams + `.yaml` metadata
+# `ndm_plx2dat` — Plexon `.plx` / `.pl2` → `.dat` + `.evt` + extra streams + online spikes + `.yaml` metadata
 
 ## Synopsis
 
@@ -8,7 +8,7 @@ ndm_plx2dat [session.yaml]
 
 **Input:** `plexonFile` (a Plexon `.plx` or `.pl2` recording — OmniPlex or MAP)
 
-**Output:** `session.dat`, `session.plx.evt`, `session.px<stream>` (one per extra stream, e.g. `.pxai`), `session.plexon.yaml`; the session `.yaml` is updated in place
+**Output:** `session.dat`, `session.plx.evt`, `session.px<stream>` (one per extra stream, e.g. `.pxai`), `session.pxres.N` / `.pxclu.N` / `.pxspk.N` (Plexon's online spikes per spike channel), `session.plexon.yaml`; the session `.yaml` is updated in place
 
 ## Description
 
@@ -22,7 +22,8 @@ Two programs do the work:
 
 - **`process_plxconvert`** (C++, no dependencies) parses the file, writes
   `session.dat`, the event file `session.plx.evt`, one file per extra
-  continuous stream and the metadata file `session.plexon.yaml`.
+  continuous stream, Plexon's online spikes and the metadata file
+  `session.plexon.yaml`.
 - **`process_plxyaml.py`** merges that metadata into the session YAML. With
   `ruamel.yaml` installed the YAML keeps its comments and layout; otherwise
   PyYAML rewrites it and the step says so.
@@ -86,6 +87,31 @@ A file with the same channel count as the `.dat` is added to the YAML's
 right rate — NeuroScope reads extra files with the session's channel count,
 so a file with a different count is not listed (the findings say so).
 
+### Online spikes — `session.pxres.N` / `.pxclu.N` / `.pxspk.N`
+
+The spikes Plexon detected (and, where online sorting ran, assigned to
+units) are exported per spike channel; group *N* is the channel's number
+(`SPK01` → 1), or header order when the numbers are not distinct positive
+integers. Format: [`.pxres` / `.pxclu` / `.pxspk`](../formats/pxspikes.md).
+
+| File | Content | Same bytes as |
+|---|---|---|
+| `.pxres.N` | `.dat` sample index of each spike, one per line, time-sorted | text `.res` |
+| `.pxclu.N` | First line max id + 1, then one cluster id per spike: **Plexon unit + 1** (unsorted 0 → 1, the MUA id; unit a → 2, …) | text `.clu` |
+| `.pxspk.N` | Raw int16 waveforms, `nSamples × nChannels` per spike, sample-major, channel fastest | `.spk` |
+
+They use their own types on purpose: `.res` is *Shared* across method tokens,
+so a `.res.plexon.N` would be picked up by `resolveAny` in place of the
+pipeline's own spike times. To view Plexon's sort in Klusters, copy the three
+files into a separate session directory under `.res` / `.clu` / `.spk` names.
+
+Times use the `.dat` origin (exact when the `.dat` is `WB`, since Plexon's
+clock ticks at the wideband rate). Spikes before the `.dat`'s first sample or
+after its end are counted per group (`skippedBeforeDat` / `skippedAfterDat`)
+and not written; `padToZero: true` keeps the early ones. Spikes found out of
+time order in the file are re-sorted, and the findings say so. µV = count ×
+`sourceRecording.onlineSpikes.groups[].uvPerCount`.
+
 ### What goes into the YAML
 
 | Block | Contents |
@@ -93,7 +119,7 @@ so a file with a different count is not listed (the findings say so).
 | `acquisitionSystem` | `nBits`, `nChannels`, `samplingRate`, `voltageRange` / `amplification` (chosen so `voltageRange·10⁶ / (2¹⁶·amplification)` = µV per count), `offset`, plus `bitResolution_uV`, `nSamples`, `duration_s`. Each change is printed. |
 | `generalInfo` | `date` from the recording date and `description` from the Plexon file comment — **only when still empty**. |
 | `files` | One `{samplingRate, extension}` entry per extra-stream file with the `.dat`'s channel count; an entry with the same extension is updated, others (e.g. `lfp`) are kept. |
-| `sourceRecording` | `header` (version / application, recording date, clock, channel-header counts, PL2 offsets and record counts), `export` (stream, time origin, segments and gaps, the per-channel table: name, source/channel, rate, µV/count, enabled, has-data, device, electrode type), `streams` (every continuous stream with channel counts, rates and scales), `extraStreams` (per exported extra stream: file, rate, time origin and offset from the `.dat`, gaps, channel table), `spikeChannels` (threshold in counts and µV, waveform length, pre-threshold samples, per-unit spike counts), `eventChannels` (event counts), `eventFile` (file, counts, label patterns), `deviceSettings` (OmniPlex `<Settings>` values such as filter cut-offs and poles, PL2 only), `deviceText` and per-channel `headerText` (other readable text in the PL2 headers and settings region — device chain, electrode and input types), `findings` (every inconsistency found). |
+| `sourceRecording` | `header` (version / application, recording date, clock, channel-header counts, PL2 offsets and record counts), `export` (stream, time origin, segments and gaps, the per-channel table: name, source/channel, rate, µV/count, enabled, has-data, device, electrode type), `streams` (every continuous stream with channel counts, rates and scales), `extraStreams` (per exported extra stream: file, rate, time origin and offset from the `.dat`, gaps, channel table), `onlineSpikes` (time base, cluster-id mapping, per group: name, channel, spike count, waveform geometry, µV/count, threshold, Plexon unit counts, spikes outside the `.dat`), `spikeChannels` (threshold in counts and µV, waveform length, pre-threshold samples, per-unit spike counts), `eventChannels` (event counts), `eventFile` (file, counts, label patterns), `deviceSettings` (OmniPlex `<Settings>` values such as filter cut-offs and poles, PL2 only), `deviceText` and per-channel `headerText` (other readable text in the PL2 headers and settings region — device chain, electrode and input types), `findings` (every inconsistency found). |
 
 The same `sourceRecording` block stays in `session.plexon.yaml`. Keep that
 file: ndmanager rewrites the session YAML from its own model when you save,
@@ -112,8 +138,8 @@ and channels hold data):
 | Data | Where it is now | Notes |
 |---|---|---|
 | `SPKC` samples with `extraStreams: auto` | Per-stream summary in `sourceRecording.streams` | Plexon's 300 Hz high-pass of `WB`, derivable with `ndm_hipass`; `extraStreams: all` (or `SPKC`) exports it. |
-| Plexon's online spikes: timestamps, waveforms, unit assignments | Per channel: spike count per unit, threshold, waveform length, pre-threshold samples | neurosuite re-detects from the `.dat`; the online sort is not available for comparison. |
-| Online-sorting definitions (PLX: templates, fit, sort width, boxes; PL2: the binary part of the spike headers) | Not decoded; PL2 header text only | |
+| Online spikes before / after the `.dat` | Counted per group in `onlineSpikes.groups[]` | `padToZero: true` keeps the early ones. |
+| Online-sorting definitions (PLX: templates, fit, sort width, boxes; PL2: the binary part of the spike headers) | Not decoded; PL2 header text only | Candidate for conversion to [`.wtl`](../formats/wtl.md) template lineages. |
 | Undocumented binary fields of PL2 channel headers | Only their readable text (`headerText`) | |
 | PL2 footer (a copy of the device settings and a per-channel index) | Not read | Redundant with what the record walk finds. |
 | PL2 records of types other than analog, spikes, events, end | Counted in `header.recordCounts`, contents not read | |
@@ -133,6 +159,7 @@ and channels hold data):
   - {name: padToZero,    value: 'false',       status: Optional}
   - {name: evtId,        value: plx,           status: Optional}
   - {name: extraStreams, value: auto,          status: Optional}
+  - {name: exportSpikes, value: 'true',        status: Optional}
   - {name: chunkSamples, value: ~,             status: Optional}
 ```
 
@@ -144,6 +171,7 @@ and channels hold data):
 | `keepEmpty` | `true` | Keep stream channels without data as zero channels. |
 | `padToZero` | `false` | Start the `.dat` (and the `.evt` times) at tick 0 instead of at the first sample. |
 | `evtId` | `plx` | Id of the event file `session.<evtId>.evt`: 3 characters, not all digits. |
+| `exportSpikes` | `true` | Export Plexon's online spikes to `.pxres.N` / `.pxclu.N` / `.pxspk.N`. |
 | `extraStreams` | `auto` | Other streams to export to `session.px<stream>`: `auto` (all with data but `SPKC`), `all`, `none`, or a comma list such as `AI,FP`. |
 | `chunkSamples` | 2²¹ / nChannels | Output samples per write chunk (≈ 4 MB). Much larger chunks are measurably slower. |
 
@@ -180,7 +208,9 @@ For events it compares the `.evt` line for line with an independently
 computed expectation, PLX against PL2, and with `padToZero`; extra streams
 are checked against an independent model of the alignment (including a
 stream that starts off the `.dat`'s grid), PLX against PL2, and for the
-`files:` entries.
+`files:` entries; online spikes against an independent model of times,
+cluster ids and per-spike waveforms (spikes outside the `.dat`, records out of
+time order, two waveforms per spike, PLX numbering that needs header order).
 
 ## See also
 

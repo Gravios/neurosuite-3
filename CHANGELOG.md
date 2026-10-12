@@ -77,6 +77,13 @@ layout at each stream's own rate, aligned to the `.dat` start on the stream's
 own grid; files with the `.dat`'s channel count are listed under `files:` for
 NeuroScope. Format: `doc/ndmanager-plugins/formats/pxstream.md`.
 
+Plexon's online spikes (`exportSpikes`, default on) go to
+`SESSION.pxres.N` / `.pxclu.N` / `.pxspk.N` per spike channel: `.dat` sample
+times, cluster id = Plexon unit + 1, raw waveforms — the byte formats of text
+`.res` / `.clu` and `.spk` under their own types, because `.res` is Shared
+across method tokens and a Plexon copy would shadow the pipeline's. Format:
+`doc/ndmanager-plugins/formats/pxspikes.md`.
+
 PLX follows Plexon.h as read by python-neo; PL2 follows OpenReadout's
 clean-room notes (Plexon publishes no PL2 specification), so every run
 checks internal consistency and reports failures under

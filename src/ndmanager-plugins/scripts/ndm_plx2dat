@@ -9,8 +9,10 @@
 #//   from .dat sample 0, plus "gap start" / "gap end" around zero-filled
 #//   pauses; id = evtId, default plx), one SESSION.px<stream> file per other
 #//   continuous stream with data (extraStreams, default auto = all but SPKC;
-#//   e.g. SESSION.pxai, SESSION.pxfp) and records everything readable from
-#//   the Plexon headers in the session YAML:
+#//   e.g. SESSION.pxai, SESSION.pxfp), Plexon's online spikes per spike
+#//   channel N as SESSION.pxres.N / .pxclu.N / .pxspk.N (exportSpikes,
+#//   default true) and records everything readable from the Plexon headers
+#//   in the session YAML:
 #//     - acquisitionSystem   nChannels, samplingRate, voltageRange /
 #//                           amplification (from the Plexon gain), plus
 #//                           bitResolution_uV, nSamples, duration_s
@@ -87,6 +89,7 @@ keepEmpty=$(read_script_parameter $session ndm_plx2dat keepEmpty)
 padToZero=$(read_script_parameter $session ndm_plx2dat padToZero)
 chunkSamples=$(read_script_parameter $session ndm_plx2dat chunkSamples)
 extraStreams=$(read_script_parameter $session ndm_plx2dat extraStreams)
+exportSpikes=$(read_script_parameter $session ndm_plx2dat exportSpikes)
 
 options=(--evt-id "$evtId")
 check_optional_variable "$stream"       && options+=(--stream "$stream")
@@ -95,6 +98,7 @@ check_optional_variable "$keepEmpty"    && options+=(--keep-empty "$keepEmpty")
 check_optional_variable "$padToZero"    && options+=(--pad-to-zero "$padToZero")
 check_optional_variable "$chunkSamples" && options+=(--chunk "$chunkSamples")
 check_optional_variable "$extraStreams" && options+=(--extra-streams "$extraStreams")
+case "${exportSpikes,,}" in false|0|no|off) options+=(--no-spikes) ;; esac
 
 # Locate the Python helper alongside this script, or in PATH
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

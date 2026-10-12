@@ -67,8 +67,11 @@ N_ANALOG = N_WB + 2 + N_AI + N_SPKC
 FP = {i: [rng.integers(-2000, 2000, n // 40, dtype=np.int16) for _, n in SEG]
       for i in range(2)}
 SPIKES = [(500 + 37 * k, k % 3, k % 2) for k in range(60)]   # (tick, channel, unit)
+SPIKES += [(60, 2, 1), (13500, 2, 0)]     # SPK03: one before, one after the .dat
 EVENTS = [(1000 + 400 * k, 0, 1) for k in range(10)] + [(2222, 1, 0x8001), (40, 1, 0x8002)]
 WF = 8
+# A distinct waveform per spike, so order and content are both checked.
+WAVES = [(np.arange(WF) * 3 + 100 * k - 2000).astype(np.int16) for k in range(len(SPIKES))]
 THRESH = -120
 UPC_V = 1.52587890625e-07      # volts per count (PL2)
 
@@ -100,7 +103,7 @@ def _name(s, n=32):
     return s.encode().ljust(n, b"\0")
 
 
-def write_plx(path, *, truncate=0, bad_rate=False):
+def write_plx(path, *, truncate=0, bad_rate=False, two_waves=False):
     hdr = bytearray(7504)
     hdr[0:4] = b"PLEX"
     struct.pack_into("<i", hdr, 4, 107)
@@ -140,10 +143,10 @@ def write_plx(path, *, truncate=0, bad_rate=False):
             struct.pack_into("<6i", b, 32, base + i, rate, 1, 1, 1000, -1)
             out += b
 
-    def blk(btype, ts, ch, unit, data):
+    def blk(btype, ts, ch, unit, data, nwf=1):
         n = len(data)
         return (struct.pack("<hHIhHhh", btype, ts >> 32, ts & 0xFFFFFFFF, ch, unit,
-                            1 if n else 0, n) + np.asarray(data, "<i2").tobytes())
+                            nwf if n else 0, n // nwf if n else 0) + np.asarray(data, "<i2").tobytes())
 
     recs = []
     for i, segs in WB.items():
@@ -158,8 +161,11 @@ def write_plx(path, *, truncate=0, bad_rate=False):
     for i, segs in SPKC.items():
         for t, d in blocks(segs, WB_RATE):
             recs.append((t, 1, blk(5, t, 300 + i, 0, d)))
-    for t, ch, u in SPIKES:
-        recs.append((t, 2, blk(1, t, ch, u, np.arange(WF, dtype=np.int16))))
+    for k, (t, ch, u) in enumerate(SPIKES):
+        if two_waves:     # stereotrode-style: two waveforms per spike, stored one after the other
+            recs.append((t, 2, blk(1, t, ch, u, np.concatenate([WAVES[k], -WAVES[k]]), nwf=2)))
+        else:
+            recs.append((t, 2, blk(1, t, ch, u, WAVES[k])))
     for t, ch, v in EVENTS:
         recs.append((t, 3, blk(4, t, ch, v, [])))
     recs.sort(key=lambda r: (r[0], r[1]))
@@ -257,15 +263,17 @@ def write_pl2(path, *, bad_header=False, off_grid=False, truncate=0, bad_counts=
                 recs.append((t, 1, _rec(0x42, src, n, struct.pack("<HHQ", i + 1, n, t),
                                         d.astype("<i2").tobytes())))
     for c in range(n_spk):
-        sp = [(t, u) for t, ch, u in SPIKES if ch == c]
-        if not sp:
-            continue
-        ts = np.array([t for t, _ in sp], "<u8")
-        us = np.array([u for _, u in sp], "<u2")
-        wf = np.tile(np.arange(WF, dtype="<i2"), len(sp))
-        body = ts.tobytes() + us.tobytes() + wf.tobytes()
-        recs.append((int(ts[0]), 2, _rec(0x31, 6, 0xBEEF, struct.pack("<HHI", c + 1, WF, len(sp)),
-                                         body)))
+        sp = sorted((t, u, k) for k, (t, ch, u) in enumerate(SPIKES) if ch == c)
+        # two records per channel, so a reversed file holds them out of order
+        for part in (sp[:len(sp) // 2], sp[len(sp) // 2:]):
+            if not part:
+                continue
+            ts = np.array([t for t, _, _ in part], "<u8")
+            us = np.array([u for _, u, _ in part], "<u2")
+            wf = np.concatenate([WAVES[k] for _, _, k in part]).astype("<i2")
+            body = ts.tobytes() + us.tobytes() + wf.tobytes()
+            recs.append((int(ts[0]), 2, _rec(0x31, 6, 0xBEEF,
+                                             struct.pack("<HHI", c + 1, WF, len(part)), body)))
     for c in range(n_dig):
         ev = [(t, v) for t, ch, v in EVENTS if ch == c]
         ts = np.array([t for t, _ in ev], "<u8")
@@ -298,6 +306,26 @@ def expected_stream(data, segs, nch, tps, origin):
             a = (t - t0) // tps
             out[a:a + n, i] = d
     return t0, out
+
+
+def expected_spikes(group, t0=None):
+    """Independent model of .pxres/.pxclu/.pxspk for spike channel group-1."""
+    t0 = SEG[0][0] if t0 is None else t0
+    end = SEG[-1][0] + SEG[-1][1] - SEG[0][0]          # .dat length (no padding)
+    if t0 == 0:
+        end = SEG[-1][0] + SEG[-1][1]
+    rows = sorted((t - t0, u, k) for k, (t, ch, u) in enumerate(SPIKES)
+                  if ch == group - 1 and 0 <= t - t0 < end)
+    res = "".join(f"{x}\n" for x, _, _ in rows)
+    ids = [u + 1 for _, u, _ in rows]
+    clu = f"{max(max(ids), 1) + 1}\n" + "".join(f"{i}\n" for i in ids)
+    spk = np.concatenate([WAVES[k] for _, _, k in rows]).astype("<i2").tobytes()
+    return res, clu, spk
+
+
+def spike_files(d, base, group):
+    return (Path(d, f"{base}.pxres.{group}").read_text(), Path(d, f"{base}.pxclu.{group}").read_text(),
+            Path(d, f"{base}.pxspk.{group}").read_bytes())
 
 
 def read_px(path, nch):
@@ -441,6 +469,31 @@ def main():
               and xs["FP"]["listedInSessionFiles"] is False
               and any(f.startswith("FP: 2 channels") for f in sr.get("findings", [])))
 
+        print("online spikes (PLX)")
+        check("PLX spike groups 1-3 written (header channels 0-2 → header order)",
+              all(Path(d, f"a.{t}.{g}").exists() for t in ("pxres", "pxclu", "pxspk") for g in (1, 2, 3)))
+        check("spikes: times, cluster ids (unit + 1) and waveforms exact, per group",
+              all(spike_files(d, "a", g) == expected_spikes(g) for g in (1, 2, 3)))
+        osp = {g["group"]: g for g in sr["onlineSpikes"]["groups"]}
+        g3 = osp.get(3, {})
+        check("spikes outside the .dat counted, not written",
+              g3.get("skippedBeforeDat") == 1 and g3.get("skippedAfterDat") == 1
+              and g3.get("nSpikes") == 20
+              and any(f.startswith("SPK03: 1 spikes before") for f in sr.get("findings", [])))
+        res1 = Path(d, "a.pxres.1").read_bytes()
+        check("pxres is text a .res reader detects as text (first byte a digit)",
+              res1[:1].isdigit() and Path(d, "a.pxspk.1").stat().st_size == 20 * WF * 2)
+
+        two = Path(d, "two.plx")
+        write_plx(two, two_waves=True)
+        rc, _, _, ymt = convert(d, two, "w2")
+        g1 = [k for k, (t, ch, u) in enumerate(SPIKES) if ch == 0]
+        exp_two = np.stack([np.stack([WAVES[k], -WAVES[k]], axis=1) for k in g1]).astype("<i2").tobytes()
+        grp = {g["group"]: g for g in yaml.safe_load(ymt.read_text())["sourceRecording"]["onlineSpikes"]["groups"]}
+        check("two waveforms per spike → .pxspk sample-major, channel fastest",
+              rc == 0 and Path(d, "w2.pxspk.1").read_bytes() == exp_two
+              and grp.get(1, {}).get("nChannels") == 2)
+
         print("PL2 → .dat")
         rc, out, arr2, yml2 = convert(d, pl2, "b")
         check("exit 0", rc == 0)
@@ -463,6 +516,8 @@ def main():
         check("PL2 event counts", {c["name"]: c["nEvents"] for c in sr2["eventChannels"]}
               == {"EVT01": 10, "Strobed": 2})
         check("PL2 .evt identical to PLX .evt", Path(d, "b.plx.evt").read_text() == evt_a)
+        check("PL2 spike files identical to PLX (channels 1-3 → groups 1-3)",
+              all(spike_files(d, "b", g) == spike_files(d, "a", g) for g in (1, 2, 3)))
         check("PL2 extra-stream files identical to PLX",
               Path(d, "b.pxai").read_bytes() == Path(d, "a.pxai").read_bytes()
               and Path(d, "b.pxfp").read_bytes() == Path(d, "a.pxfp").read_bytes())
@@ -477,6 +532,10 @@ def main():
         rc, _, _, _ = convert(d, rev, "r")
         check("records out of time order give the same .dat",
               rc == 0 and Path(d, "r.dat").read_bytes() == Path(d, "a.dat").read_bytes())
+        srr = yaml.safe_load(Path(d, "r.yaml").read_text())["sourceRecording"]
+        check("out-of-order spike records re-sorted to the same files",
+              all(spike_files(d, "r", g) == spike_files(d, "a", g) for g in (1, 2, 3))
+              and any("re-sorted" in f for f in srr.get("findings", [])))
 
         print("options")
         rc, _, arr, _ = convert(d, pl2, "c", ["--pad-to-zero", "true"])
@@ -484,6 +543,14 @@ def main():
               rc == 0 and np.array_equal(arr, expected_dat(pad_to_zero=True)))
         check("pad-to-zero .evt times from tick 0",
               Path(d, "c.plx.evt").read_text() == expected_evt(pad_to_zero=True))
+        check("pad-to-zero keeps the early spike",
+              spike_files(d, "c", 3) == expected_spikes(3, t0=0))
+        rc, _, _, _ = convert(d, pl2, "s1", ["--no-spikes"])
+        check("--no-spikes writes no spike files",
+              rc == 0 and not list(Path(d).glob("s1.pxres.*")))
+        Path(d, "s2.pxclu.2").write_text("x")
+        rc, out = run([str(pl2), str(Path(d, "s2"))])
+        check("refuses to overwrite an existing .pxclu", rc == 3 and not Path(d, "s2.dat").exists())
         rc, _, _, _ = convert(d, pl2, "h", ["--evt-id", "ttl", "--no-evt"])
         check("--no-evt writes no event file",
               rc == 0 and not list(Path(d).glob("h.*.evt")))
@@ -513,8 +580,8 @@ def main():
               and np.array_equal(read_px(Path(d, "x1.pxspkc"), N_SPKC),
                                  expected_stream(SPKC, SEG, N_SPKC, 1, SEG[0][0])[1]))
         rc, _, _, _ = convert(d, pl2, "x2", ["--extra-streams", "none"])
-        check("extra-streams none writes no .px* file",
-              rc == 0 and not [q for q in Path(d).glob("x2.px*")])
+        check("extra-streams none writes no .px<stream> file",
+              rc == 0 and not [q for q in Path(d).glob("x2.px*") if not q.suffix[1:].isdigit()])
         rc, _, _, _ = convert(d, pl2, "x3", ["--extra-streams", "ai"])
         check("extra-streams list (case-insensitive)", rc == 0 and Path(d, "x3.pxai").exists()
               and not Path(d, "x3.pxfp").exists())
