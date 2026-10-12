@@ -1,4 +1,4 @@
-# `ndm_plx2dat` — Plexon `.plx` / `.pl2` → `.dat` + `.evt` + `.yaml` metadata
+# `ndm_plx2dat` — Plexon `.plx` / `.pl2` → `.dat` + `.evt` + extra streams + `.yaml` metadata
 
 ## Synopsis
 
@@ -8,7 +8,7 @@ ndm_plx2dat [session.yaml]
 
 **Input:** `plexonFile` (a Plexon `.plx` or `.pl2` recording — OmniPlex or MAP)
 
-**Output:** `session.dat`, `session.plx.evt`, `session.plexon.yaml`; the session `.yaml` is updated in place
+**Output:** `session.dat`, `session.plx.evt`, `session.px<stream>` (one per extra stream, e.g. `.pxai`), `session.plexon.yaml`; the session `.yaml` is updated in place
 
 ## Description
 
@@ -21,8 +21,8 @@ byte 10 for PL2), so the same step handles both.
 Two programs do the work:
 
 - **`process_plxconvert`** (C++, no dependencies) parses the file, writes
-  `session.dat`, the event file `session.plx.evt` and the metadata file
-  `session.plexon.yaml`.
+  `session.dat`, the event file `session.plx.evt`, one file per extra
+  continuous stream and the metadata file `session.plexon.yaml`.
 - **`process_plxyaml.py`** merges that metadata into the session YAML. With
   `ruamel.yaml` installed the YAML keeps its comments and layout; otherwise
   PyYAML rewrites it and the step says so.
@@ -66,13 +66,34 @@ pattern used per channel. Zero-filled pauses of the `.dat` add
 The id (`plx`) is the `evtId` parameter; NeuroScope requires a 3-character
 id that is not all digits.
 
+### Extra streams — `session.px<stream>`
+
+Every other continuous stream with data (`extraStreams: auto`) is written to
+its own file, named `px` + the lower-case stream prefix: `session.pxai`,
+`session.pxfp`, … `auto` leaves out `SPKC`, Plexon's 300 Hz high-pass copy of
+`WB` (use `all` or name it to include it). The `px` prefix keeps these names
+clear of every neurosuite type. Format: [`.px<stream>`](../formats/pxstream.md)
+— the `.dat` layout (int16 counts, interleaved) at the stream's own rate.
+
+Each file is aligned to the `.dat`: its sample 0 is the last point of the
+stream's own sample grid at or before the `.dat`'s first sample (the lead-in is
+zero-filled), so the two start within one of the stream's samples of each
+other; the exact offset is `sourceRecording.extraStreams[].offsetFromDat_s`.
+Pauses are zero-filled like the `.dat`'s.
+
+A file with the same channel count as the `.dat` is added to the YAML's
+`files:` list (`{samplingRate, extension}`), so NeuroScope opens it at the
+right rate — NeuroScope reads extra files with the session's channel count,
+so a file with a different count is not listed (the findings say so).
+
 ### What goes into the YAML
 
 | Block | Contents |
 |---|---|
 | `acquisitionSystem` | `nBits`, `nChannels`, `samplingRate`, `voltageRange` / `amplification` (chosen so `voltageRange·10⁶ / (2¹⁶·amplification)` = µV per count), `offset`, plus `bitResolution_uV`, `nSamples`, `duration_s`. Each change is printed. |
 | `generalInfo` | `date` from the recording date and `description` from the Plexon file comment — **only when still empty**. |
-| `sourceRecording` | `header` (version / application, recording date, clock, channel-header counts, PL2 offsets and record counts), `export` (stream, time origin, segments and gaps, the per-channel table: name, source/channel, rate, µV/count, enabled, has-data, device, electrode type), `streams` (every continuous stream with channel counts, rates and scales), `spikeChannels` (threshold in counts and µV, waveform length, pre-threshold samples, per-unit spike counts), `eventChannels` (event counts), `eventFile` (file, counts, label patterns), `deviceSettings` (OmniPlex `<Settings>` values such as filter cut-offs and poles, PL2 only), `deviceText` and per-channel `headerText` (other readable text in the PL2 headers and settings region — device chain, electrode and input types), `findings` (every inconsistency found). |
+| `files` | One `{samplingRate, extension}` entry per extra-stream file with the `.dat`'s channel count; an entry with the same extension is updated, others (e.g. `lfp`) are kept. |
+| `sourceRecording` | `header` (version / application, recording date, clock, channel-header counts, PL2 offsets and record counts), `export` (stream, time origin, segments and gaps, the per-channel table: name, source/channel, rate, µV/count, enabled, has-data, device, electrode type), `streams` (every continuous stream with channel counts, rates and scales), `extraStreams` (per exported extra stream: file, rate, time origin and offset from the `.dat`, gaps, channel table), `spikeChannels` (threshold in counts and µV, waveform length, pre-threshold samples, per-unit spike counts), `eventChannels` (event counts), `eventFile` (file, counts, label patterns), `deviceSettings` (OmniPlex `<Settings>` values such as filter cut-offs and poles, PL2 only), `deviceText` and per-channel `headerText` (other readable text in the PL2 headers and settings region — device chain, electrode and input types), `findings` (every inconsistency found). |
 
 The same `sourceRecording` block stays in `session.plexon.yaml`. Keep that
 file: ndmanager rewrites the session YAML from its own model when you save,
@@ -84,13 +105,13 @@ conversion.
 
 ### Not exported
 
-What the three outputs do **not** carry, so you can decide whether it
+What the outputs do **not** carry, so you can decide whether it
 matters for a recording (`process_plxconvert --dry-run` shows which streams
 and channels hold data):
 
 | Data | Where it is now | Notes |
 |---|---|---|
-| Samples of the other continuous streams (e.g. `SPKC`, `FP`, `AI`) | Only per-stream channel counts, rates, scales and sample totals in `sourceRecording.streams` | `SPKC` (300 Hz high-pass of WB) and `FP` (low-pass, 1 kHz) are derivable from `WB` with `ndm_hipass` / `ndm_lfp`. **`AI` auxiliary inputs are not** — export them with `stream: AI` into a separate session if they hold data. |
+| `SPKC` samples with `extraStreams: auto` | Per-stream summary in `sourceRecording.streams` | Plexon's 300 Hz high-pass of `WB`, derivable with `ndm_hipass`; `extraStreams: all` (or `SPKC`) exports it. |
 | Plexon's online spikes: timestamps, waveforms, unit assignments | Per channel: spike count per unit, threshold, waveform length, pre-threshold samples | neurosuite re-detects from the `.dat`; the online sort is not available for comparison. |
 | Online-sorting definitions (PLX: templates, fit, sort width, boxes; PL2: the binary part of the spike headers) | Not decoded; PL2 header text only | |
 | Undocumented binary fields of PL2 channel headers | Only their readable text (`headerText`) | |
@@ -111,6 +132,7 @@ and channels hold data):
   - {name: keepEmpty,    value: 'true',        status: Optional}
   - {name: padToZero,    value: 'false',       status: Optional}
   - {name: evtId,        value: plx,           status: Optional}
+  - {name: extraStreams, value: auto,          status: Optional}
   - {name: chunkSamples, value: ~,             status: Optional}
 ```
 
@@ -122,6 +144,7 @@ and channels hold data):
 | `keepEmpty` | `true` | Keep stream channels without data as zero channels. |
 | `padToZero` | `false` | Start the `.dat` (and the `.evt` times) at tick 0 instead of at the first sample. |
 | `evtId` | `plx` | Id of the event file `session.<evtId>.evt`: 3 characters, not all digits. |
+| `extraStreams` | `auto` | Other streams to export to `session.px<stream>`: `auto` (all with data but `SPKC`), `all`, `none`, or a comma list such as `AI,FP`. |
 | `chunkSamples` | 2²¹ / nChannels | Output samples per write chunk (≈ 4 MB). Much larger chunks are measurably slower. |
 
 `process_plxconvert --dry-run recording.pl2` prints the streams, channel
@@ -154,7 +177,10 @@ gap placement, PLX/PL2 byte identity, options and metadata, plus negative
 controls (truncated files, a wrong header record type, mixed rates,
 off-grid blocks, header/record spike-count mismatch, a non-Plexon file).
 For events it compares the `.evt` line for line with an independently
-computed expectation, PLX against PL2, and with `padToZero`.
+computed expectation, PLX against PL2, and with `padToZero`; extra streams
+are checked against an independent model of the alignment (including a
+stream that starts off the `.dat`'s grid), PLX against PL2, and for the
+`files:` entries.
 
 ## See also
 

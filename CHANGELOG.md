@@ -71,6 +71,12 @@ end` markers around zero-filled pauses. The command page lists what none of
 the three outputs carries (other streams' samples, Plexon's online spikes and
 sort definitions, the PL2 footer, unknown record types).
 
+The other continuous streams with data (`extraStreams`, default all but
+`SPKC`) go to `SESSION.px<stream>` files (`.pxai`, `.pxfp`, …): the `.dat`
+layout at each stream's own rate, aligned to the `.dat` start on the stream's
+own grid; files with the `.dat`'s channel count are listed under `files:` for
+NeuroScope. Format: `doc/ndmanager-plugins/formats/pxstream.md`.
+
 PLX follows Plexon.h as read by python-neo; PL2 follows OpenReadout's
 clean-room notes (Plexon publishes no PL2 specification), so every run
 checks internal consistency and reports failures under

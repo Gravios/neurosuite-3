@@ -33,7 +33,7 @@ For task-oriented walkthroughs that span multiple programs, see
 | Command | Purpose |
 |---|---|
 | [`ndm_aom2dat`](commands/ndm_aom2dat.md) | AlphaOmega `.mat` (HDF5 v7.3) → `.dat` + `.yaml` |
-| [`ndm_plx2dat`](commands/ndm_plx2dat.md) | Plexon `.plx` / `.pl2` → `.dat` + `.evt` + header metadata in the `.yaml` |
+| [`ndm_plx2dat`](commands/ndm_plx2dat.md) | Plexon `.plx` / `.pl2` → `.dat` + `.evt` + extra streams + header metadata in the `.yaml` |
 | [Format conversion](commands/format-conversion.md) | Neuralynx, CED/Spike2, Amplipex converters |
 | [Channel manipulation](commands/channel-manipulation.md) | `ndm_resample`, `ndm_mergedat`, `ndm_extractchannels`, `ndm_reorderchannels`, `ndm_recolorchannels`, `ndm_concatenate` |
 | [`ndm_setupgroups`](commands/ndm_setupgroups.md) | Build channel groups from probe library |
@@ -74,6 +74,7 @@ For task-oriented walkthroughs that span multiple programs, see
 |---|---|
 | [**Naming convention**](formats/naming.md) | The `<base>.<type>.<method>.<group>` **variant** scheme shared by all files below |
 | [`.dat` / `.lfp` / `.fil`](formats/dat.md) | Binary signal files (session-wide) |
+| [`.px<stream>`](formats/pxstream.md) | Extra Plexon continuous streams (`.pxai`, `.pxfp`, …) from `ndm_plx2dat` |
 | [`.res.<method>.N`](formats/res.md) | Spike timestamps (shared across variants) |
 | [`.spk.<method>.N`](formats/spk.md) | Spike waveforms (shared across variants) |
 | [`.fet.<method>.N`](formats/fet.md) | PCA feature vectors (`standard` / `stderiv`) |

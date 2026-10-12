@@ -357,6 +357,9 @@ programs:
       - name: evtId
         value: plx
         status: Optional
+      - name: extraStreams
+        value: auto
+        status: Optional
       - name: chunkSamples
         value: ~
         status: Optional
@@ -411,6 +414,15 @@ programs:
       Start the .dat at timestamp 0 instead of at the first sample, so .dat
       sample n is Plexon tick n x ticksPerSample (default = false; the offset
       is always recorded as sourceRecording.export.firstSampleTimestamp_ticks).
+
+      # extraStreams
+
+      Other continuous streams to export, each to SESSION.px<stream> (e.g.
+      SESSION.pxai, SESSION.pxfp) in the .dat layout at the stream's own
+      rate, aligned to the .dat start: auto (default — every other stream
+      with data except SPKC, the spike-filtered copy of WB), all, none, or a
+      comma list such as AI,FP.  Files with the .dat's channel count are
+      added to the files: list so NeuroScope opens them at the right rate.
 
       # evtId
 

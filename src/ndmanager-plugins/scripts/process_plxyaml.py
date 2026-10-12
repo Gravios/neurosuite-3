@@ -11,6 +11,9 @@ Reads the ``sourceRecording`` block that process_plxconvert writes to
                         duration_s); every change is printed
   - generalInfo         date (from the recording date) and description (from
                         the Plexon file comment), only when still empty
+  - files               one {samplingRate, extension} entry per extra stream
+                        file NeuroScope can read (.pxai, .pxfp, …); an entry
+                        with the same extension is updated, others are kept
   - sourceRecording     the whole block, replacing an earlier one
 
 With ruamel.yaml installed the session YAML keeps its comments and layout;
@@ -94,6 +97,22 @@ def merge(param_file: Path, meta_file: Path) -> list[str]:
         if v and not gi.get(k):
             gi[k] = v
             changes.append(f"generalInfo.{k}: {v}")
+
+    files_new = (meta.get("export") or {}).get("sessionFiles") or []
+    if files_new:
+        files = doc.get("files")
+        if not isinstance(files, list):
+            files = []
+            doc["files"] = files
+        for entry in files_new:
+            ext, rate = entry.get("extension"), entry.get("samplingRate")
+            hit = next((f for f in files if isinstance(f, dict) and f.get("extension") == ext), None)
+            if hit is None:
+                files.append({"samplingRate": rate, "extension": ext})
+                changes.append(f"files: + {ext} @ {rate} Hz")
+            elif hit.get("samplingRate") != rate:
+                changes.append(f"files: {ext} samplingRate {hit.get('samplingRate')} -> {rate}")
+                hit["samplingRate"] = rate
 
     doc["sourceRecording"] = meta
     changes.append("sourceRecording: written")

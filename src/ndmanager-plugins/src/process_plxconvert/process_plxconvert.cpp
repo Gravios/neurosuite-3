@@ -36,6 +36,11 @@
  *                          that stays cache-friendly; much larger chunks are
  *                          measurably slower).
  *   -m, --meta FILE        Metadata output (default output_basename.plexon.yaml).
+ *   -x, --extra-streams S  Other continuous streams to export, each to its own
+ *                          file output_basename.px<stream>: "auto" (default:
+ *                          every other stream with data except SPKC, the
+ *                          spike-filtered copy of WB), "all", "none", or a
+ *                          comma list of stream prefixes (e.g. "AI,FP").
  *   -e, --evt-id ID        3-character event-file id (default plx →
  *                          output_basename.plx.evt; NeuroScope requires 3
  *                          characters, not all digits).
@@ -47,6 +52,9 @@
  * Outputs:
  *   output_basename.dat          int16 little-endian, sample-major interleaved.
  *                                Raw Plexon counts, copied verbatim.
+ *   output_basename.px<stream>   one per extra stream (e.g. .pxai, .pxfp): the
+ *                                .dat layout at that stream's own rate, on its
+ *                                own sample grid, aligned to the .dat start.
  *   output_basename.<id>.evt     NeuroScope events: every digital event (ms from
  *                                .dat sample 0, time-sorted) plus "gap start" /
  *                                "gap end" around zero-filled pauses.
@@ -957,7 +965,15 @@ struct Layout {
     vector<string> warnings;
 };
 
-Layout buildLayout(Recording& rec, vector<size_t> chans, bool keepEmpty, bool padToZero) {
+/**
+ * alignTo: time origin (tick) of another exported stream.  When set, this
+ * stream's sample 0 is put on its own sample grid at the last grid point at
+ * or before alignTo (zero-padding the lead-in), so its files start within
+ * one of its samples of that origin; a stream that starts earlier keeps its
+ * first sample (negative offset, reported by the caller).
+ */
+Layout buildLayout(Recording& rec, vector<size_t> chans, bool keepEmpty, bool padToZero,
+                   std::optional<uint64_t> alignTo = std::nullopt) {
     Layout L;
     if (!keepEmpty) {
         string dropped;
@@ -988,6 +1004,12 @@ Layout buildLayout(Recording& rec, vector<size_t> chans, bool keepEmpty, bool pa
     if (!(L.rate > 0)) throw std::runtime_error("selected stream has sampling rate 0");
     L.tps = rec.clock / L.rate;
     L.t0 = padToZero ? 0 : t0;
+    if (alignTo && t0 >= *alignTo) {
+        const double n = std::floor(static_cast<double>(t0 - *alignTo) / L.tps + 1e-9);
+        L.t0 = t0 - static_cast<uint64_t>(std::llround(n * L.tps));
+    } else if (alignTo) {
+        L.t0 = t0;
+    }
 
     size_t ref = SIZE_MAX;
     for (size_t j = 0; j < chans.size(); ++j) {
@@ -1213,6 +1235,31 @@ EvtSummary writeEvt(const Recording& rec, const Layout& L, const fs::path& path)
 // Metadata
 // ─────────────────────────────────────────────────────────────────────────────
 
+constexpr size_t kMaxGaps = 1000;
+
+List gapList(const Layout& L) {
+    List gaps;
+    for (size_t k = 1; k < L.segments.size() && gaps.size() < kMaxGaps; ++k) {
+        const uint64_t after = L.segments[k - 1].first + L.segments[k - 1].second;
+        gaps.push_back(Map{{"afterSample", after}, {"nSamples", L.segments[k].first - after},
+                           {"start_s", round9(static_cast<double>(after) / L.rate)}});
+    }
+    return gaps;
+}
+
+List channelTable(const Recording& rec, const Layout& L) {
+    List chans;
+    for (size_t j = 0; j < L.chans.size(); ++j) {
+        const AnalogChannel& c = rec.analog[L.chans[j]];
+        Map d{{"datChannel", static_cast<uint64_t>(j)}, {"name", c.name}, {"rate_hz", c.rate},
+              {"uvPerCount", round9(c.uvPerCount)}, {"enabled", c.enabled},
+              {"hasData", c.nBlocks > 0}, {"nSamples", c.nSamples}};
+        for (const auto& kv : c.meta) d.push_back(kv);
+        chans.push_back(std::move(d));
+    }
+    return chans;
+}
+
 string nowIso() {
     const std::time_t t = std::time(nullptr);
     std::tm lt{};
@@ -1228,7 +1275,9 @@ string nowIso() {
 
 Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
                     const fs::path& input, const string& datName,
-                    const std::optional<EvtSummary>& evt) {
+                    const std::optional<EvtSummary>& evt,
+                    const List& extraStreams, const List& sessionFiles,
+                    const vector<string>& extraFindings) {
     List spk, evtList, chans, streamsList, gaps;
     vector<string> countFindings;
     for (size_t i = 0; i < rec.spikeChannels.size(); ++i) {
@@ -1261,14 +1310,8 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
         d.push_back({"nEvents", rec.eventCounts[i]});
         evtList.push_back(std::move(d));
     }
-    for (size_t j = 0; j < L.chans.size(); ++j) {
-        const AnalogChannel& c = rec.analog[L.chans[j]];
-        Map d{{"datChannel", static_cast<uint64_t>(j)}, {"name", c.name}, {"rate_hz", c.rate},
-              {"uvPerCount", round9(c.uvPerCount)}, {"enabled", c.enabled},
-              {"hasData", c.nBlocks > 0}, {"nSamples", c.nSamples}};
-        for (const auto& kv : c.meta) d.push_back(kv);
-        chans.push_back(std::move(d));
-    }
+    chans = channelTable(rec, L);
+    gaps = gapList(L);
     for (const auto& [k, idx] : streamsOf(rec)) {
         std::set<double> rates, uvs;
         uint64_t live = 0;
@@ -1283,12 +1326,6 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
         streamsList.push_back(Map{{"name", k}, {"nChannels", static_cast<uint64_t>(idx.size())},
                                   {"nWithData", live}, {"rate_hz", rl}, {"uvPerCount", ul},
                                   {"exported", k == stream}});
-    }
-    constexpr size_t kMaxGaps = 1000;
-    for (size_t k = 1; k < L.segments.size() && gaps.size() < kMaxGaps; ++k) {
-        const uint64_t after = L.segments[k - 1].first + L.segments[k - 1].second;
-        gaps.push_back(Map{{"afterSample", after}, {"nSamples", L.segments[k].first - after},
-                           {"start_s", round9(static_cast<double>(after) / L.rate)}});
     }
 
     // acquisitionSystem for the session YAML: µV/count = voltageRange·1e6 / (2^16 · amplification)
@@ -1307,6 +1344,7 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
     if (evt && evt->afterDat)
         findings.push_back(std::to_string(evt->afterDat) + " events follow the end of the .dat");
     findings.insert(findings.end(), countFindings.begin(), countFindings.end());
+    findings.insert(findings.end(), extraFindings.begin(), extraFindings.end());
     findings.insert(findings.end(), L.warnings.begin(), L.warnings.end());
     Map acq{{"nBits", 16}, {"nChannels", static_cast<uint64_t>(L.chans.size())},
             {"samplingRate", L.rate}, {"voltageRange", 20}};
@@ -1341,6 +1379,7 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
         ex.push_back({"gapsTruncated", static_cast<uint64_t>(L.segments.size() - 1)});
     ex.push_back({"valueNote", "raw int16 counts as stored by Plexon; uV = count x channels[].uvPerCount"});
     ex.push_back({"acquisitionSystem", acq});
+    if (!sessionFiles.empty()) ex.push_back({"sessionFiles", sessionFiles});
     ex.push_back({"channels", chans});
 
     std::error_code ec;
@@ -1353,6 +1392,7 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
              {"header", rec.header},
              {"export", ex},
              {"streams", streamsList},
+             {"extraStreams", extraStreams},
              {"spikeChannels", spk},
              {"eventChannels", evtList}};
     if (evt)
@@ -1441,6 +1481,7 @@ void usage(std::ostream& o) {
          "  -z, --pad-to-zero B    start the .dat at tick 0 (default 0)\n"
          "  -c, --chunk N          output samples per write chunk (default 2^21 / nChannels)\n"
          "  -m, --meta FILE        metadata output (default output_basename.plexon.yaml)\n"
+         "  -x, --extra-streams S  other streams to own files: auto (all but SPKC), all, none, or AI,FP,...\n"
          "  -e, --evt-id ID        3-character event-file id (default plx -> output_basename.plx.evt)\n"
          "      --no-evt           do not write the event file\n"
          "  -f, --force            overwrite an existing output_basename.dat\n"
@@ -1459,7 +1500,7 @@ bool parseBool(const string& s) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    string stream, channelSpec, metaPath, evtId = "plx";
+    string stream, channelSpec, metaPath, evtId = "plx", extraSpec = "auto";
     bool writeEvents = true;
     bool keepEmpty = true, padToZero = false, force = false, dryRun = false;
     uint64_t chunk = 0;   // 0 = auto: ~4 MB of output per chunk
@@ -1479,6 +1520,7 @@ int main(int argc, char** argv) {
             else if (a == "-m" || a == "--meta") metaPath = next();
             else if (a == "-e" || a == "--evt-id") evtId = next();
             else if (a == "--no-evt") writeEvents = false;
+            else if (a == "-x" || a == "--extra-streams") extraSpec = next();
             else if (a == "-f" || a == "--force") force = true;
             else if (a == "-d" || a == "--dry-run") dryRun = true;
             else if (a == "-h" || a == "--help") { usage(std::cout); return 0; }
@@ -1531,6 +1573,41 @@ int main(int argc, char** argv) {
             candidates = streamCandidates(rec);
         }
         string chosen = dryRun || candidates.empty() ? string() : candidates.front();
+        auto upper = [](string x) {
+            for (char& c : x) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            return x;
+        };
+        auto pickExtras = [&](const string& mainStream) {
+            std::set<string> out;
+            const string spec = upper(extraSpec);
+            if (spec == "NONE" || dryRun) return out;
+            if (spec == "AUTO" || spec == "ALL") {
+                for (const auto& [k, idx] : streams) {
+                    bool live = false;
+                    for (size_t i : idx) live = live || (rec.analog[i].recording && rec.analog[i].enabled);
+                    if (k != mainStream && live && !(spec == "AUTO" && k == "SPKC")) out.insert(k);
+                }
+                return out;
+            }
+            std::stringstream ss(spec);
+            string tok;
+            while (std::getline(ss, tok, ',')) {
+                tok.erase(0, tok.find_first_not_of(" \t"));
+                tok.erase(tok.find_last_not_of(" \t") + 1);
+                if (tok.empty() || tok == mainStream) continue;
+                if (!streams.count(tok))
+                    throw std::runtime_error("extra stream '" + tok + "' not found");
+                out.insert(tok);
+            }
+            return out;
+        };
+        std::set<string> extras = pickExtras(chosen);
+        auto markIndexed = [&]() {
+            for (auto& c : rec.analog) {
+                const string k = streamPrefix(c.name);
+                c.indexed = (!chosen.empty() && k == chosen) || extras.count(k);
+            }
+        };
         auto walk = [&]() {
             for (auto& c : rec.analog) { c.nSamples = 0; c.nBlocks = 0; c.blocks.clear(); }
             for (auto& uc : rec.unitCounts) uc.clear();
@@ -1540,7 +1617,7 @@ int main(int argc, char** argv) {
             if (rec.container == "plx") walkPlx(r, rec);
             else walkPl2(r, rec);
         };
-        for (auto& c : rec.analog) c.indexed = !chosen.empty() && streamPrefix(c.name) == chosen;
+        markIndexed();
         const Map headerBeforeWalk = rec.header;
         walk();
         summarize(rec);
@@ -1570,7 +1647,8 @@ int main(int argc, char** argv) {
             std::cout << "  (stream " << (chosen.empty() ? "?" : chosen) << " holds no data; using "
                       << next << ")\n";
             chosen = next;
-            for (auto& c : rec.analog) c.indexed = streamPrefix(c.name) == chosen;
+            extras = pickExtras(chosen);
+            markIndexed();
             rec.header = headerBeforeWalk;
             walk();
         }
@@ -1579,8 +1657,24 @@ int main(int argc, char** argv) {
         Layout L = buildLayout(rec, sel, keepEmpty, padToZero);
         const fs::path dat = pos[1] + ".dat";
         const fs::path evtPath = pos[1] + "." + evtId + ".evt";
-        for (const fs::path& o : {dat, evtPath}) {
-            if (o == evtPath && !writeEvents) continue;
+        vector<string> extraFindings;
+        vector<std::pair<string, fs::path>> extraOut;
+        for (const string& k : extras) {
+            if (!hasData(k)) {
+                if (upper(extraSpec) != "AUTO" && upper(extraSpec) != "ALL")
+                    extraFindings.push_back("extra stream " + k + " holds no data; not exported");
+                continue;
+            }
+            string ext = "px";
+            for (char c : k)
+                if (std::isalnum(static_cast<unsigned char>(c)))
+                    ext += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            extraOut.push_back({k, fs::path(pos[1] + "." + ext)});
+        }
+        vector<fs::path> outputs{dat};
+        if (writeEvents) outputs.push_back(evtPath);
+        for (const auto& kv : extraOut) outputs.push_back(kv.second);
+        for (const fs::path& o : outputs) {
             if (fs::exists(o) && !force) {
                 std::cerr << "error: " << o.string() << " exists (use --force)\n";
                 return 3;
@@ -1599,8 +1693,43 @@ int main(int argc, char** argv) {
             std::cout << "  wrote " << evtPath.string() << " (" << evt->nEvents << " events, "
                       << evt->nGapMarkers << " gap markers)\n";
         }
+        // Extra streams: each to its own file, aligned to the .dat start.
+        List extraMeta, sessionFiles;
+        for (const auto& [k, path] : extraOut) {
+            Layout X;
+            try {
+                X = buildLayout(rec, streams.at(k), keepEmpty, false, L.t0);
+            } catch (const std::exception& e) {
+                extraFindings.push_back("extra stream " + k + " not exported: " + e.what());
+                continue;
+            }
+            const uint64_t xchunk = std::max<uint64_t>(4096, (1ull << 21) / std::max<size_t>(X.chans.size(), 1));
+            writeDat(r, rec, X, path, xchunk);
+            const double offset = (static_cast<double>(X.t0) - static_cast<double>(L.t0)) / rec.clock;
+            std::cout << "  wrote " << path.string() << " (" << k << ": " << X.chans.size()
+                      << " channels @ " << scalar(Value(X.rate)) << " Hz, " << X.nSamples << " samples)\n";
+            for (const auto& w : X.warnings) extraFindings.push_back(k + ": " + w);
+            const string ext = path.extension().string().substr(1);
+            const bool neuroscopeReadable = X.chans.size() == L.chans.size();
+            Map m{{"stream", k}, {"file", path.filename().string()}, {"extension", ext},
+                  {"nChannels", static_cast<uint64_t>(X.chans.size())}, {"samplingRate_hz", X.rate},
+                  {"ticksPerSample", X.tps}, {"firstSampleTimestamp_ticks", X.t0},
+                  {"offsetFromDat_s", round9(offset)}, {"nSamples", X.nSamples},
+                  {"duration_s", round9(static_cast<double>(X.nSamples) / X.rate)},
+                  {"nSegments", static_cast<uint64_t>(X.segments.size())}, {"gaps", gapList(X)},
+                  {"listedInSessionFiles", neuroscopeReadable},
+                  {"channels", channelTable(rec, X)}};
+            extraMeta.push_back(std::move(m));
+            if (neuroscopeReadable)
+                sessionFiles.push_back(Map{{"samplingRate", X.rate}, {"extension", ext}});
+            else
+                extraFindings.push_back(k + ": " + std::to_string(X.chans.size()) + " channels, the .dat has " +
+                                        std::to_string(L.chans.size()) + " — not listed under files: "
+                                        "(NeuroScope reads extra files with the session's channel count)");
+        }
         const fs::path meta = metaPath.empty() ? fs::path(pos[1] + ".plexon.yaml") : fs::path(metaPath);
-        writeMetadata(meta, buildMetadata(rec, chosen, L, input, dat.filename().string(), evt));
+        writeMetadata(meta, buildMetadata(rec, chosen, L, input, dat.filename().string(), evt,
+                                          extraMeta, sessionFiles, extraFindings));
         std::cout << "  wrote " << dat.string() << "\n  metadata: " << meta.string() << "\n";
         return 0;
     } catch (const std::exception& e) {

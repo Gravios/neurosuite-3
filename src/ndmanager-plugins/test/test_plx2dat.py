@@ -57,6 +57,13 @@ BLOCK = 997                    # odd block size: blocks do not align to anything
 rng = np.random.default_rng(7)
 WB = {i: [rng.integers(-30000, 30000, n, dtype=np.int16) for _, n in SEG]
       for i in range(N_WB) if i != 2}
+# Extra streams.  AI starts 57 ticks after the .dat origin — off its own
+# 40-tick grid — so the export must pad one sample and report the offset.
+AI_SEG = [(177, 150), (9017, 100)]          # (first tick, n samples at 1 kHz)
+N_AI, N_SPKC = 4, 2
+AI = {i: [rng.integers(-500, 500, n, dtype=np.int16) for _, n in AI_SEG] for i in range(N_AI)}
+SPKC = {i: [rng.integers(-900, 900, n, dtype=np.int16) for _, n in SEG] for i in range(N_SPKC)}
+N_ANALOG = N_WB + 2 + N_AI + N_SPKC
 FP = {i: [rng.integers(-2000, 2000, n // 40, dtype=np.int16) for _, n in SEG]
       for i in range(2)}
 SPIKES = [(500 + 37 * k, k % 3, k % 2) for k in range(60)]   # (tick, channel, unit)
@@ -78,11 +85,11 @@ def expected_dat(pad_to_zero=False, chans=range(N_WB)):
     return out
 
 
-def blocks(seg_data, rate):
+def blocks(seg_data, rate, segs=SEG):
     """[(tick, samples)] split into BLOCK-sized pieces."""
     tps = CLOCK // rate
     out = []
-    for (t, _), d in zip(SEG, seg_data):
+    for (t, _), d in zip(segs, seg_data):
         for a in range(0, len(d), BLOCK):
             out.append((t + a * tps, d[a:a + BLOCK]))
     return out
@@ -98,7 +105,7 @@ def write_plx(path, *, truncate=0, bad_rate=False):
     hdr[0:4] = b"PLEX"
     struct.pack_into("<i", hdr, 4, 107)
     hdr[8:8 + 11] = b"synthetic 1"
-    struct.pack_into("<14i", hdr, 136, CLOCK, 3, 2, N_WB + 2, WF, 2,
+    struct.pack_into("<14i", hdr, 136, CLOCK, 3, 2, N_ANALOG, WF, 2,
                      2024, 9, 4, 15, 11, 11, 0, WB_RATE)
     struct.pack_into("<d", hdr, 192, 13000.0)
     struct.pack_into("<4B", hdr, 200, 1, 1, 16, 16)
@@ -126,6 +133,12 @@ def write_plx(path, *, truncate=0, bad_rate=False):
         b[0:32] = _name(f"FP{i + 1:02d}")
         struct.pack_into("<6i", b, 32, 100 + i, FP_RATE, 1, 1, 1000, -1)
         out += b
+    for prefix, n, base, rate in (("AI", N_AI, 200, FP_RATE), ("SPKC", N_SPKC, 300, WB_RATE)):
+        for i in range(n):
+            b = bytearray(296)
+            b[0:32] = _name(f"{prefix}{i + 1:02d}")
+            struct.pack_into("<6i", b, 32, base + i, rate, 1, 1, 1000, -1)
+            out += b
 
     def blk(btype, ts, ch, unit, data):
         n = len(data)
@@ -139,6 +152,12 @@ def write_plx(path, *, truncate=0, bad_rate=False):
     for i, segs in FP.items():
         for t, d in blocks(segs, FP_RATE):
             recs.append((t, 1, blk(5, t, 100 + i, 0, d)))
+    for i, segs in AI.items():
+        for t, d in blocks(segs, FP_RATE, AI_SEG):
+            recs.append((t, 1, blk(5, t, 200 + i, 0, d)))
+    for i, segs in SPKC.items():
+        for t, d in blocks(segs, WB_RATE):
+            recs.append((t, 1, blk(5, t, 300 + i, 0, d)))
     for t, ch, u in SPIKES:
         recs.append((t, 2, blk(1, t, ch, u, np.arange(WF, dtype=np.int16))))
     for t, ch, v in EVENTS:
@@ -167,7 +186,7 @@ SETTINGS_XML = (b"range=2.500000 rate=1000\0\x01\x02Spike Separator\0"
 
 def write_pl2(path, *, bad_header=False, off_grid=False, truncate=0, bad_counts=False,
               reverse=False):
-    n_spk, n_ana, n_dig = 3, N_WB + 2, 2
+    n_spk, n_ana, n_dig = 3, N_ANALOG, 2
     hdr = bytearray(0x480)
     hdr[0] = 0xFE
     hdr[10:16] = b"PLEXON"
@@ -193,7 +212,9 @@ def write_pl2(path, *, bad_header=False, off_grid=False, truncate=0, bad_counts=
             struct.pack_into("<Q", b, 0xA0 + 8 * u, int(n) + (1 if bad_counts and c == 0 else 0))
         heads += b
     analog = [(f"WB{i + 1:02d}", 3, i + 1, WB_RATE) for i in range(N_WB)] + \
-             [(f"FP{i + 1:02d}", 7, i + 1, FP_RATE) for i in range(2)]
+             [(f"FP{i + 1:02d}", 7, i + 1, FP_RATE) for i in range(2)] + \
+             [(f"AI{i + 1:02d}", 8, i + 1, FP_RATE) for i in range(N_AI)] + \
+             [(f"SPKC{i + 1:02d}", 4, i + 1, WB_RATE) for i in range(N_SPKC)]
     for name, src, ch, rate in analog:
         b = bytearray(512)
         b[0], b[1] = 0xD4, src
@@ -229,6 +250,12 @@ def write_pl2(path, *, bad_header=False, off_grid=False, truncate=0, bad_counts=
             n = len(d)
             recs.append((t, 1, _rec(0x42, 7, n, struct.pack("<HHQ", i + 1, n, t),
                                     d.astype("<i2").tobytes())))
+    for src, segs_by_ch, rate, segs in ((8, AI, FP_RATE, AI_SEG), (4, SPKC, WB_RATE, SEG)):
+        for i, data in segs_by_ch.items():
+            for t, d in blocks(data, rate, segs):
+                n = len(d)
+                recs.append((t, 1, _rec(0x42, src, n, struct.pack("<HHQ", i + 1, n, t),
+                                        d.astype("<i2").tobytes())))
     for c in range(n_spk):
         sp = [(t, u) for t, ch, u in SPIKES if ch == c]
         if not sp:
@@ -257,6 +284,24 @@ def write_pl2(path, *, bad_header=False, off_grid=False, truncate=0, bad_counts=
     if truncate:
         out = out[:footer_start - truncate]
     Path(path).write_bytes(out)
+
+
+def expected_stream(data, segs, nch, tps, origin):
+    """Independent model of an aligned extra-stream file: sample 0 is the last
+    point of the stream's own grid at or before the .dat origin."""
+    first = segs[0][0]
+    t0 = first - ((first - origin) // tps) * tps if first >= origin else first
+    total = (segs[-1][0] - t0) // tps + segs[-1][1]
+    out = np.zeros((total, nch), np.int16)
+    for i in range(nch):
+        for (t, n), d in zip(segs, data[i]):
+            a = (t - t0) // tps
+            out[a:a + n, i] = d
+    return t0, out
+
+
+def read_px(path, nch):
+    return np.fromfile(path, "<i2").reshape(-1, nch)
 
 
 def expected_evt(pad_to_zero=False):
@@ -288,6 +333,9 @@ acquisitionSystem:
   voltageRange: 20
   amplification: 1000
   offset: 0
+files:
+  - samplingRate: 1250
+    extension: lfp
 programs:
   - name: ndm_plx2dat
     parameters:
@@ -370,6 +418,29 @@ def main():
         check("programs block kept", doc["programs"][0]["name"] == "ndm_plx2dat")
         check("sidecar written", Path(d, "a.plexon.yaml").exists())
 
+        print("extra streams (PLX, auto)")
+        t0_ai, exp_ai = expected_stream(AI, AI_SEG, N_AI, 40, SEG[0][0])
+        check("auto exports AI and FP, skips SPKC",
+              Path(d, "a.pxai").exists() and Path(d, "a.pxfp").exists()
+              and not Path(d, "a.pxspkc").exists())
+        check(".pxai samples, aligned to the .dat origin on its own grid",
+              np.array_equal(read_px(Path(d, "a.pxai"), N_AI), exp_ai))
+        _, exp_fpx = expected_stream(FP, [(t, n // 40) for t, n in SEG], 2, 40, SEG[0][0])
+        check(".pxfp samples", np.array_equal(read_px(Path(d, "a.pxfp"), 2), exp_fpx))
+        xs = {x["stream"]: x for x in sr["extraStreams"]}
+        check("AI offset and origin recorded",
+              xs["AI"]["firstSampleTimestamp_ticks"] == t0_ai == 137
+              and abs(xs["AI"]["offsetFromDat_s"] - 17 / CLOCK) < 1e-12
+              and xs["AI"]["nSegments"] == 2 and xs["AI"]["channels"][0]["name"] == "AI01")
+        files = doc["files"]
+        check("files: keeps lfp, adds pxai (same channel count as the .dat)",
+              {"samplingRate": 1250, "extension": "lfp"} in files
+              and {"samplingRate": 1000, "extension": "pxai"} in files)
+        check("files: omits pxfp (2 channels ≠ 4) and says why",
+              not any(f.get("extension") == "pxfp" for f in files)
+              and xs["FP"]["listedInSessionFiles"] is False
+              and any(f.startswith("FP: 2 channels") for f in sr.get("findings", [])))
+
         print("PL2 → .dat")
         rc, out, arr2, yml2 = convert(d, pl2, "b")
         check("exit 0", rc == 0)
@@ -392,6 +463,9 @@ def main():
         check("PL2 event counts", {c["name"]: c["nEvents"] for c in sr2["eventChannels"]}
               == {"EVT01": 10, "Strobed": 2})
         check("PL2 .evt identical to PLX .evt", Path(d, "b.plx.evt").read_text() == evt_a)
+        check("PL2 extra-stream files identical to PLX",
+              Path(d, "b.pxai").read_bytes() == Path(d, "a.pxai").read_bytes()
+              and Path(d, "b.pxfp").read_bytes() == Path(d, "a.pxfp").read_bytes())
         dig = {c["name"]: c for c in sr2["eventChannels"]}
         check("PL2 digital header text captured",
               dig["EVT01"].get("headerText") == ["Single-bit events", "Plexon Digital Input"])
@@ -434,6 +508,21 @@ def main():
                 exp_fp[a:a + len(x), i] = x
         check("FP stream at 1 kHz", rc == 0 and np.array_equal(arr, exp_fp)
               and yaml.safe_load(ymlf.read_text())["acquisitionSystem"]["samplingRate"] == FP_RATE)
+        rc, _, _, _ = convert(d, pl2, "x1", ["--extra-streams", "all"])
+        check("extra-streams all includes SPKC", rc == 0 and Path(d, "x1.pxspkc").exists()
+              and np.array_equal(read_px(Path(d, "x1.pxspkc"), N_SPKC),
+                                 expected_stream(SPKC, SEG, N_SPKC, 1, SEG[0][0])[1]))
+        rc, _, _, _ = convert(d, pl2, "x2", ["--extra-streams", "none"])
+        check("extra-streams none writes no .px* file",
+              rc == 0 and not [q for q in Path(d).glob("x2.px*")])
+        rc, _, _, _ = convert(d, pl2, "x3", ["--extra-streams", "ai"])
+        check("extra-streams list (case-insensitive)", rc == 0 and Path(d, "x3.pxai").exists()
+              and not Path(d, "x3.pxfp").exists())
+        rc, out = run(["--extra-streams", "XYZ", str(pl2), str(Path(d, "x4"))])
+        check("unknown extra stream is an error", rc == 1 and "XYZ" in out)
+        Path(d, "x5.pxai").write_bytes(b"")
+        rc, out = run([str(pl2), str(Path(d, "x5"))])
+        check("refuses to overwrite an existing .pxai", rc == 3 and not Path(d, "x5.dat").exists())
         rc, out = run(["--dry-run", str(pl2)])
         check("dry-run summary", rc == 0 and "WB" in out and "FP" in out)
         rc, out = run([str(pl2), str(Path(d, "a"))])
