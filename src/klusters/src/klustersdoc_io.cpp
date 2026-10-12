@@ -138,6 +138,7 @@ void KlustersDoc::closeDocument(){
     activeMethod.clear();
     activeFetPath.clear();
     activeSpkPath.clear();
+    discardSyncedFeatureSpaces();
     parameterFile.clear();
     qDeleteAll(clusterColorListUndoList);
     clusterColorListUndoList.clear();
@@ -883,6 +884,9 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // For SaveAs, update the original paths first so commitAndRenewPending()
     // copies to the correct new location.
     if (isSaveAs) {
+        // Synced working copies belong to the old location's spaces; Save As
+        // does not carry them (and is only reachable from the .clu's own space).
+        discardSyncedFeatureSpaces();
         QFileInfo newInfo(docUrl);
         // Re-resolve at the new location, pinned to the method parsed from the
         // SaveAs target (chain-of-custody).

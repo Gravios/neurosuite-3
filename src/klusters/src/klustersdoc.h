@@ -44,6 +44,7 @@
 #include <QList>
 #include <QSet>
 #include <QMap>
+#include <QHash>
 #include <QFile>
 #include <QEvent>
 #include <QDebug>
@@ -1512,6 +1513,7 @@ public:
         QString spkPath;       ///< the .spk its waveforms come from (custody-resolved)
         QString spkMethod;     ///< token the .spk was found under (may differ: _D, fallback)
         bool    usable = false;
+        bool    synced = false;  ///< reads working copies synced this session
         QString reason;        ///< why it is not usable (tooltip text)
     };
     /** Every <base>.fet.<method>.<group> next to the document, the .clu's own
@@ -1533,6 +1535,23 @@ public:
      *  undoing it would write the .clu space's rows into the loaded features.
      *  On failure nothing changes and @p errorInformation says why. */
     bool switchFeatureSpace(const QString& method, QString& errorInformation);
+
+    /** Bring another method space up to date with this session's spike times.
+     *  Realign / nudge only rewrite the .clu space's .spk/.fet, so another
+     *  space's waveforms and features drift from the shared .res.  This
+     *  re-extracts the space's own .spk from .fil at the current timestamps
+     *  (unless it reads the .clu space's waveforms, already current) and
+     *  re-projects its .fet through its own .pca basis (extra non-PCA columns
+     *  copied, timestamp column from the session).  Writes go to that space's
+     *  ".pending" working copies: the switcher loads them, Save commits them,
+     *  closing without saving — or undoing a realignment — discards them.  If the
+     *  space is the one shown, it is reloaded.  @p logOut gets a summary. */
+    bool syncFeatureSpace(const QString& method, QString& logOut);
+    /** syncFeatureSpace for every usable space except the .clu's own; a .spk
+     *  shared by several spaces is re-extracted once. */
+    bool syncAllFeatureSpaces(QString& logOut);
+    /** Delete every synced working copy and forget it. */
+    void discardSyncedFeatureSpaces();
 
     /** Discards the most recent pending realignment and restores the
      *  in-memory Data to its state before that realignment was run.
@@ -1900,6 +1919,12 @@ private:
     QString activeMethod;
     QString activeFetPath;
     QString activeSpkPath;
+    /** Synced working copies of other spaces (syncFeatureSpace): committed
+     *  path -> its ".pending" copy.  Committed by Save, removed at close. */
+    QHash<QString, QString> syncedPending;
+    /** One space's sync; @p spkDone holds .spk paths already re-extracted in this
+     *  pass so a shared waveform file is rebuilt once. */
+    bool syncOneSpace(const QString& method, QSet<QString>& spkDone, QString& logOut);
 
     /** Cluster ids currently masked (hidden from the active list and the view
      *  foreground).  Stored here, not in Data, so the data model and global id

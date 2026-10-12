@@ -2354,6 +2354,7 @@ void KlustersDoc::removePendingFiles()
     // per 8-channel group here, for every group ever opened).
     for (const QString& p : { pendingSpkPath, pendingResPath, pendingFetPath, pendingCluPath })
         if (!p.isEmpty()) QFile::remove(p);
+    discardSyncedFeatureSpaces();   // other spaces' synced working copies
     pendingSpkPath.clear(); pendingResPath.clear();
     pendingFetPath.clear(); pendingCluPath.clear();
 }
@@ -2431,6 +2432,10 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
     allOk &= copyOver(pendingResPath, origResPath, "res");
     allOk &= copyOver(pendingFetPath, origFetPath, "fet");
     allOk &= copyOver(pendingCluPath, docUrl,      "clu");
+    // Other feature spaces synced this session (syncFeatureSpace): commit their
+    // working copies too; they stay live, like the .clu space's.
+    for (auto it = syncedPending.constBegin(); it != syncedPending.constEnd(); ++it)
+        allOk &= copyOver(it.value(), it.key(), "synced feature space");
 
     // Clear the in-memory queue — all realignment batches have been
     // applied to disk (even if a later step failed).  Don't replay them.
@@ -2473,6 +2478,12 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
 void KlustersDoc::rejectLastRealign()
 {
     if (pendingRealign.empty()) return;
+
+    // Spaces synced since this realign carry its timestamps, which are about to
+    // be undone: drop their working copies (they fall back to their committed
+    // files; re-sync after the undo if wanted).  Switching is refused while a
+    // realign is pending, so none of them is the space shown.
+    discardSyncedFeatureSpaces();
 
     const PendingRealign& p = pendingRealign.back();
 
