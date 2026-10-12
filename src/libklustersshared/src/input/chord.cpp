@@ -81,7 +81,10 @@ QString Chord::displayString() const
         return QStringLiteral("(unbound)");
     case Device::Key: {
         // QKeySequence renders the modifier combo + key natively ("Ctrl+Shift+S").
-        const QKeySequence seq(static_cast<int>(modifiers) | code);
+        // Qt reports Shift+Tab as Backtab; show it the way it is typed.
+        const bool backtab = (code == Qt::Key_Backtab);
+        const QKeySequence seq(static_cast<int>(backtab ? (modifiers | Qt::ShiftModifier) : modifiers)
+                               | (backtab ? static_cast<int>(Qt::Key_Tab) : code));
         const QString txt = seq.toString(QKeySequence::NativeText);
         return txt.isEmpty() ? QStringLiteral("(unbound)") : txt;
     }
