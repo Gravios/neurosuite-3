@@ -2544,7 +2544,10 @@ dataType Data::createNewCluster(const SpikeSelection& selection, const QList <in
     }
     //return 0 if no new cluster have been created
     //safe as cluster 0 (artifact) can never be created that way
-    else return 0;
+    //(prepareUndo took no ownership of the temporary tables: free them.)
+    delete spikesByClusterTemp;
+    delete clusterInfoMapTemp;
+    return 0;
 }
 
 QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QList <int>& clustersOfOrigin,QList <int>& emptyClusters){
@@ -2735,6 +2738,10 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
         //clusters' spike rows changed, so publishSnapshot's carry-forward
         //already left their waveform entries and correlogram pairs behind
         //in the previous epoch.
+    } else {
+        //Nothing created: prepareUndo took no ownership of the temporaries.
+        delete spikesByClusterTemp;
+        delete clusterInfoMapTemp2;
     }
     return fromToNewClusterIds;
 }
@@ -3528,6 +3535,10 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
         //No source-cluster cache walk (epoch-snapshot step 8): the publish in
         //prepareUndo() above carried forward only content-identical clusters,
         //so the changed sources and destination already recompute on demand.
+    } else {
+        //Nothing moved: prepareUndo took no ownership of the temporaries.
+        delete spikesByClusterTemp;
+        delete clusterInfoMapTemp;
     }
 }
 
