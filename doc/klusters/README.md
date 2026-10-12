@@ -114,19 +114,25 @@ that does not matter, because every `.spk` and `.fet` follows the one `.res`.
 
 **Putting rows back in time order.** **Actions → Sort Spikes by Time** sorts
 the saved `.res` by time and moves the same rows in every file of the group that
-is indexed by spike: each method's `.res`, `.spk` and `.fet`, and every `.clu`
-and `.clc` (stage-tagged copies too). It works on the saved files, so save
+is indexed by spike: the group's `.res`, each waveform file (`.spk`), each
+method's `.fet`, and every `.clu` and `.clc` (stage-tagged copies too). A file
+shared by several spaces — the one `.res`, or the `.spk.stderiv_C5` that
+`stderiv_C5_D34` also reads — is one file and is permuted once. It works on the saved files, so save
 first; it then reopens the document, which clears undo history. A file without
 the group's spike count is left as is, and an `.eap` template-class file is
 listed as not reordered (regenerate it). All files are written first and
 swapped in together; if anything fails, every file is left as it was.
 
 **Keeping spaces in sync.** Realign and nudge rewrite only the `.clu` space's
-`.spk` and `.fet`, so the other spaces' waveforms and features stay at the old
-spike times. **Actions → Sync Feature Spaces** brings every other space up to
-date: it re-extracts each space's `.spk` from the `.fil` at the current spike
-times and re-projects its `.fet` through that space's own `.pca` basis (lag
-`_D` spaces included). To do this automatically, turn on **Preferences →
+`.spk` and `.fet`. A `_D` space has no waveform file of its own — it reads its
+waveform token's (`stderiv_C5_D34` reads `.spk.stderiv_C5`) — so with the
+`.clu` in `stderiv_C5` the lag space's waveforms are already current and only
+its `.fet` is stale; a space over a different waveform file (`standard`, say)
+is stale in both. **Actions → Sync Feature Spaces** brings every other space up
+to date: it re-extracts each waveform file the `.clu` space does not use from
+the `.fil` at the current spike times (once, however many spaces read it) and
+re-projects every other space's `.fet` through its own `.pca` basis (lag `_D`
+spaces included). To do this automatically, turn on **Preferences →
 Refinement → Sync a feature space to the current spike times when switching to
 it**; each switch then costs one `.fil` pass over the group. Synced files are
 working copies: **Save** writes them, closing without saving discards them,

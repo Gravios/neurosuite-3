@@ -47,10 +47,11 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 **Sync.** Realign and nudge rewrite only the `.clu` space's `.spk`/`.fet`, so
 the group's other method spaces drift from the shared `.res`. **Actions → Sync
-Feature Spaces** re-extracts each other space's `.spk` from `.fil` at the
-session's spike times (same window cutting and stderiv transform as the
-pipeline; a `.spk` shared by several spaces is rebuilt once) and re-projects
-its `.fet` through its own `.pca` basis with the kernel realign uses — a `_D`
+Feature Spaces** re-extracts each waveform file the `.clu` space does not use
+from `.fil` at the session's spike times (same window cutting and stderiv
+transform as the pipeline; a `.spk` shared by several spaces — a `_D` space
+reads its waveform token's — is rebuilt once) and re-projects each space's
+`.fet` through its own `.pca` basis with the kernel realign uses — a `_D`
 lag basis is an ordinary PCAE basis on a widened window, so lag spaces are
 covered; extra non-PCA columns are carried over. A preference (Refinement →
 *Sync a feature space … when switching to it*, off by default) does it for the
@@ -68,8 +69,9 @@ removed.
 
 **Sort Spikes by Time.** A new action, **Actions → Sort Spikes by Time**, puts a
 group's rows back in time order. It sorts the saved `.res` by time (stable)
-and applies the same row permutation to each method's `.res`/`.spk`/`.fet` and
-every `.clu`/`.clc`. It needs a saved document, swaps all files in together
+and applies the same row permutation to every `.spk` file, each method's
+`.fet` and every `.clu`/`.clc`; a file shared by several spaces is permuted
+once. It needs a saved document, swaps all files in together
 (rolling back on any failure), and reopens the document. `.eap` membership is
 reported, not reordered.
 
