@@ -1702,7 +1702,7 @@ void TraceView::drawTraces(QPainter& painter){
                 QList<int> eventList = iterator.value();
                 QString providerName = iterator.key();
 
-                if(!eventList.isEmpty() || eventsData[providerName] == 0) continue;
+                if(eventList.isEmpty() || eventsData[providerName] == 0) continue;
                 ItemColors* colors = providerItemColors[providerName];
                 Array<dataType>& currentData = static_cast<EventData*>(eventsData[providerName])->getTimes();
                 Array<int>& currentIds = static_cast<EventData*>(eventsData[providerName])->getIds();
