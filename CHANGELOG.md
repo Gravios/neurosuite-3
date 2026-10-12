@@ -76,9 +76,6 @@ once. It needs a saved document, swaps all files in together
 reported, not reordered, and any other file naming the group is listed.
 
 **Follow-ups.**
-- NeuroScope sorts each loaded cluster file's spikes by time in memory: its
-  window lookup bisects the times, so an out-of-order `.res` could hide spikes
-  at a window edge. The files are not changed.
 - Realign and nudge apply the session's `sdiffPairs` pattern only when the
   method token allows it (`_C<n>` or bare `stderiv`; not `_S<n>`), the same
   rule re-extraction uses.
