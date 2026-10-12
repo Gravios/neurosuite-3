@@ -176,6 +176,9 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRefinement->errorMatrixLowPrecisionCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModePcaRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeRmsRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
+    connect(prefRefinement->realignModeCentroidRadio,   &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
+    connect(prefRefinement->realignVerboseCheckBox,     &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
+    connect(prefRefinement->reextractSpikesOnSaveCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
     connect(prefSorting->reorderMethodComboBox,         &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
     connect(prefSorting->mergeRecommendMaxSpinBox,          &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefSorting->mergeRecommendErrorFloorSpinBox,   &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -230,6 +233,14 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefclusterView->tsneExagItersLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->tsneSubsampleCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
     connect(prefclusterView->tsneRandomSeedCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
+    // Template projection scope and the density heatmap: these settings were added to
+    // the page without a change signal here, so editing only them left Apply disabled.
+    connect(prefclusterView->projModeCombo,  &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->projScopeMinutesLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView->projHideOutOfScopeCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
+    connect(prefclusterView->showCollisionsCheckBox,     &QCheckBox::toggled, this, &PrefDialog::enableApply);
+    connect(prefclusterView->showClassMembersCheckBox,   &QCheckBox::toggled, this, &PrefDialog::enableApply);
+    connect(prefclusterView->densitySigmaSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView, &PrefWaveformView::positionsChanged,      this, &PrefDialog::enableApply);
 
