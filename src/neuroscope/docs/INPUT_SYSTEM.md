@@ -58,6 +58,7 @@ commands are registered **once, process-wide**, not per-`TraceWidget`.
 | `view.spectral` | `ViewType` | the view is a `SpectralView` (registered after `view.frame`, so it shadows it) | `Ctrl+Left` drag pan, `Ctrl+wheel` time + frequency zoom, plain wheel time zoom |
 | `view.trace` | `ViewType` | the trace widget is focused | `+` / `-` duration, the scroll mirrors |
 | `mode.zoom` | `ToolMode` | `currentMode() == BaseFrame::ZOOM` | the trace zoom gesture |
+| `nav.trace` | `ToolMode` | the view is a `TraceView` (registered after the `mode.*` scopes, so it shadows them) | `trace.pan` (`Ctrl+Left` drag; disabled in SELECT), `Ctrl+wheel` zoom, `Ctrl+Shift+wheel` amplitude, plain wheel horizontal zoom |
 | `mode.selectChannels` | `ToolMode` | `currentMode() == TraceView::SELECT` | select-channels press |
 | `mode.measure` | `ToolMode` | `currentMode() == TraceView::MEASURE` | measure press |
 | `mode.selectTime` | `ToolMode` | `currentMode() == TraceView::SELECT_TIME` | select-time press |

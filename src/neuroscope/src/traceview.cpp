@@ -310,6 +310,13 @@ void TraceView::dataAvailable(Array<dataType>& data,QObject* initiator)
     this->data = data;
     dataReady = true;
     updateWindow();
+    // A Ctrl+drag pan that paged the time window keeps its zoomed rectangle (the window
+    // keeps the same width, so its world mapping is unchanged by the reload).
+    if (restoreWindowAfterLoad){
+        restoreWindowAfterLoad = false;
+        window.setVisible(windowToRestore.left(), windowToRestore.top(),
+                          windowToRestore.right(), windowToRestore.bottom());
+    }
 
     //The following code was done in case of threads, without thread the trace data arrive always last
     //No clusters or events selected
@@ -2651,6 +2658,73 @@ void TraceView::drawTimeLine(QPainter *painter){
     }
 }
 
+QPoint TraceView::navWorldAt(const QPoint& pos){
+    // Identical to the adjustment mouseMoveEvent applies: when the window left is 0 the
+    // id/gain margin (xMargin) is shown inside the viewport but outside the world, so the
+    // abscissa is shifted by it before converting to world coordinates.
+    const QRect r(static_cast<QRect>(window));
+    if (r.left() != 0) return viewportToWorld(pos.x(), pos.y());
+    return viewportToWorld(pos.x() - xMargin, pos.y());
+}
+
+void TraceView::beginCtrlPan(const QPoint& pos){
+    // Arm the pan; mouseMoveEvent crosses the drag threshold and recentres the window,
+    // mouseReleaseEvent disarms.  Mirrors the Klusters TraceView::beginCtrlPan.
+    ctrlPanArmed       = true;
+    ctrlPanning        = false;
+    ctrlPanAnchorPx    = pos;
+    const QPoint w     = navWorldAt(pos);
+    ctrlPanPressWorldX = w.x();
+    ctrlPanPressWorldY = w.y();
+    setCursor(Qt::ClosedHandCursor);
+}
+
+void TraceView::wheelZoomAtCursor(bool zoomIn, const QPoint& pos, bool horizontalOnly){
+    // One discrete zoom step that keeps the world point under the cursor at the same screen
+    // fraction.  Mirrors the Klusters TraceView::wheelZoomAtCursor; the horizontal-only
+    // variant (plain wheel) scales the width alone.  Both magnify the loaded window -- the
+    // time window itself is unchanged, and zooming out stops at it.
+    const double factor = zoomIn ? ctrlWheelZoomStep : (1.0 / ctrlWheelZoomStep);
+    const QPoint p  = navWorldAt(pos);
+    const QRect  wr = static_cast<QRect>(window);
+    const double W = wr.width(), H = wr.height();
+    if (W <= 0.0 || H <= 0.0) return;
+    // Cursor's fraction within the current window == its screen fraction.
+    const double fx = (static_cast<double>(p.x()) - wr.left()) / W;
+    const double fy = (static_cast<double>(p.y()) - wr.top())  / H;
+    const double Wn = W / factor;
+    const double Hn = horizontalOnly ? H : H / factor;
+    const double left = p.x() - fx * Wn;
+    const double top  = horizontalOnly ? wr.top() : p.y() - fy * Hn;
+    if (!window.setVisible(static_cast<float>(left), static_cast<float>(top),
+                           static_cast<float>(left + Wn), static_cast<float>(top + Hn)))
+        return;
+    // The id/gain margin is drawn inside the viewport only while the window's left edge is
+    // at 0 (navWorldAt), so the screen mapping shifts by the margin when a zoom moves the
+    // edge off 0 or back.  Measure where the anchored point landed and slide the window by
+    // the difference so it really stays under the cursor (the window size is unchanged).
+    for (int pass = 0; pass < 2; ++pass){
+        const QPoint landed = navWorldAt(pos);
+        const int dx = landed.x() - p.x();
+        const int dy = landed.y() - p.y();
+        if (dx == 0 && dy == 0) break;
+        const QRect nr = static_cast<QRect>(window);
+        if (!window.zoom(1.0f, static_cast<float>(nr.left() + nr.width() / 2.0 - dx),
+                         static_cast<float>(nr.top() + nr.height() / 2.0 - dy)))
+            break;
+    }
+    drawContentsMode = REDRAW;
+    update();
+}
+
+void TraceView::wheelEvent(QWheelEvent* event){
+    // Wheel / Ctrl+wheel zoom and Ctrl+Shift+wheel amplitude are registry commands
+    // (trace.wheelTimeZoom*, trace.wheelZoom*, trace.amplitude*), resolved here.  A wheel
+    // with no vertical delta yields no chord and falls through to the base.
+    if (dispatchInput(event)) return;
+    BaseFrame::wheelEvent(event);
+}
+
 void TraceView::mouseDoubleClickEvent(QMouseEvent* e){
     BaseFrame::mouseDoubleClickEvent(e);
 
@@ -2663,6 +2737,61 @@ void TraceView::mouseDoubleClickEvent(QMouseEvent* e){
 }
 
 void TraceView::mouseMoveEvent(QMouseEvent* event){
+    // Ctrl+drag pan (trace.pan gesture), ported from the Klusters trace view: keep the world
+    // point grabbed at press under the cursor by recentring the window (size unchanged --
+    // zoom(1.0, c) recentres and clamps).  Runs ahead of the mode logic and consumes the move
+    // while a pan is armed.
+    if (ctrlPanArmed && (event->buttons() & Qt::LeftButton) && (event->modifiers() & Qt::ControlModifier)){
+        const QPoint dpx = event->position().toPoint() - ctrlPanAnchorPx;
+        if (!ctrlPanning && (qAbs(dpx.x()) + qAbs(dpx.y()) >= ctrlPanDragThreshold))
+            ctrlPanning = true;
+        if (ctrlPanning){
+            const QPoint cw = navWorldAt(event->position().toPoint());
+            const QRect  wr = static_cast<QRect>(window);
+            const double curCx = wr.left() + wr.width()  / 2.0;
+            const double curCy = wr.top()  + wr.height() / 2.0;
+            const double newCx = curCx - static_cast<double>(cw.x() - ctrlPanPressWorldX);
+            const double newCy = curCy - static_cast<double>(cw.y() - ctrlPanPressWorldY);
+            const bool moved = window.zoom(1.0f, static_cast<float>(newCx), static_cast<float>(newCy));
+
+            // Edge-autoscroll in time: if the recentre clamped horizontally -- the view can't
+            // follow the grab any further within the loaded window -- page the time window in
+            // the drag direction so the pan keeps scrolling through the recording.  The clamp
+            // overflow (world X) converts to a time shift via the status read-out's mapping
+            // ms = worldX / Xstep * timeStep.  The grab anchor is corrected by the applied
+            // world shift, and the zoomed rectangle is restored after the reload
+            // (restoreWindowAfterLoad), so the trace stays glued under the cursor.
+            const QRect  aw        = static_cast<QRect>(window);
+            const double overflowX = newCx - (aw.left() + aw.width() / 2.0);
+            bool         paged     = false;
+            if (qAbs(overflowX) >= 1.0 && Xstep > 0 && timeFrameWidth < length){
+                const double overflowMs = overflowX / static_cast<double>(Xstep)
+                                                    * static_cast<double>(timeStep);
+                long newStart = startTime + static_cast<long>(overflowMs < 0 ? overflowMs - 0.5
+                                                                             : overflowMs + 0.5);
+                const long maxStart = static_cast<long>(length) - timeFrameWidth;
+                newStart = qBound(0L, newStart, maxStart);
+                if (newStart != startTime){
+                    const double appliedWorldX = static_cast<double>(newStart - startTime)
+                                                 / static_cast<double>(timeStep)
+                                                 * static_cast<double>(Xstep);
+                    ctrlPanPressWorldX -= static_cast<long>(appliedWorldX < 0 ? appliedWorldX - 0.5
+                                                                              : appliedWorldX + 0.5);
+                    restoreWindowAfterLoad = true;
+                    windowToRestore = static_cast<QRect>(window);
+                    emit setStartAndDuration(newStart, timeFrameWidth);
+                    paged = true;
+                }
+            }
+            if (moved && !paged){
+                drawContentsMode = REDRAW;
+                update();
+            }
+        }
+        event->accept();
+        return;
+    }
+
     QString message;
     //Write the current coordinates in the statusbar.
     QRect r((QRect)window);
@@ -3376,6 +3505,16 @@ void TraceView::mousePressEvent(QMouseEvent* event){
 
 
 void TraceView::mouseReleaseEvent(QMouseEvent* event){
+    // End a Ctrl+drag pan (trace.pan gesture).  Ctrl+Left is owned by the pan gesture (its
+    // press resolved ahead of the mode presses, so no mode body ran) -- consume the release
+    // whether or not the drag crossed the threshold, and restore the current tool cursor.
+    if (ctrlPanArmed){
+        ctrlPanArmed = false;
+        ctrlPanning  = false;
+        changeCursor();
+        event->accept();
+        return;
+    }
     if (mode == SELECT){
         mMoveSelectChannel = false;
         if (event->button() & Qt::LeftButton && !(event->modifiers() & Qt::ShiftModifier) && !(event->modifiers() & Qt::ControlModifier)){

@@ -29,6 +29,7 @@
 #include <QList>
 #include <QResizeEvent>
 #include <QMouseEvent>
+#include <QWheelEvent>
 
 //include files for the application
 #include "baseframe.h"
@@ -219,6 +220,19 @@ public:
     /** S8: TraceView drives its own primary press (its mousePressEvent seam + the per-mode
    *  scopes), so the shared view.frame ZOOM gesture must stay out of its scope. */
     bool managesOwnPrimaryPress() const override { return true; }
+
+    // ── Mouse navigation: the Klusters trace view's gestures ─────────────────────────────
+    // Public because the registry commands (registered in tracewidget.cpp) invoke them.
+    // Ctrl+Left drag pans the zoomed view (paging the time window at its edges), Ctrl+wheel
+    // zooms the view toward the cursor, Ctrl+Shift+wheel scales all amplitudes, and the plain
+    // wheel zooms the view horizontally only.  The zooms magnify the loaded window; they do
+    // not change the time window.
+    /** Ctrl+Left pans in every mode but SELECT, where Ctrl+click toggles a channel. */
+    bool ctrlPanArmable() const { return mode != SELECT; }
+    void beginCtrlPan(const QPoint& pos);
+    /** One zoom step keeping the world point under @p pos fixed on screen: both axes, or
+     *  (@p horizontalOnly) time alone. */
+    void wheelZoomAtCursor(bool zoomIn, const QPoint& pos, bool horizontalOnly);
 
     // ── S5 tool-mode press bodies ─────────────────────────────────────────────────────────
     // Public because the registry Gesture commands (registered in tracewidget.cpp) invoke them
@@ -597,6 +611,8 @@ protected:
   * @param event mouse event.
   */
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    /**Ctrl+wheel / wheel zoom, resolved through the input registry.*/
+    void wheelEvent(QWheelEvent* event) override;
 
     /** Where a trace Left-press landed, resolved once by resolveClickGeometry() and shared by
      * every press-mode body (neuroscope input overhaul S5).  Single-column presses leave the
@@ -1249,6 +1265,23 @@ private:
     QPoint currentPoint;
     QPoint selectPoint;
     bool mMoveSelectChannel;
+
+    // ── Mouse navigation state (see wheelZoomAtCursor) ──
+    /** World point under the viewport position @p pos, correcting for the id/gain margin
+     *  shown while the window's left edge is at 0 (as the status read-out does). */
+    QPoint navWorldAt(const QPoint& pos);
+
+    bool   ctrlPanArmed = false;
+    bool   ctrlPanning = false;
+    QPoint ctrlPanAnchorPx;
+    long   ctrlPanPressWorldX = 0;
+    long   ctrlPanPressWorldY = 0;
+    /** A pan that paged the time window keeps its zoom: dataAvailable() rebuilds the window
+     *  on every load, so the zoomed rectangle is put back after the rebuild. */
+    bool   restoreWindowAfterLoad = false;
+    QRect  windowToRestore;
+    static constexpr int   ctrlPanDragThreshold = 3;     // px, as in Klusters
+    static constexpr float ctrlWheelZoomStep = 1.25f;    // per notch, as in Klusters
 };
 
 #endif

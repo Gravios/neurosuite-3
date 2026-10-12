@@ -16,6 +16,8 @@
  ***************************************************************************/
 //include files for the application
 #include "tracewidget.h"
+
+#include <functional>
 #include "spectralview.h"
 #include "freqbandslider.h"
 
@@ -285,6 +287,79 @@ void registerTraceInputOnce()
         };
         reg.addCommand(sc);
     }
+
+    // Mouse navigation, ported from the Klusters trace view (its trace.pan / wheel commands).
+    // A ToolMode-layer scope registered AFTER the mode.* scopes, so in that layer it shadows
+    // them and a Ctrl+Left resolves to the pan before any mode's AtLeast Left press.  The pan
+    // is disabled in SELECT (ctrlPanArmable), where the press falls through to
+    // trace.selectChannelsPress and Ctrl+click keeps toggling a channel.  The wheel chords
+    // collide with no press, so they live here too and work in every mode.
+    input::InputScope nav;
+    nav.id     = QStringLiteral("nav.trace");
+    nav.layer  = input::Layer::ToolMode;
+    nav.active = [](const input::Ctx& c){ return qobject_cast<TraceView*>(c.view) != nullptr; };
+    reg.addScope(nav);
+
+    {
+        input::Command pan;
+        pan.id       = QStringLiteral("trace.pan");
+        pan.scopeId  = QStringLiteral("nav.trace");
+        pan.label    = TraceView::tr("Pan the view");
+        pan.category = TraceView::tr("Navigation");
+        pan.kind     = input::Kind::Gesture;
+        pan.defaultChord = input::Chord::button(Qt::LeftButton, Qt::ControlModifier,
+                                                input::Phase::Press, input::ModMatch::AtLeast);
+        pan.enabled  = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            return v && v->ctrlPanArmable();
+        };
+        pan.invoke   = [](const input::Ctx& c){
+            auto* v = qobject_cast<TraceView*>(c.view);
+            if(v && c.event)
+                v->beginCtrlPan(static_cast<QMouseEvent*>(c.event)->position().toPoint());
+        };
+        reg.addCommand(pan);
+    }
+
+    // Wheel commands.  resolve() takes the first match in registration order and the
+    // AtLeast chords tolerate extra modifiers, so the most specific comes first:
+    // Ctrl+Shift (amplitude), then Ctrl (zoom), then the Exact plain wheel (time zoom).
+    auto addWheel = [&](const QString& id, const QString& label, const QString& category,
+                        int dir, Qt::KeyboardModifiers mods, input::ModMatch mm,
+                        std::function<void(TraceView*, QWheelEvent*)> fn){
+        input::Command c;
+        c.id       = id;
+        c.scopeId  = QStringLiteral("nav.trace");
+        c.label    = label;
+        c.category = category;
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::wheel(dir, mods, mm);
+        c.invoke   = [fn](const input::Ctx& ctx){
+            auto* v = qobject_cast<TraceView*>(ctx.view);
+            if(v && ctx.event) fn(v, static_cast<QWheelEvent*>(ctx.event));
+        };
+        reg.addCommand(c);
+    };
+    const QString amp  = TraceView::tr("Amplitude");
+    const QString zoom = TraceView::tr("Zoom");
+    addWheel(QStringLiteral("trace.amplitudeUp"), TraceView::tr("Increase trace amplitude"), amp,
+             +1, Qt::ControlModifier | Qt::ShiftModifier, input::ModMatch::AtLeast,
+             [](TraceView* v, QWheelEvent*){ v->increaseAllAmplitude(); });
+    addWheel(QStringLiteral("trace.amplitudeDown"), TraceView::tr("Decrease trace amplitude"), amp,
+             -1, Qt::ControlModifier | Qt::ShiftModifier, input::ModMatch::AtLeast,
+             [](TraceView* v, QWheelEvent*){ v->decreaseAllAmplitude(); });
+    addWheel(QStringLiteral("trace.wheelZoomIn"), TraceView::tr("Zoom in toward cursor"), zoom,
+             +1, Qt::ControlModifier, input::ModMatch::AtLeast,
+             [](TraceView* v, QWheelEvent* e){ v->wheelZoomAtCursor(true, e->position().toPoint(), false); });
+    addWheel(QStringLiteral("trace.wheelZoomOut"), TraceView::tr("Zoom out from cursor"), zoom,
+             -1, Qt::ControlModifier, input::ModMatch::AtLeast,
+             [](TraceView* v, QWheelEvent* e){ v->wheelZoomAtCursor(false, e->position().toPoint(), false); });
+    addWheel(QStringLiteral("trace.wheelTimeZoomIn"), TraceView::tr("Zoom in horizontally"), zoom,
+             +1, Qt::NoModifier, input::ModMatch::Exact,
+             [](TraceView* v, QWheelEvent* e){ v->wheelZoomAtCursor(true, e->position().toPoint(), true); });
+    addWheel(QStringLiteral("trace.wheelTimeZoomOut"), TraceView::tr("Zoom out horizontally"), zoom,
+             -1, Qt::NoModifier, input::ModMatch::Exact,
+             [](TraceView* v, QWheelEvent* e){ v->wheelZoomAtCursor(false, e->position().toPoint(), true); });
 }
 }  // namespace
 
