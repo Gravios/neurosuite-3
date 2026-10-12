@@ -20,6 +20,8 @@
 #include <utility>
 
 class QTimer;
+class QWheelEvent;
+namespace input { class BindingRegistry; }
 template <typename T> class QFutureWatcher;
 
 class SpectralView : public BaseFrame {
@@ -101,6 +103,12 @@ public:
     bool   isLockedToTrace() const { return pendingLockToTrace; }
     long   spanMs() const { return pendingSpan; }
 
+    /**Registers the spectral view's mouse commands (view.spectral scope): Ctrl+Left
+    * drag pans, Ctrl+wheel zooms time and frequency toward the cursor, the plain
+    * wheel zooms time only.  Call from NeuroscopeApp::registerInputBindings after
+    * BaseFrame::registerInput, so view.spectral shadows view.frame.*/
+    static void registerInput(input::BindingRegistry& reg);
+
 public Q_SLOTS:
     void dataAvailable(Array<dataType>& data, QObject* initiator);
 
@@ -111,9 +119,16 @@ Q_SIGNALS:
     /// Emitted when the spectral mode changes (e.g. to show the band slider
     /// only in channel mode).
     void spectralModeChanged(neuroscope::spectral::SpectralMode mode);
+    /// Asks the owning TraceWidget to show [start, start+duration) (ms): the
+    /// horizontal pan and zoom move the shared time window, so the trace view and
+    /// the scroll bar follow.
+    void timeWindowRequested(long start, long duration);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private:
     void requestCurrentWindow();
@@ -121,6 +136,18 @@ private:
     void recompute();          // run the engine on the current window, rebuild image
     void rebuildImage();       // SpectralImage -> QImage
     void drawAxes(QPainter& painter, const QRect& plot);
+    QRect plotRect() const;    // heatmap area inside the axis margins
+
+    // Mouse navigation (see registerInput).  Time is the shared trace window;
+    // the vertical axis (frequency, or channel rows) is a crop [yLo, yHi] of the
+    // computed image, as fractions of its height from the top.
+    void beginPan(const QPoint& pos);
+    void zoomAtCursor(bool zoomIn, const QPoint& pos, bool vertical);
+    void zoomTime(double factor, double fx);
+    void zoomRows(double factor, double fy);
+    void requestTraceStart(long start, long duration);
+    long minimumSpanMs() const;
+    void resetRowView() { yLo = 0.0; yHi = 1.0; }
 
     // Renders the current window as a moving-window preview (single taper) and
     // arms the settle pass, or as the full estimate for modes with no preview.
@@ -208,6 +235,19 @@ private:
     // Most-recent-first list of (windowId, full estimate); front is newest.
     std::list<std::pair<std::uint64_t, neuroscope::spectral::SpectralImage>> recent_;
     std::size_t recentCap = 16;
+
+    // Vertical crop of the image and the Ctrl+drag pan state.
+    double yLo = 0.0;
+    double yHi = 1.0;
+    bool   panArmed = false;
+    bool   panning = false;
+    QPoint panAnchorPx;
+    long   panPressTraceStart = 0;
+    long   panPressWidth = 0;
+    double panPressYLo = 0.0;
+    double panPressYHi = 1.0;
+    static constexpr int    panDragThreshold = 3;      // px, as in the Klusters trace view
+    static constexpr double wheelZoomStep = 1.25;      // per notch, as in Klusters
 };
 
 #endif // NEUROSCOPE_SPECTRALVIEW_H

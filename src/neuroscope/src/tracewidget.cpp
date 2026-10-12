@@ -1103,6 +1103,10 @@ void TraceWidget::setSpectralMode(bool on)
 
             connect(freqBandSlider, &FreqBandSlider::bandChanged,
                     spectralView, &SpectralView::setBand);
+            // Horizontal pan/zoom in the spectral view moves the shared time window,
+            // exactly as the trace view's own pan does.
+            connect(spectralView, &SpectralView::timeWindowRequested,
+                    this, &TraceWidget::slotSetStartAndDuration);
             connect(spectralView, &SpectralView::frequencyRangeChanged,
                     freqBandSlider, &FreqBandSlider::setRange);
             connect(spectralView, &SpectralView::spectralModeChanged, this,
