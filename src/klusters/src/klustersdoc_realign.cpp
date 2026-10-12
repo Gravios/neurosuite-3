@@ -108,7 +108,7 @@ extern int nbUndo;
 using klustersdoc_internal::SdiffPattern;
 using klustersdoc_internal::featureMethod;
 using klustersdoc_internal::methodIsStderiv;
-using klustersdoc_internal::readSdiffPattern;
+using klustersdoc_internal::sdiffPatternForMethod;
 using klustersdoc_internal::resolveFeature;
 using klustersdoc_internal::stripFeatureSuffix;
 
@@ -724,8 +724,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     std::vector<int> stderivPartner, stderivSetOff, stderivSetMem;
     if (isStderivRealign && !parameterFile.isEmpty()) {
         {
-            const SdiffPattern sp = readSdiffPattern(parameterFile, grpId, nChan,
-                                                     d.getTotalNbChannels());
+            const SdiffPattern sp = sdiffPatternForMethod(parameterFile, grpId, nChan,
+                                                          d.getTotalNbChannels(), fetMethod);
             if (sp.applied) {
                 stderivPartner  = sp.partner;
                 stderivSetOff   = sp.setOff;
@@ -2788,8 +2788,11 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // map.  On parse failure or channel-count mismatch we keep the basis order.
     std::vector<int> nudgePartner, nudgeSetOff, nudgeSetMem;
     if (neurosuite::core::hasTemporalDiff(pca.method) && !parameterFile.isEmpty()) {
-        const SdiffPattern sp = readSdiffPattern(parameterFile, electrodeGroupID,
-                                                 nChan, d.getTotalNbChannels());
+        // Nudge runs only in the .clu's own space (refused while another is
+        // shown), so originMethod is the token of the waveforms it rewrites.
+        const SdiffPattern sp = sdiffPatternForMethod(parameterFile, electrodeGroupID,
+                                                      nChan, d.getTotalNbChannels(),
+                                                      originMethod);
         if (sp.applied) {
             nudgePartner = sp.partner;
             nudgeSetOff  = sp.setOff;
@@ -3676,16 +3679,9 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
             && neurosuite::core::loadPca(pcaPath.toStdString(), pca)
             && neurosuite::core::hasTemporalDiff(pca.method))
             order = neurosuite::core::spatialOrder(pca.method);
-        // The token says whether the session's custom pattern applies: "_C"
-        // (stderiv_C5) was built with it, "_S" (stderiv_S3) with a plain order
-        // the basis carries.  A bare legacy "stderiv" token cannot say, and its
-        // basis reports all-pairs even when a pattern was used, so it follows
-        // the session as before.
-        const bool plainOrder =
-            neurosuite::custody::parseMethodToken(spkMethod.toStdString()).kind == 'S';
-        const SdiffPattern sp = plainOrder
-            ? SdiffPattern{}
-            : readSdiffPattern(parameterFile, grpId, nChan, totalNbChan);
+        // The .spk's token says whether the session pattern applies.
+        const SdiffPattern sp = sdiffPatternForMethod(parameterFile, grpId, nChan,
+                                                      totalNbChan, spkMethod);
         if (sp.applied) {
             partner = sp.partner; setOff = sp.setOff; setMem = sp.setMem;
             order   = sp.order;

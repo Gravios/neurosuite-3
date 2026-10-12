@@ -122,6 +122,19 @@ inline SdiffPattern readSdiffPattern(const QString& parameterFile, const QString
     return out;
 }
 
+// The session's custom pattern for a stderiv space of method token @p method.
+// The token says whether it applies (formats/naming.md): "_C<n>" was built with
+// the sdiffPairs pattern, "_S<n>" with the plain order its basis carries -- any
+// pattern deliberately unused.  A bare legacy "stderiv" token cannot say, and its
+// basis reports all-pairs even when a pattern was used, so it follows the session.
+// A _D lag token carries its waveform token's kind (stderiv_S3_D34 -> 'S').
+inline SdiffPattern sdiffPatternForMethod(const QString& parameterFile, const QString& group,
+                                          int nChan, int totalNbChannels, const QString& method) {
+    if (neurosuite::custody::parseMethodToken(method.toStdString()).kind == 'S')
+        return SdiffPattern{};
+    return readSdiffPattern(parameterFile, group, nChan, totalNbChannels);
+}
+
 // Resolve a SHARED artifact across EVERY method.  Spike times are method-independent:
 // there is one .res per group whatever token wrote it, and detection may have run
 // under a different method than the .clu being opened (detect at stderiv, sort at
