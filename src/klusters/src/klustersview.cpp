@@ -817,7 +817,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                         mainWindow.updateDimensionSpinBoxes(dimensionX,dimensionY);
                         QObject::disconnect(this, &KlustersView::updatedDimensions, nullptr, nullptr);
                         connect(this,&KlustersView::updatedDimensions,viewWidget, &ViewWidget::updatedDimensions);
-                        return QWidget::eventFilter(object,event);
+                        return DockArea::eventFilter(object,event);
                     }
                 }
             }
@@ -835,7 +835,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                         shoulderLine = dynamic_cast<CorrelationView*>(viewWidget)->isShoulderLine();
                         mainWindow.updateCorrelogramViewVariables(binSize,correlogramTimeFrame,shoulderLine,correlationScale);
                         updateCorrelogramConnections(viewWidget);
-                        return QWidget::eventFilter(object,event);
+                        return DockArea::eventFilter(object,event);
                     }
                 }
             }
@@ -858,7 +858,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
                     QObject::disconnect(this, &KlustersView::updatedDimensions, nullptr, nullptr);
                     connect(this,&KlustersView::updatedDimensions,widget, &ViewWidget::updatedDimensions);
                     bool inProcess = dynamic_cast<ClusterView*>(widget)->isASelectionInProcess();
-                    if(inProcess) return QWidget::eventFilter(object,event);
+                    if(inProcess) return DockArea::eventFilter(object,event);
                 }
             }
         }
@@ -900,7 +900,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
         } else if(qobject_cast<TraceView*>(object)) {
             //widget = traceWidget;
         } else {
-            return QWidget::eventFilter(object,event);    // standard event processing
+            return DockArea::eventFilter(object,event);    // standard event processing
         }
 
         QMouseEvent* mouseEvent = dynamic_cast<QMouseEvent*>(event);
@@ -912,7 +912,7 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
             // menu.  Let the press through to the ClusterView's own handler instead.
             if(ClusterView* cvOverlay = qobject_cast<ClusterView*>(object);
                cvOverlay && cvOverlay->lineageOverlayActive())
-                return QWidget::eventFilter(object,event);
+                return DockArea::eventFilter(object,event);
             //Create the popmenu: the cluster-sorting options.  Reuse the main
             //window's "Sort Clusters" actions directly, so each item carries its
             //own text, enabled state, and triggered() connection -- selecting one
@@ -933,9 +933,9 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
             menu.exec(QCursor::pos());
             return true;
         }
-        else return QWidget::eventFilter(object,event);    // standard event processing
+        else return DockArea::eventFilter(object,event);    // standard event processing
     }
-    else return QWidget::eventFilter(object,event);    // standard event processing
+    else return DockArea::eventFilter(object,event);    // standard event processing
 
 }
 
