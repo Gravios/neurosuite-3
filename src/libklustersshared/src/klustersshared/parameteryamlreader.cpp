@@ -195,13 +195,24 @@ void ParameterYamlReader::getSampleRateByExtension(QMap<QString,double>& result)
 
 // neuroscope variant — fills per-channel group + per-group channel maps
 void ParameterYamlReader::getAnatomicalDescription(
-        int /*nbChannels*/,
+        int nbChannels,
         QMap<int,int>&        displayChannelsGroups,
         QMap<int,QList<int>>& displayGroupsChannels,
         QMap<int,bool>&       skipStatus) const
 {
     auto groups = safeGet2(root, "anatomicalDescription", "channelGroups");
     if (!groups || !groups.IsSequence()) return;
+
+    // A channel in no anatomical group is in NeuroScope's display trash (group
+    // 0).  The trash is not written to the file -- the readers number groups by
+    // position, so it would come back as group 1 -- so it is rebuilt here from
+    // the channels the groups leave out, as the XML reader did.
+    QList<int> trashList;
+    for (int i = 0; i < nbChannels; ++i) {
+        trashList.append(i);
+        displayChannelsGroups[i] = 0;
+        skipStatus[i] = false;
+    }
 
     int groupId = 1;
     for (auto grp : groups) {
@@ -215,10 +226,13 @@ void ParameterYamlReader::getAnatomicalDescription(
             chList.append(id);
             displayChannelsGroups[id] = groupId;
             skipStatus[id] = (skip != 0);
+            trashList.removeAll(id);
         }
         displayGroupsChannels[groupId] = chList;
         ++groupId;
     }
+    if (!trashList.isEmpty())
+        displayGroupsChannels.insert(0, trashList);
 }
 
 // ndmanager variant — fills anatomical groups + per-channel attributes

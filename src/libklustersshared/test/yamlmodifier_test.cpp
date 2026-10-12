@@ -12,6 +12,7 @@
  ***************************************************************************/
 
 #include <klustersshared/parameteryamlmodifier.h>
+#include <klustersshared/parameteryamlreader.h>
 
 #include <QDir>
 #include <QTemporaryDir>
@@ -47,6 +48,19 @@ acquisitionSystem:
   voltageRange: 20
   amplification: 1000
   offset: 0
+anatomicalDescription:
+  channelGroups:
+    - label: shank A
+      channels:
+        - {id: 0, skip: 0, depth: 100}
+        - {id: 1, skip: 1}
+        - {id: 2, skip: 0}
+        - {id: 3, skip: 0}
+    - channels:
+        - {id: 4, skip: 0}
+        - {id: 5, skip: 0}
+        - {id: 6, skip: 0}
+        - {id: 7, skip: 0}
 spikeDetection:
   channelGroups:
     - channels: [0, 1, 2, 3]
@@ -134,6 +148,39 @@ int main()
         chk(str(grps[1]["probeId"]) == "2", "edited group keeps its keys by position");
         chk(str(grps[2]["nSamples"]) == "54" && str(grps[2]["nFeatures"]) == "3",
             "new group gets the session geometry");
+    }
+
+    std::printf("anatomical groups, channel 7 moved to the display trash:\n");
+    writeSession(path);
+    {
+        QMap<int,QList<int>> g;
+        g[0] = {7};                          // NeuroScope's display trash
+        g[1] = {0, 1, 2, 3};
+        g[2] = {4, 5, 6};
+        QMap<int,bool> skip;
+        skip[1] = true;
+        skip[2] = true;                      // newly skipped
+        ParameterYamlModifier mod;
+        chk(mod.parseFile(path), "parseFile");
+        mod.setAnatomicalDescription(g, skip);
+        chk(mod.writeToFile(path), "writeToFile");
+        const YAML::Node grps = YAML::LoadFile(path.toStdString())
+                                    ["anatomicalDescription"]["channelGroups"];
+        chk(grps.size() == 2, "trash not written as a group");
+        chk(grps[0]["channels"].size() == 4, "group 1 is still the first group");
+        chk(str(grps[0]["label"]) == "shank A", "group key kept");
+        chk(str(grps[0]["channels"][0]["depth"]) == "100", "channel key kept");
+        chk(str(grps[0]["channels"][2]["skip"]) == "1", "skip flag updated");
+        chk(grps[1]["channels"].size() == 3, "group 2 channels updated");
+
+        ParameterYamlReader rd;
+        chk(rd.parseFile(path), "reader parses");
+        QMap<int,int> chGrp; QMap<int,QList<int>> grpCh; QMap<int,bool> sk;
+        rd.getAnatomicalDescription(8, chGrp, grpCh, sk);
+        chk(grpCh.value(0) == QList<int>{7} && chGrp.value(7, -1) == 0,
+            "reader rebuilds the trash from the unlisted channel");
+        chk(grpCh.value(1).size() == 4 && grpCh.value(2).size() == 3,
+            "groups 1 and 2 read back in place");
     }
 
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

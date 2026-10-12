@@ -326,15 +326,39 @@ bool ParameterYamlModifier::setAnatomicalDescription(
         QMap<int,QList<int>>& anatomicalGroups,
         const QMap<int,bool>& skipStatus)
 {
+    // Same rule as the spike groups: existing group and channel entries are
+    // carried across whole, with only the channel list and each channel's skip
+    // flag updated, so keys other tools add to either survive a NeuroScope save.
+    const YAML::Node existing = root["anatomicalDescription"]["channelGroups"];
+    const QMap<int,YAML::Node> carried = matchExistingGroups(existing, anatomicalGroups);
+
+    QMap<int,YAML::Node> existingChannels;          // channel id -> its entry
+    if (existing && existing.IsSequence()) {
+        for (const auto& grp : existing) {
+            if (!grp.IsMap() || !grp["channels"] || !grp["channels"].IsSequence())
+                continue;
+            for (const auto& ch : grp["channels"]) {
+                if (!ch.IsMap() || !ch["id"]) continue;
+                try { existingChannels.insert(ch["id"].as<int>(), YAML::Clone(ch)); }
+                catch (...) {}
+            }
+        }
+    }
+
     auto ad = ensureMap("anatomicalDescription");
     YAML::Node seq(YAML::NodeType::Sequence);
 
     for (auto it = anatomicalGroups.constBegin();
          it != anatomicalGroups.constEnd(); ++it) {
-        YAML::Node grp;
+        // Key 0 is NeuroScope's display trash, not an anatomical group.  The
+        // readers number groups by position from 1, so writing it would turn the
+        // trash into group 1 on the next open and shift every real group by one.
+        // (The XML writer this replaced skipped it for the same reason.)
+        if (it.key() <= 0) continue;
+        YAML::Node grp = carried.value(it.key(), YAML::Node(YAML::NodeType::Map));
         YAML::Node chSeq(YAML::NodeType::Sequence);
         for (int ch : it.value()) {
-            YAML::Node chNode;
+            YAML::Node chNode = existingChannels.value(ch, YAML::Node(YAML::NodeType::Map));
             chNode["id"]   = ch;
             chNode["skip"] = skipStatus.value(ch, false) ? 1 : 0;
             chSeq.push_back(chNode);
