@@ -36,6 +36,10 @@
  *                          that stays cache-friendly; much larger chunks are
  *                          measurably slower).
  *   -m, --meta FILE        Metadata output (default output_basename.plexon.yaml).
+ *   -e, --evt-id ID        3-character event-file id (default plx →
+ *                          output_basename.plx.evt; NeuroScope requires 3
+ *                          characters, not all digits).
+ *       --no-evt           Do not write the event file.
  *   -f, --force            Overwrite an existing output_basename.dat.
  *   -d, --dry-run          Print the file summary and exit.
  *   -h, --help             Display help.
@@ -43,6 +47,9 @@
  * Outputs:
  *   output_basename.dat          int16 little-endian, sample-major interleaved.
  *                                Raw Plexon counts, copied verbatim.
+ *   output_basename.<id>.evt     NeuroScope events: every digital event (ms from
+ *                                .dat sample 0, time-sorted) plus "gap start" /
+ *                                "gap end" around zero-filled pauses.
  *   output_basename.plexon.yaml  `sourceRecording:` block — file header,
  *                                per-channel names / sources / µV per count,
  *                                .dat time origin and pauses, spike- and
@@ -320,6 +327,14 @@ struct AnalogChannel {
     vector<Block> blocks;     // only when indexed
 };
 
+struct Event {
+    uint64_t ts;
+    uint32_t chan;      // index into eventChannels, or kNoChannel
+    uint32_t raw;       // channel number as stored in the data block / record
+    uint16_t value;
+};
+constexpr uint32_t kNoChannel = UINT32_MAX;
+
 struct Recording {
     string container;         // "plx" | "pl2"
     double clock = 0.0;
@@ -338,6 +353,7 @@ struct Recording {
     std::map<std::pair<uint32_t, uint32_t>, size_t> spikeByKey, eventByKey;
     vector<std::map<uint32_t, uint64_t>> unitCounts;   // per spike channel
     vector<uint64_t> eventCounts;                      // per event channel
+    vector<Event> events;                              // every event, file order
 };
 
 string streamPrefix(const string& name) {
@@ -523,7 +539,12 @@ void walkPlx(Reader& r, Recording& rec) {
             if (it != rec.spikeByKey.end()) ++rec.unitCounts[it->second][unit];
         } else {
             auto it = rec.eventByKey.find({0u, ch});
-            if (it != rec.eventByKey.end()) ++rec.eventCounts[it->second];
+            uint32_t idx = kNoChannel;
+            if (it != rec.eventByKey.end()) {
+                ++rec.eventCounts[it->second];
+                idx = static_cast<uint32_t>(it->second);
+            }
+            rec.events.push_back({ts, idx, ch, unit});
         }
         pos = end;
         if (pos >= nextReport) {
@@ -806,7 +827,18 @@ void walkPl2(Reader& r, Recording& rec) {
             const uint32_t n = rd<uint16_t>(b + 6);
             len = pl2RecordLen(5ull * n);
             auto it = rec.eventByKey.find({src, ch});
-            if (it != rec.eventByKey.end()) rec.eventCounts[it->second] += n;
+            uint32_t idx = kNoChannel;
+            if (it != rec.eventByKey.end()) {
+                rec.eventCounts[it->second] += n;
+                idx = static_cast<uint32_t>(it->second);
+            }
+            if (n && p + len <= size) {
+                vector<uint64_t> ts(n);
+                vector<uint16_t> vals(n);
+                r.readExact(p + 16, ts.data(), 8ull * n);
+                r.readExact(p + 16 + 8ull * n, vals.data(), 2ull * n);
+                for (uint32_t k = 0; k < n; ++k) rec.events.push_back({ts[k], idx, ch, vals[k]});
+            }
         } else if (kind == kRecEnd && words == 10 && p + 32 <= size) {
             endDuration = rd<uint64_t>(r.at(p + 24, 8));
         }
@@ -1096,6 +1128,88 @@ void writeDat(Reader& r, const Recording& rec, const Layout& L, const fs::path& 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// .evt writer
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct EvtSummary {
+    string file;
+    uint64_t nEvents = 0, nGapMarkers = 0, beforeDat = 0, afterDat = 0;
+    Map labels;               // channel → label pattern
+};
+
+/**
+ * NeuroScope event file: "<ms>\t<label>" per line, time-sorted (NeuroScope
+ * takes the last line as the file's end time).  Times are milliseconds from
+ * .dat sample 0, so events line up with the exported trace; events before
+ * the .dat start get negative times and are counted.  A channel's label is
+ * its name when every event of the channel carries the same value (single-bit
+ * inputs), else "name value"; strobed channels always carry the value.
+ * Zero-filled pauses of the .dat are marked "gap start" / "gap end".
+ */
+EvtSummary writeEvt(const Recording& rec, const Layout& L, const fs::path& path) {
+    EvtSummary S;
+    S.file = path.filename().string();
+    auto key = [](const Event& e) -> uint64_t {
+        return e.chan == kNoChannel ? (1ull << 32) | e.raw : e.chan;
+    };
+    std::map<uint64_t, std::pair<uint16_t, bool>> uniform;   // first value, all equal
+    for (const Event& e : rec.events) {
+        auto [it, fresh] = uniform.try_emplace(key(e), e.value, true);
+        if (!fresh && it->second.first != e.value) it->second.second = false;
+    }
+    auto clean = [](string x) {
+        for (char& c : x) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+        return x.empty() ? string("event") : x;
+    };
+    std::map<uint64_t, std::pair<string, bool>> label;       // base, withValue
+    for (const auto& [k, u] : uniform) {
+        string base = k >> 32 ? "event channel " + std::to_string(k & 0xFFFFFFFFu)
+                              : clean(std::get<string>(mapGet(rec.eventChannels[k], "name").v));
+        string lower;
+        for (char c : base) lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const bool withValue = !u.second || lower.find("strob") != string::npos;
+        S.labels.push_back({base, withValue ? base + " <value>" : base});
+        label[k] = {base, withValue};
+    }
+
+    struct Line { double ms; uint64_t order; string text; };
+    vector<Line> lines;
+    lines.reserve(rec.events.size() + 2 * L.segments.size());
+    const double durMs = static_cast<double>(L.nSamples) / L.rate * 1000.0;
+    uint64_t order = 0;
+    for (const Event& e : rec.events) {
+        const double ms = (static_cast<double>(e.ts) - static_cast<double>(L.t0)) * 1000.0 / rec.clock;
+        const auto& [base, withValue] = label[key(e)];
+        lines.push_back({ms, order++, withValue ? base + " " + std::to_string(e.value) : base});
+        S.beforeDat += ms < 0.0;
+        S.afterDat += ms > durMs;
+    }
+    S.nEvents = rec.events.size();
+    for (size_t k = 1; k < L.segments.size(); ++k) {
+        const uint64_t after = L.segments[k - 1].first + L.segments[k - 1].second;
+        lines.push_back({static_cast<double>(after) / L.rate * 1000.0, order++, "gap start"});
+        lines.push_back({static_cast<double>(L.segments[k].first) / L.rate * 1000.0, order++, "gap end"});
+        S.nGapMarkers += 2;
+    }
+    std::stable_sort(lines.begin(), lines.end(),
+                     [](const Line& a, const Line& b) { return a.ms < b.ms; });
+
+    const fs::path tmp = path.string() + ".part";
+    {
+        std::ofstream o(tmp, std::ios::trunc);
+        if (!o) throw std::runtime_error("cannot create " + tmp.string());
+        char buf[48];
+        for (const Line& l : lines) {
+            std::snprintf(buf, sizeof buf, "%.6f\t", l.ms);
+            o << buf << l.text << '\n';
+        }
+        if (!o) throw std::runtime_error("write error on " + tmp.string());
+    }
+    fs::rename(tmp, path);
+    return S;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Metadata
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1113,8 +1227,9 @@ string nowIso() {
 }
 
 Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
-                    const fs::path& input, const string& datName) {
-    List spk, evt, chans, streamsList, gaps;
+                    const fs::path& input, const string& datName,
+                    const std::optional<EvtSummary>& evt) {
+    List spk, evtList, chans, streamsList, gaps;
     vector<string> countFindings;
     for (size_t i = 0; i < rec.spikeChannels.size(); ++i) {
         Map d = rec.spikeChannels[i];
@@ -1144,7 +1259,7 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
         if (!rec.eventCounts[i]) continue;
         Map d = rec.eventChannels[i];
         d.push_back({"nEvents", rec.eventCounts[i]});
-        evt.push_back(std::move(d));
+        evtList.push_back(std::move(d));
     }
     for (size_t j = 0; j < L.chans.size(); ++j) {
         const AnalogChannel& c = rec.analog[L.chans[j]];
@@ -1181,6 +1296,16 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
     for (size_t i : L.chans)
         if (rec.analog[i].nBlocks && rec.analog[i].uvPerCount > 0) uvs.insert(round9(rec.analog[i].uvPerCount));
     vector<string> findings = rec.findings;
+    uint64_t unlistedEvents = 0;
+    for (const Event& e : rec.events) unlistedEvents += e.chan == kNoChannel;
+    if (unlistedEvents)
+        findings.push_back(std::to_string(unlistedEvents) +
+                           " events on channels with no header (labelled \"event channel N\")");
+    if (evt && evt->beforeDat)
+        findings.push_back(std::to_string(evt->beforeDat) +
+                           " events precede .dat sample 0 (negative .evt times; padToZero keeps them)");
+    if (evt && evt->afterDat)
+        findings.push_back(std::to_string(evt->afterDat) + " events follow the end of the .dat");
     findings.insert(findings.end(), countFindings.begin(), countFindings.end());
     findings.insert(findings.end(), L.warnings.begin(), L.warnings.end());
     Map acq{{"nBits", 16}, {"nChannels", static_cast<uint64_t>(L.chans.size())},
@@ -1229,7 +1354,15 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
              {"export", ex},
              {"streams", streamsList},
              {"spikeChannels", spk},
-             {"eventChannels", evt}};
+             {"eventChannels", evtList}};
+    if (evt)
+        meta.push_back({"eventFile", Map{{"file", evt->file},
+                                         {"timeOrigin", "ms from .dat sample 0 (tick firstSampleTimestamp_ticks)"},
+                                         {"nEvents", evt->nEvents},
+                                         {"nGapMarkers", evt->nGapMarkers},
+                                         {"beforeDatStart", evt->beforeDat},
+                                         {"afterDatEnd", evt->afterDat},
+                                         {"labels", evt->labels}}});
     if (!rec.deviceSettings.empty())
         meta.push_back({"deviceSettings", rec.deviceSettings});
     if (!rec.preDataText.empty())
@@ -1308,6 +1441,8 @@ void usage(std::ostream& o) {
          "  -z, --pad-to-zero B    start the .dat at tick 0 (default 0)\n"
          "  -c, --chunk N          output samples per write chunk (default 2^21 / nChannels)\n"
          "  -m, --meta FILE        metadata output (default output_basename.plexon.yaml)\n"
+         "  -e, --evt-id ID        3-character event-file id (default plx -> output_basename.plx.evt)\n"
+         "      --no-evt           do not write the event file\n"
          "  -f, --force            overwrite an existing output_basename.dat\n"
          "  -d, --dry-run          print the file summary and exit\n"
          "  -h, --help             display this help\n";
@@ -1324,7 +1459,8 @@ bool parseBool(const string& s) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    string stream, channelSpec, metaPath;
+    string stream, channelSpec, metaPath, evtId = "plx";
+    bool writeEvents = true;
     bool keepEmpty = true, padToZero = false, force = false, dryRun = false;
     uint64_t chunk = 0;   // 0 = auto: ~4 MB of output per chunk
     vector<string> pos;
@@ -1341,6 +1477,8 @@ int main(int argc, char** argv) {
             else if (a == "-z" || a == "--pad-to-zero") padToZero = parseBool(next());
             else if (a == "-c" || a == "--chunk") chunk = std::max<uint64_t>(1, std::stoull(next()));
             else if (a == "-m" || a == "--meta") metaPath = next();
+            else if (a == "-e" || a == "--evt-id") evtId = next();
+            else if (a == "--no-evt") writeEvents = false;
             else if (a == "-f" || a == "--force") force = true;
             else if (a == "-d" || a == "--dry-run") dryRun = true;
             else if (a == "-h" || a == "--help") { usage(std::cout); return 0; }
@@ -1349,6 +1487,10 @@ int main(int argc, char** argv) {
         }
         if (pos.empty() || (!dryRun && pos.size() != 2) || pos.size() > 2)
             throw std::invalid_argument("expected input file and output basename");
+        bool allDigits = true;
+        for (char c : evtId) allDigits = allDigits && std::isdigit(static_cast<unsigned char>(c));
+        if (evtId.size() != 3 || allDigits || evtId.find_first_of("./\\ \t") != string::npos)
+            throw std::invalid_argument("--evt-id must be 3 characters, not all digits (NeuroScope rule)");
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
         usage(std::cerr);
@@ -1394,6 +1536,7 @@ int main(int argc, char** argv) {
             for (auto& uc : rec.unitCounts) uc.clear();
             std::fill(rec.eventCounts.begin(), rec.eventCounts.end(), 0);
             rec.findings.clear();
+            rec.events.clear();
             if (rec.container == "plx") walkPlx(r, rec);
             else walkPl2(r, rec);
         };
@@ -1435,9 +1578,13 @@ int main(int argc, char** argv) {
         const vector<size_t> sel = parseChannelSpec(channelSpec, streams.at(chosen), rec);
         Layout L = buildLayout(rec, sel, keepEmpty, padToZero);
         const fs::path dat = pos[1] + ".dat";
-        if (fs::exists(dat) && !force) {
-            std::cerr << "error: " << dat.string() << " exists (use --force)\n";
-            return 3;
+        const fs::path evtPath = pos[1] + "." + evtId + ".evt";
+        for (const fs::path& o : {dat, evtPath}) {
+            if (o == evtPath && !writeEvents) continue;
+            if (fs::exists(o) && !force) {
+                std::cerr << "error: " << o.string() << " exists (use --force)\n";
+                return 3;
+            }
         }
         std::cout << "  Exporting " << chosen << ": " << L.chans.size() << " channels @ "
                   << scalar(Value(L.rate)) << " Hz, " << L.nSamples << " samples ("
@@ -1446,8 +1593,14 @@ int main(int argc, char** argv) {
         for (const auto& w : L.warnings) std::cout << "  ! " << w << "\n";
         if (chunk == 0) chunk = std::max<uint64_t>(4096, (1ull << 21) / std::max<size_t>(L.chans.size(), 1));
         writeDat(r, rec, L, dat, chunk);
+        std::optional<EvtSummary> evt;
+        if (writeEvents) {
+            evt = writeEvt(rec, L, evtPath);
+            std::cout << "  wrote " << evtPath.string() << " (" << evt->nEvents << " events, "
+                      << evt->nGapMarkers << " gap markers)\n";
+        }
         const fs::path meta = metaPath.empty() ? fs::path(pos[1] + ".plexon.yaml") : fs::path(metaPath);
-        writeMetadata(meta, buildMetadata(rec, chosen, L, input, dat.filename().string()));
+        writeMetadata(meta, buildMetadata(rec, chosen, L, input, dat.filename().string(), evt));
         std::cout << "  wrote " << dat.string() << "\n  metadata: " << meta.string() << "\n";
         return 0;
     } catch (const std::exception& e) {

@@ -60,7 +60,7 @@ WB = {i: [rng.integers(-30000, 30000, n, dtype=np.int16) for _, n in SEG]
 FP = {i: [rng.integers(-2000, 2000, n // 40, dtype=np.int16) for _, n in SEG]
       for i in range(2)}
 SPIKES = [(500 + 37 * k, k % 3, k % 2) for k in range(60)]   # (tick, channel, unit)
-EVENTS = [(1000 + 400 * k, 0, 1) for k in range(10)] + [(2222, 1, 0x8001)]
+EVENTS = [(1000 + 400 * k, 0, 1) for k in range(10)] + [(2222, 1, 0x8001), (40, 1, 0x8002)]
 WF = 8
 THRESH = -120
 UPC_V = 1.52587890625e-07      # volts per count (PL2)
@@ -259,6 +259,20 @@ def write_pl2(path, *, bad_header=False, off_grid=False, truncate=0, bad_counts=
     Path(path).write_bytes(out)
 
 
+def expected_evt(pad_to_zero=False):
+    t0 = 0 if pad_to_zero else SEG[0][0]
+    name = {0: "EVT01", 1: "Strobed"}
+    lines = [((t - t0) / CLOCK * 1000.0, i,
+              name[ch] + (f" {v}" if ch == 1 else "")) for i, (t, ch, v) in enumerate(EVENTS)]
+    k = len(lines)
+    for (a, n), (b, _) in zip(SEG[:-1], SEG[1:]):
+        lines.append(((a + n - t0) / CLOCK * 1000.0, k, "gap start"))
+        lines.append(((b - t0) / CLOCK * 1000.0, k + 1, "gap end"))
+        k += 2
+    lines.sort(key=lambda x: (x[0], x[1]))
+    return "".join(f"{ms:.6f}\t{lab}\n" for ms, _, lab in lines)
+
+
 # ── harness ─────────────────────────────────────────────────────────────────
 SESSION_YAML = """\
 # session file — this comment must survive (ruamel) the update
@@ -344,7 +358,13 @@ def main():
         check("spike counts per unit", spk["SPK01"]["nSpikes"] == 20
               and sum(spk["SPK02"]["unitCounts"].values()) == 20)
         check("event counts", {c["name"]: c["nEvents"] for c in sr["eventChannels"]}
-              == {"EVT01": 10, "Strobed": 1})
+              == {"EVT01": 10, "Strobed": 2})
+        evt_a = Path(d, "a.plx.evt").read_text()
+        check(".evt: exact lines (ms from .dat start, sorted, labels, gap markers)",
+              evt_a == expected_evt())
+        check(".evt: event before the .dat start reported",
+              sr["eventFile"]["beforeDatStart"] == 1
+              and any("precede .dat sample 0" in f for f in sr.get("findings", [])))
         check("comment preserved (ruamel) or noted",
               "this comment must survive" in yml.read_text() or "ruamel" in out)
         check("programs block kept", doc["programs"][0]["name"] == "ndm_plx2dat")
@@ -363,13 +383,15 @@ def main():
               abs(sr2["export"]["channels"][0]["uvPerCount"] - UPC_V * 1e6) < 1e-9)
         check("PL2 device/electrode text", sr2["export"]["channels"][0]["device"]
               == "Plexon Mini DigiAmp")
-        check("PL2 spike counts match header (no findings)", "findings" not in sr2)
+        check("PL2 spike counts match header (no count finding)",
+              not any("header counts" in f for f in sr2.get("findings", [])))
         check("PL2 spike threshold in µV",
               abs(sr2["spikeChannels"][0]["threshold_uV"] - THRESH * UPC_V * 1e6) < 1e-3)
         check("PL2 device settings scraped, GUI layout ignored",
               sr2.get("deviceSettings") == [{"m_highpassFreq": 300, "m_inputSamplingRate": 40000}])
         check("PL2 event counts", {c["name"]: c["nEvents"] for c in sr2["eventChannels"]}
-              == {"EVT01": 10, "Strobed": 1})
+              == {"EVT01": 10, "Strobed": 2})
+        check("PL2 .evt identical to PLX .evt", Path(d, "b.plx.evt").read_text() == evt_a)
         dig = {c["name"]: c for c in sr2["eventChannels"]}
         check("PL2 digital header text captured",
               dig["EVT01"].get("headerText") == ["Single-bit events", "Plexon Digital Input"])
@@ -386,6 +408,18 @@ def main():
         rc, _, arr, _ = convert(d, pl2, "c", ["--pad-to-zero", "true"])
         check("pad-to-zero aligns sample 0 with tick 0",
               rc == 0 and np.array_equal(arr, expected_dat(pad_to_zero=True)))
+        check("pad-to-zero .evt times from tick 0",
+              Path(d, "c.plx.evt").read_text() == expected_evt(pad_to_zero=True))
+        rc, _, _, _ = convert(d, pl2, "h", ["--evt-id", "ttl", "--no-evt"])
+        check("--no-evt writes no event file",
+              rc == 0 and not list(Path(d).glob("h.*.evt")))
+        rc, _, _, _ = convert(d, pl2, "i", ["--evt-id", "ttl"])
+        check("--evt-id names the file", rc == 0 and Path(d, "i.ttl.evt").exists())
+        rc, out = run(["--evt-id", "123", str(pl2), str(Path(d, "j"))])
+        check("all-digit event id refused (NeuroScope rule)", rc == 2)
+        Path(d, "k.plx.evt").write_text("x")
+        rc, out = run([str(pl2), str(Path(d, "k"))])
+        check("refuses to overwrite an existing .evt", rc == 3)
         rc, _, arr, _ = convert(d, pl2, "e", ["--channels", "4,WB02"])
         check("channel spec (index + name, in given order)",
               rc == 0 and np.array_equal(arr, expected_dat(chans=[3, 1])))

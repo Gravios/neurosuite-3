@@ -5,8 +5,10 @@
 #//   Convert a Plexon recording (.plx or .pl2) to .dat
 #//
 #//   Writes SESSION.dat (raw int16 counts of one continuous stream,
-#//   interleaved, sample-major) and records everything readable from the
-#//   Plexon headers in the session YAML:
+#//   interleaved, sample-major), SESSION.<id>.evt (every digital event in ms
+#//   from .dat sample 0, plus "gap start" / "gap end" around zero-filled
+#//   pauses; id = evtId, default plx) and records everything readable from
+#//   the Plexon headers in the session YAML:
 #//     - acquisitionSystem   nChannels, samplingRate, voltageRange /
 #//                           amplification (from the Plexon gain), plus
 #//                           bitResolution_uV, nSamples, duration_s
@@ -68,7 +70,10 @@ if [ ! -f "$plexonFile" ]; then
     exit $INPUTS_MISSING
 fi
 
-if outputs_exist "$session.dat"; then
+evtId=$(read_script_parameter $session ndm_plx2dat evtId)
+check_optional_variable "$evtId" || evtId=plx
+
+if outputs_exist "$session.dat" "$session.$evtId.evt"; then
     exit $OUTPUTS_EXIST
 fi
 
@@ -78,7 +83,7 @@ keepEmpty=$(read_script_parameter $session ndm_plx2dat keepEmpty)
 padToZero=$(read_script_parameter $session ndm_plx2dat padToZero)
 chunkSamples=$(read_script_parameter $session ndm_plx2dat chunkSamples)
 
-options=()
+options=(--evt-id "$evtId")
 check_optional_variable "$stream"       && options+=(--stream "$stream")
 check_optional_variable "$channels"     && options+=(--channels "$channels")
 check_optional_variable "$keepEmpty"    && options+=(--keep-empty "$keepEmpty")
@@ -103,7 +108,7 @@ check_command_status process_plxconvert
 python3 "$PY_HELPER" --param-file "$yamlfile" --meta "$session.plexon.yaml"
 check_command_status process_plxyaml.py
 
-echo_info "Conversion complete: $session.dat"
+echo_info "Conversion complete: $session.dat, $session.$evtId.evt"
 echo_info "Next steps:"
 echo_info "  ndmanager $session.yaml  — add probes to configure channel groups"
 echo_info "  ndm_hipass               — high-pass filter for spike detection"

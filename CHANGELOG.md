@@ -9,7 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
-| 2026-10-12 | [ndm_plx2dat: Plexon .plx / .pl2 → .dat with header metadata in the session YAML](#2026-10-12--ndm_plx2dat-plexon-plx--pl2--dat-with-header-metadata-in-the-session-yaml) |
+| 2026-10-12 | [ndm_plx2dat: Plexon .plx / .pl2 → .dat + .evt with header metadata in the session YAML](#2026-10-12--ndm_plx2dat-plexon-plx--pl2--dat--evt-with-header-metadata-in-the-session-yaml) |
 | 2026-10-12 | [Klusters: sync other feature spaces to the current spike times](#2026-10-12--klusters-sync-other-feature-spaces-to-the-current-spike-times) |
 | 2026-10-11 | [Klusters: view one .clu through another method's feature space; spikes never change order](#2026-10-11--klusters-view-one-clu-through-another-methods-feature-space-spikes-never-change-order) |
 | 2026-10-10 | [Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation](#2026-10-10--input-binding-overhaul-completed-across-klusters-and-neuroscope-qt-64612-compatibility-documentation) |
@@ -41,7 +41,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 ---
 
-## 2026-10-12 — ndm_plx2dat: Plexon .plx / .pl2 → .dat with header metadata in the session YAML
+## 2026-10-12 — ndm_plx2dat: Plexon .plx / .pl2 → .dat + .evt with header metadata in the session YAML
 
 <details>
 <summary>Details</summary>
@@ -62,6 +62,14 @@ data are kept as zero channels so channel numbering survives.
 Readable text of the PL2 headers and settings region that the decoded fields
 do not hold (device chain, electrode and input types, source configuration)
 is kept as `headerText` / `deviceText`.
+
+Every digital event (single-bit inputs, strobed words, keyboard, start/stop)
+goes to a NeuroScope event file `SESSION.plx.evt` (id: `evtId`), time-sorted,
+in ms from `.dat` sample 0, labelled by channel name (plus the value when a
+channel's values vary, always for strobed words), with `gap start` / `gap
+end` markers around zero-filled pauses. The command page lists what none of
+the three outputs carries (other streams' samples, Plexon's online spikes and
+sort definitions, the PL2 footer, unknown record types).
 
 PLX follows Plexon.h as read by python-neo; PL2 follows OpenReadout's
 clean-room notes (Plexon publishes no PL2 specification), so every run

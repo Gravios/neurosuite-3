@@ -354,12 +354,15 @@ programs:
       - name: padToZero
         value: 'false'
         status: Optional
+      - name: evtId
+        value: plx
+        status: Optional
       - name: chunkSamples
         value: ~
         status: Optional
     help: |-
       Convert a Plexon recording (.plx or .pl2, OmniPlex or MAP) to SESSION.dat
-      and record its metadata in this YAML (process_plxconvert writes the .dat
+      and SESSION.plx.evt, and record its metadata in this YAML (process_plxconvert writes the .dat
       and SESSION.plexon.yaml; process_plxyaml.py merges the metadata here).
 
       One continuous stream is exported as raw int16 counts (no rescaling),
@@ -408,6 +411,15 @@ programs:
       Start the .dat at timestamp 0 instead of at the first sample, so .dat
       sample n is Plexon tick n x ticksPerSample (default = false; the offset
       is always recorded as sourceRecording.export.firstSampleTimestamp_ticks).
+
+      # evtId
+
+      Three-character id of the event file SESSION.<evtId>.evt (default =
+      plx).  NeuroScope requires exactly 3 characters, not all digits.  The
+      file holds every digital event (keyboard, single-bit inputs, strobed
+      words, start/stop) in ms from .dat sample 0, labelled by channel name
+      (with the value when a channel's values vary, always for strobed
+      channels), plus "gap start" / "gap end" around zero-filled pauses.
 
       # chunkSamples
 
