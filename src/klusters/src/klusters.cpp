@@ -6949,6 +6949,10 @@ void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
             break;
         case KlustersView::GROUPING_ASSISTANT_VIEW:
             break;
+        case KlustersView::TEMPLATE_LIBRARY:
+            // A display of its own with no toolbar state (it reads the
+            // group's template files itself).
+            break;
         case KlustersView::TRACES:
             slotStateChanged("traceViewState");
             showHideLabels->setChecked(view->getLabelStatus());
@@ -7012,6 +7016,13 @@ void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType
     case KlustersView::TEMPLATE_MATRIX:
         templateMatrixExists = false;
         break;
+    case KlustersView::RESIDUAL_MATRIX:
+    case KlustersView::DRIFT_MATRIX:
+        // No flag to clear: the residual-gated sort and the reorder look for
+        // their matrix in the active display and say so when it is missing.
+        break;
+    case KlustersView::TEMPLATE_LIBRARY:
+        break;                                   // no toolbar state to undo
     case KlustersView::OVERVIEW:
         break;
     case KlustersView::GROUPING_ASSISTANT_VIEW:

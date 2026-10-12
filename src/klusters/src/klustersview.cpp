@@ -192,6 +192,10 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
     case ERROR_MATRIX:
         break;
     case TEMPLATE_MATRIX:
+    case RESIDUAL_MATRIX:
+    case DRIFT_MATRIX:
+        // An empty display; the matrix itself is added afterwards (addView /
+        // the New ... Matrix Display actions), as for the template matrix.
         isThereWaveformView = false;
         isThereClusterView = false;
         isThereCorrelationView = false;
@@ -1337,6 +1341,8 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
         break;
     case GROUPING_ASSISTANT_VIEW:
         break;
+    case TEMPLATE_LIBRARY:
+        break;      // a display of its own (the constructor), never added to another
     }
 
     return newViewType;
