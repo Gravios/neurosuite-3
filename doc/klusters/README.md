@@ -121,8 +121,10 @@ Refinement → Sync a feature space to the current spike times when switching to
 it**; each switch then costs one `.fil` pass over the group. Synced files are
 working copies: **Save** writes them, closing without saving discards them,
 and undoing a realignment drops them (re-sync afterwards). A space that cannot
-be synced — no `.pca` basis, or a basis that does not fit the waveforms — is
-reported and keeps its existing files.
+be synced — no `.pca` basis, a basis that does not fit the waveforms, or one
+trained in the other domain (standard vs stderiv) — is reported and keeps its
+existing files. Spaces that read the same `.spk` are synced together, and if
+any one of them cannot be, none of them is.
 
 ### Feature file format (`.fet.<method>.N`)
 
