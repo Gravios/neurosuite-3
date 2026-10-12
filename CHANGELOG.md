@@ -73,7 +73,20 @@ and applies the same row permutation to every `.spk` file, each method's
 `.fet` and every `.clu`/`.clc`; a file shared by several spaces is permuted
 once. It needs a saved document, swaps all files in together
 (rolling back on any failure), and reopens the document. `.eap` membership is
-reported, not reordered.
+reported, not reordered, and any other file naming the group is listed.
+
+**Follow-ups.**
+- NeuroScope sorts each loaded cluster file's spikes by time in memory: its
+  window lookup bisects the times, so an out-of-order `.res` could hide spikes
+  at a window edge. The files are not changed.
+- Realign and nudge apply the session's `sdiffPairs` pattern only when the
+  method token allows it (`_C<n>` or bare `stderiv`; not `_S<n>`), the same
+  rule re-extraction uses.
+- A synced space whose spike times changed since its sync (a later realign or
+  nudge) is marked in the Space box tooltip as needing another sync.
+- Save As drops synced copies on the GUI thread, before the save thread runs.
+- Realign warns when a cluster's own spikes leave time order (correlograms and
+  ISI assume they do not); Sort Spikes by Time repairs it.
 
 **Fix.** A session working copy such as `x.spk.stderiv_C5.7.pending` was read
 as the *standard* method (`custody::methodOf` needs the group as the last

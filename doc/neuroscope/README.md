@@ -105,6 +105,8 @@ Median-filtered, high-pass signal used for spike detection. Loaded automatically
 
 Cluster files are loaded via **File → Load Cluster File(s)…** A cluster file must follow the naming convention `basename.clu.N` or `basename.N.clu` (where N is an integer electrode group number). NeuroScope automatically locates the corresponding `.res.N` (timestamps) and `.spk.N` (waveform snippets) files in the same directory.
 
+The `.res` need not be in time order (Klusters' realign and nudge keep each spike in its own row, so a spike's time may pass a neighbour's): NeuroScope sorts the spikes by time in memory when it loads them, and leaves the files as they are.
+
 ### What gets loaded
 
 | File | Role | Required |
