@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-12 | [Klusters: Shift+H density heatmap over the feature view](#2026-10-12--klusters-shifth-density-heatmap-over-the-feature-view) |
 | 2026-10-12 | [NeuroScope: closing a session no longer deletes or overwrites parameter-file values](#2026-10-12--neuroscope-closing-a-session-no-longer-deletes-or-overwrites-parameter-file-values) |
 | 2026-10-12 | [ndm_plx2dat: Plexon .plx / .pl2 → .dat + .evt with header metadata in the session YAML](#2026-10-12--ndm_plx2dat-plexon-plx--pl2--dat--evt-with-header-metadata-in-the-session-yaml) |
 | 2026-10-12 | [Klusters: sync other feature spaces to the current spike times](#2026-10-12--klusters-sync-other-feature-spaces-to-the-current-spike-times) |
@@ -41,6 +42,21 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-12 — Klusters: Shift+H density heatmap over the feature view
+
+<details>
+<summary>Details</summary>
+
+**Shift+H** toggles a point-density heatmap over the cluster view, in the
+feature scatter, the oblique projection and the t-SNE embedding alike. It
+shows the density of the points the view draws (the shown clusters, with the
+same out-of-scope filter), binned at screen resolution so it follows zoom and
+pan, log-scaled and drawn semi-transparently: dense cores read warm, sparse
+regions stay clear so their points remain visible. The key is rebindable
+(`cluster.densityOverlay`).
+
+</details>
 
 ## 2026-10-12 — NeuroScope: closing a session no longer deletes or overwrites parameter-file values
 
