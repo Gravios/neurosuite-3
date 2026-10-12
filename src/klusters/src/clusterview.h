@@ -141,6 +141,12 @@ public:
     void toggleLineageOverlay();
     bool lineageOverlayActive() const { return lineageOverlay_; }
 
+    /** Toggles the point-density heatmap drawn over the points (Shift+H) -- in the
+     *  feature scatter and in the oblique / t-SNE embeddings alike.  Public because
+     *  the key is dispatched by the application filter. */
+    void toggleDensityOverlay();
+    bool densityOverlayActive() const { return densityOverlay_; }
+
     // ── Input-binding seam (input-remapping plan P0d-4) ──────────────────────
     /** Register ClusterView's resolver-dispatched mouse GESTURES into the one app-wide
      *  registry (called once from KlustersApp::registerInputBindings).  The press
@@ -633,6 +639,20 @@ private:
     // then mapped with worldToViewport every repaint.
     struct LineageNodeDraw { int node; int classId; int parent; bool drift; bool empty; QPoint world; double a; double b; };
     bool                         lineageOverlay_ = false;
+
+    // ── Density heatmap overlay (Shift+H) ──────────────────────────────────────
+    // The density of the points the view draws, binned at screen resolution so it
+    // follows zoom and pan, and drawn semi-transparently over them.  Cached: the
+    // scatter rebuilds it when its buffer is repainted (paintBuffer marks it
+    // dirty); the embedding rebuilds it when the embedding, its bounds or the
+    // widget size change (densityKey_).  Mouse-move repaints reuse the image.
+    bool                         densityOverlay_ = false;
+    bool                         densityDirty_ = true;
+    QImage                       densityImage_;
+    QRect                        densityRect_;   ///< widget rect the image covers
+    QString                      densityKey_;    ///< embedding signature the image was built for
+    void paintDensityOverlay(QPainter& p, bool embedding);   ///< device coordinates
+    void buildDensityImage(const QRect& area, bool embedding);
     int                          lineageActiveClass_ = -1;  ///< the PRIMARY template class (palette ★); -1 = none.
                                                             ///< Drives the waveform band's visibility and gates edit mode.
     std::set<int>                markedNodes_;              ///< node ids marked (edit-mode context menu) for the matrices;

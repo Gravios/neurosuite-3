@@ -796,6 +796,9 @@ void ClusterView::paintTsne(QPainter& painter){
         }
         painter.setPen(Qt::NoPen);
     }
+    // Density heatmap (Shift+H) over the embedded points, under the lasso.
+    if (densityOverlay_)
+        paintDensityOverlay(painter, true);
     if (!selectionPolygon.isEmpty()) {
         // Same overlay as the scatter: the mode's colour and the configured
         // line width, so the polygon tells the curator which action is armed.
@@ -955,6 +958,7 @@ void ClusterView::setupWorldTransform(QPainter& buf){
 }
 
 void ClusterView::paintBuffer(QPainter& painter, DrawContentsMode level){
+    densityDirty_ = true;     // the points changed: the heatmap follows them
     if (level == REDRAW){
         //Reset the variables associated with the polygon on a full redraw.
         selectionPolygon.resize(0);
@@ -984,6 +988,11 @@ void ClusterView::paintBufferDeviceLayer(QPainter& painter){
 }
 
 void ClusterView::paintWidgetOverlays(QPainter& p){
+    // Density heatmap (Shift+H): directly over the points, under the lasso and the
+    // other overlays.
+    if (densityOverlay_)
+        paintDensityOverlay(p, false);
+
     // Computing over the scatter: the first embedding of a selection runs with
     // the feature view still showing, and without this the only sign that F did
     // anything is a status line that scrolls away.
@@ -1016,6 +1025,157 @@ void ClusterView::paintWidgetOverlays(QPainter& p){
     // boundaries over the scatter, repainted every event.
     if (lineageOverlay_)
         paintLineageOverlay(p);
+}
+
+// ── Density heatmap overlay (Shift+H) ────────────────────────────────────────
+
+void ClusterView::toggleDensityOverlay()
+{
+    densityOverlay_ = !densityOverlay_;
+    densityDirty_ = true;
+    densityKey_.clear();
+    densityImage_ = QImage();
+    update();
+}
+
+void ClusterView::paintDensityOverlay(QPainter& p, bool embedding)
+{
+    const QRect area = embedding ? contentsRect() : rect();
+    if (area.width() < 2 || area.height() < 2) return;
+
+    if (embedding) {
+        // The embedding repaints wholesale on every event, so rebuild only when what
+        // it shows changed: the coordinates, their bounds, the widget size, or the
+        // out-of-scope filter.  A strided sample of the coordinates catches a new
+        // embedding that reuses the vector's storage.
+        const int N = static_cast<int>(tsneXY.size() / 2);
+        double probe = 0.0;
+        for (int i = 0; i < N; i += qMax(1, N / 16)) probe += tsneXY[2 * i] + 3.0 * tsneXY[2 * i + 1];
+        const bool gate = projScopeActive();
+        const QString key = QStringLiteral("%1|%2|%3|%4|%5|%6|%7x%8|%9|%10")
+            .arg(N).arg(tsneMinX).arg(tsneMaxX).arg(tsneMinY).arg(tsneMaxY)
+            .arg(probe).arg(area.width()).arg(area.height())
+            .arg(gate).arg(gate && configuration().getProjectionOutOfScopeHidden());
+        if (key != densityKey_ || densityImage_.isNull()) {
+            buildDensityImage(area, true);
+            densityKey_ = key;
+        }
+    } else if (densityDirty_ || densityImage_.isNull() || densityRect_ != area) {
+        buildDensityImage(area, false);
+        densityDirty_ = false;
+    }
+    if (densityImage_.isNull()) return;
+
+    p.save();
+    p.resetTransform();
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    p.drawImage(QRectF(densityRect_), densityImage_);
+    p.restore();
+}
+
+void ClusterView::buildDensityImage(const QRect& area, bool embedding)
+{
+    // Bin the drawn points on a grid of `cell`-pixel squares over `area`, in the
+    // same viewport coordinates the points are drawn at, with the same
+    // out-of-scope filter.
+    constexpr int cell = 2;
+    const int gw = (area.width()  + cell - 1) / cell;
+    const int gh = (area.height() + cell - 1) / cell;
+    std::vector<float> grid(static_cast<size_t>(gw) * gh, 0.0f);
+    auto add = [&](const QPoint& px){
+        const int gx = (px.x() - area.left()) / cell;
+        const int gy = (px.y() - area.top())  / cell;
+        if (gx >= 0 && gx < gw && gy >= 0 && gy < gh)
+            grid[static_cast<size_t>(gy) * gw + gx] += 1.0f;
+    };
+
+    const bool gate    = projScopeActive();
+    const bool hideOOS = gate && configuration().getProjectionOutOfScopeHidden();
+    if (embedding) {
+        const int N = static_cast<int>(tsneXY.size() / 2);
+        for (int i = 0; i < N; ++i) {
+            if (hideOOS && i < tsneRowSpike.size()) {
+                const double t = static_cast<double>(doc.data().featureValue(
+                    static_cast<dataType>(tsneRowSpike.at(i) + 1), timeDimension));
+                if (!spikeTimeInScope(t)) continue;
+            }
+            add(tsneViewportPos(i));
+        }
+    } else {
+        Data& clusteringData = doc.data();
+        for (int clustId : view.clusters()) {
+            Data::Iterator it = clusteringData.iterator(static_cast<dataType>(clustId));
+            for (; it.hasNext(); it.next()) {
+                if (hideOOS && !spikeTimeInScope(
+                        static_cast<double>(it(static_cast<dataType>(timeDimension))))) continue;
+                add(worldToViewport(it(dimensionX, dimensionY)));
+            }
+        }
+    }
+
+    // Separable Gaussian smoothing (sigma 1.5 cells), so isolated spikes read as
+    // soft spots rather than single cells.
+    constexpr int radius = 4;
+    constexpr double sigma = 1.5;
+    float kernel[2 * radius + 1];
+    float ksum = 0.0f;
+    for (int k = -radius; k <= radius; ++k) {
+        kernel[k + radius] = static_cast<float>(std::exp(-0.5 * k * k / (sigma * sigma)));
+        ksum += kernel[k + radius];
+    }
+    for (float& k : kernel) k /= ksum;
+    std::vector<float> tmp(grid.size(), 0.0f);
+    for (int y = 0; y < gh; ++y)
+        for (int x = 0; x < gw; ++x) {
+            float acc = 0.0f;
+            for (int k = -radius; k <= radius; ++k) {
+                const int xx = qBound(0, x + k, gw - 1);
+                acc += kernel[k + radius] * grid[static_cast<size_t>(y) * gw + xx];
+            }
+            tmp[static_cast<size_t>(y) * gw + x] = acc;
+        }
+    float maxD = 0.0f;
+    for (int y = 0; y < gh; ++y)
+        for (int x = 0; x < gw; ++x) {
+            float acc = 0.0f;
+            for (int k = -radius; k <= radius; ++k) {
+                const int yy = qBound(0, y + k, gh - 1);
+                acc += kernel[k + radius] * tmp[static_cast<size_t>(yy) * gw + x];
+            }
+            grid[static_cast<size_t>(y) * gw + x] = acc;
+            maxD = qMax(maxD, acc);
+        }
+
+    densityRect_ = area;
+    if (maxD <= 0.0f) { densityImage_ = QImage(); return; }
+
+    // Log scale: spike densities span orders of magnitude, and a linear map shows
+    // only the densest cluster core.  Colour runs dark purple -> orange -> pale
+    // yellow (an inferno-like ramp); opacity grows with density, so empty and
+    // sparse regions stay clear and their points remain visible.
+    static const QColor stops[] = { QColor(40, 11, 84), QColor(101, 21, 110), QColor(188, 55, 84),
+                                    QColor(249, 142, 9), QColor(252, 255, 164) };
+    constexpr int nStops = 5;
+    const double logMax = std::log1p(static_cast<double>(maxD) * 4.0);
+    densityImage_ = QImage(gw, gh, QImage::Format_ARGB32);
+    for (int y = 0; y < gh; ++y) {
+        QRgb* line = reinterpret_cast<QRgb*>(densityImage_.scanLine(y));   // ARGB32 rows are QRgb
+        for (int x = 0; x < gw; ++x) {
+            const float d = grid[static_cast<size_t>(y) * gw + x];
+            if (d < 1e-3f) { line[x] = qRgba(0, 0, 0, 0); continue; }
+            const double v = std::log1p(static_cast<double>(d) * 4.0) / logMax;   // 0..1
+            const double pos = v * (nStops - 1);
+            const int i0 = qMin(nStops - 2, static_cast<int>(pos));
+            const double f = pos - i0;
+            const QColor& a = stops[i0];
+            const QColor& b = stops[i0 + 1];
+            const int alpha = static_cast<int>(40 + 180 * std::pow(v, 0.8));
+            line[x] = qRgba(static_cast<int>(a.red()   + f * (b.red()   - a.red())),
+                            static_cast<int>(a.green() + f * (b.green() - a.green())),
+                            static_cast<int>(a.blue()  + f * (b.blue()  - a.blue())),
+                            alpha);
+        }
+    }
 }
 
 void ClusterView::setWatershedOverlay(const QImage& img,

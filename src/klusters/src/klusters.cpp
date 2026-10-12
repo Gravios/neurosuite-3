@@ -2673,6 +2673,25 @@ void KlustersApp::registerInputBindings()
         };
         reg.addCommand(c);
     }
+    {   // Shift+H — point-density heatmap over the feature scatter and the oblique /
+        // t-SNE embeddings.  Falls through when there is no cluster view.
+        input::Command c;
+        c.id       = QStringLiteral("cluster.densityOverlay");
+        c.scopeId  = QStringLiteral("view.cluster");
+        c.label    = tr("Density heatmap overlay");
+        c.category = tr("Cluster view");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_H, Qt::ShiftModifier);
+        c.enabled  = [this](const input::Ctx&){ return activeClusterView() != nullptr; };
+        c.invoke   = [this](const input::Ctx&){
+            if(ClusterView* cv = activeClusterView()){
+                cv->toggleDensityOverlay();
+                if(statusBar()) statusBar()->showMessage(cv->densityOverlayActive()
+                    ? tr("Density heatmap on (Shift+H to hide)") : tr("Density heatmap off"), 3000);
+            }
+        };
+        reg.addCommand(c);
+    }
     {   // F — toggle the t-SNE alternate presentation of the selection.  A bare letter,
         // so it is claimed at ShortcutOverride too (tryViewKeyCommand), keeping it from
         // the palette type-ahead.  Falls through when there is no cluster view.
