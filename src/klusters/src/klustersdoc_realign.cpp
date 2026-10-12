@@ -547,9 +547,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // Gap since the previous cluster's realign finished — captures the
     // inter-cluster overhead (the batch worker's per-iteration bookkeeping and
     // clusterDone emit) that is invisible to the in-function timers.
-    const long long _nowStartMs = (long long)
+    const long long _nowStartMs = static_cast<long long>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+            std::chrono::steady_clock::now().time_since_epoch()).count());
     const long long _gapMs =
         (realignPrevEndMs >= 0) ? (_nowStartMs - realignPrevEndMs) : -1;
 
@@ -1349,7 +1349,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                 // mark them as clamped and leave cumShift untouched —
                 // matches the CPU path's "every candidate ran off the
                 // .fil edge" accounting.
-                std::vector<int16_t> rawFrame(
+                std::vector<int16_t> gpuFrame(
                     static_cast<size_t>(nSamp) * totalNbChanP82);
                 for (int64_t i = 0; i < N; ++i) {
                     if (!validRow[static_cast<size_t>(i)]) { ++nClamped; continue; }
@@ -1368,15 +1368,15 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                                         * static_cast<off_t>(totalNbChanP82)
                                         * static_cast<off_t>(sizeof(short));
                     if (fseeko(filFp82, bestOff, SEEK_SET) != 0) continue;
-                    if (fread(rawFrame.data(), sizeof(short),
-                              rawFrame.size(), filFp82)
-                            != rawFrame.size()) continue;
+                    if (fread(gpuFrame.data(), sizeof(short),
+                              gpuFrame.size(), filFp82)
+                            != gpuFrame.size()) continue;
                     int16_t* wTgt = wavBuf.data()
-                        + (ptrdiff_t)i * (ptrdiff_t)spkElems;
+                        + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
                     for (int t = 0; t < nSamp; ++t)
                         for (int ci = 0; ci < nChan; ++ci)
                             wTgt[static_cast<size_t>(ci) * nSamp + t] =
-                                rawFrame[static_cast<size_t>(t) * totalNbChanP82
+                                gpuFrame[static_cast<size_t>(t) * totalNbChanP82
                                        + groupChannelsP82[ci]];
                     if (useStder)
                         neurosuite::core::applyStderivTransform(stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr,
@@ -1396,9 +1396,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             if (!gpuPathRan) {
                 enum class RefineResult { None, Refined, Clamped };
                 auto refineSpike =
-                    [&](int64_t i, FILE* filFp82,
-                        std::vector<int16_t>& rawFrame,
-                        std::vector<int16_t>& candCM) -> RefineResult {
+                    [&](int64_t i, FILE* spikeFp,
+                        std::vector<int16_t>& frameBuf,
+                        std::vector<int16_t>& candBuf) -> RefineResult {
                 const int   curr = cumShift[static_cast<size_t>(i)];
                 const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
                 int bestS = 0;
@@ -1413,23 +1413,23 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     const off_t rawOff = static_cast<off_t>(candStart)
                                        * static_cast<off_t>(totalNbChanP82)
                                        * static_cast<off_t>(sizeof(short));
-                    if (fseeko(filFp82, rawOff, SEEK_SET) != 0) continue;
-                    if (fread(rawFrame.data(), sizeof(short),
-                              rawFrame.size(), filFp82)
-                            != rawFrame.size()) continue;
+                    if (fseeko(spikeFp, rawOff, SEEK_SET) != 0) continue;
+                    if (fread(frameBuf.data(), sizeof(short),
+                              frameBuf.size(), spikeFp)
+                            != frameBuf.size()) continue;
 
                     // Subset to group channels (sample-major in rawFrame
                     // → channel-major for PCA projection).
                     for (int t = 0; t < nSamp; ++t)
                         for (int ci = 0; ci < nChan; ++ci)
-                            candCM[static_cast<size_t>(ci * nSamp + t)] =
-                                rawFrame[static_cast<size_t>(
+                            candBuf[static_cast<size_t>(ci * nSamp + t)] =
+                                frameBuf[static_cast<size_t>(
                                     t * totalNbChanP82 + groupChannelsP82[ci])];
 
                     // Apply stderiv transform in-place if pipeline needs it.
                     // Spatial order from the basis; matches the disk-write block.
                     if (useStder)
-                        neurosuite::core::applyStderivTransform(stderivOrder, candCM.data(), nChan, nSamp, candCM.data(), stderivPartnerPtr,
+                        neurosuite::core::applyStderivTransform(stderivOrder, candBuf.data(), nChan, nSamp, candBuf.data(), stderivPartnerPtr,
                     nullptr, stderivSetOffPtr, stderivSetMemPtr);
 
                     // PCA projection energy — shared primitive in
@@ -1440,7 +1440,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     // sIdx, a no-op here because the loader rejects any basis with
                     // recShift + data2use > nSamp.
                     const double energy = neurosuite::core::pcaProjectionEnergy(
-                        candCM.data(), nChan, nSamp, pcaRef);
+                        candBuf.data(), nChan, nSamp, pcaRef);
                     ++validCandidates;
 
                     if (energy > bestEnergy) {
@@ -1470,16 +1470,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     const off_t bestOff = static_cast<off_t>(bestStart)
                                         * static_cast<off_t>(totalNbChanP82)
                                         * static_cast<off_t>(sizeof(short));
-                    if (fseeko(filFp82, bestOff, SEEK_SET) == 0 &&
-                        fread(rawFrame.data(), sizeof(short),
-                              rawFrame.size(), filFp82) == rawFrame.size()) {
+                    if (fseeko(spikeFp, bestOff, SEEK_SET) == 0 &&
+                        fread(frameBuf.data(), sizeof(short),
+                              frameBuf.size(), spikeFp) == frameBuf.size()) {
                         int16_t* wTgt = wavBuf.data()
                             + static_cast<ptrdiff_t>(i)
                             * static_cast<ptrdiff_t>(spkElems);
                         for (int t = 0; t < nSamp; ++t)
                             for (int ci = 0; ci < nChan; ++ci)
                                 wTgt[static_cast<size_t>(ci * nSamp + t)] =
-                                    rawFrame[static_cast<size_t>(
+                                    frameBuf[static_cast<size_t>(
                                         t * totalNbChanP82
                                       + groupChannelsP82[ci])];
                         if (useStder)
@@ -1826,8 +1826,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // Resolve .fil / .dat path
     QString filPath;
     {
-        const QString base = spkPath.left(spkPath.lastIndexOf(QLatin1Char('.')));
-        const QString noExt = base.left(base.lastIndexOf(QLatin1Char('.')));
+        const QString spkBase = spkPath.left(spkPath.lastIndexOf(QLatin1Char('.')));
+        const QString noExt = spkBase.left(spkBase.lastIndexOf(QLatin1Char('.')));
         if (QFileInfo::exists(noExt + QStringLiteral(".fil")))
             filPath = noExt + QStringLiteral(".fil");
         else
@@ -2186,9 +2186,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     }
     // Record this call's end so the next cluster can report its gap.  Updated
     // unconditionally (cheap) so it is correct regardless of the timing flag.
-    realignPrevEndMs = (long long)
+    realignPrevEndMs = static_cast<long long>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+            std::chrono::steady_clock::now().time_since_epoch()).count());
 
     return true;
 }
@@ -3187,7 +3187,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //   (d) the feature delta is in line with what process_refeaturize_stderiv
     //       would compute for a +1-sample shift of the same spike.
     // The reference computation can be reproduced offline by running:
-    //   process_refeaturize_stderiv -p session.pcaD.G -w nSamp -n (nChan-1) \
+    //   process_refeaturize_stderiv -p session.pcaD.G -w nSamp -n (nChan-1)
     //                                -i one-spike-index session.spkD.G
     // on the .spkD slice corresponding to the nudged spike.
     const bool traceFirst = qEnvironmentVariableIsSet("NS3_VERBOSE");

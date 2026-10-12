@@ -48,15 +48,15 @@ const int CorrelationView::XMARGIN = 10;
 const int CorrelationView::YMARGIN = 0;
 
 
-CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColor& backgroundColor,QStatusBar * statusBar,QWidget* parent,Data::ScaleMode scale,int binSize, int correlationTimeFrame,bool shoulderLine, const char* name,
+CorrelationView::CorrelationView(KlustersDoc& kdoc,KlustersView& kview,const QColor& backgroundColor,QStatusBar * sbar,QWidget* parent,Data::ScaleMode scale,int bin, int correlationTimeFrame,bool shoulder, const char* name,
                                  int minSize, int maxSize, int windowTopLeft ,int windowBottomRight, int border) :
-    ViewWidget(doc,view,backgroundColor,statusBar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border,XMARGIN,YMARGIN),
+    ViewWidget(kdoc,kview,backgroundColor,sbar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border,XMARGIN,YMARGIN),
     scaleMode(scale),
     jobToken(std::make_shared<KlustersJobToken>()),
     dataReady(true),
-    binSize(binSize),
+    binSize(bin),
     timeWindow(correlationTimeFrame),
-    shoulderLine(shoulderLine),
+    shoulderLine(shoulder),
     isZoomed(false),
     goingToDie(false),
     printState(false)
@@ -67,7 +67,7 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
     mode = NONE;
 
     //Set the drawing variables
-    nbBins = (binSize > 0) ? timeWindow / binSize : 0;
+    nbBins = (bin > 0) ? timeWindow / bin : 0;
     binWidth = 100;
     widthBorder = (nbBins * binWidth) / 30;
     heightBorder = 20;
@@ -85,7 +85,7 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
     // fixed ladder topped out at 20 ms, which is 22 marks per side at a 900 ms
     // Duration and 50 at 2000 ms.
     n = cvGridStepMs(timeWindow);
-    int pixelPerTimeWindow = (binSize > 0) ? (timeWindow * binWidth) / binSize : 0;
+    int pixelPerTimeWindow = (bin > 0) ? (timeWindow * binWidth) / bin : 0;
     tickMarkStep = (n > 0 && timeWindow > 0)
         ? static_cast<float>(pixelPerTimeWindow * n) / static_cast<float>(timeWindow)
         : 0.0f;
@@ -104,7 +104,7 @@ CorrelationView::CorrelationView(KlustersDoc& doc,KlustersView& view,const QColo
     ordinateMax = 0;
 
     //Create the pairs for the clusters to show.
-    const QList<int>& shownClusters = view.clusters();
+    const QList<int>& shownClusters = kview.clusters();
     QList<int> clusters;
     for (int id : shownClusters)
         clusters.append(id);
@@ -258,7 +258,7 @@ void CorrelationView::spikesAddedToCluster(int clusterId,bool active){
 QRect CorrelationView::computeViewport(){
     const QRect contentsRec = contentsRect();
     //Set the window (part of the world I want to show)
-    const QRect r((QRect)window);
+    const QRect r(static_cast<QRect>(window));
     //If the border is not visible (the user zoomed without taking it in his selection),
     //the viewport and the contentsRec have the same size.
     if(r.left() != 0)
@@ -618,19 +618,19 @@ void CorrelationView::drawClusterIds(QPainter& painter){
     int clusterIndex = 1;
     int nbClusters = shownClusters.size();
     ItemColors& clusterColors = doc.clusterColors();
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     bool isMargin = true;
     if(r.left() != 0)
         isMargin = false;
 
     for(iterator = shownClusters.begin(); iterator != shownClusters.end(); ++iterator){
         //the abscissa is increase by the font size to adjust for conversion from world coordinates to viewport coordinates.
-        QRect r;
+        QRect rl;
         if(isMargin)
-            r = QRect(worldToViewport(X,-Y).x() + 10,worldToViewport(X,-Y).y() -4 ,worldToViewportWidth(width),10);
+            rl = QRect(worldToViewport(X,-Y).x() + 10,worldToViewport(X,-Y).y() -4 ,worldToViewportWidth(width),10);
         else
-            r = QRect(worldToViewport(X,-Y).x() + 10  - XMARGIN,worldToViewport(X,-Y).y() -4 ,worldToViewportWidth(width),10);
-        painter.drawText(r,Qt::AlignHCenter,QString::fromLatin1("%1").arg(*iterator));
+            rl = QRect(worldToViewport(X,-Y).x() + 10  - XMARGIN,worldToViewport(X,-Y).y() -4 ,worldToViewportWidth(width),10);
+        painter.drawText(rl,Qt::AlignHCenter,QString::fromLatin1("%1").arg(*iterator));
 
         if(shoulderLine){
             QString firingRate;
@@ -686,8 +686,8 @@ void CorrelationView::drawClusterIds(QPainter& painter){
     uint yshift = YsizeForMaxAmp + Yspace;
 
     for(iterator = shownClusters.begin(); iterator != shownClusters.end(); ++iterator){
-        QRect r(worldToViewport(X,-Y).x(),worldToViewport(X,-Y).y(),10,worldToViewportHeight(YsizeForMaxAmp + Yspace));
-        painter.drawText(r,Qt::AlignCenter,QString::fromLatin1("%1").arg(*iterator));
+        QRect rl(worldToViewport(X,-Y).x(),worldToViewport(X,-Y).y(),10,worldToViewportHeight(YsizeForMaxAmp + Yspace));
+        painter.drawText(rl,Qt::AlignCenter,QString::fromLatin1("%1").arg(*iterator));
         Y += yshift;
     }
 }
@@ -810,7 +810,7 @@ void CorrelationView::supersedeRunningThreads(){
 
 void CorrelationView::mouseMoveEvent(QMouseEvent* event){
     //Write the current coordinates in the statusbar.
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     QPoint current;
     if(r.left() != 0)
         current = viewportToWorld(event->position().toPoint().x(),event->position().toPoint().y());
@@ -872,7 +872,7 @@ void CorrelationView::print(QPainter& printPainter,int width,int height, bool wh
 
     //If the left margin is not visible (the user zoomed without taking it in his selection), the viewport and the printer
     //have the same size.
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     if(r.left() != 0)
         viewport = QRect(printPainter.viewport().left(),printPainter.viewport().top(),printPainter.viewport().width(),printPainter.viewport().height() -10 );
     else

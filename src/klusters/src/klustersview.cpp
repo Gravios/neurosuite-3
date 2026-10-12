@@ -65,10 +65,10 @@ const QString KlustersView::DisplayTypeNames[]={QObject::tr("Cluster Display"),
                                                 QObject::tr("Template Library")};
 
 
-KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColor& backgroundColor,int initialDimensionX,int initialDimensionY,
+KlustersView::KlustersView(KlustersApp& app,KlustersDoc& pDoc,const QColor& backgroundColor,int initialDimensionX,int initialDimensionY,
                            QList<int>* initialClusterList, DisplayType type, QWidget *parent, const char* name,QStatusBar * statusBar,int timeInterval,int maxAmplitude,
-                           const QList<int>& positions,bool isTimeFrameMode,long start,long timeFrameWidth,long nbSpkToDisplay,bool overLay,bool mean,
-                           int binSize, int correlationTimeFrame,Data::ScaleMode scale,bool shoulderLine,long startingTime,long duration,bool labelsDisplay,
+                           const QList<int>& positions,bool isTimeFrameMode,long start,long timeFrameWidth,long nbSpk,bool overLay,bool mean,
+                           int bin, int correlationTimeFrame,Data::ScaleMode scale,bool shoulder,long traceStart,long traceDuration,bool showLabels,
                            QList< QList<int>* > undoList, QList< QList<int>* > redoList)
     : DockArea(parent),
       doc(pDoc),
@@ -81,18 +81,18 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
       inTimeFrameMode(isTimeFrameMode),
       timeWindow(timeFrameWidth),
       startTime(start),
-      nbSpkToDisplay(nbSpkToDisplay),
+      nbSpkToDisplay(nbSpk),
       overLayDisplay(overLay),
       meanDisplay(mean),
-      binSize(binSize),
+      binSize(bin),
       correlogramTimeFrame(correlationTimeFrame),
       correlationScale(scale),
-      shoulderLine(shoulderLine),
-      mainWindow(mainWindow),
+      shoulderLine(shoulder),
+      mainWindow(app),
       traceWidget(nullptr),
-      startingTime(startingTime),
-      duration(duration),
-      labelsDisplay(labelsDisplay)
+      startingTime(traceStart),
+      duration(traceDuration),
+      labelsDisplay(showLabels)
 {
     setObjectName(name);
     setAutoFillBackground(true);
@@ -140,7 +140,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereTemplateMatrixView = false;
         isThereTraceView = false;
         mainDock->setWidget(new WaveformView(doc,*this,backgroundColor,maxAmplitude,positions,statusBar,mainDock,
-                                             inTimeFrameMode,startTime,timeWindow,nbSpkToDisplay,overLayDisplay,meanDisplay));
+                                             inTimeFrameMode,startTime,timeWindow,nbSpk,overLayDisplay,meanDisplay));
         mainDock->setWindowTitle(tr("Waveforms"));
 
         currentViewWidget = dynamic_cast<ViewWidget*>(mainDock->widget());
@@ -160,7 +160,7 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         isThereTemplateMatrixView = false;
         isThereTraceView = false;
         mainDock->setWidget(new CorrelationView(doc,*this,backgroundColor,statusBar,mainDock,correlationScale,
-                                                binSize,correlogramTimeFrame,shoulderLine));
+                                                bin,correlogramTimeFrame,shoulder));
         mainDock->setWindowTitle(tr("Auto-correlogram"));
 
         currentViewWidget = dynamic_cast<ViewWidget*>(mainDock->widget());
@@ -215,8 +215,8 @@ KlustersView::KlustersView(KlustersApp& mainWindow,KlustersDoc& pDoc,const QColo
         if(!doc.isTracesProvider()) doc.createProviders();
         QList<int> skippedChannels;
         //the settings are : greyScale, no vertical lines nor rasters and waveforms, no labels displayed, no channel skipped.
-        mainDock->setWidget(new TraceWidget(startingTime,duration,true,*doc.getTraceProvider(),false,false,false,
-                                            true,labelsDisplay,doc.getCurrentChannels(),doc.getGain(),doc.getAcquisitionGain(),doc.channelColors(),
+        mainDock->setWidget(new TraceWidget(traceStart,traceDuration,true,*doc.getTraceProvider(),false,false,false,
+                                            true,showLabels,doc.getCurrentChannels(),doc.getGain(),doc.getAcquisitionGain(),doc.channelColors(),
                                             doc.getDisplayGroupsChannels(),doc.getDisplayChannelsGroups(),offsets,gains,skippedChannels,mainDock,"traces",
                                             backgroundColor,statusBar,5));
         mainDock->setWindowTitle(tr("Traces"));
@@ -1348,11 +1348,11 @@ bool KlustersView::addView(DisplayType displayType, const QColor &backgroundColo
     return newViewType;
 }
 
-void KlustersView::updateDimensions(int dimensionX,int dimensionY){
-    this->dimensionX = dimensionX;
-    this->dimensionY = dimensionY;
+void KlustersView::updateDimensions(int dimX,int dimY){
+    this->dimensionX = dimX;
+    this->dimensionY = dimY;
     //Signal a change to the Widgets
-    emit updatedDimensions(dimensionX,dimensionY);
+    emit updatedDimensions(dimX,dimY);
 }
 
 void KlustersView::syncToolbarDimensions(){

@@ -50,14 +50,14 @@
 const int WaveformView::XMARGIN = 0;
 const int WaveformView::YMARGIN = 0;
 
-WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& backgroundColor,int acquisitionGain,const QList<int>& positions,QStatusBar * statusBar,QWidget* parent,
-                           bool isTimeFrameMode,long start,long timeFrameWidth,long nbSpkToDisplay,
+WaveformView::WaveformView(KlustersDoc& kdoc,KlustersView& kview,const QColor& backgroundColor,int acqGain,const QList<int>& positions,QStatusBar * sbar,QWidget* parent,
+                           bool isTimeFrameMode,long start,long timeFrameWidth,long nbSpk,
                            bool overLay,bool mean, const char* name,int minSize, int maxSize, int windowTopLeft ,int windowBottomRight,
                            int border) :
-    ViewWidget(doc,view,backgroundColor,statusBar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border,XMARGIN,YMARGIN)
-  ,meanPresentation(mean),overLayPresentation(overLay),acquisitionGain(acquisitionGain),
+    ViewWidget(kdoc,kview,backgroundColor,sbar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border,XMARGIN,YMARGIN)
+  ,meanPresentation(mean),overLayPresentation(overLay),acquisitionGain(acqGain),
     jobToken(std::make_shared<KlustersJobToken>()),dataReady(true),
-    nbSpkToDisplay(nbSpkToDisplay),isZoomed(false),goingToDie(false){
+    nbSpkToDisplay(nbSpk),isZoomed(false),goingToDie(false){
 
     //Set the default modes
     mode = NONE;
@@ -67,7 +67,7 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
         presentationMode = SAMPLE;
 
     //Set the drawing variables
-    Data& clusteringData = doc.data();
+    Data& clusteringData = kdoc.data();
     nbSamplesInWaveform = clusteringData.nbOfSampleInWaveform();
     peakPositionInWaveform = clusteringData.positionOfPeakInWaveform();
     nbchannels = clusteringData.nbOfchannels();
@@ -80,7 +80,7 @@ WaveformView::WaveformView(KlustersDoc& doc,KlustersView& view,const QColor& bac
     YsizeForMaxAmp = 100;
     // Ctrl release commits the channel selection; see eventFilter().
     qApp->installEventFilter(this);
-    Yfactor = static_cast<float>(YsizeForMaxAmp)/static_cast<float>(acquisitionGain);
+    Yfactor = static_cast<float>(YsizeForMaxAmp)/static_cast<float>(acqGain);
     gain = 0;
 
     channelPositions.resize(nbchannels);
@@ -533,12 +533,12 @@ void WaveformView::drawWaveforms(QPainter& painter,const QList<int>& clusterList
             for(long i = 0; i < nbOfSpikes; ++i){
                 int x = 0;
                 QPolygon spike(nbchannels * nbSamplesInWaveform);
-                for(int i = 0; i < nbSamplesInWaveform; ++i){
+                for(int sample = 0; sample < nbSamplesInWaveform; ++sample){
                     for(int j = 0; j < nbchannels; ++j){
                         Y = channelBaselineY(j);
                         //The point is drawn in the QT coordinate system where the Y axis in oriented downwards
                         //The value receive from the iterator is already inverted.
-                        spike.setPoint((j*nbSamplesInWaveform) + i, X + x,-Y + static_cast<long>(waveformIterator->nextSpike() * Yfactor));
+                        spike.setPoint((j*nbSamplesInWaveform) + sample, X + x,-Y + static_cast<long>(waveformIterator->nextSpike() * Yfactor));
                     }
                     x += Xstep;
                 }
@@ -1287,7 +1287,7 @@ void WaveformView::drawChannelSelection(QPainter& painter){
     if(pendingChannelSelection.isEmpty()) return;
     // Shade the full width of each selected channel's band.  Drawn before the
     // waveforms so the traces stay on top.
-    const QRect r((QRect)window);
+    const QRect r(static_cast<QRect>(window));
     const int step = channelStep();
     QColor shade = palette().color(backgroundRole()).lightness() > 127
                        ? QColor(0, 0, 0, 30)      // light background -> darken
@@ -1397,7 +1397,7 @@ void WaveformView::print(QPainter& printPainter,int width,int height, bool white
     viewport = QRect(printPainter.viewport().left(),printPainter.viewport().top(),printPainter.viewport().width(),printPainter.viewport().height()-10);
 
     //Set the window (part of the world I want to show)
-    QRect r((QRect)window);
+    QRect r(static_cast<QRect>(window));
     printPainter.setWindow(r.left(),r.top(),r.width()-1,r.height()-1);//hack because Qt QRect is used differently in this function
 
     //Set the viewport (part of the device I want to write on).

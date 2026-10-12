@@ -847,9 +847,9 @@ public Q_SLOTS:
   * @param start starting time.
   * @param duration time window.
   */
-    void setStartAndDuration(long start,long duration){
+    void setStartAndDuration(long start,long dur){
         startingTime = start;
-        this->duration = duration;
+        this->duration = dur;
     }
 
 Q_SIGNALS:

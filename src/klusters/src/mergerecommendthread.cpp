@@ -15,20 +15,20 @@
 
 MergeRecommendThread::MergeRecommendThread(MergeRecommendView& v,
                                            const std::shared_ptr<KlustersJobToken>& viewToken,
-                                           std::vector<MergePair> gated,
-                                           std::vector<int> tplId,
-                                           std::vector<std::vector<double>> tplMean,
-                                           std::vector<std::vector<double>> tplSd,
-                                           int nSamp, int nChan, int maxShift,
-                                           std::size_t maxCount, double qualityFloor,
-                                           std::vector<int> restrictTo)
+                                           std::vector<MergePair> gatedPairs,
+                                           std::vector<int> ids,
+                                           std::vector<std::vector<double>> means,
+                                           std::vector<std::vector<double>> sds,
+                                           int samples, int channels, int shiftMax,
+                                           std::size_t countMax, double minQuality,
+                                           std::vector<int> restrictIds)
     : view(v), token(viewToken),
-      gated(std::move(gated)),
-      tplId(std::move(tplId)),
-      tplMean(std::move(tplMean)), tplSd(std::move(tplSd)),
-      nSamp(nSamp), nChan(nChan), maxShift(maxShift),
-      maxCount(maxCount), qualityFloor(qualityFloor),
-      restrictTo(std::move(restrictTo)),
+      gated(std::move(gatedPairs)),
+      tplId(std::move(ids)),
+      tplMean(std::move(means)), tplSd(std::move(sds)),
+      nSamp(samples), nChan(channels), maxShift(shiftMax),
+      maxCount(countMax), qualityFloor(minQuality),
+      restrictTo(std::move(restrictIds)),
       finished_ok(false)
 {
     setAutoDelete(true);

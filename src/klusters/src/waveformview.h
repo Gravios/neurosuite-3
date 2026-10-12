@@ -218,8 +218,8 @@ public Q_SLOTS:
     /**Sets the initial maximum amplitude of the waveforms.
   * @param gain the new value to set the initial maximum amplitude of the waveforms (before increase or decrease).
  */
-    inline void setGain(int gain){
-        this->acquisitionGain = gain;
+    inline void setGain(int newGain){
+        this->acquisitionGain = newGain;
         this->gain = 0;
         Yfactor = static_cast<float>(YsizeForMaxAmp)/static_cast<float>(acquisitionGain);
 

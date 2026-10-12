@@ -9,17 +9,17 @@
 #include <cmath>
 
 PairXcorrThread::PairXcorrThread(TemplateMatrixView& v,
-                                 int sourceCluster, int targetCluster,
-                                 const std::vector<int>&   sourceFileIdx,
-                                 const std::vector<float>& targetMean,
+                                 int src, int tgt,
+                                 const std::vector<int>&   srcFileIdx,
+                                 const std::vector<float>& tgtMean,
                                  const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
-                                 int nChan, int nSamp, bool twoBytes,
+                                 int channels, int samples, bool twoByte,
                                  const std::shared_ptr<KlustersJobToken>& viewToken)
     : view(v),
-      sourceCluster(sourceCluster), targetCluster(targetCluster),
-      sourceFileIdx(sourceFileIdx), targetMean(targetMean),
-      snapshot(snap), nChan(nChan), nSamp(nSamp),
-      twoBytes(twoBytes), token(viewToken)
+      sourceCluster(src), targetCluster(tgt),
+      sourceFileIdx(srcFileIdx), targetMean(tgtMean),
+      snapshot(snap), nChan(channels), nSamp(samples),
+      twoBytes(twoByte), token(viewToken)
 {
     setAutoDelete(true);
     //The creation of the job launches the request, as the old thread's

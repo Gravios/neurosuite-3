@@ -29,21 +29,21 @@
 ErrorMatrixThread::ErrorMatrixThread(ErrorMatrixView& view,Data& d,
                                      const std::shared_ptr<const Data::ClusteringSnapshot>& snap,
                                      const std::shared_ptr<KlustersJobToken>& viewToken,
-                                     bool incremental, bool verify,
-                                     const Array<double>* prevRaw, const QList<int>& prevRawIds,
-                                     const QList<int>& prevRawSizes, int prevNbDimensions,
-                                     const QSet<int>& changedIds, bool seedOnly,
-                                     std::vector<int> activeDims,
-                                     QList<int> activeClusters)
+                                     bool incr, bool vfy,
+                                     const Array<double>* prevMatrix, const QList<int>& prevIds,
+                                     const QList<int>& prevSizes, int prevDims,
+                                     const QSet<int>& changed, bool seed,
+                                     std::vector<int> dims,
+                                     QList<int> clusterIds)
     : errorMatrixView(view),data(d),token(viewToken),
       snapshot(snap),
       probabilities(nullptr),
-      incremental(incremental),verify(verify),
-      prevRaw(prevRaw),prevRawIds(prevRawIds),prevRawSizes(prevRawSizes),
-      prevNbDimensions(prevNbDimensions),changedIds(changedIds),
+      incremental(incr),verify(vfy),
+      prevRaw(prevMatrix),prevRawIds(prevIds),prevRawSizes(prevSizes),
+      prevNbDimensions(prevDims),changedIds(changed),
       newRaw(nullptr),newRawDims(-1),nbReused(0),usedIncremental(false),
-      seedOnly(seedOnly),activeDims(std::move(activeDims)),
-      activeClusters(std::move(activeClusters)){
+      seedOnly(seed),activeDims(std::move(dims)),
+      activeClusters(std::move(clusterIds)){
     setAutoDelete(true);
     // Restrict the model to the selected channels' feature columns before
     // anything is computed; empty = every dimension, i.e. unchanged.
@@ -61,7 +61,7 @@ ErrorMatrixThread::ErrorMatrixThread(ErrorMatrixView& view,Data& d,
     token->active.fetch_add(1, std::memory_order_acq_rel);
     //A display compute is batch work the user sees land; the seedOnly cache
     //warmer is background work nobody is watching.
-    KlustersJobPool::start(this, seedOnly ? KlustersJobPool::BackgroundPriority
+    KlustersJobPool::start(this, seed ? KlustersJobPool::BackgroundPriority
                                           : KlustersJobPool::BatchPriority);
 }
 

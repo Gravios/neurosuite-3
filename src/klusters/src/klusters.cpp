@@ -3369,8 +3369,8 @@ void KlustersApp::initDisplay(){
             widgetAddToDisplay(KlustersView::TRACES);
             // Now arrange the dock layout — splits the left column
             // vertically and positions the right-hand tabbed frame.
-            if (KlustersView* view = activeView()) {
-                view->applyOverviewLayout();
+            if (KlustersView* overview = activeView()) {
+                overview->applyOverviewLayout();
             }
             // Populate every matrix (slotUpdateErrorMatrix emits the
             // compute signal for all four; Qt drops the ones not open).
@@ -3788,7 +3788,7 @@ void KlustersApp::customEvent (QEvent* event){
     //Event sent by the SaveThread
     if(event->type() == QEvent::User + 100){
         slotStatusMsg(tr("Save file done."));
-        SaveThread::SaveDoneEvent* saveEvent = (SaveThread::SaveDoneEvent*) event;
+        SaveThread::SaveDoneEvent* saveEvent = static_cast<SaveThread::SaveDoneEvent*>(event);
         if(saveEvent->isSaveOk()){
             //The cluster data have been saved to a local temporary file if the original file was a remote one
             //(otherwise the so call temporary file is the orignal one).
@@ -3820,7 +3820,7 @@ void KlustersApp::customEvent (QEvent* event){
     }
     //Event sent by klusterDoc to advice that there is some threads still running.
     if(event->type() == QEvent::User + 400){
-        KlustersDoc::CloseDocumentEvent* closeEvent = (KlustersDoc::CloseDocumentEvent*) event;
+        KlustersDoc::CloseDocumentEvent* closeEvent = static_cast<KlustersDoc::CloseDocumentEvent*>(event);
         QString origin = closeEvent->methodOfOrigin();
 
         //Try to close the document again
@@ -7033,12 +7033,12 @@ void KlustersApp::widgetRemovedFromDisplay(KlustersView::DisplayType displayType
     }
 }
 
-void KlustersApp::updateDimensionSpinBoxes(int dimensionX, int dimensionY){
+void KlustersApp::updateDimensionSpinBoxes(int dimX, int dimY){
     isInit = true; //prevent the spine boxes or the lineedit and the editline to trigger during initialisation
 
     //Update the dimension spine boxes
-    this->dimensionX->setValue(dimensionX);
-    this->dimensionY->setValue(dimensionY);
+    this->dimensionX->setValue(dimX);
+    this->dimensionY->setValue(dimY);
     this->dimensionXAction->setVisible(true);
     this->dimensionYAction->setVisible(true);
     autoNFeaturesLabelAction->setVisible(autoSelectFeatures);
@@ -7063,14 +7063,14 @@ void KlustersApp::slotShowLabels(){
         currentView->showLabelsUpdate(showHideLabels->isChecked());
 }
 
-void KlustersApp::updateCorrelogramViewVariables(int binSize,int timeWindow,bool isShoulderLine, Data::ScaleMode correlationScale){
+void KlustersApp::updateCorrelogramViewVariables(int bin,int corrWindow,bool isShoulderLine, Data::ScaleMode correlationScale){
     isInit = true; //prevent the boxes or menu entry to trigger during initialisation
 
     //Update the boxes
-    this->binSize = binSize;
-    binSizeBox->setText(QString::fromLatin1("%1").arg(binSize));
+    this->binSize = bin;
+    binSizeBox->setText(QString::fromLatin1("%1").arg(bin));
     //timeWindow is the time frame use to compute the correlograms, the lineedit correlogramsHalfDuration contains half of it.
-    correlogramTimeFrame = timeWindow;
+    correlogramTimeFrame = corrWindow;
     //int k = ((static_cast<float>(correlogramTimeFrame) / static_cast<float>(binSize)) - 1) / 2;
     //correlogramsHalfDuration->setText(QString::fromLatin1("%1").arg(k * binSize));
     correlogramsHalfDuration->setText(QString::fromLatin1("%1").arg(static_cast<int>(correlogramTimeFrame / 2)));
@@ -7142,12 +7142,12 @@ void KlustersApp::slotSaveRecentFiles()
 }
 
 /**Informs the active display to present the waveforms for an updated time frame.*/
-void KlustersApp::slotUpdateStartTime(int start)
+void KlustersApp::slotUpdateStartTime(int startMs)
 {
-    NS3_DIAG()<<" void KlustersApp::slotUpdateStartTime(int start)"<<start;
+    NS3_DIAG()<<" void KlustersApp::slotUpdateStartTime(int start)"<<startMs;
     if(!isInit){
-        startTime = start;
-        activeView()->updateTimeFrame(static_cast<long>(start),timeWindow);
+        startTime = startMs;
+        activeView()->updateTimeFrame(static_cast<long>(startMs),timeWindow);
     }
 }
 
