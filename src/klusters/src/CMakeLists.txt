@@ -29,6 +29,7 @@ set(klusters_SRCS
     curationlogger.cpp
     data.cpp
     spkreader.cpp               # shared positioned-read .spk access (worker-pool step 1)
+    spkmemory.cpp               # every .spk of the open group held in memory (SpkMemoryCache)
     klustersjobpool.cpp         # shared worker pool for compute jobs (worker-pool step 2)
     dataprovider.cpp
     dipsplit.cpp

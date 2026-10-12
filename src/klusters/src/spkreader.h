@@ -27,9 +27,11 @@
 #ifndef SPKREADER_H
 #define SPKREADER_H
 
+#include <QByteArray>
 #include <QMutex>
 #include <QString>
 #include <atomic>
+#include <memory>
 
 class SpkReader {
 public:
@@ -53,6 +55,11 @@ public:
     * whatever replaces it later.*/
     void prime() { ensureOpen(); }
 
+    /**Serve reads from @p bytes (the whole file, held in memory by
+    * SpkMemoryCache) instead of the descriptor.  Call once, at install,
+    * before the reader is shared.*/
+    void setMemory(std::shared_ptr<const QByteArray> bytes) { memory = std::move(bytes); }
+
     /**Thread-safe positioned read: @p bytes at @p offset into @p dst.
     * Returns false on open failure (path unset, file missing) or short read;
     * @p dst is unspecified then.  Safe from any number of threads at once.*/
@@ -66,6 +73,7 @@ private:
     QMutex           mutex;          // guards open/close and the path; the
                                      // read path is lock-free once open
     std::atomic<int> fdAtomic{-1};
+    std::shared_ptr<const QByteArray> memory;   // set once at install; read-only after
 };
 
 #endif // SPKREADER_H

@@ -10,6 +10,7 @@
 #else
 #include <QHash>
 #include <cstdio>
+#include <cstring>
 #endif
 
 SpkReader::~SpkReader()
@@ -70,6 +71,11 @@ bool SpkReader::ensureOpen()
 bool SpkReader::read(void* dst, qint64 bytes, qint64 offset)
 {
     if (bytes <= 0 || offset < 0) return false;
+    if (memory) {                                  // the file, held in memory
+        if (offset + bytes > memory->size()) return false;
+        std::memcpy(dst, memory->constData() + offset, static_cast<size_t>(bytes));
+        return true;
+    }
     if (!ensureOpen()) return false;
 #ifdef Q_OS_UNIX
     const int fd = fdAtomic.load(std::memory_order_acquire);

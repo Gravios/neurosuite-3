@@ -2409,9 +2409,13 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
     // applied to disk (even if a later step failed).  Don't replay them.
     pendingRealign.clear();
     //And the overlay with it (epoch-snapshot step 7): the pending file the
-    //readers fall through to holds the same bytes now.
-    if (clusteringData) clusteringData->clearSpkOverlay();
-    if (childData)      childData->clearSpkOverlay();
+    //readers fall through to holds the same bytes now.  A reader holds the
+    //file in memory as it was when installed (SpkMemoryCache), so reinstall
+    //it first -- the rewritten file is read once, and the overlay it still
+    //sees holds the same bytes -- then drop the overlay, so no published
+    //snapshot ever pairs the old bytes with an empty overlay.
+    if (clusteringData) { clusteringData->reopenSpkReader(); clusteringData->clearSpkOverlay(); }
+    if (childData)      { childData->reopenSpkReader();      childData->clearSpkOverlay(); }
 
     // Step 2 — renew.  The commit above copied each pending file OVER its original, so the two are
     // now byte-identical: re-seeding orig -> pending would copy a file onto content that already

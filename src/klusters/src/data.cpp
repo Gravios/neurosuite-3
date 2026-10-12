@@ -22,6 +22,7 @@
  ***************************************************************************/
 //Application include files
 #include "data.h"
+#include "spkmemory.h"
 #include "waveformiou.h"
 #include "binfile.h"
 #include "minmaxthread.h"
@@ -74,9 +75,15 @@ Data::Data()
 void Data::installSpkReader(const QString& path){
     auto reader = std::make_shared<SpkReader>();
     reader->setPath(path);
-    //Eager open binds the reader to the inode behind the path NOW; snapshots
-    //that pin this reader keep this file version across later renames.
-    reader->prime();
+    //The whole file is held in memory (SpkMemoryCache): reads never touch the
+    //disk, and the bytes are this file version's for every snapshot pinning
+    //the reader.  If it cannot be held, fall back to the descriptor: the
+    //eager open binds the reader to the inode behind the path NOW, so
+    //snapshots that pin it keep this file version across later renames.
+    if (std::shared_ptr<const QByteArray> bytes = SpkMemoryCache::instance().get(path))
+        reader->setMemory(std::move(bytes));
+    else
+        reader->prime();
     spkReaderInstance = std::move(reader);
 }
 
