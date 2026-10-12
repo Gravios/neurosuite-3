@@ -297,11 +297,11 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
         featureRowSet.insert(static_cast<dataType>(idx + 1));
 
     QList<int> fromClusters, emptiedClusters;
-        // Supersede in-flight view jobs, without waiting: they read their
-        // captured epoch snapshot, so the swap cannot tear under them (see
-        // groupClusters; epoch-snapshot step 6b).
-        for (KlustersView* view : *viewList)
-            view->supersedeAllViewThreads();
+    // Supersede in-flight view jobs, without waiting: they read their
+    // captured epoch snapshot, so the swap cannot tear under them (see
+    // groupClusters; epoch-snapshot step 6b).
+    for (KlustersView* view : *viewList)
+        view->supersedeAllViewThreads();
     // PARENT-layer edit by design -- see the header: atoms are moved by
     // re-cutting the child layer afterwards, never by naming atom ids here.
     idsBelongTo(parentData(), QList<int>{ fromCluster }, "moveSpikeSubsetToCluster");
@@ -430,11 +430,11 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
                                   : CurationLogger::ActionType::DELETE_ARTEFACT,
                   clustersToDelete);
 
-        // Supersede in-flight view jobs, without waiting: they read their
-        // captured epoch snapshot, so the swap cannot tear under them (see
-        // groupClusters; epoch-snapshot step 6b).
-        for (KlustersView* view : *viewList)
-            view->supersedeAllViewThreads();
+    // Supersede in-flight view jobs, without waiting: they read their
+    // captured epoch snapshot, so the swap cannot tear under them (see
+    // groupClusters; epoch-snapshot step 6b).
+    for (KlustersView* view : *viewList)
+        view->supersedeAllViewThreads();
 
 
     // Child-primary: a delete is a RECLASSIFICATION, in either scope.
@@ -768,11 +768,11 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
         originClusters     = parents;
     }
 
-        // Supersede in-flight view jobs, without waiting: they read their
-        // captured epoch snapshot, so the swap cannot tear under them (see
-        // groupClusters; epoch-snapshot step 6b).
-        for (KlustersView* view : *viewList)
-            view->supersedeAllViewThreads();
+    // Supersede in-flight view jobs, without waiting: they read their
+    // captured epoch snapshot, so the swap cannot tear under them (see
+    // groupClusters; epoch-snapshot step 6b).
+    for (KlustersView* view : *viewList)
+        view->supersedeAllViewThreads();
     // PARENT-layer edit; in child scope originClusters was translated above
     // from the shown atoms to the parents those spikes are actually in.
     idsBelongTo(parentData(), originClusters, "deleteSpikesFromClusters");
@@ -1190,11 +1190,11 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
         logBefore(CurationLogger::ActionType::SPLIT,
                   QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
-        // Supersede in-flight view jobs, without waiting: they read their
-        // captured epoch snapshot, so the swap cannot tear under them (see
-        // groupClusters; epoch-snapshot step 6b).
-        for (KlustersView* view : *viewList)
-            view->supersedeAllViewThreads();
+    // Supersede in-flight view jobs, without waiting: they read their
+    // captured epoch snapshot, so the swap cannot tear under them (see
+    // groupClusters; epoch-snapshot step 6b).
+    for (KlustersView* view : *viewList)
+        view->supersedeAllViewThreads();
     float newClusterId = targetData.createNewCluster(selection,clustersOfOrigin,fromClusters,emptyClusters);
 
     //Check if a new cluster has been created
@@ -1345,11 +1345,11 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
         logBefore(CurationLogger::ActionType::SPLIT_N,
                   QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
-        // Supersede in-flight view jobs, without waiting: they read their
-        // captured epoch snapshot, so the swap cannot tear under them (see
-        // groupClusters; epoch-snapshot step 6b).
-        for (KlustersView* view : *viewList)
-            view->supersedeAllViewThreads();
+    // Supersede in-flight view jobs, without waiting: they read their
+    // captured epoch snapshot, so the swap cannot tear under them (see
+    // groupClusters; epoch-snapshot step 6b).
+    for (KlustersView* view : *viewList)
+        view->supersedeAllViewThreads();
     QMap<int,int> fromToNewClusterIds = targetData.createNewClusters(selection,clustersOfOrigin,emptyClusters);
     newClusters = fromToNewClusterIds.values();
     fromClusters = fromToNewClusterIds.keys();

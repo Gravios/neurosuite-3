@@ -45,8 +45,8 @@ void QPageWidgetPrivate::_k_slotCurrentPageChanged(const QModelIndex &current, c
   if ( before.isValid() )
     beforeItem = model()->item( before );
 
-    Q_Q(QPageWidget);
-    emit q->currentPageChanged(currentItem, beforeItem);
+  Q_Q(QPageWidget);
+  emit q->currentPageChanged(currentItem, beforeItem);
 }
 
 QPageWidget::QPageWidget(QPageWidgetPrivate &dd, QWidget *parent)
@@ -135,7 +135,7 @@ QPageWidgetItem* QPageWidget::currentPage() const
   if ( !index.isValid() )
     return nullptr;
 
-    return d_func()->model()->item(index);
+  return d_func()->model()->item(index);
 }
 
 #include "moc_qpagewidget.cpp"

@@ -127,7 +127,8 @@ double PartitionStrip::xToTime(int x) const
     const int W = width();
     if (W <= 0 || tEnd <= 0.0) return 0.0;
     double t = (static_cast<double>(x) / W) * tEnd;
-    if (t < 0.0) t = 0.0; if (t > tEnd) t = tEnd;
+    if (t < 0.0) t = 0.0;
+    if (t > tEnd) t = tEnd;
     return t;
 }
 int PartitionStrip::timeToX(double t) const

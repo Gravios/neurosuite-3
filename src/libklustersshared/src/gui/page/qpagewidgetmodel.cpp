@@ -513,7 +513,7 @@ void QPageWidgetModel::removePage( QPageWidgetItem *item )
   if ( parentPageItem != d->rootItem )
     index = createIndex( row, 0, parentPageItem );
 
-    beginRemoveRows(index, pageItem->row(), pageItem->row());
+  beginRemoveRows(index, pageItem->row(), pageItem->row());
 
   parentPageItem->removeChild( pageItem->row() );
   delete pageItem;
@@ -540,7 +540,7 @@ QModelIndex QPageWidgetModel::index( const QPageWidgetItem *item ) const
   if ( !item )
     return QModelIndex();
 
-    const PageItem *pageItem = d_func()->rootItem->findChild(item);
+  const PageItem *pageItem = d_func()->rootItem->findChild(item);
   if ( !pageItem ) {
     return QModelIndex();
   }
