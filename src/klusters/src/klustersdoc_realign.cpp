@@ -1729,14 +1729,36 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // i of .res, of every method's .spk/.fet and of the .clu/.clc stays the
     // same spike.  A timestamp may pass another cluster's neighbour; that is
     // harmless.  Per-cluster code (correlograms, ISI, the spike table) reads a
-    // cluster's rows in file order as time order, which still holds: two spikes
-    // of one cluster are a refractory period apart, far beyond maxShift.
+    // cluster's rows in file order as time order, which normally still holds:
+    // two spikes of one cluster are a refractory period apart, far beyond
+    // maxShift.  A contaminated cluster or a raised shift cap can break that,
+    // so it is checked below and reported (Sort Spikes by Time repairs it).
     std::vector<int64_t> newTs(static_cast<size_t>(N));   // = extTs (re-extract window + timestamp)
     std::vector<int64_t> resTs(static_cast<size_t>(N));   // current .res value (seeds extTs + verification)
     for (int64_t i = 0; i < N; ++i) {
         resTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)];
         newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
             + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+    }
+    {
+        // This cluster's spikes in file order: does any now precede the one
+        // before it in time?
+        std::vector<int64_t> byRow(static_cast<size_t>(N));
+        std::iota(byRow.begin(), byRow.end(), int64_t{0});
+        std::sort(byRow.begin(), byRow.end(), [&](int64_t a, int64_t b) {
+            return gidx[static_cast<size_t>(a)] < gidx[static_cast<size_t>(b)];
+        });
+        int64_t nCrossed = 0;
+        for (size_t k = 1; k < byRow.size(); ++k)
+            if (newTs[static_cast<size_t>(byRow[k])] < newTs[static_cast<size_t>(byRow[k - 1])])
+                ++nCrossed;
+        if (nCrossed > 0) {
+            log << "WARNING: " << nCrossed << " spike(s) of this cluster now come before the "
+                   "previous spike of the same cluster in time.  Correlograms and ISI\n"
+                   "         assume each cluster's rows are in time order: run Actions > "
+                   "Sort Spikes by Time after saving.\n";
+            emitFlush();
+        }
     }
 
     // -----------------------------------------------------------------------
