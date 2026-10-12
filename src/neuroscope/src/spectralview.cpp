@@ -83,6 +83,9 @@ SpectralView::SpectralView(TracesProvider& tracesProvider,
             this, &SpectralView::onSettleComputed);
 
     loadSettings();   // restore inspector/render settings over the defaults above
+    pending = params;
+    pendingLockToTrace = lockToTrace;
+    pendingSpan = span;
 
     traceStart = startTime;
     traceWidth = timeFrameWidth;
@@ -130,29 +133,30 @@ void SpectralView::loadSettings()
 
 void SpectralView::saveSettings() const
 {
+    // The staged values: what the inspector shows is what the next session opens with.
     QSettings s;
     s.beginGroup(kSpectralGroup);
-    s.setValue("mode", static_cast<int>(params.mode));
-    s.setValue("singleChannel", params.singleChannel);
-    s.setValue("nw", params.nw);
-    s.setValue("nTapers", params.nTapers);
-    s.setValue("windowSamples", params.windowSamples);
-    s.setValue("nfft", params.nfft);
-    s.setValue("stepSamples", params.stepSamples);
-    s.setValue("freqLow", params.freqLow);
-    s.setValue("freqHigh", params.freqHigh);
-    s.setValue("whiten", params.whiten);
-    s.setValue("car", params.car);
-    s.setValue("refRegress", params.refRegress);
-    s.setValue("refChannel", params.refChannel);
-    s.setValue("decimate", params.decimate);
-    s.setValue("bandLo", params.bandLo);
-    s.setValue("bandHi", params.bandHi);
+    s.setValue("mode", static_cast<int>(pending.mode));
+    s.setValue("singleChannel", pending.singleChannel);
+    s.setValue("nw", pending.nw);
+    s.setValue("nTapers", pending.nTapers);
+    s.setValue("windowSamples", pending.windowSamples);
+    s.setValue("nfft", pending.nfft);
+    s.setValue("stepSamples", pending.stepSamples);
+    s.setValue("freqLow", pending.freqLow);
+    s.setValue("freqHigh", pending.freqHigh);
+    s.setValue("whiten", pending.whiten);
+    s.setValue("car", pending.car);
+    s.setValue("refRegress", pending.refRegress);
+    s.setValue("refChannel", pending.refChannel);
+    s.setValue("decimate", pending.decimate);
+    s.setValue("bandLo", pending.bandLo);
+    s.setValue("bandHi", pending.bandHi);
     s.setValue("colormap", static_cast<int>(colormap));
     s.setValue("autoScale", autoScale);
     s.setValue("dynamicRangeDb", dynamicRangeDb);
-    s.setValue("lockToTrace", lockToTrace);
-    s.setValue("span", static_cast<qlonglong>(span));
+    s.setValue("lockToTrace", pendingLockToTrace);
+    s.setValue("span", static_cast<qlonglong>(pendingSpan));
     s.endGroup();
 }
 
@@ -166,15 +170,28 @@ void SpectralView::displayTimeFrame(long start, long width)
 {
     traceStart = start;
     traceWidth = width;
+    // The file can grow (NeuroScope's auto-forward paging re-reads its length),
+    // and the unlocked window is clamped to it.
+    recordingLength = tracesProvider.recordingLength();
     // A moving window renders the fast preview; the settle timer restarts on
     // every move and triggers the full multitaper once it stops (~200 ms idle).
     // FrequencyAcrossChannels needs no settle - its single compute is the full
-    // estimate - so skip the redundant background pass there.
-    movePreview = true;
+    // estimate - so it is not marked as a preview at all (a stale "preview" flag
+    // left over from that mode used to pin the next mode's image at one taper).
+    movePreview = params.mode != neuroscope::spectral::SpectralMode::FrequencyAcrossChannels;
     ++settleGen;          // invalidates any in-flight background multitaper pass
-    if (params.mode != neuroscope::spectral::SpectralMode::FrequencyAcrossChannels)
+    if (movePreview)
         settleTimer->start(200);
     applyWindow();
+}
+
+void SpectralView::renderMoving()
+{
+    movePreview = params.mode != neuroscope::spectral::SpectralMode::FrequencyAcrossChannels;
+    ++settleGen;
+    if (movePreview)
+        settleTimer->start(200);
+    if (dataReady) { recompute(); update(); }
 }
 
 void SpectralView::applyWindow()
@@ -190,12 +207,16 @@ void SpectralView::applyWindow()
     requestCurrentWindow();
 }
 
+// Setters only stage a change (into pending / pendingLockToTrace / pendingSpan);
+// nothing on screen or in the caches is touched until flushPending() commits it.
+// Previously the setters wrote the live parameters and only deferred the
+// recompute, so the next scroll, settle or band drag applied a half-edited set
+// while "u" was still outstanding, and the title showed values the image was not
+// computed with.
 void SpectralView::scheduleParamUpdate()
 {
-    engine.invalidate();
     paramsDirty = true;
-    ++settleGen;   // a parameter change supersedes any in-flight background pass
-    recent_.clear();   // cached estimates are for the old parameters
+    update();      // the title flags the uncommitted change
     if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
     // else: manual mode — the change waits for commitNow() ("u").
 }
@@ -203,8 +224,7 @@ void SpectralView::scheduleParamUpdate()
 void SpectralView::scheduleWindowUpdate()
 {
     windowDirty = true;
-    ++settleGen;
-    recent_.clear();   // window width may change, invalidating cached window ids
+    update();
     if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
     // else: manual mode — the change waits for commitNow() ("u").
 }
@@ -212,13 +232,36 @@ void SpectralView::scheduleWindowUpdate()
 void SpectralView::flushPending()
 {
     recomputeTimer->stop();
-    if (windowDirty) {
-        windowDirty = false;
-        paramsDirty = false;
+    if (!paramsDirty && !windowDirty) return;
+
+    const bool modeChanged  = pending.mode != params.mode;
+    const bool rangeChanged = pending.freqLow != params.freqLow
+                           || pending.freqHigh != params.freqHigh;
+    const bool windowChanged = windowDirty
+                            || pendingLockToTrace != lockToTrace || pendingSpan != span;
+    pending.bandLo = params.bandLo;     // the band is live (setBand), never staged
+    pending.bandHi = params.bandHi;
+    params = pending;
+    lockToTrace = pendingLockToTrace;
+    span = pendingSpan;
+    paramsDirty = false;
+    windowDirty = false;
+
+    engine.invalidate();
+    recent_.clear();       // cached estimates are for the old parameters / window
+    ++settleGen;           // drop any in-flight pass computed with them
+
+    if (rangeChanged) emit frequencyRangeChanged(params.freqLow, params.freqHigh);
+    if (modeChanged)  emit spectralModeChanged(params.mode);
+
+    // Render as a preview and settle in the background, as a scroll does, rather
+    // than running the full multitaper on the UI thread.
+    if (windowChanged) {
+        movePreview = params.mode != neuroscope::spectral::SpectralMode::FrequencyAcrossChannels;
+        if (movePreview) settleTimer->start(200);
         applyWindow();              // re-derives the window; recompute on dataReady
-    } else if (paramsDirty) {
-        paramsDirty = false;
-        if (dataReady) { recompute(); update(); }
+    } else {
+        renderMoving();
     }
 }
 
@@ -229,8 +272,16 @@ void SpectralView::commitNow()
 
 void SpectralView::setChannels(const QList<int>& chans)
 {
+    // The displayed channels are not an inspector parameter: follow them at once,
+    // as the trace view does.  (They used to wait for "u" -- or leak in on the next
+    // scroll.)  TraceWidget calls this on every show, so an unchanged list must not
+    // throw the cached estimates away; a hidden view only records the list, and
+    // displayTimeFrame() renders it when the view is shown.
+    if (chans == channels) return;
     channels = chans;
-    scheduleParamUpdate();
+    recent_.clear();
+    if (isVisible()) renderMoving();
+    else ++settleGen;
 }
 
 void SpectralView::dataAvailable(Array<dataType>& incoming, QObject* initiator)
@@ -249,12 +300,8 @@ void SpectralView::dataAvailable(Array<dataType>& incoming, QObject* initiator)
                  << "cols=" << data.nbOfColumns() << "movePreview=" << movePreview;
     recompute();
     update();
-
-    // The fresh render already used the current parameters, so cancel any
-    // pending debounced recompute.
-    paramsDirty = false;
-    windowDirty = false;
-    if (recomputeTimer) recomputeTimer->stop();
+    // A staged (uncommitted) change stays staged: this render used the committed
+    // parameters, not the staged ones.
 }
 
 bool SpectralView::buildInput(std::vector<double>& sampleMajor, std::vector<int>& chans,
@@ -292,6 +339,7 @@ void SpectralView::recompute()
         fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
         haveFullScale = true;
         movePreview = false;
+        lastIsPreview = false;
         settleTimer->stop();
         rebuildImage();
         return;
@@ -314,6 +362,9 @@ void SpectralView::recompute()
         params.mode != neuroscope::spectral::SpectralMode::FrequencyAcrossChannels;
     const neuroscope::spectral::SpectralParams& p = preview ? previewParams() : params;
     lastImage = engine.compute(sampleMajor.data(), nSamples, nCh, chans, p, windowId);
+    lastIsPreview = preview && lastImage.valid();
+    // A preview is only ever an interim image: make sure a settle pass follows it.
+    if (preview && !settleTimer->isActive()) settleTimer->start(200);
     if (qEnvironmentVariableIsSet("NS3_VERBOSE"))
         qDebug() << "[spectral] compute" << (preview ? "preview" : "full")
                  << "backend=" << static_cast<int>(p.backend)
@@ -431,6 +482,7 @@ void SpectralView::onSettleComputed()
     fullScaleMin = lastImage.valueMin; fullScaleMax = lastImage.valueMax;
     haveFullScale = true;
     recentPut(pendingWindowId, lastImage);   // settled full estimate is cacheable
+    lastIsPreview = false;
     rebuildImage();
     update();
 }
@@ -479,7 +531,9 @@ void SpectralView::drawAxes(QPainter& painter, const QRect& plot)
     const bool modeB = lastImage.mode == SpectralMode::TimeFrequencySingleChannel;
     QString title = modeB ? tr("time \xC3\x97 frequency") : tr("band power \xC3\x97 channel");
     title += QString(" \xE2\x80\x94 NW=%1 K=%2 win=%3")
-                 .arg(params.nw).arg(params.nTapers).arg(params.windowSamples);
+                 .arg(params.nw).arg(lastIsPreview ? 1 : params.nTapers).arg(params.windowSamples);
+    if (lastIsPreview) title += tr("  (preview)");
+    if (paramsDirty || windowDirty) title += tr("  \xE2\x80\x94 uncommitted changes");
     painter.drawText(plot.left(), plot.top() - 5, title);
 
     // X axis: time in ms across the window.
@@ -526,58 +580,57 @@ void SpectralView::drawAxes(QPainter& painter, const QRect& plot)
 
 void SpectralView::setSpectralMode(SpectralMode mode)
 {
-    params.mode = mode;
-    emit spectralModeChanged(mode);
+    pending.mode = mode;     // spectralModeChanged is emitted when it is committed
     scheduleParamUpdate();
 }
 
 void SpectralView::setWindowSamples(int n)
 {
     if (n < 2) n = 2;
-    params.windowSamples = n;
-    if (params.nfft < n) params.nfft = n;
+    pending.windowSamples = n;
+    if (pending.nfft < n) pending.nfft = n;
     scheduleParamUpdate();
 }
 
 void SpectralView::setNfft(int n)
 {
-    if (n < params.windowSamples) n = params.windowSamples;
-    params.nfft = n;
+    if (n < pending.windowSamples) n = pending.windowSamples;
+    pending.nfft = n;
     scheduleParamUpdate();
 }
 
 void SpectralView::setStep(int s)
 {
     if (s < 1) s = 1;
-    params.stepSamples = s;
+    pending.stepSamples = s;
     scheduleParamUpdate();
 }
 
 void SpectralView::setTimeBandwidth(double nw)
 {
-    params.nw = nw;
+    pending.nw = nw;
     scheduleParamUpdate();
 }
 
 void SpectralView::setNumTapers(int k)
 {
     if (k < 1) k = 1;
-    params.nTapers = k;
+    pending.nTapers = k;
     scheduleParamUpdate();
 }
 
 void SpectralView::setFrequencyRange(double lowHz, double highHz)
 {
-    params.freqLow = lowHz;
-    params.freqHigh = highHz;
-    emit frequencyRangeChanged(lowHz, highHz);
+    pending.freqLow = lowHz;     // frequencyRangeChanged is emitted when committed
+    pending.freqHigh = highHz;
     scheduleParamUpdate();
 }
 
 void SpectralView::setBand(double lowHz, double highHz)
 {
-    params.bandLo = lowHz;
-    params.bandHi = highHz;
+    // Live, not staged: the slider gives immediate feedback on the shown image.
+    params.bandLo = pending.bandLo = lowHz;
+    params.bandHi = pending.bandHi = highHz;
     // The band is now the band-pass filter's pass-band, so re-filter rather than
     // re-integrate a cube. Filtering is cheap, so recompute immediately for live
     // slider feedback; cached estimates are band-specific, so drop them.
@@ -589,37 +642,37 @@ void SpectralView::setBand(double lowHz, double highHz)
 
 void SpectralView::setSingleChannelRow(int row)
 {
-    params.singleChannel = row < 0 ? 0 : row;
+    pending.singleChannel = row < 0 ? 0 : row;
     scheduleParamUpdate();
 }
 
 void SpectralView::setWhitening(bool on)
 {
-    params.whiten = on;
+    pending.whiten = on;
     scheduleParamUpdate();
 }
 
 void SpectralView::setCar(bool on)
 {
-    params.car = on;
+    pending.car = on;
     scheduleParamUpdate();
 }
 
 void SpectralView::setRefRegress(bool on)
 {
-    params.refRegress = on;
+    pending.refRegress = on;
     scheduleParamUpdate();
 }
 
 void SpectralView::setRefChannel(int row)
 {
-    params.refChannel = row < 0 ? 0 : row;
+    pending.refChannel = row < 0 ? 0 : row;
     scheduleParamUpdate();
 }
 
 void SpectralView::setDecimate(bool on)
 {
-    params.decimate = on;
+    pending.decimate = on;
     scheduleParamUpdate();
 }
 
@@ -646,19 +699,19 @@ void SpectralView::setAutoScale(bool on)
 
 void SpectralView::setBackend(SpectralBackend backend)
 {
-    params.backend = backend;
+    pending.backend = backend;
     scheduleParamUpdate();
 }
 
 void SpectralView::setLockToTrace(bool on)
 {
-    lockToTrace = on;
+    pendingLockToTrace = on;
     scheduleWindowUpdate();   // re-derive the window after the debounce / on "u"
 }
 
 void SpectralView::setSpan(long ms)
 {
-    span = ms;
-    if (!lockToTrace)
+    pendingSpan = ms;
+    if (!pendingLockToTrace)
         scheduleWindowUpdate();
 }

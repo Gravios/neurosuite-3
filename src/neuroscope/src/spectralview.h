@@ -40,7 +40,11 @@ public:
     /// Channels (0-based ids) to include, in display order.
     void setChannels(const QList<int>& channels);
 
-    // --- inspector-driven parameters; each recomputes and repaints ---------
+    // --- inspector-driven parameters -----------------------------------------
+    // Each setter stages its value; nothing the view shows changes until the change
+    // is committed ("u", commitNow(), or the debounce delay when one is set).  The
+    // displayed image always matches the committed parameters, so scrolling or a
+    // channel change never applies a half-edited set.
     void setSpectralMode(neuroscope::spectral::SpectralMode mode);
     void setWindowSamples(int n);
     void setNfft(int n);
@@ -75,25 +79,27 @@ public:
     * the trace window. The view re-centres on the current trace centre.*/
     void setSpan(long ms);
 
-    /**Applies any pending parameter/window change now (bound to the "u" key).
-    * With the default manual update mode this is the only thing that triggers a
-    * recompute after an inspector change; with a debounce delay set it also
-    * flushes early.*/
+    /**Commits the staged parameter/window changes now (bound to the "u" key).
+    * With the default manual update mode this is the only thing that applies an
+    * inspector change; with a debounce delay set it also flushes early.*/
     void commitNow();
 
     /**Debounce delay (ms) before a parameter change is applied. 0 (the default)
     * means manual: changes are held until the user presses "u" (commitNow).*/
     void setUpdateDelay(int ms) { recomputeDelayMs = ms < 0 ? 0 : ms; }
 
-    const neuroscope::spectral::SpectralParams& spectralParams() const { return params; }
+    /// The staged parameters -- what the inspector controls show.  The image on
+    /// screen was computed with the committed set, which equals this one unless a
+    /// change is waiting for commitNow().
+    const neuroscope::spectral::SpectralParams& spectralParams() const { return pending; }
 
     // Display-state accessors (not part of SpectralParams) so a shared
     // inspector can reload its controls when it is retargeted to this view.
     neuroscope::spectral::Colormap colormapValue() const { return colormap; }
     double dynamicRange() const { return dynamicRangeDb; }
     bool   isAutoScale() const { return autoScale; }
-    bool   isLockedToTrace() const { return lockToTrace; }
-    long   spanMs() const { return span; }
+    bool   isLockedToTrace() const { return pendingLockToTrace; }
+    long   spanMs() const { return pendingSpan; }
 
 public Q_SLOTS:
     void dataAvailable(Array<dataType>& data, QObject* initiator);
@@ -116,6 +122,9 @@ private:
     void rebuildImage();       // SpectralImage -> QImage
     void drawAxes(QPainter& painter, const QRect& plot);
 
+    // Renders the current window as a moving-window preview (single taper) and
+    // arms the settle pass, or as the full estimate for modes with no preview.
+    void renderMoving();
     // Debounced application of inspector changes: setters mark what is dirty and
     // (re)start a short timer; flushPending() applies once when it fires or when
     // the user presses "u" (commitNow). Avoids recomputing on every keystroke.
@@ -164,7 +173,11 @@ private:
     bool dataReady = false;
 
     neuroscope::spectral::SpectralEngine engine;
-    neuroscope::spectral::SpectralParams params;
+    neuroscope::spectral::SpectralParams params;    // committed: what is computed
+    neuroscope::spectral::SpectralParams pending;   // staged by the inspector
+    bool pendingLockToTrace = true;
+    long pendingSpan = 0;
+    bool lastIsPreview = false;  // the image on screen is the single-taper preview
     neuroscope::spectral::SpectralImage lastImage;
     neuroscope::spectral::Colormap colormap = neuroscope::spectral::Colormap::Viridis;
     double dynamicRangeDb = 60.0;
