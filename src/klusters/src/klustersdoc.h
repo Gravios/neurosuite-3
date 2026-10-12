@@ -195,7 +195,10 @@ public:
     bool isStderivSession() const
         { // The LOADED space decides (a borrowed standard space is not stderiv
           // even when the .clu is).
-          const QString& spk = isBorrowedSpace() ? activeSpkPath : origSpkPath;
+          // (Strip a ".pending" working-copy suffix first: methodOf needs the
+          // group as the last token.)
+          const QString& path = isBorrowedSpace() ? activeSpkPath : origSpkPath;
+          const QString spk = path.endsWith(QStringLiteral(".pending")) ? path.chopped(8) : path;
           return neurosuite::custody::isStderivMethod(
                      neurosuite::custody::methodOf(spk.toStdString()))
               || spk.contains(QStringLiteral(".spkD.")); }

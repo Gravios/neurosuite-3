@@ -29,8 +29,14 @@ namespace klustersdoc_internal {
 
 // Extract the method token from a per-group path <base>.<type>.<method>.<group>;
 // returns "standard" for an untagged legacy name (or anything unparseable).
+// A session's ".pending" working copy names the same method: custody::methodOf
+// requires the group to be the LAST token, so it returns "" for
+// "x.spk.stderiv_C5.7.pending" -- which read a stderiv pending .spk as standard
+// (re-extract-on-save rebuilt it raw).  Strip the suffix first.
 inline QString featureMethod(const QString& path) {
-    const std::string m = neurosuite::custody::methodOf(path.toStdString());
+    static const QString pendingSuffix = QStringLiteral(".pending");
+    const QString p = path.endsWith(pendingSuffix) ? path.chopped(pendingSuffix.size()) : path;
+    const std::string m = neurosuite::custody::methodOf(p.toStdString());
     return m.empty() ? QStringLiteral("standard") : QString::fromStdString(m);
 }
 
