@@ -82,7 +82,10 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
     // failed sync still switches (to the space's current files) and says why.
     QString syncLog;
     bool syncFailed = false;
-    if (configuration().getSyncFeatureSpaceOnSwitch() && method != doc->cluMethod()) {
+    // Not while a realignment is pending: the switch refuses then, so a sync
+    // would be wasted work (switchFeatureSpace says why).
+    if (configuration().getSyncFeatureSpaceOnSwitch() && method != doc->cluMethod()
+        && !doc->hasPendingRealign()) {
         slotStatusMsg(tr("Syncing the %1 feature space to the current spike times…").arg(method));
         QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         syncFailed = !doc->syncFeatureSpace(method, syncLog);
