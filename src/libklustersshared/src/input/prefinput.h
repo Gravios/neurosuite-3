@@ -55,6 +55,8 @@ private:
         ButtonChordEdit*  buttonEdit = nullptr;   // button commands
         WheelChordEdit*   wheelEdit  = nullptr;   // wheel commands
         QLabel*           fixed      = nullptr;   // any other device (read-only fallback)
+        QToolButton*      section      = nullptr; // the collapsible section holding the row
+        QToolButton*      scopeSection = nullptr; // and its scope's
     };
 
     void build();                ///< construct the UI from the registry (once, in the ctor)
@@ -76,6 +78,7 @@ private:
 
     input::InputPrefsStore& store_;   ///< the app's persistence seam (binding overrides + profiles)
     QList<Row> rows_;
+    QList<QToolButton*> sectionToggles_;   ///< every collapsible section's header (Expand / Collapse all)
 
     QComboBox*  profileCombo_   = nullptr;
     QToolButton* applyProfileBtn_ = nullptr;

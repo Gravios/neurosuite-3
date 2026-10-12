@@ -16,6 +16,8 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QVBoxLayout>
+
+#include <utility>
 #include <QHBoxLayout>
 #include <QScrollArea>
 #include <QFrame>
@@ -189,9 +191,57 @@ void PrefInput::build()
         tr("Editable keyboard shortcuts and mouse buttons / wheel.  For a key, click the "
            "field and press the new combination; for a mouse button or wheel, choose it and "
            "its modifiers.  Reset restores the shipped default.  Fields that clash within "
-           "the same context are highlighted."), body);
+           "the same context are highlighted, and their section opens."), body);
     intro->setWordWrap(true);
     v->addWidget(intro);
+
+    // Every scope and category is a collapsible section: a header that shows or
+    // hides its rows.  Scopes start open, categories closed, so the page opens
+    // as a short outline.
+    {
+        auto* bar = new QHBoxLayout;
+        auto* expandAll   = new QToolButton(body);
+        auto* collapseAll = new QToolButton(body);
+        expandAll->setText(tr("Expand all"));
+        collapseAll->setText(tr("Collapse all"));
+        connect(expandAll, &QToolButton::clicked, this, [this]{
+            for (QToolButton* t : sectionToggles_) t->setChecked(true);
+        });
+        connect(collapseAll, &QToolButton::clicked, this, [this]{
+            for (QToolButton* t : sectionToggles_) t->setChecked(false);
+        });
+        bar->addWidget(expandAll);
+        bar->addWidget(collapseAll);
+        bar->addStretch(1);
+        v->addLayout(bar);
+    }
+    auto makeSection = [this, body](QVBoxLayout* parentLayout, const QString& title, bool scope,
+                                    bool expanded) {
+        auto* toggle = new QToolButton(body);
+        toggle->setText(title);
+        toggle->setCheckable(true);
+        toggle->setChecked(expanded);
+        toggle->setAutoRaise(true);
+        toggle->setStyleSheet(QStringLiteral("QToolButton { border: none; padding: 2px; }"));   // a header, not a button
+        toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        toggle->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+        QFont tf = toggle->font();
+        tf.setBold(scope);
+        tf.setItalic(!scope);
+        toggle->setFont(tf);
+        auto* content = new QWidget(body);
+        auto* contentLayout = new QVBoxLayout(content);
+        contentLayout->setContentsMargins(16, 0, 0, scope ? 6 : 2);
+        content->setVisible(expanded);
+        connect(toggle, &QToolButton::toggled, this, [toggle, content](bool on){
+            toggle->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
+            content->setVisible(on);
+        });
+        parentLayout->addWidget(toggle);
+        parentLayout->addWidget(content);
+        sectionToggles_.append(toggle);
+        return std::make_pair(toggle, contentLayout);
+    };
 
     // Iterate the registry in scope-registration order; within a scope, group the
     // commands by category (then label).  Headers are drawn for each scope + category
@@ -208,30 +258,35 @@ void PrefInput::build()
             return a->label < b->label;
         });
 
-        auto* scopeHdr = new QLabel(tr("Scope: %1").arg(s.id), body);
-        QFont f = scopeHdr->font(); f.setBold(true); scopeHdr->setFont(f);
-        scopeHdr->setContentsMargins(0, 8, 0, 0);
-        v->addWidget(scopeHdr);
+        const auto scopeSection = makeSection(v, tr("Scope: %1").arg(s.id), /*scope*/ true,
+                                              /*expanded*/ true);
+        QToolButton* section       = scopeSection.first;
+        QVBoxLayout* sectionLayout = scopeSection.second;
 
         QString lastCategory;
         for (const Command* c : cmds) {
             if (c->category != lastCategory) {
                 lastCategory = c->category;
                 if (!lastCategory.isEmpty()) {
-                    auto* catHdr = new QLabel(QStringLiteral("  ") + lastCategory, body);
-                    catHdr->setContentsMargins(0, 4, 0, 0);
-                    QFont cf = catHdr->font(); cf.setItalic(true); catHdr->setFont(cf);
-                    v->addWidget(catHdr);
+                    const auto cat = makeSection(scopeSection.second, lastCategory,
+                                                 /*scope*/ false, /*expanded*/ false);
+                    section       = cat.first;
+                    sectionLayout = cat.second;
+                } else {
+                    section       = scopeSection.first;
+                    sectionLayout = scopeSection.second;
                 }
             }
 
             auto* rowLayout = new QHBoxLayout;
-            auto* nameLabel = new QLabel(QStringLiteral("    ") + c->label, body);
+            auto* nameLabel = new QLabel(c->label, body);
             nameLabel->setMinimumWidth(240);
             rowLayout->addWidget(nameLabel);
             rowLayout->addStretch(1);
 
             Row row;
+            row.section      = section;
+            row.scopeSection = scopeSection.first;
             row.commandId    = c->id;
             row.scopeId      = c->scopeId;
             row.defaultChord = c->defaultChord;
@@ -309,7 +364,7 @@ void PrefInput::build()
                 });
             }
 
-            v->addLayout(rowLayout);
+            sectionLayout->addLayout(rowLayout);
             rows_.append(row);
         }
     }
@@ -419,6 +474,11 @@ void PrefInput::recomputeConflicts()
             r.buttonEdit->setConflict(conflicted[i]);
         } else if (r.wheelEdit) {
             r.wheelEdit->setConflict(conflicted[i]);
+        }
+        // A clash must never sit unseen in a closed section.
+        if (conflicted[i]) {
+            if (r.scopeSection) r.scopeSection->setChecked(true);
+            if (r.section)      r.section->setChecked(true);
         }
     }
 }
