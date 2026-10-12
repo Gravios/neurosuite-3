@@ -1588,8 +1588,9 @@ public:
      *  Reads the saved files, so the document must be saved first. */
     bool planTimeSort(TimeSortPlan& plan, QString& errorInformation) const;
     /** Apply @p plan: write each file with its rows in time order, then swap all
-     *  of them in; on any failure every file is left as it was.  The open
-     *  document still holds the old order: reopen it afterwards. */
+     *  of them in; on any failure every file is left as it was (or the log
+     *  names any original a failed rollback left as .timesort.bak).  Uses only
+     *  @p plan, so the caller closes the document first and reopens it after. */
     bool applyTimeSort(const TimeSortPlan& plan, QString& logOut);
 
     /** Discards the most recent pending realignment and restores the

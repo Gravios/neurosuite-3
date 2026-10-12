@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <numeric>
+#include <stdexcept>
 #include <sys/types.h>
 #include <vector>
 
@@ -46,11 +47,11 @@ bool isPerSpikeType(const std::string& t)
     return t == "res" || t == "spk" || t == "fet" || t == "clu" || t == "clc";
 }
 
-/// Per-group types that are not per spike: a basis, a model, colours, a log,
+/// Per-group types that are not per spike: a basis, a model, a log,
 /// child-cluster properties, and the template library's per-template files.
 bool isPerClusterType(const QString& t)
 {
-    static const QStringList types{ "pca", "model", "col", "klg",
+    static const QStringList types{ "pca", "model", "klg",
                                     "clp", "tcl", "wti", "wtf", "wtl" };
     return types.contains(t);
 }
@@ -143,7 +144,20 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
             if (!isWorkingCopySuffix(name.mid(eapPrefix.size()))) plan.notReordered << name;
             continue;
         }
-        const neurosuite::custody::Anchor a = neurosuite::custody::parseAnchor(name.toStdString());
+        neurosuite::custody::Anchor a;
+        try {
+            a = neurosuite::custody::parseAnchor(name.toStdString());
+        } catch (const std::exception&) {
+            continue;                                 // a group-like token out of int range: not ours
+        }
+        // The decollide collision sidecar (.col) holds a spike index per record:
+        // row-indexed, and owned by decollide, like .eap.
+        if (a.ok && a.group == group && a.type == "col"
+            && QString::fromStdString(a.base) == baseName
+            && !isWorkingCopySuffix(QString::fromStdString(a.suffix))) {
+            plan.notReordered << name;
+            continue;
+        }
         const bool ours = a.ok && a.group == group && QString::fromStdString(a.base) == baseName;
         if (ours && isWorkingCopySuffix(QString::fromStdString(a.suffix)))
             continue;
@@ -181,8 +195,11 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
                 fits = size == 4 + n * f.record;
             }
         } else if (a.type == "spk") {
-            f.record = size / n;                      // nChan * nSamp * int16
-            fits = size > 0 && size % n == 0;
+            // This group's record size: a stage file with extra rows must not
+            // be split at a guessed width.
+            f.record = static_cast<qint64>(clusteringData->nbOfChannels())
+                     * clusteringData->nbSamplesPerWaveform() * 2;     // int16 samples
+            fits = f.record > 0 && size == n * f.record;
         }
         if (fits) plan.files.push_back(f);
         else      plan.skipped << name;
@@ -214,6 +231,7 @@ bool KlustersDoc::applyTimeSort(const TimeSortPlan& plan, QString& logOut)
     // ── 2. Swap them all in; any failure puts every original back ─────────
     auto local = [](const QString& p) { return p.toLocal8Bit(); };
     std::vector<size_t> swapped;
+    QStringList stranded;                         // originals a failed rollback left as .bak
     bool ok = true;
     for (size_t i = 0; ok && i < plan.files.size(); ++i) {
         const QString& path = plan.files[i].path;
@@ -221,7 +239,8 @@ bool KlustersDoc::applyTimeSort(const TimeSortPlan& plan, QString& logOut)
         QFile::remove(bak);
         if (std::rename(local(path).constData(), local(bak).constData()) != 0) { ok = false; break; }
         if (std::rename(local(tmps[i]).constData(), local(path).constData()) != 0) {
-            std::rename(local(bak).constData(), local(path).constData());
+            if (std::rename(local(bak).constData(), local(path).constData()) != 0)
+                stranded << QFileInfo(bak).fileName();
             ok = false;
             break;
         }
@@ -230,11 +249,18 @@ bool KlustersDoc::applyTimeSort(const TimeSortPlan& plan, QString& logOut)
     if (!ok) {
         for (auto it = swapped.rbegin(); it != swapped.rend(); ++it) {
             const QString& path = plan.files[*it].path;
+            const QString  bak  = path + QStringLiteral(".timesort.bak");
             QFile::remove(path);
-            std::rename(local(path + QStringLiteral(".timesort.bak")).constData(),
-                        local(path).constData());
+            if (std::rename(local(bak).constData(), local(path).constData()) != 0)
+                stranded << QFileInfo(bak).fileName();
         }
         dropTmps();
+        if (!stranded.isEmpty()) {
+            log << tr("Replacing the files failed, and these originals could not be put back; "
+                      "rename each to drop \".timesort.bak\" before opening the session:")
+                << "\n  " << stranded.join(QStringLiteral("\n  ")) << "\n";
+            return false;
+        }
         log << tr("Replacing the files failed; every file was put back as it was.") << "\n";
         return false;
     }

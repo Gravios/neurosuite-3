@@ -125,8 +125,10 @@ method's `.fet`, and every `.clu` and `.clc` (stage-tagged copies too). A file
 shared by several spaces — the one `.res`, or the `.spk.stderiv_C5` that
 `stderiv_C5_D34` also reads — is one file and is permuted once. It works on the saved files, so save
 first; it then reopens the document, which clears undo history. A file without
-the group's spike count is left as is, and an `.eap` template-class file is
-listed as not reordered (regenerate it). All files are written first and
+the group's spike count is left as is, and an `.eap` template-class file or a
+`.col` decollide sidecar is listed as not reordered (regenerate it). The sort
+closes the document, rewrites the files, and opens it again; if the document
+cannot be closed yet, nothing is sorted. All files are written first and
 swapped in together; if anything fails, every file is left as it was.
 
 **Keeping spaces in sync.** Realign and nudge rewrite only the `.clu` space's

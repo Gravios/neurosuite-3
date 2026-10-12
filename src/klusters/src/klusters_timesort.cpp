@@ -76,18 +76,28 @@ void KlustersApp::slotSortSpikesByTime()
     box.setDefaultButton(QMessageBox::Cancel);
     if (box.exec() != QMessageBox::Ok) return;
 
-    // Nothing may read the files while they are swapped.
-    for (KlustersView* v : doc->viewListCopy())
-        if (v) v->stopAllViewThreads();
+    // Close first: nothing then reads the files while they are swapped, and no
+    // open document is left holding the old row order (whose working copies a
+    // later Save would copy back over the sorted files).  A close that does
+    // not complete (a job still stopping) sorts nothing.
+    const QString url = doc->url();
+    slotFileClose();
+    if (mainDock) {
+        statusBar()->showMessage(tr("The document could not be closed yet, so nothing was "
+                                    "sorted.  Try again in a moment."), 8000);
+        return;
+    }
 
     QString log;
     QApplication::setOverrideCursor(Qt::WaitCursor);
     slotStatusMsg(tr("Sorting spikes by time…"));
-    const bool ok = doc->applyTimeSort(plan, log);
+    const bool ok = doc->applyTimeSort(plan, log);   // works on the plan's files only
     QApplication::restoreOverrideCursor();
-    if (!ok) {
+
+    openDocumentFile(url);
+    if (!ok)
         QMessageBox::warning(this, tr("Sort Spikes by Time"), log.trimmed());
-        return;
-    }
-    reopenCurrentDocument(tr("sorting spikes by time"));
+    else
+        statusBar()->showMessage(tr("Spikes sorted by time; \"%1\" reopened.")
+                                     .arg(QFileInfo(url).fileName()), 6000);
 }
