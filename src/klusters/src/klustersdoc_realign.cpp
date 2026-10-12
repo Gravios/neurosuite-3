@@ -3723,7 +3723,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 // sample-major, write.  A "standard" .spk is raw (no transform); a "stderiv" .spk
 // uses the spatial order carried by the PCAE basis, overridden to the custom
 // per-channel operator when the session carries an sdiffPairs pattern (same rule
-// as realignSpikes / nudgeClusterTimestamps).  Writes a temp file + rename so a
+// as realignSpikes / nudgeClusterTimestamps) -- unless the .spk's token names a
+// plain order ("_S<n>"), which the pattern must not override.  Writes a temp file + rename so a
 // crash can never leave a half-written .spk.
 // ─────────────────────────────────────────────────────────────────────────────
 bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut)
@@ -3783,7 +3784,16 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
             && neurosuite::core::loadPca(pcaPath.toStdString(), pca)
             && neurosuite::core::hasTemporalDiff(pca.method))
             order = neurosuite::core::spatialOrder(pca.method);
-        const SdiffPattern sp = readSdiffPattern(parameterFile, grpId, nChan, totalNbChan);
+        // The token says whether the session's custom pattern applies: "_C"
+        // (stderiv_C5) was built with it, "_S" (stderiv_S3) with a plain order
+        // the basis carries.  A bare legacy "stderiv" token cannot say, and its
+        // basis reports all-pairs even when a pattern was used, so it follows
+        // the session as before.
+        const bool plainOrder =
+            neurosuite::custody::parseMethodToken(spkMethod.toStdString()).kind == 'S';
+        const SdiffPattern sp = plainOrder
+            ? SdiffPattern{}
+            : readSdiffPattern(parameterFile, grpId, nChan, totalNbChan);
         if (sp.applied) {
             partner = sp.partner; setOff = sp.setOff; setMem = sp.setMem;
             order   = sp.order;
