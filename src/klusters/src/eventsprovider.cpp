@@ -145,6 +145,7 @@ int EventsProvider::loadData(){
     descriptionLength = qMax(descriptionLength,2);
 
     //Initialize the variables
+    nbEvents = nbEventsRead;    //the request path returns early while this is 0
     previousStartTime = 0;
     previousStartIndex = 1;
     previousEndIndex = nbEventsRead;
