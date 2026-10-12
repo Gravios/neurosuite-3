@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-12 | [ndm_plx2dat: Plexon .plx / .pl2 → .dat with header metadata in the session YAML](#2026-10-12--ndm_plx2dat-plexon-plx--pl2--dat-with-header-metadata-in-the-session-yaml) |
 | 2026-10-12 | [Klusters: sync other feature spaces to the current spike times](#2026-10-12--klusters-sync-other-feature-spaces-to-the-current-spike-times) |
 | 2026-10-11 | [Klusters: view one .clu through another method's feature space; spikes never change order](#2026-10-11--klusters-view-one-clu-through-another-methods-feature-space-spikes-never-change-order) |
 | 2026-10-10 | [Input-binding overhaul completed across Klusters and NeuroScope; Qt 6.4–6.12 compatibility; documentation](#2026-10-10--input-binding-overhaul-completed-across-klusters-and-neuroscope-qt-64612-compatibility-documentation) |
@@ -39,6 +40,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-12 — ndm_plx2dat: Plexon .plx / .pl2 → .dat with header metadata in the session YAML
+
+<details>
+<summary>Details</summary>
+
+New acquisition converter for Plexon recordings, both containers (detected
+from the file signature). **`process_plxconvert`** (C++20, no dependencies)
+exports one continuous stream — `WB` by default; `stream` / `channels` pick
+another or a subset — as raw int16 counts into `SESSION.dat`, and writes the
+Plexon header metadata to `SESSION.plexon.yaml`; **`process_plxyaml.py`**
+merges it into the session YAML (`acquisitionSystem` from the Plexon gain,
+`generalInfo` date/description when empty, and a `sourceRecording` block:
+headers, per-channel names / sources / µV per count, the `.dat` time origin
+and pauses, spike- and event-channel summaries, OmniPlex filter settings,
+findings). The timeline is rebuilt from block timestamps, so a paused
+recording keeps its time base (gaps zero-filled and listed) and the `.dat`
+stays aligned with Plexon's spike and event timestamps; channels without
+data are kept as zero channels so channel numbering survives.
+
+PLX follows Plexon.h as read by python-neo; PL2 follows OpenReadout's
+clean-room notes (Plexon publishes no PL2 specification), so every run
+checks internal consistency and reports failures under
+`sourceRecording.findings`. Throughput on a 2-core VM: 0.8 s for a 330 MB
+PLX of 1.5 M blocks, 0.6 s for a 300 MB PL2. Test:
+`src/ndmanager-plugins/test/test_plx2dat.py` (synthetic files from an
+independent encoder; set `PROCESS_PLXCONVERT_BIN`). Reference:
+`doc/ndmanager-plugins/commands/ndm_plx2dat.md`.
+
+</details>
 
 ## 2026-10-12 — Klusters: sync other feature spaces to the current spike times
 

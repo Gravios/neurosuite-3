@@ -2,6 +2,9 @@
 
 Short utilities for format conversion scripts.  Each is invoked with the session YAML or basename as its single argument.
 
+AlphaOmega and Plexon recordings have their own pages:
+[`ndm_aom2dat`](ndm_aom2dat.md) and [`ndm_plx2dat`](ndm_plx2dat.md).
+
 ---
 
 ## `ndm_ncs2dat` — Neuralynx `.ncs` → `.dat`

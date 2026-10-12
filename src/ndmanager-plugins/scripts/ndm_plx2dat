@@ -1,0 +1,109 @@
+#!/bin/bash
+
+#////////////////////////////////////////////////////////////////////////////
+#//
+#//   Convert a Plexon recording (.plx or .pl2) to .dat
+#//
+#//   Writes SESSION.dat (raw int16 counts of one continuous stream,
+#//   interleaved, sample-major) and records everything readable from the
+#//   Plexon headers in the session YAML:
+#//     - acquisitionSystem   nChannels, samplingRate, voltageRange /
+#//                           amplification (from the Plexon gain), plus
+#//                           bitResolution_uV, nSamples, duration_s
+#//     - generalInfo         date and description, only when still empty
+#//     - sourceRecording     file header, per-channel names / scales /
+#//                           sources, the .dat time origin and pauses,
+#//                           spike- and event-channel summaries, OmniPlex
+#//                           device (filter) settings, and any problems found
+#//   The same sourceRecording block also goes to SESSION.plexon.yaml, which
+#//   survives a save from ndmanager (ndmanager rewrites the session YAML
+#//   from its own model and drops blocks it does not know).
+#//
+#//   Does NOT write anatomical or spike-detection groups — use
+#//   ndm_setupgroups or the Probes tab in ndmanager after conversion.
+#//
+#//   Backed by process_plxconvert (C++, no dependencies: parses the file,
+#//   writes the .dat and SESSION.plexon.yaml) and process_plxyaml.py (merges
+#//   that metadata into the session YAML; ruamel.yaml optional — keeps the
+#//   comments of the session YAML when installed).
+#//
+#//   copyright       (C) 2026 neurosuite-3 contributors
+#//
+#//   This program is free software; you can redistribute it and/or modify
+#//   it under the terms of the GNU General Public License as published by
+#//   the Free Software Foundation; either version 3 of the License, or
+#//   (at your option) any later version.
+#//
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 1 ]; then
+    echo_error "usage: $program [parameter-file]"
+    exit $GENERAL_ERROR
+fi
+ndm_resolve_session "$@"
+[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+
+print_header "$session - Converting Plexon .plx/.pl2 → .dat"
+
+check_commands_installed process_plxconvert python3
+python3 -c "import yaml" 2>/dev/null || {
+    echo_error "Python package missing: install pyyaml"; exit $GENERAL_ERROR; }
+
+yamlfile=$(find_yaml_file "$session")
+[ -z "$yamlfile" ] && {
+    echo_error "No parameter file found for session '$session' (expected ${session}.yaml)"
+    exit $INPUTS_MISSING; }
+inputs_missing "$yamlfile" && exit $INPUTS_MISSING
+
+# ── Read parameters ────────────────────────────────────────────────────────────
+
+plexonFile=$(read_script_parameter $session ndm_plx2dat plexonFile)
+check_mandatory_variable "$plexonFile" "missing plexonFile (path to the input .plx or .pl2 file)"
+
+if [ ! -f "$plexonFile" ]; then
+    echo_error "input file '$plexonFile' not found"
+    exit $INPUTS_MISSING
+fi
+
+if outputs_exist "$session.dat"; then
+    exit $OUTPUTS_EXIST
+fi
+
+stream=$(read_script_parameter $session ndm_plx2dat stream)
+channels=$(read_script_parameter $session ndm_plx2dat channels)
+keepEmpty=$(read_script_parameter $session ndm_plx2dat keepEmpty)
+padToZero=$(read_script_parameter $session ndm_plx2dat padToZero)
+chunkSamples=$(read_script_parameter $session ndm_plx2dat chunkSamples)
+
+options=()
+check_optional_variable "$stream"       && options+=(--stream "$stream")
+check_optional_variable "$channels"     && options+=(--channels "$channels")
+check_optional_variable "$keepEmpty"    && options+=(--keep-empty "$keepEmpty")
+check_optional_variable "$padToZero"    && options+=(--pad-to-zero "$padToZero")
+check_optional_variable "$chunkSamples" && options+=(--chunk "$chunkSamples")
+
+# Locate the Python helper alongside this script, or in PATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_HELPER="${SCRIPT_DIR}/process_plxyaml.py"
+[ -f "$PY_HELPER" ] || PY_HELPER="$(command -v process_plxyaml.py)"
+[ -n "$PY_HELPER" ] || {
+    echo_error "process_plxyaml.py not found next to $program or in PATH"; exit $GENERAL_ERROR; }
+
+# ── Run conversion ─────────────────────────────────────────────────────────────
+
+print_header "$session - Processing $plexonFile"
+process_plxconvert "${options[@]}" --meta "$session.plexon.yaml" "$plexonFile" "$session"
+check_command_status process_plxconvert
+
+# ── Merge metadata into the session YAML ───────────────────────────────────────
+
+python3 "$PY_HELPER" --param-file "$yamlfile" --meta "$session.plexon.yaml"
+check_command_status process_plxyaml.py
+
+echo_info "Conversion complete: $session.dat"
+echo_info "Next steps:"
+echo_info "  ndmanager $session.yaml  — add probes to configure channel groups"
+echo_info "  ndm_hipass               — high-pass filter for spike detection"

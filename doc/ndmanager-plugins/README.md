@@ -33,6 +33,7 @@ For task-oriented walkthroughs that span multiple programs, see
 | Command | Purpose |
 |---|---|
 | [`ndm_aom2dat`](commands/ndm_aom2dat.md) | AlphaOmega `.mat` (HDF5 v7.3) → `.dat` + `.yaml` |
+| [`ndm_plx2dat`](commands/ndm_plx2dat.md) | Plexon `.plx` / `.pl2` → `.dat` + header metadata in the `.yaml` |
 | [Format conversion](commands/format-conversion.md) | Neuralynx, CED/Spike2, Amplipex converters |
 | [Channel manipulation](commands/channel-manipulation.md) | `ndm_resample`, `ndm_mergedat`, `ndm_extractchannels`, `ndm_reorderchannels`, `ndm_recolorchannels`, `ndm_concatenate` |
 | [`ndm_setupgroups`](commands/ndm_setupgroups.md) | Build channel groups from probe library |

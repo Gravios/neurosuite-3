@@ -39,7 +39,7 @@ recording session.
 ### [ndmanager-plugins](ndmanager-plugins/README.md)
 
 Command-line preprocessing pipeline. Converts raw acquisition data
-(AlphaOmega, Neuralynx, CED/Spike2, Amplipex) into spike-sorting-ready
+(AlphaOmega, Plexon, Neuralynx, CED/Spike2, Amplipex) into spike-sorting-ready
 files through format conversion, median-subtraction high-pass filtering,
 LFP downsampling, spike detection, and PCA feature extraction.
 
