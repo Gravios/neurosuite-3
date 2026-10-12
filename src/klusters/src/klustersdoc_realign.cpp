@@ -2129,6 +2129,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // spkFileName already points to pendingSpkPath (set on open and kept
     // permanently) — no redirect needed here.
     pendingRealign.push_back(std::move(pending));
+    {
+        // Rows whose time changed, for followMovedSpikes; recorded before the
+        // generation bump, which marks the times they moved from.
+        std::vector<int64_t> moved;
+        for (int64_t i = 0; i < N; ++i)
+            if (cumShift[static_cast<size_t>(i)] != 0) moved.push_back(gidx[static_cast<size_t>(i)]);
+        recordMovedRows(moved);
+    }
     ++spikeTimesGeneration;          // synced feature spaces are now stale
 
     //Publish the overlay batch (revertible: rejectLastRealign pairs with it).
@@ -2459,6 +2467,11 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
 void KlustersDoc::rejectLastRealign()
 {
     if (pendingRealign.empty()) return;
+    // It restores .clu-space features into the loaded table: only there.
+    if (isBorrowedSpace()) {
+        qWarning() << "[realign] undo refused while another feature space is shown";
+        return;
+    }
 
     // The undo re-seeds the .clu space's working copies from the saved files
     // (initPendingFiles below), so every synced copy -- made at times that are
@@ -3242,6 +3255,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //step 7); published after the loop.  Not revertible: the nudge has no
     //reject path (pendingRealign never learns of it).
     QHash<qint64, std::shared_ptr<const QByteArray>> overlayBatch;
+    std::vector<int64_t> nudgeMoved;   // rows whose time changed (followMovedSpikes)
+    nudgeMoved.reserve(static_cast<size_t>(N));
     for (int64_t i = 0; i < N; ++i) {
         const dataType row  = static_cast<dataType>(
             spkTable(1, static_cast<dataType>(i + 1)));
@@ -3264,6 +3279,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         if (newTs < 0) newTs = 0;
         if (maxValidTs > 0 && newTs > static_cast<dataType>(maxValidTs))
             newTs = static_cast<dataType>(maxValidTs);
+        if (newTs != oldTs) nudgeMoved.push_back(pos0);
 
         const int64_t ts64 = static_cast<int64_t>(newTs);
 
@@ -3644,8 +3660,76 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // pushes NO Data-undo entry, so the ring must not pair it with one.
     logAfterNotUndoable(QList<int>{ clusterId });
 
+    recordMovedRows(nudgeMoved);     // before the bump: the rows moved from here
     ++spikeTimesGeneration;          // synced feature spaces are now stale
     return true;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KlustersDoc::rawRecordingPath / spikeCutSpecFor
+//
+// The .fil (else .dat) of the session, and how to cut a .spk of a given method
+// out of it: window geometry plus, for a stderiv .spk, the spatial order from
+// the .spk's own basis (or @p fallbackBasis) and the session's custom pattern
+// when the token allows it.  One determination for the full re-extraction and
+// the incremental follow, so both write the same bytes the extractor would.
+// ─────────────────────────────────────────────────────────────────────────────
+QString KlustersDoc::rawRecordingPath() const
+{
+    const QString stem = documentDirectory() + QLatin1Char('/') + documentBaseName();
+    const QString fil  = stem + QStringLiteral(".fil");
+    return QFileInfo::exists(fil) ? fil : stem + QStringLiteral(".dat");
+}
+
+void KlustersDoc::spikeCutSpecFor(const QString& spkMethod,
+                                  const neurosuite::core::PcaBasis* fallbackBasis,
+                                  SpikeCutSpec& cut, QTextStream& log) const
+{
+    const int     nChan       = clusteringData->nbOfChannels();
+    const int     totalNbChan = clusteringData->getTotalNbChannels();
+    const QString grpId       = currentElectrodeGroupID();
+    cut.groupChannels = clusteringData->getCurrentChannels();
+    cut.window = neurosuite::core::SpikeWindowSpec{};
+    cut.window.nSamp           = clusteringData->nbSamplesPerWaveform();
+    cut.window.peakSample      = clusteringData->peakSampleIndex() - 1;   // 0-based
+    cut.window.totalNbChannels = totalNbChan;
+    cut.window.nChan           = nChan;
+    cut.window.applyTransform  = methodIsStderiv(spkMethod);
+    cut.window.order           = neurosuite::core::SdiffOrder::AllPairs;
+    cut.partner.clear(); cut.setOff.clear(); cut.setMem.clear();
+    if (cut.window.applyTransform) {
+        // Resolve the basis at the .spk's OWN token (stderiv_C4, ...), not a
+        // hardcoded "stderiv" which would miss a suffixed basis entirely.
+        const QString pcaPath = resolveFeature(documentDirectory() + QLatin1Char('/')
+                                                   + documentBaseName(),
+                                               QStringLiteral("pca"), grpId, spkMethod);
+        neurosuite::core::PcaBasis pca;
+        if (QFileInfo::exists(pcaPath)
+            && neurosuite::core::loadPca(pcaPath.toStdString(), pca)
+            && neurosuite::core::hasTemporalDiff(pca.method))
+            cut.window.order = neurosuite::core::spatialOrder(pca.method);
+        else if (fallbackBasis && neurosuite::core::hasTemporalDiff(fallbackBasis->method))
+            cut.window.order = neurosuite::core::spatialOrder(fallbackBasis->method);  // e.g. only a _D basis
+        else
+            log << "re-extract: no basis for " << spkMethod
+                << "; using the all-pairs spatial derivative\n";
+        // The .spk's token says whether the session pattern applies.
+        const SdiffPattern sp = sdiffPatternForMethod(parameterFile, grpId, nChan,
+                                                      totalNbChan, spkMethod);
+        if (sp.applied) {
+            cut.partner = sp.partner; cut.setOff = sp.setOff; cut.setMem = sp.setMem;
+            cut.window.order = sp.order;
+        } else if (!sp.problem.isEmpty()) {
+            log << "re-extract: group " << grpId << " sdiffPairs '" << sp.spec
+                << "': " << sp.problem << "; using all-pairs\n";
+        }
+    }
+    // The spec points into this object's own vectors: set the pointers last.
+    cut.window.groupChannels = cut.groupChannels.data();
+    cut.window.partner = cut.partner.empty() ? nullptr : cut.partner.data();
+    cut.window.setOff  = cut.setOff.empty()  ? nullptr : cut.setOff.data();
+    cut.window.setMem  = cut.setMem.empty()  ? nullptr : cut.setMem.data();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3671,7 +3755,6 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
 
     const int     nChan       = clusteringData->nbOfChannels();
     const int     nSamp       = clusteringData->nbSamplesPerWaveform();
-    const int     peakSamp0   = clusteringData->peakSampleIndex() - 1;  // 0-based
     const int     totalNbChan = clusteringData->getTotalNbChannels();
     const int     timeDim     = clusteringData->timeDimension();
     const QList<int>& groupChannels = clusteringData->getCurrentChannels();
@@ -3692,53 +3775,13 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
         return false;
     }
 
-    const QString dir   = documentDirectory();
-    const QString base  = documentBaseName();
-    const QString grpId = currentElectrodeGroupID();
-
-    QString filPath = dir + QLatin1Char('/') + base + QStringLiteral(".fil");
-    if (!QFileInfo::exists(filPath))
-        filPath = dir + QLatin1Char('/') + base + QStringLiteral(".dat");
+    const QString filPath = rawRecordingPath();
     FILE* filF = std::fopen(filPath.toLocal8Bit().constData(), "rb");
     if (!filF) { log << "re-extract: cannot open raw file " << filPath; return false; }
-    const int64_t totalSamples =
-        static_cast<int64_t>(QFileInfo(filPath).size())
-        / (static_cast<int64_t>(sizeof(short)) * totalNbChan);
 
-    // Spatial transform for a stderiv .spk: order from the basis, custom pattern
-    // from the session (identical determination to realignSpikes/nudge).
-    neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
-    std::vector<int> partner, setOff, setMem;
-    if (spkIsStderiv) {
-        // Resolve the basis at the .spk's OWN token (stderiv_C4, ...), not a
-        // hardcoded "stderiv" which would miss a suffixed basis entirely.
-        const QString pcaPath = resolveFeature(dir + QLatin1Char('/') + base,
-                                               QStringLiteral("pca"), grpId,
-                                               spkMethod);
-        neurosuite::core::PcaBasis pca;
-        if (QFileInfo::exists(pcaPath)
-            && neurosuite::core::loadPca(pcaPath.toStdString(), pca)
-            && neurosuite::core::hasTemporalDiff(pca.method))
-            order = neurosuite::core::spatialOrder(pca.method);
-        else if (fallbackBasis && neurosuite::core::hasTemporalDiff(fallbackBasis->method))
-            order = neurosuite::core::spatialOrder(fallbackBasis->method);   // e.g. only a _D basis
-        else
-            log << "re-extract: no basis for " << spkMethod
-                << "; using the all-pairs spatial derivative\n";
-        // The .spk's token says whether the session pattern applies.
-        const SdiffPattern sp = sdiffPatternForMethod(parameterFile, grpId, nChan,
-                                                      totalNbChan, spkMethod);
-        if (sp.applied) {
-            partner = sp.partner; setOff = sp.setOff; setMem = sp.setMem;
-            order   = sp.order;
-        } else if (!sp.problem.isEmpty()) {
-            log << "re-extract: group " << grpId << " sdiffPairs '" << sp.spec
-                << "': " << sp.problem << "; using all-pairs\n";
-        }
-    }
-    const int* partnerPtr = partner.empty() ? nullptr : partner.data();
-    const int* setOffPtr  = setOff.empty()  ? nullptr : setOff.data();
-    const int* setMemPtr  = setMem.empty()  ? nullptr : setMem.data();
+    // Window cutting and the .spk's own transform (shared with the follow).
+    SpikeCutSpec cut;
+    spikeCutSpecFor(spkMethod, fallbackBasis, cut, log);
 
     const QString tmpPath = targetSpkPath + QStringLiteral(".reextract.tmp");
     FILE* out = std::fopen(tmpPath.toLocal8Bit().constData(), "wb");
@@ -3757,20 +3800,8 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
     // byte-identical to what ndm_extractspikes wrote.  It also streams the file with
     // a forward cursor instead of a seek+read per spike -- spike times are ordered,
     // so the scattered reads were never necessary.
-    neurosuite::core::SpikeWindowSpec wspec;
-    wspec.nSamp           = nSamp;
-    wspec.peakSample      = static_cast<int>(peakSamp0);
-    wspec.totalNbChannels = totalNbChan;
-    wspec.groupChannels   = groupChannels.data();
-    wspec.nChan           = nChan;
-    wspec.applyTransform  = spkIsStderiv;
-    wspec.order           = order;
-    wspec.partner         = partnerPtr;
-    wspec.setOff          = setOffPtr;
-    wspec.setMem          = setMemPtr;
-
     neurosuite::core::extractSpikeWindows(
-        filF, nSpikes, wspec,
+        filF, nSpikes, cut.window,
         // featureValue is 1-based over spikes; the primitive indexes from 0.
         [&](int64_t i) {
             return static_cast<int64_t>(clusteringData->featureValue(i + 1, timeDim));

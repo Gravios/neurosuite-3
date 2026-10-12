@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QFileInfo>
 
+#include <cstring>
 #include <new>
 
 SpkMemoryCache& SpkMemoryCache::instance()
@@ -63,6 +64,23 @@ void SpkMemoryCache::moved(const QString& from, const QString& to)
     if (info.size() != e.size) return;          // not the same file after all
     e.modified = info.lastModified();
     entries.insert(to, e);
+}
+
+void SpkMemoryCache::patch(const QString& path, qint64 offset, const void* src, qint64 len)
+{
+    QMutexLocker lk(&mutex);
+    const auto it = entries.find(path);
+    if (it == entries.end()) return;
+    Entry& e = it.value();
+    if (!e.bytes || e.bytes.use_count() != 1 || offset < 0 || offset + len > e.bytes->size()) {
+        e.size = -1;                              // shared or out of range: re-read later
+        return;
+    }
+    // The cache created these bytes non-const (make_shared<QByteArray>); with
+    // no other reference, writing through them is safe.
+    QByteArray& bytes = const_cast<QByteArray&>(*e.bytes);
+    std::memcpy(bytes.data() + offset, src, static_cast<size_t>(len));
+    e.modified = QFileInfo(path).lastModified();
 }
 
 void SpkMemoryCache::keepOnly(const QStringList& paths)

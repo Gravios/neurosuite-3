@@ -44,6 +44,13 @@ public:
     * the new name (a rename keeps size and modification time).*/
     void moved(const QString& from, const QString& to);
 
+    /**@p len bytes at @p offset of @p path were just rewritten on disk with
+    * @p src: copy them into the held bytes too, when no reader holds them
+    * (readers watch the bytes weakly, so the cache's is then the only
+    * reference), and take the file's new modification time.  Otherwise the
+    * entry is marked written and the next get() reads the file again.*/
+    void patch(const QString& path, qint64 offset, const void* src, qint64 len);
+
     /**Drop every entry whose path is not in @p paths.*/
     void keepOnly(const QStringList& paths);
 

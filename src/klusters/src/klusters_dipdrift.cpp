@@ -25,6 +25,8 @@
 #include "config-klusters.h"
 // application specific includes
 #include "klusters.h"
+
+#include <QTimer>
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
@@ -585,7 +587,6 @@ void KlustersApp::slotApplyDriftSiblings()
 void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
 {
     if (nudgeInProgress || isInit || !activeView()) return;
-    if (refuseInBorrowedSpace(tr("Nudge"))) return;
     const QList<int>& shown = activeView()->clusters();
     if (shown.size() != 1) {
         statusBar()->showMessage(
@@ -593,6 +594,9 @@ void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
         return;
     }
     const int id = shown.first();
+    // From another feature space: nudge in the .clu's own, then come back
+    // (returnFromRealignSpace, scheduled below once the nudge is done).
+    if (!enterClusterSpaceForRealign(tr("Nudge"))) return;
     nudgeInProgress = true;
     nudgeMinusAction->setEnabled(false);
     nudgePlusAction->setEnabled(false);
@@ -601,6 +605,9 @@ void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
     const bool ok = doc->nudgeClusterTimestamps(id, deltaSamples);
     nudgeInProgress = false;
     lastNudgeTimer.restart();
+    // Other spaces follow the moved spikes; a nudge started from another
+    // space goes back to it.
+    QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);
     nudgeMinusAction->setEnabled(true);
     nudgePlusAction->setEnabled(true);
     if (ok) {

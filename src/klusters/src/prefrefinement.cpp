@@ -35,6 +35,8 @@ void   PrefRefinement::setReextractSpikesOnSave(bool b) { reextractSpikesOnSaveC
 bool   PrefRefinement::getReextractSpikesOnSave() const { return reextractSpikesOnSaveCheckBox->isChecked(); }
 void   PrefRefinement::setSyncFeatureSpaceOnSwitch(bool b) { syncFeatureSpaceOnSwitchCheckBox->setChecked(b); }
 bool   PrefRefinement::getSyncFeatureSpaceOnSwitch() const { return syncFeatureSpaceOnSwitchCheckBox->isChecked(); }
+void   PrefRefinement::setRealignFromAnySpace(bool b) { realignFromAnySpaceCheckBox->setChecked(b); }
+bool   PrefRefinement::getRealignFromAnySpace() const { return realignFromAnySpaceCheckBox->isChecked(); }
 
 void   PrefRefinement::setErrorMatrixIncremental(bool b)  { errorMatrixIncrementalCheckBox->setChecked(b); }
 bool   PrefRefinement::getErrorMatrixIncremental() const  { return errorMatrixIncrementalCheckBox->isChecked(); }

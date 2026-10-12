@@ -40,12 +40,14 @@
 #include <neurosuite/core/custody.hpp>        // header-only method-token policy
 #include <neurosuite/core/pca_projection.hpp>  // header-only PcaBasis/loadPca/pcaProjectionEnergy
 #include <neurosuite/core/stderiv_transform.hpp> // header-only spatialOrder/applyStderivTransform
+#include <neurosuite/core/spike_extract.hpp>     // header-only SpikeWindowSpec (re-extract / follow)
 
 
 #include <QList>
 #include <QSet>
 #include <QMap>
 #include <QHash>
+#include <QMutex>
 #include <QDateTime>
 #include <QFile>
 #include <QEvent>
@@ -1557,6 +1559,20 @@ public:
     bool syncAllFeatureSpaces(QString& logOut);
     /** Delete every synced working copy and forget it. */
     void discardSyncedFeatureSpaces();
+    /** Bring every other feature space up to the spike times realign / nudge
+     *  moved since the last call: each moved spike is re-extracted from the
+     *  .fil into each other waveform file (once per file, in its own domain)
+     *  and re-projected into each space's features; the rest of every file is
+     *  untouched.  A space that was not current before the moves gets a full
+     *  sync instead.  Results go to the spaces' .pending working copies (Save
+     *  writes them) and to the tables held in memory.  @p logOut gets a summary;
+     *  false when some space could not be brought up to date. */
+    bool followMovedSpikes(QString& logOut);
+    /** Forget the recorded moves (the option is off: spaces are left as they are). */
+    void dropMovedSpikes();
+    /** Record spike rows (0-based) whose times realign / nudge just changed.
+     *  Thread-safe: realign calls it from its worker thread. */
+    void recordMovedRows(const std::vector<int64_t>& rows);
     /** Hold every usable space's .fet and .spk in memory (the shown space is
      *  already loaded), and drop whatever no space uses any more, so switching
      *  and syncing never read them from disk.  Unchanged files are not read
@@ -1962,6 +1978,27 @@ private:
     /** Synced working copies of other spaces (syncFeatureSpace): committed
      *  path -> its ".pending" copy.  Committed by Save, removed at close. */
     QHash<QString, QString> syncedPending;
+    /** Window cutting for a .spk of one method (see spikeCutSpecFor).  The spec
+     *  points into the vectors below, so it is filled in place, never copied. */
+    struct SpikeCutSpec {
+        neurosuite::core::SpikeWindowSpec window;
+        QList<int>       groupChannels;
+        std::vector<int> partner, setOff, setMem;
+    };
+    /** The session's .fil (else .dat). */
+    QString rawRecordingPath() const;
+    /** Fill @p cut to cut a .spk of @p spkMethod: geometry, and for stderiv the
+     *  spatial order (its own basis, else @p fallbackBasis) and the session
+     *  pattern when the token allows it. */
+    void spikeCutSpecFor(const QString& spkMethod,
+                         const neurosuite::core::PcaBasis* fallbackBasis,
+                         SpikeCutSpec& cut, QTextStream& log) const;
+    /** Rows moved since the last follow, and the spike-times generation the
+     *  first of them moved from (a space at that generation can be followed
+     *  incrementally).  Guarded by movedRowsMutex. */
+    std::vector<int64_t> movedRows;
+    quint64 movedRowsBase = 0;
+    QMutex  movedRowsMutex;
     /** Spike-times generation each synced .fet was made at (committed .fet path
      *  -> spikeTimesGeneration then); a mismatch means the copy is stale. */
     QHash<QString, quint64> syncedGeneration;

@@ -552,6 +552,8 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("noRealignState")) {
         if (featureSpaceCombo) featureSpaceCombo->setEnabled(true);
         populateFeatureSpaceCombo();     // a realign may have staled synced spaces
+        // A realign started from another feature space goes back to it.
+        QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);
         // Restore all actions that realignState locked.
         mRealignSpikes->setEnabled(true);
         mPcaAlignAllClusters->setEnabled(true);

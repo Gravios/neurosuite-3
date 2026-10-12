@@ -122,6 +122,7 @@ public:
     void setRealignVerbose(bool b)        {realignVerbose = b;}
     void setReextractSpikesOnSave(bool b) {reextractSpikesOnSave = b;}
     void setSyncFeatureSpaceOnSwitch(bool b) {syncFeatureSpaceOnSwitch = b;}
+    void setRealignFromAnySpace(bool b)   {realignFromAnySpace = b;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
     void setTsneSpikeCap(int n) {tsneSpikeCap = (n < 1000) ? 1000 : n;}
@@ -272,6 +273,7 @@ public:
     bool   getRealignVerbose()    const {return realignVerbose;}
     bool   getReextractSpikesOnSave() const {return reextractSpikesOnSave;}
     bool   getSyncFeatureSpaceOnSwitch() const {return syncFeatureSpaceOnSwitch;}
+    bool   getRealignFromAnySpace() const {return realignFromAnySpace;}
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
     int    getTsneSpikeCap() const {return tsneSpikeCap;}
@@ -387,6 +389,7 @@ public:
     bool   getRealignVerboseDefault()    const {return false;}
     bool   getReextractSpikesOnSaveDefault() const {return false;}
     bool   getSyncFeatureSpaceOnSwitchDefault() const {return false;}
+    bool   getRealignFromAnySpaceDefault() const {return true;}
     bool   getAutoRealignAfterMergeDefault() const {return true;}
     bool   getAutoRenumberAfterMergeDefault() const {return true;}
     int    getTsneSpikeCapDefault() const {return 32000;}
@@ -581,6 +584,7 @@ private:
     bool    realignVerbose;    // stream per-spike realignment detail to stderr
     bool    reextractSpikesOnSave;  // re-extract .spk from .fil at save (off)
     bool    syncFeatureSpaceOnSwitch = false;  // re-extract + re-project a feature space when switching to it (off)
+    bool    realignFromAnySpace = true;        // realign/nudge from any space; other spaces follow moved spikes (on)
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
     int     tsneSpikeCap;                  // feature-view t-SNE: max spikes embedded (latency budget)

@@ -1782,6 +1782,9 @@ void KlustersApp::executePreferencesDlg(){
 
 void KlustersApp::applyPreferences() {
     configuration().write();
+    // "Realign and nudge from any feature space" decides which actions a
+    // borrowed space locks.
+    applyFeatureSpaceLocks();
 
     // Input bindings: a rebind in the Input preferences page set the registry overrides
     // (live for resolver-dispatched keys) and the Configuration map (just persisted by

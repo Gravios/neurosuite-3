@@ -20,6 +20,9 @@
 #include "data.h"
 #include "pca_row_projection.h"     // klusters::projectSpikeOntoPca — the one projection kernel
 #include "spkmemory.h"
+#include "klustersdoc_internal.h"   // featureMethod
+
+using klustersdoc_internal::featureMethod;
 
 #include <neurosuite/core/neurofileio.h>
 
@@ -29,6 +32,9 @@
 #include <QStringList>
 
 #include <cstdint>
+#include <numeric>
+#include <map>
+#include <algorithm>
 #include <cstdio>
 #include <iterator>
 #include <new>
@@ -143,12 +149,8 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
         return false;
     }
     if (method == activeMethod) return true;
-    if (hasPendingRealign()) {
-        errorInformation = tr("Save (or undo) the pending realignment before switching feature "
-                              "space: undoing it would write %1 features into the loaded space.")
-                           .arg(originMethod);
-        return false;
-    }
+    // A pending (unsaved) realignment does not stop a switch: it lives in the
+    // .clu space's working copies, which the switch holds and restores.
 
     FeatureSpace target;
     bool found = false;
@@ -470,6 +472,231 @@ bool KlustersDoc::syncAllFeatureSpaces(QString& logOut)
         }
         allOk = syncOneSpace(s.method, methodsDone, logOut) && allOk;
     }
+    return allOk;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Follow: after realign / nudge, bring every other space to the new spike times
+// for the moved spikes only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void KlustersDoc::recordMovedRows(const std::vector<int64_t>& rows)
+{
+    if (rows.empty()) return;
+    QMutexLocker lk(&movedRowsMutex);
+    // The generation before this move: a space still at it is current except
+    // for the rows recorded from here on.
+    if (movedRows.empty()) movedRowsBase = spikeTimesGeneration.load();
+    movedRows.insert(movedRows.end(), rows.begin(), rows.end());
+}
+
+void KlustersDoc::dropMovedSpikes()
+{
+    QMutexLocker lk(&movedRowsMutex);
+    movedRows.clear();
+}
+
+bool KlustersDoc::followMovedSpikes(QString& logOut)
+{
+    std::vector<int64_t> rows;
+    quint64 base = 0;
+    {
+        QMutexLocker lk(&movedRowsMutex);
+        rows.swap(movedRows);
+        base = movedRowsBase;
+    }
+    if (rows.empty() || !clusteringData) return true;
+    std::sort(rows.begin(), rows.end());
+    rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
+
+    const QString dir   = QFileInfo(docUrl).absolutePath();
+    const std::string stem = (dir + QDir::separator() + baseName).toStdString();
+    const int     group   = electrodeGroupID.toInt();
+    const int     nChan   = clusteringData->nbOfChannels();
+    const int     nSamp   = clusteringData->nbSamplesPerWaveform();
+    const int     timeDim = clusteringData->timeDimension();
+    const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+    const size_t  spikeElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    const qint64  spikeBytes = static_cast<qint64>(spikeElems * sizeof(int16_t));
+    const quint64 now = spikeTimesGeneration.load();
+    auto timeOf = [&](int64_t row) {
+        return static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(row + 1), timeDim));
+    };
+
+    // ── Which spaces, and how ─────────────────────────────────────────────
+    struct Space {
+        QString method, fetSource, fetCommitted, pcaPath, spkCommitted;
+        neurosuite::core::PcaBasis pca;
+        std::shared_ptr<const neurofileio::FetBinaryFile> table;
+    };
+    std::vector<Space> spaces;
+    QStringList fullSync;
+    bool allOk = true;
+    {
+        QTextStream log(&logOut);
+        for (const FeatureSpace& s : availableFeatureSpaces()) {
+            if (s.method == originMethod) continue;              // realign / nudge wrote it
+            if (!s.usable) { log << s.method << ": skipped — " << s.reason << ".\n"; continue; }
+            Space sp;
+            sp.method       = s.method;
+            sp.fetSource    = s.fetPath;
+            sp.fetCommitted = QString::fromStdString(neurosuite::custody::methodPath(
+                stem, "fet", s.method.toStdString(), group));
+            // A space that was not current before these moves cannot be
+            // patched row by row: give it a full sync.
+            if (syncedGeneration.value(sp.fetCommitted, 0) != base) { fullSync << s.method; continue; }
+            sp.spkCommitted = QString::fromStdString(
+                neurosuite::custody::resolve(stem, "spk", group, s.method.toStdString()).path);
+            sp.pcaPath = QString::fromStdString(neurosuite::custody::methodPath(
+                stem, "pca", s.method.toStdString(), group));
+            const bool spkStderiv = neurosuite::custody::isStderivMethod(
+                neurosuite::custody::methodOf(sp.spkCommitted.toStdString()));
+            sp.table = featuresInMemory(sp.fetSource);
+            const bool basisOk = neurosuite::core::loadPca(sp.pcaPath.toStdString(), sp.pca)
+                && sp.pca.valid() && sp.pca.nCh <= nChan && sp.pca.recShift >= 0
+                && sp.pca.recShift + sp.pca.data2use <= nSamp
+                && neurosuite::core::hasTemporalDiff(sp.pca.method) == spkStderiv;
+            if (!basisOk || !sp.table || sp.table->nSpikes != nSpikes
+                || sp.table->nFeatures - 1 < sp.pca.nCh * sp.pca.nComp) {
+                log << s.method << ": not followed — its basis or features do not fit; "
+                    << "it stays at the old spike times (Sync Feature Spaces).\n";
+                allOk = false;
+                continue;
+            }
+            spaces.push_back(std::move(sp));
+        }
+    }
+
+    // ── Incremental: per waveform file, then per space reading it ─────────
+    std::map<QString, std::vector<size_t>> bySpk;
+    for (size_t k = 0; k < spaces.size(); ++k) bySpk[spaces[k].spkCommitted].push_back(k);
+    std::vector<int16_t> wav(rows.size() * spikeElems);
+    for (const auto& entry : bySpk) {
+        QTextStream log(&logOut);
+        const QString& spkCommitted = entry.first;
+        const Space&   first        = spaces[entry.second.front()];
+        bool ok = true;
+        if (spkCommitted == origSpkPath) {
+            // The .clu space's own waveforms: realign / nudge already rewrote
+            // the moved rows of its working copy.
+            QFile f(QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath);
+            ok = f.open(QIODevice::ReadOnly);
+            for (size_t k = 0; ok && k < rows.size(); ++k)
+                // reinterpret_cast: raw int16 records read straight into the buffer.
+                ok = f.seek(rows[k] * spikeBytes)
+                  && f.read(reinterpret_cast<char*>(wav.data() + k * spikeElems), spikeBytes) == spikeBytes;
+        } else {
+            // Another waveform file: re-cut the moved spikes from the .fil, in
+            // this file's own domain, into its working copy.
+            const QString spkPending = spkCommitted + QStringLiteral(".pending");
+            if (!syncedPending.contains(spkCommitted) || !QFileInfo::exists(spkPending)) {
+                QFile::remove(spkPending);
+                ok = QFile::copy(spkCommitted, spkPending);       // first change: start the copy
+            }
+            SpikeCutSpec cut;
+            if (ok) spikeCutSpecFor(featureMethod(spkCommitted), &first.pca, cut, log);
+            std::FILE* fil = ok ? std::fopen(rawRecordingPath().toLocal8Bit().constData(), "rb") : nullptr;
+            ok = ok && fil;
+            if (ok) {
+                std::vector<size_t> byTime(rows.size());
+                std::iota(byTime.begin(), byTime.end(), size_t{0});
+                std::stable_sort(byTime.begin(), byTime.end(),
+                                 [&](size_t a, size_t b) { return timeOf(rows[a]) < timeOf(rows[b]); });
+                int64_t outOfRange = 0;
+                neurosuite::core::extractSpikeWindows(
+                    fil, static_cast<int64_t>(rows.size()), cut.window,
+                    [&](int64_t i) { return timeOf(rows[byTime[static_cast<size_t>(i)]]); },
+                    [&](int64_t i, const int16_t* row) {
+                        std::copy(row, row + spikeElems,
+                                  wav.data() + byTime[static_cast<size_t>(i)] * spikeElems);
+                    },
+                    &outOfRange);
+                std::fclose(fil);
+                if (outOfRange) log << QFileInfo(spkCommitted).fileName() << ": " << outOfRange
+                                    << " moved window(s) off the recording → zeroed\n";
+                QFile out(spkPending);
+                ok = out.open(QIODevice::ReadWrite);
+                for (size_t k = 0; ok && k < rows.size(); ++k)
+                    // reinterpret_cast: raw int16 records written straight from the buffer.
+                    ok = out.seek(rows[k] * spikeBytes)
+                      && out.write(reinterpret_cast<const char*>(wav.data() + k * spikeElems),
+                                   spikeBytes) == spikeBytes;
+                out.close();
+                for (size_t k = 0; ok && k < rows.size(); ++k)
+                    SpkMemoryCache::instance().patch(spkPending, rows[k] * spikeBytes,
+                                                     wav.data() + k * spikeElems, spikeBytes);
+                if (ok) syncedPending.insert(spkCommitted, spkPending);
+            }
+        }
+        if (!ok) {
+            log << QFileInfo(spkCommitted).fileName() << ": moved waveforms could not be "
+                << "updated; spaces reading it stay at the old spike times.\n";
+            allOk = false;
+            continue;
+        }
+
+        for (size_t idx : entry.second) {
+            const Space&  sp         = spaces[idx];
+            const QString fetPending = sp.fetCommitted + QStringLiteral(".pending");
+            const bool    hadCopy    = syncedPending.contains(sp.fetCommitted)
+                                       && QFileInfo::exists(fetPending);
+            // Update the held working copy in place; the first time, start one.
+            std::shared_ptr<neurofileio::FetBinaryFile> t =
+                (hadCopy && sp.fetSource == fetPending)
+                    ? std::const_pointer_cast<neurofileio::FetBinaryFile>(sp.table)
+                    : std::make_shared<neurofileio::FetBinaryFile>(*sp.table);
+            const size_t nDims = static_cast<size_t>(t->nFeatures);
+            for (size_t k = 0; k < rows.size(); ++k) {
+                const int16_t* w = wav.data() + k * spikeElems;
+                int64_t* row = t->values.data() + static_cast<size_t>(rows[k]) * nDims;
+                klusters::projectSpikeOntoPca(
+                    sp.pca,
+                    [&](int ch, int j) {
+                        return static_cast<double>(
+                            w[static_cast<size_t>((sp.pca.recShift + j) * nChan + ch)]);
+                    },
+                    row);
+                row[nDims - 1] = timeOf(rows[k]);
+            }
+            bool written = false;
+            if (hadCopy) {
+                QFile out(fetPending);
+                written = out.open(QIODevice::ReadWrite);
+                const qint64 rowBytes = static_cast<qint64>(nDims * sizeof(int64_t));
+                for (size_t k = 0; written && k < rows.size(); ++k)
+                    // reinterpret_cast: the .fet row's int64 values written as raw bytes.
+                    written = out.seek(4 + rows[k] * rowBytes)
+                           && out.write(reinterpret_cast<const char*>(
+                                            t->values.data() + static_cast<size_t>(rows[k]) * nDims),
+                                        rowBytes) == rowBytes;
+            } else {
+                const QString tmp = fetPending + QStringLiteral(".tmp");
+                written = neurofileio::writeFetBinary(tmp.toStdString(), t->nFeatures, t->values);
+                if (written) {
+                    QFile::remove(fetPending);
+                    written = std::rename(tmp.toLocal8Bit().constData(),
+                                          fetPending.toLocal8Bit().constData()) == 0;
+                }
+                if (!written) QFile::remove(tmp);
+            }
+            if (!written) {
+                log << sp.method << ": writing its features failed; it stays at the old spike times.\n";
+                allOk = false;
+                continue;
+            }
+            holdFeatures(fetPending, std::move(t));
+            syncedPending.insert(sp.fetCommitted, fetPending);
+            syncedGeneration.insert(sp.fetCommitted, now);
+            log << sp.method << ": " << rows.size() << " moved spike(s) followed.\n";
+        }
+    }
+
+    // ── Spaces that were not current: full sync ───────────────────────────
+    QSet<QString> done;
+    for (const QString& m : fullSync)
+        allOk = syncOneSpace(m, done, logOut) && allOk;
+
+    setModified(true);
     return allOk;
 }
 

@@ -937,6 +937,23 @@ private:
      *  sort wait for it (the Space box's enabled state is not enough: a
      *  recluster finishing mid-save re-enables it). */
     bool fileJobRunning() const;
+    /** Load @p method's feature space into every display (optionally syncing
+     *  it to the current spike times first), refresh the views, the Space box
+     *  and the action locks.  False (after a warning) when it cannot. */
+    bool showFeatureSpace(const QString& method, bool syncFirst);
+    /** Before a realign / Align All / nudge (@p what, for messages): if another
+     *  space is shown, swap to the .clu's own space and remember the shown one
+     *  (returnFromRealignSpace brings it back).  With the "realign from any
+     *  space" preference off this refuses instead, like refuseInBorrowedSpace
+     *  (quietly when @p silent).  False: do not run the operation. */
+    bool enterClusterSpaceForRealign(const QString& what, bool silent = false);
+    /** Once the realign lane and any nudge are idle: let every other space
+     *  follow the moved spikes (preference on; otherwise forget them), then
+     *  show again the space a realign / nudge was started from.  No-op while
+     *  a job is still running. */
+    void returnFromRealignSpace();
+    /** Space to return to after a realign started from it; empty when none. */
+    QString realignReturnSpace;
     /** After a switch: re-range the dimension spin boxes, keep every display's
      *  axes valid (a time axis stays on time), and refresh views and matrices. */
     void refreshAfterFeatureSpaceSwitch(int oldNbDimensions);

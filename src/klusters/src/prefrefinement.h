@@ -30,6 +30,8 @@ public:
     bool   getReextractSpikesOnSave() const;
     void   setSyncFeatureSpaceOnSwitch(bool b);
     bool   getSyncFeatureSpaceOnSwitch() const;
+    void   setRealignFromAnySpace(bool b);
+    bool   getRealignFromAnySpace() const;
 
     // Auto-run spike alignment after each interactive merge
     void   setAutoRealignAfterMerge(bool b);

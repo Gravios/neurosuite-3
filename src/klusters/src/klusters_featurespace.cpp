@@ -18,9 +18,11 @@
 #include "data.h"
 #include "configuration.h"
 #include "savethread.h"
+#include "serialjobqueue.h"
 
 #include <QApplication>
 #include <QComboBox>
+#include <QDebug>
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QFont>
@@ -28,6 +30,7 @@
 #include <QSignalBlocker>
 #include <QStandardItemModel>
 #include <QStatusBar>
+#include <QTimer>
 
 #include <algorithm>
 
@@ -99,17 +102,30 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
         return;
     }
 
-    const int  oldDims     = doc->nbDimensions();
+    // Preference: bring the target space to the current spike times first.
+    const bool sync = configuration().getSyncFeatureSpaceOnSwitch()
+                      && method != doc->cluMethod();
+    if (!showFeatureSpace(method, sync)) return;
+
+    slotStatusMsg(doc->isBorrowedSpace()
+        ? tr("Showing the %1 feature space (%2 dimensions).  The .clu stays %3; "
+             "%4 until you switch back.")
+              .arg(method).arg(doc->nbDimensions() - 1).arg(doc->cluMethod())
+              .arg(configuration().getRealignFromAnySpace()
+                       ? tr("realign and nudge work from here; Save As is off")
+                       : tr("realign, nudge and Save As are off"))
+        : tr("Back in the .clu's own %1 feature space.").arg(method));
+}
+
+bool KlustersApp::showFeatureSpace(const QString& method, bool syncFirst)
+{
+    const int oldDims = doc->nbDimensions();
     QString err;
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    // Preference: bring the target space to the current spike times first.  A
-    // failed sync still switches (to the space's current files) and says why.
+    // A failed sync still switches (to the space's current files) and says why.
     QString syncLog;
     bool syncFailed = false;
-    // Not while a realignment is pending: the switch refuses then, so a sync
-    // would be wasted work (switchFeatureSpace says why).
-    if (configuration().getSyncFeatureSpaceOnSwitch() && method != doc->cluMethod()
-        && !doc->hasPendingRealign()) {
+    if (syncFirst && method != doc->cluMethod()) {
         slotStatusMsg(tr("Syncing the %1 feature space to the current spike times…").arg(method));
         QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         syncFailed = !doc->syncFeatureSpace(method, syncLog);
@@ -128,7 +144,7 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
         for (KlustersView* v : doc->viewListCopy())
             if (v) v->reloadWaveformsAndCorrelograms(v == active);
         populateFeatureSpaceCombo();               // back to the loaded space
-        return;
+        return false;
     }
 
     refreshAfterFeatureSpaceSwitch(oldDims);
@@ -138,12 +154,65 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
     // Locks on (borrowed) or each action back to what the state machine last
     // asked for (leaving a borrowed space).
     applyFeatureSpaceLocks();
+    return true;
+}
 
-    slotStatusMsg(doc->isBorrowedSpace()
-        ? tr("Showing the %1 feature space (%2 dimensions).  The .clu stays %3; "
-             "realign, nudge and Save As are off until you switch back.")
-              .arg(method).arg(doc->nbDimensions() - 1).arg(doc->cluMethod())
-        : tr("Back in the .clu's own %1 feature space.").arg(method));
+bool KlustersApp::enterClusterSpaceForRealign(const QString& what, bool silent)
+{
+    if (!doc || !doc->isBorrowedSpace()) return true;
+    if (!configuration().getRealignFromAnySpace())
+        return !refuseInBorrowedSpace(what, silent);
+    // Realign and nudge rewrite the .clu space's .spk/.fet and the shared .res
+    // and update the loaded feature table as they go, so they run in that
+    // space: swap to it (every space is held in memory, so this is quick) and
+    // come back once they are done (returnFromRealignSpace).  A second one
+    // while away keeps the first space to return to.
+    if (realignReturnSpace.isEmpty()) realignReturnSpace = doc->activeFeatureMethod();
+    if (!showFeatureSpace(doc->cluMethod(), /*syncFirst*/ false)) {
+        realignReturnSpace.clear();
+        return false;
+    }
+    slotStatusMsg(tr("%1 in the .clu's own %2 feature space; back to %3 when it is done.")
+                      .arg(what, doc->cluMethod(), realignReturnSpace));
+    // If nothing ends up running (no selection, a refusal), come back.
+    QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);
+    return true;
+}
+
+void KlustersApp::returnFromRealignSpace()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    // Wait until everything that moves spikes is idle: a realign job, the
+    // batch worker, anything queued behind them (the post-merge step), a nudge.
+    if (realignRunning || realignBatchActive || nudgeInProgress
+        || (realignQueue && realignQueue->isBusy()))
+        return;
+
+    // Every other space follows the spikes that moved.
+    if (configuration().getRealignFromAnySpace()) {
+        QString log;
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        const bool ok = doc->followMovedSpikes(log);
+        QApplication::restoreOverrideCursor();
+        if (!log.trimmed().isEmpty()) qInfo().noquote() << "[follow]" << log.trimmed();
+        if (!ok)
+            statusBar()->showMessage(tr("Some feature spaces could not follow the moved spikes "
+                                        "and keep their old spike times (see the log; Sync "
+                                        "Feature Spaces retries)."), 8000);
+    } else {
+        doc->dropMovedSpikes();
+    }
+
+    if (realignReturnSpace.isEmpty()) {
+        populateFeatureSpaceCombo();                // stale / synced marks
+        return;
+    }
+    const QString method = realignReturnSpace;
+    realignReturnSpace.clear();
+    if (method == doc->activeFeatureMethod()) return;
+    // The follow brought it to the new spike times (or synced it in full).
+    if (showFeatureSpace(method, /*syncFirst*/ false))
+        slotStatusMsg(tr("Back in the %1 feature space, at the new spike times.").arg(method));
 }
 
 void KlustersApp::refreshAfterFeatureSpaceSwitch(int oldNbDimensions)
@@ -216,9 +285,15 @@ void KlustersApp::applyFeatureSpaceLocks()
         }
     }
     const bool borrowed = doc && doc->isBorrowedSpace();
+    // Realign, Align All and nudge run from any space when the preference is
+    // on (enterClusterSpaceForRealign); Save As always needs the .clu's own.
+    const bool anySpace = configuration().getRealignFromAnySpace();
     featureSpaceLocking = true;
-    for (QAction* a : actions)
-        if (a) a->setEnabled(!borrowed && featureSpaceDesiredEnabled.value(a, a->isEnabled()));
+    for (QAction* a : actions) {
+        if (!a) continue;
+        const bool locked = borrowed && (a == mSaveAsAction || !anySpace);
+        a->setEnabled(!locked && featureSpaceDesiredEnabled.value(a, a->isEnabled()));
+    }
     featureSpaceLocking = false;
 }
 
