@@ -146,7 +146,7 @@ private:
 // ---------------------------------------------------------------------------
 
 RealignReviewDialog::RealignReviewDialog(
-        int clusterId, int nShifted, int nClamped,
+        int clusterId, int nShifted,
         int nChan, int nSamp,
         const QVector<float>& meanBefore,
         const QVector<float>& meanAfter,
@@ -175,10 +175,10 @@ RealignReviewDialog::RealignReviewDialog(
     mainLayout->setContentsMargins(10, 10, 10, 10);
 
     auto* summaryLabel = new QLabel(
-        tr("<b>Cluster %1</b>: %2 spike(s) shifted, %3 held back at a neighbouring spike.<br>"
+        tr("<b>Cluster %1</b>: %2 spike(s) shifted.<br>"
            "Mean waveform: before (grey dashed) and after (blue) realignment.<br>"
            "Yellow dashed line marks the expected peak sample.")
-        .arg(clusterId).arg(nShifted).arg(nClamped), this);
+        .arg(clusterId).arg(nShifted), this);
     summaryLabel->setWordWrap(true);
     mainLayout->addWidget(summaryLabel);
 

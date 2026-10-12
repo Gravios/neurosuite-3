@@ -1422,9 +1422,6 @@ public:
      * @param clusterId   Cluster to realign.
      * @param logOut      Receives human-readable progress / warning messages.
      * @param nShifted    Set to the number of spikes that were shifted.
-     * @param nClamped    Set to the number of spikes whose shift was limited so
-     *                    they do not cross a neighbouring spike (realign never
-     *                    reorders rows; see spikeorder.h).
      * @param liveLog     Optional callback invoked for every progress line so
      *                    the caller can stream output to a UI in real time.
      *                    Second arg is true for warnings/errors, false for
@@ -1439,7 +1436,7 @@ public:
      *                    backup created so the caller can offer a revert.
      * @return true on success.
      */
-    bool realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nClamped,
+    bool realignSpikes(int clusterId, QString& logOut, int& nShifted,
                        std::function<void(const QString&,bool)> liveLog = nullptr,
                        const QString& args = QString(),
                        QVector<float>* meanBefore = nullptr,

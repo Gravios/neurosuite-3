@@ -54,14 +54,13 @@ signals:
     /** Emitted when the realignment job finishes.
      *  @param ok          true = completed successfully.
      *  @param nShifted    spikes shifted.
-     *  @param nClamped    spikes held back at a neighbouring spike.
      *  @param meanBefore  cluster mean waveform before alignment (channel-major float).
      *  @param meanAfter   cluster mean waveform after alignment (channel-major float).
      *  @param backupBase  base path of .realign_bak files (empty if backup failed).
      *  @param nChan       number of channels.
      *  @param nSamp       samples per channel.
      */
-    void finished(bool ok, int nShifted, int nClamped,
+    void finished(bool ok, int nShifted,
                   QVector<float> meanBefore, QVector<float> meanAfter,
                   QString backupBase, int nChan, int nSamp);
 

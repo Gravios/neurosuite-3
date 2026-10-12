@@ -20,7 +20,7 @@ class RealignReviewDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit RealignReviewDialog(int clusterId, int nShifted, int nClamped,
+    explicit RealignReviewDialog(int clusterId, int nShifted,
                                  int nChan, int nSamp,
                                  const QVector<float>& meanBefore,
                                  const QVector<float>& meanAfter,

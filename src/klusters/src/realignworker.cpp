@@ -69,10 +69,10 @@ void RealignWorker::run()
                              id, k + 1, total);
 
             QString logOut;
-            int nsh = 0, nsw = 0;
+            int nsh = 0;
             bool ok = false;
             try {
-                ok = doc->realignSpikes(id, logOut, nsh, nsw, liveLog, args,
+                ok = doc->realignSpikes(id, logOut, nsh, liveLog, args,
                                           nullptr, nullptr, nullptr);
             } catch (const std::bad_alloc& e) {
                 std::fprintf(stderr, "ERROR: out of memory — %s\n",
@@ -103,9 +103,9 @@ void RealignWorker::run()
             emit clusterDone(k + 1, total, id, ok, nsh);
         }
         // finished payload in batch mode: ok=true unless cancelled before any
-        // work (shutdown); nShifted carries the batch total, nClamped carries the
-        // accepted count.  The GUI finaliser uses its own accumulated counters.
-        emit finished(!cancelRequested || accepted > 0, shiftedTotal, accepted,
+        // work (shutdown); nShifted carries the batch total.  The GUI finaliser
+        // uses its own accumulated counters.
+        emit finished(!cancelRequested || accepted > 0, shiftedTotal,
                       {}, {}, QString(), nChan, nSamp);
         return;
     }
@@ -116,13 +116,12 @@ void RealignWorker::run()
 
     QString logOut;
     int nShifted = 0;
-    int nClamped = 0;
     bool ok = false;
     QVector<float> meanBefore, meanAfter;
     QString backupBase;
 
     try {
-        ok = doc->realignSpikes(clusterId, logOut, nShifted, nClamped,
+        ok = doc->realignSpikes(clusterId, logOut, nShifted,
             [this](const QString& line, bool isError) {
                 // Errors always surface to stderr; detail only when verbose.
                 if (isError || verbose)
@@ -150,5 +149,5 @@ void RealignWorker::run()
         }
     }
 
-    emit finished(ok, nShifted, nClamped, meanBefore, meanAfter, backupBase, nChan, nSamp);
+    emit finished(ok, nShifted, meanBefore, meanAfter, backupBase, nChan, nSamp);
 }

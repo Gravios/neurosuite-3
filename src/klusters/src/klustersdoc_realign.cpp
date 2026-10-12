@@ -471,7 +471,7 @@ KlustersDoc::RealignBasis KlustersDoc::resolveRealignBasis(
     return out;
 }
 
-bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, int& nClamped,
+bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
                                 QVector<float>* meanBefore,
@@ -479,7 +479,6 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
                                 QString* backupBase)
 {
     nShifted = 0;
-    nClamped = 0;
     logOut.clear();
 
     // Realign rewrites the .clu space's .spk/.fet/.pca and the shared .res; it is
@@ -2113,8 +2112,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted, i
     clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ true);
     if (childData) childData->applySpkOverlayBatch(overlayBatch, /*revertible*/ true);
 
-    log << "Done. " << nShifted << " shifted, " << nClamped
-        << " held back at a neighbour. (pending save)\n";
+    log << "Done. " << nShifted << " shifted. (pending save)\n";
 
     // Capture after-mean for the review dialog.
     if (meanAfter) {
