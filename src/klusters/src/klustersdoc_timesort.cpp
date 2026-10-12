@@ -21,6 +21,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QStringList>
 #include <QTextStream>
 
 #include <algorithm>
@@ -37,6 +38,29 @@ bool isWorkingCopySuffix(const QString& suffix)
 {
     return suffix.contains(QLatin1String("pending")) || suffix.contains(QLatin1String("tmp"))
         || suffix.contains(QLatin1String("bak"));
+}
+
+/// Types with one entry per spike, each permuted here.
+bool isPerSpikeType(const std::string& t)
+{
+    return t == "res" || t == "spk" || t == "fet" || t == "clu" || t == "clc";
+}
+
+/// Per-group types that are not per spike: a basis, a model, colours, a log,
+/// child-cluster properties, and the template library's per-template files.
+bool isPerClusterType(const QString& t)
+{
+    static const QStringList types{ "pca", "model", "col", "klg",
+                                    "clp", "tcl", "wti", "wtf", "wtl" };
+    return types.contains(t);
+}
+
+/// True when @p name is a file of session @p base that carries @p group as a
+/// dot-separated token (<base>.<...>.<group>[.<...>]).
+bool namesGroup(const QString& name, const QString& base, const QString& group)
+{
+    if (!name.startsWith(base + QLatin1Char('.'))) return false;
+    return name.mid(base.size() + 1).split(QLatin1Char('.')).contains(group);
 }
 
 /// Write @p src with its rows in @p order to @p dst (header copied first).
@@ -120,9 +144,19 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
             continue;
         }
         const neurosuite::custody::Anchor a = neurosuite::custody::parseAnchor(name.toStdString());
-        if (!a.ok || a.group != group || QString::fromStdString(a.base) != baseName
-            || isWorkingCopySuffix(QString::fromStdString(a.suffix)))
+        const bool ours = a.ok && a.group == group && QString::fromStdString(a.base) == baseName;
+        if (ours && isWorkingCopySuffix(QString::fromStdString(a.suffix)))
             continue;
+        if (!ours || !isPerSpikeType(a.type)) {
+            // Anything else that names this group (a tool's sidecar, say) is
+            // listed so the user can check none of it is indexed by spike.
+            const QString typeToken = name.mid(baseName.size() + 1).section(QLatin1Char('.'), 0, 0);
+            if (namesGroup(name, baseName, electrodeGroupID)
+                && !isWorkingCopySuffix(name.mid(baseName.size()))
+                && !isPerClusterType(typeToken))
+                plan.otherGroupFiles << name;
+            continue;
+        }
         const QString path = dir.absoluteFilePath(name);
         const qint64  size = QFileInfo(path).size();
         RowFile f;
@@ -149,8 +183,6 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
         } else if (a.type == "spk") {
             f.record = size / n;                      // nChan * nSamp * int16
             fits = size > 0 && size % n == 0;
-        } else {
-            continue;                                 // not per-spike (.pca, .klg, ...)
         }
         if (fits) plan.files.push_back(f);
         else      plan.skipped << name;

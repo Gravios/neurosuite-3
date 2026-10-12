@@ -1572,6 +1572,7 @@ public:
         std::vector<RowFile> files;     ///< every file permuted together
         QStringList  skipped;           ///< group files without this spike count (left as is)
         QStringList  notReordered;      ///< row-indexed files this cannot permute (.eap)
+        QStringList  otherGroupFiles;   ///< other files naming this group, left as is
     };
     /** Read the saved .res and list every row-indexed file of this group: each
      *  method's .res/.spk/.fet and every .clu/.clc (stage-tagged copies too).

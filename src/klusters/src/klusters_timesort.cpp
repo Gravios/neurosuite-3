@@ -59,6 +59,10 @@ void KlustersApp::slotSortSpikesByTime()
     if (!plan.skipped.isEmpty())
         details += tr("\n\nLeft as is (not this group's spike count):\n%1")
                        .arg(plan.skipped.join(QLatin1Char('\n')));
+    if (!plan.otherGroupFiles.isEmpty())
+        details += tr("\n\nOther files of this group, not reordered (check none holds "
+                      "one entry per spike):\n%1")
+                       .arg(plan.otherGroupFiles.join(QLatin1Char('\n')));
     QString text = tr("%1 spike(s) are out of time order.  Sorting moves the same rows in "
                       "%2 file(s) of this group, then reopens the document; undo history "
                       "is cleared.")
