@@ -29,7 +29,7 @@ void RealignWorker::cancel()
 void RealignWorker::run()
 {
     if (cancelRequested) {
-        emit finished(false, 0, 0, {}, {}, {}, 0, 0);
+        emit finished(false, 0, {}, {}, {}, 0, 0);
         return;
     }
 
