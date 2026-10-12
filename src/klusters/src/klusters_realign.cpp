@@ -117,8 +117,9 @@ extern int nbUndo;
 
 void KlustersApp::slotRealignSpikes()
 {
-    // From another feature space: realign in the .clu's own, then come back.
-    if (!enterClusterSpaceForRealign(tr("Realign"))) return;
+    // Another space shown: refused only with the "from any space" preference
+    // off; otherwise startRealignForCluster swaps to the .clu's own space.
+    if (realignBlockedHere(tr("Realign"))) return;
 
     // Don't allow a second realignment while one is running.
     if (realignRunning) {
@@ -174,6 +175,9 @@ void KlustersApp::slotRealignSpikes()
 // from a child-layer edit to a parent-view flip.
 void KlustersApp::startRealignForCluster(int clusterId)
 {
+    // Swap to the .clu's own space now, right before the job starts (after any
+    // confirmation): realign runs there; returnFromRealignSpace comes back.
+    if (!enterClusterSpaceForRealign(tr("Realign"))) return;
     realignArgs = buildRealignArgs();   // saved mode + top-ch gate
 
     // ── Lock UI exactly as reclustering does ─────────────────────────────────
@@ -384,7 +388,7 @@ void KlustersApp::startPostOpRealign(const QList<int>& parents, bool setChanged)
     // From another feature space the automatic post-edit realign runs in the
     // .clu's own space too (when the preference allows; skipped silently
     // otherwise), and the other spaces follow the moved spikes.
-    if (!enterClusterSpaceForRealign(tr("Realign"), /*silent=*/true)) return;
+    if (realignBlockedHere(tr("Realign"), /*silent=*/true)) return;
     // Refresh the saved-mode args (top-ch gate + --pca-refine) like the
     // single-cluster and Align-All paths, then derive the batch args: strip any
     // top-ch / pca-refine tokens and re-add for the current top-channel count.
@@ -433,6 +437,8 @@ void KlustersApp::startPostOpRealign(const QList<int>& parents, bool setChanged)
         delete realignWorker;
         realignWorker = nullptr;
     }
+    // Swap to the .clu's own space right before the batch starts.
+    if (!enterClusterSpaceForRealign(tr("Realign"), /*silent=*/true)) return;
     // Initialise batch state and launch ONE worker for the whole list.
     realignBatchActive          = true;
     realignBatchTotal           = parents.size();
@@ -537,7 +543,7 @@ void KlustersApp::flushRealignBatchRefresh()
 // ---------------------------------------------------------------------------
 void KlustersApp::slotPcaAlignAllClusters()
 {
-    if (!enterClusterSpaceForRealign(tr("Align All"))) return;
+    if (realignBlockedHere(tr("Align All"))) return;
 
     if (realignRunning) {
         // Status bar, not a modal.
@@ -663,6 +669,9 @@ void KlustersApp::slotPcaAlignAllClusters()
     // worker loops realignSpikes internally (RealignWorker batch mode) and
     // reports per-cluster progress via slotRealignClusterDone, so the
     // per-cluster thread-spawn + GUI round-trip is paid once for the batch.
+    // Swap to the .clu's own space right before the batch starts (after the
+    // confirmation above, whose event loop must not see a pending return).
+    if (!enterClusterSpaceForRealign(tr("Align All"))) return;
     realignBatchActive       = true;
     realignBatchTotal        = clusters.size();
     realignBatchAccepted     = 0;

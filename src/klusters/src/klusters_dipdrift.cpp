@@ -605,9 +605,16 @@ void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
     const bool ok = doc->nudgeClusterTimestamps(id, deltaSamples);
     nudgeInProgress = false;
     lastNudgeTimer.restart();
-    // Other spaces follow the moved spikes; a nudge started from another
-    // space goes back to it.
-    QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);
+    // Other spaces follow the moved spikes and a nudge started from another
+    // space goes back to it -- once the nudging pauses: auto-repeat would
+    // otherwise swap spaces and follow after every single step.
+    if (!nudgeFollowTimer) {
+        nudgeFollowTimer = new QTimer(this);
+        nudgeFollowTimer->setSingleShot(true);
+        nudgeFollowTimer->setInterval(400);
+        connect(nudgeFollowTimer, &QTimer::timeout, this, &KlustersApp::returnFromRealignSpace);
+    }
+    nudgeFollowTimer->start();
     nudgeMinusAction->setEnabled(true);
     nudgePlusAction->setEnabled(true);
     if (ok) {

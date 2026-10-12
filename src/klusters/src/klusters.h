@@ -947,6 +947,11 @@ private:
      *  space" preference off this refuses instead, like refuseInBorrowedSpace
      *  (quietly when @p silent).  False: do not run the operation. */
     bool enterClusterSpaceForRealign(const QString& what, bool silent = false);
+    /** True (with a message unless @p silent) when another space is shown and
+     *  the "from any space" preference is off: the operation is refused. */
+    bool realignBlockedHere(const QString& what, bool silent = false);
+    /** Debounces the follow-and-return after nudges (auto-repeat). */
+    QTimer* nudgeFollowTimer = nullptr;
     /** Once the realign lane and any nudge are idle: let every other space
      *  follow the moved spikes (preference on; otherwise forget them), then
      *  show again the space a realign / nudge was started from.  No-op while

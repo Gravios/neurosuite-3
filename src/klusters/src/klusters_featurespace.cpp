@@ -72,8 +72,13 @@ void KlustersApp::populateFeatureSpaceCombo()
 
 bool KlustersApp::fileJobRunning() const
 {
+    // Also while a realign lane still drains (the post-merge step) or a return
+    // to the space a realign / nudge started from is pending: the follow then
+    // runs in the .clu's own space, which must stay the shown one until then.
     return realignRunning || realignBatchActive || nudgeInProgress || mPluginRunning
-        || (saveThread && saveThread->isRunning());
+        || (saveThread && saveThread->isRunning())
+        || (realignQueue && realignQueue->isBusy())
+        || !realignReturnSpace.isEmpty();
 }
 
 void KlustersApp::preloadFeatureSpaces()
@@ -174,17 +179,26 @@ bool KlustersApp::enterClusterSpaceForRealign(const QString& what, bool silent)
     }
     slotStatusMsg(tr("%1 in the .clu's own %2 feature space; back to %3 when it is done.")
                       .arg(what, doc->cluMethod(), realignReturnSpace));
-    // If nothing ends up running (no selection, a refusal), come back.
-    QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);
+    // No return is scheduled here: the callers start their job right away,
+    // and its end (or the nudge's) triggers returnFromRealignSpace.
     return true;
+}
+
+bool KlustersApp::realignBlockedHere(const QString& what, bool silent)
+{
+    if (!doc || !doc->isBorrowedSpace() || configuration().getRealignFromAnySpace()) return false;
+    return refuseInBorrowedSpace(what, silent);
 }
 
 void KlustersApp::returnFromRealignSpace()
 {
     if (!doc || doc->url().isEmpty()) return;
-    // Wait until everything that moves spikes is idle: a realign job, the
-    // batch worker, anything queued behind them (the post-merge step), a nudge.
-    if (realignRunning || realignBatchActive || nudgeInProgress
+    // Wait until everything that moves spikes or reads the files is idle: a
+    // realign job, the batch worker, anything queued behind them (the
+    // post-merge step), a nudge, a save, a plugin.  Each of their ends
+    // triggers this again.
+    if (realignRunning || realignBatchActive || nudgeInProgress || mPluginRunning
+        || (saveThread && saveThread->isRunning())
         || (realignQueue && realignQueue->isBusy()))
         return;
 

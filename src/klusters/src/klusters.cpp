@@ -3920,6 +3920,8 @@ void KlustersApp::slotFileClose(){
                 clusterPanel->hide();
                 mainDock = nullptr;
                 doc->closeDocument();
+                realignReturnSpace.clear();      // nothing to return to any more
+                if (nudgeFollowTimer) nudgeFollowTimer->stop();
                 resetState();
                 QApplication::restoreOverrideCursor();
             }
@@ -7916,6 +7918,8 @@ bool KlustersApp::launchPlugin(const KlustersPlugin& plugin, const QMap<QString,
 void KlustersApp::slotPluginFinished(int exitCode, QProcess::ExitStatus status)
 {
     mPluginRunning = false;
+    // A follow / return that waited for the plugin can run now.
+    QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);
     if (mPluginsMenu)
         mPluginsMenu->setEnabled(true);
 

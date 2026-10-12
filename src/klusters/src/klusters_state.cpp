@@ -289,6 +289,7 @@ void KlustersApp::slotStateChanged(const QString& state)
     } else if(state == QLatin1String("SavingDoneState")) {
         if (featureSpaceCombo) featureSpaceCombo->setEnabled(true);
         preloadFeatureSpaces();          // Save rewrote files; Save As moved them
+        QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);   // waited for the save
         populateFeatureSpaceCombo();     // Save As may have changed the .clu's method
         mSaveAction->setEnabled(true);
         mSaveAsAction->setEnabled(true);

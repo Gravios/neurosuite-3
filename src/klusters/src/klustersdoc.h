@@ -1563,8 +1563,10 @@ public:
      *  moved since the last call: each moved spike is re-extracted from the
      *  .fil into each other waveform file (once per file, in its own domain)
      *  and re-projected into each space's features; the rest of every file is
-     *  untouched.  A space that was not current before the moves gets a full
-     *  sync instead.  Results go to the spaces' .pending working copies (Save
+     *  untouched.  A space that was not current before the moves (its features'
+     *  times differ from the session's at spikes that did not move) gets a
+     *  full sync instead; the spaces reading one waveform file are followed
+     *  together or not at all.  Results go to the spaces' .pending working copies (Save
      *  writes them) and to the tables held in memory.  @p logOut gets a summary;
      *  false when some space could not be brought up to date. */
     bool followMovedSpikes(QString& logOut);
@@ -1993,11 +1995,9 @@ private:
     void spikeCutSpecFor(const QString& spkMethod,
                          const neurosuite::core::PcaBasis* fallbackBasis,
                          SpikeCutSpec& cut, QTextStream& log) const;
-    /** Rows moved since the last follow, and the spike-times generation the
-     *  first of them moved from (a space at that generation can be followed
-     *  incrementally).  Guarded by movedRowsMutex. */
+    /** Rows moved since the last follow (followMovedSpikes).  Guarded by
+     *  movedRowsMutex: realign records them from its worker thread. */
     std::vector<int64_t> movedRows;
-    quint64 movedRowsBase = 0;
     QMutex  movedRowsMutex;
     /** Spike-times generation each synced .fet was made at (committed .fet path
      *  -> spikeTimesGeneration then); a mismatch means the copy is stale. */
