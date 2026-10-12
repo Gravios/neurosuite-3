@@ -455,6 +455,9 @@ private Q_SLOTS:
     /** Actions > Sync Feature Spaces: re-extract and re-project every other
      *  method space at this session's spike times (KlustersDoc::syncAllFeatureSpaces). */
     void slotSyncFeatureSpaces();
+    /** Show the next (@p step +1) or previous (-1) usable space of the Space
+     *  box, wrapping around; same path as picking it in the box. */
+    void slotCycleFeatureSpace(int step);
     /** Actions > Sort Spikes by Time: put the group's spike rows back in time
      *  order in every row-indexed file, then reopen (KlustersDoc::planTimeSort). */
     void slotSortSpikesByTime();
@@ -1287,6 +1290,8 @@ private:
     QAction *mPcaAlignAllClusters;
     QAction *mSyncFeatureSpaces = nullptr;   ///< Actions > Sync Feature Spaces
     QAction *mSortSpikesByTime  = nullptr;   ///< Actions > Sort Spikes by Time
+    QAction *mNextFeatureSpace     = nullptr;   ///< Actions > Next Feature Space (Ctrl+Tab)
+    QAction *mPreviousFeatureSpace = nullptr;   ///< Actions > Previous Feature Space (Ctrl+Shift+Tab)
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;

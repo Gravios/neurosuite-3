@@ -113,6 +113,10 @@ space; pick the `(.clu)` entry to go back.
   the other spaces keep their old spike times until synced.
 - **Save As**, **decollide** and **template generation** still need the
   `.clu`'s own space. **Recluster** works, using the shown space's features.
+- **Ctrl+Tab** shows the next space and **Ctrl+Shift+Tab** the previous one
+  (Actions → Next / Previous Feature Space; rebindable in Preferences →
+  Input). Spaces that cannot be loaded are skipped. Plain Tab / Shift+Tab
+  still move keyboard focus around the window.
 - The box is locked while saving, realigning or reclustering.
 - Every space is held in memory: its `.fet` table and its `.spk` waveforms are
   loaded when the document opens (and refreshed after a switch, a sync or a

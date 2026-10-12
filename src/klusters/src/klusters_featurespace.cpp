@@ -122,6 +122,27 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
         : tr("Back in the .clu's own %1 feature space.").arg(method));
 }
 
+void KlustersApp::slotCycleFeatureSpace(int step)
+{
+    if (!doc || doc->url().isEmpty() || !featureSpaceCombo) return;
+    auto* model = qobject_cast<QStandardItemModel*>(featureSpaceCombo->model());
+    const int n = featureSpaceCombo->count();
+    const int current = featureSpaceCombo->findData(doc->activeFeatureMethod());
+    if (n < 2 || current < 0) {
+        statusBar()->showMessage(tr("This group has only one feature space."), 3000);
+        return;
+    }
+    // The next item the box would let you pick (greyed-out spaces are skipped).
+    for (int k = 1; k < n; ++k) {
+        const int i = ((current + step * k) % n + n) % n;
+        const QStandardItem* item = model ? model->item(i) : nullptr;
+        if (item && !item->isEnabled()) continue;
+        slotFeatureSpaceActivated(i);
+        return;
+    }
+    statusBar()->showMessage(tr("No other feature space of this group can be loaded."), 3000);
+}
+
 bool KlustersApp::showFeatureSpace(const QString& method, bool syncFirst)
 {
     const int oldDims = doc->nbDimensions();

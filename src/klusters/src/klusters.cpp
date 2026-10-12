@@ -798,6 +798,19 @@ void KlustersApp::createMenus()
     connect(mSyncFeatureSpaces, &QAction::triggered,
             this, &KlustersApp::slotSyncFeatureSpaces);
 
+    // Step through the Space box without the mouse.  Ctrl+Tab, because plain
+    // Tab / Shift+Tab move keyboard focus around the window.
+    mNextFeatureSpace = actionMenu->addAction(tr("Ne&xt Feature Space"));
+    mNextFeatureSpace->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Tab));
+    mNextFeatureSpace->setToolTip(tr("Show the next feature space in the Space box "
+                                     "(spaces that cannot be loaded are skipped)."));
+    connect(mNextFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(+1); });
+    mPreviousFeatureSpace = actionMenu->addAction(tr("Previous Feature Spa&ce"));
+    // Shift+Tab arrives as Backtab, so the chord is Ctrl+Shift+Backtab.
+    mPreviousFeatureSpace->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Backtab));
+    mPreviousFeatureSpace->setToolTip(tr("Show the previous feature space in the Space box."));
+    connect(mPreviousFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(-1); });
+
     mSortSpikesByTime = actionMenu->addAction(tr("Sort Spikes by &Time"));
     mSortSpikesByTime->setToolTip(tr(
         "Realign and nudge keep each spike in its own row, so the .res can drift "
@@ -2398,6 +2411,8 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("action.realignSpikes"),        QStringLiteral("Actions"), mRealignSpikes);
     registerActionCommand(QStringLiteral("action.partitionByTime"),      QStringLiteral("Actions"), mPartitionByTime);
     registerActionCommand(QStringLiteral("action.pcaAlignAllClusters"),  QStringLiteral("Actions"), mPcaAlignAllClusters);
+    registerActionCommand(QStringLiteral("action.nextFeatureSpace"),     QStringLiteral("Actions"), mNextFeatureSpace);
+    registerActionCommand(QStringLiteral("action.previousFeatureSpace"), QStringLiteral("Actions"), mPreviousFeatureSpace);
     registerActionCommand(QStringLiteral("action.generateProbeDrift"),   QStringLiteral("Actions"), mGenerateProbeDrift);
     registerActionCommand(QStringLiteral("action.applyDriftSiblings"),   QStringLiteral("Actions"), mApplyDriftSiblings);
 

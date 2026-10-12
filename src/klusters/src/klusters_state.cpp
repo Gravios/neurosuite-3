@@ -178,6 +178,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mPcaAlignAllClusters->setEnabled(false);
         mSyncFeatureSpaces->setEnabled(false);
         mSortSpikesByTime->setEnabled(false);
+        mNextFeatureSpace->setEnabled(false);
+        mPreviousFeatureSpace->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
         mGenerateProbeDrift->setEnabled(false);
@@ -248,6 +250,8 @@ void KlustersApp::slotStateChanged(const QString& state)
         mPcaAlignAllClusters->setEnabled(true);
         mSyncFeatureSpaces->setEnabled(true);
         mSortSpikesByTime->setEnabled(true);
+        mNextFeatureSpace->setEnabled(true);
+        mPreviousFeatureSpace->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
         nudgePlusAction->setEnabled(true);
         mGenerateProbeDrift->setEnabled(true);
