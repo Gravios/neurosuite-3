@@ -95,6 +95,14 @@ public:
         return zoom(firstPoint.x(), firstPoint.y(), secondPoint.x(), secondPoint.y());
     };
 
+    /**
+* Shows exactly the rectangle [@p l, @p r] x [@p t, @p b] (world coordinates), corrected
+* to the initial boundaries and zoom limits like the other zooms.  Lets a view zoom one
+* axis on its own, or restore a zoom it keeps across a rebuild of the window.
+* @return boolean indicating if the window has been modified
+*/
+    bool setVisible(float l, float t, float r, float b);
+
 protected:
     /**
 * Make sure that the new window remains inside the intial boundaries.

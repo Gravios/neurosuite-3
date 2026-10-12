@@ -101,6 +101,24 @@ bool ZoomWindow::zoom(int firstClickX,int firstClickY, int secondClickX,int seco
 
 }
 
+bool ZoomWindow::setVisible(float l, float t, float r, float b){
+    const float previousLeft   = left;
+    const float previousRight  = right;
+    const float previousTop    = top;
+    const float previousBottom = bottom;
+
+    left   = qMin(l, r);
+    right  = qMax(l, r);
+    top    = qMin(t, b);
+    bottom = qMax(t, b);
+
+    //Make sure that the new window remains inside the intial boundaries.
+    correctWindow();
+
+    //Verify if the window has really been modified
+    return !(left == previousLeft && right == previousRight && top == previousTop && bottom == previousBottom);
+}
+
 void ZoomWindow::correctWindow(){
     if(left < initialLeft) {
         right += initialLeft - left;
