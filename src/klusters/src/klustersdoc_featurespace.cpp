@@ -6,9 +6,9 @@
     keeping the cluster assignment.
 
     Every per-group file of a session is indexed by the same spike row — .res,
-    each method's .spk and .fet, the .clu — and realign/nudge never reorder rows
-    (spikeorder.h).  So the in-memory cluster tables, which index feature rows,
-    stay valid when another method's features are loaded under them; only the
+    each method's .spk and .fet, the .clu — and realign/nudge rewrite each spike
+    in its own row, never another.  So the in-memory cluster tables, which index
+    feature rows, stay valid when another method's features are loaded under them; only the
     feature values, the waveform source and what depends on them change.
 
     Copyright (C) 2026  neurosuite-3 contributors
