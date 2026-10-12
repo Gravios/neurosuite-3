@@ -19,6 +19,9 @@
 #include "klustersview.h"
 #include "data.h"
 #include "pca_row_projection.h"     // klusters::projectSpikeOntoPca — the one projection kernel
+#include "spkmemory.h"
+
+#include <neurosuite/core/neurofileio.h>
 
 #include <QDir>
 #include <QFile>
@@ -27,6 +30,9 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <iterator>
+#include <new>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -162,15 +168,29 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
     if (viewList)
         for (KlustersView* v : *viewList) v->stopAllViewThreads();
 
+    // Leaving the .clu's own space: hold its live table (realign / nudge keep
+    // it current) so that switching back reads nothing from disk.
+    if (activeMethod == originMethod && !activeFetPath.isEmpty())
+        holdFeatures(activeFetPath, clusteringData->featureTableCopy());
+
+    // Tables come from memory (preloadFeatureSpaces), read once if not held.
+    const std::shared_ptr<const neurofileio::FetBinaryFile> fet = featuresInMemory(target.fetPath);
+    if (!fet) {
+        errorInformation = tr("Cannot read %1.").arg(QFileInfo(target.fetPath).fileName());
+        return false;
+    }
     const QString prevFet = activeFetPath;
     const QString prevSpk = activeSpkPath;
-    if (!clusteringData->replaceFeatureSpace(target.fetPath, target.spkPath, errorInformation))
+    if (!clusteringData->replaceFeatureSpace(*fet, target.fetPath, target.spkPath, errorInformation))
         return false;
-    if (childData && !childData->replaceFeatureSpace(target.fetPath, target.spkPath, errorInformation)) {
+    if (childData && !childData->replaceFeatureSpace(*fet, target.fetPath, target.spkPath,
+                                                     errorInformation)) {
         // Keep both layers in one space: put the parent back (the active paths
         // are exactly what was loaded, pending copies included).
         QString rollbackError;
-        if (!clusteringData->replaceFeatureSpace(prevFet, prevSpk, rollbackError))
+        const std::shared_ptr<const neurofileio::FetBinaryFile> prev = featuresInMemory(prevFet);
+        if (!(prev ? clusteringData->replaceFeatureSpace(*prev, prevFet, prevSpk, rollbackError)
+                   : clusteringData->replaceFeatureSpace(prevFet, prevSpk, rollbackError)))
             errorInformation += tr("\nRestoring the %1 space also failed: %2  "
                                    "Close and reopen the document.")
                                     .arg(activeMethod, rollbackError);
@@ -407,6 +427,67 @@ bool KlustersDoc::syncAllFeatureSpaces(QString& logOut)
         allOk = syncOneSpace(s.method, methodsDone, logOut) && allOk;
     }
     return allOk;
+}
+
+std::shared_ptr<const neurofileio::FetBinaryFile> KlustersDoc::featuresInMemory(const QString& path)
+{
+    const QFileInfo info(path);
+    if (!info.exists()) return nullptr;
+    const auto it = fetMemory.constFind(path);
+    if (it != fetMemory.constEnd() && it->size == info.size() && it->modified == info.lastModified())
+        return it->fet;
+    std::shared_ptr<neurofileio::FetBinaryFile> fet;
+    try {
+        fet = std::make_shared<neurofileio::FetBinaryFile>(
+            neurofileio::readFetBinary(path.toStdString()));
+    } catch (const std::bad_alloc&) {
+        return nullptr;
+    }
+    if (!fet->ok) return nullptr;
+    holdFeatures(path, fet);
+    return fet;
+}
+
+void KlustersDoc::holdFeatures(const QString& path,
+                               std::shared_ptr<const neurofileio::FetBinaryFile> fet)
+{
+    const QFileInfo info(path);
+    FetInMemory& m = fetMemory[path];
+    m.size     = info.size();
+    m.modified = info.lastModified();
+    m.fet      = std::move(fet);
+}
+
+qint64 KlustersDoc::preloadFeatureSpaces()
+{
+    if (!clusteringData) return 0;
+    SpkMemoryCache& spkMemory = SpkMemoryCache::instance();
+    const QString liveSpk = clusteringData->getSpkFileName();
+    QStringList keepSpk{ liveSpk }, keepFet;
+    if (childData) keepSpk << childData->getSpkFileName();
+    for (const FeatureSpace& s : availableFeatureSpaces()) {
+        if (!s.usable) continue;
+        keepSpk << s.spkPath;
+        keepFet << s.fetPath;
+        // The shown space is loaded already: its table lives in Data and its
+        // reader holds its .spk (re-reading it after each realign / nudge
+        // would cost a full file read per edit).
+        if (s.method != activeMethod) featuresInMemory(s.fetPath);
+        if (s.spkPath != liveSpk)     spkMemory.get(s.spkPath);
+    }
+    spkMemory.keepOnly(keepSpk);
+    for (auto it = fetMemory.begin(); it != fetMemory.end();)
+        it = keepFet.contains(it.key()) ? std::next(it) : fetMemory.erase(it);
+
+    qint64 held = spkMemory.bytesHeld();
+    for (const FetInMemory& m : std::as_const(fetMemory)) held += m.size;
+    return held;
+}
+
+void KlustersDoc::releaseFeatureSpaces()
+{
+    SpkMemoryCache::instance().clear();
+    fetMemory.clear();
 }
 
 void KlustersDoc::discardSyncedFeatureSpaces()

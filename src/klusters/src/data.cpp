@@ -97,6 +97,24 @@ void Data::setSpkFileName(const QString& path){
 
 bool Data::replaceFeatureSpace(const QString& fetPath, const QString& spkPath,
                                QString& errorInformation){
+    const neurofileio::FetBinaryFile fet = neurofileio::readFetBinary(fetPath.toStdString());
+    return replaceFeatureSpace(fet, fetPath, spkPath, errorInformation);
+}
+
+std::shared_ptr<neurofileio::FetBinaryFile> Data::featureTableCopy() const{
+    auto fet = std::make_shared<neurofileio::FetBinaryFile>();
+    fet->nFeatures = nbDimensions;
+    fet->nSpikes   = static_cast<int64_t>(nbSpikes);
+    const int64_t total = static_cast<int64_t>(nbSpikes) * nbDimensions;
+    fet->values.resize(static_cast<size_t>(total));
+    for(int64_t i = 0; i < total; ++i)
+        fet->values[static_cast<size_t>(i)] = static_cast<int64_t>(features[static_cast<size_t>(i)]);
+    fet->ok = true;
+    return fet;
+}
+
+bool Data::replaceFeatureSpace(const neurofileio::FetBinaryFile& fet, const QString& fetPath,
+                               const QString& spkPath, QString& errorInformation){
     //Let a running extrema recompute finish: it reads the feature table.  Then
     //clear the cluster-0 flag, as restartDimensionExtrema does: a stale value
     //(e.g. left by an empty createNewCluster) would make the rescan below
@@ -104,7 +122,6 @@ bool Data::replaceFeatureSpace(const QString& fetPath, const QString& spkPath,
     if(minMaxThread) minMaxThread->wait();
     clusterZeroJustModified = false;
 
-    const neurofileio::FetBinaryFile fet = neurofileio::readFetBinary(fetPath.toStdString());
     if(!fet.ok || fet.nFeatures < 2 || fet.nFeatures > 65536){
         errorInformation = QObject::tr("Invalid, missing, or unreadable feature file: %1").arg(fetPath);
         return false;

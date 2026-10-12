@@ -288,6 +288,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         nudgePlusAction->setEnabled(false);
     } else if(state == QLatin1String("SavingDoneState")) {
         if (featureSpaceCombo) featureSpaceCombo->setEnabled(true);
+        preloadFeatureSpaces();          // Save rewrote files; Save As moved them
         populateFeatureSpaceCombo();     // Save As may have changed the .clu's method
         mSaveAction->setEnabled(true);
         mSaveAsAction->setEnabled(true);

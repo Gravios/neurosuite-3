@@ -3187,7 +3187,8 @@ void KlustersApp::initDisplay(){
     //Set the range value of the spine boxes
     dimensionX->setRange(1,doc->nbDimensions());
     dimensionY->setRange(1,doc->nbDimensions());
-    //Feature-space switcher: list this group's method spaces.
+    //Feature-space switcher: hold every space in memory, list them.
+    preloadFeatureSpaces();
     populateFeatureSpaceCombo();
     featureSpaceSpacerAction->setVisible(true);
     featureSpaceLabelAction->setVisible(true);

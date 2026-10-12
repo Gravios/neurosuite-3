@@ -66,6 +66,19 @@ void KlustersApp::populateFeatureSpaceCombo()
     featureSpaceCombo->setFont(f);
 }
 
+void KlustersApp::preloadFeatureSpaces()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    slotStatusMsg(tr("Loading feature spaces into memory…"));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    const qint64 held = doc->preloadFeatureSpaces();
+    QApplication::restoreOverrideCursor();
+    statusBar()->showMessage(tr("Feature spaces in memory: %1 MB.")
+                                 .arg(static_cast<double>(held) / (1024.0 * 1024.0), 0, 'f', 0),
+                             4000);
+}
+
 void KlustersApp::slotFeatureSpaceActivated(int index)
 {
     if (!doc || !featureSpaceCombo) return;
@@ -107,6 +120,7 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
     }
 
     refreshAfterFeatureSpaceSwitch(oldDims);
+    preloadFeatureSpaces();                        // a sync may have written new files
     populateFeatureSpaceCombo();
 
     // Locks on (borrowed) or each action back to what the state machine last
@@ -228,6 +242,7 @@ void KlustersApp::slotSyncFeatureSpaces()
 
     // A borrowed space being shown was reloaded by the sync.
     if (shownWasBorrowed) refreshAfterFeatureSpaceSwitch(oldDims);
+    preloadFeatureSpaces();                        // hold the synced copies
     populateFeatureSpaceCombo();
 
     const QString summary = log.trimmed().isEmpty()

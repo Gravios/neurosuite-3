@@ -139,6 +139,7 @@ void KlustersDoc::closeDocument(){
     activeFetPath.clear();
     activeSpkPath.clear();
     discardSyncedFeatureSpaces();
+    releaseFeatureSpaces();
     parameterFile.clear();
     qDeleteAll(clusterColorListUndoList);
     clusterColorListUndoList.clear();

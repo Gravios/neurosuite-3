@@ -929,6 +929,9 @@ private:
     /** Refill the combo from KlustersDoc::availableFeatureSpaces(), select the
      *  loaded space, disable unusable entries (tooltip says why). */
     void populateFeatureSpaceCombo();
+    /** Hold every usable space's .fet/.spk in memory (KlustersDoc::
+     *  preloadFeatureSpaces), with a wait cursor and a status-bar note. */
+    void preloadFeatureSpaces();
     /** After a switch: re-range the dimension spin boxes, keep every display's
      *  axes valid (a time axis stays on time), and refresh views and matrices. */
     void refreshAfterFeatureSpaceSwitch(int oldNbDimensions);

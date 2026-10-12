@@ -46,6 +46,7 @@
 #include <QSet>
 #include <QMap>
 #include <QHash>
+#include <QDateTime>
 #include <QFile>
 #include <QEvent>
 #include <QDebug>
@@ -1555,6 +1556,13 @@ public:
     bool syncAllFeatureSpaces(QString& logOut);
     /** Delete every synced working copy and forget it. */
     void discardSyncedFeatureSpaces();
+    /** Hold every usable space's .fet and .spk in memory (the shown space is
+     *  already loaded), and drop whatever no space uses any more, so switching
+     *  and syncing never read them from disk.  Unchanged files are not read
+     *  again.  Returns the bytes held. */
+    qint64 preloadFeatureSpaces();
+    /** Drop every feature table and waveform file held for other spaces. */
+    void releaseFeatureSpaces();
 
     // ── Full time sort (klustersdoc_timesort.cpp) ──────────────────────────
     /** One row-indexed file of the group and its layout: @c header bytes, then
@@ -1957,6 +1965,19 @@ private:
     QHash<QString, quint64> syncedGeneration;
     /** Bumped whenever spike times change (realign, nudge, undoing a realign). */
     quint64 spikeTimesGeneration = 0;
+    /** Feature tables held in memory (preloadFeatureSpaces), by .fet path, each
+     *  for one file version.  The .clu space's live table is kept here while
+     *  another space is shown. */
+    struct FetInMemory {
+        qint64    size = -1;
+        QDateTime modified;
+        std::shared_ptr<const neurofileio::FetBinaryFile> fet;
+    };
+    QHash<QString, FetInMemory> fetMemory;
+    /** The table of @p path for the file as it is now: held, or read and held. */
+    std::shared_ptr<const neurofileio::FetBinaryFile> featuresInMemory(const QString& path);
+    /** Hold @p fet as the table of @p path for the file as it is now. */
+    void holdFeatures(const QString& path, std::shared_ptr<const neurofileio::FetBinaryFile> fet);
     /** One space's sync, with every space sharing its .spk; @p methodsDone holds
      *  the methods already synced in this pass so a shared .spk is rebuilt once. */
     bool syncOneSpace(const QString& method, QSet<QString>& methodsDone, QString& logOut);

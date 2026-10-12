@@ -49,6 +49,8 @@
 #include <memory>
 #include "requestticket.h"
 #include "spkoverlay.h"
+
+namespace neurofileio { struct FetBinaryFile; }
 using namespace std;
 
 // forward declaration
@@ -1028,6 +1030,13 @@ public:
     * .spk (KlustersView::stopAllViewThreads): the table is reallocated.*/
     bool replaceFeatureSpace(const QString& fetPath, const QString& spkPath,
                              QString& errorInformation);
+    /**As above, with the feature table already in memory (@p fetName names it
+    * in messages): switching to a preloaded space reads nothing from disk.*/
+    bool replaceFeatureSpace(const neurofileio::FetBinaryFile& fet, const QString& fetName,
+                             const QString& spkPath, QString& errorInformation);
+    /**A copy of the loaded feature table in .fet layout (row-major, the time
+    * in the last column), to keep in memory while another space is shown.*/
+    std::shared_ptr<neurofileio::FetBinaryFile> featureTableCopy() const;
 
     /**Rebinds the reader to whatever inode now sits behind the CURRENT
     * spkFileName and republishes.  For writers that replace the file in
