@@ -58,6 +58,14 @@ target space on every switch. Results are `.pending` working copies: the Space
 box loads them, Save commits them, closing without saving, Save As or undoing a
 realignment discards them. Reference: `doc/klusters/README.md` → Feature spaces.
 
+**Neighbour clamp removed.** The 2026-10-11 clamp that held a realigned or
+nudged spike short of its neighbour in `.res` is gone: what the files share is
+the row index, which realign and nudge keep (each spike is rewritten in its own
+row; the reorder step stays removed), and every `.spk`/`.fet` follows the one
+`.res`, so the order of times across clusters does not matter. Every spike now
+moves the full shift. `spikeorder.h`, its test and the held-back count are
+removed.
+
 **Fix.** A session working copy such as `x.spk.stderiv_C5.7.pending` was read
 as the *standard* method (`custody::methodOf` needs the group as the last
 token), so re-extract-on-save rebuilt a stderiv `.spk` as raw waveforms.

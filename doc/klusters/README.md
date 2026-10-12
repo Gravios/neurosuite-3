@@ -108,8 +108,9 @@ space; pick the `(.clu)` entry to go back.
   and the box is locked while saving, realigning or reclustering.
 
 This works because every file of a group is indexed by the same spike row,
-and Klusters keeps it that way: realign and nudge never move a spike past its
-neighbour in `.res`.
+and Klusters keeps it that way: realign and nudge rewrite each spike in its own
+row and never move rows. A spike's new time may pass a neighbouring spike's;
+that does not matter, because every `.spk` and `.fet` follows the one `.res`.
 
 **Keeping spaces in sync.** Realign and nudge rewrite only the `.clu` space's
 `.spk` and `.fet`, so the other spaces' waveforms and features stay at the old
@@ -860,7 +861,7 @@ For each spike in the selected clusters:
 1. The cluster mean waveform is computed.
 2. The spike's waveform is cross-correlated against the mean template at each lag within ±maxShift samples.
 3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the eigenvector basis matching the session method (`pca.stderiv.N` when the method is stderiv, else `pca.standard.N`).
-4. No spike is moved past its neighbour in `.res`: a shift that would cross one is limited to stop just short (a neighbour that is also moving splits the gap). Rows are never reordered, so every method's `.spk`/`.fet` and the `.clu` stay aligned; the log reports how many spikes were held back.
+4. Each spike is written back to its own row; rows are never reordered, so every method's `.spk`/`.fet` and the `.clu` stay aligned. A spike's new time may pass a neighbouring spike's.
 
 ### Pipeline variant awareness
 
@@ -901,7 +902,7 @@ session files. The session files are updated atomically on save:
   by upstream scripts (reextract, subcluster) give an independent
   rollback option.
 
-After realignment completes, the **Realignment Review Dialog** shows before/after mean waveforms and reports the number of spikes shifted and how many were held back at a neighbouring spike. The result can be **accepted** (pending files renamed; changes persisted) or **rejected** (pending files discarded).
+After realignment completes, the **Realignment Review Dialog** shows before/after mean waveforms and reports the number of spikes shifted. The result can be **accepted** (pending files renamed; changes persisted) or **rejected** (pending files discarded).
 
 **Actions → Abort Realignment** cancels realignment in progress.
 
@@ -926,9 +927,8 @@ reprojects through the PCA basis (using the same variant-aware logic as
 realign), and writes the update into the `.pending` files. The Apply /
 Reject cycle is the same as realign — nothing is committed until save.
 
-A spike never passes its neighbour in `.res`: if the shift would carry it
-past another spike, it stops one sample short, and the status bar says how
-many spikes were held back.
+Every spike moves the full step and keeps its row, even where that carries
+it past a spike of another cluster.
 
 Focus returns to the cluster palette after nudge completes, so you can
 immediately step to the next cluster with the arrow keys.
