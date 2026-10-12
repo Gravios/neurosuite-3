@@ -26,10 +26,7 @@
 
 //Unix include file
 #include <unistd.h>
-#include <algorithm>
 #include <cstdint>
-#include <numeric>
-#include <vector>
 
 //include files for the application
 #include "clustersprovider.h"
@@ -98,28 +95,13 @@ int ClustersProvider::loadData(){
 
     RestartTimer();
 
-    // Every lookup below bisects row 2 and then walks forward while the time is
-    // in the window, so the table must be in time order.  Klusters' realign and
-    // nudge rewrite each spike in its own row, so a saved .res need not be
-    // (Klusters' Sort Spikes by Time puts the files back in order); sort a copy
-    // here, stably, so NeuroScope never depends on it.  The files are untouched.
-    std::vector<long> order(static_cast<size_t>(nbSpikes));
-    std::iota(order.begin(), order.end(), 0L);
-    if(!std::is_sorted(data.times.begin(), data.times.end())){
-        std::stable_sort(order.begin(), order.end(), [&data](long a, long b){
-            return data.times[static_cast<size_t>(a)] < data.times[static_cast<size_t>(b)];
-        });
-        qDebug() << "Spike times of" << fileName << "were not in time order; sorted in memory.";
-    }
-
     //Set the size of the Array (row 1 = cluster ids, row 2 = timestamps).
     clusters.setSize(2, nbSpikes);
     QMap<int,int> idSet;
     for(long k = 0; k < nbSpikes; ++k){
-        const size_t row = static_cast<size_t>(order[static_cast<size_t>(k)]);
-        const int id = data.ids[row];
+        const int id = data.ids[static_cast<size_t>(k)];
         clusters(1, k+1) = static_cast<dataType>(id);
-        clusters(2, k+1) = static_cast<dataType>(data.times[row]);
+        clusters(2, k+1) = static_cast<dataType>(data.times[static_cast<size_t>(k)]);
         idSet.insert(id, id);
     }
     clusterIds = idSet.keys();
