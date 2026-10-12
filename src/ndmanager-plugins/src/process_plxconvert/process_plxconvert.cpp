@@ -331,6 +331,7 @@ struct Recording {
     vector<Map> eventChannels;
     vector<string> findings;
     List deviceSettings;
+    List preDataText;         // PL2: other readable text before the data records
     uint64_t dataStart = 0, dataStop = 0;
     // walk keys
     std::map<std::pair<uint32_t, uint32_t>, size_t> analogByKey;
@@ -585,6 +586,34 @@ List scrapeSettings(const string& blob) {
     return out;
 }
 
+/**
+ * Printable text runs in bytes [from, to) that the decoded fields do not
+ * already hold — device chains, electrode types, mode names.  A run needs
+ * at least 4 characters, 3 of them letters, so binary noise (sort templates,
+ * floats) is not mistaken for text.
+ */
+List textRuns(const uint8_t* b, size_t from, size_t to, const std::set<string>& known,
+              size_t maxRuns = 32) {
+    List out;
+    std::set<string> seen = known;
+    string cur;
+    auto flush = [&]() {
+        size_t letters = 0;
+        for (char c : cur) letters += std::isalpha(static_cast<unsigned char>(c)) != 0;
+        while (!cur.empty() && cur.back() == ' ') cur.pop_back();
+        if (cur.size() >= 4 && letters >= 3 && seen.insert(cur).second && out.size() < maxRuns)
+            out.push_back(cur);
+        cur.clear();
+    };
+    for (size_t k = from; k < to; ++k) {
+        const uint8_t c = b[k];
+        if (c >= 0x20 && c < 0x7F) cur += static_cast<char>(c);
+        else flush();
+    }
+    flush();
+    return out;
+}
+
 void readPl2Headers(Reader& r, Recording& rec) {
     if (r.size() < kPl2FileHeader) throw std::runtime_error("not a PL2 file");
     const uint8_t* h = r.at(0, kPl2FileHeader);
@@ -672,6 +701,8 @@ void readPl2Headers(Reader& r, Recording& rec) {
                 d.push_back({"threshold_uV", std::round(thr * uv * 1000.0) / 1000.0});
                 d.push_back({"preThresholdSamples", pre});
                 d.push_back({"headerUnitCounts", hdrUnits});
+                if (List t = textRuns(b, 0x8A0, len, {name, units}); !t.empty())
+                    d.push_back({"headerText", t});
                 rec.spikeByKey[{sc[0], sc[1]}] = rec.spikeChannels.size();
                 rec.spikeChannels.push_back(std::move(d));
             } else if (kind == kRecAnalogHeader) {
@@ -683,12 +714,18 @@ void readPl2Headers(Reader& r, Recording& rec) {
                 c.recording = sc[3] != 0;
                 c.rate = rate;
                 c.uvPerCount = uv;
+                const string device = cstr(b + 0xD8, 64), electrode = cstr(b + 0x118, 64);
                 c.meta = {{"source", sc[0]}, {"channel", sc[1]}, {"units", units},
-                          {"unitsPerCount", upc}, {"device", cstr(b + 0xD8, 64)},
-                          {"electrode", cstr(b + 0x118, 64)}};
+                          {"unitsPerCount", upc}, {"device", device}, {"electrode", electrode}};
+                List t = textRuns(b, 0x80, 0xD8, {name, units, device, electrode});
+                const List t2 = textRuns(b, 0x158, len, {name, units, device, electrode});
+                t.insert(t.end(), t2.begin(), t2.end());
+                if (!t.empty()) c.meta.push_back({"headerText", t});
                 rec.analogByKey[{c.source, c.channel}] = rec.analog.size();
                 rec.analog.push_back(std::move(c));
             } else {
+                if (List t = textRuns(b, 0x60, len, {name}); !t.empty())
+                    d.push_back({"headerText", t});
                 rec.eventByKey[{sc[0], sc[1]}] = rec.eventChannels.size();
                 rec.eventChannels.push_back(std::move(d));
             }
@@ -705,6 +742,19 @@ void readPl2Headers(Reader& r, Recording& rec) {
         string blob(rec.dataStart - headersStop, '\0');
         r.readExact(headersStop, blob.data(), blob.size());
         rec.deviceSettings = scrapeSettings(blob);
+        string rest;
+        size_t q = 0;
+        while (true) {
+            const size_t a = blob.find("<Settings", q);
+            if (a == string::npos) { rest += blob.substr(q); break; }
+            rest += blob.substr(q, a - q);
+            rest += '\0';
+            const size_t e = blob.find("</Settings>", a);
+            if (e == string::npos) break;
+            q = e + 11;
+        }
+        rec.preDataText = textRuns(reinterpret_cast<const uint8_t*>(rest.data()),   // text bytes
+                                   0, rest.size(), {}, 200);
     }
 }
 
@@ -1182,6 +1232,8 @@ Value buildMetadata(const Recording& rec, const string& stream, const Layout& L,
              {"eventChannels", evt}};
     if (!rec.deviceSettings.empty())
         meta.push_back({"deviceSettings", rec.deviceSettings});
+    if (!rec.preDataText.empty())
+        meta.push_back({"deviceText", rec.preDataText});
     if (!findings.empty()) {
         List fl;
         for (auto& f : findings) fl.push_back(f);

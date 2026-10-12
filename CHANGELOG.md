@@ -59,6 +59,9 @@ findings). The timeline is rebuilt from block timestamps, so a paused
 recording keeps its time base (gaps zero-filled and listed) and the `.dat`
 stays aligned with Plexon's spike and event timestamps; channels without
 data are kept as zero channels so channel numbering survives.
+Readable text of the PL2 headers and settings region that the decoded fields
+do not hold (device chain, electrode and input types, source configuration)
+is kept as `headerText` / `deviceText`.
 
 PLX follows Plexon.h as read by python-neo; PL2 follows OpenReadout's
 clean-room notes (Plexon publishes no PL2 specification), so every run

@@ -159,7 +159,8 @@ def _rec(kind, src, words, body_head, body):
     return head + body + b"\0" * pad
 
 
-SETTINGS_XML = (b"<Settings>\r\n\t<m_highpassFreq>300</m_highpassFreq>\r\n"
+SETTINGS_XML = (b"range=2.500000 rate=1000\0\x01\x02Spike Separator\0"
+                b"<Settings>\r\n\t<m_highpassFreq>300</m_highpassFreq>\r\n"
                 b"\t<m_inputSamplingRate>40000</m_inputSamplingRate>\r\n</Settings>\r\n"
                 b"<Settings CompactMode=\"1\"><CommandBars Schema=\"34\"/></Settings>")
 
@@ -208,6 +209,8 @@ def write_pl2(path, *, bad_header=False, off_grid=False, truncate=0, bad_counts=
         b[0], b[1] = 0xD6, 9
         b[16:80] = _name(["EVT01", "Strobed"][c], 64)
         struct.pack_into("<4I", b, 0x50, 9, c + 1, 1, 1)
+        b[0x80:0x80 + 17] = b"Single-bit events"
+        b[0xC0:0xC0 + 20] = b"Plexon Digital Input"
         heads += b
     headers_end = 0x480 + len(heads)
     settings = SETTINGS_XML + b"\0" * ((-len(SETTINGS_XML)) % 16)
@@ -367,6 +370,11 @@ def main():
               sr2.get("deviceSettings") == [{"m_highpassFreq": 300, "m_inputSamplingRate": 40000}])
         check("PL2 event counts", {c["name"]: c["nEvents"] for c in sr2["eventChannels"]}
               == {"EVT01": 10, "Strobed": 1})
+        dig = {c["name"]: c for c in sr2["eventChannels"]}
+        check("PL2 digital header text captured",
+              dig["EVT01"].get("headerText") == ["Single-bit events", "Plexon Digital Input"])
+        check("PL2 plain text outside <Settings> captured",
+              sr2.get("deviceText") == ["range=2.500000 rate=1000", "Spike Separator"])
 
         rev = Path(d, "rev.pl2")
         write_pl2(rev, reverse=True)
