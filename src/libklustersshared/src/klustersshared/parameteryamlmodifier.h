@@ -26,6 +26,8 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <string>
+
 // Forward declarations — avoid pulling in the full headers into every TU
 // that includes this header.
 class ChannelColors;
@@ -169,6 +171,8 @@ public:
 
 private:
     YAML::Node root;   ///< live YAML tree (Map or Null if never parsed)
+    QString     parsedPath;   ///< absolute path parseFile() loaded, if any
+    std::string parsedText;   ///< that tree as emitted, to detect a no-op save
 
     // Helpers
     /** Ensure root is a Map and has the given top-level key as a Map. */

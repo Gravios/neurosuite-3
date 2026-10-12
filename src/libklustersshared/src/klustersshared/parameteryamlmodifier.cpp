@@ -29,8 +29,22 @@ ParameterYamlModifier::ParameterYamlModifier()
 // File I/O
 // ---------------------------------------------------------------------------
 
+namespace {
+std::string emitDocument(const YAML::Node& node)
+{
+    YAML::Emitter emitter;
+    emitter.SetIndent(2);
+    emitter.SetMapFormat(YAML::Block);
+    emitter.SetSeqFormat(YAML::Block);
+    emitter << node;
+    return std::string(emitter.c_str(), emitter.size());
+}
+} // namespace
+
 bool ParameterYamlModifier::parseFile(const QString& path)
 {
+    parsedPath.clear();
+    parsedText.clear();
     try {
         root = YAML::LoadFile(path.toStdString());
         if (!root.IsDefined() || !root.IsMap()) {
@@ -38,6 +52,8 @@ bool ParameterYamlModifier::parseFile(const QString& path)
             root = YAML::Node(YAML::NodeType::Map);
             return false;
         }
+        parsedPath = QFileInfo(path).absoluteFilePath();
+        parsedText = emitDocument(root);
         return true;
     } catch (const YAML::Exception& e) {
         qWarning() << "ParameterYamlModifier: parse error in" << path
@@ -55,6 +71,22 @@ bool ParameterYamlModifier::writeToFile(const QString& path)
         root["parameters"]["creator"] = "neuroscope-3";
     }
 
+    std::string text;
+    try {
+        text = emitDocument(root);
+    } catch (const std::exception& e) {
+        qWarning() << "ParameterYamlModifier: emit error:" << e.what();
+        return false;
+    }
+
+    // Nothing changed since parseFile(): leave the file alone.  NeuroScope saves
+    // on every close, and re-emitting an unchanged tree still rewrites the file
+    // -- dropping its comments, normalising its formatting and bumping its mtime
+    // -- for no reason.
+    if (!parsedText.empty() && text == parsedText &&
+        QFileInfo(path).absoluteFilePath() == parsedPath && QFile::exists(path))
+        return true;
+
     QString tmpPath = path + QLatin1String(".nstmp");
     try {
         std::ofstream out(tmpPath.toStdString());
@@ -62,12 +94,13 @@ bool ParameterYamlModifier::writeToFile(const QString& path)
             qWarning() << "ParameterYamlModifier: cannot open" << tmpPath << "for writing";
             return false;
         }
-        YAML::Emitter emitter(out);
-        emitter.SetIndent(2);
-        emitter.SetMapFormat(YAML::Block);
-        emitter.SetSeqFormat(YAML::Block);
-        emitter << root;
+        out << text << '\n';
         out.close();
+        if (!out) {
+            qWarning() << "ParameterYamlModifier: write error on" << tmpPath;
+            QFile::remove(tmpPath);
+            return false;
+        }
     } catch (const std::exception& e) {
         qWarning() << "ParameterYamlModifier: write error:" << e.what();
         QFile::remove(tmpPath);

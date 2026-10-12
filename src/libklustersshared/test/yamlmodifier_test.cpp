@@ -39,7 +39,8 @@ static std::string str(const YAML::Node& n)
 
 // A session written by ndmanager / the stderiv pipeline: group 1 carries a custom
 // difference pattern, group 2 a probe/shank, and both an unknown future key.
-static const char* kSession = R"(parameters:
+static const char* kSession = R"(# hand-written note
+parameters:
   version: "1.0"
   creator: ndmanager
 acquisitionSystem:
@@ -269,6 +270,29 @@ int main()
         chk(mod2.writeToFile(path), "writeToFile");
         chk(str(YAML::LoadFile(path.toStdString())["acquisitionSystem"]["amplification"]) == "400",
             "a real change is still written");
+    }
+
+    std::printf("no-op save leaves the file untouched:\n");
+    writeSession(path);
+    {
+        ParameterYamlModifier mod;
+        chk(mod.parseFile(path), "parseFile");
+        mod.setAcquisitionSystemInformation(16, 8, 20000.0, 20, 193, 0);  // same values
+        mod.setLfpInformation(1250.0);                                      // new key
+        chk(mod.writeToFile(path), "writeToFile");
+        std::ifstream in(path.toStdString());
+        std::string first;
+        std::getline(in, first);
+        chk(first != "# hand-written note", "a real change rewrites the file");
+
+        writeSession(path);
+        ParameterYamlModifier mod2;
+        chk(mod2.parseFile(path), "parseFile");
+        mod2.setAcquisitionSystemInformation(16, 8, 20000.0, 20, 193, 0);
+        chk(mod2.writeToFile(path), "writeToFile");
+        std::ifstream in2(path.toStdString());
+        std::getline(in2, first);
+        chk(first == "# hand-written note", "unchanged tree: comment and layout kept");
     }
 
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
