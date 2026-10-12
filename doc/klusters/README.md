@@ -112,6 +112,15 @@ and Klusters keeps it that way: realign and nudge rewrite each spike in its own
 row and never move rows. A spike's new time may pass a neighbouring spike's;
 that does not matter, because every `.spk` and `.fet` follows the one `.res`.
 
+**Putting rows back in time order.** **Actions → Sort Spikes by Time** sorts
+the saved `.res` by time and moves the same rows in every file of the group that
+is indexed by spike: each method's `.res`, `.spk` and `.fet`, and every `.clu`
+and `.clc` (stage-tagged copies too). It works on the saved files, so save
+first; it then reopens the document, which clears undo history. A file without
+the group's spike count is left as is, and an `.eap` template-class file is
+listed as not reordered (regenerate it). All files are written first and
+swapped in together; if anything fails, every file is left as it was.
+
 **Keeping spaces in sync.** Realign and nudge rewrite only the `.clu` space's
 `.spk` and `.fet`, so the other spaces' waveforms and features stay at the old
 spike times. **Actions → Sync Feature Spaces** brings every other space up to

@@ -66,6 +66,13 @@ row; the reorder step stays removed), and every `.spk`/`.fet` follows the one
 moves the full shift. `spikeorder.h`, its test and the held-back count are
 removed.
 
+**Sort Spikes by Time.** A new action, **Actions → Sort Spikes by Time**, puts a
+group's rows back in time order. It sorts the saved `.res` by time (stable)
+and applies the same row permutation to each method's `.res`/`.spk`/`.fet` and
+every `.clu`/`.clc`. It needs a saved document, swaps all files in together
+(rolling back on any failure), and reopens the document. `.eap` membership is
+reported, not reordered.
+
 **Fix.** A session working copy such as `x.spk.stderiv_C5.7.pending` was read
 as the *standard* method (`custody::methodOf` needs the group as the last
 token), so re-extract-on-save rebuilt a stderiv `.spk` as raw waveforms.
