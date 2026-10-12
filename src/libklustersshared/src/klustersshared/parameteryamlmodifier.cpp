@@ -219,10 +219,27 @@ bool ParameterYamlModifier::setVideoInformation(int width, int height)
 bool ParameterYamlModifier::setSampleRateByExtension(
         const QMap<QString,double>& extensionSamplingRates)
 {
-    // files: is a sequence of { samplingRate: N, extension: "ext" }
+    // files: is a sequence of { samplingRate: N, extension: "ext", ... }.
+    // Entries are updated in place, not rebuilt: ndmanager stores each file's
+    // channelMapping here, and the readers skip an entry they cannot use (no
+    // extension, no rate) rather than reject the file, so an entry the caller
+    // did not report must still be kept.  Rebuilding the sequence from the
+    // caller's map deleted both on every NeuroScope save.
     YAML::Node seq(YAML::NodeType::Sequence);
-    for (auto it = extensionSamplingRates.constBegin();
-         it != extensionSamplingRates.constEnd(); ++it) {
+    QMap<QString,double> pending = extensionSamplingRates;
+    const YAML::Node existing = root["files"];
+    if (existing && existing.IsSequence()) {
+        for (const auto& old : existing) {
+            YAML::Node entry = YAML::Clone(old);
+            if (entry.IsMap() && entry["extension"] && entry["extension"].IsScalar()) {
+                const QString ext = QString::fromStdString(entry["extension"].Scalar());
+                if (pending.contains(ext))
+                    entry["samplingRate"] = pending.take(ext);
+            }
+            seq.push_back(entry);
+        }
+    }
+    for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
         YAML::Node entry;
         entry["samplingRate"] = it.value();
         entry["extension"]    = it.key().toStdString();

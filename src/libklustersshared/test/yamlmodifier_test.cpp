@@ -48,6 +48,15 @@ acquisitionSystem:
   voltageRange: 20
   amplification: 1000
   offset: 0
+files:
+  - samplingRate: 20000
+    extension: fil
+    channelMapping:
+      - original: 0
+        mapped: [0, 1]
+  - samplingRate: 1250
+    extension: lfp
+  - note: hand-written entry the readers skip
 anatomicalDescription:
   channelGroups:
     - label: shank A
@@ -181,6 +190,27 @@ int main()
             "reader rebuilds the trash from the unlisted channel");
         chk(grpCh.value(1).size() == 4 && grpCh.value(2).size() == 3,
             "groups 1 and 2 read back in place");
+    }
+
+    std::printf("files: rate changed, extension added:\n");
+    writeSession(path);
+    {
+        QMap<QString,double> rates;
+        rates[QStringLiteral("fil")] = 20000;
+        rates[QStringLiteral("lfp")] = 1000;  // changed
+        rates[QStringLiteral("whl")] = 39.06; // new
+        ParameterYamlModifier mod;
+        chk(mod.parseFile(path), "parseFile");
+        mod.setSampleRateByExtension(rates);
+        chk(mod.writeToFile(path), "writeToFile");
+        const YAML::Node f = YAML::LoadFile(path.toStdString())["files"];
+        chk(f.size() == 4, "all entries kept, one added");
+        chk(f[0]["channelMapping"] && f[0]["channelMapping"].size() == 1,
+            "channelMapping kept");
+        chk(str(f[1]["samplingRate"]) == "1000", "lfp rate updated");
+        chk(str(f[2]["note"]) == "hand-written entry the readers skip",
+            "entry the caller never saw kept");
+        chk(str(f[3]["extension"]) == "whl", "new extension appended");
     }
 
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
