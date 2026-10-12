@@ -33,6 +33,8 @@ void   PrefRefinement::setRealignVerbose(bool b) { realignVerboseCheckBox->setCh
 bool   PrefRefinement::getRealignVerbose() const { return realignVerboseCheckBox->isChecked(); }
 void   PrefRefinement::setReextractSpikesOnSave(bool b) { reextractSpikesOnSaveCheckBox->setChecked(b); }
 bool   PrefRefinement::getReextractSpikesOnSave() const { return reextractSpikesOnSaveCheckBox->isChecked(); }
+void   PrefRefinement::setSyncFeatureSpaceOnSwitch(bool b) { syncFeatureSpaceOnSwitchCheckBox->setChecked(b); }
+bool   PrefRefinement::getSyncFeatureSpaceOnSwitch() const { return syncFeatureSpaceOnSwitchCheckBox->isChecked(); }
 
 void   PrefRefinement::setErrorMatrixIncremental(bool b)  { errorMatrixIncrementalCheckBox->setChecked(b); }
 bool   PrefRefinement::getErrorMatrixIncremental() const  { return errorMatrixIncrementalCheckBox->isChecked(); }

@@ -28,6 +28,8 @@ public:
     bool   getRealignVerbose()    const;
     void   setReextractSpikesOnSave(bool b);
     bool   getReextractSpikesOnSave() const;
+    void   setSyncFeatureSpaceOnSwitch(bool b);
+    bool   getSyncFeatureSpaceOnSwitch() const;
 
     // Auto-run spike alignment after each interactive merge
     void   setAutoRealignAfterMerge(bool b);

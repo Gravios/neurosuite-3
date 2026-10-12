@@ -789,6 +789,15 @@ void KlustersApp::createMenus()
     connect(mPcaAlignAllClusters, &QAction::triggered,
             this, &KlustersApp::slotPcaAlignAllClusters);
 
+    mSyncFeatureSpaces = actionMenu->addAction(tr("S&ync Feature Spaces"));
+    mSyncFeatureSpaces->setToolTip(tr(
+        "Bring every other feature space (method) of this group up to the current "
+        "spike times: re-extract its waveforms from the .fil and re-project its "
+        "features through its own PCA basis.  Use after realigning or nudging in "
+        "the .clu's own space.  The results are working copies, written by Save."));
+    connect(mSyncFeatureSpaces, &QAction::triggered,
+            this, &KlustersApp::slotSyncFeatureSpaces);
+
     mDipSplit = reclusterMenu->addAction(tr("&DipSplit Selected Cluster"));
     mDipSplit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
     mDipSplit->setToolTip(

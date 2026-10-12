@@ -16,9 +16,11 @@
 #include "klustersdoc.h"
 #include "klustersview.h"
 #include "data.h"
+#include "configuration.h"
 
 #include <QApplication>
 #include <QComboBox>
+#include <QEventLoop>
 #include <QFileInfo>
 #include <QFont>
 #include <QMessageBox>
@@ -41,10 +43,11 @@ void KlustersApp::populateFeatureSpaceCombo()
         if (s.method == doc->cluMethod()) label += tr("  (.clu)");
         featureSpaceCombo->addItem(label, s.method);
         const int row = featureSpaceCombo->count() - 1;
-        const QString tip = s.usable
+        QString tip = s.usable
             ? tr("Features: %1\nWaveforms: %2")
                   .arg(QFileInfo(s.fetPath).fileName(), QFileInfo(s.spkPath).fileName())
             : tr("Not available: %1").arg(s.reason);
+        if (s.synced) tip += tr("\nSynced to the current spike times this session (written by Save).");
         featureSpaceCombo->setItemData(row, tip, Qt::ToolTipRole);
         if (!s.usable && model)
             if (QStandardItem* item = model->item(row)) item->setEnabled(false);
@@ -75,8 +78,21 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
     const int  oldDims     = doc->nbDimensions();
     QString err;
     QApplication::setOverrideCursor(Qt::WaitCursor);
+    // Preference: bring the target space to the current spike times first.  A
+    // failed sync still switches (to the space's current files) and says why.
+    QString syncLog;
+    bool syncFailed = false;
+    if (configuration().getSyncFeatureSpaceOnSwitch() && method != doc->cluMethod()) {
+        slotStatusMsg(tr("Syncing the %1 feature space to the current spike times…").arg(method));
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        syncFailed = !doc->syncFeatureSpace(method, syncLog);
+    }
     const bool ok = doc->switchFeatureSpace(method, err);
     QApplication::restoreOverrideCursor();
+    if (syncFailed)
+        QMessageBox::warning(this, tr("Feature space"),
+                             tr("Could not sync %1 to the current spike times; showing its "
+                                "existing files.\n\n%2").arg(method, syncLog.trimmed()));
     if (!ok) {
         QMessageBox::warning(this, tr("Feature space"), err);
         populateFeatureSpaceCombo();               // back to the loaded space
@@ -182,4 +198,38 @@ bool KlustersApp::refuseInBorrowedSpace(const QString& what, bool silent)
                "(the %3 space is loaded).")
                 .arg(what, doc->cluMethod(), doc->activeFeatureMethod()), 6000);
     return true;
+}
+
+void KlustersApp::slotSyncFeatureSpaces()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    // The combo is locked during save / realign / recluster: same busy test.
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled())
+        || realignRunning || realignBatchActive || nudgeInProgress) {
+        statusBar()->showMessage(tr("Wait for the running job to finish before syncing "
+                                    "feature spaces."), 5000);
+        return;
+    }
+    const int oldDims = doc->nbDimensions();
+    const bool shownWasBorrowed = doc->isBorrowedSpace();
+    QString log;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    slotStatusMsg(tr("Syncing feature spaces to the current spike times…"));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    const bool ok = doc->syncAllFeatureSpaces(log);
+    QApplication::restoreOverrideCursor();
+
+    // A borrowed space being shown was reloaded by the sync.
+    if (shownWasBorrowed) refreshAfterFeatureSpaceSwitch(oldDims);
+    populateFeatureSpaceCombo();
+
+    const QString summary = log.trimmed().isEmpty()
+        ? tr("This group has no other feature space.") : log.trimmed();
+    if (ok) {
+        slotStatusMsg(tr("Feature spaces synced to the current spike times (written by Save)."));
+        QMessageBox::information(this, tr("Sync Feature Spaces"), summary);
+    } else {
+        QMessageBox::warning(this, tr("Sync Feature Spaces"),
+                             tr("Some spaces were not synced:\n\n%1").arg(summary));
+    }
 }

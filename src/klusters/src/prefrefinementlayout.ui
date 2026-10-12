@@ -290,6 +290,19 @@
             </property>
            </widget>
           </item>
+          <item row="9" column="0">
+           <widget class="QCheckBox" name="syncFeatureSpaceOnSwitchCheckBox">
+            <property name="text">
+             <string>Sync a feature space to the current spike times when switching to it</string>
+            </property>
+            <property name="toolTip">
+             <string>When you pick another method in the Space box, first re-extract that space's .spk from the .fil at the session's current spike times and re-project its .fet through its own .pca basis, so realign / nudge done in the .clu's space carry over. The results are working copies, saved with Save and discarded if you close without saving. Off by default; when on, each switch costs one .fil pass over the group. Actions → Sync Feature Spaces does the same for every space on demand.</string>
+            </property>
+            <property name="checked">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
        </layout>
       </widget>
    </item>

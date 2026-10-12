@@ -87,6 +87,7 @@ void Configuration::read() {
     reorderDisplayOnly= settings.value("reorderDisplayOnly", false).toBool();
     realignVerbose    = settings.value("realignVerbose",     false).toBool();
     reextractSpikesOnSave = settings.value("reextractSpikesOnSave", false).toBool();
+    syncFeatureSpaceOnSwitch = settings.value("syncFeatureSpaceOnSwitch", false).toBool();
     autoRealignAfterMerge = settings.value("autoRealignAfterMerge", true).toBool();
     autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", true).toBool();
     tsneSpikeCap = settings.value("tsneSpikeCap", 32000).toInt();
@@ -237,6 +238,7 @@ void Configuration::write() const {
     settings.setValue("reorderDisplayOnly",reorderDisplayOnly);
     settings.setValue("realignVerbose",    realignVerbose);
     settings.setValue("reextractSpikesOnSave", reextractSpikesOnSave);
+    settings.setValue("syncFeatureSpaceOnSwitch", syncFeatureSpaceOnSwitch);
     settings.setValue("autoRealignAfterMerge", autoRealignAfterMerge);
     settings.setValue("tsneSpikeCap", tsneSpikeCap);
     settings.setValue("tsnePerplexityStep", tsnePerplexityStep);

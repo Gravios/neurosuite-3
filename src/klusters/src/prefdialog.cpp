@@ -166,6 +166,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRefinement->realignMaxShiftSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRefinement->realignModeOffRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->curationLoggingCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
+    connect(prefRefinement->syncFeatureSpaceOnSwitchCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
     connect(prefSorting->reorderDisplayOnlyCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRefinement->autoRealignAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
     connect(prefRefinement->autoRenumberAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
@@ -285,6 +286,7 @@ void PrefDialog::updateDialog()
     prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnly());
     prefRefinement->setRealignVerbose(configuration().getRealignVerbose());
     prefRefinement->setReextractSpikesOnSave(configuration().getReextractSpikesOnSave());
+    prefRefinement->setSyncFeatureSpaceOnSwitch(configuration().getSyncFeatureSpaceOnSwitch());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMerge());
     prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMerge());
     prefRefinement->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMerge());
@@ -388,6 +390,7 @@ void PrefDialog::updateConfiguration()
     configuration().setReorderDisplayOnly(prefSorting->getReorderDisplayOnly());
     configuration().setRealignVerbose(prefRefinement->getRealignVerbose());
     configuration().setReextractSpikesOnSave(prefRefinement->getReextractSpikesOnSave());
+    configuration().setSyncFeatureSpaceOnSwitch(prefRefinement->getSyncFeatureSpaceOnSwitch());
     configuration().setAutoRealignAfterMerge(prefRefinement->getAutoRealignAfterMerge());
     configuration().setAutoRenumberAfterMerge(prefRefinement->getAutoRenumberAfterMerge());
     configuration().setAutoUpdateMatricesAfterMerge(prefRefinement->getAutoUpdateMatricesAfterMerge());
@@ -497,6 +500,7 @@ void PrefDialog::slotDefault()
     prefSorting->setReorderDisplayOnly(configuration().getReorderDisplayOnlyDefault());
     prefRefinement->setRealignVerbose(configuration().getRealignVerboseDefault());
     prefRefinement->setReextractSpikesOnSave(configuration().getReextractSpikesOnSaveDefault());
+    prefRefinement->setSyncFeatureSpaceOnSwitch(configuration().getSyncFeatureSpaceOnSwitchDefault());
     prefRefinement->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMergeDefault());
     prefRefinement->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMergeDefault());
     prefRefinement->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMergeDefault());

@@ -452,6 +452,9 @@ private Q_SLOTS:
     /** The Parameters-toolbar feature-space combo was used: load that method
      *  space's .fet/.spk under the open .clu (KlustersDoc::switchFeatureSpace). */
     void slotFeatureSpaceActivated(int index);
+    /** Actions > Sync Feature Spaces: re-extract and re-project every other
+     *  method space at this session's spike times (KlustersDoc::syncAllFeatureSpaces). */
+    void slotSyncFeatureSpaces();
     /** Shift timestamps of the selected cluster by ±1 sample. */
     void slotNudgeTimestampMinus();
     void slotNudgeTimestampPlus();
@@ -1248,6 +1251,7 @@ private:
      *  commit (Save) or discard (close without saving) the batch as a
      *  whole.*/
     QAction *mPcaAlignAllClusters;
+    QAction *mSyncFeatureSpaces = nullptr;   ///< Actions > Sync Feature Spaces
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;
