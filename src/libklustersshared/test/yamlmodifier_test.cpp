@@ -11,6 +11,7 @@
  *  Self-contained, assert-style (own main). Built only with NS_BUILD_TESTS.
  ***************************************************************************/
 
+#include <klustersshared/channelcolors.h>
 #include <klustersshared/parameteryamlmodifier.h>
 #include <klustersshared/parameteryamlreader.h>
 
@@ -48,6 +49,14 @@ acquisitionSystem:
   voltageRange: 20
   amplification: 1000
   offset: 0
+neuroscope:
+  channels:
+    colors:
+      - {channel: 0, color: "#ff0000", anatomyColor: "#ff0000", spikeColor: "#ff0000", label: ref}
+      - {channel: 3, color: "#00ff00", anatomyColor: "#00ff00", spikeColor: "#00ff00"}
+    offsets:
+      - {channel: 0, defaultOffset: 10}
+      - {channel: 3, defaultOffset: 50}
 files:
   - samplingRate: 20000
     extension: fil
@@ -211,6 +220,29 @@ int main()
         chk(str(f[2]["note"]) == "hand-written entry the readers skip",
             "entry the caller never saw kept");
         chk(str(f[3]["extension"]) == "whl", "new extension appended");
+    }
+
+    std::printf("channel display: caller knows channels 0-2 only:\n");
+    writeSession(path);
+    {
+        ChannelColors colors;
+        for (int ch = 0; ch < 3; ++ch) colors.append(ch, QColor(Qt::blue));
+        QMap<int,int> chGroups;
+        QMap<int,int> offsets;
+        offsets[0] = 20;
+        ParameterYamlModifier mod;
+        chk(mod.parseFile(path), "parseFile");
+        chk(mod.setChannelDisplayInformation(&colors, chGroups, offsets), "set");
+        chk(mod.writeToFile(path), "writeToFile");
+        const YAML::Node c = YAML::LoadFile(path.toStdString())["neuroscope"]["channels"];
+        chk(c["colors"].size() == 8 && c["offsets"].size() == 8, "one entry per channel");
+        chk(str(c["colors"][0]["color"]) == "#0000ff", "known colour updated");
+        chk(str(c["colors"][0]["label"]) == "ref", "colour entry key kept");
+        chk(str(c["colors"][3]["color"]) == "#00ff00", "unknown channel keeps the file colour");
+        chk(str(c["colors"][5]["color"]) == "#0080ff", "absent channel gets the default");
+        chk(str(c["offsets"][0]["defaultOffset"]) == "20", "known offset updated");
+        chk(str(c["offsets"][3]["defaultOffset"]) == "50", "unknown channel keeps the file offset");
+        chk(str(c["offsets"][5]["defaultOffset"]) == "0", "absent offset defaults to 0");
     }
 
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

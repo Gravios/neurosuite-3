@@ -450,6 +450,21 @@ bool ParameterYamlModifier::setChannelDisplayInformation(
 
     auto channels = root["neuroscope"]["channels"];
 
+    // Existing per-channel entries, so a rewrite updates them instead of
+    // rebuilding them: keys other tools add survive, and a channel the caller
+    // has no value for keeps the file's value rather than a default.
+    auto byChannel = [](const YAML::Node& list) {
+        QMap<int,YAML::Node> m;
+        if (!list || !list.IsSequence()) return m;
+        for (const auto& e : list) {
+            if (!e.IsMap() || !e["channel"]) continue;
+            try { m.insert(e["channel"].as<int>(), YAML::Clone(e)); } catch (...) {}
+        }
+        return m;
+    };
+    const QMap<int,YAML::Node> oldColors  = byChannel(channels["colors"]);
+    const QMap<int,YAML::Node> oldOffsets = byChannel(channels["offsets"]);
+
     YAML::Node colorSeq(YAML::NodeType::Sequence);
     YAML::Node offsetSeq(YAML::NodeType::Sequence);
 
@@ -466,22 +481,25 @@ bool ParameterYamlModifier::setChannelDisplayInformation(
     const std::string defaultColor = "#0080ff";
 
     for (int chId = 0; chId < nChannels; ++chId) {
-        YAML::Node cc;
+        YAML::Node cc = oldColors.value(chId, YAML::Node(YAML::NodeType::Map));
         cc["channel"] = chId;
         if (channelColors->contains(chId)) {
             cc["color"]        = channelColors->color(chId).name().toStdString();
             cc["anatomyColor"] = channelColors->groupColor(chId).name().toStdString();
             cc["spikeColor"]   = channelColors->spikeGroupColor(chId).name().toStdString();
         } else {
-            cc["color"]        = defaultColor;
-            cc["anatomyColor"] = defaultColor;
-            cc["spikeColor"]   = defaultColor;
+            if (!cc["color"])        cc["color"]        = defaultColor;
+            if (!cc["anatomyColor"]) cc["anatomyColor"] = defaultColor;
+            if (!cc["spikeColor"])   cc["spikeColor"]   = defaultColor;
         }
         colorSeq.push_back(cc);
 
-        YAML::Node co;
-        co["channel"]       = chId;
-        co["defaultOffset"] = channelDefaultOffsets.value(chId, 0);
+        YAML::Node co = oldOffsets.value(chId, YAML::Node(YAML::NodeType::Map));
+        co["channel"] = chId;
+        if (channelDefaultOffsets.contains(chId))
+            co["defaultOffset"] = channelDefaultOffsets.value(chId);
+        else if (!co["defaultOffset"])
+            co["defaultOffset"] = 0;
         offsetSeq.push_back(co);
     }
 
