@@ -55,7 +55,7 @@ commands are registered **once, process-wide**, not per-`TraceWidget`.
 | Scope id | Layer | Active when | Carries |
 |----------|-------|-------------|---------|
 | `view.frame` | `ViewType` | the view is a `BaseFrame` **and** `!managesOwnPrimaryPress()` | base rubber-band zoom (Position / Spectral) |
-| `view.spectral` | `ViewType` | the view is a `SpectralView` (registered after `view.frame`, so it shadows it) | `Ctrl+Left` drag pan, `Ctrl+wheel` time + frequency zoom, plain wheel time zoom |
+| `view.spectral` | `ViewType` | the view is a `SpectralView` (registered after `view.frame`, so it shadows it) | `Ctrl+Left` drag pan (pages the time window at the image edge), `Ctrl+wheel` magnify both axes, plain wheel magnify horizontally |
 | `view.trace` | `ViewType` | the trace widget is focused | `+` / `-` duration, the scroll mirrors |
 | `mode.zoom` | `ToolMode` | `currentMode() == BaseFrame::ZOOM` | the trace zoom gesture |
 | `nav.trace` | `ToolMode` | the view is a `TraceView` (registered after the `mode.*` scopes, so it shadows them) | `trace.pan` (`Ctrl+Left` drag; disabled in SELECT), `Ctrl+wheel` zoom, `Ctrl+Shift+wheel` amplitude, plain wheel horizontal zoom |
@@ -165,15 +165,16 @@ whose own `mode.*` gestures own the `Left` press. `TraceView` overrides
 `mousePressEvent` and never reaches `BaseFrame::mousePressEvent` anyway; the guard
 is what keeps the *scope* from claiming the press in the resolver.
 
-The spectral view adds `view.spectral` on top, with the same gestures as the
-Klusters trace view: `spectral.pan` (`Ctrl+Left` drag, `AtLeast`),
-`spectral.zoomIn` / `spectral.zoomOut` (`Ctrl+wheel`, time and frequency toward
-the cursor) and `spectral.timeZoomIn` / `spectral.timeZoomOut` (plain wheel,
-time only). Time is the shared trace window, so a horizontal pan or zoom moves
-it through `SpectralView::timeWindowRequested` →
-`TraceWidget::slotSetStartAndDuration`; the vertical axis is a crop of the
-computed image. The press arms the pan through the resolver; the drag and the
-disarm live in `SpectralView::mouseMoveEvent` / `mouseReleaseEvent`.
+The trace view's navigation lives in `nav.trace` (above), and the spectral
+view mirrors it in `view.spectral` -- the gestures of the Klusters trace view:
+`trace.pan` / `spectral.pan` (`Ctrl+Left` drag, `AtLeast`) pans the magnified
+view, paging the time window (`setStartAndDuration` / `timeWindowRequested` →
+`TraceWidget::slotSetStartAndDuration`) when it runs into the loaded window's
+edge; `Ctrl+wheel` magnifies both axes toward the cursor; the plain wheel
+magnifies horizontally; and in the trace view `Ctrl+Shift+wheel` scales all
+amplitudes.  The zooms never change the time window.  The press arms the pan
+through the resolver; the drag and the disarm live in each view's
+`mouseMoveEvent` / `mouseReleaseEvent`.
 
 > Palette (channel-group) navigation was deliberately **left at the inline seam**
 > — it is not a registry gesture.

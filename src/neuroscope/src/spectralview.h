@@ -103,9 +103,10 @@ public:
     bool   isLockedToTrace() const { return pendingLockToTrace; }
     long   spanMs() const { return pendingSpan; }
 
-    /**Registers the spectral view's mouse commands (view.spectral scope): Ctrl+Left
-    * drag pans, Ctrl+wheel zooms time and frequency toward the cursor, the plain
-    * wheel zooms time only.  Call from NeuroscopeApp::registerInputBindings after
+    /**Registers the spectral view's mouse commands (view.spectral scope), the Klusters
+    * trace view's gestures: Ctrl+Left drag pans the magnified image (paging the time
+    * window at its edges), Ctrl+wheel magnifies both axes toward the cursor, the plain
+    * wheel magnifies time only.  Call from NeuroscopeApp::registerInputBindings after
     * BaseFrame::registerInput, so view.spectral shadows view.frame.*/
     static void registerInput(input::BindingRegistry& reg);
 
@@ -138,16 +139,14 @@ private:
     void drawAxes(QPainter& painter, const QRect& plot);
     QRect plotRect() const;    // heatmap area inside the axis margins
 
-    // Mouse navigation (see registerInput).  Time is the shared trace window;
-    // the vertical axis (frequency, or channel rows) is a crop [yLo, yHi] of the
-    // computed image, as fractions of its height from the top.
+    // Mouse navigation (see registerInput).  The view shows the part
+    // [xLo, xHi] x [yLo, yHi] of the computed image, as fractions of its width and
+    // height from the top-left; the zooms magnify within it, as the trace view's do.
     void beginPan(const QPoint& pos);
-    void zoomAtCursor(bool zoomIn, const QPoint& pos, bool vertical);
-    void zoomTime(double factor, double fx);
-    void zoomRows(double factor, double fy);
+    void zoomAtCursor(bool zoomIn, const QPoint& pos, bool horizontalOnly);
     void requestTraceStart(long start, long duration);
-    long minimumSpanMs() const;
-    void resetRowView() { yLo = 0.0; yHi = 1.0; }
+    void resetView() { xLo = 0.0; xHi = 1.0; yLo = 0.0; yHi = 1.0; }
+    QPointF imageFractionAt(const QPoint& pos) const;   // pos -> [0,1]^2 of the image
 
     // Renders the current window as a moving-window preview (single taper) and
     // arms the settle pass, or as the full estimate for modes with no preview.
@@ -236,18 +235,19 @@ private:
     std::list<std::pair<std::uint64_t, neuroscope::spectral::SpectralImage>> recent_;
     std::size_t recentCap = 16;
 
-    // Vertical crop of the image and the Ctrl+drag pan state.
+    // Visible part of the image and the Ctrl+drag pan state.
+    double xLo = 0.0;
+    double xHi = 1.0;
     double yLo = 0.0;
     double yHi = 1.0;
     bool   panArmed = false;
     bool   panning = false;
     QPoint panAnchorPx;
-    long   panPressTraceStart = 0;
-    long   panPressWidth = 0;
-    double panPressYLo = 0.0;
-    double panPressYHi = 1.0;
+    QPointF panGrab;               // image fraction grabbed at the press
+    bool   keepViewOnNextWindow = false;   // a pan paged the window: keep the zoom
     static constexpr int    panDragThreshold = 3;      // px, as in the Klusters trace view
     static constexpr double wheelZoomStep = 1.25;      // per notch, as in Klusters
+    static constexpr double maxZoom = 22.73;           // ZoomWindow's MAX_SCALE
 };
 
 #endif // NEUROSCOPE_SPECTRALVIEW_H

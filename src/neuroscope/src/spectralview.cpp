@@ -175,6 +175,10 @@ void SpectralView::displayTimeFrame(long start, long width)
 {
     traceStart = start;
     traceWidth = width;
+    // A new window shows the whole image again, as the trace view's window rebuild
+    // does on every load -- except the page a Ctrl+drag pan asked for, which keeps
+    // its magnification so the pan stays continuous.
+    if (!keepViewOnNextWindow) resetView();
     // The file can grow (NeuroScope's auto-forward paging re-reads its length),
     // and the unlocked window is clamped to it.
     recordingLength = tracesProvider.recordingLength();
@@ -256,7 +260,7 @@ void SpectralView::flushPending()
     recent_.clear();       // cached estimates are for the old parameters / window
     ++settleGen;           // drop any in-flight pass computed with them
 
-    if (modeChanged || rangeChanged) resetRowView();   // the vertical axis changed
+    if (modeChanged || rangeChanged) resetView();   // the image axes changed
     if (rangeChanged) emit frequencyRangeChanged(params.freqLow, params.freqHigh);
     if (modeChanged)  emit spectralModeChanged(params.mode);
 
@@ -511,9 +515,9 @@ void SpectralView::paintEvent(QPaintEvent*)
     const QRect plot = plotRect();
 
     if (!image.isNull()) {
-        // Only the rows inside the vertical zoom [yLo, yHi] are shown.
-        const QRectF src(0.0, yLo * image.height(),
-                         image.width(), (yHi - yLo) * image.height());
+        // Only the magnified part [xLo, xHi] x [yLo, yHi] of the image is shown.
+        const QRectF src(xLo * image.width(), yLo * image.height(),
+                         (xHi - xLo) * image.width(), (yHi - yLo) * image.height());
         painter.drawImage(QRectF(plot), image, src);
     } else {
         painter.setPen(Qt::gray);
@@ -550,11 +554,13 @@ void SpectralView::drawAxes(QPainter& painter, const QRect& plot)
     if (paramsDirty || windowDirty) title += tr("  \xE2\x80\x94 uncommitted changes");
     painter.drawText(plot.left(), plot.top() - 5, title);
 
-    // X axis: time in ms across the window.
-    painter.drawText(plot.left(), plot.bottom() + 16, QString::number(startTime));
+    // X axis: time in ms across the visible part of the window.
+    const long tLo = startTime + std::lround(xLo * timeFrameWidth);
+    const long tHi = startTime + std::lround(xHi * timeFrameWidth);
+    painter.drawText(plot.left(), plot.bottom() + 16, QString::number(tLo));
     painter.drawText(plot.center().x() - 10, plot.bottom() + 16,
-                     QString::number(startTime + timeFrameWidth / 2));
-    painter.drawText(plot.right() - 30, plot.bottom() + 16, QString::number(endTime));
+                     QString::number((tLo + tHi) / 2));
+    painter.drawText(plot.right() - 30, plot.bottom() + 16, QString::number(tHi));
 
     // Y axis ticks + labels on the left edge: frequency (mode B) or channel
     // id (mode A). Low frequency at the bottom, channel 0 at the top.
@@ -739,12 +745,12 @@ void SpectralView::setSpan(long ms)
 
 // --- mouse navigation -------------------------------------------------------
 //
-// The same gestures as the Klusters trace view: Ctrl+Left drag pans, Ctrl+wheel
-// zooms toward the cursor.  The plain wheel zooms time only.  The horizontal axis
-// is the shared trace window, so a time pan or zoom moves it (through
-// timeWindowRequested), the trace view and scroll bar follow, and the spectral
-// image recomputes through the usual preview/settle path.  The vertical axis --
-// frequency, or channel rows -- is a crop of the computed image and costs nothing.
+// The Klusters trace view's gestures, with the same meaning: the zooms magnify the
+// computed image -- they do not change the time window, and zooming out stops at
+// it -- and Ctrl+Left drag pans the magnified image, paging the shared time window
+// (timeWindowRequested) when the pan runs into the image's left or right edge, so
+// it keeps scrolling through the recording.  The visible part is
+// [xLo, xHi] x [yLo, yHi] of the image.
 
 void SpectralView::registerInput(input::BindingRegistry& reg)
 {
@@ -767,10 +773,10 @@ void SpectralView::registerInput(input::BindingRegistry& reg)
     };
     reg.addCommand(pan);
 
-    // Ctrl+wheel (AtLeast, so registered before the plain-wheel pair, which is
-    // Exact and could not match a Ctrl event anyway).
+    // Ctrl+wheel (AtLeast) before the plain-wheel pair (Exact, which could not match a
+    // Ctrl event anyway).
     auto addZoom = [&](const QString& id, const QString& label, int dir,
-                       Qt::KeyboardModifiers mods, input::ModMatch mm, bool vertical){
+                       Qt::KeyboardModifiers mods, input::ModMatch mm, bool horizontalOnly){
         input::Command c;
         c.id       = id;
         c.scopeId  = QStringLiteral("view.spectral");
@@ -778,22 +784,22 @@ void SpectralView::registerInput(input::BindingRegistry& reg)
         c.category = tr("Spectral view");
         c.kind     = input::Kind::Action;
         c.defaultChord = input::Chord::wheel(dir, mods, mm);
-        c.invoke   = [view, dir, vertical](const input::Ctx& ctx){
+        c.invoke   = [view, dir, horizontalOnly](const input::Ctx& ctx){
             if (auto* sv = view(ctx); sv && ctx.event)
                 sv->zoomAtCursor(dir > 0,
                                  static_cast<QWheelEvent*>(ctx.event)->position().toPoint(),
-                                 vertical);
+                                 horizontalOnly);
         };
         reg.addCommand(c);
     };
     addZoom(QStringLiteral("spectral.zoomIn"),  tr("Zoom in toward cursor"), +1,
-            Qt::ControlModifier, input::ModMatch::AtLeast, true);
+            Qt::ControlModifier, input::ModMatch::AtLeast, false);
     addZoom(QStringLiteral("spectral.zoomOut"), tr("Zoom out from cursor"),  -1,
-            Qt::ControlModifier, input::ModMatch::AtLeast, true);
-    addZoom(QStringLiteral("spectral.timeZoomIn"),  tr("Zoom in on time"),  +1,
-            Qt::NoModifier, input::ModMatch::Exact, false);
-    addZoom(QStringLiteral("spectral.timeZoomOut"), tr("Zoom out on time"), -1,
-            Qt::NoModifier, input::ModMatch::Exact, false);
+            Qt::ControlModifier, input::ModMatch::AtLeast, false);
+    addZoom(QStringLiteral("spectral.hZoomIn"),  tr("Zoom in horizontally"),  +1,
+            Qt::NoModifier, input::ModMatch::Exact, true);
+    addZoom(QStringLiteral("spectral.hZoomOut"), tr("Zoom out horizontally"), -1,
+            Qt::NoModifier, input::ModMatch::Exact, true);
 }
 
 void SpectralView::wheelEvent(QWheelEvent* event)
@@ -802,40 +808,63 @@ void SpectralView::wheelEvent(QWheelEvent* event)
     BaseFrame::wheelEvent(event);
 }
 
+QPointF SpectralView::imageFractionAt(const QPoint& pos) const
+{
+    const QRect plot = plotRect();
+    const double fx = std::clamp(static_cast<double>(pos.x() - plot.left()) / plot.width(), 0.0, 1.0);
+    const double fy = std::clamp(static_cast<double>(pos.y() - plot.top()) / plot.height(), 0.0, 1.0);
+    return { xLo + fx * (xHi - xLo), yLo + fy * (yHi - yLo) };
+}
+
 void SpectralView::beginPan(const QPoint& pos)
 {
     // Arm the pan; mouseMoveEvent crosses the drag threshold and moves the view,
-    // mouseReleaseEvent disarms.  Everything is measured from the press, so the
-    // point grabbed stays under the cursor.
-    panArmed           = true;
-    panning            = false;
-    panAnchorPx        = pos;
-    panPressTraceStart = traceStart;
-    panPressWidth      = timeFrameWidth;
-    panPressYLo        = yLo;
-    panPressYHi        = yHi;
+    // mouseReleaseEvent disarms.  The image point grabbed stays under the cursor.
+    panArmed    = true;
+    panning     = false;
+    panAnchorPx = pos;
+    panGrab     = imageFractionAt(pos);
     setCursor(Qt::ClosedHandCursor);
 }
 
 void SpectralView::mouseMoveEvent(QMouseEvent* event)
 {
-    if (panArmed && (event->buttons() & Qt::LeftButton)) {
+    if (panArmed && (event->buttons() & Qt::LeftButton) && (event->modifiers() & Qt::ControlModifier)) {
         const QPoint d = event->position().toPoint() - panAnchorPx;
         if (!panning && std::abs(d.x()) + std::abs(d.y()) >= panDragThreshold)
             panning = true;
         if (panning) {
             const QRect plot = plotRect();
-            // Vertical: slide the crop, keeping its height.
-            const double h = panPressYHi - panPressYLo;
-            if (h < 1.0) {
-                double lo = panPressYLo - static_cast<double>(d.y()) / plot.height() * h;
-                lo = std::clamp(lo, 0.0, 1.0 - h);
-                if (lo != yLo) { yLo = lo; yHi = lo + h; update(); }
+            const double fx = static_cast<double>(event->position().x() - plot.left()) / plot.width();
+            const double fy = static_cast<double>(event->position().y() - plot.top()) / plot.height();
+            const double w = xHi - xLo, h = yHi - yLo;
+            // Put the grabbed point under the cursor, then clamp to the image.
+            const double wantLo = panGrab.x() - fx * w;
+            const double lo     = std::clamp(wantLo, 0.0, 1.0 - w);
+            const double top    = std::clamp(panGrab.y() - fy * h, 0.0, 1.0 - h);
+            const bool moved = lo != xLo || top != yLo;
+            xLo = lo; xHi = lo + w;
+            yLo = top; yHi = top + h;
+
+            // Edge-autoscroll in time, as in the Klusters trace view: the overflow past
+            // the image edge pages the time window by that much, and the grab point is
+            // corrected by the applied shift so the image stays glued under the cursor.
+            const double overflow = wantLo - lo;              // image fractions
+            bool paged = false;
+            if (std::fabs(overflow) * plot.width() * (1.0 / w) >= 1.0 && timeFrameWidth > 0
+                && timeFrameWidth < recordingLength) {
+                const long shiftMs = std::lround(overflow * timeFrameWidth);
+                const long before = traceStart;
+                keepViewOnNextWindow = true;
+                requestTraceStart(traceStart + shiftMs, traceWidth);
+                keepViewOnNextWindow = false;
+                const long applied = traceStart - before;
+                if (applied != 0) {
+                    panGrab.rx() -= static_cast<double>(applied) / timeFrameWidth;
+                    paged = true;
+                }
             }
-            // Horizontal: move the shared time window by the dragged fraction of
-            // the window shown at the press.
-            const double dtMs = static_cast<double>(d.x()) / plot.width() * panPressWidth;
-            requestTraceStart(panPressTraceStart - std::lround(dtMs), traceWidth);
+            if (moved && !paged) update();
         }
         event->accept();
         return;
@@ -845,7 +874,7 @@ void SpectralView::mouseMoveEvent(QMouseEvent* event)
 
 void SpectralView::mouseReleaseEvent(QMouseEvent* event)
 {
-    if (panArmed && event->button() == Qt::LeftButton) {
+    if (panArmed) {
         panArmed = false;
         panning  = false;
         unsetCursor();
@@ -855,61 +884,26 @@ void SpectralView::mouseReleaseEvent(QMouseEvent* event)
     BaseFrame::mouseReleaseEvent(event);
 }
 
-void SpectralView::zoomAtCursor(bool zoomIn, const QPoint& pos, bool vertical)
+void SpectralView::zoomAtCursor(bool zoomIn, const QPoint& pos, bool horizontalOnly)
 {
+    // One discrete step that keeps the image point under the cursor at the same
+    // screen position; zooming out stops at the whole image, zooming in at the trace
+    // view's limit.
     const QRect plot = plotRect();
     const double factor = zoomIn ? wheelZoomStep : 1.0 / wheelZoomStep;
     const double fx = std::clamp(static_cast<double>(pos.x() - plot.left()) / plot.width(), 0.0, 1.0);
     const double fy = std::clamp(static_cast<double>(pos.y() - plot.top()) / plot.height(), 0.0, 1.0);
-    if (vertical) zoomRows(factor, fy);
-    zoomTime(factor, fx);
-}
+    const QPointF at = imageFractionAt(pos);
 
-void SpectralView::zoomRows(double factor, double fy)
-{
-    // Keep the row under the cursor at the same screen height.
-    const double h  = yHi - yLo;
-    const double at = yLo + fy * h;
-    const double nh = std::clamp(h / factor, 1.0 / 64.0, 1.0);
-    if (nh == h) return;
-    const double lo = std::clamp(at - fy * nh, 0.0, 1.0 - nh);
-    yLo = lo;
-    yHi = lo + nh;
-    update();
-}
-
-long SpectralView::minimumSpanMs() const
-{
-    // Narrower than two analysis windows leaves no spectrogram to show.
-    const double fs = tracesProvider.getSamplingRate();
-    if (fs <= 0.0) return 1;
-    const double ms = 2.0 * params.windowSamples * 1000.0 / fs;
-    return std::max(1L, static_cast<long>(std::ceil(ms)));
-}
-
-void SpectralView::zoomTime(double factor, double fx)
-{
-    // Keep the time under the cursor at the same screen fraction.
-    if (timeFrameWidth <= 0) return;
-    const long maxW = recordingLength > 0 ? recordingLength : timeFrameWidth;
-    const long w = std::clamp(std::lround(timeFrameWidth / factor),
-                              std::min(minimumSpanMs(), maxW), maxW);
-    if (w == timeFrameWidth) return;
-    const double at = startTime + fx * timeFrameWidth;
-    long start = std::lround(at - fx * w);
-    start = std::clamp(start, 0L, std::max(0L, maxW - w));
-
-    if (lockToTrace) {
-        requestTraceStart(start, w);          // the trace window is the spectral window
-    } else {
-        // Unlocked: the view has its own span, centred on the trace window.  Set
-        // the span directly (a mouse zoom is immediate, not staged) and recentre
-        // the trace window on the new spectral centre.
-        span = pendingSpan = w;
-        const long centre = start + w / 2;
-        if (traceStart + traceWidth / 2 == centre) displayTimeFrame(traceStart, traceWidth);
-        else requestTraceStart(centre - traceWidth / 2, traceWidth);
+    const double w = std::clamp((xHi - xLo) / factor, 1.0 / maxZoom, 1.0);
+    const double lo = std::clamp(at.x() - fx * w, 0.0, 1.0 - w);
+    xLo = lo; xHi = lo + w;
+    if (!horizontalOnly) {
+        const double h = std::clamp((yHi - yLo) / factor, 1.0 / maxZoom, 1.0);
+        const double top = std::clamp(at.y() - fy * h, 0.0, 1.0 - h);
+        yLo = top; yHi = top + h;
     }
+    update();
 }
 
 void SpectralView::requestTraceStart(long start, long duration)
