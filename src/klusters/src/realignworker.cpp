@@ -9,12 +9,12 @@
 #include <stdexcept>
 #include <cstdio>
 
-RealignWorker::RealignWorker(KlustersDoc* doc, int clusterId,
-                             const QString& args, QObject* parent)
+RealignWorker::RealignWorker(KlustersDoc* document, int cluster,
+                             const QString& realignArgs, QObject* parent)
     : QObject(parent)
-    , doc(doc)
-    , clusterId(clusterId)
-    , args(args)
+    , doc(document)
+    , clusterId(cluster)
+    , args(realignArgs)
     , cancelRequested(false)
 {}
 

@@ -57,9 +57,9 @@ static bool errorMatrixIncrementalEnabled(){
 #include <QEvent>
 #include <QDebug>
 
-ErrorMatrixView::ErrorMatrixView(KlustersDoc& doc,KlustersView& view,const QColor& backgroundColor,QStatusBar* statusBar,QWidget *parent,const char* name,int minSize, int
+ErrorMatrixView::ErrorMatrixView(KlustersDoc& kdoc,KlustersView& kview,const QColor& backgroundColor,QStatusBar* sbar,QWidget *parent,const char* name,int minSize, int
                                  maxSize, int windowTopLeft ,int windowBottomRight,int border) :
-    ViewWidget(doc,view,backgroundColor,statusBar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border),
+    ViewWidget(kdoc,kview,backgroundColor,sbar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border),
     dataReady(false),
     nbColors(100),
     cutoffProbability(0.1),

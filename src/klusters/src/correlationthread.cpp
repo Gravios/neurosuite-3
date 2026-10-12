@@ -25,12 +25,12 @@
 #include <QList>
 #include <QMutexLocker>
 
-CorrelationThread::CorrelationThread(CorrelationView& view,Data& d,const QList<Pair>& pairs,const QList<int>& clusterIds,
+CorrelationThread::CorrelationThread(CorrelationView& view,Data& d,const QList<Pair>& pairs,const QList<int>& ids,
                                      const std::shared_ptr<KlustersJobToken>& viewToken)
     :correlationView(view),data(d),clusterPairs(pairs),token(viewToken),
     snapshot(d.currentSnapshot()),
     snapBinSize(view.binSize),snapTimeWindow(view.timeWindow){
-    this->clusterIds = clusterIds;
+    clusterIds = ids;
     setAutoDelete(true);
     //The creation of the job launches the request, as the old thread's
     //constructor did with start().

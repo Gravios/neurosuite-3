@@ -320,8 +320,8 @@ void KlustersApp::slotRecluster(){
                     // Sort feature indices by descending variance.
                     QVector<QPair<int,double>> iv;
                     iv.reserve(variances.size());
-                    for(int i = 0; i < variances.size() && i < nFeatureCols; ++i)
-                        iv.append(qMakePair(i, variances[i]));
+                    for(int fi = 0; fi < variances.size() && fi < nFeatureCols; ++fi)
+                        iv.append(qMakePair(fi, variances[fi]));
                     std::sort(iv.begin(), iv.end(),
                         [](const QPair<int,double>& a, const QPair<int,double>& b){
                             return a.second > b.second;
@@ -470,8 +470,8 @@ void KlustersApp::slotRecluster(){
                     // for the timestamp to preserve the historical
                     // default behaviour when auto-select is off (that path
                     // is not affected by the checkbox).
-                    for(int i = 0; i < nFeatureCols; ++i)
-                        features.append(selected.contains(i) ? QLatin1Char('1') : QLatin1Char('0'));
+                    for(int fi = 0; fi < nFeatureCols; ++fi)
+                        features.append(selected.contains(fi) ? QLatin1Char('1') : QLatin1Char('0'));
                     // Timestamp column: OFF by default (see above), unless the user
                     // ticks the "time" checkbox next to the N-feat spin box.
                     features.append(configuration().getIncludeTimeInAutoSelect()

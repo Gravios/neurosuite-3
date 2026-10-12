@@ -1135,9 +1135,9 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
     if (children.size() == 1){
         const int only = children.first();
         if (!childToParent.contains(only)) return -1;
-        const int parent = childToParent.value(only);
-        if (parentToChildren.value(parent).size() <= 1)
-            return parent;                        // already its own parent
+        const int parentId = childToParent.value(only);
+        if (parentToChildren.value(parentId).size() <= 1)
+            return parentId;                        // already its own parent
     }
 
     setActiveClustering(false);
@@ -1145,12 +1145,12 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
     int target = -1;
     for (int c : children){
         if (!childToParent.contains(c)) continue;
-        const int parent = childToParent.value(c);
-        if (parent == newId) continue;                // already pooled
+        const int parentId = childToParent.value(c);
+        if (parentId == newId) continue;                // already pooled
         const QVector<int> spk = childData->clusterSpkIndices(c);
         if (spk.isEmpty()) continue;
         const int dest = (target < 0 ? newId : target);
-        moveSpikeSubsetToCluster(parent, spk, dest, activeView);
+        moveSpikeSubsetToCluster(parentId, spk, dest, activeView);
 
         // Child-primary: one map entry per promoted child.  Their spikes keep their
         // child ids -- only the parent changes -- so this is a reparent, matching
@@ -1175,9 +1175,9 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
     return target;
 }
 
-bool KlustersDoc::dissolveParent(int parent, KlustersView& activeView){
+bool KlustersDoc::dissolveParent(int parentId, KlustersView& activeView){
     if (!childData) return false;
-    const QList<int> kids = parentToChildren.value(parent);
+    const QList<int> kids = parentToChildren.value(parentId);
     if (kids.size() < 2) return false;                // nothing to explode
     // Each child becomes its own parent: promoteChildren with a single-element
     // list per child, not one call with all of them, which would pool them into
@@ -1191,18 +1191,18 @@ bool KlustersDoc::dissolveParent(int parent, KlustersView& activeView){
 
 bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     if (!childData || !childToParent.contains(childCluster)) return false;
-    const int parent = childToParent.value(childCluster);
-    if (parent == 1) return false;                    // already noise
+    const int parentId = childToParent.value(childCluster);
+    if (parentId == 1) return false;                    // already noise
     const QVector<int> spk = childData->clusterSpkIndices(childCluster);
     if (spk.isEmpty()) return false;
     // Siblings that will survive, captured before the move: the landing is one of
     // them, and after the move the atom is gone from the parent's list.
     QList<int> siblings;
-    for (int kid : parentToChildren.value(parent))
+    for (int kid : parentToChildren.value(parentId))
         if (kid > 1 && kid != childCluster) siblings.append(kid);
 
     setActiveClustering(false);
-    moveSpikeSubsetToCluster(parent, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
+    moveSpikeSubsetToCluster(parentId, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
 
     // Child-primary: the child is RECLASSIFIED, not relabelled.
     //
@@ -1213,7 +1213,7 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     // does: it changes the .clu of those rows and leaves the .clc alone.  So the
     // map edit is one entry, and it says the same thing the relabel does.
 
-    setPendingParentSelection({parent});   // land on the source parent (noise isn't selectable)
+    setPendingParentSelection({parentId});   // land on the source parent (noise isn't selectable)
     rebuildHierarchyFromData();
 
     // Parked before the emit, for the reason given in mergeChildren: the palette
@@ -1275,17 +1275,17 @@ double waveformCorrelation(const std::vector<double>& a,
 
 }   // namespace
 
-int KlustersDoc::mergeOrphanChildren(int parent, int minSpikes,
+int KlustersDoc::mergeOrphanChildren(int parentId, int minSpikes,
                                      double minCorrelation,
                                      KlustersView& activeView,
                                      int* matchedOut, int* strayOut)
 {
     if (matchedOut) *matchedOut = 0;
     if (strayOut)   *strayOut   = 0;
-    if (!childData || parent < 0 || minSpikes < 1)
+    if (!childData || parentId < 0 || minSpikes < 1)
         return -1;
 
-    const QList<int> kids = childrenOf(QList<int>{ parent });
+    const QList<int> kids = childrenOf(QList<int>{ parentId });
     if (kids.size() < 2)
         return -1;
 
@@ -1369,9 +1369,9 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
     // Same-parent guard: merging atoms from different parents would create a
     // microfiber whose spikes straddle two parents, which the nesting invariant
     // forbids.  Refuse rather than silently re-parent.
-    const int parent = childToParent.value(children.first(), -1);
+    const int parentId = childToParent.value(children.first(), -1);
     for (int c : children)
-        if (childToParent.value(c, -2) != parent) return -1;
+        if (childToParent.value(c, -2) != parentId) return -1;
 
     QList<int> grp = children;                         // groupClusters takes a non-const ref
     const int newId = static_cast<int>(childData->groupClusters(grp));   // mutates childData, self-snapshots

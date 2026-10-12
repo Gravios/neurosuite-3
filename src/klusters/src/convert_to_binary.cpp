@@ -28,7 +28,8 @@ static bool convertRes(const std::string& path)
     if (!f) { fprintf(stderr, "Cannot open %s\n", path.c_str()); return false; }
     std::vector<int64_t> ts;
     int64_t v;
-    while (fscanf(f, "%lld", (long long*)&v) == 1)
+    // reinterpret_cast: int64_t and long long are both 64-bit; %lld needs long long*
+    while (fscanf(f, "%lld", reinterpret_cast<long long*>(&v)) == 1)
         ts.push_back(v);
     fclose(f);
 
@@ -55,7 +56,8 @@ static bool convertFet(const std::string& path, int& nDimOut, int64_t& nSpikesOu
 
     std::vector<int64_t> data;
     int64_t v;
-    while (fscanf(f, "%lld", (long long*)&v) == 1)
+    // reinterpret_cast: int64_t and long long are both 64-bit; %lld needs long long*
+    while (fscanf(f, "%lld", reinterpret_cast<long long*>(&v)) == 1)
         data.push_back(v);
     fclose(f);
 

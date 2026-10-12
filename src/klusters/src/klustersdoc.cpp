@@ -91,9 +91,9 @@ using klustersdoc_internal::featureMethod;
 using klustersdoc_internal::resolveFeature;
 using klustersdoc_internal::stripFeatureSuffix;
 
-KlustersDoc::KlustersDoc(QWidget* parent,ClusterPalette& clusterPalette,bool autoSave,int savingInterval)
-    : clusterColorListUndoList(),clusterColorListRedoList(),modified(false),docUrl(),parent(parent),clusterPalette(clusterPalette)
-  ,autoSave(autoSave),savingInterval(savingInterval),tracesProvider(nullptr),clustersProvider(nullptr),channelColorList(nullptr)
+KlustersDoc::KlustersDoc(QWidget* parentWin,ClusterPalette& palette,bool autoSaveOn,int interval)
+    : clusterColorListUndoList(),clusterColorListRedoList(),modified(false),docUrl(),parent(parentWin),clusterPalette(palette)
+  ,autoSave(autoSaveOn),savingInterval(interval),tracesProvider(nullptr),clustersProvider(nullptr),channelColorList(nullptr)
 {
     // Child-primary backend, chosen per session rather than per build.  Read once
     // here so it cannot change under a running document -- the two models disagree
@@ -240,10 +240,10 @@ void KlustersDoc::forceClusterRefresh(int clusterId)
         for (int kid : childrenOf(QList<int>{ clusterId }))
             for (int i = 0; i < viewList->count(); ++i)
                 viewList->at(i)->forceClusterRefresh(kid);
-        const int parent = parentOfChild(clusterId);
-        if (parent > 0)
+        const int parentId = parentOfChild(clusterId);
+        if (parentId > 0)
             for (int i = 0; i < viewList->count(); ++i)
-                viewList->at(i)->forceClusterRefresh(parent);
+                viewList->at(i)->forceClusterRefresh(parentId);
     }
 }
 
@@ -294,11 +294,11 @@ QList<int> KlustersDoc::getSiblingElectrodeGroups(int groupId) const
     return reader.getSiblingElectrodeGroups(groupId);
 }
 
-void KlustersDoc::setGain(int acquisitionGain){
+void KlustersDoc::setGain(int newGain){
     //Notify all the views of the modification
     for(int i =0; i<viewList->count();++i) {
         KlustersView *view = viewList->at(i);
-        view->setGain(acquisitionGain);
+        view->setGain(newGain);
     }
 
     //Get the active view.

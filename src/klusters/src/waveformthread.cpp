@@ -28,34 +28,34 @@
 #include <QList>
 #include <QMutexLocker>
 
-void WaveformThread::getWaveformInformation(int clusterId,WaveformView::PresentationMode mode){
+void WaveformThread::getWaveformInformation(int id,WaveformView::PresentationMode mode){
     Q_UNUSED(mode); //run() works on the snapshot taken below.
-    this->clusterId = clusterId;
+    clusterId = id;
     treatSingleCluster = true;
     snapshotViewParams();
     enqueue();
 }
 
-void WaveformThread::getWaveformInformation(const QList<int>& clusterIds,WaveformView::PresentationMode mode){
+void WaveformThread::getWaveformInformation(const QList<int>& ids,WaveformView::PresentationMode mode){
     Q_UNUSED(mode);
-    this->clusterIds = clusterIds;
+    clusterIds = ids;
     treatSingleCluster = false;
     snapshotViewParams();
     enqueue();
 }
 
-void WaveformThread::getMean(int clusterId,WaveformView::PresentationMode mode){
+void WaveformThread::getMean(int id,WaveformView::PresentationMode mode){
     Q_UNUSED(mode);
-    this->clusterId = clusterId;
+    clusterId = id;
     treatSingleCluster = true;
     meanRequested = true;
     snapshotViewParams();
     enqueue();
 }
 
-void WaveformThread::getMean(const QList<int>& clusterIds,WaveformView::PresentationMode mode){
+void WaveformThread::getMean(const QList<int>& ids,WaveformView::PresentationMode mode){
     Q_UNUSED(mode);
-    this->clusterIds = clusterIds;
+    clusterIds = ids;
     treatSingleCluster = false;
     meanRequested = true;
     snapshotViewParams();

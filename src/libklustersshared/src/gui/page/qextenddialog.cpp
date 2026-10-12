@@ -335,7 +335,7 @@ QExtendDialog::ButtonCode QExtendDialog::defaultButton() const
   while ( it.hasNext() ) {
     it.next();
     if (it.value()->isDefault()) {
-      return (ButtonCode)it.key();
+      return static_cast<ButtonCode>(it.key());
     }
   }
 
@@ -508,7 +508,7 @@ void QExtendDialog::resizeLayout( QWidget *widget, int margin, int spacing ) //s
     const QList<QObject*> list = widget->children();
     for ( QObject *object : list ) {
       if ( object->isWidgetType() )
-        resizeLayout( (QWidget*)object, margin, spacing );
+        resizeLayout( static_cast<QWidget*>(object), margin, spacing );
     }
   }
 }

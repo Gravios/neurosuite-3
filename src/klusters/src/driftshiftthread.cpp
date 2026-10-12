@@ -17,12 +17,12 @@ DriftShiftThread::DriftShiftThread(DriftMatrixView& v,
                                    const std::shared_ptr<KlustersJobToken>& viewToken,
                                    std::vector<std::vector<float>> means,
                                    std::vector<float> chanDepths,
-                                   int nChan, int nSamp, int maxShift, double deltaUm,
-                                   bool forSelection)
+                                   int nChannels, int nSamples, int shiftMax, double stepUm,
+                                   bool selectionOnly)
     : view(v), token(viewToken),
       meanWav(std::move(means)), depths(std::move(chanDepths)),
-      nChan(nChan), nSamp(nSamp), maxShift(maxShift), deltaUm(deltaUm),
-      forSelection(forSelection), scores(nullptr)
+      nChan(nChannels), nSamp(nSamples), maxShift(shiftMax), deltaUm(stepUm),
+      forSelection(selectionOnly), scores(nullptr)
 {
     setAutoDelete(true);
     //The creation of the job launches the request, as the old thread's

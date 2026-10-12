@@ -589,7 +589,7 @@ void BlockProgress::setPosition(long long position)
     pos = position;
 
     if (isTty) {
-        const int filled = static_cast<int>((pos * (long long)cells) / total);
+        const int filled = static_cast<int>((pos * static_cast<long long>(cells)) / total);
         if (filled != lastDrawnCells)
             redraw();
     } else {
@@ -662,7 +662,7 @@ void BlockProgress::redraw()
     if (!isTty) return;
     std::FILE* out = static_cast<std::FILE*>(ttyFile);
 
-    int filled = static_cast<int>((pos * (long long)cells) / total);
+    int filled = static_cast<int>((pos * static_cast<long long>(cells)) / total);
     if (filled < 0)      filled = 0;
     if (filled > cells)  filled = cells;
     int pct = static_cast<int>((pos * 100LL) / total);

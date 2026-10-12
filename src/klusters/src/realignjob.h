@@ -52,9 +52,9 @@ public:
      *  @param guiContext  a GUI-thread QObject (the app) used as the receiver for
      *                     every worker-signal callback, so they run on the GUI
      *                     thread.  Must outlive the job. */
-    RealignJob(QObject* guiContext, KlustersDoc* doc, int clusterId, QString args,
+    RealignJob(QObject* guiContext, KlustersDoc* document, int cluster, QString realignArgs,
                FinishedFn onFinished, LogFn onLog = {}, ClusterFn onCluster = {})
-        : context(guiContext), doc(doc), clusterId(clusterId), args(std::move(args)),
+        : context(guiContext), doc(document), clusterId(cluster), args(std::move(realignArgs)),
           finishedFn(std::move(onFinished)), logFn(std::move(onLog)),
           clusterFn(std::move(onCluster)) {}
 

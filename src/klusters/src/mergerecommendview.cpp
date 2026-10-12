@@ -67,12 +67,12 @@ void MergeRecommendView::onItemActivated(QTreeWidgetItem* item, int /*column*/)
     emit recommendationActivated(QList<int>{ a, b });
 }
 
-void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
+void MergeRecommendView::refreshFrom(KlustersView* view, Data* viewData,
                                      const QList<int>& selected)
 {
     tree->clear();
 
-    if (!view || !data) {
+    if (!view || !viewData) {
         setNotice(tr("No active display."));
         return;
     }
@@ -165,7 +165,7 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
         tplSd.reserve(need.size());
         std::vector<double> m, sd;
         for (const int id : need)
-            if (data->clusterTemplateFor(id, m, sd)) {
+            if (viewData->clusterTemplateFor(id, m, sd)) {
                 tplId.push_back(id);
                 tplMean.push_back(m);
                 tplSd.push_back(sd);
@@ -185,7 +185,7 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* data,
     //Creating the job launches it; the pool owns and deletes it.
     new MergeRecommendThread(
         *this, jobToken, gated, tplId, tplMean, tplSd,
-        data->nbSamplesPerWaveform(), data->nbOfChannels(),
+        viewData->nbSamplesPerWaveform(), viewData->nbOfChannels(),
         configuration().getMergeRecommendMaxShift(),
         static_cast<std::size_t>(maxRecs), qFloor, restrict);
 }

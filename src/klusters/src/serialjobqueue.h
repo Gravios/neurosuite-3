@@ -41,9 +41,9 @@ public:
 class LambdaJob : public Job
 {
 public:
-    explicit LambdaJob(std::function<void()> fn,
-                       QString label = QStringLiteral("lambda"))
-        : fn(std::move(fn)), label(std::move(label)) {}
+    explicit LambdaJob(std::function<void()> func,
+                       QString jobLabel = QStringLiteral("lambda"))
+        : fn(std::move(func)), label(std::move(jobLabel)) {}
 
     void run(std::function<void()> done) override
     {

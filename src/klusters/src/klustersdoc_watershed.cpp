@@ -247,8 +247,8 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     QList<int> clustersToShow;
     {
         const QList<int> currentlyShown = mainActiveView->clusters();
-        for (int c : currentlyShown)
-            if (!inputs.contains(c)) clustersToShow.append(c);
+        for (int shownId : currentlyShown)
+            if (!inputs.contains(shownId)) clustersToShow.append(shownId);
     }
     QColor color;
     for (int newId : newClusterList) {

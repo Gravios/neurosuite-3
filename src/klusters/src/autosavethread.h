@@ -39,7 +39,7 @@ class AutoSaveThread : public QThread {
 public:
 
     //The default saving interval is 5 minutes.
-    AutoSaveThread(Data& d, KlustersDoc* doc,const QString &saveTmpUrl):data(d),doc(doc),autoSaveUrl(saveTmpUrl){
+    AutoSaveThread(Data& d, KlustersDoc* document,const QString &saveTmpUrl):data(d),doc(document),autoSaveUrl(saveTmpUrl){
     }
 
     void removeTmpFile(){

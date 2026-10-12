@@ -252,7 +252,7 @@ void PageItem::dump( int indent )
     prefix.append( " " );
 
   const QString name = ( mPageWidgetItem ? mPageWidgetItem->name() : "root" );
-  qDebug( "%s (%p)", qPrintable( QString( "%1%2" ).arg( prefix, name ) ), (void*)this );
+  qDebug( "%s (%p)", qPrintable( QString( "%1%2" ).arg( prefix, name ) ), static_cast<void*>(this) );
   for ( int i = 0; i < mChildItems.count(); ++i )
     mChildItems[ i ]->dump( indent + 2 );
 }
@@ -545,7 +545,7 @@ QModelIndex QPageWidgetModel::index( const QPageWidgetItem *item ) const
     return QModelIndex();
   }
 
-  return createIndex( pageItem->row(), 0, (void*)pageItem );
+  return createIndex( pageItem->row(), 0, static_cast<const void*>(pageItem) );
 }
 
 #include "moc_qpagewidgetmodel.cpp"

@@ -52,7 +52,7 @@ public:
     void setCrashRecoveryIndex(int index){crashRecoveryIndex = index;}
 
     /**Sets the gain used to display the waveforms.*/
-    void setGain(int gain){this->gain = gain;}
+    void setGain(int newGain){gain = newGain;}
 
     /**Sets the time interval between 2 lines drawn in the cluster views
     * when the time dimension in selected. The time @p time is in second.*/

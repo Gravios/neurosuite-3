@@ -392,38 +392,38 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
                             float bloatFactor,
                             float valleyThresh)
 {
-    auto resultFromDecision = [](const DipSplitDecision& D) {
+    auto resultFromDecision = [](const DipSplitDecision& dec) {
         DipSplitResult R;
-        R.accepted   = D.accepted;
-        R.sourceId   = D.clusterId;
-        R.n0         = D.n0;
-        R.n1         = D.n1;
-        R.bestPC     = D.bestPC;
-        R.bestDepth  = D.bestDepth;
-        R.mahal2P90  = D.mahal2P90;
-        R.chi2_90    = D.chi2_90;
-        R.deltaBIC   = D.deltaBIC;
-        R.reason     = D.reason;
+        R.accepted   = dec.accepted;
+        R.sourceId   = dec.clusterId;
+        R.n0         = dec.n0;
+        R.n1         = dec.n1;
+        R.bestPC     = dec.bestPC;
+        R.bestDepth  = dec.bestDepth;
+        R.mahal2P90  = dec.mahal2P90;
+        R.chi2_90    = dec.chi2_90;
+        R.deltaBIC   = dec.deltaBIC;
+        R.reason     = dec.reason;
         return R;
     };
 
-    auto buildLogDetails = [&](const DipSplitDecision& D, int leftId, int rightId) {
+    auto buildLogDetails = [&](const DipSplitDecision& dec, int leftId, int rightId) {
         QMap<QString, QVariant> m;
         m.insert(QStringLiteral("algorithm"),     QStringLiteral("dipsplit"));
-        m.insert(QStringLiteral("source_cluster"), D.clusterId);
+        m.insert(QStringLiteral("source_cluster"), dec.clusterId);
         m.insert(QStringLiteral("left_cluster"),   leftId);
         m.insert(QStringLiteral("right_cluster"),  rightId);
-        m.insert(QStringLiteral("reason"),         D.reason);
+        m.insert(QStringLiteral("reason"),         dec.reason);
         m.insert(QStringLiteral("min_size"),       minSize);
         m.insert(QStringLiteral("bloat_factor"),   static_cast<double>(bloatFactor));
         m.insert(QStringLiteral("valley_thresh"),  static_cast<double>(valleyThresh));
-        m.insert(QStringLiteral("n_left"),         D.n0);
-        m.insert(QStringLiteral("n_right"),        D.n1);
-        m.insert(QStringLiteral("best_pc"),        D.bestPC);
-        m.insert(QStringLiteral("best_depth"),     D.bestDepth);
-        m.insert(QStringLiteral("mahal2_p90"),     D.mahal2P90);
-        m.insert(QStringLiteral("chi2_90"),        D.chi2_90);
-        m.insert(QStringLiteral("delta_bic"),      D.deltaBIC);
+        m.insert(QStringLiteral("n_left"),         dec.n0);
+        m.insert(QStringLiteral("n_right"),        dec.n1);
+        m.insert(QStringLiteral("best_pc"),        dec.bestPC);
+        m.insert(QStringLiteral("best_depth"),     dec.bestDepth);
+        m.insert(QStringLiteral("mahal2_p90"),     dec.mahal2P90);
+        m.insert(QStringLiteral("chi2_90"),        dec.chi2_90);
+        m.insert(QStringLiteral("delta_bic"),      dec.deltaBIC);
         return m;
     };
 

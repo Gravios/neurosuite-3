@@ -21,10 +21,10 @@
 #include "klustersview.h"
 #include <QDebug>
 
-ViewWidget::ViewWidget(KlustersDoc& doc,KlustersView& view,const QColor& backgroundColor,QStatusBar* statusBar,QWidget* parent, const char* name,
-                       int minSize,int maxSize ,int windowTopLeft ,int windowBottomRight,int border,int Xborder,int Yborder):
-    BufferedView(Xborder,Yborder,parent,name,backgroundColor,minSize,maxSize,windowTopLeft,windowBottomRight,border),
-    view(view),doc(doc),statusBar(statusBar){
+ViewWidget::ViewWidget(KlustersDoc& kdoc,KlustersView& kview,const QColor& backgroundColor,QStatusBar* sbar,QWidget* parent, const char* name,
+                       int minSize,int maxSize ,int windowTopLeft ,int windowBottomRight,int border,int borderX,int borderY):
+    BufferedView(borderX,borderY,parent,name,backgroundColor,minSize,maxSize,windowTopLeft,windowBottomRight,border),
+    view(kview),doc(kdoc),statusBar(sbar){
 }
 
 ViewWidget::~ViewWidget(){

@@ -27,12 +27,12 @@ namespace XcorrDispatch {
     const char* backendName();
 }
 
-SpikeRealignDialog::SpikeRealignDialog(KlustersDoc& doc, int clusterId,
-                                       const QString& args, QWidget* parent)
+SpikeRealignDialog::SpikeRealignDialog(KlustersDoc& document, int cluster,
+                                       const QString& realignArgs, QWidget* parent)
     : QDialog(parent)
-    , doc(doc)
-    , clusterId(clusterId)
-    , args(args)
+    , doc(document)
+    , clusterId(cluster)
+    , args(realignArgs)
 {
     setWindowTitle(tr("Realign Spikes — Cluster %1").arg(clusterId));
     setMinimumWidth(500);

@@ -106,11 +106,11 @@ public:
         /**Field form, for the ticket closure: the completion may fire from a
         * waiter flush long after the job object is gone (epoch-snapshot
         * step 3a).*/
-        GetWaveformsEvent(int gen,bool single,int clusterId,const QList<int>& clusterIds,
-                          bool meanRequested,bool launchedWithMean,WaveformView::PresentationMode m)
+        GetWaveformsEvent(int gen,bool isSingle,int id,const QList<int>& ids,
+                          bool meanWanted,bool withMean,WaveformView::PresentationMode m)
             :QEvent(QEvent::Type(QEvent::User + 200)),
-            eventGeneration(gen),single(single),clusterId(clusterId),clusterIds(clusterIds),
-            meanRequested(meanRequested),launchedWithMean(launchedWithMean),snapMode(m){}
+            eventGeneration(gen),single(isSingle),clusterId(id),clusterIds(ids),
+            meanRequested(meanWanted),launchedWithMean(withMean),snapMode(m){}
 
         int eventGeneration;
         bool single;

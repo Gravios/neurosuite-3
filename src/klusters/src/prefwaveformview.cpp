@@ -28,9 +28,9 @@
 #include <QDir>
 
 
-PrefWaveformView::PrefWaveformView(QWidget *parent,int nbChannels,const char *name):
-    PrefWaveformViewLayout(parent),nbChannels(nbChannels){
-    if(nbChannels > 0) {
+PrefWaveformView::PrefWaveformView(QWidget *parent,int channelCount,const char *name):
+    PrefWaveformViewLayout(parent),nbChannels(channelCount){
+    if(channelCount > 0) {
         initializeChannelList();
     } else {
         saveButton->setEnabled(false);

@@ -656,7 +656,7 @@ void KlustersDoc::customEvent(QEvent *event){
             }
         }
         else{
-            if(((AutoSaveThread::AutoSaveEvent*)event)->isIOerror())
+            if(static_cast<AutoSaveThread::AutoSaveEvent*>(event)->isIOerror())
                 QMessageBox::critical(nullptr,tr("I/O Error !"),tr(
                                           "In order to protect your work in case of a crash, Klusters periodically saves a hidden copy of the cluster file"
                                           " in the directory where your files are located (this temporary rescue file is removed when you quit the application).\n"

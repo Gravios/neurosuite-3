@@ -28,18 +28,18 @@
 class WaveformPlotWidget : public QWidget
 {
 public:
-    explicit WaveformPlotWidget(int nChan, int nSamp, int peakSamp0,
-                                const QVector<float>& before,
-                                const QVector<float>& after,
+    explicit WaveformPlotWidget(int channels, int samples, int peak0,
+                                const QVector<float>& beforeWave,
+                                const QVector<float>& afterWave,
                                 QWidget* parent = nullptr)
         : QWidget(parent)
-        , nChan(nChan > 0 ? nChan : 1)
-        , nSamp(nSamp > 0 ? nSamp : 1)
-        , peakSamp0(peakSamp0)
-        , before(before)
-        , after(after)
+        , nChan(channels > 0 ? channels : 1)
+        , nSamp(samples > 0 ? samples : 1)
+        , peakSamp0(peak0)
+        , before(beforeWave)
+        , after(afterWave)
     {
-        setMinimumSize(400, std::max(120, nChan * 80));
+        setMinimumSize(400, std::max(120, channels * 80));
         // Never let the plot steal keyboard focus — Tab should cycle only the buttons.
         setFocusPolicy(Qt::NoFocus);
     }

@@ -317,14 +317,14 @@ void ClusterPaletteWidget::keyPressEvent(QKeyEvent *event)
 
 
 
-ClusterPalette::ClusterPalette(const QColor& backgroundColor,QWidget* parent,QStatusBar * statusBar, const char* name )
+ClusterPalette::ClusterPalette(const QColor& bgColor,QWidget* parent,QStatusBar * bar, const char* name )
     : QWidget( parent ),
       doc(nullptr),
       mode(IMMEDIATE),
       isInSelectItems(false),
       isUpToDate(true),
-      backgroundColor(backgroundColor),
-      statusBar(statusBar),
+      backgroundColor(bgColor),
+      statusBar(bar),
       isInUserClusterInfoMode(false)
 {
     setObjectName(name);
@@ -334,7 +334,7 @@ ClusterPalette::ClusterPalette(const QColor& backgroundColor,QWidget* parent,QSt
     setAutoFillBackground(true);
 
     QPalette palette;
-    palette.setColor(backgroundRole(), backgroundColor);
+    palette.setColor(backgroundRole(), bgColor);
     palette.setColor(foregroundRole(), Qt::white);
     setPalette(palette);
 
@@ -377,7 +377,7 @@ ClusterPalette::ClusterPalette(const QColor& backgroundColor,QWidget* parent,QSt
     iconView->setContextMenuPolicy(Qt::CustomContextMenu);
 
     //Deal with the sizes
-    setSizePolicy(QSizePolicy((QSizePolicy::Policy)5,(QSizePolicy::Policy)5));
+    setSizePolicy(QSizePolicy(static_cast<QSizePolicy::Policy>(5),static_cast<QSizePolicy::Policy>(5)));
 
     iconView->setPalette(palette);
     //Set the legend in the good language
