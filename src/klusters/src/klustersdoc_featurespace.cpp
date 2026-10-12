@@ -163,22 +163,22 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
         return false;
     }
 
-    // The feature table is reallocated: every job that reads it, or the .spk,
-    // must be gone first (the blocking quiesce, not the superseding one).
-    if (viewList)
-        for (KlustersView* v : *viewList) v->stopAllViewThreads();
-
-    // Leaving the .clu's own space: hold its live table (realign / nudge keep
-    // it current) so that switching back reads nothing from disk.
-    if (activeMethod == originMethod && !activeFetPath.isEmpty())
-        holdFeatures(activeFetPath, clusteringData->featureTableCopy());
-
     // Tables come from memory (preloadFeatureSpaces), read once if not held.
     const std::shared_ptr<const neurofileio::FetBinaryFile> fet = featuresInMemory(target.fetPath);
     if (!fet) {
         errorInformation = tr("Cannot read %1.").arg(QFileInfo(target.fetPath).fileName());
         return false;
     }
+
+    // Leaving the .clu's own space: hold its live table (realign / nudge keep
+    // it current) so that switching back reads nothing from disk.
+    if (activeMethod == originMethod && !activeFetPath.isEmpty())
+        holdFeatures(activeFetPath, clusteringData->featureTableCopy());
+
+    // The feature table is reallocated: every job that reads it, or the .spk,
+    // must be gone first (the blocking quiesce, not the superseding one).
+    if (viewList)
+        for (KlustersView* v : *viewList) v->stopAllViewThreads();
     const QString prevFet = activeFetPath;
     const QString prevSpk = activeSpkPath;
     if (!clusteringData->replaceFeatureSpace(*fet, target.fetPath, target.spkPath, errorInformation))

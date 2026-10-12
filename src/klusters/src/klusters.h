@@ -932,6 +932,11 @@ private:
     /** Hold every usable space's .fet/.spk in memory (KlustersDoc::
      *  preloadFeatureSpaces), with a wait cursor and a status-bar note. */
     void preloadFeatureSpaces();
+    /** True while a job that reads or writes the group's files is running: a
+     *  save, a realign or nudge, or a plugin.  Switching, syncing and the time
+     *  sort wait for it (the Space box's enabled state is not enough: a
+     *  recluster finishing mid-save re-enables it). */
+    bool fileJobRunning() const;
     /** After a switch: re-range the dimension spin boxes, keep every display's
      *  axes valid (a time axis stays on time), and refresh views and matrices. */
     void refreshAfterFeatureSpaceSwitch(int oldNbDimensions);

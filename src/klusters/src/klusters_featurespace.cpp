@@ -17,6 +17,7 @@
 #include "klustersview.h"
 #include "data.h"
 #include "configuration.h"
+#include "savethread.h"
 
 #include <QApplication>
 #include <QComboBox>
@@ -66,6 +67,12 @@ void KlustersApp::populateFeatureSpaceCombo()
     featureSpaceCombo->setFont(f);
 }
 
+bool KlustersApp::fileJobRunning() const
+{
+    return realignRunning || realignBatchActive || nudgeInProgress || mPluginRunning
+        || (saveThread && saveThread->isRunning());
+}
+
 void KlustersApp::preloadFeatureSpaces()
 {
     if (!doc || doc->url().isEmpty()) return;
@@ -85,9 +92,9 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
     const QString method = featureSpaceCombo->itemData(index).toString();
     if (method.isEmpty() || method == doc->activeFeatureMethod()) return;
 
-    if (realignRunning || realignBatchActive || nudgeInProgress) {
-        statusBar()->showMessage(tr("Wait for the running realignment to finish before "
-                                    "switching feature space."), 5000);
+    if (fileJobRunning() || !featureSpaceCombo->isEnabled()) {
+        statusBar()->showMessage(tr("Wait for the running job (save, realignment or plugin) "
+                                    "to finish before switching feature space."), 5000);
         populateFeatureSpaceCombo();
         return;
     }
@@ -115,6 +122,11 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
                                 "existing files.\n\n%2").arg(method, syncLog.trimmed()));
     if (!ok) {
         QMessageBox::warning(this, tr("Feature space"), err);
+        // The switch stopped the views' jobs before it was refused: request
+        // the loaded space's waveforms and correlograms again.
+        KlustersView* active = activeView();
+        for (KlustersView* v : doc->viewListCopy())
+            if (v) v->reloadWaveformsAndCorrelograms(v == active);
         populateFeatureSpaceCombo();               // back to the loaded space
         return;
     }
@@ -225,8 +237,7 @@ void KlustersApp::slotSyncFeatureSpaces()
 {
     if (!doc || doc->url().isEmpty()) return;
     // The combo is locked during save / realign / recluster: same busy test.
-    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled())
-        || realignRunning || realignBatchActive || nudgeInProgress) {
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
         statusBar()->showMessage(tr("Wait for the running job to finish before syncing "
                                     "feature spaces."), 5000);
         return;
