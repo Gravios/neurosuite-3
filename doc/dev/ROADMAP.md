@@ -113,6 +113,21 @@ cross-applied from ns3.  Estimate: half a session.
 
 ### 💭 considered
 
+**Klusters — events from spike annotation.**
+Let a user label stretches of the recording from the spiking itself and
+save them as an event file: for example, mark where a unit's waveform
+changes shape between network states, so the change becomes a time-stamped
+event usable alongside the session's other events.  Klusters already carries
+dormant event support inherited from NeuroScope's trace view
+(`eventsprovider.*`, `TraceWidget::addEventProvider`, and the event drawing
+in `traceview.cpp`) that nothing creates or calls today.  It is kept in place
+while it stays benign: two latent bugs in it were fixed during the warning
+cleanup (0834 — the loaded event count was never stored; 0835 — the
+single-column layout skipped selected events), and neither could be reached
+by a user.  The work would wire a provider to the trace view, add the
+annotation gesture (e.g. from a waveform or time selection), and write the
+result in the event file format NeuroScope reads.
+
 **Template curation — open UX questions.**
 From the template-curation live runs, none blocking:
 - how to return from a single-node overlay to the full class band in
