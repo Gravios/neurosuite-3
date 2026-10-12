@@ -105,7 +105,10 @@ public:
     /**
      * @brief Set nSamples, peakSampleIndex, and the channel groups.
      *
-     * Preserves nFeatures of each existing group if possible.
+     * Each existing group is kept whole -- every key it carries (nSamples,
+     * nFeatures, sdiffPairs, probeId, ...) survives; only its channel list is
+     * replaced.  @p nbSamples / @p peakSampleIndex / nFeatures=3 only fill a
+     * group that lacks them.
      */
     bool setSpikeDetectionInformation(int nbSamples, int peakSampleIndex,
                                       QMap<int,QList<int>>& spikeGroups);
@@ -170,6 +173,12 @@ private:
     // Helpers
     /** Ensure root is a Map and has the given top-level key as a Map. */
     YAML::Node ensureMap(const std::string& key);
+
+    /// Pairs the caller's groups (key = 1-based group number) with entries of an
+    /// existing channelGroups sequence -- exact channel-set matches first, then by
+    /// position -- and returns deep copies keyed by the caller's group number.
+    static QMap<int,YAML::Node> matchExistingGroups(const YAML::Node& existing,
+                                                    const QMap<int,QList<int>>& groups);
 
     /** Assign a scalar, creating intermediate maps as needed. */
     template<typename T>

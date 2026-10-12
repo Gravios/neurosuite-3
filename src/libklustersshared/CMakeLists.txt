@@ -62,7 +62,7 @@ add_subdirectory(src)
 
 # ---------------------------------------------------------------------------
 # Regression tests — built only with NS_BUILD_TESTS, run with ctest.
-# (Only the self-contained theme test is registered here; the legacy
+# (Only the self-contained tests are registered here; the legacy
 # test_scrollview demo in test/ is left untouched and unbuilt.)
 # ---------------------------------------------------------------------------
 if(NS_BUILD_TESTS)
@@ -72,6 +72,12 @@ if(NS_BUILD_TESTS)
     set_tests_properties(klustersshared_theme_test PROPERTIES
         ENVIRONMENT
             "QT_QPA_PLATFORM=offscreen;XDG_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/themecfg")
+
+    # ParameterYamlModifier round trip: NeuroScope's saves must not drop keys
+    # other tools write (sdiffPairs, probeId, channelMapping, ...).
+    add_executable(klustersshared_yamlmodifier_test test/yamlmodifier_test.cpp)
+    target_link_libraries(klustersshared_yamlmodifier_test PRIVATE Neurosuite::qt yaml-cpp)
+    add_test(NAME klustersshared_yamlmodifier_test COMMAND klustersshared_yamlmodifier_test)
 endif()
 
 # ---------------------------------------------------------------------------

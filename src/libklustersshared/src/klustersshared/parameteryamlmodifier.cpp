@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QDir>
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -89,6 +90,71 @@ bool ParameterYamlModifier::writeToFile(const QString& path)
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+namespace {
+
+// Channel ids of one channelGroups entry, sorted.  spikeDetection lists plain
+// ids; anatomicalDescription lists {id, skip} maps -- both are accepted.
+QList<int> groupChannelIds(const YAML::Node& grp)
+{
+    QList<int> ids;
+    if (!grp.IsMap()) return ids;
+    const YAML::Node channels = grp["channels"];
+    if (!channels || !channels.IsSequence()) return ids;
+    for (const auto& ch : channels) {
+        const YAML::Node idNode = ch.IsMap() ? ch["id"] : ch;
+        try { ids.append(idNode.as<int>()); } catch (...) {}
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
+} // namespace
+
+// Pair the caller's groups with the existing channelGroups entries, so a rewrite
+// can start from the existing node and keep every key it carries.
+//
+// The readers number groups by position (1-based), so position is the default
+// pairing.  But a group whose channel set is unchanged is the strongest evidence
+// of identity: if the caller renumbered its groups (one deleted, say), pairing by
+// position alone would graft one group's keys -- an sdiffPairs pattern, a
+// waveform geometry -- onto its neighbour.  So exact channel-set matches are
+// paired first, wherever they sit, and only the leftovers pair by position.
+// Each existing entry is used at most once; the returned nodes are deep copies.
+QMap<int,YAML::Node> ParameterYamlModifier::matchExistingGroups(
+        const YAML::Node& existing, const QMap<int,QList<int>>& groups)
+{
+    QMap<int,YAML::Node> result;
+    if (!existing || !existing.IsSequence()) return result;
+
+    QMap<int,YAML::Node> pool;              // position (1-based) -> entry
+    int pos = 1;
+    for (const auto& grp : existing) {
+        if (grp.IsMap()) pool.insert(pos, grp);
+        ++pos;
+    }
+
+    for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
+        if (it.key() <= 0) continue;
+        QList<int> wanted = it.value();
+        std::sort(wanted.begin(), wanted.end());
+        if (wanted.isEmpty()) continue;
+        int found = 0;
+        if (pool.contains(it.key()) && groupChannelIds(pool[it.key()]) == wanted) {
+            found = it.key();
+        } else {
+            for (auto p = pool.constBegin(); p != pool.constEnd(); ++p)
+                if (groupChannelIds(p.value()) == wanted) { found = p.key(); break; }
+        }
+        if (found) result.insert(it.key(), YAML::Clone(pool.take(found)));
+    }
+    for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
+        if (it.key() <= 0 || result.contains(it.key())) continue;
+        if (pool.contains(it.key()))
+            result.insert(it.key(), YAML::Clone(pool.take(it.key())));
+    }
+    return result;
+}
 
 YAML::Node ParameterYamlModifier::ensureMap(const std::string& key)
 {
@@ -174,40 +240,25 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
         int nbSamples, int peakSampleIndex,
         QMap<int,QList<int>>& spikeGroups)
 {
-    // Preserve per-group nFeatures, nSamples AND peakSampleIndex from any existing
-    // groups.
+    // Every existing group is carried across WHOLE -- every key it holds, not a
+    // list of the ones this class knows about.
+    //
+    // This setter used to rebuild each group from four keys (channels, nSamples,
+    // peakSampleIndex, nFeatures) and so silently deleted everything else a group
+    // carries: the stderiv pipeline's sdiffPairs (the custom-difference channel
+    // algebra), probeId/shankIndex, and anything a later tool adds.  NeuroScope
+    // calls it on EVERY close -- even with nothing modified -- so merely opening a
+    // session in NeuroScope was enough to destroy them.  An earlier fix preserved
+    // nSamples/peakSampleIndex/nFeatures by name; a whitelist is the wrong shape for
+    // a file other tools extend, so the group node itself is preserved now.
     //
     // nSamples/peakSampleIndex are PER GROUP in this format, and klusters reads them
-    // that way (ParameterYamlReader::getNbSamples(electrodeGroupID)).  Neuroscope,
-    // the only caller of this overload, models exactly one of each for the whole
-    // session -- "Neuroscope uses the same values for all the groups" -- so the
-    // values it passes in are not per-group knowledge, they are the single value it
-    // happened to load.  Writing them across every group therefore destroys geometry
-    // the caller never modelled, and it is destroyed on ANY neuroscope save: opening
-    // a session to look at traces and hitting Save is enough.
-    //
-    // The damage is silent and downstream: klusters derives the spike count as
-    // spkFileLength / (nChannels * nSamples * sampleSize), so a wrong nSamples makes
-    // a perfectly good .clu look like it has the wrong number of entries and the
-    // session stops loading, pointing at the cluster files rather than at the .yaml.
-    //
-    // So an existing per-group value always wins.  The caller's value is used only
-    // for groups that do not have one -- a group neuroscope just created, where its
-    // session-wide value is the only information available.
-    QMap<int,int> existingNFeatures, existingNSamples, existingPeak;
-    auto existing = root["spikeDetection"]["channelGroups"];
-    if (existing && existing.IsSequence()) {
-        int idx = 1;
-        for (auto grp : existing) {
-            if (grp["nFeatures"])
-                existingNFeatures[idx] = grp["nFeatures"].as<int>(3);
-            if (grp["nSamples"])
-                existingNSamples[idx] = grp["nSamples"].as<int>(0);
-            if (grp["peakSampleIndex"])
-                existingPeak[idx] = grp["peakSampleIndex"].as<int>(0);
-            ++idx;
-        }
-    }
+    // that way.  Neuroscope models one of each for the whole session, so its values
+    // are not per-group knowledge: they are only used to fill a group that has none
+    // (a group neuroscope just created).  A wrong nSamples makes klusters derive the
+    // wrong spike count from the .spk, so an existing value always wins.
+    const QMap<int,YAML::Node> carried =
+        matchExistingGroups(root["spikeDetection"]["channelGroups"], spikeGroups);
 
     // neuroscope/spikes also carries nSamples and peakSampleIndex
     if (!root["neuroscope"] || !root["neuroscope"].IsMap())
@@ -220,16 +271,16 @@ bool ParameterYamlModifier::setSpikeDetectionInformation(
     auto sd = ensureMap("spikeDetection");
     YAML::Node seq(YAML::NodeType::Sequence);
 
-    // spikeGroups keys: -1 = trash (skip), 0 = display-only (skip), ≥1 = real
+    // spikeGroups keys: -1 = trash (skip), 0 = display-only (skip), >=1 = real
     for (auto it = spikeGroups.constBegin(); it != spikeGroups.constEnd(); ++it) {
         if (it.key() <= 0) continue;   // skip trash / display-only groups
-        YAML::Node grp;
+        YAML::Node grp = carried.value(it.key(), YAML::Node(YAML::NodeType::Map));
         YAML::Node chSeq(YAML::NodeType::Sequence);
         for (int ch : it.value()) chSeq.push_back(ch);
-        grp["channels"]        = chSeq;
-        grp["nSamples"]        = existingNSamples.value(it.key(), nbSamples);
-        grp["peakSampleIndex"] = existingPeak.value(it.key(), peakSampleIndex);
-        grp["nFeatures"]       = existingNFeatures.value(it.key(), 3);
+        grp["channels"] = chSeq;
+        if (!grp["nSamples"])        grp["nSamples"]        = nbSamples;
+        if (!grp["peakSampleIndex"]) grp["peakSampleIndex"] = peakSampleIndex;
+        if (!grp["nFeatures"])       grp["nFeatures"]       = 3;
         seq.push_back(grp);
     }
     sd["channelGroups"] = seq;
