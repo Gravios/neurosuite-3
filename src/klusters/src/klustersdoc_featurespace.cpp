@@ -243,6 +243,7 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
         QString method, fetSource, fetCommitted, pcaPath;
         neurosuite::core::PcaBasis pca;
         int32_t nDims = 0;
+        std::shared_ptr<const neurofileio::FetBinaryFile> oldFet;   // held in memory
     };
     std::vector<Plan> plans;
     for (const FeatureSpace& s : spaces) {
@@ -285,13 +286,14 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
                 << QFileInfo(spkCommitted).fileName() << " are in different domains.\n";
             return false;
         }
-        QFile f(p.fetSource);
-        // reinterpret_cast: QIODevice::read fills raw bytes (native-endian int32 header).
-        if (!f.open(QIODevice::ReadOnly)
-            || f.read(reinterpret_cast<char*>(&p.nDims), sizeof(p.nDims)) != sizeof(p.nDims)) {
+        // The current table (held by preloadFeatureSpaces) supplies the extra
+        // non-PCA columns.
+        p.oldFet = featuresInMemory(p.fetSource);
+        if (!p.oldFet) {
             log << who << ": not synced — cannot read " << QFileInfo(p.fetSource).fileName() << ".\n";
             return false;
         }
+        p.nDims = p.oldFet->nFeatures;
         const int nPca = p.pca.nCh * p.pca.nComp;
         if (p.nDims - 1 - nPca < 0) {                 // last column is the timestamp
             log << who << ": not synced — the basis yields " << nPca
@@ -345,47 +347,57 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
     // serves it.  Extra non-PCA columns are carried over from the current .fet.
     const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
     const int     timeDim = clusteringData->timeDimension();
+    // The waveforms, held in memory: a re-extracted file is read once here and
+    // stays held for the switcher; the .clu space's pending copy is the live one.
+    const size_t spikeElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    const std::shared_ptr<const QByteArray> spk = SpkMemoryCache::instance().get(spkSource);
+    if (!spk || static_cast<qint64>(spk->size())
+                    != nSpikes * static_cast<qint64>(spikeElems * sizeof(int16_t))) {
+        log << method << ": cannot hold " << QFileInfo(spkSource).fileName()
+            << " in memory, or it does not match this group.\n";
+        rollBack();
+        return false;
+    }
+    // reinterpret_cast: the held bytes are the .spk's native-endian int16 records.
+    const int16_t* waveforms = reinterpret_cast<const int16_t*>(spk->constData());
     for (const Plan& p : plans) {
         const QString fetPending = p.fetCommitted + QStringLiteral(".pending");
         const QString fetTmp     = fetPending + QStringLiteral(".tmp");
-        std::FILE* oldFet = std::fopen(p.fetSource.toLocal8Bit().constData(), "rb");
-        std::FILE* spkIn  = std::fopen(spkSource.toLocal8Bit().constData(), "rb");
-        std::FILE* out    = std::fopen(fetTmp.toLocal8Bit().constData(), "wb");
-        std::vector<int16_t> wav(static_cast<size_t>(nChan) * static_cast<size_t>(nSamp));
-        std::vector<int64_t> row(static_cast<size_t>(p.nDims));
-        int32_t nDims = 0;
-        bool ok = oldFet && spkIn && out
-               && std::fread(&nDims, sizeof(nDims), 1, oldFet) == 1 && nDims == p.nDims
-               && std::fwrite(&nDims, sizeof(nDims), 1, out) == 1;
-        for (int64_t i = 0; ok && i < nSpikes; ++i) {
-            ok = std::fread(wav.data(), sizeof(int16_t), wav.size(), spkIn) == wav.size()
-              && std::fread(row.data(), sizeof(int64_t), row.size(), oldFet) == row.size();
-            if (!ok) break;
-            // .spk records are sample-major [s * nChan + ch]; a stderiv .spk
-            // already holds the transformed waveform, projected as-is (as
-            // realign does).
-            klusters::projectSpikeOntoPca(
-                p.pca,
-                [&](int ch, int j) {
-                    return static_cast<double>(
-                        wav[static_cast<size_t>((p.pca.recShift + j) * nChan + ch)]);
-                },
-                row.data());
-            // row[nPca .. nDims-1) keeps the old extra columns.
-            row[static_cast<size_t>(nDims - 1)] = static_cast<int64_t>(
-                clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
-            ok = std::fwrite(row.data(), sizeof(int64_t), row.size(), out) == row.size();
+        const size_t  nDims      = static_cast<size_t>(p.nDims);
+        auto out = std::make_shared<neurofileio::FetBinaryFile>();
+        bool ok = p.oldFet->nSpikes == nSpikes;
+        if (ok) {
+            out->nFeatures = p.nDims;
+            out->nSpikes   = nSpikes;
+            out->values    = p.oldFet->values;     // row[nPca .. nDims-1) keeps the extras
+            out->ok        = true;
+            for (int64_t i = 0; i < nSpikes; ++i) {
+                const int16_t* wav = waveforms + static_cast<size_t>(i) * spikeElems;
+                int64_t*       row = out->values.data() + static_cast<size_t>(i) * nDims;
+                // .spk records are sample-major [s * nChan + ch]; a stderiv .spk
+                // already holds the transformed waveform, projected as-is (as
+                // realign does).
+                klusters::projectSpikeOntoPca(
+                    p.pca,
+                    [&](int ch, int j) {
+                        return static_cast<double>(
+                            wav[static_cast<size_t>((p.pca.recShift + j) * nChan + ch)]);
+                    },
+                    row);
+                row[nDims - 1] = static_cast<int64_t>(
+                    clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+            }
         }
-        if (oldFet) std::fclose(oldFet);
-        if (spkIn)  std::fclose(spkIn);
-        if (out && std::fclose(out) != 0) ok = false;
-        if (!ok || std::rename(fetTmp.toLocal8Bit().constData(),
-                               fetPending.toLocal8Bit().constData()) != 0) {
+        // Written for Save (the working copy); the table itself stays in memory.
+        if (!ok || !neurofileio::writeFetBinary(fetTmp.toStdString(), out->nFeatures, out->values)
+            || std::rename(fetTmp.toLocal8Bit().constData(),
+                           fetPending.toLocal8Bit().constData()) != 0) {
             QFile::remove(fetTmp);
             log << p.method << ": writing the regenerated features failed.\n";
             rollBack();
             return false;
         }
+        holdFeatures(fetPending, std::move(out));
         syncedPending.insert(p.fetCommitted, fetPending);
         syncedGeneration.insert(p.fetCommitted, spikeTimesGeneration);
         log << p.method << ": " << nSpikes << " feature rows re-projected through "
