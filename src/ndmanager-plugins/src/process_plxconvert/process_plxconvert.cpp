@@ -1633,6 +1633,48 @@ void writeMetadata(const fs::path& path, const Value& doc) {
 // CLI
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Channel names as compact ranges, in the order given: WB17..WB24 becomes
+ * "WB17-WB24"; names that do not continue a run are listed on their own.
+ */
+string nameRanges(const vector<string>& names) {
+    auto split = [](const string& n, string& pre, long& num, size_t& width) {
+        size_t k = n.size();
+        while (k > 0 && std::isdigit(static_cast<unsigned char>(n[k - 1]))) --k;
+        if (k == n.size()) return false;
+        pre = n.substr(0, k);
+        width = n.size() - k;
+        num = std::stol(n.substr(k));
+        return true;
+    };
+    string out;
+    size_t i = 0;
+    while (i < names.size()) {
+        string pre, p2;
+        long a = 0, b = 0;
+        size_t w = 0, w2 = 0;
+        size_t j = i + 1;
+        if (split(names[i], pre, a, w)) {
+            long last = a;
+            while (j < names.size() && split(names[j], p2, b, w2) && p2 == pre && w2 == w && b == last + 1) {
+                last = b;
+                ++j;
+            }
+        }
+        out += (out.empty() ? "" : ", ") + names[i];
+        if (j - i > 1) out += "-" + names[j - 1];
+        i = j;
+    }
+    return out;
+}
+
+vector<string> namesWithData(const Recording& rec, const vector<size_t>& idx) {
+    vector<string> n;
+    for (size_t i : idx)
+        if (rec.analog[i].nBlocks) n.push_back(rec.analog[i].name);
+    return n;
+}
+
 void summarize(const Recording& rec) {
     std::cout << "  Container      : " << (rec.container == "plx" ? "PLX" : "PL2");
     if (rec.container == "plx") std::cout << " v" << scalar(mapGet(rec.header, "version"));
@@ -1661,6 +1703,8 @@ void summarize(const Recording& rec) {
                   << "/" << std::left << std::setw(4) << idx.size() << std::right << "ch "
                   << std::setw(9) << rs << " Hz " << std::setw(13) << ns << " samples  "
                   << us << " uV/count\n";
+        if (live && live < idx.size())
+            std::cout << "           with data: " << nameRanges(namesWithData(rec, idx)) << "\n";
     }
     uint64_t nsp = 0, csp = 0, nev = 0, cev = 0;
     for (const auto& uc : rec.unitCounts) {
@@ -1719,7 +1763,15 @@ int main(int argc, char** argv) {
             else if (a == "-C" || a == "--channels") channelSpec = next();
             else if (a == "-k" || a == "--keep-empty") keepEmpty = parseBool(next());
             else if (a == "-z" || a == "--pad-to-zero") padToZero = parseBool(next());
-            else if (a == "-c" || a == "--chunk") chunk = std::max<uint64_t>(1, std::stoull(next()));
+            else if (a == "-c" || a == "--chunk") {
+                const string v = next();
+                size_t used = 0;
+                unsigned long long n = 0;
+                try { n = std::stoull(v, &used); } catch (const std::exception&) { used = 0; }
+                if (v.empty() || used != v.size() || v[0] == '-' || n == 0)
+                    throw std::invalid_argument(a + " expects a positive integer (samples), got '" + v + "'");
+                chunk = n;
+            }
             else if (a == "-m" || a == "--meta") metaPath = next();
             else if (a == "-e" || a == "--evt-id") evtId = next();
             else if (a == "--no-evt") writeEvents = false;
@@ -1858,6 +1910,11 @@ int main(int argc, char** argv) {
         }
 
         const vector<size_t> sel = parseChannelSpec(channelSpec, streams.at(chosen), rec);
+        if (std::none_of(sel.begin(), sel.end(), [&](size_t i) { return rec.analog[i].nBlocks > 0; }))
+            throw std::runtime_error("none of the selected " + chosen + " channels (" +
+                                     nameRanges([&] { vector<string> n; for (size_t i : sel) n.push_back(rec.analog[i].name); return n; }()) +
+                                     ") holds data; channels with data: " +
+                                     nameRanges(namesWithData(rec, streams.at(chosen))));
         Layout L = buildLayout(rec, sel, keepEmpty, padToZero);
         const fs::path dat = pos[1] + ".dat";
         const fs::path evtPath = pos[1] + "." + evtId + ".evt";

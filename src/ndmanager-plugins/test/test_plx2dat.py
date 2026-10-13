@@ -592,6 +592,17 @@ def main():
         check("refuses to overwrite an existing .pxai", rc == 3 and not Path(d, "x5.dat").exists())
         rc, out = run(["--dry-run", str(pl2)])
         check("dry-run summary", rc == 0 and "WB" in out and "FP" in out)
+        check("dry-run lists the channels with data when some are empty",
+              "with data: WB01-WB02, WB04" in out)
+        rc, out = run(["--channels", "3", str(pl2), str(Path(d, "e1"))])
+        check("empty selection names the channels that hold data",
+              rc == 1 and "none of the selected WB channels (WB03) holds data; "
+                          "channels with data: WB01-WB02, WB04" in out)
+        for bad in ("~", "12abc", "0", "-5", ""):
+            rc, out = run(["--chunk", bad, str(pl2), str(Path(d, "e2"))])
+            check(f"--chunk '{bad}' refused with the option and value named",
+                  rc == 2 and f"--chunk expects a positive integer (samples), got '{bad}'" in out
+                  and "stoull" not in out)
         rc, out = run([str(pl2), str(Path(d, "a"))])
         check("refuses to overwrite an existing .dat", rc == 3)
 
