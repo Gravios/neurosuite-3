@@ -725,6 +725,10 @@ try:
     if val is None:
         sys.exit(0)
     out = str(val).strip()
+    # ndmanager builds before the libklustersshared null fix wrote empty
+    # fields as the quoted string "~": that is "unset", not a value.
+    if out == '~':
+        sys.exit(0)
     if out in ('True', 'False'):
         out = out.lower()
     print(out, end='')
@@ -858,6 +862,11 @@ try:
         result = xpath_program_param(doc, xpath)
     else:
         result = xpath_simple(doc, xpath)
+
+    # ndmanager builds before the libklustersshared null fix wrote empty
+    # fields as the quoted string "~": that is "unset", not a value.
+    if result == '~':
+        result = None
 
     if result is not None:
         # Normalise Python booleans to bash-compatible lowercase

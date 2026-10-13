@@ -94,7 +94,8 @@ def merge(param_file: Path, meta_file: Path) -> list[str]:
     fill = {"date": (hdr.get("recordedAt") or "")[:10] or None,
             "description": hdr.get("comment") or None}
     for k, v in fill.items():
-        if v and not gi.get(k):
+        # "~" is how ndmanager builds before the null fix wrote an empty field
+        if v and (not gi.get(k) or gi.get(k) == "~"):
             gi[k] = v
             changes.append(f"generalInfo.{k}: {v}")
 
