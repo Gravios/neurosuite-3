@@ -61,7 +61,14 @@ void ParameterYamlReader::closeFile()
 QString ParameterYamlReader::nodeStr(const YAML::Node& n) const
 {
     if (!n || !n.IsDefined() || n.IsNull()) return {};
-    try { return QString::fromStdString(n.as<std::string>()); }
+    try {
+        const std::string v = n.as<std::string>();
+        // Files saved by earlier builds hold empty fields as the quoted string
+        // "~" (see ParameterYamlWriter::strNode).  Read it as empty, so the
+        // next save writes a real null and the file repairs itself.
+        if (v == "~") return {};
+        return QString::fromStdString(v);
+    }
     catch (...) { return {}; }
 }
 

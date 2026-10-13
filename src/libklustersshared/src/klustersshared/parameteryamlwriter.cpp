@@ -17,14 +17,15 @@
 
 YAML::Node ParameterYamlWriter::strNode(const QString& s)
 {
-    // Write empty optional fields as the explicit YAML null scalar "~".
-    // YAML::NodeType::Null is correct per-spec but yaml-cpp's emitter can
-    // produce a bare "key:" (no value token) in certain block-mapping contexts
-    // on some builds, which causes "illegal map value" errors on re-read.
-    // Using "~" as a plain scalar is unambiguous across all yaml-cpp versions.
-    YAML::Node n;
-    n = s.isEmpty() ? std::string("~") : s.toStdString();
-    return n;
+    // An empty field is written as a YAML null.  It must be a Null node: a
+    // std::string("~") is a string whose content happens to be a tilde, and
+    // yaml-cpp emits it quoted ("~"), so every other reader (the ndm_* scripts,
+    // PyYAML) gets the text "~" instead of "unset".  A Null node is emitted
+    // as a plain ~ in block maps, block sequences and as a final value, and
+    // reads back as null in yaml-cpp and PyYAML (checked with yaml-cpp 0.7.0,
+    // Debian 12, and 0.8.0, Ubuntu 24.04).
+    if (s.isEmpty()) return YAML::Node(YAML::NodeType::Null);
+    return YAML::Node(s.toStdString());
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +356,7 @@ void ParameterYamlWriter::setProgramsInformation(
                 else {
                     double dv = row[1].toDouble(&ok);
                     if (ok) { p["value"] = dv; }
-                    else if (row[1].isEmpty()) { p["value"] = std::string("~"); }
+                    else if (row[1].isEmpty()) { p["value"] = YAML::Node(YAML::NodeType::Null); }
                     else { p["value"] = row[1].toStdString(); }
                 }
                 p["status"] = row[2].toStdString();
