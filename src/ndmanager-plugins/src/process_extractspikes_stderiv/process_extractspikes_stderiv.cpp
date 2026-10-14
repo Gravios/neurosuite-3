@@ -1281,6 +1281,26 @@ int main(int argc, char *argv[])
     }
     const int nbGroups = getChannelsFromArg(channelNb_grp, channelList, args);
 
+    // A spatial derivative needs neighbours.  On a one-channel group the
+    // all-pairs (and custom, which falls back to it) derivative is identically
+    // zero, so the threshold is zero, every sample crosses it, and the run
+    // "detects" one spike per sample only to reject them all as flat.  The
+    // first-difference and Laplacian orders have no neighbour either.  Refuse
+    // before any work, naming the group, rather than produce that.
+    if(args.sdiffOrder != SDIFF_NONE) {
+        for(int g = 0; g < nbGroups; g++) {
+            if(channelNb_grp[g] == 1) {
+                cerr << "error: group " << g+1 << " has a single channel ("
+                     << channelList[g][0] << "); a spatial derivative (order "
+                     << (int)args.sdiffOrder << ") needs at least two channels.\n"
+                     << "       Use derivative order 0 (-d 0; ndm_detectspikes --method "
+                        "stderiv --methodOrder 0) or the standard method,\n"
+                     << "       or group the channel with its neighbours.\n";
+                exit(1);
+            }
+        }
+    }
+
     // patch86: in -R mode, dispatch to mmap-based re-extract and return.
     // The detection state machine + threshold setup below is skipped.
     if(args.useExistingRes) {
@@ -1314,6 +1334,22 @@ int main(int argc, char *argv[])
                                 ? &carSigma : nullptr);
 
     for(int g = 0; g < nbGroups; g++) thresNb_grp[g] = channelNb_grp[g];
+
+    // A zero threshold means the detection signal's noise median is zero -- a
+    // flat (dead or constant) channel -- and every sample would cross it.
+    for(int g = 0; g < nbGroups; g++) {
+        for(int ci = 0; ci < channelNb_grp[g]; ci++) {
+            if(!(thresList[g][ci] > 0.0)) {
+                cerr << "error: group " << g+1 << " channel " << channelList[g][ci]
+                     << ": the detection signal is flat over the threshold window "
+                        "(noise median 0), so the threshold would be 0 and every "
+                        "sample a spike.\n"
+                     << "       Check that the channel carries signal, or drop it "
+                        "from the group.\n";
+                exit(1);
+            }
+        }
+    }
 
     if(!checkChanAndThres(channelList, channelNb_grp, nbGroups,
                            thresNb_grp, nbGroups)) {

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-14 | [ndm_detectspikes (stderiv): refuse one-channel groups and flat signals](#2026-10-14--ndm_detectspikes-stderiv-refuse-one-channel-groups-and-flat-signals) |
 | 2026-10-14 | [Klusters: crash on opening a session whose probe has no .probe file; leftover .pending copies](#2026-10-14--klusters-crash-on-opening-a-session-whose-probe-has-no-probe-file-leftover-pending-copies) |
 | 2026-10-14 | [Klusters: watershed split on the noise cluster](#2026-10-14--klusters-watershed-split-on-the-noise-cluster) |
 | 2026-10-14 | [Klusters: multi-lasso tool; zoom and pan in the t-SNE / oblique view](#2026-10-14--klusters-multi-lasso-tool-zoom-and-pan-in-the-t-sne--oblique-view) |
@@ -45,6 +46,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-14 — ndm_detectspikes (stderiv): refuse one-channel groups and flat signals
+
+<details>
+<summary>Details</summary>
+
+A spatial derivative needs neighbouring channels. On a one-channel group (a
+Plexon single-electrode session, say) the order-3 derivative is identically
+zero, so the threshold came out 0, every sample was "detected" (9.1 million on
+one group) and the extraction then rejected them all as flat. The detector now
+stops before any work and names the group, suggesting derivative order 0
+(`--method stderiv --methodOrder 0`), the standard method, or regrouping. It
+also stops when a channel's detection signal is flat over the threshold window,
+which gave the same zero threshold.
+
+</details>
 
 ## 2026-10-14 — Klusters: crash on opening a session whose probe has no .probe file; leftover .pending copies
 
