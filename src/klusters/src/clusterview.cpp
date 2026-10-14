@@ -401,6 +401,7 @@ void ClusterView::onTsneFinished(int runId, bool ok, const QString& err,
             const double my = (tsneMaxY - tsneMinY) * 0.05 + 1e-9;
             tsneMinX -= mx; tsneMaxX += mx; tsneMinY -= my; tsneMaxY += my;
         }
+        tsneView_ = QRectF(0.0, 0.0, 1.0, 1.0);   // a new embedding is shown whole
     }
     tsneSpikeCount  = nSpikes;
     tsneClusterCount= nClusters;
@@ -419,11 +420,7 @@ void ClusterView::onTsneFinished(int runId, bool ok, const QString& err,
 }
 
 QPoint ClusterView::tsneViewportPos(int i) const {
-    const QRect vp = contentsRect();
-    const double sx = vp.width()  / qMax(1e-12, tsneMaxX - tsneMinX);
-    const double sy = vp.height() / qMax(1e-12, tsneMaxY - tsneMinY);
-    return QPoint(vp.left() + static_cast<int>((tsneXY[2 * i]     - tsneMinX) * sx),
-                  vp.top()  + static_cast<int>((tsneXY[2 * i + 1] - tsneMinY) * sy));
+    return tsneViewportPosFor(tsneXY[2 * i], tsneXY[2 * i + 1]);
 }
 
 void ClusterView::tsneRelabelFromDoc(){
@@ -702,11 +699,61 @@ bool ClusterView::tsneEmbeddingPoints(QVector<double>& xs, QVector<double>& ys,
 
 QPoint ClusterView::tsneViewportPosFor(double x, double y) const
 {
+    // The visible window (tsneView_) of the full bounds fills the viewport.
     const QRect vp = contentsRect();
-    const double sx = vp.width()  / qMax(1e-12, tsneMaxX - tsneMinX);
-    const double sy = vp.height() / qMax(1e-12, tsneMaxY - tsneMinY);
-    return QPoint(vp.left() + static_cast<int>((x - tsneMinX) * sx),
-                  vp.top()  + static_cast<int>((y - tsneMinY) * sy));
+    const double fullW = qMax(1e-12, tsneMaxX - tsneMinX);
+    const double fullH = qMax(1e-12, tsneMaxY - tsneMinY);
+    const double x0 = tsneMinX + tsneView_.left() * fullW;
+    const double y0 = tsneMinY + tsneView_.top()  * fullH;
+    const double sx = vp.width()  / qMax(1e-12, tsneView_.width()  * fullW);
+    const double sy = vp.height() / qMax(1e-12, tsneView_.height() * fullH);
+    return QPoint(vp.left() + static_cast<int>(std::floor((x - x0) * sx)),
+                  vp.top()  + static_cast<int>(std::floor((y - y0) * sy)));
+}
+
+QPointF ClusterView::tsneEmbeddingAt(const QPoint& px) const
+{
+    const QRect vp = contentsRect();
+    const double fullW = qMax(1e-12, tsneMaxX - tsneMinX);
+    const double fullH = qMax(1e-12, tsneMaxY - tsneMinY);
+    const double x0 = tsneMinX + tsneView_.left() * fullW;
+    const double y0 = tsneMinY + tsneView_.top()  * fullH;
+    return { x0 + (px.x() - vp.left()) * tsneView_.width()  * fullW / qMax(1, vp.width()),
+             y0 + (px.y() - vp.top())  * tsneView_.height() * fullH / qMax(1, vp.height()) };
+}
+
+void ClusterView::setEmbeddingView(const QRectF& vis)
+{
+    // Clamp: no smaller than 1/50 of the embedding per axis, never past its bounds.
+    const double w = qBound(0.02, vis.width(),  1.0);
+    const double h = qBound(0.02, vis.height(), 1.0);
+    const QRectF nv(qBound(0.0, vis.left(), 1.0 - w), qBound(0.0, vis.top(), 1.0 - h), w, h);
+    if (nv == tsneView_) return;
+
+    // An in-progress lasso is held in viewport pixels: carry its vertices through
+    // the change so they stay on the same embedded points.
+    QVector<QPointF> emb;
+    emb.reserve(selectionPolygon.size());
+    for (const QPoint& p : selectionPolygon) emb.append(tsneEmbeddingAt(p));
+    tsneView_ = nv;
+    for (int i = 0; i < emb.size(); ++i)
+        selectionPolygon.setPoint(i, tsneViewportPosFor(emb[i].x(), emb[i].y()));
+    invalidate(REDRAW);
+    update();
+}
+
+void ClusterView::zoomEmbedding(bool zoomIn, const QPoint& viewportPos)
+{
+    // One step that keeps the embedded point under the cursor where it is.
+    const QRect vp = contentsRect();
+    const double factor = zoomIn ? ctrlWheelZoomStep : (1.0 / ctrlWheelZoomStep);
+    const double fx = qBound(0.0, (viewportPos.x() - vp.left()) / qMax(1.0, double(vp.width())),  1.0);
+    const double fy = qBound(0.0, (viewportPos.y() - vp.top())  / qMax(1.0, double(vp.height())), 1.0);
+    const double ax = tsneView_.left() + fx * tsneView_.width();
+    const double ay = tsneView_.top()  + fy * tsneView_.height();
+    const double w = qBound(0.02, tsneView_.width()  / factor, 1.0);
+    const double h = qBound(0.02, tsneView_.height() / factor, 1.0);
+    setEmbeddingView(QRectF(ax - fx * w, ay - fy * h, w, h));
 }
 
 void ClusterView::paintWatershedOverlayEmbedded(QPainter& p)
@@ -743,6 +790,8 @@ void ClusterView::paintWatershedOverlayEmbedded(QPainter& p)
 void ClusterView::paintTsne(QPainter& painter){
     const QRect vp = contentsRect();
     painter.fillRect(vp, palette().color(QPalette::Window));
+    // Zoomed in, points outside the visible window map outside the viewport.
+    painter.setClipRect(vp);
     const int N = static_cast<int>(tsneXY.size() / 2);
     if (N == 0) return;
     ItemColors& colors = doc.clusterColors();
@@ -835,6 +884,12 @@ void ClusterView::paintTsne(QPainter& painter){
                     "(↑/↓ perplexity — F returns to features)"))
                 .arg(tsneSpikeCount).arg(tsneClusterCount).arg(tsnePerplexity, 0, 'f', 0));
     }
+    // Zoomed in: say so, since nothing else on screen shows that part is hidden.
+    if (tsneView_ != QRectF(0.0, 0.0, 1.0, 1.0))
+        painter.drawText(vp.left() + 8, vp.top() + 34,
+            tr("zoomed %1x  (Ctrl+wheel, Ctrl+drag pan, double-click shows all)")
+                .arg(1.0 / qMin(tsneView_.width(), tsneView_.height()), 0, 'f', 1));
+    painter.setClipping(false);
 }
 
 void ClusterView::drawClusters(QPainter& painter,const QList<int>& clustersList,bool drawCircles){
@@ -1058,10 +1113,11 @@ void ClusterView::paintDensityOverlay(QPainter& p, bool embedding)
         double probe = 0.0;
         for (int i = 0; i < N; i += qMax(1, N / 16)) probe += tsneXY[2 * i] + 3.0 * tsneXY[2 * i + 1];
         const bool gate = projScopeActive();
-        const QString key = QStringLiteral("%1|%2|%3|%4|%5|%6|%7x%8|%9|%10")
+        const QString key = QStringLiteral("%1|%2|%3|%4|%5|%6|%7x%8|%9|%10|%11,%12,%13,%14")
             .arg(N).arg(tsneMinX).arg(tsneMaxX).arg(tsneMinY).arg(tsneMaxY)
             .arg(probe).arg(area.width()).arg(area.height())
-            .arg(gate).arg(gate && configuration().getProjectionOutOfScopeHidden());
+            .arg(gate).arg(gate && configuration().getProjectionOutOfScopeHidden())
+            .arg(tsneView_.left()).arg(tsneView_.top()).arg(tsneView_.width()).arg(tsneView_.height());
         if (key != densityKey_ || densityImage_.isNull()) {
             buildDensityImage(area, true);
             densityKey_ = key;
@@ -1489,6 +1545,7 @@ void ClusterView::beginCtrlPan(const QPoint& pos)
     ctrlPanArmed       = true;
     ctrlPanning        = false;
     ctrlPanAnchorPx    = pos;
+    tsnePanPressView_  = tsneView_;        // the embedding pans from the press view
     const QPoint w     = viewportToWorld(pos.x(), pos.y());
     ctrlPanPressWorldX = w.x();
     ctrlPanPressWorldY = w.y();
@@ -1599,6 +1656,7 @@ void ClusterView::pickSelectionTime(const QPoint& viewportPos)
 
 void ClusterView::wheelZoomAtCursor(bool zoomIn, const QPoint& viewportPos)
 {
+    if (tsneMode) { zoomEmbedding(zoomIn, viewportPos); return; }   // oblique / t-SNE
     // Body lifted from the old inline Ctrl+wheel branch; the direction (in/out) now comes
     // from the command rather than the wheel delta's sign.
     const float  factor = zoomIn ? ctrlWheelZoomStep : (1.0f / ctrlWheelZoomStep);
@@ -1691,8 +1749,9 @@ void ClusterView::registerInput(input::BindingRegistry& reg)
     pan.defaultChord = input::Chord::button(Qt::LeftButton, Qt::ControlModifier,
                                             input::Phase::Press, input::ModMatch::AtLeast);
     pan.enabled  = [](const input::Ctx& c){
-        auto* cv = qobject_cast<ClusterView*>(c.view);
-        return cv && !cv->isTsneShowing();
+        // The scatter pans its world window; the oblique / t-SNE embedding pans its
+        // view of the embedding (mouseMoveEvent).
+        return qobject_cast<ClusterView*>(c.view) != nullptr;
     };
     pan.invoke   = [](const input::Ctx& c){
         auto* cv = qobject_cast<ClusterView*>(c.view);
@@ -1940,7 +1999,15 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
         event->accept();
         return;
     }
-    if (tsneMode) return;
+    if (tsneMode) {
+        if (ctrlPanArmed) {                     // end a Ctrl+drag pan of the embedding
+            ctrlPanArmed = false;
+            ctrlPanning  = false;
+            applyModeCursor();
+            event->accept();
+        }
+        return;
+    }
     // End a Ctrl+drag pan.  Ctrl+Left is fully owned by the pan gesture (its
     // press was intercepted, so the base never started a rubber-band / click-zoom)
     // — consume the release whether or not a drag actually occurred.
@@ -1964,11 +2031,12 @@ void ClusterView::mouseReleaseEvent(QMouseEvent* event){
 // middle.  Without Ctrl the event is handed to the base so existing wheel
 // behaviour is unchanged.
 void ClusterView::wheelEvent(QWheelEvent* e){
-    if (tsneMode) return;                 // the embedding's wheel is inert
     // Ctrl+wheel zoom-to-cursor is a registry command (cluster.wheelZoomIn / wheelZoomOut),
-    // resolved here; a plain wheel falls through to the base; a Ctrl+wheel with no vertical
+    // resolved here -- in the embedding too, where it zooms the embedding; a plain wheel
+    // falls through to the base (inert in the embedding); a Ctrl+wheel with no vertical
     // delta yields no chord (chordFromEvent) and is swallowed, as before.
     if (dispatchInput(e)) return;
+    if (tsneMode) { e->accept(); return; }
     if(!(e->modifiers() & Qt::ControlModifier)){
         ViewWidget::wheelEvent(e);
         return;
@@ -1997,6 +2065,7 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
         // scatter's own keys all speak feature-world coordinates.
         if (statusBar) statusBar->showMessage(
             tr("t-SNE view: lasso with Ctrl+1 / Ctrl+2 / Delete / Shift+Delete, "
+               "Ctrl+wheel zoom, Ctrl+drag pan, double-click shows all, "
                "↑/↓ perplexity, F returns"), 2000);
         return;
     }
@@ -2717,6 +2786,13 @@ void ClusterView::clearTemplatePreviewOnViews()
 
 void ClusterView::mouseDoubleClickEvent(QMouseEvent* e)
 {
+    // In the oblique / t-SNE embedding a double-click shows the whole embedding
+    // again, as it resets the zoom in the scatter.
+    if (tsneMode) {
+        if (e->button() == Qt::LeftButton) setEmbeddingView(QRectF(0.0, 0.0, 1.0, 1.0));
+        e->accept();
+        return;
+    }
     // Double-left-click is reset-zoom (handled by the base).  The lineage overlay
     // does NOT intercept it any more — region boundaries are moved with
     // Shift+left-drag (see mousePressEvent), so double-click stays reset-zoom.
@@ -3096,6 +3172,7 @@ void ClusterView::startOblique(){
             const double my = (tsneMaxY - tsneMinY) * 0.05 + 1e-9;
             tsneMinX -= mx; tsneMaxX += mx; tsneMinY -= my; tsneMaxY += my;
         }
+        tsneView_ = QRectF(0.0, 0.0, 1.0, 1.0);   // a new embedding is shown whole
     }
     tsneSpikeCount   = N;
     if (usePinned) {
@@ -3248,6 +3325,21 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
             lineageLassoDragged_ = true;
         lineageLassoRect_ = QRect(lineageLassoAnchor_, vp).normalized();
         if (lineageLassoDragged_) { invalidate(REFRESH); update(); }
+        e->accept();
+        return;
+    }
+    if (tsneMode && ctrlPanArmed && (e->buttons() & Qt::LeftButton)) {
+        // Ctrl+drag pan of the embedding: the point grabbed at press follows the cursor.
+        const QPoint dpx = e->position().toPoint() - ctrlPanAnchorPx;
+        if (!ctrlPanning && (qAbs(dpx.x()) + qAbs(dpx.y()) >= ctrlPanDragThreshold))
+            ctrlPanning = true;
+        if (ctrlPanning) {
+            const QRect vp = contentsRect();
+            QRectF v = tsnePanPressView_;
+            v.moveLeft(v.left() - dpx.x() * v.width()  / qMax(1, vp.width()));
+            v.moveTop (v.top()  - dpx.y() * v.height() / qMax(1, vp.height()));
+            setEmbeddingView(v);
+        }
         e->accept();
         return;
     }

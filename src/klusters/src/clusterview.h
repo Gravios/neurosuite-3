@@ -770,6 +770,19 @@ private:
      *  computed in embedding space lands on the points it describes. */
     QPoint tsneViewportPosFor(double x, double y) const;
 
+    // Zoom / pan of the embedding (oblique and t-SNE).  The visible part of the
+    // embedding, as fractions of its full bounds [tsneMin, tsneMax] -- (0,0,1,1)
+    // shows it all.  Every embedding mapping (paint, lasso hit-test, heatmap,
+    // watershed overlay) goes through tsneViewportPosFor, so they follow it.
+    // Reset to the whole embedding whenever a new one arrives.
+    QRectF tsneView_{0.0, 0.0, 1.0, 1.0};
+    QRectF tsnePanPressView_;            ///< tsneView_ at a Ctrl+drag press
+    /** Embedding coordinates under viewport pixel @p px (the inverse mapping). */
+    QPointF tsneEmbeddingAt(const QPoint& px) const;
+    /** Shows @p vis (clamped) and keeps an in-progress lasso on the same points. */
+    void setEmbeddingView(const QRectF& vis);
+    void zoomEmbedding(bool zoomIn, const QPoint& viewportPos);
+
     /** Draws the watershed preview over the embedding.  Separate from the
      *  scatter's version because that one works in world coordinates with a
      *  negated Y, neither of which the embedding has. */
