@@ -2324,6 +2324,13 @@ bool KlustersDoc::initPendingFiles()
         // `if (pendingResPath.isEmpty())` could never fire.  Clear them instead: the session then
         // runs in plain non-pending mode -- tmpCluFile still names the real .clu, saveDocument writes
         // there directly, commitAndRenewPending no-ops -- and the next realign retries the seed.
+        //
+        // The copies that DID succeed are removed too: nothing points at them
+        // any more, so they would only linger beside the originals.  The usual
+        // case is a session opened from its .fet before any .clu exists -- the
+        // .clu seed fails after the .spk/.res/.fet seeds were written.
+        for (const QString& p : {pendingSpkPath, pendingResPath, pendingFetPath, pendingCluPath})
+            QFile::remove(p);
         pendingSpkPath.clear(); pendingResPath.clear();
         pendingFetPath.clear(); pendingCluPath.clear();
     }

@@ -9,7 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
-| 2026-10-14 | [Klusters: crash on opening a session whose probe has no .probe file](#2026-10-14--klusters-crash-on-opening-a-session-whose-probe-has-no-probe-file) |
+| 2026-10-14 | [Klusters: crash on opening a session whose probe has no .probe file; leftover .pending copies](#2026-10-14--klusters-crash-on-opening-a-session-whose-probe-has-no-probe-file-leftover-pending-copies) |
 | 2026-10-14 | [Klusters: watershed split on the noise cluster](#2026-10-14--klusters-watershed-split-on-the-noise-cluster) |
 | 2026-10-14 | [Klusters: multi-lasso tool; zoom and pan in the t-SNE / oblique view](#2026-10-14--klusters-multi-lasso-tool-zoom-and-pan-in-the-t-sne--oblique-view) |
 | 2026-10-12 | [Klusters: Shift+H density heatmap over the feature view](#2026-10-12--klusters-shifth-density-heatmap-over-the-feature-view) |
@@ -46,7 +46,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 ---
 
-## 2026-10-14 — Klusters: crash on opening a session whose probe has no .probe file
+## 2026-10-14 — Klusters: crash on opening a session whose probe has no .probe file; leftover .pending copies
 
 <details>
 <summary>Details</summary>
@@ -57,6 +57,11 @@ geometry at the session directory itself; reading a directory throws a stream
 error that the YAML parser does not translate, and Klusters aborted as soon as
 the drift view was shown. A probe without a readable `.probe` file now simply
 has no geometry, and any read error in the geometry lookup is caught.
+
+**Leftover working copies.** Opening a session from its `.fet` before any
+`.clu` exists left `.spk.pending`, `.res.pending` and `.fet.pending` copies
+beside the originals, because the `.clu` copy failed after they were made.
+They are now removed when the set cannot be completed.
 
 </details>
 
