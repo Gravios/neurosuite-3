@@ -15,6 +15,8 @@
 #include <QMap>
 #include <QVector>
 
+#include <exception>
+
 // Load the flat per-site depth (y) list from one .probe file.  Empty on failure.
 static QVector<float> readProbeSiteDepths(const QString& path)
 {
@@ -30,7 +32,10 @@ static QVector<float> readProbeSiteDepths(const QString& path)
                               ? static_cast<float>(xy[1].as<double>())   // [x, y] -> y
                               : 0.0f);
         }
-    } catch (const YAML::Exception&) {
+    } catch (const std::exception&) {
+        // YAML::Exception for a malformed file, and std::ios_base::failure from
+        // the stream itself: libstdc++ throws that on a read error whatever the
+        // stream's exception mask, and yaml-cpp does not translate it.
         ys.clear();
     }
     return ys;
@@ -45,7 +50,7 @@ std::vector<float> loadGroupChannelDepths(const QString& yamlPath,
     YAML::Node root;
     try {
         root = YAML::LoadFile(yamlPath.toStdString());
-    } catch (const YAML::Exception& e) {
+    } catch (const std::exception& e) {   // YAML::Exception or a stream read error
         if (err)
             *err = QStringLiteral("cannot parse session YAML: %1")
                        .arg(QString::fromStdString(e.what()));
@@ -64,14 +69,22 @@ std::vector<float> loadGroupChannelDepths(const QString& yamlPath,
 
     // Cache each probe's flat site-depth list.  A .probe file is resolved next
     // to the session first, then under probeLibraryPath.
+    // Only a regular file is a .probe: an entry with no probeFile would
+    // otherwise resolve to the session directory itself, which opens but
+    // cannot be read.  Such a probe simply has no geometry.
     QMap<int, QVector<float>> depthByProbe;
     for (const ProbeEntry& pe : probes) {
-        const QString local = sessDir + QLatin1Char('/') + pe.probeFile;
-        QString path = QFile::exists(local)
-                           ? local
-                           : (libPath.isEmpty()
-                                  ? QString()
-                                  : libPath + QLatin1Char('/') + pe.probeFile);
+        QString path;
+        if (!pe.probeFile.isEmpty()) {
+            const QString local = sessDir + QLatin1Char('/') + pe.probeFile;
+            const QString lib   = libPath.isEmpty()
+                                      ? QString()
+                                      : libPath + QLatin1Char('/') + pe.probeFile;
+            if (QFileInfo(local).isFile())
+                path = local;
+            else if (!lib.isEmpty() && QFileInfo(lib).isFile())
+                path = lib;
+        }
         depthByProbe.insert(pe.id, readProbeSiteDepths(path));
     }
 
