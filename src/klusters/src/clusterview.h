@@ -127,6 +127,23 @@ public:
     void confirmPendingLasso();
     void cancelPendingLasso();
 
+    // ── Multi-lasso (the MULTI_LASSO tool) ───────────────────────────────────────
+    // Closing a lasso in this tool does not cut anything: the lasso is kept, as the
+    // set of spikes it enclosed (resolved when it closed, so a later zoom, pan,
+    // projection change or switch between the scatter and the embedding does not
+    // change what it caught), and drawn while the view shows the space it was drawn
+    // in.  applyMultiLasso() then splits by overlap: every distinct combination of
+    // lassos a spike falls in becomes one new cluster -- two overlapping lassos A and
+    // B give A only, B only and A and B.  Spikes in no lasso stay where they are.
+    // Public because the keys and the toolbar button are dispatched by the application.
+    bool hasMultiLassos() const { return !multiLassos_.isEmpty(); }
+    int  multiLassoCount() const { return multiLassos_.size(); }
+    /** The number of clusters applyMultiLasso() would create. */
+    int  multiLassoRegionCount() const;
+    void applyMultiLasso();
+    void clearMultiLassos();
+    void removeLastMultiLasso();
+
     /** Toggles autoscale-to-visible-clusters.  Public for the same reason:
      *  the A key is dispatched by the application filter. */
     void toggleAutoscale();
@@ -863,6 +880,26 @@ private:
     static const QColor DELETE_NOISE_COLOR;
     static const QColor DELETE_ARTEFACT_COLOR;
 
+    // One kept multi-lasso: its spikes, and its outline in the space it was drawn in
+    // (feature-world coordinates of the dimX/dimY projection, or embedding
+    // coordinates of embedding generation `generation`), only for drawing.
+    struct MultiLasso {
+        QSet<dataType> rows;        ///< 1-based feature rows it enclosed
+        bool     embedding = false;
+        int      dimX = -1, dimY = -1;
+        quint64  generation = 0;
+        QPolygonF outline;
+    };
+    QList<MultiLasso> multiLassos_;
+    long        multiLassoSpikeCount_ = -1;   ///< spike count when the first lasso was kept
+    quint64     tsneGeneration_ = 0;          ///< bumped for every new embedding
+    static constexpr int maxMultiLassos = 32;
+    /** Resolves the just-closed polygon to its spikes and keeps it (MULTI_LASSO). */
+    void keepMultiLasso();
+    QSet<dataType> rowsInScatterPolygon(const QPolygon& worldPolygon);
+    QSet<dataType> rowsInEmbeddingPolygon(const QPolygon& viewportPolygon);
+    void paintMultiLassos(QPainter& p, bool embedding);
+
     /**
   * Draws the spikes of the clusters in the list @p clustersList on the given painter
   * @param painter painter on which to draw the spikes
@@ -884,6 +921,8 @@ private:
         case NEW_CLUSTER:
             return NEW_CLUSTER_COLOR;
         case NEW_CLUSTERS:
+            return NEW_CLUSTER_COLOR;
+        case MULTI_LASSO:
             return NEW_CLUSTER_COLOR;
         case ZOOM:
             break; //nothing to do

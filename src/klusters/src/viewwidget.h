@@ -83,7 +83,8 @@ public:
   * (SELECT_TIME was retired in the Overview redesign — the feature-view normal-cursor click
   *  now jumps the trace to the picked time; see ClusterView::pickSelectionTime.)
   */
-    enum {DELETE_NOISE = ZOOM+1,DELETE_ARTEFACT = ZOOM+2,NEW_CLUSTER = ZOOM+3,NEW_CLUSTERS = ZOOM+4};
+    enum {DELETE_NOISE = ZOOM+1,DELETE_ARTEFACT = ZOOM+2,NEW_CLUSTER = ZOOM+3,NEW_CLUSTERS = ZOOM+4,
+          MULTI_LASSO = ZOOM+5};   ///< lassos are kept, then split together by their overlaps
 
 public Q_SLOTS:
 

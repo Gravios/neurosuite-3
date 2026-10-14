@@ -310,6 +310,10 @@ private Q_SLOTS:
     void slotSingleNew();
     /**Changes to a mode enabling the creation of a multiple clusters by selecting an area.*/
     void slotMultipleNew();
+    /**Enters / leaves the multi-lasso tool: closed lassos are kept, then split together.*/
+    void slotMultiLasso();
+    /**Splits the active cluster view's kept multi-lassos by their overlaps.*/
+    void slotApplyMultiLasso();
     /**Changes to a mode enabling the deletion of spikes from a cluster and move them to the cluster (number 1) containing the poorly isolated cells.*/
     void slotDeleteNoise();
     /**Changes to a mode enabling the deletion of spikes from a cluster and move them to the cluster (number 0) containing the artefacts.*/
@@ -1299,6 +1303,8 @@ private:
     QAction *mDecreasePointSize;
     QAction *mNewCluster;
     QAction *mSplitClusters;
+    QAction *mMultiLasso;        ///< the multi-lasso tool (checkable, Ctrl+5)
+    QAction *mApplyMultiLasso;   ///< Split by Lassos: commit the kept multi-lassos
     QAction *mDeleteArtifactSpikes;
     QAction *mDeleteNoisySpikes;
     QAction *mWatershed;

@@ -20,6 +20,9 @@
 #include "config-klusters.h"
 // application specific includes
 #include "klusters.h"
+
+#include <QPainter>
+#include <QPainterPath>
 #include "input/bindingregistry.h"     // app-scope command mirror (input-remapping plan P0c)
 #include "input/inputdispatcher.h"     // input::registry() — the one app-wide registry
 #include "input/chord.h"               // QKeySequence <-> Chord bridge
@@ -875,6 +878,45 @@ void KlustersApp::createMenus()
     mSplitClusters->setCheckable(true);
     connect(mSplitClusters,&QAction::triggered, this,&KlustersApp::slotMultipleNew);
 
+    // Multi-lasso: a lasso tool whose closed lassos are kept rather than cut, and the
+    // button that splits by them.  The icons are drawn here (two overlapping loops;
+    // filled in three colours for the split), there being no stock artwork for them.
+    auto lassoIcon = [](bool filled){
+        QPixmap pm(44, 44);
+        pm.fill(Qt::transparent);
+        QPainter ip(&pm);
+        ip.setRenderHint(QPainter::Antialiasing);
+        const QRectF a(4, 8, 24, 22), b(16, 14, 24, 22);
+        if (filled) {
+            QPainterPath pa; pa.addEllipse(a);
+            QPainterPath pb; pb.addEllipse(b);
+            ip.setPen(Qt::NoPen);
+            ip.setBrush(QColor(255, 200, 40, 200)); ip.drawPath(pa.subtracted(pb));
+            ip.setBrush(QColor(60, 220, 255, 200)); ip.drawPath(pb.subtracted(pa));
+            ip.setBrush(QColor(255, 90, 200, 220)); ip.drawPath(pa.intersected(pb));
+        }
+        QPen pen(QColor(90, 90, 90));
+        pen.setWidthF(2.5);
+        pen.setStyle(filled ? Qt::SolidLine : Qt::DashLine);
+        ip.setPen(pen);
+        ip.setBrush(Qt::NoBrush);
+        ip.drawEllipse(a);
+        ip.drawEllipse(b);
+        return QIcon(pm);
+    };
+    mMultiLasso = toolsMenu->addAction(tr("&Multi-Lasso"));
+    mMultiLasso->setIcon(lassoIcon(false));
+    mMultiLasso->setCheckable(true);
+    mMultiLasso->setToolTip(tr("Multi-lasso (Ctrl+5): closing a lasso keeps it instead of cutting.\n"
+                               "Draw several, then Split by Lassos (Enter): each overlap pattern\n"
+                               "becomes a cluster -- two overlapping lassos give three."));
+    connect(mMultiLasso,&QAction::triggered, this,&KlustersApp::slotMultiLasso);
+
+    mApplyMultiLasso = toolsMenu->addAction(tr("Split by &Lassos"));
+    mApplyMultiLasso->setIcon(lassoIcon(true));
+    mApplyMultiLasso->setToolTip(tr("Split the kept multi-lassos by their overlaps (Enter)"));
+    connect(mApplyMultiLasso,&QAction::triggered, this,&KlustersApp::slotApplyMultiLasso);
+
     toolsMenu->addSeparator();
 
     mDeleteArtifactSpikes = toolsMenu->addAction(tr("Delete &Artifact Spikes"));
@@ -1512,6 +1554,8 @@ void KlustersApp::createToolBar()
 
     mToolBar->addAction(mNewCluster);
     mToolBar->addAction(mSplitClusters);
+    mToolBar->addAction(mMultiLasso);
+    mToolBar->addAction(mApplyMultiLasso);
     mToolBar->addSeparator();
     mToolBar->addAction(mDeleteArtifactSpikes);
     mToolBar->addAction(mDeleteNoisySpikes);
@@ -2574,6 +2618,19 @@ void KlustersApp::registerInputBindings()
         c.invoke   = [this](const input::Ctx&){ slotSingleNew(); };
         reg.addCommand(c);
     }
+    {   // Ctrl+5 — enter the Multi-Lasso tool
+        input::Command c;
+        c.id       = QStringLiteral("tools.multiLasso");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Multi-lasso mode");
+        c.category = tr("Tools");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_5, Qt::ControlModifier);
+        c.enabled  = [this](const input::Ctx&){
+            return !isInit && doc && activeView() && !editConsolidationLock; };
+        c.invoke   = [this](const input::Ctx&){ slotMultiLasso(); };
+        reg.addCommand(c);
+    }
     {   // Ctrl+2 — enter the Split Clusters tool
         input::Command c;
         c.id       = QStringLiteral("tools.splitClusters");
@@ -2828,6 +2885,37 @@ void KlustersApp::registerInputBindings()
             return cv && cv->hasPendingLasso();
         };
         reg.addScope(pl);   // Passive (default): other keys pass through while pending
+    }
+    // ── transient.multiLasso: split / trim / discard the kept multi-lassos ─────────────────
+    // Live while the active cluster view keeps multi-lassos and no lasso is being drawn
+    // (with one open, Enter still closes it -- which keeps it -- and Esc still discards
+    // it).  Passive, like the pending lasso: every other key keeps working.
+    {
+        input::InputScope ml;
+        ml.id     = QStringLiteral("transient.multiLasso");
+        ml.layer  = input::Layer::Transient;
+        ml.active = [this](const input::Ctx&){
+            ClusterView* cv = activeClusterView();
+            return cv && cv->hasMultiLassos() && !cv->hasOpenSelectionPolygon();
+        };
+        reg.addScope(ml);
+        auto mlCmd = [&](const QString& id, const QString& label, int key,
+                         std::function<void(ClusterView*)> fn){
+            input::Command c;
+            c.id = id; c.scopeId = ml.id; c.label = label; c.category = tr("Multi-lasso");
+            c.kind = input::Kind::Locked;
+            c.defaultChord = input::Chord::key(key);
+            c.invoke = [this, fn](const input::Ctx&){ if(ClusterView* cv = activeClusterView()) fn(cv); };
+            reg.addCommand(c);
+        };
+        mlCmd(QStringLiteral("multiLasso.split"),       tr("Split by the kept lassos"),        Qt::Key_Return,
+              [](ClusterView* cv){ cv->applyMultiLasso(); });
+        mlCmd(QStringLiteral("multiLasso.splitKeypad"), tr("Split by the kept lassos (keypad Enter)"), Qt::Key_Enter,
+              [](ClusterView* cv){ cv->applyMultiLasso(); });
+        mlCmd(QStringLiteral("multiLasso.removeLast"),  tr("Remove the last kept lasso"),      Qt::Key_Backspace,
+              [](ClusterView* cv){ cv->removeLastMultiLasso(); });
+        mlCmd(QStringLiteral("multiLasso.clear"),       tr("Discard the kept lassos"),         Qt::Key_Escape,
+              [](ClusterView* cv){ cv->clearMultiLassos(); });
     }
     {
         const QString plScope = QStringLiteral("transient.pendingLasso");
@@ -4473,6 +4561,30 @@ void KlustersApp::slotMultipleNew(){
     updateToolModeActions(m);
     slotStatusMsg(tr("Ready."));
 }
+/**Multi-lasso tool: closed lassos are kept, then split together by their overlaps*/
+void KlustersApp::slotMultiLasso(){
+    slotStatusMsg(tr("Multi-lasso…"));
+
+    //If we are in delay mode, update the display, if need it, before triggering the tool change
+    if(mDelaySelection->isChecked()){
+        clusterPalette->updateClusters();
+    }
+
+    KlustersView* view = activeView();
+    if(!view) return;
+    const BaseFrame::Mode m = (view->currentMode() == ViewWidget::MULTI_LASSO)
+                                  ? BaseFrame::NONE : static_cast<BaseFrame::Mode>(ViewWidget::MULTI_LASSO);
+    view->setMode(m);
+    updateToolModeActions(m);
+    slotStatusMsg(m == static_cast<BaseFrame::Mode>(ViewWidget::MULTI_LASSO)
+        ? tr("Multi-lasso: draw lassos (closing one keeps it); Enter or Split by Lassos splits by their overlaps")
+        : tr("Ready."));
+}
+
+void KlustersApp::slotApplyMultiLasso(){
+    if(ClusterView* cv = activeClusterView()) cv->applyMultiLasso();
+}
+
 /**Deletes spikes from a cluster and move them to the cluster (number 1) containing the poorly isolated cells*/
 void KlustersApp::slotDeleteNoise(){
     slotStatusMsg(tr("Delete noise…"));
@@ -4552,6 +4664,7 @@ void KlustersApp::updateToolModeActions(BaseFrame::Mode mode){
     // QActionGroup, so any non-tool mode (NONE, …) clears all four.
     mNewCluster->setChecked(mode == ViewWidget::NEW_CLUSTER);
     mSplitClusters->setChecked(mode == ViewWidget::NEW_CLUSTERS);
+    mMultiLasso->setChecked(mode == ViewWidget::MULTI_LASSO);
     mDeleteArtifactSpikes->setChecked(mode == ViewWidget::DELETE_ARTEFACT);
     mDeleteNoisySpikes->setChecked(mode == ViewWidget::DELETE_NOISE);
 }

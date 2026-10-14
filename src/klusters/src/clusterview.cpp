@@ -402,6 +402,7 @@ void ClusterView::onTsneFinished(int runId, bool ok, const QString& err,
             tsneMinX -= mx; tsneMaxX += mx; tsneMinY -= my; tsneMaxY += my;
         }
         tsneView_ = QRectF(0.0, 0.0, 1.0, 1.0);   // a new embedding is shown whole
+        ++tsneGeneration_;                         // lassos drawn on the old one stop drawing
     }
     tsneSpikeCount  = nSpikes;
     tsneClusterCount= nClusters;
@@ -472,6 +473,16 @@ void ClusterView::closeSelectionPolygon(){
     }
     //erase the last line drawn if the user moved since the last click
     eraseTheLastMovingLine();
+
+    // The multi-lasso tool keeps the lasso instead of cutting: Enter (with no lasso
+    // open) or the toolbar's Split by Lassos then splits by the kept lassos' overlaps.
+    if (mode == MULTI_LASSO) {
+        keepMultiLasso();
+        resetSelectionPolygon();
+        invalidate(REFRESH);
+        update();
+        return;
+    }
     polygonClosed = true;
 
     // Queue the work rather than doing it here, so the closed polygon is on
@@ -848,6 +859,9 @@ void ClusterView::paintTsne(QPainter& painter){
     // Density heatmap (Shift+H) over the embedded points, under the lasso.
     if (densityOverlay_)
         paintDensityOverlay(painter, true);
+    // Kept multi-lassos drawn on this embedding.
+    if (!multiLassos_.isEmpty())
+        paintMultiLassos(painter, true);
     if (!selectionPolygon.isEmpty()) {
         // Same overlay as the scatter: the mode's colour and the configured
         // line width, so the polygon tells the curator which action is armed.
@@ -1070,6 +1084,10 @@ void ClusterView::paintWidgetOverlays(QPainter& p){
         p.drawPolyline(selectionPolygon);
     }
 
+    // Kept multi-lassos drawn in this projection (the MULTI_LASSO tool).
+    if (!multiLassos_.isEmpty())
+        paintMultiLassos(p, false);
+
     // Watershed overlay (Shift+W preview mode).  Drawn on top of points and any
     // selection polygon; repainted every event, never cached into the buffer.
     if (!wsImage.isNull())
@@ -1083,6 +1101,246 @@ void ClusterView::paintWidgetOverlays(QPainter& p){
     // boundaries over the scatter, repainted every event.
     if (lineageOverlay_)
         paintLineageOverlay(p);
+}
+
+// ── Multi-lasso (MULTI_LASSO tool) ───────────────────────────────────────────
+
+QSet<dataType> ClusterView::rowsInScatterPolygon(const QPolygon& worldPolygon)
+{
+    // The spikes the scatter's lasso would take: the shown clusters' points inside
+    // the polygon, tested in viewport pixels through the same mapping drawClusters
+    // draws them with, and out-of-scope spikes never selectable (as the
+    // SpikeSelection time scope makes them for the single lasso).
+    QPolygon vpPoly;
+    vpPoly.reserve(worldPolygon.size());
+    for (const QPoint& w : worldPolygon) vpPoly << worldToViewport(w);
+    const QRect bounds = vpPoly.boundingRect();
+    const bool gate = projScopeActive();
+    QSet<dataType> rows;
+    Data& clusteringData = doc.data();
+    for (int clustId : view.clusters()) {
+        Data::Iterator it = clusteringData.iterator(static_cast<dataType>(clustId));
+        for (; it.hasNext(); it.next()) {
+            const QPoint px = worldToViewport(it(dimensionX, dimensionY));
+            if (!bounds.contains(px) || !vpPoly.containsPoint(px, Qt::OddEvenFill)) continue;
+            if (gate && !spikeTimeInScope(
+                    static_cast<double>(it(static_cast<dataType>(timeDimension))))) continue;
+            rows.insert(it.featureRow());
+        }
+    }
+    return rows;
+}
+
+QSet<dataType> ClusterView::rowsInEmbeddingPolygon(const QPolygon& viewportPolygon)
+{
+    // The embedding lasso's hit-test (applyTsneLasso), returning the rows.
+    const QRegion area(viewportPolygon);
+    const bool gate = projScopeActive();
+    QSet<dataType> rows;
+    const int n = qMin(static_cast<int>(tsneXY.size() / 2), tsneRowSpike.size());
+    for (int i = 0; i < n; ++i) {
+        if (!area.contains(tsneViewportPos(i))) continue;
+        if (gate) {
+            const double t = static_cast<double>(doc.data().featureValue(
+                static_cast<dataType>(tsneRowSpike.at(i)) + 1, timeDimension));
+            if (!spikeTimeInScope(t)) continue;
+        }
+        rows.insert(static_cast<dataType>(tsneRowSpike.at(i)) + 1);
+    }
+    return rows;
+}
+
+void ClusterView::keepMultiLasso()
+{
+    if (selectionPolygon.size() < 3) return;
+    if (multiLassos_.size() >= maxMultiLassos) {
+        if (statusBar) statusBar->showMessage(
+            tr("Multi-lasso: at most %1 lassos — press Enter to split or Esc to clear")
+                .arg(maxMultiLassos), 5000);
+        return;
+    }
+    MultiLasso l;
+    if (tsneMode) {
+        l.embedding  = true;
+        l.generation = tsneGeneration_;
+        l.rows = rowsInEmbeddingPolygon(selectionPolygon);
+        for (const QPoint& px : selectionPolygon) l.outline << tsneEmbeddingAt(px);
+    } else {
+        l.dimX = dimensionX;
+        l.dimY = dimensionY;
+        l.rows = rowsInScatterPolygon(selectionPolygon);
+        for (const QPoint& w : selectionPolygon) l.outline << QPointF(w);
+    }
+    if (l.rows.isEmpty()) {
+        if (statusBar) statusBar->showMessage(tr("Multi-lasso: no spikes inside — lasso not kept"), 4000);
+        return;
+    }
+    if (multiLassos_.isEmpty())
+        multiLassoSpikeCount_ = doc.data().labelByFeatureRow().size();
+    multiLassos_.append(l);
+    if (statusBar) statusBar->showMessage(
+        tr("Multi-lasso: %1 lasso(s), %2 spike(s) in the last — %3 cluster(s) on split.  "
+           "Enter splits, Backspace removes the last lasso, Esc clears")
+            .arg(multiLassos_.size()).arg(l.rows.size()).arg(multiLassoRegionCount()), 0);
+}
+
+int ClusterView::multiLassoRegionCount() const
+{
+    QHash<dataType, quint32> sig;
+    for (int i = 0; i < multiLassos_.size(); ++i)
+        for (dataType r : multiLassos_.at(i).rows) sig[r] |= (1u << i);
+    QSet<quint32> regions;
+    for (auto it = sig.cbegin(); it != sig.cend(); ++it) regions.insert(it.value());
+    return regions.size();
+}
+
+void ClusterView::clearMultiLassos()
+{
+    if (multiLassos_.isEmpty()) return;
+    multiLassos_.clear();
+    multiLassoSpikeCount_ = -1;
+    invalidate(REFRESH);
+    update();
+    if (statusBar) statusBar->showMessage(tr("Multi-lasso: lassos cleared"), 3000);
+}
+
+void ClusterView::removeLastMultiLasso()
+{
+    if (multiLassos_.isEmpty()) return;
+    multiLassos_.removeLast();
+    invalidate(REFRESH);
+    update();
+    if (statusBar) statusBar->showMessage(
+        multiLassos_.isEmpty()
+            ? tr("Multi-lasso: no lassos left")
+            : tr("Multi-lasso: %1 lasso(s) — %2 cluster(s) on split")
+                  .arg(multiLassos_.size()).arg(multiLassoRegionCount()), 4000);
+}
+
+void ClusterView::applyMultiLasso()
+{
+    if (multiLassos_.isEmpty()) {
+        if (statusBar) statusBar->showMessage(
+            tr("Multi-lasso: draw lassos first (closing one keeps it), then split"), 4000);
+        return;
+    }
+    // The lassos name spikes by feature row; a change in the spike count (a re-extract,
+    // a sort) means the rows may no longer be the same spikes.
+    const QVector<dataType> labelByRow = doc.data().labelByFeatureRow();
+    if (labelByRow.size() != multiLassoSpikeCount_) {
+        multiLassos_.clear();
+        multiLassoSpikeCount_ = -1;
+        invalidate(REFRESH);
+        update();
+        if (statusBar) statusBar->showMessage(
+            tr("Multi-lasso: the spikes changed since the lassos were drawn — lassos discarded"), 6000);
+        return;
+    }
+
+    // Partition by overlap: a spike's signature is the set of lassos it is in, and
+    // each distinct signature is one new cluster.
+    QHash<dataType, quint32> sig;
+    for (int i = 0; i < multiLassos_.size(); ++i)
+        for (dataType r : multiLassos_.at(i).rows) sig[r] |= (1u << i);
+    QMap<quint32, QSet<dataType>> regions;      // ordered: deterministic cluster order
+    for (auto it = sig.cbegin(); it != sig.cend(); ++it) regions[it.value()].insert(it.key());
+
+    const int nLassos = multiLassos_.size();
+    multiLassos_.clear();
+    multiLassoSpikeCount_ = -1;
+
+    // One createNewCluster per region, through the same builder the single lasso
+    // uses (undo, colours, curation log, child layer).  The regions are disjoint, so
+    // each cut leaves the others' spikes where they were; the sources are read from
+    // the live clustering, as the embedding lasso does.
+    const bool inEmbedding = tsneMode;
+    if (inEmbedding) tsneApplyingLasso = true;   // our own edit: do not self-drop
+    QList<int> created, allSources;
+    for (auto it = regions.cbegin(); it != regions.cend(); ++it) {
+        QList<int> sources;
+        for (dataType r : it.value()) {
+            if (r <= 0 || r >= labelByRow.size()) continue;
+            const int cid = static_cast<int>(labelByRow.at(static_cast<int>(r)));
+            if (!sources.contains(cid)) sources.append(cid);
+        }
+        if (sources.isEmpty()) continue;
+        const int id = doc.createNewCluster(
+            SpikeSelection(it.value(), QStringLiteral("manual_multi_lasso")), sources);
+        if (id > 0) created.append(id);
+        for (int src : sources) if (!allSources.contains(src)) allSources.append(src);
+    }
+    // Land on every piece: each createNewCluster parks its own result as the
+    // selection, so the last region's would win and hide the others.  The landing is
+    // applied once, after the post-edit automation, which has not run yet: park the
+    // whole split -- the new clusters first, then what is left of their sources (the
+    // landing drops any source the split emptied).
+    if (!created.isEmpty()) {
+        QList<int> landing = created;
+        for (int src : allSources) if (!landing.contains(src)) landing.append(src);
+        if (doc.isChildClusteringActive()) doc.setPendingChildSelection(landing);
+        else                               doc.setPendingParentSelection(landing);
+    }
+    if (inEmbedding) {
+        tsneApplyingLasso = false;
+        tsneRelabelFromDoc();                     // positions unchanged: recolour in place
+    }
+    invalidate(REDRAW);
+    update();
+
+    QStringList ids;
+    for (int id : created) ids << QString::number(id);
+    if (statusBar) statusBar->showMessage(
+        tr("Multi-lasso: %1 lasso(s) split into %2 new cluster(s): %3  (one undo step each)")
+            .arg(nLassos).arg(created.size()).arg(ids.join(QStringLiteral(", "))), 8000);
+}
+
+void ClusterView::paintMultiLassos(QPainter& p, bool embedding)
+{
+    // Each kept lasso, dashed with a light fill, in a colour of its own -- drawn only
+    // in the space it was drawn in (its outline means nothing elsewhere; its spikes
+    // are kept regardless).  Then a line saying what Enter will do.
+    static const QColor colours[] = { QColor(255, 200, 40), QColor(60, 220, 255), QColor(255, 90, 200),
+                                      QColor(140, 255, 90), QColor(255, 140, 60), QColor(170, 140, 255) };
+    p.save();
+    const QRect r(static_cast<QRect>(window));
+    int shown = 0;
+    for (int i = 0; i < multiLassos_.size(); ++i) {
+        const MultiLasso& l = multiLassos_.at(i);
+        QPolygonF poly;
+        if (embedding) {
+            if (!l.embedding || l.generation != tsneGeneration_) continue;
+            for (const QPointF& e : l.outline) poly << QPointF(tsneViewportPosFor(e.x(), e.y()));
+            p.resetTransform();
+            p.setWindow(rect());
+            p.setViewport(rect());
+        } else {
+            if (l.embedding || l.dimX != dimensionX || l.dimY != dimensionY) continue;
+            poly = l.outline;
+            p.setWindow(r.left(), r.top(), r.width() - 1, r.height() - 1);   // world units, as the lasso
+        }
+        const QColor c = colours[i % 6];
+        QPen pen(c);
+        pen.setCosmetic(true);
+        pen.setWidth(2);
+        pen.setStyle(Qt::DashLine);
+        p.setPen(pen);
+        QColor fill = c;
+        fill.setAlpha(40);
+        p.setBrush(fill);
+        p.drawPolygon(poly);
+        ++shown;
+    }
+    p.restore();
+
+    p.save();
+    p.resetTransform();
+    p.setPen(colorLegend);
+    const int hidden = multiLassos_.size() - shown;
+    QString text = tr("Multi-lasso: %1 lasso(s) → %2 cluster(s)   Enter splits · Backspace removes last · Esc clears")
+                       .arg(multiLassos_.size()).arg(multiLassoRegionCount());
+    if (hidden > 0) text += tr("   (%1 drawn in another view)").arg(hidden);
+    p.drawText(QRect(8, height() - 22, width() - 16, 18), Qt::AlignLeft | Qt::AlignVCenter, text);
+    p.restore();
 }
 
 // ── Density heatmap overlay (Shift+H) ────────────────────────────────────────
@@ -1497,6 +1755,8 @@ void ClusterView::clusterFeaturesReprojected(int /*clusterId*/){
 
 void ClusterView::setMode(BaseFrame::Mode selectedMode){
     statusBar->clearMessage();
+    // The kept multi-lassos belong to the multi-lasso tool: leaving it drops them.
+    if (selectedMode != MULTI_LASSO && !multiLassos_.isEmpty()) multiLassos_.clear();
     selectionPolygon.clear();
     nbSelectionPoints = 0;
     mode = selectedMode;
@@ -1519,6 +1779,7 @@ void ClusterView::applyModeCursor(){
     case DELETE_ARTEFACT: setCursor(deleteArtefactCursor); break;
     case NEW_CLUSTER:     setCursor(newClusterCursor);     break;
     case NEW_CLUSTERS:    setCursor(newClustersCursor);    break;
+    case MULTI_LASSO:     setCursor(newClustersCursor);    break;
     case NONE:            setCursor(Qt::ArrowCursor);      break;   // normal cursor (default)
     }
 }
@@ -1596,7 +1857,7 @@ void ClusterView::beginBoundaryDrag(const QPoint& vp)
 bool ClusterView::inSelectionMode() const
 {
     return mode == DELETE_NOISE || mode == DELETE_ARTEFACT
-        || mode == NEW_CLUSTER  || mode == NEW_CLUSTERS;
+        || mode == NEW_CLUSTER  || mode == NEW_CLUSTERS || mode == MULTI_LASSO;
 }
 
 void ClusterView::addSelectionVertex(const QPoint& viewportPos)
@@ -1917,7 +2178,7 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
         // drifted immediately (no tracking vertex, its own undo arithmetic,
         // its own pen).
         if (mode != DELETE_NOISE && mode != DELETE_ARTEFACT &&
-            mode != NEW_CLUSTER  && mode != NEW_CLUSTERS) {
+            mode != NEW_CLUSTER  && mode != NEW_CLUSTERS && mode != MULTI_LASSO) {
             // Zoom / time modes have no meaning here: the axes are not features.
             if (statusBar) statusBar->showMessage(
                 tr("t-SNE view: use Ctrl+1 / Ctrl+2 / Delete / Shift+Delete to lasso, "
@@ -2051,7 +2312,7 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
     // Enter or Return closes the selection polygon, same as middle mouse button
     if((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) &&
        (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
-        mode == NEW_CLUSTER  || mode == NEW_CLUSTERS) &&
+        mode == NEW_CLUSTER  || mode == NEW_CLUSTERS || mode == MULTI_LASSO) &&
        selectionPolygon.size() > 2)
     {
         closeSelectionPolygon();   // same in the scatter and the embedding
@@ -3176,6 +3437,7 @@ void ClusterView::startOblique(){
             tsneMinX -= mx; tsneMaxX += mx; tsneMinY -= my; tsneMaxY += my;
         }
         tsneView_ = QRectF(0.0, 0.0, 1.0, 1.0);   // a new embedding is shown whole
+        ++tsneGeneration_;                         // lassos drawn on the old one stop drawing
     }
     tsneSpikeCount   = N;
     if (usePinned) {
@@ -3353,7 +3615,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
         // units to report.
         if(!polygonClosed &&
            (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
-            mode == NEW_CLUSTER  || mode == NEW_CLUSTERS) &&
+            mode == NEW_CLUSTER  || mode == NEW_CLUSTERS || mode == MULTI_LASSO) &&
            !selectionPolygon.isEmpty()){
             const QPoint current = selectionPoint(e->position().toPoint());
             if(nbSelectionPoints == selectionPolygon.size())
@@ -3412,7 +3674,8 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
     //If the user is closing the polygon do not take mousemove event into account
     if(!polygonClosed){
         //In one of the selection modes we draw the tracking line
-        if(mode == DELETE_NOISE || mode == DELETE_ARTEFACT || mode == NEW_CLUSTER || mode == NEW_CLUSTERS){
+        if(mode == DELETE_NOISE || mode == DELETE_ARTEFACT || mode == NEW_CLUSTER || mode == NEW_CLUSTERS
+           || mode == MULTI_LASSO){
 
 
             //If there is no selection point, do not draw a tracking line
