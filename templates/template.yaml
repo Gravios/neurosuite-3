@@ -1,5 +1,5 @@
 # neurosuite-3 session parameter template
-# Copy to SESSION/SESSION.yaml and fill in the fields marked with ~ or null.
+# Copy to SESSION/SESSION.yaml and fill in the fields left empty.
 # Fields with a concrete value show the recommended default; change as needed.
 #
 # Keys read by the ndmanager-plugins scripts are annotated with the plugin name
@@ -14,10 +14,10 @@ parameters:
 # General information
 # ─────────────────────────────────────────────────────────────────────────────
 generalInfo:
-  date: ~                  # YYYY-MM-DD
-  experimenters: ~
-  description: ~
-  notes: ~
+  date:                    # YYYY-MM-DD
+  experimenters:
+  description:
+  notes:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Acquisition system
@@ -25,8 +25,8 @@ generalInfo:
 # ─────────────────────────────────────────────────────────────────────────────
 acquisitionSystem:
   nBits: 16
-  nChannels: ~             # total number of recorded channels
-  samplingRate: ~          # Hz, e.g. 20000 or 32552
+  nChannels:               # total number of recorded channels
+  samplingRate:            # Hz, e.g. 20000 or 32552
   voltageRange: 20         # mV
   amplification: 1000
   offset: 0
@@ -60,15 +60,15 @@ files:
 # ─────────────────────────────────────────────────────────────────────────────
 probes:
   - id: 0
-    probeFile: ~             # e.g. neuronexus/Buzsaki64.probe
-    label: ~                 # e.g. left CA1
+    probeFile:               # e.g. neuronexus/Buzsaki64.probe
+    label:                   # e.g. left CA1
     channelOffset: 0
     anatomicalGroups: [1, 2] # extend to match actual number of groups
 
 # Uncomment and repeat for additional probes:
 # - id: 1
-#   probeFile: ~
-#   label: ~
+#   probeFile:
+#   label:
 #   channelOffset: 64
 #   anatomicalGroups: [3, 4]
 
@@ -146,11 +146,11 @@ spikeDetection:
 units:
   - group: 1
     cluster: 2
-    structure: ~
-    type: ~
-    isolationDistance: ~
-    quality: ~
-    notes: ~
+    structure:
+    type:
+    isolationDistance:
+    quality:
+    notes:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # NeuroScope display settings
@@ -159,11 +159,11 @@ neuroscope:
   version: 1.2.5
   miscellaneous:
     screenGain: 0.2
-    traceBackgroundImage: ~
+    traceBackgroundImage:
   video:
     rotate: 0
     flip: 0
-    videoImage: ~
+    videoImage:
     positionsBackground: 0
   spikes:
     nSamples: 32            # waveform window shown in NeuroScope spike view
@@ -175,7 +175,8 @@ neuroscope:
 # Pipeline plugin parameters
 # Each entry configures one ndmanager-plugin.  Parameters with a value shown
 # are the recommended defaults from the plugin source; change as needed.
-# Parameters with null (shown as ~) must be filled in before running.
+# A parameter with no value line is unset: give Mandatory ones a value before
+# running; an unset Optional one uses the plugin's built-in default.
 # ─────────────────────────────────────────────────────────────────────────────
 programs:
 
@@ -307,7 +308,6 @@ programs:
   - name: ndm_aom2dat
     parameters:
       - name: matFile
-        value: ~
         status: Mandatory
       - name: chunkSamples
         value: 10000000
@@ -340,13 +340,10 @@ programs:
   - name: ndm_plx2dat
     parameters:
       - name: plexonFile
-        value: ~
         status: Mandatory
       - name: stream
-        value: ~
         status: Optional
       - name: channels
-        value: ~
         status: Optional
       - name: keepEmpty
         value: 'true'
@@ -364,7 +361,6 @@ programs:
         value: 'true'
         status: Optional
       - name: chunkSamples
-        value: ~
         status: Optional
     help: |-
       Convert a Plexon recording (.plx or .pl2, OmniPlex or MAP) to SESSION.dat
@@ -495,10 +491,8 @@ programs:
         value: 'true'
         status: Mandatory
       - name: suffixes
-        value: ~
         status: Mandatory
       - name: channelsExcluded
-        value: ~
         status: Mandatory
     help: |-
       Convert from .smr (CED files) to .dat format.
@@ -543,10 +537,8 @@ programs:
   - name: ndm_smr2evt
     parameters:
       - name: suffixes
-        value: ~
         status: Optional
       - name: rename
-        value: ~
         status: Optional
     help: |-
       Convert from .smr (CED files) to .evt format.
@@ -564,7 +556,6 @@ programs:
   - name: ndm_nvt2spots
     parameters:
       - name: suffix
-        value: ~
         status: Mandatory
       # - name: gap
       #   value: 1
@@ -587,7 +578,6 @@ programs:
   - name: ndm_tsp2sts
     parameters:
       - name: suffix
-        value: ~
         status: Mandatory
     help: |-
       Extract spots timestamps from .tsp and .meta (Amplipex files).
@@ -601,7 +591,6 @@ programs:
   - name: ndm_smi2sts
     parameters:
       - name: suffix
-        value: ~
         status: Mandatory
       # - name: gap
       #   value: 1
@@ -629,7 +618,6 @@ programs:
   - name: ndm_extractleds
     parameters:
       - name: suffix
-        value: ~
         status: Mandatory
       - name: useTrackerData
         value: 'true'
@@ -672,13 +660,11 @@ programs:
   - name: ndm_transcodevideo
     parameters:
       - name: suffix
-        value: ~
         status: Mandatory
       - name: extension
         value: avi
         status: Mandatory
       - name: codec
-        value: ~
         status: Mandatory
       # - name: frequency
       #   value: 30
@@ -737,10 +723,8 @@ programs:
   - name: ndm_extractchannels
     parameters:
       - name: nChannels
-        value: ~
         status: Mandatory
       - name: channels
-        value: ~
         status: Mandatory
     help: |-
       Extract channels from .dat file (remove those not listed).
@@ -758,10 +742,8 @@ programs:
   - name: ndm_mergedat
     parameters:
       - name: suffixes
-        value: ~
         status: Mandatory
       - name: nChannels
-        value: ~
         status: Mandatory
     help: |-
       Merge multiple .dat files recorded simultaneously.
@@ -779,13 +761,10 @@ programs:
   - name: ndm_resample
     parameters:
       - name: suffixes
-        value: ~
         status: Mandatory
       - name: samplingRates
-        value: ~
         status: Mandatory
       - name: nChannels
-        value: ~
         status: Mandatory
     help: |-
       Resample individual .dat files from their original sampling rates to the
@@ -808,10 +787,8 @@ programs:
   - name: ndm_rescale
     parameters:
       - name: suffixes
-        value: ~
         status: Mandatory
       - name: scalingFactors
-        value: ~
         status: Mandatory
     help: |-
       Rescale individual .dat files from their original input ranges to the
@@ -830,7 +807,6 @@ programs:
   - name: ndm_reorderchannels
     parameters:
       - name: channels
-        value: ~
         status: Mandatory
     help: |-
       Reorder channels in .dat file.
@@ -2570,13 +2546,10 @@ programs:
         value: apply
         status: Optional
       - name: group
-        value: ~
         status: Optional
       - name: rawCluExt
-        value: ~
         status: Optional
       - name: curatedCluExt
-        value: ~
         status: Optional
       - name: outCluExt
         value: autocur
@@ -2585,7 +2558,6 @@ programs:
         value: default
         status: Optional
       - name: modelPath
-        value: ~
         status: Optional
       - name: noiseClusters
         value: '0,1'
@@ -2612,7 +2584,6 @@ programs:
         value: 'false'
         status: Optional
       - name: probeLibrary
-        value: ~
         status: Optional
     help: |-
       Learn manual spike-sorting curation from (auto, curated) .clu pairs and
@@ -2768,7 +2739,6 @@ programs:
         value: 'true'
         status: Optional
       - name: probeLibrary
-        value: ~
         status: Optional
     help: |-
       Estimate in-vivo spatial probe drift from curated spike-sorting results.
@@ -3018,7 +2988,6 @@ programs:
         value: 0
         status: Optional
       - name: probeLibrary
-        value: ~
         status: Optional
     help: |-
       Inverse model of spike positions relative to the probe shank.
