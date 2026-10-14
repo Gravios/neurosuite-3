@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-14 | [Klusters: multi-lasso tool; zoom and pan in the t-SNE / oblique view](#2026-10-14--klusters-multi-lasso-tool-zoom-and-pan-in-the-t-sne--oblique-view) |
 | 2026-10-12 | [Klusters: Shift+H density heatmap over the feature view](#2026-10-12--klusters-shifth-density-heatmap-over-the-feature-view) |
 | 2026-10-12 | [NeuroScope: closing a session no longer deletes or overwrites parameter-file values](#2026-10-12--neuroscope-closing-a-session-no-longer-deletes-or-overwrites-parameter-file-values) |
 | 2026-10-12 | [ndm_plx2dat: Plexon .plx / .pl2 → .dat + .evt with header metadata in the session YAML](#2026-10-12--ndm_plx2dat-plexon-plx--pl2--dat--evt-with-header-metadata-in-the-session-yaml) |
@@ -42,6 +43,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-14 — Klusters: multi-lasso tool; zoom and pan in the t-SNE / oblique view
+
+<details>
+<summary>Details</summary>
+
+**Multi-lasso** (Tools ▸ Multi-Lasso, toolbar, Ctrl+5). Closing a lasso keeps it
+instead of cutting; draw as many as needed, then **Split by Lassos** (toolbar, or
+Enter with no lasso open). Every distinct combination of lassos a spike falls in
+becomes one new cluster — two overlapping lassos give *A only*, *B only* and *A
+and B* — and spikes in no lasso stay where they are. Backspace removes the last
+lasso, Esc discards them all. A lasso is resolved to its spikes when it closes, so
+lassos can be drawn across zooms, projections and the scatter/embedding switch and
+still intersect. Each region is its own undo step; the selection lands on all the
+new clusters.
+
+**t-SNE / oblique navigation.** The embedding now zooms (Ctrl+wheel, toward the
+cursor), pans (Ctrl+drag) and resets (double-click) like the feature scatter; the
+lasso, the density heatmap and the watershed preview follow the zoom. The
+embedding's title, previously black on the black background, is now readable.
+
+</details>
 
 ## 2026-10-12 — Klusters: Shift+H density heatmap over the feature view
 
