@@ -863,7 +863,10 @@ void ClusterView::paintTsne(QPainter& painter){
         painter.setPen(selPen);
         painter.drawPolyline(selectionPolygon);
     }
-    painter.setPen(palette().color(QPalette::WindowText));
+    // The legend colour contrasts with the view background (BaseFrame picks black or
+    // white); WindowText did not, so on the default black background the title was
+    // drawn black on black.
+    painter.setPen(colorLegend);
     if (obliqueMode) {
         // The condition number is the headline: it tells the curator when the
         // selected templates are genuinely separable (~1-3) versus fusing (large),
