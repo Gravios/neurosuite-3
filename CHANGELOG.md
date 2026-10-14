@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-14 | [Klusters: watershed split on the noise cluster](#2026-10-14--klusters-watershed-split-on-the-noise-cluster) |
 | 2026-10-14 | [Klusters: multi-lasso tool; zoom and pan in the t-SNE / oblique view](#2026-10-14--klusters-multi-lasso-tool-zoom-and-pan-in-the-t-sne--oblique-view) |
 | 2026-10-12 | [Klusters: Shift+H density heatmap over the feature view](#2026-10-12--klusters-shifth-density-heatmap-over-the-feature-view) |
 | 2026-10-12 | [NeuroScope: closing a session no longer deletes or overwrites parameter-file values](#2026-10-12--neuroscope-closing-a-session-no-longer-deletes-or-overwrites-parameter-file-values) |
@@ -43,6 +44,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-14 — Klusters: watershed split on the noise cluster
+
+<details>
+<summary>Details</summary>
+
+**Shift+W now works on the noise cluster (1).** Select noise on its own and the
+preview shows its density basins as usual; Enter carves every basin except the
+largest out as a new cluster, while the largest basin (the noise core) and the
+spikes no basin claimed stay in noise, so the noise bin always survives. The
+commit applies the basins the preview drew, not a recomputation. Each new
+cluster is its own undo step. Noise selected together with other clusters is
+refused, because the regular split dissolves its sources and noise must not be
+dissolved. The artefact cluster (0) is still never split.
+
+</details>
 
 ## 2026-10-14 — Klusters: multi-lasso tool; zoom and pan in the t-SNE / oblique view
 

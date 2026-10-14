@@ -4712,6 +4712,9 @@ void KlustersApp::updateToolModeActions(BaseFrame::Mode mode){
 //   Enter   commit the partition
 //   Esc     cancel
 //
+// The noise cluster (1) can be split too, selected on its own: its basins are
+// carved out as new clusters and the largest one stays as noise (wsExit).
+//
 // Other keys are blocked while preview is active (intercepted in
 // eventFilter, see the wsPreviewActive branch there) so the user doesn't
 // accidentally trigger an unrelated action mid-tune.
@@ -4751,9 +4754,10 @@ bool KlustersApp::wsEnter()
     sel.removeAll(1);
     const bool onChild = !sel.isEmpty();
     if (!onChild) {
+        // Noise (1) stays in: splitting dense units out of the noise bin is a
+        // common curation step.  The artefact bin (0) is never split.
         sel = clusterPalette->selectedClusters();
         sel.removeAll(0);
-        sel.removeAll(1);
     }
     if (sel.isEmpty()) {
         statusBar()->showMessage(
@@ -4776,6 +4780,18 @@ bool KlustersApp::wsEnter()
                    "cross-parent selection would straddle parents."), 5000);
             return false;
         }
+    }
+
+    // The noise bin must outlive the split, so it cannot go through the
+    // feature path's dissolve-the-sources commit; it is carved instead (see
+    // wsExit).  Mixed with other clusters, the two commits would disagree on
+    // what happens to the sources, so noise is split on its own.
+    const bool onNoise = !onChild && sel.contains(1);
+    if (onNoise && sel.size() > 1) {
+        statusBar()->showMessage(
+            tr("Watershed: split the noise cluster on its own — deselect the "
+               "other clusters first."), 5000);
+        return false;
     }
 
     KlustersView* aview = activeView();
@@ -4873,6 +4889,7 @@ bool KlustersApp::wsEnter()
                 const auto row = subset(1, i);
                 xs.append(static_cast<double>(src.featureValue(row, dimX)));
                 ys.append(static_cast<double>(src.featureValue(row, dimY)));
+                if (onNoise) rows.append(static_cast<int>(row) - 1);
             }
         }
     }
@@ -4888,7 +4905,7 @@ bool KlustersApp::wsEnter()
     wsSel       = sel;
     wsXs        = std::move(xs);
     wsYs        = std::move(ys);
-    wsRows      = std::move(rows);          // empty on the feature path
+    wsRows      = std::move(rows);          // empty on the feature path, noise aside
     wsOnEmbedding = (tsneView != nullptr);
     wsOnChild   = onChild;
     wsDimX      = dimX;
@@ -4977,7 +4994,7 @@ void KlustersApp::wsExit(bool commit)
     slotStatusMsg(tr("Applying watershed split…"));
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     int nNew = 0;
-    if (onEmbedding) {
+    if (onEmbedding || (!onChild && sel.contains(1))) {
         // Apply exactly the basins that were on screen.  The feature-space path
         // below re-runs the watershed inside the document, which is fine there
         // because it re-derives from the same projection the preview used --
@@ -4986,6 +5003,12 @@ void KlustersApp::wsExit(bool commit)
         // preview produced ARE the split: group the points by basin, keep the
         // largest where it is, and carve each of the others off through the
         // row-named builder the embedding's lasso already uses.
+        //
+        // The noise cluster commits the same way from its feature preview: the
+        // largest basin (the noise core) and the unassigned spikes stay in
+        // noise, and every other basin is carved out as a new cluster.  The
+        // feature path below would dissolve its sources, and the noise bin
+        // must survive.
         QMap<int, QSet<dataType>> byBasin;
         const int n = qMin(static_cast<int>(result.pointLabels.size()), rows.size());
         for (int i = 0; i < n; ++i) {
@@ -5010,7 +5033,8 @@ void KlustersApp::wsExit(bool commit)
             }
             if (sources.isEmpty()) continue;
             doc->createNewCluster(SpikeSelection(it.value(),
-                                                 QStringLiteral("watershed_tsne")),
+                                                 onEmbedding ? QStringLiteral("watershed_tsne")
+                                                             : QStringLiteral("watershed_noise")),
                                   sources);
             ++nNew;
         }

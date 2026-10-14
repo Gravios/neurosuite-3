@@ -1014,7 +1014,8 @@ private:
     bool                wsPreviewActive   = false;
     QList<int>          wsSel;
     /// Per-point 0-based .spk index, filled only when the preview runs on the
-    /// embedding; it is what lets the commit apply the basins the preview drew.
+    /// embedding or on the noise cluster; it is what lets the commit apply the
+    /// basins the preview drew.
     QVector<int>        wsRows;
     bool                wsOnEmbedding = false;
     /// True when the preview runs on the ATOM layer (children view: wsSel
