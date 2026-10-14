@@ -14,6 +14,7 @@
 #include <klustersshared/channelcolors.h>
 #include <klustersshared/parameteryamlmodifier.h>
 #include <klustersshared/parameteryamlreader.h>
+#include <klustersshared/parameteryamlwriter.h>
 
 #include <QDir>
 #include <QTemporaryDir>
@@ -293,6 +294,31 @@ int main()
         std::ifstream in2(path.toStdString());
         std::getline(in2, first);
         chk(first == "# hand-written note", "unchanged tree: comment and layout kept");
+    }
+
+    std::printf("empty program parameters (ndManager save):\n");
+    {
+        const QString wp = dir.filePath(QStringLiteral("w.yaml"));
+        ProgramInformation pi;
+        pi.setProgramName(QStringLiteral("ndm_pca"));
+        QMap<int,QStringList> params;
+        params[0] = {QStringLiteral("excludeClusters"), QString(), QStringLiteral("dynamic")};
+        params[1] = {QStringLiteral("nFeatures"), QStringLiteral("3"), QStringLiteral("dynamic")};
+        pi.setParameterInformation(params);
+        ParameterYamlWriter w;
+        w.setProgramsInformation({pi});
+        chk(w.writeTofile(wp), "writeTofile");
+        std::ifstream in(wp.toStdString());
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        chk(text.find('~') == std::string::npos, "no ~ written for an empty value");
+        const YAML::Node ps = YAML::LoadFile(wp.toStdString())["programs"][0]["parameters"];
+        chk(ps.size() == 2 && str(ps[0]["name"]) == "excludeClusters", "the empty parameter is still listed");
+        chk(!ps[0]["value"], "the empty parameter has no value key");
+        chk(str(ps[1]["value"]) == "3", "a set parameter keeps its value");
+        ParameterYamlReader r;
+        chk(r.parseFile(wp), "reader parses it");
+        chk(r.getProgramParameter(QStringLiteral("ndm_pca"), QStringLiteral("excludeClusters")).isEmpty(),
+            "reader sees the empty parameter as empty");
     }
 
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);

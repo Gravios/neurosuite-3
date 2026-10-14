@@ -350,14 +350,18 @@ void ParameterYamlWriter::setProgramsInformation(
                 if (row.size() < 3) continue;
                 YAML::Node p;
                 p["name"] = row[0].toStdString();
+                // An empty value is left out rather than written as null: an
+                // absent key is "unset" to every reader (ParameterYamlReader,
+                // the ndm_* scripts' yaml_read, PyYAML) without depending on
+                // each one treating ~ as unset, and the file says nothing it
+                // does not mean.
                 bool ok;
                 int iv = row[1].toInt(&ok);
                 if (ok) { p["value"] = iv; }
                 else {
                     double dv = row[1].toDouble(&ok);
                     if (ok) { p["value"] = dv; }
-                    else if (row[1].isEmpty()) { p["value"] = YAML::Node(YAML::NodeType::Null); }
-                    else { p["value"] = row[1].toStdString(); }
+                    else if (!row[1].isEmpty()) { p["value"] = row[1].toStdString(); }
                 }
                 p["status"] = row[2].toStdString();
                 paramSeq.push_back(p);

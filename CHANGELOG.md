@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-14 | [ndManager: empty program parameters are no longer written as `~`](#2026-10-14--ndmanager-empty-program-parameters-are-no-longer-written-as-) |
 | 2026-10-14 | [ndm_detectspikes (stderiv): refuse one-channel groups and flat signals](#2026-10-14--ndm_detectspikes-stderiv-refuse-one-channel-groups-and-flat-signals) |
 | 2026-10-14 | [Klusters: crash on opening a session whose probe has no .probe file; leftover .pending copies](#2026-10-14--klusters-crash-on-opening-a-session-whose-probe-has-no-probe-file-leftover-pending-copies) |
 | 2026-10-14 | [Klusters: watershed split on the noise cluster](#2026-10-14--klusters-watershed-split-on-the-noise-cluster) |
@@ -46,6 +47,20 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-14 — ndManager: empty program parameters are no longer written as `~`
+
+<details>
+<summary>Details</summary>
+
+Saving from ndManager wrote a parameter left blank as `value: ~` (YAML null).
+Every reader in the suite treats that as unset, but only if it is new enough
+to know the convention, and an older installed `ndm_*` script read the text
+`~` as a value (`excludeClusters=~`). An empty parameter is now saved with its
+name and status only and no `value` key, which every reader sees as unset.
+Files saved earlier are cleaned up the next time ndManager saves them.
+
+</details>
 
 ## 2026-10-14 — ndm_detectspikes (stderiv): refuse one-channel groups and flat signals
 
