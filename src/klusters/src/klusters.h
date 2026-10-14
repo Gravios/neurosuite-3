@@ -905,6 +905,11 @@ private:
      *  double-click interval clears the cluster palette selection; a single
      *  Escape never does, so a stray press cannot wipe the selection. */
     qint64 lastEscapeClearMs_ = -1;
+    // The double-Escape gesture counts key PRESSES, but one press reaches eventFilter
+    // several times (the filter is on the application and on each view, and an ignored
+    // key propagates to the parents).  The press last counted, to skip its repeats.
+    const QKeyEvent* lastEscapeEvent_ = nullptr;
+    quint64          lastEscapeTimestamp_ = 0;
 
     /**Warns about bindings that cannot fire: a menu action whose shortcut a
   * resolver-dispatched (non-external) registry key command swallows first, and

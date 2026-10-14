@@ -2103,9 +2103,32 @@ bool KlustersApp::eventFilter(QObject* object,QEvent* event){
         // have declined it, and only while the palette actually has a selection — otherwise
         // Escape keeps falling through to whatever else it means.  The first press arms the
         // gesture (and falls through, harmless); the second within the interval clears.
+        //
+        // Two refinements make it a true double press:
+        //  - One press reaches this filter more than once (it is installed on the
+        //    application and on each view, and an ignored key propagates to the parents),
+        //    and each delivery used to count -- so a SINGLE Escape in a view armed and
+        //    fired the gesture at once.  Repeat deliveries of the press last counted are
+        //    skipped (same event, same timestamp), as is a held key's auto-repeat.
+        //  - An Escape that a more specific meaning claims -- discarding the kept
+        //    multi-lassos, a pending lasso, the watershed preview (the transient Esc
+        //    commands) -- is not a step of the gesture, so a following Escape does not
+        //    clear the selection.
+        const bool repeatDelivery = (ke == lastEscapeEvent_ && ke->timestamp() == lastEscapeTimestamp_);
+        bool escapeClaimed = false;
+        if(ke->key() == Qt::Key_Escape && ke->modifiers() == Qt::NoModifier && !repeatDelivery){
+            input::Ctx ctx;
+            ctx.view  = activeClusterView();
+            ctx.event = ke;
+            escapeClaimed = input::registry().resolve(input::Chord::key(Qt::Key_Escape), ctx) != nullptr;
+            if(escapeClaimed) lastEscapeClearMs_ = -1;   // a claimed Escape breaks the pair
+        }
         if(ke->key() == Qt::Key_Escape && ke->modifiers() == Qt::NoModifier
+           && !repeatDelivery && !escapeClaimed && !ke->isAutoRepeat()
            && doc && !focusIsInTextInput()
            && clusterPalette && !clusterPalette->selectedClusters().isEmpty()){
+            lastEscapeEvent_     = ke;
+            lastEscapeTimestamp_ = ke->timestamp();
             const qint64 now = QDateTime::currentMSecsSinceEpoch();
             if(lastEscapeClearMs_ >= 0
                && (now - lastEscapeClearMs_) <= QApplication::doubleClickInterval()){
