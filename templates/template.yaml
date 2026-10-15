@@ -560,6 +560,9 @@ programs:
       # - name: gap
       #   value: 1
       #   status: Optional
+      - name: ignoreEvents
+        value: 'false'
+        status: Optional
     help: |-
       Extract spots from .nvt (Neuralynx files).
 
@@ -574,6 +577,12 @@ programs:
       # gap
 
       Sampling gap threshold for 'acquisition restart' detection (seconds, default = 1).
+
+      # ignoreEvents
+
+      Set to 'true' if the NEV files list acquisition start/stop events
+      incorrectly; 'restart acquisition' events are then guessed from the
+      timestamps (default = false).
 
   - name: ndm_tsp2sts
     parameters:
@@ -784,26 +793,6 @@ programs:
 
       Space-separated list of channel counts in the individual files (one per suffix)
 
-  - name: ndm_rescale
-    parameters:
-      - name: suffixes
-        status: Mandatory
-      - name: scalingFactors
-        status: Mandatory
-    help: |-
-      Rescale individual .dat files from their original input ranges to the
-      common range (smallest).
-
-      PARAMETERS
-
-      # suffixes
-
-      List of suffixes for the individual files to rescale
-
-      # scalingFactors
-
-      Comma-separated list of scaling factors (< 1.0, one per suffix)
-
   - name: ndm_reorderchannels
     parameters:
       - name: channels
@@ -816,6 +805,109 @@ programs:
       # channels
 
       Space-separated list of reordered channel indices (0-based)
+
+  - name: ndm_extractemg
+    parameters:
+      - name: hpFreq
+        value: 100
+        status: Optional
+      - name: thresholdFactor
+        value: 5.0
+        status: Optional
+      - name: envelopeWindowMs
+        value: 20
+        status: Optional
+      - name: refractoryPeriod
+        value: 0
+        status: Optional
+      - name: peakSearchLength
+        value: 0
+        status: Optional
+      - name: downsample
+        value: 3
+        status: Optional
+      - name: idStart
+        value: 0
+        status: Optional
+      - name: idDuration
+        value: 60
+        status: Optional
+      - name: chunkSamples
+        value: 1048576
+        status: Optional
+      - name: backend
+        value: auto
+        status: Optional
+      - name: emgClean
+        value: 'yes'
+        status: Optional
+      - name: emgTrace
+        value: 'yes'
+        status: Optional
+      - name: emgWaveforms
+        value: 'yes'
+        status: Optional
+    help: |-
+      Identify and remove the EMG component of the .dat with FastICA, per probe,
+      and write the EMG events out as spikes.
+
+      FastICA (deflation, pow3) runs on each probe's anatomical channels
+      (skip = 0), high-pass filtered; the EMG component is the independent
+      component whose channel loading is most uniform.  Outputs:
+        <session>-emgclean.dat        EMG component subtracted (all probes)
+        <session>.emg.<probe>         1-channel EMG trace
+        <session>.res.emg.<probe>     EMG event times (samples)
+        <session>.spk.emg.<probe>     EMG event waveforms
+        <session>.emg.meta.yaml       loadings, unmixing, convergence
+      Without probes: the spike groups are used instead.
+
+      Run before ndm_hipass to detect spikes on the cleaned signal (point the
+      filter at <session>-emgclean.dat); run after detection to use the EMG
+      events for analysis only.
+
+      OPTIONAL PARAMETERS
+
+      # hpFreq
+
+      High-pass cutoff in Hz for component identification (default 100).
+
+      # thresholdFactor
+
+      Event threshold as a multiple of 1.4826 · MAD(|EMG|) (default 5.0).
+
+      # envelopeWindowMs
+
+      Boxcar smoothing of |EMG| before peak detection, ms (default 20).
+
+      # refractoryPeriod
+
+      Minimum samples between events (default 0 = from envelopeWindowMs).
+
+      # peakSearchLength
+
+      Samples after a crossing searched for the peak (default 0 =
+      refractoryPeriod).
+
+      # downsample
+
+      Subsampling of the identification data before FastICA (default 3).
+
+      # idStart / idDuration
+
+      Window in seconds FastICA learns from (default 0 + 60).
+
+      # chunkSamples
+
+      Samples per channel per streaming chunk (default 1048576).
+
+      # backend
+
+      auto (default), cpu, cuda, hip or sycl for the FastICA kernel; falls
+      back to CPU when the backend is not built or no device is found.
+
+      # emgClean / emgTrace / emgWaveforms
+
+      yes / no for each output (default yes).
 
   # == Group setup ==============================================================
   - name: ndm_setupgroups
@@ -1180,6 +1272,8 @@ programs:
       # - name: dedupSamples
       #   value: 0
       #   status: Optional
+      - name: memCapGB
+        status: Optional
     help: |-
       Detect spikes on the high-pass filtered .fil file and write the shared
       spike-time .res files.  The engine also emits a .spk in passing (there is no
@@ -1277,6 +1371,10 @@ programs:
       samples of the previous kept one (earlier kept).  Unset = 0 (identical
       positions only); -1 = off.
 
+      # memCapGB
+
+      Memory cap in GB for the detection process (default = 2).
+
   - name: ndm_extractspikes
     parameters:
       # Chain-of-custody method: standard | sdiff | stderiv.  Selects the waveform
@@ -1368,6 +1466,12 @@ programs:
       - name: method
         value: standard
         status: Optional
+      - name: topChannels
+        value: 0
+        status: Optional
+      - name: alignSigma
+        value: 0.0
+        status: Optional
     help: |-
       Align spike waveform snippets to their true energy peak before PCA.
 
@@ -1406,6 +1510,21 @@ programs:
       Minimum relative energy score ∈ [0,1] to accept a shift.  Score = peak
       energy / total window energy.  Spikes where the peak is too diffuse
       (score < minScore) are left unshifted.  Default 0.0 (accept all shifts).
+
+      # topChannels
+
+      Use only the N highest-amplitude channels of each spike when computing
+      the energy (default 0 = all channels).  Keeps collision or residual
+      activity on non-primary channels out of the peak search.
+
+      # alignSigma
+
+      Standard deviation, in samples, of a Gaussian template circularly
+      cross-correlated with each spike's energy over the whole snippet
+      (default 0.0).  > 0 replaces the bounded-argmax peak search and works on
+      the existing .spk / .spkD snippets without reading the .fil; σ ≳ 1.5
+      bridges the two-lobed energy of .spkD waveforms.  ≤ 0 keeps the
+      bounded-argmax search.
 
   - name: ndm_spikecleaner
     parameters:
@@ -1632,6 +1751,12 @@ programs:
       - name: reextractAutoSubcluster
         value: 0
         status: Optional
+      - name: method
+        value: standard
+        status: Optional
+      - name: methodOrder
+        value: 3
+        status: Optional
     help: |-
       Second-pass spike detection with mask exclusion and IN-PLACE shadow
       clustering.
@@ -1758,6 +1883,20 @@ programs:
         ndm_redetectspikes          — residual-dat re-detection pipeline
         ndm_subcluster_unmatched    — re-cluster the unmatched bin
 
+      OPTIONAL PARAMETERS
+
+      # method
+
+      Engine whose files this step reads and writes: standard (default), sdiff
+      or stderiv.  Must match the method of the detection / PCA / clustering
+      run it continues; it selects the .<type>.<method>.N names.
+
+      # methodOrder
+
+      Spatial-derivative order 1-3 for sdiff / stderiv (default 3).
+      thresholdFactor, refractoryPeriod, peakSearchLength, start and
+      duration come from ndm_detectspikes unless set in this block.
+
   - name: ndm_subcluster_unmatched
     parameters:
       # ── Cluster count (tuned for the outlier bin) ──────────────────────────────
@@ -1846,6 +1985,9 @@ programs:
     # ── Parallelism ─────────────────────────────────────────────────────────────
       - name: nThreads
         value: 0
+        status: Optional
+      - name: method
+        value: standard
         status: Optional
     help: |-
       Re-cluster the "unmatched" bin produced by process_shadowcluster
@@ -2009,6 +2151,14 @@ programs:
         ndm_reextractspikes          — raw-signal re-extraction
         ndm_reextractspikes (method: stderiv)  — stderiv re-extraction
         ndm_klustakwik               — primary sort + parameter reference
+
+      OPTIONAL PARAMETERS
+
+      # method
+
+      Engine whose files this step reads and writes: standard (default), sdiff
+      or stderiv.  Must match the method of the detection / PCA / clustering
+      run it continues; it selects the .<type>.<method>.N names.
 
   - name: ndm_lfp
     parameters:
@@ -2254,6 +2404,41 @@ programs:
       explicitly to cap total CPU use:
         threadsPerGroup * nGroups <= nAvailableCores
 
+  - name: ndm_refeaturize
+    parameters:
+      - name: method
+        value: standard
+        status: Optional
+      - name: methodOrder
+        value: 3
+        status: Optional
+      - name: extra
+        value: 'false'
+        status: Optional
+    help: |-
+      Re-project spike waveforms onto the saved PCA basis and rewrite .fet,
+      without refitting the PCA.
+
+      Reads .spk.<method>.N and the eigenvectors in .pca.<method>.N (written by
+      ndm_pca) and overwrites .fet.<method>.N.  A fast alternative to re-running
+      ndm_pca when the spikes moved but the basis still holds, e.g. after
+      ndm_alignspikes_pca.  dropLastChannel comes from ndm_pca unless set here.
+
+      OPTIONAL PARAMETERS
+
+      # method
+
+      standard (default), sdiff or stderiv — as in ndm_pca.
+
+      # methodOrder
+
+      Spatial-derivative order 1-3 for sdiff / stderiv (default 3).
+
+      # extra
+
+      Append per-channel peak values as extra features.  Must match the extra
+      setting ndm_pca used when it fit the basis (default false).
+
   - name: ndm_klustakwik
     parameters:
       # ── Cluster count ──────────────────────────────────────────────────────────
@@ -2363,9 +2548,6 @@ programs:
         status: Optional
     # ── Parallelism ─────────────────────────────────────────────────────────────
       - name: nThreads
-        value: 0
-        status: Optional
-      - name: parallelK
         value: 0
         status: Optional
     help: |-
@@ -2529,16 +2711,6 @@ programs:
       0 (default) = use all available cores (nproc). Set explicitly only when you
       need to leave cores free for other concurrent work.
 
-      # parallelK
-
-      Number of (K-value, start) jobs to run concurrently. Each job is an
-      independent KlustaKwik run with its own cluster count K and random seed.
-      KlustaKwik distributes nCores evenly: threadsPerJob = nCores / parallelK.
-      GPU is disabled on all workers; Phase-3 GPU contribution is <1% of runtime.
-      0 (default) = serial. Recommended for many-core chunked sessions:
-        parallelK = nCores / max(1, nChunks / 2)
-      Example: 128 cores, 9 chunks → parallelK=32, 4 OMP threads/job, ~20x speedup.
-
 
   - name: ndm_autoklusta
     parameters:
@@ -2584,6 +2756,11 @@ programs:
         value: 'false'
         status: Optional
       - name: probeLibrary
+        status: Optional
+      - name: splitThreshold
+        value: -1
+        status: Optional
+      - name: curationLog
         status: Optional
     help: |-
       Learn manual spike-sorting curation from (auto, curated) .clu pairs and
@@ -2724,6 +2901,82 @@ programs:
       Override the probe library search path (accepted for parity; geometry is
       read from this YAML).
 
+      # splitThreshold
+
+      p(split) above which a kept cluster is flagged as a split candidate
+      when the model is applied.  Negative (default -1) uses the value stored
+      with the trained model, or 0.5 if it has none.
+
+      # curationLog
+
+      Klusters curation log used to supervise split training.  Empty or false
+      (default) = off; true or auto = <session>.curation_log.<group>.<method>;
+      otherwise a directory or a file path, which may contain {g} for the
+      group number.
+
+  - name: ndm_alignspikes_pca
+    parameters:
+      - name: maxShift
+        value: 3
+        status: Optional
+      - name: maxShiftGlobal
+        value: 4
+        status: Optional
+      - name: iterations
+        value: 2
+        status: Optional
+      - name: minScore
+        value: 0.70
+        status: Optional
+      - name: minSpikes
+        value: 5
+        status: Optional
+      - name: skipPca
+        value: 'false'
+        status: Optional
+      - name: method
+        value: standard
+        status: Optional
+    help: |-
+      Two-stage per-cluster spike realignment, after clustering.
+
+      Stage 1 aligns each spike to its cluster mean by normalised
+      cross-correlation over ±maxShift and re-extracts shifted spikes from the
+      .fil.  Stage 2 shifts the whole cluster by the single lag in
+      ±maxShiftGlobal that maximises the cluster mean's energy in the PCA basis
+      (.pca.N), so mixture clusters are not dispersed.  Needs .clu.N; re-run
+      ndm_pca or ndm_refeaturize afterwards.
+
+      OPTIONAL PARAMETERS
+
+      # maxShift
+
+      Stage-1 per-spike shift bound, samples (default 3).
+
+      # maxShiftGlobal
+
+      Stage-2 cluster shift bound, samples (default 4).
+
+      # iterations
+
+      Stage-1 passes per cluster (default 2).
+
+      # minScore
+
+      Cross-correlation score needed to shift a spike in stage 1 (default 0.70).
+
+      # minSpikes
+
+      Clusters with fewer spikes are skipped (default 5).
+
+      # skipPca
+
+      true to run stage 1 only (default false).
+
+      # method
+
+      standard (default), sdiff or stderiv — the engine whose files are read.
+
   - name: ndm_estimatedrift
     parameters:
       - name: windowSec
@@ -2739,6 +2992,12 @@ programs:
         value: 'true'
         status: Optional
       - name: probeLibrary
+        status: Optional
+      - name: weightMode
+        value: geometry
+        status: Optional
+      - name: nWorkers
+        value: 1
         status: Optional
     help: |-
       Estimate in-vivo spatial probe drift from curated spike-sorting results.
@@ -2780,6 +3039,68 @@ programs:
       Override the probe library search path. Searches NEUROSUITE_PROBE_PATH,
       ~/.local/share/neurosuite/probes/, /usr/share/neurosuite/probes/, and
       ./probes/ by default.
+
+      # weightMode
+
+      Per-unit weight in the weighted median of unit shifts: geometry
+      (default), sharpness or count.  sharpness = cross-correlation curvature
+      × active sites × sqrt(spikes); geometry also multiplies by how much the
+      unit's amplitude profile changes along the shank, so far-field units
+      with flat profiles count less; count = sqrt(n_ref × n_win), the old
+      weighting.
+
+      # nWorkers
+
+      Worker processes, one shank each (default 1 = sequential; 0 = all
+      CPUs).  Shanks are independent, so this scales with shank count.
+
+  - name: ndm_driftcorrect
+    parameters:
+      - name: overwrite
+        value: 'false'
+        status: Optional
+      - name: passthroughThreshUm
+        value: 0.25
+        status: Optional
+      - name: batchSize
+        value: 100000
+        status: Optional
+      - name: nWorkers
+        value: 1
+        status: Optional
+      - name: probeLibrary
+        status: Optional
+    help: |-
+      Re-interpolate each spike's waveform across the probe sites as if the
+      probe sat at its reference position, using the drift signal
+      (SESSION.dat.drift.P) written by ndm_estimatedrift.
+
+      Reads .spkD.N (or .spk.N), writes .spkCD.N (or .spkC.N); no .clu is read.
+      Re-run ndm_pca and ndm_klustakwik on the corrected waveforms, then
+      ndm_estimatedrift again, and iterate until the drift estimate settles.
+
+      OPTIONAL PARAMETERS
+
+      # overwrite
+
+      Overwrite existing .spkC(D) outputs (default false).
+
+      # passthroughThreshUm
+
+      If |drift| never exceeds this many µm, the waveforms are copied unchanged
+      (default 0.25).
+
+      # batchSize
+
+      Spikes per batch, bounds memory (default 100000).
+
+      # nWorkers
+
+      Worker processes, one spike group each (default 1 = sequential).
+
+      # probeLibrary
+
+      Override the probe library search path.
 
   - name: ndm_applydrift
     parameters:
@@ -2862,6 +3183,71 @@ programs:
       # mergeThresh / globalMergeIter / timeMergeIter
 
       KlustaKwik merge parameters (defaults 35 / 30 / 35).
+
+  - name: ndm_drifttracker
+    parameters:
+      - name: windowMin
+        value: 5.0
+        status: Optional
+      - name: overlapMin
+        value: 2.5
+        status: Optional
+      - name: minWinSpikes
+        value: 30
+        status: Optional
+      - name: lambda
+        value: 1.0
+        status: Optional
+      - name: mergeThresh
+        value: 0.05
+        status: Optional
+      - name: maxShift
+        value: 3
+        status: Optional
+      - name: minWinOverlap
+        value: 3
+        status: Optional
+      - name: spkSuffix
+        value: spk
+        status: Optional
+    help: |-
+      Drift-aware cluster merging: per spike group, follow each cluster's mean
+      waveform through sliding windows, smooth the trajectory, and merge
+      clusters whose trajectories coincide window by window.
+
+      Reads .res.N, .clu.N and .spk.N (or .spkD.N); writes .clu.N.drift (merged
+      IDs) and .drift.N.yaml (per-window report).  The .clu.N is not modified.
+
+      OPTIONAL PARAMETERS
+
+      # windowMin / overlapMin
+
+      Sliding window length and overlap, minutes (default 5.0 / 2.5).
+
+      # minWinSpikes
+
+      Spikes a cluster needs in a window to define its template there
+      (default 30).
+
+      # lambda
+
+      Tikhonov ridge weight smoothing each trajectory (default 1.0).
+
+      # mergeThresh
+
+      Mean residual below which two trajectories are merged (default 0.05).
+
+      # maxShift
+
+      Cyclic-shift search half-width, samples (default 3).
+
+      # minWinOverlap
+
+      Windows two clusters must share before they are compared (default 3).
+
+      # spkSuffix
+
+      Waveform file suffix: spk (default) or spkD for stderiv.
 
   - name: ndm_decomposecollisions
     parameters:
