@@ -58,6 +58,9 @@ RecenterResult circularRecenterShift(const double* energy, int nSamp,
  *   nSamp     samples per waveform (the periodic axis length)
  *   shiftOut  filled (size nSpikes) with each spike's signed circular shift, same roll convention
  *             as circularRecenterShift: new[t]=old[(t+shift)%N].
+ *             A spike whose own centroid is undefined (mean resultant length ~0: zero energy, e.g. a
+ *             zero-filled failed read, or a flat profile) gets shift 0 and is left out of the
+ *             population target.
  *
  * Where circularRecenterShift moves a WHOLE cluster onto a FIXED peakPos, this moves EACH spike so its
  * own circular energy centroid lands on the POPULATION's circular-mean centroid -- a template-free

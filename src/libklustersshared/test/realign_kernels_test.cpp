@@ -10,11 +10,17 @@
 //   - ordinary spikes in the same batch are still aligned;
 //   - an exact two-way tie between lags resolves to the lower lag (the first
 //     maximum) -- the rule the CUDA/HIP tree reduction must reproduce.
+// and realign_center::perSpikeCentroidShifts (Klusters --align-centroid):
+//   - a zero-energy spike has no centroid; it gets shift 0 and does not bias
+//     the population target the other spikes are moved onto.
 // Qt-free, self-contained (own main), run via ctest.
 
 #include "realign_xcorr.h"
+#include "realign_center.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -87,9 +93,61 @@ static void testXcorrTie() {
           + std::to_string(sh) + ")");
 }
 
+// Per-sample energy of a spike centred at sample c on the periodic axis (a
+// wrapped Gaussian, so its circular centroid is exactly c).
+static void putEnergy(double* e, int nSamp, int c) {
+    for (int s = 0; s < nSamp; ++s) {
+        int d = std::abs(s - c);
+        d = std::min(d, nSamp - d);
+        e[s] = 1000.0 * std::exp(-0.5 * d * d / 4.0);
+    }
+}
+
+static std::string join(const std::vector<int>& v) {
+    std::string out;
+    for (size_t i = 0; i < v.size(); ++i) out += (i ? "," : "") + std::to_string(v[i]);
+    return out;
+}
+
+static void testCentroidZeroSpike() {
+    const int N = 42;
+    // Three spikes centred at 21 plus one all-zero spike: nothing moves.
+    {
+        std::vector<double> e(4 * N, 0.0);
+        for (int i = 0; i < 3; ++i) putEnergy(e.data() + i * N, N, 21);
+        std::vector<int> sh;
+        realign_center::perSpikeCentroidShifts(e.data(), 4, N, sh);
+        check(sh == std::vector<int>{0, 0, 0, 0},
+              "centroid: 3 spikes at 21 + zero spike -> 0,0,0,0 (got " + join(sh) + ")");
+    }
+    // Spikes at 10, 11, 12: the target is 11 with or without a zero spike.
+    {
+        std::vector<double> e3(3 * N, 0.0), e4(4 * N, 0.0);
+        for (int i = 0; i < 3; ++i) {
+            putEnergy(e3.data() + i * N, N, 10 + i);
+            putEnergy(e4.data() + i * N, N, 10 + i);
+        }
+        std::vector<int> s3, s4;
+        realign_center::perSpikeCentroidShifts(e3.data(), 3, N, s3);
+        realign_center::perSpikeCentroidShifts(e4.data(), 4, N, s4);
+        check(s3 == std::vector<int>{-1, 0, 1},
+              "centroid: spikes at 10,11,12 -> -1,0,1 (got " + join(s3) + ")");
+        check(s4 == std::vector<int>{-1, 0, 1, 0},
+              "centroid: zero spike leaves the target unchanged (got " + join(s4) + ")");
+    }
+    // Only zero spikes: every shift is 0.
+    {
+        std::vector<double> e(2 * N, 0.0);
+        std::vector<int> sh;
+        realign_center::perSpikeCentroidShifts(e.data(), 2, N, sh);
+        check(sh == std::vector<int>{0, 0}, "centroid: all-zero input -> all shifts 0");
+    }
+}
+
 int main() {
     testXcorrUndefined();
     testXcorrTie();
+    testCentroidZeroSpike();
     std::printf("%d/%d checks passed\n", g_ran - g_fail, g_ran);
     return g_fail ? 1 : 0;
 }
