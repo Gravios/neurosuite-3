@@ -294,7 +294,9 @@ corrected times are used by every later extraction. Because the spikes are also
 re-sorted by time, any **other** method's `.spk`, `.fet` or `.clu` already
 written for the same group no longer lines up row-for-row with the new `.res`.
 Re-extract those methods from the aligned `.res` instead of reusing their old
-files.
+files. When any spike moved, both aligners print a warning naming the other
+`.spk` files of the group that exist (`.spk.<other method>.N` and the untagged
+`.spk.N`).
 
 ## See also
 

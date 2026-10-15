@@ -99,6 +99,7 @@
 #include <algorithm>
 #include <numeric>
 #include <climits>
+#include <filesystem>
 #include <stdexcept>
 #include <unistd.h>     // access(F_OK) for prealign archive
 #include <neurosuite/core/custody.hpp>      // shared chain-of-custody resolver
@@ -173,6 +174,39 @@ static std::vector<int> parseIntList(const char* s)
     }
     free(buf);
     return v;
+}
+
+// Every other .spk of this group -- <base>.spk.<token>.<group> for any method
+// token, and the untagged <base>.spk.<group> -- except `aligned`.  The .res is
+// shared by all methods, so once alignment rewrites it these no longer line up
+// row for row with it and must be re-extracted.
+static std::vector<std::string> otherSpkFiles(const std::string& base, int group,
+                                              const std::string& aligned)
+{
+    namespace fs = std::filesystem;
+    std::vector<std::string> out;
+    const fs::path bp(base);
+    const fs::path dir = bp.has_parent_path() ? bp.parent_path() : fs::path(".");
+    const std::string stem   = bp.filename().string() + ".spk.";
+    const std::string suffix = "." + std::to_string(group);
+    std::error_code ec;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        bool match = (name == stem + std::to_string(group));            // untagged
+        if (!match && name.size() > stem.size() + suffix.size()
+            && name.compare(0, stem.size(), stem) == 0
+            && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            const std::string tok = name.substr(stem.size(),
+                                                name.size() - stem.size() - suffix.size());
+            match = (tok.find('.') == std::string::npos);                // <token>.<group>
+        }
+        if (!match) continue;
+        std::error_code eq;
+        if (fs::equivalent(it->path(), fs::path(aligned), eq)) continue;
+        out.push_back(bp.has_parent_path() ? it->path().string() : name);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 // ── Shift estimation ──────────────────────────────────────────────────────
@@ -994,6 +1028,16 @@ int main(int argc, char* argv[])
     if (nEdgeRefused > 0)
         fprintf(stderr, "  edge-refused=%d", nEdgeRefused);
     fprintf(stderr, "\n");
+    if (nShifted > 0) {
+        const std::vector<std::string> stale = otherSpkFiles(basename, electrodeGroup, spkPath);
+        if (!stale.empty()) {
+            std::string list;
+            for (const std::string& f : stale) list += (list.empty() ? "" : ", ") + f;
+            fprintf(stderr, "process_alignspikes: WARNING: the shared %s was rewritten; "
+                            "these .spk no longer line up with it, re-extract them: %s\n",
+                    resPath.c_str(), list.c_str());
+        }
+    }
     fprintf(stderr,
             "  NOTE: delete %s.fet%s%d and %s.pca%s%d then re-run "
             "process_pca%s\n",
