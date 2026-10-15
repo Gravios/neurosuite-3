@@ -272,12 +272,27 @@ static void testCraftedHeaders()
     }
 }
 
+// ── 6. Zero-spike binary .fet round-trips ───────────────────────────────────
+static void testEmptyFetBinary()
+{
+    using namespace neurofileio;
+    const std::string fp = "nfio_rob_empty.tmp.fet";
+    check(writeFetBinary(fp, 5, {}), "fet empty: writeFetBinary(0 spikes) ok");
+    const FetBinaryFile f = readFetBinary(fp);
+    check(f.ok && f.nFeatures == 5 && f.nSpikes == 0 && f.values.empty(),
+          "fet empty: header-only file reads as an empty group");
+    writeBytes(fp, std::string("\x05\x00\x00\x00\x01\x02", 6));   // 2 stray bytes
+    check(!readFetBinary(fp).ok, "fet: partial row still rejected");
+    std::remove(fp.c_str());
+}
+
 int main()
 {
     testResDetection();
     testEvtPrecision();
     testColTruncation();
     testCraftedHeaders();
+    testEmptyFetBinary();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);

@@ -119,7 +119,8 @@ NEUROSUITE_CORE_EXPORT FetFile readFet(const std::string& path);
 // Binary .fet: int32_t feature-count header, then nSpikes × nFeatures int64
 // values, row-major. This is the layout written by the process_pca plugin and
 // read by BOTH klusters (Data::loadFeatures) and KlustaKwik (KK::LoadData), so
-// it is genuine cross-app duplication. nSpikes is derived from the file size.
+// it is genuine cross-app duplication. nSpikes is derived from the file size; a
+// header-only file is a valid empty group (nSpikes = 0, ok = true).
 struct FetBinaryFile {
     int                  nFeatures = 0;
     int64_t              nSpikes   = 0;

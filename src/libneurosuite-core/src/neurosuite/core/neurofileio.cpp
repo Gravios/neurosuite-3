@@ -331,7 +331,10 @@ FetBinaryFile readFetBinary(const std::string& path)
         static_cast<int64_t>(fileBytes) - static_cast<int64_t>(sizeof(nFeat));
     const int64_t rowBytes =
         static_cast<int64_t>(sizeof(int64_t)) * out.nFeatures;
-    if (dataBytes <= 0 || (dataBytes % rowBytes) != 0) return out;
+    // A header-only file (dataBytes == 0) is a valid EMPTY group — exactly what
+    // writeFetBinary writes for zero spikes, and what readSpk / readResBinary /
+    // readCluBinary accept for theirs.
+    if (dataBytes < 0 || (dataBytes % rowBytes) != 0) return out;
     out.nSpikes = dataBytes / rowBytes;
 
     in.seekg(static_cast<std::streamoff>(sizeof(nFeat)), std::ios::beg);
