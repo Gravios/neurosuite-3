@@ -4,6 +4,7 @@
 #include "neurofileio.h"
 #include "custody.hpp"   // single source of truth for composition/parsing
 
+#include <charconv>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -12,6 +13,23 @@
 #include <limits>
 
 namespace neurofileio {
+
+// A double written for a text sidecar: the SHORTEST decimal that reads back to
+// the identical double, always in fixed (never scientific) notation — e.g.
+// 120 -> "120", 3656.1728 -> "3656.1728", 1e-5 -> "0.00001".  The stream default
+// (6 significant digits) rounded window edges / sampling rates, so a re-read
+// partition no longer met tEnd.  Non-finite values fall back to the stream text.
+static std::string fmtExact(double x)
+{
+    char buf[400];                                  // fixed form of DBL_MAX is 309 digits
+    const std::to_chars_result r =
+        std::to_chars(buf, buf + sizeof buf, x, std::chars_format::fixed);
+    if (r.ec == std::errc()) return std::string(buf, r.ptr);
+    std::ostringstream os;
+    os.precision(std::numeric_limits<double>::max_digits10);
+    os << x;
+    return os.str();
+}
 
 // ── .clu.N ────────────────────────────────────────────────────────────────
 CluFile readClu(const std::string& path)
@@ -532,14 +550,14 @@ bool writeWti(const std::string& path, const WtiIndex& idx)
     out << "nSamples "   << idx.nSamples   << "\n";
     out << "nChannels "  << idx.nChannels  << "\n";
     out << "peakSample " << idx.peakSample << "\n";
-    out << "sr "         << idx.sr         << "\n";
+    out << "sr "         << fmtExact(idx.sr) << "\n";
     out << "nRows "      << idx.rows.size() << "\n";
     out << (ver >= 2 ? "# row unit link bin a b nSpikes parent\n"
                      : "# row unit link bin a b nSpikes\n");
     for (const WtiRow& r : idx.rows) {
         out << "row " << r.row << ' ' << r.unitId << ' '
             << (r.link.empty() ? std::string("drift") : r.link) << ' '
-            << r.bin << ' ' << r.a << ' ' << r.b << ' ' << r.nSpikes;
+            << r.bin << ' ' << fmtExact(r.a) << ' ' << fmtExact(r.b) << ' ' << r.nSpikes;
         if (ver >= 2) out << ' ' << r.parent;
         out << "\n";
     }
@@ -662,7 +680,7 @@ bool writeWtl(const std::string& path, const WtlForest& f)
     for (const WtlNode& n : f.nodes) {
         out << "node " << n.node << ' ' << n.classId << ' '
             << (n.kind.empty() ? std::string("drift-root") : n.kind) << ' '
-            << n.parent << ' ' << n.a << ' ' << n.b << ' ' << n.count << "\n";
+            << n.parent << ' ' << fmtExact(n.a) << ' ' << fmtExact(n.b) << ' ' << n.count << "\n";
         out << "mean " << n.mean.size();
         for (float x : n.mean) out << ' ' << x;
         out << "\n";
@@ -919,8 +937,14 @@ bool writeEvt(const std::string& path, const std::vector<EvtEntry>& events)
 {
     std::ofstream os(path);
     if (!os) return false;
-    for (const auto& e : events)
-        os << e.timeMs << '\t' << e.label << '\n';
+    // "%.6f" ms (nanosecond resolution, never scientific) — the convention of
+    // the in-repo .evt writer process_plxconvert; the stream default kept only 6
+    // significant digits, i.e. 1 s resolution past ~2.8 h.
+    char buf[400];
+    for (const auto& e : events) {
+        std::snprintf(buf, sizeof buf, "%.6f", e.timeMs);
+        os << buf << '\t' << e.label << '\n';
+    }
     return static_cast<bool>(os);
 }
 

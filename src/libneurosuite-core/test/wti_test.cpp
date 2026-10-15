@@ -118,6 +118,26 @@ int main()
     writeRaw("wti_v3.tmp.wti", "wti 3\nnRows 0\n");
     check(!readWti("wti_v3.tmp.wti").ok, "version 3 rejected");
 
+    // ── Window coordinates + sr round-trip bit-exact, never scientific ────────
+    {
+        WtiIndex w; w.nSamples = 2; w.nChannels = 1; w.sr = 32552.123456789;
+        WtiRow r; r.row = 0; r.unitId = 5; r.link = "drift"; r.bin = 0;
+        r.a = 609.3621333333333; r.b = 3656.1728; r.nSpikes = 3;
+        WtiRow s2 = r; s2.row = 1; s2.bin = 1; s2.a = 1e-7; s2.b = 0.1 + 0.2;
+        w.rows = {r, s2};
+        check(writeWti("wti_prec.tmp.wti", w), "precision: writeWti ok");
+        const WtiIndex rw = readWti("wti_prec.tmp.wti");
+        check(rw.ok && rw.sr == w.sr && rw.rows.size() == 2 &&
+              rw.rows[0].a == r.a && rw.rows[0].b == r.b &&
+              rw.rows[1].a == s2.a && rw.rows[1].b == s2.b,
+              "precision: sr and a/b read back bit-exact");
+        std::ifstream in("wti_prec.tmp.wti"); std::stringstream ss; ss << in.rdbuf();
+        check(ss.str().find(" 0.0000001 ") != std::string::npos && ss.str().find("e-") == std::string::npos,
+              "precision: tiny coordinate in fixed notation, no scientific");
+        check(ss.str().find(" 3656.1728 ") != std::string::npos && ss.str().find("sr 32552.123456789\n") != std::string::npos,
+              "precision: shortest round-trip text");
+    }
+
     std::printf("wti_test: %d checks, %d failures%s\n",
                 g_ran, g_fail, g_fail ? " — FAILURES" : "");
     std::printf(g_fail ? "RESULT: FAIL\n" : "RESULT: PASS\n");

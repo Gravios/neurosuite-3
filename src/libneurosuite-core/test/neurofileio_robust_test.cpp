@@ -9,7 +9,9 @@
 #include "neurosuite/core/neurofileio.h"
 #include "neurosuite/core/template_generate.hpp"   // templategen::readResAny
 
+#include <cmath>
 #include <cstdint>
+#include <iterator>
 #include <cstdio>
 #include <fstream>
 #include <string>
@@ -134,9 +136,29 @@ static void testResDetection()
     }
 }
 
+// ── 2. .evt precision ───────────────────────────────────────────────────────
+static void testEvtPrecision()
+{
+    using namespace neurofileio;
+    const std::string ep = "nfio_rob_evt.tmp.evt";
+    // 3 h into a session: the stream default (6 significant digits) wrote
+    // 10800123.456789 ms as "1.08001e+07" -- 1 s resolution, scientific.
+    const std::vector<EvtEntry> ev = {{10800123.456789, "stim on"}, {0.5, "start"}, {-2.25, "pre"}};
+    check(writeEvt(ep, ev), "evt: writeEvt ok");
+    std::ifstream in(ep); std::string all((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    check(all == "10800123.456789\tstim on\n0.500000\tstart\n-2.250000\tpre\n",
+          "evt: %.6f ms (process_plxconvert convention), no scientific notation");
+    bool ok = false;
+    const std::vector<EvtEntry> r = readEvt(ep, &ok);
+    check(ok && r.size() == 3 && std::fabs(r[0].timeMs - ev[0].timeMs) < 1e-6 && r[0].label == "stim on",
+          "evt: re-read keeps sub-microsecond time + label");
+    std::remove(ep.c_str());
+}
+
 int main()
 {
     testResDetection();
+    testEvtPrecision();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);

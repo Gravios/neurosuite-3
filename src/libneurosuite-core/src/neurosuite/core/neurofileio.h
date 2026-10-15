@@ -19,7 +19,8 @@
  *   .clu.N  first line is the cluster count, then one cluster id per spike.
  *   .res.N  one sample-index timestamp per spike, no header.
  *   .fet.N  first line is the feature count, then one row of ints per spike.
- *   .evt    one "<time_ms> <label>" per line; time is a float in milliseconds.
+ *   .evt    one "<time_ms> <label>" per line; time is a float in milliseconds
+ *           (written "%.6f", the process_plxconvert convention).
  *   .dat    interleaved int16, nbChannels values per sample, no header.
  ***************************************************************************/
 #pragma once
@@ -206,6 +207,9 @@ NEUROSUITE_CORE_EXPORT std::vector<ColDecomp> readColAccepted(const std::string&
 //     row 2 31 adapt 0 1.00 2.00 410
 //     ...
 //
+// `sr`, `a` and `b` are written as the shortest decimal that reads back to the
+// identical double, in fixed notation (never scientific); files written with the
+// former 6-significant-digit default still read.
 // `link` is drift|adapt|collision (unknown tokens tolerated and kept verbatim);
 // `bin` is the 0-based ordinal within that (unit,link) series; a/b are the bin's
 // coordinates (drift: chunk start/end seconds; adapt: energy lo/hi); nSpikes is
@@ -309,6 +313,8 @@ NEUROSUITE_CORE_EXPORT std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int un
 // running summary (0 = an empty placeholder).  Each node line is followed by a
 // `mean <N> …` and a `std <N> …` line carrying the node's running mean and std
 // waveforms (N = nSamples*nChannels, 0 for a placeholder) in .spk element order.
+// a/b are written at round-trip precision in fixed notation (older files carry
+// 6 significant digits; drift::partitionFromWindows absorbs that rounding).
 //
 // v2 stores these SUMMARIES, not the spike indices: a node is updated by folding
 // a new selection's (mean,std,count) into its own with the exact parallel-variance

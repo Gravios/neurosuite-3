@@ -32,6 +32,7 @@
 #include "neurosuite/core/running_stats.hpp"   // combineMeanStd (re-grain = combine overlapping summaries)
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -91,25 +92,64 @@ inline Partition uniformPartition(double tEnd, int k)
     return p;
 }
 
+namespace detail {
+// Half a unit in the 6th significant digit of |x|: the largest error a value
+// written with the iostream default (6 significant digits, as writeWtl/writeWti
+// did before they switched to round-trip precision) can carry.  0 for x == 0 or
+// non-finite x.  E.g. tEnd 3656.1728 s -> 0.005 s ("3656.17" is 0.0028 off).
+inline double sixDigitTol(double x)
+{
+    x = std::fabs(x);
+    if (!(x > 0.0) || !std::isfinite(x)) return 0.0;
+    return 0.5 * std::pow(10.0, std::floor(std::log10(x)) - 5.0);
+}
+// Could a and b be the same value, one (or both) rounded to 6 significant
+// digits?  Uses the larger magnitude's tolerance (a value rounded up across a
+// decade, 9999.996 -> 10000, is still within half a unit of its own decade),
+// plus a hair of slack for the log10/pow arithmetic.
+inline bool sameAtSixDigits(double a, double b)
+{
+    const double tol = std::max(sixDigitTol(a), sixDigitTol(b));
+    return std::fabs(a - b) <= tol * (1.0 + 1e-9);
+}
+} // namespace detail
+
 // Recover the partition from a set of drift-root windows (the tiling read back
-// from a .wtl/.wti): the distinct interior edges, with tEnd the largest `b`.
+// from a .wtl/.wti): the distinct interior edges, with tEnd the largest `b`
+// (or `tEndHint`, the session end from the .res, when that is larger).
 // Degenerate/overlapping inputs are cleaned (sorted-unique edges inside (0,tEnd)).
+//
+// Legacy precision: .wtl/.wti files written before the writers switched to
+// round-trip precision carry window edges rounded to 6 significant digits.  So
+// that such a file does not grow a sliver region at the end, a window edge that
+// matches tEnd to within half a unit in the 6th significant digit of tEnd
+// (detail::sameAtSixDigits) IS tEnd: an edge just below it is not an interior
+// boundary, and a rounded-UP last edge just above `tEndHint` does not extend the
+// session (tEnd stays the hint).  Likewise two interior edges equal at 6
+// significant digits are one boundary (the first kept).  The cost: no boundary
+// can sit within that tolerance (5 ms for a 1000-9999 s session) of tEnd or of
+// another boundary — far below any meaningful drift region.  Exact (current)
+// files are unaffected: equal edges compare equal.
 inline Partition partitionFromWindows(const std::vector<std::pair<double,double>>& windows,
                                       double tEndHint = 0.0)
 {
     Partition p;
     double tEnd = tEndHint;
     for (const auto& w : windows) { tEnd = std::max(tEnd, w.first); tEnd = std::max(tEnd, w.second); }
+    if (tEndHint > 0.0 && tEnd > tEndHint && detail::sameAtSixDigits(tEnd, tEndHint))
+        tEnd = tEndHint;                            // a 6-digit last edge rounded up past the session end
     p.tEnd = tEnd;
     if (tEnd <= 0.0) return p;
     std::vector<double> edges;
-    for (const auto& w : windows) {
-        if (w.first  > 0.0 && w.first  < tEnd) edges.push_back(w.first);
-        if (w.second > 0.0 && w.second < tEnd) edges.push_back(w.second);
-    }
+    auto take = [&](double e) {
+        if (e > 0.0 && e < tEnd && !detail::sameAtSixDigits(e, tEnd)) edges.push_back(e);
+    };
+    for (const auto& w : windows) { take(w.first); take(w.second); }
     std::sort(edges.begin(), edges.end());
-    edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
-    p.bounds = std::move(edges);
+    std::vector<double> bounds;
+    for (double e : edges)
+        if (bounds.empty() || !detail::sameAtSixDigits(bounds.back(), e)) bounds.push_back(e);
+    p.bounds = std::move(bounds);
     return p;
 }
 

@@ -12,10 +12,13 @@
 // node line skipped; and the class/tree navigation helpers.
 
 #include "neurosuite/core/neurofileio.h"
+#include "neurosuite/core/drift_partition.hpp"
 
 #include <cstdio>
+#include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -139,6 +142,75 @@ int main()
     WtlForest rk = readWtl("wtl_kind.tmp.wtl");
     check(rk.ok && rk.nodes.size() == 1 && rk.nodes[0].kind == "my-custom-kind",
           "unknown kind token kept verbatim (extensible)");
+
+    // ── 8. Window precision: a partition survives write -> read exactly ──────
+    // A 3656.1728 s session tiled into 6 regions.  The stream default wrote the
+    // edges at 6 significant digits ("3656.17"), so the re-read last edge fell
+    // short of tEnd and partitionFromWindows grew a 7th sliver region.
+    {
+        namespace dr = neurosuite::drift;
+        const double tEnd = 3656.1728;
+        const dr::Partition p0 = dr::uniformPartition(tEnd, 6);
+        WtlForest pf; pf.version = 2; pf.nSamples = nS; pf.nChannels = nC;
+        dr::tileClassDrift(pf, 31, p0);
+        dr::tileClassDrift(pf, 40, p0);
+        check(writeWtl("wtl_prec.tmp.wtl", pf), "precision: writeWtl ok");
+        const WtlForest rp = readWtl("wtl_prec.tmp.wtl");
+        check(rp.ok && rp.nodes.size() == pf.nodes.size(), "precision: readWtl ok");
+        bool exact = rp.nodes.size() == pf.nodes.size();
+        for (std::size_t i = 0; exact && i < rp.nodes.size(); ++i)
+            exact = rp.nodes[i].a == pf.nodes[i].a && rp.nodes[i].b == pf.nodes[i].b;
+        check(exact, "precision: every window edge reads back bit-exact");
+        std::vector<std::pair<double,double>> win;
+        for (const WtlNode& n : rp.nodes) win.push_back({n.a, n.b});
+        const dr::Partition p1 = dr::partitionFromWindows(win, tEnd);
+        check(p1.nRegions() == 6 && p1.tEnd == tEnd && p1.bounds == p0.bounds,
+              "precision: round-tripped partition has 6 regions with exact bounds");
+
+        // An OLD file (edges at the 6-significant-digit stream default) still
+        // recovers 6 regions: the rounded last edge snaps to tEnd.
+        auto oldFile = [&](double tE) {
+            const dr::Partition q = dr::uniformPartition(tE, 6);
+            std::ostringstream os;                      // default precision = 6 sig. digits
+            os << "wtl 2\nnNodes " << q.nRegions() << "\n";
+            for (int r = 0; r < q.nRegions(); ++r)
+                os << "node " << r << " 31 drift-root -1 " << q.region(r).first << ' '
+                   << q.region(r).second << " 0\nmean 0\nstd 0\n";
+            writeRaw("wtl_prec_old.tmp.wtl", os.str());
+            const WtlForest ro = readWtl("wtl_prec_old.tmp.wtl");
+            std::vector<std::pair<double,double>> w;
+            for (const WtlNode& n : ro.nodes) w.push_back({n.a, n.b});
+            return std::make_pair(q, w);
+        };
+        {
+            const auto qw = oldFile(tEnd);                // last edge "3656.17" < tEnd
+            check(qw.second.back().second != tEnd, "old file: last edge is rounded (premise)");
+            const dr::Partition po = dr::partitionFromWindows(qw.second, tEnd);
+            bool near = po.bounds.size() == qw.first.bounds.size();
+            for (std::size_t i = 0; near && i < po.bounds.size(); ++i)
+                near = std::fabs(po.bounds[i] - qw.first.bounds[i]) <= 0.005;
+            check(po.nRegions() == 6 && po.tEnd == tEnd && near && po.valid(),
+                  "old 6-digit file -> 6 regions ending at tEnd (no sliver)");
+            const dr::Partition pn = dr::partitionFromWindows(qw.second);   // no hint
+            check(pn.nRegions() == 6, "old 6-digit file, no tEnd hint -> 6 regions");
+        }
+        {
+            const double tUp = 3656.1758;                 // rounds UP to "3656.18" > tEnd
+            const auto qw = oldFile(tUp);
+            const dr::Partition po = dr::partitionFromWindows(qw.second, tUp);
+            check(po.nRegions() == 6 && po.tEnd == tUp,
+                  "old file whose last edge rounded above tEnd -> 6 regions, tEnd kept");
+        }
+        {
+            // Near-duplicate interior edges (one exact, one 6-digit) are one boundary.
+            const dr::Partition pd = dr::partitionFromWindows(
+                {{0.0, 1218.7242666}, {1218.72, 2437.4485}, {2437.45, 3656.1728}}, 3656.1728);
+            check(pd.nRegions() == 3, "interior edges equal at 6 significant digits dedupe");
+            // ... while genuinely distinct close bounds (1 ms apart at 100 s) stay.
+            const dr::Partition pk = dr::partitionFromWindows({{0, 100.0}, {100.0, 100.001}, {100.001, 200}});
+            check(pk.nRegions() == 3, "distinct bounds beyond the tolerance are kept");
+        }
+    }
 
     std::printf("wtl_test: %d checks, %d failures%s\n",
                 g_ran, g_fail, g_fail ? " — FAILURES" : "");
