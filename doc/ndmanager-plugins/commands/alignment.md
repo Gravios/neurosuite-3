@@ -60,6 +60,10 @@ For each electrode group the script calls `process_alignspikes`, which:
    sample before the window (`ndm_extractspikes`) or with 0 (detection-pass and
    older `.spk` files); the convention is detected from the file and printed,
    and an undetermined file is treated as seeded from the previous sample.
+   A shift whose window would start before sample 1 or run past the end of
+   `.fil` is not applied (`ndm_extractspikes` writes no row for such a window,
+   so the aligned `.res` could not be re-extracted row for row); the summary
+   counts these as `edge-refused`.
 5. Writes the `.spk` sorted by the new times, and rewrites `.res` so that
    `.res[i] = originalTs[i] + δ[i]`. This keeps the invariant that the peak of
    `.spk[i]` is at file sample `.res[i]`, which Klusters' nudge and any tool that
@@ -84,6 +88,11 @@ pattern, so:
   refused.
 
 See [custom difference patterns and alignment](spike-detection.md#custom-difference-patterns-and-alignment).
+
+**Row count.** The `.spk` must have one row per `.res` time. If it is short
+by whole rows, the usual cause is that `ndm_extractspikes` skipped spikes whose
+window starts before sample 1 or runs past the end of `.fil`; the aligner stops
+and says so. Remove those times (or re-detect) and re-extract first.
 
 **File resolution.** The `.res` is found across all method tags (detection may
 have run under a different token). The `.spk` is resolved as a shared artifact:
@@ -169,6 +178,11 @@ Runs on an existing clustering and realigns each cluster in two stages:
    Because all members move by the same amount, a cluster that is a mixture of
    several units keeps its internal spread. A per-spike PCA refinement would
    pull those units onto one position.
+
+Re-extraction follows the same rules as `ndm_alignspikes`: the extractor's
+arithmetic, the `.spk`'s own seed convention, and no window that starts before
+sample 1 or runs past the end of the raw file (such a spike keeps its previous
+position).
 
 Clusters 0 and 1 (noise and artefact) are not touched, and clusters with fewer
 than 5 spikes are skipped. Stage 2 is skipped for a group whose

@@ -511,6 +511,28 @@ int main(int argc, char** argv) {
                                    a.dryRun ? "rb" : "r+b");
     if (!spkFp) die("cannot open " + spkPath);
 
+    // The .spk must hold one row per spike time.  A short .spk is what
+    // ndm_extractspikes (-R) leaves when spike windows start before sample 1 or
+    // run past the end of the .fil: it writes no row for those, and the
+    // remaining rows can no longer be matched to the .res.
+    {
+        const long long rowBytes = static_cast<long long>(spkElems) * 2;
+        const long long spkBytes = neurosuite::core::detail::sizeOf(spkFp);
+        if (spkBytes != nSpikes * rowBytes) {
+            std::string why = spkPath + " holds " + std::to_string(spkBytes) + " bytes, expected "
+                + std::to_string(nSpikes * rowBytes) + " (" + std::to_string(nSpikes)
+                + " spikes x " + std::to_string(a.nSamp) + " samples x "
+                + std::to_string(nChan) + " channels x 2 bytes)";
+            if (spkBytes >= 0 && spkBytes < nSpikes * rowBytes && spkBytes % rowBytes == 0)
+                why += "; it has " + std::to_string(spkBytes / rowBytes) + " rows for "
+                    + std::to_string(nSpikes) + " spike times.  ndm_extractspikes (-R) "
+                    "writes no row for a spike whose window starts before sample 1 or "
+                    "runs past the end of the .fil.  Remove those spike times from "
+                    + resPath + " (and the .clu) or re-detect, and re-extract";
+            die(why);
+        }
+    }
+
     // How a spike is re-cut from .fil: window geometry and transform exactly as
     // the extractor applies them (see readFilWindow).
     const SpatialOperator op = makeSpatialOperator(nChan);
@@ -623,10 +645,14 @@ int main(int argc, char** argv) {
                 scores[k] = score;
                 if (lag != 0 && score >= a.minScore) {
                     // Tentative shift; re-extract waveform from .fil at
-                    // the new position to avoid wraparound artifacts.
+                    // the new position to avoid wraparound artifacts.  A
+                    // window that would start before sample 1 or run past
+                    // the end is not taken: ndm_extractspikes (-R) writes no
+                    // row for it (it needs the sample before the window), so
+                    // the aligned .res could not be re-extracted row for row.
                     const int newCum = cumShift[i] + lag;
                     const int64_t newStart = resTs[i] + newCum - peakSamp0;
-                    if (newStart < 0 ||
+                    if (newStart < 1 ||
                         newStart + a.nSamp > totalSamples) continue;
                     // Cannot share filFp across threads — guard with
                     // critical for now.  (Per-thread FILE handles are
@@ -678,7 +704,7 @@ int main(int argc, char** argv) {
                     const int64_t i = idxs[static_cast<size_t>(k)];
                     const int newCum = cumShift[i] + s;
                     const int64_t newStart = resTs[i] + newCum - peakSamp0;
-                    if (newStart < 0 ||
+                    if (newStart < 1 ||
                         newStart + a.nSamp > totalSamples) continue;
                     if (!readFilWindow(filFp, newStart, cut, per.data())) continue;
                     for (int e = 0; e < spkElems; ++e) accD[e] += per[e];
@@ -704,7 +730,7 @@ int main(int argc, char** argv) {
                     const int64_t i = idxs[static_cast<size_t>(k)];
                     const int newCum = cumShift[i] + globalShift;
                     const int64_t newStart = resTs[i] + newCum - peakSamp0;
-                    if (newStart < 0 ||
+                    if (newStart < 1 ||
                         newStart + a.nSamp > totalSamples) continue;
                     if (readFilWindow(filFp, newStart, cut,
                                        wavBuf.data() + k * spkElems))

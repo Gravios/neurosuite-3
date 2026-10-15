@@ -628,6 +628,15 @@ int main(int argc, char* argv[])
                 "(%d spikes × %d samp × %d chan × 2 bytes)\n",
                 spkPath.c_str(), (long long)spkSize, (long long)spkExpected,
                 nSpikes, nSamples, nChanGrp);
+        const off_t rowBytes = (off_t)elemsPerSpike * (off_t)sizeof(short);
+        if (spkSize < spkExpected && spkSize % rowBytes == 0)
+            fprintf(stderr,
+                    "process_alignspikes: the .spk has %lld rows for %d spike times.  "
+                    "ndm_extractspikes (-R) writes no row for a spike whose window "
+                    "starts before sample 1 or runs past the end of the .fil, so the "
+                    "rows can no longer be matched to %s.  Remove those spike times "
+                    "from the .res (or re-detect) and re-extract before aligning.\n",
+                    (long long)(spkSize / rowBytes), nSpikes, resPath.c_str());
         fclose(spkF);
         exit(1);
     }
@@ -673,6 +682,7 @@ int main(int argc, char* argv[])
     std::vector<int>    shifts(nSpikes, 0);
     std::vector<double> scores(nSpikes, 0.0);
     int nToRextract = 0;
+    int nEdgeRefused = 0;   // shifts refused because the window would leave the .fil
 
     // Precompute the stationary Gaussian template for path (A).
     std::vector<double> gauss;
@@ -822,19 +832,28 @@ int main(int argc, char* argv[])
 
         // Shifted spikes in file order (extractSpikeWindows needs
         // non-decreasing times; it streams the .fil with one forward cursor).
-        // A shift whose window would leave the recording is not applied.
+        //
+        // A shift is applied only if its window lies where ndm_extractspikes
+        // (-R) would cut it: starting at sample 1 or later (it needs the sample
+        // before the window for the stderiv seed) and ending inside the file.
+        // -R writes no row for any other window, so a later re-extraction at
+        // the aligned .res would produce fewer rows than .res -- the spike is
+        // left unshifted instead.  Raw windows follow the same rule so the two
+        // families agree on which spikes move.
         std::vector<int> relist;
         relist.reserve(nToRextract);
         for (int i = 0; i < nSpikes; ++i) {
             if (shifts[i] == 0) continue;
             const int64_t winStart = resTs[i] + shifts[i] - peakSampleIdx;
-            if (winStart < 0 || winStart + nSamples > filSamples) {
+            if (winStart < 1 || winStart + nSamples > filSamples) {
                 if (verbose)
                     fprintf(stderr,
-                            "  warning: spike %d at ts=%lld shift=%d would read "
-                            "outside the .fil; left unshifted\n",
+                            "  warning: spike %d at ts=%lld shift=%d would move its "
+                            "window off the .fil (start < 1 or past the end); "
+                            "left unshifted\n",
                             i, (long long)resTs[i], shifts[i]);
                 shifts[i] = 0;
+                ++nEdgeRefused;
                 continue;
             }
             relist.push_back(i);
@@ -972,6 +991,8 @@ int main(int argc, char* argv[])
         fprintf(stderr, "  range=[%+d,%+d]", minSh, maxSh);
     if (nReordered > 0)
         fprintf(stderr, "  reordered=%d", nReordered);
+    if (nEdgeRefused > 0)
+        fprintf(stderr, "  edge-refused=%d", nEdgeRefused);
     fprintf(stderr, "\n");
     fprintf(stderr,
             "  NOTE: delete %s.fet%s%d and %s.pca%s%d then re-run "
