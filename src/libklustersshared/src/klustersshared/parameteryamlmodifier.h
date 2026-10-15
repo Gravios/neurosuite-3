@@ -180,6 +180,7 @@ public:
 private:
     YAML::Node root;   ///< live YAML tree (Map or Null if never parsed)
     QString     parsedPath;   ///< absolute path parseFile() loaded, if any
+    std::string sourceText;   ///< that file's text: its comments and layout are kept on save
     std::string parsedText;   ///< that tree as emitted, to detect a no-op save
 
     // Helpers

@@ -90,6 +90,17 @@ if(NS_BUILD_TESTS)
     target_link_libraries(klustersshared_yamlwriter_test PRIVATE Neurosuite::qt yaml-cpp)
     add_test(NAME klustersshared_yamlwriter_test COMMAND klustersshared_yamlwriter_test)
 
+    # Saving keeps the file's layout (yamlformat.cpp, Qt-free): comments,
+    # inline lists, quoting; round trips over the repository's templates.
+    add_executable(klustersshared_yamlformat_test
+        test/yamlformat_test.cpp src/klustersshared/yamlformat.cpp)
+    target_include_directories(klustersshared_yamlformat_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+    target_compile_definitions(klustersshared_yamlformat_test PRIVATE KLUSTERSSHARED_STATICLIB)
+    target_link_libraries(klustersshared_yamlformat_test PRIVATE Qt6::Core yaml-cpp)  # Qt: export-macro header only
+    add_test(NAME klustersshared_yamlformat_test
+        COMMAND klustersshared_yamlformat_test "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+
     # ItemColors / ChannelColors: copies (construction and assignment) are deep.
     add_executable(klustersshared_colors_test test/colors_test.cpp)
     target_include_directories(klustersshared_colors_test

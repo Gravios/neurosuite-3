@@ -70,6 +70,9 @@ every other key, group entry and top-level block (`probeId`, `sitePositions_um`,
 `klustakwik:`, `bitResolution_uV`, `sourceRecording`, ...) is kept. Groups are paired with
 the existing ones like `ParameterYamlModifier` does (same channel set first, then position); a
 group left out is removed. ndmanager saves this way, starting from the file it opened.
+The text is written by `yamlformat::emitWithLayout` (`yamlformat.h`, also used by
+`ParameterYamlModifier`), which takes comments, inline (flow) style, quoting and spacing from
+the base file, so a save changes only the lines whose values changed.
 
 ```cpp
 ParameterYamlWriter writer;

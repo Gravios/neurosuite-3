@@ -798,6 +798,17 @@ corrected; the text describes the problem as it was.
     Preferences key editor now records one combination (Qt ≥ 6.5 via
     `setMaximumSequenceLength`, older Qt by truncating).
 
+42. **Fixed (0528):** every save (ndmanager's `ParameterYamlWriter`,
+    NeuroScope/Klusters' `ParameterYamlModifier`) re-emitted the file through
+    a block-style yaml-cpp emitter: comments were dropped, inline lists
+    expanded and quotes removed (`'false'` became the boolean `false` for
+    PyYAML). Both now write through `yamlformat::emitWithLayout`
+    (`klustersshared/yamlformat.{h,cpp}`, Qt-free), which keeps comments,
+    flow style, quoting and spacing from the file that was loaded. Test:
+    `klustersshared_yamlformat_test` (round trips over the repository's
+    templates; the 3596-line `templates/template.yaml` comes back identical
+    apart from one multi-line quoted string written as a literal block).
+
 **Widgets and utilities**
 
 25. **Fixed (0493):** both have a deep-copy `operator=` (copy-and-swap), and

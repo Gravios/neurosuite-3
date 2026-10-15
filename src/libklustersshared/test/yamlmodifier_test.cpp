@@ -284,7 +284,11 @@ int main()
         std::ifstream in(path.toStdString());
         std::string first;
         std::getline(in, first);
-        chk(first != "# hand-written note", "a real change rewrites the file");
+        // Since the layout-keeping emitter (yamlformat.h) a real change is
+        // written without losing the file's comments.
+        chk(first == "# hand-written note", "a real change keeps the comment");
+        chk(str(YAML::LoadFile(path.toStdString())["fieldPotentials"]["lfpSamplingRate"]) == "1250",
+            "a real change is written");
 
         writeSession(path);
         ParameterYamlModifier mod2;

@@ -4,6 +4,7 @@
 
 #include "parameteryamlmodifier.h"
 #include "channelcolors.h"
+#include "yamlformat.h"   // emitWithLayout
 
 #include <QDebug>
 #include <QFile>
@@ -30,14 +31,11 @@ ParameterYamlModifier::ParameterYamlModifier()
 // ---------------------------------------------------------------------------
 
 namespace {
-std::string emitDocument(const YAML::Node& node)
+// The tree in the layout of the text it was parsed from: comments, inline
+// lists and quoting survive a save (yamlformat.h).
+std::string emitDocument(const YAML::Node& node, const std::string& sourceText)
 {
-    YAML::Emitter emitter;
-    emitter.SetIndent(2);
-    emitter.SetMapFormat(YAML::Block);
-    emitter.SetSeqFormat(YAML::Block);
-    emitter << node;
-    return std::string(emitter.c_str(), emitter.size());
+    return yamlformat::emitWithLayout(node, sourceText);
 }
 } // namespace
 
@@ -45,6 +43,7 @@ bool ParameterYamlModifier::parseFile(const QString& path)
 {
     parsedPath.clear();
     parsedText.clear();
+    sourceText.clear();
     try {
         root = YAML::LoadFile(path.toStdString());
         if (!root.IsDefined() || !root.IsMap()) {
@@ -53,7 +52,8 @@ bool ParameterYamlModifier::parseFile(const QString& path)
             return false;
         }
         parsedPath = QFileInfo(path).absoluteFilePath();
-        parsedText = emitDocument(root);
+        sourceText = yamlformat::readText(path.toStdString());
+        parsedText = emitDocument(root, sourceText);
         return true;
     } catch (const YAML::Exception& e) {
         qWarning() << "ParameterYamlModifier: parse error in" << path
@@ -68,12 +68,13 @@ bool ParameterYamlModifier::writeToFile(const QString& path)
     // Ensure the version/creator header is present (needed for new files)
     if (!root["parameters"]) {
         root["parameters"]["version"] = "1.0";
+        root["parameters"]["version"].SetTag("!");  // a string: '1.0', not 1.0
         root["parameters"]["creator"] = "neuroscope-3";
     }
 
     std::string text;
     try {
-        text = emitDocument(root);
+        text = emitDocument(root, sourceText);
     } catch (const std::exception& e) {
         qWarning() << "ParameterYamlModifier: emit error:" << e.what();
         return false;

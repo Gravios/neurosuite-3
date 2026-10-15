@@ -314,6 +314,13 @@ extra `acquisitionSystem` keys, a group's `probeId` / `shankIndex` / `sitePositi
 is removed with its keys. **Save as Default** is the exception: the default template is
 written from ndmanager's fields alone, so one session's blocks do not reach every new file.
 
+The file's layout survives too: comments (including commented-out parameters), inline lists
+such as `channels: [0, 1, 2, 3]`, quoting (`value: 'false'` stays a string) and the spacing
+around values are kept, and saving an unchanged session rewrites the same text. Comments
+belong to the key or list item below them, so a program's comments follow the program when
+the list is reordered and leave with it when it is removed. Lists ndmanager creates are written
+inline when they hold plain values. NeuroScope and Klusters save the same way.
+
 ### YAML schema (abbreviated)
 
 ```yaml

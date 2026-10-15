@@ -132,6 +132,7 @@ public:
 
 private:
     YAML::Node doc;
+    std::string baseText;   ///< text of the base document: its comments and layout are kept
 
     static YAML::Node strNode(const QString& s);
 };

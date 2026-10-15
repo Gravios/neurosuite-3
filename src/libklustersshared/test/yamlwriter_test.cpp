@@ -22,6 +22,7 @@
 
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 static int fails = 0;
@@ -265,6 +266,37 @@ int main()
         Model m2 = load(path);
         const YAML::Node d2 = save(m2, path, path);
         chk(YAML::Dump(d2) == YAML::Dump(d), "second save writes the same document");
+    }
+
+    std::printf("comments, inline lists and quoting survive a save:\n");
+    {
+        // The session as a person wrote it: a header note, an end-of-line
+        // comment, a comment above a group.
+        std::string text = std::string("# rat 12, day 3\n") + kSession;
+        const std::string from = "  nChannels: 8\n", to = "  nChannels: 8          # two tetrodes\n";
+        text.replace(text.find(from), from.size(), to);
+        const std::string grp = "    - channels: [4, 5, 6, 7]\n";
+        text.insert(text.find(grp), "    # second tetrode\n");
+        std::ofstream(path.toStdString()) << text;
+
+        Model m = load(path);
+        save(m, path, path);
+        std::ifstream in(path.toStdString());
+        std::stringstream ss;
+        ss << in.rdbuf();
+        const std::string out = ss.str();
+        chk(out.rfind("# rat 12, day 3\n", 0) == 0, "header comment kept");
+        chk(out.find("  nChannels: 8          # two tetrodes\n") != std::string::npos, "end-of-line comment kept");
+        chk(out.find("    # second tetrode\n    - channels: [4, 5, 6, 7]\n") != std::string::npos,
+            "group comment and inline channel list kept");
+        chk(out.find("  version: \"1.0\"\n") != std::string::npos, "quoted version stays quoted");
+
+        Model m2 = load(path);
+        save(m2, path, path);
+        std::ifstream in2(path.toStdString());
+        std::stringstream ss2;
+        ss2 << in2.rdbuf();
+        chk(ss2.str() == out, "second save leaves the text unchanged");
     }
 
     std::printf("Save As: base is the opened file, target is new:\n");

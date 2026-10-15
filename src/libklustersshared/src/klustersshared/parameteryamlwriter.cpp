@@ -5,6 +5,7 @@
 #include "parameteryamlwriter.h"
 #include "parameteryamlmodifier.h"       // matchExistingGroups
 #include "parameteryamlreader_probes.h"  // writeProbesSection, ProbeEntry
+#include "yamlformat.h"                  // emitWithLayout
 
 #include <QDebug>
 #include <QFile>
@@ -86,6 +87,7 @@ ParameterYamlWriter::ParameterYamlWriter()
     // only when the intermediate node is fetched as a live reference first.
     YAML::Node params = doc["parameters"];
     params["version"] = "1.0";
+    params["version"].SetTag("!");   // a string: written '1.0', not the number 1.0
     params["creator"] = "ndManager-yaml";
 }
 
@@ -109,10 +111,11 @@ bool ParameterYamlWriter::setBaseDocument(const QString& path)
     if (!base.IsMap()) return false;
 
     doc = base;
+    baseText = yamlformat::readText(path.toStdString());
     // The version/creator header is only filled in where the file lacks it:
     // like ParameterYamlModifier, a save does not restamp what it did not model.
     YAML::Node params = mapAt(doc, "parameters");
-    if (!params["version"]) params["version"] = "1.0";
+    if (!params["version"]) { params["version"] = "1.0"; params["version"].SetTag("!"); }
     if (!params["creator"]) params["creator"] = "ndManager-yaml";
     return true;
 }
@@ -131,12 +134,16 @@ bool ParameterYamlWriter::writeTofile(const QString& path)
             qWarning() << "ParameterYamlWriter: cannot open" << tmpPath << "for writing";
             return false;
         }
-        YAML::Emitter emitter(out);
-        emitter.SetIndent(2);
-        emitter.SetMapFormat(YAML::Block);
-        emitter.SetSeqFormat(YAML::Block);
-        emitter << doc;
+        // The base document's comments, inline lists and quoting are kept
+        // (yamlformat.h); a new file gets the same block layout as before,
+        // with lists of scalars written inline.
+        out << yamlformat::emitWithLayout(doc, baseText);
         out.close();
+        if (!out) {
+            qWarning() << "ParameterYamlWriter: write error on" << tmpPath;
+            QFile::remove(tmpPath);
+            return false;
+        }
     } catch (const std::exception& e) {
         qWarning() << "ParameterYamlWriter: write error:" << e.what();
         QFile::remove(tmpPath);
