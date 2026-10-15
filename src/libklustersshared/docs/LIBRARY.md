@@ -770,7 +770,10 @@ corrected; the text describes the problem as it was.
 
 **Widgets and utilities**
 
-25. `ItemColors` and `ChannelColors` own raw pointers and define a copy
+25. **Fixed (0493):** both have a deep-copy `operator=` (copy-and-swap), and
+    `ChannelColors`' copy constructor copies every channel — it copied the
+    first one N times. Test: `klustersshared_colors_test`.
+    Was: `ItemColors` and `ChannelColors` own raw pointers and define a copy
     constructor but no copy assignment; an assignment copies the pointers and
     both objects delete them.
 26. `Utilities::compareVersion` compares components as strings (`"10" < "9"`)

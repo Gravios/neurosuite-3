@@ -19,6 +19,7 @@
 
 //Added by qt3to4:
 #include <QList>
+#include <utility>             // std::swap
 #include <QDebug>
 
 
@@ -36,8 +37,17 @@ ChannelColors::ChannelColors(const ChannelColors& origin){
     //Insert into channelList a deep copy of all the elements of origin.channelList
     QList<ChannelColor*> originChannelList =  origin.channelList;
     for (int i = 0; i < originChannelList.size(); ++i) {
-        channelList.append(new ChannelColor(*originChannelList.at(0)));
+        channelList.append(new ChannelColor(*originChannelList.at(i)));
     }
+}
+
+// Copy-and-swap, as ItemColors::operator=.
+ChannelColors& ChannelColors::operator=(const ChannelColors& other){
+    if(this != &other){
+        ChannelColors copy(other);
+        channelList.swap(copy.channelList);
+    }
+    return *this;
 }
 
 QColor ChannelColors::color(int identifier){

@@ -21,6 +21,7 @@
 #include <QList>
 #include <QDebug>
 #include <algorithm>           // std::stable_sort (sortByItemId)
+#include <utility>             // std::swap
 
 ItemColors::ItemColors()
     :itemList(),
@@ -42,6 +43,18 @@ ItemColors::ItemColors(const ItemColors& origin):colorChanged(origin.colorChange
     for (int i = 0; i < originItemList.size(); ++i) {
         itemList.append(new ItemColor(*originItemList.at(i)));
     }
+}
+
+// Copy-and-swap: build the deep copy first, then exchange it with ours, so the
+// old items are deleted by the temporary and self-assignment is harmless.  The
+// implicit operator= copied the pointers and both objects then deleted them.
+ItemColors& ItemColors::operator=(const ItemColors& other){
+    if(this != &other){
+        ItemColors copy(other);
+        itemList.swap(copy.itemList);
+        std::swap(colorChanged, copy.colorChanged);
+    }
+    return *this;
 }
 
 QColor ItemColors::color(int identifier, SelectionMode mode){

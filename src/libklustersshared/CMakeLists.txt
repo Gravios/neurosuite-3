@@ -84,6 +84,13 @@ if(NS_BUILD_TESTS)
     target_link_libraries(klustersshared_yamlmodifier_test PRIVATE Neurosuite::qt yaml-cpp)
     add_test(NAME klustersshared_yamlmodifier_test COMMAND klustersshared_yamlmodifier_test)
 
+    # ItemColors / ChannelColors: copies (construction and assignment) are deep.
+    add_executable(klustersshared_colors_test test/colors_test.cpp)
+    target_include_directories(klustersshared_colors_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+    target_link_libraries(klustersshared_colors_test PRIVATE Neurosuite::qt Qt6::Gui)
+    add_test(NAME klustersshared_colors_test COMMAND klustersshared_colors_test)
+
     # sdiffPairs grammar (sdiff_pairs.h, header-only, no Qt): trees, sets,
     # strict positions; malformed patterns are rejected, not reinterpreted.
     add_executable(klustersshared_sdiff_pairs_test test/sdiff_pairs_test.cpp)

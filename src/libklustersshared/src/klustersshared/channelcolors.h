@@ -37,6 +37,8 @@ public:
   ChannelColors();
   virtual ~ChannelColors();
   ChannelColors(const ChannelColors& channelcolors);
+  /** Deep copy: the channels are copied, never shared (both objects own theirs). */
+  ChannelColors& operator=(const ChannelColors& other);
 
 
 public:

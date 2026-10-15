@@ -40,6 +40,8 @@ public:
   ItemColors();
   virtual ~ItemColors();
   ItemColors(const ItemColors& itemcolors);
+  /** Deep copy: the items are copied, never shared (both objects own theirs). */
+  ItemColors& operator=(const ItemColors& other);
 
 
 public:
