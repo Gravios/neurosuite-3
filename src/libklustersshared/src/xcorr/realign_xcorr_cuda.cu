@@ -90,12 +90,18 @@ __global__ void xcorr_kernel(
     sh_lag  [threadIdx.x] = 0.0f;
     __syncthreads();
 
+    // Constant across lags (full-waveform energies).  denom <= 1e-12 means the
+    // spike or the template has zero energy: the correlation is undefined and
+    // the result is forced to shift 0 / score 0 below, matching the OMP/SYCL
+    // back ends.
+    const double denom = static_cast<double>(tmplEnergyBuf[0])
+                       * static_cast<double>(spkSqrtEnergy[sp]);
+    const bool defined = denom > 1e-12;
+
     // Only the nLags real lag candidates compute and store; padding lanes keep
     // their -FLT_MAX init so they never win the reduction (and do no work).
-    if (static_cast<int>(threadIdx.x) < nLags) {
+    if (defined && static_cast<int>(threadIdx.x) < nLags) {
         const int16_t* spk = waveforms + static_cast<long long>(sp) * nChan * nSamp;
-        const double denom = static_cast<double>(tmplEnergyBuf[0])
-                           * static_cast<double>(spkSqrtEnergy[sp]);
         double num = 0.0;
         // Circular shift — all samples contribute at every lag.
         for (int ch = 0; ch < nChan; ++ch) {
@@ -107,7 +113,7 @@ __global__ void xcorr_kernel(
                      * static_cast<double>(sch[sLag]);
             }
         }
-        float score = (denom > 1e-12) ? static_cast<float>(num / denom) : 0.0f;
+        const float score = static_cast<float>(num / denom);
         sh_score[threadIdx.x] = score;
         sh_lag  [threadIdx.x] = static_cast<float>(lag);
     }
@@ -129,11 +135,11 @@ __global__ void xcorr_kernel(
     }
 
     if (threadIdx.x == 0) {
-        float best = sh_score[0];
-        int   blag = static_cast<int>(sh_lag[0]);
+        float best = defined ? sh_score[0] : 0.0f;
+        int   blag = defined ? static_cast<int>(sh_lag[0]) : 0;
         // +bestLag: spike peak is at peakSamp0+bestLag, so ts is bestLag too early;
         // caller does newTs = ts + shifts_out to correct.
-        shifts_out[sp] = (best >= minScore) ? blag : 0;
+        shifts_out[sp] = (defined && best >= minScore) ? blag : 0;
         scores_out[sp] = best;
     }
 }

@@ -135,7 +135,10 @@ bool ComputeClusterShiftsFlat(
     outScores.assign(static_cast<size_t>(nSpikes), 0.0f);
 
     // ── Run the xcorr dispatcher with minScore=0; pre-aligned template
-    //    ensures lag=0 wins naturally for well-aligned spikes.
+    //    ensures lag=0 wins naturally for well-aligned spikes.  A zero-energy
+    //    spike (a zero-filled failed read) or a zero template has no defined
+    //    correlation and comes back as shift 0 / score 0 regardless of
+    //    minScore, so callers that commit every nonzero shift leave it alone.
     const int rc = XcorrDispatch::compute(
         waveBuf.data(), tmplBuf.data(),
         nSpikes, nChan, nSamples,

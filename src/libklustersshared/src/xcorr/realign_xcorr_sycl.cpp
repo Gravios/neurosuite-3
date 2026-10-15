@@ -83,11 +83,21 @@ static void k_xcorr_scores(
 static void k_reduce(
     item<1> it,
     const float* scores,   // [nSpikes × nLags]
+    float        sqrtTmplE,
+    const float* spkSqrtE, // [nSpikes]
     int nLags, int maxShift, float minScore,
     int*   shifts_out,
     float* scores_out)
 {
     int sp = static_cast<int>(it.get_id(0));
+    // Zero-energy spike or template: the correlation is undefined (every lag
+    // scored 0).  Report shift 0 / score 0 whatever minScore is, matching the
+    // OMP/CUDA/HIP back ends, instead of the first lag -maxShift.
+    if (!(sqrtTmplE * spkSqrtE[sp] > 1e-12f)) {
+        shifts_out[sp] = 0;
+        scores_out[sp] = 0.0f;
+        return;
+    }
     float best = -FLT_MAX;
     int   blag = 0;
     for (int li = 0; li < nLags; ++li) {
@@ -303,7 +313,8 @@ int xcorr_sycl_compute(
             h.parallel_for(
                 range<1>(static_cast<size_t>(nSpikes)),
                 [=](item<1> it) {
-                    k_reduce(it, d_scores, nLags, maxShift, minScore,
+                    k_reduce(it, d_scores, sqrtTmplE, d_spkSqrtE,
+                             nLags, maxShift, minScore,
                              d_shifts, d_sout);
                 });
         });

@@ -94,6 +94,16 @@ int xcorr_omp_compute(
             }
         const double denom = sqrtTmplEnergy * std::sqrt(spkEnergy);
 
+        // Undefined correlation: a zero-energy spike (e.g. a zero-filled slot
+        // whose read failed) or a zero template scores 0 at every lag, and the
+        // search below would return the first lag, -maxShift.  Report shift 0
+        // and score 0 instead; the shift is forced to 0 whatever minScore is.
+        if (!(denom > 1e-12)) {
+            shifts_out[sp] = 0;
+            scores_out[sp] = 0.0f;
+            continue;
+        }
+
         float bestScore = -FLT_MAX;
         int   bestLag   = 0;
 
@@ -112,9 +122,7 @@ int xcorr_omp_compute(
                 }
             }
 
-            float score = (denom > 1e-12)
-                          ? static_cast<float>(num / denom)
-                          : 0.0f;
+            const float score = static_cast<float>(num / denom);
 
             if (score > bestScore) {
                 bestScore = score;

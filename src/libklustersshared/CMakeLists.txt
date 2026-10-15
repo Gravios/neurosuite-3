@@ -117,6 +117,14 @@ if(NS_BUILD_TESTS)
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/xcorr")
     target_link_libraries(klustersshared_xcorr_dispatch_test PRIVATE Threads::Threads)
     add_test(NAME klustersshared_xcorr_dispatch_test COMMAND klustersshared_xcorr_dispatch_test)
+
+    # Realignment kernel edge cases (no Qt): undefined (zero-energy) xcorr.
+    add_executable(klustersshared_realign_kernels_test
+        test/realign_kernels_test.cpp
+        src/xcorr/realign_xcorr_omp.cpp)
+    target_include_directories(klustersshared_realign_kernels_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/xcorr")
+    add_test(NAME klustersshared_realign_kernels_test COMMAND klustersshared_realign_kernels_test)
 endif()
 
 # ---------------------------------------------------------------------------

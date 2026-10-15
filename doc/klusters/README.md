@@ -895,7 +895,7 @@ For each spike in the selected clusters:
 
 1. The cluster mean waveform is computed.
 2. The spike's waveform is cross-correlated against the mean template at each lag within ±maxShift samples.
-3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the eigenvector basis matching the session method (`pca.stderiv.N` when the method is stderiv, else `pca.standard.N`).
+3. If the peak correlation exceeds `minScore`, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the eigenvector basis matching the session method (`pca.stderiv.N` when the method is stderiv, else `pca.standard.N`). A spike whose snippet is all zeros (or a cluster whose mean is all zeros) has no defined correlation; it is never shifted, whatever `minScore` is, and its score counts as 0.
 4. Each spike is written back to its own row; rows are never reordered, so every method's `.spk`/`.fet` and the `.clu` stay aligned. A spike's new time may pass a neighbouring spike's.
 
 ### Pipeline variant awareness

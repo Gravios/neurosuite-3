@@ -1716,8 +1716,10 @@ int KK::KlustersStyleRealignAllClusters(int nChan, int nSamplesPerSpike)
                                        waveSamples, dst)) {
                 ++nReadOk;
             } else {
-                // Zero-fill the failed slot; it will contribute zero to the
-                // mean and the xcorr will return shift=0 for it.
+                // Zero-fill the failed slot; it contributes zero to the mean,
+                // and a zero-energy spike has an undefined correlation, for
+                // which every xcorr back end returns shift 0 / score 0
+                // (realign_xcorr.h), so it is never committed below.
                 std::memset(dst, 0,
                             static_cast<size_t>(waveSamples) *
                             sizeof(int16_t));

@@ -16,6 +16,13 @@
  * required shift.  Spikes whose best score is below minScore are left
  * unchanged (they may be noise or belong to an adjacent cluster).
  *
+ * Undefined correlation: when the spike or the template has zero energy
+ * (denominator <= 1e-12, e.g. a zero-filled spike whose read failed) every
+ * lag scores 0 and no lag is preferred.  Every back end then returns
+ * shift 0 and score 0 for that spike, whatever minScore is (including 0 or
+ * negative), so it is never moved.  The score stays finite so callers that
+ * average or print scores are unaffected.
+ *
  * The template is the mean waveform over all spikes in the cluster,
  * computed by the caller before entering this function.
  *
