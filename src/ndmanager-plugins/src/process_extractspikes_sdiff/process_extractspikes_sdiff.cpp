@@ -83,6 +83,7 @@ double computeSDiff(const short *record,
         return val;
 
     case SDIFF_FIRST:
+        if(nChanGrp == 1) return val;   // no neighbour (refused in main)
         return (idx < nChanGrp - 1)
                ? val - record[chanList[idx + 1]]
                : val - record[chanList[idx - 1]];
@@ -96,8 +97,9 @@ double computeSDiff(const short *record,
 
     case SDIFF_ALLPAIRS:
     default: {
-        // Single-channel group: no neighbours, all-pairwise is undefined.
-        // Detection will find nothing; use order 0 for single-channel groups.
+        // Single-channel group: no neighbours, all-pairwise is identically
+        // zero (a zero threshold would make every sample a spike).  main()
+        // refuses such groups for any order but 0; kept as a guard.
         if(nChanGrp == 1) return 0.0;
         double sum = 0.0;
         for(int j = 0; j < nChanGrp; j++) sum += record[chanList[j]];
@@ -941,6 +943,25 @@ int main(int argc, char *argv[])
         for(int j = 0; j < MAX_CHANNO; j++) channelList[i][j] = -1;
     }
     const int nbGroups = getChannelsFromArg(channelNb_grp, channelList, args);
+
+    // A spatial derivative needs neighbours.  On a one-channel group the
+    // all-pairs derivative is identically zero, so the threshold is zero and
+    // every sample crosses it; the first-difference order would read a
+    // neighbour that does not exist, and the Laplacian has none either.
+    // Refuse before any work, naming the group, rather than produce that.
+    if(args.sdiffOrder != SDIFF_NONE) {
+        for(int g = 0; g < nbGroups; g++) {
+            if(channelNb_grp[g] == 1) {
+                cerr << "error: group " << g+1 << " has a single channel ("
+                     << channelList[g][0] << "); a spatial derivative (order "
+                     << (int)args.sdiffOrder << ") needs at least two channels.\n"
+                     << "       Use derivative order 0 (-d 0; ndm_detectspikes --method "
+                        "sdiff --methodOrder 0) or the standard method,\n"
+                     << "       or group the channel with its neighbours.\n";
+                exit(1);
+            }
+        }
+    }
 
     // patch86: in -R mode, dispatch to mmap-based re-extract and return.
     if(args.useExistingRes) {

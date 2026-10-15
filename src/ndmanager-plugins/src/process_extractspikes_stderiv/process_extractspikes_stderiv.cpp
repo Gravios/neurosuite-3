@@ -123,6 +123,7 @@ double computeSDiff(const short *record,
         return val;
 
     case SDIFF_FIRST:
+        if(nChanGrp == 1) return val;   // no neighbour (refused in main)
         return (idx < nChanGrp - 1)
                ? val - record[chanList[idx + 1]]
                : val - record[chanList[idx - 1]];
@@ -153,8 +154,8 @@ double computeSDiff(const short *record,
 
     case SDIFF_ALLPAIRS:
     default: {
-        // Single-channel group: no neighbours, all-pairwise is undefined.
-        // Detection will find nothing; use order 0 for single-channel groups.
+        // Single-channel group: no neighbours, all-pairwise is identically
+        // zero.  main() refuses such groups for any order but 0.
         if(nChanGrp == 1) return 0.0;
         double sum = 0.0;
         for(int j = 0; j < nChanGrp; j++) sum += record[chanList[j]];
@@ -2174,6 +2175,7 @@ int main(int argc, char *argv[])
                     switch(args.sdiffOrder) {
                     case SDIFF_NONE: sd = v; break;
                     case SDIFF_FIRST:
+                        if(nCG==1){ sd=xPrev[0]; break; }
                         sd = (ci<nCG-1) ? xPrev[ci]-xPrev[ci+1]
                                         : xPrev[ci]-xPrev[ci-1]; break;
                     case SDIFF_LAPLACIAN:
@@ -2229,6 +2231,7 @@ int main(int argc, char *argv[])
                     switch(args.sdiffOrder) {
                     case SDIFF_NONE: sd = row[ci]; break;
                     case SDIFF_FIRST:
+                        if(nCG==1){ sd=row[ci]; break; }
                         sd = (ci<nCG-1) ? row[ci]-row[ci+1] : row[ci]-row[ci-1]; break;
                     case SDIFF_LAPLACIAN:
                         if(nCG==1){ sd=row[ci]; break; }
@@ -2303,6 +2306,7 @@ int main(int argc, char *argv[])
                     switch(args.sdiffOrder) {
                     case SDIFF_NONE: sd = val; break;
                     case SDIFF_FIRST:
+                        if(nCG==1){ sd=val; break; }
                         sd = (ci<nCG-1) ? val-rt[ci+1] : val-rt[ci-1]; break;
                     case SDIFF_LAPLACIAN:
                         if(nCG==1){ sd=val; break; }

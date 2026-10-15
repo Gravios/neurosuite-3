@@ -181,6 +181,9 @@
 						<literal>2</literal> — discrete Laplacian (default,
 						<emphasis>s[i] = x[i] − ½(x[i−1] + x[i+1])</emphasis>,
 						edge channels use one-sided differences).
+						Any order but <literal>0</literal> needs at least two
+						channels per group; a one-channel group is refused with
+						an error naming it.
 					</para>
 				</listitem>
 			</varlistentry>

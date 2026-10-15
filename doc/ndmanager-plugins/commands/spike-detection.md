@@ -404,7 +404,9 @@ Spatial-derivative orders (`methodOrder`, engine `-d`; default 3):
 
 Orders 1 and 3 (and the custom orders 4 and 5) leave one linearly dependent
 channel, which the PCA step drops.  Orders 1 and 2 depend on the channel order
-of the group.
+of the group.  A one-channel group has no neighbours, so `sdiff` and `stderiv`
+refuse any order but 0 on it, naming the group: use order 0, the `standard`
+method, or group the channel with its neighbours.
 
 Qualified `stderiv` tokens state the transform in the file name:
 
