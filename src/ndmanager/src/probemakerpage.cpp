@@ -1600,8 +1600,9 @@ bool ProbeMakerPage::loadFromFile(const QString& path, QString* error)
     //       sites at x = k * spacing_um ± (within-shank lateral offset)
     //       for shank k.  Single-shank probes have x in a small range
     //       (typically -W/2 to +W/2) around the shank's centreline.
-    //   y = depth from the TIP of the shank, growing toward the head.
-    //       Sites are typically listed tip-to-base (y ascending).
+    //   y = height above the TIP of the shank, growing toward the head.
+    //       The library files list each shank's sites top first (y
+    //       descending), so channel numbers ascend with depth.
     //
     // Internal model conventions (see ProbeShank/ProbeChannel docs):
     //   Each ProbeChannel::posUm is in the shank's LOCAL frame, with

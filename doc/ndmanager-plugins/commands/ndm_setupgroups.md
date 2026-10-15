@@ -36,8 +36,18 @@ still read but only `probeId` is written).
 **Channel assignment** — when `channelMap.map` is null (all supplied NeuroNexus files):
 
 ```
-shank i → [offset + i × n_per_shank, …, offset + (i+1) × n_per_shank − 1]
+shank i → [offset + n_0 + … + n_(i−1), …, offset + n_0 + … + n_i − 1]
 ```
+
+where `n_k` is `sites.count_per_shank` (one number for every shank, or a
+list).  Site *j* of the probe file is channel `offset + j` (or
+`offset + channelMap.map[j]`) and gets `sites.geometry[j]` as its entry in
+`sitePositions_um`.  The library files list each shank's sites top first, so
+channel numbers ascend with depth (see [`.probe`](../formats/probe.md)).
+
+Sessions set up before the library geometry was corrected (sites listed tip
+first, `y = 0` at the lowest site) carry the old `sitePositions_um`; run
+`ndm_setupgroups` again with `overwrite: true` to refresh them.
 
 **Probe library search order** (lowest → highest priority):
 

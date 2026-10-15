@@ -99,7 +99,8 @@
 						Grouped channel list (e.g. <literal>0,1,2:4,5,7</literal> for
 						2 groups with 3 channels each). Channels within each group
 						<emphasis>must</emphasis> be listed in physical probe order
-						(tip-to-base) so that spatial neighbours are adjacent.
+						along the shank (top to tip, as ndm_setupgroups writes
+						them, or the reverse) so that spatial neighbours are adjacent.
 					</para>
 				</listitem>
 			</varlistentry>

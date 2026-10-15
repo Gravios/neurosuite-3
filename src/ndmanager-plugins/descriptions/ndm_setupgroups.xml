@@ -51,16 +51,19 @@ the newly assigned group IDs.
 Channel assignment
   If channelMap.map is null (the common case) channels are assigned
   sequentially within each shank:
-    shank i → [offset + i×n_per_shank, …, offset + (i+1)×n_per_shank − 1]
-  where offset = probes[].channelOffset and n_per_shank =
-  probeFile.sites.count_per_shank.
+    shank i → [offset + n_0 + … + n_(i−1), …, offset + n_0 + … + n_i − 1]
+  where offset = probes[].channelOffset and n_k is
+  probeFile.sites.count_per_shank (one number, or one per shank).
 
   If channelMap.map is a list it is used directly (flat or shank-major nested)
   with channelOffset added to each entry.
 
-Channel ordering within each group follows the probe file order (tip-to-base
-for linear and octrode layouts as recorded in the NeuroNexus catalog).  This
-ordering is assumed by ndm_extractspikes_sdiff and ndm_estimatedrift.
+Channel ordering within each group follows the probe file order: top site
+first, tip site last, so channel numbers ascend with depth.  This ordering is
+assumed by ndm_extractspikes_sdiff (spatial neighbours adjacent); the drift
+and localisation tools look positions up by channel number.  Site j of the
+probe file is channel channelOffset + j (or channelOffset +
+channelMap.map[j]); sites.count_per_shank is one number or a per-shank list.
 
 OPTIONAL PARAMETERS
 

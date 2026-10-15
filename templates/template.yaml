@@ -113,7 +113,7 @@ anatomicalDescription:
 # Read by: ndm_detectspikes, ndm_extractspikes, ndm_pca, ndm_klustakwik,
 #          ndm_estimatedrift, ndm_decomposecollisions
 #
-# channels        - physical channel indices in physical probe order (tip-to-base)
+# channels        - physical channel indices in physical probe order (top to tip)
 # nSamples        - total waveform length in samples (e.g. 52 at 32 kHz)
 # peakSampleIndex - sample index of the expected waveform peak (0-based)
 # nFeatures       - PCA components per channel (used by ndm_pca / ndm_klustakwik)

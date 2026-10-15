@@ -294,9 +294,9 @@ probeFile:
     layout: octrode
     area_um2: 160
     spacing_um: null
-    geometry:           # [[x_um, y_um], …] tip-to-base, optional
-      - [0,    0]
-      - [-11,  20]
+    geometry:           # [[x_um, y_um], …] top site first, y above the tip
+      - [-20.7, 162]
+      - [16.6,  142]
       …
   channelMap:
     description: null

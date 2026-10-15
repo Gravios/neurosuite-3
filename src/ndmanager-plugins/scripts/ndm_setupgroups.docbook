@@ -89,10 +89,15 @@
     added to each entry.
   </para>
   <para>
-    Channel ordering within each group follows the probe file order
-    (tip-to-base for linear and octrode layouts).  This ordering is required
-    by <command>ndm_extractspikes_sdiff</command> and
-    <command>ndm_estimatedrift</command>.
+    Channel ordering within each group follows the probe file order: top
+    site first, tip site last, so channel numbers ascend with depth.  This
+    ordering is required by <command>ndm_extractspikes_sdiff</command>
+    (spatial neighbours adjacent); the drift and localisation tools look
+    positions up by channel number and accept any order.  Site
+    <replaceable>j</replaceable> of the probe file is channel
+    channelOffset + <replaceable>j</replaceable> (or channelOffset +
+    channelMap.map[<replaceable>j</replaceable>]); sites.count_per_shank is
+    one number or a list with one entry per shank.
   </para>
 </refsect1>
 

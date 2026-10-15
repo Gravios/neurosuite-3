@@ -52,8 +52,8 @@ ndm_extractspikes.
 
 CHANNEL ORDERING
 Channels in each spikeDetection group should be listed in their physical
-probe order (tip-to-base, or shank-proximal to shank-distal) so that
-spatial neighbours are adjacent in the channel list.
+probe order along the shank (top to tip, as ndm_setupgroups writes them,
+or the reverse) so that spatial neighbours are adjacent in the channel list.
 
 PARAMETERS
 
