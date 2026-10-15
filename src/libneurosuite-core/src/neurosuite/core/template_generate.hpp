@@ -420,14 +420,13 @@ inline std::string sessionPath(const std::string& base, const std::string& type,
     return p;
 }
 
-// Read a .res that may be text or binary, picking the format the way
-// neurofileio's own cluster-pair reader does (binary iff the byte pattern says
-// so).  Returns the timestamps; `ok` reflects success.
+// Read a .res that may be text or binary, with the SAME detection and
+// consistency checks as neurofileio's cluster-pair reader (readResAuto).
+// Returns the timestamps; `ok` is false (and the result empty) when the file
+// cannot be read consistently in the detected format — never garbage.
 inline std::vector<int64_t> readResAny(const std::string& resPath, bool* ok)
 {
-    if (neurofileio::isBinaryClusterRes(resPath))
-        return neurofileio::readResBinary(resPath, ok);
-    return neurofileio::readRes(resPath, ok);
+    return neurofileio::readResAuto(resPath, ok);
 }
 
 // Resolve + read the session's inputs, run generate(), and write the outputs.

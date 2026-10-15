@@ -137,6 +137,16 @@ target_include_directories(core_test_projectionscope
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_projectionscope COMMAND core_test_projectionscope)
 
+# neurofileio readers on unusual / corrupt inputs (neurofileio_robust_test.cpp):
+# .res text-vs-binary detection + consistency, truncated and crafted headers,
+# zero-spike files, malformed .tcl registries.  Links the library.
+add_executable(core_test_neurofileio_robust neurofileio_robust_test.cpp)
+target_compile_features(core_test_neurofileio_robust PRIVATE cxx_std_17)
+target_include_directories(core_test_neurofileio_robust
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_neurofileio_robust PRIVATE Neurosuite::core)
+add_test(NAME core_test_neurofileio_robust COMMAND core_test_neurofileio_robust)
+
 # PCAE transform-method enum conformance.  Pins core::Method's integer values and
 # its spatialOrder/hasTemporalDiff/methodTag helpers against the shared table; the
 # fiber-kit Python mirror runs an identical copy so the cross-repo enum cannot drift.

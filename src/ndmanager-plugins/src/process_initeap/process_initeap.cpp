@@ -105,10 +105,7 @@ int main(int argc, char** argv)
         return 1;
     }
     bool ok = false;
-    const std::vector<int64_t> times =
-        neurofileio::isBinaryClusterRes(res_r.path)
-            ? neurofileio::readResBinary(res_r.path, &ok)
-            : neurofileio::readRes(res_r.path, &ok);
+    const std::vector<int64_t> times = neurofileio::readResAuto(res_r.path, &ok);
     if (!ok) {
         std::fprintf(stderr, "  group %d: could not read %s\n", group, res_r.path.c_str());
         return 1;

@@ -8,6 +8,8 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 
 namespace neurofileio {
 
@@ -155,28 +157,100 @@ std::vector<int64_t> readResBinary(const std::string& path, bool* ok)
     return out;
 }
 
+// Bytes a TEXT .res/.clu may contain: ASCII digits, a sign, and whitespace
+// (space, TAB, CR, LF, VT, FF).
+static bool isResTextByte(unsigned char c)
+{
+    return (c >= '0' && c <= '9') || c == '-' || c == '+' ||
+           c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
+
+// How much of the file the detector inspects.  A multiple of 8, so whenever the
+// file is a candidate binary .res (size % 8 == 0, size > 0) the probe covers at
+// least one whole int64 record.
+static constexpr std::streamsize kResProbeBytes = 4096;
+
 bool isBinaryClusterRes(const std::string& resPath)
 {
     std::ifstream in(resPath, std::ios::binary | std::ios::ate);
     if (!in) return false;
     const std::streamoff sz = in.tellg();
-    if (sz <= 0 || (sz % 8) != 0) return false;
+    if (sz <= 0 || (sz % 8) != 0) return false;            // necessary for binary
     in.seekg(0, std::ios::beg);
-    char first = 0;
-    in.read(&first, 1);
-    if (in.gcount() != 1) return false;
-    return (first < '0' || first > '9');   // not an ASCII digit -> binary
+    const std::streamsize want = std::min<std::streamsize>(kResProbeBytes, static_cast<std::streamsize>(sz));
+    std::vector<char> buf(static_cast<std::size_t>(want));
+    in.read(buf.data(), want);
+    if (in.gcount() != want) return false;
+    // Any byte outside the text alphabet -> binary.  A binary int64 timestamp t
+    // with |t| < 2^56 always carries a 0x00 (or, negative, 0xFF) high byte, so a
+    // binary file of plausible timestamps is never all-text in its first record.
+    for (char c : buf)
+        if (!isResTextByte(static_cast<unsigned char>(c))) return true;
+    return false;
+}
+
+// Strict text .res parse: every non-blank line must hold exactly ONE integer
+// (optional sign, digits, surrounding whitespace).  Anything else fails, so a
+// binary file that slipped past detection cannot come back as garbage.
+static bool readResTextStrict(const std::string& path, std::vector<int64_t>& out)
+{
+    out.clear();
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+    std::string line;
+    while (std::getline(in, line)) {
+        auto isWs = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\v' || c == '\f'; };
+        std::size_t b = 0, e = line.size();
+        while (b < e && isWs(line[b]))     ++b;
+        while (e > b && isWs(line[e - 1])) --e;
+        if (b == e) continue;                               // blank line
+        std::size_t k = b;
+        if (line[k] == '-' || line[k] == '+') ++k;
+        if (k == e) { out.clear(); return false; }          // a lone sign
+        int64_t v = 0;
+        const bool neg = (line[b] == '-');
+        for (; k < e; ++k) {
+            const char c = line[k];
+            if (c < '0' || c > '9') { out.clear(); return false; }   // not one integer
+            const int d = c - '0';
+            if (v > (std::numeric_limits<int64_t>::max() - d) / 10) { out.clear(); return false; }  // overflow
+            v = v * 10 + d;
+        }
+        out.push_back(neg ? -v : v);
+    }
+    if (in.bad()) { out.clear(); return false; }
+    return true;
+}
+
+std::vector<int64_t> readResAuto(const std::string& path, bool* ok, bool* binary)
+{
+    if (ok) *ok = false;
+    const bool bin = isBinaryClusterRes(path);
+    if (binary) *binary = bin;
+    std::vector<int64_t> out;
+    if (bin) {
+        bool rok = false;
+        out = readResBinary(path, &rok);
+        if (!rok) { out.clear(); return out; }
+        // Plausibility: a real timestamp is far below 2^56 in magnitude.  A text
+        // file that only looked binary (a stray byte outside the text alphabet)
+        // reinterprets ASCII as the high byte -> |v| >= 2^56.  Reject it.
+        static constexpr int64_t kLim = int64_t(1) << 56;
+        for (int64_t t : out)
+            if (t >= kLim || t <= -kLim) { out.clear(); return out; }
+    } else {
+        if (!readResTextStrict(path, out)) { out.clear(); return out; }
+    }
+    if (ok) *ok = true;
+    return out;
 }
 
 ClusterResData readClusterRes(const std::string& cluPath,
                               const std::string& resPath)
 {
     ClusterResData out;
-    out.binary = isBinaryClusterRes(resPath);
-
     bool rok = false;
-    out.times = out.binary ? readResBinary(resPath, &rok)
-                           : readRes(resPath, &rok);
+    out.times = readResAuto(resPath, &rok, &out.binary);
     if (!rok) return out;
 
     const int64_t nSpikes = static_cast<int64_t>(out.times.size());

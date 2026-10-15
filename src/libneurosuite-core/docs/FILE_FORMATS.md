@@ -26,7 +26,7 @@ This is the sibling of the cluster/spike document reference, [DOCUMENT_MODEL.md]
 | `.dat` | binary | `int16`, channel-interleaved | `datSampleCount` / `readDatWindow` | raw wideband acquisition signal |
 | `.lfp` / `.eeg` | binary | `int16`, interleaved | same as `.dat` | downsampled LFP (`.eeg` = legacy name for `.lfp`) |
 | `.fil` | binary | `int16`, interleaved | same as `.dat` | high-pass-filtered signal `.spk` is cut from |
-| `.res(.N)` | text **or** binary | `int64` timestamps | `readRes`/`readResBinary` · `writeRes`/`writeResBinary` | one sample-index timestamp per spike |
+| `.res(.N)` | text **or** binary | `int64` timestamps | `readRes`/`readResBinary`/`readResAuto` · `writeRes`/`writeResBinary` | one sample-index timestamp per spike |
 | `.clu(.N)` | text **or** binary | `int32` ids (+`int32` count) | `readClu`/`readCluBinary` · `writeClu`/`writeCluBinary` | per-spike cluster id; first value = cluster count |
 | `.fet(.N)` | text **or** binary | **binary `int64`** / text ASCII ints | `readFet`/`readFetBinary` · `writeFetBinary` | PCA feature vectors, row-major |
 | `.spk(.N)` | binary | `int16` | `readSpk`/`readSpkRecords` · `writeSpk` | windowed spike waveforms |
@@ -89,7 +89,9 @@ All binary forms are little-endian (§3.3). Each per-group file shares one spike
 
 One sample-index timestamp per spike, **no header** (`neurofileio.h:62-71`). Text is one decimal `int64` per line (`readRes`, `neurofileio.cpp:100-115`); binary is a bare `int64` array with `nSpikes = size/8` (`readResBinary`, `neurofileio.cpp:135-156`, size must be a non-zero multiple of 8 at line 141).
 
-Format auto-detection probes the `.res`: **binary iff its size is a non-zero multiple of 8 and its first byte is not an ASCII digit** (`isBinaryClusterRes`, `neurofileio.cpp:158-169`, verdict at line 168). `readClusterRes` runs that probe, reads both files in the detected format, and requires `clu.ids.size() == nSpikes` (`neurofileio.cpp:171-192`, guard at line 186).
+Format auto-detection probes the `.res`: **binary iff its size is a non-zero multiple of 8 and its first `min(size, 4 KiB)` bytes contain a byte outside the text alphabet** (ASCII digits, `-`, `+`, space, TAB, CR, LF, VT, FF) (`isBinaryClusterRes`). A binary `int64` timestamp *t* with |*t*| < 2^56 always has a `0x00` (negative: `0xFF`) high byte, and the probe always covers at least one whole record, so a binary `.res` of plausible timestamps is always recognised whatever its first timestamp's low byte. (The earlier rule — "first byte is not an ASCII digit" — read a binary file whose first spike sat at a sample whose low byte is `0x30`–`0x39`, e.g. 50, as text.)
+
+`readResAuto` is the format-agnostic reader built on that probe, and it checks the result is self-consistent before reporting success: **text** must be exactly one integer per non-blank line throughout the file, **binary** must have every |*t*| < 2^56 (a text file that only looked binary decodes ASCII into the high byte and fails). On failure it returns `ok=false` and an empty vector, never a partial or garbage read. `readClusterRes` reads the `.res` with `readResAuto`, reads the `.clu` in the detected format, and requires `clu.ids.size() == nSpikes`. `templategen::readResAny` (lineage/template `.res` reads) and `process_initeap` use `readResAuto` too; NeuroScope's `ClustersProvider` uses `readClusterRes`, so every auto-detecting reader shares the one rule.
 
 ### 3.2 `.clu` — cluster ids (`int32`)
 

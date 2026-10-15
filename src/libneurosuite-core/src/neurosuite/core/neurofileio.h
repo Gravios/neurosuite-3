@@ -75,10 +75,27 @@ NEUROSUITE_CORE_EXPORT bool writeResBinary(const std::string& path, const std::v
 // binary variant for fast loading of large datasets; this detects which and
 // returns the unified result so no consumer re-implements the detection.
 //
-// Detection (matches NeuroScope): probe the .res file — binary iff its size is
-// a non-zero multiple of 8 AND its first byte is not an ASCII digit; text
-// otherwise. The .clu is then read in the same format.
+// Detection: probe the .res file — binary iff its size is a non-zero multiple
+// of 8 AND its first min(size, 4 KiB) bytes contain a byte outside the text
+// alphabet (ASCII digits, '-', '+', space, TAB, CR, LF, VT, FF); text otherwise.
+// The .clu is then read in the same format.  A binary int64 timestamp t with
+// |t| < 2^56 always has a 0x00 (0xFF if negative) high byte, so a binary .res of
+// plausible timestamps is always detected — whatever its first timestamp's low
+// byte (the former "first byte is not an ASCII digit" rule read a binary file
+// whose first spike sat at e.g. sample 50, low byte '2', as text).
 NEUROSUITE_CORE_EXPORT bool isBinaryClusterRes(const std::string& resPath);
+
+// Read a .res in whichever format isBinaryClusterRes detects, and verify the
+// result is self-consistent before reporting success:
+//   text   — every non-blank line must be exactly one integer (strict: a line
+//            that is not, anywhere in the file, fails the read);
+//   binary — every value must satisfy |t| < 2^56 (a text file that only looked
+//            binary decodes ASCII into the high byte, so it fails).
+// On failure `ok` is false and the result is empty — never partial or garbage.
+// `binary`, when non-null, receives the detected format.  This is the one
+// format-agnostic .res reader; readClusterRes and templategen::readResAny use it.
+NEUROSUITE_CORE_EXPORT std::vector<int64_t> readResAuto(const std::string& path, bool* ok = nullptr,
+                                                        bool* binary = nullptr);
 
 struct ClusterResData {
     int                  nClusters = 0;
