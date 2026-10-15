@@ -141,6 +141,11 @@ void readAnatomyGroupMeta(const YAML::Node& root,
 
 /**
  * @brief Emit the `probes` sequence into a YAML document node.
+ *
+ * The caller owns the probe list: an empty @p probes removes `probes`.  An
+ * empty @p libraryPath leaves `probeLibraryPath` as it is.  A probe entry
+ * @p root already holds (matched by id) is updated in place, so keys the
+ * caller does not model survive.
  */
 KLUSTERSSHARED_EXPORT void writeProbesSection(YAML::Node& root,
                         const QList<ProbeEntry>& probes,

@@ -62,12 +62,18 @@ intermediate key is absent. All 13 previously unsafe chained subscripts are cove
 
 #### `ParameterYamlWriter`
 
-Builds a YAML document from scratch via a series of `set*()` calls and writes it atomically
-using a `.nstmp` temporary-file-plus-rename pattern so the original file is never left in a
-partial state on crash.
+Builds a YAML document via a series of `set*()` calls and writes it atomically using a
+`.nstmp` temporary-file-plus-rename pattern so the original file is never left in a partial
+state on crash. The document starts empty (a new file) or, after `setBaseDocument(path)`, as a
+copy of an existing parameter file: the setters then write only what they model over it, and
+every other key, group entry and top-level block (`probeId`, `sitePositions_um`,
+`klustakwik:`, `bitResolution_uV`, `sourceRecording`, ...) is kept. Groups are paired with
+the existing ones like `ParameterYamlModifier` does (same channel set first, then position); a
+group left out is removed. ndmanager saves this way, starting from the file it opened.
 
 ```cpp
 ParameterYamlWriter writer;
+writer.setBaseDocument(openedPath);   // optional; false = keep the empty document
 writer.setGeneralInformation(gi);
 writer.setAcquisitionSystemInformation(acqInfo);
 writer.setAnatomicalDescription(groups, attributes);

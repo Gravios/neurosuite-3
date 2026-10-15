@@ -159,14 +159,36 @@ void writeProbesSection(YAML::Node& root,
                         const QList<ProbeEntry>& probes,
                         const QString& libraryPath)
 {
+    // An empty library path means the caller has none to offer (ndmanager's
+    // probe tab always has one, its default included), so the file's is kept.
     if (!libraryPath.isEmpty())
         root["probeLibraryPath"] = libraryPath.toStdString();
 
-    if (probes.isEmpty()) return;
+    // The caller (ndmanager's probe tab) owns the probe list: an empty list is
+    // every probe removed there.  On a fresh document this is a no-op.
+    if (probes.isEmpty()) {
+        root.remove("probes");
+        return;
+    }
+
+    // Entries already in the document, by id, so a rewrite keeps any key the
+    // caller does not model.
+    QMap<int, YAML::Node> old;
+    const YAML::Node& croot = root;
+    const YAML::Node existing = croot.IsMap() ? croot["probes"] : YAML::Node();
+    if (existing && existing.IsSequence()) {
+        for (std::size_t i = 0; i < existing.size(); ++i) {
+            const YAML::Node p = existing[i];
+            if (!p.IsMap()) continue;
+            const int id = yi(p["id"], static_cast<int>(i));
+            if (!old.contains(id)) old.insert(id, YAML::Clone(p));
+        }
+    }
 
     YAML::Node seq(YAML::NodeType::Sequence);
     for (const ProbeEntry& e : probes) {
-        YAML::Node entry(YAML::NodeType::Map);
+        YAML::Node entry = old.contains(e.id) ? old.take(e.id)
+                                              : YAML::Node(YAML::NodeType::Map);
         entry["id"]            = e.id;
         entry["probeFile"]     = e.probeFile.toStdString();
         entry["label"]         = e.label.toStdString();
@@ -183,6 +205,8 @@ void writeProbesSection(YAML::Node& root,
             for (int g : e.spikeGroups)
                 sg.push_back(g);
             entry["spikeGroups"] = sg;
+        } else {
+            entry.remove("spikeGroups");
         }
 
         seq.push_back(entry);

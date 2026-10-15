@@ -37,6 +37,10 @@ class ndManagerDoc{
 private:
     /**The url of the document .*/
     QString docUrl;
+    /**The file the document's content was loaded from (or last saved to under
+     * its own name).  A save starts from it, so keys ndmanager does not model
+     * survive; unlike docUrl it does not follow rename() or a pending saveAs().*/
+    QString sourceUrl;
     /**Reason the last openDocument() failed to parse; empty on success.*/
     QString lastParseError;
     
@@ -83,6 +87,10 @@ public:
     inline OpenSaveCreateReturnMessage save(){return save(docUrl);}
 
     /**Saves the current parameter file on the disk at the location defined by url.
+ * The saved file starts from the file the document was loaded from (not the
+ * file at url), so keys ndmanager does not model are kept: on Save the two are
+ * the same file; on Save As the target is new or an unrelated file the user
+ * chose to replace, whose keys describe some other session.
  * @param url url of the file where to save the parameter information.
  * @return an OpenSaveCreateReturnMessage enum giving the saving status.
  */
@@ -114,6 +122,10 @@ public:
     }
 
 private:
+
+    /**Writes the document to url, starting from the parameter file baseUrl
+ * (empty: from nothing), and carrying every key the model does not own.*/
+    OpenSaveCreateReturnMessage write(const QString& url, const QString& baseUrl);
 
     /**Pointer on the parent widget (main window).*/
     QWidget* parent;

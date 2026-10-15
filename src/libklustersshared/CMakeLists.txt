@@ -84,6 +84,12 @@ if(NS_BUILD_TESTS)
     target_link_libraries(klustersshared_yamlmodifier_test PRIVATE Neurosuite::qt yaml-cpp)
     add_test(NAME klustersshared_yamlmodifier_test COMMAND klustersshared_yamlmodifier_test)
 
+    # ParameterYamlWriter over a base document: ndmanager's saves must carry the
+    # keys and blocks it does not model (probeId, sourceRecording, ...).
+    add_executable(klustersshared_yamlwriter_test test/yamlwriter_test.cpp)
+    target_link_libraries(klustersshared_yamlwriter_test PRIVATE Neurosuite::qt yaml-cpp)
+    add_test(NAME klustersshared_yamlwriter_test COMMAND klustersshared_yamlwriter_test)
+
     # ItemColors / ChannelColors: copies (construction and assignment) are deep.
     add_executable(klustersshared_colors_test test/colors_test.cpp)
     target_include_directories(klustersshared_colors_test

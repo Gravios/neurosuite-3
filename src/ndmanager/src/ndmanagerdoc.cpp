@@ -56,10 +56,12 @@ ndManagerDoc::~ndManagerDoc(){
 
 void ndManagerDoc::closeDocument(){
     docUrl.clear();
+    sourceUrl.clear();
 }
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::openDocument(const QString& url){
     docUrl = url;
+    sourceUrl = url;
 
     NdManagerYamlReader reader;
     if (!reader.parseFile(url)) {
@@ -177,6 +179,10 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::newDocument(){
 
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url){
+    return write(url, sourceUrl);
+}
+
+ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url, const QString& baseUrl){
     //first gather the information
     QMap<int, QList<int> > anatomicalGroups;
     QMap<QString, QMap<int,QString> > attributes;
@@ -208,13 +214,21 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url)
     view->getProbeData(probes, probeLibraryPath);
 
     auto doWrite = [&](auto& writer) -> bool {
+        // Start from baseUrl as it is on disk now, so every key ndmanager does
+        // not model -- per-group probeId, shankIndex, sitePositions_um,
+        // klustakwik:, acquisition keys such as bitResolution_uV, top-level
+        // blocks such as sourceRecording -- is carried into the saved file
+        // instead of being dropped.  An empty, missing or non-YAML baseUrl
+        // gives a fresh document.
+        writer.setBaseDocument(baseUrl);
         writer.setGeneralInformation(generalInformation);
         writer.setAcquisitionSystemInformation(acquisitionSystemInfo);
         if(!videoInformation.isEmpty())
             writer.setVideoInformation(videoInformation);
         writer.setLfpInformation(lfpRate);
-        if(!files.isEmpty())
-            writer.setFilesInformation(files);
+        // Called even when empty: ndmanager owns these lists, so an empty one
+        // removes the section the base document had.
+        writer.setFilesInformation(files);
         writer.setAnatomicalDescription(anatomicalGroups,attributes);
         writer.setSpikeDetectionInformation(spikeGroups,spikeGroupsInformation);
         writer.setUnitsInformation(units);
@@ -222,9 +236,8 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url)
         writer.setNeuroscopeVideoInformation(neuroscopeVideoInfo);
         writer.setNeuroscopeSpikeInformation(nbSamples,peakSampleIndex);
         writer.setChannelDisplayInformation(channelColors,channelDefaultOffsets);
-        if(!programs.isEmpty())
-            writer.setProgramsInformation(programs);
-        // Probe section — no-op when list is empty (backward compatible)
+        writer.setProgramsInformation(programs);
+        // Probe section — an empty list removes the base document's probes
         writer.setProbesInformation(probes, probeLibraryPath);
         return writer.writeTofile(url);
     };
@@ -233,6 +246,11 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url)
     const bool status = doWrite(yamlWriter);
     if(!status)
         return CREATION_ERROR;
+
+    // The document now lives at url when it was saved under its own name
+    // (Save, Save As); later saves start from that file.
+    if(url == docUrl)
+        sourceUrl = url;
 
     //reset the state of the page as saved state
     view->hasBeenSave();
@@ -247,7 +265,10 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveDefault(){
     bool ok = dir.mkpath(path);
     path = path + QDir::separator() + QLatin1String("ndManagerDefault.yaml");
 
-    return save(path);
+    // Written from ndmanager's model alone: the default is a template for new
+    // documents, and this session's own blocks (sourceRecording, per-group
+    // probe geometry, ...) must not be copied into every one of them.
+    return write(path, QString());
 }
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveScript(const QString &scriptName){

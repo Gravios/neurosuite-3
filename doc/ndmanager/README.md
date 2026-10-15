@@ -307,6 +307,13 @@ and octrode configurations.
 Both XML and YAML formats are fully supported. YAML is preferred for new sessions. The
 `ndm_xml2yaml` script converts existing XML session files.
 
+Saving writes ndmanager's fields over the file the session was opened from and keeps
+everything else in it: keys and blocks ndmanager has no page for (`sourceRecording`,
+extra `acquisitionSystem` keys, a group's `probeId` / `shankIndex` / `sitePositions_um` /
+`klustakwik:` block, ...) survive a save, including Save As. A group deleted in ndmanager
+is removed with its keys. **Save as Default** is the exception: the default template is
+written from ndmanager's fields alone, so one session's blocks do not reach every new file.
+
 ### YAML schema (abbreviated)
 
 ```yaml

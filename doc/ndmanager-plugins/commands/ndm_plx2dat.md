@@ -121,9 +121,11 @@ time order in the file are re-sorted, and the findings say so. µV = count ×
 | `files` | One `{samplingRate, extension}` entry per extra-stream file with the `.dat`'s channel count; an entry with the same extension is updated, others (e.g. `lfp`) are kept. |
 | `sourceRecording` | `header` (version / application, recording date, clock, channel-header counts, PL2 offsets and record counts), `export` (stream, time origin, segments and gaps, the per-channel table: name, source/channel, rate, µV/count, enabled, has-data, device, electrode type), `streams` (every continuous stream with channel counts, rates and scales), `extraStreams` (per exported extra stream: file, rate, time origin and offset from the `.dat`, gaps, channel table), `onlineSpikes` (time base, cluster-id mapping, per group: name, channel, spike count, waveform geometry, µV/count, threshold, Plexon unit counts, spikes outside the `.dat`), `spikeChannels` (threshold in counts and µV, waveform length, pre-threshold samples, per-unit spike counts), `eventChannels` (event counts), `eventFile` (file, counts, label patterns), `deviceSettings` (OmniPlex `<Settings>` values such as filter cut-offs and poles, PL2 only), `deviceText` and per-channel `headerText` (other readable text in the PL2 headers and settings region — device chain, electrode and input types), `findings` (every inconsistency found). |
 
-The same `sourceRecording` block stays in `session.plexon.yaml`. Keep that
-file: ndmanager rewrites the session YAML from its own model when you save,
-which drops blocks it does not know, `sourceRecording` included.
+The same `sourceRecording` block stays in `session.plexon.yaml`. Saving the
+session in ndmanager keeps `sourceRecording` and the extra `acquisitionSystem`
+keys: ndmanager writes its own fields over the file it opened and carries
+every key it does not model. Keep `session.plexon.yaml` anyway, as the
+converter's own record of the source file.
 
 Anatomical and spike-detection groups are **not** written — use
 [`ndm_setupgroups`](ndm_setupgroups.md) or the Probes tab in ndmanager after

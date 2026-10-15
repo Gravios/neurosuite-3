@@ -169,6 +169,14 @@ public:
      */
     bool setUnitsInformation(const QMap<int,QStringList>& units);
 
+    /// Pairs the caller's groups (key = 1-based group number) with entries of an
+    /// existing channelGroups sequence -- exact channel-set matches first, then by
+    /// position -- and returns deep copies keyed by the caller's group number.
+    /// Entries left unpaired (groups the caller deleted) are not returned.
+    /// Shared with ParameterYamlWriter, which pairs ndmanager's groups the same way.
+    static QMap<int,YAML::Node> matchExistingGroups(const YAML::Node& existing,
+                                                    const QMap<int,QList<int>>& groups);
+
 private:
     YAML::Node root;   ///< live YAML tree (Map or Null if never parsed)
     QString     parsedPath;   ///< absolute path parseFile() loaded, if any
@@ -177,12 +185,6 @@ private:
     // Helpers
     /** Ensure root is a Map and has the given top-level key as a Map. */
     YAML::Node ensureMap(const std::string& key);
-
-    /// Pairs the caller's groups (key = 1-based group number) with entries of an
-    /// existing channelGroups sequence -- exact channel-set matches first, then by
-    /// position -- and returns deep copies keyed by the caller's group number.
-    static QMap<int,YAML::Node> matchExistingGroups(const YAML::Node& existing,
-                                                    const QMap<int,QList<int>>& groups);
 
     /** Assign a scalar, creating intermediate maps as needed. */
     template<typename T>
