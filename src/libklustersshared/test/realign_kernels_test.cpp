@@ -7,7 +7,9 @@
 //     and commits every nonzero shift) must come back as shift 0 / score 0,
 //     even with minScore 0 or negative;
 //   - an all-zero template likewise gives shift 0 / score 0 for every spike;
-//   - ordinary spikes in the same batch are still aligned.
+//   - ordinary spikes in the same batch are still aligned;
+//   - an exact two-way tie between lags resolves to the lower lag (the first
+//     maximum) -- the rule the CUDA/HIP tree reduction must reproduce.
 // Qt-free, self-contained (own main), run via ctest.
 
 #include "realign_xcorr.h"
@@ -68,8 +70,26 @@ static void testXcorrUndefined() {
     }
 }
 
+static void testXcorrTie() {
+    // Spike = two copies of the template, 3 samples early and 3 samples late.
+    // score(-3) and score(+3) are both R(0)+R(6) (exact integer sums), score(0)
+    // is 2R(3) = 0: a two-way tie that must resolve to -3.
+    const int nCh = 2, nS = 32, maxShift = 4;
+    std::vector<int16_t> tmpl(static_cast<size_t>(nCh) * nS), wave(tmpl.size()),
+                         a(tmpl.size()), b(tmpl.size());
+    putSpike(tmpl.data(), nCh, nS, 16);
+    putSpike(a.data(), nCh, nS, 13);
+    putSpike(b.data(), nCh, nS, 19);
+    for (size_t i = 0; i < wave.size(); ++i) wave[i] = static_cast<int16_t>(a[i] + b[i]);
+    int sh = -99; float sc = 0.0f;
+    xcorr_omp_compute(wave.data(), tmpl.data(), 1, nCh, nS, maxShift, 0.0f, &sh, &sc);
+    check(sh == -3, "tie between lags -3 and +3 resolves to -3 (got "
+          + std::to_string(sh) + ")");
+}
+
 int main() {
     testXcorrUndefined();
+    testXcorrTie();
     std::printf("%d/%d checks passed\n", g_ran - g_fail, g_ran);
     return g_fail ? 1 : 0;
 }

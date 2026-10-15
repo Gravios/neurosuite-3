@@ -122,11 +122,18 @@ __global__ void xcorr_kernel(
     // Parallel reduction over the full power-of-two block.  Starting the stride
     // at nLags/2 (with nLags odd) silently drops the top candidate, lag
     // +maxShift; reducing over blockDim.x with the padding lanes pinned at
-    // -FLT_MAX covers every real candidate.  A strict '>' keeps the lower index
-    // on ties, i.e. the more-negative lag, matching the OMP/SYCL backends.
+    // -FLT_MAX covers every real candidate.  Ties must go to the lower lag,
+    // matching the OMP/SYCL backends (first maximum = most-negative lag).  A
+    // strict '>' alone does not do that: after the first level a slot holds
+    // the winner of a strided subset, so the right-hand slot can carry a lower
+    // lag than the left one.  Compare (score, -lag) instead.
     for (int stride = blockDim.x / 2; stride >= 1; stride >>= 1) {
         if (static_cast<int>(threadIdx.x) < stride) {
-            if (sh_score[threadIdx.x + stride] > sh_score[threadIdx.x]) {
+            const float other = sh_score[threadIdx.x + stride];
+            const float mine  = sh_score[threadIdx.x];
+            if (other > mine
+                || (other == mine
+                    && sh_lag[threadIdx.x + stride] < sh_lag[threadIdx.x])) {
                 sh_score[threadIdx.x] = sh_score[threadIdx.x + stride];
                 sh_lag  [threadIdx.x] = sh_lag  [threadIdx.x + stride];
             }
