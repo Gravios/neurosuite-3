@@ -1115,6 +1115,9 @@ programs:
       at an alternative, externally-processed source (e.g. car.dat) to filter that
       file instead of the raw recording.
 
+      A leading dot is ignored (.lfp = lfp).  When set, the file must exist:
+      a missing one stops the step with an error rather than skipping it.
+
   - name: ndm_bandpass
     parameters:
       - name: windowHalfLength
@@ -1168,6 +1171,9 @@ programs:
       Data file read for filtering, without the leading dot (default dat). Point it
       at an alternative, externally-processed source (e.g. car.dat) to filter that
       file instead of the raw recording.
+
+      A leading dot is ignored (.lfp = lfp).  When set, the file must exist:
+      a missing one stops the step with an error rather than skipping it.
 
   - name: ndm_denoiseuniform
     parameters:
@@ -1312,6 +1318,9 @@ programs:
 
       Data file extension to read, without the leading dot (default fil).
 
+      A leading dot is ignored (.lfp = lfp).  When set, the file must exist:
+      a missing one stops the step with an error rather than skipping it.
+
       # thresholdNoise
 
       stderiv engine only: the signal the baseline noise sigma is measured on.
@@ -1448,6 +1457,9 @@ programs:
       # inputExtension
 
       Data file extension to read, without the leading dot (default fil).
+
+      A leading dot is ignored (.lfp = lfp).  When set, the file must exist:
+      a missing one stops the step with an error rather than skipping it.
 
       # memCapGB
 
@@ -2209,6 +2221,9 @@ programs:
       at an alternative, externally-processed source (e.g. car.dat) to downsample
       that file instead of the raw recording.
 
+      A leading dot is ignored (.lfp = lfp).  When set, the file must exist:
+      a missing one stops the step with an error rather than skipping it.
+
       Any value but dat selects the source outright: the spike-cleaned dat is not
       used even when present, because ndm_stripdat cleans session.dat and cannot
       produce a spike-free version of another file. Combining it with
@@ -2281,6 +2296,9 @@ programs:
 
       File to slice, without the leading dot (default lfp). Point it at dat, fil
       or any externally-processed source to excerpt that instead.
+
+      A leading dot is ignored (.lfp = lfp).  When set, the file must exist:
+      a missing one stops the step with an error rather than skipping it.
 
   - name: ndm_pca
     parameters:

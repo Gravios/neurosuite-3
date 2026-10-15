@@ -5,7 +5,8 @@ The scripts are the ground truth: a parameter is any name a script looks up
 in a program block, through read_script_parameter (its own block, `-s
 other` for another block, `-a other` for a fallback block), read_kk_param
 (ndm_klustakwik's block, or the caller's with -b), ndm_process_spikes
-(ndm_detectspikes / ndm_extractspikes, in ndm_functions) or a direct
+(ndm_detectspikes / ndm_extractspikes, in ndm_functions), ndm_input_extension
+(inputExtension) or a direct
 yaml_read of a //program/…/parameter path.
 
 Checks, for every program block:
@@ -142,6 +143,8 @@ def script_parameters() -> dict:
                     add("ndm_klustakwik", args[1], prog, args[2] if len(args) > 2 else None, own=True)
                     if caller and caller != "ndm_klustakwik":
                         add(caller, args[1], prog, None, own=False)
+            if re.match(r"\s*ndm_input_extension\b", ln):   # reads inputExtension under $program
+                add(prog, "inputExtension", prog, ln.split()[1] if len(ln.split()) > 1 else None, own=True)
             for m in XP.finditer(ln):
                 var = re.match(r"\s*(\w+)=", ln)
                 add(m.group(1), m.group(2), prog, _default(var.group(1) if var else None, text), own=True)

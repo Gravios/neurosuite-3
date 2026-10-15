@@ -307,6 +307,37 @@ inputs_missing()
 	$missing && return $NO_ERROR || return $GENERAL_ERROR
 }
 
+# Resolve the extension of the file a step reads, $session.<ext> (YAML field
+# inputExtension; a non-empty second argument, e.g. a command-line override,
+# takes precedence).  Leading dots are dropped, so ".lfp" means "lfp".
+# Sets $inputExtension, and $NDM_INPUT_EXPLICIT=1 when the value was given
+# rather than defaulted.
+#  usage: ndm_input_extension default [override]
+ndm_input_extension()
+{
+	local value=$2
+	[ -z "$value" ] && value=$(read_script_parameter $session inputExtension)
+	while [ "${value#.}" != "$value" ]; do value=${value#.}; done
+	NDM_INPUT_EXPLICIT=0
+	[ -n "$value" ] && NDM_INPUT_EXPLICIT=1
+	inputExtension=${value:-$1}
+}
+
+# Like inputs_missing for the parameter file and $session.$inputExtension,
+# except that an input named explicitly by inputExtension must exist: a
+# missing one stops the step with an error instead of the usual "skipping
+# this step" warning, which is easy to overlook in a pipeline log.
+#  usage: ndm_input_missing && exit $INPUTS_MISSING
+ndm_input_missing()
+{
+	if [ "$NDM_INPUT_EXPLICIT" = 1 ] && [ ! -f "$session.$inputExtension" ]
+	then
+		echo_error "inputExtension is '$inputExtension' but '$session.$inputExtension' does not exist"
+		exit $GENERAL_ERROR
+	fi
+	inputs_missing "$session.$param_ext" "$session.$inputExtension"
+}
+
 # Check if output files already exist (found => return 1)
 #  usage: outputs_exist file1 [file2...]
 #  typical usage 1: outputs_exist file1 file2 && exit 1 (exit with error if output files are already present)
@@ -1595,10 +1626,8 @@ ndm_process_spikes()
 
 	# Input data extension (default fil): lets a step run on an alternative,
 	# externally-processed source without renaming it to .fil.  CLI > YAML > default.
-	inputExtension=$inputExtensionOverride
-	[ -z "$inputExtension" ] && inputExtension=$(read_script_parameter $session inputExtension)
-	inputExtension=${inputExtension:-fil}
-	inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
+	ndm_input_extension fil "$inputExtensionOverride"
+	ndm_input_missing && exit $INPUTS_MISSING
 
 	secondsToBytes() { unset LANG && echo $1 $samplingRate $nChannels $resolution | awk '{printf "%f",int($1*$2)/8*$3*$4}' | sed 's/[.].*//'; }
 

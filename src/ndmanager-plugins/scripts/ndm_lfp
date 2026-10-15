@@ -44,11 +44,10 @@ print_header "$session - Creating LFP file"
 # dat), so it can downsample an alternative, externally-processed source
 # instead of the raw .dat (YAML field inputExtension; defaults to dat when
 # unset).
-inputExtension=$(read_script_parameter $session inputExtension)
-inputExtension=${inputExtension:-dat}
+ndm_input_extension dat
 
 outputs_exist $session.lfp && exit $OUTPUTS_EXIST
-inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
+ndm_input_missing && exit $INPUTS_MISSING
 
 check_commands_installed xpathReader process_resample
 

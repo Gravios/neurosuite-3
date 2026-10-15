@@ -48,8 +48,7 @@ check_commands_installed xpathReader process_slicebinary
 # Input data extension: the slicer reads $session.$inputExtension (default lfp),
 # so it can excerpt the wide-band .dat, the filtered .fil, or any other
 # externally-processed source instead (YAML field inputExtension).
-inputExtension=$(read_script_parameter $session inputExtension)
-inputExtension=${inputExtension:-lfp}
+ndm_input_extension lfp
 
 slicedChannels=$(read_script_parameter $session slicedChannels)
 tag=$(read_script_parameter $session tag)
@@ -137,7 +136,7 @@ fi
 output=$session.$inputExtension.slice.$tag
 
 outputs_exist "$output" && exit $OUTPUTS_EXIST
-inputs_missing "$session.$param_ext" "$session.$inputExtension" && exit $INPUTS_MISSING
+ndm_input_missing && exit $INPUTS_MISSING
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Process

@@ -2,6 +2,12 @@
 
 Short utilities for signal processing.  Each is invoked with the session YAML or basename as its single argument.
 
+**`inputExtension`** (ndm_hipass, ndm_bandpass, ndm_lfp, ndm_slicebinary, and
+ndm_detectspikes / ndm_extractspikes) names the input file `SESSION.<inputExtension>`.
+A leading dot is ignored (`.lfp` = `lfp`). When the parameter is set, that file
+must exist: a missing one stops the step with an error. Only an unset parameter
+whose default input is missing gives the usual "skipping this step" warning.
+
 ---
 
 ## `ndm_hipass` — high-pass filter (`.dat` → `.fil`)
