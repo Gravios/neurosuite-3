@@ -109,6 +109,33 @@ int main()
               "placeholder is a drift-root spanning the empty region");
     }
 
+    // (d2) A legacy v1 root (count, NO mean) overlapping the same region as a
+    // summarised v2 root: the result is the v2 summary whichever comes first
+    // (formerly a v1 root combined first discarded the later v2 root's summary,
+    // and two v1 roots summed counts with no mean behind them).
+    {
+        neurofileio::WtlNode v1 = mk(0, 5, "drift-root", -1, 0, 50, 40, 0.f);
+        v1.mean.clear(); v1.std.clear();                                   // count 40, no summary
+        const neurofileio::WtlNode v2 = mk(1, 5, "drift-root", -1, 50, 100, 3, 12.f, 2.f);
+        Partition p; p.tEnd = 100.0;                                       // one region overlaps both
+        for (int order = 0; order < 2; ++order) {
+            neurofileio::WtlForest g; g.version=2; g.nSamples=1; g.nChannels=1;
+            if (order == 0) { g.nodes.push_back(v1); g.nodes.push_back(v2); }
+            else            { g.nodes.push_back(v2); g.nodes.push_back(v1); }
+            const neurofileio::WtlForest r = regrainForest(g, p);
+            CHECK(r.nodes.size()==1 && r.nodes[0].count==3 && r.nodes[0].mean.size()==1
+                  && close(r.nodes[0].mean[0], 12.f) && close(r.nodes[0].std[0], 2.f),
+                  order == 0 ? "v1 root then v2 root -> the v2 summary (count 3)"
+                             : "v2 root then v1 root -> the v2 summary (count 3)");
+        }
+        neurofileio::WtlForest only; only.version=2; only.nSamples=1; only.nChannels=1;
+        neurofileio::WtlNode v1b = v1; v1b.node = 1; v1b.a = 50; v1b.b = 100; v1b.count = 2;
+        only.nodes = {v1, v1b};
+        const neurofileio::WtlForest r = regrainForest(only, p);
+        CHECK(r.nodes.size()==1 && r.nodes[0].count==42 && r.nodes[0].mean.empty(),
+              "two v1 roots merged -> a stub carrying the summed legacy count");
+    }
+
     // (e) tileClassDrift: fresh 2-region tiling = empty placeholders (no spikes).
     {
         Partition p; p.tEnd=100.0; p.bounds={50.0};

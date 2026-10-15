@@ -111,7 +111,7 @@ int main()
     WtlForest rv1 = readWtl("wtl_v1.tmp.wtl");
     check(rv1.ok && rv1.version == 1 && rv1.nodes.size() == 2, "v1 file still reads");
     check(rv1.nodes.size() == 2 && rv1.nodes[0].count == 3 && rv1.nodes[0].mean.empty(),
-          "v1 spike count maps to count, summary empty (repopulate to fill)");
+          "v1 spike count maps to count, summary empty (a legacy stub)");
 
     // ── 4. Header / version rejections ───────────────────────────────────────
     writeRaw("wtl_badver.tmp.wtl", "wtl 3\nnNodes 0\n");

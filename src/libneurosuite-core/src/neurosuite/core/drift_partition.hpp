@@ -220,6 +220,10 @@ inline double overlapLen(double a0, double b0, double a1, double b1)
 // Leaves keep their own summary and re-parent to the new region their OLD parent
 // root maps to (max overlap).  Node ids are reassigned densely; windows become each
 // region's [a,b].
+// The per-region combine is order-independent: a legacy v1 root (count, no mean)
+// contributes nothing when any overlapping root has a summary (the result is the
+// summarised roots' combine, its count theirs alone), and only stub-only regions
+// carry the summed legacy count — see stats::combineMeanStd.
 inline neurofileio::WtlForest regrainForest(const neurofileio::WtlForest& forest,
                                             const Partition& p)
 {

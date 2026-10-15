@@ -636,7 +636,8 @@ WtlForest readWtl(const std::string& path)
             n.count = static_cast<int64_t>(cnt);
             if (f.version == 1) {
                 // v1 kept the spike indices on the line; drop them (v2 keeps only the
-                // count + running mean/std, which a v1 node lacks — repopulate to fill).
+                // count + running mean/std, which a v1 node lacks: it stays a legacy
+                // stub until a selection is folded in — see stats::combineMeanStd).
                 bool bad = false;
                 for (long long k = 0; k < cnt; ++k) { int64_t idx; if (!(ls >> idx)) { bad = true; break; } }
                 if (bad) continue;                  // short tail: corrupt node, skip

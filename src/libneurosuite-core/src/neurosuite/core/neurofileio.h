@@ -318,10 +318,14 @@ NEUROSUITE_CORE_EXPORT std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int un
 //
 // v2 stores these SUMMARIES, not the spike indices: a node is updated by folding
 // a new selection's (mean,std,count) into its own with the exact parallel-variance
-// combine (template_generate.hpp), so the originating spikes are never kept.  v1
+// combine (running_stats.hpp), so the originating spikes are never kept.  v1
 // (spike-list) files still read — their nodes map to count=nSpikes with empty
-// mean/std (repopulate to fill them).  `nNodes`/`nSamples`/`nChannels`, when
-// present, are checked.
+// mean/std (a "legacy stub": the spikes are not kept, so there is no summary to
+// recover).  A stub contributes nothing to a combine (stats::combineMeanStd): the
+// first selection folded into it, or a summarised node it is re-grained with,
+// REPLACES it and its legacy count is dropped (a count always describes the
+// spikes behind the mean); a stub never combined with real data renders as a
+// 0-filled placeholder record.  `nNodes`, when present, is checked.
 struct WtlNode {
     int                node    = 0;    ///< 0-based node id (referenced by children's `parent`)
     int                classId = 0;    ///< .eap column / template-class id this node belongs to
