@@ -652,7 +652,8 @@ See [BUILD.md §6](../../../doc/BUILD.md#6-tests).
 
 ## 9. Known issues
 
-Found while writing this page; nothing here has been changed.
+Found while writing this page. Items marked **Fixed** have since been
+corrected; the text describes the problem as it was.
 
 **Build and packaging**
 
@@ -719,13 +720,19 @@ Found while writing this page; nothing here has been changed.
 
 **sdiff patterns**
 
-19. `parseSdiffPairs` checks for a single root but not for cycles or
+19. **Fixed (0490):** the parser follows every channel to the root and
+    rejects a cycle.
+    Was: `parseSdiffPairs` checks for a single root but not for cycles or
     connectivity: `0-1,1-0,2-3` is accepted (`ok = true`, partner
     `[1,0,3,2]`) although it is not a spanning tree.
-20. Positions are read with `atoi`, so junk is accepted: `x-1` is read as
+20. **Fixed (0490):** positions must be plain non-negative integers.
+    Was: Positions are read with `atoi`, so junk is accepted: `x-1` is read as
     `0-1`, and an order-5 token `0-1+2` given to `parseSdiffPairs` is read as
     `0-1`.
-21. Because of 20, `process_reextractspikes_stderiv`, which always calls
+21. **Fixed (0490):** the engine dispatches on `+` like the extractor and
+    handles order 5; `ndm_reextractspikes` passes `-P`; `-d 4`/`-d 5` without
+    `-P` is an error.
+    Was: Because of 20, `process_reextractspikes_stderiv`, which always calls
     `parseSdiffPairsPerGroup` (`:290`), would silently misread an order-5
     pattern. In practice `ndm_reextractspikes` never passes `-P`; for a
     `stderiv_C4`/`_C5` method it passes `-d 4`/`-d 5`
@@ -733,13 +740,16 @@ Found while writing this page; nothing here has been changed.
     falls back to the all-pairs derivative (order 4 falls through, order 5 hits
     `default`). Re-extraction then runs in a different spatial space from the
     session's `.spk`.
-22. `parseSdiffSets` accepts a repeated target (`0-1+1` gives `{1,1}`, which
+22. **Fixed (0490):** repeated members are rejected.
+    Was: `parseSdiffSets` accepts a repeated target (`0-1+1` gives `{1,1}`, which
     double-weights it).
-23. The `sdiff_pairs.h` header comment says only the two extractors use it and
+23. **Fixed (0490):** header comment and `spike-detection.md` updated.
+    Was: The `sdiff_pairs.h` header comment says only the two extractors use it and
     that malformed input always exits; four tools and Klusters use it and the
     `ok` mode does not exit. `spike-detection.md` omits the order-4 root rules
     and does not say that one `+` anywhere makes every group order 5.
-24. The test fixture in `yamlmodifier_test.cpp` uses `sdiffPairs:
+24. **Fixed (0490):** fixture is now `0-1,1-2,2-3`.
+    Was: The test fixture in `yamlmodifier_test.cpp` uses `sdiffPairs:
     "0-1,1-2,2-3,3-0"`, which the parser would reject (no root). The test only
     checks that the string survives, so it passes, but it is not a valid
     example.

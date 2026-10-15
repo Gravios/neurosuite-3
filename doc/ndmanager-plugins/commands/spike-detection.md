@@ -424,6 +424,15 @@ engine `-P`).  Its grammar fixes the order:
 - `a-b+c+d,…` — per-channel reference set (order 5): output channel a =
   x[a] − mean(x[b], x[c], x[d]); every channel needs a set.
 
+Positions are plain non-negative integers.  An order-4 pattern must be a tree:
+every channel's chain of partners reaches the root, which must be the last
+position (`0-1,1-2,2-3` is valid; `0-1,1-0,2-3` is not — 0 and 1 form a
+cycle).  A reference set may not repeat a channel.  A malformed pattern stops
+the engine with an error naming it; it is never read as a different pattern.
+The order is decided once for the whole `-P` value: a single `+` in any
+group makes every group order 5 (a group written `a-b` then has the
+one-member set `{b}`).
+
 A group whose pattern is empty or does not match its size falls back to
 order 3.  Select the pattern with a `_C` token — `stderiv_C4` or `stderiv_C5`.
 

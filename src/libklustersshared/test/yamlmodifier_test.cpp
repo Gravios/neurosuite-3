@@ -87,7 +87,7 @@ spikeDetection:
       nSamples: 40
       peakSampleIndex: 20
       nFeatures: 4
-      sdiffPairs: "0-1,1-2,2-3,3-0"
+      sdiffPairs: "0-1,1-2,2-3"
       futureKey: kept
     - channels: [4, 5, 6, 7]
       nSamples: 32
@@ -129,7 +129,7 @@ int main()
         const YAML::Node r = roundTrip(path, g);
         const YAML::Node grps = r["spikeDetection"]["channelGroups"];
         chk(grps.IsSequence() && grps.size() == 2, "two groups written");
-        chk(str(grps[0]["sdiffPairs"]) == "0-1,1-2,2-3,3-0", "group 1 sdiffPairs kept");
+        chk(str(grps[0]["sdiffPairs"]) == "0-1,1-2,2-3", "group 1 sdiffPairs kept");
         chk(str(grps[0]["futureKey"]) == "kept", "group 1 unknown key kept");
         chk(str(grps[0]["nSamples"]) == "40", "group 1 nSamples not replaced by session value");
         chk(str(grps[0]["nFeatures"]) == "4", "group 1 nFeatures kept");
@@ -140,7 +140,7 @@ int main()
 
         // A second close must be a fixed point.
         const YAML::Node r2 = roundTrip(path, g);
-        chk(str(r2["spikeDetection"]["channelGroups"][0]["sdiffPairs"]) == "0-1,1-2,2-3,3-0",
+        chk(str(r2["spikeDetection"]["channelGroups"][0]["sdiffPairs"]) == "0-1,1-2,2-3",
             "sdiffPairs survives a second save");
     }
 

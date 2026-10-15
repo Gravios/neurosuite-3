@@ -170,6 +170,7 @@ secondsToBytes()
 }
 
 electrodeList=""
+sdiffPairsList=""
 samplesInWaveform=""
 peakSample=""
 # Per-group resolved dotted paths (method-tagged; .res is Shared).
@@ -189,6 +190,10 @@ for group in $(seq 1 $nElectrodeGroups); do
     check_mandatory_variable $electrodes "missing electrode list for group $group"
     electrodes=$(echo $electrodes | sed 's/ /,/g')
     electrodeList="$electrodeList:$electrodes"
+    # Kept for every group (active or not) so position N of -P lines up with
+    # position N of -c.
+    _pairs=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/sdiffPairs")
+    sdiffPairsList="$sdiffPairsList:$_pairs"
 
     _ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/nSamples")
     _ps=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/peakSampleIndex")
@@ -241,6 +246,39 @@ for group in $(seq 1 $nElectrodeGroups); do
     activeCount=$((activeCount + 1))
 done
 electrodeList=${electrodeList#:}
+sdiffPairsList=${sdiffPairsList#:}
+
+# The custom-pattern methods (stderiv_C4 / _C5, and a bare stderiv token on a
+# session with sdiffPairs) were extracted with the session's pattern, so the
+# second pass must difference with the same pattern — passing only -d 4/5 left
+# the engine without a partner map and it fell back to the all-pairs derivative.
+# Same rules as ndm_extractspikes (ndm_functions).
+sdiffPairsArg=()
+reOrderArg=(-d "$methodOrder")
+if [ "$methodFamily" = stderiv ]; then
+    havePairs=0
+    case "$sdiffPairsList" in *[!:]*) havePairs=1 ;; esac
+    case "$NDM_M_KIND" in
+        C)
+            if [ "$havePairs" = 0 ]; then
+                echo_error "method '$method' asks for the custom difference pattern, but no spike group defines sdiffPairs."
+                exit $GENERAL_ERROR
+            fi
+            case "$sdiffPairsList" in *+*) impliedOrder=5 ;; *) impliedOrder=4 ;; esac
+            if [ "$NDM_M_ORDER" != "$impliedOrder" ]; then
+                echo_error "method '$method' states order $NDM_M_ORDER but the session's sdiffPairs imply order $impliedOrder"
+                exit $GENERAL_ERROR
+            fi
+            sdiffPairsArg=(-P "$sdiffPairsList"); reOrderArg=()
+            ;;
+        S) : ;;
+        *)
+            if [ "$havePairs" = 1 ]; then
+                sdiffPairsArg=(-P "$sdiffPairsList"); reOrderArg=()
+            fi
+            ;;
+    esac
+fi
 
 if [ "$activeCount" -eq 0 ]; then
     echo_error "No groups have the full set of inputs — nothing to re-extract."
@@ -310,7 +348,7 @@ if [ "$methodFamily" = stderiv ]; then
         -f $reextractThresholdFactor \
         -B $startInBytes \
         -Z $durationInBytes \
-        -d $methodOrder \
+        "${reOrderArg[@]}" "${sdiffPairsArg[@]}" \
         -m $maskBase \
         -M $reextractMaskHalfWidth \
         -v \

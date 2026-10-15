@@ -78,12 +78,23 @@ static const std::vector<int>& groupPartner(int g)
     return (g >= 0 && g < (int)g_custom_partner.size()) ? g_custom_partner[g] : none;
 }
 
+// Order 5: g_custom_sets[g][ci] is the within-group reference set of channel ci
+// (s[ci] = x[ci] - mean(x over the set)); set from -P when the pattern uses '+'.
+static std::vector<std::vector<std::vector<int> > > g_custom_sets;
+
+static const std::vector<std::vector<int> >& groupSets(int g)
+{
+    static const std::vector<std::vector<int> > none;
+    return (g >= 0 && g < (int)g_custom_sets.size()) ? g_custom_sets[g] : none;
+}
+
 static double computeSDiff(const int16_t *rec,
                             const int     *chanList,
                             int ci, int nChanGrp,
                             SdiffOrder order,
-                            const std::vector<int>& customPartner)
+                            int g)
 {
+    const std::vector<int>& customPartner = groupPartner(g);
     const double val = rec[chanList[ci]];
     switch (order) {
     case SDIFF_NONE:
@@ -101,6 +112,18 @@ static double computeSDiff(const int16_t *rec,
         if (nChanGrp > 1 && (int)customPartner.size() == nChanGrp)
             return val - rec[chanList[customPartner[ci]]];
         [[fallthrough]];
+    case SDIFF_CUSTOM_CAR: {
+        // Byte-identical to process_extractspikes_stderiv's SDIFF_CUSTOM_CAR,
+        // including its fall-through to all-pairs when the map does not fit.
+        const std::vector<std::vector<int> >& sets = groupSets(g);
+        if (order == SDIFF_CUSTOM_CAR && nChanGrp > 1 && (int)sets.size() == nChanGrp
+            && !sets[ci].empty()) {
+            double sum = 0.0;
+            for (size_t k = 0; k < sets[ci].size(); ++k) sum += rec[chanList[sets[ci][k]]];
+            return val - sum / (double)sets[ci].size();
+        }
+        [[fallthrough]];
+    }
     case SDIFF_ALLPAIRS:
     default: {
         if (nChanGrp == 1) return 0.0;
@@ -116,12 +139,12 @@ static inline double stderivAt(const int16_t *data,
                                 int64_t t, int nChanTot,
                                 const int *chans, int ci, int nChanGrp,
                                 SdiffOrder order,
-                                const std::vector<int>& customPartner)
+                                int g)
 {
     const int16_t *recT    = data + t       * nChanTot;
     const int16_t *recTm1  = data + (t - 1) * nChanTot;
-    return computeSDiff(recT,   chans, ci, nChanGrp, order, customPartner)
-         - computeSDiff(recTm1, chans, ci, nChanGrp, order, customPartner);
+    return computeSDiff(recT,   chans, ci, nChanGrp, order, g)
+         - computeSDiff(recTm1, chans, ci, nChanGrp, order, g);
 }
 
 // =========================================================================
@@ -173,7 +196,7 @@ static void computeThresholds(const int16_t *data,
             for (int ci = 0; ci < nCG; ++ci)
                 absBuf[g][ci].push_back(
                     std::fabs(stderivAt(data, t, nChanTot,
-                                         chGroups[g].data(), ci, nCG, order, groupPartner(g))));
+                                         chGroups[g].data(), ci, nCG, order, g)));
         }
     }
 
@@ -273,6 +296,7 @@ static void usage(const char *name)
 static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
 {
     string inputOverride;
+    bool havePattern = false;
     for (int i = 1; i < argc; ++i) {
         const string arg = argv[i];
         if      (arg == "-h") { usage(argv[0]); std::exit(0); }
@@ -287,8 +311,15 @@ static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
         else if (arg == "-B" && i+1 < argc) a.threshStartByte    = (off_t)std::atoll(argv[++i]);
         else if (arg == "-Z" && i+1 < argc) a.threshSizeBytes    = (off_t)std::atoll(argv[++i]);
         else if (arg == "-d" && i+1 < argc) a.sdiffOrder         = (SdiffOrder)std::atoi(argv[++i]);
-        else if (arg == "-P" && i+1 < argc) { g_custom_partner = parseSdiffPairsPerGroup(argv[++i]);
-                                              a.sdiffOrder = SDIFF_CUSTOM; }
+        else if (arg == "-P" && i+1 < argc) {
+            // Same dispatch as process_extractspikes_stderiv: '+' selects order 5.
+            const char *pat = argv[++i];
+            if (sdiffSpecUsesSets(pat)) { g_custom_sets    = parseSdiffSetsPerGroup(pat);
+                                          a.sdiffOrder = SDIFF_CUSTOM_CAR; }
+            else                        { g_custom_partner = parseSdiffPairsPerGroup(pat);
+                                          a.sdiffOrder = SDIFF_CUSTOM; }
+            havePattern = true;
+        }
         else if (arg == "-m" && i+1 < argc) a.maskBaseFileName   = argv[++i];
         else if (arg == "-M" && i+1 < argc) a.maskHalfWidth      = std::atoll(argv[++i]);
         else if (arg == "-i" && i+1 < argc) inputOverride        = argv[++i];
@@ -296,6 +327,14 @@ static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
         else { cerr << "error: unknown option '" << arg << "'" << endl; return false; }
     }
     if (a.outputBaseFileName.empty()) return false;
+    if ((int)a.sdiffOrder < 0 || (int)a.sdiffOrder > 5) {
+        cerr << "error: -d must be 0-3 (4 and 5 come from -P)" << endl; return false;
+    }
+    if ((a.sdiffOrder == SDIFF_CUSTOM || a.sdiffOrder == SDIFF_CUSTOM_CAR) && !havePattern) {
+        // Without the map the engine would silently difference all pairs.
+        cerr << "error: sdiffOrder " << (int)a.sdiffOrder
+             << " needs the sdiffPairs pattern (-P)" << endl; return false;
+    }
     if (a.maskBaseFileName.empty()) a.maskBaseFileName = a.outputBaseFileName;
     a.inputFilePath = !inputOverride.empty() ? inputOverride
                                              : a.outputBaseFileName + ".fil";
@@ -409,7 +448,7 @@ int main(int argc, char **argv)
             int hitCi = -1; bool hitNeg = false;
             for (int ci = 0; ci < nChanG; ++ci) {
                 const double v  = stderivAt(data, t, nChanT, chans.data(),
-                                             ci, nChanG, ord, groupPartner(g));
+                                             ci, nChanG, ord, g);
                 if (std::fabs(v) >= std::fabs(tg[ci])) {
                     hitCi = ci; hitNeg = (v < 0.0); break;
                 }
@@ -419,11 +458,11 @@ int main(int argc, char **argv)
             // Local extremum on the stderiv signal.
             int64_t peakT = t;
             double  peakV = stderivAt(data, t, nChanT, chans.data(),
-                                       hitCi, nChanG, ord, groupPartner(g));
+                                       hitCi, nChanG, ord, g);
             const int64_t pEnd = std::min<int64_t>(t + psl, nSamples);
             for (int64_t s = t + 1; s < pEnd; ++s) {
                 const double v = stderivAt(data, s, nChanT, chans.data(),
-                                            hitCi, nChanG, ord, groupPartner(g));
+                                            hitCi, nChanG, ord, g);
                 if ((hitNeg && v < peakV) || (!hitNeg && v > peakV)) {
                     peakV = v; peakT = s;
                 }
@@ -431,9 +470,9 @@ int main(int argc, char **argv)
             if (peakT <= 1 || peakT >= nSamples - 1) continue;
 
             const double pb = stderivAt(data, peakT - 1, nChanT,
-                                         chans.data(), hitCi, nChanG, ord, groupPartner(g));
+                                         chans.data(), hitCi, nChanG, ord, g);
             const double pa = stderivAt(data, peakT + 1, nChanT,
-                                         chans.data(), hitCi, nChanG, ord, groupPartner(g));
+                                         chans.data(), hitCi, nChanG, ord, g);
             if (!isRealPeak(peakV, pb, pa)) continue;
             if (std::fabs(peakV) < std::fabs(tg[hitCi])) continue;
 
@@ -508,7 +547,7 @@ int main(int argc, char **argv)
                         data + (int64_t)(start + s) * a.totalChannelNumber;
                     for (int ci = 0; ci < nChanG; ++ci) {
                         double sd = computeSDiff(frame, chans.data(),
-                                                  ci, nChanG, a.sdiffOrder, groupPartner(g));
+                                                  ci, nChanG, a.sdiffOrder, g);
                         int iv = (int)std::llround(sd);
                         if (iv >  32767) iv =  32767;
                         if (iv < -32768) iv = -32768;

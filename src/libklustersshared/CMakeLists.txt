@@ -78,6 +78,13 @@ if(NS_BUILD_TESTS)
     add_executable(klustersshared_yamlmodifier_test test/yamlmodifier_test.cpp)
     target_link_libraries(klustersshared_yamlmodifier_test PRIVATE Neurosuite::qt yaml-cpp)
     add_test(NAME klustersshared_yamlmodifier_test COMMAND klustersshared_yamlmodifier_test)
+
+    # sdiffPairs grammar (sdiff_pairs.h, header-only, no Qt): trees, sets,
+    # strict positions; malformed patterns are rejected, not reinterpreted.
+    add_executable(klustersshared_sdiff_pairs_test test/sdiff_pairs_test.cpp)
+    target_include_directories(klustersshared_sdiff_pairs_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+    add_test(NAME klustersshared_sdiff_pairs_test COMMAND klustersshared_sdiff_pairs_test)
 endif()
 
 # ---------------------------------------------------------------------------

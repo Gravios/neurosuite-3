@@ -65,8 +65,12 @@ detection engine.
   computes over `[start, start+duration)`. New waveforms are written in
   stderiv space, matching the reference rows and the `pca.stderiv.N` basis.
   A suffixed token (`stderiv_S<n>`) fixes the order and overrides
-  `methodOrder`. `stderiv_C<n>` tokens pass the token's order but not the
-  group's `sdiffPairs` pattern to the engine.
+  `methodOrder`. `stderiv_C<n>` tokens (and a bare `stderiv` on a session
+  whose spike groups define `sdiffPairs`) pass the groups' `sdiffPairs`
+  patterns to the engine with `-P`, exactly as `ndm_extractspikes` does, so the
+  second pass differences in the same space as the session's `.spk`; a '+'
+  in any pattern selects order 5. `stderiv_C<n>` fails if no group defines
+  `sdiffPairs` or if the pattern's order is not `<n>`.
 
 Spike times are method-independent: the group's `.res` is found under the
 requested method first, then `standard`, `stderiv`, `sdiff`, any other tag,

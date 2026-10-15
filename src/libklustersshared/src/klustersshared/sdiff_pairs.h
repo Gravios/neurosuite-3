@@ -15,9 +15,15 @@
 // groups of -c — into one partner map per group.  An empty segment means that
 // group carries no custom pattern and keeps the base spatial-derivative order.
 //
-// Header-only (inline) so process_extractspikes_stderiv and
-// process_reextractspikes_stderiv share a single implementation without a
-// separate translation unit.  On malformed input it prints to stderr and exits.
+// Header-only (inline) so every engine that applies the patterns —
+// process_extractspikes_stderiv, process_reextractspikes_stderiv,
+// process_alignspikes, process_alignspikes_pca — and Klusters share a single
+// implementation.  On malformed input it prints to stderr and exits, or with an
+// `ok` pointer reports failure instead (Klusters).
+//
+// Positions must be plain non-negative integers ("x-1" or "0-1+2" in a pair
+// pattern are errors, not 0-1), a pair pattern must be a tree (no cycles), and
+// a reference set may not name a channel twice.
 #ifndef KLUSTERSSHARED_SDIFF_PAIRS_H
 #define KLUSTERSSHARED_SDIFF_PAIRS_H
 
@@ -25,6 +31,22 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+// A within-group channel position: optional blanks around a plain decimal
+// non-negative integer.  Anything else (letters, signs, '+', empty) is -1.
+inline int parseSdiffPosition(const std::string& t)
+{
+    size_t a = t.find_first_not_of(" \t");
+    size_t b = t.find_last_not_of(" \t");
+    if(a == std::string::npos) return -1;
+    long v = 0;
+    for(size_t i = a; i <= b; i++) {
+        if(t[i] < '0' || t[i] > '9') return -1;
+        v = v * 10 + (t[i] - '0');
+        if(v > 1000000) return -1;
+    }
+    return static_cast<int>(v);
+}
 
 // When `ok` is non-null the parser never exits: any malformed input sets *ok=false
 // and returns an empty map (for GUI callers such as klusters, which must not abort
@@ -46,8 +68,8 @@ inline std::vector<int> parseSdiffPairs(const char *spec, bool *ok = nullptr)
                 std::cerr << "error: bad sdiffPairs token '" << tok << "' (want a-b).\n";
                 exit(1);
             }
-            int a = atoi(tok.substr(0, dash).c_str());
-            int b = atoi(tok.substr(dash + 1).c_str());
+            int a = parseSdiffPosition(tok.substr(0, dash));
+            int b = parseSdiffPosition(tok.substr(dash + 1));
             if(a < 0 || b < 0 || a == b) {
                 if(ok) { *ok = false; return std::vector<int>(); }
                 std::cerr << "error: bad sdiffPairs token '" << tok << "'.\n";
@@ -92,6 +114,19 @@ inline std::vector<int> parseSdiffPairs(const char *spec, bool *ok = nullptr)
         std::cerr << "error: sdiffPairs root channel " << roots[0]
                   << " must be the last position (" << maxPos - 1 << ").\n";
         exit(1);
+    }
+    // Tree, not just one root: from every position the partner chain must reach
+    // the root.  "0-1,1-0,2-3" has one root (3) but 0 and 1 form a cycle that
+    // never reaches it.
+    for(int idx = 0; idx < maxPos; idx++) {
+        int cur = idx, steps = 0;
+        while(cur != roots[0] && steps <= maxPos) { cur = partner[cur]; steps++; }
+        if(cur != roots[0]) {
+            if(ok) { *ok = false; return std::vector<int>(); }
+            std::cerr << "error: sdiffPairs channel " << idx
+                      << " is on a cycle that never reaches the root.\n";
+            exit(1);
+        }
     }
     int pred = -1;                                   // wire the root to a predecessor
     for(int j = 0; j < maxPos; j++)
@@ -156,7 +191,7 @@ inline std::vector<std::vector<int> > parseSdiffSets(const char *spec, bool *ok 
         if(!tok.empty()) {
             size_t dash = tok.find('-');
             if(dash == std::string::npos) { fail("bad sdiffSets token '" + tok + "' (want a-b[+c...])"); return std::vector<std::vector<int> >(); }
-            int a = atoi(tok.substr(0, dash).c_str());
+            int a = parseSdiffPosition(tok.substr(0, dash));
             if(a < 0) { fail("bad sdiffSets source '" + tok + "'"); return std::vector<std::vector<int> >(); }
             std::vector<int> set;
             std::string rhs = tok.substr(dash + 1);
@@ -164,8 +199,10 @@ inline std::vector<std::vector<int> > parseSdiffSets(const char *spec, bool *ok 
             while(true) {
                 size_t plus = rhs.find('+', q);
                 std::string m = (plus == std::string::npos) ? rhs.substr(q) : rhs.substr(q, plus - q);
-                int b = atoi(m.c_str());
-                if(m.empty() || b < 0 || b == a) { fail("bad sdiffSets target in '" + tok + "'"); return std::vector<std::vector<int> >(); }
+                int b = parseSdiffPosition(m);
+                if(b < 0 || b == a) { fail("bad sdiffSets target in '" + tok + "'"); return std::vector<std::vector<int> >(); }
+                for(size_t k = 0; k < set.size(); k++)
+                    if(set[k] == b) { fail("sdiffSets target repeated in '" + tok + "'"); return std::vector<std::vector<int> >(); }
                 set.push_back(b);
                 if(b + 1 > maxPos) maxPos = b + 1;
                 if(plus == std::string::npos) break;
