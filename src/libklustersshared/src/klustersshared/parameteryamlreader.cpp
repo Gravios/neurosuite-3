@@ -146,22 +146,36 @@ QString ParameterYamlReader::getNotes() const
 // Acquisition system
 // ---------------------------------------------------------------------------
 
-// An integer acquisition value.  The file is hand-edited and written by other
-// tools, so "1000.0" is as likely as "1000"; a strict int read rejects it and
-// returns the "absent" 0, and NeuroScope then substitutes its preference default
-// -- which its save-on-close writes back over the real value.  A non-integral
-// number rounds to the nearest integer instead.
-static int acquisitionInt(const YAML::Node& root, const char* key)
+// An integer value.  The file is hand-edited and written by other tools, so
+// "1000.0" is as likely as "1000"; a strict int read rejects it and returns the
+// "absent" fallback, and the application then substitutes a default -- which
+// its next save writes back over the real value (NeuroScope's preference
+// default for an acquisition field; 0 for a group's nSamples in ndmanager).
+// A non-integral number rounds to the nearest integer instead.  Returns false,
+// leaving @p out alone, for an absent, null or non-numeric value.
+static bool readInt(const YAML::Node& n, int& out)
 {
-    const YAML::Node n = safeGet2(root, "acquisitionSystem", key);
-    if (!n || !n.IsScalar()) return 0;
-    try { return n.as<int>(); } catch (...) {}
+    if (!n || !n.IsScalar()) return false;
+    try { out = n.as<int>(); return true; } catch (...) {}
     try {
         const double d = n.as<double>();
-        if (std::isfinite(d) && std::fabs(d) < 2.0e9)
-            return static_cast<int>(std::lround(d));
+        if (std::isfinite(d) && std::fabs(d) < 2.0e9) {
+            out = static_cast<int>(std::lround(d));
+            return true;
+        }
     } catch (...) {}
-    return 0;
+    return false;
+}
+
+static int intOr(const YAML::Node& n, int fallback)
+{
+    int v = fallback;
+    return readInt(n, v) ? v : fallback;
+}
+
+static int acquisitionInt(const YAML::Node& root, const char* key)
+{
+    return intOr(safeGet2(root, "acquisitionSystem", key), 0);
 }
 
 int ParameterYamlReader::getResolution() const
@@ -316,7 +330,7 @@ int ParameterYamlReader::getProbeId(int electrodeGroupID) const
     auto grp = spikeGroup(electrodeGroupID);
     if (!grp) return 0;
     // probeId is optional; default 0 (all groups on one probe)
-    return nodeAs<int>(grp["probeId"], 0);
+    return intOr(grp["probeId"], 0);
 }
 
 int ParameterYamlReader::getShankIndex(int electrodeGroupID) const
@@ -324,7 +338,7 @@ int ParameterYamlReader::getShankIndex(int electrodeGroupID) const
     auto grp = spikeGroup(electrodeGroupID);
     if (!grp) return electrodeGroupID - 1;
     // shankIndex is optional; default to group-1 (0-based)
-    return nodeAs<int>(grp["shankIndex"], electrodeGroupID - 1);
+    return intOr(grp["shankIndex"], electrodeGroupID - 1);
 }
 
 QList<int> ParameterYamlReader::getSiblingElectrodeGroups(int electrodeGroupID) const
@@ -338,7 +352,7 @@ QList<int> ParameterYamlReader::getSiblingElectrodeGroups(int electrodeGroupID) 
     int gnum = 1;
     for (const auto& grp : groups) {
         if (gnum != electrodeGroupID) {
-            const int pid = nodeAs<int>(grp["probeId"], 0);
+            const int pid = intOr(grp["probeId"], 0);
             if (pid == myProbeId)
                 siblings.append(gnum);
         }
@@ -349,17 +363,17 @@ QList<int> ParameterYamlReader::getSiblingElectrodeGroups(int electrodeGroupID) 
 
 int ParameterYamlReader::getNbSamples(int electrodeGroupID) const
 {
-    return nodeAs<int>(spikeGroup(electrodeGroupID)["nSamples"], 0);
+    return intOr(spikeGroup(electrodeGroupID)["nSamples"], 0);
 }
 
 int ParameterYamlReader::getPeakSampleIndex(int electrodeGroupID) const
 {
-    return nodeAs<int>(spikeGroup(electrodeGroupID)["peakSampleIndex"], 0);
+    return intOr(spikeGroup(electrodeGroupID)["peakSampleIndex"], 0);
 }
 
 int ParameterYamlReader::getNbFeatures(int electrodeGroupID) const
 {
-    return nodeAs<int>(spikeGroup(electrodeGroupID)["nFeatures"], 0);
+    return intOr(spikeGroup(electrodeGroupID)["nFeatures"], 0);
 }
 
 // neuroscope variant — fills per-channel spike group + per-group channel maps
@@ -432,9 +446,18 @@ void ParameterYamlReader::getSpikeDescription(
         spikeGroups[groupId] = chList;
 
         QMap<QString,QString> info;
-        info[QStringLiteral("nSamples")]       = QString::number(nodeAs<int>(grp["nSamples"],       0));
-        info[QStringLiteral("peakSampleIndex")]= QString::number(nodeAs<int>(grp["peakSampleIndex"],0));
-        info[QStringLiteral("nFeatures")]      = QString::number(nodeAs<int>(grp["nFeatures"],      0));
+        // An absent value shows as 0, as before.  A value that is present but
+        // not a number is left out instead: ndmanager's cell stays empty, and
+        // its save keeps the file's value rather than writing 0 over it.
+        for (const char* key : {"nSamples", "peakSampleIndex", "nFeatures"}) {
+            const YAML::Node n = grp[key];
+            int v = 0;
+            if (readInt(n, v) || !n || n.IsNull())
+                info[QString::fromLatin1(key)] = QString::number(v);
+            else
+                qWarning() << "ParameterYamlReader: spike group" << groupId << key
+                           << "is not a number; left unset";
+        }
         // Optional per-group custom difference pattern for the stderiv pipeline.
         // Recorded only when present, so sessions that do not use it round-trip
         // unchanged (no empty sdiffPairs is written back).
@@ -497,7 +520,7 @@ int ParameterYamlReader::getNbSamplesSpikes() const
     auto ns = root["neuroscope"];
     if (!ns || !ns.IsDefined()) return 0;
     auto spk = ns["spikes"];
-    return nodeAs<int>(spk["nSamples"], 0);
+    return intOr(spk["nSamples"], 0);
 }
 
 int ParameterYamlReader::getPeakSampleIndexSpikes() const
@@ -505,7 +528,7 @@ int ParameterYamlReader::getPeakSampleIndexSpikes() const
     auto ns = root["neuroscope"];
     if (!ns || !ns.IsDefined()) return 0;
     auto spk = ns["spikes"];
-    return nodeAs<int>(spk["peakSampleIndex"], 0);
+    return intOr(spk["peakSampleIndex"], 0);
 }
 
 QString ParameterYamlReader::getTraceBackgroundImage() const

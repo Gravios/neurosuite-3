@@ -328,6 +328,21 @@ int main()
         chk(d["sourceRecording"].IsMap(), "unmodelled block still kept");
     }
 
+    std::printf("per-group ints written as floats, or not numbers:\n");
+    {
+        std::string text = kSession;
+        auto swap = [&text](const std::string& from, const std::string& to) {
+            text.replace(text.find(from), from.size(), to);
+        };
+        swap("nSamples: 40", "nSamples: 40.0");
+        swap("peakSampleIndex: 16", "peakSampleIndex: sixteen");
+        std::ofstream(path.toStdString()) << text;
+        Model m = load(path);
+        const YAML::Node sg = save(m, path, path)["spikeDetection"]["channelGroups"];
+        chk(str(sg[0]["nSamples"]) == "40", "nSamples 40.0 saved as 40, not 0");
+        chk(str(sg[1]["peakSampleIndex"]) == "sixteen", "a non-number is left for the user, not zeroed");
+    }
+
     std::printf("brand-new file (no base document):\n");
     {
         writeSession(path);

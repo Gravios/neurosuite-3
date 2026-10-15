@@ -241,6 +241,9 @@ public:
     int        getShankIndex(int electrodeGroupID)               const;
     QList<int> getSiblingElectrodeGroups(int electrodeGroupID)  const;
 
+    // These per-group ints (and probeId/shankIndex above) accept a number
+    // written as a float: 42.0 reads as 42, a non-integral value rounds.  An
+    // absent or non-numeric value gives the fallback (0).
     int getNbSamples(int electrodeGroupID)      const;
     int getPeakSampleIndex(int electrodeGroupID) const;
     int getNbFeatures(int electrodeGroupID)      const;
