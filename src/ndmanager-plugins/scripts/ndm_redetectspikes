@@ -53,6 +53,8 @@ inputs_missing "$session.$param_ext" && exit $INPUTS_MISSING
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 # // Read Parameters
+# Detection parameters come from this program's own block when it has them,
+# otherwise from ndm_detectspikes (the values the first round used).
 # ////////////////////////////////////////////////////////////////////////////////////////////////
 
 nChannels=$(yaml_read $session "//acquisitionSystem/nChannels")
@@ -60,12 +62,12 @@ resolution=$(yaml_read $session "//acquisitionSystem/nBits")
 samplingRate=$(yaml_read $session "//acquisitionSystem/samplingRate")
 nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 windowHalfLength=$(read_script_parameter -s ndm_hipass $session windowHalfLength)
-thresholdFactor=$(read_script_parameter $session thresholdFactor)
-refractoryPeriod=$(read_script_parameter $session refractoryPeriod)
-peakSearchLength=$(read_script_parameter $session peakSearchLength)
-start=$(read_script_parameter $session start)
-duration=$(read_script_parameter $session duration)
-memCapGB=$(read_script_parameter $session memCapGB)
+thresholdFactor=$(read_script_parameter -a ndm_detectspikes $session thresholdFactor)
+refractoryPeriod=$(read_script_parameter -a ndm_detectspikes $session refractoryPeriod)
+peakSearchLength=$(read_script_parameter -a ndm_detectspikes $session peakSearchLength)
+start=$(read_script_parameter -a ndm_detectspikes $session start)
+duration=$(read_script_parameter -a ndm_detectspikes $session duration)
+memCapGB=$(read_script_parameter -a ndm_detectspikes $session memCapGB)
 
 check_mandatory_variable $nChannels      "missing number of channels"
 check_mandatory_variable $resolution     "missing resolution (nBits)"
