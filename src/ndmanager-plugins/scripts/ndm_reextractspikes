@@ -12,7 +12,8 @@
 #//      an existing spike time, so only spikes MISSED by the first pass survive.
 #//      Output lands at $session-reextr-tmp.{res,spk}.N.
 #//         standard / sdiff : process_reextractspikes        (external -t threshold)
-#//         stderiv          : process_reextractspikes_stderiv (-f/-B/-Z/-d order)
+#//         stderiv          : process_reextractspikes_stderiv (-f/-B/-Z/-T/-d order;
+#//                            thresholds computed exactly as ndm_detectspikes does)
 #//
 #//   2. Originals are copied to <dotted-name>.bak for crash recovery.
 #//
@@ -117,6 +118,10 @@ refractoryPeriod=$(read_script_parameter -a ndm_detectspikes $session refractory
 peakSearchLength=$(read_script_parameter -a ndm_detectspikes $session peakSearchLength)
 start=$(read_script_parameter -a ndm_detectspikes $session start)
 duration=$(read_script_parameter -a ndm_detectspikes $session duration)
+# Noise base of the stderiv threshold (ndm_detectspikes thresholdNoise, engine
+# -T): the second pass measures sigma on the same signal as the detection did,
+# so reextractThresholdFactor scales the detection's own noise level.
+thresholdNoise=$(read_script_parameter -a ndm_detectspikes $session thresholdNoise)
 
 # Re-extraction-specific parameters (ndm_reextractspikes node).
 reextractThresholdFactor=$(read_script_parameter $session reextractThresholdFactor)
@@ -133,6 +138,19 @@ check_mandatory_variable $refractoryPeriod "missing refractoryPeriod"
 check_mandatory_variable $peakSearchLength "missing peakSearchLength"
 check_mandatory_variable $start            "missing start"
 check_mandatory_variable $duration         "missing duration"
+thresholdNoiseArg=()
+if [ -n "$thresholdNoise" ]; then
+    case "$thresholdNoise" in
+        sdiff|stderiv) : ;;
+        *) echo_error "thresholdNoise must be 'sdiff' or 'stderiv' (got '$thresholdNoise')"
+           exit $GENERAL_ERROR ;;
+    esac
+    if [ "$methodFamily" = stderiv ]; then
+        thresholdNoiseArg=(-T "$thresholdNoise")
+    else
+        echo_warning "thresholdNoise=$thresholdNoise ignored: it applies to method stderiv only (method is '$method')"
+    fi
+fi
 
 # Fallback defaults — normally supplied by the XML descriptor.
 reextractThresholdFactor=${reextractThresholdFactor:-$(unset LANG && echo "$thresholdFactor 0.75" \
@@ -147,6 +165,7 @@ reextractAutoSubcluster=${reextractAutoSubcluster:-0}
 echo_info "Re-extraction parameters:"
 echo_info "  reextractThresholdFactor = $reextractThresholdFactor  (main thresholdFactor=$thresholdFactor)"
 [ "$methodFamily" != standard ] && echo_info "  spatial derivative order = $methodOrder"
+[ "$methodFamily" = stderiv ] && echo_info "  threshold noise base     = ${thresholdNoise:-sdiff} (ndm_detectspikes thresholdNoise)"
 if [ -n "$reextractMaskHalfWidth" ]; then
     echo_info "  reextractMaskHalfWidth   = $reextractMaskHalfWidth samples (explicit)"
 else
@@ -353,6 +372,7 @@ if [ "$methodFamily" = stderiv ]; then
         -f $reextractThresholdFactor \
         -B $startInBytes \
         -Z $durationInBytes \
+        "${thresholdNoiseArg[@]}" \
         "${reOrderArg[@]}" "${sdiffPairsArg[@]}" \
         -S auto \
         -m $maskBase \

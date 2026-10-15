@@ -15,6 +15,10 @@
  reference rows, so the .pcaD basis (trained on transformed waveforms)
  projects them into the same feature space as the reference data.
 
+ Thresholds are computed as process_extractspikes_stderiv computes them,
+ including its -T noise base (default sdiff), so the same factor, window
+ and base give the same per-channel thresholds.
+
  Mask semantics are identical: candidate peaks within ± maskHalfWidth of
  any timestamp listed in the per-group mask .res.N are rejected.
 
@@ -55,6 +59,13 @@
 #define SPIKE_TIME_OUT_EXT  "res"
 #define SPIKE_REC_OUT_EXT   "spkD"
 
+// Signal the threshold's noise sigma is measured on — process_extract-
+// spikes_stderiv's -T, same default.
+enum ThresholdNoise {
+    THRNOISE_SDIFF   = 0,  // median|sdiff|   (default, historical)
+    THRNOISE_STDERIV = 1   // median|stderiv| (the detection signal)
+};
+
 enum SeedMode {
     SEED_AUTO = 0,   // detect from the reference .spk/.res (<maskBase>.{spk,res}.N)
     SEED_PREV = 1,   // sd[-1] = spatial derivative of the sample before the window
@@ -84,8 +95,9 @@ struct ReextractStderivArgs {
     int         totalChannelNumber = 0;
     std::string channelList;
 
-    // Threshold computation (applied to sdiff signal)
+    // Threshold computation: factor × 4 × median|x| / 0.6745, x per -T
     double thresholdFactor = -1.0;
+    ThresholdNoise thresholdNoise = THRNOISE_SDIFF;
     off_t  threshStartByte = 0;
     off_t  threshSizeBytes = 0;
 

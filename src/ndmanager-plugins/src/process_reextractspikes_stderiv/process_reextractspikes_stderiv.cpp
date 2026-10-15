@@ -13,12 +13,22 @@
  *
  * Threshold computation
  * ---------------------
- *   Thresholds are computed internally from the stderiv signal over the
- *   window [threshStartByte, threshStartByte + threshSizeBytes) using the
- *   Quiroga (2004) robust formula:
- *       thr = thresholdFactor × 4 × median(|stderiv|) / 0.6745
- *   This matches process_extractspikes_stderiv exactly, so the bash
- *   wrapper supplies the same -f / -B / -Z arguments.
+ *   Thresholds are computed internally over the window
+ *   [threshStartByte, threshStartByte + threshSizeBytes) with the Quiroga
+ *   (2004) robust formula
+ *       thr = thresholdFactor × 4 × median(|x|) / 0.6745
+ *   where x, chosen by -T exactly as in process_extractspikes_stderiv, is
+ *       sdiff   (default) the spatial derivative only — the detector's
+ *               historical noise base, although it thresholds the stderiv
+ *               signal, whose noise is smaller;
+ *       stderiv the detection signal itself (rounded, int16-clamped sdiff,
+ *               then a clamped first difference; the window's first sample
+ *               has no difference).
+ *   Both bases are measured the way computeSdiffThresholds measures them
+ *   (same window, decimation and median), so for the same -f / -B / -Z / -T
+ *   the per-channel thresholds equal the detector's.  The detection signal
+ *   is built like fill_sdiff_buffer's (rounded + clamped sdiff, clamped
+ *   difference).
  *
  * The detection engine then runs on the stderiv shadow signal, and
  * waveform extraction (Pass 2) reads from the original raw .fil.
@@ -139,7 +149,19 @@ static double computeSDiff(const int16_t *rec,
     }
 }
 
-// Temporal first-difference at time t: stderivAt(t) = sdiff(t) - sdiff(t-1)
+// Saturating round to int16, as process_extractspikes_stderiv's
+// fill_sdiff_buffer stores the spatial derivative and its difference.
+static inline int clamp16(double v)
+{
+    long iv = std::lround(v);
+    if (iv >  32767) iv =  32767;
+    if (iv < -32768) iv = -32768;
+    return (int)iv;
+}
+
+// Temporal first-difference at time t: stderivAt(t) = sdiff(t) - sdiff(t-1),
+// built like the detector's signal (fill_sdiff_buffer): each sdiff rounded and
+// int16-clamped, the difference clamped.
 static inline double stderivAt(const int16_t *data,
                                 int64_t t, int nChanTot,
                                 const int *chans, int ci, int nChanGrp,
@@ -148,12 +170,19 @@ static inline double stderivAt(const int16_t *data,
 {
     const int16_t *recT    = data + t       * nChanTot;
     const int16_t *recTm1  = data + (t - 1) * nChanTot;
-    return computeSDiff(recT,   chans, ci, nChanGrp, order, g)
-         - computeSDiff(recTm1, chans, ci, nChanGrp, order, g);
+    return (double)clamp16((double)clamp16(computeSDiff(recT,   chans, ci, nChanGrp, order, g))
+                         - (double)clamp16(computeSDiff(recTm1, chans, ci, nChanGrp, order, g)));
 }
 
 // =========================================================================
-// Compute per-group / per-channel thresholds from the stderiv signal.
+// Per-group / per-channel thresholds — process_extractspikes_stderiv's
+// computeSdiffThresholds on the mapped file: the window starts at
+// startByte, holds sizeBytes / frame samples (cut at the end of the file),
+// is decimated with the same stride, and both noise bases are measured:
+//   |sdiff|   unrounded spatial derivative, every kept sample;
+//   |stderiv| clamped difference of the rounded, clamped sdiff, every kept
+//             sample but the window's first (its predecessor is not used).
+// `noise` picks the base; both are reported in verbose mode.
 // =========================================================================
 static void computeThresholds(const int16_t *data,
                                int64_t nSamples,
@@ -162,67 +191,94 @@ static void computeThresholds(const int16_t *data,
                                const vector<vector<int>> &chGroups,
                                SdiffOrder order,
                                double factor,
+                               ThresholdNoise noise,
                                vector<vector<double>> &outThresh,
                                bool verbose)
 {
-    const int64_t startSample = startByte / ((int64_t)nChanTot * (int64_t)sizeof(int16_t));
-    int64_t       nWinSamples = sizeBytes / ((int64_t)nChanTot * (int64_t)sizeof(int16_t));
-    if (startSample < 1) {
-        // We need t-1 for temporal diff — skip sample 0.
-        nWinSamples = std::max<int64_t>(0, nWinSamples - (1 - startSample));
-    }
-    const int64_t tLo = std::max<int64_t>(1, startSample);
+    const int64_t frame       = (int64_t)nChanTot * (int64_t)sizeof(int16_t);
+    const int64_t startSample = startByte / frame;
+    const int64_t nWinSamples = sizeBytes / frame;
+    const int64_t tLo = std::max<int64_t>(0, startSample);
     const int64_t tHi = std::min<int64_t>(nSamples, tLo + nWinSamples);
-    if (tHi <= tLo) {
+    if (nWinSamples <= 0 || tHi <= tLo) {
         cerr << "error: threshold window has no samples "
                 "(startByte=" << startByte << " sizeBytes=" << sizeBytes
              << " nSamples=" << nSamples << ")" << endl;
         std::exit(1);
     }
 
-    // Decimate to keep memory bounded (~32 MB cap).
+    // Decimate to keep memory bounded (~32 MB cap) — the detector's stride.
     const int64_t maxKept = 4000000;
-    const int     stride  = (tHi - tLo > maxKept)
-                            ? (int)((tHi - tLo) / maxKept) + 1
+    const int     stride  = (nWinSamples > maxKept)
+                            ? (int)(nWinSamples / maxKept) + 1
                             : 1;
 
     const int nG = (int)chGroups.size();
     outThresh.assign(nG, {});
-    vector<vector<vector<double>>> absBuf(nG);
+    vector<vector<vector<double>>> absSd(nG);
+    vector<vector<vector<double>>> absTd(nG);
+    vector<vector<int>>            prevSd(nG);
     for (int g = 0; g < nG; ++g) {
-        absBuf[g].resize(chGroups[g].size());
+        absSd[g].resize(chGroups[g].size());
+        absTd[g].resize(chGroups[g].size());
+        prevSd[g].assign(chGroups[g].size(), 0);
         outThresh[g].resize(chGroups[g].size(), 0.0);
     }
 
     for (int64_t t = tLo; t < tHi; ++t) {
-        if ((t - tLo) % stride != 0) continue;
+        const int64_t seen  = t - tLo;
+        const bool    keep  = (seen % stride == 0);
+        const bool    hasTd = (seen > 0);
+        const int16_t *rec  = data + t * nChanTot;
         for (int g = 0; g < nG; ++g) {
             const int nCG = (int)chGroups[g].size();
-            for (int ci = 0; ci < nCG; ++ci)
-                absBuf[g][ci].push_back(
-                    std::fabs(stderivAt(data, t, nChanTot,
-                                         chGroups[g].data(), ci, nCG, order, g)));
+            for (int ci = 0; ci < nCG; ++ci) {
+                const double v   = computeSDiff(rec, chGroups[g].data(), ci, nCG, order, g);
+                const int    sdi = clamp16(v);
+                if (keep) {
+                    absSd[g][ci].push_back(std::fabs(v));
+                    if (hasTd)
+                        absTd[g][ci].push_back(
+                            std::fabs((double)clamp16((double)sdi - prevSd[g][ci])));
+                }
+                prevSd[g][ci] = sdi;
+            }
         }
     }
 
     for (int g = 0; g < nG; ++g) {
+        double minK = 1e300, maxK = 0.0;
         for (size_t ci = 0; ci < chGroups[g].size(); ++ci) {
-            auto &v = absBuf[g][ci];
-            if (v.empty()) {
+            auto &vs = absSd[g][ci];
+            auto &vt = absTd[g][ci];
+            if (vs.empty() || vt.empty()) {
                 cerr << "error: empty threshold window for g=" << g+1
                      << " ci=" << ci << endl;
                 std::exit(1);
             }
-            std::sort(v.begin(), v.end());
-            const double med = v[v.size() / 2];
+            std::sort(vs.begin(), vs.end());
+            std::sort(vt.begin(), vt.end());
+            const double medSd = vs[vs.size() / 2];
+            const double medTd = vt[vt.size() / 2];
+            const double med   = (noise == THRNOISE_STDERIV) ? medTd : medSd;
             // Quiroga (2004): thr = factor × 4 × σ_n,   σ_n = median(|x|)/0.6745
             outThresh[g][ci] = factor * 4.0 * med / 0.6745;
+            const double k = (medTd > 0) ? outThresh[g][ci] / (medTd / 0.6745) : 0.0;
+            minK = std::min(minK, k); maxK = std::max(maxK, k);
             if (verbose)
-                cerr << "  [sdiff thr] g=" << (g+1)
+                cerr << "  [noise] g=" << (g+1)
                      << " ch=" << chGroups[g][ci]
-                     << "  median|stderiv|=" << med
-                     << "  thr=" << outThresh[g][ci] << endl;
+                     << "  median|sdiff|=" << medSd
+                     << "  median|stderiv|=" << medTd
+                     << "  thr=" << outThresh[g][ci]
+                     << "  (= " << k << " sigma of the detection signal)" << endl;
         }
+        if (!chGroups[g].empty())
+            cout << "  group " << (g+1) << " noise base: "
+                 << (noise == THRNOISE_STDERIV ? "stderiv" : "sdiff (historical)")
+                 << "; effective threshold " << minK << ".." << maxK
+                 << " sigma of the detection signal (factor " << factor
+                 << " x 4 = " << factor * 4.0 << ")" << endl;
     }
 }
 
@@ -381,9 +437,12 @@ static void usage(const char *name)
     cerr << programVersion << endl;
     cerr << "usage: " << name
          << " -n nCh -c channels -w wLen -p peak -l pslen -r ref"
-            " -f factor -B startByte -Z sizeBytes"
+            " -f factor -B startByte -Z sizeBytes [-T sdiff|stderiv]"
             " [-d sdiffOrder] [-P g1:g2:...] [-S auto|prev|zero] [-m maskBase] [-M maskHalf]"
             " [-i in.fil] [-v] basename" << endl;
+    cerr << "  -T  noise base of the threshold, as process_extractspikes_stderiv -T:\n"
+            "      sdiff (default) = median|spatial derivative|, stderiv = median|\n"
+            "      detection signal|; thr = factor * 4 * median / 0.6745" << endl;
     cerr << "  -S  seed of each written window's temporal difference: the previous\n"
             "      sample's spatial derivative (prev, process_extractspikes_stderiv -R),\n"
             "      0 (zero, older extractor), or auto (default): follow the reference\n"
@@ -416,6 +475,12 @@ static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
             else                        { g_custom_partner = parseSdiffPairsPerGroup(pat);
                                           a.sdiffOrder = SDIFF_CUSTOM; }
             havePattern = true;
+        }
+        else if (arg == "-T" && i+1 < argc) {
+            const string v = argv[++i];
+            if      (v == "sdiff")   a.thresholdNoise = THRNOISE_SDIFF;
+            else if (v == "stderiv") a.thresholdNoise = THRNOISE_STDERIV;
+            else { cerr << "error: -T must be sdiff or stderiv" << endl; return false; }
         }
         else if (arg == "-S" && i+1 < argc) {
             const string v = argv[++i];
@@ -496,7 +561,7 @@ int main(int argc, char **argv)
     computeThresholds(data, nSamples, a.totalChannelNumber,
                       a.threshStartByte, a.threshSizeBytes,
                       chGroups, a.sdiffOrder, a.thresholdFactor,
-                      thr, a.verbose);
+                      a.thresholdNoise, thr, a.verbose);
 
     // Load per-group masks.
     vector<vector<int64_t>> maskBy(nGroups);
@@ -512,6 +577,8 @@ int main(int argc, char **argv)
              << "mask base        : " << a.maskBaseFileName << endl
              << "sdiffOrder       : " << (int)a.sdiffOrder << endl
              << "threshold factor : " << a.thresholdFactor << endl
+             << "noise base       : " << (a.thresholdNoise == THRNOISE_STDERIV
+                                          ? "stderiv" : "sdiff (historical)") << endl
              << "mask half-width  : " << a.maskHalfWidth << " samples" << endl;
         for (int g = 0; g < nGroups; ++g)
             cerr << "  group " << g+1 << ": "

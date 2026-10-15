@@ -22,6 +22,7 @@
 			<arg choice="plain"><option>-f</option> <replaceable>thresholdFactor</replaceable></arg>
 			<arg choice="plain"><option>-B</option> <replaceable>startByte</replaceable></arg>
 			<arg choice="plain"><option>-Z</option> <replaceable>sizeBytes</replaceable></arg>
+			<arg choice="opt"><option>-T</option> <replaceable>sdiff|stderiv</replaceable></arg>
 			<arg choice="opt"><option>-d</option> <replaceable>sdiffOrder</replaceable></arg>
 			<arg choice="opt"><option>-P</option> <replaceable>sdiffPairs</replaceable></arg>
 			<arg choice="opt"><option>-S</option> <replaceable>auto|prev|zero</replaceable></arg>
@@ -36,9 +37,13 @@
 		<para>
 			Spatial-derivative + temporal first-difference variant of
 			<command>process_reextractspikes</command>.  Thresholds are
-			computed internally from the stderiv signal over
+			computed internally over
 			<replaceable>startByte</replaceable>..<replaceable>startByte+sizeBytes</replaceable>
-			using the Quiroga (2004) robust noise estimator.  Detection runs
+			using the Quiroga (2004) robust noise estimator, exactly as
+			<command>process_extractspikes_stderiv</command> computes them:
+			<option>-T</option> <literal>sdiff</literal> (default) measures the
+			noise on the spatial derivative, <literal>stderiv</literal> on the
+			detection signal.  Detection runs
 			on the stderiv shadow signal; waveform extraction reads the
 			original unmodified <filename>.fil</filename> and writes
 			<filename>.spkD.N</filename> files.

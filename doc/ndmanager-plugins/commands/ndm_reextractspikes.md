@@ -61,8 +61,13 @@ detection engine.
   shares this engine; only the file names differ.
 - `stderiv` — `process_reextractspikes_stderiv`. Detection runs on the
   spatial + temporal first-difference signal of order `methodOrder`; the
-  threshold is `reextractThresholdFactor` × the noise level the engine
-  computes over `[start, start+duration)`. New waveforms are written in
+  threshold is `reextractThresholdFactor` × 4 × σ, with σ measured over
+  `[start, start+duration)` on the signal named by `thresholdNoise` (read
+  like `thresholdFactor`: this block, then the
+  [`ndm_detectspikes`](spike-detection.md) block): `sdiff` (default) or
+  `stderiv`. The noise is measured exactly as `ndm_detectspikes` measures it,
+  so `reextractThresholdFactor` = `thresholdFactor` reproduces the detection
+  thresholds channel for channel. New waveforms are written in
   stderiv space, matching the reference rows and the `pca.stderiv.N` basis.
   Sample 0 of each window follows the group's existing `.spk`: the engine
   checks its leading rows against the `.fil` and seeds the temporal
@@ -101,7 +106,7 @@ Set in the `ndm_reextractspikes` block (see [parameters](../parameters.md)):
 
 | Name | Default | Meaning |
 |---|---|---|
-| `reextractThresholdFactor` | `0.75` | Threshold factor for re-detection, used **instead of** `thresholdFactor` (baseline × factor). If left empty: 0.75 × `thresholdFactor`. |
+| `reextractThresholdFactor` | `0.75` | Threshold factor for re-detection, used **instead of** `thresholdFactor` (baseline × factor). If left empty: 0.75 × `thresholdFactor`. For `stderiv` it multiplies the same noise base as the detection (see `thresholdNoise` below). |
 | `reextractMaskHalfWidth` | empty | Minimum distance in samples from every existing spike time. Empty: the largest `nSamples` of the active groups. |
 | `reextractMinClusterSize` | `50` | Parent clusters with fewer spikes are not eligible for shadow assignment. |
 | `reextractChi2` | `0.999` | χ² quantile for the squared-Mahalanobis admission threshold; lower is stricter (more spikes go to the unmatched bin). |
@@ -117,7 +122,20 @@ Set in the `ndm_reextractspikes` block (see [parameters](../parameters.md)):
 [`ndm_detectspikes`](spike-detection.md) block. `refractoryPeriod` and
 `peakSearchLength` are passed to the engine; `start`/`duration` set the
 threshold window. `thresholdFactor` itself is only used for the empty-factor
-default above.
+default above. `thresholdNoise` (optional, `sdiff` | `stderiv`, `stderiv`
+method only) is read the same way and passed to the engine as `-T`; empty
+means the engine default `sdiff`, as for the detection.
+
+> **Behaviour change (2026-10-15).** The `stderiv` engine used to measure σ on
+> the detection signal (median |stderiv|) whatever `thresholdNoise` said, while
+> the detector's default is median |sdiff|. It now uses the detection's base.
+> On a session that leaves `thresholdNoise` unset, the same
+> `reextractThresholdFactor` therefore gives thresholds higher by the
+> median |sdiff| / median |stderiv| ratio of each channel (~1.6 on the
+> reference session, ~1.24 on band-limited synthetic noise): divide a factor
+> tuned before this change by that ratio to keep its old thresholds, or set
+> `thresholdNoise: stderiv` (the `ndm_detectspikes` setting, so a re-run
+> detection would use it too).
 
 Per group, `channels`, `nSamples` and `peakSampleIndex` come from
 `spikeDetection.channelGroups`. The engine applies one waveform length and
