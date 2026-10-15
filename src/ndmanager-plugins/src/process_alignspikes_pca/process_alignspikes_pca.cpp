@@ -92,6 +92,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <initializer_list>
 #include <string>
 #include <vector>
 
@@ -125,14 +126,18 @@ static std::vector<int> parseChannelList(const std::string& s) {
 
 // ─── File I/O ──────────────────────────────────────────────────────────────
 
+// File size and positioning go through the core's 64-bit helpers: fseek/ftell
+// take a long, which is 32 bits on Windows, so a .res past 2 GiB (268M spikes)
+// or a large .spk would be misread there.
+using neurosuite::core::detail::seek64;
+using neurosuite::core::detail::sizeOf;
+
 // Read full .res.N (N × int64).
 static bool readRes(const std::string& path, std::vector<int64_t>& ts) {
     std::FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) return false;
-    std::fseek(f, 0, SEEK_END);
-    const long bytes = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    if (bytes % 8 != 0) { std::fclose(f); return false; }
+    const long long bytes = sizeOf(f);
+    if (bytes < 0 || bytes % 8 != 0 || seek64(f, 0) != 0) { std::fclose(f); return false; }
     ts.resize(static_cast<size_t>(bytes / 8));
     const size_t n = std::fread(ts.data(), 8, ts.size(), f);
     std::fclose(f);
@@ -146,14 +151,30 @@ static bool readClu(const std::string& path, std::vector<int32_t>& ids) {
     if (!f) return false;
     int32_t header = 0;
     if (std::fread(&header, 4, 1, f) != 1) { std::fclose(f); return false; }
-    std::fseek(f, 0, SEEK_END);
-    const long bytes = std::ftell(f);
+    const long long bytes = sizeOf(f);
     if (bytes < 4 || (bytes - 4) % 4 != 0) { std::fclose(f); return false; }
     ids.resize(static_cast<size_t>((bytes - 4) / 4));
-    std::fseek(f, 4, SEEK_SET);
+    if (seek64(f, 4) != 0) { std::fclose(f); return false; }
     const size_t n = std::fread(ids.data(), 4, ids.size(), f);
     std::fclose(f);
     return n == ids.size();
+}
+
+// Replace `path` with the given blocks: written to <path>.aligntmp with every
+// fwrite and the fclose checked, then renamed over the original, so a full
+// disk or an interrupted run never leaves a truncated .res / .clu behind.
+struct Block { const void* data; size_t bytes; };
+static bool writeFileAtomic(const std::string& path, std::initializer_list<Block> blocks) {
+    const std::string tmp = path + ".aligntmp";
+    std::FILE* f = std::fopen(tmp.c_str(), "wb");
+    if (!f) return false;
+    bool ok = true;
+    for (const Block& b : blocks)
+        if (ok && b.bytes > 0) ok = (std::fwrite(b.data, 1, b.bytes, f) == b.bytes);
+    ok = (std::fclose(f) == 0) && ok;
+    if (ok) ok = (std::rename(tmp.c_str(), path.c_str()) == 0);
+    if (!ok) std::remove(tmp.c_str());
+    return ok;
 }
 
 // Read one spike waveform from .spk.N at given 0-based index.  Layout on
@@ -162,7 +183,7 @@ static bool readClu(const std::string& path, std::vector<int32_t>& ids) {
 static bool readSpkSampleMajor(std::FILE* f, int64_t spikeIdx, int nChan,
                                 int nSamp, int16_t* outChannelMajor) {
     const int64_t bytesPerSpike = static_cast<int64_t>(nChan) * nSamp * 2;
-    if (std::fseek(f, spikeIdx * bytesPerSpike, SEEK_SET) != 0) return false;
+    if (seek64(f, spikeIdx * bytesPerSpike) != 0) return false;
     std::vector<int16_t> buf(static_cast<size_t>(nChan * nSamp));
     if (std::fread(buf.data(), 2, buf.size(), f) != buf.size()) return false;
     // Transpose [s][c] → [c][s]
@@ -177,7 +198,7 @@ static bool readSpkSampleMajor(std::FILE* f, int64_t spikeIdx, int nChan,
 static bool writeSpkSampleMajor(std::FILE* f, int64_t spikeIdx, int nChan,
                                  int nSamp, const int16_t* channelMajor) {
     const int64_t bytesPerSpike = static_cast<int64_t>(nChan) * nSamp * 2;
-    if (std::fseek(f, spikeIdx * bytesPerSpike, SEEK_SET) != 0) return false;
+    if (seek64(f, spikeIdx * bytesPerSpike) != 0) return false;
     std::vector<int16_t> buf(static_cast<size_t>(nChan * nSamp));
     for (int s = 0; s < nSamp; ++s)
         for (int c = 0; c < nChan; ++c)
@@ -235,7 +256,7 @@ static bool readFilWindow(std::FILE* fil, int64_t startSample,
         (spec.applyTransform && spec.seedFromPrevious && startSample >= 1) ? 1 : 0;
     const long long off = static_cast<long long>(startSample - lead)
                         * nTotalChan * static_cast<long long>(sizeof(int16_t));
-    if (neurosuite::core::detail::seek64(fil, off) != 0) return false;
+    if (seek64(fil, off) != 0) return false;
     std::vector<int16_t> frame(static_cast<size_t>((nSamp + lead) * nTotalChan));
     if (std::fread(frame.data(), 2, frame.size(), fil) != frame.size())
         return false;
@@ -449,7 +470,12 @@ int main(int argc, char** argv) {
     // File paths (chain-of-custody: <base>.<type>.<method>.<grp>).
     const std::string grpStr = std::to_string(a.groupId);
     const std::string spkPath = neurosuite::custody::resolve(a.basename, "spk", a.groupId, a.method).path;
-    const std::string resPath = neurosuite::custody::resolve(a.basename, "res", a.groupId, a.method).path;
+    // Spike times are method-independent: ONE .res per group serves every method,
+    // and detection may have run under a different token than this alignment
+    // (detect at stderiv, cluster+align at stderiv_C5).  resolve() only walks
+    // method -> standard -> untagged and would miss it; resolveAny scans every
+    // method-tagged copy, exactly as process_alignspikes does.
+    const std::string resPath = neurosuite::custody::resolveAny(a.basename, "res", a.groupId, a.method).path;
     const std::string cluPath = neurosuite::custody::methodPath(a.basename, "clu", a.method, a.groupId);
     const std::string pcaPath = neurosuite::custody::methodPath(a.basename, "pca", a.method, a.groupId);
     const std::string fetPath = neurosuite::custody::methodPath(a.basename, "fet", a.method, a.groupId);
@@ -502,8 +528,7 @@ int main(int argc, char** argv) {
     // Open .fil for raw re-extraction (only needed when writing changes)
     std::FILE* filFp = std::fopen(filPath.c_str(), "rb");
     if (!filFp) die("cannot open raw file " + filPath);
-    std::fseek(filFp, 0, SEEK_END);
-    const int64_t filBytes = std::ftell(filFp);
+    const int64_t filBytes = sizeOf(filFp);
     const int64_t totalSamples = filBytes / (a.nTotalChan * 2);
 
     // Open .spk for read/write
@@ -517,7 +542,7 @@ int main(int argc, char** argv) {
     // remaining rows can no longer be matched to the .res.
     {
         const long long rowBytes = static_cast<long long>(spkElems) * 2;
-        const long long spkBytes = neurosuite::core::detail::sizeOf(spkFp);
+        const long long spkBytes = sizeOf(spkFp);
         if (spkBytes != nSpikes * rowBytes) {
             std::string why = spkPath + " holds " + std::to_string(spkBytes) + " bytes, expected "
                 + std::to_string(nSpikes * rowBytes) + " (" + std::to_string(nSpikes)
@@ -565,7 +590,7 @@ int main(int argc, char** argv) {
                 [&](int64_t i, int ci) -> int16_t {
                     if (i != cachedIdx) {
                         cachedIdx = i;
-                        if (neurosuite::core::detail::seek64(spkFp, i * bytesPerSpike) != 0
+                        if (seek64(spkFp, i * bytesPerSpike) != 0
                             || std::fread(row0.data(), 2, row0.size(), spkFp) != row0.size())
                             die("spk read failed for spike " + std::to_string(i));
                     }
@@ -744,8 +769,9 @@ int main(int argc, char** argv) {
             for (int64_t k = 0; k < N; ++k) {
                 const int64_t i = idxs[static_cast<size_t>(k)];
                 if (cumShift[i] == 0) continue;
-                writeSpkSampleMajor(spkFp, i, nChan, a.nSamp,
-                                     wavBuf.data() + k * spkElems);
+                if (!writeSpkSampleMajor(spkFp, i, nChan, a.nSamp,
+                                         wavBuf.data() + k * spkElems))
+                    die("spk write failed for spike " + std::to_string(i));
             }
         }
 
@@ -783,7 +809,8 @@ int main(int argc, char** argv) {
     }
 
     std::fclose(filFp);
-    std::fclose(spkFp);
+    if (std::fclose(spkFp) != 0 && !a.dryRun)
+        die("write error on " + spkPath);
     std::fclose(logFp);
 
     std::printf("  processed %d clusters, %lld spikes shifted total\n",
@@ -810,21 +837,17 @@ int main(int argc, char** argv) {
             resOut[i] = resTs[perm[i]];
             cluOut[i] = clu[perm[i]];
         }
-        // Write .res
-        std::FILE* rf = std::fopen(resPath.c_str(), "wb");
-        if (!rf) die("cannot write " + resPath);
-        std::fwrite(resOut.data(), 8, resOut.size(), rf);
-        std::fclose(rf);
+        // Write .res (temp file + rename, every write checked)
+        if (!writeFileAtomic(resPath, {{resOut.data(), resOut.size() * 8}}))
+            die("cannot write " + resPath);
         // Write .clu  (header is count of distinct cluster IDs)
         std::vector<int32_t> uniq(cluOut.begin(), cluOut.end());
         std::sort(uniq.begin(), uniq.end());
         uniq.erase(std::unique(uniq.begin(), uniq.end()), uniq.end());
-        std::FILE* cf = std::fopen(cluPath.c_str(), "wb");
-        if (!cf) die("cannot write " + cluPath);
         const int32_t nDistinct = static_cast<int32_t>(uniq.size());
-        std::fwrite(&nDistinct, 4, 1, cf);
-        std::fwrite(cluOut.data(), 4, cluOut.size(), cf);
-        std::fclose(cf);
+        if (!writeFileAtomic(cluPath, {{&nDistinct, 4},
+                                       {cluOut.data(), cluOut.size() * 4}}))
+            die("cannot write " + cluPath);
         if (needsResort) {
             // Reorder .spk on disk: open original, write to .spk.tmp
             // sorted by perm, then replace.  Large I/O cost — but it
@@ -837,7 +860,7 @@ int main(int argc, char** argv) {
                 static_cast<int64_t>(nChan) * a.nSamp * 2;
             std::vector<char> buf(static_cast<size_t>(bytesPerSpike));
             for (int64_t k = 0; k < nSpikes; ++k) {
-                if (std::fseek(sfIn, perm[k] * bytesPerSpike, SEEK_SET) != 0)
+                if (seek64(sfIn, perm[k] * bytesPerSpike) != 0)
                     die("spk seek failed during resort");
                 if (std::fread(buf.data(), 1, buf.size(), sfIn) != buf.size())
                     die("spk read failed during resort");
@@ -845,8 +868,10 @@ int main(int argc, char** argv) {
                     die("spk write failed during resort");
             }
             std::fclose(sfIn);
-            std::fclose(sfOut);
-            std::rename((spkPath + ".tmp").c_str(), spkPath.c_str());
+            if (std::fclose(sfOut) != 0)
+                die("spk write failed during resort");
+            if (std::rename((spkPath + ".tmp").c_str(), spkPath.c_str()) != 0)
+                die("cannot replace " + spkPath + " with the resorted copy");
         }
         std::printf("  wrote: %s, %s%s\n", resPath.c_str(), cluPath.c_str(),
                     needsResort ? " (and resorted .spk)" : "");

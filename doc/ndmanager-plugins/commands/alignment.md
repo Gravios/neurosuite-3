@@ -153,7 +153,7 @@ when `process_alignspikes` fails on a group.
 ndm_alignspikes_pca [session.yaml] [electrodeGroup] [--method M] [-- process_alignspikes_pca flags]
 ```
 
-**Input:** `session.fil` (or `session.dat` when there is no `.fil`), `session.clu.<method>.N`, `session.res.<method>.N`, `session.spk.<method>.N`, `session.pca.<method>.N` (for stage 2)
+**Input:** `session.fil` (or `session.dat` when there is no `.fil`), `session.clu.<method>.N`, `session.res.<method>.N` (shared spike times, any method tag), `session.spk.<method>.N`, `session.pca.<method>.N` (for stage 2)
 
 **Output:** `session.spk.<method>.N`, `session.res.<method>.N`, `session.clu.<method>.N` rewritten in place; `session.res.<method>.N.preAlignPca` (times before this run); `session.alignspikes_pca.log.N` (per-cluster CSV); stale `session.fet.<method>.N` renamed to `.fet.<method>.N.preAlignPca`
 
@@ -209,8 +209,11 @@ detection times.
 Without an `electrodeGroup` argument, all groups are processed one after
 another (each binary uses OpenMP internally). With one, only that group runs.
 A group whose `.clu`, `.res` or `.spk` is missing is skipped. The `.clu` is
-looked up strictly as `.clu.<method>.N`; `.res` and `.spk` fall back to the
-`standard` and untagged names. Group geometry (`channels`, `nSamples`,
+looked up strictly as `.clu.<method>.N`; the `.res` is found across all method
+tags, as for `ndm_alignspikes` (detection may have run under a different
+token); the `.spk` falls back to the `standard` and untagged names. The `.res`
+and `.clu` are written to a temporary file and renamed into place, so a failed
+write leaves the previous files intact. Group geometry (`channels`, `nSamples`,
 `peakSampleIndex`) and `nChannels` come from the session YAML.
 
 **Methods.** `standard`, `sdiff` and stderiv tokens are accepted. Stderiv

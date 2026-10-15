@@ -169,17 +169,21 @@ once()
     shift
     local groupExtra=("$@")
 
-    # Required for this group: .clu is method-specific (strict); .res / raw .spk
-    # are shared (fall back to the existing copy).
+    # Required for this group: .clu is method-specific (strict); the .spk is
+    # resolved as a shared artifact (method -> standard -> untagged).  Spike times
+    # are METHOD-INDEPENDENT: one physical .res serves every method, so resolve it
+    # across all of them (ndm_resolve_any), exactly as ndm_alignspikes and
+    # process_alignspikes_pca do -- a .res written under another token (detection
+    # at stderiv, clustering at stderiv_C5) was otherwise reported missing.
     local cluFile=$(ndm_method_path "$session" clu "$group" "$method")
-    local resFile=$(ndm_resolve_shared "$session" res "$group" "$method")
+    local resFile=$(ndm_resolve_any "$session" res "$group" "$method")
     local spkFile=$(ndm_resolve_shared "$session" spk "$group" "$method")
     if [ ! -f "$cluFile" ]; then
         echo_warning "  group $group: $cluFile missing — skip (run ndm_klustakwik first)"
         return $INPUTS_MISSING
     fi
-    if [ ! -f "$resFile" ]; then
-        echo_warning "  group $group: no .res for group $group — skipping"
+    if [ -z "$resFile" ] || [ ! -f "$resFile" ]; then
+        echo_warning "  group $group: no .res for group $group (any method) — skipping"
         return $INPUTS_MISSING
     fi
     if [ ! -f "$spkFile" ]; then
