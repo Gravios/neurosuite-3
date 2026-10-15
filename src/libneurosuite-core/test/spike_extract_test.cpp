@@ -212,6 +212,20 @@ int main() {
               "detect: unrelated data → Unknown");
     }
 
+    // ── spatialDeriv First on a single-channel group: pass-through, no chanRow[-1]
+    {
+        using neurosuite::core::spatialDeriv;
+        using neurosuite::core::SdiffOrder;
+        const double buf[3] = {999.0, 7.0, 555.0};          // chanRow = buf+1, one channel
+        check(spatialDeriv(SdiffOrder::First, buf + 1, 0, 1) == 7.0,
+              "First, nChan==1: pass-through (did not read chanRow[-1])");
+        check(spatialDeriv(SdiffOrder::Laplacian, buf + 1, 0, 1) == 7.0,
+              "Laplacian, nChan==1: pass-through (unchanged)");
+        const double two[2] = {5.0, 2.0};
+        check(spatialDeriv(SdiffOrder::First, two, 0, 2) == 3.0 &&
+              spatialDeriv(SdiffOrder::First, two, 1, 2) == -3.0, "First, nChan==2 unchanged");
+    }
+
     std::remove(path);
     std::printf("%d/%d checks passed\n", g_ran - g_fail, g_ran);
     return g_fail ? 1 : 0;

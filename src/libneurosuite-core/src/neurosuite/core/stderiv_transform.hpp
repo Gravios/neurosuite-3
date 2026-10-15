@@ -50,6 +50,9 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
         case SdiffOrder::None:
             return val;
         case SdiffOrder::First:
+            // A single-channel group has no neighbour: pass through, like
+            // Laplacian (the ternary below would read chanRow[-1]).
+            if (nChan == 1) return val;
             return (idx < nChan - 1) ? val - chanRow[idx + 1]
                                      : val - chanRow[idx - 1];
         case SdiffOrder::Laplacian:
