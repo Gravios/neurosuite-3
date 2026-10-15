@@ -74,6 +74,14 @@ The full-length EMG trace of every group is held in memory as float32
 during steps 3–4: 4 bytes × samples × groups (about 0.6 GB per probe for
 2 h at 20 kHz).
 
+**Progress.** A stage bar shows the run on the terminal, like the spike
+detectors': `ICA` (identification, steps 1–2 — the reads of the ID window
+and each accepted FastICA component, summed over the groups), `CLEAN` (the
+streaming pass over `SESSION.dat`, step 3) and `WRITE` (events and
+waveforms, one step per group), ending with ✓, or ✗ where it failed. It is
+drawn on the terminal itself, so it shows even when the output is logged;
+without a terminal it prints a line every 5 %.
+
 The waveform shape comes from the first spike group
 (`spikeDetection.channelGroups[1].nSamples` and `peakSampleIndex`),
 defaulting to 32 and 16.

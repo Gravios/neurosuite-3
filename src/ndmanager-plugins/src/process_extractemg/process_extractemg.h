@@ -42,6 +42,7 @@
 
 #include <cstdint>
 #include <string>
+#include <functional>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -247,4 +248,7 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
                           int                       maxIterations   = 1000,
                           int                       failureLimit    = 5,
                           uint64_t                  seed            = 0,
-                          Pow3Kernel               *pow3Kernel      = nullptr);
+                          Pow3Kernel               *pow3Kernel      = nullptr,
+                          // called with the fraction of the K components
+                          // accepted so far (progress display); may be empty
+                          const std::function<void(double)> &onProgress = {});

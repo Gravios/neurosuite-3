@@ -78,6 +78,7 @@
 
 #include "process_extractemg.h"
 #include "process_extractemg_gpu.h"
+#include "progressbar.h"      // BlockProgress — stage progress on the terminal
 
 #include <algorithm>
 #include <cerrno>
@@ -337,7 +338,8 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
                           int                       maxIterations,
                           int                       failureLimit,
                           uint64_t                  seed,
-                          Pow3Kernel               *pow3Kernel)
+                          Pow3Kernel               *pow3Kernel,
+                          const std::function<void(double)> &onProgress)
 {
     outIterTotal = 0;
     outAcceptedK = 0;
@@ -624,6 +626,7 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
 
         ++accepted;
         numFailures = 0;
+        if (onProgress) onProgress((double)accepted / K);
     }
 
     outIterTotal = iterTotal;
@@ -965,13 +968,19 @@ static void boxcarAbs(const vector<double> &signal,
 //          threshold, medianEmgEnvelope, nIcaSweeps, converged}.
 // =============================================================================
 
+// Progress of one group's identification, 0..1: the two reads of the ID
+// window take the first half, the FastICA components the second.
+using ProgressFn = std::function<void(double)>;
+
 static bool identifyComponent(const EmgArgs    &args,
                               FILE             *fdat,
                               int64_t           totalSamples,
                               const vector<int>&groupChans,
                               GroupModel       &model,
-                              Pow3Kernel       *pow3Kernel)
+                              Pow3Kernel       *pow3Kernel,
+                              const ProgressFn &onProgress = {})
 {
+    auto report = [&](double f) { if (onProgress) onProgress(f); };
     const int nch = (int)groupChans.size();
     if (nch < 2) {
         cerr << "process_extractemg: group has < 2 channels; cannot run FastICA\n";
@@ -1022,6 +1031,7 @@ static bool identifyComponent(const EmgArgs    &args,
             }
             nKept += gotN;
             soFar += gotN;
+            report(0.25 * (double)soFar / (double)durSamp);
         }
         if (nKept == 0) {
             cerr << "process_extractemg: empty ID window\n";
@@ -1100,6 +1110,7 @@ static bool identifyComponent(const EmgArgs    &args,
                 ++globalSamp;
             }
             soFar += gotN;
+            report(0.25 + 0.25 * (double)soFar / (double)durSamp);
         }
     }
 
@@ -1134,7 +1145,8 @@ static bool identifyComponent(const EmgArgs    &args,
                                             /*maxIter*/      1000,
                                             /*failureLimit*/ 5,
                                             seed,
-                                            pow3Kernel);
+                                            pow3Kernel,
+                                            [&](double f) { report(0.5 + 0.5 * f); });
 
     if (icaAcc == 0) {
         cerr << "process_extractemg: FastICA produced no components\n";
@@ -1284,7 +1296,8 @@ struct GroupRuntime {
 static bool streamProcess(const EmgArgs        &args,
                           FILE                 *fdat,
                           int64_t               totalSamples,
-                          vector<GroupRuntime> &runtime)
+                          vector<GroupRuntime> &runtime,
+                          BlockProgress        &prog)
 {
     if (args.verbose)
         cout << "  PASS 2 (streaming): " << totalSamples << " samples × "
@@ -1427,6 +1440,7 @@ static bool streamProcess(const EmgArgs        &args,
         }
 
         soFar += gotN;
+        prog.setPosition(soFar);
         if (args.verbose && (soFar % (chunkSamp * 10) == 0))
             cout << "    " << soFar << " / " << totalSamples
                  << " samples processed\n";
@@ -1638,6 +1652,26 @@ int main(int argc, char **argv)
     for (size_t g = 0; g < args.groupChannels.size(); ++g)
         runtime[g].channels = args.groupChannels[g];
 
+    // Stage progress on the terminal (drawn to /dev/tty, so it shows even
+    // when the wrapper captures output): ICA -- identification of each
+    // probe's EMG component; CLEAN -- the streaming pass over the .dat
+    // (subtraction, EMG trace); WRITE -- events and waveforms per probe.
+    // A failure ends the bar with a red cross instead of the tick.
+    const size_t nGroups = runtime.size();
+    BlockProgress prog(args.basename);
+    struct FailOnExit {
+        BlockProgress &p;
+        bool ok = false;
+        ~FailOnExit() { if (!ok) p.setFailed(); }
+    } progGuard{prog};
+
+    // ICA: each group reports its own 0..1 fraction (threads in parallel);
+    // the bar shows their sum.  BlockProgress is not thread-safe, hence the
+    // critical section.
+    const long long icaUnits = 1000;
+    vector<double> icaFrac(nGroups, 0.0);
+    prog.beginStage("ICA", icaUnits * (long long)nGroups);
+
     bool pass1Failed = false;
     int  pass1FailGroup = -1;
 
@@ -1699,7 +1733,16 @@ int main(int argc, char **argv)
         const bool ok = identifyComponent(args, fdatThr, totalSamples,
                                           runtime[g].channels,
                                           runtime[g].model,
-                                          kernel.get());
+                                          kernel.get(),
+                                          [&](double f) {
+            #pragma omp critical(emg_progress)
+            {
+                icaFrac[g] = f;
+                double sum = 0.0;
+                for (double x : icaFrac) sum += x;
+                prog.setPosition((long long)(sum * icaUnits));
+            }
+        });
         std::fclose(fdatThr);
         kernel->destroy();      // release device buffers ASAP
 
@@ -1720,14 +1763,18 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    prog.endStage();
+
     // ------------------------------------------------------------------
     //  PASS 2 — streaming subtraction + EMG_au accumulation
     // ------------------------------------------------------------------
-    if (!streamProcess(args, fdat, totalSamples, runtime)) {
+    prog.beginStage("CLEAN", totalSamples);
+    if (!streamProcess(args, fdat, totalSamples, runtime, prog)) {
         std::fclose(fdat);
         return EXIT_FAILURE;
     }
     std::fclose(fdat);
+    prog.endStage();
 
     // ------------------------------------------------------------------
     //  Detect events for each group (parallel across probes)
@@ -1754,6 +1801,8 @@ int main(int argc, char **argv)
     // ------------------------------------------------------------------
     bool writeFailed = false;
     int  writeFailGroup = -1;
+    long long groupsWritten = 0;
+    prog.beginStage("WRITE", (long long)nGroups);
     #pragma omp parallel for schedule(dynamic, 1) if(runtime.size() > 1)
     for (int gi = 0; gi < (int)runtime.size(); ++gi) {
         if (writeFailed) continue;
@@ -1797,6 +1846,8 @@ int main(int argc, char **argv)
                 { if (!writeFailed) { writeFailed = true; writeFailGroup = (int)g; } }
             }
         }
+        #pragma omp critical(emg_progress)
+        prog.setPosition(++groupsWritten);
     }
     if (writeFailed) {
         cerr << "process_extractemg: output write failed at group "
@@ -1864,5 +1915,8 @@ int main(int argc, char **argv)
             cout << "metadata written → " << mp << "\n";
     }
 
+    prog.endStage();
+    progGuard.ok = true;
+    prog.finish();
     return EXIT_SUCCESS;
 }
