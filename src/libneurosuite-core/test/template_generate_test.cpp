@@ -205,6 +205,39 @@ static void test_drop_empty()
           "dropEmpty=false: empty chunk is a 0-filled placeholder");
 }
 
+// ── 7. energyVariant is validated like variants (presence + length) ─────────
+static void test_energy_variant_validation()
+{
+    const int nsamp = 2, nchan = 1;
+    std::vector<int64_t> times = {0, 10, 20};
+    std::vector<int>     clu   = {2, 2, 2};
+    auto spk = spkConst({10, 20, 30}, nsamp, nchan);          // "standard", 3 records
+    Params p; p.nSamples=nsamp; p.nChannels=nchan; p.sr=1000.0;
+    p.linkDrift=false; p.linkAdapt=true; p.nEnergy=1;
+
+    bool threw = false;
+    Result R;
+    try { R = generate(times, {"standard"}, spk, "absent", &clu, nullptr, {}, p); }
+    catch (...) { threw = true; }
+    CHECK(!threw && !R.ok && !R.err.empty(), "energyVariant absent from spk -> clean failure (spk.at threw)");
+
+    auto spk2 = spk;
+    spk2["short"] = std::vector<int16_t>(1, 0);                // present, NOT 3 records
+    threw = false;
+    try { R = generate(times, {"standard"}, spk2, "short", &clu, nullptr, {}, p); }
+    catch (...) { threw = true; }
+    CHECK(!threw && !R.ok && !R.err.empty(), "energyVariant of the wrong length -> clean failure (was OOB)");
+
+    auto spk3 = spk;
+    spk3["energy"] = spk.at("standard");                       // valid, outside `variants`
+    R = generate(times, {"standard"}, spk3, "energy", &clu, nullptr, {}, p);
+    CHECK(R.ok && R.rows.size() == 1, "energyVariant outside variants but valid -> ok");
+
+    Params q = p; q.linkAdapt = false; q.linkDrift = true; q.nChunks = 1;
+    R = generate(times, {"standard"}, spk, "absent", &clu, nullptr, {}, q);
+    CHECK(R.ok, "energyVariant unused (no adapt link) -> not required");
+}
+
 int main()
 {
     test_clu_drift();
@@ -213,6 +246,7 @@ int main()
     test_eap_align();
     test_adapt_energy();
     test_drop_empty();
+    test_energy_variant_validation();
     std::printf("template_generate_test: %d checks, %d failures%s\n",
                 tests, fails, fails ? " — FAILURES" : "");
     std::printf(fails ? "RESULT: FAIL\n" : "RESULT: PASS\n");

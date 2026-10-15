@@ -189,7 +189,9 @@ inline double round_nd(double x, int d)
 // `spk`      : variant → flat int16 stack, N records of nSamples*nChannels
 //              (neurofileio::SpkFile::samples layout).
 // `energyVariant` : variant whose energy defines the adapt bins ("" ⇒ "standard"
-//              if present, else variants[0]).
+//              if present, else variants[0]).  It may be outside `variants`
+//              but must be in `spk` with N records when linkAdapt is set,
+//              else R.ok = false with R.err set.
 // Membership — exactly one of:
 //   `clu` (length N, clu-mode): a class is a cluster id; members are clu==id;
 //         default units = the ids ≥ 2.
@@ -258,11 +260,20 @@ inline Result generate(const std::vector<int64_t>&                       times,
     std::vector<int> chOf(static_cast<std::size_t>(N));
     for (int64_t i = 0; i < N; ++i) chOf[static_cast<std::size_t>(i)] = assign_bin(edges, static_cast<double>(times[i]));
 
-    // Energy reference variant.
+    // Energy reference variant.  Validated like `variants` (present in `spk`,
+    // N records long) whenever the adapt link will read it: an explicit
+    // energyVariant need not be one of `variants`, and was neither found
+    // (spk.at threw) nor length-checked (an out-of-bounds read) before.
     std::string eref = energyVariant;
     if (eref.empty())
         eref = (std::find(variants.begin(), variants.end(), std::string("standard")) != variants.end())
              ? std::string("standard") : variants.front();
+    if (p.linkAdapt) {
+        auto it = spk.find(eref);
+        if (it == spk.end() || it->second.size() != static_cast<std::size_t>(N) * recLen) {
+            R.err = "energy variant '" + eref + "' missing or wrong length"; return R;
+        }
+    }
 
     for (const std::string& v : variants) R.wtf[v] = {};
 
