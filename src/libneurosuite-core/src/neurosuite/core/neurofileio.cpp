@@ -294,13 +294,17 @@ FetFile readFet(const std::string& path)
     if (!std::getline(in, line)) return out;       // header (feature count)
     {
         std::istringstream hs(line);
-        if (!(hs >> out.nFeatures)) return out;
+        if (!(hs >> out.nFeatures) || out.nFeatures < 0) return out;   // e.g. "-1": reject
     }
+    // The header is untrusted: it only HINTS the row width.  Reserve at most a
+    // bounded amount per row (a crafted "2000000000" must not allocate gigabytes
+    // per line; "-1" used to make reserve() throw length_error).
+    const std::size_t rowHint = static_cast<std::size_t>(std::min(out.nFeatures, 4096));
     while (std::getline(in, line)) {
         if (line.empty()) continue;
         std::istringstream ls(line);
         std::vector<int> row;
-        row.reserve(static_cast<size_t>(out.nFeatures));
+        row.reserve(rowHint);
         int v;
         while (ls >> v) row.push_back(v);
         if (!row.empty()) out.rows.push_back(std::move(row));
@@ -660,6 +664,10 @@ WtlForest readWtl(const std::string& path)
             if (f.nodes.empty()) continue;          // stray summary before any node
             long long N = 0;
             if (!(ls >> N) || N < 0) continue;
+            // Each value needs at least two characters on the line (separator +
+            // digit), so a count beyond that is a corrupt/crafted line: drop it
+            // like a short tail, BEFORE reserving N floats.
+            if (N > static_cast<long long>(line.size() / 2 + 1)) continue;
             std::vector<float> v; v.reserve(static_cast<std::size_t>(N));
             bool bad = false;
             for (long long k = 0; k < N; ++k) { float x; if (!(ls >> x)) { bad = true; break; } v.push_back(x); }
@@ -745,7 +753,18 @@ EapFile readEap(const std::string& path)
     in.seekg(12, std::ios::cur);                            // pad -> 32B header (4+4*4+12)
     if (!in) return e;
 
-    const std::size_t n = static_cast<std::size_t>(nSpikes) * nClasses;
+    // Check the body is all there BEFORE allocating it: the header's
+    // nSpikes*nClasses (up to 2^64) is untrusted.
+    const uint64_t n64 = static_cast<uint64_t>(nSpikes) * static_cast<uint64_t>(nClasses);
+    const std::streampos bodyStart = in.tellg();
+    in.seekg(0, std::ios::end);
+    const std::streamoff fileBytes = in.tellg();
+    in.seekg(bodyStart);
+    if (!in || fileBytes < 0 || bodyStart < 0) return e;
+    if (fileBytes < static_cast<std::streamoff>(bodyStart)) return e;           // short header
+    if (nClasses > static_cast<uint32_t>(std::numeric_limits<int>::max())) return e;
+    if (n64 > static_cast<uint64_t>(fileBytes - static_cast<std::streamoff>(bodyStart))) return e;  // short body
+    const std::size_t n = static_cast<std::size_t>(n64);
     std::vector<int8_t> cells(n);
     if (n) in.read(reinterpret_cast<char*>(cells.data()), static_cast<std::streamsize>(n));
     if (!in && n) return e;                                 // short body

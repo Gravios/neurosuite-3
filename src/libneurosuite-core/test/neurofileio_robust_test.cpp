@@ -166,7 +166,8 @@ static std::string colFile(uint32_t nRecords, uint32_t nTemplates, int recordsWr
     u32(100); u32(nRecords); u32(nTemplates); u32(0); u32(0);
     b.append(8, '\0');                       // header pad -> 32 B
     b.append(32, '\0');                      // ColParams
-    b.append(static_cast<std::size_t>(nTemplates) * 24, '\0');
+    if (nTemplates < 1000)                    // (crafted huge counts: header only)
+        b.append(static_cast<std::size_t>(nTemplates) * 24, '\0');
     for (int r = 0; r < recordsWritten; ++r) {
         const int64_t ts = 1000 + r; b.append(reinterpret_cast<const char*>(&ts), 8);
         i32(10 + r); i32(2); f32(0.5f); u32(1u /*accepted*/); f32(0.1f);
@@ -206,11 +207,77 @@ static void testColTruncation()
     std::remove(cp.c_str());
 }
 
+// ── 5. Crafted header counts: fail cleanly, never throw or over-allocate ─────
+template <class F> static bool noThrow(F f) { try { f(); return true; } catch (...) { return false; } }
+
+static void testCraftedHeaders()
+{
+    using namespace neurofileio;
+    // .fet text: "-1" made reserve(size_t(-1)) throw length_error.
+    {
+        const std::string fp = "nfio_rob.tmp.fet";
+        writeBytes(fp, "-1\n1 2 3\n");
+        FetFile f;
+        check(noThrow([&]{ f = readFet(fp); }) && !f.ok, "fet: header -1 -> ok=false, no throw");
+        writeBytes(fp, "2000000000\n1 2 3\n4 5 6\n");     // would reserve 8 GB per row
+        check(noThrow([&]{ f = readFet(fp); }) && f.ok && f.rows.size() == 2 && f.rows[1].size() == 3,
+              "fet: absurd header count does not drive allocation");
+        writeBytes(fp, "3\n1 2 3\n");
+        f = readFet(fp);
+        check(f.ok && f.nFeatures == 3 && f.rows.size() == 1, "fet: normal file unchanged");
+        std::remove(fp.c_str());
+    }
+    // .wtl: "mean 4000000000000" used to reserve 16 TB of floats.
+    {
+        const std::string wp = "nfio_rob.tmp.wtl";
+        writeBytes(wp, "wtl 2\nnode 0 1 drift-root -1 0 10 3\nmean 4000000000000 1 2\nstd 2 0.5 0.5\n");
+        WtlForest w;
+        check(noThrow([&]{ w = readWtl(wp); }) && w.ok && w.nodes.size() == 1 &&
+              w.nodes[0].mean.empty() && w.nodes[0].std.size() == 2,
+              "wtl: absurd mean count -> that line dropped, no throw");
+        std::remove(wp.c_str());
+    }
+    // .eap: header nSpikes*nClasses far beyond the file -> fail before allocating.
+    {
+        const std::string ep = "nfio_rob.tmp.eap";
+        auto eapHdr = [](uint32_t ns, uint32_t nc) {
+            std::string b = "EAP"; b += '\x01';
+            for (uint32_t v : {ns, nc, 0u, 0u}) b.append(reinterpret_cast<const char*>(&v), 4);
+            b.append(12, '\0');
+            return b;
+        };
+        writeBytes(ep, eapHdr(0xFFFFFFFFu, 0xFFFFFFFFu) + std::string(16, '\0'));
+        EapFile e;
+        check(noThrow([&]{ e = readEap(ep); }) && !e.ok, "eap: 2^64 cells declared, 16 present -> ok=false, no throw");
+        writeBytes(ep, eapHdr(3, 2) + std::string(5, '\0'));   // one cell short
+        check(!readEap(ep).ok, "eap: one cell short -> ok=false");
+        writeBytes(ep, eapHdr(3, 2) + std::string(6, '\x7f'));
+        e = readEap(ep);
+        check(e.ok && e.nSpikes == 3 && e.nClasses == 2 && e.cells.size() == 6, "eap: exact body ok");
+        writeBytes(ep, eapHdr(0, 0x90000000u));                  // 0 spikes, nClasses > INT_MAX
+        check(!readEap(ep).ok, "eap: nClasses beyond int -> ok=false");
+        writeBytes(ep, std::string("EAP\x01\x01\x00", 6));      // header cut short
+        check(noThrow([&]{ e = readEap(ep); }) && !e.ok, "eap: truncated header -> ok=false");
+        std::remove(ep.c_str());
+    }
+    // .col: n_records = 2^32-1 with a tiny file -> fail before reserving.
+    {
+        const std::string cp = "nfio_rob_big.tmp.col";
+        writeBytes(cp, colFile(0xFFFFFFFFu, 0xFFFFFFFFu, 0));
+        bool ok = true;
+        std::vector<ColDecomp> v;
+        check(noThrow([&]{ v = readColAccepted(cp, &ok); }) && !ok && v.empty(),
+              "col: 2^32-1 records + templates declared -> ok=false, no throw");
+        std::remove(cp.c_str());
+    }
+}
+
 int main()
 {
     testResDetection();
     testEvtPrecision();
     testColTruncation();
+    testCraftedHeaders();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);
