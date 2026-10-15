@@ -443,11 +443,13 @@ accepts 0–3 only, and `-d` is never passed alongside `-P` (it is range-checked
 first and would exit before `-P` is read).  `methodOrder: 4` or `5` is refused
 with a pointer to the `_C` tokens.
 
-`ndm_alignspikes` re-extracts from `.fil`, so it must apply the *same* spatial
-operator the `.spk` was built with; for a `_C` method it passes the group's
-pattern through `-P`, and skips a group that has no pattern (with a warning)
-rather than aligning it with all-pairs.  `_S1`/`_S2` are refused —
-first-difference and Laplacian are not implemented in the aligners.
+`ndm_alignspikes` and `ndm_alignspikes_pca` re-extract from `.fil`, so they
+must apply the *same* spatial operator the `.spk` was built with; for a `_C`
+method they pass the group's pattern through `-P`, and skip a group that has no
+pattern (with a warning) rather than aligning it with all-pairs.  A bare
+`stderiv` token passes the pattern when the group has one, as extraction does.
+`_S1`/`_S2` are refused — first-difference and Laplacian are not implemented in
+the aligners.
 
 Alignment rewrites `.res` so `.res[i]` marks the true peak, archiving the
 original as `<res>.prealign`.  Because `.res` is method-independent, the

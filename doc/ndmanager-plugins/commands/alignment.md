@@ -86,6 +86,10 @@ pattern, so:
   `-P`. A group without `sdiffPairs` is skipped with a warning. A token whose
   order disagrees with the pattern (`_C4` with a reference-set pattern) is
   refused.
+- a bare `stderiv` passes the group's `sdiffPairs` when the group defines one,
+  because that is how `ndm_extractspikes` extracted it; `stderiv_S3` never
+  passes it. This is the same rule `ndm_extractspikes` and
+  `ndm_reextractspikes` use.
 
 See [custom difference patterns and alignment](spike-detection.md#custom-difference-patterns-and-alignment).
 
@@ -216,11 +220,13 @@ and `.clu` are written to a temporary file and renamed into place, so a failed
 write leaves the previous files intact. Group geometry (`channels`, `nSamples`,
 `peakSampleIndex`) and `nChannels` come from the session YAML.
 
-**Methods.** `standard`, `sdiff` and stderiv tokens are accepted. Stderiv
-re-extraction applies the all-pairs spatial derivative, so `stderiv_S1`,
-`stderiv_S2` and the custom-pattern tokens `stderiv_C4` / `stderiv_C5` are
-refused by `process_alignspikes_pca`. Unlike `ndm_alignspikes`, the script does
-not pass the group's `sdiffPairs`.
+**Methods.** Same as for `ndm_alignspikes`: an invalid token is an error;
+`stderiv_C4` / `stderiv_C5` pass the group's `sdiffPairs` to
+`process_alignspikes_pca` as `-P` (a group without one is skipped with a
+warning, a token whose order disagrees with the pattern is refused); a bare
+`stderiv` passes the pattern when the group defines one; `stderiv_S3` never
+does. `stderiv_S1` and `stderiv_S2` are refused (first difference and Laplacian
+are not implemented here).
 
 **Extra flags.** Anything after the positional arguments (or after `--`) is
 passed to `process_alignspikes_pca`:
@@ -279,7 +285,8 @@ All parameters follow the usual [parameters](../parameters.md) lookup.
 ### Exit status
 
 0 when done; 11 when the session file is missing or neither `session.fil` nor
-`session.dat` exists; 1 for an out-of-range `electrodeGroup` or missing
+`session.dat` exists; 1 for an invalid method token, an out-of-range
+`electrodeGroup` or missing
 `nChannels` / group geometry. When `process_alignspikes_pca` fails, its status
 is returned (2 for its own errors). Groups skipped for missing inputs do not
 change the status.

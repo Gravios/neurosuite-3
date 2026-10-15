@@ -74,6 +74,9 @@ method=${NDM_METHOD:-$(read_script_parameter $session method)}; method=${method:
 # Vet the token so a typo is reported as such instead of surfacing later as a
 # missing artifact for a method that was never valid.
 ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
+# Keep the parsed token: later custody helpers re-parse tokens into NDM_M_*.
+methodFamily=$NDM_M_FAMILY
+methodKind=$NDM_M_KIND
 
 print_header "$session - Spike waveform alignment (pre-PCA)"
 
@@ -149,17 +152,27 @@ for group in $(seq 1 $nElectrodeGroups); do
         continue
     fi
 
-    # A custom-pattern method must re-extract with the SAME spatial operator the
-    # .spk was built with, so hand the group's own sdiffPairs to the aligner.
-    sdiffArg=
-    if [ "$NDM_M_KIND" = C ]; then
+    # Re-extraction must apply the SAME spatial operator the .spk was built with,
+    # so hand the group's own sdiffPairs to the aligner under the same rule
+    # ndm_extractspikes (ndm_functions) and ndm_reextractspikes extract with:
+    #   _C<order>  the pattern is required (a group without one is skipped);
+    #   _S<order>  the plain derivative, any pattern left unused;
+    #   bare stderiv  the pattern when the group defines one (legacy behaviour) --
+    #              passing none there re-cut a patterned .spk with all-pairs.
+    sdiffArg=()
+    if [ "$methodFamily" = stderiv ]; then
         pat=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/sdiffPairs")
-        if [ -z "$pat" ]; then
-            echo_warning "  group $group: method $method needs sdiffPairs, none defined — skipping"
-            nSkipped=$((nSkipped + 1))
-            continue
-        fi
-        sdiffArg="-P $pat"
+        case "$methodKind" in
+            C)
+                if [ -z "$pat" ]; then
+                    echo_warning "  group $group: method $method needs sdiffPairs, none defined — skipping"
+                    nSkipped=$((nSkipped + 1))
+                    continue
+                fi
+                sdiffArg=(-P "$pat") ;;
+            S) : ;;
+            *) [ -n "$pat" ] && sdiffArg=(-P "$pat") ;;
+        esac
     fi
 
     echo_info "  aligning group $group  (${nSamples}s × $(echo $electrodes | wc -w)ch" \
@@ -175,7 +188,7 @@ for group in $(seq 1 $nElectrodeGroups); do
         --top-channels "$topChannels" \
         --align-sigma "$alignSigma" \
         --method "$method" \
-        $sdiffArg \
+        "${sdiffArg[@]}" \
         -v \
         "$session" "$group"
 

@@ -111,6 +111,11 @@ ndm_resolve_session "${positionals[@]}"
 param_ext=$(param_file_ext "$session")
 electrodeGroup=${positionals[1]:-}
 method=${methodOverride:-$(read_script_parameter $session method)}; method=${method:-standard}
+# Vet the token so a typo is reported as such, and keep its parts: the kind
+# decides below whether the group's sdiffPairs is passed on.
+ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
+methodFamily=$NDM_M_FAMILY
+methodKind=$NDM_M_KIND
 
 print_header "$session - Per-cluster spike alignment (xcorr + PCA-projection refine)"
 
@@ -212,6 +217,28 @@ once()
 
     local chanList=$(echo $electrodes | sed 's/ /,/g')
 
+    # Re-extraction must apply the SAME spatial operator the .spk was built with,
+    # so hand the group's own sdiffPairs to the aligner under the same rule
+    # ndm_extractspikes (ndm_functions) and ndm_reextractspikes extract with:
+    #   _C<order>  the pattern is required (a group without one is skipped);
+    #   _S<order>  the plain derivative, any pattern left unused;
+    #   bare stderiv  the pattern when the group defines one (legacy behaviour) --
+    #              passing none there re-cut a patterned .spk with all-pairs.
+    local sdiffArg=() pat
+    if [ "$methodFamily" = stderiv ]; then
+        pat=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/sdiffPairs")
+        case "$methodKind" in
+            C)
+                if [ -z "$pat" ]; then
+                    echo_warning "  group $group: method $method needs sdiffPairs, none defined — skipping"
+                    return $INPUTS_MISSING
+                fi
+                sdiffArg=(-P "$pat") ;;
+            S) : ;;
+            *) [ -n "$pat" ] && sdiffArg=(-P "$pat") ;;
+        esac
+    fi
+
     echo_info "  realigning group $group (${nSamples} samples, "\
 "$(echo $electrodes | wc -w) channels, peak=$peakIdx)"
 
@@ -225,6 +252,7 @@ once()
         -i "$iterations" \
         -t "$minScore" \
         --method "$method" \
+        "${sdiffArg[@]}" \
         $skipPcaFlag \
         "${groupExtra[@]}" \
         "$session" "$group"

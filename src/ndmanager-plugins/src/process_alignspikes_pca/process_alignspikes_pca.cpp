@@ -421,6 +421,9 @@ static void usage() {
         "  -M maxShiftGlobal   global cluster shift bound (default 4)\n"
         "  -i iterations       Stage-1 iterations (default 2)\n"
         "  -t minScore         xcorr threshold (default 0.70)\n"
+        "  --method M          method token of the files (default standard)\n"
+        "  -P PATTERN          the group's sdiffPairs: 'a-b,...' (order 4) or\n"
+        "                      'a-b+c,...' (order 5); required for a _C method\n"
         "  --stderiv           input/output are .spkD/.pcaD/.fetD\n"
         "  --skip-pca          Stage-1 only, no PCA refinement\n"
         "  --dry-run           compute shifts, don't modify files\n"
@@ -470,9 +473,11 @@ static Args parseArgs(int argc, char** argv) {
     if (a.peakSamp < 1 || a.peakSamp > a.nSamp)
         die("peakSampleIndex out of range");
     // Family test, not equality -- stderiv_S3 is still the stderiv family, and the
-    // literal comparison reported it as raw.  readFilWindow applies SDIFF_ALLPAIRS,
-    // so a custom pattern or a non-allpairs order cannot be reproduced here; refuse
-    // rather than realign against a transform the waveforms never had.
+    // literal comparison reported it as raw.  readFilWindow applies all-pairs or
+    // the group's -P pattern; first-difference and Laplacian cannot be reproduced
+    // here, so refuse rather than realign against a transform the waveforms
+    // never had.  A _C method needs its -P (ndm_alignspikes_pca passes the
+    // group's sdiffPairs); a bare stderiv token applies -P when one is given.
     {
         const neurosuite::custody::MethodSpec ms =
             neurosuite::custody::parseMethodToken(a.method);
@@ -480,7 +485,7 @@ static Args parseArgs(int argc, char** argv) {
         if (a.stderivMode && ms.kind == 'C'
             && g_customPartner.empty() && g_customSets.empty())
             die("method " + a.method + " applies a custom sdiffPairs pattern but no -P "
-                "was given; .fil would be read with SDIFF_ALLPAIRS and the waveforms "
+                "was given; .fil would be read with all-pairs and the waveforms "
                 "would be misaligned in the space they are clustered in");
         if (a.stderivMode && ms.kind == 'C') {
             const int impliedOrder = g_customSets.empty() ? 4 : 5;
@@ -490,7 +495,7 @@ static Args parseArgs(int argc, char** argv) {
         }
         if (a.stderivMode && ms.kind == 'S' && ms.order != 3)
             die("method " + a.method + " is spatial order " + std::to_string(ms.order)
-                + "; this aligner reads .fil with SDIFF_ALLPAIRS (order 3) only");
+                + "; this aligner reproduces all-pairs (order 3) or a -P pattern only");
     }
     return a;
 }
