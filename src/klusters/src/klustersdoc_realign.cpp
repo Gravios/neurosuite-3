@@ -113,6 +113,66 @@ using klustersdoc_internal::sdiffPatternForMethod;
 using klustersdoc_internal::resolveFeature;
 using klustersdoc_internal::stripFeatureSuffix;
 
+// Seed for neurosuite::core::applyStderivTransform on a window re-cut from the
+// .fil: the spatial derivative of the raw sample just before the window (byte
+// offset `windowOff`), exactly as process_extractspikes_stderiv seeds every
+// window.  Without it sample 0 of a re-cut stderiv waveform differs from what
+// ndm_extractspikes wrote.  Returns nullptr (seed 0) for a window at the start
+// of the file or if the row cannot be read.  Moves the file position; every
+// caller seeks before its next read.
+static const int16_t* readStderivSeed(FILE* fp, off_t windowOff, int totalNbChan,
+                                      const QList<int>& groupChannels,
+                                      neurosuite::core::SdiffOrder order,
+                                      const int* partner, const int* setOff,
+                                      const int* setMem,
+                                      std::vector<int16_t>& seedBuf)
+{
+    const off_t rowBytes = static_cast<off_t>(totalNbChan)
+                         * static_cast<off_t>(sizeof(short));
+    if (!fp || windowOff < rowBytes) return nullptr;
+    std::vector<int16_t> row(static_cast<size_t>(totalNbChan));
+    if (fseeko(fp, windowOff - rowBytes, SEEK_SET) != 0
+        || fread(row.data(), sizeof(short), row.size(), fp) != row.size())
+        return nullptr;
+    const int nChan = static_cast<int>(groupChannels.size());
+    std::vector<int16_t> groupRow(static_cast<size_t>(nChan));
+    for (int ci = 0; ci < nChan; ++ci)
+        groupRow[static_cast<size_t>(ci)] = row[static_cast<size_t>(groupChannels[ci])];
+    seedBuf.resize(static_cast<size_t>(nChan));
+    neurosuite::core::stderivSeed(order, groupRow.data(), nChan, seedBuf.data(),
+                                  partner, setOff, setMem);
+    return seedBuf.data();
+}
+
+// Whether an existing stderiv .spk was written with windows seeded from the
+// previous sample (ndm_extractspikes since the detect/extract split) or with
+// seed 0 (the older single-pass extractor).  Spikes re-cut into that file, and
+// features projected onto the basis fit on it, must follow the same convention.
+// `storedSample0At(i, ci)` is the stored sample 0 of spike i on group channel ci;
+// `timestampAt(i)` its time.  Unknown (too few spikes, unreadable .fil, mixed
+// file) keeps the current extractor's convention.
+template <class TimestampAt, class StoredSample0At>
+static neurosuite::core::StderivSeeding detectSpkSeeding(
+        const QString& filPath, int totalNbChan, const QList<int>& groupChannels,
+        int nSamp, int peakSamp0, neurosuite::core::SdiffOrder order,
+        const int* partner, const int* setOff, const int* setMem,
+        int64_t nSpikes, TimestampAt timestampAt, StoredSample0At storedSample0At)
+{
+    std::vector<int> chans(groupChannels.begin(), groupChannels.end());
+    neurosuite::core::SpikeWindowSpec spec;
+    spec.nSamp = nSamp; spec.peakSample = peakSamp0;
+    spec.totalNbChannels = totalNbChan;
+    spec.groupChannels = chans.data(); spec.nChan = static_cast<int>(chans.size());
+    spec.applyTransform = true; spec.order = order;
+    spec.partner = partner; spec.setOff = setOff; spec.setMem = setMem;
+    FILE* fp = fopen(filPath.toLocal8Bit().constData(), "rb");
+    if (!fp) return neurosuite::core::StderivSeeding::Unknown;
+    const auto r = neurosuite::core::detectStderivSeeding(fp, nSpikes, spec,
+                                                          timestampAt, storedSample0At);
+    fclose(fp);
+    return r;
+}
+
 
 // ===========================================================================
 // KlustersDoc::realignSpikes  (normalised cross-correlation template method)
@@ -894,6 +954,34 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         fclose(ff);
     }
 
+    // Seed convention of this stderiv .spk (see detectSpkSeeding): every
+    // re-cut stderiv window below follows the file, so rewritten spikes and the
+    // PCA basis fit on the file stay consistent.
+    bool stderivSeeded = true;
+    if (spkIsTransformed) {
+        QString seedFilPath;
+        {
+            const QString spkBase = spkPath.left(spkPath.lastIndexOf(QLatin1Char('.')));
+            const QString noExt = spkBase.left(spkBase.lastIndexOf(QLatin1Char('.')));
+            seedFilPath = QFileInfo::exists(noExt + QStringLiteral(".fil"))
+                        ? noExt + QStringLiteral(".fil") : noExt + QStringLiteral(".dat");
+        }
+        const auto conv = detectSpkSeeding(
+            seedFilPath, clusteringData->getTotalNbChannels(),
+            clusteringData->getCurrentChannels(), nSamp, peakSamp0, stderivOrder,
+            stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, N,
+            [&](int64_t i) { return clusterTs[static_cast<size_t>(i)]; },
+            [&](int64_t i, int ci) {
+                return wavBuf[static_cast<size_t>(i) * spkElems
+                              + static_cast<size_t>(ci) * static_cast<size_t>(nSamp)]; });
+        stderivSeeded = (conv != neurosuite::core::StderivSeeding::Zero);
+        log << "stderiv .spk seed convention: "
+            << (conv == neurosuite::core::StderivSeeding::Previous ? "previous sample"
+                : conv == neurosuite::core::StderivSeeding::Zero   ? "zero (older extractor)"
+                                                                   : "undetermined, using previous sample")
+            << "\n";
+    }
+
     // -----------------------------------------------------------------------
     // Iterative xcorr alignment on waveform buffer
     // -----------------------------------------------------------------------
@@ -1378,9 +1466,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                             wTgt[static_cast<size_t>(ci) * nSamp + t] =
                                 gpuFrame[static_cast<size_t>(t) * totalNbChanP82
                                        + groupChannelsP82[ci]];
-                    if (useStder)
+                    if (useStder) {
+                        std::vector<int16_t> seedBuf;
+                        const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filFp82, bestOff, totalNbChanP82, groupChannelsP82,
+                            stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf);
                         neurosuite::core::applyStderivTransform(stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr,
-                    nullptr, stderivSetOffPtr, stderivSetMemPtr);
+                            seed, stderivSetOffPtr, stderivSetMemPtr);
+                    }
                 }
                 gpuPathRan = true;
             } while (false);
@@ -1428,9 +1520,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
 
                     // Apply stderiv transform in-place if pipeline needs it.
                     // Spatial order from the basis; matches the disk-write block.
-                    if (useStder)
+                    if (useStder) {
+                        std::vector<int16_t> seedBuf;
+                        const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(spikeFp, rawOff, totalNbChanP82, groupChannelsP82,
+                            stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf);
                         neurosuite::core::applyStderivTransform(stderivOrder, candBuf.data(), nChan, nSamp, candBuf.data(), stderivPartnerPtr,
-                    nullptr, stderivSetOffPtr, stderivSetMemPtr);
+                            seed, stderivSetOffPtr, stderivSetMemPtr);
+                    }
 
                     // PCA projection energy — shared primitive in
                     // libneurosuite-core (same math the GPU kernel mirrors and
@@ -1482,9 +1578,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                                     frameBuf[static_cast<size_t>(
                                         t * totalNbChanP82
                                       + groupChannelsP82[ci])];
-                        if (useStder)
+                        if (useStder) {
+                            std::vector<int16_t> seedBuf;
+                            const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(spikeFp, bestOff, totalNbChanP82, groupChannelsP82,
+                                stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf);
                             neurosuite::core::applyStderivTransform(stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr,
-                    nullptr, stderivSetOffPtr, stderivSetMemPtr);
+                                seed, stderivSetOffPtr, stderivSetMemPtr);
+                        }
                     }
                 }
                 return RefineResult::Refined;
@@ -1916,9 +2016,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             // Mirror the stderiv transform used in the per-spike loop, so
             // verifyWav lives in the same space as wavBuf for raw OR stderiv
             // .spk formats.
-            if (spkIsTransformed)
+            if (spkIsTransformed) {
+                std::vector<int16_t> seedBuf;
+                const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, rawOffV, totalNbChan, groupChannels,
+                    stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf);
                 neurosuite::core::applyStderivTransform(stderivOrder, verifyWav.data(), nChan, nSamp, verifyWav.data(), stderivPartnerPtr,
-                    nullptr, stderivSetOffPtr, stderivSetMemPtr);
+                    seed, stderivSetOffPtr, stderivSetMemPtr);
+            }
 
             // Compare to wavBuf[csV * spkElems ..] which holds the .spk
             // contents in channel-major layout (same as verifyWav above).
@@ -2030,8 +2134,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                             // stderiv into w (channel-major), then mirror into
                             // spkRow (sample-major, what .spkD stores) so wavBuf
                             // stays in stderiv space for xcorr and the two agree.
+                            std::vector<int16_t> seedBuf;
+                            const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, rawOff, totalNbChan, groupChannels,
+                                stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf);
                             neurosuite::core::applyStderivTransform(stderivOrder, rawCM.data(), nChan, nSamp, w, stderivPartnerPtr,
-                    nullptr, stderivSetOffPtr, stderivSetMemPtr);
+                                seed, stderivSetOffPtr, stderivSetMemPtr);
                             for (int s = 0; s < nSamp; ++s)
                                 for (int ci = 0; ci < nChan; ++ci)
                                     spkRow[static_cast<size_t>(s * nChan + ci)] =
@@ -2750,11 +2857,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // ── Per-spike waveform re-extraction helper ───────────────────────────
     // Reads raw waveform from .fil into channel-major layout [ch*nSamp+s].
     //
-    // NOTE: this still reads ONE EXTRA raw sample at (startSample - 1) into
-    // `prevSample`, a patch89 leftover.  The transform IGNORES it: sample 0
-    // resets sdiff[-1]=0 PER SPIKE, matching the canonical .spk writer
-    // (process_extractspikes_stderiv.cpp Step 3, `prev(nCG, 0)`).  prevSample
-    // and the extra read are dead-but-harmless, pending a cleanup.
+    // Also reads the raw sample at (startSample - 1) into `prevSample`: the
+    // stderiv transform seeds its temporal difference from it when the
+    // session's .spk was written that way (nudgeSeeded, below).
     const int64_t bytesPerSpike = static_cast<int64_t>(nChan) * nSamp * 2;
 
     auto extractWaveform = [&](int64_t ts,
@@ -2802,11 +2907,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // Returns transformed waveform in sample-major layout [s*nChan+ch]
     // (ALL nChan channels, including the linearly-dependent last one).
     //
-    // prevRaw: kept for ABI compatibility with existing call sites; ignored.
-    // The canonical pipeline applies the temporal first-difference per
-    // spike with sdiff[-1] = 0, so the actual preceding raw sample is
-    // not used.  See the comment on `prev` inside the body for the full
-    // rationale.
+    // prevRaw: the raw sample before the window.  The temporal first-difference
+    // is seeded with its spatial derivative when the session's .spk was written
+    // that way (nudgeSeeded); see the comment on `prev` inside the body.
     // Saturation counters — populated by applyStderivTransform via lambda
     // capture-by-reference.  Reported once after the main loop.  The int16
     // .spk format inherently clips spatial derivatives that exceed ±32768,
@@ -2884,12 +2987,124 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                           "partner[ci]; last position = dropped root): [" << pStr << "]";
     }
 
+    // Seed convention of the stderiv .spk being nudged (see detectSpkSeeding):
+    // judged from the first spikes of the group's pending .spk / .res, so a
+    // nudged spike matches the rest of the file and the basis fit on it.
+    bool nudgeSeeded = true;
+    if (spkIsTransformed && filF) {
+        std::vector<int64_t> chkTs;
+        std::vector<int16_t> chkS0;   // [i * nChan + ci]
+        FILE* rs = fopen(pendingResPath.toLocal8Bit().constData(), "rb");
+        FILE* ss = fopen(pendingSpkPath.toLocal8Bit().constData(), "rb");
+        if (rs && ss) {
+            const size_t rowElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+            std::vector<int16_t> rowBuf(rowElems);
+            for (int i = 0; i < 256; ++i) {
+                int64_t t = 0;
+                if (fread(&t, sizeof(int64_t), 1, rs) != 1) break;
+                if (fread(rowBuf.data(), sizeof(int16_t), rowElems, ss) != rowElems) break;
+                chkTs.push_back(t);
+                chkS0.insert(chkS0.end(), rowBuf.begin(), rowBuf.begin() + nChan);  // sample-major: sample 0 first
+            }
+        }
+        if (rs) fclose(rs);
+        if (ss) fclose(ss);
+        const auto conv = detectSpkSeeding(
+            filPath, totalNbChan, groupChannels, nSamp, peakSamp0,
+            static_cast<neurosuite::core::SdiffOrder>(kSdiffOrder),
+            nudgePartner.empty() ? nullptr : nudgePartner.data(),
+            nudgeSetOff.empty()  ? nullptr : nudgeSetOff.data(),
+            nudgeSetMem.empty()  ? nullptr : nudgeSetMem.data(),
+            static_cast<int64_t>(chkTs.size()),
+            [&](int64_t i) { return chkTs[static_cast<size_t>(i)]; },
+            [&](int64_t i, int ci) {
+                return chkS0[static_cast<size_t>(i) * static_cast<size_t>(nChan)
+                             + static_cast<size_t>(ci)]; });
+        nudgeSeeded = (conv != neurosuite::core::StderivSeeding::Zero);
+        NS3_DIAG() << "[nudge] stderiv .spk seed convention:"
+                   << (conv == neurosuite::core::StderivSeeding::Previous ? "previous sample"
+                       : conv == neurosuite::core::StderivSeeding::Zero   ? "zero (older extractor)"
+                                                                          : "undetermined, using previous sample");
+    }
+
     auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
                                      const std::vector<int16_t>& prevRaw,
                                      std::vector<int16_t>& out) {
         // wavCM: channel-major [ch*nSamp+s]
         // out:   sample-major  [s*nChan+ch]
         out.resize(static_cast<size_t>(nSamp * nChan));
+
+        // Spatial derivative of channel ci at one time sample; V(cj) returns
+        // that sample's raw value on group channel cj.  Shared by the window
+        // samples and the seed sample before the window.
+        auto spatialAt = [&](auto V, int ci) -> int {
+            const int val = V(ci);
+                int sd;
+            switch (kSdiffOrder) {
+            case 0:  // SDIFF_NONE — pass-through
+                sd = val;
+                break;
+            case 1: {  // SDIFF_FIRST — val − next-channel (or prev at edge)
+                const int other = (ci < nChan - 1)
+                    ? V((ci+1))
+                    : (nChan > 1
+                        ? V((ci-1))
+                        : 0);
+                sd = val - other;
+                break; }
+            case 2: {  // SDIFF_LAPLACIAN
+                if (nChan == 1) { sd = val; break; }
+                if (ci == 0)
+                    sd = val - V(1);
+                else if (ci == nChan - 1)
+                    sd = val - V((nChan-2));
+                else {
+                    // ½(prev+next) implemented in integer arithmetic with
+                    // the same rounding behaviour as the canonical:
+                    //   sd = round(val − 0.5*(prev + next))
+                    //      = (2*val − prev − next + sign·1) / 2
+                    // canonical uses double + std::round → tie-to-nearest-even
+                    // is unreachable for int16 inputs; the (a+1)/2 trick
+                    // matches the floor(.5+) behaviour for all values
+                    // representable as int16.
+                    const int prev = V((ci-1));
+                    const int next = V((ci+1));
+                    const int twoVal = 2 * val - prev - next;
+                    sd = (twoVal >= 0)
+                        ? (twoVal + 1) / 2
+                        : -((-twoVal + 1) / 2);
+                }
+                break; }
+            case 4: {  // SDIFF_CUSTOM - val minus partner-channel
+                sd = nudgePartner.empty()
+                    ? val
+                    : val - V(nudgePartner[static_cast<size_t>(ci)]);
+                break; }
+            case 5: {  // SDIFF_CUSTOM_CAR - val minus the mean of its reference set
+                if (!nudgeSetOff.empty()) {
+                    const int b = nudgeSetOff[static_cast<size_t>(ci)];
+                    const int e = nudgeSetOff[static_cast<size_t>(ci) + 1];
+                    if (e > b) {
+                        double acc = 0.0;
+                        for (int k = b; k < e; ++k)
+                            acc += V(nudgeSetMem[static_cast<size_t>(k)]);
+                        // round like the extractor (process_extractspikes_stderiv round())
+                        sd = static_cast<int>(std::lround(val - acc / static_cast<double>(e - b)));
+                        break;
+                    }
+                }
+                sd = val;
+                break; }
+            case 3:  // SDIFF_ALLPAIRS — fall through (default)
+            default: {
+                int sum = 0;
+                for (int cj = 0; cj < nChan; ++cj)
+                    sum += V(cj);
+                sd = nChan * val - sum;
+                break; }
+            }
+            return sd;
+        };
 
         // Step 1: spatial derivative (matches process_extractspikes_stderiv
         // computeSDiff for each mode).  Result lands in `out` in the
@@ -2899,93 +3114,31 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             // intra-channel access in modes 1 (FIRST) and 2 (LAPLACIAN).
             // We read channel-major wavCM[ci * nSamp + s].
             for (int ci = 0; ci < nChan; ++ci) {
-                const int val = wavCM[static_cast<size_t>(ci * nSamp + s)];
-                int sd;
-                switch (kSdiffOrder) {
-                case 0:  // SDIFF_NONE — pass-through
-                    sd = val;
-                    break;
-                case 1: {  // SDIFF_FIRST — val − next-channel (or prev at edge)
-                    const int other = (ci < nChan - 1)
-                        ? wavCM[static_cast<size_t>((ci+1) * nSamp + s)]
-                        : (nChan > 1
-                            ? wavCM[static_cast<size_t>((ci-1) * nSamp + s)]
-                            : 0);
-                    sd = val - other;
-                    break; }
-                case 2: {  // SDIFF_LAPLACIAN
-                    if (nChan == 1) { sd = val; break; }
-                    if (ci == 0)
-                        sd = val - wavCM[static_cast<size_t>(1 * nSamp + s)];
-                    else if (ci == nChan - 1)
-                        sd = val - wavCM[static_cast<size_t>((nChan-2) * nSamp + s)];
-                    else {
-                        // ½(prev+next) implemented in integer arithmetic with
-                        // the same rounding behaviour as the canonical:
-                        //   sd = round(val − 0.5*(prev + next))
-                        //      = (2*val − prev − next + sign·1) / 2
-                        // canonical uses double + std::round → tie-to-nearest-even
-                        // is unreachable for int16 inputs; the (a+1)/2 trick
-                        // matches the floor(.5+) behaviour for all values
-                        // representable as int16.
-                        const int prev = wavCM[static_cast<size_t>((ci-1) * nSamp + s)];
-                        const int next = wavCM[static_cast<size_t>((ci+1) * nSamp + s)];
-                        const int twoVal = 2 * val - prev - next;
-                        sd = (twoVal >= 0)
-                            ? (twoVal + 1) / 2
-                            : -((-twoVal + 1) / 2);
-                    }
-                    break; }
-                case 4: {  // SDIFF_CUSTOM - val minus partner-channel
-                    sd = nudgePartner.empty()
-                        ? val
-                        : val - wavCM[static_cast<size_t>(
-                              nudgePartner[static_cast<size_t>(ci)] * nSamp + s)];
-                    break; }
-                case 5: {  // SDIFF_CUSTOM_CAR - val minus the mean of its reference set
-                    if (!nudgeSetOff.empty()) {
-                        const int b = nudgeSetOff[static_cast<size_t>(ci)];
-                        const int e = nudgeSetOff[static_cast<size_t>(ci) + 1];
-                        if (e > b) {
-                            double acc = 0.0;
-                            for (int k = b; k < e; ++k)
-                                acc += wavCM[static_cast<size_t>(
-                                    nudgeSetMem[static_cast<size_t>(k)] * nSamp + s)];
-                            sd = static_cast<int>(val - acc / static_cast<double>(e - b));
-                            break;
-                        }
-                    }
-                    sd = val;
-                    break; }
-                case 3:  // SDIFF_ALLPAIRS — fall through (default)
-                default: {
-                    int sum = 0;
-                    for (int cj = 0; cj < nChan; ++cj)
-                        sum += wavCM[static_cast<size_t>(cj * nSamp + s)];
-                    sd = nChan * val - sum;
-                    break; }
-                }
+                int sd = spatialAt([&](int cj) {
+                    return static_cast<int>(wavCM[static_cast<size_t>(cj * nSamp + s)]); }, ci);
                 if (sd >  32767) { sd =  32767; ++spatialClampCount; }
                 else if (sd < -32768) { sd = -32768; ++spatialClampCount; }
                 out[static_cast<size_t>(s * nChan + ci)] = static_cast<int16_t>(sd);
             }
         }
 
-        // Boundary condition: sdiff[-1] = 0, reset PER SPIKE -- matching the
-        // canonical extractor's Step 3 (process_extractspikes_stderiv.cpp:
-        //   `std::vector<short> prev(nCG, 0);`
-        // immediately before its temporal first-difference).  The .spk and the
-        // .pcaD basis the nudge must reproduce were BOTH written that way, so a
-        // spike's output sample 0 is st[0] - 0 = st[0].  Seeding prev from the
-        // actual preceding raw sample (as patch89 did) makes every nudged
-        // spike's sample 0 differ from the basis content by a constant, which
-        // projects onto the eigenvectors as a fixed feature-space offset and
-        // disperses the cluster -- the exact symptom that motivated this.  The
-        // continuous g_prev_sdiff carried across chunks in fill_sdiff_buffer is
-        // a DETECTION-path buffer, not the per-spike .spk writer.  prevRaw is
-        // therefore unused (kept on the signature for the existing call sites).
+        // Seed the temporal difference the way this session's .spk was written
+        // (nudgeSeeded, detected above): with the spatial derivative of the raw
+        // sample before the window, as process_extractspikes_stderiv -R (what
+        // ndm_extractspikes runs since the detect/extract split) does, or with 0
+        // for files from the older single-pass extractor.  The PCA basis was fit
+        // on the file, so a nudged spike written the other way would sit at a
+        // fixed offset in feature space.  prevRaw is empty for a window at the
+        // start of the file, which is seeded with 0 either way.
         std::vector<int16_t> prev(static_cast<size_t>(nChan), 0);
-        (void)prevRaw;
+        if (nudgeSeeded && prevRaw.size() == static_cast<size_t>(nChan))
+            for (int ci = 0; ci < nChan; ++ci) {
+                int sd = spatialAt([&](int cj) {
+                    return static_cast<int>(prevRaw[static_cast<size_t>(cj)]); }, ci);
+                if (sd >  32767) sd =  32767;
+                else if (sd < -32768) sd = -32768;
+                prev[static_cast<size_t>(ci)] = static_cast<int16_t>(sd);
+            }
 
         // Step 2: temporal first-difference in-place, using prev as the
         // baseline for output sample 0.
@@ -3006,9 +3159,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     // ── Feature projection helper ─────────────────────────────────────────
     // wav: channel-major [ch*nSamp+s] — raw OR stderiv depending on isStderiv.
-    // prevRaw: kept on the signature for ABI compatibility; ignored.  The
-    //          stderiv transform now uses sdiff[-1]=0 per spike, matching
-    //          the canonical pipeline that built .pcaD.
+    // prevRaw: the raw sample before the window; seeds the stderiv transform
+    //          when the session's .spk was written that way (nudgeSeeded).
     // Returns full feature row (nFeatCols int64_t + timestamp placeholder).
     auto makeFetRow = [&](int64_t ts,
                           const std::vector<int16_t>& wavRaw,
@@ -3300,10 +3452,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                     clusteringData->featureValue(row, col + 1)));
         }
 
-        // Re-extract waveform at new timestamp.  extractWaveform still fills
-        // prevSample, but the transform ignores it (sample 0 resets
-        // sdiff[-1]=0 per spike, matching the canonical .spk writer), so it is
-        // dead-but-harmless here.
+        // Re-extract waveform at new timestamp; prevSample (the raw sample
+        // before the window) seeds the stderiv transform when nudgeSeeded.
         std::vector<int16_t> wav;
         std::vector<int16_t> prevSample;
         const bool gotWav = extractWaveform(ts64, wav, prevSample);
@@ -3737,6 +3887,47 @@ void KlustersDoc::spikeCutSpecFor(const QString& spkMethod,
     cut.window.partner = cut.partner.empty() ? nullptr : cut.partner.data();
     cut.window.setOff  = cut.setOff.empty()  ? nullptr : cut.setOff.data();
     cut.window.setMem  = cut.setMem.empty()  ? nullptr : cut.setMem.data();
+
+    // Seed convention: follow the session's existing .spk of this method (see
+    // detectSpkSeeding), judged from its first spikes, so re-cut windows match
+    // the file and the basis fit on it.  No file or no decision: the current
+    // extractor's convention (seeded from the previous sample).
+    if (cut.window.applyTransform) {
+        const QString spkPath = resolveFeature(documentDirectory() + QLatin1Char('/')
+                                                   + documentBaseName(),
+                                               QStringLiteral("spk"), grpId, spkMethod);
+        QFile spkFile(spkPath);
+        if (spkFile.open(QIODevice::ReadOnly)) {
+            const int nSamp = cut.window.nSamp;
+            const qint64 rowBytes = static_cast<qint64>(nChan) * nSamp
+                                  * static_cast<qint64>(sizeof(int16_t));
+            const int64_t nCheck = std::min<int64_t>(
+                256, std::min<int64_t>(static_cast<int64_t>(clusteringData->totalNbOfSpikes()),
+                                       rowBytes > 0 ? spkFile.size() / rowBytes : 0));
+            std::vector<int16_t> s0(static_cast<size_t>(nCheck) * static_cast<size_t>(nChan));
+            for (int64_t i = 0; i < nCheck; ++i)
+                // reinterpret_cast: raw int16 sample-major rows; sample 0 comes first.
+                if (!spkFile.seek(i * rowBytes)
+                    || spkFile.read(reinterpret_cast<char*>(s0.data() + i * nChan),
+                                    nChan * static_cast<qint64>(sizeof(int16_t)))
+                       != nChan * static_cast<qint64>(sizeof(int16_t)))
+                    break;
+            const int timeDim = clusteringData->timeDimension();
+            const auto conv = detectSpkSeeding(
+                rawRecordingPath(), totalNbChan, cut.groupChannels, nSamp,
+                cut.window.peakSample, cut.window.order,
+                cut.window.partner, cut.window.setOff, cut.window.setMem, nCheck,
+                [&](int64_t i) {
+                    return static_cast<int64_t>(clusteringData->featureValue(i + 1, timeDim)); },
+                [&](int64_t i, int ci) {
+                    return s0[static_cast<size_t>(i) * static_cast<size_t>(nChan)
+                              + static_cast<size_t>(ci)]; });
+            cut.window.seedFromPrevious = (conv != neurosuite::core::StderivSeeding::Zero);
+            if (conv == neurosuite::core::StderivSeeding::Zero)
+                log << "re-extract: " << QFileInfo(spkPath).fileName()
+                    << " was written by the older extractor (seed 0); re-cut windows follow it\n";
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

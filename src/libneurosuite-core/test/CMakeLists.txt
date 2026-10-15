@@ -79,6 +79,15 @@ target_include_directories(core_test_running_stats
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_running_stats COMMAND core_test_running_stats)
 
+# extractSpikeWindows reproduces process_extractspikes_stderiv's bytes: windows
+# are seeded with the spatial derivative of the sample before them (stderivSeed),
+# for every spatial order, across read-buffer boundaries.  Header-only.
+add_executable(core_test_spike_extract spike_extract_test.cpp)
+target_compile_features(core_test_spike_extract PRIVATE cxx_std_17)
+target_include_directories(core_test_spike_extract
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_spike_extract COMMAND core_test_spike_extract)
+
 # .wtl manual template-linkage sidecar (readWtl/writeWtl + the wtl* view-model
 # helpers): the per-node curator lineage (v2 running mean/std/count).  Links the
 # library (the readers/writers live in neurofileio.cpp), like the .spk test.

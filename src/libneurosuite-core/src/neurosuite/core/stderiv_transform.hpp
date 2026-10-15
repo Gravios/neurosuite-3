@@ -14,7 +14,8 @@
 //  Ground truth (matched byte-for-byte):
 //    spatial : process_extractspikes_stderiv::computeSDiff   (double result)
 //    clamp   : round() then saturate to int16                (fill_sdiff_buffer Step 1)
-//    temporal: out[t] = clamp16( sd[t] − sd[t−1] ), sd[-1] = prevSeed (default 0)
+//    temporal: out[t] = clamp16( sd[t] − sd[t−1] ), sd[-1] = prevSeed, the
+//              spatial derivative of the sample before the window (stderivSeed)
 //                                                            (fill_sdiff_buffer Step 2)
 // ════════════════════════════════════════════════════════════════════════════
 #ifndef NEUROSUITE_CORE_STDERIV_TRANSFORM_HPP
@@ -92,10 +93,31 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
     }
 }
 
+// The prevSeed of a window cut out of a continuous recording: the clamped
+// spatial derivative of the raw sample just BEFORE the window, one value per
+// group channel (`groupRow[ci]` = that sample on the group's ci-th channel).
+// process_extractspikes_stderiv seeds every window this way (its -R path reads
+// one extra leading sample), so a tool that re-cuts windows from the .fil must
+// pass this seed to reproduce the extractor's bytes; without it, sample 0 of
+// every window is the spatial derivative itself instead of its difference.
+inline void stderivSeed(SdiffOrder order, const int16_t* groupRow, int nChan,
+                        int16_t* seedOut,
+                        const int* partner = nullptr,
+                        const int* setOff = nullptr, const int* setMem = nullptr) {
+    std::vector<double> row(static_cast<size_t>(nChan));
+    for (int ci = 0; ci < nChan; ++ci)
+        row[static_cast<size_t>(ci)] = static_cast<double>(groupRow[ci]);
+    for (int ci = 0; ci < nChan; ++ci)
+        seedOut[ci] = clampToInt16(
+            spatialDeriv(order, row.data(), ci, nChan, partner, setOff, setMem));
+}
+
 // Full stderiv transform of a channel-major waveform (in[ci*nSamp + t]) into
 // out (same layout): spatial derivative per `order` (rounded+clamped to int16),
 // then a temporal first-difference per channel (clamped), seeded by prevSeed
-// (per channel; nullptr ⇒ 0, the per-spike windowed case).  In-place is safe
+// (per channel; nullptr ⇒ 0).  Windows cut from a recording should pass the
+// stderivSeed() of the sample before the window — that is what the extractor
+// writes; nullptr is right only for a window at the very start of the file.  In-place is safe
 // (out may alias in): each time sample's raw row is snapshotted before writing,
 // so neighbour reads (First/Laplacian) always see untouched values.
 inline void applyStderivTransform(SdiffOrder order,
