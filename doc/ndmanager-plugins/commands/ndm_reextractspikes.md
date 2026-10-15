@@ -64,6 +64,13 @@ detection engine.
   threshold is `reextractThresholdFactor` × the noise level the engine
   computes over `[start, start+duration)`. New waveforms are written in
   stderiv space, matching the reference rows and the `pca.stderiv.N` basis.
+  Sample 0 of each window follows the group's existing `.spk`: the engine
+  checks its leading rows against the `.fil` and seeds the temporal
+  difference with the previous sample's spatial derivative (what
+  `ndm_extractspikes` writes) or with 0 (sessions extracted by the older
+  single-pass extractor), so a new spike's row is byte-identical to the row
+  the extractor would write for it. The convention found is logged per group;
+  when it cannot be decided, the previous-sample convention is used.
   A suffixed token (`stderiv_S<n>`) fixes the order and overrides
   `methodOrder`. `stderiv_C<n>` tokens (and a bare `stderiv` on a session
   whose spike groups define `sdiffPairs`) pass the groups' `sdiffPairs`

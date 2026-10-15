@@ -325,6 +325,10 @@ fi
 # //  The engine reads the existing spike times from <maskBase>.res.N; the .res
 # //  is method-independent and lives under a dotted/shared name, so link the
 # //  resolved file into a raw-named mask base for the (stem-based) binary.
+# //  The stderiv engine also reads <maskBase>.spk.N (the group's reference .spk,
+# //  row-paired with that .res) to decide which seed convention the session's
+# //  waveforms use (-S auto), so its new rows match the reference rows and the
+# //  basis fit on them.
 # ////////////////////////////////////////////////////////////////////////////
 
 tmpStem=$session-reextr-tmp
@@ -333,8 +337,9 @@ rm -f $tmpStem.fil
 ln -s $session.fil $tmpStem.fil
 for group in $(seq 1 $nElectrodeGroups); do
     [ "${groupActive[$group]}" != "y" ] && continue
-    rm -f "$maskBase.res.$group"
+    rm -f "$maskBase.res.$group" "$maskBase.spk.$group"
     ln -sf "$(basename "${groupResFile[$group]}")" "$maskBase.res.$group"
+    [ "$methodFamily" = stderiv ] && ln -sf "$(realpath "${groupSpkFile[$group]}")" "$maskBase.spk.$group"
 done
 
 if [ "$methodFamily" = stderiv ]; then
@@ -349,6 +354,7 @@ if [ "$methodFamily" = stderiv ]; then
         -B $startInBytes \
         -Z $durationInBytes \
         "${reOrderArg[@]}" "${sdiffPairsArg[@]}" \
+        -S auto \
         -m $maskBase \
         -M $reextractMaskHalfWidth \
         -v \
@@ -379,7 +385,7 @@ fi
 rm -f $tmpStem.fil
 for group in $(seq 1 $nElectrodeGroups); do
     [ "${groupActive[$group]}" != "y" ] && continue
-    rm -f "$maskBase.res.$group"
+    rm -f "$maskBase.res.$group" "$maskBase.spk.$group"
 done
 
 # ////////////////////////////////////////////////////////////////////////////

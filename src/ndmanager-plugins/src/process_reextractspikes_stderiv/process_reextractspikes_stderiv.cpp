@@ -26,6 +26,10 @@
  * Mask exclusion is applied to the detected peak timestamp, not to the
  * stderiv signal — so the mask window refers to ORIGINAL spike
  * timestamps, consistent with process_reextractspikes.
+ *
+ * Written windows follow the reference .spk's seed convention (-S, see the
+ * header): sample 0 is sd[0] - sd[-1] with sd[-1] the previous sample's
+ * spatial derivative (process_extractspikes_stderiv -R) or 0 (older files).
  ***************************************************************************/
 
 #define _LARGEFILE_SOURCE
@@ -33,6 +37,7 @@
 
 #include "process_reextractspikes_stderiv.h"
 #include "sdiff_pairs.h"      // shared SDIFF_CUSTOM pair-pattern parser
+#include <neurosuite/core/spike_extract.hpp>   // detectStderivSeeding (header-only)
 
 #include <algorithm>
 #include <cerrno>
@@ -281,6 +286,94 @@ static vector<int64_t> loadMaskGroup(const string &base, int grp)
 }
 
 // =========================================================================
+// Seed convention of the reference .spk (see the header, -S).
+// =========================================================================
+// The reference rows are <maskBase>.spk.N paired row-for-row with
+// <maskBase>.res.N (int64).  Sample 0 of up to 1024 leading rows is handed to
+// neurosuite::core::detectStderivSeeding, which recomputes it both ways from
+// the .fil.  `why` explains an Unknown result.
+static neurosuite::core::StderivSeeding
+detectReferenceSeeding(const string &maskBase, int grp, const string &filPath,
+                       int nChanTot, const vector<int> &chans,
+                       int spikeLength, int timeBeforeSpike,
+                       SdiffOrder order, int g, string &why)
+{
+    using neurosuite::core::StderivSeeding;
+    const int nChan = (int)chans.size();
+    std::ostringstream pr, ps;
+    pr << maskBase << "." << SPIKE_TIME_OUT_EXT << "." << grp;
+    ps << maskBase << ".spk." << grp;
+    FILE *fr = std::fopen(pr.str().c_str(), "rb");
+    FILE *fs = std::fopen(ps.str().c_str(), "rb");
+    if (!fr || !fs) {
+        why = "no reference " + (fr ? ps.str() : pr.str());
+        if (fr) std::fclose(fr);
+        if (fs) std::fclose(fs);
+        return StderivSeeding::Unknown;
+    }
+    fseeko(fr, 0, SEEK_END); const off_t resBytes = ftello(fr); fseeko(fr, 0, SEEK_SET);
+    fseeko(fs, 0, SEEK_END); const off_t spkBytes = ftello(fs); fseeko(fs, 0, SEEK_SET);
+    const off_t rowBytes = (off_t)spikeLength * nChan * (off_t)sizeof(int16_t);
+    const int64_t nRes = (int64_t)(resBytes / (off_t)sizeof(int64_t));
+    if (resBytes % (off_t)sizeof(int64_t) != 0 || rowBytes <= 0
+        || spkBytes != (off_t)nRes * rowBytes) {
+        why = ps.str() + " does not hold one " + std::to_string(spikeLength) + "x"
+            + std::to_string(nChan) + " row per spike of " + pr.str();
+        std::fclose(fr); std::fclose(fs);
+        return StderivSeeding::Unknown;
+    }
+    const int64_t nCheck = std::min<int64_t>(nRes, 1024);
+    vector<int64_t> ts((size_t)nCheck);
+    vector<int16_t> s0((size_t)nCheck * nChan);
+    vector<int16_t> row((size_t)spikeLength * nChan);
+    int64_t got = 0;
+    for (; got < nCheck; ++got) {
+        if (std::fread(&ts[(size_t)got], sizeof(int64_t), 1, fr) != 1) break;
+        if (std::fread(row.data(), sizeof(int16_t), row.size(), fs) != row.size()) break;
+        std::copy(row.begin(), row.begin() + nChan, s0.begin() + (size_t)got * nChan);
+    }
+    std::fclose(fr); std::fclose(fs);
+
+    // The engine's own derivative (computeSDiff) in core terms.  A custom map
+    // that does not fit the group falls back to all-pairs in computeSDiff, so
+    // it does here too.
+    using CoreOrder = neurosuite::core::SdiffOrder;
+    CoreOrder co = static_cast<CoreOrder>((int)order);
+    const vector<int> &partner = groupPartner(g);
+    const vector<vector<int> > &sets = groupSets(g);
+    vector<int> setOff, setMem;
+    if (order == SDIFF_CUSTOM && !(nChan > 1 && (int)partner.size() == nChan))
+        co = CoreOrder::AllPairs;
+    if (order == SDIFF_CUSTOM_CAR) {
+        if (nChan > 1 && (int)sets.size() == nChan) {
+            setOff.push_back(0);
+            for (int ci = 0; ci < nChan; ++ci) {
+                setMem.insert(setMem.end(), sets[ci].begin(), sets[ci].end());
+                setOff.push_back((int)setMem.size());
+            }
+        } else co = CoreOrder::AllPairs;
+    }
+    neurosuite::core::SpikeWindowSpec spec;
+    spec.nSamp = spikeLength; spec.peakSample = timeBeforeSpike;
+    spec.totalNbChannels = nChanTot;
+    spec.groupChannels = chans.data(); spec.nChan = nChan;
+    spec.applyTransform = true; spec.order = co;
+    spec.partner = (co == CoreOrder::Custom) ? partner.data() : nullptr;
+    spec.setOff  = setOff.empty() ? nullptr : setOff.data();
+    spec.setMem  = setMem.empty() ? nullptr : setMem.data();
+    FILE *fil = std::fopen(filPath.c_str(), "rb");
+    if (!fil) { why = "cannot open " + filPath; return StderivSeeding::Unknown; }
+    const auto r = neurosuite::core::detectStderivSeeding(
+        fil, got, spec,
+        [&](int64_t i) { return ts[(size_t)i]; },
+        [&](int64_t i, int ci) { return s0[(size_t)i * nChan + ci]; });
+    std::fclose(fil);
+    if (r == StderivSeeding::Unknown)
+        why = "no clear majority in " + std::to_string(got) + " reference rows";
+    return r;
+}
+
+// =========================================================================
 // Argument parsing
 // =========================================================================
 static void usage(const char *name)
@@ -289,8 +382,12 @@ static void usage(const char *name)
     cerr << "usage: " << name
          << " -n nCh -c channels -w wLen -p peak -l pslen -r ref"
             " -f factor -B startByte -Z sizeBytes"
-            " [-d sdiffOrder] [-P g1:g2:...] [-m maskBase] [-M maskHalf] [-i in.fil] [-v]"
-            " basename" << endl;
+            " [-d sdiffOrder] [-P g1:g2:...] [-S auto|prev|zero] [-m maskBase] [-M maskHalf]"
+            " [-i in.fil] [-v] basename" << endl;
+    cerr << "  -S  seed of each written window's temporal difference: the previous\n"
+            "      sample's spatial derivative (prev, process_extractspikes_stderiv -R),\n"
+            "      0 (zero, older extractor), or auto (default): follow the reference\n"
+            "      <maskBase>.spk.N / .res.N, previous sample when undetermined." << endl;
 }
 
 static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
@@ -319,6 +416,13 @@ static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
             else                        { g_custom_partner = parseSdiffPairsPerGroup(pat);
                                           a.sdiffOrder = SDIFF_CUSTOM; }
             havePattern = true;
+        }
+        else if (arg == "-S" && i+1 < argc) {
+            const string v = argv[++i];
+            if      (v == "auto") a.seedMode = SEED_AUTO;
+            else if (v == "prev") a.seedMode = SEED_PREV;
+            else if (v == "zero") a.seedMode = SEED_ZERO;
+            else { cerr << "error: -S must be auto, prev or zero" << endl; return false; }
         }
         else if (arg == "-m" && i+1 < argc) a.maskBaseFileName   = argv[++i];
         else if (arg == "-M" && i+1 < argc) a.maskHalfWidth      = std::atoll(argv[++i]);
@@ -496,7 +600,7 @@ int main(int argc, char **argv)
     // Write .res.N (int64) and .spkD.N (int16) using the STDERIV-TRANSFORMED
     // signal.  process_extractspikes_stderiv writes the transformed waveform
     // to .spkD (spatial derivative across group channels + temporal
-    // first-difference with sdiff[-1]=0 boundary), and the .pcaD basis is
+    // first-difference, seeded as described below), and the .pcaD basis is
     // trained on these transformed waveforms.  If Pass-2 here wrote raw
     // waveforms, the new-spike rows in .spkD would be in a different
     // amplitude space than the reference rows and would project through
@@ -507,10 +611,29 @@ int main(int argc, char **argv)
     //
     // Reuse computeSDiff() (ported unchanged from extractspikes_stderiv)
     // to keep the transform bit-identical between the two programs.
+    //
+    // Sample 0's seed follows the reference .spk (-S): sd[-1] is the clamped
+    // spatial derivative of the sample before the window (what
+    // process_extractspikes_stderiv -R writes) or 0 (the older extractor).
     for (int g = 0; g < nGroups; ++g) {
         const vector<int> &chans = chGroups[g];
         const int nChanG = (int)chans.size();
         const auto &res  = resPerGroup[g];
+
+        bool seedPrev = (a.seedMode != SEED_ZERO);
+        if (a.seedMode == SEED_AUTO && !res.empty()) {
+            string why;
+            const auto conv = detectReferenceSeeding(
+                a.maskBaseFileName, g + 1, a.inputFilePath, a.totalChannelNumber,
+                chans, a.spikeLength, a.timeBeforeSpike, a.sdiffOrder, g, why);
+            seedPrev = (conv != neurosuite::core::StderivSeeding::Zero);
+            cout << "  group " << (g+1) << ": reference .spk seed convention: "
+                 << (conv == neurosuite::core::StderivSeeding::Previous ? "previous sample"
+                     : conv == neurosuite::core::StderivSeeding::Zero
+                           ? "zero (older extractor)"
+                           : "undetermined (" + why + "), using previous sample")
+                 << endl;
+        }
 
         std::ostringstream pRes, pSpk;
         pRes << a.outputBaseFileName << "." << SPIKE_TIME_OUT_EXT << "." << (g+1);
@@ -556,12 +679,25 @@ int main(int argc, char **argv)
                 }
 
                 // Step 2 — temporal first-difference, in-place into buf[].
-                // Boundary: sdiff[-1] = 0, matching process_extractspikes_
-                // stderiv::Pass 2 exactly.  Walking prev[] forward preserves
-                // the unclamped sdiff for the next iteration's subtrahend
-                // (do not use the already-clamped output).
+                // Boundary: sdiff[-1] = the clamped spatial derivative of the
+                // sample before the window when seedPrev (process_extract-
+                // spikes_stderiv -R), else 0 (its detection pass / the older
+                // extractor); a window at sample 0 has no predecessor and is
+                // seeded with 0 either way.  Walking prev[] forward preserves
+                // the sdiff (not the clamped output) for the next subtrahend.
                 {
                     vector<int16_t> prev((size_t)nChanG, 0);
+                    if (seedPrev && start >= 1) {
+                        const int16_t *frame =
+                            data + (int64_t)(start - 1) * a.totalChannelNumber;
+                        for (int ci = 0; ci < nChanG; ++ci) {
+                            int iv = (int)std::llround(computeSDiff(frame, chans.data(),
+                                                       ci, nChanG, a.sdiffOrder, g));
+                            if (iv >  32767) iv =  32767;
+                            if (iv < -32768) iv = -32768;
+                            prev[(size_t)ci] = (int16_t)iv;
+                        }
+                    }
                     for (int s = 0; s < a.spikeLength; ++s) {
                         int16_t       *dst = buf.data()   + (size_t)s * nChanG;
                         const int16_t *sd  = sdWav.data() + (size_t)s * nChanG;

@@ -24,6 +24,7 @@
 			<arg choice="plain"><option>-Z</option> <replaceable>sizeBytes</replaceable></arg>
 			<arg choice="opt"><option>-d</option> <replaceable>sdiffOrder</replaceable></arg>
 			<arg choice="opt"><option>-P</option> <replaceable>sdiffPairs</replaceable></arg>
+			<arg choice="opt"><option>-S</option> <replaceable>auto|prev|zero</replaceable></arg>
 			<arg choice="opt"><option>-m</option> <replaceable>maskBase</replaceable></arg>
 			<arg choice="opt"><option>-M</option> <replaceable>maskHalfWidth</replaceable></arg>
 			<arg choice="plain"><replaceable>basename</replaceable></arg>
@@ -41,6 +42,16 @@
 			on the stderiv shadow signal; waveform extraction reads the
 			original unmodified <filename>.fil</filename> and writes
 			<filename>.spkD.N</filename> files.
+		</para>
+		<para>
+			<option>-S</option> sets the seed of each written window's temporal
+			difference: <literal>prev</literal> (the spatial derivative of the
+			sample before the window, as <command>process_extractspikes_stderiv -R</command>
+			writes), <literal>zero</literal> (the older extractor), or
+			<literal>auto</literal> (default): follow the reference
+			<filename>maskBase.spk.N</filename> paired with
+			<filename>maskBase.res.N</filename>, using <literal>prev</literal>
+			when that cannot be decided.
 		</para>
 	</refsect1>
 

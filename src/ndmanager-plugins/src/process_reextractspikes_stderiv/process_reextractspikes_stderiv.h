@@ -28,6 +28,20 @@
  Output .spk files use the .spkD extension to match the ndm_extractspikes_
  stderiv convention; downstream tools that consume .spkD transparently
  accept these outputs without modification.
+
+ Seed convention (-S)
+ --------------------
+ The temporal difference at sample 0 of a written window needs sd[-1].
+ process_extractspikes_stderiv -R (ndm_extractspikes since the detect/
+ extract split) uses the clamped spatial derivative of the sample before
+ the window; its detection pass and the older single-pass extractor used 0.
+ The new rows are shadow-clustered against the session's .spk and projected
+ on the basis fit on it, so they must follow that file's convention:
+   -S auto  (default) decide per group from <maskBase>.spk.N paired with
+            <maskBase>.res.N (neurosuite::core::detectStderivSeeding);
+            undetermined or missing -> previous sample, logged
+   -S prev  seed with the previous sample's spatial derivative
+   -S zero  seed with 0
  ***************************************************************************/
 #ifndef PROCESS_REEXTRACTSPIKES_STDERIV_H
 #define PROCESS_REEXTRACTSPIKES_STDERIV_H
@@ -40,6 +54,12 @@
 #define CHANNEL_SEPARATOR   ","
 #define SPIKE_TIME_OUT_EXT  "res"
 #define SPIKE_REC_OUT_EXT   "spkD"
+
+enum SeedMode {
+    SEED_AUTO = 0,   // detect from the reference .spk/.res (<maskBase>.{spk,res}.N)
+    SEED_PREV = 1,   // sd[-1] = spatial derivative of the sample before the window
+    SEED_ZERO = 2    // sd[-1] = 0 (older extractor / detection pass)
+};
 
 enum SdiffOrder {
     SDIFF_NONE      = 0,
@@ -70,6 +90,7 @@ struct ReextractStderivArgs {
     off_t  threshSizeBytes = 0;
 
     SdiffOrder sdiffOrder = SDIFF_ALLPAIRS;
+    SeedMode   seedMode   = SEED_AUTO;
 
     bool verbose = false;
 };
