@@ -264,9 +264,13 @@ void ParameterYamlReader::getAnatomicalDescription(
     int groupId = 1;
     for (auto grp : groups) {
         auto channels = grp["channels"];
-        if (!channels || !channels.IsSequence()) { ++groupId; continue; }
+        // A group whose channels are null or missing is kept, as an empty
+        // group: groups are numbered by position, so skipping it renumbered
+        // every later group against its .spk.N/.clu.N files, and a save then
+        // dropped it from the file.
+        const bool listed = channels && channels.IsSequence();
         QList<int> chList;
-        for (auto ch : channels) {
+        if (listed) for (auto ch : channels) {
             int id   = nodeAs<int>(ch["id"],   -1);
             int skip = nodeAs<int>(ch["skip"],  0);
             if (id < 0) continue;
@@ -294,9 +298,13 @@ void ParameterYamlReader::getAnatomicalDescription(
     int groupId = 1;
     for (auto grp : groups) {
         auto channels = grp["channels"];
-        if (!channels || !channels.IsSequence()) { ++groupId; continue; }
+        // A group whose channels are null or missing is kept, as an empty
+        // group: groups are numbered by position, so skipping it renumbered
+        // every later group against its .spk.N/.clu.N files, and a save then
+        // dropped it from the file.
+        const bool listed = channels && channels.IsSequence();
         QList<int> chList;
-        for (auto ch : channels) {
+        if (listed) for (auto ch : channels) {
             int id   = nodeAs<int>(ch["id"],  -1);
             int skip = nodeAs<int>(ch["skip"], 0);
             if (id < 0) continue;
@@ -407,9 +415,11 @@ void ParameterYamlReader::getSpikeDescription(
         int groupId = 1;
         for (auto grp : groups) {
             auto channels = grp["channels"];
-            if (!channels || !channels.IsSequence()) { ++groupId; continue; }
+            // Kept as an empty group when its channels are null or missing
+            // (see getAnatomicalDescription).
+            const bool listed = channels && channels.IsSequence();
             QList<int> chList;
-            for (auto ch : channels) {
+            if (listed) for (auto ch : channels) {
                 int id = nodeAs<int>(ch, -1);
                 if (id < 0) continue;
                 chList.append(id);
@@ -437,9 +447,11 @@ void ParameterYamlReader::getSpikeDescription(
     int groupId = 1;
     for (auto grp : groups) {
         auto channels = grp["channels"];
-        if (!channels || !channels.IsSequence()) { ++groupId; continue; }
+        // Kept as an empty group when its channels are null or missing (see
+        // getAnatomicalDescription); ndmanager then writes it as channels: [].
+        const bool listed = channels && channels.IsSequence();
         QList<int> chList;
-        for (auto ch : channels) {
+        if (listed) for (auto ch : channels) {
             int id = nodeAs<int>(ch, -1);
             if (id >= 0) chList.append(id);
         }

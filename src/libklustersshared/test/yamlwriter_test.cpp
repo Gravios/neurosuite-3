@@ -343,6 +343,21 @@ int main()
         chk(str(sg[1]["peakSampleIndex"]) == "sixteen", "a non-number is left for the user, not zeroed");
     }
 
+    std::printf("a spike group with null channels keeps its place:\n");
+    {
+        std::string text = kSession;
+        const std::string from = "    - channels: [0, 1, 2, 3]\n";
+        text.replace(text.find(from), from.size(), "    - channels: ~\n");
+        std::ofstream(path.toStdString()) << text;
+        Model m = load(path);
+        chk(m.spike.size() == 2 && m.spike.value(1).isEmpty(), "read as an empty group 1");
+        const YAML::Node sg = save(m, path, path)["spikeDetection"]["channelGroups"];
+        chk(sg.size() == 2, "both groups written");
+        chk(sg[0]["channels"].IsSequence() && sg[0]["channels"].size() == 0 &&
+            str(sg[0]["sdiffPairs"]) == "0-1,1-2,2-3", "group 1 written empty, keys kept");
+        chk(str(sg[1]["nCells"]) == "7", "group 2 is still group 2");
+    }
+
     std::printf("brand-new file (no base document):\n");
     {
         writeSession(path);
