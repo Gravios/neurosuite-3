@@ -1646,12 +1646,25 @@ ndm_process_spikes()
 	local outType=res
 	[ "$mode" = extract ] && outType=spk
 	electrodeGroups=
+	local nEmptyGroups=0
 	for group in $(seq 1 $nElectrodeGroups); do
+		# A group with no channels (kept in the file so later groups keep their
+		# numbers, e.g. an empty XML group converted by ndm_xml2yaml) has
+		# nothing to detect: skip it rather than fail the whole run.
+		if xml_read_failed "$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel")"; then
+			echo_info "Spike group $group has no channels, skipped."
+			nEmptyGroups=$((nEmptyGroups + 1))
+			continue
+		fi
 		if [ -n "$force" ] || ! outputs_exist "$(ndm_method_path "$session" $outType "$group" "$method")"; then
 			electrodeGroups="$electrodeGroups $group"
 		fi
 	done
 	if [ -z "$electrodeGroups" ]; then
+		if [ $nEmptyGroups -eq $nElectrodeGroups ]; then
+			echo_error "no spike group has any channels"
+			exit $GENERAL_ERROR
+		fi
 		echo_info "All output files already exist, nothing to do."
 		exit $NO_ERROR
 	fi

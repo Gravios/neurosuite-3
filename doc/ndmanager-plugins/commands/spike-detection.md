@@ -55,6 +55,8 @@ The `--method`, `--methodOrder` and `--inputExtension` flags override the YAML
 values.  A group is processed only if `session.res.<method>.N` for **this**
 method does not exist yet; `--force` re-detects and overwrites.  When every
 group already has its `.res`, the step prints "nothing to do" and exits 0.
+A group with no channels (`channels: []`) is skipped with a message; the other
+groups keep their numbers.  It is an error only when no group has channels.
 
 Spike times are method-independent and later steps resolve the `.res` across
 methods (see [naming](../formats/naming.md#artifact-classes)).  Detect once.
@@ -294,7 +296,8 @@ transform.
 
 A group is processed only if `session.spk.<method>.N` does not exist yet;
 `--force` re-extracts and overwrites.  When every group already has its `.spk`,
-the step prints "nothing to do" and exits 0.
+the step prints "nothing to do" and exits 0.  A group with no channels is
+skipped, as in detection.
 
 All groups are extracted with the `nSamples`/`peakSampleIndex` of the first
 group processed; a group with different values gets a warning.
