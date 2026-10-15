@@ -619,6 +619,21 @@ def xcorr_shift(ref: np.ndarray, win: np.ndarray, depths: np.ndarray
     """
     if ref.sum() == 0 or win.sum() == 0 or len(depths) < 3:
         return None
+    # Correlate along depth, not along channel order.  Groups may list their
+    # sites in any order (NeuroScope convention: top site first, so depth
+    # decreases with channel index); a lag counted in channel steps then has
+    # the opposite sign.  Sorting by depth makes the shift's sign mean the
+    # same thing for every ordering.  Sites without a depth are dropped.
+    depths = np.asarray(depths, dtype=float)
+    ref = np.asarray(ref, dtype=float)
+    win = np.asarray(win, dtype=float)
+    finite = np.isfinite(depths)
+    order = np.argsort(depths[finite], kind="stable")
+    depths = depths[finite][order]
+    ref = ref[finite][order]
+    win = win[finite][order]
+    if ref.sum() == 0 or win.sum() == 0 or len(depths) < 3:
+        return None
     r = ref / (np.linalg.norm(ref) + 1e-12)
     w = win / (np.linalg.norm(win) + 1e-12)
     try:
@@ -645,10 +660,8 @@ def xcorr_shift(ref: np.ndarray, win: np.ndarray, depths: np.ndarray
         # integer lag but report curvature 0 so the caller can downweight.
         lag       = float(lags[pk])
         curvature = 0.0
-    # Filter NaN depths (null geometry sites) before computing spacing
-    valid_depths = depths[np.isfinite(depths)] if len(depths) > 0 else depths
-    spacing = float(np.median(np.diff(np.sort(valid_depths)))) \
-              if len(valid_depths) > 1 else 50.0
+    # depths is finite and sorted ascending here (see above)
+    spacing = float(np.median(np.diff(depths))) if len(depths) > 1 else 50.0
     return round(float(lag * spacing), 2), round(curvature, 4)
 
 
