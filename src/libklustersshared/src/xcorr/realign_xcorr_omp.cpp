@@ -60,7 +60,8 @@ int xcorr_omp_compute(
 {
     // -----------------------------------------------------------------------
     // Precompute template energy (constant for all spikes and lags).
-    // Sum over full waveform — matches the zero-padded numerator sum range.
+    // Sum over the full waveform — the numerator below is a circular
+    // correlation, so every sample contributes at every lag.
     // -----------------------------------------------------------------------
     double tmplEnergy = 0.0;
     for (int ch = 0; ch < nChannels; ++ch)
@@ -104,7 +105,8 @@ int xcorr_omp_compute(
                 const int16_t* tch = tmpl + ch * nSamples;
                 const int16_t* sch = spk  + ch * nSamples;
                 for (int s = 0; s < nSamples; ++s) {
-                    int sLag = (s + lag + nSamples) % nSamples;
+                    // double modulo: |lag| may exceed nSamples (wide maxShift)
+                    int sLag = ((s + lag) % nSamples + nSamples) % nSamples;
                     num += static_cast<double>(tch[s])
                          * static_cast<double>(sch[sLag]);
                 }
@@ -121,10 +123,8 @@ int xcorr_omp_compute(
         }
 
         // A peak at bestLag means the spike is shifted +bestLag samples
-        // relative to the template.  Negate so the caller can simply add
-        // shifts_out to the timestamp (moving the spike earlier).
-        // +bestLag: spike peak is at peakSamp0+bestLag, so ts is bestLag too early;
-        // caller does newTs = ts + shifts_out to correct.
+        // relative to the template: its peak is at peakSamp0+bestLag, so ts is
+        // bestLag too early and the caller does newTs = ts + shifts_out.
         shifts_out[sp] = (bestScore >= minScore) ? bestLag : 0;
         scores_out[sp] = bestScore;
     }

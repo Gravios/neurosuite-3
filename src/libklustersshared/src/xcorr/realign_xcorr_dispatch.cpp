@@ -14,13 +14,20 @@
  *   XcorrDispatch::compute(...)  — run the alignment kernel
  *   XcorrDispatch::backendName() — human-readable active backend label
  *
- * Consumers:
- *   KK.cpp (KlustaKwik)          — Phase 1.5 batch realignment after chunked CEM
- *   klustersdoc.cpp (Klusters)   — interactive per-cluster realignment in the GUI
+ * Consumers (each compiles these sources itself; they are not in the library):
+ *   KiloKlustaKwik (KK_templatematch.cpp) — calls compute() from inside an
+ *                                           OpenMP parallel loop
+ *   Klusters (klustersdoc_realign.cpp)     — interactive per-cluster realignment
+ *
+ * Thread safety: compute() and backendName() may be called concurrently.  The
+ * back end is probed once (a function-local static, initialised under the
+ * C++ guarantee) and held in an atomic, so a GPU demotion by one thread is
+ * seen by the others without a data race.
  ***************************************************************************/
 
 #include "realign_xcorr.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 
@@ -64,9 +71,6 @@ namespace XcorrDispatch {
 
 enum class Backend { OMP, CUDA, HIP, SYCL };
 
-static Backend s_backend = Backend::OMP;
-static bool    s_detected = false;
-
 static Backend detectBackend()
 {
 #ifdef USE_CUDA
@@ -95,14 +99,36 @@ static Backend detectBackend()
     return Backend::OMP;
 }
 
+// The active back end.  The initialiser runs detectBackend() exactly once, even
+// when the first calls arrive from several threads at the same time; later
+// demotions are atomic stores.
+static std::atomic<Backend>& backendState()
+{
+    static std::atomic<Backend> state{detectBackend()};
+    return state;
+}
+
 static Backend activeBackend()
 {
-    if (!s_detected) {
-        s_backend  = detectBackend();
-        s_detected = true;
-    }
-    return s_backend;
+    return backendState().load(std::memory_order_acquire);
 }
+
+// Permanently fall back to OpenMP after a GPU failure.  Only the thread whose
+// call actually moves the state from `from` reports it, so the message
+// appears once however many threads hit the failure together.
+static void demote(Backend from, const char* name, int rc)
+{
+    Backend expected = from;
+    if (backendState().compare_exchange_strong(expected, Backend::OMP,
+                                               std::memory_order_acq_rel))
+        fprintf(stderr, "[realign] %s xcorr failed (rc=%d), falling back to OMP"
+                        " for the rest of this process\n", name, rc);
+}
+
+// The CUDA and HIP kernels reduce all 2*maxShift+1 lags in one block of at
+// most 1024 threads.  Larger shifts are not a device failure: such calls go
+// straight to OpenMP and leave the GPU in use for the others.
+static bool gpuCanShift(int maxShift) { return 2 * maxShift + 1 <= 1024; }
 
 const char* backendName()
 {
@@ -118,7 +144,9 @@ const char* backendName()
  * Compute optimal realignment shifts for a batch of waveforms against
  * a cluster template, using the best available backend.
  *
- * On GPU failure the call is automatically retried on the OpenMP path.
+ * On GPU failure the call is retried on the OpenMP path and later calls use
+ * OpenMP; a maxShift beyond the CUDA/HIP block limit runs that call on OpenMP
+ * without demoting.
  */
 int compute(
     const int16_t* waveforms,
@@ -131,28 +159,24 @@ int compute(
     int rc = -1;
     switch (activeBackend()) {
     case Backend::CUDA:
+        if (!gpuCanShift(maxShift)) break;
         rc = xcorr_cuda_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
                                 maxShift, minScore, shifts_out, scores_out);
         if (rc == 0) return 0;
-        fprintf(stderr, "[realign] CUDA xcorr failed (rc=%d), falling back to OMP\n", rc);
-        // Permanently demote to OMP so we don't re-probe a failing GPU each call.
-        s_backend = Backend::OMP;
+        demote(Backend::CUDA, "CUDA", rc);
         break;
     case Backend::HIP:
+        if (!gpuCanShift(maxShift)) break;
         rc = xcorr_hip_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
                                maxShift, minScore, shifts_out, scores_out);
         if (rc == 0) return 0;
-        fprintf(stderr, "[realign] HIP xcorr failed (rc=%d), falling back to OMP\n", rc);
-        // Permanently demote to OMP so we don't re-probe a failing GPU each call.
-        s_backend = Backend::OMP;
+        demote(Backend::HIP, "HIP", rc);
         break;
     case Backend::SYCL:
         rc = xcorr_sycl_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
                                 maxShift, minScore, shifts_out, scores_out);
         if (rc == 0) return 0;
-        fprintf(stderr, "[realign] SYCL xcorr failed (rc=%d), falling back to OMP\n", rc);
-        // Permanently demote to OMP so we don't attempt SYCL again this session.
-        s_backend  = Backend::OMP;
+        demote(Backend::SYCL, "SYCL", rc);
         break;
     default:
         break;

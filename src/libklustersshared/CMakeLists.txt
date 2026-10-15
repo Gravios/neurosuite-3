@@ -85,6 +85,20 @@ if(NS_BUILD_TESTS)
     target_include_directories(klustersshared_sdiff_pairs_test
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
     add_test(NAME klustersshared_sdiff_pairs_test COMMAND klustersshared_sdiff_pairs_test)
+
+    # XcorrDispatch under concurrent calls (no Qt): one probe, atomic demotion,
+    # wide shifts on OpenMP.  Built with USE_CUDA against a fake CUDA back end
+    # defined in the test, so it needs no GPU.
+    find_package(Threads REQUIRED)
+    add_executable(klustersshared_xcorr_dispatch_test
+        test/xcorr_dispatch_test.cpp
+        src/xcorr/realign_xcorr_dispatch.cpp
+        src/xcorr/realign_xcorr_omp.cpp)
+    target_compile_definitions(klustersshared_xcorr_dispatch_test PRIVATE USE_CUDA)
+    target_include_directories(klustersshared_xcorr_dispatch_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/xcorr")
+    target_link_libraries(klustersshared_xcorr_dispatch_test PRIVATE Threads::Threads)
+    add_test(NAME klustersshared_xcorr_dispatch_test COMMAND klustersshared_xcorr_dispatch_test)
 endif()
 
 # ---------------------------------------------------------------------------

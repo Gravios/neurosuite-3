@@ -683,22 +683,31 @@ corrected; the text describes the problem as it was.
 
 **xcorr**
 
-10. `XcorrDispatch` caches its back end in unsynchronised statics
+10. **Fixed (0491):** the back end is probed once through a function-local
+    static and held in a `std::atomic`; demotion is a compare-exchange.
+    Test: `klustersshared_xcorr_dispatch_test`.
+    Was: `XcorrDispatch` caches its back end in unsynchronised statics
     (`realign_xcorr_dispatch.cpp:67-68`, writes at `:101`, `:139`, `:147`,
     `:155`) while KiloKlustaKwik calls `compute` from inside
     `#pragma omp parallel for` (`KK_templatematch.cpp:314`). That is a data race
     on first detection and on GPU demotion.
-11. A single GPU failure demotes the whole process to OpenMP for good, and
+11. **Partly fixed (0491):** a `maxShift` beyond the CUDA/HIP block limit now
+    runs that call on OpenMP without demoting; a real GPU failure still demotes
+    for the rest of the process.  The OpenMP kernel also indexed out of bounds
+    when `maxShift` exceeded `nSamples` (negative modulo); fixed.
+    Was: A single GPU failure demotes the whole process to OpenMP for good, and
     `maxShift > 511` is such a failure on CUDA/HIP, so one large-shift call
     silently turns off the GPU for every later call.
 12. `realign_xcorr.h` calls the layout "interleaved samples"; it is
     channel-major per spike (`[spike][channel][sample]`), the transpose of the
     interleaved `.spk` layout.
-13. Stale comments in `realign_xcorr_omp.cpp`: "matches the zero-padded
+13. **Partly fixed (0491):** the two `realign_xcorr_omp.cpp` comments.
+    Was: Stale comments in `realign_xcorr_omp.cpp`: "matches the zero-padded
     numerator sum range" (the sum is circular) and "Negate so the caller can
     simply add…" (nothing is negated). `realign_xcorr_cuda.cu` still says
     "One block, one thread per spike (up to 1024 spikes per call chunk)".
-14. The consumer list is stale in three places: `realign_xcorr_dispatch.cpp`
+14. **Partly fixed (0491):** the dispatcher header lists its real consumers.
+    Was: The consumer list is stale in three places: `realign_xcorr_dispatch.cpp`
     names "KK.cpp (KlustaKwik)" and "klustersdoc.cpp"; `src/CMakeLists.txt` names
     "klustakwik, kiloklustakwik, klusters" (there is no klustakwik);
     `process_alignspikes_pca.cpp:84` suggests calling `XcorrDispatch::compute`
