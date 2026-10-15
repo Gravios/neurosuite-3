@@ -437,6 +437,14 @@ struct TclRegistry {
     std::vector<TclEntry> entries;      ///< size nClasses, indexed by col
     bool                  ok = false;
 };
+// readTcl returns entries INDEXED BY COLUMN (entries[i].col == i, sorted
+// whatever the file's row order) — the templateclass engine indexes them that
+// way.  It fails (ok = false) on a missing file, a bad header, a malformed
+// row (non-integer col / provenance_clu, unknown status, fewer than two
+// fields), a duplicate, missing or out-of-range col (rows must cover exactly
+// 0..nClasses-1, nClasses defaulting to the row count), or a merged:<n>
+// target outside 0..nClasses-1 or equal to its own col.  A malformed row is
+// never skipped: that shifted every later entry off its column.
 NEUROSUITE_CORE_EXPORT TclRegistry readTcl(const std::string& path);
 NEUROSUITE_CORE_EXPORT bool        writeTcl(const std::string& path, const TclRegistry& reg);
 // A fresh registry of nClasses Free slots (col i set, everything else default).

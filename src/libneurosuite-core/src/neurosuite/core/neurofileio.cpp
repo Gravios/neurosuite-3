@@ -857,6 +857,24 @@ static std::string tclStatusToken(const TclEntry& t)
     }
 }
 
+// Strict decimal int: optional sign then digits, nothing else ("3abc" fails).
+static bool parseIntStrict(const std::string& t, int& v)
+{
+    if (t.empty()) return false;
+    std::size_t k = (t[0] == '-' || t[0] == '+') ? 1 : 0;
+    if (k == t.size()) return false;
+    long long acc = 0;
+    for (; k < t.size(); ++k) {
+        if (t[k] < '0' || t[k] > '9') return false;
+        acc = acc * 10 + (t[k] - '0');
+        if (acc > static_cast<long long>(std::numeric_limits<int>::max()) + 1) return false;
+    }
+    if (t[0] == '-') acc = -acc;
+    if (acc < std::numeric_limits<int>::min() || acc > std::numeric_limits<int>::max()) return false;
+    v = static_cast<int>(acc);
+    return true;
+}
+
 TclRegistry readTcl(const std::string& path)
 {
     TclRegistry reg;
@@ -866,6 +884,7 @@ TclRegistry readTcl(const std::string& path)
     std::string line;
     bool haveHeader = false;
     long declaredN = -1;
+    std::vector<TclEntry> rows;
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         const std::size_t s = line.find_first_not_of(" \t");
@@ -879,36 +898,53 @@ TclRegistry readTcl(const std::string& path)
         // nClasses header line (space-separated) vs a col row (TAB-separated).
         if (line.compare(0, 9, "nClasses ") == 0) {
             std::istringstream ns(line);
-            std::string key; ns >> key >> declaredN;
+            std::string key, extra;
+            if (!(ns >> key >> declaredN) || declaredN < 0 || (ns >> extra)) return TclRegistry{};
             continue;
         }
         // col row: col <TAB> status <TAB> label <TAB> prov_clu <TAB> prov_stage <TAB> created
+        // A malformed row fails the whole read: skipping it would shift every
+        // later entry off its column (the engine indexes entries BY column).
         std::vector<std::string> f;
         std::string cur;
         for (char c : line) { if (c == '\t') { f.push_back(cur); cur.clear(); } else cur += c; }
         f.push_back(cur);
-        if (f.size() < 2) continue;                          // not a valid row
+        if (f.size() < 2) return TclRegistry{};
         TclEntry e;
-        try { e.col = std::stoi(f[0]); } catch (...) { continue; }
+        if (!parseIntStrict(f[0], e.col)) return TclRegistry{};
         const std::string& st = f[1];
         if      (st == "active") e.status = TclStatus::Active;
         else if (st == "tomb")   e.status = TclStatus::Tomb;
         else if (st == "free")   e.status = TclStatus::Free;
         else if (st.compare(0, 7, "merged:") == 0) {
             e.status = TclStatus::Merged;
-            try { e.mergedInto = std::stoi(st.substr(7)); } catch (...) { e.mergedInto = -1; }
-        } else e.status = TclStatus::Free;
+            if (!parseIntStrict(st.substr(7), e.mergedInto)) return TclRegistry{};
+        } else return TclRegistry{};                         // unknown status token
         auto dash = [](const std::string& v) { return v == "-" ? std::string() : v; };
         if (f.size() > 2) e.label = dash(f[2]);
         if (f.size() > 3) { const std::string p = dash(f[3]);
-            try { e.provenanceClu = p.empty() ? -1 : std::stoi(p); } catch (...) { e.provenanceClu = -1; } }
+            if (p.empty()) e.provenanceClu = -1;
+            else if (!parseIntStrict(p, e.provenanceClu)) return TclRegistry{}; }
         if (f.size() > 4) e.provenanceStage = dash(f[4]);
         if (f.size() > 5) e.created = dash(f[5]);
-        reg.entries.push_back(e);
+        rows.push_back(e);
     }
     if (!haveHeader) return TclRegistry{};
-    reg.nClasses = (declaredN >= 0) ? static_cast<int>(declaredN)
-                                    : static_cast<int>(reg.entries.size());
+    const long n = (declaredN >= 0) ? declaredN : static_cast<long>(rows.size());
+    // Exactly one row per column 0..n-1: no duplicate, missing or out-of-range
+    // col (this also bounds a crafted nClasses by the rows actually present).
+    if (static_cast<long>(rows.size()) != n) return TclRegistry{};
+    std::vector<TclEntry> byCol(rows.size());
+    std::vector<char> seen(rows.size(), 0);
+    for (const TclEntry& e : rows) {
+        if (e.col < 0 || e.col >= n || seen[static_cast<std::size_t>(e.col)]) return TclRegistry{};
+        seen[static_cast<std::size_t>(e.col)] = 1;
+        if (e.status == TclStatus::Merged &&
+            (e.mergedInto < 0 || e.mergedInto >= n || e.mergedInto == e.col)) return TclRegistry{};
+        byCol[static_cast<std::size_t>(e.col)] = e;
+    }
+    reg.nClasses = static_cast<int>(n);
+    reg.entries  = std::move(byCol);
     reg.ok = true;
     return reg;
 }

@@ -1029,9 +1029,19 @@ static bool write_eap_membership(const std::string &session, int g,
         return false;
     }
     nf::TclRegistry reg = nf::readTcl(tclPath);
-    if (!reg.ok) reg = nf::initTcl(e.nClasses);
+    if (!reg.ok) {
+        // Only an ABSENT .tcl starts fresh; a present-but-invalid one (malformed
+        // row, duplicate/missing col) would be overwritten with all-Free slots.
+        if (std::ifstream(tclPath).good()) {
+            fprintf(stderr, "  group %d: %s is not a valid .tcl registry; skipping .eap\n",
+                    g, tclPath.c_str());
+            return false;
+        }
+        reg = nf::initTcl(e.nClasses);
+    }
 
     // Reconcile widths (a sibling stage may have grown the shared .tcl pool).
+    // readTcl guarantees entries[i].col == i, so appended cols never duplicate.
     const int T = std::max(e.nClasses, reg.nClasses);
     if (e.nClasses < T) e = nf::growEap(e, T);
     while ((int)reg.entries.size() < T) {

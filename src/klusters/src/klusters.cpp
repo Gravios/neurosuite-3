@@ -8806,8 +8806,20 @@ void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decom
             e.cells.assign(static_cast<std::size_t>(e.nSpikes) * 128, EAP_ABSENT);
             e.ok = true;
         }
-        if (e.nSpikes == static_cast<int64_t>(cr.ids.size())) {
-            TclRegistry reg = readTcl(tclPath);
+        TclRegistry reg = readTcl(tclPath);
+        // Only an ABSENT .tcl starts fresh: a present-but-invalid registry
+        // (readTcl rejects malformed rows / duplicate or missing cols) would be
+        // overwritten with all-Free slots by the writeTcl below.
+        const bool tclCorrupt = !reg.ok && QFileInfo::exists(QString::fromStdString(tclPath));
+        if (tclCorrupt) {
+            QApplication::restoreOverrideCursor();
+            QMessageBox::warning(this, tr("Decollide"),
+                tr("%1 is not a valid .tcl registry; the .eap membership is not updated "
+                   "(the decollided stage is still written).")
+                    .arg(QString::fromStdString(tclPath)));
+            QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+        }
+        if (!tclCorrupt && e.nSpikes == static_cast<int64_t>(cr.ids.size())) {
             if (!reg.ok) reg = initTcl(e.nClasses);
             const int T = std::max(e.nClasses, reg.nClasses);    // reconcile against the shared .tcl
             if (e.nClasses < T) e = growEap(e, T);

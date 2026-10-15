@@ -286,6 +286,55 @@ static void testEmptyFetBinary()
     std::remove(fp.c_str());
 }
 
+// ── 8. .tcl: entries indexed by column; malformed registries rejected ───────
+static void testTcl()
+{
+    using namespace neurofileio;
+    const std::string tp = "nfio_rob.tmp.tcl";
+    const std::string H = "tcl 1\nnClasses 3\n# col\tstatus\tlabel\tprovenance_clu\tprovenance_stage\tcreated\n";
+
+    // Rows out of order -> entries sorted so entries[i].col == i.
+    writeBytes(tp, H + "2\tactive\tC\t7\tgt\t-\n0\tfree\t-\t-\t-\t-\n1\tmerged:2\tB\t-\t-\t-\n");
+    TclRegistry r = readTcl(tp);
+    check(r.ok && r.nClasses == 3 && r.entries.size() == 3 &&
+          r.entries[0].col == 0 && r.entries[1].col == 1 && r.entries[2].col == 2 &&
+          r.entries[2].status == TclStatus::Active && r.entries[2].provenanceClu == 7 &&
+          r.entries[1].status == TclStatus::Merged && r.entries[1].mergedInto == 2,
+          "tcl: out-of-order rows -> entries indexed by col");
+
+    // writeTcl -> readTcl round-trip of a sorted registry is the identity.
+    check(writeTcl(tp, r), "tcl: writeTcl ok");
+    const TclRegistry r2 = readTcl(tp);
+    check(r2.ok && r2.entries.size() == 3 && r2.entries[2].label == "C" && r2.entries[1].label == "B",
+          "tcl: round-trip");
+
+    auto bad = [&](const std::string& body, const char* what) {
+        writeBytes(tp, body);
+        check(!readTcl(tp).ok, what);
+    };
+    bad(H + "0\tfree\n1\tfree\n1\tactive\n",           "tcl: duplicate col -> ok=false");
+    bad(H + "0\tfree\n2\tfree\n",                        "tcl: missing col (2 rows, nClasses 3) -> ok=false");
+    bad(H + "0\tfree\n1\tfree\n3\tfree\n",             "tcl: col out of range -> ok=false");
+    bad(H + "0\tfree\nbogus\tfree\n2\tfree\n",         "tcl: non-integer col (was skipped, shifting cols) -> ok=false");
+    bad(H + "0\tfree\n1 free\n2\tfree\n",               "tcl: row without TAB fields -> ok=false");
+    bad(H + "0\tfree\n1\tactiv\n2\tfree\n",            "tcl: unknown status -> ok=false");
+    bad(H + "0\tfree\n1\tmerged:x\n2\tfree\n",         "tcl: merged: bad target -> ok=false");
+    bad(H + "0\tfree\n1\tmerged:9\n2\tfree\n",         "tcl: merged: target out of range -> ok=false");
+    bad(H + "0\tfree\n1\tactive\tL\t3x\n2\tfree\n",  "tcl: non-integer provenance_clu -> ok=false");
+    bad("tcl 1\nnClasses 2000000000\n0\tfree\n",          "tcl: nClasses far beyond the rows -> ok=false");
+    bad("tcl 1\nnClasses -4\n",                             "tcl: negative nClasses -> ok=false");
+
+    // No nClasses line: the rows define it (still must be 0..n-1).
+    writeBytes(tp, "tcl 1\n1\ttomb\n0\tactive\n");
+    r = readTcl(tp);
+    check(r.ok && r.nClasses == 2 && r.entries[0].status == TclStatus::Active &&
+          r.entries[1].status == TclStatus::Tomb, "tcl: implicit nClasses from rows, sorted");
+    writeBytes(tp, "tcl 1\nnClasses 0\n");
+    r = readTcl(tp);
+    check(r.ok && r.nClasses == 0 && r.entries.empty(), "tcl: empty registry ok");
+    std::remove(tp.c_str());
+}
+
 int main()
 {
     testResDetection();
@@ -293,6 +342,7 @@ int main()
     testColTruncation();
     testCraftedHeaders();
     testEmptyFetBinary();
+    testTcl();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);

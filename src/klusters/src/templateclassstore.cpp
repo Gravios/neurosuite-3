@@ -12,6 +12,7 @@
 #include "neurosuite/core/templateclass.hpp"
 
 #include <algorithm>
+#include <fstream>
 
 namespace nf  = neurofileio;
 namespace tc  = neurosuite::templateclass;
@@ -46,12 +47,20 @@ bool TemplateClassStore::load(const std::string& base, int group,
         eap_.ok = true;
     }
 
-    // .tcl resolution: its file; else a fresh registry matching the matrix width.
+    // .tcl resolution: its file; else (only when there is NO file) a fresh
+    // registry matching the matrix width.  An existing .tcl that readTcl rejects
+    // (malformed row, duplicate/missing col) must not be replaced by all-Free
+    // slots — a later save() would overwrite the curated registry — so the load
+    // fails instead.
     tcl_ = nf::readTcl(tclPath_);
-    if (!tcl_.ok)
+    if (!tcl_.ok) {
+        if (std::ifstream(tclPath_).good()) { loaded_ = false; return false; }
         tcl_ = nf::initTcl(eap_.nClasses);
+    }
 
-    // Reconcile widths: a class id must be a valid column in BOTH structures.  If
+    // Reconcile widths: a class id must be a valid column in BOTH structures.
+    // readTcl guarantees entries[i].col == i for i < nClasses, so appending at
+    // col = entries.size() extends the pool without a duplicate id.  If
     // another stage grew the shared pool, the .tcl records more classes than this
     // stage's (possibly inherited) .eap — widen the matrix to match, and vice
     // versa — so engine calls that require reg.nClasses == eap.nClasses hold.
