@@ -371,8 +371,11 @@ def correct_waveform_batch(wf:        np.ndarray,
     valid_idx_sorted = valid_idx[order]
 
     # Vectorise across spikes: z_query has shape (b, n_valid),
-    # bracket indices are (b, n_valid).
-    z_query = z_v[None, :] - d_batch[:, None]   # (b, n_valid)
+    # bracket indices are (b, n_valid).  Target sites are taken in the same
+    # depth-sorted order as the grid, because the result is scattered back
+    # through valid_idx_sorted below (sites may be listed in any depth order,
+    # e.g. top first as in the probe library).
+    z_query = z_sorted[None, :] - d_batch[:, None]   # (b, n_valid)
 
     idx_right = np.searchsorted(z_sorted, z_query, side="right")
     idx_right = np.clip(idx_right, 1, n_valid - 1)
