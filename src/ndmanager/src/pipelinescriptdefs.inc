@@ -70,7 +70,7 @@
      { "nChannels", "", "Mandatory" }} },
 { "ndm_concatenate", "Concatenate", "Concatenate sessions", "preparation", "concatenation",
     {{ "spotsSamplingRate", "50", "Mandatory" }} },
-{ "ndm_extractemg", "Extract EMG", "FastICA EMG removal → -emgclean.dat + EMG events", "preparation", "",
+{ "ndm_extractemg", "Extract EMG", "FastICA EMG removal → .emgclean (-emgclean.dat) + EMG events", "preparation", "",
     {{ "hpFreq", "100", "Optional" },
      { "thresholdFactor", "5.0", "Optional" },
      { "envelopeWindowMs", "20", "Optional" },

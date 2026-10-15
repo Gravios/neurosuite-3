@@ -22,9 +22,13 @@
 #//   `backend` parameter; `auto` picks the first available among CUDA,
 #//   HIP, SYCL, falling back to CPU.
 #//
+#//   The cleaned recording is also reachable as <session>.emgclean (a
+#//   symlink to <session>-emgclean.dat), so a later step can read it with
+#//   inputExtension: emgclean.
+#//
 #//   Run BEFORE ndm_hipass / ndm_extractspikes if you want spike detection
-#//   to operate on the EMG-cleaned signal (the wrapper does NOT rename
-#//   .dat itself; renaming or symlinking is the operator's call).  Run
+#//   to operate on the EMG-cleaned signal (set inputExtension: emgclean on
+#//   ndm_hipass or ndm_bandpass; .dat itself is left untouched).  Run
 #//   AFTER spike detection if you want the .res.emg.<id> / .spk.emg.<id>
 #//   events purely for analysis without disturbing spike extraction.
 #//
@@ -235,7 +239,20 @@ for probeId in $(echo "$probeIdList" | tr ',' ' '); do
 done
 [ "$emgClean" = "yes" ] && [ ! -f "$session-emgclean.dat" ] && allOk=false
 
+# <session>.emgclean → <session>-emgclean.dat, so inputExtension: emgclean
+# selects the cleaned recording (inputExtension names SESSION.<ext>, and the
+# -emgclean.dat name, kept for NeuroScope, is not of that form).
+link_emgclean()
+{
+    [ "$emgClean" = "yes" ] && [ -f "$session-emgclean.dat" ] || return 0
+    [ -e "$session.emgclean" ] && [ ! -L "$session.emgclean" ] && {
+        echo_warning "$session.emgclean exists and is not a link; leaving it"; return 0; }
+    ln -sfn "$(basename "$session")-emgclean.dat" "$session.emgclean" &&
+        echo_info "Linked $session.emgclean -> $(basename "$session")-emgclean.dat (inputExtension: emgclean)"
+}
+
 if [ "$allOk" = "true" ]; then
+    link_emgclean
     echo_info "All EMG outputs already exist, nothing to do."
     exit $NO_ERROR
 fi
@@ -281,3 +298,4 @@ process_extractemg \
     $session
 
 check_command_status process_extractemg
+link_emgclean

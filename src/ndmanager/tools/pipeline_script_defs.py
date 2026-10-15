@@ -69,7 +69,7 @@ META = [
     ("ndm_mergedat", "Merge DATs", "Merge multiple .dat files", "preparation", "wideband", [], False),
     ("ndm_resample", "Resample", "Resample to common rate", "preparation", "wideband", [], False),
     ("ndm_concatenate", "Concatenate", "Concatenate sessions", "preparation", "concatenation", [], False),
-    ("ndm_extractemg", "Extract EMG", "FastICA EMG removal → -emgclean.dat + EMG events",
+    ("ndm_extractemg", "Extract EMG", "FastICA EMG removal → .emgclean (-emgclean.dat) + EMG events",
      "preparation", "", [], False),
     ("ndm_hipass", "High-pass Filter", ".dat → .fil (Butterworth or median)", "preparation", "spikes",
      ["windowHalfLength", "inputExtension"], False),

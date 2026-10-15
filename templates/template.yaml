@@ -854,16 +854,17 @@ programs:
       FastICA (deflation, pow3) runs on each probe's anatomical channels
       (skip = 0), high-pass filtered; the EMG component is the independent
       component whose channel loading is most uniform.  Outputs:
-        <session>-emgclean.dat        EMG component subtracted (all probes)
+        <session>-emgclean.dat        EMG component subtracted (all probes),
+                                      also linked as <session>.emgclean
         <session>.emg.<probe>         1-channel EMG trace
         <session>.res.emg.<probe>     EMG event times (samples)
         <session>.spk.emg.<probe>     EMG event waveforms
         <session>.emg.meta.yaml       loadings, unmixing, convergence
       Without probes: the spike groups are used instead.
 
-      Run before ndm_hipass to detect spikes on the cleaned signal (point the
-      filter at <session>-emgclean.dat); run after detection to use the EMG
-      events for analysis only.
+      Run before ndm_hipass to detect spikes on the cleaned signal: set
+      inputExtension: emgclean on ndm_hipass (or ndm_bandpass).  Run after
+      detection to use the EMG events for analysis only.
 
       OPTIONAL PARAMETERS
 

@@ -7,6 +7,8 @@ ndm_detectspikes / ndm_extractspikes) names the input file `SESSION.<inputExtens
 A leading dot is ignored (`.lfp` = `lfp`). When the parameter is set, that file
 must exist: a missing one stops the step with an error. Only an unset parameter
 whose default input is missing gives the usual "skipping this step" warning.
+`emgclean` reads the EMG-cleaned recording: `ndm_extractemg` links
+`SESSION.emgclean` to the `SESSION-emgclean.dat` it writes.
 
 ---
 
