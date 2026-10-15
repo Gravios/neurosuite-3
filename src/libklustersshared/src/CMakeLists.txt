@@ -152,4 +152,12 @@ install(FILES ${_hdrs}
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/klustersshared"
     COMPONENT   Devel)
 
+# The input:: engine keeps its own directory, so apps' #include "input/<h>"
+# resolves against ${includedir}/klustersshared (already on the install
+# interface); its headers' bare sibling includes resolve next to them.
+install(DIRECTORY input/
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/klustersshared/input"
+    COMPONENT   Devel
+    FILES_MATCHING PATTERN "*.h")
+
 # Images are embedded in the .so via the .qrc resources; nothing to install.

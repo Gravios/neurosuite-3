@@ -43,10 +43,10 @@ Build order (root `CMakeLists.txt`, see [BUILD.md §5](../../../doc/BUILD.md#5-t
 | Library target | `neurosuite-core`, `SHARED`, alias **`Neurosuite::core`** | `src/libneurosuite-core/src/CMakeLists.txt` |
 | Compiled sources | `neurosuite/core/neurofileio.cpp` only | same |
 | SOVERSION | major version (`2`) | same |
-| Package | `find_package(LibNeurosuiteCore)` → imported `Neurosuite::core`; version file `SameMajorVersion` | `LibNeurosuiteCoreConfig.cmake.in` |
+| Package | `find_package(LibNeurosuiteCore)` → imported `Neurosuite::core` (`EXPORT_NAME core`); version file `SameMajorVersion` | `LibNeurosuiteCoreConfig.cmake.in` |
 | Export set | `LibNeurosuiteCoreTargets`, namespace `Neurosuite::`; the monorepo root also `export()`s it into the build tree and sets `LibNeurosuiteCore_DIR` | root `CMakeLists.txt` |
 | Include dir | `src/libneurosuite-core/src` (build), `${CMAKE_INSTALL_INCLUDEDIR}` (install), PUBLIC | `src/CMakeLists.txt` |
-| Installed headers | `neurosuite_core_export.h`, `neurofileio.h`, `custody.hpp`, `pca_projection.hpp`, `stderiv_transform.hpp` → `include/neurosuite/core/` | `_core_hdrs` in `src/CMakeLists.txt` (incomplete — [§5](#5-known-issues)) |
+| Installed headers | every `*.h`/`*.hpp` in `neurosuite/core/` → `include/neurosuite/core/` | `install(DIRECTORY …)` in `src/CMakeLists.txt` |
 | C++ standard | `CMAKE_CXX_STANDARD 20`, required, no extensions — set for the library directory only; **not** propagated to consumers as a compile feature | `src/libneurosuite-core/CMakeLists.txt` |
 | Visibility | `CMAKE_CXX_VISIBILITY_PRESET hidden`, `VISIBILITY_INLINES_HIDDEN ON` | same |
 | Link hardening (GCC/Clang, non-Apple) | `-Wl,--fatal-warnings -Wl,--no-undefined` | same |
@@ -600,7 +600,7 @@ Adding a new column to a table changes every reader in both repositories, which 
 
 1. Create `src/libneurosuite-core/src/neurosuite/core/<name>.hpp` with an include guard (`NEUROSUITE_CORE_<NAME>_HPP`) or `#pragma once`, code in `namespace neurosuite { namespace <area> { … } }`, and only standard-library, `neurosuite/core/…` includes. Keep it C++17-clean.
 2. Header-only is the default (`inline` free functions, no globals). If it needs compiled code, add the `.cpp` to `_core_srcs` and mark every out-of-line declaration `NEUROSUITE_CORE_EXPORT` (hidden visibility is the default).
-3. Add it to `_core_hdrs` in `src/libneurosuite-core/src/CMakeLists.txt` so it is installed.
+3. Put it in `src/neurosuite/core/`; the directory install picks up every `.h`/`.hpp` there.
 4. Write the file comment: what it is, who uses it, its twins.
 5. In each consumer: `#include <neurosuite/core/<name>.hpp>`; link `Neurosuite::core` if any out-of-line `neurofileio` function is used; plugins that do not link get the include path from `ndmanager-plugins/src/CMakeLists.txt`.
 6. Add a test (below) and a section to this page.
@@ -632,7 +632,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | # | Where | Issue |
 |---|---|---|
 | C1 | `spike_extract.hpp`, Klusters realign / nudge | **Fixed (0489).** Windows re-cut from the `.fil` were transformed with seed 0, while `process_extractspikes_stderiv -R` (what `ndm_extractspikes` runs) seeds with the spatial derivative of the preceding sample. The extractor's detection pass and the older single-pass extractor do use seed 0, so both conventions exist in `.spk` files. Now `stderivSeed()` gives the seed, `SpikeWindowSpec::seedFromPrevious` selects the convention, `detectStderivSeeding()` reads it off an existing file, and Klusters follows the file; checked byte-for-byte against the extractor binary. |
-| C2 | `src/libneurosuite-core/src/CMakeLists.txt` | `_core_hdrs` installs only 5 of 13 headers. `decollide*.hpp`, `drift_partition.hpp`, `projectionscope.hpp`, `running_stats.hpp`, `spike_extract.hpp`, `template_generate.hpp` and `templateclass.hpp` are missing from an install, so an installed `Neurosuite::core` cannot be used for them. |
+| C2 | `src/libneurosuite-core/src/CMakeLists.txt` | **Fixed (0492).** All headers are installed (directory install), and the exported target is named `Neurosuite::core` like the in-tree alias (it was `Neurosuite::neurosuite-core`, so an installed consumer linking `Neurosuite::core` failed to configure). Verified with an out-of-tree consumer that includes every header. Was: `_core_hdrs` installs only 5 of 13 headers. `decollide*.hpp`, `drift_partition.hpp`, `projectionscope.hpp`, `running_stats.hpp`, `spike_extract.hpp`, `template_generate.hpp` and `templateclass.hpp` are missing from an install, so an installed `Neurosuite::core` cannot be used for them. |
 | C3 | `custody.hpp` `resolveAny` | The directory scan uses `std::filesystem::directory_iterator`, whose order is unspecified; `ndm_resolve_io.resolve_any` sorts names and bash globs in collation order. With two or more copies under tokens outside `standard`/`stderiv`/`sdiff` (for example `stderiv_C4` and `stderiv_C5`), the C++ result can differ from the mirrors. The filters also differ: C++ and Python reject a token that contains a dot; bash accepts any name `ndm_method_of` parses. No vector covers either case. |
 | C4 | `custody.hpp` `parseAnchor` | `std::stoi` on the all-digit group field throws `std::out_of_range` for a group token larger than `INT_MAX`. It is the only throwing path in the library. |
 | C5 | `template_generate.hpp` `generate` | In eap mode, explicit `units` are not checked against `eapPtr->nClasses`; an out-of-range id reads past the row (`cells[i*T + u]`). |

@@ -18,13 +18,6 @@
 set(_core_srcs
     neurosuite/core/neurofileio.cpp)
 
-set(_core_hdrs
-    neurosuite/core/neurosuite_core_export.h
-    neurosuite/core/neurofileio.h
-    neurosuite/core/custody.hpp
-    neurosuite/core/pca_projection.hpp
-    neurosuite/core/stderiv_transform.hpp)
-
 add_library(neurosuite-core SHARED ${_core_srcs})
 add_library(Neurosuite::core ALIAS neurosuite-core)
 
@@ -41,9 +34,12 @@ target_include_directories(neurosuite-core
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 # No Qt, no yaml-cpp: pure C++/STL.
+# EXPORT_NAME: an installed or build-tree package provides Neurosuite::core,
+# the same name the in-tree alias gives, so consumers link one name either way.
 set_target_properties(neurosuite-core PROPERTIES
-    VERSION   "${PROJECT_VERSION}"
-    SOVERSION "${PROJECT_VERSION_MAJOR}")
+    VERSION     "${PROJECT_VERSION}"
+    SOVERSION   "${PROJECT_VERSION_MAJOR}"
+    EXPORT_NAME core)
 
 # ---------------------------------------------------------------------------
 # Install
@@ -55,6 +51,10 @@ install(TARGETS neurosuite-core
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     COMPONENT Devel)
 
-install(FILES ${_core_hdrs}
+# Every public header, so an installed consumer can include any of them (and
+# the headers' own includes of each other resolve).  A directory install keeps
+# the set complete as headers are added; the export macro header is among them.
+install(DIRECTORY neurosuite/core/
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/neurosuite/core"
-    COMPONENT   Devel)
+    COMPONENT   Devel
+    FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")

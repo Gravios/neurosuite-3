@@ -20,6 +20,11 @@ set(CMAKE_AUTORCC ON)
 # ---------------------------------------------------------------------------
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(yaml-cpp REQUIRED)
+# Inside the monorepo libneurosuite-core is configured first and its target
+# exists; built on its own, this library finds the installed package.
+if(NOT TARGET Neurosuite::core)
+    find_package(LibNeurosuiteCore REQUIRED)
+endif()
 
 # ---------------------------------------------------------------------------
 # Install layout

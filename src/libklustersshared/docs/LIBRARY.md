@@ -145,7 +145,8 @@ The target publishes these include directories:
 |---|---|
 | `src/`, `src/klustersshared/`, `src/gui/`, `src/gui/page/` | `${includedir}`, `${includedir}/klustersshared` |
 
-All headers in `_hdrs` are installed flat into `${includedir}/klustersshared/`.
+All headers in `_hdrs` are installed flat into `${includedir}/klustersshared/`;
+`src/input/*.h` keep their directory, `${includedir}/klustersshared/input/`.
 That makes the following spellings work in both trees, and all of them are in
 use:
 
@@ -154,7 +155,7 @@ use:
 #include "itemcolors.h"                // bare, src/klustersshared/
 #include <qpagedialog.h>               // bare, src/gui/page/
 #include <dockarea.h>                  // bare, src/gui/
-#include "input/bindingregistry.h"     // via src/ — build tree only (see §9)
+#include "input/bindingregistry.h"     // via src/ or ${includedir}/klustersshared
 ```
 
 ### 1.8 Place in the layering
@@ -657,11 +658,15 @@ corrected; the text describes the problem as it was.
 
 **Build and packaging**
 
-1. `src/input/*.h` are not in `_hdrs`, so they are not installed, and the
+1. **Fixed (0492):** `src/input/*.h` install to `include/klustersshared/input/`,
+   so `#include "input/…"` resolves on the existing install interface.
+   Was: `src/input/*.h` are not in `_hdrs`, so they are not installed, and the
    install interface does not expose an `input/` path. Install-tree consumers
    cannot compile the `#include "input/…"` lines that Klusters and NeuroScope
    use.
-2. `src/libklustersshared/CMakeLists.txt` links `Neurosuite::core` (via
+2. **Fixed (0492):** `find_package(LibNeurosuiteCore)` when the target does
+   not already exist.
+   Was: `src/libklustersshared/CMakeLists.txt` links `Neurosuite::core` (via
    `src/CMakeLists.txt`) but never calls `find_package(LibNeurosuiteCore)`, so
    the library configures only inside the monorepo, not standalone.
 3. `src/HTML/en/common/` (KDE handbook chrome) and `src/images/note.gif` are
