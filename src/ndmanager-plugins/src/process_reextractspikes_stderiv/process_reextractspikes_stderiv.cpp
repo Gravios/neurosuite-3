@@ -535,6 +535,30 @@ int main(int argc, char **argv)
                 return 1;
             }
 
+    // A spatial derivative needs neighbours.  On a one-channel group order 1
+    // would read past the channel list, and orders 3-5 (all-pairs, and the
+    // custom patterns that fall back to it) are identically zero, so the
+    // threshold is zero and every refractory period yields a "spike".  The
+    // detector refuses such a group (commit 9f2cf1b4); here the group is
+    // skipped with a warning and no output, because ndm_reextractspikes passes
+    // every spike group in -c (active or not, so positions line up) and an
+    // inactive one-channel group must not break the run.
+    vector<char> skip(nGroups, 0);
+    vector<vector<int>> detGroups = chGroups;   // emptied for skipped groups
+    if (a.sdiffOrder != SDIFF_NONE) {
+        for (int g = 0; g < nGroups; ++g) {
+            if (chGroups[g].size() != 1) continue;
+            cerr << "warning: group " << g+1 << " has a single channel ("
+                 << chGroups[g][0] << "); a spatial derivative (order "
+                 << (int)a.sdiffOrder << ") needs at least two channels -- "
+                    "skipping the group, no output written.\n"
+                 << "         Re-extract it with the standard method, or group the "
+                    "channel with its neighbours." << endl;
+            skip[g] = 1;
+            detGroups[g].clear();
+        }
+    }
+
     const int fd = ::open(a.inputFilePath.c_str(), O_RDONLY);
     if (fd < 0) {
         cerr << "error: open '" << a.inputFilePath << "': "
@@ -560,8 +584,25 @@ int main(int argc, char **argv)
     vector<vector<double>> thr;
     computeThresholds(data, nSamples, a.totalChannelNumber,
                       a.threshStartByte, a.threshSizeBytes,
-                      chGroups, a.sdiffOrder, a.thresholdFactor,
+                      detGroups, a.sdiffOrder, a.thresholdFactor,
                       a.thresholdNoise, thr, a.verbose);
+
+    // A zero threshold (flat detection signal over the noise window: a dead
+    // or constant channel) would accept a spike every refractory period, as
+    // above.  The detector refuses it; skip the group here, for the same
+    // reason as a one-channel group.
+    for (int g = 0; g < nGroups; ++g) {
+        if (skip[g]) continue;
+        for (size_t ci = 0; ci < detGroups[g].size(); ++ci) {
+            if (thr[g][ci] > 0.0) continue;
+            cerr << "warning: group " << g+1 << " channel " << detGroups[g][ci]
+                 << ": the detection signal is flat over the threshold window "
+                    "(noise median 0) -- skipping the group, no output written."
+                 << endl;
+            skip[g] = 1;
+            break;
+        }
+    }
 
     // Load per-group masks.
     vector<vector<int64_t>> maskBy(nGroups);
@@ -599,6 +640,7 @@ int main(int argc, char **argv)
     #pragma omp parallel for schedule(dynamic)
 #endif
     for (int g = 0; g < nGroups; ++g) {
+        if (skip[g]) continue;
         const vector<int>    &chans  = chGroups[g];
         const vector<double> &tg     = thr[g];
         const vector<int64_t>&mask   = maskBy[g];
@@ -683,6 +725,7 @@ int main(int argc, char **argv)
     // spatial derivative of the sample before the window (what
     // process_extractspikes_stderiv -R writes) or 0 (the older extractor).
     for (int g = 0; g < nGroups; ++g) {
+        if (skip[g]) continue;          // skipped above: no output at all
         const vector<int> &chans = chGroups[g];
         const int nChanG = (int)chans.size();
         const auto &res  = resPerGroup[g];
@@ -789,10 +832,12 @@ int main(int argc, char **argv)
 
     cout << "process_reextractspikes_stderiv: groups=" << nGroups
          << "  sdiffOrder=" << (int)a.sdiffOrder << endl;
-    for (int g = 0; g < nGroups; ++g)
+    for (int g = 0; g < nGroups; ++g) {
+        if (skip[g]) { cout << "  group " << (g+1) << "  skipped" << endl; continue; }
         cout << "  group " << (g+1)
              << "  masked=" << maskBy[g].size()
              << "  rejected-by-mask=" << nMasked[g]
              << "  accepted=" << nAccepted[g] << endl;
+    }
     return 0;
 }

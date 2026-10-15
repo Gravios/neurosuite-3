@@ -263,6 +263,24 @@ int main(int argc, char **argv)
             }
     }
 
+    // A zero threshold (a flat channel: process_medianthreshold baseline 0)
+    // is crossed by every sample, so the scan would accept a "spike" every
+    // refractory period.  Skip such a group with a warning and no output
+    // rather than exit: ndm_reextractspikes passes every spike group in -c
+    // (active or not), and an inactive dead group must not break the run.
+    // One-channel groups need no guard here: this engine thresholds the raw
+    // signal, with no spatial derivative.
+    vector<char> skip(nGroups, 0);
+    for (int g = 0; g < nGroups; ++g)
+        for (size_t ci = 0; ci < thrGroups[g].size(); ++ci)
+            if (!(std::fabs(thrGroups[g][ci]) > 0.0)) {
+                cerr << "warning: group " << g+1 << " channel " << chGroups[g][ci]
+                     << " has threshold 0 (flat channel?) -- skipping the group, "
+                        "no output written." << endl;
+                skip[g] = 1;
+                break;
+            }
+
     // ── mmap input ────────────────────────────────────────────────────────
     const int fd = ::open(args.inputFilePath.c_str(), O_RDONLY);
     if (fd < 0) {
@@ -346,6 +364,7 @@ int main(int argc, char **argv)
     #pragma omp parallel for schedule(dynamic)
 #endif
     for (int g = 0; g < nGroups; ++g) {
+        if (skip[g]) continue;
         const vector<int>    &chans   = chGroups [g];
         const vector<double> &thresh  = thrGroups[g];
         const vector<int64_t>&mask    = maskByGroup[g];
@@ -428,6 +447,7 @@ int main(int argc, char **argv)
 
     // ── write per-group .res.N (int64) and .spk.N (int16) ─────────────────
     for (int g = 0; g < nGroups; ++g) {
+        if (skip[g]) continue;          // skipped above: no output at all
         const vector<int>    &chans  = chGroups[g];
         const int             nChanG = (int)chans.size();
         const vector<int64_t>&res    = resPerGroup[g];
@@ -475,6 +495,7 @@ int main(int argc, char **argv)
     // ── report ────────────────────────────────────────────────────────────
     cout << "process_reextractspikes: groups=" << nGroups << endl;
     for (int g = 0; g < nGroups; ++g) {
+        if (skip[g]) { cout << "  group " << (g+1) << "  skipped" << endl; continue; }
         cout << "  group " << (g+1)
              << "  masked=" << maskByGroup[g].size()
              << "  rejected-by-mask=" << nMasked[g]

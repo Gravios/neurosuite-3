@@ -39,6 +39,8 @@
    scaling the per-channel baseline by reextractThresholdFactor.  We do
    NOT recompute thresholds inside this binary — the bash wrapper owns
    that policy choice.
+   A group with a zero threshold on any channel (a flat channel) is skipped
+   with a warning and gets no output files.
  ***************************************************************************/
 #ifndef PROCESS_REEXTRACTSPIKES_H
 #define PROCESS_REEXTRACTSPIKES_H

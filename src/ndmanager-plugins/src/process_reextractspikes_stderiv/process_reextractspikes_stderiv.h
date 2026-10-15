@@ -19,6 +19,10 @@
  including its -T noise base (default sdiff), so the same factor, window
  and base give the same per-channel thresholds.
 
+ A one-channel group (with a spatial order other than 0) and a group with a
+ zero threshold on any channel are skipped with a warning and get no output
+ files; process_extractspikes_stderiv refuses both.
+
  Mask semantics are identical: candidate peaks within ± maskHalfWidth of
  any timestamp listed in the per-group mask .res.N are rejected.
 

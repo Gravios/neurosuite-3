@@ -227,6 +227,18 @@ for group in $(seq 1 $nElectrodeGroups); do
         echo_warning "  the detection engine uses uniform values; using group 1's."
     fi
 
+    # The stderiv method always runs a spatial derivative here (order 1-3 or a
+    # pattern; order 0 is refused above), which a one-channel group does not
+    # have: the engine skips such a group (it is still passed in -c so the
+    # positions line up), so do not count it as active either.
+    if [ "$methodFamily" = stderiv ] && [ "$(echo "$electrodes" | tr ',' ' ' | wc -w)" -eq 1 ]; then
+        echo_warning "  group $group: single channel ($electrodes); the stderiv spatial derivative needs at least two channels — skipping"
+        echo_warning "    (re-extract it with --method standard, or group the channel with its neighbours)"
+        groupActive[$group]=n
+        skippedCount=$((skippedCount + 1))
+        continue
+    fi
+
     # .res holds method-independent spike times — resolve it across methods.
     resFile=$(ndm_resolve_any "$session" res "$group" "$method")
     if [ -z "$resFile" ] || [ ! -f "$resFile" ]; then

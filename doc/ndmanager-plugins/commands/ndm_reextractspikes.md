@@ -42,7 +42,12 @@ into the existing sort.
    [`ndm_subcluster_unmatched`](ndm_subcluster_unmatched.md).
 
 Groups without a `.res` (any method) or without the method's `.spk`, `.fet`
-or `.clu` are skipped with a warning; if no group qualifies the script exits
+or `.clu` are skipped with a warning, and so is a one-channel group under
+`stderiv` (a spatial derivative needs at least two channels; re-extract it
+with `--method standard`). The engines also skip, with a warning and no
+output, a one-channel group under a spatial order and any group with a zero
+threshold on a channel (a flat channel), instead of accepting a spike every
+refractory period. If no group qualifies the script exits
 11. A group where Pass 1 finds no new spikes is left unchanged. The
 `.pca.<method>.N` is not checked up front, but shadow clustering cannot run
 without it: a missing basis stops the run with an error at that group (groups
