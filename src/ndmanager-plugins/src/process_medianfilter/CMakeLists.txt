@@ -26,6 +26,11 @@ else()
         message(STATUS "process_medianfilter: CPU single-threaded build")
     endif()
 endif()
+# Stage progress bar: klustersshared's Qt-free progressbar source, compiled in
+# as the other CLI plugins do.
+set(_klustersshared_dir "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
+target_sources(process_medianfilter PRIVATE "${_klustersshared_dir}/progressbar.cpp")
+target_include_directories(process_medianfilter PRIVATE "${_klustersshared_dir}")
 target_compile_features(process_medianfilter PRIVATE cxx_std_17)
 install(TARGETS process_medianfilter DESTINATION "${CMAKE_INSTALL_BINDIR}")
 add_manpage(process_medianfilter)

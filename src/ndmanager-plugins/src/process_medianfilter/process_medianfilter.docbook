@@ -73,7 +73,7 @@
 				<term><option>-v</option></term>
 				<listitem>
 					<para>
-						verbose mode, displays progress information
+						verbose mode: the compute path (a progress bar is shown on the terminal in any case; the CUDA path prints its own progress)
 					</para>
 				</listitem>
 			</varlistentry>

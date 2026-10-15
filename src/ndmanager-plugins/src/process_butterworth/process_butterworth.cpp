@@ -32,6 +32,7 @@
 #endif
 
 #include "butterworth_core.h"
+#include "progressbar.h"      // BlockProgress — stage progress on the terminal
 
 using std::cerr;
 using std::cout;
@@ -95,13 +96,17 @@ static bool writeRows(int fd, const short* src, long long row, long long rows, i
     return true;
 }
 
+// Filters output rows [c0, c1) of one chunk.  @p prog, when given, is moved
+// through [c0, c1) as the (channel, block) units finish; BlockProgress is not
+// thread-safe, so the update is serialised (it is tiny next to a block).
 template <typename T>
 static void cpuChunk(const BwCoefs<T>& c, const short* chunk, long long row0,
                      long long nRows, int nCh, long long c0, long long c1, int M,
-                     long long B, short* out)
+                     long long B, short* out, BlockProgress* prog)
 {
     const long long nBlk = (c1 - c0 + B - 1) / B;
     const long long nUnits = nBlk * nCh;
+    long long unitsDone = 0;
 #pragma omp parallel
     {
         std::vector<T> scratch((size_t)(B + 2LL * M));
@@ -112,6 +117,13 @@ static void cpuChunk(const BwCoefs<T>& c, const short* chunk, long long row0,
             const long long e = (s + B < c1) ? s + B : c1;
             bwFilterBlock<T>(chunk, row0, nRows, nCh, ch, s, e, M, c,
                              scratch.data(), 1, out, c0);
+            if (prog) {
+#pragma omp critical(bw_progress)
+                {
+                    ++unitsDone;
+                    prog->setPosition(c0 + (c1 - c0) * unitsDone / nUnits);
+                }
+            }
         }
     }
 }
@@ -242,6 +254,19 @@ int main(int argc, char* argv[])
         dev = bwCudaInit(useDouble ? 1 : 0, flat.data(), (int)sos.size(), nCh, C + 2LL * M, C, M, (int)B);
     }
 #endif
+    // Stage progress on the terminal (drawn to /dev/tty, so it shows under the
+    // wrapper's output capture), by output samples; a red cross on failure.
+    std::string label = outPath;
+    if (label.size() > 4 && label.compare(label.size() - 4, 4, ".fil") == 0)
+        label.resize(label.size() - 4);
+    BlockProgress prog(label);
+    struct FailOnExit {
+        BlockProgress& p;
+        bool ok = false;
+        ~FailOnExit() { if (!ok) p.setFailed(); }
+    } progGuard{prog};
+    prog.beginStage("FILTER", nRows);
+
     const long long nChunks = (nRows + C - 1) / C;
     for (long long k = 0; k < nChunks; ++k) {
         const long long c0 = k * C, c1 = (c0 + C < nRows) ? c0 + C : nRows;
@@ -252,16 +277,18 @@ int main(int argc, char* argv[])
         if (gpu) bwCudaChunk(dev, in.data(), r0, r1 - r0, nRows, c0, c1, out.data());
         else
 #endif
-        if (useDouble) cpuChunk<double>(cd, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data());
-        else           cpuChunk<float>(cf, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data());
+        if (useDouble) cpuChunk<double>(cd, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data(), &prog);
+        else           cpuChunk<float>(cf, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data(), &prog);
         if (!writeRows(outFd, out.data(), c0, c1 - c0, nCh)) { cerr << "error: write failed" << endl; return 1; }
-        if (verbose) { cout << "\r  chunk " << k + 1 << "/" << nChunks << std::flush; }
+        prog.setPosition(c1);
     }
-    if (verbose) cout << endl;
+    prog.endStage();
 #ifdef USE_CUDA
     if (dev) bwCudaFree(dev);
 #endif
     close(inFd);
     if (close(outFd) != 0) { cerr << "error: closing output failed" << endl; return 1; }
+    progGuard.ok = true;
+    prog.finish();
     return 0;
 }

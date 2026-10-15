@@ -18,6 +18,8 @@
 #ifdef __linux__
 #  include <fcntl.h>   // posix_fallocate
 #endif
+#include <string>
+#include "progressbar.h"   // BlockProgress — stage progress on the terminal
 
 using namespace std;
 
@@ -75,29 +77,28 @@ static void filterChannel(short windowHalfLength, const short* widebandData,
     }
 }
 
+// Filters one chunk.  @p prog is moved from @p pos0 by @p span as the
+// channels finish (the progress bar replaces the old per-channel '#' marks).
 static void filterCPU(short windowHalfLength, short* widebandData,
                        short* filteredData, long long int nSamplesPerChannel,
-                       short nChannels = 1)
+                       short nChannels, BlockProgress& prog,
+                       long long pos0, long long span)
 {
-    if (verbose) {
-        for (int i = 0; i < nChannels; ++i) cout << ".";
-        for (int i = 0; i < nChannels; ++i) cout << "\b";
-        cout << flush;
-    }
+    int channelsDone = 0;
 #ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic)
 #endif
     for (int channel = 0; channel < nChannels; ++channel) {
         filterChannel(windowHalfLength, widebandData, filteredData,
                       nSamplesPerChannel, nChannels, channel);
-        if (verbose) {
 #ifdef _OPENMP
-            #pragma omp critical
+        #pragma omp critical(median_progress)
 #endif
-            cout << "#" << flush;
+        {
+            ++channelsDone;
+            prog.setPosition(pos0 + span * channelsDone / nChannels);
         }
     }
-    if (verbose) cout << endl;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +225,14 @@ int main(int argc, char *argv[])
     long long int overlapSize     = nOverlapSamples * sampleSize;
     short   *input, *output;
 
+    // Stage progress on the terminal (drawn to /dev/tty, so it shows under the
+    // wrapper's output capture), by bytes of the input.
+    std::string label = outputPath;
+    if (label.size() > 4 && label.compare(label.size() - 4, 4, ".fil") == 0)
+        label.resize(label.size() - 4);
+    BlockProgress prog(label);
+    prog.beginStage("MEDIAN", size);
+
     // Use single-chunk path only when the entire file is smaller than the
     // chunk budget.  For large recordings the chunked path is always used,
     // regardless of how nSamplesPerChunk compares to nSamples, to avoid
@@ -234,22 +243,19 @@ int main(int argc, char *argv[])
         output = new short[nSamples];
         { size_t _r = fread((char*)&input[nPaddingSamples], sizeof(char), (size_t)size, inputFile); (void)_r; }
         filterCPU(windowHalfLength, &input[nPaddingSamples], output,
-                  nSamplesPerChannel, nChannels);
+                  nSamplesPerChannel, nChannels, prog, 0, size);
         fwrite((char*)output, sizeof(char), (size_t)size, outputFile);
     } else {
-        long long int chunk = 1, nChunks = size / chunkSize;
-        if (nChunks * chunkSize < size) nChunks++;
         input  = new short[nSamplesPerChunk + 2 * nOverlapSamples];
         output = new short[nSamplesPerChunk];
         // Zero the leading overlap region — represents silence before the
         // recording starts.  The original code left this uninitialised.
         memset(input, 0, (size_t)(nOverlapSamples * sizeof(short)));
-        for (long long int sizeLeft = size; sizeLeft > 0; sizeLeft -= chunkSize, ++chunk) {
+        for (long long int sizeLeft = size; sizeLeft > 0; sizeLeft -= chunkSize) {
             if (sizeLeft <= chunkSize) {
                 chunkSize = sizeLeft;
                 nSamplesPerChunkPerChannel = sizeLeft / nChannels / sampleSize;
             }
-            if (verbose) cout << "Chunk " << chunk << "/" << nChunks << " ";
             if (sizeLeft == size) {
                 // First chunk: leading overlap region already zeroed above.
                 // Read chunkSize bytes only — the trailing overlap comes from
@@ -257,13 +263,15 @@ int main(int argc, char *argv[])
                 { size_t _r = fread((char*)&input[nOverlapSamples], sizeof(char),
                                     (size_t)chunkSize, inputFile); (void)_r; }
                 filterCPU(windowHalfLength, &input[nOverlapSamples], output,
-                          nSamplesPerChunkPerChannel, nChannels);
+                          nSamplesPerChunkPerChannel, nChannels,
+                          prog, size - sizeLeft, chunkSize);
             } else {
                 memcpy(input, &input[nSamplesPerChunk], (size_t)(2 * overlapSize));
                 { size_t _r = fread((char*)&input[2 * nOverlapSamples], sizeof(char),
                                     (size_t)chunkSize, inputFile); (void)_r; }
                 filterCPU(windowHalfLength, &input[nOverlapSamples], output,
-                          nSamplesPerChunkPerChannel, nChannels);
+                          nSamplesPerChunkPerChannel, nChannels,
+                          prog, size - sizeLeft, chunkSize);
             }
             fwrite((char*)output, sizeof(char), (size_t)chunkSize, outputFile);
         }
@@ -273,6 +281,7 @@ int main(int argc, char *argv[])
     delete[] output;
     fclose(inputFile);
     fclose(outputFile);
-    if (verbose) cout << "\n";
+    prog.endStage();
+    prog.finish();
     return 0;
 }

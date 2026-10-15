@@ -56,6 +56,12 @@ with `filter`:
   pure tones, and it adds broadband content above 10 kHz that the `.dat` does
   not have.
 
+A progress bar (stage `FILTER` for `butterworth`, `MEDIAN` for `median`)
+shows the run on the terminal, like the spike detectors', ending with ✓ (✗ on
+a failure). It is drawn on the terminal itself, so it shows under logged
+output; without a terminal it prints a line every 5 %. The `median` filter's
+CUDA path has no bar.
+
 Skips with exit 10 if `SESSION.fil` exists. Any other `filter` value is an
 error.
 
