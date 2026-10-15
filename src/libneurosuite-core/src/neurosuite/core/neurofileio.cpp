@@ -441,11 +441,15 @@ bool writeSpk(const std::string& path, int nSamples, int nChannels,
     return static_cast<bool>(os);
 }
 
-std::vector<ColDecomp> readColAccepted(const std::string& path)
+std::vector<ColDecomp> readColAccepted(const std::string& path, bool* ok)
 {
+    if (ok) *ok = false;
     std::vector<ColDecomp> out;
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
     if (!in) return out;
+    const std::streamoff fileBytes = in.tellg();
+    in.seekg(0, std::ios::beg);
+    if (fileBytes < 0) return out;
 
     auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };
     auto rdI32 = [&](int32_t&  v) { in.read(reinterpret_cast<char*>(&v), 4); };
@@ -458,20 +462,26 @@ std::vector<ColDecomp> readColAccepted(const std::string& path)
         return out;
     uint32_t nSpikes = 0, nRecords = 0, nTemplates = 0, group = 0, flags = 0;
     rdU32(nSpikes); rdU32(nRecords); rdU32(nTemplates); rdU32(group); rdU32(flags);
+    if (!in) return out;                                     // short header
+    // The whole layout must be present BEFORE anything is read or reserved: a
+    // truncated file (or a crafted n_records/n_templates) is rejected outright
+    // rather than yielding a prefix of its records.
+    const int64_t need = 32 + 32 + static_cast<int64_t>(nTemplates) * 24
+                       + static_cast<int64_t>(nRecords) * 60;
+    if (static_cast<int64_t>(fileBytes) < need) return out;
     in.seekg(8, std::ios::cur);                              // header pad[8]
     in.seekg(32, std::ios::cur);                             // ColParams (32B)
     in.seekg(static_cast<std::streamoff>(nTemplates) * 24, std::ios::cur);  // ColTemplate[] (24B each)
     if (!in) return out;
 
     static constexpr uint32_t REC_FLAG_ACCEPTED = 1u;
-    out.reserve(nRecords);
     for (uint32_t r = 0; r < nRecords; ++r) {
         int64_t ts = 0; int32_t spikeIdx = 0, bsu = 0; float bsc = 0; uint32_t rf = 0; float rn = 0;
         int32_t u1 = 0, sh1 = 0; float sf1 = 0, a1 = 0; int32_t u2 = 0, sh2 = 0; float sf2 = 0, a2 = 0;
         rdI64(ts); rdI32(spikeIdx); rdI32(bsu); rdF32(bsc); rdU32(rf); rdF32(rn);
         rdI32(u1); rdI32(sh1); rdF32(sf1); rdF32(a1);
         rdI32(u2); rdI32(sh2); rdF32(sf2); rdF32(a2);
-        if (!in) break;
+        if (!in) { out.clear(); return out; }               // short read despite the size check
         if (rf & REC_FLAG_ACCEPTED) {
             ColDecomp d;
             d.spikeIndex = spikeIdx;
@@ -480,6 +490,7 @@ std::vector<ColDecomp> readColAccepted(const std::string& path)
             out.push_back(d);
         }
     }
+    if (ok) *ok = true;
     return out;
 }
 

@@ -8879,8 +8879,15 @@ void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decom
 void KlustersApp::decollideApplyCol(const QString& colPath)
 {
     namespace dc = neurosuite::decollide;
+    bool colOk = false;
     const std::vector<neurofileio::ColDecomp> accepted =
-        neurofileio::readColAccepted(colPath.toStdString());
+        neurofileio::readColAccepted(colPath.toStdString(), &colOk);
+    if (!colOk) {
+        // Missing, not a .col, or truncated: refuse rather than apply a prefix.
+        slotStatusMsg(tr("Decollide (batch): cannot read %1 (missing, not a .col file, or truncated).")
+                          .arg(QFileInfo(colPath).fileName()));
+        return;
+    }
     if (accepted.empty()) {
         slotStatusMsg(tr("Decollide (batch): no accepted collisions in %1.")
                           .arg(QFileInfo(colPath).fileName()));

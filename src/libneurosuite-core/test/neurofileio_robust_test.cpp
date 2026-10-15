@@ -155,10 +155,62 @@ static void testEvtPrecision()
     std::remove(ep.c_str());
 }
 
+// ── 4. .col: a truncated file is rejected, not returned as a prefix ─────────
+static std::string colFile(uint32_t nRecords, uint32_t nTemplates, int recordsWritten)
+{
+    std::string b = "COL";
+    b += '\x01';
+    auto u32 = [&](uint32_t v) { b.append(reinterpret_cast<const char*>(&v), 4); };
+    auto i32 = [&](int32_t v)  { b.append(reinterpret_cast<const char*>(&v), 4); };
+    auto f32 = [&](float v)    { b.append(reinterpret_cast<const char*>(&v), 4); };
+    u32(100); u32(nRecords); u32(nTemplates); u32(0); u32(0);
+    b.append(8, '\0');                       // header pad -> 32 B
+    b.append(32, '\0');                      // ColParams
+    b.append(static_cast<std::size_t>(nTemplates) * 24, '\0');
+    for (int r = 0; r < recordsWritten; ++r) {
+        const int64_t ts = 1000 + r; b.append(reinterpret_cast<const char*>(&ts), 8);
+        i32(10 + r); i32(2); f32(0.5f); u32(1u /*accepted*/); f32(0.1f);
+        i32(2); i32(-1); f32(0.f); f32(1.0f);
+        i32(3); i32(4);  f32(0.f); f32(0.9f);
+    }
+    return b;
+}
+static void testColTruncation()
+{
+    using namespace neurofileio;
+    const std::string cp = "nfio_rob.tmp.col";
+    writeBytes(cp, colFile(3, 2, 3));
+    bool ok = false;
+    std::vector<ColDecomp> v = readColAccepted(cp, &ok);
+    check(ok && v.size() == 3 && v[2].spikeIndex == 12, "col: complete file -> 3 accepted records, ok");
+
+    std::string cut = colFile(3, 2, 3); cut.resize(cut.size() - 30);   // last record half-written
+    writeBytes(cp, cut);
+    ok = true;
+    v = readColAccepted(cp, &ok);
+    check(!ok && v.empty(), "col: truncated last record -> empty, ok=false (no 2-record prefix)");
+
+    writeBytes(cp, colFile(3, 2, 1));        // header says 3 records, 1 present
+    ok = true;
+    v = readColAccepted(cp, &ok);
+    check(!ok && v.empty(), "col: header declares more records than present -> empty, ok=false");
+
+    writeBytes(cp, colFile(0, 0, 0));
+    ok = false;
+    v = readColAccepted(cp, &ok);
+    check(ok && v.empty(), "col: valid zero-record file -> empty, ok=true");
+
+    ok = true;
+    v = readColAccepted("nfio_rob_missing.tmp.col", &ok);
+    check(!ok && v.empty(), "col: missing file -> ok=false");
+    std::remove(cp.c_str());
+}
+
 int main()
 {
     testResDetection();
     testEvtPrecision();
+    testColTruncation();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);

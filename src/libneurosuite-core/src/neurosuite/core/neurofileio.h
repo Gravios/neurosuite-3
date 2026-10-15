@@ -176,10 +176,15 @@ NEUROSUITE_CORE_EXPORT bool    writeSpk(const std::string& path, int nSamples, i
 // A record with REC_FLAG_ACCEPTED (flags bit 0) is an accepted two-component
 // decomposition.  readColAccepted returns ONLY those, as (spikeIndex, the two
 // components with their integer shift + amplitude) — the input the decollide
-// engine applies.  Returns empty on a bad magic / short file.
+// engine applies.  Returns empty with ok=false on a missing file, a bad magic,
+// or a short file (smaller than 64 + n_templates*24 + n_records*60 bytes — the
+// whole layout is checked before any record is read, so a truncated .col never
+// yields a prefix of its records).  A valid file with no accepted records
+// returns empty with ok=true.
 struct ColDecomp { int64_t spikeIndex = -1; int u1 = 0; int sh1 = 0; double a1 = 0.0;
                                              int u2 = 0; int sh2 = 0; double a2 = 0.0; };
-NEUROSUITE_CORE_EXPORT std::vector<ColDecomp> readColAccepted(const std::string& path);
+NEUROSUITE_CORE_EXPORT std::vector<ColDecomp> readColAccepted(const std::string& path,
+                                                              bool* ok = nullptr);
 
 // ── .wti — waveform-template index (companion to .wtf) ──────────────────────
 // The template library stores a marked unit's waveform as a LINKED SERIES: not
