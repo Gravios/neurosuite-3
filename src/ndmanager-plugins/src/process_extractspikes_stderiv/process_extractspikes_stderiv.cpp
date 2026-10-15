@@ -2072,6 +2072,14 @@ int main(int argc, char *argv[])
         if(args.isInputFileProvided)
             prog.beginStage("EXTRACT", progFileBytes);
 
+        // Compact one-record rows of a group's channels for the re-centring
+        // search below, sized for the largest group (a group may hold up to
+        // MAX_CHANNO channels) and allocated once rather than per sample.
+        int maxNCG = 1;
+        for(int g = 0; g < nbGroups; g++) maxNCG = std::max(maxNCG, channelNb_grp[g]);
+        std::vector<double> rowBuf(static_cast<size_t>(maxNCG));
+        std::vector<double> xPrevBuf(static_cast<size_t>(maxNCG));
+
         for(const SpikeEvent &ev : allEvents) {
             if(args.isInputFileProvided) prog.setPosition((long long)ev.fileOffset);
             const int grp  = ev.grp;
@@ -2128,41 +2136,34 @@ int main(int argc, char *argv[])
                 // the search window so the first temporal diff is correct.
                 const short *frPrev = wideFrame.data()
                     + (searchStart - 1) * args.totalChannelNumber;
+                // Full group row, needed by the neighbour-based orders.
+                double *xPrev = xPrevBuf.data();
+                for(int jj=0;jj<nCG;jj++) xPrev[jj]=frPrev[cL[jj]];
                 for(int ci = 0; ci < nCG; ci++) {
                     double v = frPrev[cL[ci]];
                     double sd = 0.0;
                     switch(args.sdiffOrder) {
                     case SDIFF_NONE: sd = v; break;
-                    case SDIFF_FIRST: {
-                        // Need full row — reread from wideFrame
-                        double xPrev[64] = {};
-                        for(int jj=0;jj<nCG;jj++) xPrev[jj]=frPrev[cL[jj]];
+                    case SDIFF_FIRST:
                         sd = (ci<nCG-1) ? xPrev[ci]-xPrev[ci+1]
                                         : xPrev[ci]-xPrev[ci-1]; break;
-                    }
-                    case SDIFF_LAPLACIAN: {
-                        double xPrev[64] = {};
-                        for(int jj=0;jj<nCG;jj++) xPrev[jj]=frPrev[cL[jj]];
+                    case SDIFF_LAPLACIAN:
                         if(nCG==1){ sd=xPrev[0]; break; }
                         if(ci==0)         sd = xPrev[0]-xPrev[1];
                         else if(ci==nCG-1) sd = xPrev[ci]-xPrev[nCG-2];
                         else               sd = xPrev[ci]-0.5*(xPrev[ci-1]+xPrev[ci+1]);
                         break;
-                    }
                     case SDIFF_CUSTOM:
                         if((int)groupPartner(grp).size() == nCG) {
-                            double xPrev[64] = {};
-                            for(int jj=0;jj<nCG;jj++) xPrev[jj]=frPrev[cL[jj]];
                             sd = xPrev[ci] - xPrev[groupPartner(grp)[ci]]; break;
                         }
                         [[fallthrough]];
                     case SDIFF_CUSTOM_CAR:
                         if((int)groupPartnerSet(grp).size()==nCG && !groupPartnerSet(grp)[ci].empty()) {
                             const std::vector<int>& st=groupPartnerSet(grp)[ci];
-                            double xp[64]={}, sm=0.0;
-                            for(int jj=0;jj<nCG;jj++) xp[jj]=frPrev[cL[jj]];
-                            for(size_t k=0;k<st.size();k++) sm+=xp[st[k]];
-                            sd = xp[ci] - sm/(double)st.size(); break;
+                            double sm=0.0;
+                            for(size_t k=0;k<st.size();k++) sm+=xPrev[st[k]];
+                            sd = xPrev[ci] - sm/(double)st.size(); break;
                         }
                         [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
@@ -2177,7 +2178,7 @@ int main(int argc, char *argv[])
             for(int s = searchStart; s <= searchEnd; s++) {
                 const short *fr = wideFrame.data() + s * args.totalChannelNumber;
                 // Build compact row for this group
-                double row[64] = {};
+                double *row = rowBuf.data();
                 for(int ci=0; ci<nCG; ci++) row[ci] = fr[cL[ci]];
                 double amp = 0.0;
                 if(rawRecenter) {
