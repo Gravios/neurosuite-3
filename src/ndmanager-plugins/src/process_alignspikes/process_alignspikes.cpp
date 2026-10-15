@@ -22,8 +22,8 @@
  *          target + maxShift].  For .spkD samples the temporal first-
  *          difference produces an energy zero-crossing at the original
  *          peak with lobes on either side, so this path re-reads each
- *          spike's window from .fil and applies SDIFF_ALLPAIRS only
- *          (no temporal diff), giving a peak-aligned signal.
+ *          spike's window from .fil and applies the spatial operator
+ *          only (no temporal diff), giving a peak-aligned signal.
  *
  *   2. Find foundSample = argmax E(t).
  *      Sub-sample refinement via parabolic interpolation reduces residual
@@ -33,7 +33,9 @@
  *
  *   4. If shift ≠ 0: re-read the spike window from the raw .fil at
  *      extTs = originalTs + shift, extract the group's channels, and
- *      (in --stderiv mode) apply SDIFF_ALLPAIRS on the fly.
+ *      (stderiv family) apply the extractor's transform on the fly via the
+ *      shared core (neurosuite/core/spike_extract.hpp), following the seed
+ *      convention the existing .spk was written with (detectStderivSeeding).
  *      Array-rolling is intentionally avoided — re-extraction is the
  *      only artifact-free method.
  *
@@ -99,21 +101,9 @@
 #include <climits>
 #include <stdexcept>
 #include <unistd.h>     // access(F_OK) for prealign archive
-#include <neurosuite/core/custody.hpp>
-#include "sdiff_pairs.h"      // shared SDIFF_CUSTOM / _CAR pattern parser   // shared chain-of-custody resolver
-
-// ── SDIFF_ALLPAIRS kernel (same as process_extractspikes_stderiv) ─────────
-
-static double sdiff_allpairs(const short* frame,
-                              const int*   chanList,
-                              int          idx,
-                              int          nChanGrp)
-{
-    if (nChanGrp <= 1) return 0.0;
-    double sum = 0.0;
-    for (int j = 0; j < nChanGrp; ++j) sum += frame[chanList[j]];
-    return (double)nChanGrp * frame[chanList[idx]] - sum;
-}
+#include <neurosuite/core/custody.hpp>      // shared chain-of-custody resolver
+#include <neurosuite/core/spike_extract.hpp> // shared window cut + stderiv transform
+#include "sdiff_pairs.h"      // shared SDIFF_CUSTOM / _CAR pattern parser
 
 // ── Custom spatial pattern (-P), empty unless supplied ────────────────────
 // Realignment re-extracts from .fil, so it must reproduce EXACTLY the spatial
@@ -123,25 +113,34 @@ static double sdiff_allpairs(const short* frame,
 static std::vector<int>              g_customPartner;   // order 4: one partner per channel
 static std::vector<std::vector<int>> g_customSets;      // order 5: reference set per channel
 
-// Spatial kernel matching process_extractspikes_stderiv's applySdiff: custom
-// reference-set, then custom partner, then all-pairs.
-static double sdiff_kernel(const short* frame,
-                           const int*   chanList,
-                           int          idx,
-                           int          nChanGrp)
+// The spatial operator in the form the shared core transform
+// (neurosuite/core/stderiv_transform.hpp) takes.  Chosen exactly as
+// process_extractspikes_stderiv's computeSDiff dispatches: reference sets, then
+// partner map, then all-pairs -- a pattern that does not fit the group falls
+// back to all-pairs there, and so it does here.
+struct SpatialOperator {
+    neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
+    std::vector<int> partner, setOff, setMem;
+    const int* partnerPtr() const { return partner.empty() ? nullptr : partner.data(); }
+    const int* setOffPtr()  const { return setOff.empty()  ? nullptr : setOff.data(); }
+    const int* setMemPtr()  const { return setMem.empty()  ? nullptr : setMem.data(); }
+};
+
+static SpatialOperator makeSpatialOperator(int nChanGrp)
 {
-    if (nChanGrp > 1 && (int)g_customSets.size() == nChanGrp
-        && !g_customSets[idx].empty()) {
-        double sum = 0.0;
-        for (size_t k = 0; k < g_customSets[idx].size(); ++k)
-            sum += frame[chanList[g_customSets[idx][k]]];
-        return (double)frame[chanList[idx]]
-             - sum / (double)g_customSets[idx].size();
+    SpatialOperator op;
+    if (nChanGrp > 1 && (int)g_customSets.size() == nChanGrp) {
+        op.order = neurosuite::core::SdiffOrder::CustomCar;
+        op.setOff.push_back(0);
+        for (const std::vector<int>& set : g_customSets) {
+            op.setMem.insert(op.setMem.end(), set.begin(), set.end());
+            op.setOff.push_back((int)op.setMem.size());
+        }
+    } else if (nChanGrp > 1 && (int)g_customPartner.size() == nChanGrp) {
+        op.order   = neurosuite::core::SdiffOrder::Custom;
+        op.partner = g_customPartner;
     }
-    if (nChanGrp > 1 && (int)g_customPartner.size() == nChanGrp)
-        return (double)frame[chanList[idx]]
-             - (double)frame[chanList[g_customPartner[idx]]];
-    return sdiff_allpairs(frame, chanList, idx, nChanGrp);
+    return op;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -561,6 +560,8 @@ int main(int argc, char* argv[])
                 method.c_str(), ms.order);
         die("unsupported spatial order for re-extraction alignment");
     }
+    const SpatialOperator op = makeSpatialOperator(nChanGrp);
+
     // Spike times are method-independent: ONE .res per group serves every method,
     // and detection may have run under a different token than this alignment
     // (detect at stderiv, extract+align at stderiv_C5).  resolve() only walks
@@ -660,15 +661,15 @@ int main(int argc, char* argv[])
     //       Raw mode: argmax over [target−maxShift, target+maxShift] on the
     //       spkBuf snippet directly.
     //       Stderiv mode: re-read each spike's window from .fil, apply
-    //       SDIFF_ALLPAIRS only (no temporal diff) to produce a peak-aligned
+    //       the spatial operator only (no temporal diff) to produce a peak-aligned
     //       signal, then bounded argmax.  Avoids the .spkD double-lobe
     //       problem at the cost of one random .fil read per spike.
     //
     // After discovery, the re-extraction phase (below) reads the .fil at
     // extTs = resTs + shift and writes new spk/spkD samples using exactly
-    // the same waveform-formation logic as ndm_extractspikes /
-    // ndm_extractspikes_stderiv (raw passthrough or SDIFF_ALLPAIRS + temporal
-    // first-difference, respectively).
+    // the same waveform-formation logic as ndm_extractspikes (raw passthrough,
+    // or for the stderiv family the spatial operator + temporal first-difference,
+    // through the same core functions the extractor's arithmetic is pinned to).
     std::vector<int>    shifts(nSpikes, 0);
     std::vector<double> scores(nSpikes, 0.0);
     int nToRextract = 0;
@@ -711,7 +712,7 @@ int main(int argc, char* argv[])
             }
         }
     } else {
-        // Path B (stderiv): read .fil and apply SDIFF_ALLPAIRS only.
+        // Path B (stderiv): read .fil and apply the spatial operator only.
         FILE* filShift = xfopen(filPath.c_str(), "rb");
         fseeko(filShift, 0, SEEK_END);
         const off_t filShiftSize = ftello(filShift);
@@ -721,6 +722,7 @@ int main(int argc, char* argv[])
         const off_t rawBytes  = (off_t)rawElems * sizeof(short);
         std::vector<short> rawWin(rawElems);
         std::vector<short> sdiffWin((size_t)nSamples * nChanGrp, 0);
+        std::vector<double> rowD((size_t)nChanGrp);
         off_t filShiftPos = 0;
 
         std::vector<int> order(nSpikes);
@@ -744,15 +746,17 @@ int main(int argc, char* argv[])
                 continue;
             filShiftPos += rawBytes;
 
-            // Apply SDIFF_ALLPAIRS only (no temporal diff) to get sdiff signal
+            // Apply the spatial operator only (no temporal diff) to get the
+            // sdiff signal, rounded and clamped as the extractor does.
             for (int s = 0; s < nSamples; ++s) {
                 const short* frame = rawWin.data() + s * nTotalChannels;
-                for (int ci = 0; ci < nChanGrp; ++ci) {
-                    double sd = sdiff_kernel(frame, chanList.data(), ci, nChanGrp);
-                    if      (sd >  32767.0) sd =  32767.0;
-                    else if (sd < -32768.0) sd = -32768.0;
-                    sdiffWin[(size_t)s * nChanGrp + ci] = (short)sd;
-                }
+                for (int ci = 0; ci < nChanGrp; ++ci)
+                    rowD[ci] = (double)frame[chanList[ci]];
+                for (int ci = 0; ci < nChanGrp; ++ci)
+                    sdiffWin[(size_t)s * nChanGrp + ci] = neurosuite::core::clampToInt16(
+                        neurosuite::core::spatialDeriv(op.order, rowD.data(), ci, nChanGrp,
+                                                       op.partnerPtr(), op.setOffPtr(),
+                                                       op.setMemPtr()));
             }
 
             double sc = 0.0;
@@ -773,107 +777,87 @@ int main(int argc, char* argv[])
 
     // ── Re-extract shifted spikes from .fil ───────────────────────────────
     if (nToRextract > 0) {
-        // Build event list sorted by file offset for near-sequential .fil access
-        struct ReEvent { off_t off; int idx; };
-        std::vector<ReEvent> relist;
-        relist.reserve(nToRextract);
+        FILE* filF = xfopen(filPath.c_str(), "rb");
 
+        // Window geometry and transform, exactly as the extractor cuts them
+        // (shared core: neurosuite/core/spike_extract.hpp).
+        neurosuite::core::SpikeWindowSpec spec;
+        spec.nSamp           = nSamples;
+        spec.peakSample      = peakSampleIdx;
+        spec.totalNbChannels = nTotalChannels;
+        spec.groupChannels   = chanList.data();
+        spec.nChan           = nChanGrp;
+        spec.applyTransform  = stderiv;
+        spec.order           = op.order;
+        spec.partner         = op.partnerPtr();
+        spec.setOff          = op.setOffPtr();
+        spec.setMem          = op.setMemPtr();
+
+        // A stderiv .spk exists in two conventions that differ only in sample 0
+        // of each window: seeded with the spatial derivative of the sample
+        // before the window (ndm_extractspikes -R today) or with 0 (the
+        // detection pass and older extractors).  Unshifted spikes keep the
+        // file's form, so the re-cut ones must follow the same convention or
+        // one .spk ends up mixing both.
+        if (stderiv) {
+            const neurosuite::core::StderivSeeding conv =
+                neurosuite::core::detectStderivSeeding(
+                    filF, nSpikes, spec,
+                    [&](int64_t i) { return resTs[(size_t)i]; },
+                    [&](int64_t i, int ci) {
+                        return spkBuf[(size_t)i * elemsPerSpike + (size_t)ci]; });
+            spec.seedFromPrevious = (conv != neurosuite::core::StderivSeeding::Zero);
+            fprintf(stderr, "process_alignspikes group %d: stderiv .spk seed convention: %s\n",
+                    electrodeGroup,
+                    conv == neurosuite::core::StderivSeeding::Previous
+                        ? "previous sample"
+                    : conv == neurosuite::core::StderivSeeding::Zero
+                        ? "zero (older extractor)"
+                        : "undetermined, using previous sample (ndm_extractspikes)");
+        }
+
+        fseeko(filF, 0, SEEK_END);
+        const int64_t filSamples =
+            (int64_t)ftello(filF) / ((int64_t)nTotalChannels * (int64_t)sizeof(short));
+
+        // Shifted spikes in file order (extractSpikeWindows needs
+        // non-decreasing times; it streams the .fil with one forward cursor).
+        // A shift whose window would leave the recording is not applied.
+        std::vector<int> relist;
+        relist.reserve(nToRextract);
         for (int i = 0; i < nSpikes; ++i) {
             if (shifts[i] == 0) continue;
-            const int64_t extTs   = resTs[i] + shifts[i];
-            const int64_t winStart = extTs - peakSampleIdx;
-            if (winStart < 0) {
-                // Window extends before start of recording — skip
+            const int64_t winStart = resTs[i] + shifts[i] - peakSampleIdx;
+            if (winStart < 0 || winStart + nSamples > filSamples) {
                 if (verbose)
                     fprintf(stderr,
-                            "  warning: spike %d at ts=%lld shift=%d would "
-                            "require reading before file start; left unshifted\n",
+                            "  warning: spike %d at ts=%lld shift=%d would read "
+                            "outside the .fil; left unshifted\n",
                             i, (long long)resTs[i], shifts[i]);
                 shifts[i] = 0;
                 continue;
             }
-            const off_t fileOff = winStart * (off_t)nTotalChannels * (off_t)sizeof(short);
-            relist.push_back({fileOff, i});
+            relist.push_back(i);
         }
-        std::sort(relist.begin(), relist.end(),
-                  [](const ReEvent& a, const ReEvent& b){ return a.off < b.off; });
+        std::sort(relist.begin(), relist.end(), [&](int a, int b) {
+            return resTs[a] + shifts[a] < resTs[b] + shifts[b];
+        });
 
-        FILE* filF = xfopen(filPath.c_str(), "rb");
-        fseeko(filF, 0, SEEK_END);
-        const off_t filSize = ftello(filF);
-        fseeko(filF, 0, SEEK_SET);
-
-        const int rawElems     = nSamples * nTotalChannels;
-        const off_t rawBytes   = (off_t)rawElems * sizeof(short);
-        std::vector<short> rawFrame(rawElems);
-
-        // Scratch buffer for per-spike derivative output (stderiv mode)
-        std::vector<short> derivFrame(elemsPerSpike);
-
-        off_t filePos = 0;
-
-        for (const ReEvent& ev : relist) {
-            // Clamp at end of file
-            if (ev.off + rawBytes > filSize) {
-                if (verbose)
-                    fprintf(stderr,
-                            "  warning: spike %d re-extraction window extends past "
-                            "end of .fil; left unshifted\n", ev.idx);
-                shifts[ev.idx] = 0;
-                continue;
-            }
-
-            // Seek to window start (use fseeko for sparse jumps between shifted spikes)
-            if (ev.off != filePos) {
-                if (fseeko(filF, ev.off, SEEK_SET) != 0)
-                    die("fseeko failed on .fil");
-                filePos = ev.off;
-            }
-
-            if (fread(rawFrame.data(), sizeof(short), rawElems, filF) != (size_t)rawElems)
-                die("short read from .fil during re-extraction");
-            filePos += rawBytes;
-
-            short* dst = spkBuf.data() + (size_t)ev.idx * elemsPerSpike;
-
-            if (!stderiv) {
-                // Raw pipeline: extract group channels directly
-                // Layout: [sample * nChanGrp + chan]
-                for (int s = 0; s < nSamples; ++s) {
-                    const short* frame = rawFrame.data() + s * nTotalChannels;
-                    for (int c = 0; c < nChanGrp; ++c)
-                        dst[s * nChanGrp + c] = frame[chanList[c]];
-                }
-            } else {
-                // Stderiv pipeline: apply SDIFF_ALLPAIRS + temporal first-difference.
-                //
-                // ndm_extractspikes_stderiv applies two transforms:
-                //   step 1: sdiff[t,c]   = ALLPAIRS(raw[t,c])
-                //   step 2: stderiv[t,c] = sdiff[t,c] - sdiff[t-1,c]
-                //
-                // We must match this exactly so re-extracted spikes are in the same
-                // signal space as spikes that were not realigned.
-                //
-                // For the temporal diff at t=0 the previous sample is outside the
-                // extracted window and is unknown — use zero as the baseline
-                // (sdiff[t=-1,c] = 0), which matches what ndm_extractspikes_stderiv
-                // does at the very first sample of the recording (g_prev_sdiff is
-                // zero-initialised before each detection pass).
-                std::vector<double> prevSdiff(nChanGrp, 0.0);
-                for (int s = 0; s < nSamples; ++s) {
-                    const short* frame = rawFrame.data() + s * nTotalChannels;
-                    for (int ci = 0; ci < nChanGrp; ++ci) {
-                        const double sd = sdiff_kernel(frame, chanList.data(), ci, nChanGrp);
-                        double stderiv  = sd - prevSdiff[ci];
-                        prevSdiff[ci]   = sd;
-                        if      (stderiv >  32767.0) stderiv =  32767.0;
-                        else if (stderiv < -32768.0) stderiv = -32768.0;
-                        dst[s * nChanGrp + ci] = (short)stderiv;
-                    }
-                }
-            }
-        }
+        int64_t nOutside = 0;
+        const int64_t nCut = neurosuite::core::extractSpikeWindows(
+            filF, (int64_t)relist.size(), spec,
+            [&](int64_t k) {
+                const int i = relist[(size_t)k];
+                return resTs[i] + shifts[i];
+            },
+            [&](int64_t k, const int16_t* row) {
+                std::memcpy(spkBuf.data() + (size_t)relist[(size_t)k] * elemsPerSpike,
+                            row, (size_t)elemsPerSpike * sizeof(short));
+            },
+            &nOutside);
         fclose(filF);
+        if (nCut != (int64_t)relist.size() || nOutside != 0)
+            die("re-extraction from .fil failed");
     }
 
     // ── Sort output order by extTs = resTs[i] + shifts[i] ─────────────────

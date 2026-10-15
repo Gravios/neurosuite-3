@@ -101,9 +101,10 @@
 
 // ─── Small helpers ─────────────────────────────────────────────────────────
 
-#include <neurosuite/core/custody.hpp>
-#include "sdiff_pairs.h"      // shared SDIFF_CUSTOM / _CAR pattern parser       // shared chain-of-custody resolver
+#include <neurosuite/core/custody.hpp>        // shared chain-of-custody resolver
+#include "sdiff_pairs.h"      // shared SDIFF_CUSTOM / _CAR pattern parser
 #include <neurosuite/core/pca_projection.hpp> // shared PcaBasis/loadPca/pcaProjectionEnergy
+#include <neurosuite/core/spike_extract.hpp>  // shared window cut + stderiv transform
 
 static void die(const std::string& msg) {
     std::fprintf(stderr, "process_alignspikes_pca: ERROR: %s\n", msg.c_str());
@@ -184,8 +185,6 @@ static bool writeSpkSampleMajor(std::FILE* f, int64_t spikeIdx, int nChan,
     return std::fwrite(buf.data(), 2, buf.size(), f) == buf.size();
 }
 
-// Read raw .fil window for a single spike.  Extracts only the group's
-// channels and stores channel-major.  Applies stderiv transform if requested.
 // Custom spatial pattern (-P), empty unless supplied.  Realignment reconstructs
 // waveforms from .fil, so it must apply the SAME spatial operator the .spk was
 // built with; all-pairs against a custom-pattern session misaligns in exactly the
@@ -193,60 +192,73 @@ static bool writeSpkSampleMajor(std::FILE* f, int64_t spikeIdx, int nChan,
 static std::vector<int>              g_customPartner;   // order 4
 static std::vector<std::vector<int>> g_customSets;      // order 5
 
-static bool readFilWindow(std::FILE* fil, int64_t startSample,
-                            int nTotalChan, int nSamp,
-                            const std::vector<int>& groupChannels,
-                            bool stderivTransform,
-                            int16_t* outChannelMajor)
+// The spatial operator in the form the shared core transform
+// (neurosuite/core/stderiv_transform.hpp) takes.  Chosen exactly as
+// process_extractspikes_stderiv's computeSDiff dispatches: reference sets, then
+// partner map, then all-pairs -- a pattern that does not fit the group falls
+// back to all-pairs there, and so it does here.
+struct SpatialOperator {
+    neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
+    std::vector<int> partner, setOff, setMem;
+};
+
+static SpatialOperator makeSpatialOperator(int nChan)
 {
-    const int nChan = static_cast<int>(groupChannels.size());
-    const int64_t off = startSample * nTotalChan * 2;
-    if (std::fseek(fil, off, SEEK_SET) != 0) return false;
-    std::vector<int16_t> frame(static_cast<size_t>(nSamp * nTotalChan));
+    SpatialOperator op;
+    if (nChan > 1 && (int)g_customSets.size() == nChan) {
+        op.order = neurosuite::core::SdiffOrder::CustomCar;
+        op.setOff.push_back(0);
+        for (const std::vector<int>& set : g_customSets) {
+            op.setMem.insert(op.setMem.end(), set.begin(), set.end());
+            op.setOff.push_back((int)op.setMem.size());
+        }
+    } else if (nChan > 1 && (int)g_customPartner.size() == nChan) {
+        op.order   = neurosuite::core::SdiffOrder::Custom;
+        op.partner = g_customPartner;
+    }
+    return op;
+}
+
+// Read the raw .fil window of one spike starting at startSample, keep the
+// group's channels (channel-major out), and -- with spec.applyTransform --
+// apply the stderiv transform with the extractor's exact arithmetic (shared
+// core: spatial derivative rounded and clamped, temporal first difference
+// seeded per spec.seedFromPrevious with the sample before the window).  This is
+// the per-spike form of neurosuite::core::extractSpikeWindows, so a re-cut
+// spike is byte-identical to what ndm_extractspikes writes at that time.
+static bool readFilWindow(std::FILE* fil, int64_t startSample,
+                          const neurosuite::core::SpikeWindowSpec& spec,
+                          int16_t* outChannelMajor)
+{
+    const int nChan = spec.nChan, nSamp = spec.nSamp, nTotalChan = spec.totalNbChannels;
+    const int64_t lead =
+        (spec.applyTransform && spec.seedFromPrevious && startSample >= 1) ? 1 : 0;
+    const long long off = static_cast<long long>(startSample - lead)
+                        * nTotalChan * static_cast<long long>(sizeof(int16_t));
+    if (neurosuite::core::detail::seek64(fil, off) != 0) return false;
+    std::vector<int16_t> frame(static_cast<size_t>((nSamp + lead) * nTotalChan));
     if (std::fread(frame.data(), 2, frame.size(), fil) != frame.size())
         return false;
-    // Channel subset, sample-major → channel-major
+    const int16_t* win = frame.data() + static_cast<size_t>(lead * nTotalChan);
+    // Channel subset, sample-major -> channel-major
     for (int t = 0; t < nSamp; ++t)
         for (int c = 0; c < nChan; ++c)
             outChannelMajor[c * nSamp + t] =
-                frame[t * nTotalChan + groupChannels[c]];
-    if (stderivTransform) {
-        std::vector<int16_t> sdPrev(static_cast<size_t>(nChan), 0);
-        // Snapshot each sample's raw channel values before transforming: the loop
-        // below writes back into outChannelMajor, and a custom pattern reads OTHER
-        // channels at the same sample -- any already-rewritten one would feed a
-        // transformed value into the next channel's operator.  All-pairs escaped
-        // this only because it needs nothing but the pre-computed sum.
-        std::vector<int> raw(static_cast<size_t>(nChan), 0);
-        for (int t = 0; t < nSamp; ++t) {
-            int64_t sum = 0;
-            for (int c = 0; c < nChan; ++c) {
-                raw[c] = outChannelMajor[c * nSamp + t];
-                sum   += raw[c];
-            }
-            for (int c = 0; c < nChan; ++c) {
-                const int v = raw[c];
-                int sd;
-                if (nChan > 1 && (int)g_customSets.size() == nChan
-                    && !g_customSets[c].empty()) {
-                    double acc = 0.0;
-                    for (size_t k = 0; k < g_customSets[c].size(); ++k)
-                        acc += raw[g_customSets[c][k]];
-                    sd = static_cast<int>(v - acc / (double)g_customSets[c].size());
-                } else if (nChan > 1 && (int)g_customPartner.size() == nChan) {
-                    sd = v - raw[g_customPartner[c]];
-                } else {
-                    sd = nChan * v - static_cast<int>(sum);
-                }
-                const int16_t sdCl = static_cast<int16_t>(
-                    std::max(-32768, std::min(32767, sd)));
-                const int diff = static_cast<int>(sdCl)
-                               - static_cast<int>(sdPrev[c]);
-                sdPrev[c] = sdCl;
-                outChannelMajor[c * nSamp + t] = static_cast<int16_t>(
-                    std::max(-32768, std::min(32767, diff)));
-            }
+                win[t * nTotalChan + spec.groupChannels[c]];
+    if (spec.applyTransform) {
+        std::vector<int16_t> seed;
+        if (lead) {
+            std::vector<int16_t> leadRow(static_cast<size_t>(nChan));
+            for (int c = 0; c < nChan; ++c)
+                leadRow[static_cast<size_t>(c)] = frame[static_cast<size_t>(spec.groupChannels[c])];
+            seed.resize(static_cast<size_t>(nChan));
+            neurosuite::core::stderivSeed(spec.order, leadRow.data(), nChan, seed.data(),
+                                          spec.partner, spec.setOff, spec.setMem);
         }
+        neurosuite::core::applyStderivTransform(spec.order, outChannelMajor, nChan, nSamp,
+                                                outChannelMajor, spec.partner,
+                                                seed.empty() ? nullptr : seed.data(),
+                                                spec.setOff, spec.setMem);
     }
     return true;
 }
@@ -499,6 +511,53 @@ int main(int argc, char** argv) {
                                    a.dryRun ? "rb" : "r+b");
     if (!spkFp) die("cannot open " + spkPath);
 
+    // How a spike is re-cut from .fil: window geometry and transform exactly as
+    // the extractor applies them (see readFilWindow).
+    const SpatialOperator op = makeSpatialOperator(nChan);
+    neurosuite::core::SpikeWindowSpec cut;
+    cut.nSamp           = a.nSamp;
+    cut.peakSample      = peakSamp0;
+    cut.totalNbChannels = a.nTotalChan;
+    cut.groupChannels   = a.groupChannels.data();
+    cut.nChan           = nChan;
+    cut.applyTransform  = a.stderivMode;
+    cut.order           = op.order;
+    cut.partner         = op.partner.empty() ? nullptr : op.partner.data();
+    cut.setOff          = op.setOff.empty()  ? nullptr : op.setOff.data();
+    cut.setMem          = op.setMem.empty()  ? nullptr : op.setMem.data();
+
+    // A stderiv .spk exists in two conventions that differ only in sample 0 of
+    // each window: seeded with the spatial derivative of the sample before the
+    // window (ndm_extractspikes -R today) or with 0 (the detection pass and
+    // older extractors).  Stage 1 averages stored and re-cut waveforms into one
+    // template, and unshifted spikes keep the file's form, so every re-cut
+    // spike must follow the file's convention.
+    if (a.stderivMode) {
+        int64_t cachedIdx = -1;
+        std::vector<int16_t> row0(static_cast<size_t>(nChan), 0);
+        const long long bytesPerSpike = static_cast<long long>(spkElems) * 2;
+        const neurosuite::core::StderivSeeding conv =
+            neurosuite::core::detectStderivSeeding(
+                filFp, nSpikes, cut,
+                [&](int64_t i) { return resTs[static_cast<size_t>(i)]; },
+                [&](int64_t i, int ci) -> int16_t {
+                    if (i != cachedIdx) {
+                        cachedIdx = i;
+                        if (neurosuite::core::detail::seek64(spkFp, i * bytesPerSpike) != 0
+                            || std::fread(row0.data(), 2, row0.size(), spkFp) != row0.size())
+                            die("spk read failed for spike " + std::to_string(i));
+                    }
+                    return row0[static_cast<size_t>(ci)];   // sample 0, channel ci
+                });
+        cut.seedFromPrevious = (conv != neurosuite::core::StderivSeeding::Zero);
+        std::printf("  stderiv .spk seed convention: %s\n",
+                    conv == neurosuite::core::StderivSeeding::Previous
+                        ? "previous sample"
+                    : conv == neurosuite::core::StderivSeeding::Zero
+                        ? "zero (older extractor)"
+                        : "undetermined, using previous sample (ndm_extractspikes)");
+    }
+
     // Cumulative per-spike shift (initially 0).  shifts[i] is the TOTAL
     // sample shift applied to spike i across all stages.
     std::vector<int> cumShift(static_cast<size_t>(nSpikes), 0);
@@ -575,9 +634,7 @@ int main(int argc, char** argv) {
                     bool ok;
                     #pragma omp critical(filRead)
                     {
-                        ok = readFilWindow(filFp, newStart, a.nTotalChan,
-                                            a.nSamp, a.groupChannels,
-                                            a.stderivMode,
+                        ok = readFilWindow(filFp, newStart, cut,
                                             wavBuf.data() + k * spkElems);
                     }
                     if (!ok) continue;
@@ -623,9 +680,7 @@ int main(int argc, char** argv) {
                     const int64_t newStart = resTs[i] + newCum - peakSamp0;
                     if (newStart < 0 ||
                         newStart + a.nSamp > totalSamples) continue;
-                    if (!readFilWindow(filFp, newStart, a.nTotalChan,
-                                        a.nSamp, a.groupChannels,
-                                        a.stderivMode, per.data())) continue;
+                    if (!readFilWindow(filFp, newStart, cut, per.data())) continue;
                     for (int e = 0; e < spkElems; ++e) accD[e] += per[e];
                     ++validN;
                 }
@@ -651,9 +706,7 @@ int main(int argc, char** argv) {
                     const int64_t newStart = resTs[i] + newCum - peakSamp0;
                     if (newStart < 0 ||
                         newStart + a.nSamp > totalSamples) continue;
-                    if (readFilWindow(filFp, newStart, a.nTotalChan,
-                                       a.nSamp, a.groupChannels,
-                                       a.stderivMode,
+                    if (readFilWindow(filFp, newStart, cut,
                                        wavBuf.data() + k * spkElems))
                         cumShift[i] = newCum;
                 }

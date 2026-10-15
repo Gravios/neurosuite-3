@@ -53,8 +53,13 @@ For each electrode group the script calls `process_alignspikes`, which:
      without reading `.fil`. A σ of about 1.5 or more bridges the two energy
      lobes of a stderiv waveform.
 3. Leaves spikes whose relative energy score is below `minScore` unshifted.
-4. Re-extracts every shifted spike from `.fil` at `originalTs + δ`, applying the
-   same spatial transform the `.spk` was built with.
+4. Re-extracts every shifted spike from `.fil` at `originalTs + δ` with exactly
+   the arithmetic of `ndm_extractspikes`, applying the same spatial transform the
+   `.spk` was built with. For the stderiv family the temporal difference of
+   each window is seeded the way the existing `.spk` was written — from the
+   sample before the window (`ndm_extractspikes`) or with 0 (detection-pass and
+   older `.spk` files); the convention is detected from the file and printed,
+   and an undetermined file is treated as seeded from the previous sample.
 5. Writes the `.spk` sorted by the new times, and rewrites `.res` so that
    `.res[i] = originalTs[i] + δ[i]`. This keeps the invariant that the peak of
    `.spk[i]` is at file sample `.res[i]`, which Klusters' nudge and any tool that
