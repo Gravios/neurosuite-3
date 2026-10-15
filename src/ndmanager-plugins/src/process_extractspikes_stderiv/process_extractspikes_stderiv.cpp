@@ -1400,10 +1400,14 @@ int main(int argc, char *argv[])
     // Same allocation sizes as raw buffers; fill_sdiff_buffer keeps them in
     // sync with the raw buffers every iteration.
     short *sdiff_cur  = new short[buffer_size + args.totalChannelNumber];
-    short *sdiff_prev = new short[buffer_size];
+    // sdiff_prev carries one extra row: the record after its last row, i.e.
+    // the current chunk's row 0 (mirrored there once sdiff_cur is filled).
+    // A peak search rescanning the previous chunk up to its last row reads
+    // that successor as buf[i+nChanTot+chan].
+    short *sdiff_prev = new short[buffer_size + args.totalChannelNumber];
 
     memset(prev_buffer, 0, sizeof(short) * buffer_size);
-    memset(sdiff_prev,  0, sizeof(short) * buffer_size);
+    memset(sdiff_prev,  0, sizeof(short) * (buffer_size + args.totalChannelNumber));
 
     // ── per-group detection state (mirrors process_extractspikes) ─────────
     int  *spkChanId              = new int[nbGroups];
@@ -1491,7 +1495,7 @@ int main(int argc, char *argv[])
     }
     g_prev_sdiff.clear();
     memset(prev_buffer, 0, sizeof(short) * buffer_size);
-    memset(sdiff_prev,  0, sizeof(short) * buffer_size);
+    memset(sdiff_prev,  0, sizeof(short) * (buffer_size + args.totalChannelNumber));
     if(!nextRec) nextRec = new short[args.totalChannelNumber];
 
     fseeko(inputFile, 0, SEEK_SET);
@@ -1597,6 +1601,10 @@ int main(int argc, char *argv[])
                                args.totalChannelNumber,
                                nbGroups, channelList, channelNb_grp,
                                args.sdiffOrder);
+
+        // Successor of the previous chunk's last row = this chunk's row 0.
+        memcpy(sdiff_prev + buffer_size, sdiff_cur,
+               sizeof(short) * args.totalChannelNumber);
 
         // ── detection loop on sdiff buffers (verbatim from process_extractspikes)
 #ifdef _OPENMP

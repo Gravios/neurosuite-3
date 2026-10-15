@@ -451,7 +451,10 @@ int main(int argc,char *argv[]) {
 	
 	// +totChN for next Rec
 	cur_buffer = new short[buffer_size+arguments.totalChannelNumber];
-	prev_buffer = new short[buffer_size];
+	// +totChN: the record after prev_buffer's last one (= cur_buffer's first
+	// record, mirrored each loop), read when a peak search in the previous
+	// buffer reaches its last record
+	prev_buffer = new short[buffer_size+arguments.totalChannelNumber];
 	// store next record
 	nextRec = new short[arguments.totalChannelNumber];
 
@@ -646,6 +649,9 @@ int main(int argc,char *argv[]) {
 		
 		// add the first record (ie the old "next record")
 		memcpy(cur_buffer, nextRec, sizeof(short)*arguments.totalChannelNumber);
+		// successor of the previous buffer's last record
+		memcpy(prev_buffer+buffer_size, cur_buffer,
+			   sizeof(short)*arguments.totalChannelNumber);
 		
 		// there is no next record (ie = last records)
 		if(rec_nb < buffer_size || (!dblBuf && feof(inputFile))) {
