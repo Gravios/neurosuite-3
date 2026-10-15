@@ -120,8 +120,9 @@ double computeSDiff(const short *record,
 // Non-group channels are copied verbatim from raw (they are never read by
 // the detection functions, but having valid values keeps valgrind happy).
 //
-// nSamples should be (rec_nb / nChanTot) + 1 so the one-record lookahead
-// slot used by isRealPeak (buf[i+nChanTot+chan]) is also transformed.
+// nSamples should include the one-record lookahead slot read by the peak
+// search (buf[i+nChanTot+chan] on a chunk's last record), so it is
+// transformed too.
 // The caller is responsible for ensuring raw has at least nSamples*nChanTot
 // valid elements.
 static void fill_sdiff_buffer(const short *raw,
@@ -1152,13 +1153,28 @@ int main(int argc, char *argv[])
 
         // ── precompute sdiff shadow buffer ────────────────────────────────
         // Transform rec_nb/nChanTot samples plus the one lookahead record
-        // (needed by isRealPeak's buf[i+nChanTot+chan] access).
+        // (needed by isRealPeak's buf[i+nChanTot+chan] access and the
+        // after-peak value of getNegativePeakFullId/getPeakFullId).
         // cur_buffer is allocated buffer_size + nChanTot so the +1 is safe.
+        // Before the last chunk the lookahead is the next chunk's first
+        // record (already in cur_buffer as the carried record).  After the
+        // last record of the file there is none: the signal is held at its
+        // last record, so the lookahead repeats it.  A peak on the last
+        // record is dropped anyway whenever its waveform would run past the
+        // end of the file.
         const int nSamplesThisChunk =
             (int)((rec_nb + args.totalChannelNumber - 1) / args.totalChannelNumber);
+        // A truncated trailing record can leave no room for the lookahead.
+        const bool lookahead =
+            (long long)(nSamplesThisChunk + 1) * args.totalChannelNumber
+                <= (long long)buffer_size + args.totalChannelNumber;
+        if(isLastLoop && lookahead)
+            memcpy(cur_buffer + (size_t)nSamplesThisChunk * args.totalChannelNumber,
+                   cur_buffer + (size_t)(nSamplesThisChunk - 1) * args.totalChannelNumber,
+                   sizeof(short) * args.totalChannelNumber);
 
         fill_sdiff_buffer(cur_buffer, sdiff_cur,
-                           nSamplesThisChunk,
+                           nSamplesThisChunk + (lookahead ? 1 : 0),
                            args.totalChannelNumber,
                            nbGroups, channelList, channelNb_grp,
                            args.sdiffOrder);

@@ -177,10 +177,12 @@ double computeSDiff(const short *record,
 // Non-group channels are copied verbatim from raw (they are never read by
 // the detection functions, but having valid values keeps valgrind happy).
 //
-// nSamples should be (rec_nb / nChanTot) + 1 so the one-record lookahead
-// slot used by isRealPeak (buf[i+nChanTot+chan]) is also transformed.
-// The caller is responsible for ensuring raw has at least nSamples*nChanTot
-// valid elements.
+// nSamples is the chunk's record count.  With lookahead, record nSamples
+// (the next chunk's first record, which the peak search reads as
+// buf[i+nChanTot+chan] for the chunk's last record) is transformed too, but
+// g_prev_sdiff is still carried from record nSamples-1, so the next chunk's
+// record 0 -- the same record -- gets the same value there.  The caller
+// guarantees raw holds nSamples (+1 with lookahead) valid records.
 // fill_sdiff_buffer: spatial derivative THEN temporal first-difference.
 //
 //   step 1: sdiff[t, ch]   = spatialDerivative(raw[t, ch], ...)
@@ -200,14 +202,17 @@ static void fill_sdiff_buffer(const short *raw,
                                int          nGroups,
                                int        **channelList,
                                int         *channelNb_grp,
-                               SdiffOrder   order)
+                               SdiffOrder   order,
+                               bool         lookahead)
 {
+    const int nRows = nSamples + (lookahead ? 1 : 0);
+
     // Step 1: compute spatial derivative into a temporary buffer sd[].
     // Copy everything first so non-group channels have valid values.
-    std::vector<short> sd((size_t)nSamples * nChanTot);
-    memcpy(sd.data(), raw, (size_t)nSamples * (size_t)nChanTot * sizeof(short));
+    std::vector<short> sd((size_t)nRows * nChanTot);
+    memcpy(sd.data(), raw, (size_t)nRows * (size_t)nChanTot * sizeof(short));
 
-    for(int t = 0; t < nSamples; t++) {
+    for(int t = 0; t < nRows; t++) {
         const short *rawRec = raw      + (size_t)t * nChanTot;
               short *sdRec  = sd.data() + (size_t)t * nChanTot;
 
@@ -229,9 +234,9 @@ static void fill_sdiff_buffer(const short *raw,
     // Step 2: temporal first-difference — work from t=0 upward so we can
     // update g_prev_sdiff at the end without clobbering values we still need.
     // Copy full buffer first so non-group channels pass through.
-    memcpy(out, sd.data(), (size_t)nSamples * (size_t)nChanTot * sizeof(short));
+    memcpy(out, sd.data(), (size_t)nRows * (size_t)nChanTot * sizeof(short));
 
-    for(int t = 0; t < nSamples; t++) {
+    for(int t = 0; t < nRows; t++) {
         const short *sdCur  = sd.data() + (size_t)t * nChanTot;
         const short *sdPrev = (t > 0)
                             ? sd.data() + (size_t)(t-1) * nChanTot
@@ -252,7 +257,8 @@ static void fill_sdiff_buffer(const short *raw,
         }
     }
 
-    // Save last time-sample's spatial derivative for the next buffer's t=0.
+    // Save the chunk's last time-sample's spatial derivative (not the
+    // lookahead's) for the next buffer's t=0.
     g_prev_sdiff.resize((size_t)nChanTot);
     memcpy(g_prev_sdiff.data(),
            sd.data() + (size_t)(nSamples - 1) * nChanTot,
@@ -1585,14 +1591,29 @@ int main(int argc, char *argv[])
 
         // ── precompute sdiff shadow buffer ────────────────────────────────
         // Transform rec_nb/nChanTot samples plus the one lookahead record
-        // (needed by isRealPeak's buf[i+nChanTot+chan] access).
+        // (needed by isRealPeak's buf[i+nChanTot+chan] access and the
+        // after-peak value of getNegativePeakFullId/getPeakFullId).
         // cur_buffer is allocated buffer_size + nChanTot so the +1 is safe.
+        // Before the last chunk the lookahead is the next chunk's first
+        // record (already in cur_buffer as the carried record).  After the
+        // last record of the file there is none: the signal is held at its
+        // last record, so the lookahead repeats it (stderiv 0, car arm the
+        // last value).  A peak on the last record is dropped anyway whenever
+        // its waveform would run past the end of the file.
         const int nSamplesThisChunk =
             (int)((rec_nb + args.totalChannelNumber - 1) / args.totalChannelNumber);
+        // A truncated trailing record can leave no room for the lookahead.
+        const bool lookahead =
+            (long long)(nSamplesThisChunk + 1) * args.totalChannelNumber
+                <= (long long)buffer_size + args.totalChannelNumber;
+        if(isLastLoop && lookahead)
+            memcpy(cur_buffer + (size_t)nSamplesThisChunk * args.totalChannelNumber,
+                   cur_buffer + (size_t)(nSamplesThisChunk - 1) * args.totalChannelNumber,
+                   sizeof(short) * args.totalChannelNumber);
 
         if(carArm)
             fill_car_buffer(cur_buffer, sdiff_cur,
-                            nSamplesThisChunk,
+                            nSamplesThisChunk + (lookahead ? 1 : 0),
                             args.totalChannelNumber,
                             nbGroups, channelList, channelNb_grp);
         else
@@ -1600,7 +1621,7 @@ int main(int argc, char *argv[])
                                nSamplesThisChunk,
                                args.totalChannelNumber,
                                nbGroups, channelList, channelNb_grp,
-                               args.sdiffOrder);
+                               args.sdiffOrder, lookahead);
 
         // Successor of the previous chunk's last row = this chunk's row 0.
         memcpy(sdiff_prev + buffer_size, sdiff_cur,
