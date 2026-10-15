@@ -34,8 +34,7 @@ ndmanager. See the [install guide](install/linux.md).
 ndmanager session.xml
 ndmanager session.yaml
 
-# Start from the built-in YAML template
-ndmanager /usr/local/share/ndmanager/templates/template.yaml
+# Start a new session from the project template: File ▸ New from Project Template… (Ctrl+Shift+N)
 
 # Crash-safe wrapper — forces software OpenGL to avoid MESA/Zink segfaults
 # on Ubuntu 24.04 systems where Vulkan is present but incomplete
@@ -295,10 +294,23 @@ not a fatal error.
 
 ## Built-in session templates
 
-The session template at `templates/template.yaml` (installed to the system data directory)
-covers a full 28-plugin pipeline including the three new analysis plugins. Use it as a starting
-point for new sessions. The legacy XML templates in `src/ndmanager/src/` cover common tetrode
-and octrode configurations.
+**File ▸ New from Project Template…** (Ctrl+Shift+N) creates a session parameter file from the
+project template, `templates/template.yaml`: it asks where to save the new file (normally
+`SESSION/SESSION.yaml`), writes the template there with today's date in `generalInfo.date`,
+and opens it. The template lists every plugin with every parameter it reads, and its comments
+— what each section is for, which script reads each key, the optional parameters left
+commented out — stay in the new file and survive later saves. Fill in the fields left empty
+(`nChannels`, `samplingRate`, the probes and groups).
+
+The template is installed as `<datadir>/ndmanager/templates/session-template.yaml`
+(e.g. `/usr/local/share/ndmanager/templates/`). If it is not found there or beside the
+executable (`../share/ndmanager/templates/`), ndmanager asks for the file;
+`NEUROSUITE_SESSION_TEMPLATE=/path/to/template.yaml` points it at another one.
+
+**File ▸ New** starts from `ndManagerDefault.yaml` instead (a short document, or your own
+default saved with **Save as Default**), and **File ▸ Use Template…** opens any parameter file
+as the model for a new one. The `Template-*.yaml` files in `src/ndmanager/src/` (installed
+beside the project template) cover common tetrode and octrode configurations.
 
 ---
 

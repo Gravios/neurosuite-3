@@ -141,6 +141,12 @@ private slots:
     /**Creates a new parameter file using defaults.*/
     void slotNewFile();
 
+    /**Creates a session parameter file from the project template
+     * (templates/template.yaml, installed as session-template.yaml): asks
+     * where to save it, writes the template there with today's date and
+     * every comment intact, and opens it.*/
+    void slotNewFromTemplate();
+
     /**Opens a file from the recent files menu.
   * @param url url of the file to open.
   */
@@ -251,6 +257,7 @@ private:
     QAction* mReloadAction;
     QAction* mSaveAsDefaultAction;
     QAction* mNewAction;
+    QAction* mNewFromTemplateAction;
     QAction* mQueryAction;
     QAction* mDiscoverPluginsAction;
     /** Save current pipeline graph to <session>.ndm.default.pipeline.

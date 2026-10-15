@@ -113,3 +113,12 @@ install(FILES ndmanager.xml
 file(GLOB _templates "${CMAKE_CURRENT_SOURCE_DIR}/Template*.yaml")
 install(FILES ${_templates}
     DESTINATION "${CMAKE_INSTALL_DATADIR}/ndmanager/templates")
+
+# The project template behind File > New from Project Template (every plugin
+# parameter with its documentation); ndmanager looks for it under this name.
+set(_session_template "${CMAKE_CURRENT_SOURCE_DIR}/../../../templates/template.yaml")
+if(EXISTS "${_session_template}")
+    install(FILES "${_session_template}"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/ndmanager/templates"
+        RENAME session-template.yaml)
+endif()

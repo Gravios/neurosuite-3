@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-15 | [ndManager: New from Project Template; saves keep comments, inline lists and quoting](#2026-10-15--ndmanager-new-from-project-template-saves-keep-comments-inline-lists-and-quoting) |
 | 2026-10-15 | [Audit fixes: ndmanager keeps unknown YAML keys; aligners and re-extraction follow the .spk convention; re-extraction threshold base](#2026-10-15--audit-fixes-ndmanager-keeps-unknown-yaml-keys-aligners-and-re-extraction-follow-the-spk-convention-re-extraction-threshold-base) |
 | 2026-10-15 | [Klusters: t-SNE of the oblique coordinates](#2026-10-15--klusters-t-sne-of-the-oblique-coordinates) |
 | 2026-10-14 | [ndManager: empty program parameters are no longer written as `~`](#2026-10-14--ndmanager-empty-program-parameters-are-no-longer-written-as-) |
@@ -49,6 +50,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-15 — ndManager: New from Project Template; saves keep comments, inline lists and quoting
+
+<details>
+<summary>Details</summary>
+
+**File ▸ New from Project Template…** (Ctrl+Shift+N) creates a session
+parameter file from `templates/template.yaml` — every plugin with every
+parameter it reads, and the comments documenting them. ndmanager asks where to
+save the file, fills in today's date and opens it. The template is installed as
+`<datadir>/ndmanager/templates/session-template.yaml`;
+`NEUROSUITE_SESSION_TEMPLATE` points at another one. The template's probe
+entries now use `probeId`, the key every tool writes.
+
+**Saves keep the file's layout.** ndmanager, NeuroScope and Klusters wrote
+parameter files back in yaml-cpp's block style: comments (including the
+template's commented-out parameters) were lost, `channels: [0, 1, 2, 3]` became
+one line per channel, and `'false'` lost its quotes and became a boolean for
+Python readers. They now keep comments with the key or list item below them,
+end-of-line comments, inline lists, quoting and spacing; saving an unchanged
+file rewrites the same text. New lists of plain values are written inline.
+
+</details>
 
 ## 2026-10-15 — Audit fixes: ndmanager keeps unknown YAML keys; aligners and re-extraction follow the .spk convention; re-extraction threshold base
 

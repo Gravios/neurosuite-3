@@ -36,6 +36,11 @@
 #include <QActionGroup>
 #include <QDebug>
 #include <QSettings>
+#include <QSaveFile>
+#include <QStandardPaths>
+#include <QCoreApplication>
+#include <QDate>
+#include <stdexcept>
 #include <QPointer>
 #include <QTimer>
 
@@ -52,6 +57,7 @@
 #include "queryoutputdialog.h"
 #include "qhelpviewer.h"
 #include "config-ndmanager.h"
+#include "yamlformat.h"   // emitWithLayout: the template is written with its comments
 
 
 ndManager::ndManager()
@@ -114,6 +120,13 @@ void ndManager::setupActions()
     mNewAction->setIcon(QPixmap(":/shared-icons/document-new"));
     mNewAction->setShortcut(QKeySequence::New);
     connect(mNewAction, &QAction::triggered, this, &ndManager::slotNewFile);
+
+    mNewFromTemplateAction = fileMenu->addAction(tr("New from Project Te&mplate…"));
+    mNewFromTemplateAction->setIcon(QPixmap(":/shared-icons/document-new"));
+    mNewFromTemplateAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N));
+    mNewFromTemplateAction->setToolTip(tr("Create a session parameter file from the project template, "
+                                          "with every plugin parameter and its documentation"));
+    connect(mNewFromTemplateAction, &QAction::triggered, this, &ndManager::slotNewFromTemplate);
 
 
     mOpenAction = fileMenu->addAction(tr("&Open…"));
@@ -318,6 +331,79 @@ void ndManager::slotFileOpenRecent(const QString& url){
 
     openDocumentFile(url);
 
+    slotStatusMsg(tr("Ready."));
+}
+
+// The project template (templates/template.yaml in the sources, installed as
+// <datadir>/ndmanager/templates/session-template.yaml).  $NEUROSUITE_SESSION_TEMPLATE
+// names another file; next to the executable covers a relocated install.
+static QString locateSessionTemplate()
+{
+    const QString env = QString::fromLocal8Bit(qgetenv("NEUROSUITE_SESSION_TEMPLATE"));
+    if (!env.isEmpty() && QFileInfo(env).isFile()) return env;
+    const QString rel = QStringLiteral("ndmanager/templates/session-template.yaml");
+    const QString found = QStandardPaths::locate(QStandardPaths::GenericDataLocation, rel);
+    if (!found.isEmpty()) return found;
+    const QString beside = QDir::cleanPath(QCoreApplication::applicationDirPath()
+                                           + QStringLiteral("/../share/") + rel);
+    return QFileInfo(beside).isFile() ? beside : QString();
+}
+
+void ndManager::slotNewFromTemplate(){
+    slotStatusMsg(tr("Creating a session from the project template…"));
+    QSettings settings;
+
+    QString templatePath = locateSessionTemplate();
+    if (templatePath.isEmpty()) {
+        QMessageBox::information(this, tr("Project template not found"),
+            tr("The project template (session-template.yaml) is not installed.\n\n"
+               "Choose the template to use, e.g. templates/template.yaml in the neurosuite-3 sources."));
+        templatePath = QFileDialog::getOpenFileName(this, tr("Choose the Project Template"), QString(),
+                                                    tr("YAML files (*.yaml *.yml);;All files (*.*)"));
+        if (templatePath.isEmpty()) { slotStatusMsg(tr("Ready.")); return; }
+    }
+
+    // "CurrentDirectory" holds the last file opened; start next to it.
+    const QFileInfo last(settings.value("CurrentDirectory").toString());
+    const QString startDir = last.isDir() ? last.absoluteFilePath()
+                           : (last.fileName().isEmpty() ? QDir::currentPath() : last.absolutePath());
+    QString target = QFileDialog::getSaveFileName(this, tr("New Session Parameter File"),
+                                                  QDir(startDir).filePath(QStringLiteral("session.yaml")),
+                                                  tr("YAML files (*.yaml *.yml)"));
+    if (target.isEmpty()) { slotStatusMsg(tr("Ready.")); return; }
+    if (QFileInfo(target).suffix().isEmpty()) target += QStringLiteral(".yaml");
+
+    // The template as it is -- its comments document every parameter and keep
+    // the optional ones commented out -- with today's date filled in.
+    const std::string text = yamlformat::readText(templatePath.toStdString());
+    std::string out;
+    try {
+        YAML::Node doc = YAML::Load(text);
+        if (!doc.IsMap()) throw std::runtime_error("the file is not a YAML mapping");
+        YAML::Node gi = doc["generalInfo"];
+        if (gi.IsMap() && (!gi["date"] || gi["date"].IsNull()))
+            gi["date"] = QDate::currentDate().toString(Qt::ISODate).toStdString();
+        out = yamlformat::emitWithLayout(doc, text);
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, tr("Error!"), tr("The project template %1 could not be read:\n\n%2")
+                              .arg(templatePath, QString::fromLocal8Bit(e.what())));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    QSaveFile file(target);
+    if (!file.open(QIODevice::WriteOnly) ||
+        file.write(out.data(), static_cast<qint64>(out.size())) != static_cast<qint64>(out.size()) ||
+        !file.commit()) {
+        QMessageBox::critical(this, tr("Error!"), tr("The new parameter file %1 could not be written:\n\n%2")
+                              .arg(target, file.errorString()));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    settings.setValue("CurrentDirectory", QFileInfo(target).absoluteFilePath());
+
+    // Opens it here, or in a new window when a session is already open.
+    openDocumentFile(target);
     slotStatusMsg(tr("Ready."));
 }
 
@@ -903,6 +989,7 @@ void ndManager::slotStateChanged(const QString& state)
         mDiscoverPluginsAction->setEnabled(false);
         mOpenAction->setEnabled(true);
         mNewAction->setEnabled(true);
+        mNewFromTemplateAction->setEnabled(true);
         mFileOpenRecent->setEnabled(true);
         mUseTemplateAction->setEnabled(true);
         mQueryAction->setEnabled(true);
