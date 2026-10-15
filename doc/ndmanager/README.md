@@ -163,6 +163,21 @@ You build the pipeline from scratch by dragging plugins from the palette. The re
 to a separate `<session>.ndm.<n>.pipeline` YAML file (see [Saving the graph](#saving-the-graph)
 below); the next time you open the session, the saved pipeline is auto-loaded.
 
+The palette lists every `ndm_*` plugin that reads parameters from the session (except
+`ndm_xml2yaml` and `ndm_recolorchannels`, which edit the parameter file rather than process
+data), grouped by category. A node dropped onto the canvas starts with the parameters of that
+plugin's block in `templates/template.yaml`, with the template's values; a node loaded from the
+session keeps the session's values. *Extract Spikes (SDiff / StDeriv)* and *PCA (StDeriv)* are
+aliases that run Detect / Extract Spikes or PCA with that method; they have no parameters of
+their own — set them on *Detect Spikes*, *Extract Spikes* and *PCA*.
+
+The list is generated: `src/ndmanager/tools/pipeline_script_defs.py` writes
+`src/ndmanager/src/pipelinescriptdefs.inc` from the template plus a table of palette labels,
+tooltips and categories. To add a plugin, give it a block in `templates/template.yaml`, add
+its row to that table, and rerun the script; `test_template_parameters.py` and
+`test_pipeline_designer_defs.py` (in `src/ndmanager-plugins/test/`) fail until the script,
+the template and the designer agree.
+
 The toolbar carries a preset combo (Pipeline A / C / D / Full), **Save** / **Save As**
 buttons, an **Apply Pipeline** button (pushes the graph into the Plugins tab), and a
 **Clear** button (empties the graph back to just the root).
