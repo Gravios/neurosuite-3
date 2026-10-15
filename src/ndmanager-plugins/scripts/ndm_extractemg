@@ -126,7 +126,8 @@ for idx, grp in enumerate(ad, start=1):
 
 probe_specs = []   # list of (probeId, [channels])
 for p in probes:
-    pid = int(p.get('id', -1))
+    # probeId is the canonical key (ndm_setupgroups writes it); id is legacy.
+    pid = int(p.get('probeId', p.get('id', -1)))
     groups = p.get('anatomicalGroups') or []
     chans = []
     seen = set()

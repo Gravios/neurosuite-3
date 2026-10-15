@@ -111,14 +111,13 @@ Free functions that extend `ParameterYamlReader` / `ParameterYamlWriter` to hand
 `probes:` top-level section and `probeId`/`shankIndex` metadata on anatomical group entries.
 These are separate from the main classes to avoid altering their API.
 
-> **YAML key naming inconsistency:** the C++ `ProbeEntry` struct uses the
-> field name `id`, and `readProbesSection` / `writeProbesSection` read and
-> write the YAML key `id`. The Python helper `process_setupgroups.py` and
-> the downstream Python tools (`process_estimatedrift.py`,
-> `process_localise.py`) normalize on the YAML key `probeId` and accept
-> either on read. For interoperability, hand-written YAML should use
-> `probeId` — `ndm_setupgroups` will rewrite `id` to `probeId` on first
-> run. Both reads work, only one key is written per writer.
+> **Probe id key:** a `probes:` entry's id is the YAML key `probeId`
+> (canonical — the key spike and anatomical groups use to refer to a probe);
+> the legacy key `id` is still read. Every reader — `readProbesSection`, the
+> Python tools, KlustaKwik, `ndm_stripdat`, `ndm_extractemg` — takes
+> `probeId`, then `id`, then the entry's 0-based position. Both writers
+> (`writeProbesSection`, `ndm_setupgroups`) write `probeId` and drop a legacy
+> `id`. The C++ `ProbeEntry` field is still called `id`.
 
 **Data types:**
 

@@ -42,12 +42,25 @@ static int yi(const YAML::Node& n, int fallback = 0)
     try { return n.as<int>(); } catch (...) { return fallback; }
 }
 
+// A probes: entry's id.  `probeId` is the canonical key -- ndm_setupgroups
+// writes it, and every reader (the ndm_* scripts, KlustaKwik) looks for it
+// first -- and `id` is the legacy key older files and ndmanager before this
+// change wrote.  Same order everywhere, so a file holding both reads the same
+// in every tool.  Reading only `id` gave a setupgroups-written probe its list
+// position instead of its id, so a group's probeId pointed at the wrong probe.
+static int probeEntryId(const YAML::Node& p, int position)
+{
+    if (p["probeId"]) return yi(p["probeId"], position);
+    if (p["id"])      return yi(p["id"],      position);
+    return position;
+}
+
 // ---------------------------------------------------------------------------
 // readProbesSection
 // ---------------------------------------------------------------------------
 // Reads:
 //   probes:
-//     - id: 0
+//     - probeId: 0                # legacy files: id: 0
 //       probeFile: neuronexus/Buzsaki64.probe
 //       label: "left CA1"
 //       channelOffset: 0
@@ -73,7 +86,7 @@ void readProbesSection(const YAML::Node& root,
         if (!p.IsMap()) continue;
 
         ProbeEntry entry;
-        entry.id            = yi(p["id"], static_cast<int>(i));
+        entry.id            = probeEntryId(p, static_cast<int>(i));
         entry.probeFile     = qs(p["probeFile"]);
         entry.label         = qs(p["label"]);
         entry.channelOffset = yi(p["channelOffset"], 0);
@@ -180,16 +193,23 @@ void writeProbesSection(YAML::Node& root,
         for (std::size_t i = 0; i < existing.size(); ++i) {
             const YAML::Node p = existing[i];
             if (!p.IsMap()) continue;
-            const int id = yi(p["id"], static_cast<int>(i));
+            const int id = probeEntryId(p, static_cast<int>(i));
             if (!old.contains(id)) old.insert(id, YAML::Clone(p));
         }
     }
 
     YAML::Node seq(YAML::NodeType::Sequence);
     for (const ProbeEntry& e : probes) {
-        YAML::Node entry = old.contains(e.id) ? old.take(e.id)
-                                              : YAML::Node(YAML::NodeType::Map);
-        entry["id"]            = e.id;
+        // probeId is the canonical key and comes first.  A legacy `id` the
+        // entry carried is dropped, so the file holds one id per probe.
+        YAML::Node entry(YAML::NodeType::Map);
+        entry["probeId"]       = e.id;
+        if (old.contains(e.id)) {
+            for (const auto& kv : old.take(e.id)) {
+                const std::string key = kv.first.as<std::string>("");
+                if (key != "id" && key != "probeId") entry[kv.first] = kv.second;
+            }
+        }
         entry["probeFile"]     = e.probeFile.toStdString();
         entry["label"]         = e.label.toStdString();
         entry["channelOffset"] = e.channelOffset;

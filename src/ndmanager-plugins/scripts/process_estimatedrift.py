@@ -1461,7 +1461,7 @@ def main() -> int:
     if os.path.isfile(dat_path):
         n_total = os.path.getsize(dat_path) // (args.n_bits // 8) // args.n_channels
         # probe_order: probeIds in their YAML list order
-        probe_order = [e.get("probeId", i)
+        probe_order = [int(e.get("probeId", e.get("id", i)))
                        for i, e in enumerate((param or {}).get("probes", []))]
         # Fallback: if no probes list, use the order they appear in our output
         if not probe_order:

@@ -30,6 +30,9 @@ namespace YAML { class Node; }
  * @brief One probe entry as stored in the session YAML `probes` section.
  */
 struct ProbeEntry {
+    /// The probe's id: YAML key `probeId` (canonical, the key spike and
+    /// anatomical groups use to refer to the probe); the legacy key `id` is
+    /// still read.  Falls back to the entry's 0-based position.
     int        id            = 0;
     QString    probeFile;           ///< relative path inside probe library
     QString    label;               ///< user-visible label

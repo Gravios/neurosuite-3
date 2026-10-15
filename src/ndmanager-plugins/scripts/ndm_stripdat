@@ -283,7 +283,9 @@ pid    = grps[group - 1].get('probeId') if 0 < group <= len(grps) else None
 if pid is None or not probes:
     print(1); sys.exit(0)
 for i, e in enumerate(probes):
-    if int(e.get('id', e.get('probeId', i))) == int(pid):
+    # probeId is the canonical key (legacy files: id), read in the same order
+    # as every other tool.
+    if int(e.get('probeId', e.get('id', i))) == int(pid):
         print(i + 1); sys.exit(0)
 print(1)
 PEOF
