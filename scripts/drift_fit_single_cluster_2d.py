@@ -64,8 +64,8 @@ def load_probe_geometry(session_path: Path, group: int):
     parameteryamlreader_probes.cpp:56 — session YAML has a `probes:`
     sequence; each entry has probeFile + channelOffset + anatomicalGroups
     /spikeGroups.  The referenced .probe file has totalChannels, sites
-    (count_per_shank, geometry as flat [x_um, y_um] list ordered tip-
-    to-base per shank then next shank), and optional channelMap.
+    (count_per_shank, geometry as flat [x_um, y_um] list, top site first
+    per shank then next shank), and optional channelMap.
     """
     if not HAVE_YAML:
         raise RuntimeError("pyyaml required: pip install pyyaml")
@@ -121,22 +121,28 @@ def load_probe_geometry(session_path: Path, group: int):
     with open(probe_path) as f:
         probe = (yaml.safe_load(f) or {}).get("probeFile") or {}
     geometry = (probe.get("sites") or {}).get("geometry") or []
-    channel_map = probe.get("channelMap") or []   # empty = sequential
-
     if not geometry:
         raise RuntimeError(f"{probe_path}: empty sites.geometry")
 
+    # Site j sits at geometry[j] and is channel offset + j, or offset + map[j]
+    # when channelMap.map is given (flat, or one list per shank) — the rule of
+    # src/ndmanager-plugins/scripts/probe_geometry.py.
+    cmap = (probe.get("channelMap") or {}).get("map")
+    if isinstance(cmap, list) and cmap and all(isinstance(v, list) for v in cmap):
+        cmap = [c for sub in cmap for c in sub]
+    site_chan = [int(c) for c in cmap] if isinstance(cmap, list) and cmap \
+        else list(range(len(geometry)))
+    pos = {channel_offset + c: geometry[j]
+           for j, c in enumerate(site_chan) if j < len(geometry)}
+
     n_chan = len(group_channels)
     q_c = np.zeros((n_chan, 2), dtype=np.float64)
-    for c_idx, hw_id in enumerate(group_channels):
-        local_hw = int(hw_id) - channel_offset
-        site_idx = (int(channel_map[local_hw]) if channel_map else local_hw)
-        if not (0 <= site_idx < len(geometry)):
+    for c_idx, ch in enumerate(group_channels):
+        hw_id = int(ch["id"]) if isinstance(ch, dict) else int(ch)
+        if hw_id not in pos:
             raise RuntimeError(
-                f"site index {site_idx} (hw {hw_id}, offset {channel_offset}) "
-                f"out of geometry range [0, {len(geometry)})"
-            )
-        x, y = geometry[site_idx]
+                f"channel {hw_id} (offset {channel_offset}) has no site in {probe_path}")
+        x, y = pos[hw_id]
         q_c[c_idx] = [float(x), float(y)]
     return q_c, str(probe_path)
 
