@@ -60,7 +60,8 @@ bool obliqueProject(const std::vector<double>& data, int N, int D,
                     const std::vector<double>& featInvStd,
                     std::vector<double>& outXY,
                     double& condNumber,
-                    std::string* err)
+                    std::string* err,
+                    std::vector<double>* outCoords)
 {
     auto fail = [&](const char* m) { if (err) *err = m; return false; };
     const int K = static_cast<int>(basisClusters.size());
@@ -189,5 +190,6 @@ bool obliqueProject(const std::vector<double>& data, int N, int D,
             outXY[static_cast<size_t>(i) * 2 + 1] = y;
         }
     }
+    if (outCoords) *outCoords = std::move(coords);
     return true;
 }

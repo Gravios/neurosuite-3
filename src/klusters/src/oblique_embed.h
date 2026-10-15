@@ -61,6 +61,10 @@
  *  @param condNumber    condition number of the K*K Gram matrix (lambda_max /
  *                       lambda_min): ~1 well separated, large => collinear.
  *  @param err           optional failure message.
+ *  @param outCoords     optional; size N*K on return, row-major: every point's
+ *                       full oblique coordinates (a_1 .. a_K), before the 2-D
+ *                       reduction.  For K > 2 this is what a further embedding
+ *                       (t-SNE) of the oblique space takes as input.
  *  @return false (with *err set) on invalid input or an empty basis cluster. */
 bool obliqueProject(const std::vector<double>& data, int N, int D,
                     const std::vector<int>& rowCluster,
@@ -69,6 +73,7 @@ bool obliqueProject(const std::vector<double>& data, int N, int D,
                     const std::vector<double>& featInvStd,
                     std::vector<double>& outXY,
                     double& condNumber,
-                    std::string* err = nullptr);
+                    std::string* err = nullptr,
+                    std::vector<double>* outCoords = nullptr);
 
 #endif

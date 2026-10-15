@@ -27,6 +27,7 @@
 #include <QRegion>
 #include <QList>
 #include <atomic>
+#include <memory>
 #include <vector>
 #include <map>
 #include <set>
@@ -616,6 +617,20 @@ private:
     // tsneMode (an embedding is on screen) and never tsneComputing (synchronous).
     bool                 obliqueMode = false;
     double               obliqueCond = 0.0;   ///< Gram condition number of the basis
+    // The oblique view's full coordinates, N x obliqueK (row-major), one row per
+    // point in tsneRowSpike order -- the 2-D picture keeps only two directions.
+    // With obliqueK >= 3, F embeds these with t-SNE instead of the features
+    // (one more direction than the picture is the least worth a t-SNE run).
+    std::shared_ptr<std::vector<double>> obliqueCoords;
+    int                  obliqueK = 0;
+    // A t-SNE of the oblique coordinates: its input is kept so a perplexity step
+    // re-embeds the same coordinates rather than falling back to the features.
+    bool                 tsneOnOblique = false;
+    std::shared_ptr<std::vector<double>> tsneSrcX;
+    std::shared_ptr<QList<int>>          tsneSrcLabels;
+    std::shared_ptr<QVector<int>>        tsneSrcRows;
+    int                  tsneSrcD = 0;
+    int                  tsneSrcClusters = 0;
     // Pinned oblique basis (Set Oblique Basis…): the cluster ids whose templates
     // are the fixed axes.  EMPTY means the default -- the basis is the selection.
     // When non-empty, startOblique projects the selection onto these axes and
@@ -762,6 +777,14 @@ private:
     /** @p perplexityOverride > 0 pins the perplexity (the arrow-key path);
      *  0 means "pick the default for this N". */
     void startTsne(double perplexityOverride = 0.0);
+    /** Launches the t-SNE worker on @p X (N x D, row-major) whose points carry
+     *  @p labels and 0-based .spk @p rows; shared by the feature gather and the
+     *  oblique-coordinate path of startTsne. */
+    void runTsne(std::shared_ptr<std::vector<double>> X,
+                 std::shared_ptr<QList<int>> labels,
+                 std::shared_ptr<QVector<int>> rows,
+                 int N, int D, int nClusters, double perplexityOverride,
+                 unsigned seed, const QString& startMessage);
     /** Computes and shows the oblique projection of the selected clusters
      *  synchronously (no worker).  Refuses with a status message on < 2 clusters,
      *  < 2 feature dims, or a degenerate basis. */

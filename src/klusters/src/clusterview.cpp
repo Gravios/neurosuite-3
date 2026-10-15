@@ -162,6 +162,10 @@ void ClusterView::exitTsne(const QString& reason){
         invalidate(REDRAW);
         update();
     }
+    obliqueCoords.reset();
+    obliqueK = 0;
+    tsneOnOblique = false;
+    tsneSrcX.reset(); tsneSrcLabels.reset(); tsneSrcRows.reset();
     if (!reason.isEmpty() && statusBar) statusBar->showMessage(reason, 3000);
 }
 
@@ -196,6 +200,41 @@ void ClusterView::startTsne(double perplexityOverride){
         exitTsne(tr("t-SNE cancelled"));
         return;
     }
+    // Seed first: it drives the subsample as well as the embedding, so a
+    // repeatable run is repeatable end to end.
+    const unsigned seed = configuration().getTsneRandomSeed()
+        ? QRandomGenerator::global()->generate()
+        : 42u;
+
+    // t-SNE OF THE OBLIQUE SPACE: from the oblique view (F) with a basis of three
+    // or more templates, or a perplexity step on such an embedding.  The input is
+    // the points' full oblique coordinates -- the 2-D oblique picture keeps only
+    // two of their directions -- and the points (spikes, labels, rows) are the
+    // oblique view's own, so the lasso and every embedding tool carry over.
+    const bool fromObliqueView = obliqueMode && obliqueK >= 3 && obliqueCoords;
+    if (fromObliqueView || (perplexityOverride > 0.0 && tsneOnOblique && tsneSrcX)) {
+        if (fromObliqueView) {
+            tsneSrcX        = obliqueCoords;
+            tsneSrcD        = obliqueK;
+            tsneSrcLabels   = std::make_shared<QList<int>>(tsneRowCluster);
+            tsneSrcRows     = std::make_shared<QVector<int>>(tsneRowSpike);
+            tsneSrcClusters = tsneClusterCount;
+        }
+        tsneOnOblique = true;
+        const int N = tsneSrcRows->size();
+        if (N < 8) {
+            if (statusBar) statusBar->showMessage(tr("t-SNE: too few spikes in the oblique view"), 3000);
+            return;
+        }
+        runTsne(tsneSrcX, tsneSrcLabels, tsneSrcRows, N, tsneSrcD, tsneSrcClusters,
+                perplexityOverride, seed,
+                tr("t-SNE: embedding the %1 oblique coordinates of %2 spikes…")
+                    .arg(tsneSrcD).arg(N));
+        return;
+    }
+    tsneOnOblique = false;
+    tsneSrcX.reset(); tsneSrcLabels.reset(); tsneSrcRows.reset();
+
     const QList<int> shown = view.clusters();
     if (shown.isEmpty()) {
         if (statusBar) statusBar->showMessage(tr("t-SNE: no clusters selected"), 3000);
@@ -244,12 +283,6 @@ void ClusterView::startTsne(double perplexityOverride){
         return;
     }
 
-    // Seed first: it drives the subsample as well as the embedding, so a
-    // repeatable run is repeatable end to end.
-    const unsigned seed = configuration().getTsneRandomSeed()
-        ? QRandomGenerator::global()->generate()
-        : 42u;
-
     // When subsampling, decide WHICH spikes before copying any features.
     QSet<qint64> keep;
     const bool sampled = (total > cap);
@@ -289,6 +322,18 @@ void ClusterView::startTsne(double perplexityOverride){
         delete pr.second;
     }
 
+    QString startMessage;
+    if (sampled)
+        startMessage = tr("t-SNE: %1 spikes selected, embedding a random sample of %2 (cap)…")
+                           .arg(total).arg(N);
+    runTsne(X, labels, rows, N, D, shown.size(), perplexityOverride, seed, startMessage);
+}
+
+void ClusterView::runTsne(std::shared_ptr<std::vector<double>> X,
+                          std::shared_ptr<QList<int>> labels,
+                          std::shared_ptr<QVector<int>> rows,
+                          int N, int D, int nClusters, double perplexityOverride,
+                          unsigned seed, const QString& startMessage){
     TsneParams params;
     params.perplexity = (perplexityOverride > 0.0)
         ? qBound(2.0, perplexityOverride, qMax(2.0, (N - 1) / 3.0))
@@ -300,7 +345,6 @@ void ClusterView::startTsne(double perplexityOverride){
     params.exagIter = qMin(configuration().getTsneExaggerationIterations(), params.nIter);
     params.seed       = seed;                    // fixed unless the user asked otherwise
     const double perp = params.perplexity;
-    const int nClusters = shown.size();
 
     tsneCancel    = false;
     tsneComputing = true;
@@ -308,10 +352,8 @@ void ClusterView::startTsne(double perplexityOverride){
     tsneProgressText = tr("t-SNE: starting…");
     invalidate(REFRESH);
     update();
-    if (sampled && statusBar)
-        statusBar->showMessage(
-            tr("t-SNE: %1 spikes selected, embedding a random sample of %2 (cap)…")
-                .arg(total).arg(N), 6000);
+    if (!startMessage.isEmpty() && statusBar)
+        statusBar->showMessage(startMessage, 6000);
     else if (statusBar) statusBar->showMessage(
         tsneChildLayer
           ? tr("t-SNE: embedding %1 spikes from %2 atom(s), perplexity %3…")
@@ -408,9 +450,21 @@ void ClusterView::onTsneFinished(int runId, bool ok, const QString& err,
     tsneClusterCount= nClusters;
     tsnePerplexity  = perp;
     tsneMode        = true;
+    // A t-SNE of the oblique coordinates REPLACES the oblique view it was run
+    // from: it is a t-SNE (perplexity arrows, immediate lasso), not the basis
+    // projection the oblique lasso previews against.
+    obliqueMode     = false;
+    obliqueCond     = 0.0;
+    obliqueCoords.reset();
+    obliqueK        = 0;
     invalidate(REDRAW);
     update();
-    if (statusBar) statusBar->showMessage(
+    if (tsneOnOblique && statusBar) statusBar->showMessage(
+        tr("t-SNE of the %1 oblique coordinates: %2 spikes, perplexity %3, %4 s — "
+           "↑/↓ change perplexity, Shift+O back to the oblique view, F returns")
+            .arg(tsneSrcD).arg(nSpikes).arg(perp, 0, 'f', 0)
+            .arg(ms / 1000.0, 0, 'f', 1), 8000);
+    else if (statusBar) statusBar->showMessage(
         (tsneChildLayer
            ? tr("t-SNE: %1 spikes, %2 atom(s), perplexity %3, %4 s — "
                 "↑/↓ change perplexity, F returns")
@@ -888,10 +942,18 @@ void ClusterView::paintTsne(QPainter& painter){
         painter.drawText(vp.left() + 8, vp.top() + 18,
             (tsneChildLayer
                ? tr("oblique  —  %1 spikes, %2 atom template(s), condition %3   "
-                    "(Shift+O returns to features)")
+                    "(%4Shift+O returns to features)")
                : tr("oblique  —  %1 spikes, %2 template(s), condition %3   "
-                    "(Shift+O returns to features)"))
-                .arg(tsneSpikeCount).arg(tsneClusterCount).arg(obliqueCond, 0, 'f', 1));
+                    "(%4Shift+O returns to features)"))
+                .arg(tsneSpikeCount).arg(tsneClusterCount).arg(obliqueCond, 0, 'f', 1)
+                .arg(obliqueK >= 3 ? tr("F t-SNE of the %1 coordinates — ").arg(obliqueK)
+                                   : QString()));
+    } else if (tsneOnOblique) {
+        painter.drawText(vp.left() + 8, vp.top() + 18,
+            tr("t-SNE of %1 oblique coordinates  —  %2 spikes, %3 cluster(s), perplexity %4   "
+               "(↑/↓ perplexity — Shift+O oblique view — F returns to features)")
+                .arg(tsneSrcD).arg(tsneSpikeCount).arg(tsneClusterCount)
+                .arg(tsnePerplexity, 0, 'f', 0));
     } else {
         painter.drawText(vp.left() + 8, vp.top() + 18,
             (tsneChildLayer
@@ -2338,6 +2400,14 @@ void ClusterView::keyPressEvent(QKeyEvent* e){
 }
 
 void ClusterView::toggleTsnePresentation(){
+    // From the oblique view, F embeds its coordinates -- when there are at least
+    // three of them; a two-template view already shows both, so F leaves it.
+    if (obliqueMode && !tsneComputing && !tsneThread) {
+        if (obliqueK >= 3) startTsne();
+        else exitTsne(tr("oblique off — t-SNE of the oblique space needs a basis "
+                         "of 3 or more templates"));
+        return;
+    }
     if (tsneMode) exitTsne(tr("t-SNE off"));
     else          startTsne();
 }
@@ -3405,7 +3475,8 @@ void ClusterView::startOblique(){
     std::vector<double> xy;
     double cond = 0.0;
     std::string err;
-    if (!obliqueProject(X, N, D, labelsVec, basis, gMean, gInv, xy, cond, &err)) {
+    auto coords = std::make_shared<std::vector<double>>();
+    if (!obliqueProject(X, N, D, labelsVec, basis, gMean, gInv, xy, cond, &err, coords.get())) {
         if (statusBar) statusBar->showMessage(
             tr("oblique failed: %1").arg(QString::fromStdString(err)), 5000);
         return;
@@ -3448,6 +3519,8 @@ void ClusterView::startOblique(){
         tsneClusterCount = shown.size();
     }
     obliqueCond      = cond;
+    obliqueCoords    = coords;
+    obliqueK         = static_cast<int>(basis.size());
     obliqueMode      = true;
     tsneMode         = true;
     invalidate(REDRAW);
@@ -3457,14 +3530,16 @@ void ClusterView::startOblique(){
             QStringList b; for (int id : pinned) b << QString::number(id);
             statusBar->showMessage(
                 tr("oblique: %1 spikes on the pinned basis [%2], condition %3 — "
-                   "lasso to cut, Shift+O returns")
-                    .arg(N).arg(b.join(QStringLiteral(","))).arg(cond, 0, 'f', 1), 8000);
+                   "lasso to cut, %4Shift+O returns")
+                    .arg(N).arg(b.join(QStringLiteral(","))).arg(cond, 0, 'f', 1)
+                    .arg(obliqueK >= 3 ? tr("F t-SNE of the coordinates, ") : QString()), 8000);
         } else {
             statusBar->showMessage(
                 (childLayer
-                   ? tr("oblique: %1 spikes, %2 atom template(s), condition %3 — lasso to cut, Shift+O returns")
-                   : tr("oblique: %1 spikes, %2 template(s), condition %3 — lasso to cut, Shift+O returns"))
-                    .arg(N).arg(shown.size()).arg(cond, 0, 'f', 1), 8000);
+                   ? tr("oblique: %1 spikes, %2 atom template(s), condition %3 — lasso to cut, %4Shift+O returns")
+                   : tr("oblique: %1 spikes, %2 template(s), condition %3 — lasso to cut, %4Shift+O returns"))
+                    .arg(N).arg(shown.size()).arg(cond, 0, 'f', 1)
+                    .arg(obliqueK >= 3 ? tr("F t-SNE of the coordinates, ") : QString()), 8000);
         }
     }
 }

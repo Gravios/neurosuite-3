@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-15 | [Klusters: t-SNE of the oblique coordinates](#2026-10-15--klusters-t-sne-of-the-oblique-coordinates) |
 | 2026-10-14 | [ndManager: empty program parameters are no longer written as `~`](#2026-10-14--ndmanager-empty-program-parameters-are-no-longer-written-as-) |
 | 2026-10-14 | [ndm_detectspikes (stderiv): refuse one-channel groups and flat signals](#2026-10-14--ndm_detectspikes-stderiv-refuse-one-channel-groups-and-flat-signals) |
 | 2026-10-14 | [Klusters: crash on opening a session whose probe has no .probe file; leftover .pending copies](#2026-10-14--klusters-crash-on-opening-a-session-whose-probe-has-no-probe-file-leftover-pending-copies) |
@@ -47,6 +48,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-15 — Klusters: t-SNE of the oblique coordinates
+
+<details>
+<summary>Details</summary>
+
+The oblique view (Shift+O) decomposes every spike on the template axes, one
+coordinate per template, but can only draw two directions of them. With a basis
+of **three or more templates**, **F** in the oblique view now runs t-SNE on the
+spikes' full oblique coordinates instead of the features, so groups the 2-D
+picture overlaps can pull apart. The embedding replaces the oblique view and is
+an ordinary t-SNE: ↑/↓ steps the perplexity on the same coordinates, the lasso,
+multi-lasso, watershed, zoom/pan and heatmap all work, Shift+O returns to the
+oblique view and F to the features. With two templates the oblique view already
+shows both coordinates, so F leaves it, as before, and says why.
+
+</details>
 
 ## 2026-10-14 — ndManager: empty program parameters are no longer written as `~`
 
