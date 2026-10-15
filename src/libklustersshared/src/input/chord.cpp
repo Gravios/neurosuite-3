@@ -102,8 +102,10 @@ QString Chord::displayString() const
 
 Chord chordFromKeySequence(const QKeySequence& seq)
 {
-    if (seq.isEmpty()) return {};
-    const QKeyCombination comb = seq[0];           // first (and, for a shortcut, only) combo
+    // Only a single key-combo maps to a Chord (chord.h): an empty or multi-combo
+    // sequence ("Ctrl+K, Ctrl+C") is invalid rather than silently its first combo.
+    if (seq.count() != 1) return {};
+    const QKeyCombination comb = seq[0];
     const int key = comb.key();
     if (key == 0 || key == Qt::Key_unknown) return {};
     return Chord::key(key, comb.keyboardModifiers());

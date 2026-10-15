@@ -565,6 +565,10 @@ starts under a held modifier (Ctrl-pan) or with any modifier (base zoom).
 **Mirror a menu action so it's rebindable.** Set `external = true`,
 `defaultChord = chordFromKeySequence(action->shortcut())`. The resolver skips it;
 `applyInputOverridesToActions()` pushes any override back onto the `QAction`.
+A chord is one key-combo: a multi-combo shortcut ("Ctrl+K, Ctrl+C") maps to an
+invalid chord (unbound), and the Preferences ▸ Input key editor records a single
+combo (`setMaximumSequenceLength(1)` on Qt ≥ 6.5; truncated to the first combo on
+older Qt).
 
 ---
 

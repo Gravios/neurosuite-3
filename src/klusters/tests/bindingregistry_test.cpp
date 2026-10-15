@@ -221,6 +221,10 @@ int main()
 
         // Empty sequence -> invalid chord; a non-key chord -> empty sequence.
         CHECK(!chordFromKeySequence(QKeySequence()).isValid());
+        // A multi-combo sequence is not a single chord: invalid, not its first combo.
+        CHECK(!chordFromKeySequence(QKeySequence(QStringLiteral("Ctrl+K, Ctrl+C"))).isValid());
+        CHECK(!chordFromKeySequence(QKeySequence(Qt::CTRL | Qt::Key_K,
+                                                 Qt::CTRL | Qt::Key_C)).isValid());
         CHECK(keySequenceFromChord(Chord::button(Qt::LeftButton)).isEmpty());
     }
 

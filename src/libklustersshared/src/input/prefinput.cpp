@@ -311,9 +311,22 @@ void PrefInput::build()
             } else if (dev == Device::Key || dev == Device::None) {
                 auto* edit = new QKeySequenceEdit(body);
                 edit->setMaximumWidth(220);
+                // A binding is a single key-combo (chordFromKeySequence rejects longer
+                // sequences), so stop recording after one.  setMaximumSequenceLength is
+                // Qt >= 6.5; on older Qt the handler below truncates to the first combo.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+                edit->setMaximumSequenceLength(1);
+#endif
                 rowLayout->addWidget(edit);
                 row.edit = edit;
-                connect(edit, &QKeySequenceEdit::keySequenceChanged, this, [this](const QKeySequence&){
+                connect(edit, &QKeySequenceEdit::keySequenceChanged, this,
+                        [this, edit](const QKeySequence& seq){
+                    if (seq.count() > 1) {
+                        // Re-emits keySequenceChanged with the single combo, which
+                        // runs the update below.
+                        edit->setKeySequence(QKeySequence(seq[0]));
+                        return;
+                    }
                     recomputeConflicts();
                     Q_EMIT changed();
                 });
