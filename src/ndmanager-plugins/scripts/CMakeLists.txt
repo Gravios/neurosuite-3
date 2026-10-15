@@ -87,6 +87,7 @@ install(PROGRAMS
     adaptmodel.py
     adapt_format.py
     ndm_resolve_io.py
+    probe_geometry.py
     process_spikefilter.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 

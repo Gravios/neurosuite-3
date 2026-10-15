@@ -61,6 +61,10 @@ import argparse, math, os, sys, warnings
 from pathlib import Path
 from typing import Optional
 
+# Shared channel → site binding (probe_geometry.py, next to this script).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import probe_geometry  # noqa: E402
+
 import numpy as np
 import yaml
 
@@ -140,8 +144,12 @@ def site_positions_from_probe(probe: dict, n_sites: int,
     """
     sites   = probe.get("sites", {})
     geom    = sites.get("geometry")
-    if geom and isinstance(geom, list) and len(geom) >= n_sites:
-        return np.array(geom[:n_sites], dtype=float)
+    if geom and isinstance(geom, list):
+        # This shank's sites in file order (count_per_shank may differ per shank).
+        shank = probe_geometry.shank_positions(probe)
+        if shank_index < len(shank) and len(shank[shank_index]) >= n_sites \
+                and all(p is not None for p in shank[shank_index][:n_sites]):
+            return np.array(shank[shank_index][:n_sites], dtype=float)
 
     # Geometry groups (compact format used by some probes)
     gg = sites.get("geometry_groups")
@@ -197,10 +205,11 @@ def site_positions_from_yaml(params: dict, group_idx: int) -> Optional[np.ndarra
             None)
         if probe_entry is None:
             return None
-        # Return (probe_entry, n_sites, shank_index) for the caller
-        # to resolve via the probe library
-        n_sites = len(grp.get("channels", []))
-        return probe_entry, n_sites, shank_index
+        # Return (probe_entry, channels, shank_index) for the caller to
+        # resolve via the probe library, by channel number.
+        channels = [int(c["id"]) if isinstance(c, dict) else int(c)
+                    for c in grp.get("channels", [])]
+        return probe_entry, channels, shank_index
     except (KeyError, IndexError, TypeError):
         return None
 
@@ -419,12 +428,21 @@ def main() -> int:
                       file=sys.stderr)
                 result = None  # fall through to probe file path
         if not isinstance(result, np.ndarray) and result is not None:
-            probe_entry, ns_yaml, shank_idx = result
+            probe_entry, grp_channels, shank_idx = result
             probe_path = probe_entry.get("probeFile", "")
             if probe_path:
                 probe = load_probe(probe_path, lib_paths)
                 if probe:
-                    xy_sites = site_positions_from_probe(probe, n_sites, shank_idx)
+                    xy_sites = None
+                    if grp_channels and len(grp_channels) == n_sites and \
+                            probe.get("sites", {}).get("geometry"):
+                        # By channel number: the group may list channels in any order.
+                        off = int(probe_entry.get("channelOffset", 0) or 0)
+                        pos = probe_geometry.positions_for_channels(probe, off, grp_channels)
+                        if all(p is not None for p in pos):
+                            xy_sites = np.array(pos, dtype=float)
+                    if xy_sites is None:
+                        xy_sites = site_positions_from_probe(probe, n_sites, shank_idx)
                     probe_file_used = probe_path
 
     if xy_sites is None or len(xy_sites) < n_sites:

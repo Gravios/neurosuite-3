@@ -87,6 +87,10 @@ import numpy as np
 from pathlib import Path
 from typing import Optional
 
+# Shared channel → site binding (probe_geometry.py, next to this script).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import probe_geometry  # noqa: E402
+
 # Shared chain-of-custody policy (Python mirror of custody.hpp).  Importable
 # because this helper lives alongside ndm_resolve_io in the scripts dir.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -157,10 +161,13 @@ def load_probe_file(probe_file: str, library_paths: list[str]) -> Optional[dict]
 
 
 def site_depths_from_probe(probe: dict, shank_index: int = 0) -> np.ndarray:
-    sites = probe.get("sites", {})
-    n     = sites.get("count_per_shank", 0)
-    if n == 0:
+    """Depths of one shank's sites in file order (used when the group's
+    channels are unknown; see group_depths_from_probe for the normal path)."""
+    sites  = probe.get("sites", {})
+    counts = probe_geometry.shank_counts(probe)
+    if not counts or shank_index >= len(counts) or counts[shank_index] == 0:
         return np.array([])
+    n = counts[shank_index]
 
     gg = sites.get("geometry_groups")
     if gg and isinstance(gg, dict):
@@ -170,12 +177,26 @@ def site_depths_from_probe(probe: dict, shank_index: int = 0) -> np.ndarray:
         d    = [grp * gs + s[1] for grp in range(ng) for s in wg]
         return np.array(d[:n], dtype=float)
 
-    geom = sites.get("geometry")
-    if geom and isinstance(geom, list):
-        return np.array([g[1] for g in geom[:n]], dtype=float)
+    if sites.get("geometry"):
+        pos = probe_geometry.shank_positions(probe)[shank_index]
+        return np.array([p[1] if p is not None else np.nan for p in pos], dtype=float)
 
     sp = sites.get("spacing_um") or 50
     return np.arange(n, dtype=float) * sp
+
+
+def group_depths_from_probe(probe: dict, entry: dict, channels: list[int],
+                            shank_index: int) -> np.ndarray:
+    """Depth of each of the group's channels, looked up by channel number
+    (channel offset + site index, probe_geometry.py), so the group may list
+    its channels in any order.  Falls back to the shank's file order when the
+    group's channels are unknown."""
+    if channels and probe.get("sites", {}).get("geometry"):
+        off = int((entry or {}).get("channelOffset", 0) or 0)
+        d = np.array(probe_geometry.depths_for_channels(probe, off, channels), dtype=float)
+        if np.any(np.isfinite(d)):
+            return d
+    return site_depths_from_probe(probe, shank_index)
 
 
 def build_group_probe_map(param: dict) -> dict:
@@ -257,7 +278,7 @@ def get_group_depths(g: int,
     probe = probe_cache[pf]
     if probe is None:
         return None
-    return site_depths_from_probe(probe, shk)
+    return group_depths_from_probe(probe, entry, probe_geometry.group_channels(param, g), shk)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

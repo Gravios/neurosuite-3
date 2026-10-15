@@ -17,18 +17,20 @@ For each entry in probes[]:
         --probe-library argument
         SESSION_DIR/probes/
 
-  2.  Extract from the .probe file:
+  2.  Extract from the .probe file (rule shared with the other plugins and
+      Klusters, see probe_geometry.py):
         n_shanks          = probeFile.shanks.count
-        n_per_shank       = probeFile.sites.count_per_shank
-        channelMap.map    (optional list of n_shanks sublists)
+        count_per_shank   = probeFile.sites.count_per_shank (int, or a list
+                            when shanks differ)
+        channelMap.map    (optional)
 
-      If channelMap.map is null, channels are assigned sequentially:
-        shank i → [offset + i*n, …, offset + (i+1)*n − 1]
-      where offset = probes[].channelOffset.
+      Sites are listed shank by shank in channel order (the library files list
+      the top site first): site j belongs to channel offset + j, where
+      offset = probes[].channelOffset.
 
-      If channelMap.map is provided it is a flat list of n_shanks × n_per_shank
-      hardware channel indices in shank-major order; channelOffset is added to
-      each entry.
+      If channelMap.map is provided (flat list, or one sublist per shank),
+      site j belongs to channel offset + map[j]; its position is still
+      geometry[j].
 
   3.  Assign group IDs starting from 1 (or from the highest existing group ID
       + 1 if --overwrite false and groups already exist).
@@ -61,6 +63,10 @@ import sys
 from pathlib import Path
 
 import yaml
+
+# Shared channel → site binding (probe_geometry.py, next to this script).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import probe_geometry  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -109,70 +115,22 @@ def parse_probe(probe_path: Path,
                 channel_offset: int) -> tuple[list[list[int]], list[list[list[float]]]]:
     """
     Return (shanks, geometries):
-      shanks     : list of lists of physical (ADC) channel indices per shank
+      shanks     : list of lists of physical (ADC) channel indices per shank,
+                   in file order (top site first in the library files)
       geometries : list of lists of [x_um, y_um] per site per shank,
                    parallel to shanks.  None entries where geometry is absent.
 
-    The geometry is read from probeFile.sites.geometry (flat list of [x,y]
-    for all sites in shank-major order).  When absent, geometries[i] is a
-    list of Nones with the same length as shanks[i].
+    Site j of the file belongs to channel channel_offset + j, or
+    channel_offset + channelMap.map[j] when a map is given; its position is
+    sites.geometry[j] either way (probe_geometry.py).  count_per_shank may
+    differ between shanks (a list).
     """
     with open(probe_path) as fh:
         pf = yaml.safe_load(fh)
-
-    root = pf.get("probeFile", {})
-
-    shanks_cfg = root.get("shanks", {})
-    sites_cfg  = root.get("sites",  {})
-
-    n_shanks     = int(shanks_cfg.get("count",          1))
-    n_per_shank  = int(sites_cfg.get( "count_per_shank", 1))
-
-    # Full probe geometry: flat list of [x_um, y_um] for all sites,
-    # shank-major order (sites 0..n-1 = shank 0, sites n..2n-1 = shank 1, ...).
-    all_geometry: list = sites_cfg.get("geometry") or []
-
-    ch_map_cfg   = root.get("channelMap", {}) or {}
-    explicit_map = ch_map_cfg.get("map")  # None or list
-
-    shanks:     list[list[int]]         = []
-    geometries: list[list[list[float]]] = []
-
-    if explicit_map and isinstance(explicit_map, list):
-        if isinstance(explicit_map[0], (int, float)):
-            flat = [int(c) for c in explicit_map]
-            if len(flat) != n_shanks * n_per_shank:
-                raise ValueError(
-                    f"{probe_path}: channelMap.map length {len(flat)} "
-                    f"!= n_shanks({n_shanks}) × n_per_shank({n_per_shank})"
-                )
-            for i in range(n_shanks):
-                shanks.append([channel_offset + flat[i * n_per_shank + j]
-                               for j in range(n_per_shank)])
-                # geometry slice: flat[i*n .. (i+1)*n] indexes into all_geometry
-                geo_slice = []
-                for j in range(n_per_shank):
-                    idx = flat[i * n_per_shank + j]
-                    geo_slice.append(all_geometry[idx]
-                                     if idx < len(all_geometry) else None)
-                geometries.append(geo_slice)
-        else:
-            for sub in explicit_map:
-                shanks.append([channel_offset + int(c) for c in sub])
-                geometries.append([None] * len(sub))
-    else:
-        # Sequential assignment: site i of shank k = all_geometry[k*n + i]
-        for i in range(n_shanks):
-            base = channel_offset + i * n_per_shank
-            shanks.append(list(range(base, base + n_per_shank)))
-            geo_slice = []
-            for j in range(n_per_shank):
-                flat_idx = i * n_per_shank + j
-                geo_slice.append(
-                    [float(v) for v in all_geometry[flat_idx]]
-                    if flat_idx < len(all_geometry) else None)
-            geometries.append(geo_slice)
-
+    probe = pf.get("probeFile", {}) or {}
+    shanks = probe_geometry.shank_channels(probe, channel_offset)
+    geometries = [[list(p) if p is not None else None for p in sh]
+                  for sh in probe_geometry.shank_positions(probe)]
     return shanks, geometries
 
 
