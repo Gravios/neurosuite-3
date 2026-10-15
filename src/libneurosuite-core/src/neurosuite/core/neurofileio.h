@@ -259,7 +259,9 @@ struct WtiIndex {
 // the reader does not implement (ok = false).  `nRows`, when present, is checked
 // against the rows actually parsed.
 NEUROSUITE_CORE_EXPORT WtiIndex readWti(const std::string& path);
-// Write a .wti from `idx` (its version field is honoured; rows written in order).
+// Write a .wti from `idx` (rows written in order).  The version written is
+// decided by CONTENT, not by idx.version: v2 (with the parent column) iff some
+// row has parent >= 0, else v1 — byte-identical to pre-v2 output (see above).
 // Returns false if the file cannot be opened.
 NEUROSUITE_CORE_EXPORT bool     writeWti(const std::string& path, const WtiIndex& idx);
 
@@ -353,8 +355,9 @@ struct WtlForest {
 // Parse a .wtl.  Rejects a missing file, a bad "wtl <version>" line, or a version
 // the reader does not implement (ok = false).
 NEUROSUITE_CORE_EXPORT WtlForest readWtl(const std::string& path);
-// Write a .wtl from `f` (its version field is honoured; nodes written in order).
-// Returns false if the file cannot be opened.
+// Write a .wtl from `f` (nodes written in order).  Always writes the current
+// version, `wtl 2` (summaries), whatever f.version says — v1 (spike lists) is
+// read-only.  Returns false if the file cannot be opened.
 NEUROSUITE_CORE_EXPORT bool       writeWtl(const std::string& path, const WtlForest& f);
 
 // ── .wtl view-model helpers (trivial filters, shared by a viewer and its test) ──
