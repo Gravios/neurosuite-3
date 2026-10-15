@@ -768,6 +768,36 @@ corrected; the text describes the problem as it was.
     checks that the string survives, so it passes, but it is not a valid
     example.
 
+**Found by the 2026-10-15 audit (all fixed)**
+
+34. **Fixed (0517):** an ndmanager save rebuilt the YAML from its model and
+    dropped every key it does not model (per-group `probeId`, `shankIndex`,
+    `sitePositions_um`, `klustakwik:`, `nCells`, extra acquisition fields,
+    top-level blocks). `ParameterYamlWriter::setBaseDocument(path)` now starts
+    from the file the document was loaded from and writes ndmanager's values
+    over it; groups are matched with the now-public `matchExistingGroups`.
+    Test: `klustersshared_yamlwriter_test`.
+35. **Fixed (0518):** per-group integers (`nSamples`, `peakSampleIndex`,
+    `nFeatures`, `probeId`, `shankIndex`) written as `42.0` read as 0, and
+    ndmanager then saved the 0. They share `acquisitionInt`'s tolerant read.
+36. **Fixed (0519):** a group whose `channels` is null or missing was skipped
+    and the groups after it renumbered on save; it is kept as an empty group.
+37. **Fixed (0520):** probe entries: `ndm_setupgroups` writes `probeId`, the
+    C++ reader read only `id`. All readers now take `probeId`, then `id`,
+    then the list position; the writer writes `probeId`.
+38. **Fixed (0523):** every xcorr back end returned shift `-maxShift` for a
+    zero-energy spike or template when `minScore` was 0 (KiloKlustaKwik
+    always passes 0); an undefined correlation now gives shift 0, score 0.
+39. **Fixed (0524):** the CUDA/HIP reduction did not keep the lowest lag on
+    ties as its comment claimed; it does now, matching OMP/SYCL.
+40. **Fixed (0525):** `perSpikeCentroidShifts` rolled a zero-energy spike by
+    about N/2 and let it bias the target. Test:
+    `klustersshared_realign_kernels_test`.
+41. **Fixed (0526):** `chordFromKeySequence` took the first combination of a
+    multi-key sequence although its header says that is invalid; the
+    Preferences key editor now records one combination (Qt ≥ 6.5 via
+    `setMaximumSequenceLength`, older Qt by truncating).
+
 **Widgets and utilities**
 
 25. **Fixed (0493):** both have a deep-copy `operator=` (copy-and-swap), and

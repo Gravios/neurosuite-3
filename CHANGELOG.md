@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-15 | [Audit fixes: ndmanager keeps unknown YAML keys; aligners and re-extraction follow the .spk convention; re-extraction threshold base](#2026-10-15--audit-fixes-ndmanager-keeps-unknown-yaml-keys-aligners-and-re-extraction-follow-the-spk-convention-re-extraction-threshold-base) |
 | 2026-10-15 | [Klusters: t-SNE of the oblique coordinates](#2026-10-15--klusters-t-sne-of-the-oblique-coordinates) |
 | 2026-10-14 | [ndManager: empty program parameters are no longer written as `~`](#2026-10-14--ndmanager-empty-program-parameters-are-no-longer-written-as-) |
 | 2026-10-14 | [ndm_detectspikes (stderiv): refuse one-channel groups and flat signals](#2026-10-14--ndm_detectspikes-stderiv-refuse-one-channel-groups-and-flat-signals) |
@@ -48,6 +49,54 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-15 — Audit fixes: ndmanager keeps unknown YAML keys; aligners and re-extraction follow the .spk convention; re-extraction threshold base
+
+<details>
+<summary>Details</summary>
+
+An audit of the shared libraries and the spike tools, each finding checked a
+second time against code, docs and history before it was fixed.
+
+**Behaviour changes to know about**
+
+- **`ndm_reextractspikes` threshold scale.** The stderiv re-extractor now
+  measures noise the way detection does (`thresholdNoise`, default `sdiff`)
+  instead of always on the stderiv signal. On a session that does not set
+  `thresholdNoise`, a tuned `reextractThresholdFactor` therefore gives
+  thresholds higher by each channel's median|sdiff| / median|stderiv| ratio
+  (about 1.6 on the reference session). Divide the factor by that ratio, or
+  set `thresholdNoise: stderiv`, to keep the old thresholds.
+- **ndmanager saves keep what they do not model** — per-group `probeId`,
+  `shankIndex`, `sitePositions_um`, `klustakwik:`, `nCells`, extra
+  acquisition fields and blocks such as `sourceRecording`. They used to be
+  dropped on every save. Probe entries are now written with `probeId`; every
+  reader accepts `probeId` and `id`.
+- **Aligned `.spk` files made before this change mix two conventions**
+  (shifted rows were re-cut with a zero seed and truncation). Re-extract them
+  at their `.res`. Both aligners and the re-extractor now detect the `.spk`'s
+  convention and follow it.
+- Aligners never move a window to sample 0 or past the end of the `.fil`; a
+  bare `stderiv` token on a session with `sdiffPairs` now aligns with the
+  pattern, and `ndm_alignspikes_pca` accepts `stderiv_C4`/`_C5`.
+- The sdiff detector and the re-extractors refuse (skip, for re-extraction)
+  one-channel groups; re-extraction rejects a spike exactly one refractory
+  period after the previous one, like detection.
+- Groups with no channels keep their number (YAML readers, `ndm_xml2yaml`)
+  instead of renumbering the groups after them.
+- Zero-energy spikes get shift 0 in every xcorr back end and in centroid
+  alignment; GPU ties pick the lowest lag like the CPU.
+- `.wti`/`.wtl` window times and `.evt` times are written at full precision;
+  binary `.res` detection no longer mistakes ~4% of files for text; a
+  truncated `.col` or malformed `.tcl` is refused instead of half-read.
+
+**Crashes and memory errors fixed:** detection on groups wider than 64
+channels (stack overrun), a read past the previous buffer in all three
+detectors, an untransformed look-ahead row at every 50,000-sample chunk edge
+(could move a timestamp), uncaught exceptions on corrupt `.fet`/`.wtl`/`.eap`
+headers.
+
+</details>
 
 ## 2026-10-15 — Klusters: t-SNE of the oblique coordinates
 

@@ -643,6 +643,21 @@ Inconsistencies found while writing this page. None has been fixed here.
 | C10 | `custody.hpp` `staleAfterRealign` | Unused by any C++ code (only the Python mirror's `stale_after_realign` exists). |
 | C11 | `test/CMakeLists.txt` | The core tests ask for `cxx_std_17`, but `CMAKE_CXX_STANDARD 20` is set for the whole `libneurosuite-core` directory, so they compile as C++20 and do not prove the C++17 compatibility that `pca_projection.hpp` and the plugins rely on. |
 
+**Found by the 2026-10-15 audit (all fixed)**
+
+| # | Where | Issue |
+|---|---|---|
+| C12 | `isBinaryClusterRes`, `templategen::readResAny` | **Fixed (0494).** A binary `.res` whose first timestamp's low byte is an ASCII digit was read as text; `readResAny` then returned garbage with ok=true. Detection now scans the first 4 KiB for non-text bytes; new `readResAuto(path, ok, binary)` checks the result and is used by `readClusterRes`, `readResAny` and `process_initeap`. |
+| C13 | `writeWtl`, `writeWti`, `writeEvt`; `partitionFromWindows` | **Fixed (0495).** Doubles were written at 6 significant digits; a reloaded `.wtl` gained a sliver drift region. Now shortest round-trip fixed notation (`.evt`: `%.6f` ms); `partitionFromWindows` absorbs the rounding of older files. |
+| C14 | `running_stats.hpp` `combineMeanStd`, `regrainForest` | **Fixed (0496).** A summary-less (v1 `.wtl`) side silently discarded the other side. New `stats::hasSummary`; a side without a summary contributes nothing; order-independent. |
+| C15 | `readColAccepted` | **Fixed (0497).** Returned a prefix of a truncated file; now empty with the new optional `bool* ok` = false. Klusters reports it. |
+| C16 | `readFet`, `readWtl`, `readEap`, `readColAccepted` | **Fixed (0498).** Absurd header counts threw `length_error`/`bad_alloc` from `reserve`; counts are checked against the file before allocating. With this, C4 (`stoi`) is again the only throwing path besides genuine out-of-memory. |
+| C17 | `readFetBinary` | **Fixed (0499).** Rejected the zero-spike file `writeFetBinary` writes. |
+| C18 | `templategen::generate` | **Fixed (0500).** An `energyVariant` outside `variants` threw (`map::at`) or was never length-checked; now validated like `variants`. |
+| C19 | `readTcl` / `templateclass.hpp` | **Fixed (0501).** Entries were in file order and malformed rows were skipped, shifting columns. `readTcl` now returns entries indexed by col and rejects malformed, duplicate, missing or out-of-range rows; callers no longer overwrite an invalid `.tcl` with a fresh one. |
+| C20 | `stderiv_transform.hpp` `spatialDeriv` | **Fixed (0502).** First order on a one-channel group read `chanRow[-1]`; it passes the value through. |
+| D15 | `neurofileio.h` | **Fixed (0503).** `writeWti`/`writeWtl` were said to honour the `version` field; `.wti`'s version follows its content and `.wtl` is always v2 (intended). |
+
 **Comments and documentation**
 
 | # | Where | Issue |

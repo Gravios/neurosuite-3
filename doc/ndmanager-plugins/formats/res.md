@@ -25,9 +25,11 @@ fileSize = nSpikes × 8
   `process_spikefilter.py`) and Klusters read binary only.
 
 The auto-detection (`neurofileio::isBinaryClusterRes`) treats a file as binary
-when its size is a non-zero multiple of 8 **and** its first byte is not an ASCII
-digit. Text `.res` files written for those readers (e.g. Plexon's
-[`.pxres`](pxspikes.md)) must not hold negative times.
+when its size is a non-zero multiple of 8 **and** its first 4 KiB contain a
+byte that cannot occur in text (anything but digits, a sign and whitespace) —
+a binary timestamp below 2^56 always has a zero high byte. `readResAuto` then
+checks the result: a text file must hold exactly one integer per line, and a
+binary one only plausible times; anything else is a failed read, not a guess.
 
 ## Naming
 
