@@ -68,7 +68,8 @@ struct ReextractArgs {
     int peakSearchLength  = -1;       // local-extremum search window
 
     // Detection timing ------------------------------------------------------
-    int   refractoryPeriod = -1;      // minimum samples between accepted spikes
+    int   refractoryPeriod = -1;      // accepted spikes are > this many samples
+                                      // apart (as the extractor: Δ <= r is rejected)
     int64_t maskHalfWidth  = -1;      // reject candidate if within ± of any
                                       // masked timestamp (defaults to refractory)
 

@@ -23,6 +23,9 @@
  zero threshold on any channel are skipped with a warning and get no output
  files; process_extractspikes_stderiv refuses both.
 
+ Refractory rule as the extractor's: a candidate within <= refractoryPeriod
+ samples of the last accepted (or masked) spike is dropped.
+
  Mask semantics are identical: candidate peaks within ± maskHalfWidth of
  any timestamp listed in the per-group mask .res.N are rejected.
 
@@ -93,7 +96,8 @@ struct ReextractStderivArgs {
     int spikeLength       = -1;
     int timeBeforeSpike   = -1;
     int peakSearchLength  = -1;
-    int refractoryPeriod  = -1;
+    int refractoryPeriod  = -1;   // accepted spikes are > this many samples apart
+                                  // (as the extractor: Δ <= r is rejected)
     int64_t maskHalfWidth = -1;
 
     int         totalChannelNumber = 0;

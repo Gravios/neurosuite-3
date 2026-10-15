@@ -125,7 +125,8 @@ Set in the `ndm_reextractspikes` block (see [parameters](../parameters.md)):
 `thresholdFactor`, `refractoryPeriod`, `peakSearchLength`, `start` and
 `duration` are mandatory; they are read from this block and fall back to the
 [`ndm_detectspikes`](spike-detection.md) block. `refractoryPeriod` and
-`peakSearchLength` are passed to the engine; `start`/`duration` set the
+`peakSearchLength` are passed to the engine (as in detection, a spike must lie
+more than `refractoryPeriod` samples after the previous one); `start`/`duration` set the
 threshold window. `thresholdFactor` itself is only used for the empty-factor
 default above. `thresholdNoise` (optional, `sdiff` | `stderiv`, `stderiv`
 method only) is read the same way and passed to the engine as `-T`; empty

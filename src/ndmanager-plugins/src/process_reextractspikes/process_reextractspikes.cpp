@@ -13,7 +13,10 @@
  * loop per group is then:
  *
  *   for t in [peakSample, nSamples - (spikeLength - peakSample)):
- *     if (t - lastAccepted) < refractoryPeriod:  skip
+ *     if (t - lastAccepted) <= refractoryPeriod: skip   (as the extractor's
+ *                                                 isRefractoryPeriod: a spike
+ *                                                 exactly r after the last is
+ *                                                 rejected)
  *     over = firstChannelOverThreshold(t, grp)
  *     if over == none:                           skip
  *     peak = localExtremum(over, [t, t + peakSearchLength))
@@ -380,7 +383,10 @@ int main(int argc, char **argv)
         int64_t lastAccepted = INT64_MIN / 2; // impossibly far in the past
 
         for (int64_t t = tStart; t < tEnd; ++t) {
-            if (t - lastAccepted < refPer) continue;
+            // Refractory as process_extractspikes(_stderiv): an event within
+            // <= refractoryPeriod samples of the last one is dropped.  The
+            // peak found below is >= t, so it then lies > refPer after it.
+            if (t - lastAccepted <= refPer) continue;
 
             // Identify first channel crossing threshold at time t.
             int   hitCh    = -1;   // index into chans[]

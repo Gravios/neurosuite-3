@@ -656,7 +656,10 @@ int main(int argc, char **argv)
         int64_t lastAccepted = INT64_MIN / 2;
 
         for (int64_t t = tStart; t < tEnd; ++t) {
-            if (t - lastAccepted < refPer) continue;
+            // Refractory as process_extractspikes_stderiv (isRefractoryPeriod,
+            // hybrid merge): an event within <= refractoryPeriod samples of
+            // the last one is dropped; the peak found below is >= t.
+            if (t - lastAccepted <= refPer) continue;
 
             int hitCi = -1; bool hitNeg = false;
             for (int ci = 0; ci < nChanG; ++ci) {
