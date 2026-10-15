@@ -40,14 +40,15 @@ reference.
 - **[Concurrency](../../src/klusters/docs/CONCURRENCY.md)** — ✅ — the background-job architecture: the two `KlustersJobPool` lanes, the `KlustersJobToken` cancellation model, the snapshot-and-retire worker pattern, supersede-vs-stop, `RequestTicket`, OpenMP, and the serial realign lane.
 - **Curation tools & workflows** — 🚧 — how a tool mode is wired end to end: new-cluster, split, watershed, hierarchy (child view), and templates. (Operationally, see the [cluster-curation workflow](../workflows/cluster-curation.md); the data-side primitives are in [Document model](../../src/klusters/docs/DOCUMENT_MODEL.md) §4.)
 - **Curation matrices** — 🚧 — the error / template / residual / drift matrices and the shared navigator + click helpers. (Covered structurally in [View system](../../src/klusters/docs/VIEW_SYSTEM.md) §5 until a dedicated reference exists.)
-- **Preferences & persistence** — 🚧 — the generated Preferences pages, QSettings storage, and keymap profiles. (The Preferences ▸ Input page, keymap profiles, and `InputPrefsStore` persistence are covered by the Input system references.)
+- **Preferences & persistence** — 🚧 — the generated Preferences pages, QSettings storage, and keymap profiles. (The page framework and how to add a page are in the [libklustersshared reference](../../src/libklustersshared/docs/LIBRARY.md); the Preferences ▸ Input page, keymap profiles, and `InputPrefsStore` persistence are covered by the Input system references.)
 
 ### neuroscope internals
 - **[Input system](../../src/neuroscope/docs/INPUT_SYSTEM.md)** — ✅ — how NeuroScope adopts the shared `input::` engine: the registration sites, the TraceView mouse decomposition (the seven tool gestures), the `BaseFrame` frame-zoom seam (`managesOwnPrimaryPress`), `InputPrefsStore`/`Configuration` persistence, the bundled Default keymap, and the derived cheat-sheet + active-tool indicator. Read the [Klusters Input system](../../src/klusters/docs/INPUT_SYSTEM.md) first for the engine itself.
 
 ### Core libraries
+- **[libneurosuite-core API](../../src/libneurosuite-core/docs/CORE_API.md)** — ✅ — the Qt-free core (`Neurosuite::core`): how to link and include it, the shared conventions (waveform layouts, units, rounding), one section per header — the file layer and naming policy (summarised; detail in File formats below), spike extraction, the stderiv transform, PCA projection, projection scope, running statistics, collision decomposition (`decollide`, `decollide_eap`), drift partitioning, template generation and template classes — with each header's consumers and twin implementations, the tests and the cross-language conformance vectors, and known issues.
 - **[File formats](../../src/libneurosuite-core/docs/FILE_FORMATS.md)** — ✅ — `neurofileio`, the Qt-free authoritative reader/writer for every on-disk format (`.dat`/`.res`/`.clu`/`.fet`/`.spk`/`.evt`/`.col` and the `.eap`/`.tcl`/`.wti`/`.wtf`/`.wtl` template-library family), with the exact byte layouts, the per-group chain-of-custody naming, and a consolidated doc-vs-code discrepancy table. Lives in `libneurosuite-core`.
-- **libklustersshared** — the shared Qt6 library (`neurosuite-qt`). Its two biggest surfaces have their own references: the `input::` engine (see [Input system](../../src/klusters/docs/INPUT_SYSTEM.md)) and the `DockArea` container (see [View system](../../src/klusters/docs/VIEW_SYSTEM.md) §3).
+- **[libklustersshared library reference](../../src/libklustersshared/docs/LIBRARY.md)** — ✅ — the shared Qt6 library (`Neurosuite::qt`, target `neurosuite-qt`): CMake package and build options, the YAML parameter layer (detail in the [YAML reference](../libklustersshared/README.md)), the `input::` engine (detail in [Input system](../../src/klusters/docs/INPUT_SYSTEM.md)), `DockArea` (detail in [View system](../../src/klusters/docs/VIEW_SYSTEM.md) §3), the `xcorr` realign engine and its OpenMP / CUDA / HIP / SYCL back ends, the paged preferences-dialog framework with a recipe for adding a page, the widgets and utilities (incl. the `sdiffPairs` grammar), the tests, and known issues.
 
 ### Other components
 - **kiloklustakwik · ndmanager-plugins · ndmanager** — 🚧 — internals references as they are written; component **usage** docs already live in [`doc/`](../README.md), and the deep algorithm notes in [`doc/design/`](../design/README.md).
@@ -67,7 +68,7 @@ Deep per-topic technical notes and multi-program walkthroughs live under [`doc/`
 ### Working on the code
 - **[Coding & layout standards](STANDARDIZATION.md)** — ✅ — directory layout, changelog, and coding conventions.
 - **[Contributing](../../.github/CONTRIBUTING.md)** — ✅ — coding standards, the patch-series workflow, commit conventions, the changelog/doc layout, and the verification gates a change passes before shipping.
-- **Testing** — 🚧 — how to add a ctest suite. (Building and running the existing suites is in [BUILD.md](../BUILD.md) §6.)
+- **Testing** — 🚧 — how to add a ctest suite. (Building and running the existing suites is in [BUILD.md](../BUILD.md) §6; the shared libraries' suites, the conformance vectors and recipes for adding a test are in the [libneurosuite-core](../../src/libneurosuite-core/docs/CORE_API.md) and [libklustersshared](../../src/libklustersshared/docs/LIBRARY.md) references.)
 
 ---
 

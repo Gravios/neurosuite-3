@@ -5,6 +5,11 @@
 YAML parameter-file format and exposes a set of data types and GUI widgets that are common
 across applications.
 
+This page covers the YAML layer and the YAML schema. The whole library — its
+CMake package, the `input::` engine, the preferences-page framework, the
+`xcorr` realign engine, the utilities and the tests — is described in the
+developer reference [`src/libklustersshared/docs/LIBRARY.md`](../../src/libklustersshared/docs/LIBRARY.md).
+
 ---
 
 ## What it contains
@@ -322,19 +327,23 @@ A worked session example is in `templates/jg05-20120316.yaml`.
 
 | Dependency | Purpose | Required |
 |---|---|---|
-| Qt6 (Core, Gui, Widgets, Xml) | UI framework and data types | Yes |
+| Qt6 ≥ 6.4 (Core, Gui, Widgets) | UI framework and data types | Yes |
 | yaml-cpp | YAML parsing and emission | Yes |
+| libneurosuite-core (`Neurosuite::core`) | on-disk formats (`neurofileio`), shared algorithms | Yes (built first in the monorepo) |
 
 ---
 
 ## Build order
 
-`libklustersshared` must be installed before ndmanager or klusters.
+Inside the monorepo the top-level `CMakeLists.txt` builds the libraries before
+the applications that link them:
 
 ```
-libklustersshared
-    ├── ndmanager
-    └── klusters
+libneurosuite-core   (Neurosuite::core)
+    └── libklustersshared   (Neurosuite::qt)
+            ├── ndmanager
+            ├── neuroscope
+            └── klusters
 ```
 
 See [BUILD.md](../BUILD.md) for build options, platforms and GPU backends.

@@ -90,7 +90,7 @@ copies.** Status of each:
   (Its `KK.cpp` is still 17,545 lines — see "monolithic TUs" below.)
 - **Format I/O — CENTRALIZED (0008–0017).** The `.clu`/`.res`/`.fet`/`.evt`/
   `.dat` readers that were re-implemented per app now go through a single
-  `neurofileio` in libklustersshared. (The *parameter/session YAML* readers are
+  `neurofileio`, now in libneurosuite-core. (The *parameter/session YAML* readers are
   a separate problem, still open — next item.)
 - **Six config readers for two file formats — OPEN.** `klustersyamlreader`,
   `neuroscopeyamlreader`, `descriptionyamlreader`, `ndmanageryamlreader`,
@@ -158,8 +158,8 @@ fork at the build level).
 truth for every on-disk format. Pure, std-only, unit-testable without Qt or
 hardware. Owns:
 - `neurofileio` — `.clu`/`.res`/`.fet`/`.evt` and interleaved-int16 `.dat`/`.lfp`
-  (**landed and in use**: `klustersshared/neurofileio.{h,cpp}`, all readers
-  migrated).
+  (**landed and in use**: `src/libneurosuite-core/src/neurosuite/core/neurofileio.{h,cpp}`,
+  all readers migrated; see `src/libneurosuite-core/docs/FILE_FORMATS.md`).
 - one **parameter model** + reader/writer, replacing the six per-app YAML
   readers (**not yet** — this is Stage 1).
 - the **session model** primitives the `.nrs` reader/writer build on.
