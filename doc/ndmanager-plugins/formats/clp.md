@@ -1,48 +1,61 @@
-# `.clp.<method>.N` — child→parent (atom→fiber) map
+# `.clp.<method>.N` — atom → fiber map
 
-The **linkage** file of a hierarchical clustering session: which fiber
-each atom belongs to. Unlike `.clu`/`.clc`, this is indexed by
-**cluster ID**, not by spike, so it is `O(nAtoms)` rather than
-`O(nSpikes)`. It carries the same `<method>` tag as the `.clu`/`.clc` it
-links (see the [variant naming convention](naming.md)).
+The linkage file of a hierarchical clustering: for each atom of the
+[`.clc`](clc.md) layer, the fiber of the [`.clu`](clu.md) layer it belongs to.
+It is indexed by **atom id**, not by spike.
+
+The per-spike `.clu` and `.clc` are the source of truth; the `.clp` is a cache
+of the map they imply.
 
 ## Layout
 
-Binary, little-endian, same clu-family framing as [`.clu.N`](clu.md):
+Binary, little-endian, the `.clu` framing:
 
 ```
-int32_t   header                     (4 bytes)
-nAtoms ×  int32_t  parentFiberId      (one per atom, indexed by atom ID)
+int32            header (highest atom id)
+nAtoms × int32   parent fiber id, entry i = atom i + 1
+nAtoms = (fileSize − 4) / 4
 ```
 
-- The number of atoms is derived from the file size:
-  `nAtoms = (fileSizeBytes − 4) / 4`. The 4-byte header is written (it
-  carries the highest atom ID) but readers ignore it and use the size.
-- Entry `i` (0-based) is the parent **fiber** ID of atom `i + 1` — atom
-  IDs are global and 1-based, so `parent[c − 1]` owns atom `c`.
-- A parent ID of `0` means the atom is noise / unmapped and is skipped
-  when building the hierarchy maps.
+- Atom ids are global and 1-based: `parent[c − 1]` is the fiber of atom `c`.
+- `0` means the atom is noise / unmapped.
+- Readers derive `nAtoms` from the file size and ignore the header.
 
-## Role
+## How Klusters uses it
 
-The `.clp.N` is the **authoritative** source for the atom→fiber map:
-it is exact even if an atom ID were reused across the per-spike arrays,
-and it needs no per-spike scan. When it is present and readable, Klusters
-builds `childToParent` / `parentToChildren` directly from it. When it is
-absent or unreadable, Klusters falls back to scanning the aligned
-[`.clu.N`](clu.md) (parent) and [`.clc.N`](clc.md) (child) per-spike
-arrays, keeping the first-seen owner for each atom and warning if the
-nesting invariant is violated.
+On open, Klusters builds the atom → fiber map by scanning the per-spike `.clu`
+and `.clc`:
 
-## Lifecycle
+- With both readable, the scan wins. The `.clp`, if present, is compared and a
+  stale one is reported (`.clp is STALE`); it is regenerated on the next Save.
+- Only when the per-spike files cannot be read is the map built from the `.clp`
+  alone, with a warning that it may not reflect the current curation.
 
-`.clp.N` is one third of the hierarchical triple `.clu.N` + `.clc.N` +
-`.clp.N`. On **save**, Klusters rewrites the `.clc.N` and `.clp.N`
-siblings together from the edited hierarchy (each with a `.bak` backup),
-so the fiber layer (`.clu.N`), the atom layer (`.clc.N`), and this map
-stay consistent. See
-[Hierarchical clustering](../../klusters/hierarchical-clustering.md).
+On **Save** Klusters rewrites an existing `.clp` from its map (keeping a `.bak`
+copy) whenever the session is hierarchical, even if the hierarchical view was
+never opened. It does not write the `.clp` when the scan found an atom under two
+fibers and the atom layer was never loaded — that map would record an arbitrary
+owner; open the hierarchical view (or use Repair Nesting) and save again. Klusters
+does not create a `.clp` that did not exist.
+
+## Naming
+
+`.clp` is not in the custody type tables ([naming](naming.md#files-outside-the-type-tables)).
+Klusters finds it by replacing `.clu.` with `.clp.` in the name of the opened
+`.clu`, so the triple shares base, method, group and suffix:
+`rat01.clu.stderiv_C5.3` / `rat01.clc.stderiv_C5.3` / `rat01.clp.stderiv_C5.3`.
+
+## Writers and readers
+
+- **Written** by fiber-kit together with the `.clc`, and rewritten by Klusters
+  on Save.
+- **Read** by Klusters.
+
+## See also
+
+- [`.clu`](clu.md), [`.clc`](clc.md).
+- [Hierarchical clustering](../../klusters/hierarchical-clustering.md).
 
 ---
 
-*Part of the [ndmanager-plugins](../README.md) file-format reference.*
+*Part of the [ndmanager-plugins](../README.md) reference.*

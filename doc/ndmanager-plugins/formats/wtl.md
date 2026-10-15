@@ -1,53 +1,78 @@
-# `.wtl.N` — manual template-lineage forest (version-tagged text)
+# `.wtl.N[.stage]` — manual template-lineage forest (versioned text)
 
-The curator's hand-built lineage for a spike group's template library: a
-**forest**, one tree per template class, that the generator re-medians into the
-`.wtf` waveform stack and its [`.wti`](wti.md) index. Text, per group, the
-curator-authored companion to `.wti`/`.wtf`. Read back by klusters
-(`templatelineagestore`); the authoritative reader/writer is
-`neurofileio::readWtl` / `writeWtl` (see
-[`../../../src/libneurosuite-core/docs/FILE_FORMATS.md`](../../../src/libneurosuite-core/docs/FILE_FORMATS.md) §4.5).
+The curator's hand-built template lineage for a spike group: a forest with one
+tree per template class. Each node is a running summary (mean, standard
+deviation and count) of the spikes the curator selected for it. Where
+[`.wti`](wti.md) / [`.wtf`](wtf.md) are a library generated automatically from
+the clustering, the `.wtl` is the editable source of a curated model.
+
+**Naming.** Method-less, per group and per stage:
+`<base>.wtl.<group>[.<stage>]` (a `.` in the stage tag is written as `_`).
+
+**Writers / readers.** Klusters' template lineage editor
+(`templatelineagestore`), through `neurofileio::readWtl` / `writeWtl` in
+`libneurosuite-core` (see also
+[`FILE_FORMATS.md` §4.5](../../../src/libneurosuite-core/docs/FILE_FORMATS.md)).
+Committing a lineage writes the `.wtl` and renders the model: each node's
+stored mean, rounded to int16, becomes one record of
+`<base>.mtf.<method>.<group>[.<stage>]`, indexed by
+`<base>.mti.<group>[.<stage>]` (the `.wtf` / `.wti` layouts, `.wti` version 2
+with `parent` columns). No `.spk` is re-read; the generated `.wti` / `.wtf` are
+not touched. A forest whose nodes are all empty placeholders is not committed.
+
+## Format (version 2)
 
 ```
 wtl 2
 nSamples 42
 nChannels 8
 nNodes 3
-node 0 3 drift-root   -1 0   720  118
-mean 336 ...        # nSamples*nChannels floats (0 = placeholder)
-std  336 ...
-node 1 3 adapt-leaf    0 0.0 0.5  140
+# node class kind parent a b count
+# mean <N> ...  then  std <N> ...   (N = nSamples*nChannels, 0 = placeholder)
+node 0 3 drift-root -1 0 720 118
+mean 336 12.5 14.1 ...
+std 336 3.2 3.0 ...
+node 1 3 adapt-leaf 0 0.0 0.5 140
 mean 336 ...
-std  336 ...
-node 2 7 drift-root   -1 0   1440 212
-mean 336 ...
-std  336 ...
+std 336 ...
+node 2 7 drift-root -1 0 1440 0
+mean 0
+std 0
 ```
 
-- **Header** — `wtl <version>` (versions **1 and 2** read; `writeWtl` always
-  emits `wtl 2`), then `nSamples`, `nChannels`, `nNodes` (checked against the
-  nodes parsed).
-- **node** — `node <node> <class> <kind> <parent> <a> <b> <count>`. `parent` is
-  the parent node's index, `-1` for a tree root; one tree per `class`.
-- **kind** — `drift-root` | `adapt-leaf` | `collision-leaf`; unknown tokens are
-  kept verbatim so the vocabulary can grow.
-- **`[a,b]`** — the node's window (chunk seconds for a drift node, energy bounds
-  for an adapt node), mirroring [`.wti`](wti.md)'s `row` semantics.
+- Line 1: `wtl <version>`; versions 1 and 2 are read, `writeWtl` always writes
+  2. Blank lines, `#` comments and unknown keys are ignored.
+- `nSamples`, `nChannels`: waveform geometry. `nNodes`: if present, must equal
+  the number of nodes parsed, else the file is rejected.
+- `node <node> <class> <kind> <parent> <a> <b> <count>`, followed by a `mean`
+  and a `std` line. A node with malformed fields is skipped.
 
-## Versions
+| Field | Meaning |
+|---|---|
+| `node` | 0-based node ID, referenced by children's `parent` |
+| `class` | Template-class ID (the [`.eap`](eap.md) column) |
+| `kind` | `drift-root` (summary of a time region's higher-amplitude spikes; a tree root), `adapt-leaf` (lower-amplitude, within-burst variant, child of its region's root) or `collision-leaf` (collision variant, child of its root). Other tokens are kept verbatim. |
+| `parent` | Parent node ID, `-1` for a root |
+| `a`, `b` | Window: start/end in seconds for drift nodes, amplitude/energy low/high for adapt nodes |
+| `count` | Spikes folded into the summary; `0` = empty placeholder |
+| `mean <N> v…`, `std <N> v…` | Running mean and standard deviation waveforms, `N = nSamples × nChannels` values in `.spk` element order; `N = 0` for a placeholder |
 
-- **v2 (current)** stores each node's **running `(mean, std, count)` summary**,
-  not spike indices: a node folds a new selection in by an exact
-  parallel-variance combine, so the originating spikes are never retained. The
-  `mean`/`std` lines carry `nSamples*nChannels` floats each (all-zero = an empty
-  placeholder).
-- **v1 (legacy, still read)** listed spike indices per node; the reader consumes
-  and discards them, mapping the node to `count = nSpikes` with empty
-  `mean`/`std`.
+Spike indices are not stored. Adding a selection to a node folds its
+(mean, std, count) into the node's with the exact parallel-variance
+combination, so the original spikes are not needed afterwards.
 
-> **fiber-kit note.** fiber-kit's `neuro_io` `.wtl` reader/writer still speaks
-> **v1** (spike lists). Reading ns3's v2 running-summary files needs a separate
-> fiber-kit change — never cross-applied from this repo.
+When rendered, `kind` maps to the `.wti` `link` by prefix (`drift…` → `drift`,
+`adapt…` → `adapt`, `collision…` → `collision`).
+
+## Version 1 (read only)
+
+Version 1 stored the spike indices on the node line:
+`node <node> <class> <kind> <parent> <a> <b> <nSpikes> <spike> …`, with no
+`mean`/`std` lines. The reader discards the indices and keeps
+`count = nSpikes` with empty mean and std; repopulate the nodes to fill them.
+
+> **fiber-kit note.** fiber-kit's `neuro_io` `.wtl` reader/writer still uses
+> version 1. Reading version-2 files there needs a fiber-kit change.
 
 ---
 

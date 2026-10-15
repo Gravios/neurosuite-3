@@ -1,34 +1,58 @@
-# `.tcl.N` — template-class registry (version-tagged text)
+# `.tcl.N` — template-class registry (versioned text)
 
-Companion to [`.eap`](eap.md): one entry per `.eap` column, carrying that template
-class's lifecycle and the provenance it was generated from. **Method-less and
-stage-INDEPENDENT** — `<base>.tcl.<group>`, one registry per session + group — so a
-class id means the same `.eap` column across every curation stage. Written with all
-slots `free` by [`process_initeap`](../commands/process_initeap.md) and updated by
-the decollide engines and Klusters.
+Companion to [`.eap`](eap.md): one entry per `.eap` column, giving that
+template class's status and where it came from.
+
+**Naming.** Method-less and stage-independent: `<base>.tcl.<group>`, one
+registry per session and group, so a class ID refers to the same `.eap` column
+in every curation stage.
+
+**Writers.** [`process_initeap`](../commands/process_initeap.md) (all slots
+`free`); [`ndm_decomposecollisions`](../commands/ndm_decomposecollisions.md),
+Klusters and fiber-kit when they create, delete or merge classes. All use
+`neurofileio::readTcl` / `writeTcl` in `libneurosuite-core`. A writer that finds
+no `.tcl` next to an `.eap` starts from all-`free` slots of the `.eap`'s width.
+
+## Format
 
 ```
 tcl 1
 nClasses 128
-# col <TAB> status <TAB> label <TAB> provenance_clu <TAB> provenance_stage <TAB> created
+# col	status	label	provenance_clu	provenance_stage	created
 0	active	CA1 pyr a	23	gt	2026-10-02
-1	active	int-1	9	gt	2026-10-02
-2	free	-	-	-	-
+1	active	-	9	-	2026-10-02
+2	merged:0	-	14	gt	2026-10-02
 3	tomb	-	41	gt	2026-10-02
+4	free	-	-	-	-
 ```
 
-The `col` rows are **TAB-separated** (so a label may contain spaces); an empty field
-is written `-`.
+- Line 1: `tcl <version>`; only version 1 is read. Blank lines and lines
+  starting with `#` are ignored.
+- `nClasses <T>` (space-separated): number of columns, equal to the `.eap`
+  width. If absent, the number of rows is used.
+- One row per column, **TAB-separated** (a label may contain spaces); an empty
+  field is written `-`. Rows with fewer than two fields are skipped; missing
+  trailing fields are empty.
 
-- **col** — the `.eap` column index = the stable template-class id.
-- **status** — `free` (available) · `active` (a live class) · `tomb` (deleted; the
-  id is **never reused**) · `merged:<col>` (folded into another column; its spikes
-  moved there).
-- **provenance_clu / provenance_stage** — the clu id + stage the class was first
-  generated from, recorded at creation; pure provenance, never identity (the clu may
-  have changed since). The decollide engines set `provenance_clu` to the colliding
-  unit id — the key the "same unit → same column" reuse rule matches on.
-- **created** — a free-form date stamp.
+## Fields
+
+| Field | Meaning |
+|---|---|
+| `col` | `.eap` column index = the class ID |
+| `status` | `free` (available) · `active` (live class) · `tomb` (deleted; the column is cleared and the ID is never reused) · `merged:<col>` (folded into column `<col>`, which took over its spikes where it had none of its own). An unknown token reads as `free`. |
+| `label` | Free text for the curator |
+| `provenance_clu` | Cluster ID the class was created from |
+| `provenance_stage` | Curation stage it was created in (`-` for the canonical, untagged stage) |
+| `created` | Date stamp, `YYYY-MM-DD` as written by the tools |
+
+Provenance is recorded once at creation and is never used as identity: the
+cluster may have changed since. It is, however, how collision decomposition
+reuses classes: a collision constituent of unit *u* goes into the lowest
+`active` column whose `provenance_clu` is *u*, and a new class with
+`provenance_clu = u` is created only when there is none.
+
+New classes take the lowest `free` column. When none is left, the `.eap` and
+the registry are widened together and the new slots are `free`.
 
 ---
 

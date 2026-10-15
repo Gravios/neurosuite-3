@@ -1,57 +1,76 @@
-# Signal processing
+# Signal processing — filters, LFP and channel slices
 
-Short utilities for signal processing.  Each is invoked with the session YAML or basename as its single argument.
+**Contents:** [`ndm_hipass`](#ndm_hipass--high-pass-filter-dat--fil) ·
+[`ndm_bandpass`](#ndm_bandpass--band-pass-filter-dat--fil) ·
+[`ndm_lfp`](#ndm_lfp--create-lfp-file-dat--lfp) ·
+[`ndm_slicebinary`](#ndm_slicebinary--channel-subset-ext--extslicetag)
 
-**`inputExtension`** (ndm_hipass, ndm_bandpass, ndm_lfp, ndm_slicebinary, and
-ndm_detectspikes / ndm_extractspikes) names the input file `SESSION.<inputExtension>`.
-A leading dot is ignored (`.lfp` = `lfp`). When the parameter is set, that file
-must exist: a missing one stops the step with an error. Only an unset parameter
-whose default input is missing gives the usual "skipping this step" warning.
-`emgclean` reads the EMG-cleaned recording: `ndm_extractemg` links
-`SESSION.emgclean` to the `SESSION-emgclean.dat` it writes.
+Each command takes the session parameter file (or nothing, to use the current
+directory's name) as its only argument, and reads `nChannels`, `nBits` and
+`samplingRate` from `acquisitionSystem`.
+
+**`inputExtension`** — all four commands read `SESSION.<inputExtension>`
+(default `dat`, or `lfp` for `ndm_slicebinary`). A leading dot is ignored
+(`.lfp` = `lfp`). When the parameter is set, that file must exist: a missing
+one stops the step with an error (exit 1). Only when the parameter is unset and
+the default input is missing does the step print "skipping this step" and exit
+11. `emgclean` reads the EMG-cleaned recording: `ndm_extractemg` links
+`SESSION.emgclean` to the `SESSION-emgclean.dat` it writes. See
+[parameters](../parameters.md) for how `inputExtension` is resolved.
 
 ---
 
 ## `ndm_hipass` — high-pass filter (`.dat` → `.fil`)
 
-Two filters, chosen with `filter`:
+### Synopsis
 
-- **`butterworth`** *(default)* — zero-phase Butterworth (`process_butterworth`).
-  Second-order sections designed in double precision, run forward then backward:
-  no phase distortion, magnitude squared (−6 dB at the corner, effective order
-  2 × `order`). Linear, so the `.fil` contains nothing the `.dat` does not.
-  Arithmetic in double on the CPU and single on a GPU (`precision: auto`); in
-  double the output equals scipy's `sosfiltfilt` rounded to int16, and single
-  changes ~0.04% of samples by 1 LSB on the reference data (1 of 59,675
-  threshold detections moved by 1 sample). Uses CUDA when built with it and a
-  device is present, otherwise OpenMP.
-- **`median`** — the historical median-subtraction high-pass
-  (`process_medianfilter`, `windowHalfLength`). Non-linear: the output is
-  `x[t] − median(window)`, which is exactly 0 whenever the centre sample is the
-  window median — at many sign changes and along steep monotonic stretches such as
-  spike downstrokes (about 5% of samples, runs up to ~17). Its effective −3 dB
-  corner at `windowHalfLength: 16` and 32.5 kHz is ~800 Hz (not 600), with a
-  +2.8 dB bump near 1.2–1.5 kHz on pure tones, and it adds broadband content
-  above 10 kHz that the `.dat` does not have.
+```bash
+ndm_hipass [session.yaml]
+```
 
-| Parameter | Default | Filter | Effect |
-|---|---|---|---|
-| `filter` | `butterworth` | — | `butterworth` or `median` |
-| `highPassHz` | 800 | butterworth | high-pass corner (−6 dB after zero phase) |
-| `lowPassHz` | 0 (off) | butterworth | optional low-pass corner → band-pass |
-| `order` | 3 | butterworth | design order per stage (×2 after zero phase) |
-| `precision` | `auto` | butterworth | `auto` (double CPU / single GPU), `double`, `single` |
-| `windowHalfLength` | — | median | median window half-length |
-| `chunkSize` | 128 MiB | median | bytes per pass |
-
-**Input:** `SESSION.dat` (or `SESSION.<inputExtension>`)
+**Input:** `SESSION.dat` (or `SESSION.<inputExtension>`), int16
 
 **Output:** `SESSION.fil`
 
-- **`inputExtension`** *(optional, default `dat`)* — the file to filter, without
-  the leading dot. Point it at an alternative, externally-processed wide-band
-  source (e.g. `car.dat`) to filter that instead of the raw recording. It must
-  still be wide-band data; the filter high-passes it as usual.
+### Description
+
+Removes the low-frequency content below the spike band. The filter is chosen
+with `filter`:
+
+- **`butterworth`** *(default)* — zero-phase Butterworth (`process_butterworth`).
+  Second-order sections designed in double precision, run forward then
+  backward: no phase distortion, magnitude squared (−6 dB at each corner,
+  effective order 2 × `order`). Linear, so the `.fil` contains nothing the
+  `.dat` does not. Arithmetic is double on the CPU and single on a GPU
+  (`precision: auto`). In double the output equals scipy's `sosfiltfilt`
+  rounded to int16; single changes ~0.04% of samples by 1 LSB on the reference
+  data (1 of 59,675 threshold detections moved by 1 sample). Uses CUDA when
+  built with it and a device is present, otherwise OpenMP. Setting `lowPassHz`
+  makes it a band-pass.
+- **`median`** — the median-subtraction high-pass (`process_medianfilter`).
+  Non-linear: the output is `x[t] − median(window)`, which is exactly 0
+  whenever the centre sample is the window median — at many sign changes and
+  along steep monotonic stretches such as spike downstrokes (about 5% of
+  samples, runs up to ~17). At `windowHalfLength: 16` and 32.5 kHz its
+  effective −3 dB corner is ~800 Hz, with a +2.8 dB bump near 1.2–1.5 kHz on
+  pure tones, and it adds broadband content above 10 kHz that the `.dat` does
+  not have.
+
+Skips with exit 10 if `SESSION.fil` exists. Any other `filter` value is an
+error.
+
+### Parameters
+
+| Name | Default | Filter | Meaning |
+|---|---|---|---|
+| `filter` | `butterworth` | — | `butterworth` or `median` |
+| `highPassHz` | 800 | butterworth | High-pass corner, Hz (−6 dB after zero phase) |
+| `lowPassHz` | 0 (none) | butterworth | Optional low-pass corner, Hz; makes the filter a band-pass |
+| `order` | 3 | butterworth | Design order of each stage (×2 after zero phase) |
+| `precision` | `auto` | butterworth | `auto` (double CPU / single GPU), `double` or `single` |
+| `windowHalfLength` | — | median | Median window half-length in samples; **required** with `median` |
+| `chunkSize` | 134217728 (128 MiB) | median | Bytes per pass; capped at 512 MiB |
+| `inputExtension` | `dat` | both | File to filter, e.g. an externally re-referenced `car.dat`; must still be wide-band |
 
 ```yaml
 - name: ndm_hipass
@@ -62,72 +81,56 @@ Two filters, chosen with `filter`:
     - name: highPassHz
       value: 800
       status: Optional
-    - name: inputExtension
-      value: dat
+    - name: chunkSize
+      value: 134217728
       status: Optional
 ```
-
 
 ---
 
 ## `ndm_bandpass` — band-pass filter (`.dat` → `.fil`)
 
-An alternative to `ndm_hipass` that band-passes the wideband `.dat` rather than
-only high-passing it. `ndm_hipass` removes everything **below** its corner (800 Hz by default) but
-leaves the whole upper spectrum (up to Nyquist) in the `.fil`; `ndm_bandpass`
-additionally attenuates everything **above** the spike band, so the signal fed
-to spike detection carries energy only where spikes actually live.
+### Synopsis
 
-**Input:** `SESSION.dat` &nbsp;·&nbsp; **Output:** `SESSION.fil`
-
-Run **either** `ndm_hipass` **or** `ndm_bandpass` — both write `SESSION.fil`, so
-running both is redundant (the second refuses, because the output already
-exists).
-
-### What it does
-
-Extracellular spike energy sits roughly between 300 Hz and 5–7 kHz; there is
-essentially nothing spike-related above ~7 kHz, so higher-frequency content in
-the `.fil` is noise that only hurts detection and clustering. `ndm_bandpass`
-sets the two edges independently:
-
-- **Lower edge** — the same median-subtraction high-pass as `ndm_hipass`
-  (`windowHalfLength`). The median is non-linear and edge-preserving, so it
-  strips slow baseline drift without rounding off the sharp spike waveform.
-- **Upper edge** — a linear-phase FIR low-pass (`lowpassCutoff`). A windowed-sinc
-  FIR is used rather than an IIR because IIR phase distortion would smear the
-  spike shape; the symmetric kernel has constant group delay — only a fixed shift,
-  which is compensated — so waveforms are preserved.
-
-Internally it runs two passes so the expensive median high-pass keeps its CUDA
-path when available: `process_medianfilter` writes a temporary
-(`SESSION.fil.hp.tmp`, removed on exit), then `process_lowpass` (CPU/OpenMP)
-produces the final `.fil`.
-
-### Parameters
-
-- **`windowHalfLength`** — median high-pass half-window; sets the lower cutoff,
-  identical to `ndm_hipass`. 16 samples ≈ 600 Hz at ~30 kHz.
-- **`lowpassCutoff`** — upper cutoff in Hz; must be below Nyquist. ~6000 suits a
-  32 kHz octrode (keeps the spike band, drops HF noise).
-- **`lowpassHalfLength`** *(optional, default 32)* — FIR half-length; the filter
-  has `2·n+1` taps. More taps → sharper transition at the cutoff, at slightly
-  more compute. 32 (65 taps) is a sensible default.
-- **`chunkSize`** *(optional)* — bytes processed per pass (default 128 MiB,
-  capped internally at 512 MiB). Reduce if RAM is tight.
-- **`inputExtension`** *(optional, default `dat`)* — the file to filter, without
-  the leading dot; identical in meaning to `ndm_hipass`'s. Point it at an
-  alternative wide-band source (e.g. `car.dat`) to band-pass that instead of the
-  raw recording.
-
-Note that `ndm_bandpass` is slower than `ndm_hipass`: it reads and writes the
-full-size `.fil` an extra time for the low-pass pass. The median stage, which
-dominates the cost, still runs on the GPU; the low-pass itself is a cheap short
-FIR.
+```bash
+ndm_bandpass [session.yaml]
+```
 
 **Input:** `SESSION.dat` (or `SESSION.<inputExtension>`)
 
 **Output:** `SESSION.fil`
+
+### Description
+
+An alternative to `ndm_hipass` with `filter: median` that also removes the
+content above the spike band. Spike energy lies roughly between 300 Hz and
+5–7 kHz; above ~7 kHz the `.fil` holds only noise that hurts detection and
+clustering. The two edges are set separately:
+
+- **Lower edge** — the median-subtraction high-pass of `ndm_hipass`
+  (`windowHalfLength`), with the same properties.
+- **Upper edge** — a linear-phase windowed-sinc FIR low-pass
+  (`lowpassCutoff`). The symmetric kernel has a constant group delay, which is
+  compensated, so waveforms are not distorted.
+
+It runs two passes so the median stage keeps its CUDA path:
+`process_medianfilter` writes `SESSION.fil.hp.tmp` (removed on exit), then
+`process_lowpass` (CPU/OpenMP) writes `SESSION.fil`. It is therefore slower
+than `ndm_hipass`: the full-size file is read and written once more.
+
+Run **either** `ndm_hipass` **or** `ndm_bandpass`: both write `SESSION.fil`,
+and the second one skips with exit 10. For a linear band-pass, use
+`ndm_hipass` with `filter: butterworth` and `lowPassHz` instead.
+
+### Parameters
+
+| Name | Default | Meaning |
+|---|---|---|
+| `windowHalfLength` | — (**required**) | Median high-pass half-window, samples; sets the lower edge as in `ndm_hipass` |
+| `lowpassCutoff` | — (**required**) | Upper cutoff, Hz; must be below Nyquist. ~6000 suits a 32 kHz recording |
+| `lowpassHalfLength` | 32 | FIR half-length *n*; the filter has 2*n*+1 taps. More taps give a sharper transition |
+| `chunkSize` | 134217728 (128 MiB) | Bytes per pass, both stages; capped at 512 MiB |
+| `inputExtension` | `dat` | File to filter, as for `ndm_hipass` |
 
 ```yaml
 - name: ndm_bandpass
@@ -144,50 +147,52 @@ FIR.
     - name: chunkSize
       value: 134217728
       status: Optional
-    - name: inputExtension
-      value: dat
-      status: Optional
 ```
-
 
 ---
 
 ## `ndm_lfp` — create LFP file (`.dat` → `.lfp`)
 
-Downsamples the wideband `.dat` to the LFP sampling rate (typically 1250 Hz).
-Automatically uses `SESSION-spkclean.dat` (from `ndm_stripdat`) when it is
-present.
+### Synopsis
+
+```bash
+ndm_lfp [session.yaml]
+```
 
 **Input:** `SESSION.dat`, `SESSION-spkclean.dat`, or `SESSION.<inputExtension>`
 
 **Output:** `SESSION.lfp`
 
+### Description
+
+Resamples a wide-band file to the LFP rate with `process_resample`. Skips
+with exit 10 if `SESSION.lfp` exists.
+
+The source is chosen in this order:
+
+1. **`inputExtension` other than `dat`** — that file, always. The
+   spike-cleaned dat is not used even when it exists, because `ndm_stripdat`
+   cleans `SESSION.dat` only and cannot produce a spike-free version of
+   another file. Combining it with `subtractSpikes: yes` is an error.
+2. **`SESSION-spkclean.dat`** (from [`ndm_stripdat`](ndm_stripdat.md)), if it
+   exists.
+3. Otherwise `subtractSpikes` decides: `auto` (or unset) means `yes` when any
+   `SESSION.spk.*` file exists and `no` otherwise; `yes` runs `ndm_stripdat`
+   first and resamples its output; `no` resamples `SESSION.dat`.
+
+A `SESSION-spkclean.dat` that `ndm_lfp` created itself is deleted once the
+`.lfp` is written; one produced beforehand is left in place.
+
+The source must be wide-band, not the `.fil`: the `.fil` has lost everything
+below the spike band, which is what the LFP is made of.
+
 ### Parameters
 
-- **`samplingRate`** — target LFP rate in Hz (default 1250). Should match
-  `fieldPotentials.lfpSamplingRate`.
-- **`subtractSpikes`** *(optional, default `auto`)* — whether to strip spikes
-  before resampling. `auto` runs `ndm_stripdat` first if `.spk.N` files exist;
-  `yes` always runs it; `no` resamples the raw source unconditionally. When
-  `ndm_lfp` invokes `ndm_stripdat` itself, the cleaned dat is removed once the
-  `.lfp` is written; a cleaned dat you produced beforehand is left in place.
-- **`inputExtension`** *(optional, default `dat`)* — the file to downsample,
-  without the leading dot, as on `ndm_hipass` / `ndm_bandpass`.
-
-### Source precedence
-
-`inputExtension` → `SESSION-spkclean.dat` → `SESSION.dat`.
-
-Any `inputExtension` other than `dat` selects the source outright: the
-spike-cleaned dat is **not** used even when it exists, because `ndm_stripdat`
-cleans `SESSION.dat` and cannot produce a spike-free version of another file —
-resampling it would silently substitute a different signal. For the same reason
-`inputExtension` ≠ `dat` together with `subtractSpikes=yes` is refused rather
-than resolved one way or the other. `subtractSpikes=auto` resolves to `no`.
-
-Note that a processed source used here should be **wide-band**, not the `.fil` —
-`.fil` has already had everything below the spike band removed, which is exactly
-the content the LFP is made of.
+| Name | Default | Meaning |
+|---|---|---|
+| `samplingRate` | — (**required**) | Target rate, Hz; should equal `fieldPotentials.lfpSamplingRate` (1250 in the template) |
+| `subtractSpikes` | `auto` | `auto`, `yes` or `no` (see above) |
+| `inputExtension` | `dat` | Source file (see above) |
 
 ```yaml
 - name: ndm_lfp
@@ -196,50 +201,61 @@ the content the LFP is made of.
       value: 1250
       status: Mandatory
     - name: subtractSpikes
-      value: auto
-      status: Optional
-    - name: inputExtension
-      value: dat
+      value: 'auto'
       status: Optional
 ```
-
-
 
 ---
 
 ## `ndm_slicebinary` — channel subset (`.<ext>` → `.<ext>.slice.<tag>`)
 
-Copies a set of channels out of an existing session binary into its own smaller
-binary. The source is opened read-only and never modified, so slicing is always
-safe to re-run.
+### Synopsis
+
+```bash
+ndm_slicebinary [session.yaml]
+```
 
 **Input:** `SESSION.<inputExtension>` (default `lfp`)
 
-**Output:** `SESSION.<inputExtension>.slice.<tag>` plus a six-field `.info` sidecar
+**Output:** `SESSION.<inputExtension>.slice.<tag>` and the sidecar
+`SESSION.<inputExtension>.slice.<tag>.info`
 
-Use it to pull one shank, one anatomical group, or a handful of reference
-channels out of a 96-channel `.lfp` so downstream analysis loads megabytes
-instead of gigabytes, without maintaining a second copy of the recording.
+### Description
 
-### Output naming
+Copies a set of channels, optionally over a time window, out of a session
+binary into a smaller binary (`process_slicebinary`). The source is opened
+read-only. Use it to pull one shank or a few reference channels out of a
+96-channel `.lfp`.
 
-The output extension **mirrors the input** rather than being fixed to `lfp`:
+The output extension mirrors the input, so the name says which stream the
+data came from:
 
-| `inputExtension` | output |
+| `inputExtension` | Output |
 |---|---|
 | `lfp` (default) | `SESSION.lfp.slice.<tag>` |
 | `dat` | `SESSION.dat.slice.<tag>` |
 | `fil` | `SESSION.fil.slice.<tag>` |
 
-A slice of the wide-band `.dat` is still wide-band data. Naming it
-`.lfp.slice.<tag>` would tell every downstream consumer it had been decimated to
-the LFP rate when it had not — the file would be a lie about its own sampling
-rate, and nothing about a headerless binary could contradict it.
+An empty `slicedChannels` means no slice was requested: the step says so and
+exits 0, so an unconfigured node does not fail a pipeline run. Re-running with
+an existing `tag` skips with exit 10; pick another tag or remove the file.
+
+**Sample width.** `nChannels` and `nBits` come from `acquisitionSystem`. 16-
+and 32-bit samples are supported; anything else is refused. A file whose
+length is not a whole number of records is refused too — but reading a 32-bit
+file as 16-bit usually divides evenly, so this check is a safety net, not a
+guarantee.
+
+**Sampling rate.** `timeRange` is converted to records with the rate of the
+stream being cut: `fieldPotentials.lfpSamplingRate` when `inputExtension` is
+`lfp`, otherwise `acquisitionSystem.samplingRate`. The same `2,4` is 2500
+records of a 1250 Hz `.lfp` and 65104 records of a 32552 Hz `.dat`. A
+down-sampled source under another extension (e.g. `eeg`) is therefore given the
+acquisition rate.
 
 ### The `.info` sidecar
 
-A sliced binary is headerless, so five numbers are written next to it — enough to
-parse the file and map every column back to the recording:
+The slice is headerless, so six lines are written next to it:
 
 ```
 nChannels: 96
@@ -250,96 +266,46 @@ samplingRate: 1250
 timeRange: 0,600
 ```
 
-- `nChannels` and `nBits` together fix the byte layout. Without both, the file
-  cannot be indexed at all, and a wrong guess yields a file of the right length
-  full of wrong numbers — the record-divisibility check only catches a mismatch
-  that leaves a remainder.
-- `nChannels` is the **source** width, which is what makes `slicedChannels`
-  readable. The slice's own width is the length of that list.
-- `samplingRate` follows the stream that was cut, not `acquisitionSystem`:
-  slicing the `.lfp` records 1250, slicing the `.dat` or `.fil` records the
-  acquisition rate. Recording 32552 for an LFP slice would misdate every sample
-  in it.
-- `timeRange` is the window as configured, in seconds, or `whole` when none was
-  set. With `samplingRate` it gives the absolute position of the excerpt in the
-  parent recording, which is otherwise unrecoverable from the bytes.
+- `nChannels` is the **source** width; the slice's width is the length of
+  `slicedChannels`. With `nBits` it fixes the byte layout.
+- `samplingRate` is the rate used above (`unknown` if not set).
+- `timeRange` is the window as configured, in seconds, or `whole`.
 
-Nothing derivable is duplicated here. Channel grouping, anatomy and spike
-geometry are all functions of `slicedChannels` against the parent session, so the
-parent answers those questions exactly — whereas a copy written beside the slice
-is the one that goes stale the moment the parent is regrouped.
-
-This is a provenance record, not a session descriptor. Opening a slice in
-neuroscope still needs a parameter file, and note that neuroscope derives one by
-stripping only the **final** dot-component of the data file name: opening
-`SESSION.lfp.slice.shank0` makes it look for `SESSION.lfp.slice.yaml`, which
-every tag would share. Naming the output `SESSION.slice.<tag>.lfp` instead would
-let neuroscope find a per-tag `SESSION.slice.<tag>.yaml` unaided.
+Grouping, anatomy and geometry are not copied: they follow from
+`slicedChannels` and the parent session. The sidecar is not a parameter file.
+NeuroScope looks for a parameter file by stripping only the last
+dot-component, so opening `SESSION.lfp.slice.shank0` looks for
+`SESSION.lfp.slice.yaml`.
 
 ### Parameters
 
-- **`slicedChannels`** — channels to copy, 0-based, in the order they should
-  appear in the output. Comma- or whitespace-separated (`0,1,4` and `0 1 4` are
-  equivalent). Order is preserved, so the list can also **reorder** channels, and
-  a channel may be **repeated** to duplicate it. Empty means "no slice
-  requested": the stage says so and succeeds, so an unconfigured node does not
-  fail a whole pipeline run.
-
-  Only plain integers are accepted. Unlike `process_extractchannels`, the gain
-  (`5*1.5`) and post-hoc reference (`5-2`) spellings are **refused** rather than
-  honoured — a slice is meant to be a byte-exact excerpt, and a stray character
-  silently producing a *derived* signal is invisible downstream.
-
-- **`tag`** — names the output. Letters, digits, `-` and `_` only; a tag holding a
-  dot, a slash or whitespace is refused, since it is a filename component and not
-  a path. Re-running with the same tag is refused because the output exists —
-  pick another tag or remove the file.
-
-- **`timeRange`** *(optional)* — temporal window to copy, as `start,end` in
-  **seconds** (e.g. `0,600` for the first ten minutes). Empty means the whole
-  recording. The window is half-open — `[start, end)` — so adjacent ranges tile
-  without overlapping or dropping a sample, and each bound is rounded to the
-  nearest sample.
-
-  Seconds are converted with the sampling rate of the **stream being cut**, not
-  the acquisition rate: the same `2,4` is 2500 records of a 1250 Hz `.lfp` and
-  65104 records of a 32552 Hz `.dat`. A window running past the end of the file
-  is refused rather than clamped — a short file that reads as success gives no
-  sign the window was not the one asked for.
-
-- **`inputExtension`** *(optional, default `lfp`)* — the file to slice, without
-  the leading dot, as on `ndm_hipass` / `ndm_lfp`.
-
-### Sample width
-
-`nChannels` and `nBits` are read from the session's `acquisitionSystem` block, so
-a slice cannot disagree with the recording it came from. 16- and 32-bit are
-supported and anything else is refused rather than reinterpreted.
-
-The engine also refuses a file whose length is not a whole number of records,
-which catches a wrong channel count or sample width — but **only when the
-mismatch leaves a remainder**. Reading a 32-bit file as 16-bit usually still
-divides evenly, so this is a safety net, not a guarantee. That is why the width
-comes from the session rather than being guessed.
+| Name | Default | Meaning |
+|---|---|---|
+| `slicedChannels` | — | 0-based channels in output order, comma- or space-separated (`0,1,4` = `0 1 4`). Channels may be reordered or repeated. Only plain integers: the gain (`5*1.5`) and reference (`5-2`) forms of `process_extractchannels` are refused. Empty: no slice, exit 0 |
+| `tag` | — (**required** when `slicedChannels` is set) | Output name component: letters, digits, `-`, `_`; a dot, slash or whitespace is refused |
+| `timeRange` | whole file | `start,end` in seconds, half-open `[start, end)`, each bound rounded to the nearest sample. End must exceed start; a window past the end of the file is refused, not clamped |
+| `inputExtension` | `lfp` | File to slice (`dat`, `fil`, …) |
 
 ```yaml
 - name: ndm_slicebinary
   parameters:
     - name: slicedChannels
-      value: '0,1,4,5'
+      value: ''
       status: Mandatory
     - name: tag
-      value: shank0
+      value: ''
       status: Mandatory
-    - name: timeRange
-      value: '0,600'
-      status: Optional
-    - name: inputExtension
-      value: lfp
-      status: Optional
 ```
 
 ---
 
-*Part of the [ndmanager-plugins](../README.md) reference.
-See [pipeline overview](../pipeline.md) for how this fits the full workflow.*
+## See also
+
+- [`.dat` / `.lfp` / `.fil`](../formats/dat.md)
+- [Spike detection](spike-detection.md) — reads the `.fil`
+- [`ndm_stripdat`](ndm_stripdat.md) — writes `SESSION-spkclean.dat`
+- [Channel manipulation](channel-manipulation.md) — `ndm_extractchannels`, `ndm_resample`
+
+---
+
+*Part of the [ndmanager-plugins](../README.md) reference.*

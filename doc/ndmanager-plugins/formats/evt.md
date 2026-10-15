@@ -1,28 +1,54 @@
 # `.evt` — timestamped events (text)
 
-Plain text, one event per line: a millisecond timestamp and a label. The
-authoritative reader/writer is `neurofileio::readEvt` / `writeEvt` (see
-[`../../../src/libneurosuite-core/docs/FILE_FORMATS.md`](../../../src/libneurosuite-core/docs/FILE_FORMATS.md) §3.5);
-NeuroScope loads and displays these, and several `ndm_*` command tools read and
-write them.
+Labelled events for display in NeuroScope: stimuli, digital inputs, behavioural
+marks, gaps in a recording.
+
+## Layout
+
+Plain text, one event per line, in ascending time order:
 
 ```
-0.050000	start
-12345.600000	stim_on
-12845.600000	stim_off
+0.05	start
+12345.6	stim_on
+12845.6	stim_off
 ```
 
-- Each line is `"<time_ms>\t<label>"`.
-- **time** is a **`double` in milliseconds** (not a sample index) — the first
-  whitespace-delimited token on the line.
-- **label** is the **remainder of the line** after that token, so a label may
-  contain spaces.
-- `writeEvt` emits `time_ms '\t' label '\n'`.
+- **Time** — the first whitespace-delimited token, a decimal number of
+  **milliseconds** from sample 0 of the recording (not a sample index;
+  fractional values allowed).
+- **Label** — the rest of the line after the time and its following
+  whitespace; it may contain spaces. Writers separate the two with a TAB.
+- Blank lines and lines that do not start with a number are skipped.
+- NeuroScope takes the time on the last line as the end of the file, so keep the
+  lines sorted.
+- Write times with enough digits: NeuroScope saves 12 significant digits.
 
-By NeuroScope convention an event file often carries a three-letter type code
-in its extension (e.g. `base.evt.rip`, `base.evt.pos`); the line format above is
-the same regardless of the code.
+Reader: `neurofileio::readEvt` (`src/libneurosuite-core/src/neurosuite/core/neurofileio.cpp`).
+
+## Naming
+
+NeuroScope requires `<base>.<id>.evt` or `<base>.evt.<id>`, where `<id>` is a
+three-character identifier (used as the event file's name in the display).
+`.evt` is not in the custody type tables ([naming](naming.md)).
+
+## Writers
+
+| Writer | File |
+|---|---|
+| [`ndm_plx2dat`](../commands/ndm_plx2dat.md) (`process_plxconvert`) | `SESSION.<id>.evt` (default id `plx`): every Plexon digital event, ms from `.dat` sample 0, plus `gap start` / `gap end` around zero-filled pauses |
+| [`ndm_nev2evt`](../commands/format-conversion.md) (`process_nlxconvert`) | `SESSION-<suffix>.nlx.evt` from Neuralynx `.nev` |
+| [`ndm_smr2evt`](../commands/format-conversion.md) (`process_smrconvert -e`) | one file per event channel, `<base>.e<NN>.evt` (channel number padded to three characters: `.e05.evt`, `.e12.evt`, `.123.evt`), from CED `.smr` |
+| NeuroScope | the event file being edited, on Save |
+
+## Readers
+
+NeuroScope (`EventsProvider`), via `neurofileio::readEvt`.
+
+## See also
+
+- [Format conversion](../commands/format-conversion.md)
+- [`.dat`](dat.md) — the recording the times refer to.
 
 ---
 
-*Part of the [ndmanager-plugins](../README.md) file-format reference.*
+*Part of the [ndmanager-plugins](../README.md) reference.*

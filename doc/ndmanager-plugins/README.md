@@ -1,201 +1,104 @@
-# ndmanager-plugins — Preprocessing Pipeline
+# ndmanager-plugins — preprocessing and post-sorting pipeline
 
-ndmanager-plugins is a collection of command-line tools that convert
-raw acquisition data into the formats required for spike sorting, and
-then carry those outputs through secondary analyses (drift estimation,
-collision decomposition, spike subtraction, re-extraction, source
-localization). It consists of C++ processing binaries (some with
-optional CUDA acceleration), Python post-sorting analysis modules, and
-Bash pipeline scripts that orchestrate them.
+ndmanager-plugins are the command-line steps that take a raw recording to
+sorted spikes and beyond: format conversion, filtering, spike detection and
+extraction, features, KiloKlustaKwik clustering, and post-sorting analyses
+(re-extraction, spike subtraction, collision decomposition, localisation,
+drift estimation and correction). Each step is an `ndm_*` bash script driving
+C++ binaries (`process_*`, some with CUDA) and Python modules. ndmanager edits
+their parameters and arranges them into pipelines.
 
-All scripts take a single optional argument: the path to the session
-`.yaml` parameter file. When omitted, the current directory name is
-used as the session basename. XML parameter files are no longer read
-directly by the pipeline — convert legacy files once with
-`ndm_xml2yaml`.
-
----
-
-## Reference
+## Start here
 
 | | |
 |---|---|
-| **[Pipeline overview](pipeline.md)** | Full per-acquisition-system pipeline diagrams (AlphaOmega, Neuralynx/CED/Amplipex, post-sorting) |
-| **[Command reference](commands/)** | Per-command pages: synopsis, options, output files |
-| **[File formats](formats/)** | Binary and YAML format reference (`.dat`, `.spk`, `.fet`, `.col`, `.drift`, …) |
-| **[Pipeline variants and file extensions](#pipeline-variants-and-file-extensions)** | Raw vs stderiv detection, extension fallback rules |
+| **[Pipeline overview](pipeline.md)** | Which steps run in which order, from acquisition to drift correction |
+| **[Parameters](parameters.md)** | The session YAML: where parameters go, how a step finds them, `method`, `inputExtension` |
+| **[Command reference](commands/README.md)** | One entry per step: synopsis, inputs/outputs, parameters |
+| **[File formats](formats/README.md)** | Every file the steps read and write; [naming convention](formats/naming.md) |
+| **[Workflows](../workflows/README.md)** | Task walkthroughs: first sort, curation, re-extraction, collisions, drift |
 
-For task-oriented walkthroughs that span multiple programs, see
-[`../workflows/`](../workflows/).
+## A first run
 
-### Acquisition pipeline commands
+```bash
+cd /data/rat01-20261015                      # session directory
+cp ~/src/neurosuite-3/templates/template.yaml rat01-20261015.yaml   # or create it in ndmanager
+# convert the recording, e.g. Plexon:
+#   set ndm_plx2dat → plexonFile in the YAML, then
+ndm_plx2dat       rat01-20261015.yaml        # → .dat (+ .evt, metadata)
+#   add the probe(s) under probes: (ndmanager → Probes tab), then
+ndm_setupgroups   rat01-20261015.yaml        # → channel groups
+ndm_hipass        rat01-20261015.yaml        # → .fil
+ndm_detectspikes  rat01-20261015.yaml        # → .res.standard.N
+ndm_extractspikes rat01-20261015.yaml        # → .spk.standard.N
+ndm_pca           rat01-20261015.yaml        # → .fet / .pca
+ndm_klustakwik    rat01-20261015.yaml        # → .clu.standard.N  — open in Klusters
+```
 
-| Command | Purpose |
-|---|---|
-| [`ndm_aom2dat`](commands/ndm_aom2dat.md) | AlphaOmega `.mat` (HDF5 v7.3) → `.dat` + `.yaml` |
-| [`ndm_plx2dat`](commands/ndm_plx2dat.md) | Plexon `.plx` / `.pl2` → `.dat` + `.evt` + extra streams + online spikes + header metadata in the `.yaml` |
-| [Format conversion](commands/format-conversion.md) | Neuralynx, CED/Spike2, Amplipex converters |
-| [Channel manipulation](commands/channel-manipulation.md) | `ndm_resample`, `ndm_mergedat`, `ndm_extractchannels`, `ndm_reorderchannels`, `ndm_recolorchannels`, `ndm_concatenate` |
-| [`ndm_setupgroups`](commands/ndm_setupgroups.md) | Build channel groups from probe library |
-| [Signal processing](commands/signal-processing.md) | `ndm_hipass`, `ndm_bandpass`, `ndm_lfp`, `ndm_slicebinary` |
-| [Spike detection](commands/spike-detection.md) | `ndm_extractspikes`, `ndm_extractspikes_sdiff`, `ndm_extractspikes_stderiv`, `ndm_spikecleaner`, `ndm_denoiseuniform` |
-| [`ndm_spikegrouper`](commands/ndm_spikegrouper.md) | Automatic spike-group refinement |
-| [PCA feature extraction](commands/pca.md) | `ndm_pca`, `ndm_pca_stderiv` |
-| [`ndm_klustakwik`](commands/ndm_klustakwik.md) | Run KiloKlustaKwik for each spike group |
+Or build the same chain in ndmanager's Pipeline tab and run it with
+[`ndm_start`](commands/ndm_start.md).
 
-### Post-sorting commands
+## Conventions
 
-| Command | Purpose |
-|---|---|
-| [`ndm_reextractspikes`](commands/ndm_reextractspikes.md) | Masked second-pass detection + shadow-clustered merge |
-| [`ndm_subcluster_unmatched`](commands/ndm_subcluster_unmatched.md) | Re-cluster the unmatched bin from reextract |
-| [`kk_build_prior.py`](commands/kk_build_prior.md) | Train a per-probe empirical prior from curation logs |
-| [`kk_resolve_prior.py`](commands/kk_resolve_prior.md) | Look up the prior for a session+group |
-| [`ndm_stripdat`](commands/ndm_stripdat.md) | Subtract spikes to produce a cleaned `.dat` |
-| [`ndm_redetectspikes`](commands/ndm_redetectspikes.md) | Second-round detection on cleaned `.dat` |
-| [`process_initeap`](commands/process_initeap.md) | Pre-construct the EAP template-class layer (`.eap.N` / `.tcl.N`) |
-| [`ndm_decomposecollisions`](commands/ndm_decomposecollisions.md) | Collision decomposition (`.col.N`; also fills the `.eap.N` / `.tcl.N` layer) |
-| [`ndm_localise`](commands/ndm_localise.md) | Per-spike source localization (`.loc.N`) |
-| [`ndm_estimatedrift`](commands/ndm_estimatedrift.md) | Spatial probe drift estimation (`.drift`) |
-| [`ndm_applydrift`](commands/ndm_applydrift.md) | Propagate curated drift to sibling shanks |
+- **One argument.** Every step takes the session: `SESSION.yaml`, `SESSION`,
+  or nothing inside a directory named after the session. Some accept a group
+  number or `--method` as well (see their pages).
+- **Parameters** come from `programs:` in `SESSION.yaml`
+  ([parameters](parameters.md)); `templates/template.yaml` lists them all.
+- **File names** are `SESSION.<type>.<method>.N` for per-group spike files
+  ([naming](formats/naming.md)); session-wide files are `SESSION.<ext>`.
+- **Re-entrant.** A step whose output exists is skipped, so a chain can be
+  re-run after an interruption; delete an output (or set `overwrite`) to redo
+  a step.
 
-### Utilities
-
-| Command | Purpose |
-|---|---|
-| [Video processing](commands/video.md) | `ndm_extractleds`, `ndm_transcodevideo` |
-| [`ndm_xml2yaml`](commands/ndm_xml2yaml.md) | Legacy XML → YAML converter |
-| [`ndm_clean`](commands/ndm_clean.md) | Remove intermediate files |
-| [`ndm_functions`](commands/ndm_functions.md) | Shared bash helpers (sourced by every script) |
-
-### File formats
-
-| File | Description |
-|---|---|
-| [**Naming convention**](formats/naming.md) | The `<base>.<type>.<method>.<group>` **variant** scheme shared by all files below |
-| [`.dat` / `.lfp` / `.fil`](formats/dat.md) | Binary signal files (session-wide) |
-| [`.px<stream>`](formats/pxstream.md) | Extra Plexon continuous streams (`.pxai`, `.pxfp`, …) from `ndm_plx2dat` |
-| [`.pxres.N` / `.pxclu.N` / `.pxspk.N`](formats/pxspikes.md) | Plexon's online spikes (times, unit + 1, waveforms) from `ndm_plx2dat` |
-| [`.res.<method>.N`](formats/res.md) | Spike timestamps (shared across variants) |
-| [`.spk.<method>.N`](formats/spk.md) | Spike waveforms (shared across variants) |
-| [`.fet.<method>.N`](formats/fet.md) | PCA feature vectors (`standard` / `stderiv`) |
-| [`.pca.<method>.N`](formats/pca.md) | PCA eigenvector basis (`standard` / `stderiv`) |
-| [`.clu.<method>.N`](formats/clu.md) | Cluster assignments (fiber layer in a hierarchical session) |
-| [`.clc.<method>.N`](formats/clc.md) | Child (atom) layer of a hierarchical clustering |
-| [`.clp.<method>.N`](formats/clp.md) | Atom→fiber map for a hierarchical clustering |
-| [`.col.<method>.N`](formats/col.md) | Collision decomposition results |
-| [`.eap.N`](formats/eap.md) | EAP template-class membership + offset matrix (method-less) |
-| [`.tcl.N`](formats/tcl.md) | Template-class registry (method-less, stage-independent) |
-| [`.wti.N`](formats/wti.md) | Template-waveform index (method-less) |
-| [`.wtf.<method>.N`](formats/wtf.md) | Template-waveform stack (method-tagged) |
-| [`.wtl.N`](formats/wtl.md) | Manual template-lineage forest (curator-authored) |
-| [`.drift`](formats/drift.md) | Probe drift trajectories |
-| [`.chunks.N`](formats/chunks.md) | Adaptive KiloKlustaKwik chunk boundaries |
-| [`.loc.N`](formats/loc.md) | Per-spike source locations |
-| [`.probe`](formats/probe.md) | Probe configuration |
-| [`.evt`](formats/evt.md) | Timestamped event labels (text) |
-| [`.pos`](formats/pos.md) | Video tracking positions (read by NeuroScope) |
-
----
-
-## Dependencies
-
-| Dependency | Purpose | Required |
-|---|---|---|
-| CMake, C++20 compiler | Build system | Yes |
-| OpenMP | Parallel processing throughout the pipeline | Recommended |
-| libhdf5 | AlphaOmega `.mat` (HDF5 v7.3) conversion | Yes |
-| libxml2 | Legacy XML parameter-file reading (via `ndm_xml2yaml` only) | Yes |
-| yaml-cpp | YAML parameter-file reading | Yes |
-| python3-yaml | YAML reading in bash pipeline scripts | Yes |
-| numpy | `ndm_estimatedrift`, `ndm_applydrift`, `ndm_decomposecollisions`, `ndm_localise`, `ndm_setupgroups`, `kk_build_prior`, `kk_resolve_prior` | Yes |
-| scipy | Sub-pixel parabolic interpolation in `process_estimatedrift.py` | Optional |
-| FFmpeg | `process_extractleds`, `ndm_transcodevideo` | Optional |
-| CUDA Toolkit ≥ 12.8 | `process_medianfilter`, `process_medianthreshold` | Optional |
-
-The CUDA filter falls back to an OpenMP CPU path automatically when
-CUDA is absent.
-
----
-
-## Pipeline variants and file extensions
-
-Two spike-detection transforms (**methods**) are supported: `standard`
-(raw waveforms) and `stderiv`. The method is an explicit tag in every
-per-group filename under the shared
-[variant naming convention](formats/naming.md).
-
-| Type | `standard` | `stderiv` | Class / writer |
-|---|---|---|---|
-| `.res` | `.res.standard.N` | *(shared — same file)* | **Shared**; `ndm_extractspikes*` |
-| `.spk` | `.spk.standard.N` | *(shared — same raw file)* | **Shared** (raw); `ndm_extractspikes*` |
-| `.fet` | `.fet.standard.N` | `.fet.stderiv.N` | **MethodSpecific**; `ndm_pca` / `ndm_pca_stderiv` |
-| `.pca` | `.pca.standard.N` | `.pca.stderiv.N` | **MethodSpecific**; `ndm_pca` / `ndm_pca_stderiv` |
-| `.clu` | `.clu.standard.N` | `.clu.stderiv.N` | **MethodSpecific**; `ndm_klustakwik`, klusters |
-
-`.res` is **shared** across methods — spike times are method-independent, so
-one physical copy per group whatever token wrote it (resolve it with
-`ndm_resolve_any`, not `ndm_resolve`). `.spk` is classed shared too, but it is
-**domain-carrying**: the stderiv transform is applied at EXTRACTION, so
-`.spk.standard.N` and `.spk.stderiv.N` hold different data. The old `.spkD` /
-`.fetD` / `.pcaD` naming is retired in favor of the dotted form.
-
-Within a single session, groups can freely mix methods. Every
-downstream tool that reads waveforms or features auto-detects both
-extensions and prefers the D variant when both are present, or picks
-the one the group was sorted with. See
-[`../../src/kiloklustakwik/CHANGES.md`](../../src/kiloklustakwik/CHANGES.md)
-for the fallback logic inside KiloKlustaKwik, and
-[`../design/reextract-v2.md`](../design/reextract-v2.md) for the
-cross-pipeline re-extract shim.
-
----
-
-## Exit codes
+### Exit status
 
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | Output already exists — step skipped (not an error in batch mode) |
-| `2` | Input files missing — step skipped |
-| `3` | General error |
-| `20` | Missing mandatory parameter |
+| `1` | Error, including a missing mandatory parameter |
+| `10` | Output already exists — step skipped |
+| `11` | Input missing — step skipped (an input named by `inputExtension` that is missing is an error, `1`) |
 
----
+[`ndm_start`](commands/ndm_start.md) treats 10 and 11 as "nothing to do" and
+carries on.
 
-## Performance notes
+## Dependencies
 
-`process_aomconvert` streams HDF5 data in chunks via the HDF5 C
-hyperslab API. Default chunk size (10M samples × 32 channels × 2 bytes
-≈ 610 MB) is tuned for systems with 64+ GB RAM. Reduce `chunkSamples`
-on memory-constrained machines.
-
-`process_medianfilter` (used by `ndm_hipass`) processes data in
-configurable chunks. CUDA targets: sm_86 (Ampere), sm_89 (Ada
-Lovelace), sm_100 (Hopper), sm_120 (Blackwell). Requires CUDA ≥ 12.8
-for sm_120 (RTX 5000 series).
-
-`process_resample`, `process_pca`, `process_pca_stderiv`,
-`process_shadowcluster`, `process_reextractspikes`,
-`process_reextractspikes_stderiv`, and `process_extractspikes_stderiv`
-all use OpenMP. `ndm_pca{,_stderiv}` runs all electrode groups in
-parallel with a configurable per-group thread budget
-(`threadsPerGroup`).
-
-For broader hardware tuning recipes, see
-[`../design/optimization.md`](../design/optimization.md).
-
----
+| Dependency | Used for | Required |
+|---|---|---|
+| CMake, C++20 compiler | building | yes |
+| yaml-cpp | YAML parameter files (C++) | yes |
+| Python 3 with PyYAML, NumPy | YAML access from the scripts; the Python steps (drift, localisation, collisions, set-up, priors, curation) | yes |
+| libhdf5 | `ndm_aom2dat` | yes |
+| libxml2, `xpathReader` | legacy `.xml` parameter files | yes |
+| OpenMP | parallel processing throughout | recommended |
+| SciPy | sub-sample refinement in `ndm_estimatedrift` | optional |
+| ruamel.yaml | keeps comments when `ndm_plx2dat` edits the YAML | optional |
+| CUDA ≥ 12.8 | GPU paths of the filters and detection (`process_butterworth`, `process_medianfilter`, `process_medianthreshold`); CPU fallback otherwise | optional |
+| FFmpeg / libav (`avconv`) | `ndm_extractleds`, `ndm_transcodevideo` | optional |
 
 ## Installation
 
 | Platform | GPU | Guide |
 |---|---|---|
-| Linux (Ubuntu / Debian) | CPU / OpenMP only | [install/linux-cpu.md](install/linux-cpu.md) |
+| Linux (Ubuntu / Debian) | CPU / OpenMP | [install/linux-cpu.md](install/linux-cpu.md) |
 | Linux (Ubuntu / Debian) | NVIDIA CUDA | [install/linux-cuda.md](install/linux-cuda.md) |
 | Windows | CPU (native) or full pipeline via WSL2 | [install/windows.md](install/windows.md) |
-| macOS | CPU / OpenMP only | [install/macos.md](install/macos.md) |
+| macOS | CPU / OpenMP | [install/macos.md](install/macos.md) |
 
-GPU stack details (CUDA versions, MOK signing, ROCm, oneAPI) are
-shared with the other components in
-[`../gpu/README.md`](../gpu/README.md).
+GPU stack details (CUDA versions, MOK signing, ROCm, oneAPI) are shared with
+the other components in [`../gpu/README.md`](../gpu/README.md). Hardware
+tuning: [`../design/optimization.md`](../design/optimization.md).
+
+## For developers
+
+- Adding a step: write `scripts/ndm_<name>` on the skeleton in
+  [`ndm_functions`](commands/ndm_functions.md), give it a block in
+  `templates/template.yaml`, add it to the Pipeline designer table
+  (`src/ndmanager/tools/pipeline_script_defs.py`), and a page under
+  `commands/` listed in the [command reference](commands/README.md).
+- `src/ndmanager-plugins/test/` checks that the template, the Pipeline
+  designer and these pages stay in step with the scripts
+  (`test_template_parameters.py`, `test_pipeline_designer_defs.py`,
+  `test_docs.py`).
