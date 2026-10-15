@@ -33,10 +33,11 @@ Sections converted:
 | `neuroscope` | `neuroscope`: `miscellaneous`, `video`, `spikes`, `channels.colors`, `channels.offsets` |
 | `programs` | `programs` (`name`, `parameters`, `help`); `true`/`false` and numbers become YAML booleans and numbers |
 
-Not converted: anything outside these sections, and channel groups with no
-channels, which are dropped — the groups after them are renumbered, so check
-the group count of a file that had empty groups. The XML format has no
-`probes:` section, so the output has no probe geometry.
+Not converted: anything outside these sections. A channel group with no
+channels is kept as `channels: []`, so every group keeps its number and still
+matches its `.spk.N` / `.clu.N` files; `ndm_detectspikes` and
+`ndm_extractspikes` skip such a group. The XML format has no `probes:`
+section, so the output has no probe geometry.
 
 ### After conversion
 

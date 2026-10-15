@@ -174,7 +174,10 @@ def convert_anatomical_description(root, w):
     w.key(1, "channelGroups")
     for grp in cg.findall("group"):
         channels = grp.findall("channel")
+        # An empty group is kept: groups are numbered by position, so dropping
+        # it renumbered every later group against the session's files.
         if not channels:
+            w.lines.append("    - channels: []")
             continue
         first = True
         for ch in channels:
@@ -202,9 +205,12 @@ def convert_spike_detection(root, w):
         peak_idx     = intval(grp.find("peakSampleIndex"), 26)
         n_features   = intval(grp.find("nFeatures"),       3)
         ch_list = channels.findall("channel") if channels is not None else []
+        # An empty group is kept (see convert_anatomical_description): its
+        # number is the N of the .spk.N/.clu.N files of every later group.
         if not ch_list:
-            continue
-        w.lines.append(f"    - channels:")
+            w.lines.append("    - channels: []")
+        else:
+            w.lines.append(f"    - channels:")
         for ch in ch_list:
             w.lines.append(f"        - {intval(ch)}")
         w.lines.append(f"      nSamples: {n_samples}")
