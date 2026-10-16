@@ -46,14 +46,10 @@
 ProbePage::ProbePage(QWidget* parent)
     : QWidget(parent)
 {
-    // Default library path: /usr/local/share/neurosuite/probes (or the
-    // platform equivalent via QStandardPaths).  empty.probe and the
-    // canonical library files all live under this prefix.
-    const QStringList dataDirs = QStandardPaths::standardLocations(
-        QStandardPaths::GenericDataLocation);
-    if (!dataDirs.isEmpty())
-        libraryPath = dataDirs.first() + QStringLiteral("/neurosuite/probes");
-
+    // libraryPath stays empty unless the session names one
+    // (probeLibraryPath): the installed libraries are found at run time by
+    // librarySearchDirs(), so one machine's install prefix is never
+    // written into the session.
     buildUi();
     refreshInspector();   // disables fields when no selection
 }
@@ -272,7 +268,7 @@ void ProbePage::getProbes(QList<ProbeEntry>& probes) const
 
 void ProbePage::setLibraryPath(const QString& path)
 {
-    if (!path.isEmpty()) libraryPath = path;
+    libraryPath = path;
 }
 
 QString ProbePage::getLibraryPath() const
@@ -336,7 +332,7 @@ void ProbePage::onAddFromLibraryClicked()
     const QString path = QFileDialog::getOpenFileName(
         this,
         tr("Add Probe — Select File from Library"),
-        getLibraryPath(),
+        defaultLibraryDir(),
         tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
     if (path.isEmpty()) return;
 
@@ -540,7 +536,7 @@ void ProbePage::onBrowseLibraryClicked()
     const QString path = QFileDialog::getOpenFileName(
         this,
         tr("Select Probe Configuration File"),
-        getLibraryPath(),
+        defaultLibraryDir(),
         tr("Probe files (*.probe *.yaml *.yml);;All files (*)"));
     if (path.isEmpty()) {
         setStatus(tr("Replace cancelled."));
@@ -855,34 +851,72 @@ ProbePage::ExistingFile ProbePage::askAboutExistingFile(const QString& path)
     return ExistingFile::Cancel;
 }
 
+QStringList ProbePage::librarySearchDirs() const
+{
+    // Probe libraries, first match wins (doc/ndmanager/README.md,
+    // "Probe library"; ndm_setupgroups searches in the same order):
+    //   1. the session's probeLibraryPath
+    //   2. $NEUROSUITE_PROBE_PATH, then the legacy $NS3_PROBE_LIBRARY_PATH
+    //      (each a list separated like PATH)
+    //   3. neurosuite/probes under every generic data directory:
+    //      ~/.local/share, then $XDG_DATA_DIRS (/usr/local/share,
+    //      /usr/share) on Linux
+    QStringList dirs;
+    auto add = [&dirs](const QString& d) {
+        if (d.isEmpty()) return;
+        const QString clean = QDir::cleanPath(d);
+        if (!dirs.contains(clean)) dirs.append(clean);
+    };
+    add(libraryPath);
+    for (const char* var : { "NEUROSUITE_PROBE_PATH", "NS3_PROBE_LIBRARY_PATH" }) {
+        const QString value = QString::fromLocal8Bit(qgetenv(var));
+        for (const QString& d : value.split(QDir::listSeparator(), Qt::SkipEmptyParts))
+            add(d);
+    }
+    for (const QString& d : QStandardPaths::locateAll(
+             QStandardPaths::GenericDataLocation, QStringLiteral("neurosuite/probes"),
+             QStandardPaths::LocateDirectory))
+        add(d);
+    return dirs;
+}
+
+QString ProbePage::defaultLibraryDir() const
+{
+    for (const QString& d : librarySearchDirs())
+        if (QFileInfo(d).isDir()) return d;
+    return QString();
+}
+
 QString ProbePage::resolveProbePath(const QString& cellValue) const
 {
+    // Search order: an absolute path as is; then relative to the session
+    // directory, its probes/ subdirectory, and each library directory of
+    // librarySearchDirs() in turn.
     if (cellValue.isEmpty()) return QString();
     if (QDir::isAbsolutePath(cellValue))
         return QFileInfo(cellValue).isFile() ? cellValue : QString();
+    QStringList bases;
     const QString dir = sessionDir();
     if (!dir.isEmpty()) {
-        const QString local = QDir(dir).absoluteFilePath(cellValue);
-        if (QFileInfo(local).isFile()) return local;
+        bases.append(dir);
+        bases.append(QDir(dir).absoluteFilePath(QStringLiteral("probes")));
     }
-    const QString libCandidate =
-        getLibraryPath() + QDir::separator() + cellValue;
-    if (QFileInfo(libCandidate).isFile()) return libCandidate;
+    bases += librarySearchDirs();
+    for (const QString& base : bases) {
+        const QString candidate = QDir(base).absoluteFilePath(cellValue);
+        if (QFileInfo(candidate).isFile()) return candidate;
+    }
     return QString();
 }
 
 QString ProbePage::emptyTemplatePath() const
 {
-    // Honour an optional environment override so test rigs can point at
-    // a custom-installed library without root.
-    const QByteArray envOverride = qgetenv("NS3_PROBE_LIBRARY_PATH");
-    if (!envOverride.isEmpty()) {
-        const QString p = QString::fromLocal8Bit(envOverride)
-                            + QStringLiteral("/general/empty.probe");
-        if (QFile::exists(p)) return p;
+    // <library>/general/empty.probe from the first library that has one.
+    for (const QString& d : librarySearchDirs()) {
+        const QString p = QDir(d).absoluteFilePath(QStringLiteral("general/empty.probe"));
+        if (QFileInfo(p).isFile()) return p;
     }
-    // Default: <library>/general/empty.probe.
-    return getLibraryPath() + QStringLiteral("/general/empty.probe");
+    return QString();
 }
 
 QString ProbePage::copyProbeIntoSession(const QString& srcPath, int probeId)

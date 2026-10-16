@@ -75,6 +75,10 @@ public:
     void setProbes(const QList<ProbeEntry>& probes);
     void getProbes(QList<ProbeEntry>& probes) const;
 
+    /** The session's probeLibraryPath: an explicitly chosen library,
+     *  searched first.  Empty when the session names none -- the
+     *  installed libraries are then found at run time and nothing is
+     *  written back.  See librarySearchDirs(). */
     void setLibraryPath(const QString& path);
     QString getLibraryPath() const;
 
@@ -184,14 +188,23 @@ private:
      *  overwrite it (Write), use it as it is (Keep) or cancel. */
     ExistingFile askAboutExistingFile(const QString& path);
 
-    /** Resolve a probeFile cell value (absolute, session-local, or
-     *  library basename) to an existing absolute path.  Returns empty
-     *  string if neither candidate exists. */
+    /** Resolve a probeFile cell value to an existing file: an absolute
+     *  path as is, else relative to the session directory, then
+     *  <session dir>/probes, then each of librarySearchDirs().  Empty
+     *  when none exists. */
     QString resolveProbePath(const QString& cellValue) const;
 
-    /** Returns the path to the system-wide empty.probe template,
-     *  honouring an optional NS3_PROBE_LIBRARY_PATH env var override. */
+    /** general/empty.probe from the first library directory that has
+     *  it, or empty. */
     QString emptyTemplatePath() const;
+
+    /** Probe library directories in search order: probeLibraryPath,
+     *  $NEUROSUITE_PROBE_PATH, $NS3_PROBE_LIBRARY_PATH (legacy), then
+     *  neurosuite/probes in every QStandardPaths generic data dir. */
+    QStringList librarySearchDirs() const;
+
+    /** First existing library directory -- where file dialogs open. */
+    QString defaultLibraryDir() const;
 
     /**
      * Copy @p srcPath into the session directory, renamed to
@@ -217,7 +230,7 @@ private:
     QList<ProbeEntry> probes;
     int               currentIndex = -1;     ///< -1 = no selection
     bool              modified     = false;
-    QString           libraryPath;
+    QString           libraryPath;           ///< session's probeLibraryPath (may be empty)
     int               nbChannels   = 0;
     bool              loadingMaker = false;  ///< suppress save during programmatic load
     bool              makerHasProbe = false; ///< maker holds the current probe's file
