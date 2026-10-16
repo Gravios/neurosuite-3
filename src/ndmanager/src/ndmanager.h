@@ -78,6 +78,12 @@ public:
   * as File > New does; used for the --new command-line option.*/
     void newDocumentFile();
 
+    /**Opens url as the model for a new parameter file (File > Use Template):
+  * the document is loaded from url but Save asks for a new name, so url is
+  * never overwritten.  When a document is already open, the model is opened
+  * in a new instance (--model url) and this window is left as it is.*/
+    void openModelFile(const QString& url);
+
     /**Creates a ParameterView.
   * @param anatomicalGroups map given the composition of the anatomical groups. The trash group is not included, channels which are not part of
   * any group are in the trash group.
@@ -323,7 +329,8 @@ private:
     /**Pointer on the ManagerView aloowing to manage the data processing.*/
     ManagerView* managerView;
 
-    /**If the current file has been imported, this variable stores the original URL.*/
+    /**If the current file has been imported (Use Template), the template it
+     * was loaded from; used to reload it as a model.*/
     QString importedFileUrl;
 
     QString html;

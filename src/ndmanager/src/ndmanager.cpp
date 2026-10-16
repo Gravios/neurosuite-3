@@ -555,7 +555,9 @@ void ndManager::openDocumentFile(const QString& url)
     else{
         QString path = doc->url();
 
-        if(path == url){
+        //A template opened as a model is not that file: open it for real
+        //in a new instance.
+        if(path == url && !importedFile){
             mFileOpenRecent->addRecentFile(url); //hack, unselect the item
             QApplication::restoreOverrideCursor();
             return;
@@ -604,23 +606,59 @@ void ndManager::createParameterView(QMap<int, QList<int> >& anatomicalGroups,QMa
 
 void ndManager::slotImport(){
     slotStatusMsg(tr("importing file as model…"));
-    importedFile = true;
 
     QSettings settings;
     const QString url = QFileDialog::getOpenFileName(this, tr("Import file as model…"),settings.value("CurrentDirectory").toString(),
                                                      tr("Parameter File (*.yaml *.yml);;All files (*)") );
-    if(!url.isEmpty()) {
-        QDir CurrentDir;
-        settings.setValue("CurrentDirectory", CurrentDir.absoluteFilePath(url));
-        openDocumentFile(url);
+    if(url.isEmpty()) {
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    QDir CurrentDir;
+    settings.setValue("CurrentDirectory", CurrentDir.absoluteFilePath(url));
+    openModelFile(url);
+}
+
+void ndManager::openModelFile(const QString& url){
+    slotStatusMsg(tr("importing file as model…"));
+    if(!QFileInfo(url).isFile()){
+        QMessageBox::critical(this, tr("Error!"), tr("The template %1 does not exist.").arg(url));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    if(rejectXmlFile(url)){
+        slotStatusMsg(tr("Ready."));
+        return;
     }
 
-    importedFileUrl = url + QDir::separator() + "Untitled";
+    //A document is already open: the model goes to a new instance, this
+    //document is left as it is.
+    if(mainDock){
+        startInstance(QStringList() << QStringLiteral("--model") << url);
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
 
-    doc->rename(url);
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    const int returnStatus = doc->openDocument(url);
+    if(returnStatus != ndManagerDoc::OK){
+        QApplication::restoreOverrideCursor();
+        QMessageBox::critical (this, tr("Error!"),
+                               tr("The selected parameter file could not be initialized:\n\n%1\n\n%2")
+                               .arg(url, doc->parseError()));
+        doc->closeDocument();
+        filePath.clear();
+        resetState();
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    //The model is never written back: Save asks for a new name.
+    importedFile = true;
+    importedFileUrl = url;
     filePath = url;
-    setWindowTitle(url);
-
+    setWindowTitle(tr("%1 [template, not saved]").arg(url));
+    QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
 }
 

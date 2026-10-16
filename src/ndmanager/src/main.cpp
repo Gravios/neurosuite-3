@@ -83,20 +83,32 @@ int main(int argc, char **argv)
     // already holds a session starts another instance with it), instead of
     // opening <cwd>/<dir>.yaml.
     bool newDocument = false;
+    // --model FILE: start a new document from FILE (File > Use Template); FILE
+    // itself is never written.
+    QString modelFile;
     for (int i = 1, n = args.size(); i < n; ++i) {
         const QString arg = args.at(i);
         if (arg == "-h" || arg == "--help" || arg == "-help") {
             qWarning() << "Usage: " << qPrintable(args.at(0))
-                       << " [--new | file]"
+                       << " [--new | --model file | file]"
                        << "\n\n"
                        << "Arguments:\n"
                        << "  file                    parameter file or session directory to open\n"
                        << "  --new                   start with a new, untitled parameter file\n"
+                       << "  --model file            start a new parameter file from the template file\n"
                        << "  -h, --help              print this help\n";
             return 1;
         }
         if (arg == QLatin1String("--new")) {
             newDocument = true;
+            continue;
+        }
+        if (arg == QLatin1String("--model")) {
+            if (i + 1 >= n) {
+                qWarning() << "ndmanager: --model needs a file name";
+                return 1;
+            }
+            modelFile = args.at(++i);
             continue;
         }
         argsList.push_back(arg);
@@ -105,7 +117,11 @@ int main(int argc, char **argv)
 
     ndManager* manager = new ndManager();
     manager->show();
-    if (newDocument) {
+    if (!modelFile.isEmpty()) {
+        if (newDocument || !argsList.isEmpty())
+            qWarning() << "ndmanager: --model given, ignoring the other arguments";
+        manager->openModelFile(QFileInfo(modelFile).absoluteFilePath());
+    } else if (newDocument) {
         if (!argsList.isEmpty())
             qWarning() << "ndmanager: --new given, ignoring" << argsList;
         manager->newDocumentFile();
