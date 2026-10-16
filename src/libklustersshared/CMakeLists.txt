@@ -115,6 +115,13 @@ if(NS_BUILD_TESTS)
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
     add_test(NAME klustersshared_sdiff_pairs_test COMMAND klustersshared_sdiff_pairs_test)
 
+    # The per-clustering cluster-information file (unitsidecar.h, header-only,
+    # no Qt) Klusters writes and ndManager records into the units table.
+    add_executable(klustersshared_unitsidecar_test test/unitsidecar_test.cpp)
+    target_include_directories(klustersshared_unitsidecar_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+    add_test(NAME klustersshared_unitsidecar_test COMMAND klustersshared_unitsidecar_test)
+
     # XcorrDispatch under concurrent calls (no Qt): one probe, atomic demotion,
     # wide shifts on OpenMP.  Built with USE_CUDA against a fake CUDA back end
     # defined in the test, so it needs no GPU.
