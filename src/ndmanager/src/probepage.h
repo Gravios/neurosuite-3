@@ -42,6 +42,8 @@
 #include <QStringList>
 #include <QWidget>
 
+#include <functional>
+
 class QListWidget;
 class QListWidgetItem;
 class QLineEdit;
@@ -76,6 +78,12 @@ public:
     void setLibraryPath(const QString& path);
     QString getLibraryPath() const;
 
+    /** Where the session file is: @p provider returns the document's
+     *  current path (it follows Save As).  Session-local probe files are
+     *  read and written next to it, named after it.  Set before
+     *  setProbes(). */
+    void setSessionFileProvider(std::function<QString()> provider);
+
     bool isModified() const { return modified; }
     void setModified(bool b) { modified = b; }
     /** Total recording channels — used to compute the leftover group on import. */
@@ -104,7 +112,10 @@ signals:
                              int                           firstNewGroupId);
 
 public slots:
-    void resetModificationStatus() { modified = false; }
+    /** Called after the document is saved: clears the modified flag and,
+     *  after Save As into another directory, copies the session's own
+     *  probe files there. */
+    void resetModificationStatus();
 
     /**
      * Recompute anatomical/spike group memberships for every probe from
@@ -154,8 +165,24 @@ private:
     bool probeIsUntouched(const QString& path) const;
 
     /** Returns the local filename a probe with @p probeId should have
-     *  in the session directory: <session>.probe.<probeId>.probe. */
-    static QString sessionProbeFilename(int probeId);
+     *  in the session directory: <session>.probe.<probeId>.probe, where
+     *  <session> is the session file's name without .yaml. */
+    QString sessionProbeFilename(int probeId) const;
+
+    /** Absolute path of sessionProbeFilename(@p probeId); empty while the
+     *  session has no file. */
+    QString sessionProbePath(int probeId) const;
+
+    /** Directory of the session file; empty while it has none. */
+    QString sessionDir() const;
+
+    /** Session file name without its .yaml/.yml/.xml extension. */
+    QString sessionStem() const;
+
+    enum class ExistingFile { Write, Keep, Cancel };
+    /** Write when @p path does not exist; otherwise ask whether to
+     *  overwrite it (Write), use it as it is (Keep) or cancel. */
+    ExistingFile askAboutExistingFile(const QString& path);
 
     /** Resolve a probeFile cell value (absolute, session-local, or
      *  library basename) to an existing absolute path.  Returns empty
@@ -194,6 +221,8 @@ private:
     int               nbChannels   = 0;
     bool              loadingMaker = false;  ///< suppress save during programmatic load
     bool              makerHasProbe = false; ///< maker holds the current probe's file
+    std::function<QString()> sessionFileProvider;  ///< document's current path
+    QString           probeFilesDir;         ///< where the session's probe files are
 
     // ── UI ───────────────────────────────────────────────────────────────
     QSplitter*       split          = nullptr;

@@ -377,25 +377,45 @@ void ProbePage::onAddFromFileClicked()
 // Returns the new id, or -1 on failure.
 int ProbePage::appendProbe(const QString& sourcePath)
 {
+    // Session-local probe files live next to the session file, so a
+    // session that has never been saved has nowhere to put one.
+    if (sessionDir().isEmpty()) {
+        setStatus(tr("Save the session first: its probe files are stored "
+                     "next to the session file."), /*err=*/true);
+        return -1;
+    }
+
     int newId = 0;
     for (const ProbeEntry& e : probes) newId = qMax(newId, e.id + 1);
 
     const QString fname = sessionProbeFilename(newId);
-    const QString fpath = QDir::current().absoluteFilePath(fname);
+    const QString fpath = sessionProbePath(newId);
 
-    if (sourcePath.isEmpty()) {
-        // Empty-template path.  Read content once; if installed
-        // template is missing, fall back to a hardcoded skeleton so
-        // the user always ends up with a valid file.
-        QString srcContent;
-        const QString templatePath = emptyTemplatePath();
-        if (QFile::exists(templatePath)) {
-            QFile f(templatePath);
-            if (f.open(QIODevice::ReadOnly | QIODevice::Text))
-                srcContent = QString::fromUtf8(f.readAll());
+    QString source = sourcePath;
+    if (source.isEmpty()) source = emptyTemplatePath();
+
+    if (!source.isEmpty() && QFile::exists(source)) {
+        // Copy the chosen file, or the installed empty template.
+        // copyProbeIntoSession asks before replacing an existing file.
+        const QString localName = copyProbeIntoSession(source, newId);
+        if (localName.isEmpty()) {
+            setStatus(tr("Import cancelled or failed."), /*err=*/true);
+            return -1;
         }
-        if (srcContent.isEmpty()) {
-            srcContent = QStringLiteral(
+    } else if (!sourcePath.isEmpty()) {
+        setStatus(tr("%1 does not exist.").arg(sourcePath), /*err=*/true);
+        return -1;
+    } else {
+        // No installed template: write a minimal valid probe so the user
+        // always ends up with a file to edit -- unless one is already
+        // there and the user wants to keep it.
+        const ExistingFile choice = askAboutExistingFile(fpath);
+        if (choice == ExistingFile::Cancel) {
+            setStatus(tr("Add cancelled."));
+            return -1;
+        }
+        if (choice == ExistingFile::Write) {
+            const QString srcContent = QStringLiteral(
                 "probeFile:\n"
                 "  version: '1.0'\n"
                 "  vendor: ''\n"
@@ -411,31 +431,21 @@ int ProbePage::appendProbe(const QString& sourcePath)
                 "    layout: linear\n"
                 "    area_um2: 100\n"
                 "    spacing_um: null\n"
-                "    geometry:\n"
+                "    geometry:            # [x_um, y_um], y = height above the tip\n"
                 "      - [0, 100]\n"
                 "  channelMap:\n"
                 "    description: 'Sequential.'\n"
                 "    map: null\n"
                 "  notes: 'Empty starter probe — edit before use.'\n");
-        }
-        QFile out(fpath);
-        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-            QMessageBox::warning(this, tr("Add Probe"),
-                tr("Cannot create %1: %2").arg(fpath, out.errorString()));
-            setStatus(tr("Failed to create %1").arg(fname), /*err=*/true);
-            return -1;
-        }
-        out.write(srcContent.toUtf8());
-        out.close();
-    } else {
-        // Copy a chosen file.  copyProbeIntoSession handles the
-        // "destination already exists" overwrite/cancel prompt; for a
-        // brand-new id the destination won't exist so the prompt is
-        // dormant.
-        const QString localName = copyProbeIntoSession(sourcePath, newId);
-        if (localName.isEmpty()) {
-            setStatus(tr("Import cancelled or failed."), /*err=*/true);
-            return -1;
+            QFile out(fpath);
+            if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+                QMessageBox::warning(this, tr("Add Probe"),
+                    tr("Cannot create %1: %2").arg(fpath, out.errorString()));
+                setStatus(tr("Failed to create %1").arg(fname), /*err=*/true);
+                return -1;
+            }
+            out.write(srcContent.toUtf8());
+            out.close();
         }
     }
 
@@ -472,7 +482,8 @@ void ProbePage::onRemoveClicked()
     // for this id.  Library files (other paths) are left alone.
     const QString sessionName = sessionProbeFilename(victim.id);
     if (victim.probeFile == sessionName) {
-        const QString fpath = QDir::current().absoluteFilePath(victim.probeFile);
+        const QString fpath = sessionDir().isEmpty() ? QString()
+            : QDir(sessionDir()).absoluteFilePath(victim.probeFile);
         if (QFile::exists(fpath))
             QFile::remove(fpath);
     }
@@ -716,8 +727,38 @@ void ProbePage::saveCurrentProbeFile()
     ProbeEntry& e = probes[currentIndex];
     if (e.id < 0) return;
 
-    const QString fname = sessionProbeFilename(e.id);
-    const QString fpath = QDir::current().absoluteFilePath(fname);
+    const QString dir = sessionDir();
+    if (dir.isEmpty()) {
+        setStatus(tr("Not saved — save the session first: its probe files "
+                     "are stored next to the session file."), /*err=*/true);
+        return;
+    }
+    // A probe whose file already sits in the session directory is written
+    // in place (whatever its name).  One that uses a library or other file
+    // gets its own session copy, <session>.probe.<id>.probe, and is
+    // pointed at it; a file of that name is only replaced if the user
+    // agrees.
+    QString fname = e.probeFile;
+    QString fpath;
+    if (!fname.isEmpty() && !QDir::isAbsolutePath(fname)
+        && QFileInfo(QDir(dir).absoluteFilePath(fname)).isFile()) {
+        fpath = QDir(dir).absoluteFilePath(fname);
+    } else {
+        fname = sessionProbeFilename(e.id);
+        fpath = sessionProbePath(e.id);
+        if (QFile::exists(fpath)) {
+            const auto reply = QMessageBox::question(
+                this, tr("Probe file exists"),
+                tr("Probe %1 uses %2, so its edits go to a session copy, but\n\n"
+                   "    %3\n\nalready exists.  Overwrite it with this probe's "
+                   "geometry?").arg(e.id).arg(e.probeFile, fname),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (reply != QMessageBox::Yes) {
+                setStatus(tr("Not saved — %1 exists.").arg(fname), /*err=*/true);
+                return;
+            }
+        }
+    }
     QString err;
     if (!maker->saveToFile(fpath, &err)) {
         qWarning() << "ProbePage: maker save failed for" << fpath << ":" << err;
@@ -754,21 +795,79 @@ void ProbePage::setStatus(const QString& msg, bool isError)
 // Path / filename helpers
 // ═══════════════════════════════════════════════════════════════════════════
 
-QString ProbePage::sessionProbeFilename(int probeId)
+void ProbePage::setSessionFileProvider(std::function<QString()> provider)
 {
-    const QString sessionStem = QDir::current().dirName();
+    sessionFileProvider = std::move(provider);
+    probeFilesDir = sessionDir();
+}
+
+QString ProbePage::sessionDir() const
+{
+    // The directory of the session file as it is on disk.  A document that
+    // has no file yet (File > New, before the first save) has none.
+    const QString file = sessionFileProvider ? sessionFileProvider() : QString();
+    if (file.isEmpty()) return QString();
+    const QFileInfo fi(file);
+    if (!fi.isFile()) return QString();
+    return fi.absolutePath();
+}
+
+QString ProbePage::sessionStem() const
+{
+    const QString file = sessionFileProvider ? sessionFileProvider() : QString();
+    if (file.isEmpty()) return QString();
+    const QFileInfo fi(file);
+    // session.yaml -> session; a name without a parameter-file extension
+    // is used whole (as ParameterView::sessionBasePath does).
+    const QString suffix = fi.suffix().toLower();
+    if (suffix == QLatin1String("yaml") || suffix == QLatin1String("yml")
+        || suffix == QLatin1String("xml"))
+        return fi.completeBaseName();
+    return fi.fileName();
+}
+
+QString ProbePage::sessionProbeFilename(int probeId) const
+{
     return QStringLiteral("%1.probe.%2.probe")
-            .arg(sessionStem)
+            .arg(sessionStem())
             .arg(probeId);
+}
+
+QString ProbePage::sessionProbePath(int probeId) const
+{
+    const QString dir = sessionDir();
+    if (dir.isEmpty()) return QString();
+    return QDir(dir).absoluteFilePath(sessionProbeFilename(probeId));
+}
+
+ProbePage::ExistingFile ProbePage::askAboutExistingFile(const QString& path)
+{
+    if (!QFile::exists(path)) return ExistingFile::Write;
+    const auto reply = QMessageBox::question(
+        this, tr("Probe file exists"),
+        tr("A probe file named\n\n    %1\n\nalready exists.  Overwrite it?  "
+           "Choose No to use the existing file as it is.")
+            .arg(QFileInfo(path).fileName()),
+        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+        QMessageBox::No);
+    if (reply == QMessageBox::Yes) return ExistingFile::Write;
+    if (reply == QMessageBox::No)  return ExistingFile::Keep;
+    return ExistingFile::Cancel;
 }
 
 QString ProbePage::resolveProbePath(const QString& cellValue) const
 {
     if (cellValue.isEmpty()) return QString();
-    if (QFile::exists(cellValue)) return cellValue;
+    if (QDir::isAbsolutePath(cellValue))
+        return QFileInfo(cellValue).isFile() ? cellValue : QString();
+    const QString dir = sessionDir();
+    if (!dir.isEmpty()) {
+        const QString local = QDir(dir).absoluteFilePath(cellValue);
+        if (QFileInfo(local).isFile()) return local;
+    }
     const QString libCandidate =
         getLibraryPath() + QDir::separator() + cellValue;
-    if (QFile::exists(libCandidate)) return libCandidate;
+    if (QFileInfo(libCandidate).isFile()) return libCandidate;
     return QString();
 }
 
@@ -789,37 +888,72 @@ QString ProbePage::emptyTemplatePath() const
 QString ProbePage::copyProbeIntoSession(const QString& srcPath, int probeId)
 {
     const QString baseName  = sessionProbeFilename(probeId);
-    const QDir    sessionDir = QDir::current();
-    const QString localPath = sessionDir.absoluteFilePath(baseName);
+    const QString localPath = sessionProbePath(probeId);
+    if (localPath.isEmpty()) {
+        setStatus(tr("Save the session first: its probe files are stored "
+                     "next to the session file."), /*err=*/true);
+        return QString();
+    }
 
     if (QFileInfo(srcPath).canonicalFilePath()
         == QFileInfo(localPath).canonicalFilePath())
         return baseName;
 
-    if (QFile::exists(localPath)) {
-        const auto reply = QMessageBox::question(
-            this, tr("Probe file exists"),
-            tr("A probe file named\n\n    %1\n\nalready exists.  Overwrite "
-               "with the selected file?  Choose No to reuse the existing "
-               "local copy.").arg(baseName),
-            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
-            QMessageBox::No);
-        if (reply == QMessageBox::Cancel) return QString();
-        if (reply == QMessageBox::No)     return baseName;
-        if (!QFile::remove(localPath)) {
-            QMessageBox::warning(this, tr("Copy Failed"),
-                tr("Cannot remove existing %1").arg(localPath));
-            return QString();
-        }
+    switch (askAboutExistingFile(localPath)) {
+    case ExistingFile::Cancel: return QString();
+    case ExistingFile::Keep:   return baseName;
+    case ExistingFile::Write:  break;
+    }
+    if (QFile::exists(localPath) && !QFile::remove(localPath)) {
+        QMessageBox::warning(this, tr("Copy Failed"),
+            tr("Cannot remove existing %1").arg(localPath));
+        return QString();
     }
 
     if (!QFile::copy(srcPath, localPath)) {
         QMessageBox::warning(this, tr("Copy Failed"),
             tr("Cannot copy\n  %1\nto\n  %2")
-                .arg(srcPath, sessionDir.absolutePath()));
+                .arg(srcPath, QFileInfo(localPath).absolutePath()));
         return QString();
     }
+    // QFile::copy keeps the source's permissions; a read-only library file
+    // must give a session copy the Probe Maker can write.
+    QFile::setPermissions(localPath, QFile::permissions(localPath)
+                          | QFileDevice::WriteOwner | QFileDevice::ReadOwner);
     return baseName;
+}
+
+void ProbePage::resetModificationStatus()
+{
+    modified = false;
+
+    // After Save As into another directory the session's own probe files
+    // are still next to the old session file, but the saved document
+    // names them relative to the new one.  Copy them across (never over
+    // an existing file) so the new session opens with its geometry.
+    const QString newDir = sessionDir();
+    if (newDir.isEmpty()) return;
+    if (!probeFilesDir.isEmpty()
+        && QDir(probeFilesDir).canonicalPath() != QDir(newDir).canonicalPath()) {
+        QStringList copied, kept;
+        for (const ProbeEntry& e : probes) {
+            if (e.probeFile.isEmpty() || QDir::isAbsolutePath(e.probeFile))
+                continue;
+            const QString from = QDir(probeFilesDir).absoluteFilePath(e.probeFile);
+            if (!QFileInfo(from).isFile()) continue;   // a library file
+            const QString to = QDir(newDir).absoluteFilePath(e.probeFile);
+            if (QFile::exists(to)) { kept.append(e.probeFile); continue; }
+            QDir().mkpath(QFileInfo(to).absolutePath());
+            if (QFile::copy(from, to)) copied.append(e.probeFile);
+        }
+        if (!kept.isEmpty())
+            setStatus(tr("Saved to a new directory; it already had %1, kept "
+                         "as is.").arg(kept.join(QStringLiteral(", "))), /*err=*/true);
+        else if (!copied.isEmpty())
+            setStatus(tr("Copied %1 next to the saved session.")
+                        .arg(copied.join(QStringLiteral(", "))));
+    }
+    probeFilesDir = newDir;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

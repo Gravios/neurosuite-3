@@ -929,6 +929,9 @@ int ParameterView::currentPage() const
 void ParameterView::setProbeData(const QList<ProbeEntry>& probes,
                                  const QString& libraryPath)
 {
+    // Session-local probe files sit next to the document; the lambda
+    // follows the document through Save As.
+    probe->setSessionFileProvider([this] { return doc.url(); });
     probe->setProbes(probes);
     if (!libraryPath.isEmpty())
         probe->setLibraryPath(libraryPath);
