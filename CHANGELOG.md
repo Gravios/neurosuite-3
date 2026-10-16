@@ -109,6 +109,13 @@ descriptions.
   `acquisitionSystem/samplingRate`).
 - `ndmanager --new` and `--model FILE`; Save as Default writes where File ▸ New
   reads; session YAML files are registered as `application/nphys-yaml`.
+- `NDM_PIPELINE` naming a pipeline file that does not exist is now an error
+  in `ndm_start` (it used to run another pipeline silently). Save Pipeline As
+  under another name leaves the graph "unsaved" for the close prompt.
+- A one-shank `.probe` without `count_per_shank` holds every geometry site in
+  every reader (it did only in the Probe Maker).
+- The installed MIME database and icon cache are refreshed once after the
+  whole install; the unused postinst/postrm scripts are gone.
 
 </details>
 
