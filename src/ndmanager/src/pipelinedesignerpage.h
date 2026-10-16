@@ -129,6 +129,12 @@ public:
     void clearAll();
     void deleteSelected();
 
+    /** Drop every selection / drag / connection / pan-in-progress state.
+     *  Called whenever the bound node list is replaced wholesale (load,
+     *  setPrograms, clearGraphToRoot), so no id from the previous graph
+     *  survives to be deleted, dragged or connected from. */
+    void resetInteraction();
+
     QString selectedNodeId()  const { return selNodeId; }
     QString selectedEdgeKey() const { return selEdgeKey; }
 

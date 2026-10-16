@@ -123,6 +123,20 @@ void PipelineCanvas::bind(QList<PipelineNode>* nodes, QList<PipelineEdge>* edges
     update();
 }
 
+void PipelineCanvas::resetInteraction()
+{
+    selNodeId.clear();
+    selEdgeKey.clear();
+    dragId.clear();
+    connecting = false;
+    connectFrom.clear();
+    if (panActive) {
+        panActive = false;
+        setCursor(Qt::ArrowCursor);
+    }
+    update();
+}
+
 void PipelineCanvas::clearAll()
 {
     if (!nodes) return;
@@ -1004,6 +1018,7 @@ void PipelineDesignerPage::setPrograms(const QList<ProgramInformation>& programs
 {
     nodes.clear();
     edges.clear();
+    if (canvas) canvas->resetInteraction();
     inspectedId.clear();
     clearInspector();
 
@@ -1110,6 +1125,7 @@ void PipelineDesignerPage::clearGraphToRoot()
 {
     nodes.clear();
     edges.clear();
+    if (canvas) canvas->resetInteraction();
     inspectedId.clear();
     clearInspector();
 
@@ -1590,6 +1606,7 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
     // Apply.
     nodes = newNodes;
     edges = newEdges;
+    if (canvas) canvas->resetInteraction();
     inspectedId.clear();
     clearInspector();
 
