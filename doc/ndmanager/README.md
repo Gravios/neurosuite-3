@@ -36,6 +36,10 @@ ndmanager. See the [install guide](install/linux.md).
 ndmanager session.yaml
 ndmanager /data/session/          # a directory opens <dir>/<dir>.yaml
 ndmanager                         # no argument: <cwd>/<cwd>.yaml if it exists
+ndmanager --new                   # an empty Untitled document (what File ▸ New starts
+                                  # when a session is already open in this window)
+ndmanager --model template.yaml   # a template as the model for a new session; Save asks
+                                  # for a name (File ▸ Use Template… with a session open)
 
 # Start a new session from the project template: File ▸ New from Project Template… (Ctrl+Shift+N)
 
@@ -392,6 +396,16 @@ not a fatal error.
   preset prepends `ndm_start` automatically. Save Pipeline after loading a preset to
   persist it.
 - For the full design, see [`../design/ndm-start-root.md`](../design/ndm-start-root.md).
+
+---
+
+## Query
+
+**Actions ▸ Query…** searches every `*.yaml` / `*.yml` file under a chosen directory
+(subdirectories included) for a value and reports a File | Path | Value table. The query is a
+path of keys separated by `/`; a segment can also be a list index or `*` for any key or item,
+e.g. `acquisitionSystem/samplingRate` or `spikeDetection/channelGroups/*/nSamples`. Files
+that are not valid YAML are named in the report. XPath is not supported.
 
 ---
 

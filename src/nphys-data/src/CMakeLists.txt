@@ -15,12 +15,13 @@ install(FILES nphys-data.xml
 #   ${CMAKE_INSTALL_DATADIR}/neurosuite/probes/<vendor>/
 # which maps to /usr/local/share/neurosuite/probes/<vendor>/ by default.
 #
-# The runtime search order (lowest to highest priority) is:
-#   /usr/share/neurosuite/probes/
-#   /usr/local/share/neurosuite/probes/
-#   ~/.local/share/neurosuite/probes/
-#   $NEUROSUITE_PROBE_PATH
-#   session_dir/probes/
+# A relative probeFile is looked up in this order, first match wins (see
+# doc/ndmanager-plugins/commands/ndm_setupgroups.md; ndmanager's Probes tab
+# uses the same order):
+#   session_dir/, session_dir/probes/, probeLibrary (ndm_setupgroups),
+#   probeLibraryPath (session YAML), $NEUROSUITE_PROBE_PATH,
+#   $NS3_PROBE_LIBRARY_PATH (legacy), then neurosuite/probes/ under
+#   $XDG_DATA_HOME and each $XDG_DATA_DIRS entry.
 
 file(GLOB _probes_neuronexus "${CMAKE_CURRENT_SOURCE_DIR}/probes/neuronexus/*.probe")
 install(FILES ${_probes_neuronexus}

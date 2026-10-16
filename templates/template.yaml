@@ -945,9 +945,10 @@ programs:
       0-based index of the expected spike peak within the window (default = 26,\
       \ i.e. midpoint of a 52-sample window).\n\n# nFeatures\nPCA components per\
       \ channel for ndm_pca / ndm_klustakwik (default = 3).\n\n# probeLibrary\n\
-      Override probe library search path.  Default search order:\n  /usr/share/neurosuite/probes/,\
-      \ /usr/local/share/neurosuite/probes/,\n  ~/.local/share/neurosuite/probes/,\
-      \ $NEUROSUITE_PROBE_PATH, SESSION_DIR/probes/\n\n# overwrite\nIf false (default),\
+      Extra probe library directory.  A relative probeFile is looked up in the\
+      \ session directory, SESSION_DIR/probes/, this directory, probeLibraryPath,\
+      \ $NEUROSUITE_PROBE_PATH, then neurosuite/probes/ under the XDG data\
+      \ directories; the first that holds it wins.\n\n# overwrite\nIf false (default),\
       \ abort if groups already exist.  Set to true to replace them."
 
   # == Spike detection pipeline =================================================
