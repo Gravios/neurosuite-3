@@ -170,18 +170,6 @@ void PipelineCanvas::resetInteraction()
     update();
 }
 
-void PipelineCanvas::clearAll()
-{
-    if (!nodes) return;
-    nodes->clear();
-    edges->clear();
-    selNodeId.clear();
-    selEdgeKey.clear();
-    connecting = false;
-    update();
-    emit graphModified();
-}
-
 void PipelineCanvas::loadPreset(const QVector<QString>& types)
 {
     if (!nodes) return;
@@ -1273,9 +1261,12 @@ void PipelineDesignerPage::onApply()
 
 void PipelineDesignerPage::onClear()
 {
-    if (canvas) canvas->clearAll();
-    inspectedId.clear();
-    clearInspector();
+    // Back to just the root — never an empty graph: ndm_start must stay
+    // present (getPrograms would otherwise export a list without it, and
+    // a saved file would lose the orchestrator entry).  Clearing is an
+    // edit, so flag it after clearGraphToRoot resets the state.
+    clearGraphToRoot();
+    onGraphModified();
 }
 
 void PipelineDesignerPage::onPresetChanged(int index)

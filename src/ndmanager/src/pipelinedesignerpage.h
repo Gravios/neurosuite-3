@@ -126,7 +126,6 @@ public:
     /** Clear and lay out @p types as a horizontal chain. */
     void loadPreset(const QVector<QString>& types);
 
-    void clearAll();
     void deleteSelected();
 
     /** Drop every selection / drag / connection / pan-in-progress state.
