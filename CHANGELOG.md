@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [CI runs the tests and a lint job; HDF5 1.10 build fix; generated files removed](#2026-10-16--ci-runs-the-tests-and-a-lint-job-hdf5-110-build-fix-generated-files-removed) |
 | 2026-10-16 | [Build and docs: one C++ standard, standard test layout, how to run the tests](#2026-10-16--build-and-docs-one-c-standard-standard-test-layout-how-to-run-the-tests) |
 | 2026-10-16 | [Spike detection: sdiffPairs as arithmetic expressions (stderiv_C6)](#2026-10-16--spike-detection-sdiffpairs-as-arithmetic-expressions-stderiv_c6) |
 | 2026-10-16 | [ndManager: export a session as a template, apply a template to a session](#2026-10-16--ndmanager-export-a-session-as-a-template-apply-a-template-to-a-session) |
@@ -56,6 +57,47 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-10-16 — CI runs the tests and a lint job; HDF5 1.10 build fix; generated files removed
+
+<details>
+<summary>Details</summary>
+
+- **CI runs the regression suite.** `ci.yml` used to build but never test.
+  It now configures with `NS_BUILD_TESTS=ON`, checks out fiber-kit, and runs
+  ctest.
+- **More tests under ctest.**
+  - The 18 ndmanager-plugins script tests are registered as `ndm_test_*`.
+  - `core_shared_contract` checks that the vector tables match fiber-kit's
+    (`-DNS_FIBER_KIT_ROOT`).
+  - Tests that cross-check a plugin binary are given this build's binary.
+- **`test_subset_pca.py`** parsed the pre-PCAE `.pca` header and crashed
+  on real output. It looked for `process_pca` at a path no build produces.
+  Both are fixed.
+- **`process_aomconvert` built only against HDF5 1.12+.** Ubuntu 24.04,
+  the documented platform and the CI image, ships HDF5 1.10, where the
+  five-argument `H5Oget_info_by_name` does not exist. It now calls the
+  versioned function, so it builds on both.
+- **Lint.**
+  - `scripts/lint.sh` checks four things, in seconds and without a build:
+    `bash -n` on every shell script, ruff's defect rules on every Python
+    file, no generated file tracked, and the build invariants.
+  - CI runs it as the `lint` job.
+- **805 generated files removed:**
+  - Doxygen HTML from the original authors' machines;
+  - configure output inside the vendored libsamplerate (CMake builds a
+    copy and configures it there);
+  - clazy compile databases.
+
+  `.gitignore` names them. Its `install/` rule no longer hides the
+  `doc/*/install/` guides.
+- **fiber-kit reads `.wtl` v2** (fiber-kit 0.41.0), so FILE_FORMATS.md no
+  longer lists a format divergence. On the roadmap, only the `.mti`/`.mtf`
+  reader remains.
+
+</details>
 
 ---
 
