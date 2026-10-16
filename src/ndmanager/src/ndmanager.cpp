@@ -700,24 +700,23 @@ void ndManager::slotSave(){
         const QString url=QFileDialog::getSaveFileName( this, tr("Save as…"),initialPath,tr("XML files (*.xml);;YAML files (*.yaml);;All files (*)"));
         if(!url.isEmpty()){
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-            int saveStatus = doc->saveAs(url);
-            if(saveStatus == ndManagerDoc::SAVE_ERROR){
-                QMessageBox::critical(this, tr("IO Error!"),tr("The current file could not be saved possibly because of insufficient file access permissions."
-                                                               " You may consider saving your session file to another location."));
-            }
-            if(importedFile || newFile){
+            const int saveStatus = doc->saveAs(url);
+            QApplication::restoreOverrideCursor();
+            if(saveStatus != ndManagerDoc::OK){
+                QMessageBox::critical(this, tr("IO Error!"),tr("The file %1 could not be saved possibly because of insufficient file access permissions."
+                                                               " You may consider saving your session file to another location.").arg(url));
+            } else {
                 filePath = url;
                 setWindowTitle(url);
+                importedFile = false;
+                newFile = false;
             }
-            importedFile = false;
-            newFile = false;
-            QApplication::restoreOverrideCursor();
         }
     }
     else{
         //Save the parameter file
-        int saveStatus = doc->save();
-        if(saveStatus == ndManagerDoc::SAVE_ERROR){
+        const int saveStatus = doc->save();
+        if(saveStatus != ndManagerDoc::OK){
             QMessageBox::critical(this, tr("IO Error!"),tr("The current file could not be saved possibly because of insufficient file access permissions."
                                                            " You may consider saving your session file to another location using the Save As entry in the File menu."));
         }
@@ -731,15 +730,16 @@ void ndManager::slotSaveAs(){
     //Save the parameter file
     QString url=QFileDialog::getSaveFileName(this, tr("Save as…"),doc->url(),tr("All files (*.*)"));
     if(!url.isEmpty()){
-        int saveStatus = doc->saveAs(url);
-        if(saveStatus == ndManagerDoc::SAVE_ERROR){
-            QMessageBox::critical(0,tr("The current file could not be saved possibly because of insufficient file access permissions."), tr("I/O Error !"));
-        }
-        filePath = url;
-        setWindowTitle(url);
+        const int saveStatus = doc->saveAs(url);
+        if(saveStatus != ndManagerDoc::OK){
+            QMessageBox::critical(this, tr("IO Error!"), tr("The file %1 could not be saved possibly because of insufficient file access permissions.").arg(url));
+        } else {
+            filePath = url;
+            setWindowTitle(url);
 
-        importedFile = false;
-        newFile = false;
+            importedFile = false;
+            newFile = false;
+        }
     }
     slotStatusMsg(tr("Ready."));
 }
@@ -754,8 +754,8 @@ void ndManager::resetState(){
 
 void ndManager::slotSaveDefault(){
     slotStatusMsg(tr("Saving as default…"));
-    int saveStatus = doc->saveDefault();
-    if(saveStatus == ndManagerDoc::SAVE_ERROR){
+    const int saveStatus = doc->saveDefault();
+    if(saveStatus != ndManagerDoc::OK){
         QMessageBox::critical(this, tr("IO Error!"),tr("The current file could not be saved as the default parameter file."));
     }
     slotStatusMsg(tr("Ready."));

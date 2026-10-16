@@ -182,6 +182,17 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url)
     return write(url, sourceUrl);
 }
 
+ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveAs(const QString& newUrl){
+    // write() treats url == docUrl as "saved under its own name", so the new
+    // name is set first and taken back when nothing was written.
+    const QString previousUrl = docUrl;
+    docUrl = newUrl;
+    const OpenSaveCreateReturnMessage status = save(newUrl);
+    if(status != OK)
+        docUrl = previousUrl;
+    return status;
+}
+
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url, const QString& baseUrl){
     //first gather the information
     QMap<int, QList<int> > anatomicalGroups;

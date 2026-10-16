@@ -96,14 +96,12 @@ public:
  */
     OpenSaveCreateReturnMessage save(const QString &url);
 
-    /**Saves the parameter file.
+    /**Saves the parameter file under a new name.  The document takes the new
+ * name only when the file was written; on failure it keeps its old one.
  * @param newUrl new url where to write the parameter fil to.
  * @return an OpenSaveCreateReturnMessage enum giving the saving status.
  */
-    inline OpenSaveCreateReturnMessage saveAs(const QString& newUrl){
-        docUrl = newUrl;
-        return save(docUrl);
-    }
+    OpenSaveCreateReturnMessage saveAs(const QString& newUrl);
 
     /**Save the current parameter file as the default one in the user .kde directory.*/
     OpenSaveCreateReturnMessage saveDefault();
