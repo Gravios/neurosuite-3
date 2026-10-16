@@ -168,6 +168,14 @@ private slots:
     /**Save the current parameter file as the default one in the user .kde directory.*/
     void slotSaveDefault();
 
+    /**File > Export Session as Template: writes chosen sections of the open
+     * session (as it would be saved) to a template file (sessiontemplate.h).*/
+    void slotExportTemplate();
+
+    /**File > Apply Template to Session: replaces chosen sections of the open
+     * session with a template's; the session counts as modified.*/
+    void slotApplyTemplate();
+
     /**Reloads the current file from disk, after offering to save the
      * modifications.  A template document is reloaded as a model; an
      * Untitled document cannot be reloaded.*/
@@ -249,6 +257,11 @@ private:
      * document must then stay open.*/
     bool confirmCloseDocument();
 
+    /**The prompts of confirmCloseDocument(): modified plugin scripts and
+     * descriptions, then (with @p includeSession) the session's parameters,
+     * then the pipeline graph.  False when the user cancels or a save fails.*/
+    bool askToSaveEdits(bool includeSession);
+
     /**Closes the open document (after confirmCloseDocument()) and its view.
      * @return true when no document is open any more.*/
     bool closeCurrentDocument();
@@ -309,6 +322,8 @@ private:
     QAction* mUseTemplateAction;
     QAction* mReloadAction;
     QAction* mSaveAsDefaultAction;
+    QAction* mExportTemplateAction;
+    QAction* mApplyTemplateAction;
     QAction* mNewAction;
     QAction* mNewFromTemplateAction;
     QAction* mQueryAction;

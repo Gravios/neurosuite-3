@@ -37,6 +37,7 @@
 #include <QDebug>
 #include <QSettings>
 #include <QSaveFile>
+#include <QTemporaryDir>
 #include <QStandardPaths>
 #include <QCoreApplication>
 #include <QDate>
@@ -70,6 +71,8 @@
 #include <fstream>
 #include <iterator>
 #include <yaml-cpp/yaml.h>
+#include "sessiontemplate.h"
+#include "templatedialogs.h"
 #include <QDirIterator>
 #include <QPair>
 #include <string>
@@ -175,6 +178,16 @@ void ndManager::setupActions()
 
     mSaveAsDefaultAction = fileMenu->addAction(tr("Save as &Default"));
     connect(mSaveAsDefaultAction, &QAction::triggered, this, &ndManager::slotSaveDefault);
+
+    fileMenu->addSeparator();
+    mExportTemplateAction = fileMenu->addAction(tr("E&xport Session as Template…"));
+    mExportTemplateAction->setToolTip(tr("Save chosen sections of this session (groups, plugins, display, …) "
+                                         "as a template for other sessions"));
+    connect(mExportTemplateAction, &QAction::triggered, this, &ndManager::slotExportTemplate);
+
+    mApplyTemplateAction = fileMenu->addAction(tr("Appl&y Template to Session…"));
+    mApplyTemplateAction->setToolTip(tr("Replace chosen sections of this session with a template's"));
+    connect(mApplyTemplateAction, &QAction::triggered, this, &ndManager::slotApplyTemplate);
 
     fileMenu->addSeparator();
 
@@ -691,6 +704,10 @@ void ndManager::openModelFile(const QString& url){
 }
 
 bool ndManager::confirmCloseDocument(){
+    return askToSaveEdits(true);
+}
+
+bool ndManager::askToSaveEdits(bool includeSession){
     //check first if some scripts have been modified
     const QStringList scriptModified = parameterView->modifiedScripts();
     for (const QString& name : scriptModified) {
@@ -725,7 +742,7 @@ bool ndManager::confirmCloseDocument(){
     }
 
     //if at least one parameter has been modified, prompt the user to save the information
-    if(parameterView->isSessionModified()){
+    if(includeSession && parameterView->isSessionModified()){
         switch(QMessageBox::question(this,tr("Parameters modification"),tr("Some parameters have changed, do you want to save the parameter file?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
         case QMessageBox::Save://<=> Save
             // A cancelled Save As dialog or a failed write keeps the document open.
@@ -881,6 +898,176 @@ void ndManager::slotSaveDefault(){
         QMessageBox::critical(this, tr("IO Error!"),tr("The current file could not be saved as the default parameter file."));
     }
     slotStatusMsg(tr("Ready."));
+}
+
+// ── Session templates ───────────────────────────────────────────────────
+//
+// Both start from the session as Save would write it (ndManagerDoc::writeCopy),
+// so unsaved edits are part of what is exported or kept.
+
+namespace {
+
+/** The open session as Save would write it, parsed, with its text (for the
+ *  layout of what is written from it).  False with @p error on failure. */
+bool sessionSnapshot(ndManagerDoc* doc, YAML::Node& node, std::string& text, QString& error)
+{
+    QTemporaryDir dir;
+    if (!dir.isValid()) { error = QObject::tr("no temporary directory"); return false; }
+    const QString path = dir.filePath(QStringLiteral("session.yaml"));
+    if (doc->writeCopy(path) != ndManagerDoc::OK) {
+        error = QObject::tr("the session could not be written to a temporary file");
+        return false;
+    }
+    text = yamlformat::readText(path.toStdString());
+    try {
+        node = YAML::Load(text);
+    } catch (const std::exception& e) {
+        error = QString::fromLocal8Bit(e.what());
+        return false;
+    }
+    if (!node.IsMap()) { error = QObject::tr("the session is not a YAML mapping"); return false; }
+    return true;
+}
+
+} // namespace
+
+void ndManager::slotExportTemplate(){
+    if(mainDock == 0L || parameterView == 0)
+        return;
+    slotStatusMsg(tr("Exporting the session as a template…"));
+
+    YAML::Node session;
+    std::string text;
+    QString error;
+    if (!sessionSnapshot(doc, session, text, error)) {
+        QMessageBox::critical(this, tr("Error!"), tr("The template could not be made:\n\n%1").arg(error));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    QStringList sections;
+    for (const std::string& sec : sessiontemplate::sectionsOf(session))
+        sections << QString::fromStdString(sec);
+
+    ExportTemplateDialog dialog(sections, QFileInfo(doc->url()).completeBaseName(), this);
+    if (dialog.exec() != QDialog::Accepted) {
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    const QString target = dialog.path();
+    if (QFileInfo(target) == QFileInfo(doc->url())) {
+        QMessageBox::critical(this, tr("Error!"), tr("%1 is this session's parameter file; "
+                                                     "choose another file for the template.").arg(target));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    if (QFileInfo::exists(target) &&
+            QMessageBox::question(this, tr("Replace template?"), tr("%1 already exists. Replace it?").arg(target),
+                                  QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    sessiontemplate::Meta meta;
+    meta.name = dialog.name().toStdString();
+    meta.description = dialog.description().toStdString();
+    meta.createdFrom = QFileInfo(doc->url()).fileName().toStdString();
+    meta.created = QDate::currentDate().toString(Qt::ISODate).toStdString();
+    std::vector<std::string> chosen;
+    for (const QString& sec : dialog.sections()) chosen.push_back(sec.toStdString());
+
+    std::string out;
+    try {
+        // In the session's layout: its comments and inline lists carry over.
+        out = yamlformat::emitWithLayout(sessiontemplate::makeTemplate(session, chosen, meta), text);
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, tr("Error!"), tr("The template could not be made:\n\n%1")
+                              .arg(QString::fromLocal8Bit(e.what())));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    QDir().mkpath(QFileInfo(target).absolutePath());
+    QSaveFile file(target);
+    if (!file.open(QIODevice::WriteOnly) ||
+        file.write(out.data(), static_cast<qint64>(out.size())) != static_cast<qint64>(out.size()) ||
+        !file.commit()) {
+        QMessageBox::critical(this, tr("Error!"), tr("The template %1 could not be written:\n\n%2")
+                              .arg(target, file.errorString()));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    statusBar()->showMessage(tr("Template \"%1\" saved to %2").arg(dialog.name(), target), 6000);
+}
+
+void ndManager::slotApplyTemplate(){
+    if(mainDock == 0L || parameterView == 0)
+        return;
+    slotStatusMsg(tr("Applying a template…"));
+
+    // The channel count the session has now (unsaved edits included).
+    YAML::Node session;
+    std::string text;
+    QString error;
+    if (!sessionSnapshot(doc, session, text, error)) {
+        QMessageBox::critical(this, tr("Error!"), tr("The template could not be applied:\n\n%1").arg(error));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    ApplyTemplateDialog dialog(sessiontemplate::channelCount(session), this);
+    if (dialog.exec() != QDialog::Accepted) {
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    // The pages are rebuilt: plugin scripts, descriptions and the pipeline
+    // graph not yet saved would be lost.  The session's own unsaved
+    // parameters are not: they are in the snapshot and stay unsaved.
+    if (!askToSaveEdits(false)) {
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    // A prompt may have saved something: start from the session as it is now.
+    if (!sessionSnapshot(doc, session, text, error)) {
+        QMessageBox::critical(this, tr("Error!"), tr("The template could not be applied:\n\n%1").arg(error));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    std::vector<std::string> chosen;
+    for (const QString& sec : dialog.sections()) chosen.push_back(sec.toStdString());
+    std::vector<std::string> skipped;
+    std::string merged;
+    try {
+        const YAML::Node templ = YAML::LoadFile(dialog.templatePath().toStdString());
+        merged = yamlformat::emitWithLayout(sessiontemplate::apply(session, templ, chosen, &skipped), text);
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, tr("Error!"), tr("The template %1 could not be read:\n\n%2")
+                              .arg(dialog.templatePath(), QString::fromLocal8Bit(e.what())));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    const int currentPage = parameterView->currentPage();
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    const int status = doc->applyMerged(merged);
+    QApplication::restoreOverrideCursor();
+    if (status != ndManagerDoc::OK) {
+        QMessageBox::critical(this, tr("Error!"), tr("The template could not be applied:\n\n%1")
+                              .arg(status == ndManagerDoc::PARSE_ERROR ? doc->parseError()
+                                                                       : tr("it could not be staged")));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    // A new view: nothing on disk holds this yet.
+    parameterView->markSessionModified();
+    parameterView->setCurrentPage(currentPage);
+
+    QStringList applied;
+    for (const QString& sec : dialog.sections())
+        if (std::find(skipped.begin(), skipped.end(), sec.toStdString()) == skipped.end())
+            applied << QString::fromStdString(sessiontemplate::describe(sec.toStdString()).label);
+    statusBar()->showMessage(tr("Applied \"%1\": %2. Save to keep it.")
+                             .arg(dialog.templateName(), applied.join(QStringLiteral(", "))), 8000);
 }
 
 // ── Pipeline-file slots ─────────────────────────────────────────────────
@@ -1300,6 +1487,8 @@ void ndManager::slotStateChanged(const QString& state)
         mSaveAction->setEnabled(false);
         mCloseAction->setEnabled(false);
         mSaveAsDefaultAction->setEnabled(false);
+        mExportTemplateAction->setEnabled(false);
+        mApplyTemplateAction->setEnabled(false);
         mSavePipelineAction->setEnabled(false);
         mSavePipelineAsAction->setEnabled(false);
         mLoadPipelineAction->setEnabled(false);
@@ -1320,6 +1509,8 @@ void ndManager::slotStateChanged(const QString& state)
         mSaveAction->setEnabled(true);
         mCloseAction->setEnabled(true);
         mSaveAsDefaultAction->setEnabled(true);
+        mExportTemplateAction->setEnabled(true);
+        mApplyTemplateAction->setEnabled(true);
         mSavePipelineAction->setEnabled(true);
         mSavePipelineAsAction->setEnabled(true);
         mLoadPipelineAction->setEnabled(true);

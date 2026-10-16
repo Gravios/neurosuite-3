@@ -157,6 +157,10 @@ public:
      * write.*/
     bool isSessionModified();
 
+    /**Counts the session as modified until the next save (a template was
+     * applied: the view was rebuilt from content no file holds yet).*/
+    void markSessionModified(){ programsModified = true; }
+
     /** Records finished curation in the Units table: the rows of every group
      *  in @p groups are replaced by @p rows (group, cluster, structure, type,
      *  isolation distance, quality, notes -- the table's columns); other groups'

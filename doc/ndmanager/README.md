@@ -511,6 +511,46 @@ Linux), and **File ▸ Use Template…** opens any parameter file
 as the model for a new one. The `Template-*.yaml` files in `src/ndmanager/src/` (installed
 beside the project template) cover common tetrode and octrode configurations.
 
+### Your own templates: export a session, apply it to others
+
+**File ▸ Export Session as Template…** saves how the open session is set up so other
+sessions can reuse it. The dialog asks for a name, an optional description and the
+sections to include, one checkbox each; the session's unsaved edits are included. By
+default the template holds everything except what belongs to this session alone:
+general information, `sourceRecording` and the units are left unchecked.
+Templates go to your template folder, `<AppDataLocation>/templates` (on Linux under
+`~/.local/share/`), as `<name>.template.yaml`. Browse… writes the file anywhere else.
+
+**File ▸ Apply Template to Session…** lists the templates in that folder by name
+(Other File… takes any file, including an ordinary session file), and the sections the
+chosen one holds. Each checked section **replaces** the session's own; the rest of the
+session is kept. By default the processing sections are checked: field potentials,
+anatomical and spike groups, NeuroScope display and plugins. The session's recording setup
+(acquisition system, extra files, video, probes) and its units are unchecked. If the
+template was made for a different channel count and you apply groups, display or probes
+without its acquisition system, the dialog warns you. Applying rebuilds the pages from the
+merged content. Unsaved plugin scripts, descriptions and pipeline edits are offered for
+saving first; unsaved session parameters are kept. Nothing is written until you save.
+
+A template is an ordinary parameter file plus a `template:` block, so it also opens with
+**Use Template…**:
+
+```yaml
+template:
+  name: CA1 4-shank
+  description: Buzsaki64, 20 kHz
+  createdFrom: rat01-20260901.yaml
+  created: 2026-10-16
+  sections: [acquisitionSystem, probes, anatomicalDescription, spikeDetection, neuroscope, programs]
+parameters: {version: '1.0', creator: ndManager}
+acquisitionSystem: ...
+```
+
+A section is a top-level key; `probes` carries `probeLibraryPath` with it. A top-level
+block ndmanager does not know about is a section too, exported by default and applied only
+when checked. The section rules live in `libklustersshared` (`sessiontemplate.h`) and are
+covered by `klustersshared_sessiontemplate_test`.
+
 ---
 
 ## Parameter file format

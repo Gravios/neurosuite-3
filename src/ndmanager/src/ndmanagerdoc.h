@@ -23,6 +23,11 @@
 // include files for QT
 #include <QString>
 
+#include <memory>
+#include <string>
+
+class QTemporaryDir;
+
 
 
 #include <QWidget>
@@ -43,6 +48,9 @@ private:
     QString sourceUrl;
     /**Reason the last openDocument() failed to parse; empty on success.*/
     QString lastParseError;
+    /**Holds the file a template was applied from (applyMerged()) while it
+     * is the document's sourceUrl; released when another file takes over.*/
+    std::unique_ptr<QTemporaryDir> appliedDir;
     /**True while the document is backed by its own session file: opened
      * from it, or saved to it under its own name.  See isSaved().*/
     bool savedToOwnFile = false;
@@ -130,6 +138,19 @@ public:
  * <writable ApplicationsLocation>/ndmanager/ndManagerDefault.yaml.  The
  * session itself is not marked as saved.*/
     OpenSaveCreateReturnMessage saveDefault();
+
+    /**Writes the document as Save would, to @p url, without making it the
+     * document's file (the session stays modified and keeps its name): the
+     * snapshot Export as Template and Apply Template start from.*/
+    OpenSaveCreateReturnMessage writeCopy(const QString& url){ return write(url, sourceUrl, false); }
+
+    /**Replaces the document's content with @p yamlText (the session with a
+     * template's sections applied) and rebuilds the view from it.  The
+     * document keeps its url() and isSaved(); the text becomes what the next
+     * save starts from, so keys ndmanager does not model in the applied
+     * sections are written too.  PARSE_ERROR (view untouched) when the text
+     * is not a parameter file; CREATION_ERROR when it cannot be staged.*/
+    OpenSaveCreateReturnMessage applyMerged(const std::string& yamlText);
 
     /**Saves the script @p scriptName.
  * @param scriptName name of the script to save.

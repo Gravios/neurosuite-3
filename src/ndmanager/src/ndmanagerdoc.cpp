@@ -39,6 +39,8 @@
 #include <klustersshared/parameteryamlreader_probes.h>
 
 #include <QStandardPaths>
+#include <QSaveFile>
+#include <QTemporaryDir>
 #include <QDir>
 
 
@@ -58,6 +60,35 @@ void ndManagerDoc::closeDocument(){
     docUrl.clear();
     sourceUrl.clear();
     savedToOwnFile = false;
+    appliedDir.reset();
+}
+
+ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::applyMerged(const std::string& yamlText){
+    // Staged in a directory of its own: it is the base of the next save and
+    // has to outlive this call; the previous staged file (an earlier apply)
+    // goes once this one has taken over.
+    auto dir = std::make_unique<QTemporaryDir>();
+    if (!dir->isValid())
+        return CREATION_ERROR;
+    const QString path = dir->filePath(QStringLiteral("applied.yaml"));
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)
+            || file.write(yamlText.data(), static_cast<qint64>(yamlText.size())) != static_cast<qint64>(yamlText.size())
+            || !file.commit())
+        return CREATION_ERROR;
+
+    NdManagerYamlReader reader;
+    if (!reader.parseFile(path)) {
+        lastParseError = reader.lastError();
+        return PARSE_ERROR;
+    }
+    lastParseError.clear();
+    const OpenSaveCreateReturnMessage status = loadFromReader(reader);
+    if (status == OK) {
+        sourceUrl = path;
+        appliedDir = std::move(dir);
+    }
+    return status;
 }
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::openDocument(const QString& url){
@@ -71,6 +102,7 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::openModel(const QString&
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::open(const QString& url, bool ownFile){
     docUrl = url;
     sourceUrl = url;
+    appliedDir.reset();
     // Set before loading: the view built by loadFromReader() may ask.
     savedToOwnFile = ownFile;
 
