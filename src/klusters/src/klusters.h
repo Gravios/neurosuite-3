@@ -789,6 +789,11 @@ private:
      *  slotFileClose() + openDocumentFile() path (hierarchy-reload).  @p reason
      *  names what rewrote it in the status message (default: the plugin run). */
     void reopenCurrentDocument(const QString& reason = QString());
+    /** Starts a save of the open document to @p url on the SaveThread: takes the
+     *  document's save snapshot (KlustersDoc::prepareSave) here, on the GUI
+     *  thread, then hands the writing to the thread.  Returns false, having told
+     *  the user why, when a save is already running or the snapshot is refused. */
+    bool startSave(const QString& url, bool saveAs);
     /** Session-dir files written/updated since the run started (prefix-matched to
      *  the session base); used to report what an analysis/export plugin produced. */
     QStringList pluginProducedFiles() const;

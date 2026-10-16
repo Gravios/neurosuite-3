@@ -645,11 +645,12 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // Hierarchical mode: deleting WHOLE parents cannot break the nesting invariant --
     // every atom inside a deleted parent moves with it, so each still has exactly one
     // owner -- and that is why this path needs no repairNesting().  But the derived maps
-    // still name the deleted parents as parents, and saveHierarchySiblings() writes the
-    // .clp straight out of childToParent, rebuilding it only when it is EMPTY.  So a
-    // stale map is not merely a wrong child palette: it is written to disk, mapping
-    // atoms to parents that no longer exist.  Re-derive them (cheap, no re-cut, and it
-    // leaves the atom undo history alone, which repairNesting would not).
+    // still name the deleted parents as parents.  (The save used to write the .clp
+    // straight out of childToParent, so a stale map reached the disk, mapping atoms to
+    // parents that no longer exist; prepareSave now derives the .clp from the per-spike
+    // layers, but the maps still drive the child palette and the scoped views.)
+    // Re-derive them (cheap, no re-cut, and it leaves the atom undo history alone,
+    // which repairNesting would not).
     if (childData) {
         rebuildHierarchyFromData();
         emit hierarchyChanged();

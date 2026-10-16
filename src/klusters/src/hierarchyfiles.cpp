@@ -116,6 +116,13 @@ bool installStaged(const std::string& path, bool keepBackup, std::string* error)
             return false;
         }
     }
+    // The rename gives the target the staged file's inode, created with the
+    // process umask; carry the old file's mode over so a group-writable .clc in
+    // a shared session directory stays group-writable.
+    std::error_code permEc;
+    const fs::file_status old = fs::status(path, permEc);
+    if (!permEc && fs::exists(old))
+        fs::permissions(tmp, old.permissions(), fs::perm_options::replace, permEc);
     fs::rename(tmp, path, ec);
     if (ec) {
         if (error) *error = "cannot replace " + path + ": " + ec.message();

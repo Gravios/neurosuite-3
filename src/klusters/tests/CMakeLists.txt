@@ -47,6 +47,15 @@ target_compile_features(klusters_test_hierarchyfiles PRIVATE cxx_std_20)
 target_include_directories(klusters_test_hierarchyfiles PRIVATE "${_klu_src}")
 add_test(NAME klusters_test_hierarchyfiles COMMAND klusters_test_hierarchyfiles)
 
+# DirtyFlag -- the "modified" flag a background save clears only if no edit
+# happened after its snapshot (header-only).
+find_package(Threads)
+add_executable(klusters_test_dirtyflag dirtyflag_test.cpp)
+target_compile_features(klusters_test_dirtyflag PRIVATE cxx_std_20)
+target_include_directories(klusters_test_dirtyflag PRIVATE "${_klu_src}")
+target_link_libraries(klusters_test_dirtyflag PRIVATE Threads::Threads)
+add_test(NAME klusters_test_dirtyflag COMMAND klusters_test_dirtyflag)
+
 # TemplateClassStore — the Qt-free EAP template-class model (phase 4).  Same
 # shape as the lineage-store test: compiles the store source and LINKS
 # Neurosuite::core (readEap/readTcl/writeEap/writeTcl + the templateclass engine

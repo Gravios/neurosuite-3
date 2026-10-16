@@ -131,9 +131,8 @@ void KlustersDoc::buildHierarchyMaps(){
     if (!clcSiblingPath.isEmpty()){
         // The live .clu for the session is the PENDING copy, not docUrl: initPendingFiles() seeds
         // <docUrl>.pending and redirects the clu writer there "for the entire document session", and
-        // commitAndRenewPending() only copies it back over docUrl at the very END of saveDocument --
-        // long after saveHierarchySiblings() runs, and long after a realign has rewritten it.  Reading
-        // docUrl here would see the pre-save / pre-realign labels.
+        // commitAndRenewPending() only copies it back over docUrl at the very END of saveDocument.
+        // Reading docUrl here would see labels older than the pending copy.
         const QString liveClu = (!pendingCluPath.isEmpty() && QFile::exists(pendingCluPath))
                               ? pendingCluPath : docUrl;
         const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
@@ -168,7 +167,7 @@ void KlustersDoc::buildHierarchyMaps(){
 
     if (haveScan){
         // Cross-check the cache against the truth and report drift; the scan wins either way and
-        // saveHierarchySiblings() regenerates the .clp on the next Save.
+        // the next Save regenerates the .clp from the per-spike layers (prepareSave).
         if (!clpSiblingPath.isEmpty()){
             const qint64 bytes = QFileInfo(clpSiblingPath).size();
             if (bytes > 4){
@@ -745,8 +744,8 @@ bool KlustersDoc::validateHierarchyMaps(const char* where) const {
     // session.  This is a genuine blind spot rather than a safe case: a session
     // curated without ever opening the hierarchical view has no childData, so no
     // repair has run and the .clu may well have drifted from the on-disk .clc.
-    // That fault is file-level and is caught by buildHierarchyMaps()'s scan, whose
-    // verdict saveHierarchySiblings() consults via hierarchyScanFoundViolation.
+    // That fault is file-level: buildHierarchyMaps()'s scan reports it on load, and
+    // prepareSave() repeats the scan on its own snapshot before writing a .clp.
     if (!childData || !clusteringData) return true;
     if (childToParent.isEmpty()) return true;
 
@@ -1603,99 +1602,4 @@ bool KlustersDoc::redoChildEditDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
     if (!v || childRedoCount() == 0) return false;
     return redoChildEdit(*v);          // forced atom redo, regardless of active scope
-}
-
-bool KlustersDoc::saveHierarchySiblings(){
-    if (clcSiblingPath.isEmpty()) return true;                 // not a hierarchical session
-    // The child layer is loaded lazily, so a session curated WITHOUT ever opening the hierarchical
-    // view has an empty map here while the .clu we just wrote has changed -- which is exactly how the
-    // .clp went stale.  Rebuild the map from the freshly-written per-spike arrays in that case.
-    if (childToParent.isEmpty()) buildHierarchyMaps();
-    if (childToParent.isEmpty()) return true;                  // nothing derivable -> leave siblings alone
-
-    // Last gate before the map reaches disk.  The .clp below is written straight
-    // out of childToParent, so a map left stale by an edit path is not merely a
-    // wrong child palette for the rest of the session -- it is what gets SAVED,
-    // and the next open reports it as drift against the per-spike arrays.
-    //
-    // Rebuild rather than write known-bad data, but report first.  Rebuilding
-    // silently would hide the path that left it stale, and naming that path is
-    // the whole point of the check: four edit paths mutated a layer without
-    // refreshing the maps until recently, and nothing here would have noticed.
-    // If a report ever appears, the gesture that preceded the save is the lead.
-    if (!validateHierarchyMaps("saveHierarchySiblings")) {
-        rebuildHierarchyFromData();
-        if (!validateHierarchyMaps("saveHierarchySiblings/after-rebuild"))
-            qWarning() << "[hierarchy] the rebuild did not settle the maps; the .clp about to be"
-                       << "written may not agree with the .clu/.clc it ships with.";
-    }
-    // .clc — the per-spike child layer (unchanged by merge/promote/move, but
-    // rewritten so the triple is regenerated together); .clp — the edited
-    // child->parent map.  Overwrite in place with a .bak backup of each.
-    auto backup = [](const QString& p){
-        if (QFile::exists(p)){
-            const QString b = p + QStringLiteral(".bak");
-            QFile::remove(b);
-            QFile::copy(p, b);
-        }
-    };
-    bool ok = true;
-    // .clc: only the loaded child layer can rewrite it.  Curation does not change the child ids, so
-    // when the child view was never opened the on-disk .clc is already correct and is left alone.
-    if (childData){
-        backup(clcSiblingPath);
-        if (FILE* f = fopen(qPrintable(clcSiblingPath), "wb")){
-            ok &= childData->saveClusters(f);
-            fclose(f);
-        } else ok = false;
-    }
-
-    if (!clpSiblingPath.isEmpty()){
-        // Do not write a .clp that is known to contradict the triple it ships with.
-        //
-        // Every hierarchy repair in this file is guarded by `if (childData)`, and
-        // childData is built lazily by loadChildClustering() -- only once the
-        // hierarchical view has actually been opened.  So a session curated WITHOUT
-        // ever opening that view gets no re-cut at all: the .clu moves, the on-disk
-        // .clc does not, and atoms end up under more than one parent at the file
-        // level.  buildHierarchyMaps() sees exactly that on its scan, warns, and
-        // keeps the first-seen parent for each child -- which is a reasonable way to
-        // finish BUILDING a map, and a bad thing to then SAVE, because the arbitrary
-        // half of each straddle becomes the recorded answer.
-        //
-        // The .clc is not rewritten in this situation either (its write is
-        // childData-guarded above), so persisting the .clp would leave a triple whose
-        // three files disagree, with the .clp the only one asserting a nesting that
-        // is false.  Keep the previous .clp instead and say what to do: opening the
-        // hierarchical view loads the atom layer and repairNesting() re-cuts the
-        // straddlers, after which a save writes a consistent triple.
-        //
-        // validateHierarchyMaps() does not cover this: it compares the in-memory map
-        // against the loaded layers, and there is no loaded child layer here.
-        if (hierarchyScanFoundViolation && !childData){
-            qWarning() << "[hierarchy] REFUSING to write" << clpSiblingPath
-                       << "-- the per-spike .clu/.clc disagree about which parent owns at"
-                       << "least one atom, and with no child layer loaded nothing has"
-                       << "re-cut them, so the map would record an arbitrary owner for"
-                       << "each straddle.  The previous .clp is left in place.  Open the"
-                       << "hierarchical view (which loads the atom layer and re-cuts on"
-                       << "the next edit, or use Repair Nesting) and save again.";
-            return ok;
-        }
-        int nChildren = 0;
-        for (auto it = childToParent.constBegin(); it != childToParent.constEnd(); ++it)
-            nChildren = qMax(nChildren, it.key());
-        backup(clpSiblingPath);
-        if (FILE* f = fopen(qPrintable(clpSiblingPath), "wb")){
-            const int32_t hdr = nChildren;                 // header ignored by readers (count derived from size)
-            ok &= (fwrite(&hdr, sizeof(int32_t), 1, f) == 1);
-            for (int c = 1; c <= nChildren && ok; ++c){
-                const int32_t p = childToParent.value(c, 0);
-                ok &= (fwrite(&p, sizeof(int32_t), 1, f) == 1);
-            }
-            fclose(f);
-        } else ok = false;
-    }
-    if (!ok) qWarning() << "[hierarchy] failed to write .clc/.clp siblings";
-    return ok;
 }

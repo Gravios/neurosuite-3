@@ -61,6 +61,7 @@
 #include <QRegularExpression>
 #include <QTextStream>
 #include <QFileInfo>
+#include <QThread>
 
 // application specific includes
 #include "processwidget.h"
@@ -80,6 +81,7 @@
 #include "dipsplit.h"
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
+#include "hierarchyfiles.h"
 
 //C, C++ include files
 //#define _LARGEFILE_SOURCE already defined in /usr/include/features.h
@@ -671,9 +673,184 @@ void KlustersDoc::customEvent(QEvent *event){
     }
 }
 
-int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/){
+namespace {
+// Local 8-bit file names for the std:: file helpers, and back.
+std::string localPath(const QString& p) { return QFile::encodeName(p).toStdString(); }
+QString fromLocal(const std::string& p) { return QFile::decodeName(QByteArray::fromStdString(p)); }
 
-    // patch63 — clear any stale error from a previous save attempt.
+// The cluster id of every spike in .res order (Data's feature rows are 1-based).
+std::vector<int32_t> labelsInSpikeOrder(const Data& d)
+{
+    const QVector<dataType> byRow = d.labelByFeatureRow();
+    std::vector<int32_t> out;
+    out.reserve(byRow.size() > 0 ? static_cast<std::size_t>(byRow.size() - 1) : 0);
+    for (qsizetype r = 1; r < byRow.size(); ++r) out.push_back(static_cast<int32_t>(byRow[r]));
+    return out;
+}
+} // namespace
+
+bool KlustersDoc::prepareSave(const QString& saveUrl){
+    savePlan = SavePlan();
+    lastSaveErrorMessage.clear();
+    lastSaveWarningMessage.clear();
+    if (!clusteringData) {
+        lastSaveErrorMessage = tr("No clustering is open.");
+        return false;
+    }
+    const bool isSaveAs = (docUrl != saveUrl);
+
+    SavePlan plan;
+    plan.url         = saveUrl;
+    plan.dirtySerial = modified.serial();
+    plan.fiber       = labelsInSpikeOrder(*clusteringData);
+    plan.fiberCount  = hierarchyfiles::distinctCount(plan.fiber);
+
+    // A flat session (no .clc, or a .clc without its .clp) writes the .clu only;
+    // an orphan .clc is ignored, as it is on open.
+    if (isHierarchicalSession()) {
+        plan.clcPath = clcSiblingPath;
+        plan.clpPath = clpSiblingPath;
+        if (isSaveAs) {
+            // The triple shares one anchor, so the new .clc/.clp are named after
+            // the new .clu.  Save As used to write the .clu alone and keep the old
+            // sibling paths: the new name opened flat, and the next plain Save
+            // wrote the new clustering's map into the OLD .clp.
+            plan.clcPath = fromLocal(hierarchyfiles::siblingPath(localPath(saveUrl), "clc"));
+            plan.clpPath = fromLocal(hierarchyfiles::siblingPath(localPath(saveUrl), "clp"));
+            if (plan.clcPath.isEmpty() || plan.clpPath.isEmpty()) {
+                lastSaveErrorMessage = tr(
+                    "This is a hierarchical session, so Save As also writes its .clc and .clp, "
+                    "named after the new cluster file.\n\n\"%1\" has no \".clu.\" in it to name "
+                    "them from; choose a name of the same form as \"%2\".")
+                    .arg(QFileInfo(saveUrl).fileName(), QFileInfo(docUrl).fileName());
+                return false;
+            }
+            plan.movesSiblings = true;
+        }
+
+        if (childData) {
+            // The maps drive the child palette; keep them honest while on the GUI
+            // thread (the save itself no longer reads them -- see below).
+            if (!validateHierarchyMaps("prepareSave")) {
+                rebuildHierarchyFromData();
+                if (!validateHierarchyMaps("prepareSave/after-rebuild"))
+                    qWarning() << "[hierarchy] the rebuild did not settle the maps";
+            }
+            plan.atom      = labelsInSpikeOrder(*childData);
+            plan.atomCount = hierarchyfiles::distinctCount(plan.atom);
+            plan.writeClc  = true;
+        } else {
+            // A hierarchical session whose atom layer did not load: the atoms on
+            // disk are the session's atoms (nothing edited them), so a plain Save
+            // leaves the .clc alone and Save As copies it.
+            const neurofileio::CluFile clc = neurofileio::readCluBinary(
+                localPath(clcSiblingPath), static_cast<int64_t>(plan.fiber.size()));
+            if (clc.ok) {
+                plan.atom.assign(clc.ids.begin(), clc.ids.end());
+                plan.atomCount = clc.nClusters;
+                plan.writeClc  = isSaveAs;
+            }
+        }
+
+        if (plan.atom.size() != plan.fiber.size() || plan.fiber.empty()) {
+            lastSaveWarningMessage = tr(
+                "The child layer %1 could not be read for this clustering, so its parent map "
+                "(.clp) was not rewritten%2.")
+                .arg(QFileInfo(clcSiblingPath).fileName(),
+                     isSaveAs ? tr(" and the new name has no .clc or .clp: it opens as a "
+                                   "flat clustering") : QString());
+            plan.writeClc = plan.writeClp = false;
+            plan.movesSiblings = false;
+        } else {
+            // The .clp is the map the per-spike layers imply, taken from this one
+            // snapshot -- not childToParent, which the GUI keeps editing while the
+            // SaveThread writes.
+            const hierarchyfiles::NestingScan scan = hierarchyfiles::scanNesting(plan.fiber, plan.atom);
+            if (!scan.straddlers.empty() && !childData) {
+                // Nothing has re-cut the straddling atoms (the re-cut needs the atom
+                // layer loaded), so a .clp written now would record an arbitrary
+                // owner for each.  Keep the previous map, and carry it on Save As.
+                lastSaveWarningMessage = tr(
+                    "%n atom(s) of %1 now span more than one unit, and the atom layer is not "
+                    "loaded to re-cut them, so the parent map (.clp) was left as it was.  Load "
+                    "the hierarchical view, use Hierarchy > Repair Nesting, and save again.",
+                    "", static_cast<int>(scan.straddlers.size()))
+                    .arg(QFileInfo(clcSiblingPath).fileName());
+                if (isSaveAs) {
+                    const hierarchyfiles::IdFile old = hierarchyfiles::readIdFile(localPath(clpSiblingPath));
+                    if (old.ok) { plan.clp = old.ids; plan.writeClp = true; }
+                }
+            } else {
+                if (!scan.straddlers.empty())
+                    lastSaveWarningMessage = tr(
+                        "%n atom(s) span more than one unit; the parent map (.clp) records "
+                        "each under the first unit it was seen in.  Hierarchy > Repair Nesting "
+                        "re-cuts them.", "", static_cast<int>(scan.straddlers.size()));
+                plan.clp      = hierarchyfiles::clpFromMap(scan.childToParent);
+                plan.writeClp = true;
+            }
+        }
+    }
+
+    savePlan = std::move(plan);
+    savePlan.valid = true;
+    return true;
+}
+
+void KlustersDoc::finishSave(bool ok){
+    // saveDocument installs or discards what it staged; this only catches a save
+    // that stopped in between.
+    if (savePlan.writeClc && !savePlan.clcPath.isEmpty())
+        hierarchyfiles::discardStaged(localPath(savePlan.clcPath));
+    if (savePlan.writeClp && !savePlan.clpPath.isEmpty())
+        hierarchyfiles::discardStaged(localPath(savePlan.clpPath));
+    savePlan = SavePlan();
+    if (!ok) modified = true;
+}
+
+bool KlustersDoc::stageHierarchySiblings(QString* error){
+    std::string e;
+    if (savePlan.writeClc
+        && !hierarchyfiles::stageIdFile(localPath(savePlan.clcPath), savePlan.atomCount,
+                                        savePlan.atom, &e)) {
+        *error = tr("Could not write the child layer (.clc); nothing was saved:\n%1")
+                     .arg(QString::fromStdString(e));
+        return false;
+    }
+    if (savePlan.writeClp
+        && !hierarchyfiles::stageIdFile(localPath(savePlan.clpPath),
+                                        static_cast<int32_t>(savePlan.clp.size()), savePlan.clp, &e)) {
+        if (savePlan.writeClc) hierarchyfiles::discardStaged(localPath(savePlan.clcPath));
+        *error = tr("Could not write the parent map (.clp); nothing was saved:\n%1")
+                     .arg(QString::fromStdString(e));
+        return false;
+    }
+    return true;
+}
+
+bool KlustersDoc::installHierarchySiblings(QString* error){
+    std::string e;
+    if (savePlan.writeClc && !hierarchyfiles::installStaged(localPath(savePlan.clcPath), true, &e)) {
+        if (savePlan.writeClp) hierarchyfiles::discardStaged(localPath(savePlan.clpPath));
+        *error = tr("The cluster file was saved, but its child layer could not be replaced, so "
+                    "the .clu and .clc on disk disagree until the next successful save:\n%1")
+                     .arg(QString::fromStdString(e));
+        return false;
+    }
+    if (savePlan.writeClp && !hierarchyfiles::installStaged(localPath(savePlan.clpPath), true, &e)) {
+        *error = tr("The cluster file and child layer were saved, but the parent map (.clp) "
+                    "could not be replaced; the next successful save regenerates it:\n%1")
+                     .arg(QString::fromStdString(e));
+        return false;
+    }
+    return true;
+}
+
+int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/){
+    Q_UNUSED(format);
+
+    // patch63 — clear any stale error from a previous save attempt.  (The
+    // warnings belong to the snapshot and were reset by prepareSave.)
     lastSaveErrorMessage.clear();
 
     // Determine whether this is a Save (same URL) or SaveAs (new URL).
@@ -686,6 +863,18 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         lastSaveErrorMessage = tr("Switch back to the %1 feature space before Save As.")
                                .arg(originMethod);
         return SAVE_ERROR;
+    }
+
+    // What is written was captured on the GUI thread by prepareSave().  A caller
+    // on the GUI thread that skipped it gets one here; the SaveThread cannot take
+    // one (the snapshot reads state only the GUI thread may touch).
+    if (!savePlan.valid || savePlan.url != saveUrl) {
+        if (QThread::currentThread() != thread() || !prepareSave(saveUrl)) {
+            if (lastSaveErrorMessage.isEmpty())
+                lastSaveErrorMessage = tr("Internal error: the save was started without its "
+                                          "snapshot (KlustersDoc::prepareSave).");
+            return SAVE_ERROR;
+        }
     }
 
     // Optional (Refinement preferences): rebuild the current group's .spk from the
@@ -721,6 +910,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             << reLog;
     }
 
+    // ── the .clu ────────────────────────────────────────────────────────────
     // The clustering is written to the session's clu write target, tmpCluFile: the
     // pending copy when a pending set is live (initPendingFiles redirected it there
     // after a SUCCESSFUL seed), else the real .clu.  commitAndRenewPending below then
@@ -732,178 +922,106 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // file just written, so the new name received the clustering as last SAVED and
     // every edit since was missing from it (they stayed in memory only).  Without a
     // pending set there is nothing to commit, and Save As writes the new URL itself.
+    //
+    // Written through a staged file and a rename, so the real .clu (the target when
+    // no pending set is live) is never left truncated by a crash or a full disk.
     const QString cluWritePath =
         (isSaveAs && pendingCluPath.isEmpty()) ? saveUrl : tmpCluFile;
-
-    //Open the clu file in write mode
-    FILE* cluFile = fopen(qPrintable(cluWritePath),"wb");
-    if(cluFile == nullptr){
-        // patch63 — surface exactly why fopen failed instead of returning
-        // a bare error code that becomes a generic "I/O Error" dialog.
-        const int e = errno;
-        lastSaveErrorMessage = QString(
-            "Cannot open file for writing:\n%1\n\n"
-            "errno %2 (%3)\n\n"
-            "Likely causes:\n"
-            "  • File owned by a different user (common after running\n"
-            "    process_drifttracker / KiloKlustaKwik as another uid,\n"
-            "    e.g. via sudo or a build account)\n"
-            "  • Parent directory not writable by the user running Klusters\n"
-            "  • File or its directory marked immutable (chattr +i)\n"
-            "  • File locked by another process (lsof to check)\n"
-            "  • Filesystem mounted read-only or out of space")
-            .arg(cluWritePath)
-            .arg(e)
-            .arg(QString::fromLocal8Bit(std::strerror(e)));
-        qWarning().noquote() << "[saveDocument] fopen failed:"
-                             << cluWritePath << "errno" << e
-                             << QString::fromLocal8Bit(std::strerror(e));
-        return OPEN_ERROR;
+    {
+        std::string e;
+        if (!hierarchyfiles::writeIdFile(localPath(cluWritePath), savePlan.fiberCount,
+                                         savePlan.fiber, false, &e)) {
+            // patch63 — say exactly what failed instead of a bare error code.
+            lastSaveErrorMessage = QString(
+                "Cannot write the cluster file:\n%1\n\n%2\n\n"
+                "Likely causes:\n"
+                "  • File owned by a different user (common after running\n"
+                "    process_drifttracker / KiloKlustaKwik as another uid,\n"
+                "    e.g. via sudo or a build account)\n"
+                "  • Parent directory not writable by the user running Klusters\n"
+                "  • File or its directory marked immutable (chattr +i)\n"
+                "  • Filesystem mounted read-only or out of space")
+                .arg(cluWritePath, QString::fromStdString(e));
+            qWarning().noquote() << "[saveDocument] clu write failed:" << QString::fromStdString(e);
+            return OPEN_ERROR;
+        }
     }
 
-    if(!clusteringData->saveClusters(cluFile)){
-        // patch63 — write failed mid-save (disk full, I/O error).
-        fclose(cluFile);
-        lastSaveErrorMessage = QString(
-            "saveClusters() failed while writing to:\n%1\n\n"
-            "errno %2 (%3)\n\n"
-            "Likely cause: disk full or I/O error.")
-            .arg(cluWritePath)
-            .arg(errno)
-            .arg(QString::fromLocal8Bit(std::strerror(errno)));
+    // ── the .clc / .clp, staged next to their targets ──────────────────────
+    // Installed only after the .clu is committed below.  They used to be written in
+    // place first, before the parameter file and the .clu commit -- both of which can
+    // fail -- so a failed save left new .clc/.clp beside the old .clu.
+    QString hierError;
+    if (!stageHierarchySiblings(&hierError)) {
+        lastSaveErrorMessage = hierError;
         return SAVE_ERROR;
     }
+    auto discardSiblings = [this]{
+        if (savePlan.writeClc) hierarchyfiles::discardStaged(localPath(savePlan.clcPath));
+        if (savePlan.writeClp) hierarchyfiles::discardStaged(localPath(savePlan.clpPath));
+    };
 
-    //close the file
-    fclose(cluFile);
-
-    // hierarchical view: regenerate the .clc/.clp siblings from the edited
-    // child->parent map so the triple stays consistent.  Only on a regular Save
-    // (the captured sibling paths are the originals); SaveAs of the triple is a
-    // follow-up.
-    // Not gated on childData: the .clp must be regenerated whenever the .clu changes, even if the
-    // hierarchical view was never opened this session -- otherwise it is left stale on disk.
-    if (!isSaveAs)
-        saveHierarchySiblings();
-
-    QString cluFileSuffix_;
+    // ── Save As: where the session moves (worked out before anything moves) ──
+    QString newBaseName = baseName, newGroup = electrodeGroupID, newParameterFile = parameterFile;
     QString saMethod = QStringLiteral("standard");   // method parsed from a SaveAs target
-    // For SaveAs: update doc URL and derived paths before committing.
     if(isSaveAs){
-        docUrl = saveUrl;
-        QFileInfo docUrlFileInfo(docUrl);
+        QFileInfo docUrlFileInfo(saveUrl);
         QString fileName = docUrlFileInfo.fileName();
         const QStringList fileParts = fileName.split(".", Qt::SkipEmptyParts);
 
         // Parse the SaveAs target through the shared custody policy -- the same
         // <base>.<type>[.<method>].<grp>[.<suffix>] parser as openDocument, so a
         // tagged path (foo.clu.stderiv.8, foo.clu.standard.8.stack, or a .clc
-        // child) updates baseName / electrodeGroupID / saMethod / cluFileSuffix_.
+        // child) updates the base name, group and method.
         const neurosuite::custody::Anchor anchor =
             neurosuite::custody::parseAnchor(fileName.toStdString());
         if (anchor.ok) {
-            baseName         = QString::fromStdString(anchor.base);
+            newBaseName = QString::fromStdString(anchor.base);
             if (!anchor.method.empty())
-                saMethod     = QString::fromStdString(anchor.method);
-            electrodeGroupID = QString::number(anchor.group);
-            cluFileSuffix_   = anchor.suffix.empty()
-                                   ? QString()
-                                   : QLatin1Char('.') + QString::fromStdString(anchor.suffix);
+                saMethod = QString::fromStdString(anchor.method);
+            newGroup = QString::number(anchor.group);
         } else {
             // Legacy fallback (unrecognised filename) — preserves old behaviour
             // so callers that don't pass a tagged form still work.
-            baseName = fileParts.first();
+            newBaseName = fileParts.first();
             if(fileParts.count() > 2)  {
                 for(qsizetype i = 1;i < fileParts.count()-2; ++i){
-                    baseName += "." + fileParts.at(i);
+                    newBaseName += "." + fileParts.at(i);
                 }
             }
             if(fileParts.count() < 3)
-                electrodeGroupID.clear();
+                newGroup.clear();
             else
-                electrodeGroupID = fileParts.at(fileParts.count()-1);
-            cluFileSuffix_.clear();
+                newGroup = fileParts.at(fileParts.count()-1);
         }
 
         // The directory of the new .clu, not the file itself: absoluteFilePath()
         // gave "<dir>/<new.clu>/<base>.yaml", which never exists, so a Save As of
         // any session with cluster-information support failed as "not writable"
         // after the .clu had been written and docUrl moved.
-        parameterFile = docUrlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
+        newParameterFile = docUrlFileInfo.absolutePath() + QDir::separator() + newBaseName + ".yaml";
     }
 
-    //Save the cluster user information if the parameterFile exists
+    // ── the parameter file must be writable before anything is committed ────
     //NB : for the moment, the specific errors are not return to the user, only a generic message (document could not be saved).
-    if(clusteringData->isTraceViewVariablesAvailable()){
-        //Save the document information
-        NS3_DIAG()<<" parameterFile"<<parameterFile;
-        QFileInfo parFileInfo = QFileInfo(parameterFile);
-
-        //Check that the file is writable
-        if(!parFileInfo.isWritable()) {
-            lastSaveErrorMessage = tr("The parameter file is missing or not writable, so the "
-                                      "cluster information (structure, type, quality, notes) "
-                                      "could not be saved:\n%1").arg(parameterFile);
-            return NOT_WRITABLE;
-        }
-
-        QMap<int,ClusterUserInformation> clusterUserInformationMap = QMap<int,ClusterUserInformation>();
-        clusteringData->getClusterUserInformation(electrodeGroupID.toInt(),clusterUserInformationMap);
-
-        // Always YAML
-        {
-            // Build the merged units map: read existing units, overwrite the
-            // units for the current electrode group, then write all back.
-            ParameterYamlModifier yamlMod;
-            if (!yamlMod.parseFile(parameterFile)) {
-                lastSaveErrorMessage = tr("Could not read the parameter file to store the "
-                                          "cluster information:\n%1").arg(parameterFile);
-                return PARSE_ERROR;
-            }
-
-            // Read existing units (all groups)
-            QMap<int,QStringList> allUnits;
-            {
-                ParameterYamlReader reader;
-                if (reader.parseFile(parameterFile))
-                    reader.getUnits(allUnits);
-            }
-
-            // Remove existing entries for this electrode group
-            const int pGroup = electrodeGroupID.toInt();
-            QMap<int,QStringList> filtered;
-            for (auto it = allUnits.cbegin(); it != allUnits.cend(); ++it) {
-                if (it.value().size() >= 1 && it.value()[0].toInt() != pGroup)
-                    filtered.insert(it.key(), it.value());
-            }
-
-            // Add updated entries for this electrode group
-            for (auto it = clusterUserInformationMap.cbegin();
-                 it != clusterUserInformationMap.cend(); ++it) {
-                const ClusterUserInformation& cui = it.value();
-                QStringList row;
-                row << QString::number(cui.getGroup())
-                    << QString::number(cui.getCluster())
-                    << cui.getStructure()
-                    << cui.getType()
-                    << cui.getId()
-                    << cui.getQuality()
-                    << cui.getNotes();
-                filtered.insert(it.key(), row);
-            }
-
-            if (!yamlMod.setUnitsInformation(filtered) || !yamlMod.writeToFile(parameterFile)) {
-                lastSaveErrorMessage = tr("Could not write the cluster information to the "
-                                          "parameter file:\n%1").arg(parameterFile);
-                return CREATION_ERROR;
-            }
-        }
+    const bool writeUnits = clusteringData->isTraceViewVariablesAvailable();
+    if (writeUnits && !QFileInfo(newParameterFile).isWritable()) {
+        lastSaveErrorMessage = tr("The parameter file is missing or not writable, so the "
+                                  "cluster information (structure, type, quality, notes) "
+                                  "could not be saved; nothing was saved:\n%1").arg(newParameterFile);
+        discardSiblings();
+        return NOT_WRITABLE;
     }
 
+    // ── commit ─────────────────────────────────────────────────────────────
     // Commit pending files → originals, then re-seed pending from fresh originals.
     // For SaveAs, update the original paths first so commitAndRenewPending()
     // copies to the correct new location.
     if (isSaveAs) {
+        docUrl           = saveUrl;
+        baseName         = newBaseName;
+        electrodeGroupID = newGroup;
+        parameterFile    = newParameterFile;
         // Synced working copies belong to the old location's spaces; Save As
         // does not carry them (and is only reachable from the .clu's own space).
         // slotFileSaveAs already dropped them on the GUI thread; this covers any
@@ -926,7 +1044,17 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     QString commitError;
     if (!commitAndRenewPending(&commitError)) {
         lastSaveErrorMessage = commitError;
+        discardSiblings();
         return SAVE_ERROR;
+    }
+
+    // The .clu is on disk: put its .clc/.clp beside it.  A Save As points the
+    // session at the new names even if this fails, so the next Save writes the
+    // triple there instead of into the old location's files.
+    const bool siblingsOk = installHierarchySiblings(&hierError);
+    if (savePlan.movesSiblings) {
+        clcSiblingPath = savePlan.clcPath;
+        clpSiblingPath = savePlan.clpPath;
     }
 
     // Save As may name another method (saMethod): the .clu now belongs to it,
@@ -939,7 +1067,70 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         activeSpkPath = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
     }
 
-    modified=false;
+    // ── cluster information (units) in the parameter file ─────────────────
+    if (writeUnits) {
+        NS3_DIAG()<<" parameterFile"<<parameterFile;
+        QMap<int,ClusterUserInformation> clusterUserInformationMap = QMap<int,ClusterUserInformation>();
+        clusteringData->getClusterUserInformation(electrodeGroupID.toInt(),clusterUserInformationMap);
+
+        // Build the merged units map: read existing units, overwrite the
+        // units for the current electrode group, then write all back.
+        ParameterYamlModifier yamlMod;
+        if (!yamlMod.parseFile(parameterFile)) {
+            lastSaveErrorMessage = tr("The clustering was saved, but the parameter file could "
+                                      "not be read to store the cluster information:\n%1")
+                                   .arg(parameterFile);
+            return PARSE_ERROR;
+        }
+
+        // Read existing units (all groups)
+        QMap<int,QStringList> allUnits;
+        {
+            ParameterYamlReader reader;
+            if (reader.parseFile(parameterFile))
+                reader.getUnits(allUnits);
+        }
+
+        // Remove existing entries for this electrode group
+        const int pGroup = electrodeGroupID.toInt();
+        QMap<int,QStringList> filtered;
+        for (auto it = allUnits.cbegin(); it != allUnits.cend(); ++it) {
+            if (it.value().size() >= 1 && it.value()[0].toInt() != pGroup)
+                filtered.insert(it.key(), it.value());
+        }
+
+        // Add updated entries for this electrode group
+        for (auto it = clusterUserInformationMap.cbegin();
+             it != clusterUserInformationMap.cend(); ++it) {
+            const ClusterUserInformation& cui = it.value();
+            QStringList row;
+            row << QString::number(cui.getGroup())
+                << QString::number(cui.getCluster())
+                << cui.getStructure()
+                << cui.getType()
+                << cui.getId()
+                << cui.getQuality()
+                << cui.getNotes();
+            filtered.insert(it.key(), row);
+        }
+
+        if (!yamlMod.setUnitsInformation(filtered) || !yamlMod.writeToFile(parameterFile)) {
+            lastSaveErrorMessage = tr("The clustering was saved, but the cluster information "
+                                      "could not be written to the parameter file:\n%1")
+                                   .arg(parameterFile);
+            return CREATION_ERROR;
+        }
+    }
+
+    if (!siblingsOk) {
+        lastSaveErrorMessage = hierError;
+        return SAVE_ERROR;
+    }
+
+    // Clean only if nothing was edited after the snapshot: the curator keeps
+    // working while the SaveThread runs, and `modified = false` here used to mark
+    // those later edits as saved, so a close afterwards asked nothing.
+    modified.clearIfUnchanged(savePlan.dirtySerial);
     return OK;
 }
 
@@ -955,11 +1146,14 @@ bool KlustersDoc::canCloseView(){
             saveURL=url();
             int saveStatus;
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-            saveStatus = saveDocument(saveURL);
+            saveStatus = prepareSave(saveURL) ? saveDocument(saveURL) : SAVE_ERROR;
+            finishSave(saveStatus == OK);
             QApplication::restoreOverrideCursor();
             if(saveStatus != OK){
-                switch(QMessageBox::question(nullptr, tr("I/O Error !"),tr("Could not save the current document !\n"
-                                                                     "Close anyway ?"),QMessageBox::No|QMessageBox::Yes))
+                switch(QMessageBox::question(nullptr, tr("I/O Error !"),
+                                             tr("Could not save the current document:\n%1\n\n"
+                                                "Close anyway ?").arg(lastSaveError()),
+                                             QMessageBox::No|QMessageBox::Yes))
                 {
                 case QMessageBox::Yes:
                     returnValue = true;

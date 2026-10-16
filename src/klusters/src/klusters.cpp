@@ -3942,7 +3942,13 @@ void KlustersApp::customEvent (QEvent* event){
     if(event->type() == QEvent::User + 100){
         slotStatusMsg(tr("Save file done."));
         SaveThread::SaveDoneEvent* saveEvent = static_cast<SaveThread::SaveDoneEvent*>(event);
+        // Drop the save snapshot; a failed save leaves the document modified.
+        doc->finishSave(saveEvent->isSaveOk());
         if(saveEvent->isSaveOk()){
+            // Saved, but with something the curator should know (e.g. a .clp left
+            // as it was because the files disagree about the nesting).
+            if(!doc->lastSaveWarning().isEmpty())
+                QMessageBox::warning(this, tr("Saved, with a note"), doc->lastSaveWarning());
             //The cluster data have been saved to a local temporary file if the original file was a remote one
             //(otherwise the so call temporary file is the orignal one).
             //If the requested save location is remote, the temporary file needs now
@@ -4104,17 +4110,37 @@ void KlustersApp::slotFileOpenRecent(const QString& url)
     slotStatusMsg(tr("Ready."));
 }
 
+bool KlustersApp::startSave(const QString& url, bool saveAs)
+{
+    // SaveThread::save() ignores a call while it runs; returning here keeps the
+    // snapshot of the running save from being replaced under it.
+    if (saveThread->isRunning()) {
+        statusBar()->showMessage(tr("A save is already in progress."), 4000);
+        return false;
+    }
+    if (!doc->prepareSave(url)) {
+        QMessageBox::critical(this, saveAs ? tr("Save As") : tr("Save"), doc->lastSaveError());
+        slotStatusMsg(tr("Ready."));
+        return false;
+    }
+    slotStateChanged("SavingState");
+    saveThread->save(url, doc, saveAs);
+    return true;
+}
+
 void KlustersApp::slotFileSave()
 {
     slotStatusMsg(tr("Saving file…"));
-
-    slotStateChanged("SavingState");
-    saveThread->save(doc->url(),doc,false);
+    startSave(doc->url(), false);
 }
 
 void KlustersApp::slotFileRenumberAndSave(){
+    // A save already in flight would capture the clustering before the renumber.
+    if (saveThread->isRunning()) {
+        statusBar()->showMessage(tr("A save is already in progress."), 4000);
+        return;
+    }
     slotStatusMsg(tr("Renumbering and saving…"));
-    slotStateChanged("SavingState");
     doc->renumberClusters();
     slotFileSave();
 }
@@ -4123,14 +4149,15 @@ void KlustersApp::slotFileSaveAs()
 {
     if (refuseInBorrowedSpace(tr("Save As"))) return;
     slotStatusMsg(tr("Saving file with a new filename…"));
-    QString url=QFileDialog::getSaveFileName(this,tr("Save as…"),QDir::currentPath(),
+    // Start from the open cluster file: its directory, and a name to edit (a
+    // hierarchical session's new name must keep its ".clu." -- see prepareSave).
+    QString url=QFileDialog::getSaveFileName(this,tr("Save as…"),doc->url(),
                                              tr("All files (*.*)") );
     if(!url.isEmpty()){
         // Synced feature-space copies belong to the old location; drop them
         // here, on the GUI thread that reads them, before the save thread runs.
         doc->discardSyncedFeatureSpaces();
-        slotStateChanged("SavingState");
-        saveThread->save(url,doc,true);
+        startSave(url, true);
     }
 }
 

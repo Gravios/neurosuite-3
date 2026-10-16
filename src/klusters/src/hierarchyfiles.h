@@ -79,7 +79,8 @@ bool stageIdFile(const std::string& path, int32_t header, const std::vector<int3
 
 /** Moves stagedPath(@p path) over @p path.  When @p path exists and
  *  @p keepBackup is set, its previous content is copied to @p path + ".bak"
- *  first.  The rename replaces the target in one step. */
+ *  first.  The rename replaces the target in one step, and the target keeps
+ *  its previous permission bits. */
 bool installStaged(const std::string& path, bool keepBackup, std::string* error);
 
 /** Removes a staged file left by a write that is not going to be installed. */

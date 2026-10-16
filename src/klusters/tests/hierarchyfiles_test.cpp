@@ -101,6 +101,13 @@ int main()
         check(b.ok && b.header == 4 && b.ids == std::vector<int32_t>({7, 7, 7, 8}), "installed content");
         check(std::filesystem::file_size(clp) == 4 + 4 * 4, "layout: header + one int32 per id");
 
+        namespace fs = std::filesystem;
+        fs::permissions(clp, fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read
+                             | fs::perms::group_write, fs::perm_options::replace);
+        check(writeIdFile(clp, 4, {7, 7, 7, 8}, false, &err), "rewrite: " + err);
+        check((fs::status(clp).permissions() & fs::perms::group_write) != fs::perms::none,
+              "a replaced file keeps its permission bits");
+
         check(stageIdFile(clp, 1, std::vector<int>{1}, &err), "stage again");
         discardStaged(clp);
         check(!std::filesystem::exists(stagedPath(clp)) && readIdFile(clp).ids.size() == 4,

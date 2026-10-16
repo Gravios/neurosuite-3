@@ -27,6 +27,7 @@
 #include "clustersprovider.h"
 #include "curationlogger.h"
 #include "watershed2d.h"
+#include "dirtyflag.h"
 
 
 // include files for QT
@@ -54,6 +55,7 @@
 #include <QDebug>
 #include <QTextStream>
 #include <vector>
+#include <cstdint>
 #include <memory>
 #include <atomic>
 
@@ -122,7 +124,7 @@ public:
     /** Sets the modified flag for the document after a modifying action on a view connected to the document.*/
     void setModified(bool m = true){ modified=m; }
     /** Returns if the document is modified or not. Use this to determine if your document needs saving by the user on closing.*/
-    bool isModified(){ return modified; }
+    bool isModified(){ return static_cast<bool>(modified); }
     /** Opens the document by filename and format.
     * @return an OpenSaveCreateReturnMessage enum giving the open status.
     */
@@ -143,10 +145,38 @@ public:
     */
     bool canCloseDocument(KlustersApp* mainWindow, const QString &callingMethod);
     
-    /** Saves the document under the file name containes in @p url.
+    /** Takes, on the GUI thread, the snapshot a save of @p url writes.
+    *
+    * saveDocument() runs on the SaveThread while the curator keeps editing, so
+    * everything an edit can change is captured here first: the fiber id of
+    * every spike and, for a hierarchical session, the atom id of every spike
+    * and the .clp map those two imply (after validating, and if need be
+    * rebuilding, the in-memory hierarchy maps -- which only the GUI thread may
+    * touch).  saveDocument() writes only this snapshot, so the three files
+    * always come from the same moment and the worker never reads the maps.
+    *
+    * Returns false, with lastSaveError(), when the save cannot be done -- a
+    * Save As of a hierarchical session to a name without ".clu.", whose .clc
+    * and .clp could not be named.  Non-fatal notes for the user (a .clp kept
+    * because the files disagree) are in lastSaveWarning() after the save.
+    */
+    bool prepareSave(const QString& url);
+
+    /** GUI thread, once the save that prepareSave() set up has finished (or was
+    * not started): drops the snapshot and any staged sibling it left behind.
+    * A failed save leaves the document modified. */
+    void finishSave(bool ok);
+
+    /** Saves the document under the file name containes in @p url, writing the
+    * snapshot prepareSave() took (called from the GUI thread without one,
+    * it takes one itself).
     * @return an OpenRetunMessage enum giving the open status
     */
     int saveDocument(const QString &url, const char* format=nullptr);
+
+    /** Notes from the last save the user should see although it succeeded
+     *  (for example the .clp left as it was); empty when there are none. */
+    QString lastSaveWarning() const { return lastSaveWarningMessage; }
     /**Returns the QString of the document. */
     const QString& url() const{return docUrl;}
     /** Absolute paths of the session's loaded sibling files, resolved at open
@@ -796,10 +826,11 @@ public:
      *  Does NOT touch the atom undo stack, so edit paths that record their own ChildEdit
      *  (e.g. a child recluster) call this directly; repairNesting wraps it with the undo reset. */
     void collapseToSelfChildren();
-    /** Overwrite the .clc and .clp siblings (with .bak) from the current child
-     *  layer + child->parent map.  Called by saveDocument when a child
-     *  clustering is loaded. */
-    bool saveHierarchySiblings();
+    /** Writes the snapshot's .clc and .clp to "<path>.saving" (SaveThread). */
+    bool stageHierarchySiblings(QString* error);
+    /** Renames the staged .clc/.clp over their targets, after a .bak copy of
+     *  each, once the .clu has been committed (SaveThread). */
+    bool installHierarchySiblings(QString* error);
     /** Ensure childColorList has a deterministic (id-derived) colour for every
      *  current child id, so atom edits/undo/redo never leave a child uncoloured. */
     void syncChildColors();
@@ -2136,6 +2167,26 @@ private:
      *  SaveDoneEvent so the user sees the actual path / errno / step name
      *  rather than a generic "I/O Error". */
     QString lastSaveErrorMessage;
+    /** Non-fatal save notes; see lastSaveWarning(). */
+    QString lastSaveWarningMessage;
+
+    /** What prepareSave() captured for the save in flight (see there).  Written
+     *  on the GUI thread before the SaveThread starts and read by it only. */
+    struct SavePlan {
+        bool                 valid = false;
+        QString              url;             ///< the save target the snapshot is for
+        std::uint64_t        dirtySerial = 0; ///< modified.serial() when it was taken
+        std::vector<int32_t> fiber;           ///< fiber id per spike, .res order
+        int32_t              fiberCount = 0;  ///< .clu count header
+        bool                 writeClc = false;
+        std::vector<int32_t> atom;            ///< atom id per spike (writeClc)
+        int32_t              atomCount = 0;
+        bool                 writeClp = false;
+        std::vector<int32_t> clp;             ///< fiber of atom c at c-1 (writeClp)
+        QString              clcPath, clpPath;///< targets: the session's, or Save As's new names
+        bool                 movesSiblings = false; ///< Save As: the session's siblings become clcPath/clpPath
+    };
+    SavePlan savePlan;
 
     /**
     * Removes spikes from some clusters and assign them to the cluster @pdestinationCluster
@@ -2262,8 +2313,9 @@ private:
     */
     QList<ItemColors*> clusterColorListRedoList;
     
-    /**The modified flag of the current document. */
-    bool modified;
+    /**The modified flag of the current document.  Assigned like a bool; a save
+     * clears it only if no edit set it after the save's snapshot (DirtyFlag). */
+    DirtyFlag modified;
 
     /** Cached PCA basis for realignSpikes.  A PCA-Center Align All batch shares
      *  one group's basis, so it is read from .pca/.pcaD once and reused for every
@@ -2446,7 +2498,7 @@ private:
      *  happens when a session is curated WITHOUT ever opening the hierarchical
      *  view, so childData is null, every `if (childData) repairNesting()` is skipped,
      *  and the .clu drifts away from the untouched on-disk .clc.  Consulted by
-     *  saveHierarchySiblings() so a .clp contradicting its own triple is not
+     *  the save snapshot (prepareSave) so a .clp contradicting its own triple is not
      *  written.  Not the same fault as validateHierarchyMaps(), which compares an
      *  in-memory map against loaded layers and cannot run at all when there is no
      *  child layer to compare with.
