@@ -103,7 +103,8 @@ public:
  */
     OpenSaveCreateReturnMessage saveAs(const QString& newUrl);
 
-    /**Save the current parameter file as the default one in the user .kde directory.*/
+    /**Save the current parameter file as the default one in the user .kde
+ * directory.  The session itself is not marked as saved.*/
     OpenSaveCreateReturnMessage saveDefault();
 
     /**Saves the script @p scriptName.
@@ -122,8 +123,11 @@ public:
 private:
 
     /**Writes the document to url, starting from the parameter file baseUrl
- * (empty: from nothing), and carrying every key the model does not own.*/
-    OpenSaveCreateReturnMessage write(const QString& url, const QString& baseUrl);
+ * (empty: from nothing), and carrying every key the model does not own.
+ * @param sessionSave true for a save of the session itself (Save, Save As):
+ * on success the view's modified state is reset; false for a copy written
+ * elsewhere (Save as Default), which leaves the session state untouched.*/
+    OpenSaveCreateReturnMessage write(const QString& url, const QString& baseUrl, bool sessionSave);
 
     /**Pointer on the parent widget (main window).*/
     QWidget* parent;

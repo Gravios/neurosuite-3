@@ -179,7 +179,7 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::newDocument(){
 
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::save(const QString& url){
-    return write(url, sourceUrl);
+    return write(url, sourceUrl, true);
 }
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveAs(const QString& newUrl){
@@ -193,7 +193,7 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveAs(const QString& ne
     return status;
 }
 
-ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url, const QString& baseUrl){
+ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url, const QString& baseUrl, bool sessionSave){
     //first gather the information
     QMap<int, QList<int> > anatomicalGroups;
     QMap<QString, QMap<int,QString> > attributes;
@@ -258,6 +258,11 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url
     if(!status)
         return CREATION_ERROR;
 
+    // A copy written elsewhere (Save as Default) leaves the session as it
+    // was: still modified, still started from the same file.
+    if(!sessionSave)
+        return OK;
+
     // The document now lives at url when it was saved under its own name
     // (Save, Save As); later saves start from that file.
     if(url == docUrl)
@@ -279,7 +284,8 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveDefault(){
     // Written from ndmanager's model alone: the default is a template for new
     // documents, and this session's own blocks (sourceRecording, per-group
     // probe geometry, ...) must not be copied into every one of them.
-    return write(path, QString());
+    // Not a save of the session: its modified state is left as it is.
+    return write(path, QString(), false);
 }
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveScript(const QString &scriptName){
