@@ -310,13 +310,56 @@ void ndManager::slotViewStatusBar()
 }
 
 
+bool ndManager::rejectXmlFile(const QString& url)
+{
+    if(QFileInfo(url).suffix().compare(QLatin1String("xml"), Qt::CaseInsensitive) != 0)
+        return false;
+    QMessageBox::critical(this, tr("XML parameter file"),
+                          tr("%1 is an XML parameter file. ndmanager reads and writes YAML only.\n\n"
+                             "Convert it first with\n\n    ndm_xml2yaml %1\n\n"
+                             "and open the .yaml file it writes.").arg(url));
+    return true;
+}
+
+QString ndManager::askSaveFileName(const QString& caption, const QString& start)
+{
+    QFileDialog dialog(this, caption);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setNameFilters(QStringList() << tr("YAML files (*.yaml *.yml)"));
+    dialog.setDefaultSuffix(QStringLiteral("yaml"));
+    const QFileInfo startInfo(start);
+    if(startInfo.isDir())
+        dialog.setDirectory(startInfo.absoluteFilePath());
+    else if(!start.isEmpty()){
+        dialog.setDirectory(startInfo.absolutePath());
+        dialog.selectFile(startInfo.fileName());
+    }
+    if(dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty())
+        return QString();
+
+    // ndmanager writes YAML only: give any other name the .yaml suffix.  The
+    // dialog confirmed an overwrite (if any) for the name before that, so ask
+    // again when the final name is a different, existing file.
+    const QString chosen = dialog.selectedFiles().constFirst();
+    const QString suffix = QFileInfo(chosen).suffix().toLower();
+    if(suffix == QLatin1String("yaml") || suffix == QLatin1String("yml"))
+        return chosen;
+    const QString url = chosen + QLatin1String(".yaml");
+    if(QFileInfo::exists(url) &&
+       QMessageBox::question(this, caption, tr("%1 already exists. Do you want to replace it?").arg(url),
+                             QMessageBox::Yes|QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+        return QString();
+    return url;
+}
+
 void ndManager::slotFileOpen()
 {
     slotStatusMsg(tr("Opening file…"));
 
     QSettings settings;
     const QString url=QFileDialog::getOpenFileName(this, tr("Open File…"),settings.value("CurrentDirectory").toString(),
-                                                   tr("Parameter File (*.xml *.yaml *.yml);;XML files (*.xml);;YAML files (*.yaml *.yml);;All files (*.*)") );
+                                                   tr("Parameter File (*.yaml *.yml);;All files (*)") );
     if(!url.isEmpty()) {
         QDir CurrentDir;
         settings.setValue("CurrentDirectory", CurrentDir.absoluteFilePath(url));
@@ -461,6 +504,10 @@ void ndManager::openDocumentFile(const QString& url)
         mFileOpenRecent-> removeRecentFile(url);
         return;
     }
+    if(rejectXmlFile(url)){
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
 
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
 
@@ -543,7 +590,7 @@ void ndManager::slotImport(){
 
     QSettings settings;
     const QString url = QFileDialog::getOpenFileName(this, tr("Import file as model…"),settings.value("CurrentDirectory").toString(),
-                                                     tr("Parameter File (*.xml *.yaml *.yml);;XML files (*.xml);;YAML files (*.yaml *.yml);;All files (*.*)") );
+                                                     tr("Parameter File (*.yaml *.yml);;All files (*)") );
     if(!url.isEmpty()) {
         QDir CurrentDir;
         settings.setValue("CurrentDirectory", CurrentDir.absoluteFilePath(url));
@@ -655,7 +702,7 @@ bool ndManager::slotSave(){
             initialPath = QFileInfo(currentUrl).absolutePath();
         }
 
-        const QString url=QFileDialog::getSaveFileName( this, tr("Save as…"),initialPath,tr("XML files (*.xml);;YAML files (*.yaml);;All files (*)"));
+        const QString url = askSaveFileName(tr("Save as…"), initialPath);
         if(!url.isEmpty()){
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             const int saveStatus = doc->saveAs(url);
@@ -691,7 +738,7 @@ bool ndManager::slotSaveAs(){
     slotStatusMsg(tr("Saving as…"));
 
     //Save the parameter file
-    QString url=QFileDialog::getSaveFileName(this, tr("Save as…"),doc->url(),tr("All files (*.*)"));
+    const QString url = askSaveFileName(tr("Save as…"), doc->url());
     if(!url.isEmpty()){
         const int saveStatus = doc->saveAs(url);
         if(saveStatus != ndManagerDoc::OK){

@@ -233,6 +233,18 @@ private:
      * @return true when no document is open any more.*/
     bool closeCurrentDocument();
 
+    /**Shows why an XML parameter file cannot be opened (convert it with
+     * ndm_xml2yaml).
+     * @return true when url is an XML file, which the caller must not open.*/
+    bool rejectXmlFile(const QString& url);
+
+    /**Asks for the name of a parameter file to write (YAML only).
+     * @param caption dialog title.
+     * @param start directory or file the dialog starts at.
+     * @return the file name, with a .yaml suffix unless it ends in .yaml or
+     * .yml; empty when the user cancelled.*/
+    QString askSaveFileName(const QString& caption, const QString& start);
+
     /**Resets the state of the application to a none document open state.*/
     void resetState();
 
