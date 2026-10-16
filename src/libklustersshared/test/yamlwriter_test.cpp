@@ -537,6 +537,16 @@ int main()
         report(str(d["parameters"][1]["hidden"]) == "true", "hidden kept");
         report(str(d["parameters"][2]["type"]) == "choice:y|z", "a new type written");
 
+        {
+            const QString tp = dir.filePath(QStringLiteral("fromtemplate.yaml"));
+            std::ofstream(tp.toStdString()) << "template: {name: CA1}\nlabNotebook: {page: 3}\nprograms: []\n";
+            ParameterYamlWriter tw;
+            tw.setBaseDocument(tp);
+            tw.removeTopLevel(QStringLiteral("template"));
+            report(tw.writeTofile(tp), "written from a template");
+            const YAML::Node td = YAML::LoadFile(tp.toStdString());
+            report(!td["template"] && str(td["labNotebook"]["page"]) == "3", "removeTopLevel drops the block, the others carried");
+        }
         progs[0].setCategory(QString());
         w.setBaseDocument(pp);
         w.setProgramsInformation(progs);

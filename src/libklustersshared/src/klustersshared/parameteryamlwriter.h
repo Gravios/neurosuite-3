@@ -75,6 +75,10 @@ public:
      */
     bool setBaseDocument(const QString& path);
 
+    /** Drops a top-level block the base document carried (ndManager drops a
+     *  session template's `template:` block from a session saved from it). */
+    void removeTopLevel(const QString& key) { doc.remove(key.toStdString()); }
+
     // ---- Content setters ----
 
     void setGeneralInformation(GeneralInformation& gi);

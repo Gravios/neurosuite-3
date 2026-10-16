@@ -140,6 +140,30 @@ int main()
     const YAML::Node same = sessiontemplate::apply(other, t, {});
     chk(YAML::Dump(same) == YAML::Dump(other), "applying nothing changes nothing");
 
+    std::printf("layout after apply:\n");
+    {
+        const char* sess = "# Session rat02\nparameters: {version: '1.0'}\nacquisitionSystem:\n  nChannels: 32\n"
+                           "# old groups\nanatomicalDescription:\n  channelGroups:\n    - channels: [{id: 5}]   # ref\n"
+                           "units: []\n";
+        const char* tmpl = "template: {name: x}\n# groups for the 4-shank probe\nanatomicalDescription:\n"
+                           "  channelGroups:\n    - channels: [{id: 0}, {id: 1}]   # shank A\n"
+                           "programs:\n  - name: ndm_hipass   # filter first\n";
+        const YAML::Node sn = YAML::Load(sess), tn = YAML::Load(tmpl);
+        const Keys secs2{"anatomicalDescription", "programs"};
+        const std::string layout = sessiontemplate::layoutAfterApply(sess, tmpl, secs2);
+        const std::string outText = yamlformat::emitWithLayout(sessiontemplate::apply(sn, tn, secs2), layout);
+        chk(outText.find("# groups for the 4-shank probe") != std::string::npos && outText.find("# shank A") != std::string::npos,
+            "the applied sections keep the template's comments");
+        chk(outText.find("# filter first") != std::string::npos, "an added section keeps its comments");
+        chk(outText.find("# old groups") == std::string::npos && outText.find("# ref") == std::string::npos,
+            "the session's comments on what was replaced are gone");
+        chk(outText.find("# Session rat02") != std::string::npos, "the session's other comments stay");
+        chk(outText.find("template") == std::string::npos, "no template block in the layout");
+        const YAML::Node back2 = YAML::Load(outText);
+        chk(back2["anatomicalDescription"]["channelGroups"][0]["channels"].size() == 2 && str(back2["acquisitionSystem"]["nChannels"]) == "32",
+            "values are the merged ones");
+    }
+
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

@@ -276,6 +276,9 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url
         // instead of being dropped.  An empty, missing or non-YAML baseUrl
         // gives a fresh document.
         writer.setBaseDocument(baseUrl);
+        // A session started from a template (Use Template, Apply Template)
+        // is not itself a template (sessiontemplate.h).
+        writer.removeTopLevel(QStringLiteral("template"));
         writer.setGeneralInformation(generalInformation);
         writer.setAcquisitionSystemInformation(acquisitionSystemInfo);
         if(!videoInformation.isEmpty())
@@ -312,6 +315,7 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url
     if(url == docUrl){
         sourceUrl = url;
         savedToOwnFile = true;
+        appliedDir.reset();   // an applied template's staged file is no longer the base
     }
 
     //reset the state of the page as saved state

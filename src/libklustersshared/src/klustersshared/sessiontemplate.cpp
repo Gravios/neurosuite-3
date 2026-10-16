@@ -163,6 +163,101 @@ YAML::Node apply(const YAML::Node& session, const YAML::Node& templ,
     return out;
 }
 
+namespace {
+
+/** A top-level key line's key ("probes:" / "'probes': x" -> probes), or "". */
+std::string topLevelKey(const std::string& line)
+{
+    if (line.empty() || line[0] == ' ' || line[0] == '\t' || line[0] == '#' || line[0] == '-')
+        return std::string();
+    const std::size_t colon = line.find(':');
+    if (colon == std::string::npos || colon == 0) return std::string();
+    std::string key = line.substr(0, colon);
+    while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.pop_back();
+    if (key.size() >= 2 && (key.front() == '\'' || key.front() == '"') && key.back() == key.front())
+        key = key.substr(1, key.size() - 2);
+    return key;
+}
+
+bool isCommentLine(const std::string& line)
+{
+    const std::size_t i = line.find_first_not_of(" \t");
+    return i != std::string::npos && line[i] == '#';
+}
+
+struct Block { std::string key; std::string text; };
+
+/** @p text split into top-level blocks; what precedes the first one has an
+ *  empty key.  A block starts at the comment lines directly above its key. */
+std::vector<Block> splitBlocks(const std::string& text)
+{
+    std::vector<std::string> lines;
+    std::size_t at = 0;
+    while (at < text.size()) {
+        const std::size_t nl = text.find('\n', at);
+        const std::size_t end = nl == std::string::npos ? text.size() : nl + 1;
+        lines.push_back(text.substr(at, end - at));
+        at = end;
+    }
+    std::vector<std::size_t> starts;    // line index where each keyed block starts
+    std::vector<std::string> keys;
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        std::string l = lines[i];
+        if (!l.empty() && l.back() == '\n') l.pop_back();
+        const std::string key = topLevelKey(l);
+        if (key.empty()) continue;
+        std::size_t s = i;
+        const std::size_t floor = starts.empty() ? 0 : starts.back() + 1;
+        while (s > floor && isCommentLine(lines[s - 1])) --s;
+        starts.push_back(s);
+        keys.push_back(key);
+    }
+    std::vector<Block> out;
+    const std::size_t first = starts.empty() ? lines.size() : starts.front();
+    Block head;
+    for (std::size_t i = 0; i < first; ++i) head.text += lines[i];
+    out.push_back(head);
+    for (std::size_t b = 0; b < starts.size(); ++b) {
+        Block blk;
+        blk.key = keys[b];
+        const std::size_t end = b + 1 < starts.size() ? starts[b + 1] : lines.size();
+        for (std::size_t i = starts[b]; i < end; ++i) blk.text += lines[i];
+        out.push_back(blk);
+    }
+    return out;
+}
+
+} // namespace
+
+std::string layoutAfterApply(const std::string& sessionText, const std::string& templText,
+                             const std::vector<std::string>& sections)
+{
+    std::vector<std::string> keys;
+    for (const std::string& sec : sections)
+        if (sec != kTemplateKey && sec != kHeaderKey)
+            for (const std::string& k : keysOf(sec)) keys.push_back(k);
+    const std::vector<Block> session = splitBlocks(sessionText);
+    const std::vector<Block> templ = splitBlocks(templText);
+    auto fromTemplate = [&templ](const std::string& key) -> const Block* {
+        for (const Block& b : templ)
+            if (!b.key.empty() && b.key == key) return &b;
+        return nullptr;
+    };
+    auto ensureNewline = [](std::string& s) { if (!s.empty() && s.back() != '\n') s += '\n'; };
+
+    std::string out;
+    std::vector<std::string> placed;
+    for (const Block& b : session) {
+        if (b.key.empty() || !contains(keys, b.key)) { out += b.text; continue; }
+        if (const Block* t = fromTemplate(b.key)) { ensureNewline(out); out += t->text; }
+        placed.push_back(b.key);
+    }
+    for (const std::string& k : keys)
+        if (!contains(placed, k))
+            if (const Block* t = fromTemplate(k)) { ensureNewline(out); out += t->text; placed.push_back(k); }
+    return out;
+}
+
 int channelCount(const YAML::Node& doc)
 {
     if (!doc || !doc.IsMap()) return -1;

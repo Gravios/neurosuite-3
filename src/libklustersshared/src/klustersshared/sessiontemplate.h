@@ -98,6 +98,17 @@ KLUSTERSSHARED_EXPORT YAML::Node apply(const YAML::Node& session, const YAML::No
                                        const std::vector<std::string>& sections,
                                        std::vector<std::string>* skipped = nullptr);
 
+/** The layout text to emit apply()'s result with (yamlformat::emitWithLayout):
+ *  @p sessionText with the top-level blocks of @p sections' keys taken from
+ *  @p templText instead -- so the applied sections keep the template's
+ *  comments and inline lists, and the session's comments on what they
+ *  replaced do not land on the new content.  A block is a top-level key's
+ *  lines with the comment lines directly above it.  Only comments and
+ *  styles come from this text; values come from the nodes. */
+KLUSTERSSHARED_EXPORT std::string layoutAfterApply(const std::string& sessionText,
+                                                   const std::string& templText,
+                                                   const std::vector<std::string>& sections);
+
 /** acquisitionSystem.nChannels of @p doc, or -1 when absent or not a number.
  *  Groups made for another channel count do not fit a session. */
 KLUSTERSSHARED_EXPORT int channelCount(const YAML::Node& doc);

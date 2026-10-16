@@ -48,8 +48,9 @@ private:
     QString sourceUrl;
     /**Reason the last openDocument() failed to parse; empty on success.*/
     QString lastParseError;
-    /**Holds the file a template was applied from (applyMerged()) while it
-     * is the document's sourceUrl; released when another file takes over.*/
+    /**Holds the staged file an applied template produced (applyMerged())
+     * while it is the document's sourceUrl; released by the next save under
+     * the document's name, open or close.*/
     std::unique_ptr<QTemporaryDir> appliedDir;
     /**True while the document is backed by its own session file: opened
      * from it, or saved to it under its own name.  See isSaved().*/

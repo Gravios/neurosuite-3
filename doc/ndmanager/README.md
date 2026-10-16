@@ -526,11 +526,14 @@ Templates go to your template folder, `<AppDataLocation>/templates` (on Linux un
 chosen one holds. Each checked section **replaces** the session's own; the rest of the
 session is kept. By default the processing sections are checked: field potentials,
 anatomical and spike groups, NeuroScope display and plugins. The session's recording setup
-(acquisition system, extra files, video, probes) and its units are unchecked. If the
+(acquisition system, extra files, video, probes), its units, and general information
+and `sourceRecording` (when a template holds them) are unchecked. If the
 template was made for a different channel count and you apply groups, display or probes
 without its acquisition system, the dialog warns you. Applying rebuilds the pages from the
 merged content. Unsaved plugin scripts, descriptions and pipeline edits are offered for
-saving first; unsaved session parameters are kept. Nothing is written until you save.
+saving first; unsaved session parameters are kept. The applied sections take the
+template's comments. Nothing is written until you save, and the saved session does not
+carry the template's `template:` block.
 
 A template is an ordinary parameter file plus a `template:` block, so it also opens with
 **Use Template…**:

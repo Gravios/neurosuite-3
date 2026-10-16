@@ -107,6 +107,7 @@ ExportTemplateDialog::ExportTemplateDialog(const QStringList& sections, const QS
     connect(nameEdit, &QLineEdit::textEdited, this, &ExportTemplateDialog::nameEdited);
     connect(pathEdit, &QLineEdit::textEdited, this, [this]() { pathFollowsName = false; refresh(); });
     connect(browseButton, &QPushButton::clicked, this, &ExportTemplateDialog::browse);
+    browseButton->setAutoDefault(false);   // Enter saves
     connect(sectionList, &QListWidget::itemChanged, this, &ExportTemplateDialog::refresh);
 
     nameEdited(nameEdit->text());
@@ -183,6 +184,10 @@ ApplyTemplateDialog::ApplyTemplateDialog(int sessionChannels, QWidget* parent)
     layout->addWidget(buttons);
 
     connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &QDialog::accept);
+    // Enter applies: an Apply-role button is not made the default, and the
+    // first auto-default button (Other File…) would take Enter instead.
+    browseButton->setAutoDefault(false);
+    buttons->button(QDialogButtonBox::Apply)->setDefault(true);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(browseButton, &QPushButton::clicked, this, &ApplyTemplateDialog::browse);
     connect(templateList, &QListWidget::currentItemChanged, this, &ApplyTemplateDialog::templateChosen);
@@ -260,8 +265,8 @@ void ApplyTemplateDialog::refresh()
     const QStringList chosen = sections();
     buttons->button(QDialogButtonBox::Apply)->setEnabled(!chosenPath.isEmpty() && !chosen.isEmpty());
     if (chosenPath.isEmpty()) return;
-    // Groups, display settings and plugin parameters name channels: made for
-    // another channel count they do not fit this session.
+    // Groups, display settings and probes name channels: made for another
+    // channel count they do not fit this session.
     const bool channelSensitive = chosen.contains(QStringLiteral("anatomicalDescription"))
                                || chosen.contains(QStringLiteral("spikeDetection"))
                                || chosen.contains(QStringLiteral("neuroscope"))

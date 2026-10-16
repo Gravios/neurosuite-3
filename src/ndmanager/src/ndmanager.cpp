@@ -1038,8 +1038,12 @@ void ndManager::slotApplyTemplate(){
     std::vector<std::string> skipped;
     std::string merged;
     try {
-        const YAML::Node templ = YAML::LoadFile(dialog.templatePath().toStdString());
-        merged = yamlformat::emitWithLayout(sessiontemplate::apply(session, templ, chosen, &skipped), text);
+        const std::string templText = yamlformat::readText(dialog.templatePath().toStdString());
+        const YAML::Node templ = YAML::Load(templText);
+        // The applied sections in the template's layout (its comments), the
+        // rest in the session's.
+        merged = yamlformat::emitWithLayout(sessiontemplate::apply(session, templ, chosen, &skipped),
+                                            sessiontemplate::layoutAfterApply(text, templText, chosen));
     } catch (const std::exception& e) {
         QMessageBox::critical(this, tr("Error!"), tr("The template %1 could not be read:\n\n%2")
                               .arg(dialog.templatePath(), QString::fromLocal8Bit(e.what())));
