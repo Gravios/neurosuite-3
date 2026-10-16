@@ -1,13 +1,13 @@
 # ndmanager — Session Manager
 
 ndmanager is a Qt6 GUI for managing electrophysiology recording sessions. It opens a `.yaml`
-(preferred) or legacy `.xml` parameter file, provides a tabbed interface for editing all
-acquisition and processing parameters, and dispatches the `ndmanager-plugins` preprocessing
-pipeline — either step by step or as a full batch.
+session parameter file, provides a tabbed interface for editing all acquisition and processing
+parameters, and dispatches the `ndmanager-plugins` preprocessing pipeline — either step by step
+or as a full batch.
 
-> **XML is accepted on open for backward compatibility, but the preprocessing pipeline no
-> longer reads XML directly** — legacy XML files should be converted to YAML with
-> `ndm_xml2yaml` before running the pipeline. ndmanager always saves YAML.
+> **ndmanager reads and writes YAML only.** A legacy `.xml` parameter file no longer opens;
+> convert it first with [`ndm_xml2yaml`](../ndmanager-plugins/commands/ndm_xml2yaml.md)
+> (`ndm_xml2yaml session.xml` writes `session.yaml`).
 
 **Contents:** [Dependencies](#dependencies) · [Launching](#launching) · [What ndmanager manages](#what-ndmanager-manages) · [The Probes tab](#the-probes-tab) · [Running the preprocessing pipeline](#running-the-preprocessing-pipeline) · [Pipeline tab — editable node graph](#pipeline-tab--editable-node-graph) · [Built-in session templates](#built-in-session-templates) · [Parameter file format](#parameter-file-format) · [Installation](#installation)
 
@@ -15,11 +15,13 @@ pipeline — either step by step or as a full batch.
 
 ## Dependencies
 
+As declared in `src/ndmanager/CMakeLists.txt` and `src/ndmanager/src/CMakeLists.txt`:
+
 | Dependency | Purpose | Required |
 |---|---|---|
-| Qt6 (Core, Gui, Widgets, Xml) | UI framework | Yes |
-| libklustersshared | Shared YAML layer and widget library | Yes — build first |
-| libxml2 | XML parameter file reading | Yes |
+| Qt6 ≥ 6.4 (Core, Gui, Widgets) | UI framework | Yes |
+| Qt6 Svg | SVG icons (`ND_HAVE_QT_SVG`) | Optional |
+| libklustersshared ≥ 2.1.0 | Shared YAML layer and widget library | Yes — build first |
 | yaml-cpp | YAML parameter file reading/writing | Yes |
 
 `libklustersshared` is not available as a distro package and must be built from source before
@@ -31,8 +33,9 @@ ndmanager. See the [install guide](install/linux.md).
 
 ```bash
 # Open an existing session
-ndmanager session.xml
 ndmanager session.yaml
+ndmanager /data/session/          # a directory opens <dir>/<dir>.yaml
+ndmanager                         # no argument: <cwd>/<cwd>.yaml if it exists
 
 # Start a new session from the project template: File ▸ New from Project Template… (Ctrl+Shift+N)
 
@@ -41,9 +44,9 @@ ndmanager session.yaml
 scripts/ndmanager-safe session.yaml
 ```
 
-The format (XML or YAML) is detected automatically from the file extension. Both formats are
-read by dispatching to either `XmlReader` or `NdManagerYamlReader`; the same UI is presented
-regardless of which format is on disk.
+Installing ndmanager registers the MIME type `application/nphys-yaml` (a `.yaml`/`.yml` file
+with an `acquisitionSystem:` key near its top — any other YAML stays plain `application/yaml`)
+and the desktop entry opens it, so file managers offer ndmanager for session files.
 
 ---
 
@@ -61,9 +64,10 @@ of PCA features per channel (`nFeatures`). Channels can be color-coded; those co
 propagate to neuroscope's trace display.
 
 **Probes** — which physical probes are connected, what `.probe` configuration file each uses,
-its first ADC channel (`channelOffset`), and a user label. The Probes tab is the GUI entry
-point for the `probes:` YAML section; the groups in the Electrode Groups tab are then populated
-automatically by running `ndm_setupgroups`.
+its first recording channel (`channelOffset`), and a user label, plus a geometry editor for each
+probe. The Probes tab is the GUI entry point for the `probes:` YAML section; it fills the
+anatomical and spike groups itself (one per shank), or `ndm_setupgroups` does it from the
+command line.
 
 **Field potentials** — LFP sampling rate.
 
@@ -86,48 +90,100 @@ script.
 ## The Probes tab
 
 The Probes tab exposes the `probes:` section of the session YAML and is the starting point for
-any silicon probe session.
+any silicon probe session. It has three panes: the probe list (with **+**, **−** and
+**Replace…**), an inspector under it, and the probe's geometry editor on the right.
 
 ### Fields
 
-| Field | YAML key | Description |
+| Inspector field | YAML key | Description |
 |---|---|---|
-| Probe ID | `probes[].probeId` | Integer identifier used by `ndm_setupgroups`, `ndm_estimatedrift`, `ndm_localise`. Legacy sessions may still use `probes[].id`; both keys are accepted on read, only `probeId` is written |
-| Probe file | `probes[].probeFile` | Path relative to the probe library (e.g. `neuronexus/Buzsaki64.probe`) |
-| Label | `probes[].label` | Free-text label displayed in NeuroScope and Klusters |
-| Channel offset | `probes[].channelOffset` | First ADC channel index for this probe (0-based) |
-| Anatomical groups | `probes[].anatomicalGroups` | List of anatomical group IDs assigned to this probe. Populated automatically by `ndm_setupgroups` |
-| Library path | session-level | Override for the probe library search path (optional; leave blank to use the system default) |
+| (list entry) | `probes[].probeId` | Assigned when the probe is added (one more than the highest id). Used by `ndm_setupgroups`, `ndm_estimatedrift`, `ndm_localise` and the groups' `probeId`. Legacy sessions may use `probes[].id`; both are read, only `probeId` is written |
+| Label | `probes[].label` | Free text; defaults to the probe file's `model` |
+| Probe file | `probes[].probeFile` | Read-only here; set by **+** and **Replace…** (see below) |
+| Channel offset | `probes[].channelOffset` | The probe's first recording channel, absolute and 0-based. Follows the previous probe (its offset + its channel count) unless you type a value, which is then kept; typing the automatic value makes it follow again |
+| Anatomical groups / Spike groups | `probes[].anatomicalGroups` | Read-only: the groups generated for the probe's shanks |
+
+There is no library field in the tab: `probeLibraryPath` is a top-level key of the session YAML
+(edit it in the file). ndmanager writes it back only when the session names one.
+
+### Probe files
+
+`probeFile` is a path. An absolute path is used as is; a relative one is looked up, first match
+wins:
+
+```
+<session directory>/                  (ndmanager's own copies, below)
+<session directory>/probes/
+probeLibraryPath                      (top-level key of the session YAML)
+$NEUROSUITE_PROBE_PATH                (colon-separated, in order)
+$NS3_PROBE_LIBRARY_PATH               (legacy name, colon-separated)
+neurosuite/probes/ under each generic data directory:
+    $XDG_DATA_HOME (~/.local/share), then $XDG_DATA_DIRS (/usr/local/share, /usr/share)
+```
+
+`ndm_setupgroups` searches the same directories in the same order (with its `probeLibrary`
+parameter after `<session>/probes/`).
+
+Adding a probe (**+**: the empty template, or *From library…* / *From file…* in its drop-down)
+copies the file into the session directory as `<session>.probe.<id>.probe`, where `<session>`
+is the session file's name without `.yaml`, and points the entry at that copy. **Replace…** does
+the same for the selected probe. Existing files are only overwritten after asking. The session
+must have been saved once (so it has a directory). A probe whose file is a library file
+(`neuronexus/Buzsaki64.probe`, e.g. from `ndm_setupgroups`) gets its session copy the first time
+its geometry is edited.
+
+**−** removes the entry; its session copy is deleted when the session is next saved without it
+(not before — closing without saving keeps it). Library files are never deleted. After
+**Save As** into another directory the session's own probe files are copied there.
 
 ### Probe library
 
 The probe library is a directory tree of `.probe` YAML files installed at
 `${CMAKE_INSTALL_DATADIR}/neurosuite/probes/` (typically
-`/usr/local/share/neurosuite/probes/`). The supplied NeuroNexus library covers 50 probe models.
+`/usr/local/share/neurosuite/probes/`): 43 NeuroNexus models in `neuronexus/` and three general
+files in `general/` (`empty.probe`, the template **+** copies, `tetrode.probe` and
+`tetrode-array-8.probe`). The format is described in
+[`.probe`](../ndmanager-plugins/formats/probe.md).
 
-The **Library path** field overrides or appends to the default search path. The search order
-from lowest to highest priority is:
+### Geometry editor
 
-```
-/usr/share/neurosuite/probes/
-/usr/local/share/neurosuite/probes/
-~/.local/share/neurosuite/probes/
-$NEUROSUITE_PROBE_PATH  (colon-separated environment variable)
-SESSION_DIR/probes/     (session-local probes placed next to the .yaml file)
-Library path field      (set in the Probes tab)
-```
+The editor shows the selected probe's connector, shanks and sites as a logical graph and as a
+physical layout (µm). Every edit — inspector fields, adding or deleting shanks and sites, undo
+and redo, dragging a site or a shank — is written to the probe's session copy at once; **Save**
+writes it again, **Save As…** writes the geometry to another `.probe` file (e.g. into a
+library) without changing which file the session uses. A site's channel ("Hw channel") is
+relative to the probe's channel offset; the file lists each shank's sites top first and
+`channelMap.map` is rebuilt from the sites' channels on every save (`null` when they ascend
+with depth). "Above tip" is the site's height above its shank's tip, the `y` the file stores;
+changing a shank's length keeps every site at its height above the tip. Two sites on one
+channel cannot be saved (the status line says why). The file has one `shanks.length_mm`: the
+longest shank's length is written.
+
+### Channel groups
+
+Whenever the probes, their offsets or their geometry change the channel layout, the tab rebuilds
+the **Anatomical Groups** and **Spike Groups** pages: one group per shank, channels in file
+order, plus one anatomical group holding every channel no probe uses. A group whose channels
+were already a group keeps its channel order, skip flags and spike parameters (`nSamples`,
+`peakSampleIndex`, `nFeatures`, `sdiffPairs`); new groups get 52 / 26 / 3. Edits that leave the
+layout unchanged (moving a site, a label) leave both pages alone. If a probe's file cannot be
+read, the other probes keep their channels and the pages are not touched; the status line says
+which file is missing.
+
+On save each group gets the `probeId` of the probe its channels are on and the `shankIndex` of
+their shank (removed if they span shanks), and an existing `sitePositions_um` is refreshed
+from the probe file; a group on no probe loses a stale `probeId`.
 
 ### Workflow
 
-1. Open or create a session YAML.
-2. On the **Probes** tab: add one row per physical probe, set `probeFile` and `channelOffset`.
-3. Save the session.
-4. Run `ndm_setupgroups` (from the Plugins tab or command line). This populates the Electrode
-   Groups tab automatically, writing `probeId`, `shankIndex`, and `sitePositions_um` (inline
-   electrode geometry) into each anatomical and spike-detection group so downstream tools
-   (`ndm_estimatedrift`, `ndm_localise`, kiloklustakwik drift-aware chunking) can reconstruct
-   geometry without re-reading the probe file.
-5. Verify channel assignments on the Electrode Groups tab, then proceed with the pipeline.
+1. Open or create the session YAML and set the channel count; save it once.
+2. On the **Probes** tab add one probe per physical probe, in channel order; check each
+   channel offset and edit the geometry if needed.
+3. Check the **Anatomical Groups** and **Spike Groups** pages, then save.
+
+Alternatively list the probes in `probes:` and run `ndm_setupgroups` (from the Plugins tab or
+the command line), which writes the groups, `probeId`, `shankIndex` and `sitePositions_um` into
+the YAML. It refuses to replace existing groups unless its `overwrite` parameter is true.
 
 ---
 
@@ -355,7 +411,9 @@ executable (`../share/ndmanager/templates/`), ndmanager asks for the file;
 `NEUROSUITE_SESSION_TEMPLATE=/path/to/template.yaml` points it at another one.
 
 **File ▸ New** starts from `ndManagerDefault.yaml` instead (a short document, or your own
-default saved with **Save as Default**), and **File ▸ Use Template…** opens any parameter file
+default saved with **Save as Default** as `ndmanager/ndManagerDefault.yaml` in the writable
+applications directory, `~/.local/share/applications/ndmanager/ndManagerDefault.yaml` on
+Linux), and **File ▸ Use Template…** opens any parameter file
 as the model for a new one. The `Template-*.yaml` files in `src/ndmanager/src/` (installed
 beside the project template) cover common tetrode and octrode configurations.
 
@@ -363,8 +421,8 @@ beside the project template) cover common tetrode and octrode configurations.
 
 ## Parameter file format
 
-Both XML and YAML formats are fully supported. YAML is preferred for new sessions. The
-`ndm_xml2yaml` script converts existing XML session files.
+Session parameter files are YAML. An old XML parameter file does not open in ndmanager;
+`ndm_xml2yaml` converts it.
 
 Saving writes ndmanager's fields over the file the session was opened from and keeps
 everything else in it: keys and blocks ndmanager has no page for (`sourceRecording`,
@@ -406,11 +464,12 @@ video:
 files:
   - extension: lfp
     samplingRate: 1250
+probeLibraryPath: /opt/probes        # optional; searched before the installed libraries
 probes:
   - probeId: 0
-    probeFile: neuronexus/Buzsaki64.probe
+    probeFile: neuronexus/Buzsaki64.probe    # or session.probe.0.probe (a session copy)
     label: "left CA1"
-    channelOffset: 0
+    channelOffset: 0                         # absolute first channel
     anatomicalGroups: [1, 2, 3, 4, 5, 6, 7, 8]
 anatomicalDescription:
   channelGroups:
