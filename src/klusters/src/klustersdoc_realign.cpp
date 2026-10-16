@@ -23,6 +23,8 @@
 #include <cerrno>          // patch63 — saveDocument errno diagnostics
 #include <cstring>         // patch63 — strerror
 #include <vector>
+#include <filesystem>
+#include <system_error>
 #include <stdint.h>
 #ifdef _OPENMP
 #include <omp.h>            // CPU-fallback realign parallelisation
@@ -2503,16 +2505,37 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
                                  << QFileInfo(src).size() << "vs" << dst << QFileInfo(dst).size();
             return false;
         }
-        QFile::remove(dst);    // OK if dst doesn't exist
-        if (!QFile::copy(src, dst)) {
+        // Copy beside the original, then rename over it.  The original used to be
+        // removed first and the copy made in its place: a crash, a kill or a full
+        // disk between the two left NO original -- and the next open, finding no
+        // .clu, re-seeded the pending copy from nothing and deleted it, so the
+        // only copy of the edits went too.  The rename replaces the original in
+        // one step, and a failed copy leaves it as it was.
+        const QString staged = dst + QStringLiteral(".saving");
+        QFile::remove(staged);
+        const bool copied = QFile::copy(src, staged)
+                            && QFileInfo(staged).size() == QFileInfo(src).size();
+        std::error_code renameEc;
+        if (copied) {
+            const QFileInfo dstInfo(dst);
+            if (dstInfo.exists())        // keep the original's mode (the copy got the umask's)
+                QFile::setPermissions(staged, QFile::permissions(dst));
+            std::filesystem::rename(QFile::encodeName(staged).toStdString(),
+                                    QFile::encodeName(dst).toStdString(), renameEc);
+        }
+        if (!copied || renameEc) {
+            QFile::remove(staged);
             // QFile doesn't expose errno reliably — best we can do is
             // report both paths and check permissions/existence.
             QFileInfo dstInfo(dst);
             QFileInfo dirInfo(dstInfo.absolutePath());
             const QString hint =
-                !dirInfo.isWritable() ? "parent directory not writable by current user"
-              : QFileInfo::exists(dst) ? "destination still present after remove() — likely owned by another user, or immutable (chattr +i)"
-              : "QFile::copy refused — check file ownership and parent-directory write permission";
+                !dirInfo.isWritable() ? QStringLiteral("parent directory not writable by current user")
+              : renameEc ? QStringLiteral("could not replace the file (%1) — likely owned by another user, "
+                                          "or immutable (chattr +i)")
+                               .arg(QString::fromStdString(renameEc.message()))
+              : QStringLiteral("copy failed or incomplete — check free space, file ownership and "
+                               "parent-directory write permission");
             if (firstError.isEmpty()) {
                 firstError = QString(
                     "Cannot commit %1:\n  %2\n→ %3\n\nHint: %4")
