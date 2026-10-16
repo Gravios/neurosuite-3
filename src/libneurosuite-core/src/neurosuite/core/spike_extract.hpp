@@ -62,6 +62,7 @@ struct SpikeWindowSpec {
     const int* partner = nullptr;   // order 4
     const int* setOff  = nullptr;   // order 5 (flattened reference sets)
     const int* setMem  = nullptr;
+    const ChannelExprSet* expr = nullptr;  // order 6 (sdiffPairs expressions)
     // Seed each window's temporal difference with the spatial derivative of
     // the sample before it (what ndm_extractspikes writes since the
     // detect/extract split).  false = seed 0, the convention of .spk files
@@ -174,12 +175,12 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
                 const std::int16_t* seedPtr = nullptr;
                 if (lead) {
                     stderivSeed(spec.order, leadRow.data(), spec.nChan, seed.data(),
-                                spec.partner, spec.setOff, spec.setMem);
+                                spec.partner, spec.setOff, spec.setMem, spec.expr);
                     seedPtr = seed.data();
                 }
                 applyStderivTransform(spec.order, wavCM.data(), spec.nChan, spec.nSamp,
                                       wavCM.data(), spec.partner, seedPtr,
-                                      spec.setOff, spec.setMem);
+                                      spec.setOff, spec.setMem, spec.expr);
             }
             for (int s = 0; s < spec.nSamp; ++s)
                 for (int ch = 0; ch < spec.nChan; ++ch)
@@ -248,9 +249,9 @@ inline StderivSeeding detectStderivSeeding(std::FILE* fil, std::int64_t nSpikes,
                 frames[frameElems + static_cast<std::size_t>(spec.groupChannels[ci])];
         }
         stderivSeed(spec.order, prevRow.data(), spec.nChan, sdPrev.data(),
-                    spec.partner, spec.setOff, spec.setMem);
+                    spec.partner, spec.setOff, spec.setMem, spec.expr);
         stderivSeed(spec.order, curRow.data(),  spec.nChan, sdCur.data(),
-                    spec.partner, spec.setOff, spec.setMem);
+                    spec.partner, spec.setOff, spec.setMem, spec.expr);
         for (int ci = 0; ci < spec.nChan; ++ci) {
             const std::int16_t zero   = sdCur[static_cast<std::size_t>(ci)];
             const std::int16_t seeded = clampToInt16(

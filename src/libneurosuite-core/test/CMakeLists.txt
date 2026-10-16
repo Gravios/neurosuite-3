@@ -15,6 +15,15 @@ add_test(NAME core_test_custody_conformance
 # .spk int16 waveform I/O + stage-tagged path composition round-trip.  Links the
 # library (unlike the header-only custody test) because readSpk/writeSpk/stagePath
 # live in neurofileio.cpp.
+# Expression form of a custom spatial pattern (channel_expr.hpp, order 6):
+# header-only; run against the cross-language vectors (fiber-kit ships a copy).
+add_executable(core_test_sdiff_expr sdiff_expr_test.cpp)
+target_compile_features(core_test_sdiff_expr PRIVATE cxx_std_17)
+target_include_directories(core_test_sdiff_expr
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_sdiff_expr
+         COMMAND core_test_sdiff_expr "${CMAKE_CURRENT_SOURCE_DIR}/sdiff_expr_vectors.tsv")
+
 add_executable(core_test_neurofileio_spk neurofileio_spk_test.cpp)
 target_compile_features(core_test_neurofileio_spk PRIVATE cxx_std_17)
 target_include_directories(core_test_neurofileio_spk

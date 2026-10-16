@@ -31,6 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SHARED = {
     "custody_vectors.tsv":     "test/custody_vectors.tsv",
     "pca_method_vectors.tsv":  "test/pca_method_vectors.tsv",
+    "sdiff_expr_vectors.tsv":  "test/sdiff_expr_vectors.tsv",
 }
 
 

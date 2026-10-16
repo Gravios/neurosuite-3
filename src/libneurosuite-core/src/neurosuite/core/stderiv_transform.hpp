@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "channel_expr.hpp"     // SdiffOrder::Expr
 #include "pca_projection.hpp"   // SdiffOrder
 
 namespace neurosuite {
@@ -44,7 +45,8 @@ inline int16_t clampToInt16(double v) {
 // process_extractspikes_stderiv::computeSDiff (and the process_pca_stderiv copy).
 inline double spatialDeriv(SdiffOrder order, const double* chanRow,
                            int idx, int nChan, const int* partner = nullptr,
-                           const int* setOff = nullptr, const int* setMem = nullptr) {
+                           const int* setOff = nullptr, const int* setMem = nullptr,
+                           const ChannelExprSet* expr = nullptr) {
     const double val = chanRow[idx];
     switch (order) {
         case SdiffOrder::None:
@@ -85,6 +87,16 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
             }
             [[fallthrough]];
         }
+        case SdiffOrder::Expr:
+            // Output channel idx = its expression over the group's channels (the
+            // session's sdiffPairs written with c0, c1, ...).  Like the other
+            // custom orders, a set that does not fit the group degrades to
+            // all-pairs rather than reading out of bounds; the engines refuse
+            // such a group up front.  (Reached by CustomCar's fall-through only
+            // with order != Expr, hence the test.)
+            if (order == SdiffOrder::Expr && expr && nChan > 1 && expr->fits(nChan))
+                return expr->eval(idx, chanRow);
+            [[fallthrough]];
         case SdiffOrder::AllPairs:
         default: {
             // Single-channel group has no pairs; the extractor returns 0 here.
@@ -106,13 +118,14 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
 inline void stderivSeed(SdiffOrder order, const int16_t* groupRow, int nChan,
                         int16_t* seedOut,
                         const int* partner = nullptr,
-                        const int* setOff = nullptr, const int* setMem = nullptr) {
+                        const int* setOff = nullptr, const int* setMem = nullptr,
+                        const ChannelExprSet* expr = nullptr) {
     std::vector<double> row(static_cast<size_t>(nChan));
     for (int ci = 0; ci < nChan; ++ci)
         row[static_cast<size_t>(ci)] = static_cast<double>(groupRow[ci]);
     for (int ci = 0; ci < nChan; ++ci)
         seedOut[ci] = clampToInt16(
-            spatialDeriv(order, row.data(), ci, nChan, partner, setOff, setMem));
+            spatialDeriv(order, row.data(), ci, nChan, partner, setOff, setMem, expr));
 }
 
 // Full stderiv transform of a channel-major waveform (in[ci*nSamp + t]) into
@@ -129,7 +142,8 @@ inline void applyStderivTransform(SdiffOrder order,
                                   const int* partner = nullptr,
                                   const int16_t* prevSeed = nullptr,
                                   const int* setOff = nullptr,
-                                  const int* setMem = nullptr) {
+                                  const int* setMem = nullptr,
+                                  const ChannelExprSet* expr = nullptr) {
     std::vector<double>  row(static_cast<size_t>(nChan));
     std::vector<int16_t> prev(static_cast<size_t>(nChan));
     for (int ci = 0; ci < nChan; ++ci)
@@ -141,7 +155,7 @@ inline void applyStderivTransform(SdiffOrder order,
                 static_cast<double>(in[static_cast<size_t>(ci) * nSamp + t]);
         for (int ci = 0; ci < nChan; ++ci) {
             const int16_t sd = clampToInt16(
-                spatialDeriv(order, row.data(), ci, nChan, partner, setOff, setMem));
+                spatialDeriv(order, row.data(), ci, nChan, partner, setOff, setMem, expr));
             const int diff = static_cast<int>(sd)
                            - static_cast<int>(prev[static_cast<size_t>(ci)]);
             prev[static_cast<size_t>(ci)] = sd;

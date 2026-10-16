@@ -40,7 +40,8 @@ namespace core {
 // Spatial-derivative order (the extractor's SdiffOrder, kept here so callers
 // need not include the plugin header).
 enum class SdiffOrder : int32_t { None = 0, First = 1, Laplacian = 2, AllPairs = 3,
-                                  Custom = 4, CustomCar = 5 };
+                                  Custom = 4, CustomCar = 5,
+                                  Expr = 6 };  // sdiffPairs as expressions (channel_expr.hpp)
 
 // The transform a basis was trained against — a single explicit method rather
 // than a (transform × order) cross-product, so an illegal combination cannot be
@@ -60,9 +61,10 @@ enum class Method : int32_t {
     StderivAllPairs  = 6,   // canonical (the YAML default)
     StderivCustom    = 7,   // per-group sdiffPairs partner map   (method stderiv_C4)
     StderivCustomCar = 8,   // per-group sdiffPairs reference sets (method stderiv_C5)
+    StderivExpr      = 9,   // per-group sdiffPairs expressions    (method stderiv_C6)
 };
 
-inline bool methodValid(int32_t v) { return v >= 0 && v <= 8; }
+inline bool methodValid(int32_t v) { return v >= 0 && v <= 9; }
 
 // Spatial-derivative order a method applies.
 inline SdiffOrder spatialOrder(Method m) {
@@ -72,6 +74,7 @@ inline SdiffOrder spatialOrder(Method m) {
         case Method::SdiffAllPairs:  case Method::StderivAllPairs:  return SdiffOrder::AllPairs;
         case Method::StderivCustom:                                 return SdiffOrder::Custom;
         case Method::StderivCustomCar:                              return SdiffOrder::CustomCar;
+        case Method::StderivExpr:                                   return SdiffOrder::Expr;
         case Method::Standard:       default:                       return SdiffOrder::None;
     }
 }
@@ -80,7 +83,7 @@ inline SdiffOrder spatialOrder(Method m) {
 inline bool hasTemporalDiff(Method m) {
     return m == Method::StderivFirst || m == Method::StderivLaplacian
         || m == Method::StderivAllPairs || m == Method::StderivCustom
-        || m == Method::StderivCustomCar;
+        || m == Method::StderivCustomCar || m == Method::StderivExpr;
 }
 
 // Chain-of-custody method tag for the filename / YAML cross-check.
@@ -89,7 +92,7 @@ inline const char* methodTag(Method m) {
         case Method::SdiffFirst: case Method::SdiffLaplacian: case Method::SdiffAllPairs:
             return "sdiff";
         case Method::StderivFirst: case Method::StderivLaplacian: case Method::StderivAllPairs:
-        case Method::StderivCustom: case Method::StderivCustomCar:
+        case Method::StderivCustom: case Method::StderivCustomCar: case Method::StderivExpr:
             return "stderiv";
         case Method::Standard: default:
             return "standard";
