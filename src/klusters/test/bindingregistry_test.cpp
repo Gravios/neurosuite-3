@@ -9,7 +9,7 @@
  *                                                                         *
  *  No widgets — only Qt6 Core (QString/Qt flags) + Gui (QKeySequence, via  *
  *  Chord::displayString in chord.cpp).  See                               *
- *  src/klusters/tests/CMakeLists.txt (klusters_test_bindingregistry).     *
+ *  src/klusters/test/CMakeLists.txt (klusters_test_bindingregistry).     *
  ***************************************************************************/
 #include "input/bindingregistry.h"
 #include "input/chord.h"

@@ -12,7 +12,7 @@
  *  computeShade) needs a live KlustersDoc and is not exercised here.       *
  *                                                                         *
  *  Build (standalone): needs Qt6 Core+Gui for QPointF/QColor.             *
- *    see src/klusters/tests/CMakeLists.txt (klusters_test_matrixtemplatestrip)
+ *    see src/klusters/test/CMakeLists.txt (klusters_test_matrixtemplatestrip)
  ***************************************************************************/
 #include "matrixtemplatecols.h"
 

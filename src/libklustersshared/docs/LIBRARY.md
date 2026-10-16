@@ -134,7 +134,7 @@ The probing helpers live in [`cmake/GpuBackends.cmake`](../../../cmake/GpuBacken
 
 `KLUSTERSSHARED_STATICLIB` is what the Klusters input unit tests define when
 they compile `src/input/*.cpp` straight into a test binary
-(`src/klusters/tests/CMakeLists.txt`). The header is committed, not generated,
+(`src/klusters/test/CMakeLists.txt`). The header is committed, not generated,
 so consumer AUTOMOC never waits for the library to build.
 
 ### 1.7 How a consumer includes headers
@@ -607,7 +607,7 @@ Library code tested from elsewhere:
 
 | ctest name | Library code exercised |
 |---|---|
-| `klusters_test_bindingregistry`, `klusters_test_inputdispatcher`, `klusters_test_keymapprofile` (`src/klusters/tests/`) | `src/input/` (compiled in with `KLUSTERSSHARED_STATICLIB`) |
+| `klusters_test_bindingregistry`, `klusters_test_inputdispatcher`, `klusters_test_keymapprofile` (`src/klusters/test/`) | `src/input/` (compiled in with `KLUSTERSSHARED_STATICLIB`) |
 | `kk_test_klusters_realign` (`src/kiloklustakwik/test/`) | `realign_xcorr_omp.cpp`, `realign_xcorr_dispatch.cpp`, `realign_center.cpp` through `klusters_realign.cpp` |
 | `build_invariants` (`tests/`) | `cmake_minimum_required` of `src/libklustersshared/CMakeLists.txt` |
 

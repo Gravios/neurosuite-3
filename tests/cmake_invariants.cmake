@@ -206,6 +206,31 @@ else()
     endif()
 endif()
 
+# --- 9. standard subproject layout (STANDARDIZATION.md §2.7) ----------------
+# Tests live in <sub>/test/ (never tests/), and no C/C++ source sits at a
+# subproject root.  The top-level tests/ (this script) is not a subproject.
+file(GLOB _subs LIST_DIRECTORIES true "${REPO}/src/*")
+set(_layout_offenders "")
+foreach(_s ${_subs})
+    if(IS_DIRECTORY "${_s}")
+        file(RELATIVE_PATH _rel "${REPO}" "${_s}")
+        if(IS_DIRECTORY "${_s}/tests")
+            list(APPEND _layout_offenders "${_rel}/tests (use test/)")
+        endif()
+        file(GLOB _loose LIST_DIRECTORIES false
+             "${_s}/*.c" "${_s}/*.cc" "${_s}/*.cpp" "${_s}/*.cxx" "${_s}/*.h" "${_s}/*.hpp")
+        foreach(_l ${_loose})
+            file(RELATIVE_PATH _lr "${REPO}" "${_l}")
+            list(APPEND _layout_offenders "${_lr}")
+        endforeach()
+    endif()
+endforeach()
+if(_layout_offenders STREQUAL "")
+    _ok("subprojects keep tests in test/ and no sources at their root")
+else()
+    _no("subproject layout broken: ${_layout_offenders}")
+endif()
+
 # --- result -----------------------------------------------------------------
 list(LENGTH _failed _n)
 if(_n GREATER 0)

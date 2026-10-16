@@ -10,7 +10,7 @@
  *                                                                         *
  *  No widgets, no QApplication — event objects construct fine standalone;  *
  *  the view pointer is only stored, never dereferenced.  Links Qt6         *
- *  Core+Gui.  See src/klusters/tests/CMakeLists.txt                        *
+ *  Core+Gui.  See src/klusters/test/CMakeLists.txt                        *
  *  (klusters_test_inputdispatcher).                                        *
  ***************************************************************************/
 #include "input/bindingregistry.h"

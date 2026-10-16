@@ -11,7 +11,7 @@
  *                                                                         *
  *  No widgets — Qt6 Core + Gui only (QString/Qt flags; QKeySequence via    *
  *  Chord::displayString in chord.cpp).  See                               *
- *  src/klusters/tests/CMakeLists.txt (klusters_test_keymapprofile).        *
+ *  src/klusters/test/CMakeLists.txt (klusters_test_keymapprofile).        *
  ***************************************************************************/
 #include "input/keymapprofile.h"
 #include "input/bindingregistry.h"

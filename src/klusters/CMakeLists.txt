@@ -182,7 +182,7 @@ if(NS_BUILD_TESTS)
     if(PROJECT_IS_TOP_LEVEL)
         enable_testing()
     endif()
-    add_subdirectory(tests)
+    add_subdirectory(test)
 endif()
 
 # Refresh the MIME database / icon cache after this project's install when it

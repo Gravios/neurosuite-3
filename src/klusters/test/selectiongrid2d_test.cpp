@@ -6,7 +6,7 @@
  *                                                                         *
  *    g++ -std=c++20 -O2 -I src/klusters/src \                             *
  *        -I src/libklustersshared/src/klustersshared \                    *
- *        src/klusters/tests/selectiongrid2d_test.cpp -o sg_test && ./sg_test
+ *        src/klusters/test/selectiongrid2d_test.cpp -o sg_test && ./sg_test
  *                                                                         *
  *  For many random polygons over random points, asserts the grid query    *
  *  returns EXACTLY the brute-force point-in-polygon result (no false       *

@@ -6,7 +6,7 @@
  *                                                                         *
  *    g++ -std=c++20 -O2 -I src/klusters/src \                             *
  *        -I src/libklustersshared/src/klustersshared \                    *
- *        src/klusters/tests/spikeassignment_test.cpp -o sa_test && ./sa_test
+ *        src/klusters/test/spikeassignment_test.cpp -o sa_test && ./sa_test
  *                                                                         *
  *  Validates against an independent reference label model over randomised *
  *  edit / undo / redo sequences, checks internal invariants after every   *

@@ -206,7 +206,7 @@ following.
 - `klustersdoc.cpp` — `realignSpikesBatch` orchestration (chunking, double-buffer).
 - `klusters.cpp` — `slotPcaAlignAllClusters` calls the batch path instead of
   queuing one worker per cluster; progress bar advances per chunk-applied cluster.
-- `tests/` — `klusters_test_refine_batch` (CPU oracle).
+- `test/` — `klusters_test_refine_batch` (CPU oracle).
 
 ---
 
