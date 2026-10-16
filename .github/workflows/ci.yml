@@ -35,6 +35,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Seconds, no build: shell syntax, Python defects, build-system invariants.
+  # The same script runs locally (scripts/lint.sh).
+  lint:
+    name: lint (bash -n, ruff, build invariants)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install ruff and zsh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh
+          python -m pip install ruff==0.16.8
+      - name: Lint
+        run: scripts/lint.sh
+
   build:
     name: build (ubuntu-24.04, CPU, Qt6)
     runs-on: ubuntu-24.04

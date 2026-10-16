@@ -206,16 +206,23 @@ rationale is in the `NS_ASAN` block of `CMakeLists.txt`.
 Two workflows run on `main` and on pull requests
 ([`.github/workflows/`](../.github/workflows/)):
 
-- **`ci.yml`** — the CPU build gate on `ubuntu-24.04`. It configures with the
-  GPU backends **off** and warnings **on but non-fatal**, exercising the
-  CPU/OpenMP path every GPU backend falls back to:
+- **`ci.yml`** has two jobs on `ubuntu-24.04`.
+  - **`lint`** runs [`scripts/lint.sh`](../scripts/lint.sh): `bash -n`, ruff's
+    defect rules and the build invariants, with no build. Run it locally the
+    same way.
+  - **`build`** is the CPU build-and-test gate. It configures with the GPU
+    backends **off**, warnings **on but non-fatal** and the regression suite
+    on, exercising the CPU/OpenMP path every GPU backend falls back to. It
+    then runs ctest, with a fiber-kit checkout for `core_shared_contract`:
 
   ```sh
   cmake -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF \
+    -DNS_BUILD_TESTS=ON -DNS_FIBER_KIT_ROOT=/path/to/fiber-kit \
     -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wshadow"
   cmake --build build --parallel
+  QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
   ```
 
   Reproduce a CI failure locally by configuring exactly this way. `-Wshadow` is

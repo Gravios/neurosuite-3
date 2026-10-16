@@ -535,7 +535,8 @@ to match real codebase structure.
 Before shipping any patch series, verify:
 
 1. **Build**: `g++ -std=c++20 -fsyntax-only -Wall -Wextra -Wshadow ...`
-   on the changed source files (§2.9).  Zero warnings.
+   on the changed source files (§2.9).  Zero warnings.  Then
+   `scripts/lint.sh` (shell syntax, Python defects, build invariants).
 2. **Convention**: `grep -n 'm_[a-zA-Z]' <changed-files>` returns only
    false positives (script names like `ndm_pca` in comments, tool names
    in strings).

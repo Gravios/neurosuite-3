@@ -73,6 +73,10 @@ To check the build system alone, with no configure at all:
 cmake -DREPO=. -P tests/cmake_invariants.cmake
 ```
 
+`scripts/lint.sh` runs that check together with `bash -n` on every shell
+script and ruff (defect rules only: E9, F63, F7, F82) on every Python file. It
+takes seconds and needs no build. CI runs it as the `lint` job.
+
 ## Script tests and the fiber-kit contract
 
 **ndmanager-plugins scripts** (`src/ndmanager-plugins/test/test_*.py`,

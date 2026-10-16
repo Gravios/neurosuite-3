@@ -131,6 +131,8 @@ shipping the series:
    g++ -std=c++20 -fsyntax-only -Wall -Wextra -Wshadow <changed files>
    ```
    (the full build still happens via CMake and CI; this is the fast local gate.)
+   Then run `scripts/lint.sh`: shell syntax, Python defects and the build
+   invariants, in seconds and without a build. CI runs it as the `lint` job.
 2. **Convention.** `grep -n 'm_[a-zA-Z]' <changed files>` returns only false
    positives (tool/script names in comments or strings), never a real `m_`
    member.
@@ -149,9 +151,11 @@ shipping the series:
 
 Two workflows gate `main` and pull requests (see [`BUILD.md`](../doc/BUILD.md) §8):
 
-- **`ci.yml`** builds the whole monorepo on `ubuntu-24.04` with the GPU backends
-  off and `-Wall -Wextra -Wshadow` surfaced (non-fatal). Reproduce a failure
-  locally with the exact configure line in `BUILD.md` §8. klusters and
+- **`ci.yml`** runs `scripts/lint.sh` (job `lint`), then builds the whole
+  monorepo on `ubuntu-24.04` with the GPU backends off and `-Wall -Wextra
+  -Wshadow` surfaced (non-fatal), and runs the regression suite with ctest (job
+  `build`). Reproduce a failure locally with the exact configure line in
+  `BUILD.md` §8. klusters and
   libklustersshared are shadow-clean; keep them that way.
 - **`docs.yml`** builds the documentation site with `mkdocs build --strict` and
   deploys to GitHub Pages. It watches `src/*/docs/**` and `DEVELOPER_GUIDE.md`,
