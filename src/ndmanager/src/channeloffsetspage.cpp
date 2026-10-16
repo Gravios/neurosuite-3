@@ -47,16 +47,16 @@ void ChannelOffsetsPage::getOffsets(QMap<int,int>& offsets){
 }
 
 void ChannelOffsetsPage::setOffsets(const QMap<int,int>& offsets){
+    // Row i is channel i (setNbChannels labels the rows); ids outside the
+    // table are ignored.
     QMap<int,int>::ConstIterator iterator;
-    QStringList lst;
     //The iterator gives the keys sorted.
     for(iterator = offsets.constBegin(); iterator != offsets.constEnd(); ++iterator){
-        int channelId = iterator.key();
-        lst << QString::number(channelId);
-        QTableWidgetItem *item = new QTableWidgetItem(QString::number(iterator.value()));
-        offsetTable->setItem(channelId,0,item);
+        const int channelId = iterator.key();
+        if(channelId < 0 || channelId >= offsetTable->rowCount())
+            continue;
+        offsetTable->setItem(channelId,0,new QTableWidgetItem(QString::number(iterator.value())));
     }
-    offsetTable->setVerticalHeaderLabels(lst);
 }
 
 
@@ -64,8 +64,15 @@ void ChannelOffsetsPage::setOffsets(const QMap<int,int>& offsets){
 void ChannelOffsetsPage::setNbChannels(int nbChannels){
     this->nbChannels = nbChannels;
 
-    for(int i =0; i<offsetTable->rowCount();++i)
-        offsetTable->removeRow(i);
-
+    // Rebuild the table: one row per channel, labelled with its id and set
+    // to the default offset, 0.  (A forward removeRow loop only removed
+    // every other row.)
+    offsetTable->setRowCount(0);
     offsetTable->setRowCount(nbChannels);
+    QStringList labels;
+    for(int i = 0; i < nbChannels; ++i){
+        labels << QString::number(i);
+        offsetTable->setItem(i,0,new QTableWidgetItem(QStringLiteral("0")));
+    }
+    offsetTable->setVerticalHeaderLabels(labels);
 }

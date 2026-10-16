@@ -697,6 +697,8 @@ void ParameterView::nbChannelsModified(int nbChannels){
     }
     this->channelColors->setColors(channelColorsList);
 
+    //the channel offset page: one row per channel, all at the default offset 0
+    this->channelDefaultOffsets->setNbChannels(nbChannels);
 }
 
 QStringList ParameterView::modifiedScripts() const{
