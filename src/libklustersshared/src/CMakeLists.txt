@@ -36,6 +36,7 @@ set(_srcs
     klustersshared/parameteryamlmodifier.cpp
     klustersshared/parameteryamlwriter.cpp
     klustersshared/yamlformat.cpp
+    klustersshared/sessiontemplate.cpp
     klustersshared/parameteryamlreader_probes.cpp
     klustersshared/theme.cpp
     # input binding core (relocated from src/klusters/src/input in the neuroscope
@@ -77,6 +78,7 @@ set(_hdrs
     klustersshared/parameteryamlmodifier.h
     klustersshared/parameteryamlwriter.h
     klustersshared/yamlformat.h
+    klustersshared/sessiontemplate.h
     klustersshared/parameteryamlreader_probes.h
     klustersshared/generalinformation.h
     klustersshared/fileinformation.h

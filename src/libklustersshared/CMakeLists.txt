@@ -101,6 +101,16 @@ if(NS_BUILD_TESTS)
     add_test(NAME klustersshared_yamlformat_test
         COMMAND klustersshared_yamlformat_test "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 
+    # Session templates (sessiontemplate.cpp, Qt-free): sections, export, apply.
+    add_executable(klustersshared_sessiontemplate_test
+        test/sessiontemplate_test.cpp src/klustersshared/sessiontemplate.cpp
+        src/klustersshared/yamlformat.cpp)
+    target_include_directories(klustersshared_sessiontemplate_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+    target_compile_definitions(klustersshared_sessiontemplate_test PRIVATE KLUSTERSSHARED_STATICLIB)
+    target_link_libraries(klustersshared_sessiontemplate_test PRIVATE Qt6::Core yaml-cpp)  # Qt: export-macro header only
+    add_test(NAME klustersshared_sessiontemplate_test COMMAND klustersshared_sessiontemplate_test)
+
     # ItemColors / ChannelColors: copies (construction and assignment) are deep.
     add_executable(klustersshared_colors_test test/colors_test.cpp)
     target_include_directories(klustersshared_colors_test
