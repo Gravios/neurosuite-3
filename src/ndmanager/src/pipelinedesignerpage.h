@@ -8,6 +8,7 @@
  * ────────────
  *   PipelineDesignerPage (QWidget)
  *   ├─ toolbar: preset combo, apply, clear
+ *   ├─ notice bar: load failures / warnings, refused edges
  *   ├─ QSplitter
  *   │   ├─ PaletteSidebar  — QListWidget of all ndm_ scripts, drag-enabled
  *   │   ├─ PipelineCanvas  — custom QPainter widget; nodes + bezier edges
@@ -106,6 +107,8 @@ struct PipelineEdge {
  *  ────────────
  *    Left-drag node body     → move node
  *    Left-drag output port   → draw pending edge; release on input port = connect
+ *                              (refused, with edgeRejected, into the root or
+ *                              when it would close a cycle)
  *    Left-click empty space  → deselect
  *    Right-drag / mid-drag   → pan
  *    Left-click edge stripe  → select edge (shown highlighted; Delete removes it)
@@ -146,6 +149,8 @@ signals:
     void nodeSelected(const QString& id);
     void selectionCleared();
     void graphModified();
+    /** An edge drag was refused; @p reason is user-facing. */
+    void edgeRejected(const QString& reason);
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -200,6 +205,10 @@ private:
     int idSeq = 0;
     QString newId() { return allocateId(); }
     bool hasNodeId(const QString& id) const;
+
+    /** True when adding from→to would close a cycle: @p to already
+     *  reaches @p from (or they are the same node). */
+    bool wouldCreateCycle(const QString& from, const QString& to) const;
 
     // coord helpers
     QPointF w2s(const QPointF& w) const { return w + pan; }
@@ -262,6 +271,11 @@ public:
 
     bool isModified() const { return modified; }
 
+    /** Show @p text in the notice bar under the toolbar (red when
+     *  @p isError).  Empty text hides the bar.  With @p timeoutMs > 0 the
+     *  notice hides itself after that long unless replaced meanwhile. */
+    void showNotice(const QString& text, bool isError = false, int timeoutMs = 0);
+
 signals:
     /** Emitted when "Apply Pipeline" is clicked.
      *  ParameterView connects this to setProgramList(). */
@@ -288,6 +302,7 @@ private slots:
     void onEnabledToggled(bool);
     void onApply();
     void onClear();
+    void onEdgeRejected(const QString& reason);
     void onPresetChanged(int index);
     void onPaletteDoubleClicked(QListWidgetItem* item);
 
@@ -322,6 +337,7 @@ private:
     // toolbar
     QComboBox*   presetCombo;
     QPushButton* applyBtn;
+    QLabel*      noticeLabel = nullptr;
 
     QString inspectedId;
 };

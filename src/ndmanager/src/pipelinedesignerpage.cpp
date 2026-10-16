@@ -27,7 +27,9 @@
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
 #include <QSplitter>
+#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -154,6 +156,25 @@ void PipelineCanvas::reserveIds()
         if (m.hasMatch())
             idSeq = qMax(idSeq, m.captured(1).toInt());
     }
+}
+
+bool PipelineCanvas::wouldCreateCycle(const QString& from, const QString& to) const
+{
+    if (from == to) return true;
+    if (!edges) return false;
+    // Does `to` already reach `from`?  Then from→to closes a cycle.
+    QSet<QString> seen{ to };
+    QStringList stack{ to };
+    while (!stack.isEmpty()) {
+        const QString cur = stack.takeLast();
+        for (const PipelineEdge& e : *edges) {
+            if (e.from != cur || seen.contains(e.to)) continue;
+            if (e.to == from) return true;
+            seen.insert(e.to);
+            stack.append(e.to);
+        }
+    }
+    return false;
 }
 
 void PipelineCanvas::resetInteraction()
@@ -622,14 +643,25 @@ void PipelineCanvas::mouseReleaseEvent(QMouseEvent* ev)
                 // so the topological sort always emits it first.  Reject
                 // any attempt to connect *into* it.
                 if (n.type == kRootType) {
+                    emit edgeRejected(tr("ndm_start is the pipeline root; it cannot "
+                                         "have an incoming edge."));
                     break;
                 }
                 // Prevent duplicate edges
                 bool dup = false;
                 for (const PipelineEdge& e : *edges)
                     if (e.from == connectFrom && e.to == n.id) { dup = true; break; }
-                if (!dup)
-                    edges->append({ connectFrom, n.id });
+                if (dup) break;
+                // A cycle has no run order: the GUI topo sort would append
+                // its nodes at the end while ndm_start's would skip them
+                // (and everything after them) altogether.
+                if (wouldCreateCycle(connectFrom, n.id)) {
+                    emit edgeRejected(tr("Edge refused: %1 already leads to the node you "
+                                         "dragged from, so this edge would close a cycle.")
+                                      .arg(n.type));
+                    break;
+                }
+                edges->append({ connectFrom, n.id });
                 emit graphModified();
                 break;
             }
@@ -716,9 +748,12 @@ static QList<PipelineNode> topoSort(const QList<PipelineNode>& nodes,
             indeg[e.to]++;
         }
     }
+    // Seed the queue in node (= file) order, not QMap key order: ndm_start's
+    // read_pipeline_file seeds Kahn's queue in YAML insertion order, and
+    // the two must agree (with QMap order "n10" sorted before "n2").
     QList<QString> queue;
-    for (auto it = indeg.begin(); it != indeg.end(); ++it)
-        if (it.value() == 0) queue.append(it.key());
+    for (const PipelineNode& n : nodes)
+        if (indeg.value(n.id) == 0 && !queue.contains(n.id)) queue.append(n.id);
 
     QList<PipelineNode> result;
     QSet<QString> visited;
@@ -843,6 +878,15 @@ PipelineDesignerPage::PipelineDesignerPage(QWidget* parent) : QWidget(parent)
 
     vbox->addWidget(toolbar);
 
+    // Notice bar: load failures and warnings, refused edges.  Hidden until
+    // showNotice() has something to say.
+    noticeLabel = new QLabel;
+    noticeLabel->setWordWrap(true);
+    noticeLabel->setTextFormat(Qt::PlainText);
+    noticeLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    noticeLabel->setVisible(false);
+    vbox->addWidget(noticeLabel);
+
     // ── Main splitter ─────────────────────────────────────────────────────
     auto* splitter = new QSplitter(Qt::Horizontal);
     splitter->setHandleWidth(2);
@@ -870,6 +914,7 @@ PipelineDesignerPage::PipelineDesignerPage(QWidget* parent) : QWidget(parent)
     connect(canvas, &PipelineCanvas::nodeSelected,   this, &PipelineDesignerPage::onNodeSelected);
     connect(canvas, &PipelineCanvas::selectionCleared, this, &PipelineDesignerPage::onSelectionCleared);
     connect(canvas, &PipelineCanvas::graphModified,  this, &PipelineDesignerPage::onGraphModified);
+    connect(canvas, &PipelineCanvas::edgeRejected,   this, &PipelineDesignerPage::onEdgeRejected);
     splitter->addWidget(canvas);
 
     // ── Inspector ─────────────────────────────────────────────────────────
@@ -1267,6 +1312,28 @@ void PipelineDesignerPage::onClear()
     // edit, so flag it after clearGraphToRoot resets the state.
     clearGraphToRoot();
     onGraphModified();
+}
+
+void PipelineDesignerPage::onEdgeRejected(const QString& reason)
+{
+    showNotice(reason, /*isError=*/false, /*timeoutMs=*/6000);
+}
+
+void PipelineDesignerPage::showNotice(const QString& text, bool isError, int timeoutMs)
+{
+    if (!noticeLabel) return;
+    noticeLabel->setText(text);
+    noticeLabel->setStyleSheet(isError
+        ? "background:#2d1010;color:#fca5a5;border-bottom:1px solid #5c1a1a;"
+          "font-size:11px;padding:4px 10px;"
+        : "background:#2a1d05;color:#fac15c;border-bottom:1px solid #5c4a1a;"
+          "font-size:11px;padding:4px 10px;");
+    noticeLabel->setVisible(!text.isEmpty());
+    if (timeoutMs > 0 && !text.isEmpty()) {
+        QTimer::singleShot(timeoutMs, noticeLabel, [label = noticeLabel, text]() {
+            if (label->text() == text) label->setVisible(false);
+        });
+    }
 }
 
 void PipelineDesignerPage::onPresetChanged(int index)
@@ -1763,6 +1830,39 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
         newEdges.append({ from, to });
     }
 
+    // Drop edges that close a cycle (hand-edited files; the canvas refuses
+    // them), in file order: keep an edge unless its target already reaches
+    // its source through the edges kept so far.  ndm_start would skip every
+    // node on or after the cycle, the canvas would append them — this way
+    // both agree once the file is saved again.
+    QStringList cycleEdges;
+    {
+        QList<PipelineEdge> kept;
+        auto reaches = [&kept](const QString& a, const QString& b) {
+            if (a == b) return true;
+            QSet<QString> seen{ a };
+            QStringList stack{ a };
+            while (!stack.isEmpty()) {
+                const QString cur = stack.takeLast();
+                for (const PipelineEdge& e : kept) {
+                    if (e.from != cur || seen.contains(e.to)) continue;
+                    if (e.to == b) return true;
+                    seen.insert(e.to);
+                    stack.append(e.to);
+                }
+            }
+            return false;
+        };
+        for (const PipelineEdge& e : newEdges) {
+            if (reaches(e.to, e.from)) {
+                cycleEdges.append(e.from + QStringLiteral("→") + e.to);
+                continue;
+            }
+            kept.append(e);
+        }
+        newEdges = kept;
+    }
+
     // Ensure ndm_start is present and at position 0.  A hand-edited pipeline
     // file might have lost the root; we silently re-insert it rather than
     // failing the load.
@@ -1810,6 +1910,12 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
         warnings << QStringLiteral("Duplicate or empty node id(s) given fresh ids "
                                    "(edges naming a duplicated id attach to its first node): %1")
                     .arg(renamedIds.join(QStringLiteral(", ")));
+    }
+    if (!cycleEdges.isEmpty()) {
+        warnings << QStringLiteral("Edge(s) closing a cycle dropped: %1.  Until the pipeline "
+                                   "is saved again, ndm_start skips the nodes on and after "
+                                   "that cycle.")
+                    .arg(cycleEdges.join(QStringLiteral(", ")));
     }
     if (error && !warnings.isEmpty()) *error = warnings.join(QLatin1Char('\n'));
     return true;
