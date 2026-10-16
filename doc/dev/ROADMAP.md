@@ -105,11 +105,12 @@ synced to the current spike times (Actions → Sync Feature Spaces provides the
 synced `.spk`).  Design first — when to trigger, and how the per-variant
 `.wtf` relate to the method-less `.wti`.  Estimate: 1–2 sessions.
 
-**fiber-kit `.wtl` v2 (and `.mti`/`.mtf`) reader mirror.**
-ns3 writes `.wtl` v2 (running mean/std/count per node); fiber-kit's
-`neuro_io.read_wtl`/`write_wtl` still speak v1 (spike lists), so fiber-kit
-cannot read current lineage files.  A separate fiber-kit patch, never
-cross-applied from ns3.  Estimate: half a session.
+**fiber-kit `.mti`/`.mtf` reader mirror.**
+fiber-kit's `neuro_io.read_wtl` reads `.wtl` v2 since fiber-kit patch 0006
+(2026-10-16), so lineage files from Klusters now read on both sides.  The
+committed template model (`.mti`/`.mtf`, the `.wti`/`.spk` layouts) has no
+fiber-kit reader yet.  A separate fiber-kit patch, never cross-applied from
+ns3.  Estimate: a quarter session.
 
 ### 💭 considered
 
