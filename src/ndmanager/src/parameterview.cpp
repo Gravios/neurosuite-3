@@ -222,14 +222,16 @@ ParameterView::ParameterView(ndManager*,ndManagerDoc& doc,QWidget* parent, const
     connect(this, &ParameterView::resetModificationStatus, neuroscopeVideo, &NeuroscopeVideoPage::resetModificationStatus);
     connect(this, &ParameterView::resetModificationStatus, clusters, &ClustersPage::resetModificationStatus);
     connect(this, &ParameterView::resetModificationStatus, unitList, &UnitListPage::resetModificationStatus);
-
+    // These pages exist (hidden) in non-expert mode too and still count in
+    // isModified(), so a save must reset them in every mode.
+    connect(this, &ParameterView::resetModificationStatus, files, &FilesPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, anatomy, &AnatomyPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, spike, &SpikePage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, channelColors, &ChannelColorsPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, channelDefaultOffsets, &ChannelOffsetsPage::resetModificationStatus);
+    connect(this, &ParameterView::resetModificationStatus, probe, &ProbePage::resetModificationStatus);
 
     if(expertMode){
-        connect(this, &ParameterView::resetModificationStatus, files, &FilesPage::resetModificationStatus);
-        connect(this, &ParameterView::resetModificationStatus, anatomy, &AnatomyPage::resetModificationStatus);
-        connect(this, &ParameterView::resetModificationStatus, spike, &SpikePage::resetModificationStatus);
-        connect(this, &ParameterView::resetModificationStatus, channelDefaultOffsets, &ChannelOffsetsPage::resetModificationStatus);
-        connect(this, &ParameterView::resetModificationStatus, probe, &ProbePage::resetModificationStatus);
         connect(probe, &ProbePage::probeLayoutImported,
                 this,  &ParameterView::applyProbeLayout);
     }
