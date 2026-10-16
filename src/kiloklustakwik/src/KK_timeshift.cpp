@@ -14,6 +14,7 @@
 #include "realign_center.h"
 #include "klusters_realign.h"
 #include <neurosuite/core/pca_projection.hpp>  // canonical PCAE loader (block-wise, v1+v2)
+#include <neurosuite/core/stderiv_transform.hpp>  // the one spatial derivative
 
 #include <algorithm>
 #include <cmath>
@@ -356,7 +357,7 @@ bool KK::TimeShiftReadSpikeWave(int p, int waveSamples, int16_t* dst)
 // ---------------------------------------------------------------------------
 // ApplySdiffAllpairsTemporalDiff — in-place stderiv transform on a spike wave.
 //
-// Mirrors process_extractspikes_stderiv.cpp::fill_sdiff_buffer() exactly:
+// The extractor's transform (fill_sdiff_buffer), order 3 only:
 //   step 1 per time sample t:  sdiff[t, ch] = nChan * raw[t, ch] − Σ raw[t, :]
 //                              (saturating to int16 range)
 //   step 2 per time sample t:  wave[t, ch] = sdiff[t, ch] − sdiff[t-1, ch]
@@ -375,42 +376,22 @@ void KK::ApplySdiffAllpairsTemporalDiff(int16_t* wave, int nChan,
 {
     if (!wave || nChan <= 0 || nSamplesPerSpike <= 0) return;
 
-    // Reusable scratch: per-channel sdiff for "current" and "previous" samples.
-    // nChan is small (≤ 16 for typical probes), so heap alloc is negligible.
-    std::vector<int32_t> sdiffCur(static_cast<size_t>(nChan), 0);
-    std::vector<int32_t> sdiffPrev(static_cast<size_t>(nChan), 0);
-
-    auto satI16 = [](int32_t v) -> int16_t {
-        if (v >  32767) return  32767;
-        if (v < -32768) return -32768;
-        return static_cast<int16_t>(v);
-    };
+    // Spatial step: neurosuite::core::spatialDeriv (stderiv_transform.hpp), the
+    // one definition, rounded and saturated with core::clampToInt16.  The
+    // temporal step and its zero seed are this function's convention.
+    std::vector<double>  row(static_cast<size_t>(nChan));
+    std::vector<int16_t> sdiffPrev(static_cast<size_t>(nChan), 0);
 
     for (int s = 0; s < nSamplesPerSpike; ++s) {
-        // Spatial sum
-        int32_t sum = 0;
-        for (int c = 0; c < nChan; ++c)
-            sum += static_cast<int32_t>(wave[s * nChan + c]);
-
-        // SDIFF_ALLPAIRS + saturate
+        int16_t* w = wave + static_cast<size_t>(s) * static_cast<size_t>(nChan);
+        for (int c = 0; c < nChan; ++c) row[static_cast<size_t>(c)] = w[c];
         for (int c = 0; c < nChan; ++c) {
-            const int32_t raw = static_cast<int32_t>(wave[s * nChan + c]);
-            int32_t iv = nChan * raw - sum;
-            if (iv >  32767) iv =  32767;
-            if (iv < -32768) iv = -32768;
-            sdiffCur[static_cast<size_t>(c)] = iv;
+            const int16_t sd = neurosuite::core::clampToInt16(neurosuite::core::spatialDeriv(
+                neurosuite::core::SdiffOrder::AllPairs, row.data(), c, nChan));
+            w[c] = neurosuite::core::clampToInt16(
+                static_cast<double>(sd) - static_cast<double>(sdiffPrev[static_cast<size_t>(c)]));
+            sdiffPrev[static_cast<size_t>(c)] = sd;
         }
-
-        // Temporal first-difference + saturate, write in place
-        for (int c = 0; c < nChan; ++c) {
-            const int32_t diff = sdiffCur[static_cast<size_t>(c)]
-                               - sdiffPrev[static_cast<size_t>(c)];
-            wave[s * nChan + c] = satI16(diff);
-        }
-
-        // Save for next iteration's sdPrev (cannot overwrite before the
-        // temporal-diff loop reads sdiffPrev).
-        std::swap(sdiffCur, sdiffPrev);
     }
 }
 
