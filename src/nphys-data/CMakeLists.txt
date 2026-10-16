@@ -17,3 +17,10 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 
 add_subdirectory(src)
+
+# Refresh the MIME database / icon cache after this project's install when it
+# is built on its own; the monorepo does it once, after every subproject.
+if(PROJECT_IS_TOP_LEVEL)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/NsDesktopCaches.cmake")
+    ns_refresh_desktop_caches()
+endif()

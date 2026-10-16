@@ -118,7 +118,8 @@ standard shape:
   test/                   # unit tests, if any
   doc/                    # user- & packaging-facing docs (DocBook handbook under doc/en/), if any
   docs/                   # developer code references in Markdown, next to the code, if any
-  <packaging>             # postinst, postrm, description, AUTHORS, COPYING, …
+  <packaging>             # description, AUTHORS, COPYING, … (no postinst/postrm:
+                          # cmake/NsDesktopCaches.cmake refreshes MIME/icon caches)
 ```
 
 - **No C/C++ sources at a subproject root** — they live under `src/`.

@@ -439,6 +439,11 @@ ns_add_subdir(ndmanager-plugins src/ndmanager-plugins)
 #    Disable with -DNS_SKIP_KILOKLUSTAKWIK=ON.
 ns_add_subdir(kiloklustakwik src/kiloklustakwik)
 
+# MIME database and icon cache of the install prefix, refreshed after every
+# subproject's install rules (declaration order, CMP0082).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/NsDesktopCaches.cmake)
+ns_refresh_desktop_caches()
+
 # ---------------------------------------------------------------------------
 # Explicit build-time dependencies for parallel builds (belt-and-suspenders)
 #

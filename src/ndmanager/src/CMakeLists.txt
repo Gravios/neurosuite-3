@@ -110,29 +110,8 @@ install(FILES ndmanager.desktop
 install(FILES ndmanager.xml
     DESTINATION "${CMAKE_INSTALL_DATADIR}/mime/packages")
 
-# Rebuild the MIME database and the icon cache of the prefix installed into,
-# so the session type and the icons are known without a separate step (the
-# Debian postinst/postrm this replaces always targeted /usr).  Skipped for a
-# staged install (DESTDIR set): a package's own triggers do it on the target.
-install(CODE "set(_ndm_datadir \"${CMAKE_INSTALL_DATADIR}\")")
-install(CODE [[
-  if("$ENV{DESTDIR}" STREQUAL "")
-    find_program(_ndm_update_mime update-mime-database)
-    if(_ndm_update_mime)
-      execute_process(COMMAND "${_ndm_update_mime}"
-                              "${CMAKE_INSTALL_PREFIX}/${_ndm_datadir}/mime"
-                      OUTPUT_QUIET ERROR_QUIET)
-    endif()
-    # Only a theme with its index (the system hicolor) keeps a cache that
-    # would hide newly installed icons.
-    set(_ndm_hicolor "${CMAKE_INSTALL_PREFIX}/${_ndm_datadir}/icons/hicolor")
-    find_program(_ndm_update_icons gtk-update-icon-cache)
-    if(_ndm_update_icons AND EXISTS "${_ndm_hicolor}/index.theme")
-      execute_process(COMMAND "${_ndm_update_icons}" -q "${_ndm_hicolor}"
-                      OUTPUT_QUIET ERROR_QUIET)
-    endif()
-  endif()
-]])
+# The MIME database and icon cache are refreshed once, after every install
+# rule: ns_refresh_desktop_caches() (cmake/NsDesktopCaches.cmake).
 
 file(GLOB _templates "${CMAKE_CURRENT_SOURCE_DIR}/Template*.yaml")
 install(FILES ${_templates}
