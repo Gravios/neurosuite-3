@@ -62,6 +62,9 @@
 #include <QTextStream>
 #include <QFileInfo>
 #include <QThread>
+#include <algorithm>
+#include <fstream>
+#include <iterator>
 
 // application specific includes
 #include "processwidget.h"
@@ -82,6 +85,7 @@
 #include "clusteruserinformation.h"
 #include "hierarchyfiles.h"
 #include "filecommit.h"
+#include "unitsidecar.h"
 
 //C, C++ include files
 //#define _LARGEFILE_SOURCE already defined in /usr/include/features.h
@@ -407,6 +411,10 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         }
     }
 
+    // A rescue pair whose install was interrupted is completed first.
+    filecommit::recoverCommit(QFile::encodeName(cluFileSaveUrl + QStringLiteral(".commit")).toStdString(),
+                              nullptr);
+
     //If a crashRecoveryFile exits, check if it is newer than the clu file, if so
     //ask the user if he wants to use that one to replace the clu file.
     QFileInfo crashFileInfo(cluFileSaveUrl);
@@ -561,6 +569,8 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         clusterColorList->append(static_cast<int>(*it),color);
     }
 
+
+    loadUnitsFile();
 
     // Crash recovery: a timer on this thread writes the rescue copies.
     autoSaveFailed = false;
@@ -738,11 +748,13 @@ void KlustersDoc::autoSaveTick(){
                                          hierarchyfiles::distinctCount(atoms), atoms, &e);
         if (ok) targets.push_back(localPath(files.at(1)));
     }
-    for (const std::string& t : targets)
-        ok = ok && hierarchyfiles::installStaged(t, false, &e);
+    // Installed as one commit: a crash between the two renames is completed on
+    // the next open (the journal sits beside the rescue copies), so a unit
+    // rescue never meets the atom rescue of an earlier tick.
+    if (ok) ok = filecommit::commitStaged(targets, localPath(files.at(0) + QStringLiteral(".commit")), &e);
     if (ok) return;
 
-    for (const std::string& t : targets) hierarchyfiles::discardStaged(t);
+    filecommit::discardStaged(targets);
     autoSaveFailed = true;
     if (autoSaveTimer) autoSaveTimer->stop();
     QMessageBox::critical(nullptr,tr("I/O Error !"),tr(
@@ -774,6 +786,33 @@ bool KlustersDoc::prepareSave(const QString& saveUrl){
     plan.dirtySerial = modified.serial();
     plan.fiber       = labelsInSpikeOrder(*clusteringData);
     plan.fiberCount  = hierarchyfiles::distinctCount(plan.fiber);
+
+    // The cluster information goes to the clustering's .cli file, never to the
+    // session YAML: the units table there is the record of FINISHED curation,
+    // filled on request by ndManager (Actions > Record Curated Units).  Taken
+    // here with the ids, so the file always matches the .clu it ships with.
+    {
+        const neurosuite::custody::Anchor a =
+            neurosuite::custody::parseAnchor(QFileInfo(saveUrl).fileName().toStdString());
+        const int group = a.ok ? a.group : electrodeGroupID.toInt();
+        QMap<int,ClusterUserInformation> info;
+        clusteringData->getClusterUserInformation(group, info);
+        std::vector<unitsidecar::Row> rows;
+        for (auto it = info.cbegin(); it != info.cend(); ++it) {
+            const ClusterUserInformation& c = it.value();
+            rows.push_back({c.getGroup(), c.getCluster(), c.getStructure().toStdString(),
+                            c.getType().toStdString(), c.getId().toStdString(),
+                            c.getQuality().toStdString(), c.getNotes().toStdString()});
+        }
+        plan.unitsPath = fromLocal(unitsidecar::pathFor(localPath(saveUrl)));
+        plan.unitsText = unitsidecar::format(rows);
+        const bool anything = std::any_of(rows.begin(), rows.end(),
+                                          [](const unitsidecar::Row& r){ return !r.describesNothing(); });
+        // Write when there is something to record, or to clear a file that has some.
+        plan.writeUnits = !plan.unitsPath.isEmpty()
+            && (anything || QFileInfo::exists(plan.unitsPath)
+                || (!isSaveAs && QFileInfo::exists(fromLocal(unitsidecar::pathFor(localPath(docUrl))))));
+    }
 
     // A flat session (no .clc, or a .clc without its .clp) writes the .clu only;
     // an orphan .clc is ignored, as it is on open.
@@ -1015,15 +1054,6 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     }
     const QString cluTarget = isSaveAs ? saveUrl : docUrl;
 
-    // ── the parameter file must be writable before anything is staged ───────
-    const bool writeUnits = clusteringData->isTraceViewVariablesAvailable();
-    if (writeUnits && !QFileInfo(newParameterFile).isWritable()) {
-        lastSaveErrorMessage = tr("The parameter file is missing or not writable, so the "
-                                  "cluster information (structure, type, quality, notes) "
-                                  "could not be saved; nothing was saved:\n%1").arg(newParameterFile);
-        return NOT_WRITABLE;
-    }
-
     // ── phase 1: stage every file that is not already at parity ─────────────
     // Each new file is written completely next to its target ("<target>.saving")
     // and flushed; no target is touched.  A file whose content is already what
@@ -1067,73 +1097,54 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     if (!stagePendingFiles(spkTarget, resTarget, fetTarget, targets, waveformsStaged, &err))
         return abandon(err, SAVE_ERROR);
 
-    // Cluster information (units) in the parameter file, staged like the rest
-    // and left out when the file already says the same.
-    if (writeUnits) {
-        NS3_DIAG()<<" parameterFile"<<newParameterFile;
-        QMap<int,ClusterUserInformation> clusterUserInformationMap = QMap<int,ClusterUserInformation>();
-        clusteringData->getClusterUserInformation(newGroup.toInt(),clusterUserInformationMap);
-
-        // Build the merged units map: read existing units, overwrite the
-        // units for the current electrode group, then write all back.
-        ParameterYamlModifier yamlMod;
-        if (!yamlMod.parseFile(newParameterFile))
-            return abandon(tr("The parameter file could not be read to store the cluster "
-                              "information; nothing was saved:\n%1").arg(newParameterFile), PARSE_ERROR);
-
-        QMap<int,QStringList> allUnits;
+    // Cluster information: the clustering's .cli file (never the session
+    // YAML -- see prepareSave), staged like the rest, left alone when unchanged.
+    if (savePlan.writeUnits) {
+        const std::string target = localPath(savePlan.unitsPath);
+        std::string current;
         {
-            ParameterYamlReader reader;
-            if (reader.parseFile(newParameterFile))
-                reader.getUnits(allUnits);
+            std::ifstream in(target, std::ios::binary);
+            if (in) current.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
         }
-        const int pGroup = newGroup.toInt();
-        QMap<int,QStringList> filtered;
-        for (auto it = allUnits.cbegin(); it != allUnits.cend(); ++it) {
-            if (it.value().size() >= 1 && it.value()[0].toInt() != pGroup)
-                filtered.insert(it.key(), it.value());
+        if (isSaveAs || current != savePlan.unitsText) {
+            const std::string st = filecommit::staged(target);
+            std::string fe;
+            bool ok;
+            {
+                std::ofstream out(st, std::ios::binary | std::ios::trunc);
+                out << savePlan.unitsText;
+                out.close();
+                ok = static_cast<bool>(out);
+            }
+            if (!ok || !filecommit::flushFile(st, &fe)) {
+                QFile::remove(QString::fromStdString(st));
+                return abandon(tr("Could not write the cluster information file; nothing was "
+                                  "saved:\n%1").arg(savePlan.unitsPath), CREATION_ERROR);
+            }
+            targets.push_back(target);
         }
-        for (auto it = clusterUserInformationMap.cbegin();
-             it != clusterUserInformationMap.cend(); ++it) {
-            const ClusterUserInformation& cui = it.value();
-            QStringList row;
-            row << QString::number(cui.getGroup())
-                << QString::number(cui.getCluster())
-                << cui.getStructure()
-                << cui.getType()
-                << cui.getId()
-                << cui.getQuality()
-                << cui.getNotes();
-            filtered.insert(it.key(), row);
-        }
-
-        const QString stagedYaml = QString::fromStdString(filecommit::staged(localPath(newParameterFile)));
-        std::string fe;
-        if (!yamlMod.setUnitsInformation(filtered) || !yamlMod.writeToFile(stagedYaml)
-            || !filecommit::flushFile(localPath(stagedYaml), &fe)) {
-            QFile::remove(stagedYaml);
-            return abandon(tr("The cluster information could not be written for the parameter "
-                              "file; nothing was saved:\n%1").arg(newParameterFile), CREATION_ERROR);
-        }
-        if (filecommit::sameContent(localPath(stagedYaml), localPath(newParameterFile)))
-            QFile::remove(stagedYaml);                       // unchanged: leave the file alone
-        else
-            targets.push_back(localPath(newParameterFile));
     }
 
     // ── phase 2: install them all, or none ──────────────────────────────────
     // The journal sits next to the .clu it commits; openDocument() finishes a
     // commit a crash interrupted.
-    const QFileInfo cluInfo(cluTarget);
-    const QString journal = cluInfo.absolutePath() + QDir::separator() + QStringLiteral(".")
-                            + cluInfo.fileName() + QStringLiteral(".commit");
+    auto journalOf = [](const QString& clu){
+        const QFileInfo fi(clu);
+        return fi.absolutePath() + QDir::separator() + QStringLiteral(".") + fi.fileName()
+               + QStringLiteral(".commit");
+    };
+    // A Save As writes the journal beside the old .clu as well: its .spk/.res/
+    // .fet/.yaml may be the same files, and reopening either name must finish
+    // an interrupted commit.
+    std::vector<std::string> journals = { localPath(journalOf(cluTarget)) };
+    if (isSaveAs) journals.push_back(localPath(journalOf(docUrl)));
     {
         std::string e;
         // The .clc/.clp keep their previous version as .bak, as they always have.
         std::vector<std::string> keepBak;
         if (savePlan.writeClc) keepBak.push_back(localPath(savePlan.clcPath));
         if (savePlan.writeClp) keepBak.push_back(localPath(savePlan.clpPath));
-        if (!filecommit::commitStaged(targets, localPath(journal), &e, keepBak)) {
+        if (!filecommit::commitStaged(targets, journals, &e, keepBak)) {
             targets.clear();
             lastSaveErrorMessage = tr("The save could not replace its files, so none of them was "
                                       "replaced -- the files on disk are as they were before the "
@@ -1289,4 +1300,35 @@ QString KlustersDoc::documentBaseName() const{
 QString KlustersDoc::documentDirectory() const {
     QFileInfo docUrlFileInfo(docUrl);
     return docUrlFileInfo.absolutePath();
+}
+
+void KlustersDoc::loadUnitsFile(){
+    if (!clusteringData) return;
+    const std::string path = unitsidecar::pathFor(localPath(docUrl));
+    if (path.empty()) return;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return;                                   // none yet: the YAML's values stand
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<unitsidecar::Row> rows;
+    std::string err;
+    if (!unitsidecar::parse(text, rows, &err)) {
+        QApplication::restoreOverrideCursor();
+        QMessageBox::warning(nullptr, tr("Cluster information"),
+            tr("%1 could not be read (%2), so the cluster information shown is the session's.")
+                .arg(QFile::decodeName(QByteArray::fromStdString(path)), QString::fromStdString(err)));
+        QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+        return;
+    }
+    // The file is the clustering's own record: every cluster takes what it says,
+    // and a cluster it does not list has none.
+    QMap<int, unitsidecar::Row> byCluster;
+    for (const auto& r : rows) byCluster.insert(r.cluster, r);
+    for (dataType id : clusteringData->clusterIds()) {
+        const int c = static_cast<int>(id);
+        if (c == 0 || c == 1) continue;
+        const unitsidecar::Row r = byCluster.value(c);
+        clusteringData->setUserClusterInformation(c, QString::fromStdString(r.structure),
+            QString::fromStdString(r.type), QString::fromStdString(r.isolationDistance),
+            QString::fromStdString(r.quality), QString::fromStdString(r.notes));
+    }
 }

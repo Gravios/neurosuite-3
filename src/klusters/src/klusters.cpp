@@ -4157,6 +4157,12 @@ bool KlustersApp::startSave(const QString& url, bool saveAs)
         statusBar()->showMessage(tr("A save is already in progress."), 4000);
         return false;
     }
+    // A realign, or the edit queued behind it (an auto-realign merge renumbers
+    // afterwards), would change the clustering the save is taking a snapshot of.
+    if (realignQueue && realignQueue->isBusy()) {
+        statusBar()->showMessage(tr("Wait for the realignment to finish before saving."), 5000);
+        return false;
+    }
     if (!doc->prepareSave(url)) {
         QMessageBox::critical(this, saveAs ? tr("Save As") : tr("Save"), doc->lastSaveError());
         slotStatusMsg(tr("Ready."));

@@ -2228,6 +2228,9 @@ private:
         bool                 movesSiblings = false; ///< Save As: the session's siblings become clcPath/clpPath
         bool                 siblingsMoved = false; ///< set by saveDocument once docUrl moved; finishSave applies it
         std::vector<std::string> staged;            ///< targets staged by saveDocument (finishSave discards leftovers)
+        QString              unitsPath;        ///< the clustering's cluster-information file (unitsidecar.h)
+        std::string          unitsText;        ///< its content, from the snapshot
+        bool                 writeUnits = false;///< there is something to record, or a file to update
     };
     SavePlan savePlan;
 
@@ -2578,6 +2581,11 @@ private:
 
     /**Set when a rescue copy could not be written; autosave is off for the document.*/
     bool autoSaveFailed = false;
+
+    /** Reads the cluster information of the open clustering from its .cli file
+     *  (unitsidecar.h) when there is one.  Without one, what the session YAML's
+     *  units table says for the group is kept, as before.  Called by openDocument. */
+    void loadUnitsFile();
 
     /**Cluster information (structure, type, quality, notes) edited since the last save.*/
     bool unitsInfoModified = false;

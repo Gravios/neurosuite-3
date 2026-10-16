@@ -436,7 +436,8 @@ and writes only that snapshot; the GUI swallows user input until it is done
    `.spk`/`.res`/`.fet` working copies and synced feature spaces
    (`stagePendingFiles`, skipped when `filecommit::atParity` proves the working
    copy equals its file — from stamps alone in the common case), and the
-   `.yaml` with the units (skipped when unchanged);
+   clustering's `.cli` file with the cluster information taken in the
+   snapshot (skipped when unchanged; the session `.yaml` is never written);
 4. **phase 2, install**: `filecommit::commitStaged` writes the journal
    `.<clu>.commit`, moves each target aside to `.rollback`, renames the staged
    file in, and on any failure puts the moved ones back — all or nothing; the
