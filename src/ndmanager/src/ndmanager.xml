@@ -1,15 +1,21 @@
 <?xml version="1.0"?>
 <mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
 
-	<!-- 	Preprocessing -->
-	
+	<!-- An ndmanager session parameter file.  Session files are plain
+	     <session>.yaml, so the name alone cannot tell them from other YAML:
+	     the globs tie with application/yaml's, and a tie is settled by the
+	     magic below: a file with an acquisitionSystem: key in its first
+	     4 KiB is a session, any other .yaml stays application/yaml.  The
+	     magic also recognises a session file without an extension. -->
 	<mime-type type="application/nphys-yaml">
-		<comment>YAML parameter file</comment>
-		<comment xml:lang="fr">fichier de paramètres YAML</comment>
+		<comment>Neurophysiology session parameters (YAML)</comment>
+		<comment xml:lang="fr">paramètres de session de neurophysiologie (YAML)</comment>
+		<sub-class-of type="application/yaml"/>
 		<glob pattern="*.yaml"/>
-		<magic priority="100">
-			<match type="string" offset="0:200" value="neuroscope_session:"/>
+		<glob pattern="*.yml"/>
+		<magic priority="50">
+			<match type="string" offset="0:4096" value="acquisitionSystem:"/>
 		</magic>
 	</mime-type>
-	
+
 </mime-info>
