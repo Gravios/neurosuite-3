@@ -78,6 +78,7 @@ struct SdiffPattern {
     neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
     std::vector<int> partner;                 // order 4
     std::vector<int> setOff, setMem;          // order 5
+    neurosuite::core::ChannelExprSet expr;    // order 6 (expressions over c0, c1, ...)
     bool applied = false;                     // a pattern was found AND fitted nChan
     QString spec;                             // the raw sdiffPairs text, for logging
     QString problem;                          // non-empty if a spec was present but unusable
@@ -98,7 +99,18 @@ inline SdiffPattern readSdiffPattern(const QString& parameterFile, const QString
 
     const QByteArray raw = spec.toUtf8();
     bool ok = false;
-    if (sdiffSpecUsesSets(raw.constData())) {          // '+' present => order 5
+    if (sdiffSpecIsExpression(raw.constData())) {     // names channels => order 6
+        std::string why;
+        std::vector<neurosuite::core::ChannelExprSet> g =
+            parseSdiffExprsPerGroup(raw.constData(), &ok, &why);
+        if (ok && g.size() == 1 && g[0].fits(nChan, &why)) {
+            out.expr = std::move(g[0]);
+            out.order = neurosuite::core::SdiffOrder::Expr;
+            out.applied = true;
+        } else {
+            out.problem = QString::fromStdString(why.empty() ? std::string("expressions did not parse") : why);
+        }
+    } else if (sdiffSpecUsesSets(raw.constData())) {   // '+' present => order 5
         const std::vector<std::vector<int> > sets = parseSdiffSets(raw.constData(), &ok);
         if (ok && static_cast<int>(sets.size()) == nChan) {
             out.setOff.reserve(nChan + 1);

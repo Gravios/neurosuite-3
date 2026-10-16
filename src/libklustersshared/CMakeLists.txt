@@ -122,7 +122,8 @@ if(NS_BUILD_TESTS)
     # strict positions; malformed patterns are rejected, not reinterpreted.
     add_executable(klustersshared_sdiff_pairs_test test/sdiff_pairs_test.cpp)
     target_include_directories(klustersshared_sdiff_pairs_test
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../libneurosuite-core/src")   # channel_expr.hpp
     add_test(NAME klustersshared_sdiff_pairs_test COMMAND klustersshared_sdiff_pairs_test)
 
     # The per-clustering cluster-information file (unitsidecar.h, header-only,

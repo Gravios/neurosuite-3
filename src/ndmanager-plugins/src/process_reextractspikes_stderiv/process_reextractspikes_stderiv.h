@@ -85,7 +85,8 @@ enum SdiffOrder {
     SDIFF_LAPLACIAN = 2,
     SDIFF_ALLPAIRS  = 3,
     SDIFF_CUSTOM    = 4,  // per-channel partner map supplied via -P "a-b,..."
-    SDIFF_CUSTOM_CAR = 5  // per-channel reference set, -P "a-b+c,..."
+    SDIFF_CUSTOM_CAR = 5, // per-channel reference set, -P "a-b+c,..."
+    SDIFF_EXPR       = 6  // per-channel expression, -P "c0-(c1+c2)/2,..."
 };
 
 struct ReextractStderivArgs {

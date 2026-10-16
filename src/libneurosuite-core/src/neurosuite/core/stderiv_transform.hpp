@@ -33,7 +33,13 @@ namespace neurosuite {
 namespace core {
 
 // Saturating round of a double to int16, exactly as fill_sdiff_buffer does it.
+// The double is saturated before it is rounded, so a value beyond the range of
+// int (an expression pattern can produce one) saturates instead of overflowing;
+// every value in range rounds exactly as before.
 inline int16_t clampToInt16(double v) {
+    if (!(v == v))       return 0;         // NaN
+    if (v >=  32767.0)   return  32767;
+    if (v <= -32768.0)   return -32768;
     int iv = static_cast<int>(std::lround(v));
     if (iv >  32767) iv =  32767;
     if (iv < -32768) iv = -32768;

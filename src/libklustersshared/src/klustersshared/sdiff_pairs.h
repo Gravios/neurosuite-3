@@ -24,6 +24,14 @@
 // Positions must be plain non-negative integers ("x-1" or "0-1+2" in a pair
 // pattern are errors, not 0-1), a pair pattern must be a tree (no cycles), and
 // a reference set may not name a channel twice.
+//
+// Order 6 is the expression form (neurosuite/core/channel_expr.hpp): one
+// arithmetic expression per output channel over c0, c1, ..., e.g.
+// "c0 - (c1 + c2)/2, c1 - c0, ...".  A pattern is in that form when it names a
+// channel (a 'c'); the two older forms above have no letters and keep their
+// meaning.  parseSdiffExprsPerGroup() reads a "-P" spec in which any group uses
+// the expression form, writing the older forms of the other groups as the
+// expressions they compute, so one order covers every group.
 #ifndef KLUSTERSSHARED_SDIFF_PAIRS_H
 #define KLUSTERSSHARED_SDIFF_PAIRS_H
 
@@ -31,6 +39,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include <neurosuite/core/channel_expr.hpp>
 
 // A within-group channel position: optional blanks around a plain decimal
 // non-negative integer.  Anything else (letters, signs, '+', empty) is -1.
@@ -228,10 +238,27 @@ inline std::vector<std::vector<int> > parseSdiffSets(const char *spec, bool *ok 
 
 // True iff the spec uses order-5 SET syntax (any '+' target list) rather than the
 // order-4 single-partner "a-b" spanning-tree syntax.  Lets a caller pick the order.
+// False for the expression form (order 6), whose '+' is arithmetic: test
+// sdiffSpecIsExpression() first, or use sdiffSpecOrder().
 inline bool sdiffSpecUsesSets(const char *spec)
 {
     std::string s(spec ? spec : "");
+    if(neurosuite::core::isChannelExprSpec(s)) return false;
     return s.find('+') != std::string::npos;
+}
+
+// True when any group of the spec is written as expressions (names a channel cN).
+inline bool sdiffSpecIsExpression(const char *spec)
+{
+    return neurosuite::core::isChannelExprSpec(spec ? spec : "");
+}
+
+// The spatial order a spec selects: 6 when any group is written as expressions,
+// else 5 when it uses reference sets ('+'), else 4.
+inline int sdiffSpecOrder(const char *spec)
+{
+    if(sdiffSpecIsExpression(spec)) return 6;
+    return sdiffSpecUsesSets(spec) ? 5 : 4;
 }
 
 // Per-group version of parseSdiffSets ("g1sets:g2sets:...").
@@ -250,6 +277,95 @@ inline std::vector<std::vector<std::vector<int> > > parseSdiffSetsPerGroup(const
         else            perGroup.push_back(parseSdiffSets(tok.c_str()));
         if(c == std::string::npos) break;
         p = c + 1;
+    }
+    return perGroup;
+}
+
+// ── Order 6: expressions ───────────────────────────────────────────────────
+
+// An order-4 partner map (as parseSdiffPairs returns it, root wired to its
+// predecessor) written as the expressions it computes: "c0-c1,c1-c2,...".
+inline std::string sdiffPairsAsExpr(const std::vector<int>& partner)
+{
+    std::string out;
+    for(size_t k = 0; k < partner.size(); k++) {
+        if(k) out += ',';
+        out += "c" + std::to_string(k) + "-c" + std::to_string(partner[k]);
+    }
+    return out;
+}
+
+// An order-5 set map written as the expressions it computes:
+// "c0-(c1+c2)/2,...".  Evaluated in the same order (sum, then divide, then
+// subtract), so the values are the same to the last bit.
+inline std::string sdiffSetsAsExpr(const std::vector<std::vector<int> >& sets)
+{
+    std::string out;
+    for(size_t k = 0; k < sets.size(); k++) {
+        if(k) out += ',';
+        out += "c" + std::to_string(k) + "-(";
+        for(size_t j = 0; j < sets[k].size(); j++) {
+            if(j) out += '+';
+            out += "c" + std::to_string(sets[k][j]);
+        }
+        out += ")/" + std::to_string(sets[k].size());
+    }
+    return out;
+}
+
+// One expression set per group of a colon-separated spec ("g1:g2:..."), for a
+// spec in which a group uses the expression form.  A group written in an older
+// form is converted to the expressions it computes; an empty segment is an
+// empty set (that group keeps the base spatial-derivative order).
+// With ok == nullptr a malformed group prints to stderr and exits (the engines'
+// use); otherwise *ok is false and *error says which group and why.
+inline std::vector<neurosuite::core::ChannelExprSet>
+parseSdiffExprsPerGroup(const char *spec, bool *ok = nullptr, std::string *error = nullptr)
+{
+    std::vector<neurosuite::core::ChannelExprSet> perGroup;
+    std::string s(spec ? spec : "");
+    size_t p = 0;
+    int group = 1;
+    auto fail = [&](const std::string& msg) {
+        const std::string full = "spike group " + std::to_string(group) + ": " + msg;
+        if(ok) { *ok = false; if(error) *error = full; return; }
+        std::cerr << "error: " << full << "\n";
+        exit(1);
+    };
+    if(ok) *ok = true;
+    while(true) {
+        size_t c = s.find(':', p);
+        std::string seg = (c == std::string::npos) ? s.substr(p) : s.substr(p, c - p);
+        size_t a = seg.find_first_not_of(" \t");
+        size_t b = seg.find_last_not_of(" \t");
+        std::string tok = (a == std::string::npos) ? std::string() : seg.substr(a, b - a + 1);
+        neurosuite::core::ChannelExprSet set;
+        if(!tok.empty()) {
+            std::string text = tok;
+            if(!neurosuite::core::isChannelExprSpec(tok)) {
+                bool legacyOk = false;
+                if(tok.find('+') != std::string::npos) {
+                    const std::vector<std::vector<int> > sets = parseSdiffSets(tok.c_str(), &legacyOk);
+                    if(legacyOk) text = sdiffSetsAsExpr(sets);
+                } else {
+                    const std::vector<int> partner = parseSdiffPairs(tok.c_str(), &legacyOk);
+                    if(legacyOk) text = sdiffPairsAsExpr(partner);
+                }
+                if(!legacyOk) {
+                    fail("bad sdiffPairs '" + tok + "' (channels in expressions are written c0, c1, ...)");
+                    return std::vector<neurosuite::core::ChannelExprSet>();
+                }
+            }
+            std::string why;
+            if(!neurosuite::core::parseChannelExprs(text, set, &why)) {
+                fail(why);
+                return std::vector<neurosuite::core::ChannelExprSet>();
+            }
+        }
+        perGroup.push_back(std::move(set));
+        if(c == std::string::npos) break;
+        p = c + 1;
+        ++group;
     }
     return perGroup;
 }

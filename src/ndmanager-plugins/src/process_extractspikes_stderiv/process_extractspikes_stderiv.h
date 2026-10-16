@@ -56,13 +56,18 @@
 //                      set of partners instead of one, keeping the local geometry
 //                      of a custom pattern while rejecting the common mode over
 //                      the set (full set == order 3; singleton set == order 4).
+//  6  SDIFF_EXPR       per-channel arithmetic expression (see -P "c0-c1,...",
+//                      neurosuite/core/channel_expr.hpp): output channel i is
+//                      element i of the list, over the group's channels c0, c1,
+//                      ....  Any arithmetic; a group it does not fit is refused.
 enum SdiffOrder {
     SDIFF_NONE      = 0,
     SDIFF_FIRST     = 1,
     SDIFF_LAPLACIAN = 2,
     SDIFF_ALLPAIRS  = 3,  // default
     SDIFF_CUSTOM     = 4, // per-channel partner map supplied via -P sdiffPairs
-    SDIFF_CUSTOM_CAR = 5  // per-channel reference SET; s[i]=x[i]-mean(set) (-P "a-b+c...")
+    SDIFF_CUSTOM_CAR = 5, // per-channel reference SET; s[i]=x[i]-mean(set) (-P "a-b+c...")
+    SDIFF_EXPR       = 6  // per-channel expression over c0, c1, ... (-P "c0-(c1+c2)/2,...")
 };
 
 // Which signal the noise level (and so the threshold) is measured on (-T).

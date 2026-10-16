@@ -113,6 +113,7 @@
 // misaligned in the very space they are clustered in.
 static std::vector<int>              g_customPartner;   // order 4: one partner per channel
 static std::vector<std::vector<int>> g_customSets;      // order 5: reference set per channel
+static neurosuite::core::ChannelExprSet g_customExpr;   // order 6: expression per channel
 
 // The spatial operator in the form the shared core transform
 // (neurosuite/core/stderiv_transform.hpp) takes.  Chosen exactly as
@@ -122,15 +123,28 @@ static std::vector<std::vector<int>> g_customSets;      // order 5: reference se
 struct SpatialOperator {
     neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
     std::vector<int> partner, setOff, setMem;
+    const neurosuite::core::ChannelExprSet* expr = nullptr;
     const int* partnerPtr() const { return partner.empty() ? nullptr : partner.data(); }
     const int* setOffPtr()  const { return setOff.empty()  ? nullptr : setOff.data(); }
     const int* setMemPtr()  const { return setMem.empty()  ? nullptr : setMem.data(); }
 };
 
+static void die(const char* msg);
+
 static SpatialOperator makeSpatialOperator(int nChanGrp)
 {
     SpatialOperator op;
-    if (nChanGrp > 1 && (int)g_customSets.size() == nChanGrp) {
+    if (!g_customExpr.empty()) {
+        // Expressions name channels by position: refuse a group they do not fit,
+        // as the extractor does, instead of realigning against all-pairs.
+        std::string why;
+        if (!g_customExpr.fits(nChanGrp, &why)) {
+            fprintf(stderr, "process_alignspikes: -P %s\n", why.c_str());
+            die("the -P expressions do not fit the group");
+        }
+        op.order = neurosuite::core::SdiffOrder::Expr;
+        op.expr  = &g_customExpr;
+    } else if (nChanGrp > 1 && (int)g_customSets.size() == nChanGrp) {
         op.order = neurosuite::core::SdiffOrder::CustomCar;
         op.setOff.push_back(0);
         for (const std::vector<int>& set : g_customSets) {
@@ -522,8 +536,9 @@ int main(int argc, char* argv[])
             // Custom spatial pattern for THIS group, same grammar as the
             // extractor's -P (a-b,... partner map, or a-b+c,... reference sets).
             const char* pat = argv[++i];
-            if (sdiffSpecUsesSets(pat)) g_customSets    = parseSdiffSets(pat);
-            else                        g_customPartner = parseSdiffPairs(pat);
+            if (sdiffSpecIsExpression(pat)) g_customExpr = parseSdiffExprsPerGroup(pat).at(0);
+            else if (sdiffSpecUsesSets(pat)) g_customSets    = parseSdiffSets(pat);
+            else                             g_customPartner = parseSdiffPairs(pat);
         }
         else if (strcmp(a, "--min-score") == 0 && i+1 < argc)
             minScore = atof(argv[++i]);
@@ -571,7 +586,7 @@ int main(int argc, char* argv[])
     // Laplacian either.  Aligning anyway would re-extract with a transform the .spk
     // was never built with, silently.  Refuse instead.
     if (stderiv && ms.kind == 'C'
-        && g_customPartner.empty() && g_customSets.empty()) {
+        && g_customPartner.empty() && g_customSets.empty() && g_customExpr.empty()) {
         fprintf(stderr, "process_alignspikes: method %s applies a custom sdiffPairs "
                         "pattern, but no -P was given; re-extraction would use "
                         "SDIFF_ALLPAIRS and misalign the waveforms.\n", method.c_str());
@@ -580,7 +595,7 @@ int main(int argc, char* argv[])
     // A pattern's own grammar fixes the order (sets => 5, partners => 4); refuse a
     // token that claims the other one rather than transform against the wrong rule.
     if (stderiv && ms.kind == 'C') {
-        const int impliedOrder = g_customSets.empty() ? 4 : 5;
+        const int impliedOrder = !g_customExpr.empty() ? 6 : g_customSets.empty() ? 4 : 5;
         if (ms.order != impliedOrder) {
             fprintf(stderr, "process_alignspikes: method %s states order %d but the "
                             "-P pattern implies order %d.\n",
@@ -800,7 +815,7 @@ int main(int argc, char* argv[])
                     sdiffWin[(size_t)s * nChanGrp + ci] = neurosuite::core::clampToInt16(
                         neurosuite::core::spatialDeriv(op.order, rowD.data(), ci, nChanGrp,
                                                        op.partnerPtr(), op.setOffPtr(),
-                                                       op.setMemPtr()));
+                                                       op.setMemPtr(), op.expr));
             }
 
             double sc = 0.0;
@@ -836,6 +851,7 @@ int main(int argc, char* argv[])
         spec.partner         = op.partnerPtr();
         spec.setOff          = op.setOffPtr();
         spec.setMem          = op.setMemPtr();
+        spec.expr            = op.expr;
 
         // A stderiv .spk exists in two conventions that differ only in sample 0
         // of each window: seeded with the spatial derivative of the sample

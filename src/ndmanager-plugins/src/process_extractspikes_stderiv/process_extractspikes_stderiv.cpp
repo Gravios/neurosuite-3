@@ -101,6 +101,17 @@ static const std::vector<std::vector<int> >& groupPartnerSet(int g)
     return (g >= 0 && g < (int)g_custom_partner_sets.size()) ? g_custom_partner_sets[g] : none;
 }
 
+// SDIFF_EXPR per-group expression sets (one expression per output channel), from
+// a -P spec in which a group is written with channel names.  Groups written in
+// the older forms are converted to the expressions they compute (sdiff_pairs.h).
+static std::vector<neurosuite::core::ChannelExprSet> g_custom_expr;
+
+static const neurosuite::core::ChannelExprSet* groupExpr(int g)
+{
+    return (g >= 0 && g < (int)g_custom_expr.size() && !g_custom_expr[g].empty())
+           ? &g_custom_expr[g] : nullptr;
+}
+
 static const char *program_version = "process_extractspikes_stderiv 1.0";
 
 // =========================================================================
@@ -114,7 +125,8 @@ double computeSDiff(const short *record,
                     SdiffOrder   order,
                     const std::vector<int>& customPartner,
                     const std::vector<std::vector<int> >& customSets =
-                        std::vector<std::vector<int> >())
+                        std::vector<std::vector<int> >(),
+                    const neurosuite::core::ChannelExprSet* customExpr = nullptr)
 {
     const double val = record[chanList[idx]];
 
@@ -150,6 +162,13 @@ double computeSDiff(const short *record,
             return val - sum / (double)customSets[idx].size();
         }
         // set-map does not fit this group -> fall through to ALLPAIRS
+        [[fallthrough]];
+
+    case SDIFF_EXPR:
+        // order 6: the group's expression for this output channel.  Reached from
+        // the cases above only when their maps did not fit, hence the test.
+        if(order == SDIFF_EXPR && customExpr && nChanGrp > 1 && customExpr->fits(nChanGrp))
+            return customExpr->eval(idx, [&](int i) { return (double)record[chanList[i]]; });
         [[fallthrough]];
 
     case SDIFF_ALLPAIRS:
@@ -223,7 +242,7 @@ static void fill_sdiff_buffer(const short *raw,
             for(int ci = 0; ci < nCG; ci++) {
                 double v = (order == SDIFF_NONE)
                              ? (double)rawRec[cList[ci]]
-                             : computeSDiff(rawRec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g));
+                             : computeSDiff(rawRec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g), groupExpr(g));
                 int iv = (int)round(v);
                 if(iv >  32767) iv =  32767;
                 if(iv < -32768) iv = -32768;
@@ -398,7 +417,7 @@ void computeSdiffThresholds(FILE          *fp,
                         absCar[g][ci].push_back((float)fabs(rec[cList[ci]] - mean));
                 }
                 for(int ci = 0; ci < nCG; ci++) {
-                    const double v = computeSDiff(rec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g));
+                    const double v = computeSDiff(rec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g), groupExpr(g));
                     const int    sdi = clamp16(lround(v));
                     if(keep) {
                         absBuf[g][ci].push_back(fabs(v));
@@ -833,7 +852,11 @@ static void help(const char *name)
          << "                  channel a = x[a]-mean(x[b],x[c],x[d]) — local geometry\n"
          << "                  with common-mode rejection; every channel needs a set.\n"
          << "                  An empty group segment (or a size that\n"
-         << "                  does not match the pattern) uses order 3 for that group.\n\n"
+         << "                  does not match the pattern) uses order 3 for that group.\n"
+         << "                  Expression syntax (order 6) names the channels c0, c1, ...:\n"
+         << "                  one expression per output channel, in channel order, with\n"
+         << "                  + - * / ^ and parentheses (\"c0-(c1+c2)/2,c1-c0,...\").\n"
+         << "                  A group it does not fit is an error.\n\n"
          << "Re-extract mode (patch86):\n"
          << "  -R              skip detection; read basename.res.<grp> instead\n"
          << "                  and re-extract waveforms at those exact timestamps,\n"
@@ -948,7 +971,11 @@ void parseArgs(int argc, char **argv, arguments &a)
                     a.isSdiffOrderProvided = true; break; }
         case 'P': {
                     const char *pat = argv[++i];
-                    if(sdiffSpecUsesSets(pat)) {
+                    if(sdiffSpecIsExpression(pat)) {
+                        // order 6; a group in an older form is converted
+                        g_custom_expr = parseSdiffExprsPerGroup(pat);
+                        a.sdiffOrder = SDIFF_EXPR;
+                    } else if(sdiffSpecUsesSets(pat)) {
                         g_custom_partner_sets = parseSdiffSetsPerGroup(pat);
                         a.sdiffOrder = SDIFF_CUSTOM_CAR;   // order 5: reference-set mean
                     } else {
@@ -1179,7 +1206,7 @@ static int runFromRes(const arguments &args,
                     if(ord == SDIFF_NONE) {
                         v = (double)raw[ channelList[grp][ci] ];
                     } else {
-                        v = computeSDiff(raw, channelList[grp], ci, nCG, ord, groupPartner(grp), groupPartnerSet(grp));
+                        v = computeSDiff(raw, channelList[grp], ci, nCG, ord, groupPartner(grp), groupPartnerSet(grp), groupExpr(grp));
                     }
                     int iv = (int)round(v);
                     if(iv >  32767) iv =  32767;
@@ -1303,6 +1330,18 @@ int main(int argc, char *argv[])
                      << "       Use derivative order 0 (-d 0; ndm_detectspikes --method "
                         "stderiv --methodOrder 0) or the standard method,\n"
                      << "       or group the channel with its neighbours.\n";
+                exit(1);
+            }
+        }
+    }
+
+    // Expressions name channels by position: a group they do not fit would be
+    // differenced some other way without a word.  Refuse it instead.
+    if(args.sdiffOrder == SDIFF_EXPR) {
+        for(int g = 0; g < nbGroups; g++) {
+            std::string why;
+            if(groupExpr(g) && !groupExpr(g)->fits(channelNb_grp[g], &why)) {
+                cerr << "error: group " << g+1 << " sdiffPairs: " << why << ".\n";
                 exit(1);
             }
         }
@@ -2197,6 +2236,11 @@ int main(int argc, char *argv[])
                             sd = xPrev[ci] - sm/(double)st.size(); break;
                         }
                         [[fallthrough]];
+                    case SDIFF_EXPR:
+                        if(args.sdiffOrder==SDIFF_EXPR && groupExpr(grp) && nCG>1 && groupExpr(grp)->fits(nCG)) {
+                            sd = groupExpr(grp)->eval(ci, [&](int i) { return (double)xPrev[i]; }); break;
+                        }
+                        [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
                         double sum=0.0;
                         for(int jj=0;jj<nCG;jj++) sum+=frPrev[cL[jj]];
@@ -2250,6 +2294,11 @@ int main(int argc, char *argv[])
                             double sm=0.0;
                             for(size_t k=0;k<st.size();k++) sm+=row[st[k]];
                             sd = row[ci] - sm/(double)st.size(); break;
+                        }
+                        [[fallthrough]];
+                    case SDIFF_EXPR:
+                        if(args.sdiffOrder==SDIFF_EXPR && groupExpr(grp) && nCG>1 && groupExpr(grp)->fits(nCG)) {
+                            sd = groupExpr(grp)->eval(ci, [&](int i) { return (double)row[i]; }); break;
                         }
                         [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {
@@ -2325,6 +2374,11 @@ int main(int argc, char *argv[])
                             double sm=0.0;
                             for(size_t k=0;k<st.size();k++) sm+=rt[st[k]];
                             sd = val - sm/(double)st.size(); break;
+                        }
+                        [[fallthrough]];
+                    case SDIFF_EXPR:
+                        if(args.sdiffOrder==SDIFF_EXPR && groupExpr(grp) && nCG>1 && groupExpr(grp)->fits(nCG)) {
+                            sd = groupExpr(grp)->eval(ci, [&](int i) { return (double)rt[i]; }); break;
                         }
                         [[fallthrough]];
                     case SDIFF_ALLPAIRS: default: {

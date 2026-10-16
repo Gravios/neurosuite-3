@@ -246,6 +246,7 @@ static bool writeSpkSampleMajor(std::FILE* f, int64_t spikeIdx, int nChan,
 // space the spikes are clustered in.
 static std::vector<int>              g_customPartner;   // order 4
 static std::vector<std::vector<int>> g_customSets;      // order 5
+static neurosuite::core::ChannelExprSet g_customExpr;   // order 6
 
 // The spatial operator in the form the shared core transform
 // (neurosuite/core/stderiv_transform.hpp) takes.  Chosen exactly as
@@ -255,12 +256,20 @@ static std::vector<std::vector<int>> g_customSets;      // order 5
 struct SpatialOperator {
     neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
     std::vector<int> partner, setOff, setMem;
+    const neurosuite::core::ChannelExprSet* expr = nullptr;
 };
 
 static SpatialOperator makeSpatialOperator(int nChan)
 {
     SpatialOperator op;
-    if (nChan > 1 && (int)g_customSets.size() == nChan) {
+    if (!g_customExpr.empty()) {
+        // Expressions name channels by position: refuse a group they do not fit.
+        std::string why;
+        if (!g_customExpr.fits(nChan, &why))
+            die("the -P expressions do not fit the group: " + why);
+        op.order = neurosuite::core::SdiffOrder::Expr;
+        op.expr  = &g_customExpr;
+    } else if (nChan > 1 && (int)g_customSets.size() == nChan) {
         op.order = neurosuite::core::SdiffOrder::CustomCar;
         op.setOff.push_back(0);
         for (const std::vector<int>& set : g_customSets) {
@@ -308,12 +317,12 @@ static bool readFilWindow(std::FILE* fil, int64_t startSample,
                 leadRow[static_cast<size_t>(c)] = frame[static_cast<size_t>(spec.groupChannels[c])];
             seed.resize(static_cast<size_t>(nChan));
             neurosuite::core::stderivSeed(spec.order, leadRow.data(), nChan, seed.data(),
-                                          spec.partner, spec.setOff, spec.setMem);
+                                          spec.partner, spec.setOff, spec.setMem, spec.expr);
         }
         neurosuite::core::applyStderivTransform(spec.order, outChannelMajor, nChan, nSamp,
                                                 outChannelMajor, spec.partner,
                                                 seed.empty() ? nullptr : seed.data(),
-                                                spec.setOff, spec.setMem);
+                                                spec.setOff, spec.setMem, spec.expr);
     }
     return true;
 }
@@ -453,8 +462,10 @@ static Args parseArgs(int argc, char** argv) {
             // Custom spatial pattern for this group; same grammar as the
             // extractor's -P ("a-b,..." order 4, "a-b+c,..." order 5).
             const std::string pat = next("-P");
-            if (sdiffSpecUsesSets(pat.c_str())) g_customSets    = parseSdiffSets(pat.c_str());
-            else                                g_customPartner = parseSdiffPairs(pat.c_str());
+            if (sdiffSpecIsExpression(pat.c_str()))
+                g_customExpr = parseSdiffExprsPerGroup(pat.c_str()).at(0);
+            else if (sdiffSpecUsesSets(pat.c_str())) g_customSets    = parseSdiffSets(pat.c_str());
+            else                                     g_customPartner = parseSdiffPairs(pat.c_str());
         }
         else if (s == "--stderiv") a.method = "stderiv";  // deprecated alias
         else if (s == "--skip-pca") a.skipPca = true;
@@ -483,12 +494,12 @@ static Args parseArgs(int argc, char** argv) {
             neurosuite::custody::parseMethodToken(a.method);
         a.stderivMode = (ms.family == "stderiv");
         if (a.stderivMode && ms.kind == 'C'
-            && g_customPartner.empty() && g_customSets.empty())
+            && g_customPartner.empty() && g_customSets.empty() && g_customExpr.empty())
             die("method " + a.method + " applies a custom sdiffPairs pattern but no -P "
                 "was given; .fil would be read with all-pairs and the waveforms "
                 "would be misaligned in the space they are clustered in");
         if (a.stderivMode && ms.kind == 'C') {
-            const int impliedOrder = g_customSets.empty() ? 4 : 5;
+            const int impliedOrder = !g_customExpr.empty() ? 6 : g_customSets.empty() ? 4 : 5;
             if (ms.order != impliedOrder)
                 die("method " + a.method + " states order " + std::to_string(ms.order)
                     + " but the -P pattern implies order " + std::to_string(impliedOrder));
@@ -611,6 +622,7 @@ int main(int argc, char** argv) {
     cut.partner         = op.partner.empty() ? nullptr : op.partner.data();
     cut.setOff          = op.setOff.empty()  ? nullptr : op.setOff.data();
     cut.setMem          = op.setMem.empty()  ? nullptr : op.setMem.data();
+    cut.expr            = op.expr;
 
     // A stderiv .spk exists in two conventions that differ only in sample 0 of
     // each window: seeded with the spatial derivative of the sample before the

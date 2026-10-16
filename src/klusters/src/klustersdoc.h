@@ -2048,6 +2048,7 @@ private:
         neurosuite::core::SpikeWindowSpec window;
         QList<int>       groupChannels;
         std::vector<int> partner, setOff, setMem;
+        neurosuite::core::ChannelExprSet expr;   // order 6; window.expr points here
     };
     /** The session's .fil (else .dat). */
     QString rawRecordingPath() const;

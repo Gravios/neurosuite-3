@@ -103,6 +103,16 @@ static const std::vector<std::vector<int> >& groupSets(int g)
     return (g >= 0 && g < (int)g_custom_sets.size()) ? g_custom_sets[g] : none;
 }
 
+// Order 6: one expression per output channel; set from -P when a group names
+// its channels (c0, c1, ...).  Older-form groups of the same spec are converted.
+static std::vector<neurosuite::core::ChannelExprSet> g_custom_expr;
+
+static const neurosuite::core::ChannelExprSet* groupExpr(int g)
+{
+    return (g >= 0 && g < (int)g_custom_expr.size() && !g_custom_expr[g].empty())
+           ? &g_custom_expr[g] : nullptr;
+}
+
 static double computeSDiff(const int16_t *rec,
                             const int     *chanList,
                             int ci, int nChanGrp,
@@ -137,6 +147,13 @@ static double computeSDiff(const int16_t *rec,
             for (size_t k = 0; k < sets[ci].size(); ++k) sum += rec[chanList[sets[ci][k]]];
             return val - sum / (double)sets[ci].size();
         }
+        [[fallthrough]];
+    }
+    case SDIFF_EXPR: {
+        // Same as process_extractspikes_stderiv's SDIFF_EXPR.
+        const neurosuite::core::ChannelExprSet* ex = groupExpr(g);
+        if (order == SDIFF_EXPR && ex && nChanGrp > 1 && ex->fits(nChanGrp))
+            return ex->eval(ci, [&](int i) { return (double)rec[chanList[i]]; });
         [[fallthrough]];
     }
     case SDIFF_ALLPAIRS:
@@ -409,6 +426,9 @@ detectReferenceSeeding(const string &maskBase, int grp, const string &filPath,
             }
         } else co = CoreOrder::AllPairs;
     }
+    const neurosuite::core::ChannelExprSet* ex = groupExpr(g);
+    if (order == SDIFF_EXPR && !(nChan > 1 && ex && ex->fits(nChan)))
+        co = CoreOrder::AllPairs;
     neurosuite::core::SpikeWindowSpec spec;
     spec.nSamp = spikeLength; spec.peakSample = timeBeforeSpike;
     spec.totalNbChannels = nChanTot;
@@ -417,6 +437,7 @@ detectReferenceSeeding(const string &maskBase, int grp, const string &filPath,
     spec.partner = (co == CoreOrder::Custom) ? partner.data() : nullptr;
     spec.setOff  = setOff.empty() ? nullptr : setOff.data();
     spec.setMem  = setMem.empty() ? nullptr : setMem.data();
+    spec.expr    = (co == CoreOrder::Expr) ? ex : nullptr;
     FILE *fil = std::fopen(filPath.c_str(), "rb");
     if (!fil) { why = "cannot open " + filPath; return StderivSeeding::Unknown; }
     const auto r = neurosuite::core::detectStderivSeeding(
@@ -470,7 +491,9 @@ static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
         else if (arg == "-P" && i+1 < argc) {
             // Same dispatch as process_extractspikes_stderiv: '+' selects order 5.
             const char *pat = argv[++i];
-            if (sdiffSpecUsesSets(pat)) { g_custom_sets    = parseSdiffSetsPerGroup(pat);
+            if (sdiffSpecIsExpression(pat)) { g_custom_expr = parseSdiffExprsPerGroup(pat);
+                                              a.sdiffOrder = SDIFF_EXPR; }
+            else if (sdiffSpecUsesSets(pat)) { g_custom_sets = parseSdiffSetsPerGroup(pat);
                                           a.sdiffOrder = SDIFF_CUSTOM_CAR; }
             else                        { g_custom_partner = parseSdiffPairsPerGroup(pat);
                                           a.sdiffOrder = SDIFF_CUSTOM; }
@@ -496,10 +519,11 @@ static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
         else { cerr << "error: unknown option '" << arg << "'" << endl; return false; }
     }
     if (a.outputBaseFileName.empty()) return false;
-    if ((int)a.sdiffOrder < 0 || (int)a.sdiffOrder > 5) {
-        cerr << "error: -d must be 0-3 (4 and 5 come from -P)" << endl; return false;
+    if ((int)a.sdiffOrder < 0 || (int)a.sdiffOrder > 6) {
+        cerr << "error: -d must be 0-3 (4, 5 and 6 come from -P)" << endl; return false;
     }
-    if ((a.sdiffOrder == SDIFF_CUSTOM || a.sdiffOrder == SDIFF_CUSTOM_CAR) && !havePattern) {
+    if ((a.sdiffOrder == SDIFF_CUSTOM || a.sdiffOrder == SDIFF_CUSTOM_CAR
+         || a.sdiffOrder == SDIFF_EXPR) && !havePattern) {
         // Without the map the engine would silently difference all pairs.
         cerr << "error: sdiffOrder " << (int)a.sdiffOrder
              << " needs the sdiffPairs pattern (-P)" << endl; return false;
@@ -534,6 +558,17 @@ int main(int argc, char **argv)
                 cerr << "error: channel " << c << " out of range" << endl;
                 return 1;
             }
+    // Expressions name channels by position: a group they do not fit is refused
+    // (process_extractspikes_stderiv does the same), never silently differenced
+    // another way.
+    if (a.sdiffOrder == SDIFF_EXPR)
+        for (int g = 0; g < nGroups; ++g) {
+            std::string why;
+            if (groupExpr(g) && !groupExpr(g)->fits((int)chGroups[g].size(), &why)) {
+                cerr << "error: group " << g + 1 << " sdiffPairs: " << why << "." << endl;
+                return 1;
+            }
+        }
 
     // A spatial derivative needs neighbours.  On a one-channel group order 1
     // would read past the channel list, and orders 3-5 (all-pairs, and the

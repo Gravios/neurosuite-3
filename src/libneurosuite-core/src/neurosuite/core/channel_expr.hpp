@@ -25,9 +25,10 @@
 //  channel.  There is no implicit multiplication (2c1 is an error: write 2*c1).
 //
 //  Any arithmetic is allowed, so the transform need not be linear.  A result
-//  that is not finite (a division by zero, an overflowing power) is 0.  The
-//  value is then rounded and saturated to int16 like every other order
-//  (stderiv_transform.hpp).
+//  that is not finite (a division by zero, an overflowing power) is 0, and a
+//  result beyond +-1e9 is held there, so no caller's integer conversion can
+//  overflow.  The value is then rounded and saturated to int16 like every
+//  other order (stderiv_transform.hpp), which the hold does not change.
 //
 //  Compiled once into a small stack program; eval() takes the group's channel
 //  values through an accessor, so callers holding a compact row, a strided
@@ -51,7 +52,8 @@ struct ChannelExpr {
     enum class Op : uint8_t { Num, Chan, Neg, Add, Sub, Mul, Div, Pow };
     struct Ins { Op op; int chan; double num; };
 
-    static constexpr int kMaxDepth = 64;   // evaluation stack; deeper is refused
+    static constexpr int    kMaxDepth = 64;    // evaluation stack; deeper is refused
+    static constexpr double kLimit    = 1e9;   // results are held within +-kLimit
 
     std::vector<Ins> code;
     int maxChan = -1;          // highest channel position used
@@ -76,7 +78,8 @@ struct ChannelExpr {
             }
         }
         const double v = sp == 1 ? st[0] : 0.0;
-        return std::isfinite(v) ? v : 0.0;
+        if (!std::isfinite(v)) return 0.0;
+        return v > kLimit ? kLimit : (v < -kLimit ? -kLimit : v);
     }
 };
 

@@ -76,6 +76,45 @@ int main() {
               && g[2] == std::vector<int>({3, 3, 3, 0}), "per-group split");
     }
 
+    // order 6: the expression form, and specs mixing it with the older forms
+    {
+        check(sdiffSpecOrder("0-1,1-2,2-3") == 4 && sdiffSpecOrder("0-1+2,1-0,2-0") == 5
+              && sdiffSpecOrder("c0-c1,c1-c0") == 6 && sdiffSpecOrder("0-1,1-0::c0-(c1+c2)/2") == 6,
+              "the order a spec selects");
+        check(!sdiffSpecUsesSets("c0-(c1+c2)/2,c1,c2") && sdiffSpecIsExpression("C0-c1"),
+              "an expression's '+' is not a reference set");
+        check(sdiffPairsAsExpr({1, 2, 3, 2}) == "c0-c1,c1-c2,c2-c3,c3-c2", "pairs as expressions");
+        check(sdiffSetsAsExpr({{1, 2}, {0}}) == "c0-(c1+c2)/2,c1-(c0)/1", "sets as expressions");
+
+        bool ok = false;
+        std::string err;
+        const auto g = parseSdiffExprsPerGroup("0-1,1-2,2-3::c0-(c1+c2)/2,c1-c0,c2-c0:0-1+2,1-0,2-0",
+                                               &ok, &err);
+        check(ok && g.size() == 4 && g[1].empty(), "a mixed spec parses, empty groups stay empty");
+        const double x[4] = {3, 5, 11, -2};
+        // an order-4 group converted computes exactly what order 4 does
+        const std::vector<int> partner = parseSdiffPairs("0-1,1-2,2-3");
+        bool same4 = g.size() == 4 && g[0].size() == 4;
+        for (int k = 0; same4 && k < 4; ++k) same4 = g[0].eval(k, x) == x[k] - x[partner[k]];
+        check(same4, "converted order-4 group: the same values");
+        // an order-5 group converted computes exactly what order 5 does
+        const auto sets = parseSdiffSets("0-1+2,1-0,2-0");
+        bool same5 = g.size() == 4 && g[3].size() == 3;
+        for (int k = 0; same5 && k < 3; ++k) {
+            double sum = 0.0;
+            for (int m : sets[k]) sum += x[m];
+            same5 = g[3].eval(k, x) == x[k] - sum / (double)sets[k].size();
+        }
+        check(same5, "converted order-5 group: the same values, to the bit");
+        check(g.size() == 4 && g[2].size() == 3 && g[2].eval(0, x) == 3 - (5 + 11) / 2.0, "an expression group");
+
+        parseSdiffExprsPerGroup("c0-c1:0-1,1-0,2-3", &ok, &err);
+        check(!ok && err.find("spike group 2") != std::string::npos, "a bad older-form group is named");
+        parseSdiffExprsPerGroup("c0-c1:c0-(c1", &ok, &err);
+        check(!ok && err.find("spike group 2") != std::string::npos && err.find("')'") != std::string::npos,
+              "a bad expression is named with the reason");
+    }
+
     std::printf("%d/%d checks passed\n", g_ran - g_fail, g_ran);
     return g_fail ? 1 : 0;
 }
