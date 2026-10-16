@@ -800,9 +800,12 @@ bool KlustersDoc::prepareSave(const QString& saveUrl){
         std::vector<unitsidecar::Row> rows;
         for (auto it = info.cbegin(); it != info.cend(); ++it) {
             const ClusterUserInformation& c = it.value();
-            rows.push_back({c.getGroup(), c.getCluster(), c.getStructure().toStdString(),
-                            c.getType().toStdString(), c.getId().toStdString(),
-                            c.getQuality().toStdString(), c.getNotes().toStdString()});
+            const UnitAnnotation a = c.annotation();
+            rows.push_back({c.getGroup(), c.getCluster(), a.structure.toStdString(),
+                            a.type.toStdString(), a.isolationDistance.toStdString(),
+                            a.quality.toStdString(), a.notes.toStdString(),
+                            a.region.toStdString(), a.division.toStdString(),
+                            a.atlas.toStdString(), a.regionId.toStdString()});
         }
         plan.unitsPath = fromLocal(unitsidecar::pathFor(localPath(saveUrl)));
         plan.unitsText = unitsidecar::format(rows);
@@ -1327,8 +1330,16 @@ void KlustersDoc::loadUnitsFile(){
         const int c = static_cast<int>(id);
         if (c == 0 || c == 1) continue;
         const unitsidecar::Row r = byCluster.value(c);
-        clusteringData->setUserClusterInformation(c, QString::fromStdString(r.structure),
-            QString::fromStdString(r.type), QString::fromStdString(r.isolationDistance),
-            QString::fromStdString(r.quality), QString::fromStdString(r.notes));
+        UnitAnnotation a;
+        a.structure = QString::fromStdString(r.structure);
+        a.type = QString::fromStdString(r.type);
+        a.isolationDistance = QString::fromStdString(r.isolationDistance);
+        a.quality = QString::fromStdString(r.quality);
+        a.notes = QString::fromStdString(r.notes);
+        a.region = QString::fromStdString(r.region);
+        a.division = QString::fromStdString(r.division);
+        a.atlas = QString::fromStdString(r.atlas);
+        a.regionId = QString::fromStdString(r.regionId);
+        clusteringData->setUserClusterAnnotation(c, a);
     }
 }

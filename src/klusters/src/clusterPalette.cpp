@@ -22,6 +22,7 @@
 #include "clusterPalette.h"
 #include "itemcolors.h"
 #include "clusterinformationdialog.h"
+#include "unitannotation.h"
 
 // include files for Qt
 #include <QVariant>
@@ -541,22 +542,9 @@ void ClusterPalette::updateClusterList(){
             } else{
                 QList<QString> clusterInformation;
                 boundData().getUserClusterInformation(curId,clusterInformation);
-
-                if(!clusterInformation.at(0).isEmpty()){
-                    clusterText.append(" - ").append(clusterInformation.at(0));
-                }
-                if(!clusterInformation.at(1).isEmpty()){
-                    clusterText.append(", ").append(clusterInformation.at(1));
-                }
-                if(!clusterInformation.at(2).isEmpty()){
-                    clusterText.append(", ").append(clusterInformation.at(2));
-                }
-                if(!clusterInformation.at(3).isEmpty()){
-                    clusterText.append(", ").append(clusterInformation.at(3));
-                }
-                if(!clusterInformation.at(4).isEmpty()){
-                    clusterText.append(", ").append(clusterInformation.at(4));
-                }
+                const QString summary = UnitAnnotation::fromFields(clusterInformation).summary();
+                if(!summary.isEmpty())
+                    clusterText.append(" - ").append(summary);
             }
             QListWidgetItem * item  = new QListWidgetItem(pix, clusterText, iconView);
             item->setData(INDEX,i);
@@ -607,64 +595,19 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
             //initizialize the dialog with the previous information
             QList<QString> clusterInformation;
             boundData().getUserClusterInformation(clusterNumber,clusterInformation);
-            clusterInformationDialog->setStructure(clusterInformation.at(0));
-            clusterInformationDialog->setType(clusterInformation.at(1));
-            clusterInformationDialog->setId(clusterInformation.at(2));
-            clusterInformationDialog->setQuality(clusterInformation.at(3));
-            clusterInformationDialog->setNotes(clusterInformation.at(4));
+            clusterInformationDialog->setAnnotation(UnitAnnotation::fromFields(clusterInformation));
 
             if(clusterInformationDialog->exec() == QDialog::Accepted)
             {
-                //Update the cluster user information.
-                boundData().setUserClusterInformation(boundColors().itemId(item->data(INDEX).toInt()),clusterInformationDialog->getStructure(),clusterInformationDialog->getType(),clusterInformationDialog->getId(),clusterInformationDialog->getQuality(),clusterInformationDialog->getNotes());
+                //Update the cluster user information (every field).
+                const UnitAnnotation annotation = clusterInformationDialog->annotation();
+                boundData().setUserClusterAnnotation(boundColors().itemId(item->data(INDEX).toInt()), annotation);
 
                 //update the text of the item
                 if(isInUserClusterInfoMode){
-                    item->setText(QString::fromLatin1("%1").arg(clusterNumber) + ": " + clusterInformationDialog->getStructure()+ ",  " + clusterInformationDialog->getType() + ", " + clusterInformationDialog->getId() + ", " + clusterInformationDialog->getQuality() + ", " + clusterInformationDialog->getNotes());
-
                     QString clusterText = QString::number(clusterNumber);
-                    bool first = true;
-
-                    if( !clusterInformationDialog->getStructure().isEmpty()){
-                        clusterText.append(" - ").append( clusterInformationDialog->getStructure());
-                        first = false;
-                    }
-                    if(!clusterInformationDialog->getType().isEmpty()){
-                        if(!first){
-                            clusterText.append(", ").append(clusterInformationDialog->getType());
-                        }
-                        else{
-                            clusterText.append(" - ").append(clusterInformationDialog->getType());
-                            first = false;
-                        }
-                    }
-                    if(!clusterInformationDialog->getId().isEmpty()){
-                        if(!first){
-                            clusterText.append(", ").append(clusterInformationDialog->getId());
-                        }
-                        else{
-                            clusterText.append(" - ").append(clusterInformationDialog->getId());
-                        }
-                    }
-                    if(clusterInformationDialog->getQuality() != ""){
-                        if(!first){
-                            clusterText.append(", ").append(clusterInformationDialog->getQuality());
-                        }
-                        else{
-                            clusterText.append(" - ").append(clusterInformationDialog->getQuality());
-                            first = false;
-                        }
-                    }
-                    if(clusterInformationDialog->getNotes() != ""){
-                        if(!first){
-                            clusterText.append(", ").append(clusterInformationDialog->getNotes());
-                        }
-                        else{
-                            clusterText.append(" - ").append(clusterInformationDialog->getNotes());
-                            first = false;
-                        }
-                    }
-
+                    if(!annotation.summary().isEmpty())
+                        clusterText.append(" - ").append(annotation.summary());
                     item->setText(clusterText);
                 }
 
@@ -688,52 +631,7 @@ void ClusterPalette::slotOnItem(QListWidgetItem* item){
             //Update the statusbar with the cluster information
             QList<QString> clusterInformation;
             boundData().getUserClusterInformation(clusterNumber,clusterInformation);
-
-            QString clusterText;
-            bool first = true;
-
-            if(!clusterInformation.at(0).isEmpty()){
-                first = false;
-                clusterText.append(tr("Structure: ")).append(clusterInformation.at(0));
-            }
-            if(!clusterInformation.at(1).isEmpty()){
-                if(first){
-                    clusterText.append(tr("Type: ")).append(clusterInformation.at(1));
-                    first = false;
-                }
-                else{
-                    clusterText.append(tr(", Type: ")).append(clusterInformation.at(1));
-                }
-
-            }
-            if(!clusterInformation.at(2).isEmpty()){
-                if(first){
-                    clusterText.append(tr("ID: ")).append(clusterInformation.at(2));
-                    first = false;
-                }
-                else{
-                    clusterText.append(tr(", ID: ")).append(clusterInformation.at(2));
-                }
-
-            }
-            if(!clusterInformation.at(3).isEmpty()){
-                if(first){
-                    clusterText.append(tr("Quality: ")).append(clusterInformation.at(3));
-                    first = false;
-                }
-                else{
-                    clusterText.append(tr(", Quality: ")).append(clusterInformation.at(3));
-                }
-            }
-            if(!clusterInformation.at(4).isEmpty()){
-                if(first){
-                    first = false;
-                    clusterText.append(tr("Notes: ")).append(clusterInformation.at(4));
-                }
-                else{
-                    clusterText.append(tr(", Notes: ")).append(clusterInformation.at(4));
-                }
-            }
+            const QString clusterText = UnitAnnotation::fromFields(clusterInformation).labelled();
 
             statusBar->showMessage(clusterText);
 
@@ -1000,48 +898,9 @@ void ClusterPalette::showUserClusterInformation(int electrodeGroupId){
         }
         else{
             currentClusterInformation = clusterUserInformationMap[clusterId];
-            bool first = true;
-
-            if(currentClusterInformation.getStructure() != ""){
-                first = false;
-                clusterText.append(" - ").append(currentClusterInformation.getStructure());
-            }
-            if(currentClusterInformation.getType() != ""){
-                if(!first){
-                    clusterText.append(", ").append(currentClusterInformation.getType());
-                }
-                else{
-                    clusterText.append(" - ").append(currentClusterInformation.getType());
-                    first = false;
-                }
-            }
-            if(currentClusterInformation.getId() != ""){
-                if(!first){
-                    clusterText.append(", ").append(currentClusterInformation.getId());
-                }
-                else{
-                    clusterText.append(" - ").append(currentClusterInformation.getId());
-                    first = false;
-                }
-            }
-            if(currentClusterInformation.getQuality() != ""){
-                if(!first){
-                    clusterText.append(", ").append(currentClusterInformation.getQuality());
-                }
-                else{
-                    clusterText.append(" - ").append(currentClusterInformation.getQuality());
-                    first = false;
-                }
-            }
-            if(currentClusterInformation.getNotes() != ""){
-                if(!first){
-                    clusterText.append(", ").append(currentClusterInformation.getNotes());
-                }
-                else{
-                    clusterText.append(" - ").append(currentClusterInformation.getNotes());
-                    first = false;
-                }
-            }
+            const QString summary = currentClusterInformation.annotation().summary();
+            if(!summary.isEmpty())
+                clusterText.append(" - ").append(summary);
         }
         iconView->item(i)->setText(clusterText);
     }

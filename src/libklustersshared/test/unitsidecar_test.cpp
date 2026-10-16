@@ -20,9 +20,10 @@ int main()
 {
     using unitsidecar::Row;
     std::vector<Row> rows(3);
-    rows[0] = {3, 2, "CA1", "pyr", "12.5", "good", "tab\there\nnew line \\ back"};
-    rows[1] = {3, 7, "", "", "", "", ""};                       // describes nothing
-    rows[2] = {3, 9, "DG", "int", "", "?", "Zelle \xC3\xBC"};
+    rows[0] = {3, 2, "CA1", "pyr", "12.5", "good", "tab\there\nnew line \\ back", "", "", "", ""};
+    rows[1] = {3, 7, "", "", "", "", "", "", "", "", ""};                       // describes nothing
+    rows[2] = {3, 9, "DG", "int", "", "?", "Zelle \xC3\xBC",
+               "hippocampal formation", "archicortex", "WHS SD rat v4", "UBERON:0001885"};
     const std::string text = unitsidecar::format(rows);
     std::vector<Row> back;
     std::string err;
@@ -36,6 +37,15 @@ int main()
     check(!unitsidecar::parse("3\t4\tx\nthree\t5\n", back, &err) && err.find("line 2") != std::string::npos,
           "malformed line refused with its number");
     check(unitsidecar::parse(unitsidecar::header(), back, &err) && back.empty(), "header only: no units");
+    check(unitsidecar::parse("# klusters units v1\n3\t4\tCA1\tpyr\t\tgood\tn\n", back, &err) && back.size() == 1
+          && back[0].notes == "n" && back[0].region.empty() && back[0].regionId.empty(),
+          "a v1 line (seven fields) reads with the new fields empty");
+    {
+        std::vector<Row> only(1);
+        only[0] = {3, 11, "", "", "", "", "", "", "thalamus", "", ""};
+        check(unitsidecar::parse(unitsidecar::format(only), back, &err) && back.size() == 1
+              && back[0].division == "thalamus", "a unit with only a new field is written");
+    }
 
     check(unitsidecar::pathFor("/d/rat.clu.stderiv_C5.3.mf") == "/d/rat.cli.stderiv_C5.3.mf", "name");
     check(unitsidecar::pathFor("/d/rat.clu.3") == "/d/rat.cli.3", "untagged name");

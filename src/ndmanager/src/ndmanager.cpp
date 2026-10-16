@@ -1106,7 +1106,9 @@ void ndManager::slotRecordCuratedUnits(){
             rows.append(QStringList{QString::number(r.group), QString::number(r.cluster),
                                     QString::fromStdString(r.structure), QString::fromStdString(r.type),
                                     QString::fromStdString(r.isolationDistance),
-                                    QString::fromStdString(r.quality), QString::fromStdString(r.notes)});
+                                    QString::fromStdString(r.quality), QString::fromStdString(r.notes),
+                                    QString::fromStdString(r.region), QString::fromStdString(r.division),
+                                    QString::fromStdString(r.atlas), QString::fromStdString(r.regionId)});
     }
     if (groups.isEmpty()) return;
     parameterView->recordUnits(groups, rows);

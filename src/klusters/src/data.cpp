@@ -1906,7 +1906,7 @@ bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,Q
         positions[clusterId] =  index;
         ClusterUserInformation vClusterUserInformation = clusterUserInformationMap[static_cast<int>(clusterId)];
 
-        clusterInfoMap->insert(clusterId,ClusterInfo(index,iterator.value(),vClusterUserInformation.getStructure(),vClusterUserInformation.getType(),vClusterUserInformation.getId(),vClusterUserInformation.getQuality(),vClusterUserInformation.getNotes()));
+        clusterInfoMap->insert(clusterId,ClusterInfo(index,iterator.value(),vClusterUserInformation.annotation()));
 
         index += iterator.value();
     }
@@ -2449,7 +2449,7 @@ dataType Data::createNewCluster(const SpikeSelection& selection, const QList <in
                    &(*spikesByCluster)(2,firstSpikePosition),
                    nbSpikesOfCluster * sizeof(dataType));
             //Construct the new clusterInfoMap
-            clusterInfoMapTemp->insert(clusterId,ClusterInfo(upperInsertionIndex,nbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
+            clusterInfoMapTemp->insert(clusterId,ClusterInfo(upperInsertionIndex,nbSpikesOfCluster,iterator.value().annotation()));
             upperInsertionIndex += nbSpikesOfCluster;
         }
         //Now deal with the clusters which may contain spikes to add to the new cluster
@@ -2498,7 +2498,7 @@ dataType Data::createNewCluster(const SpikeSelection& selection, const QList <in
 
                     //Construct the insertion of the current cluster in the new clusterInfoMap if
                     // the number of spikes is more than zero
-                    if(newNbSpikesOfCluster >0)clusterInfoMapTemp->insert(clusterId,ClusterInfo(updatedClusterPosition,newNbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
+                    if(newNbSpikesOfCluster >0)clusterInfoMapTemp->insert(clusterId,ClusterInfo(updatedClusterPosition,newNbSpikesOfCluster,iterator.value().annotation()));
                     else emptyClusters.append(static_cast<int>(clusterId));
                 }
             }
@@ -2595,7 +2595,7 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
                    &(*spikesByCluster)(2,firstSpikePosition),
                    nbSpikesOfCluster * sizeof(dataType));
             //Construct the new clusterInfoMap
-            clusterInfoMapTemp.insert(clusterId,ClusterInfo(upperInsertionIndex,nbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
+            clusterInfoMapTemp.insert(clusterId,ClusterInfo(upperInsertionIndex,nbSpikesOfCluster,iterator.value().annotation()));
             upperInsertionIndex += nbSpikesOfCluster;
         }
         //Now deal with the clusters which may contain spikes to add to a new cluster <=> spike in the region.
@@ -2643,7 +2643,7 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
                     // the number of spikes is more than zero.
                     //Copy the spikes back to spikesByCluster.
                     if(newNbSpikesOfCluster > 0){
-                        clusterInfoMapTemp.insert(clusterId,ClusterInfo(updatedClusterPosition,newNbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
+                        clusterInfoMapTemp.insert(clusterId,ClusterInfo(updatedClusterPosition,newNbSpikesOfCluster,iterator.value().annotation()));
                     }
                     else emptyClusters.append(static_cast<int>(clusterId));
 
@@ -3173,11 +3173,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
             if (kept > 0) {
                 newInfo->insert(cid,
                     ClusterInfo(clStart, kept,
-                                it.value().getStructure(),
-                                it.value().getType(),
-                                it.value().getId(),
-                                it.value().getQuality(),
-                                it.value().getNotes()));
+                                it.value().annotation()));
             } else {
                 emptiedClusters.append(sourceCluster);
             }
@@ -3192,11 +3188,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
             if (nSpk > 0) {
                 newInfo->insert(cid,
                     ClusterInfo(clStart, nSpk,
-                                it.value().getStructure(),
-                                it.value().getType(),
-                                it.value().getId(),
-                                it.value().getQuality(),
-                                it.value().getNotes()));
+                                it.value().annotation()));
             }
         }
     }
@@ -3431,11 +3423,7 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
         dataType firstSpikePosition = currentClusterInfo.firstSpikePosition();
         dataType nbSpikesOfCluster = currentClusterInfo.nbSpikes();
         //The user information of the different clusters.
-        QString structure = currentClusterInfo.getStructure();
-        QString	type = currentClusterInfo.getType();
-        QString	iD = currentClusterInfo.getId();
-        QString	quality = currentClusterInfo.getQuality();
-        QString	notes = currentClusterInfo.getNotes();
+        const UnitAnnotation annotation = currentClusterInfo.annotation();
 
 
         //if clustersOfOrigin does not contains the current cluster, this cluster is let unchanged
@@ -3450,7 +3438,7 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
                    &(*spikesByCluster)(2,firstSpikePosition),
                    nbSpikesOfCluster * sizeof(dataType));
             //Construct the new clusterInfoMap
-            clusterInfoMapTemp->insert(clusterId,ClusterInfo(lowerInsertionIndex,nbSpikesOfCluster,structure,type,iD,quality,notes));
+            clusterInfoMapTemp->insert(clusterId,ClusterInfo(lowerInsertionIndex,nbSpikesOfCluster,annotation));
         }
         //Now deal with the clusters which may contain spikes to add to the new cluster
         //<=> spike in the region. Look up the spikes starting from the last one.
@@ -3492,7 +3480,7 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
                     }
                     //Construct the insertion of the current cluster in the new clusterInfoMap if
                     // the number of spikes is more than zero
-                    if(newNbSpikesOfCluster >0)clusterInfoMapTemp->insert(clusterId,ClusterInfo(lowerInsertionIndex,newNbSpikesOfCluster,structure,type,iD,quality,notes));
+                    if(newNbSpikesOfCluster >0)clusterInfoMapTemp->insert(clusterId,ClusterInfo(lowerInsertionIndex,newNbSpikesOfCluster,annotation));
                     else emptyClusters.append(static_cast<int>(clusterId));
                 }
             }
@@ -3760,11 +3748,7 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     QList<dataType> nbOfspikes;
 
     //The user information of the different clusters to be grouped will be concatenated.
-    QString newStructure;
-    QString	newType;
-    QString	newID;
-    QString	newQuality;
-    QString	newNotes;
+    UnitAnnotation newAnnotation;
 
     //The new information about the cluster will be inserted in the table pointed by spikesByClusterTemp
     SortableTable* spikesByClusterTemp = new SortableTable();
@@ -3800,7 +3784,7 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
                    nbSpikesOfCluster * sizeof(dataType));
 
             //Construct the new clusterInfoMap
-            clusterInfoMapTemp->insert(clusterId,ClusterInfo(upperInsertionIndex,nbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
+            clusterInfoMapTemp->insert(clusterId,ClusterInfo(upperInsertionIndex,nbSpikesOfCluster,iterator.value().annotation()));
             upperInsertionIndex += nbSpikesOfCluster;
         }
         //Now deal with the clusters which are to be grouped and need to be added to the new cluster
@@ -3817,22 +3801,14 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
             //Store the number of spikes coming from the current cluster
             nbOfspikes.append(nbSpikesOfCluster);
 
-            //Take care of the user information about the current cluster
+            //Take care of the user information about the current cluster:
+            //every field of the merged units, joined with "--".
             if(first){
-                newStructure += iterator.value().getStructure();
-                newType += iterator.value().getType();
-                newID += iterator.value().getId();
-                newQuality += iterator.value().getQuality();
-                newNotes += iterator.value().getNotes();
-
+                newAnnotation = iterator.value().annotation();
                 first = false;
             }
             else{
-                newStructure += "--" + iterator.value().getStructure();
-                newType += "--" + iterator.value().getType();
-                newID += "--" + iterator.value().getId();
-                newQuality += "--" + iterator.value().getQuality();
-                newNotes += "--" + iterator.value().getNotes();
+                newAnnotation = newAnnotation.mergedWith(iterator.value().annotation());
             }
         }
     }
@@ -3842,7 +3818,7 @@ dataType Data::groupClusters(QList<int>& clustersToGroup){
     for(dataType i = 0; i<nbSpikesInNewCluster;++i) (*spikesByClusterTemp)(2,lowerInsertionIndex + i) = newClusterId;
 
     //Construct the insertion of the new cluster in the new clusterInfoMap
-    clusterInfoMapTemp->insert(newClusterId,ClusterInfo(lowerInsertionIndex,nbSpikesInNewCluster,newStructure,newType,newID,newQuality,newNotes));
+    clusterInfoMapTemp->insert(newClusterId,ClusterInfo(lowerInsertionIndex,nbSpikesInNewCluster,newAnnotation));
 
     //Sort the spikes of the newly created cluster.
     sortCluster(clusterInfoMapTemp,spikesByClusterTemp,newClusterId,positions,nbOfspikes,1);
@@ -4120,8 +4096,7 @@ bool Data::setClusterLabels(const QVector<dataType>& labels)
             const ClusterInfo old = clusterInfoMap->value(cid);
             clusterInfoMapTemp->insert(cid,
                 ClusterInfo(clStart, static_cast<dataType>(rows.size()),
-                            old.getStructure(), old.getType(),
-                            old.getId(), old.getQuality(), old.getNotes()));
+                            old.annotation()));
         } else {
             clusterInfoMapTemp->insert(cid,
                 ClusterInfo(clStart, static_cast<dataType>(rows.size())));
@@ -4524,7 +4499,7 @@ void Data::moveClusters(QList<int>& clustersToDelete,SortableTable* spikesByClus
                    nbSpikesOfCluster * sizeof(dataType));
 
             //Construct the new clusterInfoMap
-            clusterInfoMapTemp->insert(clusterId,ClusterInfo(upperInsertionIndex,nbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
+            clusterInfoMapTemp->insert(clusterId,ClusterInfo(upperInsertionIndex,nbSpikesOfCluster,iterator.value().annotation()));
             upperInsertionIndex += nbSpikesOfCluster;
         }
     }
@@ -4743,7 +4718,7 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
             //renumbering left in place keep their caches).
         }
         //Construct the new clusterInfoMap
-        clusterInfoMapTemp->insert(clusterNumber,ClusterInfo(firstSpikePosition,nbSpikesOfCluster,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes()));
+        clusterInfoMapTemp->insert(clusterNumber,ClusterInfo(firstSpikePosition,nbSpikesOfCluster,iterator.value().annotation()));
         clusterIdsOldNew.insert(static_cast<int>(clusterId),clusterNumber);
         clusterIdsNewOld.insert(clusterNumber,static_cast<int>(clusterId));
 
@@ -4898,10 +4873,7 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
         // Insert into clusterInfoMapTemp under the NEW id, with the
         // NEW firstSpikePosition (writePos) — not the old one.
         clusterInfoMapTemp->insert(newId,
-            ClusterInfo(writePos, nbSp,
-                        b.info.getStructure(), b.info.getType(),
-                        b.info.getId(), b.info.getQuality(),
-                        b.info.getNotes()));
+            ClusterInfo(writePos, nbSp, b.info.annotation()));
 
         writePos += nbSp;
     }
@@ -6979,7 +6951,7 @@ void Data::getClusterUserInformation (int pGroup,QMap<int,ClusterUserInformation
 
         if(clusterId == 0 || clusterId == 1) continue;
 
-        ClusterUserInformation currentClusterUserInformation = ClusterUserInformation(pGroup,clusterId,iterator.value().getStructure(),iterator.value().getType(),iterator.value().getId(),iterator.value().getQuality(),iterator.value().getNotes());
+        ClusterUserInformation currentClusterUserInformation = ClusterUserInformation(pGroup,clusterId,iterator.value().annotation());
 
         userInfoMap.insert(clusterId,currentClusterUserInformation);
     }

@@ -13,17 +13,35 @@ record of finished curation, filled on request in ndManager with
 ## Layout
 
 UTF-8 text. Lines starting with `#` are comments; every other line is one unit
-with seven tab-separated fields, in the order of the YAML `units` table:
+with eleven tab-separated fields, in the order of the YAML `units` table:
 
 ```
-# klusters units v1
-# group	cluster	structure	type	isolationDistance	quality	notes
-3	2	CA1	pyr	14.2	good	stable over the session
-3	7	DG	int			
+# klusters units v2
+# group	cluster	structure	type	isolationDistance	quality	notes	region	division	atlas	regionId
+3	2	CA1	pyramidal	14.2	good	stable over the session	hippocampal formation	archicortex	WHS SD rat v4	<atlas or UBERON id>
+3	7	DG	interneuron
 ```
+
+| Field | Example | Meaning |
+|---|---|---|
+| `structure` | CA1 | the finest anatomical label |
+| `type` | pyramidal | the putative cell type |
+| `isolationDistance` | 14.2 | |
+| `quality` | good | |
+| `notes` | | free text |
+| `region` | hippocampal formation | the named region |
+| `division` | archicortex, cerebral cortex, thalamus, cerebellum | the broad division |
+| `atlas` | Waxholm Space rat atlas (WHS SD) v4 | where the region terms come from |
+| `regionId` | an atlas structure ID or an `UBERON:` ID | a stable identifier of the finest term |
 
 - `group` and `cluster` are integers; the other fields are free text and may
-  be empty (missing trailing fields read as empty).
+  be empty. Missing trailing fields read as empty, so a v1 file (seven
+  fields, before `region`…`regionId`) reads unchanged.
+- Name regions with the terms of one reference atlas and record which in
+  `atlas`: for rat the Waxholm Space atlas, for mouse the Allen Common
+  Coordinate Framework; `regionId` then lets the hierarchy (structure ⊂
+  region ⊂ division) be looked up instead of typed. UBERON IDs work across
+  species.
 - A tab, newline, carriage return or backslash inside a field is written as
   `\t`, `\n`, `\r` or `\\`.
 - Units with every descriptive field empty are not written; a file with no

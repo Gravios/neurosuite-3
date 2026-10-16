@@ -11,6 +11,7 @@
 #define CLUSTERUSERINFORMATION_H
 
 #include <QString>
+#include "unitannotation.h"
 
 /**
  * Value type holding user-supplied metadata for a single cluster.
@@ -42,6 +43,28 @@ struct ClusterUserInformation {
         , structure(pStructure), type(pType)
         , ID(pID), quality(pQuality), notes(pNotes)
     {}
+
+    // The fields added after the first five (unitannotation.h).
+    QString region;
+    QString division;
+    QString atlas;
+    QString regionId;
+
+    /** Every field of a unit (unitannotation.h). */
+    ClusterUserInformation(int pGroup, int pCluster, const UnitAnnotation& a)
+        : group(pGroup), cluster(pCluster)
+        , structure(a.structure), type(a.type), ID(a.isolationDistance)
+        , quality(a.quality), notes(a.notes)
+        , region(a.region), division(a.division), atlas(a.atlas), regionId(a.regionId)
+    {}
+
+    [[nodiscard]] UnitAnnotation annotation() const {
+        UnitAnnotation a;
+        a.structure = structure; a.type = type; a.isolationDistance = ID;
+        a.quality = quality; a.notes = notes;
+        a.region = region; a.division = division; a.atlas = atlas; a.regionId = regionId;
+        return a;
+    }
 
     // Accessors kept for call-site compatibility.
     [[nodiscard]] int     getGroup()     const noexcept { return group; }

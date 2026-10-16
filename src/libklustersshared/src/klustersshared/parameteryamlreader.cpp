@@ -508,7 +508,12 @@ void ParameterYamlReader::getUnits(QMap<int,QStringList>& units) const
              << nodeStr(u["type"])
              << nodeStr(u["isolationDistance"])
              << nodeStr(u["quality"])
-             << nodeStr(u["notes"]);
+             << nodeStr(u["notes"])
+             // Added later (region, division, atlas, regionId); absent -> empty.
+             << nodeStr(u["region"])
+             << nodeStr(u["division"])
+             << nodeStr(u["atlas"])
+             << nodeStr(u["regionId"]);
         units.insert(i++, info);
     }
 }

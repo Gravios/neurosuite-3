@@ -587,6 +587,9 @@ bool ParameterYamlModifier::setUnitsInformation(const QMap<int,QStringList>& uni
         u["isolationDistance"] = strOrNull(row[4]);
         u["quality"]           = strOrNull(row[5]);
         u["notes"]             = strOrNull(row[6]);
+        static const char* const kLater[] = {"region", "division", "atlas", "regionId"};
+        for (int k = 0; k < 4; ++k)
+            if (row.size() > 7 + k && !row[7 + k].isEmpty()) u[kLater[k]] = row[7 + k].toStdString();
         seq.push_back(u);
     }
     root["units"] = seq;

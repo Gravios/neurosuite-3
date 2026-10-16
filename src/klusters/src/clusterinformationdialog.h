@@ -24,6 +24,8 @@
 
 #include <QLineEdit>
 
+#include "unitannotation.h"
+
 /**
     @author Lynn Hazan <lynn.hazan@myrealbox.com>
     This class is the dialog used to gather cluster information.
@@ -47,6 +49,10 @@ public:
      void setQuality(const QString& pQuality) { quality->setText(pQuality); }
      void setNotes(const QString& pNotes) { notes->setText(pNotes); }
 
+     /** Every field (unitannotation.h). */
+     UnitAnnotation annotation() const;
+     void setAnnotation(const UnitAnnotation& a);
+
 private:
     QLineEdit		*structure;
     QLineEdit		*type;
@@ -54,6 +60,10 @@ private:
     QLineEdit		*id;
     QLineEdit		*quality;
     QLineEdit		*notes;
+    QLineEdit		*region;
+    QLineEdit		*division;
+    QLineEdit		*atlas;
+    QLineEdit		*regionId;
 
 };
 

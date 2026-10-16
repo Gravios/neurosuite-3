@@ -24,6 +24,7 @@
 #include <QVBoxLayout>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFormLayout>
 
 
 
@@ -32,52 +33,39 @@ ClusterInformationDialog::ClusterInformationDialog(QWidget *parent,const QString
 {
     setWindowTitle(caption);
     setModal(true);
-    QWidget *page = new QWidget(this);
 
-    QVBoxLayout*  layout = new QVBoxLayout(page);
-    layout->setContentsMargins(2,2,2,2);
-    setLayout(layout);
-    //Structure information (label and lineedit)
-    QLabel *label1 = new QLabel(tr("Structure"),page);
-    layout->addWidget(label1);
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(6,6,6,6);
+    QFormLayout* form = new QFormLayout;
+    layout->addLayout(form);
 
-    structure = new QLineEdit(page);
-    structure->setMinimumWidth(fontMetrics().maxWidth()*20);
-    structure->setFocus();
-    layout->addWidget(structure);
-
-    //Type information (label and lineedit)
-    QLabel *label2 = new QLabel(tr("Type"),page);
-    layout->addWidget(label2);
-
-    type = new QLineEdit(page);
-    type->setMinimumWidth(fontMetrics().maxWidth()*20);
-    layout->addWidget(type);
-
-    //Id information (label and lineedit)
-    QLabel *label3 = new QLabel(tr("Isolation distance"),page);
-    layout->addWidget(label3);
-
-    id = new QLineEdit(page);
+    // Anatomy first (finest label, then the named region, its division, and the
+    // atlas the terms come from), then the unit itself.  Tab follows this order.
+    auto field = [&](const QString& label, const QString& placeholder, const QString& tip) {
+        QLineEdit* e = new QLineEdit(this);
+        e->setMinimumWidth(fontMetrics().averageCharWidth()*40);
+        e->setPlaceholderText(placeholder);
+        e->setToolTip(tip);
+        form->addRow(label, e);
+        return e;
+    };
+    structure = field(tr("Structure"), tr("e.g. CA1"),
+                      tr("The finest anatomical label of the recording site."));
+    region    = field(tr("Region"), tr("e.g. hippocampal formation"),
+                      tr("The named brain region the structure belongs to."));
+    division  = field(tr("Division"), tr("e.g. archicortex, cerebral cortex, thalamus, cerebellum"),
+                      tr("The broad division of the brain the region belongs to."));
+    atlas     = field(tr("Atlas"), tr("e.g. Waxholm Space rat atlas (WHS SD) v4"),
+                      tr("The reference atlas or ontology the terms above come from."));
+    regionId  = field(tr("Region ID"), tr("e.g. the atlas structure ID or an UBERON:… ID"),
+                      tr("A stable identifier of the finest term in that atlas or ontology."));
+    type      = field(tr("Type"), tr("e.g. pyramidal, interneuron"),
+                      tr("The putative cell type of the unit."));
+    id        = field(tr("Isolation distance"), QString(), QString());
     id->setObjectName("id");
-    id->setMinimumWidth(fontMetrics().maxWidth()*20);
-    layout->addWidget(id);
-
-    //Quality information (label and lineedit)
-    QLabel *label4 = new QLabel(tr("Quality"),page);
-    layout->addWidget(label4);
-
-    quality = new QLineEdit(page);
-    quality->setMinimumWidth(fontMetrics().maxWidth()*20);
-    layout->addWidget(quality);
-
-    //Type information (label and lineedit)
-    QLabel *label5 = new QLabel(tr("Notes"),page);
-    layout->addWidget(label5);
-
-    notes = new QLineEdit(page);
-    notes->setMinimumWidth(fontMetrics().maxWidth()*20);
-    layout->addWidget(notes);
+    quality   = field(tr("Quality"), QString(), QString());
+    notes     = field(tr("Notes"), QString(), QString());
+    structure->setFocus();
 
     layout->addStretch(10);
 
@@ -86,7 +74,34 @@ ClusterInformationDialog::ClusterInformationDialog(QWidget *parent,const QString
     layout->addWidget(buttonBox);
     connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+}
 
+UnitAnnotation ClusterInformationDialog::annotation() const
+{
+    UnitAnnotation a;
+    a.structure = structure->text();
+    a.type = type->text();
+    a.isolationDistance = id->text();
+    a.quality = quality->text();
+    a.notes = notes->text();
+    a.region = region->text();
+    a.division = division->text();
+    a.atlas = atlas->text();
+    a.regionId = regionId->text();
+    return a;
+}
+
+void ClusterInformationDialog::setAnnotation(const UnitAnnotation& a)
+{
+    structure->setText(a.structure);
+    type->setText(a.type);
+    id->setText(a.isolationDistance);
+    quality->setText(a.quality);
+    notes->setText(a.notes);
+    region->setText(a.region);
+    division->setText(a.division);
+    atlas->setText(a.atlas);
+    regionId->setText(a.regionId);
 }
 
 ClusterInformationDialog::~ClusterInformationDialog()

@@ -90,11 +90,20 @@ UnitListLayout::UnitListLayout(QWidget* parent, const char* name)
     unitTable->setColumnCount( unitTable->columnCount() + 1 );
     unitTable->setHorizontalHeaderItem(unitTable->columnCount() - 1,new QTableWidgetItem(tr( "Type" ) ));
     unitTable->setColumnCount( unitTable->columnCount() + 1 );
-    unitTable->setHorizontalHeaderItem(unitTable->columnCount() - 1,new QTableWidgetItem(tr( "I.D." ) ));
+    unitTable->setHorizontalHeaderItem(unitTable->columnCount() - 1,new QTableWidgetItem(tr( "Isolation distance" ) ));
     unitTable->setColumnCount( unitTable->columnCount() + 1 );
     unitTable->setHorizontalHeaderItem(unitTable->columnCount() - 1,new QTableWidgetItem(tr( "Quality" ) ));
     unitTable->setColumnCount( unitTable->columnCount() + 1 );
     unitTable->setHorizontalHeaderItem(unitTable->columnCount() - 1,new QTableWidgetItem(tr( "Notes" ) ));
+    // Where the unit is, by a reference atlas: the named region, its broad
+    // division, the atlas, and the stable ID of the finest term (the session
+    // YAML's units region/division/atlas/regionId; see doc/klusters).
+    const char* const kAnatomy[] = { QT_TR_NOOP("Region"), QT_TR_NOOP("Division"),
+                                     QT_TR_NOOP("Atlas"), QT_TR_NOOP("Region ID") };
+    for (const char* h : kAnatomy) {
+        unitTable->setColumnCount( unitTable->columnCount() + 1 );
+        unitTable->setHorizontalHeaderItem(unitTable->columnCount() - 1,new QTableWidgetItem(tr( h ) ));
+    }
 
     policy = QSizePolicy((QSizePolicy::Policy)7, (QSizePolicy::Policy)7);
     policy.setHorizontalStretch(0);
@@ -107,7 +116,7 @@ UnitListLayout::UnitListLayout(QWidget* parent, const char* name)
     unitTable->setMinimumSize( QSize( 200, 100 ) );
     unitTable->setVerticalScrollBarPolicy( Qt::ScrollBarAsNeeded );
     unitTable->setRowCount( 0 );
-    unitTable->setColumnCount( 7 );
+    unitTable->setColumnCount( 11 );
     unitTable->setSelectionMode( QAbstractItemView::MultiSelection );
     unitTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     layout20->addWidget( unitTable, 1, 0, 1, 6 );

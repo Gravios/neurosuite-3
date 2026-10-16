@@ -14,11 +14,13 @@
  * (Actions > Record Curated Units), which reads these files.
  *
  * Format: UTF-8 text, lines starting with '#' are comments, one unit per line
- * with seven tab-separated fields
+ * with eleven tab-separated fields
  *
  *     group  cluster  structure  type  isolationDistance  quality  notes
+ *     region  division  atlas  regionId
  *
- * in the order of the YAML units table.  A tab, newline, carriage return or
+ * in the order of the YAML units table (the last four were added later; a
+ * line with fewer fields reads them as empty, so v1 files read unchanged).  A tab, newline, carriage return or
  * backslash inside a field is written as \t, \n, \r or \\.  Units with every
  * descriptive field empty are not written.
  */
@@ -35,21 +37,25 @@ namespace unitsidecar {
 struct Row {
     int group = 0, cluster = 0;
     std::string structure, type, isolationDistance, quality, notes;
+    std::string region, division, atlas, regionId;
     bool describesNothing() const {
         return structure.empty() && type.empty() && isolationDistance.empty()
-            && quality.empty() && notes.empty();
+            && quality.empty() && notes.empty() && region.empty() && division.empty()
+            && atlas.empty() && regionId.empty();
     }
     bool operator==(const Row& o) const {
         return group == o.group && cluster == o.cluster && structure == o.structure
             && type == o.type && isolationDistance == o.isolationDistance
-            && quality == o.quality && notes == o.notes;
+            && quality == o.quality && notes == o.notes && region == o.region
+            && division == o.division && atlas == o.atlas && regionId == o.regionId;
     }
 };
 
 inline const char* header()
 {
-    return "# klusters units v1\n"
-           "# group\tcluster\tstructure\ttype\tisolationDistance\tquality\tnotes\n";
+    return "# klusters units v2\n"
+           "# group\tcluster\tstructure\ttype\tisolationDistance\tquality\tnotes"
+           "\tregion\tdivision\tatlas\tregionId\n";
 }
 
 inline std::string escape(const std::string& s)
@@ -87,7 +93,8 @@ inline std::string format(const std::vector<Row>& rows)
         out += std::to_string(r.group) + '\t' + std::to_string(r.cluster) + '\t'
              + escape(r.structure) + '\t' + escape(r.type) + '\t'
              + escape(r.isolationDistance) + '\t' + escape(r.quality) + '\t'
-             + escape(r.notes) + '\n';
+             + escape(r.notes) + '\t' + escape(r.region) + '\t' + escape(r.division) + '\t'
+             + escape(r.atlas) + '\t' + escape(r.regionId) + '\n';
     }
     return out;
 }
@@ -125,12 +132,16 @@ inline bool parse(const std::string& text, std::vector<Row>& rows, std::string* 
             if (error) *error = "line " + std::to_string(lineNo) + ": expected <group> <cluster> ...";
             return false;
         }
-        f.resize(7);
+        f.resize(11);
         r.structure = unescape(f[2]);
         r.type = unescape(f[3]);
         r.isolationDistance = unescape(f[4]);
         r.quality = unescape(f[5]);
         r.notes = unescape(f[6]);
+        r.region = unescape(f[7]);
+        r.division = unescape(f[8]);
+        r.atlas = unescape(f[9]);
+        r.regionId = unescape(f[10]);
         rows.push_back(r);
     }
     return true;

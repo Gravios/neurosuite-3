@@ -25,6 +25,7 @@
 #include "pair.h"
 #include "types.h"
 #include "clusteruserinformation.h"
+#include "unitannotation.h"
 #include "curationlogger.h"   // for ClusterSnapshot return type
 
 //Include files for QT
@@ -1259,6 +1260,15 @@ public:
         }
     }
 
+    /** Sets every field the curator records about a cluster (unitannotation.h). */
+    void setUserClusterAnnotation(int clusterId, const UnitAnnotation& annotation){
+        if((*clusterInfoMap).contains(static_cast<dataType>(clusterId))){
+            ClusterInfo currentClusterInfo = clusterInfoMap->value(static_cast<dataType>(clusterId));
+            currentClusterInfo.setAnnotation(annotation);
+            clusterInfoMap->insert(static_cast<dataType>(clusterId),currentClusterInfo);
+        }
+    }
+
     /**Gest the cluster the information given by the user.
     * @param clusterId id of the cluster for which the information are given.
     * @return array of QString containing the following information (in the following order) :
@@ -1273,11 +1283,9 @@ public:
         if((*clusterInfoMap).contains(static_cast<dataType>(clusterId))){
             ClusterInfo currentClusterInfo = clusterInfoMap->value(static_cast<dataType>(clusterId));
 
-            clusterInformation.append(currentClusterInfo.getStructure());
-            clusterInformation.append(currentClusterInfo.getType());
-            clusterInformation.append(currentClusterInfo.getId());
-            clusterInformation.append(currentClusterInfo.getQuality());
-            clusterInformation.append(currentClusterInfo.getNotes());
+            // All nine fields in column order (unitannotation.h); the first five
+            // keep their historical positions.
+            clusterInformation.append(currentClusterInfo.annotation().fields());
         }
     }
 
@@ -1463,26 +1471,34 @@ private:
 
     public:
         explicit ClusterInfo(const QString& pStructure = QString(), const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
-            :structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
+            { ann.structure = pStructure; ann.type = pType; ann.isolationDistance = pID; ann.quality = pQuality; ann.notes = pNotes; }
         ClusterInfo(dataType pos, dataType nb,const QString& pStructure = QString(),const QString& pType = QString(),const QString& pID = QString(),const QString& pQuality = QString(),const QString& pNotes = QString())
-            :position(pos),spikeNb(nb),structure(pStructure),type(pType),ID(pID),quality(pQuality),notes(pNotes){}
+            :position(pos),spikeNb(nb)
+            { ann.structure = pStructure; ann.type = pType; ann.isolationDistance = pID; ann.quality = pQuality; ann.notes = pNotes; }
+        /** A cluster span carrying an existing unit's annotation (every field). */
+        ClusterInfo(dataType pos, dataType nb, const UnitAnnotation& pAnnotation)
+            :position(pos),spikeNb(nb),ann(pAnnotation){}
         ~ClusterInfo(){}
          dataType firstSpikePosition() const {return position;}
          dataType nbSpikes() const {return spikeNb;}
          void setNbSpikes(dataType nbSpikes){spikeNb = nbSpikes;}
          void setFirstSpikePosition(dataType pos){this->position = pos;}
 
-         QString getStructure() const { return structure; }
-         QString getType() const { return type; }
-         QString getId() const { return ID; }
-         QString getQuality() const { return quality; }
-         QString getNotes() const { return notes; }
+         /** Everything the curator recorded about the unit. */
+         const UnitAnnotation& annotation() const { return ann; }
+         void setAnnotation(const UnitAnnotation& a) { ann = a; }
 
-         void setStructure(const QString& pStructure) { structure = pStructure; }
-         void setType(const QString& pType) { type = pType; }
-         void setId(const QString& pId) { ID = pId; }
-         void setQuality(const QString& pQuality) { quality = pQuality; }
-         void setNotes(const QString& pNotes) { notes = pNotes; }
+         QString getStructure() const { return ann.structure; }
+         QString getType() const { return ann.type; }
+         QString getId() const { return ann.isolationDistance; }
+         QString getQuality() const { return ann.quality; }
+         QString getNotes() const { return ann.notes; }
+
+         void setStructure(const QString& pStructure) { ann.structure = pStructure; }
+         void setType(const QString& pType) { ann.type = pType; }
+         void setId(const QString& pId) { ann.isolationDistance = pId; }
+         void setQuality(const QString& pQuality) { ann.quality = pQuality; }
+         void setNotes(const QString& pNotes) { ann.notes = pNotes; }
 
     private:
         // Zero-initialised so a default-constructed ClusterInfo — e.g. the one
@@ -1494,12 +1510,9 @@ private:
         dataType position = 0;
         dataType spikeNb = 0;
 
-        QString		structure;
-        QString		type;
-        /**Isolation Distance*/
-        QString		ID;
-        QString		quality;
-        QString		notes;
+        /** Structure, type, isolation distance, quality, notes, region,
+         *  division, atlas, region id (unitannotation.h). */
+        UnitAnnotation ann;
     } ;
 
     typedef QMap<dataType,ClusterInfo> ClusterInfoMap;

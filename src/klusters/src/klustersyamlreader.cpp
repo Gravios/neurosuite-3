@@ -35,6 +35,7 @@ void KlustersYamlReader::getClusterUserInformation(
 
     // value layout: [0]=group [1]=cluster [2]=structure [3]=type
     //               [4]=isolationDistance [5]=quality [6]=notes
+    //               [7]=region [8]=division [9]=atlas [10]=regionId
     for (auto it = unitsMap.cbegin(); it != unitsMap.cend(); ++it) {
         const QStringList& info = it.value();
         if (info.size() < 7) continue;
@@ -42,8 +43,7 @@ void KlustersYamlReader::getClusterUserInformation(
         if (group != pGroup) continue;
 
         int clusterId = info[1].toInt();
-        ClusterUserInformation cui(group, clusterId,
-                                   info[2], info[3], info[4], info[5], info[6]);
+        ClusterUserInformation cui(group, clusterId, UnitAnnotation::fromFields(info.mid(2)));
         clusterUserInformationMap.insert(clusterId, cui);
     }
 }

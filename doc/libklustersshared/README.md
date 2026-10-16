@@ -194,7 +194,8 @@ anatomicalDescription:
 spikeDetection:
   channelGroups:   # list of {channels, nSamples, peakSampleIndex, nFeatures,
                    #         probeId?, shankIndex?, sitePositions_um?, klustakwik?}
-units:             # list of {group, cluster, structure, type, isolationDistance, quality, notes}
+units:             # list of {group, cluster, structure, type, isolationDistance, quality, notes,
+                   #          region, division, atlas, regionId}  (last four optional)
 neuroscope:        # version, miscellaneous, video (rotate/flip/…), spikes, channels
 programs:          # list of {name, parameters: [{name, value, status}], help}
 ```

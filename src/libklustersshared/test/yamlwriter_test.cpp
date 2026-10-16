@@ -466,6 +466,42 @@ int main()
             "a missing base is refused");
     }
 
+    // Units: region, division, atlas and regionId read and written; a unit
+    // without them gains no keys.
+    {
+        std::printf("units: region, division, atlas, regionId\n");
+        const QString up = dir.filePath(QStringLiteral("units.yaml"));
+        std::ofstream(up.toStdString()) <<
+            "units:\n"
+            "  - {group: 1, cluster: 2, structure: CA1, type: pyr, isolationDistance: 20, quality: good, notes: ~}\n"
+            "  - {group: 1, cluster: 3, structure: CA3, region: hippocampal formation, division: archicortex,"
+            " atlas: WHS SD rat v4, regionId: 'UBERON:0003881'}\n";
+        ParameterYamlReader r;
+        report(r.parseFile(up), "units file parsed");
+        QMap<int,QStringList> units;
+        r.getUnits(units);
+        report(units.size() == 2 && units[0].size() == 11 && units[1].size() == 11, "eleven columns per unit");
+        report(units[0][7].isEmpty() && units[1][7] == "hippocampal formation" && units[1][8] == "archicortex"
+               && units[1][9] == "WHS SD rat v4" && units[1][10] == "UBERON:0003881", "new fields read");
+        units[0][8] = QStringLiteral("cerebral cortex");                        // set one on unit 2
+        units[1][9] = QString();                                               // clear one on unit 3
+        ParameterYamlWriter w;
+        w.setBaseDocument(up);
+        w.setUnitsInformation(units);
+        report(w.writeTofile(up), "units written");
+        const YAML::Node d = YAML::LoadFile(up.toStdString());
+        report(str(d["units"][0]["division"]) == "cerebral cortex" && !d["units"][0]["region"],
+               "a set field is written, an empty one is not added");
+        report(!d["units"][1]["atlas"] && str(d["units"][1]["regionId"]) == "UBERON:0003881",
+               "a cleared field is removed, the others kept");
+        QMap<int,QStringList> seven;                                           // a 7-column row (older callers)
+        seven.insert(0, QStringList{"2", "4", "DG", "", "", "", ""});
+        w.setBaseDocument(up);
+        w.setUnitsInformation(seven);
+        report(w.writeTofile(up) && str(YAML::LoadFile(up.toStdString())["units"][0]["structure"]) == "DG",
+               "seven-column rows still accepted");
+    }
+
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

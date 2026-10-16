@@ -605,6 +605,14 @@ void ParameterYamlWriter::setUnitsInformation(const QMap<int,QStringList>& units
         u["isolationDistance"] = strNode(row[4]);
         u["quality"]           = strNode(row[5]);
         u["notes"]             = strNode(row[6]);
+        // region, division, atlas, regionId: written when set, so a table that
+        // never used them keeps its units as they were.
+        static const char* const kLater[] = {"region", "division", "atlas", "regionId"};
+        for (int k = 0; k < 4; ++k) {
+            const QString v = row.size() > 7 + k ? row[7 + k] : QString();
+            if (!v.isEmpty()) u[kLater[k]] = strNode(v);
+            else if (u[kLater[k]]) u.remove(kLater[k]);
+        }
         seq.push_back(u);
     }
     doc["units"] = seq;

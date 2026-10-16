@@ -224,15 +224,19 @@ Double-click a cluster button to open a color picker. Colors last for the sessio
 
 ### Cluster information panel
 
-**Settings → Show Cluster Info** (or `Settings` menu toggle) expands each cluster button to show five user-editable metadata fields:
+**Settings → Show Cluster Info** (or `Settings` menu toggle) expands each cluster button to show the user-editable metadata fields (the non-empty ones, in this order):
 
 | Field | Description |
 |---|---|
 | **Structure** | Brain region or anatomical label (e.g. `CA1`, `DG`) |
-| **Type** | Unit type (e.g. `p`, `i` for pyramidal/interneuron) |
-| **ID** | Free-form identifier |
+| **Type** | Putative cell type (e.g. `pyramidal`, `interneuron`) |
+| **Isolation distance** | Cluster isolation distance |
 | **Quality** | Sorting quality rating (e.g. `1`, `2`, `3`) |
 | **Notes** | Free-form text |
+| **Region** | The named region (e.g. `hippocampal formation`) |
+| **Division** | The broad division (e.g. `archicortex`, `cerebral cortex`, `thalamus`, `cerebellum`) |
+| **Atlas** | The reference atlas the terms come from (e.g. Waxholm Space rat atlas v4, Allen CCF) |
+| **Region ID** | A stable identifier of the finest term (an atlas structure ID or an `UBERON:` ID) |
 
 Double-click a cluster button (when the info panel is visible) to edit any field via a dialog. The fields are saved with the clustering, in its own file beside the `.clu` ([`.cli.<method>.N`](../ndmanager-plugins/formats/cli.md)), and read back when it is opened. Klusters does not write the session YAML's `units` table: that is the record of finished curation, filled from these files in ndManager with **Actions ▸ Record Curated Units…**.
 
