@@ -38,8 +38,11 @@ ChannelOffsetsPage::ChannelOffsetsPage(QWidget* parent)
 ChannelOffsetsPage::~ChannelOffsetsPage(){}
 
 void ChannelOffsetsPage::getOffsets(QMap<int,int>& offsets){
-    for(int i =0; i<nbChannels;++i){
-        offsets.insert(i,offsetTable->item(i,0)->text().toInt());
+    // A cell setOffsets never filled (the session lists no offset for that
+    // channel, or none at all) is null: it is the default offset, 0.
+    for(int i =0; i<nbChannels && i<offsetTable->rowCount();++i){
+        const QTableWidgetItem* cell = offsetTable->item(i,0);
+        offsets.insert(i,cell ? cell->text().toInt() : 0);
     }
 }
 
