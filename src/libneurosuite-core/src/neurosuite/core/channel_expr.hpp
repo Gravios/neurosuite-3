@@ -181,7 +181,8 @@ private:
     bool err(const std::string& m, bool col = true) { msg_ = m; col_ = col; return false; }
     void skip() { while (p_ < s_.size() && isBlank(s_[p_])) ++p_; }
     bool peek(char c) { skip(); return p_ < s_.size() && s_[p_] == c; }
-    void emit(ChannelExpr::Op op, int chan = -1, double num = 0.0) {
+    // Not named emit: Qt defines emit as an empty macro, and Qt files include this.
+    void push(ChannelExpr::Op op, int chan = -1, double num = 0.0) {
         out_.code.push_back({op, chan, num});
         if (op == ChannelExpr::Op::Num || op == ChannelExpr::Op::Chan) {
             if (++sp_ > out_.depth) out_.depth = sp_;
@@ -195,7 +196,7 @@ private:
         while (peek('+') || peek('-')) {
             const char op = s_[p_++];
             if (!term()) return false;
-            emit(op == '+' ? ChannelExpr::Op::Add : ChannelExpr::Op::Sub);
+            push(op == '+' ? ChannelExpr::Op::Add : ChannelExpr::Op::Sub);
         }
         return true;
     }
@@ -204,7 +205,7 @@ private:
         while (peek('*') || peek('/')) {
             const char op = s_[p_++];
             if (!unary()) return false;
-            emit(op == '*' ? ChannelExpr::Op::Mul : ChannelExpr::Op::Div);
+            push(op == '*' ? ChannelExpr::Op::Mul : ChannelExpr::Op::Div);
         }
         return true;
     }
@@ -213,7 +214,7 @@ private:
     bool unary() {
         struct Nest { int& n; explicit Nest(int& x) : n(x) { ++n; } ~Nest() { --n; } } nest(nest_);
         if (nest_ > ChannelExpr::kMaxNest) return err("is nested too deeply", false);
-        if (peek('-')) { ++p_; if (!unary()) return false; emit(ChannelExpr::Op::Neg); return true; }
+        if (peek('-')) { ++p_; if (!unary()) return false; push(ChannelExpr::Op::Neg); return true; }
         if (peek('+')) { ++p_; return unary(); }
         return power();
     }
@@ -222,7 +223,7 @@ private:
         if (peek('^')) {
             ++p_;
             if (!unary()) return false;          // right-associative: 2^3^2 = 2^(3^2)
-            emit(ChannelExpr::Op::Pow);
+            push(ChannelExpr::Op::Pow);
         }
         return true;
     }
@@ -249,7 +250,7 @@ private:
             if (p_ == start) { p_ = start - 1; return err("has a 'c' without a channel number"); }
             const int ch = static_cast<int>(v);
             if (ch > out_.maxChan) out_.maxChan = ch;
-            emit(ChannelExpr::Op::Chan, ch);
+            push(ChannelExpr::Op::Chan, ch);
             return true;
         }
         if (isDigit(c) || c == '.') {
@@ -277,7 +278,7 @@ private:
                 p_ = start;
                 return err("has a number that cannot be read");
             }
-            emit(ChannelExpr::Op::Num, -1, value);
+            push(ChannelExpr::Op::Num, -1, value);
             // "2c1": a number followed directly by a channel or '(' is not a product.
             skip();
             if (p_ < s_.size() && (s_[p_] == 'c' || s_[p_] == 'C' || s_[p_] == '('))
