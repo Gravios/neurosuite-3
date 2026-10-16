@@ -48,6 +48,7 @@
 #include "process_reextractspikes_stderiv.h"
 #include "sdiff_pairs.h"      // shared SDIFF_CUSTOM pair-pattern parser
 #include <neurosuite/core/spike_extract.hpp>   // detectStderivSeeding (header-only)
+#include <neurosuite/core/stderiv_transform.hpp>   // the one spatial derivative
 
 #include <algorithm>
 #include <cerrno>
@@ -81,8 +82,8 @@ static const char *programVersion =
     "process_reextractspikes_stderiv 1.0 (2026-04)";
 
 // =========================================================================
-// Spatial derivative at a single (time-sample, group-channel) position.
-// Ported from process_extractspikes_stderiv::computeSDiff, plus SDIFF_CUSTOM.
+// Spatial derivative: neurosuite::core::spatialDerivBy (stderiv_transform.hpp),
+// the definition every tool shares; see sdiffRec below.
 // =========================================================================
 static std::vector<std::vector<int> > g_custom_partner;   // one map per group; set from -P
 
@@ -113,57 +114,64 @@ static const neurosuite::core::ChannelExprSet* groupExpr(int g)
            ? &g_custom_expr[g] : nullptr;
 }
 
-static double computeSDiff(const int16_t *rec,
-                            const int     *chanList,
-                            int ci, int nChanGrp,
-                            SdiffOrder order,
-                            int g)
+// sdiffRec casts the -d order to core's enum: the values must stay the same.
+static_assert((int)SDIFF_NONE == (int)neurosuite::core::SdiffOrder::None &&
+              (int)SDIFF_FIRST == (int)neurosuite::core::SdiffOrder::First &&
+              (int)SDIFF_LAPLACIAN == (int)neurosuite::core::SdiffOrder::Laplacian &&
+              (int)SDIFF_ALLPAIRS == (int)neurosuite::core::SdiffOrder::AllPairs &&
+              (int)SDIFF_CUSTOM == (int)neurosuite::core::SdiffOrder::Custom &&
+              (int)SDIFF_CUSTOM_CAR == (int)neurosuite::core::SdiffOrder::CustomCar &&
+              (int)SDIFF_EXPR == (int)neurosuite::core::SdiffOrder::Expr,
+              "SdiffOrder values must match neurosuite::core::SdiffOrder");
+
+// Group g's -P map in the form core::spatialDerivBy takes, built once by
+// buildGroupSdiff().  A field is null when the group has no map of that kind or
+// one that does not fit it; the transform then degrades to all-pairs, as in
+// process_extractspikes_stderiv.
+struct GroupSdiff {
+    const int* partner = nullptr;                            // order 4
+    vector<int> setOff, setMem;                              // order 5
+    const neurosuite::core::ChannelExprSet* expr = nullptr;  // order 6
+};
+static vector<GroupSdiff> g_group_sdiff;
+
+static void buildGroupSdiff(const vector<vector<int> >& chGroups)
 {
-    const std::vector<int>& customPartner = groupPartner(g);
-    const double val = rec[chanList[ci]];
-    switch (order) {
-    case SDIFF_NONE:
-        return val;
-    case SDIFF_FIRST:
-        return (ci < nChanGrp - 1)
-               ? val - rec[chanList[ci + 1]]
-               : val - rec[chanList[ci - 1]];
-    case SDIFF_LAPLACIAN:
-        if (nChanGrp == 1)           return val;
-        if (ci == 0)                 return val - rec[chanList[1]];
-        if (ci == nChanGrp - 1)      return val - rec[chanList[nChanGrp - 2]];
-        return val - 0.5 * (rec[chanList[ci - 1]] + rec[chanList[ci + 1]]);
-    case SDIFF_CUSTOM:
-        if (nChanGrp > 1 && (int)customPartner.size() == nChanGrp)
-            return val - rec[chanList[customPartner[ci]]];
-        [[fallthrough]];
-    case SDIFF_CUSTOM_CAR: {
-        // Byte-identical to process_extractspikes_stderiv's SDIFF_CUSTOM_CAR,
-        // including its fall-through to all-pairs when the map does not fit.
-        const std::vector<std::vector<int> >& sets = groupSets(g);
-        if (order == SDIFF_CUSTOM_CAR && nChanGrp > 1 && (int)sets.size() == nChanGrp
-            && !sets[ci].empty()) {
-            double sum = 0.0;
-            for (size_t k = 0; k < sets[ci].size(); ++k) sum += rec[chanList[sets[ci][k]]];
-            return val - sum / (double)sets[ci].size();
+    g_group_sdiff.assign(chGroups.size(), GroupSdiff());
+    for (size_t g = 0; g < chGroups.size(); ++g) {
+        const int nCG = (int)chGroups[g].size();
+        GroupSdiff& m = g_group_sdiff[g];
+        if (nCG > 1 && (int)groupPartner((int)g).size() == nCG) m.partner = groupPartner((int)g).data();
+        const vector<vector<int> >& sets = groupSets((int)g);
+        if (nCG > 1 && (int)sets.size() == nCG) {
+            m.setOff.push_back(0);
+            for (const vector<int>& set : sets) {
+                m.setMem.insert(m.setMem.end(), set.begin(), set.end());
+                m.setOff.push_back((int)m.setMem.size());
+            }
+            if (m.setMem.empty()) m.setOff.clear();
         }
-        [[fallthrough]];
+        m.expr = groupExpr((int)g);
     }
-    case SDIFF_EXPR: {
-        // Same as process_extractspikes_stderiv's SDIFF_EXPR.
-        const neurosuite::core::ChannelExprSet* ex = groupExpr(g);
-        if (order == SDIFF_EXPR && ex && nChanGrp > 1 && ex->fits(nChanGrp))
-            return ex->eval(ci, [&](int i) { return (double)rec[chanList[i]]; });
-        [[fallthrough]];
-    }
-    case SDIFF_ALLPAIRS:
-    default: {
-        if (nChanGrp == 1) return 0.0;
-        double s = 0.0;
-        for (int j = 0; j < nChanGrp; ++j) s += rec[chanList[j]];
-        return (double)nChanGrp * val - s;
-    }
-    }
+}
+
+// Group g's map (an empty one for a group without).
+static const GroupSdiff& groupMap(int g)
+{
+    static const GroupSdiff none;
+    return (g >= 0 && g < (int)g_group_sdiff.size()) ? g_group_sdiff[(size_t)g] : none;
+}
+
+// Spatial derivative of channel ci of a group, read straight from an
+// interleaved record (chans = the group's channels): neurosuite::core's.
+static inline double sdiffRec(SdiffOrder order, const int16_t *rec, const int *chans,
+                              int ci, int nCG, const GroupSdiff& m)
+{
+    return neurosuite::core::spatialDerivBy(
+        static_cast<neurosuite::core::SdiffOrder>(order),
+        [rec, chans](int j) { return rec[chans[j]]; }, ci, nCG, m.partner,
+        m.setOff.empty() ? nullptr : m.setOff.data(),
+        m.setMem.empty() ? nullptr : m.setMem.data(), m.expr);
 }
 
 // Saturating round to int16, as process_extractspikes_stderiv's
@@ -182,13 +190,12 @@ static inline int clamp16(double v)
 static inline double stderivAt(const int16_t *data,
                                 int64_t t, int nChanTot,
                                 const int *chans, int ci, int nChanGrp,
-                                SdiffOrder order,
-                                int g)
+                                SdiffOrder order, const GroupSdiff& m)
 {
     const int16_t *recT    = data + t       * nChanTot;
     const int16_t *recTm1  = data + (t - 1) * nChanTot;
-    return (double)clamp16((double)clamp16(computeSDiff(recT,   chans, ci, nChanGrp, order, g))
-                         - (double)clamp16(computeSDiff(recTm1, chans, ci, nChanGrp, order, g)));
+    return (double)clamp16((double)clamp16(sdiffRec(order, recT,   chans, ci, nChanGrp, m))
+                         - (double)clamp16(sdiffRec(order, recTm1, chans, ci, nChanGrp, m)));
 }
 
 // =========================================================================
@@ -249,8 +256,9 @@ static void computeThresholds(const int16_t *data,
         const int16_t *rec  = data + t * nChanTot;
         for (int g = 0; g < nG; ++g) {
             const int nCG = (int)chGroups[g].size();
+            const GroupSdiff &gm = groupMap(g);
             for (int ci = 0; ci < nCG; ++ci) {
-                const double v   = computeSDiff(rec, chGroups[g].data(), ci, nCG, order, g);
+                const double v   = sdiffRec(order, rec, chGroups[g].data(), ci, nCG, gm);
                 const int    sdi = clamp16(v);
                 if (keep) {
                     absSd[g][ci].push_back(std::fabs(v));
@@ -407,37 +415,19 @@ detectReferenceSeeding(const string &maskBase, int grp, const string &filPath,
     }
     std::fclose(fr); std::fclose(fs);
 
-    // The engine's own derivative (computeSDiff) in core terms.  A custom map
-    // that does not fit the group falls back to all-pairs in computeSDiff, so
-    // it does here too.
-    using CoreOrder = neurosuite::core::SdiffOrder;
-    CoreOrder co = static_cast<CoreOrder>((int)order);
-    const vector<int> &partner = groupPartner(g);
-    const vector<vector<int> > &sets = groupSets(g);
-    vector<int> setOff, setMem;
-    if (order == SDIFF_CUSTOM && !(nChan > 1 && (int)partner.size() == nChan))
-        co = CoreOrder::AllPairs;
-    if (order == SDIFF_CUSTOM_CAR) {
-        if (nChan > 1 && (int)sets.size() == nChan) {
-            setOff.push_back(0);
-            for (int ci = 0; ci < nChan; ++ci) {
-                setMem.insert(setMem.end(), sets[ci].begin(), sets[ci].end());
-                setOff.push_back((int)setMem.size());
-            }
-        } else co = CoreOrder::AllPairs;
-    }
-    const neurosuite::core::ChannelExprSet* ex = groupExpr(g);
-    if (order == SDIFF_EXPR && !(nChan > 1 && ex && ex->fits(nChan)))
-        co = CoreOrder::AllPairs;
+    // The engine's own derivative in core terms: the group's map, whose misfit
+    // rule (all-pairs) is core's.
+    const GroupSdiff& m = groupMap(g);
     neurosuite::core::SpikeWindowSpec spec;
     spec.nSamp = spikeLength; spec.peakSample = timeBeforeSpike;
     spec.totalNbChannels = nChanTot;
     spec.groupChannels = chans.data(); spec.nChan = nChan;
-    spec.applyTransform = true; spec.order = co;
-    spec.partner = (co == CoreOrder::Custom) ? partner.data() : nullptr;
-    spec.setOff  = setOff.empty() ? nullptr : setOff.data();
-    spec.setMem  = setMem.empty() ? nullptr : setMem.data();
-    spec.expr    = (co == CoreOrder::Expr) ? ex : nullptr;
+    spec.applyTransform = true;
+    spec.order   = static_cast<neurosuite::core::SdiffOrder>((int)order);
+    spec.partner = m.partner;
+    spec.setOff  = m.setOff.empty() ? nullptr : m.setOff.data();
+    spec.setMem  = m.setMem.empty() ? nullptr : m.setMem.data();
+    spec.expr    = m.expr;
     FILE *fil = std::fopen(filPath.c_str(), "rb");
     if (!fil) { why = "cannot open " + filPath; return StderivSeeding::Unknown; }
     const auto r = neurosuite::core::detectStderivSeeding(
@@ -552,6 +542,7 @@ int main(int argc, char **argv)
 
     vector<vector<int>> chGroups = splitGroups<int>(a.channelList, &asInt);
     const int nGroups = (int)chGroups.size();
+    buildGroupSdiff(chGroups);   // each group's -P map, for sdiffRec
     for (int g = 0; g < nGroups; ++g)
         for (int c : chGroups[g])
             if (c < 0 || c >= a.totalChannelNumber) {
@@ -685,6 +676,7 @@ int main(int argc, char **argv)
         const int refPer  = a.refractoryPeriod;
         const int64_t hw  = a.maskHalfWidth;
         const SdiffOrder ord = a.sdiffOrder;
+        const GroupSdiff &gm = groupMap(g);
 
         vector<int64_t> out;
         out.reserve((size_t)(nSamples / std::max(refPer, 1) + 1));
@@ -698,8 +690,7 @@ int main(int argc, char **argv)
 
             int hitCi = -1; bool hitNeg = false;
             for (int ci = 0; ci < nChanG; ++ci) {
-                const double v  = stderivAt(data, t, nChanT, chans.data(),
-                                             ci, nChanG, ord, g);
+                const double v  = stderivAt(data, t, nChanT, chans.data(), ci, nChanG, ord, gm);
                 if (std::fabs(v) >= std::fabs(tg[ci])) {
                     hitCi = ci; hitNeg = (v < 0.0); break;
                 }
@@ -708,22 +699,18 @@ int main(int argc, char **argv)
 
             // Local extremum on the stderiv signal.
             int64_t peakT = t;
-            double  peakV = stderivAt(data, t, nChanT, chans.data(),
-                                       hitCi, nChanG, ord, g);
+            double  peakV = stderivAt(data, t, nChanT, chans.data(), hitCi, nChanG, ord, gm);
             const int64_t pEnd = std::min<int64_t>(t + psl, nSamples);
             for (int64_t s = t + 1; s < pEnd; ++s) {
-                const double v = stderivAt(data, s, nChanT, chans.data(),
-                                            hitCi, nChanG, ord, g);
+                const double v = stderivAt(data, s, nChanT, chans.data(), hitCi, nChanG, ord, gm);
                 if ((hitNeg && v < peakV) || (!hitNeg && v > peakV)) {
                     peakV = v; peakT = s;
                 }
             }
             if (peakT <= 1 || peakT >= nSamples - 1) continue;
 
-            const double pb = stderivAt(data, peakT - 1, nChanT,
-                                         chans.data(), hitCi, nChanG, ord, g);
-            const double pa = stderivAt(data, peakT + 1, nChanT,
-                                         chans.data(), hitCi, nChanG, ord, g);
+            const double pb = stderivAt(data, peakT - 1, nChanT, chans.data(), hitCi, nChanG, ord, gm);
+            const double pa = stderivAt(data, peakT + 1, nChanT, chans.data(), hitCi, nChanG, ord, gm);
             if (!isRealPeak(peakV, pb, pa)) continue;
             if (std::fabs(peakV) < std::fabs(tg[hitCi])) continue;
 
@@ -756,8 +743,8 @@ int main(int argc, char **argv)
     // "green haze at the far right of cluster 5" symptom observed in
     // Klusters.
     //
-    // Reuse computeSDiff() (ported unchanged from extractspikes_stderiv)
-    // to keep the transform bit-identical between the two programs.
+    // The transform is core::spatialDerivBy (sdiffRec), as in
+    // process_extractspikes_stderiv, so the two write the same bytes.
     //
     // Sample 0's seed follows the reference .spk (-S): sd[-1] is the clamped
     // spatial derivative of the sample before the window (what
@@ -806,24 +793,17 @@ int main(int argc, char **argv)
             // .spkD layout exactly.
             vector<int16_t> sdWav(wLen);
             vector<int16_t> buf(wLen);
+            const GroupSdiff &gmW = groupMap(g);
             for (int64_t ts : res) {
                 const int64_t start = ts - a.timeBeforeSpike;
 
                 // Step 1 — spatial derivative per sample.
-                // computeSDiff takes a frame pointer and a chanList of
-                // full-probe channel indices; it returns the sdiff value
-                // for channel `ci` within the group.
                 for (int s = 0; s < a.spikeLength; ++s) {
                     const int16_t *frame =
                         data + (int64_t)(start + s) * a.totalChannelNumber;
-                    for (int ci = 0; ci < nChanG; ++ci) {
-                        double sd = computeSDiff(frame, chans.data(),
-                                                  ci, nChanG, a.sdiffOrder, g);
-                        int iv = (int)std::llround(sd);
-                        if (iv >  32767) iv =  32767;
-                        if (iv < -32768) iv = -32768;
-                        sdWav[(size_t)s * nChanG + ci] = (int16_t)iv;
-                    }
+                    for (int ci = 0; ci < nChanG; ++ci)
+                        sdWav[(size_t)s * nChanG + ci] = neurosuite::core::clampToInt16(
+                            sdiffRec(a.sdiffOrder, frame, chans.data(), ci, nChanG, gmW));
                 }
 
                 // Step 2 — temporal first-difference, in-place into buf[].
@@ -838,13 +818,9 @@ int main(int argc, char **argv)
                     if (seedPrev && start >= 1) {
                         const int16_t *frame =
                             data + (int64_t)(start - 1) * a.totalChannelNumber;
-                        for (int ci = 0; ci < nChanG; ++ci) {
-                            int iv = (int)std::llround(computeSDiff(frame, chans.data(),
-                                                       ci, nChanG, a.sdiffOrder, g));
-                            if (iv >  32767) iv =  32767;
-                            if (iv < -32768) iv = -32768;
-                            prev[(size_t)ci] = (int16_t)iv;
-                        }
+                        for (int ci = 0; ci < nChanG; ++ci)
+                            prev[(size_t)ci] = neurosuite::core::clampToInt16(
+                                sdiffRec(a.sdiffOrder, frame, chans.data(), ci, nChanG, gmW));
                     }
                     for (int s = 0; s < a.spikeLength; ++s) {
                         int16_t       *dst = buf.data()   + (size_t)s * nChanG;
