@@ -5,7 +5,7 @@
 # NS_BUILD_TESTS=ON; run with `ctest` from the build directory.
 # =============================================================================
 add_executable(core_test_custody_conformance custody_conformance_test.cpp)
-target_compile_features(core_test_custody_conformance PRIVATE cxx_std_17)
+target_compile_features(core_test_custody_conformance PRIVATE cxx_std_20)
 target_include_directories(core_test_custody_conformance
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_custody_conformance
@@ -18,14 +18,14 @@ add_test(NAME core_test_custody_conformance
 # Expression form of a custom spatial pattern (channel_expr.hpp, order 6):
 # header-only; run against the cross-language vectors (fiber-kit ships a copy).
 add_executable(core_test_sdiff_expr sdiff_expr_test.cpp)
-target_compile_features(core_test_sdiff_expr PRIVATE cxx_std_17)
+target_compile_features(core_test_sdiff_expr PRIVATE cxx_std_20)
 target_include_directories(core_test_sdiff_expr
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_sdiff_expr
          COMMAND core_test_sdiff_expr "${CMAKE_CURRENT_SOURCE_DIR}/sdiff_expr_vectors.tsv")
 
 add_executable(core_test_neurofileio_spk neurofileio_spk_test.cpp)
-target_compile_features(core_test_neurofileio_spk PRIVATE cxx_std_17)
+target_compile_features(core_test_neurofileio_spk PRIVATE cxx_std_20)
 target_include_directories(core_test_neurofileio_spk
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_link_libraries(core_test_neurofileio_spk PRIVATE Neurosuite::core)
@@ -34,7 +34,7 @@ add_test(NAME core_test_neurofileio_spk COMMAND core_test_neurofileio_spk)
 # Two-component collision-apply engine (decollide.hpp) — header-only, so no link
 # (mirrors the custody conformance test).  The noise-free linear case is exact.
 add_executable(core_test_decollide decollide_test.cpp)
-target_compile_features(core_test_decollide PRIVATE cxx_std_17)
+target_compile_features(core_test_decollide PRIVATE cxx_std_20)
 target_include_directories(core_test_decollide
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_decollide COMMAND core_test_decollide)
@@ -43,7 +43,7 @@ add_test(NAME core_test_decollide COMMAND core_test_decollide)
 # registry.  Header-only, but links the library for the writeEap/writeTcl +
 # readEap/readTcl persistence round-trip.
 add_executable(core_test_templateclass templateclass_test.cpp)
-target_compile_features(core_test_templateclass PRIVATE cxx_std_17)
+target_compile_features(core_test_templateclass PRIVATE cxx_std_20)
 target_include_directories(core_test_templateclass
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_link_libraries(core_test_templateclass PRIVATE Neurosuite::core)
@@ -53,7 +53,7 @@ add_test(NAME core_test_templateclass COMMAND core_test_templateclass)
 # membership matrix via .tcl provenance.  Header-only, links the library for the
 # growEap/writeEap/writeTcl + readEap/readTcl persistence round-trip.
 add_executable(core_test_decollide_eap decollide_eap_test.cpp)
-target_compile_features(core_test_decollide_eap PRIVATE cxx_std_17)
+target_compile_features(core_test_decollide_eap PRIVATE cxx_std_20)
 target_include_directories(core_test_decollide_eap
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_link_libraries(core_test_decollide_eap PRIVATE Neurosuite::core)
@@ -64,7 +64,7 @@ add_test(NAME core_test_decollide_eap COMMAND core_test_decollide_eap)
 # edges, subsample stride, res-frame roll, rint->int16).  Header-only (the pure
 # core uses only neurofileio's inline structs), so no link.
 add_executable(core_test_template_generate template_generate_test.cpp)
-target_compile_features(core_test_template_generate PRIVATE cxx_std_17)
+target_compile_features(core_test_template_generate PRIVATE cxx_std_20)
 target_include_directories(core_test_template_generate
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_template_generate COMMAND core_test_template_generate)
@@ -73,7 +73,7 @@ add_test(NAME core_test_template_generate COMMAND core_test_template_generate)
 # `parent` lineage column + the `collision` link kind — and v1/v2 back-compat.
 # Links the library (the readers/writers live in neurofileio.cpp).
 add_executable(core_test_wti wti_test.cpp)
-target_compile_features(core_test_wti PRIVATE cxx_std_17)
+target_compile_features(core_test_wti PRIVATE cxx_std_20)
 target_include_directories(core_test_wti
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_link_libraries(core_test_wti PRIVATE Neurosuite::core)
@@ -83,7 +83,7 @@ add_test(NAME core_test_wti COMMAND core_test_wti)
 # meanStdOfRecords + the EXACT weighted combine combineMeanStd.  Headline invariant:
 # combine(A,B) == summary(A∪B), which is why a node keeps no spikes.  Header-only.
 add_executable(core_test_running_stats running_stats_test.cpp)
-target_compile_features(core_test_running_stats PRIVATE cxx_std_17)
+target_compile_features(core_test_running_stats PRIVATE cxx_std_20)
 target_include_directories(core_test_running_stats
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_running_stats COMMAND core_test_running_stats)
@@ -92,7 +92,7 @@ add_test(NAME core_test_running_stats COMMAND core_test_running_stats)
 # are seeded with the spatial derivative of the sample before them (stderivSeed),
 # for every spatial order, across read-buffer boundaries.  Header-only.
 add_executable(core_test_spike_extract spike_extract_test.cpp)
-target_compile_features(core_test_spike_extract PRIVATE cxx_std_17)
+target_compile_features(core_test_spike_extract PRIVATE cxx_std_20)
 target_include_directories(core_test_spike_extract
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_spike_extract COMMAND core_test_spike_extract)
@@ -101,7 +101,7 @@ add_test(NAME core_test_spike_extract COMMAND core_test_spike_extract)
 # helpers): the per-node curator lineage (v2 running mean/std/count).  Links the
 # library (the readers/writers live in neurofileio.cpp), like the .spk test.
 add_executable(core_test_wtl wtl_test.cpp)
-target_compile_features(core_test_wtl PRIVATE cxx_std_17)
+target_compile_features(core_test_wtl PRIVATE cxx_std_20)
 target_include_directories(core_test_wtl
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_link_libraries(core_test_wtl PRIVATE Neurosuite::core)
@@ -112,7 +112,7 @@ add_test(NAME core_test_wtl COMMAND core_test_wtl)
 # binning), with the kind->link mapping, parent row indices and empty placeholders.
 # Header-only (uses only the inline median primitives + neurofileio structs), no link.
 add_executable(core_test_template_lineage template_lineage_test.cpp)
-target_compile_features(core_test_template_lineage PRIVATE cxx_std_17)
+target_compile_features(core_test_template_lineage PRIVATE cxx_std_20)
 target_include_directories(core_test_template_lineage
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_template_lineage COMMAND core_test_template_lineage)
@@ -121,7 +121,7 @@ add_test(NAME core_test_template_lineage COMMAND core_test_template_lineage)
 # persist a .wtl forest + render it to .wti (v2) + per-variant .wtf on a synthetic
 # session.  Links the library (the readers/writers live in neurofileio.cpp).
 add_executable(core_test_template_lineage_io template_lineage_io_test.cpp)
-target_compile_features(core_test_template_lineage_io PRIVATE cxx_std_17)
+target_compile_features(core_test_template_lineage_io PRIVATE cxx_std_20)
 target_include_directories(core_test_template_lineage_io
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_link_libraries(core_test_template_lineage_io PRIVATE Neurosuite::core)
@@ -132,7 +132,7 @@ add_test(NAME core_test_template_lineage_io COMMAND core_test_template_lineage_i
 # and the re-bin of pooled drift spikes onto a new grain (leaf re-parenting,
 # placeholders).  Header-only (neurofileio structs only), so no link.
 add_executable(core_test_drift_partition drift_partition_test.cpp)
-target_compile_features(core_test_drift_partition PRIVATE cxx_std_17)
+target_compile_features(core_test_drift_partition PRIVATE cxx_std_20)
 target_include_directories(core_test_drift_partition
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_drift_partition COMMAND core_test_drift_partition)
@@ -141,7 +141,7 @@ add_test(NAME core_test_drift_partition COMMAND core_test_drift_partition)
 # resolution, the union of a class's .wti drift windows, interval merge + the
 # in-scope test.  Header-only (builds the structs directly), so no link.
 add_executable(core_test_projectionscope projectionscope_test.cpp)
-target_compile_features(core_test_projectionscope PRIVATE cxx_std_17)
+target_compile_features(core_test_projectionscope PRIVATE cxx_std_20)
 target_include_directories(core_test_projectionscope
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_projectionscope COMMAND core_test_projectionscope)
@@ -150,7 +150,7 @@ add_test(NAME core_test_projectionscope COMMAND core_test_projectionscope)
 # .res text-vs-binary detection + consistency, truncated and crafted headers,
 # zero-spike files, malformed .tcl registries.  Links the library.
 add_executable(core_test_neurofileio_robust neurofileio_robust_test.cpp)
-target_compile_features(core_test_neurofileio_robust PRIVATE cxx_std_17)
+target_compile_features(core_test_neurofileio_robust PRIVATE cxx_std_20)
 target_include_directories(core_test_neurofileio_robust
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_link_libraries(core_test_neurofileio_robust PRIVATE Neurosuite::core)
@@ -160,7 +160,7 @@ add_test(NAME core_test_neurofileio_robust COMMAND core_test_neurofileio_robust)
 # its spatialOrder/hasTemporalDiff/methodTag helpers against the shared table; the
 # fiber-kit Python mirror runs an identical copy so the cross-repo enum cannot drift.
 add_executable(core_test_pca_method_conformance pca_method_conformance_test.cpp)
-target_compile_features(core_test_pca_method_conformance PRIVATE cxx_std_17)
+target_compile_features(core_test_pca_method_conformance PRIVATE cxx_std_20)
 target_include_directories(core_test_pca_method_conformance
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_pca_method_conformance

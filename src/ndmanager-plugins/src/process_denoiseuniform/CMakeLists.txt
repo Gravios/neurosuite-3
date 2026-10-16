@@ -2,7 +2,7 @@ find_package(OpenMP)
 
 add_executable(process_denoiseuniform
     process_denoiseuniform.cpp)
-target_compile_features(process_denoiseuniform PRIVATE cxx_std_17)
+target_compile_features(process_denoiseuniform PRIVATE cxx_std_20)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(process_denoiseuniform PRIVATE OpenMP::OpenMP_CXX)

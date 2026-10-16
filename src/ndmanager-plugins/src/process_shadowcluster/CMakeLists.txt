@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 add_executable(process_shadowcluster process_shadowcluster.cpp)
-target_compile_features(process_shadowcluster PRIVATE cxx_std_17)
+target_compile_features(process_shadowcluster PRIVATE cxx_std_20)
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)

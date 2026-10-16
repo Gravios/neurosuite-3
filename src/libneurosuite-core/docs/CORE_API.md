@@ -52,7 +52,7 @@ Build order (root `CMakeLists.txt`, see [BUILD.md §5](../../../doc/BUILD.md#5-t
 | Link hardening (GCC/Clang, non-Apple) | `-Wl,--fatal-warnings -Wl,--no-undefined` | same |
 | Dependencies | none beyond the standard library (`<filesystem>` is used by `custody.hpp`) | — |
 
-The headers themselves are written to compile as C++17: the plugins build with `cxx_std_17` and include them, and `pca_projection.hpp` states that constraint explicitly. Do not use C++20-only features in any header.
+Everything that includes these headers — the library, its tests, the plugins and the apps — is built as C++20, the one standard for the tree ([STANDARDIZATION.md](../../../doc/dev/STANDARDIZATION.md) §2.9). Targets that declare a compile feature declare `cxx_std_20`.
 
 **Export macro.** `neurosuite_core_export.h` defines `NEUROSUITE_CORE_EXPORT` without any Qt dependency:
 
@@ -301,7 +301,7 @@ Namespace `neurofileio`. The only compiled part of the library; every out-of-lin
 
 ### 3.6 `pca_projection.hpp` — PCAE basis I/O and projection
 
-Namespace `neurosuite::core`. Header-only, std only, kept C++17-clean. The `.pca` basis file is **not** a `neurofileio` format; this header owns it.
+Namespace `neurosuite::core`. Header-only, std only. The `.pca` basis file is **not** a `neurofileio` format; this header owns it.
 
 ```cpp
 enum class SdiffOrder : int32_t { None = 0, First = 1, Laplacian = 2, AllPairs = 3, Custom = 4, CustomCar = 5 };
@@ -598,7 +598,7 @@ Adding a new column to a table changes every reader in both repositories, which 
 
 **Adding a header.**
 
-1. Create `src/libneurosuite-core/src/neurosuite/core/<name>.hpp` with an include guard (`NEUROSUITE_CORE_<NAME>_HPP`) or `#pragma once`, code in `namespace neurosuite { namespace <area> { … } }`, and only standard-library, `neurosuite/core/…` includes. Keep it C++17-clean.
+1. Create `src/libneurosuite-core/src/neurosuite/core/<name>.hpp` with an include guard (`NEUROSUITE_CORE_<NAME>_HPP`) or `#pragma once`, code in `namespace neurosuite { namespace <area> { … } }`, and only standard-library, `neurosuite/core/…` includes.
 2. Header-only is the default (`inline` free functions, no globals). If it needs compiled code, add the `.cpp` to `_core_srcs` and mark every out-of-line declaration `NEUROSUITE_CORE_EXPORT` (hidden visibility is the default).
 3. Put it in `src/neurosuite/core/`; the directory install picks up every `.h`/`.hpp` there.
 4. Write the file comment: what it is, who uses it, its twins.
@@ -612,7 +612,7 @@ Adding a new column to a table changes every reader in both repositories, which 
 
    ```cmake
    add_executable(core_test_<name> <name>_test.cpp)
-   target_compile_features(core_test_<name> PRIVATE cxx_std_17)
+   target_compile_features(core_test_<name> PRIVATE cxx_std_20)
    target_include_directories(core_test_<name> PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
    target_link_libraries(core_test_<name> PRIVATE Neurosuite::core)   # only if neurofileio.cpp is needed
    add_test(NAME core_test_<name> COMMAND core_test_<name>)
@@ -641,7 +641,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | C8 | `projectionscope.hpp` / `decollide_eap.hpp` | `projectionscope::classForUnit` and `decollide::eapClassForUnit` are two copies of the same lookup in one library. |
 | C9 | `drift_partition.hpp` | `detail::timeOf` and `detail::medianTime` are unused anywhere in the repository. `regrainForest` flattens any deeper tree (a leaf's child is re-parented to the region root) and turns a non-drift root (`parent < 0`, kind not `drift*`) into a child of region 0. |
 | C10 | `custody.hpp` `staleAfterRealign` | Unused by any C++ code (only the Python mirror's `stale_after_realign` exists). |
-| C11 | `test/CMakeLists.txt` | The core tests ask for `cxx_std_17`, but `CMAKE_CXX_STANDARD 20` is set for the whole `libneurosuite-core` directory, so they compile as C++20 and do not prove the C++17 compatibility that `pca_projection.hpp` and the plugins rely on. |
+| C11 | `test/CMakeLists.txt` | **Resolved.** The core tests asked for `cxx_std_17` while the directory sets `CMAKE_CXX_STANDARD 20`, so they never proved the C++17 compatibility the docs claimed. Nothing needed C++17 (the plugins build as C++20 too), so the claim was dropped and the tests declare `cxx_std_20`; `build_invariants` keeps the tree on one standard. |
 
 **Found by the 2026-10-15 audit (all fixed)**
 

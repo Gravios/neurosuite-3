@@ -165,6 +165,47 @@ else()
     _no("nphys-data no longer LANGUAGES NONE")
 endif()
 
+# --- 8. one C++ standard: C++20 (STANDARDIZATION.md §2.9) -------------------
+# Every project root sets CMAKE_CXX_STANDARD 20, and no target asks for a
+# different cxx_std_NN.  process_smrconvert is an external package (§1) and the
+# vendored libsamplerate is never touched, so both are exempt.
+set(_std_offenders "")
+foreach(_root
+        "CMakeLists.txt"
+        "src/libneurosuite-core/CMakeLists.txt"
+        "src/libklustersshared/CMakeLists.txt"
+        "src/klusters/CMakeLists.txt"
+        "src/neuroscope/CMakeLists.txt"
+        "src/ndmanager/CMakeLists.txt"
+        "src/ndmanager-plugins/CMakeLists.txt"
+        "src/kiloklustakwik/CMakeLists.txt")
+    _slurp(_c "${REPO}/${_root}")
+    if(NOT _c MATCHES "set\\(CMAKE_CXX_STANDARD +20\\)")
+        list(APPEND _std_offenders "${_root}")
+    endif()
+endforeach()
+set(_feat_offenders "")
+foreach(_f ${_files})
+    if((_f MATCHES "CMakeLists\\.txt$" OR _f MATCHES "\\.cmake$")
+            AND NOT _f MATCHES "libsamplerate" AND NOT _f MATCHES "process_smrconvert")
+        file(READ "${_f}" _c)
+        if(_c MATCHES "cxx_std_(98|11|14|17|23|26)" OR _c MATCHES "CXX_STANDARD +(98|11|14|17|23|26)")
+            file(RELATIVE_PATH _rel "${REPO}" "${_f}")
+            list(APPEND _feat_offenders "${_rel}")
+        endif()
+    endif()
+endforeach()
+if(_std_offenders STREQUAL "" AND _feat_offenders STREQUAL "")
+    _ok("C++20 everywhere (CMAKE_CXX_STANDARD 20 at every root, no other cxx_std_NN)")
+else()
+    if(NOT _std_offenders STREQUAL "")
+        _no("CMAKE_CXX_STANDARD 20 missing in: ${_std_offenders}")
+    endif()
+    if(NOT _feat_offenders STREQUAL "")
+        _no("another C++ standard requested in: ${_feat_offenders}")
+    endif()
+endif()
+
 # --- result -----------------------------------------------------------------
 list(LENGTH _failed _n)
 if(_n GREATER 0)

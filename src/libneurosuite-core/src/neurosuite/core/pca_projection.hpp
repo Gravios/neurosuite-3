@@ -4,8 +4,8 @@
 //
 // Header-only and DEPENDENCY-FREE (std only; no Qt, no libneurosuite-core
 // linkage), like custody.hpp, so the Qt apps and the standalone ndmanager-plugins
-// binaries that do not link the core library can use it by #include alone.  Kept
-// C++17-clean because the plugin target compiles as cxx_std_17.
+// binaries that do not link the core library can use it by #include alone.  Like
+// the rest of the tree it is built as C++20 (doc/dev/STANDARDIZATION.md §2.9).
 //
 // This is the variance-neutral PCA-projection energy only.  The *policy* that
 // consumes it — per-spike argmax (klusters --pca-refine) vs global-mean argmax

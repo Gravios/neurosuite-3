@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 add_executable(process_reextractspikes_stderiv
     process_reextractspikes_stderiv.cpp
 )
-target_compile_features(process_reextractspikes_stderiv PRIVATE cxx_std_17)
+target_compile_features(process_reextractspikes_stderiv PRIVATE cxx_std_20)
 # Pull in the shared klustersshared headers (sdiff_pairs.h is header-only, so no
 # extra source is compiled — only the include directory is needed).
 # neurosuite/core/spike_extract.hpp (detectStderivSeeding) is header-only too.

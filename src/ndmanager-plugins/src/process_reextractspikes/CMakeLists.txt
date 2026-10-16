@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 add_executable(process_reextractspikes process_reextractspikes.cpp)
-target_compile_features(process_reextractspikes PRIVATE cxx_std_17)
+target_compile_features(process_reextractspikes PRIVATE cxx_std_20)
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)

@@ -1,4 +1,4 @@
 add_executable(process_extractchannels process_extractchannels.cpp)
-target_compile_features(process_extractchannels PRIVATE cxx_std_17)
+target_compile_features(process_extractchannels PRIVATE cxx_std_20)
 install(TARGETS process_extractchannels DESTINATION "${CMAKE_INSTALL_BINDIR}")
 add_manpage(process_extractchannels)

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 add_executable(process_drifttracker process_drifttracker.cpp)
-target_compile_features(process_drifttracker PRIVATE cxx_std_17)
+target_compile_features(process_drifttracker PRIVATE cxx_std_20)
 
 find_package(yaml-cpp REQUIRED)
 target_link_libraries(process_drifttracker PRIVATE yaml-cpp)

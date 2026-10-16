@@ -13,7 +13,7 @@ add_executable(process_extractspikes_sdiff
 target_include_directories(process_extractspikes_sdiff
     PRIVATE "${_klustersshared_dir}")
 
-target_compile_features(process_extractspikes_sdiff PRIVATE cxx_std_17)
+target_compile_features(process_extractspikes_sdiff PRIVATE cxx_std_20)
 
 # Enable OpenMP if available (parallel group processing).
 find_package(OpenMP)

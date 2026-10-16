@@ -16,7 +16,7 @@ target_include_directories(process_pca
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${_klustersshared_dir}")
-target_compile_features(process_pca PRIVATE cxx_std_17)
+target_compile_features(process_pca PRIVATE cxx_std_20)
 target_link_libraries(process_pca PRIVATE GSL::gsl GSL::gslcblas)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(process_pca PRIVATE OpenMP::OpenMP_CXX)

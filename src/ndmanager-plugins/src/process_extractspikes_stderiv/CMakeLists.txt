@@ -12,7 +12,7 @@ add_executable(process_extractspikes_stderiv
 )
 target_include_directories(process_extractspikes_stderiv
     PRIVATE "${_klustersshared_dir}")
-target_compile_features(process_extractspikes_stderiv PRIVATE cxx_std_17)
+target_compile_features(process_extractspikes_stderiv PRIVATE cxx_std_20)
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)

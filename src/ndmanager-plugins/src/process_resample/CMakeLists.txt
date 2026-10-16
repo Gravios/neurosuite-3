@@ -67,7 +67,7 @@ endif()
 find_package(OpenMP)
 
 add_executable(process_resample process_resample.cpp)
-target_compile_features(process_resample PRIVATE cxx_std_17)
+target_compile_features(process_resample PRIVATE cxx_std_20)
 target_compile_options(process_resample PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
         -O3 -ffast-math -funroll-loops>)

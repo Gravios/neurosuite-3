@@ -1,4 +1,4 @@
 add_executable(process_removeartefacts process_removeartefacts.cpp)
-target_compile_features(process_removeartefacts PRIVATE cxx_std_17)
+target_compile_features(process_removeartefacts PRIVATE cxx_std_20)
 install(TARGETS process_removeartefacts DESTINATION "${CMAKE_INSTALL_BINDIR}")
 add_manpage(process_removeartefacts)

@@ -12,7 +12,7 @@ add_executable(process_reassignspikes
 )
 target_include_directories(process_reassignspikes
     PRIVATE "${_klustersshared_dir}")
-target_compile_features(process_reassignspikes PRIVATE cxx_std_17)
+target_compile_features(process_reassignspikes PRIVATE cxx_std_20)
 
 # YAML parameter file (geometry, sampling rate), as in process_drifttracker.
 find_package(yaml-cpp REQUIRED)

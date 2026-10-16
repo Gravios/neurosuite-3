@@ -8,8 +8,8 @@ KiloKlustaKwik performs automatic spike sorting via Classification EM (CEM). It 
 
 | Dependency | Purpose | Required |
 |---|---|---|
-| C++17 compiler | Build | Yes |
-| CMake ≥ 3.21 | Build | Yes |
+| C++20 compiler | Build | Yes |
+| CMake ≥ 3.22 | Build | Yes |
 | OpenMP | Parallel chunk processing and CPU fallback | Strongly recommended |
 | CUDA Toolkit ≥ 11 | NVIDIA GPU acceleration | Optional |
 | ROCm / HIP SDK ≥ 5.0 | AMD GPU acceleration | Optional |

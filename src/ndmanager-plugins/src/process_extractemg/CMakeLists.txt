@@ -136,7 +136,7 @@ list(APPEND _emg_srcs "${_klustersshared_dir}/progressbar.cpp")
 
 add_executable(process_extractemg ${_emg_srcs})
 target_include_directories(process_extractemg PRIVATE "${_klustersshared_dir}")
-target_compile_features(process_extractemg PRIVATE cxx_std_17)
+target_compile_features(process_extractemg PRIVATE cxx_std_20)
 target_compile_definitions(process_extractemg PRIVATE _USE_MATH_DEFINES)
 
 # =============================================================================

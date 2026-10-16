@@ -16,6 +16,6 @@ target_include_directories(process_nlxconvert
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${_klustersshared_dir}")
-target_compile_features(process_nlxconvert PRIVATE cxx_std_17)
+target_compile_features(process_nlxconvert PRIVATE cxx_std_20)
 install(TARGETS process_nlxconvert DESTINATION "${CMAKE_INSTALL_BINDIR}")
 add_manpage(process_nlxconvert)
