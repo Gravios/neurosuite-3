@@ -2138,7 +2138,9 @@ private:
      *  failure.  Previous behaviour swallowed errors via qWarning() which
      *  meant the user saw "save successful" but the on-disk file was
      *  unchanged when QFile::copy failed (e.g. NTFS permission issues). */
-    bool commitAndRenewPending(QString* outError = nullptr);
+    /** @p cluCommitted (when given) is set once the .clu itself is on disk, so a
+     *  caller can keep the .clc/.clp with it when a later file fails. */
+    bool commitAndRenewPending(QString* outError = nullptr, bool* cluCommitted = nullptr);
 
     /** Re-extract every spike of the current group from the raw .fil (or .dat)
      *  at its current .res/.fet timestamp and rewrite @p targetSpkPath, so the
@@ -2201,6 +2203,7 @@ private:
         std::vector<int32_t> clp;             ///< fiber of atom c at c-1 (writeClp)
         QString              clcPath, clpPath;///< targets: the session's, or Save As's new names
         bool                 movesSiblings = false; ///< Save As: the session's siblings become clcPath/clpPath
+        bool                 siblingsMoved = false; ///< set by saveDocument once docUrl moved; finishSave applies it
     };
     SavePlan savePlan;
 

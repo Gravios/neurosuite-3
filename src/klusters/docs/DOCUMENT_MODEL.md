@@ -423,15 +423,18 @@ hierarchy maps.  `int saveDocument(url, format)` then runs on the `SaveThread`
 and writes only that snapshot, so curation can continue during the save:
 
 1. optional re-extract of the `.spk` from the `.fil`;
-2. the `.clu` to the pending copy (or the real file when no pending set is
-   live), through a staged file and a rename;
+2. the `.clu` to the pending copy through a staged file and a rename (with no
+   pending set live, the real `.clu` is only staged here and renamed into place
+   at step 5);
 3. the `.clc`/`.clp` staged as `<path>.saving`;
 4. Save As: the new base name, group, method and parameter file are worked out,
    and the parameter file is checked writable before anything moves;
 5. `commitAndRenewPending()` copies each pending file beside its original and
    renames it over it;
-6. the staged `.clc`/`.clp` are renamed into place, each after a `.bak` copy;
-   Save As moves the session's sibling paths to the new names;
+6. the staged `.clc`/`.clp` are renamed into place, each after a `.bak` copy --
+   also when a file committed after the `.clu` failed, so they stay with it;
+   Save As moves the session's sibling paths to the new names (applied on the
+   GUI thread by `finishSave`);
 7. per-cluster user information to the YAML;
 8. `modified` is cleared only if no edit set it after the snapshot
    (`DirtyFlag::clearIfUnchanged`).

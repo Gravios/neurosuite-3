@@ -3916,6 +3916,9 @@ bool KlustersApp::queryClose()
     //implement to ask the user to save if necessary before closing
     if(doc == nullptr) return true;
     else{
+        // A save in flight owns the document's save snapshot; canCloseView may
+        // take a new one.  Let it finish first (as slotFileClose does).
+        while(!saveThread->wait()){};
         if(doc->canCloseView()){
             //Set a waiting cursor in case there is some delay to the ending of the running threads.
             QApplication::restoreOverrideCursor();
@@ -3959,6 +3962,10 @@ void KlustersApp::customEvent (QEvent* event){
         SaveThread::SaveDoneEvent* saveEvent = static_cast<SaveThread::SaveDoneEvent*>(event);
         // Drop the save snapshot; a failed save leaves the document modified.
         doc->finishSave(saveEvent->isSaveOk());
+        // A Save As can move the session and still fail at a later step; the
+        // title follows wherever the document now is.
+        if(saveEvent->isItSaveAs())
+            setWindowTitle(doc->documentName());
         if(saveEvent->isSaveOk()){
             // Saved, but with something the curator should know (e.g. a .clp left
             // as it was because the files disagree about the nesting).
@@ -3969,10 +3976,8 @@ void KlustersApp::customEvent (QEvent* event){
             //If the requested save location is remote, the temporary file needs now
             //to be uploaded. The save process is made in a thread and it seams that
             //the KDE upload can not be call asynchronously, so the upload is call after the end of the thread.
-            if(saveEvent->isItSaveAs()){
+            if(saveEvent->isItSaveAs())
                 mFileOpenRecent->addRecentFile(doc->url());
-                setWindowTitle(doc->documentName());
-            }
             // Persist the template-unit set next to the just-saved clustering and,
             // if any unit is marked, (re)write their .wtf from the saved files.
             // Deferred: run the generator off this event-handler stack.
@@ -4155,6 +4160,11 @@ bool KlustersApp::startSave(const QString& url, bool saveAs)
         slotStatusMsg(tr("Ready."));
         return false;
     }
+    // Synced feature-space copies belong to the old location; drop them here, on
+    // the GUI thread that reads them, before the save thread runs -- and only
+    // once the Save As is going ahead.
+    if (saveAs)
+        doc->discardSyncedFeatureSpaces();
     slotStateChanged("SavingState");
     saveThread->save(url, doc, saveAs);
     return true;
@@ -4186,9 +4196,6 @@ void KlustersApp::slotFileSaveAs()
     QString url=QFileDialog::getSaveFileName(this,tr("Save as…"),doc->url(),
                                              tr("All files (*.*)") );
     if(!url.isEmpty()){
-        // Synced feature-space copies belong to the old location; drop them
-        // here, on the GUI thread that reads them, before the save thread runs.
-        doc->discardSyncedFeatureSpaces();
         startSave(url, true);
     }
 }

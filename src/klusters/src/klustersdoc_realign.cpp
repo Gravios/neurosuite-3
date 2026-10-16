@@ -2461,8 +2461,9 @@ void KlustersDoc::removePendingFiles()
 }
 
 
-bool KlustersDoc::commitAndRenewPending(QString* outError)
+bool KlustersDoc::commitAndRenewPending(QString* outError, bool* cluCommitted)
 {
+    if (cluCommitted) *cluCommitted = pendingCluPath.isEmpty();   // nothing pending: the caller wrote it
     // Not running with pending files (the seed failed and initPendingFiles cleared the paths):
     // saveDocument wrote straight to the real .clu, so there is nothing to commit and reporting a
     // failure here would be spurious.
@@ -2553,7 +2554,9 @@ bool KlustersDoc::commitAndRenewPending(QString* outError)
     allOk &= copyOver(pendingSpkPath, origSpkPath, "spk");
     allOk &= copyOver(pendingResPath, origResPath, "res");
     allOk &= copyOver(pendingFetPath, origFetPath, "fet");
-    allOk &= copyOver(pendingCluPath, docUrl,      "clu");
+    const bool cluOk = copyOver(pendingCluPath, docUrl, "clu");
+    if (cluCommitted) *cluCommitted = cluOk;
+    allOk &= cluOk;
     // Other feature spaces synced this session (syncFeatureSpace): commit their
     // working copies too; they stay live, like the .clu space's.
     for (auto it = syncedPending.constBegin(); it != syncedPending.constEnd(); ++it)

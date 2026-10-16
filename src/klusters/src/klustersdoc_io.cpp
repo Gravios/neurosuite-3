@@ -690,6 +690,12 @@ std::vector<int32_t> labelsInSpikeOrder(const Data& d)
 } // namespace
 
 bool KlustersDoc::prepareSave(const QString& saveUrl){
+    // A finished Save As whose done-event has not been handled yet (a close
+    // right after it) still has a sibling move to apply.
+    if (savePlan.siblingsMoved) {
+        clcSiblingPath = savePlan.clcPath;
+        clpSiblingPath = savePlan.clpPath;
+    }
     savePlan = SavePlan();
     lastSaveErrorMessage.clear();
     lastSaveWarningMessage.clear();
@@ -804,6 +810,12 @@ void KlustersDoc::finishSave(bool ok){
         hierarchyfiles::discardStaged(localPath(savePlan.clcPath));
     if (savePlan.writeClp && !savePlan.clpPath.isEmpty())
         hierarchyfiles::discardStaged(localPath(savePlan.clpPath));
+    // A Save As that moved the session moves its siblings with it -- here, on the
+    // GUI thread that reads them, rather than on the SaveThread.
+    if (savePlan.siblingsMoved) {
+        clcSiblingPath = savePlan.clcPath;
+        clpSiblingPath = savePlan.clpPath;
+    }
     savePlan = SavePlan();
     if (!ok) modified = true;
 }
@@ -925,12 +937,20 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     //
     // Written through a staged file and a rename, so the real .clu (the target when
     // no pending set is live) is never left truncated by a crash or a full disk.
+    //
+    // Without a pending set that target IS the real file, so it is only staged
+    // here and installed at the commit point below, after the checks that can
+    // still refuse the save.
     const QString cluWritePath =
         (isSaveAs && pendingCluPath.isEmpty()) ? saveUrl : tmpCluFile;
+    const bool cluDirect = pendingCluPath.isEmpty();
     {
         std::string e;
-        if (!hierarchyfiles::writeIdFile(localPath(cluWritePath), savePlan.fiberCount,
-                                         savePlan.fiber, false, &e)) {
+        const bool written = cluDirect
+            ? hierarchyfiles::stageIdFile(localPath(cluWritePath), savePlan.fiberCount, savePlan.fiber, &e)
+            : hierarchyfiles::writeIdFile(localPath(cluWritePath), savePlan.fiberCount,
+                                          savePlan.fiber, false, &e);
+        if (!written) {
             // patch63 — say exactly what failed instead of a bare error code.
             lastSaveErrorMessage = QString(
                 "Cannot write the cluster file:\n%1\n\n%2\n\n"
@@ -953,10 +973,12 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // fail -- so a failed save left new .clc/.clp beside the old .clu.
     QString hierError;
     if (!stageHierarchySiblings(&hierError)) {
+        if (cluDirect) hierarchyfiles::discardStaged(localPath(cluWritePath));
         lastSaveErrorMessage = hierError;
         return SAVE_ERROR;
     }
-    auto discardSiblings = [this]{
+    auto discardSiblings = [this, cluDirect, cluWritePath]{
+        if (cluDirect) hierarchyfiles::discardStaged(localPath(cluWritePath));
         if (savePlan.writeClc) hierarchyfiles::discardStaged(localPath(savePlan.clcPath));
         if (savePlan.writeClp) hierarchyfiles::discardStaged(localPath(savePlan.clpPath));
     };
@@ -1034,6 +1056,21 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         origSpkPath = resolveFeature(newBase, "spk", electrodeGroupID, saMethod);
         origResPath = resolveFeatureAny(newBase, "res", electrodeGroupID, saMethod);
         origFetPath = resolveFeature(newBase, "fet", electrodeGroupID, saMethod);
+        // The siblings move with the session whatever happens next, so a later
+        // plain Save never writes this clustering's map into the old .clp.
+        // Applied by finishSave() on the GUI thread.
+        savePlan.siblingsMoved = savePlan.movesSiblings;
+    }
+    // The staged real .clu (no pending set) goes in first: the commit below then
+    // has nothing to do for it.
+    if (cluDirect) {
+        std::string e;
+        if (!hierarchyfiles::installStaged(localPath(cluWritePath), false, &e)) {
+            lastSaveErrorMessage = tr("Cannot replace the cluster file:\n%1\n\n%2")
+                                   .arg(cluWritePath, QString::fromStdString(e));
+            discardSiblings();
+            return SAVE_ERROR;
+        }
     }
     // patch63 — commitAndRenewPending now reports failure.  When the
     // pending → original copy fails (typical: NTFS/fuseblk permission
@@ -1042,20 +1079,24 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // check Klusters reported "save successful" while the on-disk file
     // was stale — extremely confusing.
     QString commitError;
-    if (!commitAndRenewPending(&commitError)) {
+    bool cluCommitted = false;
+    if (!commitAndRenewPending(&commitError, &cluCommitted)) {
         lastSaveErrorMessage = commitError;
-        discardSiblings();
+        // Once the .clu is on disk its .clc/.clp go with it, even though another
+        // file (a feature space committed after it) failed: discarding them
+        // would leave the new .clu beside the old siblings.
+        if (cluCommitted) {
+            QString e;
+            if (!installHierarchySiblings(&e))
+                lastSaveErrorMessage += QStringLiteral("\n\n") + e;
+        } else {
+            discardSiblings();
+        }
         return SAVE_ERROR;
     }
 
-    // The .clu is on disk: put its .clc/.clp beside it.  A Save As points the
-    // session at the new names even if this fails, so the next Save writes the
-    // triple there instead of into the old location's files.
+    // The .clu is on disk: put its .clc/.clp beside it.
     const bool siblingsOk = installHierarchySiblings(&hierError);
-    if (savePlan.movesSiblings) {
-        clcSiblingPath = savePlan.clcPath;
-        clpSiblingPath = savePlan.clpPath;
-    }
 
     // Save As may name another method (saMethod): the .clu now belongs to it,
     // and its pending copies were re-seeded by commitAndRenewPending.  Only
