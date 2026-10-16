@@ -25,7 +25,7 @@
  * template so the user has a working starter file to edit immediately.
  *
  * The data model still uses ProbeEntry from libklustersshared.  Anat/
- * spike group lists are computed by importProbeYaml from the probe
+ * spike group lists are computed by computeLayout from the probe
  * geometry on import or save; the inspector shows them read-only.
  *
  * Copyright (C) 2025–2026 neurosuite-3 contributors
@@ -38,6 +38,7 @@
 
 #include <QList>
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QWidget>
@@ -213,18 +214,28 @@ private:
      */
     QString copyProbeIntoSession(const QString& srcPath, int probeId);
 
-    /**
-     * Parse a .probe YAML, fill @p entry's anatomicalGroups/spikeGroups,
-     * and populate the channel-list maps.
-     */
-    bool importProbeYaml(const QString&        path,
-                         ProbeEntry&           entry,
-                         int                   nextGroupId,
-                         QMap<int,QList<int>>& outAnatomy,
-                         QMap<int,QList<int>>& outSpike);
-
-    /** totalChannels from a .probe YAML, or 0 on error. */
+    /** Channels a .probe file occupies from its offset (sites, or the
+     *  highest mapped channel + 1), or 0 when it cannot be read. */
     static int probeChannelCount(const QString& probePath);
+
+    /** Channel count of @p e's probe, or the span remembered for it when
+     *  its file cannot be read now. */
+    int probeSpan(const ProbeEntry& e) const;
+
+    /** Offset probe @p index gets when it follows the previous probe. */
+    int automaticOffset(int index) const;
+
+    /** On load: offsets that differ from the automatic value are the
+     *  user's (manualOffsetIds); remember each probe's span. */
+    void classifyOffsets();
+
+    /** Walk @p list assigning automatic offsets and building one group
+     *  per shank (plus a leftover anatomy group).  Returns false when a
+     *  probe file could not be read -- the layout is then incomplete. */
+    bool computeLayout(QList<ProbeEntry>&    list,
+                       QMap<int,QList<int>>& outAnatomy,
+                       QMap<int,QList<int>>& outSpike,
+                       QStringList&          warnings);
 
     // ── Data ─────────────────────────────────────────────────────────────
     QList<ProbeEntry> probes;
@@ -235,6 +246,10 @@ private:
     bool              loadingMaker = false;  ///< suppress save during programmatic load
     bool              makerHasProbe = false; ///< maker holds the current probe's file
     std::function<QString()> sessionFileProvider;  ///< document's current path
+    QSet<int>         manualOffsetIds;       ///< probe ids whose offset the user set
+    QMap<int,int>     knownSpan;             ///< probe id -> channels, last known
+    QMap<int,QList<int>> lastAnatomy;        ///< probe-derived groups last applied
+    QMap<int,QList<int>> lastSpike;
     QString           probeFilesDir;         ///< where the session's probe files are
 
     // ── UI ───────────────────────────────────────────────────────────────

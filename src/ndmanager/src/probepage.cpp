@@ -293,9 +293,10 @@ void ProbePage::buildUi()
     inspOffset = new QSpinBox;
     inspOffset->setRange(0, 100000);
     inspOffset->setToolTip(tr(
-        "First ADC channel from this probe.  "
-        "Auto-recomputed by Recalculate; manual edits override the "
-        "stack-from-zero default."));
+        "First recording channel of this probe (absolute).  By default it "
+        "follows the previous probe (its offset + its channel count); a "
+        "value you type is kept.  Type the automatic value to make it "
+        "follow again."));
 
     inspForm->addRow(tr("Label:"),          inspLabel);
     inspForm->addRow(tr("Probe file:"),     inspFile);
@@ -380,6 +381,24 @@ void ProbePage::buildUi()
 void ProbePage::setProbes(const QList<ProbeEntry>& probes)
 {
     this->probes = probes;
+    probeFilesDir = sessionDir();
+
+    // Which offsets the user set (kept by recalculateAll), and the layout
+    // the session already has: recalculateAll rebuilds the anatomy and
+    // spike pages only when the probe-derived groups differ from it.
+    classifyOffsets();
+    lastAnatomy.clear();
+    lastSpike.clear();
+    {
+        QList<ProbeEntry> copy = this->probes;
+        QMap<int,QList<int>> a, s;
+        QStringList warnings;
+        if (computeLayout(copy, a, s, warnings)) {
+            lastAnatomy = a;
+            lastSpike   = s;
+        }
+    }
+
     rebuildList();
     if (!probes.isEmpty()) {
         list->setCurrentRow(0);
@@ -613,6 +632,8 @@ void ProbePage::onRemoveClicked()
             QFile::remove(fpath);
     }
 
+    manualOffsetIds.remove(victim.id);
+    knownSpan.remove(victim.id);
     probes.removeAt(currentIndex);
     if (probes.isEmpty()) {
         currentIndex = -1;
@@ -798,7 +819,16 @@ void ProbePage::onLabelEdited()
 void ProbePage::onOffsetEdited()
 {
     if (currentIndex < 0) return;
-    probes[currentIndex].channelOffset = inspOffset->value();
+    // A typed offset is kept from now on; typing the automatic value
+    // (previous probe's offset + its channel count) makes it follow the
+    // previous probe again.
+    ProbeEntry& e = probes[currentIndex];
+    const int value = inspOffset->value();
+    if (value == automaticOffset(currentIndex))
+        manualOffsetIds.remove(e.id);
+    else
+        manualOffsetIds.insert(e.id);
+    e.channelOffset = value;
     modified = true;
     recalculateAll();
 }
@@ -1120,99 +1150,148 @@ void ProbePage::resetModificationStatus()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// recalculateAll  +  importProbeYaml  +  probeChannelCount
+// recalculateAll  +  computeLayout  +  probeChannelCount
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Walk the probe list top-to-bottom assigning channel offsets cumulatively
-// and parsing each probe's geometry to derive anatomical / spike groups.
-// Mirrors the original algorithm but works against the probes vector
-// instead of a QTableWidget.
+// Channel offsets (probes[].channelOffset) are absolute ADC channels.  A
+// probe's offset is "automatic" -- it follows the previous probe, i.e. the
+// previous offset plus that probe's span -- unless the user set it: an
+// offset typed in the inspector, or one that already differed from the
+// automatic value when the session was loaded, is kept as it is.  A probe
+// whose file cannot be read keeps the span it had (from the next probe's
+// offset at load, or from its file when last read), so the probes after it
+// do not move; the anatomy and spike pages are then left alone, since
+// that probe's groups cannot be rebuilt.
+
+int ProbePage::probeSpan(const ProbeEntry& e) const
+{
+    const int n = probeChannelCount(resolveProbePath(e.probeFile));
+    return n > 0 ? n : knownSpan.value(e.id, 0);
+}
+
+int ProbePage::automaticOffset(int index) const
+{
+    if (index <= 0 || index > probes.size()) return 0;
+    const ProbeEntry& prev = probes[index - 1];
+    return prev.channelOffset + probeSpan(prev);
+}
+
+void ProbePage::classifyOffsets()
+{
+    manualOffsetIds.clear();
+    knownSpan.clear();
+    for (int i = 0; i < probes.size(); ++i) {
+        const ProbeEntry& e = probes[i];
+        const int n = probeChannelCount(resolveProbePath(e.probeFile));
+        if (n > 0) {
+            knownSpan.insert(e.id, n);
+        } else if (i + 1 < probes.size()
+                   && probes[i + 1].channelOffset > e.channelOffset) {
+            // Unreadable file: assume it covers the channels up to the
+            // next probe, as the stored offsets say.
+            knownSpan.insert(e.id, probes[i + 1].channelOffset - e.channelOffset);
+        }
+        if (e.channelOffset != automaticOffset(i))
+            manualOffsetIds.insert(e.id);
+    }
+}
+
+bool ProbePage::computeLayout(QList<ProbeEntry>&    list,
+                              QMap<int,QList<int>>& outAnatomy,
+                              QMap<int,QList<int>>& outSpike,
+                              QStringList&          warnings)
+{
+    bool complete = true;
+    QMap<int,int> claimedBy;          // channel -> probe id
+    int nextGroupId = 1;
+    int prevEnd     = 0;
+
+    for (ProbeEntry& e : list) {
+        if (!manualOffsetIds.contains(e.id))
+            e.channelOffset = prevEnd;
+        e.anatomicalGroups.clear();
+        e.spikeGroups.clear();
+
+        const QString resolved = resolveProbePath(e.probeFile);
+        ProbeLayout layout;
+        QString err;
+        int span = 0;
+        if (resolved.isEmpty()) {
+            err = tr("%1 not found").arg(e.probeFile);
+        } else if (readProbeLayout(resolved, layout, &err) && layout.nSites > 0) {
+            span = layout.span;
+            knownSpan.insert(e.id, span);
+            if (e.label.isEmpty() && !layout.model.isEmpty())
+                e.label = layout.model;
+            for (int s = 0; s < layout.shankChannels.size(); ++s) {
+                const int gid = nextGroupId++;
+                e.anatomicalGroups.append(gid);
+                QList<int> chs;
+                for (int rel : layout.shankChannels[s]) {
+                    const int ch = e.channelOffset + rel;
+                    chs.append(ch);
+                    if (claimedBy.contains(ch) && claimedBy.value(ch) != e.id)
+                        warnings.append(tr("channel %1 is on probe %2 and probe %3")
+                                          .arg(ch).arg(claimedBy.value(ch)).arg(e.id));
+                    claimedBy.insert(ch, e.id);
+                    if (nbChannels > 0 && ch >= nbChannels)
+                        warnings.append(tr("probe %1 uses channel %2, the recording has %3")
+                                          .arg(e.id).arg(ch).arg(nbChannels));
+                }
+                outAnatomy[gid] = chs;
+                outSpike[gid]   = chs;
+            }
+        } else if (err.isEmpty()) {
+            err = tr("%1 has no sites").arg(e.probeFile);
+        }
+
+        if (span == 0) {
+            // Keep the channels this probe had, so later probes stay put.
+            complete = false;
+            span = knownSpan.value(e.id, 0);
+            warnings.append(span > 0
+                ? tr("probe %1: %2; keeping channels %3–%4")
+                      .arg(e.id).arg(err).arg(e.channelOffset).arg(e.channelOffset + span - 1)
+                : tr("probe %1: %2; its channel count is unknown").arg(e.id).arg(err));
+        }
+        prevEnd = e.channelOffset + span;
+    }
+
+    // Leftover anatomical group: any acquisition channel not claimed by a
+    // probe.  Not a spike group.
+    if (nbChannels > 0) {
+        QList<int> leftover;
+        for (int ch = 0; ch < nbChannels; ++ch)
+            if (!claimedBy.contains(ch))
+                leftover.append(ch);
+        if (!leftover.isEmpty())
+            outAnatomy[nextGroupId] = leftover;
+    }
+    return complete;
+}
 
 void ProbePage::recalculateAll()
 {
     QMap<int,QList<int>> outAnatomy;
     QMap<int,QList<int>> outSpike;
-    QSet<int> claimedChannels;
-    int nextGroupId = 1;
-    int cumOffset   = 0;
-
-    for (ProbeEntry& e : probes) {
-        e.channelOffset = cumOffset;
-        e.anatomicalGroups.clear();
-        e.spikeGroups.clear();
-
-        const QString resolved = resolveProbePath(e.probeFile);
-        if (resolved.isEmpty()) continue;
-
-        const int cnt = probeChannelCount(resolved);
-        if (cnt <= 0) continue;
-
-        QMap<int,QList<int>> ra, rs;
-        if (importProbeYaml(resolved, e, nextGroupId, ra, rs)) {
-            for (auto it = ra.constBegin(); it != ra.constEnd(); ++it) {
-                outAnatomy[it.key()] = it.value();
-                for (int ch : it.value()) claimedChannels.insert(ch);
-                nextGroupId = qMax(nextGroupId, it.key() + 1);
-            }
-            for (auto it = rs.constBegin(); it != rs.constEnd(); ++it)
-                outSpike[it.key()] = it.value();
-        }
-
-        cumOffset += cnt;
-    }
-
-    // Leftover anatomical group: any acquisition channel not claimed by a probe.
-    if (nbChannels > 0) {
-        QList<int> leftover;
-        for (int ch = 0; ch < nbChannels; ++ch)
-            if (!claimedChannels.contains(ch))
-                leftover.append(ch);
-        if (!leftover.isEmpty())
-            outAnatomy[nextGroupId] = leftover;
-            // leftover NOT added to outSpike — it isn't a spike group.
-    }
+    QStringList warnings;
+    const bool complete = computeLayout(probes, outAnatomy, outSpike, warnings);
 
     // Refresh inspector readouts after group recomputation.
     refreshInspector();
+    warnings.removeDuplicates();
+    if (!warnings.isEmpty())
+        setStatus(warnings.join(QStringLiteral("\n")), /*err=*/true);
 
     emit probesModified();
-    if (!outAnatomy.isEmpty())
-        emit probeLayoutImported(probes, outAnatomy, outSpike, 1);
-}
-
-bool ProbePage::importProbeYaml(const QString&        path,
-                                ProbeEntry&           entry,
-                                int                   nextGroupId,
-                                QMap<int,QList<int>>& outAnatomy,
-                                QMap<int,QList<int>>& outSpike)
-{
-    ProbeLayout layout;
-    QString err;
-    if (!readProbeLayout(path, layout, &err)) {
-        qWarning() << "ProbePage:" << path << ":" << err;
-        return false;
-    }
-    if (layout.nSites < 1) {
-        qWarning() << "ProbePage: no sites in" << path;
-        return false;
-    }
-
-    if (entry.label.isEmpty() && !layout.model.isEmpty())
-        entry.label = layout.model;
-
-    // Site j of the file is channel channelOffset + map[j] (or + j without
-    // a map) -- the channelOffset shift applies to mapped channels too.
-    entry.anatomicalGroups.clear();
-    entry.spikeGroups.clear();
-    for (int s = 0; s < layout.shankChannels.size(); ++s) {
-        const int gid = nextGroupId + s;
-        entry.anatomicalGroups.append(gid);
-        QList<int> chs;
-        for (int rel : layout.shankChannels[s]) chs.append(entry.channelOffset + rel);
-        outAnatomy[gid] = chs;
-        outSpike[gid]   = chs;
-    }
-    return true;
+    // The anatomy and spike pages are rebuilt only when the probe-derived
+    // groups changed (a pad drag or a label edit leaves them as they are,
+    // with any hand edits), and never from an incomplete layout.
+    if (!complete || outAnatomy.isEmpty()) return;
+    if (outAnatomy == lastAnatomy && outSpike == lastSpike) return;
+    lastAnatomy = outAnatomy;
+    lastSpike   = outSpike;
+    emit probeLayoutImported(probes, outAnatomy, outSpike, 1);
 }
 
 int ProbePage::probeChannelCount(const QString& probePath)
