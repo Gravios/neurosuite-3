@@ -181,9 +181,6 @@ struct arguments {
 };
 
 // ── Function declarations ─────────────────────────────────────────────────
-double computeSDiff(const short *record, const int *chanList,
-                    int idx, int nChanGrp, SdiffOrder order);
-
 void computeSdiffThresholds(FILE *fp, off_t startByte, off_t sizeByte,
                              int nChanTot, int nGroups,
                              int **channelList, int *channelNb_group,

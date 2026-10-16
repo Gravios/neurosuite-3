@@ -32,6 +32,7 @@
 #include "process_extractspikes_stderiv.h"
 #include "progressbar.h"      // BlockProgress - defrag-style stage progress
 #include "sdiff_pairs.h"      // shared SDIFF_CUSTOM pair-pattern parser
+#include <neurosuite/core/stderiv_transform.hpp>   // the one spatial derivative
 
 #include <algorithm>
 #include <numeric>
@@ -117,71 +118,68 @@ static const char *program_version = "process_extractspikes_stderiv 1.0";
 // =========================================================================
 // Spatial derivative
 // =========================================================================
+// The arithmetic is neurosuite::core::spatialDeriv (stderiv_transform.hpp), the
+// one definition every tool shares and test/stderiv_vectors.tsv pins.  This file
+// only gathers a group's row and hands over the group's custom map.
 
-double computeSDiff(const short *record,
-                    const int   *chanList,
-                    int          idx,
-                    int          nChanGrp,
-                    SdiffOrder   order,
-                    const std::vector<int>& customPartner,
-                    const std::vector<std::vector<int> >& customSets =
-                        std::vector<std::vector<int> >(),
-                    const neurosuite::core::ChannelExprSet* customExpr = nullptr)
+// sdiffAt casts the -d order to core's enum: the values must stay the same.
+static_assert((int)SDIFF_NONE == (int)neurosuite::core::SdiffOrder::None &&
+              (int)SDIFF_FIRST == (int)neurosuite::core::SdiffOrder::First &&
+              (int)SDIFF_LAPLACIAN == (int)neurosuite::core::SdiffOrder::Laplacian &&
+              (int)SDIFF_ALLPAIRS == (int)neurosuite::core::SdiffOrder::AllPairs &&
+              (int)SDIFF_CUSTOM == (int)neurosuite::core::SdiffOrder::Custom &&
+              (int)SDIFF_CUSTOM_CAR == (int)neurosuite::core::SdiffOrder::CustomCar &&
+              (int)SDIFF_EXPR == (int)neurosuite::core::SdiffOrder::Expr,
+              "SdiffOrder values must match neurosuite::core::SdiffOrder");
+
+// Group g's custom map in the form core::spatialDeriv takes, built once by
+// buildGroupSdiff().  A field is null when the group has no map of that kind,
+// or one that does not fit it; the transform then degrades to all-pairs, as -P
+// documents ("a size that does not match the pattern uses order 3").
+struct GroupSdiff {
+    const int* partner = nullptr;                        // order 4
+    std::vector<int> setOff, setMem;                     // order 5 (prefix table + members)
+    const neurosuite::core::ChannelExprSet* expr = nullptr;  // order 6
+};
+static std::vector<GroupSdiff> g_group_sdiff;
+
+static void buildGroupSdiff(int nGroups, const int* channelNb_grp)
 {
-    const double val = record[chanList[idx]];
-
-    switch(order) {
-    case SDIFF_NONE:
-        return val;
-
-    case SDIFF_FIRST:
-        if(nChanGrp == 1) return val;   // no neighbour (refused in main)
-        return (idx < nChanGrp - 1)
-               ? val - record[chanList[idx + 1]]
-               : val - record[chanList[idx - 1]];
-
-    case SDIFF_LAPLACIAN:
-        if(nChanGrp == 1) return val;
-        if(idx == 0)            return val - record[chanList[1]];
-        if(idx == nChanGrp - 1) return val - record[chanList[nChanGrp - 2]];
-        return val - 0.5 * (record[chanList[idx - 1]] +
-                             record[chanList[idx + 1]]);
-
-    case SDIFF_CUSTOM:
-        if(nChanGrp > 1 && (int)customPartner.size() == nChanGrp)
-            return val - record[chanList[customPartner[idx]]];
-        // pattern does not fit this group -> fall through to ALLPAIRS
-        [[fallthrough]];
-
-    case SDIFF_CUSTOM_CAR:
-        if(nChanGrp > 1 && (int)customSets.size() == nChanGrp
-           && !customSets[idx].empty()) {
-            double sum = 0.0;
-            for(size_t k = 0; k < customSets[idx].size(); k++)
-                sum += record[chanList[customSets[idx][k]]];
-            return val - sum / (double)customSets[idx].size();
+    g_group_sdiff.assign((size_t)(nGroups > 0 ? nGroups : 0), GroupSdiff());
+    for(int g = 0; g < nGroups; g++) {
+        const int nCG = channelNb_grp[g];
+        GroupSdiff& m = g_group_sdiff[(size_t)g];
+        if(nCG > 1 && (int)groupPartner(g).size() == nCG) m.partner = groupPartner(g).data();
+        const std::vector<std::vector<int> >& sets = groupPartnerSet(g);
+        if(nCG > 1 && (int)sets.size() == nCG) {
+            m.setOff.push_back(0);
+            for(const std::vector<int>& set : sets) {
+                m.setMem.insert(m.setMem.end(), set.begin(), set.end());
+                m.setOff.push_back((int)m.setMem.size());
+            }
+            if(m.setMem.empty()) { m.setOff.clear(); }   // no members at all: all-pairs
         }
-        // set-map does not fit this group -> fall through to ALLPAIRS
-        [[fallthrough]];
-
-    case SDIFF_EXPR:
-        // order 6: the group's expression for this output channel.  Reached from
-        // the cases above only when their maps did not fit, hence the test.
-        if(order == SDIFF_EXPR && customExpr && nChanGrp > 1 && customExpr->fits(nChanGrp))
-            return customExpr->eval(idx, [&](int i) { return (double)record[chanList[i]]; });
-        [[fallthrough]];
-
-    case SDIFF_ALLPAIRS:
-    default: {
-        // Single-channel group: no neighbours, all-pairwise is identically
-        // zero.  main() refuses such groups for any order but 0.
-        if(nChanGrp == 1) return 0.0;
-        double sum = 0.0;
-        for(int j = 0; j < nChanGrp; j++) sum += record[chanList[j]];
-        // = sum_{j!=i}(x[i]-x[j]) = n*x[i] - sum_j(x[j])
-        return (double)nChanGrp * val - sum;
+        m.expr = groupExpr(g);
     }
-    }
+}
+
+// Spatial derivative of channel ci of group g, from that group's row of raw
+// values at one time sample (row[0..nCG)).
+static inline double sdiffAt(SdiffOrder order, const double *row, int ci, int nCG, int g)
+{
+    static const GroupSdiff none;
+    const GroupSdiff& m = (g >= 0 && g < (int)g_group_sdiff.size()) ? g_group_sdiff[(size_t)g] : none;
+    return neurosuite::core::spatialDeriv(static_cast<neurosuite::core::SdiffOrder>(order),
+                                          row, ci, nCG, m.partner,
+                                          m.setOff.empty() ? nullptr : m.setOff.data(),
+                                          m.setMem.empty() ? nullptr : m.setMem.data(),
+                                          m.expr);
+}
+
+// Group g's raw values at one time sample of an interleaved record.
+static inline void gatherRow(const short *record, const int *chanList, int nCG, double *row)
+{
+    for(int ci = 0; ci < nCG; ci++) row[ci] = (double)record[chanList[ci]];
 }
 
 // =========================================================================
@@ -191,7 +189,7 @@ double computeSDiff(const short *record,
 // the same interleaved layout as the raw buffer.
 //
 // For every time sample t and every group-channel (g, ci):
-//   sdiff[t*nChanTot + chanList[g][ci]] = computeSDiff(raw + t*nChanTot, ...)
+//   sdiff[t*nChanTot + chanList[g][ci]] = sdiffAt(group row at t, ci)
 //   clamped to int16 range.
 //
 // Non-group channels are copied verbatim from raw (they are never read by
@@ -232,6 +230,9 @@ static void fill_sdiff_buffer(const short *raw,
     std::vector<short> sd((size_t)nRows * nChanTot);
     memcpy(sd.data(), raw, (size_t)nRows * (size_t)nChanTot * sizeof(short));
 
+    int maxNCG = 1;
+    for(int g = 0; g < nGroups; g++) maxNCG = std::max(maxNCG, channelNb_grp[g]);
+    std::vector<double> row((size_t)maxNCG);
     for(int t = 0; t < nRows; t++) {
         const short *rawRec = raw      + (size_t)t * nChanTot;
               short *sdRec  = sd.data() + (size_t)t * nChanTot;
@@ -239,15 +240,10 @@ static void fill_sdiff_buffer(const short *raw,
         for(int g = 0; g < nGroups; g++) {
             const int  nCG   = channelNb_grp[g];
             const int *cList = channelList[g];
-            for(int ci = 0; ci < nCG; ci++) {
-                double v = (order == SDIFF_NONE)
-                             ? (double)rawRec[cList[ci]]
-                             : computeSDiff(rawRec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g), groupExpr(g));
-                int iv = (int)round(v);
-                if(iv >  32767) iv =  32767;
-                if(iv < -32768) iv = -32768;
-                sdRec[cList[ci]] = (short)iv;
-            }
+            gatherRow(rawRec, cList, nCG, row.data());
+            for(int ci = 0; ci < nCG; ci++)
+                sdRec[cList[ci]] = neurosuite::core::clampToInt16(
+                    sdiffAt(order, row.data(), ci, nCG, g));
         }
     }
 
@@ -392,6 +388,10 @@ void computeSdiffThresholds(FILE          *fp,
         return (int)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
     };
 
+    int maxNCG = 1;
+    for(int g = 0; g < nGroups; g++) maxNCG = std::max(maxNCG, channelNb_group[g]);
+    vector<double> thrRow((size_t)maxNCG);
+
     long long samplesRead = 0, samplesSeen = 0;
     while(samplesRead < nSamples) {
         long long toRead = min((long long)chunkSz, nSamples - samplesRead);
@@ -416,9 +416,10 @@ void computeSdiffThresholds(FILE          *fp,
                     for(int ci = 0; ci < nCG; ci++)
                         absCar[g][ci].push_back((float)fabs(rec[cList[ci]] - mean));
                 }
+                gatherRow(rec, cList, nCG, thrRow.data());
                 for(int ci = 0; ci < nCG; ci++) {
-                    const double v = computeSDiff(rec, cList, ci, nCG, order, groupPartner(g), groupPartnerSet(g), groupExpr(g));
-                    const int    sdi = clamp16(lround(v));
+                    const double v = sdiffAt(order, thrRow.data(), ci, nCG, g);
+                    const int    sdi = neurosuite::core::clampToInt16(v);
                     if(keep) {
                         absBuf[g][ci].push_back(fabs(v));
                         if(hasTd)
@@ -1179,6 +1180,7 @@ static int runFromRes(const arguments &args,
         // sd holds the spatial derivative at samples [ws-1 .. ws+spikeLen-1]
         // (spikeLen + 1 rows), packed by group channels only (nCG wide).
         vector<short> sd((size_t)(spikeLen + 1) * (size_t)nCG);
+        vector<double> rRow((size_t)nCG);   // one raw group row
         // out is the temporal first-diff, sd[s+1] - sd[s], rows [0..spikeLen)
         vector<short> waveBuf((size_t)spikeLen * (size_t)nCG);
 
@@ -1201,18 +1203,10 @@ static int runFromRes(const arguments &args,
                 const short *raw =
                     fil + (size_t)(ws - 1 + s) * (size_t)nChanTot;
                 short *sdRow = sd.data() + (size_t)s * (size_t)nCG;
-                for(int ci = 0; ci < nCG; ci++) {
-                    double v;
-                    if(ord == SDIFF_NONE) {
-                        v = (double)raw[ channelList[grp][ci] ];
-                    } else {
-                        v = computeSDiff(raw, channelList[grp], ci, nCG, ord, groupPartner(grp), groupPartnerSet(grp), groupExpr(grp));
-                    }
-                    int iv = (int)round(v);
-                    if(iv >  32767) iv =  32767;
-                    if(iv < -32768) iv = -32768;
-                    sdRow[ci] = (short)iv;
-                }
+                gatherRow(raw, channelList[grp], nCG, rRow.data());
+                for(int ci = 0; ci < nCG; ci++)
+                    sdRow[ci] = neurosuite::core::clampToInt16(
+                        sdiffAt(ord, rRow.data(), ci, nCG, grp));
             }
 
             // step 2: temporal first-difference into waveBuf
@@ -1314,6 +1308,7 @@ int main(int argc, char *argv[])
         for(int j = 0; j < MAX_CHANNO; j++) channelList[i][j] = -1;
     }
     const int nbGroups = getChannelsFromArg(channelNb_grp, channelList, args);
+    buildGroupSdiff(nbGroups, channelNb_grp);   // each group's -P map, for sdiffAt
 
     // A spatial derivative needs neighbours.  On a one-channel group the
     // all-pairs (and custom, which falls back to it) derivative is identically
@@ -2208,47 +2203,9 @@ int main(int argc, char *argv[])
                 // Full group row, needed by the neighbour-based orders.
                 double *xPrev = xPrevBuf.data();
                 for(int jj=0;jj<nCG;jj++) xPrev[jj]=frPrev[cL[jj]];
-                for(int ci = 0; ci < nCG; ci++) {
-                    double v = frPrev[cL[ci]];
-                    double sd = 0.0;
-                    switch(args.sdiffOrder) {
-                    case SDIFF_NONE: sd = v; break;
-                    case SDIFF_FIRST:
-                        if(nCG==1){ sd=xPrev[0]; break; }
-                        sd = (ci<nCG-1) ? xPrev[ci]-xPrev[ci+1]
-                                        : xPrev[ci]-xPrev[ci-1]; break;
-                    case SDIFF_LAPLACIAN:
-                        if(nCG==1){ sd=xPrev[0]; break; }
-                        if(ci==0)         sd = xPrev[0]-xPrev[1];
-                        else if(ci==nCG-1) sd = xPrev[ci]-xPrev[nCG-2];
-                        else               sd = xPrev[ci]-0.5*(xPrev[ci-1]+xPrev[ci+1]);
-                        break;
-                    case SDIFF_CUSTOM:
-                        if((int)groupPartner(grp).size() == nCG) {
-                            sd = xPrev[ci] - xPrev[groupPartner(grp)[ci]]; break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_CUSTOM_CAR:
-                        if((int)groupPartnerSet(grp).size()==nCG && !groupPartnerSet(grp)[ci].empty()) {
-                            const std::vector<int>& st=groupPartnerSet(grp)[ci];
-                            double sm=0.0;
-                            for(size_t k=0;k<st.size();k++) sm+=xPrev[st[k]];
-                            sd = xPrev[ci] - sm/(double)st.size(); break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_EXPR:
-                        if(args.sdiffOrder==SDIFF_EXPR && groupExpr(grp) && nCG>1 && groupExpr(grp)->fits(nCG)) {
-                            sd = groupExpr(grp)->eval(ci, [&](int i) { return (double)xPrev[i]; }); break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_ALLPAIRS: default: {
-                        double sum=0.0;
-                        for(int jj=0;jj<nCG;jj++) sum+=frPrev[cL[jj]];
-                        sd = nCG*v - sum; break;
-                    }
-                    }
-                    sdPrevSearch[static_cast<size_t>(ci)] = sd;
-                }
+                for(int ci = 0; ci < nCG; ci++)
+                    sdPrevSearch[static_cast<size_t>(ci)] =
+                        sdiffAt(args.sdiffOrder, xPrev, ci, nCG, grp);
             }
             for(int s = searchStart; s <= searchEnd; s++) {
                 const short *fr = wideFrame.data() + s * args.totalChannelNumber;
@@ -2271,42 +2228,7 @@ int main(int argc, char *argv[])
                     continue;
                 }
                 for(int ci = 0; ci < nCG; ci++) {
-                    double sd = 0.0;
-                    switch(args.sdiffOrder) {
-                    case SDIFF_NONE: sd = row[ci]; break;
-                    case SDIFF_FIRST:
-                        if(nCG==1){ sd=row[ci]; break; }
-                        sd = (ci<nCG-1) ? row[ci]-row[ci+1] : row[ci]-row[ci-1]; break;
-                    case SDIFF_LAPLACIAN:
-                        if(nCG==1){ sd=row[ci]; break; }
-                        if(ci==0)         sd = row[0]-row[1];
-                        else if(ci==nCG-1) sd = row[ci]-row[nCG-2];
-                        else               sd = row[ci]-0.5*(row[ci-1]+row[ci+1]);
-                        break;
-                    case SDIFF_CUSTOM:
-                        if((int)groupPartner(grp).size() == nCG) {
-                            sd = row[ci] - row[groupPartner(grp)[ci]]; break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_CUSTOM_CAR:
-                        if((int)groupPartnerSet(grp).size()==nCG && !groupPartnerSet(grp)[ci].empty()) {
-                            const std::vector<int>& st=groupPartnerSet(grp)[ci];
-                            double sm=0.0;
-                            for(size_t k=0;k<st.size();k++) sm+=row[st[k]];
-                            sd = row[ci] - sm/(double)st.size(); break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_EXPR:
-                        if(args.sdiffOrder==SDIFF_EXPR && groupExpr(grp) && nCG>1 && groupExpr(grp)->fits(nCG)) {
-                            sd = groupExpr(grp)->eval(ci, [&](int i) { return (double)row[i]; }); break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_ALLPAIRS: default: {
-                        double sum=0.0;
-                        for(int j=0;j<nCG;j++) sum+=row[j];
-                        sd = nCG*row[ci] - sum; break;
-                    }
-                    }
+                    const double sd = sdiffAt(args.sdiffOrder, row, ci, nCG, grp);
                     // Temporal difference
                     double td = sd - sdPrevSearch[static_cast<size_t>(ci)];
                     sdPrevSearch[static_cast<size_t>(ci)] = sd;
@@ -2349,49 +2271,10 @@ int main(int argc, char *argv[])
             for(int s = 0; s < args.spikeLength; s++) {
                 const short *rt = rawWav.data() + s * nCG;
                       short *st = sdWav.data()  + s * nCG;
-                for(int ci = 0; ci < nCG; ci++) {
-                    const double val = rt[ci];
-                    double sd = 0.0;
-                    switch(args.sdiffOrder) {
-                    case SDIFF_NONE: sd = val; break;
-                    case SDIFF_FIRST:
-                        if(nCG==1){ sd=val; break; }
-                        sd = (ci<nCG-1) ? val-rt[ci+1] : val-rt[ci-1]; break;
-                    case SDIFF_LAPLACIAN:
-                        if(nCG==1){ sd=val; break; }
-                        if(ci==0)        sd = val - rt[1];
-                        else if(ci==nCG-1) sd = val - rt[nCG-2];
-                        else             sd = val - 0.5*(rt[ci-1]+rt[ci+1]);
-                        break;
-                    case SDIFF_CUSTOM:
-                        if((int)groupPartner(grp).size() == nCG) {
-                            sd = val - rt[groupPartner(grp)[ci]]; break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_CUSTOM_CAR:
-                        if((int)groupPartnerSet(grp).size()==nCG && !groupPartnerSet(grp)[ci].empty()) {
-                            const std::vector<int>& st=groupPartnerSet(grp)[ci];
-                            double sm=0.0;
-                            for(size_t k=0;k<st.size();k++) sm+=rt[st[k]];
-                            sd = val - sm/(double)st.size(); break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_EXPR:
-                        if(args.sdiffOrder==SDIFF_EXPR && groupExpr(grp) && nCG>1 && groupExpr(grp)->fits(nCG)) {
-                            sd = groupExpr(grp)->eval(ci, [&](int i) { return (double)rt[i]; }); break;
-                        }
-                        [[fallthrough]];
-                    case SDIFF_ALLPAIRS: default: {
-                        double sum=0.0;
-                        for(int j=0;j<nCG;j++) sum+=rt[j];
-                        sd = nCG*val - sum; break;
-                    }
-                    }
-                    int iv=(int)round(sd);
-                    if(iv> 32767) iv= 32767;
-                    if(iv<-32768) iv=-32768;
-                    st[ci]=(short)iv;
-                }
+                for(int ci = 0; ci < nCG; ci++) rowBuf[(size_t)ci] = (double)rt[ci];
+                for(int ci = 0; ci < nCG; ci++)
+                    st[ci] = neurosuite::core::clampToInt16(
+                        sdiffAt(args.sdiffOrder, rowBuf.data(), ci, nCG, grp));
             }
 
             // Step 3: temporal first-difference in-place.
