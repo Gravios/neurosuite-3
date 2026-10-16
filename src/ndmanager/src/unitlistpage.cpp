@@ -35,6 +35,7 @@
 #include <QVector>
 #include <QHeaderView>
 #include <QRegularExpression>
+#include <QSignalBlocker>
 
 UnitListPage::UnitListPage(QWidget* parent) :
     UnitListLayout(parent),isIncorrect(false),incorrectRow(0),modified(false)
@@ -89,20 +90,34 @@ bool UnitListPage::eventFilter(QObject* object,QEvent* event)
 
 void UnitListPage::setUnits(const QMap<int, QStringList >& units)
 {
-    unitTable->clearContents();
-    unitTable->setRowCount(units.count());
-
-    QMap<int,QStringList >::const_iterator iterator;
-    //The iterator gives the keys sorted.
-    for (iterator = units.constBegin(); iterator != units.constEnd(); ++iterator)
+    // Fill with sorting off.  With it on, every setItem in the sort column
+    // re-sorts the table, so later cells of a unit land in rows that have
+    // already moved: units came out scrambled and rows were left with null
+    // cells.  Loading is not an edit, so the cell-changed validation is not
+    // run and the page is left unmodified.
+    const bool sorting = unitTable->isSortingEnabled();
+    unitTable->setSortingEnabled(false);
     {
-        const QStringList info = iterator.value();
-        for (uint i=0;i<info.count();++i)
+        const QSignalBlocker blocker(unitTable);
+        unitTable->clearContents();
+        unitTable->setRowCount(units.count());
+
+        // A row counter, not the map key: the reader's keys are 0-based
+        // but nothing guarantees that.
+        int row = 0;
+        QMap<int,QStringList >::const_iterator iterator;
+        //The iterator gives the keys sorted.
+        for (iterator = units.constBegin(); iterator != units.constEnd(); ++iterator, ++row)
         {
-            UnitTableItem* item = new UnitTableItem(info.at(i));
-            unitTable->setItem(iterator.key(),i,item);
-        }
-    }//end of units loop
+            const QStringList info = iterator.value();
+            // Every cell gets an item, even past a short entry, so getUnits
+            // never meets a null cell.
+            for (int i = 0; i < unitTable->columnCount(); ++i)
+                unitTable->setItem(row, i, new UnitTableItem(i < info.count() ? info.at(i) : QString()));
+        }//end of units loop
+    }
+    unitTable->setSortingEnabled(sorting);
+    modified = false;
 }
 
 void UnitListPage::getUnits(QMap<int, QStringList >& units)const
@@ -113,8 +128,8 @@ void UnitListPage::getUnits(QMap<int, QStringList >& units)const
         QStringList info;
         for(int j = 0;j < unitTable->columnCount(); ++j)
         {
-            QString text = unitTable->item(i,j)->text();
-            info.append(text.simplified());
+            const QTableWidgetItem* cell = unitTable->item(i,j);
+            info.append(cell ? cell->text().simplified() : QString());
         }
         units.insert(unitId,info);
         unitId++;
