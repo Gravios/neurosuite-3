@@ -7,10 +7,11 @@
  *
  *  Transformation per spike (nChan × wLen samples):
  *
- *    step 1:  sdiff[t, ch]   = spatialDerivative(raw[t, ch], ...)
- *                              same four orders as process_extractspikes_sdiff:
+ *    step 1:  sdiff[t, ch]   = neurosuite::core::spatialDeriv, order -d:
  *                              0 = none, 1 = first-diff, 2 = Laplacian,
- *                              3 = all-pairwise (default)
+ *                              3 = all-pairwise (default).  -d 4 is pass-through
+ *                              (the input is already transformed), not core's
+ *                              order 4.
  *
  *    step 2:  stderiv[t, ch] = sdiff[t, ch] - sdiff[t-1, ch]
  *                              boundary: sdiff[-1, ch] = 0 per spike
@@ -39,18 +40,19 @@
 #include <string>
 #include <iostream>
 
+#include <neurosuite/core/stderiv_transform.hpp>   // the one spatial derivative
+
 static const char *VERSION = "process_pca_stderiv 1.0";
 
-// ── Spatial derivative (mirrors computeSDiff from process_extractspikes_sdiff) ──
-// record[ch] is one time-sample across all channels.
-// chanList[ci] = global channel index for local position ci within the group.
-// For PCA, the "group" is all nChan channels.
-enum SdiffOrder { SDIFF_NONE=0, SDIFF_FIRST=1, SDIFF_LAPLACIAN=2,
-                  SDIFF_ALLPAIRS=3, SDIFF_PASS=4 };
-// SDIFF_PASS: no transform — just read nChan and write nOutChan, dropping the
-// dependent channel when the order applied AT EXTRACTION left one.  Use when the
-// input already holds the transformed waveform.  That order is not recoverable
-// from the data, so pass it with -D.
+// ── Spatial derivative ───────────────────────────────────────────────────────
+// -d 0..3 apply neurosuite::core::spatialDeriv (stderiv_transform.hpp), the one
+// definition every tool shares, across the nChan channels of each time sample.
+// -d 4 is NOT core's order 4 (a custom partner map): it means "pass" -- no
+// transform, just read nChan and write nOutChan, dropping the dependent channel
+// when the order applied AT EXTRACTION left one.  Use it when the input already
+// holds the transformed waveform (ndm_pca, ndm_refeaturize).  That order is not
+// recoverable from the data, so pass it with -D.
+static const int kPassArg = 4;
 
 // True when a spatial derivative of this order leaves one linearly dependent
 // channel for the reduction to drop:
@@ -63,28 +65,6 @@ enum SdiffOrder { SDIFF_NONE=0, SDIFF_FIRST=1, SDIFF_LAPLACIAN=2,
 // Mirrors ndm_sdiff_drops_last in ndm_custody; keep the two in step.
 static inline bool dropsLastChannel(int o)
 { return o == 1 || o == 3 || o == 4 || o == 5; }
-
-static double computeSDiff(const short *record, int idx, int nChan, SdiffOrder order)
-{
-    const double val = record[idx];
-    switch(order) {
-    case SDIFF_NONE: return val;
-    case SDIFF_FIRST:
-        return (idx < nChan-1) ? val - record[idx+1]
-                               : val - record[idx-1];
-    case SDIFF_LAPLACIAN:
-        if(nChan == 1) return val;
-        if(idx == 0)           return val - record[1];
-        if(idx == nChan-1)     return val - record[nChan-2];
-        return val - 0.5*(record[idx-1] + record[idx+1]);
-    case SDIFF_ALLPAIRS:
-    default: {
-        double sum = 0.0;
-        for(int j = 0; j < nChan; j++) sum += record[j];
-        return nChan * val - sum;  // = nChan*(val - mean)
-    }
-    }
-}
 
 static void usage(const char *name)
 {
@@ -130,11 +110,12 @@ int main(int argc, char *argv[])
         usage(argv[0]);
     }
 
-    const SdiffOrder order = static_cast<SdiffOrder>(
-        (orderArg >= 0 && orderArg <= 4) ? orderArg : 3);
-    // SDIFF_PASS (4): input is already transformed; just do channel-reduction.
-    // Use -D <origOrder> to specify the original extraction order so we know
-    // whether to drop the last (dependent) channel.
+    // -d 4: input is already transformed; just do channel-reduction (-D says
+    // whether the extraction order left a dependent channel).  Otherwise one of
+    // core's plain orders 0..3; anything else falls back to all-pairs, as before.
+    const bool passThrough = (orderArg == kPassArg);
+    const neurosuite::core::SdiffOrder order = static_cast<neurosuite::core::SdiffOrder>(
+        (orderArg >= 0 && orderArg <= 3) ? orderArg : 3);
 
     FILE *in = inFile.empty() ? stdin : fopen(inFile.c_str(), "rb");
     if(!in) {
@@ -152,7 +133,7 @@ int main(int argc, char *argv[])
     // process_pca sees only the independent dimensions.
     //   order 1 (first-diff):   s[n-1] = -s[n-2]
     //   order 3 (all-pairwise): sum(s) = 0  →  s[n-1] = -sum(s[0..n-2])
-    // Input already transformed (SDIFF_PASS): the decision belongs to the order
+    // Input already transformed (-d 4): the decision belongs to the order
     // used at EXTRACTION, supplied by -D.  Without it, assume all-pairs — the
     // historical default, so existing callers keep their behaviour.
     // -k suppresses the drop.  For orders 1 and 3 the last channel is a genuine
@@ -161,7 +142,7 @@ int main(int argc, char *argv[])
     // so -k is how a caller keeps that information.  The basis records the real
     // width, so downstream consumers follow whichever was used.
     const bool dropLast = keepLast ? false
-        : (order == SDIFF_PASS)
+        : passThrough
         ? dropsLastChannel(origOrder >= 0 ? origOrder : 3)
         : dropsLastChannel(static_cast<int>(order));
     const int  nOutChan = dropLast ? nChan - 1 : nChan;
@@ -184,8 +165,8 @@ int main(int argc, char *argv[])
             break;
         }
 
-        // SDIFF_PASS: no transform, just channel-reduction.
-        if(order == SDIFF_PASS) {
+        // -d 4: no transform, just channel-reduction.
+        if(passThrough) {
             if(dropLast) {
                 for(int t = 0; t < wLen; t++)
                     fwrite(rawSpike.data() + t * nChan, sizeof(short),
@@ -202,13 +183,9 @@ int main(int argc, char *argv[])
         for(int t = 0; t < wLen; t++) {
             const short *rawT = rawSpike.data() + t * nChan;
                   short *sdT  = sdSpike.data()  + t * nChan;
-            for(int ci = 0; ci < nChan; ci++) {
-                double v = computeSDiff(rawT, ci, nChan, order);
-                int iv = (int)round(v);
-                if(iv >  32767) iv =  32767;
-                if(iv < -32768) iv = -32768;
-                sdT[ci] = (short)iv;
-            }
+            for(int ci = 0; ci < nChan; ci++)
+                sdT[ci] = neurosuite::core::clampToInt16(neurosuite::core::spatialDerivBy(
+                    order, [rawT](int j) { return rawT[j]; }, ci, nChan));
         }
 
         // Step 2: temporal first-difference across samples per channel.
