@@ -135,7 +135,7 @@ private slots:
     void onAddClicked();          ///< clone empty.probe into a new entry
     void onAddFromLibraryClicked();///< new entry, geometry copied from a library file
     void onAddFromFileClicked();  ///< new entry, geometry copied from a chosen path
-    void onRemoveClicked();       ///< delete current entry + its session-local file
+    void onRemoveClicked();       ///< remove current entry; its session copy goes on the next save
     void onBrowseLibraryClicked();///< replace current probe's geometry from a chosen file
     void onLabelEdited();
     void onOffsetEdited();
@@ -232,6 +232,11 @@ private:
     /** Walk @p list assigning automatic offsets and building one group
      *  per shank (plus a leftover anatomy group).  Returns false when a
      *  probe file could not be read -- the layout is then incomplete. */
+    /** After a save: delete the session copies of removed probes that the
+     *  saved document no longer uses.  Copies of a document saved under
+     *  another name, or still listed in the file, are kept. */
+    void applyPendingDeletions();
+
     bool computeLayout(QList<ProbeEntry>&    list,
                        QMap<int,QList<int>>& outAnatomy,
                        QMap<int,QList<int>>& outSpike,
@@ -248,6 +253,11 @@ private:
     std::function<QString()> sessionFileProvider;  ///< document's current path
     QSet<int>         manualOffsetIds;       ///< probe ids whose offset the user set
     QMap<int,int>     knownSpan;             ///< probe id -> channels, last known
+    struct PendingDeletion {
+        QString path;       ///< absolute path of the removed probe's session copy
+        QString document;   ///< session file it was removed from
+    };
+    QList<PendingDeletion> pendingDeletions; ///< removed probes' copies, deleted on save
     QMap<int,QList<int>> lastAnatomy;        ///< probe-derived groups last applied
     QMap<int,QList<int>> lastSpike;
     QString           probeFilesDir;         ///< where the session's probe files are

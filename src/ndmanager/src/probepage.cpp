@@ -612,25 +612,36 @@ void ProbePage::onRemoveClicked()
     if (currentIndex < 0 || currentIndex >= probes.size()) return;
     const ProbeEntry victim = probes[currentIndex];
 
+    // The probe's own session copy (<session>.probe.<id>.probe in the
+    // session directory) is deleted only when the document is saved
+    // without it -- until then the session file on disk still uses it,
+    // and closing without saving must leave it intact.  Library files and
+    // files elsewhere are never deleted.
+    QString ownCopy;
+    const QString dir = sessionDir();
+    if (!dir.isEmpty() && !victim.probeFile.isEmpty()
+        && !QDir::isAbsolutePath(victim.probeFile)
+        && !victim.probeFile.contains(QLatin1Char('/'))
+        && victim.probeFile.endsWith(QStringLiteral(".probe.%1.probe").arg(victim.id))) {
+        const QString p = QDir(dir).absoluteFilePath(victim.probeFile);
+        if (QFileInfo(p).isFile()) ownCopy = p;
+    }
+
     const auto reply = QMessageBox::question(
         this, tr("Remove Probe"),
-        tr("Remove probe %1 (%2)?\n\n"
-           "The probe file will be deleted from the session directory if it "
-           "is a session-local copy (matches <session>.probe.%1.probe).")
-            .arg(victim.id)
-            .arg(victim.label.isEmpty() ? tr("unlabeled") : victim.label),
+        ownCopy.isEmpty()
+            ? tr("Remove probe %1 (%2)?").arg(victim.id)
+                  .arg(victim.label.isEmpty() ? tr("unlabeled") : victim.label)
+            : tr("Remove probe %1 (%2)?\n\nIts session copy %3 will be "
+                 "deleted when the session is saved.").arg(victim.id)
+                  .arg(victim.label.isEmpty() ? tr("unlabeled") : victim.label,
+                       victim.probeFile),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (reply != QMessageBox::Yes) return;
 
-    // Delete session-local copy if its name matches the canonical pattern
-    // for this id.  Library files (other paths) are left alone.
-    const QString sessionName = sessionProbeFilename(victim.id);
-    if (victim.probeFile == sessionName) {
-        const QString fpath = sessionDir().isEmpty() ? QString()
-            : QDir(sessionDir()).absoluteFilePath(victim.probeFile);
-        if (QFile::exists(fpath))
-            QFile::remove(fpath);
-    }
+    if (!ownCopy.isEmpty())
+        pendingDeletions.append(PendingDeletion{
+            ownCopy, sessionFileProvider ? sessionFileProvider() : QString()});
 
     manualOffsetIds.remove(victim.id);
     knownSpan.remove(victim.id);
@@ -1119,6 +1130,7 @@ QString ProbePage::copyProbeIntoSession(const QString& srcPath, int probeId)
 void ProbePage::resetModificationStatus()
 {
     modified = false;
+    applyPendingDeletions();
 
     // After Save As into another directory the session's own probe files
     // are still next to the old session file, but the saved document
@@ -1147,6 +1159,50 @@ void ProbePage::resetModificationStatus()
                         .arg(copied.join(QStringLiteral(", "))));
     }
     probeFilesDir = newDir;
+}
+
+void ProbePage::applyPendingDeletions()
+{
+    if (pendingDeletions.isEmpty()) return;
+
+    // The probe files the session file on disk -- just written -- uses.
+    const QString docFile = sessionFileProvider ? sessionFileProvider() : QString();
+    const QString dir = sessionDir();
+    QSet<QString> used;
+    bool readable = false;
+    if (!dir.isEmpty()) {
+        try {
+            const YAML::Node root = YAML::LoadFile(docFile.toStdString());
+            QList<ProbeEntry> saved;
+            QString lib;
+            readProbesSection(root, saved, lib);
+            for (const ProbeEntry& e : saved) {
+                const QString p = QDir::isAbsolutePath(e.probeFile)
+                    ? e.probeFile : QDir(dir).absoluteFilePath(e.probeFile);
+                used.insert(QFileInfo(p).absoluteFilePath());
+            }
+            readable = true;
+        } catch (const std::exception& e) {
+            qWarning() << "ProbePage: cannot re-read" << docFile << ":" << e.what();
+        }
+    }
+
+    QList<PendingDeletion> keep;
+    QStringList deleted;
+    for (const PendingDeletion& d : pendingDeletions) {
+        // Saved under another name or elsewhere (Save As, Save as
+        // Default): the document the probe was removed from is unchanged
+        // on disk and still uses the file.
+        if (d.document != docFile) continue;
+        if (!readable || used.contains(QFileInfo(d.path).absoluteFilePath())) {
+            keep.append(d);   // still used (e.g. re-added): try after the next save
+            continue;
+        }
+        if (QFile::remove(d.path)) deleted.append(QFileInfo(d.path).fileName());
+    }
+    pendingDeletions = keep;
+    if (!deleted.isEmpty())
+        setStatus(tr("Deleted %1 (probe removed).").arg(deleted.join(QStringLiteral(", "))));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
