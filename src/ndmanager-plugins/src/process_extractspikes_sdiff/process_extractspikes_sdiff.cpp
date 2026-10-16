@@ -31,6 +31,7 @@
 
 #include "process_extractspikes_sdiff.h"
 #include "progressbar.h"      // BlockProgress - defrag-style stage progress
+#include <neurosuite/core/stderiv_transform.hpp>   // the one spatial derivative
 
 #include <algorithm>
 #include <cmath>
@@ -70,43 +71,25 @@ static const char *program_version = "process_extractspikes_sdiff 1.1";
 // Spatial derivative
 // =========================================================================
 
+// The arithmetic is neurosuite::core::spatialDerivBy (stderiv_transform.hpp), the
+// one definition every tool shares and test/stderiv_vectors.tsv pins; this reads
+// group channel j of the interleaved record as record[chanList[j]].
+static_assert((int)SDIFF_NONE == (int)neurosuite::core::SdiffOrder::None &&
+              (int)SDIFF_FIRST == (int)neurosuite::core::SdiffOrder::First &&
+              (int)SDIFF_LAPLACIAN == (int)neurosuite::core::SdiffOrder::Laplacian &&
+              (int)SDIFF_ALLPAIRS == (int)neurosuite::core::SdiffOrder::AllPairs,
+              "SdiffOrder values must match neurosuite::core::SdiffOrder");
+
 double computeSDiff(const short *record,
                     const int   *chanList,
                     int          idx,
                     int          nChanGrp,
                     SdiffOrder   order)
 {
-    const double val = record[chanList[idx]];
-
-    switch(order) {
-    case SDIFF_NONE:
-        return val;
-
-    case SDIFF_FIRST:
-        if(nChanGrp == 1) return val;   // no neighbour (refused in main)
-        return (idx < nChanGrp - 1)
-               ? val - record[chanList[idx + 1]]
-               : val - record[chanList[idx - 1]];
-
-    case SDIFF_LAPLACIAN:
-        if(nChanGrp == 1) return val;
-        if(idx == 0)            return val - record[chanList[1]];
-        if(idx == nChanGrp - 1) return val - record[chanList[nChanGrp - 2]];
-        return val - 0.5 * (record[chanList[idx - 1]] +
-                             record[chanList[idx + 1]]);
-
-    case SDIFF_ALLPAIRS:
-    default: {
-        // Single-channel group: no neighbours, all-pairwise is identically
-        // zero (a zero threshold would make every sample a spike).  main()
-        // refuses such groups for any order but 0; kept as a guard.
-        if(nChanGrp == 1) return 0.0;
-        double sum = 0.0;
-        for(int j = 0; j < nChanGrp; j++) sum += record[chanList[j]];
-        // = sum_{j!=i}(x[i]-x[j]) = n*x[i] - sum_j(x[j])
-        return (double)nChanGrp * val - sum;
-    }
-    }
+    // A one-channel group is refused in main() for any order but 0.
+    return neurosuite::core::spatialDerivBy(
+        static_cast<neurosuite::core::SdiffOrder>(order),
+        [record, chanList](int j) { return record[chanList[j]]; }, idx, nChanGrp);
 }
 
 // =========================================================================
