@@ -24,6 +24,7 @@
 #include <QPainterPath>
 #include <QPainterPathStroker>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSplitter>
@@ -121,6 +122,38 @@ void PipelineCanvas::bind(QList<PipelineNode>* nodes, QList<PipelineEdge>* edges
     this->nodes = nodes;
     this->edges = edges;
     update();
+}
+
+bool PipelineCanvas::hasNodeId(const QString& id) const
+{
+    if (!nodes) return false;
+    for (const PipelineNode& n : *nodes)
+        if (n.id == id) return true;
+    return false;
+}
+
+QString PipelineCanvas::allocateId()
+{
+    // The counter alone is not enough: a loaded pipeline file keeps its own
+    // ids, which may be ahead of idSeq.  reserveIds() moves the counter past
+    // them; the membership check guards any id the counter cannot see
+    // (non-numeric ids, ids added behind the canvas's back).
+    QString id;
+    do {
+        id = QStringLiteral("n%1").arg(++idSeq);
+    } while (hasNodeId(id));
+    return id;
+}
+
+void PipelineCanvas::reserveIds()
+{
+    if (!nodes) return;
+    static const QRegularExpression numericId(QStringLiteral("^n(\\d{1,9})$"));
+    for (const PipelineNode& n : *nodes) {
+        const QRegularExpressionMatch m = numericId.match(n.id);
+        if (m.hasMatch())
+            idSeq = qMax(idSeq, m.captured(1).toInt());
+    }
 }
 
 void PipelineCanvas::resetInteraction()
@@ -1544,12 +1577,30 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
 
     // Replace the graph atomically — only mutate nodes/edges if the
     // parse succeeds.
+    QString parsedOutput;
     QList<PipelineNode> newNodes;
     QList<PipelineEdge> newEdges;
     QHash<QString, int> nodeIdx;  // id → index in newNodes
     QStringList unknownTypes;
+    QStringList renamedIds;
+    // Fresh ids for renamed duplicates: "n<k>" above every numeric id in
+    // the file, so they can't collide with a later node either.
+    int freshSeq = 0;
+    {
+        static const QRegularExpression numericId(QStringLiteral("(?m)^NODE\\tn(\\d{1,9})\\t"));
+        const QString all = QString::fromUtf8(py.readAllStandardOutput());
+        auto it = numericId.globalMatch(all);
+        while (it.hasNext()) freshSeq = qMax(freshSeq, it.next().captured(1).toInt());
+        parsedOutput = all;
+    }
+    auto uniqueFreshId = [&]() {
+        QString id;
+        do { id = QStringLiteral("n%1").arg(++freshSeq); } while (nodeIdx.contains(id));
+        return id;
+    };
 
-    const QString output = QString::fromUtf8(py.readAllStandardOutput());
+    const QString output = parsedOutput;
+    int curNode = -1;   // index of the node the following PARAM lines belong to
     for (const QString& line : output.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
         const QStringList parts = line.split(QLatin1Char('\t'));
         if (parts.isEmpty()) continue;
@@ -1559,6 +1610,7 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
             // was renamed or removed since it was saved.
             if (!ndmScriptDef(parts[2])) {
                 unknownTypes.append(parts[2]);
+                curNode = -1;
                 continue;
             }
             PipelineNode n;
@@ -1566,12 +1618,23 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
             n.type    = parts[2];
             n.pos     = QPointF(parts[3].toDouble(), parts[4].toDouble());
             n.enabled = (parts[5] == QLatin1String("1"));
-            nodeIdx.insert(n.id, newNodes.size());
+            if (n.id.isEmpty() || nodeIdx.contains(n.id)) {
+                // A second node with the same id (or none): edges and
+                // params naming the id belong to the first node; this one
+                // keeps its type and position under a fresh id.
+                renamedIds.append(QStringLiteral("%1 (%2)")
+                    .arg(n.id.isEmpty() ? QStringLiteral("<empty>") : n.id, n.type));
+                n.id = uniqueFreshId();
+            }
+            curNode = newNodes.size();
+            nodeIdx.insert(n.id, curNode);
             newNodes.append(n);
         } else if (parts[0] == QLatin1String("PARAM") && parts.size() >= 4) {
-            if (!nodeIdx.contains(parts[1])) continue;  // unknown-type drop
+            // PARAM lines follow their NODE line; attach by position, not
+            // by id, so a renamed duplicate keeps its own parameters.
+            if (curNode < 0) continue;  // unknown-type drop
             const QString val = yamlUnquote(parts[3]);
-            newNodes[nodeIdx.value(parts[1])].params.append({ parts[2], val });
+            newNodes[curNode].params.append({ parts[2], val });
         } else if (parts[0] == QLatin1String("EDGE") && parts.size() >= 3) {
             // Skip edges that reference a dropped (unknown-type) node.
             if (!nodeIdx.contains(parts[1])) continue;
@@ -1589,7 +1652,7 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
     }
     if (rootIdx < 0) {
         PipelineNode root;
-        root.id      = QStringLiteral("nroot");
+        root.id      = uniqueFreshId();
         root.type    = kRootType;
         root.pos     = QPointF(60.0, 80.0);
         root.enabled = true;
@@ -1606,7 +1669,10 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
     // Apply.
     nodes = newNodes;
     edges = newEdges;
-    if (canvas) canvas->resetInteraction();
+    if (canvas) {
+        canvas->resetInteraction();
+        canvas->reserveIds();   // new nodes must not reuse the file's ids
+    }
     inspectedId.clear();
     clearInspector();
 
@@ -1614,10 +1680,17 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
     modified = false;
     refreshApplyState();
 
-    if (error && !unknownTypes.isEmpty()) {
-        *error = QStringLiteral("Loaded with %1 unknown plugin type(s) dropped: %2")
+    QStringList warnings;
+    if (!unknownTypes.isEmpty()) {
+        warnings << QStringLiteral("Loaded with %1 unknown plugin type(s) dropped: %2")
                     .arg(unknownTypes.size())
                     .arg(unknownTypes.join(QStringLiteral(", ")));
     }
+    if (!renamedIds.isEmpty()) {
+        warnings << QStringLiteral("Duplicate or empty node id(s) given fresh ids "
+                                   "(edges naming a duplicated id attach to its first node): %1")
+                    .arg(renamedIds.join(QStringLiteral(", ")));
+    }
+    if (error && !warnings.isEmpty()) *error = warnings.join(QLatin1Char('\n'));
     return true;
 }

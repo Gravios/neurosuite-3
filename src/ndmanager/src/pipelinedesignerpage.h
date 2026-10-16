@@ -135,6 +135,11 @@ public:
      *  survives to be deleted, dragged or connected from. */
     void resetInteraction();
 
+    /** Advance the id counter past every "n<digits>" id in the bound node
+     *  list, so ids kept from a loaded file never collide with freshly
+     *  allocated ones. */
+    void reserveIds();
+
     QString selectedNodeId()  const { return selNodeId; }
     QString selectedEdgeKey() const { return selEdgeKey; }
 
@@ -161,8 +166,9 @@ public:
     static constexpr float CR    = 8.f;   // corner radius
     static constexpr float HBAR  = 4.f;   // header stripe height
 
-    /** Allocate the next unique node id (e.g. "n42"). */
-    QString allocateId() { return QStringLiteral("n%1").arg(++idSeq); }
+    /** Allocate the next unique node id (e.g. "n42").  Never returns an
+     *  id already present in the bound node list. */
+    QString allocateId();
 
     /** Programmatically select a node by id and update the display. */
     void selectNode(const QString& id) {
@@ -193,7 +199,8 @@ private:
     QPointF connectCursor;
 
     int idSeq = 0;
-    QString newId() { return QStringLiteral("n%1").arg(++idSeq); }
+    QString newId() { return allocateId(); }
+    bool hasNodeId(const QString& id) const;
 
     // coord helpers
     QPointF w2s(const QPointF& w) const { return w + pan; }
