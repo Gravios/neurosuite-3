@@ -3,15 +3,20 @@
  ***************************************************************************/
 #include "descriptionyamlwriter.h"
 
-#include <QFile>
+#include <QSaveFile>
 #include <QTextStream>
 #include <QStringList>
 
+// A YAML double-quoted scalar.  The backslash is escaped first, so the
+// escapes added for the other characters are not escaped again.
 static QString esc(const QString& s)
 {
     QString e = s;
+    e.replace(QLatin1Char('\\'), QLatin1String("\\\\"));
     e.replace(QLatin1Char('"'), QLatin1String("\\\""));
     e.replace(QLatin1Char('\n'), QLatin1String("\\n"));
+    e.replace(QLatin1Char('\r'), QLatin1String("\\r"));
+    e.replace(QLatin1Char('\t'), QLatin1String("\\t"));
     return QLatin1Char('"') + e + QLatin1Char('"');
 }
 
@@ -22,7 +27,9 @@ void DescriptionYamlWriter::setProgramInformation(const ProgramInformation& info
 
 bool DescriptionYamlWriter::writeTofile(const QString& url)
 {
-    QFile f(url);
+    // Written to a temporary file and renamed over url only when every byte
+    // was written, so a failed write leaves the previous description intact.
+    QSaveFile f(url);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
         return false;
 
@@ -48,6 +55,10 @@ bool DescriptionYamlWriter::writeTofile(const QString& url)
         }
     }
 
-    f.close();
-    return true;
+    o.flush();
+    if (o.status() != QTextStream::Ok) {
+        f.cancelWriting();
+        return false;
+    }
+    return f.commit();
 }
