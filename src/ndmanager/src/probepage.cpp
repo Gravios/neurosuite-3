@@ -103,9 +103,15 @@ bool readProbeLayout(const QString& path, ProbeLayout& out, QString* err)
         if (cps && cps.IsSequence()) {
             for (std::size_t i = 0; i < cps.size(); ++i)
                 counts.append(qMax(0, yamlInt(cps[i], 0)));
-        } else {
+        } else if (cps && cps.IsScalar()) {
             const int n = qMax(0, yamlInt(cps, 0));
             for (int i = 0; i < nShanks; ++i) counts.append(n);
+        } else if (nShanks == 1) {
+            // No count at all on a one-shank probe: every geometry entry is
+            // a site of that shank (probe_geometry.py, the Probe Maker).
+            counts.append((geom && geom.IsSequence()) ? static_cast<int>(geom.size()) : 0);
+        } else {
+            for (int i = 0; i < nShanks; ++i) counts.append(0);
         }
         for (int n : counts) out.nSites += n;
 

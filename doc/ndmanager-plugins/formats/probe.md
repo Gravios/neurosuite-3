@@ -55,7 +55,9 @@ Every tool looks a channel's position up by channel number
 may list their channels in any order.
 
 `count_per_shank` decides which geometry entries belong to which shank; it is
-a list when the shanks differ.
+a list when the shanks differ. A one-shank probe may leave it out (or null):
+every geometry entry is then a site of that shank. A multi-shank probe needs
+it.
 
 ## NeuroNexus library
 

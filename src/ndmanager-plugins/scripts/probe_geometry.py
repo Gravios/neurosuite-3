@@ -14,7 +14,9 @@ ndm_localise (and the same rule Klusters' driftgeometry.cpp applies):
   depth increases (doc/ndmanager-plugins/formats/probe.md).
 
   sites.count_per_shank is one integer (every shank alike) or a list with one
-  entry per shank (designs whose shanks differ, e.g. Buzsaki64sp).
+  entry per shank (designs whose shanks differ, e.g. Buzsaki64sp).  Without
+  it, a one-shank probe holds every geometry entry; a multi-shank probe
+  without it has no assignable sites.
 
 A position is looked up by channel NUMBER, never by where a channel happens to
 sit in a group's list, so a group may list its channels in any order.
@@ -36,7 +38,12 @@ def shank_counts(probe: dict) -> list[int]:
     cps = ((probe or {}).get("sites") or {}).get("count_per_shank")
     if isinstance(cps, list):
         return [int(c) for c in cps]
-    return [int(cps or 0)] * n_shanks
+    if cps is None:
+        # No count at all: a one-shank probe holds every geometry entry
+        # (what ndmanager's Probe Maker and Probes tab read too); several
+        # shanks cannot be split without it.
+        return [len(_geometry(probe))] if n_shanks == 1 else [0] * n_shanks
+    return [int(cps)] * n_shanks
 
 
 def _geometry(probe: dict) -> list:

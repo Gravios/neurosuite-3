@@ -70,6 +70,15 @@ mapped = {"shanks": {"count": 1},
 print("probe_geometry")
 check("count list", pg.shank_counts(uneven) == [2, 3])
 check("count int", pg.shank_counts(two) == [3, 3])
+# No count_per_shank: a one-shank probe holds every geometry entry (the rule
+# ndmanager's Probe Maker and Probes tab share); several shanks hold none.
+nocount1 = {"shanks": {"count": None},
+            "sites": {"count_per_shank": None, "geometry": [[0, 100], [10, 80], [0, 60]]}}
+nocount2 = {"shanks": {"count": 2},
+            "sites": {"geometry": [[0, 100], [0, 80], [200, 100], [200, 80]]}}
+check("no count, one shank", pg.shank_counts(nocount1) == [3])
+check("no count, one shank: channels", pg.shank_channels(nocount1, 4) == [[4, 5, 6]])
+check("no count, two shanks", pg.shank_counts(nocount2) == [0, 0])
 check("shank channels, offset 8", pg.shank_channels(two, 8) == [[8, 9, 10], [11, 12, 13]])
 check("uneven shank channels", pg.shank_channels(uneven, 0) == [[0, 1], [2, 3, 4]])
 check("mapped channel 0 at geometry[1]",
