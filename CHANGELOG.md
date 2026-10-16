@@ -9,6 +9,8 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [ndManager: parameter tables by keyboard, typed values; plugins listed by purpose](#2026-10-16--ndmanager-parameter-tables-by-keyboard-typed-values-plugins-listed-by-purpose) |
+| 2026-10-16 | [Units: brain region, division, atlas and region ID](#2026-10-16--units-brain-region-division-atlas-and-region-id) |
 | 2026-10-16 | [Klusters: saves are all-or-nothing and skip unchanged files; autosave covers hierarchical sessions; editing locked during a save](#2026-10-16--klusters-saves-are-all-or-nothing-and-skip-unchanged-files-autosave-covers-hierarchical-sessions-editing-locked-during-a-save) |
 | 2026-10-16 | [Klusters: save-system fixes; Promote to Hierarchical Session](#2026-10-16--klusters-save-system-fixes-promote-to-hierarchical-session) |
 | 2026-10-16 | [ndManager: audit fixes — saves, Pipeline tab, Probes tab, Probe Maker](#2026-10-16--ndmanager-audit-fixes--saves-pipeline-tab-probes-tab-probe-maker) |
@@ -53,6 +55,57 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-16 — ndManager: parameter tables by keyboard, typed values; plugins listed by purpose
+
+<details>
+<summary>Details</summary>
+
+- **Tab never traps the keyboard.** In every ndManager table Tab and
+  Shift+Tab move cell to cell and leave the table after the last cell (or
+  before the first). An invalid entry is put back to its last good value with
+  the reason beside the cell, instead of holding the focus until it is fixed.
+  The help field, the pipeline canvas and the parameter page's buttons are in
+  the Tab order.
+- **Parameter tables edit like a spreadsheet:** double-click, F2 or typing
+  starts an edit; Add opens the new row's name; **Move Up / Move Down**
+  reorder rows.
+- **Typed parameters.** A description's optional `type` (`bool`, `int`,
+  `float`, `choice:a|b|c`), `default` and `hidden` keys are kept — through the
+  table, the description file and the session file's `programs:` entry —
+  instead of being dropped on the first save. The Value cell's editor follows
+  the type (a list for bool and choice, a number-only field for int and
+  float); a value the type does not take is refused, and an empty one means
+  "not set". `hidden: true` hides a row outside expert mode.
+- A value edited on a plugin's page reaches that plugin's nodes in the
+  Pipeline graph.
+- **Plugins by purpose.** The Plugins tree and the Pipeline palette list
+  plugins in collapsible branches (Conversion, Preparation, Detection,
+  Sorting, …). The branch comes from the description's `category`, else the
+  built-in table, else Other; the palette no longer leaves out a category
+  missing from a fixed list. Enter on a palette entry adds it to the graph.
+
+See `doc/ndmanager/README.md` — *Editing a plugin's parameters* and *Plugins
+by purpose*.
+
+</details>
+
+## 2026-10-16 — Units: brain region, division, atlas and region ID
+
+<details>
+<summary>Details</summary>
+
+Units carry four more optional fields after structure, type, isolation
+distance, quality and notes: **region** (e.g. hippocampal formation),
+**division** (e.g. archicortex), **atlas** (where the terms come from, e.g.
+WHS SD rat v4 or Allen CCF) and **regionId** (a stable atlas or UBERON id).
+Klusters edits them in Cluster Information and shows them in the palette;
+the `.cli` cluster information file is format v2 (eleven fields; v1 files
+read unchanged); ndManager's Units page and Record Curated Units carry them;
+the session YAML's `units` entries write each key only when it is set. See
+`doc/ndmanager-plugins/formats/cli.md`.
+
+</details>
 
 ## 2026-10-16 — Klusters: saves are all-or-nothing and skip unchanged files; autosave covers hierarchical sessions; editing locked during a save
 
