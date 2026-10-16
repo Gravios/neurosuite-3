@@ -103,8 +103,9 @@ public:
  */
     OpenSaveCreateReturnMessage saveAs(const QString& newUrl);
 
-    /**Save the current parameter file as the default one in the user .kde
- * directory.  The session itself is not marked as saved.*/
+    /**Save the current parameter file as the default one used by File > New:
+ * <writable ApplicationsLocation>/ndmanager/ndManagerDefault.yaml.  The
+ * session itself is not marked as saved.*/
     OpenSaveCreateReturnMessage saveDefault();
 
     /**Saves the script @p scriptName.

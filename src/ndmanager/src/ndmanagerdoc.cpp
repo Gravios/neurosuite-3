@@ -276,10 +276,13 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::saveDefault(){
 
-    QString path = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
-    QDir dir(path);
-    bool ok = dir.mkpath(path);
-    path = path + QDir::separator() + QLatin1String("ndManagerDefault.yaml");
+    // newDocument() looks the default up as "ndmanager/ndManagerDefault.yaml"
+    // in ApplicationsLocation, whose writable entry is searched first.
+    const QString dirPath = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation)
+                          + QLatin1String("/ndmanager");
+    if(!QDir().mkpath(dirPath))
+        return CREATION_ERROR;
+    const QString path = dirPath + QLatin1String("/ndManagerDefault.yaml");
 
     // Written from ndmanager's model alone: the default is a template for new
     // documents, and this session's own blocks (sourceRecording, per-group
