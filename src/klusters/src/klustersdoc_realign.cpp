@@ -3041,82 +3041,17 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
         // Spatial derivative of channel ci at one time sample; V(cj) returns
         // that sample's raw value on group channel cj.  Shared by the window
-        // samples and the seed sample before the window.
+        // samples and the seed sample before the window.  The arithmetic is
+        // neurosuite::core::spatialDerivBy (stderiv_transform.hpp), the one
+        // definition the extractor uses too, rounded like the extractor; the
+        // caller clamps to int16 and counts the clamps.
         auto spatialAt = [&](auto V, int ci) -> int {
-            const int val = V(ci);
-                int sd;
-            switch (kSdiffOrder) {
-            case 0:  // SDIFF_NONE — pass-through
-                sd = val;
-                break;
-            case 1: {  // SDIFF_FIRST — val − next-channel (or prev at edge)
-                const int other = (ci < nChan - 1)
-                    ? V((ci+1))
-                    : (nChan > 1
-                        ? V((ci-1))
-                        : 0);
-                sd = val - other;
-                break; }
-            case 2: {  // SDIFF_LAPLACIAN
-                if (nChan == 1) { sd = val; break; }
-                if (ci == 0)
-                    sd = val - V(1);
-                else if (ci == nChan - 1)
-                    sd = val - V((nChan-2));
-                else {
-                    // ½(prev+next) implemented in integer arithmetic with
-                    // the same rounding behaviour as the canonical:
-                    //   sd = round(val − 0.5*(prev + next))
-                    //      = (2*val − prev − next + sign·1) / 2
-                    // canonical uses double + std::round → tie-to-nearest-even
-                    // is unreachable for int16 inputs; the (a+1)/2 trick
-                    // matches the floor(.5+) behaviour for all values
-                    // representable as int16.
-                    const int prev = V((ci-1));
-                    const int next = V((ci+1));
-                    const int twoVal = 2 * val - prev - next;
-                    sd = (twoVal >= 0)
-                        ? (twoVal + 1) / 2
-                        : -((-twoVal + 1) / 2);
-                }
-                break; }
-            case 4: {  // SDIFF_CUSTOM - val minus partner-channel
-                sd = nudgePartner.empty()
-                    ? val
-                    : val - V(nudgePartner[static_cast<size_t>(ci)]);
-                break; }
-            case 5: {  // SDIFF_CUSTOM_CAR - val minus the mean of its reference set
-                if (!nudgeSetOff.empty()) {
-                    const int b = nudgeSetOff[static_cast<size_t>(ci)];
-                    const int e = nudgeSetOff[static_cast<size_t>(ci) + 1];
-                    if (e > b) {
-                        double acc = 0.0;
-                        for (int k = b; k < e; ++k)
-                            acc += V(nudgeSetMem[static_cast<size_t>(k)]);
-                        // round like the extractor (process_extractspikes_stderiv round())
-                        sd = static_cast<int>(std::lround(val - acc / static_cast<double>(e - b)));
-                        break;
-                    }
-                }
-                sd = val;
-                break; }
-            case 6:  // expressions over c0, c1, ... - rounded like the extractor
-                if (nudgeExpr.fits(nChan)) {
-                    // eval holds its result within +-1e9, so the int cannot overflow
-                    sd = static_cast<int>(std::lround(nudgeExpr.eval(ci, [&](int cj) {
-                        return static_cast<double>(V(cj)); })));
-                    break;
-                }
-                [[fallthrough]];
-            case 3:  // SDIFF_ALLPAIRS — fall through (default)
-            default: {
-                int sum = 0;
-                for (int cj = 0; cj < nChan; ++cj)
-                    sum += V(cj);
-                sd = nChan * val - sum;
-                break; }
-            }
-            return sd;
+            return static_cast<int>(std::lround(neurosuite::core::spatialDerivBy(
+                static_cast<neurosuite::core::SdiffOrder>(kSdiffOrder), V, ci, nChan,
+                nudgePartner.empty() ? nullptr : nudgePartner.data(),
+                nudgeSetOff.empty()  ? nullptr : nudgeSetOff.data(),
+                nudgeSetMem.empty()  ? nullptr : nudgeSetMem.data(),
+                nudgeExpr.empty()    ? nullptr : &nudgeExpr)));
         };
 
         // Step 1: spatial derivative (matches process_extractspikes_stderiv
