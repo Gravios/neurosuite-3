@@ -14,6 +14,7 @@ cmake_minimum_required(VERSION 3.22)
 if(NOT DEFINED REPO)
     get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
+get_filename_component(REPO "${REPO}" ABSOLUTE)   # -DREPO=. works too
 
 set(_failed "")
 macro(_ok msg)

@@ -12,7 +12,7 @@ made.  Read it first before designing or shipping any change.
 ## 1. Project map
 
 `neurosuite-3` is a Qt6/C++20 modernization of the Neurosuite electrophysiology
-toolchain.  The repo contains six tightly-coupled subsystems:
+toolchain.  The repo contains seven tightly-coupled subsystems:
 
 | Subsystem | Path | Role |
 |---|---|---|
@@ -22,13 +22,14 @@ toolchain.  The repo contains six tightly-coupled subsystems:
 | **ndmanager-plugins** | `src/ndmanager-plugins/` | preprocessing plugins (CLI tools + bash wrappers) |
 | **neuroscope** | `src/neuroscope/` | trace viewer GUI |
 | **libklustersshared** | `src/libklustersshared/` | shared library (Qt6 + yaml-cpp + KDE-port widgets) |
+| **libneurosuite-core** | `src/libneurosuite-core/` | Qt-free core (std only): file I/O (`neurofileio`), file naming (`custody`), PCA, spike extraction, templates |
 
 `libklustersshared` is consumed by all three Qt apps (klusters, ndmanager,
 neuroscope) and provides shared widgets (DockArea, ZoomWindow), color
 management (ItemColors, ChannelColors), schema I/O (ParameterYamlReader/
 Writer/Modifier), and the progress bar used by ndmanager-plugins CLI tools.
 
-A seventh subproject, `nphys-data` (`src/nphys-data/`), packages MIME/desktop
+An eighth subproject, `nphys-data` (`src/nphys-data/`), packages MIME/desktop
 resources and contains no C++.  Every subproject under `src/` follows the
 standard directory layout codified in §2.7.
 
@@ -85,7 +86,7 @@ don't introduce regressions.
 
 ### 2.4 Cluster colors
 
-Hue formula: `hue = (clusterId * 7) mod 36) * 10`, `sat = 200`, `val = 255`.
+Hue formula: `hue = ((clusterId * 7) mod 36) * 10`, `sat = 200`, `val = 255`.
 Don't change this; the visual continuity across sessions depends on it.
 
 ### 2.5 Curation log primitives
@@ -139,7 +140,12 @@ standard shape:
   `neuroscope/docs/INPUT_SYSTEM.md`. This is the "references live next to the
   code" split the [Developer Guide](DEVELOPER_GUIDE.md) uses; §2.8 covers the
   project-wide doc homes (`doc/design/`, `doc/workflows/`).
+- **Tests live in `<sub>/test/`**, never `tests/` (klusters was the last
+  outlier).  The top-level `tests/` holds the build-system checks and is not a
+  subproject.
 - **Never keep a file at both `<sub>/X` and `<sub>/src/X`.**  See §6.8.
+- `build_invariants` (check 9) fails if a subproject has a `tests/` directory
+  or a C/C++ source at its root.
 
 ### 2.8 Documentation and changelog layout
 
@@ -157,6 +163,20 @@ standard shape:
   purpose; the top-level changelog references them but does not absorb
   them.
 - Vendored third-party changelogs (e.g. libsamplerate) are never touched.
+
+### 2.9 Language standard
+
+- **C++20 everywhere, C11 for C**, extensions off.  Every project root sets
+  `CMAKE_CXX_STANDARD 20` (required); this holds for the apps, both libraries,
+  the plugins and kiloklustakwik alike.
+- A target that declares a compile feature declares `cxx_std_20`, not an
+  older floor: a `cxx_std_17` there builds as C++20 anyway and only misleads.
+- There is no "C++17-clean" subset.  An older claim that the core headers had
+  to stay C++17 because the plugins built as C++17 was never true.
+- Exempt: `process_smrconvert` (an external package, §1) and the vendored
+  libsamplerate.
+- `build_invariants` (check 8) enforces this.  Syntax checks use
+  `-std=c++20` (§7.5, §9).
 
 ---
 
@@ -232,51 +252,47 @@ group 25.  Use these for any change that needs end-to-end verification.
 
 ## 4. Workflow
 
-### 4.1 Iterative tarball pattern
+### 4.1 Iterative patch-series pattern
 
 The session loop is:
 
 1. Gravio describes a goal (often terse: a paste of build log, runtime
    failure, or a one-line ask).
-2. Claude diagnoses, designs, and stages changes in
-   `/home/claude/release/<topic>/` mirroring repo structure.
-3. Claude builds a **cumulative drop-in tarball** (`tar czf` with full
-   paths from repo root) into `/mnt/user-data/outputs/`.
-4. Claude ships via `present_files`.
-5. Gravio extracts directly into the source tree (`tar xzf` from repo root).
-6. Gravio reports build errors / runtime failures tersely.
-7. GOTO 2 with version bump (`v2`, `v3`, ...).
+2. Claude diagnoses, designs, and commits the change in a working clone.
+3. Claude exports a numbered `git format-patch` series and sends the
+   `.patch` files.
+4. Gravio applies them with `git am` and build-tests on `nphy-069`.
+5. Gravio reports build errors / runtime failures tersely.
+6. GOTO 2: fixes are **new patches on top**, not rewrites of shipped ones.
 
-Each tarball is a **complete drop-in for that topic** — not a delta.  Later
-versions supersede earlier ones.  Files inside the tarball use the same
-relative paths as the repo, so `tar xzf` lands them in the right place.
+Each commit ends with a NOTE distinguishing what was verified (built, ctest,
+`git am`) from what still needs a hardware build (Qt/CUDA/HIP/SYCL wiring
+that could not be compiled where the patch was made).
 
-**Patch-series variant.** For structural, repo-wide, or multi-commit work
-(e.g. the KiloKlustaKwik rebrand, the per-subproject `src/` standardization,
-and the changelog consolidation), deliver a numbered `git format-patch`
-series instead: stage commits in a working clone, `git format-patch
-<base>..HEAD -o patches/`, verify the whole stack applies clean with
-`git am` on a fresh detached checkout of `<base>`, then ship the `.patch`
-files via `present_files`.  Gravio applies them with `git am` and build-tests
-each on `nphy-069`.  Commit messages end with a NOTE distinguishing what was
-verified (compiles / grep / `git am`) from what still needs a hardware build
-(Qt/CUDA/HIP/SYCL wiring can't be compiled in the container).
+Tarballs are no longer used.  Older entries in `CHANGELOG.md` and
+`doc/history/` mention `*.tar.gz` drops; that was the earlier delivery format.
 
-### 4.2 Tarball discipline
+### 4.2 Patch discipline
 
-- Filename: `<topic>-<descriptor>[-vN].tar.gz` (e.g. `klusters-dipsplit-postcommit-v3.tar.gz`).
-- Contents: **only files actually changed** (and a `<TOPIC>.md` doc explaining
-  the drop, if non-trivial).
-- Don't include unmodified files.  Don't include build artefacts.  Don't
-  include `.gitignore`'d output.
-- Use `--owner=0 --group=0` to avoid permission noise on extraction.
+- **One concern per commit**, with an imperative, component-scoped subject
+  (`klusters: …`, `build: …`, `doc: …`).
+- **Numbering continues across sessions**: `git format-patch --start-number N
+  <base>..HEAD`, where `N` follows the last patch already shipped.
+  fiber-kit patches are numbered separately from 0001 and kept apart from
+  neurosuite-3's.
+- **Author** `Justin Graboski <justingraboski@gmail.com>`; the commit message
+  ends with the attribution trailers the session specifies.
+- **Verify the whole series** with `git am` onto a fresh checkout of the base,
+  and confirm the resulting tree matches the working clone.
+- Only source changes go in a patch: no build output, no `.gitignore`d files,
+  no generated `ui_*.h`.
 
 ### 4.3 Reference clone discipline
 
 Maintain a fresh clone alongside the working copy:
-- `/tmp/ns3-fresh/` or `/tmp/neurosuite-3-fresh/` — fresh clone at HEAD,
-  used for auditing / diff baselines.
-- `/home/claude/release/<topic>/` — working copy, where changes are staged.
+- a fresh clone at the base commit, used for auditing, diff baselines and
+  the `git am` check;
+- the working clone, where the commits are made.
 
 When verifying that a change preserves behavior, diff the working copy's
 file against the fresh clone's, ideally after normalizing whitespace and
@@ -297,7 +313,7 @@ the things the change is supposed to alter.
 ### 4.5 What ships in `/mnt/user-data/outputs/`
 
 Only artefacts Gravio will use directly:
-- Tarballs of source changes
+- The `.patch` files (fiber-kit's under `fiber-kit/`)
 - Generated docs (e.g. AUDIT.md, DEDUPE.md, or a per-topic change note)
 - Test reports if requested
 
@@ -306,7 +322,7 @@ Not:
 - Throwaway demos
 - Logs from build attempts
 
-Use `/home/claude/` (not `/mnt/user-data/outputs/`) for everything else.
+Keep everything else in the session's scratch space.
 
 ---
 
@@ -453,6 +469,13 @@ sources does, and must be build-tested per backend.
 
 ### 7.2 Test harnesses
 
+**The regression suite** is opt-in: configure with `-DNS_BUILD_TESTS=ON` and
+run `ctest --test-dir build --output-on-failure`.  [tests/README.md](../../tests/README.md)
+is the one reference: running one subproject (`ctest -R`), a Qt-free configure
+that builds the core, kiloklustakwik and build-system tests in a few minutes,
+the ndmanager-plugins script tests and the fiber-kit contract check (neither
+runs under ctest).
+
 For terminal/TTY-related features (progressbar):
 - `script(1)` for PTY emulation in container — `script -q -c '<cmd>' /tmp/cap.log`.
 - Python `pty` module for finer control with redirections.
@@ -509,19 +532,24 @@ to match real codebase structure.
 
 ## 9. Verification gates before shipping
 
-Before shipping any tarball, verify:
+Before shipping any patch series, verify:
 
-1. **Build**: `g++ -std=c++17 -fsyntax-only -Wall -Wextra -Wshadow ...`
-   on the changed source files.  Zero warnings.
+1. **Build**: `g++ -std=c++20 -fsyntax-only -Wall -Wextra -Wshadow ...`
+   on the changed source files (§2.9).  Zero warnings.
 2. **Convention**: `grep -n 'm_[a-zA-Z]' <changed-files>` returns only
    false positives (script names like `ndm_pca` in comments, tool names
    in strings).
 3. **Domain invariants**: if the change touches curation, undo, spike
    files, or PCA — sanity-check that the relevant invariant from §3
    still holds (read the change, not the test suite).
-4. **Tarball contents**: list with `tar tzf` and confirm only changed
-   files are included (no stale staging detritus).
-5. **AUDIT.md / DEDUPE.md / per-topic change notes**: present and accurate
+4. **Tests**: build with `-DNS_BUILD_TESTS=ON` and run `ctest` for the
+   area touched, plus the ndmanager-plugins script tests it covers
+   ([tests/README.md](../../tests/README.md)).  Where Qt is missing, run the
+   Qt-free set and say which tests could not be built.
+5. **Patch series**: it applies with `git am` onto a fresh checkout of the
+   base, the resulting tree matches the working clone, and each patch holds
+   only its own concern (§4.2).
+6. **AUDIT.md / DEDUPE.md / per-topic change notes**: present and accurate
    if the change is non-trivial.  The single canonical project changelog is
    `CHANGELOG.md` (§2.8) — record user-visible changes there, not in a new
    root file.
@@ -531,12 +559,12 @@ Before shipping any tarball, verify:
 ## 10. End-of-session recap pattern
 
 When wrapping up, summarize:
-- What shipped (tarball name, file count, replaces previous version if any).
+- What shipped (patch numbers and subjects).
 - What changed (concrete bullets).
 - What was deferred (with reasons).
 - What's blocked / awaiting verification.
 
-This goes in the chat reply, not in the tarball.  Memory will pick up the
+This goes in the chat reply, not in a patch.  Memory will pick up the
 key facts on next session.
 
 ---
