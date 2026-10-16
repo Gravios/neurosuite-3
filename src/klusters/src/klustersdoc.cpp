@@ -63,7 +63,6 @@
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
-#include "autosavethread.h"
 #include "parameteryamlmodifier.h"
 #include "dipsplit.h"
 #include "parameteryamlreader.h"
@@ -106,8 +105,10 @@ KlustersDoc::KlustersDoc(QWidget* parentWin,ClusterPalette& palette,bool autoSav
 
     viewList = new QList<KlustersView*>();
     clusterColorList = nullptr;
-    endAutoSaving = false;
-    autoSaveThread = nullptr;
+    // Crash recovery runs on the GUI thread from a timer: it snapshots the ids
+    // (as a save does) instead of letting a thread read the live Data.
+    autoSaveTimer = new QTimer(this);
+    connect(autoSaveTimer, &QTimer::timeout, this, &KlustersDoc::autoSaveTick);
 }
 
 KlustersDoc::~KlustersDoc(){
@@ -144,20 +145,11 @@ KlustersDoc::~KlustersDoc(){
     // by Save; a close without saving discards them by design.
     removePendingFiles();
 
-    //If an autoSaveThread exists and has not finish, wait until it is done
-    if(autoSave && autoSaveThread != nullptr){
-        if(!autoSaveThread->isRunning()){
-            autoSaveThread->removeTmpFile();
-            delete autoSaveThread;
-            autoSaveThread = nullptr;
-        }
-        else{
-            endAutoSaving = true;
-            while(!autoSaveThread->wait()){};
-            //Wait that the customEvent has process the AutoSaveEvent and deleted the autoSaveThread
-            while(autoSaveThread != nullptr){};
-        }
-    }
+    // The rescue copies belong to a session that ended normally.  (The old
+    // AutoSaveThread teardown busy-waited here for an event that could not be
+    // delivered from a destructor.)
+    if (autoSaveTimer) autoSaveTimer->stop();
+    if (!docUrl.isEmpty()) removeRescueFiles();
 }
 
 bool KlustersDoc::idsBelongTo(const Data& layer, const QList<int>& ids,

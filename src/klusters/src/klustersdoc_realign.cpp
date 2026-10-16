@@ -4,7 +4,7 @@
 // in-GUI spike-realignment machinery of KlustersDoc — realignSpikes and its
 // file-static helpers (readSpkWaveform/writeSpkWaveform/readTextFile/writeTextFile/
 // swapSpkEntries/parseRealignArgs/realignRmsRecenter), the pending-file lifecycle
-// (initPendingFiles/commitAndRenewPending/rejectLastRealign), the waveform/correlogram
+// (initPendingFiles/stagePendingFiles/renewPendingAfterCommit/rejectLastRealign), the waveform/correlogram
 // cache invalidators, the cluster-membership checks, and nudgeClusterTimestamps.
 //
 // Mechanical relocation, no logic change.  Declarations remain in klustersdoc.h.
@@ -25,6 +25,7 @@
 #include <vector>
 #include <filesystem>
 #include <system_error>
+#include "filecommit.h"
 #include <stdint.h>
 #ifdef _OPENMP
 #include <omp.h>            // CPU-fallback realign parallelisation
@@ -80,7 +81,6 @@
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
-#include "autosavethread.h"
 #include "parameteryamlmodifier.h"
 #include "dipsplit.h"
 #include "parameteryamlreader.h"
@@ -2393,7 +2393,7 @@ bool KlustersDoc::initPendingFiles()
             QFile::remove(dst);          // a failed copy can leave a partial file behind
             return false;
         }
-        // A partial seed must never survive: commitAndRenewPending checks only that the pending file
+        // A partial seed must never survive: the save checks only that the pending file
         // EXISTS, so a truncated one would later be copied straight over a good original.
         if (QFileInfo(src).size() != QFileInfo(dst).size()) {
             qWarning() << "[initPendingFiles] incomplete copy (" << QFileInfo(dst).size() << "of"
@@ -2410,6 +2410,12 @@ bool KlustersDoc::initPendingFiles()
                  && seedFile(docUrl,        pendingCluPath);
 
     if (ok) {
+        // Each copy equals its original right now; the save skips what stays so.
+        for (const QString& w : {pendingSpkPath, pendingResPath, pendingFetPath}) {
+            const QString o = w.left(w.size() - int(QStringLiteral(".pending").size()));
+            syncStamps[w] = filecommit::markInSync(QFile::encodeName(w).toStdString(),
+                                                   QFile::encodeName(o).toStdString());
+        }
         // Redirect the waveform reader and clu writer to the pending files.
         // They will remain here for the entire document session.
         clusteringData->setSpkFileName(pendingSpkPath);
@@ -2428,11 +2434,11 @@ bool KlustersDoc::initPendingFiles()
     } else {
         // Leave NO half-state.  The four paths are assigned above, BEFORE the copies, so on failure
         // they pointed at files that were never seeded: saveDocument would still target
-        // pendingCluPath, commitAndRenewPending would try to commit files that do not exist (a
+        // pendingCluPath, the save would try to commit files that do not exist (a
         // spurious "save failed" on a save that in fact worked), and the lazy retry guard
         // `if (pendingResPath.isEmpty())` could never fire.  Clear them instead: the session then
         // runs in plain non-pending mode -- tmpCluFile still names the real .clu, saveDocument writes
-        // there directly, commitAndRenewPending no-ops -- and the next realign retries the seed.
+        // there directly, stagePendingFiles no-ops -- and the next realign retries the seed.
         //
         // The copies that DID succeed are removed too: nothing points at them
         // any more, so they would only linger beside the originals.  The usual
@@ -2461,136 +2467,103 @@ void KlustersDoc::removePendingFiles()
 }
 
 
-bool KlustersDoc::commitAndRenewPending(QString* outError, bool* cluCommitted)
+bool KlustersDoc::stagePendingFiles(const QString& spkTarget, const QString& resTarget,
+                                    const QString& fetTarget, std::vector<std::string>& targets,
+                                    bool& waveforms, QString* error)
 {
-    if (cluCommitted) *cluCommitted = pendingCluPath.isEmpty();   // nothing pending: the caller wrote it
-    // Not running with pending files (the seed failed and initPendingFiles cleared the paths):
-    // saveDocument wrote straight to the real .clu, so there is nothing to commit and reporting a
-    // failure here would be spurious.
+    waveforms = false;
+    // No pending set (the seed failed and initPendingFiles cleared the paths): the
+    // session reads the originals directly and there is no working copy to commit.
     if (pendingCluPath.isEmpty()) return true;
-    // patch63 — Step 1: copy each pending file over the original.
-    // QFile::copy refuses to overwrite, so remove the target first.
-    // Each step now reports failure via outError + return value instead
-    // of silently swallowing the error.  Without this, a failed
-    // QFile::copy here meant the user saw "save successful" but the
-    // on-disk file was unchanged.
-    QString firstError;
-    auto copyOver = [&firstError](const QString& src, const QString& dst,
-                                  const char* label) -> bool {
-        if (!QFile::exists(src)) {
-            if (firstError.isEmpty()) {
-                firstError = QString(
-                    "Cannot commit %1 — pending file missing:\n%2")
-                    .arg(QString::fromLatin1(label)).arg(src);
-            }
-            qWarning().noquote() << "[commitAndRenewPending]" << label
-                                 << "pending missing:" << src;
-            return false;
-        }
-        // exists() above proves only that the file is there, not that its seed completed.  Every
-        // pending file is size-invariant for a session (realign rewrites rows in place with "r+b";
-        // saveClusters writes an int32 header + nbSpikes int32 ids), so a pending whose size differs
-        // from the original it is about to replace is truncated -- refuse rather than clobber a good
-        // file with it.  On SaveAs dst is a fresh path that need not exist yet, so only check when it
-        // does; a size clash there means the target is a different recording, which is worth refusing.
-        if (QFile::exists(dst) && QFileInfo(src).size() != QFileInfo(dst).size()) {
-            if (firstError.isEmpty()) {
-                firstError = QString(
-                    "Cannot commit %1 — the pending file is %2 bytes but the file it would replace "
-                    "is %3.\nThe pending copy looks incomplete, so nothing was overwritten:\n%4\n→ %5")
-                    .arg(QString::fromLatin1(label))
-                    .arg(QFileInfo(src).size()).arg(QFileInfo(dst).size()).arg(src).arg(dst);
-            }
-            qWarning().noquote() << "[commitAndRenewPending]" << label
-                                 << "size mismatch, refusing to commit:" << src
-                                 << QFileInfo(src).size() << "vs" << dst << QFileInfo(dst).size();
-            return false;
-        }
-        // Copy beside the original, then rename over it.  The original used to be
-        // removed first and the copy made in its place: a crash, a kill or a full
-        // disk between the two left NO original -- and the next open, finding no
-        // .clu, re-seeded the pending copy from nothing and deleted it, so the
-        // only copy of the edits went too.  The rename replaces the original in
-        // one step, and a failed copy leaves it as it was.
-        const QString staged = dst + QStringLiteral(".saving");
-        QFile::remove(staged);
-        const bool copied = QFile::copy(src, staged)
-                            && QFileInfo(staged).size() == QFileInfo(src).size();
-        std::error_code renameEc;
-        if (copied) {
-            const QFileInfo dstInfo(dst);
-            if (dstInfo.exists())        // keep the original's mode (the copy got the umask's)
-                QFile::setPermissions(staged, QFile::permissions(dst));
-            std::filesystem::rename(QFile::encodeName(staged).toStdString(),
-                                    QFile::encodeName(dst).toStdString(), renameEc);
-        }
-        if (!copied || renameEc) {
-            QFile::remove(staged);
-            // QFile doesn't expose errno reliably — best we can do is
-            // report both paths and check permissions/existence.
-            QFileInfo dstInfo(dst);
-            QFileInfo dirInfo(dstInfo.absolutePath());
-            const QString hint =
-                !dirInfo.isWritable() ? QStringLiteral("parent directory not writable by current user")
-              : renameEc ? QStringLiteral("could not replace the file (%1) — likely owned by another user, "
-                                          "or immutable (chattr +i)")
-                               .arg(QString::fromStdString(renameEc.message()))
-              : QStringLiteral("copy failed or incomplete — check free space, file ownership and "
-                               "parent-directory write permission");
-            if (firstError.isEmpty()) {
-                firstError = QString(
-                    "Cannot commit %1:\n  %2\n→ %3\n\nHint: %4")
-                    .arg(QString::fromLatin1(label))
-                    .arg(src).arg(dst).arg(hint);
-            }
-            qWarning().noquote() << "[commitAndRenewPending]" << label
-                                 << "copy failed:" << src << "->" << dst
-                                 << "hint:" << hint;
-            return false;
-        }
-        return true;
-    };
-    bool allOk = true;
-    allOk &= copyOver(pendingSpkPath, origSpkPath, "spk");
-    allOk &= copyOver(pendingResPath, origResPath, "res");
-    allOk &= copyOver(pendingFetPath, origFetPath, "fet");
-    const bool cluOk = copyOver(pendingCluPath, docUrl, "clu");
-    if (cluCommitted) *cluCommitted = cluOk;
-    allOk &= cluOk;
-    // Other feature spaces synced this session (syncFeatureSpace): commit their
-    // working copies too; they stay live, like the .clu space's.
-    for (auto it = syncedPending.constBegin(); it != syncedPending.constEnd(); ++it)
-        allOk &= copyOver(it.value(), it.key(), "synced feature space");
 
-    // Clear the in-memory queue — all realignment batches have been
-    // applied to disk (even if a later step failed).  Don't replay them.
+    struct Pair { QString work, target; QString label; bool waveform; };
+    QList<Pair> pairs = {
+        {pendingSpkPath, spkTarget, QStringLiteral("spk"), true},
+        {pendingResPath, resTarget, QStringLiteral("res"), true},
+        {pendingFetPath, fetTarget, QStringLiteral("fet"), true},
+    };
+    // Other feature spaces synced this session (syncFeatureSpace): committed in
+    // the same transaction; they stay live, like the .clu space's.
+    for (auto it = syncedPending.constBegin(); it != syncedPending.constEnd(); ++it)
+        pairs.append({it.value(), it.key(), QStringLiteral("synced feature space"), false});
+
+    for (const Pair& p : pairs) {
+        if (p.work.isEmpty()) continue;
+        if (!QFile::exists(p.work)) {
+            *error = QString("Cannot commit %1 — pending file missing:\n%2").arg(p.label, p.work);
+            return false;
+        }
+        // Every working copy is size-invariant for a session (realign rewrites
+        // rows in place), so one whose size differs from the file it would replace
+        // is truncated -- or, on Save As, the target is another recording.
+        // Refuse rather than clobber a good file with it.
+        if (QFile::exists(p.target) && QFileInfo(p.work).size() != QFileInfo(p.target).size()) {
+            *error = QString("Cannot commit %1 — the pending file is %2 bytes but the file it "
+                             "would replace is %3.\nThe pending copy looks incomplete, so nothing "
+                             "was overwritten:\n%4\n→ %5")
+                         .arg(p.label).arg(QFileInfo(p.work).size()).arg(QFileInfo(p.target).size())
+                         .arg(p.work, p.target);
+            return false;
+        }
+        const std::string work = QFile::encodeName(p.work).toStdString();
+        const std::string target = QFile::encodeName(p.target).toStdString();
+        // At parity (nothing realigned, nudged or synced since the last save):
+        // nothing to write.  Proven from the stamps alone in the common case.
+        if (filecommit::atParity(work, target, syncStamps[p.work])) continue;
+        std::string e;
+        if (!filecommit::stageCopy(work, target, &e)) {
+            *error = QString("Cannot commit %1:\n%2").arg(p.label, QString::fromStdString(e));
+            return false;
+        }
+        targets.push_back(target);
+        if (p.waveform) waveforms = true;
+    }
+    return true;
+}
+
+void KlustersDoc::renewPendingAfterCommit(bool waveformsCommitted)
+{
+    if (pendingCluPath.isEmpty()) { pendingRealign.clear(); return; }
+
+    // Every realign batch is on disk now (committed, or already at parity).
+    // Don't replay them.
+    const bool hadRealign = !pendingRealign.empty();
     pendingRealign.clear();
     //And the overlay with it (epoch-snapshot step 7): the pending file the
-    //readers fall through to holds the same bytes now.  A reader holds the
-    //file in memory as it was when installed (SpkMemoryCache), so reinstall
-    //it first -- the rewritten file is read once, and the overlay it still
-    //sees holds the same bytes -- then drop the overlay, so no published
-    //snapshot ever pairs the old bytes with an empty overlay.
-    if (clusteringData) { clusteringData->reopenSpkReader(); clusteringData->clearSpkOverlay(); }
-    if (childData)      { childData->reopenSpkReader();      childData->clearSpkOverlay(); }
+    //readers fall through to holds the same bytes.  A reader holds the file in
+    //memory as it was when installed (SpkMemoryCache), so reinstall it first --
+    //the file is read once, and the overlay it still sees holds the same bytes --
+    //then drop the overlay, so no published snapshot ever pairs the old bytes
+    //with an empty overlay.  Only when waveforms actually moved: reinstalling
+    //rereads the whole .spk.
+    if (waveformsCommitted || hadRealign) {
+        if (clusteringData) { clusteringData->reopenSpkReader(); clusteringData->clearSpkOverlay(); }
+        if (childData)      { childData->reopenSpkReader();      childData->clearSpkOverlay(); }
+    }
 
-    // Step 2 — renew.  The commit above copied each pending file OVER its original, so the two are
-    // now byte-identical: re-seeding orig -> pending would copy a file onto content that already
-    // matches it, and the redirects are already in place.  That is ~459 MB of pure I/O per save on
-    // an 8-channel group here (spk 337 + fet 116 + res 4 + clu 2), doubling the cost of every save.
-    // The one case that genuinely needs a re-seed is SaveAs: it repoints origSpkPath/origResPath/
-    // origFetPath and docUrl at a NEW location, so the pending files still sitting next to the old
-    // one are orphans and a fresh set must be derived there.
+    // Save As repointed origSpkPath/origResPath/origFetPath and docUrl at a NEW
+    // location, so the pending files next to the old one are orphans and a fresh
+    // set is derived there (initPendingFiles stamps it).
     const bool pathsMoved =
            pendingSpkPath != origSpkPath + QStringLiteral(".pending")
         || pendingResPath != origResPath + QStringLiteral(".pending")
         || pendingFetPath != origFetPath + QStringLiteral(".pending")
         || pendingCluPath != docUrl      + QStringLiteral(".pending");
     if (pathsMoved) {
-        // Drop the now-orphaned pending copies at the old location before deriving the new ones.
         for (const QString& stale : { pendingSpkPath, pendingResPath, pendingFetPath, pendingCluPath })
             if (!stale.isEmpty()) QFile::remove(stale);
         initPendingFiles();
+    } else {
+        // Each working copy now equals its file: record it, so the next save
+        // need not read either to know.
+        const QList<QPair<QString, QString>> pairs = {
+            {pendingSpkPath, origSpkPath}, {pendingResPath, origResPath}, {pendingFetPath, origFetPath}};
+        for (const auto& pr : pairs)
+            syncStamps[pr.first] = filecommit::markInSync(QFile::encodeName(pr.first).toStdString(),
+                                                          QFile::encodeName(pr.second).toStdString());
+        for (auto it = syncedPending.constBegin(); it != syncedPending.constEnd(); ++it)
+            syncStamps[it.value()] = filecommit::markInSync(QFile::encodeName(it.value()).toStdString(),
+                                                            QFile::encodeName(it.key()).toStdString());
     }
 
     // Localisation probe (Data::checkSpikeFeatureInvariant): realignSpikes updated the
@@ -2599,9 +2572,6 @@ bool KlustersDoc::commitAndRenewPending(QString* outError, bool* cluCommitted)
     // instead of letting it surface later in a curation-log snapshot.
     if (clusteringData) clusteringData->checkSpikeFeatureInvariant("realign-commit/parent");
     if (childData)      childData->checkSpikeFeatureInvariant("realign-commit/child");
-
-    if (!allOk && outError) *outError = firstError;
-    return allOk;
 }
 
 void KlustersDoc::rejectLastRealign()

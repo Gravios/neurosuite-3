@@ -72,7 +72,6 @@
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
-#include "autosavethread.h"
 #include "parameteryamlmodifier.h"
 #include "dipsplit.h"
 #include "parameteryamlreader.h"
@@ -130,10 +129,9 @@ void KlustersDoc::buildHierarchyMaps(){
     bool haveScan = false;
     bool nestingViolation = false;
     if (!clcSiblingPath.isEmpty()){
-        // The live .clu for the session is the PENDING copy, not docUrl: initPendingFiles() seeds
-        // <docUrl>.pending and redirects the clu writer there "for the entire document session", and
-        // commitAndRenewPending() only copies it back over docUrl at the very END of saveDocument.
-        // Reading docUrl here would see labels older than the pending copy.
+        // The session's scratch .clu is the PENDING copy: initPendingFiles() seeds <docUrl>.pending
+        // from docUrl and every save rewrites it with what it saved, so it is read in preference;
+        // docUrl stands in when the session runs without a pending set.
         const QString liveClu = (!pendingCluPath.isEmpty() && QFile::exists(pendingCluPath))
                               ? pendingCluPath : docUrl;
         const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());

@@ -70,7 +70,6 @@
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
-#include "autosavethread.h"
 #include "parameteryamlmodifier.h"
 #include "dipsplit.h"
 #include "parameteryamlreader.h"

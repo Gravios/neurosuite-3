@@ -7,7 +7,7 @@ A developer reference for how Klusters runs curation-adjacent compute off the GU
 <details>
 <summary>Sources this reference was written against</summary>
 
-**Source note.** Written against `klustersjobpool.h`/`.cpp`, `klustersjobtoken` (defined in `klustersjobpool.h`), `requestticket.h`, `serialjobqueue.h`, `realignjob.h`, `realignworker.h`/`.cpp`, `autosavethread.h`/`.cpp`, `savethread.h`/`.cpp`, the `*thread.h`/`.cpp` worker family (`waveformthread`, `correlationthread`, `errormatrixthread`, `minmaxthread`, `pairxcorrthread`, `templatematrixthread`, `residualmatrixthread`, `driftmatrixthread`, `driftshiftthread`, `mergerecommendthread`), the view-side stop/supersede methods in `klustersview.cpp`/`.h`, `waveformview.cpp`, `residualmatrixview.cpp`, `errormatrixview.cpp`, the quiesce call sites in `klustersdoc_undo.cpp` and `klustersdoc_realign.cpp`, the pool-drain sites in `klustersdoc.cpp`/`klustersdoc_io.cpp`, `klusters_realign.cpp`, and the OpenMP wiring in `../CMakeLists.txt` and `CMakeLists.txt`. Cross-references to `STANDARDIZATION.md` use its section numbers. See also [DOCUMENT_MODEL.md](DOCUMENT_MODEL.md) (the `Data` epoch/snapshot substrate the workers pin) and [VIEW_SYSTEM.md](VIEW_SYSTEM.md) (the views that own the tokens and receive completion events).
+**Source note.** Written against `klustersjobpool.h`/`.cpp`, `klustersjobtoken` (defined in `klustersjobpool.h`), `requestticket.h`, `serialjobqueue.h`, `realignjob.h`, `realignworker.h`/`.cpp`, `savethread.h`/`.cpp`, the `*thread.h`/`.cpp` worker family (`waveformthread`, `correlationthread`, `errormatrixthread`, `minmaxthread`, `pairxcorrthread`, `templatematrixthread`, `residualmatrixthread`, `driftmatrixthread`, `driftshiftthread`, `mergerecommendthread`), the view-side stop/supersede methods in `klustersview.cpp`/`.h`, `waveformview.cpp`, `residualmatrixview.cpp`, `errormatrixview.cpp`, the quiesce call sites in `klustersdoc_undo.cpp` and `klustersdoc_realign.cpp`, the pool-drain sites in `klustersdoc.cpp`/`klustersdoc_io.cpp`, `klusters_realign.cpp`, and the OpenMP wiring in `../CMakeLists.txt` and `CMakeLists.txt`. Cross-references to `STANDARDIZATION.md` use its section numbers. See also [DOCUMENT_MODEL.md](DOCUMENT_MODEL.md) (the `Data` epoch/snapshot substrate the workers pin) and [VIEW_SYSTEM.md](VIEW_SYSTEM.md) (the views that own the tokens and receive completion events).
 
 </details>
 
@@ -214,7 +214,6 @@ Each worker posts a distinct `QEvent::User + N` subclass, letting the view's `cu
 | `ErrorMatrixThread::ErrorMatrixEvent` | `User + 600` | `errormatrixthread.h:108` |
 | `MergeRecommendThread::MergeRecommendEvent` | `User + 605` | `mergerecommendthread.h:73` |
 | `SaveThread::SaveDoneEvent` | `User + 100` | `savethread.h:95` |
-| `AutoSaveThread::AutoSaveEvent` | `User + 500` | `autosavethread.h:73` |
 
 > **`MinMaxThread` is NOT a pool worker.** Despite the `*thread.cpp` name, `MinMaxThread : public QThread` (`minmaxthread.h:35`) is a plain, persistent `QThread` owned by `Data` (`Data::minMaxThread`, `data.h:1352`; constructed once at `data.cpp:65` via the factory `minMaxCalculator()`, `data.cpp:381-382`). Its `run()` is a one-liner, `data.minMaxDimensionCalculation(modifiedClusters)` (`minmaxthread.cpp:22-25`), and it is stopped through `Data`'s own internal booleans ("inform the `MinMaxThread` that an undo or a redo is in process", `data.h:1838`; "cluster 0 has changed", `data.h:1841`) — **outside the pool/token/snapshot model entirely.** Do not assume every `*thread` follows the `QRunnable`+token pattern.
 
@@ -336,12 +335,13 @@ Because `done()` fires last, the curation lane stays occupied for the whole real
 
 **Why realign is serialized:** realign/nudge rewrite the per-session pending `.spk`/`.res`/`.fet` scratch files in place and must preserve the spike-file invariant `.spk[i]`↔`.res[i]` (`STANDARDIZATION.md` §3.1; [DOCUMENT_MODEL.md](DOCUMENT_MODEL.md) §7.4). The classic failure was a merge → auto-align → renumber → matrix sequence racing through hand-rolled busy flags; as four ordered queue items the race cannot occur by construction (`serialjobqueue.h:76-91`). Wiring: `KlustersApp::enqueueRealignJob` lazily creates `realignQueue = new SerialJobQueue(this)` (`klusters_realign.cpp:218-219`), builds the `RealignJob` with the apply-result closure (`:224-234`), and `realignQueue->enqueue(job)` (`:236`); the post-merge renumber rides behind it as a `LambdaJob` (`klusters.cpp:5379-5380`). `realignQueue` is a member (`klusters.h:1558`). The batch "Align All" path is separate and still uses a dedicated `realignThread`/`realignWorker` (`klusters_realign.cpp:209-210`).
 
-### 7.3 The legacy save threads — plain `QThread`s
+### 7.3 The save thread — a plain `QThread`
 
-Both pre-date the pool and remain simple one-shot `QThread`s that call into `Data`/`KlustersDoc` and post an event back:
+`SaveThread` pre-dates the pool and remains a simple one-shot `QThread` that calls into `KlustersDoc` and posts an event back:
 
 - **`SaveThread`** (`savethread.h:38`): `save(url, doc, isSaveAs)` guards against re-entry with `if(isRunning()) return;` then `start()` (`savethread.cpp:27-38`); `run()` calls `doc->saveDocument(url)` and posts a `SaveDoneEvent` (`User + 100`) to the `KlustersApp` parent (`savethread.cpp:40-54`, `savethread.h:68-101`).
-- **`AutoSaveThread`** (`autosavethread.h:38`, default 5-minute schedule): `run()` `fopen`s the temp URL, calls `data.saveClusters(cluFile)`, and posts an `AutoSaveEvent` (`User + 500`) to the doc with an `IOerror` flag on failure (`autosavethread.cpp:28-47`).
+- **`SaveThread` reads a snapshot, not `Data`.** `KlustersDoc::prepareSave` takes the unit/atom ids on the GUI thread before the thread starts, and the GUI swallows user input until the done-event (`SaveInputBlocker`), so nothing the thread reads changes under it.
+- **Crash recovery has no thread.** The former `AutoSaveThread` read the live `Data` off the GUI thread; `KlustersDoc::autoSaveTick` now runs from a `QTimer` on the GUI thread, snapshots the ids like a save, and writes the rescue copies (a few MB) directly.
 
 ---
 

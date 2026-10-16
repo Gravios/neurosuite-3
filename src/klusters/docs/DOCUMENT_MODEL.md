@@ -406,7 +406,10 @@ fallback. Decoding details live in [FILE_FORMATS.md](../../libneurosuite-core/do
    (`klustersdoc_io.cpp:249-298`). Missing `.spk`/`.fet` → `SPK_DOWNLOAD_ERROR`/
    `FET_DOWNLOAD_ERROR`.
 3. `.fet` loaded eagerly; `.spk` only measured for length, read on the fly.
-4. Crash-recovery: an `.autosave` newer than the `.clu` prompts to use it
+4. A commit journal `.<clu>.commit` left by an interrupted save is rolled
+   forward first (`filecommit::recoverCommit`).  Crash-recovery: an
+   `.autosave` newer than the `.clu` prompts to use it, together with the
+   `.clc` rescue copy in a hierarchical session
    (`klustersdoc_io.cpp:378-408`).
 5. **Parsing delegated to `Data`**: `clusteringData->initialize(...)`
    (`klustersdoc_io.cpp:428`).
@@ -420,27 +423,32 @@ A save has two halves.  `bool prepareSave(url)` runs on the GUI thread
 and, for a hierarchical session, the atom id of every spike and the `.clp` map
 those two imply (`hierarchyfiles::scanNesting`), after validating the in-memory
 hierarchy maps.  `int saveDocument(url, format)` then runs on the `SaveThread`
-and writes only that snapshot, so curation can continue during the save:
+and writes only that snapshot; the GUI swallows user input until it is done
+(`SaveInputBlocker`, `KlustersApp::beginSaveLock`):
 
 1. optional re-extract of the `.spk` from the `.fil`;
-2. the `.clu` to the pending copy through a staged file and a rename (with no
-   pending set live, the real `.clu` is only staged here and renamed into place
-   at step 5);
-3. the `.clc`/`.clp` staged as `<path>.saving`;
-4. Save As: the new base name, group, method and parameter file are worked out,
-   and the parameter file is checked writable before anything moves;
-5. `commitAndRenewPending()` copies each pending file beside its original and
-   renames it over it;
-6. the staged `.clc`/`.clp` are renamed into place, each after a `.bak` copy --
-   also when a file committed after the `.clu` failed, so they stay with it;
-   Save As moves the session's sibling paths to the new names (applied on the
-   GUI thread by `finishSave`);
-7. per-cluster user information to the YAML;
-8. `modified` is cleared only if no edit set it after the snapshot
+2. Save As: the new base name, group, method, parameter file and waveform
+   triple paths are worked out (nothing moves yet), and the parameter file is
+   checked writable;
+3. **phase 1, staging**: each file whose content would change is written in
+   full to `<target>.saving` and flushed — the `.clu`, `.clc`, `.clp`
+   (`stageIdTarget`, skipped when the ids on disk are the same), the
+   `.spk`/`.res`/`.fet` working copies and synced feature spaces
+   (`stagePendingFiles`, skipped when `filecommit::atParity` proves the working
+   copy equals its file — from stamps alone in the common case), and the
+   `.yaml` with the units (skipped when unchanged);
+4. **phase 2, install**: `filecommit::commitStaged` writes the journal
+   `.<clu>.commit`, moves each target aside to `.rollback`, renames the staged
+   file in, and on any failure puts the moved ones back — all or nothing; the
+   `.clc`/`.clp` keep their previous version as `.bak`;
+5. the session follows (Save As), the pending `.clu` is rewritten with what was
+   saved, and `renewPendingAfterCommit` drops the realign queue, rebinds the
+   readers only when waveforms were committed, and stamps the working copies
+   as in sync;
+6. `modified` is cleared only if no edit set it after the snapshot
    (`DirtyFlag::clearIfUnchanged`).
 
-A failure before step 5 leaves every original untouched and discards what was
-staged.  `finishSave(ok)` (GUI thread) drops the snapshot; a failed save leaves
+A failure anywhere leaves every file as it was.  `finishSave(ok)` (GUI thread) drops the snapshot; a failed save leaves
 the document modified.  `lastSaveError()` names the failing step;
 `lastSaveWarning()` carries notes for a save that succeeded (a `.clp` kept
 because the files disagree about the nesting).

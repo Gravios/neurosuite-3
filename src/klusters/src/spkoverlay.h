@@ -9,7 +9,7 @@
 // current at its publication, and reads go overlay-first
 // (ClusteringSnapshot::readSpk).  A snapshot published before a batch never
 // sees that batch's records through the overlay; the pending FILE remains
-// the journal the writers keep for Save (commitAndRenewPending) and for
+// the journal the writers keep for Save (stagePendingFiles / renewPendingAfterCommit) and for
 // their own readbacks, exactly as before.
 //
 // Generations are immutable once published, like everything a snapshot

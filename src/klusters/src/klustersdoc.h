@@ -28,6 +28,7 @@
 #include "curationlogger.h"
 #include "watershed2d.h"
 #include "dirtyflag.h"
+#include "filecommit.h"
 
 
 // include files for QT
@@ -65,7 +66,7 @@
 // forward declaration
 class KlustersView;
 class KlustersApp;
-class AutoSaveThread;
+class QTimer;
 class ClusterPalette;
 /**
   * The KlustersDoc class provides a document object that can be used in conjunction with the classes
@@ -842,11 +843,10 @@ public:
      *  Does NOT touch the atom undo stack, so edit paths that record their own ChildEdit
      *  (e.g. a child recluster) call this directly; repairNesting wraps it with the undo reset. */
     void collapseToSelfChildren();
-    /** Writes the snapshot's .clc and .clp to "<path>.saving" (SaveThread). */
-    bool stageHierarchySiblings(QString* error);
-    /** Renames the staged .clc/.clp over their targets, after a .bak copy of
-     *  each, once the .clu has been committed (SaveThread). */
-    bool installHierarchySiblings(QString* error);
+    /** Stages an id file (.clu/.clc/.clp) for the commit unless @p path already
+     *  holds @p ids (SaveThread).  Appends @p path to @p targets when staged. */
+    bool stageIdTarget(const QString& path, int32_t header, const std::vector<int32_t>& ids,
+                       bool force, std::vector<std::string>& targets, QString* error);
     /** Ensure childColorList has a deterministic (id-derived) colour for every
      *  current child id, so atom edits/undo/redo never leave a child uncoloured. */
     void syncChildColors();
@@ -1330,7 +1330,6 @@ public:
     */
     void setAutoSaving(int interval){
         savingInterval = interval;
-        endAutoSaving = false;
         autoSave = true;
     }
     
@@ -1339,14 +1338,22 @@ public:
     */
     void updateAutoSavingInterval(int interval);
     
-    /**Stops the auto saving of the document.
+    /**Stops the auto saving of the document and removes its rescue files.
    * @param currentDocument true if the auto saving is stopped only for the currently open document, false if it is
    * a change in the settings which triggered this call and therefore the auto saving is disabled completely.
-   * @return true if the autoSaving thread has been delete false otherwise.
+   * @return always true (the rescue copy is written on the GUI thread; there is no thread to wait for).
    */
     bool stopAutoSaving(bool currentDocument = false);
 
-    void customEvent (QEvent* event) override;
+    /** True while a save set up by prepareSave() has not been finished. */
+    bool isSaving() const { return savePlan.valid; }
+
+    /** Whether the open clustering differs from what is on disk: the unit and
+     *  atom ids against the .clu/.clc, each working copy (.spk/.res/.fet and the
+     *  synced feature spaces) against its file, uncommitted realign batches,
+     *  and edited cluster information.  Cheap when nothing changed (see
+     *  filecommit::atParity).  The close prompt asks only when this is true. */
+    bool differsFromDisk();
     /**Sets the acquisition system gain.
     * @param acquisitionGain acquisition system gain.
     */
@@ -1776,7 +1783,7 @@ public:
     void showUserClusterInformation();
 
     /**Sets the modified status of the current opend document to true .*/
-    void clusterInformationModified(){modified = true;}
+    void clusterInformationModified(){modified = true; unitsInfoModified = true;}
 
     // ── Curation logging ──────────────────────────────────────────────────
     /** Compute a ClusterSnapshot for @p clusterId from the current in-memory
@@ -2012,8 +2019,16 @@ public Q_SLOTS:
     int watershedSelectedChildren(const QList<int>& selectedChildren,
                                   const Watershed2D::Config& cfg);
 
-    /**Launchs an autoSave by starting the autoSaveThread.*/
-    void launchAutoSave();
+    /** One crash-recovery tick (GUI thread): writes the rescue copy of the unit
+     *  ids and, in a hierarchical session, of the atom ids.  Skipped while a save
+     *  runs or nothing is modified. */
+    void autoSaveTick();
+    /** The rescue files of the open document: ".<clu name>.autosave" and, in a
+     *  hierarchical session, ".<clc name>.autosave", next to the files. */
+    QStringList rescueFiles() const;
+    void removeRescueFiles();
+    /** (Re)starts the crash-recovery timer for the open document. */
+    void startAutoSaveTimer();
 
 private:
 
@@ -2128,19 +2143,27 @@ private:
                                    QList<int>& emptiedClusters,
                                    KlustersView* activeView);
 
-    /** Commit all pending files to the originals, then re-seed the pending
-     *  files from the freshly-written originals so the cycle continues.
-     *  Called by saveDocument() after a successful write.
-     *  Also handles SaveAs: pass the new base paths when the doc URL changed.
-     *
-     *  patch63 — returns false if any of the four file copies failed and
-     *  populates outError with a human-readable description of the first
-     *  failure.  Previous behaviour swallowed errors via qWarning() which
-     *  meant the user saw "save successful" but the on-disk file was
-     *  unchanged when QFile::copy failed (e.g. NTFS permission issues). */
-    /** @p cluCommitted (when given) is set once the .clu itself is on disk, so a
-     *  caller can keep the .clc/.clp with it when a later file fails. */
-    bool commitAndRenewPending(QString* outError = nullptr, bool* cluCommitted = nullptr);
+    /** Stages, for the save's commit, every working copy (.spk/.res/.fet of the
+     *  .clu space, and the synced feature spaces) that is not already at parity
+     *  with its file.  @p spkTarget/@p resTarget/@p fetTarget are where the
+     *  .clu space's copies go (the originals, or Save As's new location).
+     *  Appends each staged target to @p targets; @p waveforms is set when a
+     *  .spk/.res/.fet of the .clu space was staged.  Returns false with
+     *  @p error on a missing or truncated working copy or a failed copy.
+     *  A session without pending files has nothing to stage. */
+    bool stagePendingFiles(const QString& spkTarget, const QString& resTarget,
+                           const QString& fetTarget, std::vector<std::string>& targets,
+                           bool& waveforms, QString* error);
+
+    /** After a successful commit: drops the realign queue, rebinds the readers
+     *  when waveforms were committed, re-seeds the pending set when Save As
+     *  moved it, and records the working copies as in sync. */
+    void renewPendingAfterCommit(bool waveformsCommitted);
+
+    /** Working copy -> stamp taken when it was last known identical to its
+     *  file (filecommit::atParity).  GUI thread and SaveThread never touch it
+     *  at the same time: the GUI is locked for the length of a save. */
+    QHash<QString, filecommit::SyncStamp> syncStamps;
 
     /** Re-extract every spike of the current group from the raw .fil (or .dat)
      *  at its current .res/.fet timestamp and rewrite @p targetSpkPath, so the
@@ -2180,7 +2203,7 @@ private:
     QString pendingFetPath;
     QString pendingCluPath;
 
-    /** patch63 — populated by saveDocument() / commitAndRenewPending() when
+    /** patch63 — populated by saveDocument() when
      *  any step fails.  Read via lastSaveError() and surfaced in the
      *  SaveDoneEvent so the user sees the actual path / errno / step name
      *  rather than a generic "I/O Error". */
@@ -2204,6 +2227,7 @@ private:
         QString              clcPath, clpPath;///< targets: the session's, or Save As's new names
         bool                 movesSiblings = false; ///< Save As: the session's siblings become clcPath/clpPath
         bool                 siblingsMoved = false; ///< set by saveDocument once docUrl moved; finishSave applies it
+        std::vector<std::string> staged;            ///< targets staged by saveDocument (finishSave discards leftovers)
     };
     SavePlan savePlan;
 
@@ -2543,8 +2567,8 @@ private:
     * lockstep with clusterColorListRedoList.*/
     QList<ClusterEditUndo> editRedoList;
 
-    /**Thread responsible for the autosaving of the document.*/
-    AutoSaveThread* autoSaveThread;
+    /**Crash-recovery timer: every savingInterval minutes, autoSaveTick().*/
+    QTimer* autoSaveTimer = nullptr;
 
     /**Boolean indicating if an auto save have to be made on the document.*/
     bool autoSave;
@@ -2552,8 +2576,11 @@ private:
     /**Time interval between two auto saving.*/
     int savingInterval;
 
-    /**Boolean indicating if the auto saving has to be stopped.*/
-    bool endAutoSaving;
+    /**Set when a rescue copy could not be written; autosave is off for the document.*/
+    bool autoSaveFailed = false;
+
+    /**Cluster information (structure, type, quality, notes) edited since the last save.*/
+    bool unitsInfoModified = false;
 
     /**Provider of the channels data.*/
     TracesProvider* tracesProvider;

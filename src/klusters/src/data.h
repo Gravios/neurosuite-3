@@ -157,7 +157,6 @@ public:
     friend class MinMaxThread;
     friend class WaveformThread;
     friend class CorrelationThread;
-    friend class AutoSaveThread;
     friend class GroupingAssistant;
     friend class ClustersProvider;
 

@@ -3,7 +3,7 @@
 // Part of the klustersdoc.cpp decomposition: this translation unit implements the
 // document open/save/import/close path of KlustersDoc — canCloseDocument,
 // closeDocument, importDocument, openDocument, saveDocument, canCloseView, the
-// autosave hooks (updateAutoSavingInterval/stopAutoSaving/launchAutoSave/customEvent),
+// crash-recovery hooks (updateAutoSavingInterval/stopAutoSaving/autoSaveTick),
 // and the document-name/path accessors.  Declarations remain in klustersdoc.h;
 // mechanical relocation, no logic change.  Carries the same preamble as
 // klustersdoc.cpp — including klustersdoc_internal.h and `extern int nbUndo;` — so
@@ -76,12 +76,12 @@
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
-#include "autosavethread.h"
 #include "parameteryamlmodifier.h"
 #include "dipsplit.h"
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
 #include "hierarchyfiles.h"
+#include "filecommit.h"
 
 //C, C++ include files
 //#define _LARGEFILE_SOURCE already defined in /usr/include/features.h
@@ -290,6 +290,31 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     const QString cluFileName = QFileInfo(cluFileUrl).fileName();
     cluFileSaveUrl = urlFileInfo.absolutePath() + QDir::separator() + "." + cluFileName + ".autosave";
 
+    // A save that died while installing its files left a commit journal: every
+    // file it names was completely written before the journal was, so finish
+    // the commit (roll it forward) before anything is read.
+    {
+        const QString journal = urlFileInfo.absolutePath() + QDir::separator()
+                                + "." + cluFileName + ".commit";
+        if (QFileInfo::exists(journal)) {
+            std::string report;
+            const bool done = filecommit::recoverCommit(QFile::encodeName(journal).toStdString(), &report);
+            QApplication::restoreOverrideCursor();
+            if (done)
+                QMessageBox::information(nullptr, tr("Interrupted save completed"),
+                    tr("The last save of %1 was interrupted while its files were being "
+                       "replaced.  It has now been completed, so the files on disk are the ones "
+                       "that save wrote:\n\n%2").arg(cluFileName, QString::fromStdString(report)));
+            else
+                QMessageBox::warning(nullptr, tr("Interrupted save"),
+                    tr("The last save of %1 was interrupted while its files were being "
+                       "replaced, and it could not be completed:\n\n%2\nThe journal %3 was left "
+                       "in place; check the files before saving again.")
+                        .arg(cluFileName, QString::fromStdString(report), journal));
+            QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+        }
+    }
+
 
     QString fetFileUrl = resolveFeature(
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
@@ -406,6 +431,39 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
                     QMessageBox::critical(nullptr, tr("I/O Error !"),tr(
                                               "It appears that the rescue file cannot be renamed (possibly because of insufficient file access permissions).\n"
                                               "The rescue file will thus not be used."));
+                // A hierarchical session's rescue also holds the atom ids, taken
+                // with the unit ids from one snapshot.  Restore them together --
+                // but only if they belong together (same spike count, every atom
+                // under one unit); otherwise keep the .clc and let the next save
+                // re-derive the map.
+                else if (cluName.contains(QStringLiteral(".clu."))) {
+                    QString clcName = cluName;
+                    clcName.replace(clcName.lastIndexOf(QStringLiteral(".clu.")), 5, QStringLiteral(".clc."));
+                    const QString clcRescue = dir.filePath(QStringLiteral(".") + clcName + QStringLiteral(".autosave"));
+                    if (QFileInfo::exists(clcRescue)) {
+                        const hierarchyfiles::IdFile u = hierarchyfiles::readIdFile(QFile::encodeName(dir.filePath(cluName)).toStdString());
+                        const hierarchyfiles::IdFile a = hierarchyfiles::readIdFile(QFile::encodeName(clcRescue).toStdString());
+                        const bool fits = u.ok && a.ok && u.ids.size() == a.ids.size()
+                            && hierarchyfiles::scanNesting(std::vector<int>(u.ids.begin(), u.ids.end()),
+                                                           std::vector<int>(a.ids.begin(), a.ids.end())).straddlers.empty();
+                        if (fits) {
+                            const QFileInfo clcInfo(dir.filePath(clcName));
+                            if (clcInfo.exists())
+                                dir.rename(clcName, clcName + QLatin1String(".")
+                                           + clcInfo.lastModified().toString("MM.dd.yyyy.hh.mm"));
+                            if (!dir.rename(QFileInfo(clcRescue).fileName(), clcName))
+                                QMessageBox::critical(nullptr, tr("I/O Error !"),
+                                    tr("The rescue copy of the child layer could not be renamed to %1; "
+                                       "the existing child layer is used.").arg(clcName));
+                        } else {
+                            QMessageBox::warning(nullptr, tr("Rescue file"),
+                                tr("The rescue copy of the child layer (%1) does not fit the "
+                                   "recovered clustering, so the existing child layer is kept.  "
+                                   "Repair Nesting re-cuts any atom that now spans two units.")
+                                    .arg(QFileInfo(clcRescue).fileName()));
+                        }
+                    }
+                }
                 break;
             }
             case QMessageBox::No:
@@ -504,13 +562,12 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     }
 
 
-    //If ask create a thread for the auto saving of the document.
-    if(autoSave){
-        NS3_DIAG()<<"autoSave = true in openDoc";
-        endAutoSaving = false;
-        autoSaveThread = new AutoSaveThread(*clusteringData,this,cluFileSaveUrl);
-        autoSaveThread->start();
-    }
+    // Crash recovery: a timer on this thread writes the rescue copies.
+    autoSaveFailed = false;
+    unitsInfoModified = false;
+    syncStamps.clear();
+    if(autoSave)
+        startAutoSaveTimer();
 
     // ── hierarchical view: detect an optional .clc child sibling ─────────────
     // The .clc holds the microfiber / pure-shape children of these units (same
@@ -612,67 +669,6 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     return OK;
 }
 
-void KlustersDoc::updateAutoSavingInterval(int interval){
-    savingInterval = interval;
-    endAutoSaving = false;
-    if(!autoSave){
-        autoSave = true;
-        autoSaveThread = new AutoSaveThread(*clusteringData,this,cluFileSaveUrl);
-        autoSaveThread->start();
-    }
-}
-
-bool KlustersDoc::stopAutoSaving(bool currentDocument){
-    if(autoSave && autoSaveThread != nullptr){
-        if(!autoSaveThread->isRunning()){
-            autoSaveThread->removeTmpFile();
-            delete autoSaveThread;
-            autoSaveThread = nullptr;
-            if(!currentDocument) autoSave = false;
-            endAutoSaving = true;
-            return true;
-        }
-        else{
-            endAutoSaving = true;
-            return false;
-        }
-    }
-    else{
-        endAutoSaving = true;
-        if(!currentDocument) autoSave = false;
-        return true;
-    }
-}
-
-void KlustersDoc::launchAutoSave(){
-    if(!endAutoSaving)autoSaveThread->start();
-}
-
-void KlustersDoc::customEvent(QEvent *event){
-    //The autoSaveThread has finish, it can be delete.
-    if(event->type() == QEvent::User + 500){
-        if(endAutoSaving){
-            if(autoSaveThread != nullptr){
-                autoSaveThread->removeTmpFile();
-                delete autoSaveThread;
-                autoSaveThread = nullptr;
-            }
-        }
-        else{
-            if(static_cast<AutoSaveThread::AutoSaveEvent*>(event)->isIOerror())
-                QMessageBox::critical(nullptr,tr("I/O Error !"),tr(
-                                          "In order to protect your work in case of a crash, Klusters periodically saves a hidden copy of the cluster file"
-                                          " in the directory where your files are located (this temporary rescue file is removed when you quit the application).\n"
-                                          "However, it now appears that this rescue file cannot be created (possibly because of insufficient file access permissions).\n"
-                                          "This feature will thus be disabled for the current session.") );
-            else
-                //upload the temp file, this can not be done asynchronously.
-                //wait savingInterval before starting the autoSaveThread again.
-                QTimer::singleShot(savingInterval*60000, this, &KlustersDoc::launchAutoSave);
-        }
-    }
-}
-
 namespace {
 // Local 8-bit file names for the std:: file helpers, and back.
 std::string localPath(const QString& p) { return QFile::encodeName(p).toStdString(); }
@@ -688,6 +684,74 @@ std::vector<int32_t> labelsInSpikeOrder(const Data& d)
     return out;
 }
 } // namespace
+
+void KlustersDoc::updateAutoSavingInterval(int interval){
+    savingInterval = interval;
+    autoSave = true;
+    if (clusteringData) startAutoSaveTimer();
+}
+
+void KlustersDoc::startAutoSaveTimer(){
+    if (!autoSaveTimer) return;
+    autoSaveTimer->start(qMax(1, savingInterval) * 60000);
+}
+
+bool KlustersDoc::stopAutoSaving(bool currentDocument){
+    if (autoSaveTimer) autoSaveTimer->stop();
+    removeRescueFiles();
+    if(!currentDocument) autoSave = false;
+    return true;
+}
+
+QStringList KlustersDoc::rescueFiles() const {
+    QStringList out;
+    auto rescueOf = [](const QString& path){
+        const QFileInfo fi(path);
+        return fi.absolutePath() + QDir::separator() + QStringLiteral(".") + fi.fileName()
+               + QStringLiteral(".autosave");
+    };
+    if (!docUrl.isEmpty()) out << rescueOf(docUrl);
+    if (isHierarchicalSession()) out << rescueOf(clcSiblingPath);
+    return out;
+}
+
+void KlustersDoc::removeRescueFiles(){
+    for (const QString& f : rescueFiles()) QFile::remove(f);
+}
+
+void KlustersDoc::autoSaveTick(){
+    // Nothing to protect, or a save is writing the real files right now.
+    if (!clusteringData || autoSaveFailed || isSaving() || !isModified()) return;
+
+    // One snapshot of both layers (as a save takes), written as a pair: both
+    // staged, then both renamed, so the rescue copies always match each other.
+    const QStringList files = rescueFiles();
+    std::vector<std::string> targets;
+    std::string e;
+    const std::vector<int32_t> units = labelsInSpikeOrder(*clusteringData);
+    bool ok = hierarchyfiles::stageIdFile(localPath(files.at(0)),
+                  hierarchyfiles::distinctCount(units), units, &e);
+    if (ok) targets.push_back(localPath(files.at(0)));
+    if (ok && files.size() > 1 && childData) {
+        const std::vector<int32_t> atoms = labelsInSpikeOrder(*childData);
+        ok = hierarchyfiles::stageIdFile(localPath(files.at(1)),
+                                         hierarchyfiles::distinctCount(atoms), atoms, &e);
+        if (ok) targets.push_back(localPath(files.at(1)));
+    }
+    for (const std::string& t : targets)
+        ok = ok && hierarchyfiles::installStaged(t, false, &e);
+    if (ok) return;
+
+    for (const std::string& t : targets) hierarchyfiles::discardStaged(t);
+    autoSaveFailed = true;
+    if (autoSaveTimer) autoSaveTimer->stop();
+    QMessageBox::critical(nullptr,tr("I/O Error !"),tr(
+        "In order to protect your work in case of a crash, Klusters periodically saves a hidden copy of the cluster file"
+        " in the directory where your files are located (this temporary rescue file is removed when you quit the application).\n"
+        "However, it now appears that this rescue file cannot be created:\n%1\n"
+        "This feature will thus be disabled for the current session.").arg(QString::fromStdString(e)));
+}
+
 
 bool KlustersDoc::prepareSave(const QString& saveUrl){
     // A finished Save As whose done-event has not been handled yet (a close
@@ -804,12 +868,9 @@ bool KlustersDoc::prepareSave(const QString& saveUrl){
 }
 
 void KlustersDoc::finishSave(bool ok){
-    // saveDocument installs or discards what it staged; this only catches a save
+    // saveDocument discards what it staged on every failure; this catches a save
     // that stopped in between.
-    if (savePlan.writeClc && !savePlan.clcPath.isEmpty())
-        hierarchyfiles::discardStaged(localPath(savePlan.clcPath));
-    if (savePlan.writeClp && !savePlan.clpPath.isEmpty())
-        hierarchyfiles::discardStaged(localPath(savePlan.clpPath));
+    filecommit::discardStaged(savePlan.staged);
     // A Save As that moved the session moves its siblings with it -- here, on the
     // GUI thread that reads them, rather than on the SaveThread.
     if (savePlan.siblingsMoved) {
@@ -817,44 +878,29 @@ void KlustersDoc::finishSave(bool ok){
         clpSiblingPath = savePlan.clpPath;
     }
     savePlan = SavePlan();
-    if (!ok) modified = true;
+    if (ok) {
+        unitsInfoModified = false;
+        removeRescueFiles();               // the real files now hold what they protected
+    } else {
+        modified = true;
+    }
 }
 
-bool KlustersDoc::stageHierarchySiblings(QString* error){
+bool KlustersDoc::stageIdTarget(const QString& path, int32_t header, const std::vector<int32_t>& ids,
+                                bool force, std::vector<std::string>& targets, QString* error){
+    const std::string p = localPath(path);
+    // Already on disk: the ids are compared, not the count header (other writers
+    // put other things there and every reader ignores it).
+    if (!force) {
+        const hierarchyfiles::IdFile onDisk = hierarchyfiles::readIdFile(p);
+        if (onDisk.ok && onDisk.ids == ids) return true;
+    }
     std::string e;
-    if (savePlan.writeClc
-        && !hierarchyfiles::stageIdFile(localPath(savePlan.clcPath), savePlan.atomCount,
-                                        savePlan.atom, &e)) {
-        *error = tr("Could not write the child layer (.clc); nothing was saved:\n%1")
-                     .arg(QString::fromStdString(e));
+    if (!hierarchyfiles::stageIdFile(p, header, ids, &e)) {
+        *error = QString::fromStdString(e);
         return false;
     }
-    if (savePlan.writeClp
-        && !hierarchyfiles::stageIdFile(localPath(savePlan.clpPath),
-                                        static_cast<int32_t>(savePlan.clp.size()), savePlan.clp, &e)) {
-        if (savePlan.writeClc) hierarchyfiles::discardStaged(localPath(savePlan.clcPath));
-        *error = tr("Could not write the parent map (.clp); nothing was saved:\n%1")
-                     .arg(QString::fromStdString(e));
-        return false;
-    }
-    return true;
-}
-
-bool KlustersDoc::installHierarchySiblings(QString* error){
-    std::string e;
-    if (savePlan.writeClc && !hierarchyfiles::installStaged(localPath(savePlan.clcPath), true, &e)) {
-        if (savePlan.writeClp) hierarchyfiles::discardStaged(localPath(savePlan.clpPath));
-        *error = tr("The cluster file was saved, but its child layer could not be replaced, so "
-                    "the .clu and .clc on disk disagree until the next successful save:\n%1")
-                     .arg(QString::fromStdString(e));
-        return false;
-    }
-    if (savePlan.writeClp && !hierarchyfiles::installStaged(localPath(savePlan.clpPath), true, &e)) {
-        *error = tr("The cluster file and child layer were saved, but the parent map (.clp) "
-                    "could not be replaced; the next successful save regenerates it:\n%1")
-                     .arg(QString::fromStdString(e));
-        return false;
-    }
+    targets.push_back(p);
     return true;
 }
 
@@ -893,10 +939,10 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // raw .fil at every spike's current timestamp before committing, so the .spk
     // stays consistent with the .res/.fet (e.g. after nudging / realigning).  Off
     // by default.  Writes the reader's .spk -- the pending copy when a pending set
-    // is live -- which commitAndRenewPending below then promotes to the original,
-    // so no extra re-seed is needed.  Plain Save only (SaveAs of the waveform
-    // triple is a separate step) and non-fatal: on failure the existing .spk is
-    // left in place and the save proceeds.
+    // is live, which the commit below then installs as the original.  (Without a
+    // pending set it rewrites the real .spk directly, outside the commit.)  Plain
+    // Save only and non-fatal: on failure the existing .spk is left in place and
+    // the save proceeds.
     if (!isSaveAs && clusteringData
         && configuration().getReextractSpikesOnSave()) {
         QString reLog;
@@ -922,70 +968,10 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             << reLog;
     }
 
-    // ── the .clu ────────────────────────────────────────────────────────────
-    // The clustering is written to the session's clu write target, tmpCluFile: the
-    // pending copy when a pending set is live (initPendingFiles redirected it there
-    // after a SUCCESSFUL seed), else the real .clu.  commitAndRenewPending below then
-    // copies the pending copy over docUrl -- which a Save As has already pointed at
-    // the new name.
-    //
-    // Save As used to write straight to the new URL and leave the pending copy as it
-    // was at the last save; the commit then copied that stale pending copy over the
-    // file just written, so the new name received the clustering as last SAVED and
-    // every edit since was missing from it (they stayed in memory only).  Without a
-    // pending set there is nothing to commit, and Save As writes the new URL itself.
-    //
-    // Written through a staged file and a rename, so the real .clu (the target when
-    // no pending set is live) is never left truncated by a crash or a full disk.
-    //
-    // Without a pending set that target IS the real file, so it is only staged
-    // here and installed at the commit point below, after the checks that can
-    // still refuse the save.
-    const QString cluWritePath =
-        (isSaveAs && pendingCluPath.isEmpty()) ? saveUrl : tmpCluFile;
-    const bool cluDirect = pendingCluPath.isEmpty();
-    {
-        std::string e;
-        const bool written = cluDirect
-            ? hierarchyfiles::stageIdFile(localPath(cluWritePath), savePlan.fiberCount, savePlan.fiber, &e)
-            : hierarchyfiles::writeIdFile(localPath(cluWritePath), savePlan.fiberCount,
-                                          savePlan.fiber, false, &e);
-        if (!written) {
-            // patch63 — say exactly what failed instead of a bare error code.
-            lastSaveErrorMessage = QString(
-                "Cannot write the cluster file:\n%1\n\n%2\n\n"
-                "Likely causes:\n"
-                "  • File owned by a different user (common after running\n"
-                "    process_drifttracker / KiloKlustaKwik as another uid,\n"
-                "    e.g. via sudo or a build account)\n"
-                "  • Parent directory not writable by the user running Klusters\n"
-                "  • File or its directory marked immutable (chattr +i)\n"
-                "  • Filesystem mounted read-only or out of space")
-                .arg(cluWritePath, QString::fromStdString(e));
-            qWarning().noquote() << "[saveDocument] clu write failed:" << QString::fromStdString(e);
-            return OPEN_ERROR;
-        }
-    }
-
-    // ── the .clc / .clp, staged next to their targets ──────────────────────
-    // Installed only after the .clu is committed below.  They used to be written in
-    // place first, before the parameter file and the .clu commit -- both of which can
-    // fail -- so a failed save left new .clc/.clp beside the old .clu.
-    QString hierError;
-    if (!stageHierarchySiblings(&hierError)) {
-        if (cluDirect) hierarchyfiles::discardStaged(localPath(cluWritePath));
-        lastSaveErrorMessage = hierError;
-        return SAVE_ERROR;
-    }
-    auto discardSiblings = [this, cluDirect, cluWritePath]{
-        if (cluDirect) hierarchyfiles::discardStaged(localPath(cluWritePath));
-        if (savePlan.writeClc) hierarchyfiles::discardStaged(localPath(savePlan.clcPath));
-        if (savePlan.writeClp) hierarchyfiles::discardStaged(localPath(savePlan.clpPath));
-    };
-
-    // ── Save As: where the session moves (worked out before anything moves) ──
+    // ── where the session goes (Save As), worked out before anything moves ──
     QString newBaseName = baseName, newGroup = electrodeGroupID, newParameterFile = parameterFile;
     QString saMethod = QStringLiteral("standard");   // method parsed from a SaveAs target
+    QString spkTarget = origSpkPath, resTarget = origResPath, fetTarget = origFetPath;
     if(isSaveAs){
         QFileInfo docUrlFileInfo(saveUrl);
         QString fileName = docUrlFileInfo.fileName();
@@ -1018,129 +1004,95 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         }
 
         // The directory of the new .clu, not the file itself: absoluteFilePath()
-        // gave "<dir>/<new.clu>/<base>.yaml", which never exists, so a Save As of
-        // any session with cluster-information support failed as "not writable"
-        // after the .clu had been written and docUrl moved.
+        // gave "<dir>/<new.clu>/<base>.yaml", which never exists.
         newParameterFile = docUrlFileInfo.absolutePath() + QDir::separator() + newBaseName + ".yaml";
+        // Re-resolve the waveform triple at the new location, pinned to the
+        // method parsed from the SaveAs target (chain-of-custody).
+        const QString newBase = docUrlFileInfo.absolutePath() + QDir::separator() + newBaseName;
+        spkTarget = resolveFeature(newBase, "spk", newGroup, saMethod);
+        resTarget = resolveFeatureAny(newBase, "res", newGroup, saMethod);
+        fetTarget = resolveFeature(newBase, "fet", newGroup, saMethod);
     }
+    const QString cluTarget = isSaveAs ? saveUrl : docUrl;
 
-    // ── the parameter file must be writable before anything is committed ────
-    //NB : for the moment, the specific errors are not return to the user, only a generic message (document could not be saved).
+    // ── the parameter file must be writable before anything is staged ───────
     const bool writeUnits = clusteringData->isTraceViewVariablesAvailable();
     if (writeUnits && !QFileInfo(newParameterFile).isWritable()) {
         lastSaveErrorMessage = tr("The parameter file is missing or not writable, so the "
                                   "cluster information (structure, type, quality, notes) "
                                   "could not be saved; nothing was saved:\n%1").arg(newParameterFile);
-        discardSiblings();
         return NOT_WRITABLE;
     }
 
-    // ── commit ─────────────────────────────────────────────────────────────
-    // Commit pending files → originals, then re-seed pending from fresh originals.
-    // For SaveAs, update the original paths first so commitAndRenewPending()
-    // copies to the correct new location.
-    if (isSaveAs) {
-        docUrl           = saveUrl;
-        baseName         = newBaseName;
-        electrodeGroupID = newGroup;
-        parameterFile    = newParameterFile;
-        // Synced working copies belong to the old location's spaces; Save As
-        // does not carry them (and is only reachable from the .clu's own space).
-        // slotFileSaveAs already dropped them on the GUI thread; this covers any
-        // other caller and is a no-op otherwise.
-        if (!syncedPending.isEmpty()) discardSyncedFeatureSpaces();
-        QFileInfo newInfo(docUrl);
-        // Re-resolve at the new location, pinned to the method parsed from the
-        // SaveAs target (chain-of-custody).
-        const QString newBase = newInfo.absolutePath() + QDir::separator() + baseName;
-        origSpkPath = resolveFeature(newBase, "spk", electrodeGroupID, saMethod);
-        origResPath = resolveFeatureAny(newBase, "res", electrodeGroupID, saMethod);
-        origFetPath = resolveFeature(newBase, "fet", electrodeGroupID, saMethod);
-        // The siblings move with the session whatever happens next, so a later
-        // plain Save never writes this clustering's map into the old .clp.
-        // Applied by finishSave() on the GUI thread.
-        savePlan.siblingsMoved = savePlan.movesSiblings;
-    }
-    // The staged real .clu (no pending set) goes in first: the commit below then
-    // has nothing to do for it.
-    if (cluDirect) {
-        std::string e;
-        if (!hierarchyfiles::installStaged(localPath(cluWritePath), false, &e)) {
-            lastSaveErrorMessage = tr("Cannot replace the cluster file:\n%1\n\n%2")
-                                   .arg(cluWritePath, QString::fromStdString(e));
-            discardSiblings();
-            return SAVE_ERROR;
-        }
-    }
-    // patch63 — commitAndRenewPending now reports failure.  When the
-    // pending → original copy fails (typical: NTFS/fuseblk permission
-    // issue, restrictive ACL, locked target), the pending .clu has the
-    // user's edits but the final .clu file is unchanged.  Without this
-    // check Klusters reported "save successful" while the on-disk file
-    // was stale — extremely confusing.
-    QString commitError;
-    bool cluCommitted = false;
-    if (!commitAndRenewPending(&commitError, &cluCommitted)) {
-        lastSaveErrorMessage = commitError;
-        // Once the .clu is on disk its .clc/.clp go with it, even though another
-        // file (a feature space committed after it) failed: discarding them
-        // would leave the new .clu beside the old siblings.
-        if (cluCommitted) {
-            QString e;
-            if (!installHierarchySiblings(&e))
-                lastSaveErrorMessage += QStringLiteral("\n\n") + e;
-        } else {
-            discardSiblings();
-        }
-        return SAVE_ERROR;
-    }
+    // ── phase 1: stage every file that is not already at parity ─────────────
+    // Each new file is written completely next to its target ("<target>.saving")
+    // and flushed; no target is touched.  A file whose content is already what
+    // the save would write is not staged at all: an unchanged .spk is not copied
+    // (filecommit::atParity), an unchanged .clu/.clc/.clp is not rewritten.
+    std::vector<std::string>& targets = savePlan.staged;
+    targets.clear();
+    auto abandon = [&](const QString& why, int code){
+        filecommit::discardStaged(targets);
+        targets.clear();
+        lastSaveErrorMessage = why;
+        return code;
+    };
+    QString err;
 
-    // The .clu is on disk: put its .clc/.clp beside it.
-    const bool siblingsOk = installHierarchySiblings(&hierError);
+    // .clu.  Save As always writes the new name.
+    if (!stageIdTarget(cluTarget, savePlan.fiberCount, savePlan.fiber, isSaveAs, targets, &err))
+        return abandon(QString(
+            "Cannot write the cluster file:\n%1\n\n%2\n\n"
+            "Likely causes:\n"
+            "  • File owned by a different user (common after running\n"
+            "    process_drifttracker / KiloKlustaKwik as another uid,\n"
+            "    e.g. via sudo or a build account)\n"
+            "  • Parent directory not writable by the user running Klusters\n"
+            "  • File or its directory marked immutable (chattr +i)\n"
+            "  • Filesystem mounted read-only or out of space").arg(cluTarget, err), OPEN_ERROR);
 
-    // Save As may name another method (saMethod): the .clu now belongs to it,
-    // and its pending copies were re-seeded by commitAndRenewPending.  Only
-    // reachable from the .clu's own space (Save As is refused while borrowed).
-    if (isSaveAs) {
-        originMethod  = saMethod;
-        activeMethod  = saMethod;
-        activeFetPath = QFileInfo::exists(pendingFetPath) ? pendingFetPath : origFetPath;
-        activeSpkPath = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
-    }
+    // .clc / .clp.
+    if (savePlan.writeClc
+        && !stageIdTarget(savePlan.clcPath, savePlan.atomCount, savePlan.atom, isSaveAs, targets, &err))
+        return abandon(tr("Could not write the child layer (.clc); nothing was saved:\n%1").arg(err),
+                       SAVE_ERROR);
+    if (savePlan.writeClp
+        && !stageIdTarget(savePlan.clpPath, static_cast<int32_t>(savePlan.clp.size()), savePlan.clp,
+                          isSaveAs, targets, &err))
+        return abandon(tr("Could not write the parent map (.clp); nothing was saved:\n%1").arg(err),
+                       SAVE_ERROR);
 
-    // ── cluster information (units) in the parameter file ─────────────────
+    // .spk/.res/.fet of the .clu space and the synced feature spaces.
+    bool waveformsStaged = false;
+    if (!stagePendingFiles(spkTarget, resTarget, fetTarget, targets, waveformsStaged, &err))
+        return abandon(err, SAVE_ERROR);
+
+    // Cluster information (units) in the parameter file, staged like the rest
+    // and left out when the file already says the same.
     if (writeUnits) {
-        NS3_DIAG()<<" parameterFile"<<parameterFile;
+        NS3_DIAG()<<" parameterFile"<<newParameterFile;
         QMap<int,ClusterUserInformation> clusterUserInformationMap = QMap<int,ClusterUserInformation>();
-        clusteringData->getClusterUserInformation(electrodeGroupID.toInt(),clusterUserInformationMap);
+        clusteringData->getClusterUserInformation(newGroup.toInt(),clusterUserInformationMap);
 
         // Build the merged units map: read existing units, overwrite the
         // units for the current electrode group, then write all back.
         ParameterYamlModifier yamlMod;
-        if (!yamlMod.parseFile(parameterFile)) {
-            lastSaveErrorMessage = tr("The clustering was saved, but the parameter file could "
-                                      "not be read to store the cluster information:\n%1")
-                                   .arg(parameterFile);
-            return PARSE_ERROR;
-        }
+        if (!yamlMod.parseFile(newParameterFile))
+            return abandon(tr("The parameter file could not be read to store the cluster "
+                              "information; nothing was saved:\n%1").arg(newParameterFile), PARSE_ERROR);
 
-        // Read existing units (all groups)
         QMap<int,QStringList> allUnits;
         {
             ParameterYamlReader reader;
-            if (reader.parseFile(parameterFile))
+            if (reader.parseFile(newParameterFile))
                 reader.getUnits(allUnits);
         }
-
-        // Remove existing entries for this electrode group
-        const int pGroup = electrodeGroupID.toInt();
+        const int pGroup = newGroup.toInt();
         QMap<int,QStringList> filtered;
         for (auto it = allUnits.cbegin(); it != allUnits.cend(); ++it) {
             if (it.value().size() >= 1 && it.value()[0].toInt() != pGroup)
                 filtered.insert(it.key(), it.value());
         }
-
-        // Add updated entries for this electrode group
         for (auto it = clusterUserInformationMap.cbegin();
              it != clusterUserInformationMap.cend(); ++it) {
             const ClusterUserInformation& cui = it.value();
@@ -1155,29 +1107,124 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             filtered.insert(it.key(), row);
         }
 
-        if (!yamlMod.setUnitsInformation(filtered) || !yamlMod.writeToFile(parameterFile)) {
-            lastSaveErrorMessage = tr("The clustering was saved, but the cluster information "
-                                      "could not be written to the parameter file:\n%1")
-                                   .arg(parameterFile);
-            return CREATION_ERROR;
+        const QString stagedYaml = QString::fromStdString(filecommit::staged(localPath(newParameterFile)));
+        std::string fe;
+        if (!yamlMod.setUnitsInformation(filtered) || !yamlMod.writeToFile(stagedYaml)
+            || !filecommit::flushFile(localPath(stagedYaml), &fe)) {
+            QFile::remove(stagedYaml);
+            return abandon(tr("The cluster information could not be written for the parameter "
+                              "file; nothing was saved:\n%1").arg(newParameterFile), CREATION_ERROR);
+        }
+        if (filecommit::sameContent(localPath(stagedYaml), localPath(newParameterFile)))
+            QFile::remove(stagedYaml);                       // unchanged: leave the file alone
+        else
+            targets.push_back(localPath(newParameterFile));
+    }
+
+    // ── phase 2: install them all, or none ──────────────────────────────────
+    // The journal sits next to the .clu it commits; openDocument() finishes a
+    // commit a crash interrupted.
+    const QFileInfo cluInfo(cluTarget);
+    const QString journal = cluInfo.absolutePath() + QDir::separator() + QStringLiteral(".")
+                            + cluInfo.fileName() + QStringLiteral(".commit");
+    {
+        std::string e;
+        // The .clc/.clp keep their previous version as .bak, as they always have.
+        std::vector<std::string> keepBak;
+        if (savePlan.writeClc) keepBak.push_back(localPath(savePlan.clcPath));
+        if (savePlan.writeClp) keepBak.push_back(localPath(savePlan.clpPath));
+        if (!filecommit::commitStaged(targets, localPath(journal), &e, keepBak)) {
+            targets.clear();
+            lastSaveErrorMessage = tr("The save could not replace its files, so none of them was "
+                                      "replaced -- the files on disk are as they were before the "
+                                      "save:\n%1").arg(QString::fromStdString(e));
+            return SAVE_ERROR;
+        }
+        targets.clear();
+    }
+
+    // ── the session follows the files ───────────────────────────────────────
+    if (isSaveAs) {
+        docUrl           = saveUrl;
+        baseName         = newBaseName;
+        electrodeGroupID = newGroup;
+        parameterFile    = newParameterFile;
+        origSpkPath      = spkTarget;
+        origResPath      = resTarget;
+        origFetPath      = fetTarget;
+        // Synced working copies belong to the old location's spaces; Save As
+        // does not carry them.  startSave dropped them on the GUI thread; this
+        // covers any other caller and is a no-op otherwise.
+        if (!syncedPending.isEmpty()) discardSyncedFeatureSpaces();
+        // Applied by finishSave() on the GUI thread.
+        savePlan.siblingsMoved = savePlan.movesSiblings;
+    }
+    // The pending .clu is the session's scratch copy of the ids (read when the
+    // atom layer loads); keep it equal to what was just saved.
+    if (!pendingCluPath.isEmpty() && !isSaveAs) {
+        std::vector<std::string> scratch;
+        QString ignored;
+        if (stageIdTarget(pendingCluPath, savePlan.fiberCount, savePlan.fiber, false, scratch, &ignored)
+            && !scratch.empty()) {
+            std::string e;
+            hierarchyfiles::installStaged(scratch.front(), false, &e);
         }
     }
+    renewPendingAfterCommit(waveformsStaged || isSaveAs);
 
-    if (!siblingsOk) {
-        lastSaveErrorMessage = hierError;
-        return SAVE_ERROR;
+    // Save As may name another method (saMethod): the .clu now belongs to it,
+    // and its pending copies were re-seeded by renewPendingAfterCommit.  Only
+    // reachable from the .clu's own space (Save As is refused while borrowed).
+    if (isSaveAs) {
+        originMethod  = saMethod;
+        activeMethod  = saMethod;
+        activeFetPath = QFileInfo::exists(pendingFetPath) ? pendingFetPath : origFetPath;
+        activeSpkPath = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
     }
 
-    // Clean only if nothing was edited after the snapshot: the curator keeps
-    // working while the SaveThread runs, and `modified = false` here used to mark
-    // those later edits as saved, so a close afterwards asked nothing.
+    // Clean only if nothing was edited after the snapshot (the GUI is locked
+    // during a save, so this is the belt to that brace).
     modified.clearIfUnchanged(savePlan.dirtySerial);
     return OK;
+}
+
+bool KlustersDoc::differsFromDisk(){
+    if (!clusteringData || docUrl.isEmpty()) return false;
+    if (unitsInfoModified || !pendingRealign.empty()) return true;
+
+    auto idsDiffer = [](const QString& path, const std::vector<int32_t>& ids){
+        const std::string p = localPath(path);
+        const hierarchyfiles::IdFile f = hierarchyfiles::readIdFile(p);
+        return !f.ok || f.ids != ids;
+    };
+    if (idsDiffer(docUrl, labelsInSpikeOrder(*clusteringData))) return true;
+    if (isHierarchicalSession() && childData
+        && idsDiffer(clcSiblingPath, labelsInSpikeOrder(*childData)))
+        return true;
+
+    // The working copies: only a realign, nudge or sync changes them.
+    if (!pendingCluPath.isEmpty()) {
+        const QList<QPair<QString, QString>> pairs = {
+            {pendingSpkPath, origSpkPath}, {pendingResPath, origResPath}, {pendingFetPath, origFetPath}};
+        for (const auto& pr : pairs)
+            if (!pr.first.isEmpty()
+                && !filecommit::atParity(localPath(pr.first), localPath(pr.second), syncStamps[pr.first]))
+                return true;
+        for (auto it = syncedPending.constBegin(); it != syncedPending.constEnd(); ++it)
+            if (!filecommit::atParity(localPath(it.value()), localPath(it.key()), syncStamps[it.value()]))
+                return true;
+    }
+    return false;
 }
 
 
 bool KlustersDoc::canCloseView(){
     bool returnValue = false;
+    // Ask only when there is something to lose: an edit that was undone, or a
+    // realign rejected, leaves the document "modified" with nothing different
+    // from the files.
+    if(isModified() && !differsFromDisk())
+        modified = false;
     if(isModified()){
         QString saveURL;
         switch(QMessageBox::question(nullptr, url(),tr("The current file has been modified.\n"

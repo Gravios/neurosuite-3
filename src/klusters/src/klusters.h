@@ -58,6 +58,7 @@ class QMenu;
 #include <QTimer>
 #include <QElapsedTimer>   // Qt 6.9/6.10 no longer pull this in transitively; declared member lastNudgeTimer needs it
 #include <QThread>
+#include <QPointer>
 #include <vector>          // decollideCommit takes std::vector<decollide::Decomp>
 
 
@@ -69,6 +70,8 @@ class TemplatePalette;
 class MergeRecommendView;
 class ClusterView;     // for watershed live-preview overlay
 class SaveThread;
+class SaveInputBlocker;
+class QProgressDialog;
 class QComboBox;
 class PrefDialog;
 class QShortcut;       // for dipsplit post-commit Esc/Enter shortcuts
@@ -797,6 +800,14 @@ private:
      *  thread, then hands the writing to the thread.  Returns false, having told
      *  the user why, when a save is already running or the snapshot is refused. */
     bool startSave(const QString& url, bool saveAs);
+    /** Locks editing for the length of a save (input swallowed, wait cursor,
+     *  a "Saving…" dialog if it takes more than a moment), and unlocks it. */
+    void beginSaveLock();
+    void endSaveLock();
+    /** Closing while a save runs: shows "Waiting for the save to finish…" until
+     *  the SaveThread is done and its done-event handled, so the close decides on
+     *  the files as that save left them.  Returns at once when no save runs. */
+    void waitForSaveToFinish();
     /** Second half of slotPromoteToHierarchy, once the clustering is saved:
      *  writes the siblings and reopens the session hierarchical. */
     void promoteSavedClustering();
@@ -1389,6 +1400,12 @@ private:
     * when using the save menu, on quit if a save is need it the thread is not call.
     */
     SaveThread* saveThread;
+
+    /** While a save runs: swallows user input (SaveInputBlocker), shows a wait
+     *  cursor and, after a moment, a "Saving…" dialog. */
+    SaveInputBlocker* mSaveBlocker = nullptr;
+    QPointer<QProgressDialog> mSaveProgress;
+    bool mSaveLocked = false;
 
     /**Amount of time used when looking for the spikes when the presentation mode is time frame.
     * This amount is in second and the default is 30.

@@ -44,6 +44,9 @@
 #include "templatepalette.h"
 #include "autoMerge.h"      // patch 0069
 #include "savethread.h"
+#include "saveinputblocker.h"
+#include <QProgressDialog>
+#include <QEventLoop>
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration
 #include "processwidget.h"
@@ -3916,9 +3919,9 @@ bool KlustersApp::queryClose()
     //implement to ask the user to save if necessary before closing
     if(doc == nullptr) return true;
     else{
-        // A save in flight owns the document's save snapshot; canCloseView may
-        // take a new one.  Let it finish first (as slotFileClose does).
-        while(!saveThread->wait()){};
+        // A save in flight: wait for it ("Waiting for the save to finish…"),
+        // then ask only if the clustering still differs from the files.
+        waitForSaveToFinish();
         if(doc->canCloseView()){
             //Set a waiting cursor in case there is some delay to the ending of the running threads.
             QApplication::restoreOverrideCursor();
@@ -3960,6 +3963,7 @@ void KlustersApp::customEvent (QEvent* event){
     if(event->type() == QEvent::User + 100){
         slotStatusMsg(tr("Save file done."));
         SaveThread::SaveDoneEvent* saveEvent = static_cast<SaveThread::SaveDoneEvent*>(event);
+        endSaveLock();
         // Drop the save snapshot; a failed save leaves the document modified.
         doc->finishSave(saveEvent->isSaveOk());
         // A Save As can move the session and still fail at a later step; the
@@ -4066,9 +4070,7 @@ void KlustersApp::slotFileOpen()
 
 void KlustersApp::slotFileClose(){
     if(doc != nullptr){
-        while(!saveThread->wait())
-        {
-        };
+        waitForSaveToFinish();
 
         if(doc->canCloseView()){
             QApplication::restoreOverrideCursor();
@@ -4166,8 +4168,77 @@ bool KlustersApp::startSave(const QString& url, bool saveAs)
     if (saveAs)
         doc->discardSyncedFeatureSpaces();
     slotStateChanged("SavingState");
+    beginSaveLock();
     saveThread->save(url, doc, saveAs);
     return true;
+}
+
+void KlustersApp::beginSaveLock()
+{
+    if (mSaveLocked) return;
+    mSaveLocked = true;
+    if (!mSaveBlocker) mSaveBlocker = new SaveInputBlocker(this);
+    mSaveBlocker->setAllowed(nullptr);
+    qApp->installEventFilter(mSaveBlocker);
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    // A dialog only for a save that takes a moment; a quick one shows just the cursor.
+    QTimer::singleShot(400, this, [this]() {
+        if (!mSaveLocked || mSaveProgress) return;
+        mSaveProgress = new QProgressDialog(
+            tr("Saving…\nThe clustering cannot be edited until the save has finished."),
+            QString(), 0, 0, this);
+        mSaveProgress->setWindowTitle(tr("Saving"));
+        mSaveProgress->setCancelButton(nullptr);
+        mSaveProgress->setWindowModality(Qt::ApplicationModal);
+        mSaveProgress->setMinimumDuration(0);
+        mSaveBlocker->setAllowed(mSaveProgress);
+        mSaveProgress->show();
+    });
+}
+
+void KlustersApp::endSaveLock()
+{
+    if (!mSaveLocked) return;
+    mSaveLocked = false;
+    if (mSaveBlocker) {
+        qApp->removeEventFilter(mSaveBlocker);
+        mSaveBlocker->setAllowed(nullptr);
+    }
+    if (mSaveProgress) {
+        mSaveProgress->close();
+        mSaveProgress->deleteLater();
+        mSaveProgress = nullptr;
+    }
+    QApplication::restoreOverrideCursor();
+}
+
+void KlustersApp::waitForSaveToFinish()
+{
+    if (saveThread->isRunning()) {
+        mPromoteAfterSave = false;               // closing abandons a pending promotion
+        if (mSaveProgress) mSaveProgress->hide();
+        QProgressDialog wait(tr("Waiting for the save to finish before closing…"),
+                             QString(), 0, 0, this);
+        wait.setWindowTitle(tr("Saving"));
+        wait.setCancelButton(nullptr);
+        wait.setWindowModality(Qt::ApplicationModal);
+        wait.setMinimumDuration(0);
+        if (mSaveBlocker) mSaveBlocker->setAllowed(&wait);
+        wait.show();
+        // Poll rather than wait on finished(): it may already have been emitted.
+        QEventLoop loop;
+        QTimer poll;
+        connect(&poll, &QTimer::timeout, &loop, [this, &loop]() {
+            if (!saveThread->isRunning()) loop.quit();
+        });
+        poll.start(50);
+        if (saveThread->isRunning()) loop.exec(QEventLoop::ExcludeUserInputEvents);
+        if (mSaveBlocker) mSaveBlocker->setAllowed(nullptr);
+    }
+    // The SaveThread posts its done-event just before it ends: handle it now, so
+    // the document's state (snapshot dropped, modified flag, sibling paths) is
+    // final before the close looks at it.
+    QCoreApplication::sendPostedEvents(this, QEvent::User + 100);
 }
 
 void KlustersApp::slotFileSave()
@@ -4240,44 +4311,11 @@ void KlustersApp::slotDisplayClose()
     }
     //or the active window if there is only one display (which can only be the mainDock)
     else {
-        //If a save is already in process, wait until it is done
-        if(saveThread->isRunning()){
-            QApplication::restoreOverrideCursor();
-            QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-            while(!saveThread->wait()){};
-
-            //reset the cluster palette and hide the cluster panel
-            clusterPalette->reset();
-            clusterPanel->hide();
-            //try to close the document
-            if(doc->canCloseDocument(this,"displayClose")){
-                doc->closeDocument();
-                //Delete the view
-                if(qobject_cast<KlustersView*>(tabsParent->currentWidget())){
-                    delete processWidget;
-                    processWidget = nullptr;
-                    delete tabsParent->currentWidget();
-                } else {
-                    if(processWidget->isRunning()){
-                        processWidget->killJob();
-                        processKilled = true;
-                    }
-                    if(processFinished && processOutputsFinished){
-                        delete tabsParent->currentWidget();
-                        processWidget = nullptr;
-                    } else {
-                        mainDock->hide();
-                        processWidget->hideWidget();
-                        QTimer::singleShot(2000, this, &KlustersApp::slotDisplayClose);
-                        return;
-                    }
-                }
-                mainDock = nullptr;
-                QApplication::restoreOverrideCursor();
-            }
-        }
+        // A save in flight: wait for it, then decide like any close (the old
+        // branch here closed without asking, even after a failed save).
+        waitForSaveToFinish();
         //Ask the user if wants to save the document if need it before closing and confirm the closing
-        else if(doc->canCloseView()){
+        if(doc->canCloseView()){
             QApplication::restoreOverrideCursor();
             QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
             //reset the cluster palette and hide the cluster panel

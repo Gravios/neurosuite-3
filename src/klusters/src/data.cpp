@@ -27,7 +27,6 @@
 #include "binfile.h"
 #include "minmaxthread.h"
 #include "waveformview.h"
-#include "autosavethread.h"
 #include "klustersyamlreader.h"
 
 //C include files
