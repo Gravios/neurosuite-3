@@ -961,29 +961,33 @@ void ndManager::slotQuery(){
 }
 
 void ndManager::slotExpertMode(){
+    //The action is already toggled: the view is rebuilt in the new mode.
+    if(mainDock != 0L){
+        if(!confirmCloseDocument()){
+            //Cancelled (or the save failed): keep the document and the mode.
+            mExpertMode->setChecked(!mExpertMode->isChecked());
+            return;
+        }
+        //Read after the prompt: saving makes a new or template document an
+        //ordinary one.
+        const bool isNewFile = newFile;
+        const bool isModel = importedFile;
+        const QString path = isModel ? importedFileUrl : filePath;
+
+        //close the file and reopen it in the new mode
+        discardCurrentDocument();
+        if(isNewFile)
+            slotNewFile();
+        else if(isModel)
+            openModelFile(path);
+        else
+            openDocumentFile(path);
+    }
+
     QSettings settings;
     settings.beginGroup("General");
     settings.setValue("expertMode",mExpertMode->isChecked());
     settings.endGroup();
-
-    bool isImportedFile = importedFile;
-    bool isNewFile = newFile;
-
-    //close the file and reopen it in the new mode
-    slotFileClose();
-
-    if(isNewFile && filePath.contains("Untitled")) {
-        slotNewFile();
-    } else if(isImportedFile && filePath.contains("Untitled")){
-        QString url = importedFileUrl;
-        openDocumentFile(url);
-        url+= QDir::separator() + tr("Untitled");
-        doc->rename(url);
-        filePath = url;
-        setWindowTitle(url);
-    } else {
-        openDocumentFile(filePath);
-    }
 }
 
 void ndManager::nbSpikeGroupsModified(int nbGroups){
