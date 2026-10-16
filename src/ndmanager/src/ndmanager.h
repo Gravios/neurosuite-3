@@ -180,11 +180,15 @@ private slots:
    */
     void slotStatusMsg(const QString &text);
     
-    /***Saves the current parameter file.*/
-    void slotSave();
+    /**Saves the current parameter file (under a new name when it is new or
+     * a template).
+     * @return true when the file was written; false when the user cancelled
+     * the file dialog or the write failed (the error has been shown).*/
+    bool slotSave();
 
-    /***Saves the current parameter file with a new name.*/
-    void slotSaveAs();
+    /**Saves the current parameter file with a new name.
+     * @return true when the file was written, false when cancelled or failed.*/
+    bool slotSaveAs();
 
     /**Save the current Pipeline Designer graph to
      *  <session>.ndm.default.pipeline.  Bound to Ctrl+Alt+P. */
@@ -219,6 +223,15 @@ protected:
 private:
     /**Sets up all the actions used.*/
     void setupActions();
+
+    /**Asks to save modified plugins, program descriptions and parameters.
+     * @return false when the user cancelled or a requested save failed: the
+     * document must then stay open.*/
+    bool confirmCloseDocument();
+
+    /**Closes the open document (after confirmCloseDocument()) and its view.
+     * @return true when no document is open any more.*/
+    bool closeCurrentDocument();
 
     /**Resets the state of the application to a none document open state.*/
     void resetState();

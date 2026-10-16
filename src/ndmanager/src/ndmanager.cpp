@@ -559,133 +559,91 @@ void ndManager::slotImport(){
     slotStatusMsg(tr("Ready."));
 }
 
-void ndManager::slotFileClose(){
-    if(doc != 0 ){
-        bool hasBeenCancel = false;
-
-        //check first if some scripts have been modified
-        QStringList scriptModified = parameterView->modifiedScripts();
-        if(!scriptModified.isEmpty()) {
-            for (const QString& name : scriptModified) {
-                switch(QMessageBox::question(0,tr("Plugin modification"),tr("The plugin %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
-                case QMessageBox::Save://<=> Save
-                    parameterView->saveScript(name);
-                    break;
-                case QMessageBox::Discard://<=> Discard
-                    break;
-                case QMessageBox::Cancel:
-                    hasBeenCancel = true;
-                    break;
-                default: break;
-                }
+bool ndManager::confirmCloseDocument(){
+    //check first if some scripts have been modified
+    const QStringList scriptModified = parameterView->modifiedScripts();
+    for (const QString& name : scriptModified) {
+        switch(QMessageBox::question(this,tr("Plugin modification"),tr("The plugin %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
+        case QMessageBox::Save://<=> Save
+            if(!parameterView->saveScript(name)){
+                QMessageBox::critical(this, tr("IO Error!"),tr("The plugin %1 could not be saved.").arg(name));
+                return false;
             }
-        }
-        //check if some descriptions have been modified
-        QStringList programModified = parameterView->modifiedProgramDescription();
-        if(!programModified.isEmpty()){
-            for (const QString& name : programModified) {
-                switch(QMessageBox::question(this,tr("Program description modification"),tr("The description of the program %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
-                case QMessageBox::Save://<=> Save
-                    parameterView->saveProgramDescription(name);
-                    break;
-                case QMessageBox::Discard://<=> Discard
-                    break;
-                case QMessageBox::Cancel:
-                    hasBeenCancel = true;
-                    break;
-                default: break;
-                }
-            }
-        }
-
-        if(!hasBeenCancel){
-            //if at least one parameter has been modified, prompt the user to save the information
-            if(parameterView->isModified()){
-                switch(QMessageBox::question(this,tr("Parameters modification"),tr("Some parameters have changed, do you want to save the parameter file?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
-                case QMessageBox::Save://<=> Save
-                    slotSave();
-                    break;
-                case QMessageBox::Discard://<=> Discard
-                    break;
-                case QMessageBox::Cancel:
-                    return;
-                default: break;
-                }
-            }
-            delete parameterView;
-            parameterView = 0;
-            //close the document
-            doc->closeDocument();
-            //Delete the main view
-            delete mainDock;
-            mainDock = 0L;
-            resetState();
+            break;
+        case QMessageBox::Discard://<=> Discard
+            break;
+        case QMessageBox::Cancel:
+            return false;
+        default: break;
         }
     }
+
+    //check if some descriptions have been modified
+    const QStringList programModified = parameterView->modifiedProgramDescription();
+    for (const QString& name : programModified) {
+        switch(QMessageBox::question(this,tr("Program description modification"),tr("The description of the program %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
+        case QMessageBox::Save://<=> Save
+            parameterView->saveProgramDescription(name);
+            break;
+        case QMessageBox::Discard://<=> Discard
+            break;
+        case QMessageBox::Cancel:
+            return false;
+        default: break;
+        }
+    }
+
+    //if at least one parameter has been modified, prompt the user to save the information
+    if(parameterView->isModified()){
+        switch(QMessageBox::question(this,tr("Parameters modification"),tr("Some parameters have changed, do you want to save the parameter file?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
+        case QMessageBox::Save://<=> Save
+            // A cancelled Save As dialog or a failed write keeps the document open.
+            if(!slotSave())
+                return false;
+            break;
+        case QMessageBox::Discard://<=> Discard
+            break;
+        case QMessageBox::Cancel:
+            return false;
+        default: break;
+        }
+    }
+    return true;
+}
+
+bool ndManager::closeCurrentDocument(){
+    if(doc == 0 || mainDock == 0L)
+        return true;
+    if(!confirmCloseDocument())
+        return false;
+    delete parameterView;
+    parameterView = 0;
+    //close the document
+    doc->closeDocument();
+    //Delete the main view
+    delete mainDock;
+    mainDock = 0L;
+    resetState();
+    return true;
+}
+
+void ndManager::slotFileClose(){
+    closeCurrentDocument();
 }
 
 bool ndManager::queryClose()
 {
     if(doc == 0 || mainDock == 0L)
         return true;
-    else{
-        //check first if some scripts have been modified
-        const QStringList scriptModified = parameterView->modifiedScripts();
-        if( !scriptModified.isEmpty() ){
-            for (const QString& name : scriptModified) {
-                switch(QMessageBox::question(this,tr("Plugin modification"),tr("The plugin %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
-                case QMessageBox::Save://<=> Save
-                    parameterView->saveScript(name);
-                    break;
-                case QMessageBox::Discard://<=> Discard
-                    break;
-                case QMessageBox::Cancel:
-                    return false;
-                    break;
-                default: break;
-                }
-            }
-        }
-
-        //check if some descriptions have been modified
-        const QStringList programModified = parameterView->modifiedProgramDescription();
-        if(!programModified.isEmpty()){
-            for (const QString& name : programModified) {
-                switch(QMessageBox::question(this,tr("Program description modification"),tr("The description of the program %1 has been modified, do you want to save the it?").arg(name),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
-                case QMessageBox::Save://<=> Save
-                    parameterView->saveProgramDescription(name);
-                    break;
-                case QMessageBox::Discard://<=> Discard
-                    break;
-                case QMessageBox::Cancel:
-                    return false;
-                    break;
-                default: break;
-                }
-            }
-        }
-
-        //if at least one parameter has been modified, prompt the user to save the information
-        if(parameterView->isModified()){
-            switch(QMessageBox::question(this,tr("Parameters modification"),tr("Some parameters have changed, do you want to save the parameter file?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
-            case QMessageBox::Save://<=> Save
-                slotSave();
-                break;
-            case QMessageBox::Discard://<=> Discard
-                break;
-            case QMessageBox::Cancel:
-                return false;
-            default: break;
-            }
-        }
-        //close the document
-        doc->closeDocument();
-        return true;
-    }
-
+    if(!confirmCloseDocument())
+        return false;
+    //close the document
+    doc->closeDocument();
+    return true;
 }
 
-void ndManager::slotSave(){
+bool ndManager::slotSave(){
+    bool saved = false;
     slotStatusMsg(tr("Saving…"));
     //if  the current file is new or was initially imported, it has to be saved under a new name
     if(importedFile || newFile){
@@ -710,6 +668,7 @@ void ndManager::slotSave(){
                 setWindowTitle(url);
                 importedFile = false;
                 newFile = false;
+                saved = true;
             }
         }
     }
@@ -719,12 +678,16 @@ void ndManager::slotSave(){
         if(saveStatus != ndManagerDoc::OK){
             QMessageBox::critical(this, tr("IO Error!"),tr("The current file could not be saved possibly because of insufficient file access permissions."
                                                            " You may consider saving your session file to another location using the Save As entry in the File menu."));
+        } else {
+            saved = true;
         }
     }
     slotStatusMsg(tr("Ready."));
+    return saved;
 }
 
-void ndManager::slotSaveAs(){
+bool ndManager::slotSaveAs(){
+    bool saved = false;
     slotStatusMsg(tr("Saving as…"));
 
     //Save the parameter file
@@ -739,9 +702,11 @@ void ndManager::slotSaveAs(){
 
             importedFile = false;
             newFile = false;
+            saved = true;
         }
     }
     slotStatusMsg(tr("Ready."));
+    return saved;
 }
 void ndManager::resetState(){
     //Disable some actions when no document is open (see the klustersui.rc file)
