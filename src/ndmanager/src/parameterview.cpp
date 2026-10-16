@@ -956,36 +956,74 @@ void ParameterView::applyProbeLayout(QList<ProbeEntry>     /*probes*/,
 {
     if (!expertMode) return;  // anatomy/spike pages only exist in expert mode
 
-    // Replace anatomy groups entirely with what the probe defines.
-    // The caller (ProbePage::browseProbeFile) has already computed:
-    //   - one group per shank, containing probe channels
-    //   - an optional final group for any leftover channels
-    // We set this as the complete anatomical description.
+    // The probe tab computed one group per shank plus a leftover anatomy
+    // group; that becomes the complete description.  A group whose channel
+    // set the pages already hold keeps what the user set on it -- its
+    // channel order, its channels' skip flags, its spike parameters
+    // (nSamples, peakSampleIndex, nFeatures, sdiffPairs) -- so adding a
+    // probe, or a geometry edit that changes one shank, does not reset
+    // every other group.  probeId / shankIndex are written per group on
+    // save (writeProbesSection), from the probe tab's layout.
+    QMap<int,QList<int>> oldAnatomy, oldSpike;
+    QMap<QString,QMap<int,QString>> oldAttributes;
+    QMap<int,QMap<QString,QString>> oldSpikeInfo;
+    anatomy->getGroups(oldAnatomy);
+    anatomy->getAttributes(oldAttributes);
+    spike->getGroups(oldSpike);
+    spike->getGroupInformation(oldSpikeInfo);
+
+    auto sameSetIn = [](const QMap<int,QList<int>>& old, const QList<int>& chs) {
+        const QSet<int> s(chs.cbegin(), chs.cend());
+        for (auto it = old.cbegin(); it != old.cend(); ++it)
+            if (QSet<int>(it.value().cbegin(), it.value().cend()) == s)
+                return it.key();
+        return -1;
+    };
+
+    QSet<int> keptChannels;          // channels of anatomy groups left as they were
+    for (auto it = newAnatomy.begin(); it != newAnatomy.end(); ++it) {
+        const int k = sameSetIn(oldAnatomy, it.value());
+        if (k < 0) continue;
+        it.value() = oldAnatomy.value(k);
+        for (int ch : it.value()) keptChannels.insert(ch);
+    }
     anatomy->setNbChannels(nbChannels);
     anatomy->setGroups(newAnatomy);
 
-    // Rebuild skip attributes for all channels in the new groups
+    // Skip flags (per channel): kept for the channels of unchanged groups,
+    // 0 elsewhere.  The attribute keys are the page's own column names.
+    QStringList attributeKeys = oldAttributes.keys();
+    if (attributeKeys.isEmpty()) attributeKeys << QStringLiteral("Skip");
     QMap<QString, QMap<int,QString>> attributes;
-    QMap<int,QString> skip;
-    for (int i = 0; i < nbChannels; ++i)
-        skip.insert(i, QStringLiteral("0"));
-    attributes.insert(QStringLiteral("Skip"), skip);
+    for (const QString& key : attributeKeys) {
+        const QMap<int,QString> old = oldAttributes.value(key);
+        QMap<int,QString> values;
+        for (int i = 0; i < nbChannels; ++i)
+            values.insert(i, keptChannels.contains(i) && old.contains(i)
+                                 ? old.value(i) : QStringLiteral("0"));
+        attributes.insert(key, values);
+    }
     anatomy->setAttributes(attributes);
     anatomy->setModified(true);
 
-    // Replace spike groups with defaults for nSamples, peakSampleIndex, nFeatures.
-    // Pre-populate spikeInfo so setGroups fills all four columns — cells that
-    // remain null in cols 1-3 crash getGroupInformation on save.
+    // Spike groups: an unchanged group keeps its row; a new one gets the
+    // defaults.  Every group gets nSamples / peakSampleIndex / nFeatures
+    // (cells left null in cols 1-3 crash getGroupInformation on save).
     QMap<int, QMap<QString,QString>> spikeInfo;
-    for (int gid : newSpike.keys()) {
+    for (auto it = newSpike.begin(); it != newSpike.end(); ++it) {
         QMap<QString,QString> info;
+        const int k = sameSetIn(oldSpike, it.value());
+        if (k >= 0) {
+            it.value() = oldSpike.value(k);
+            info = oldSpikeInfo.value(k);
+        }
         // Use the tag constants, not hand-typed strings: SpikePage::setGroups
         // matches on these exact keys, and "nbSamples"/"nbFeatures" silently
         // matched nothing, leaving those cells blank to be saved as 0.
-        info[NB_SAMPLES]        = QStringLiteral("52");
-        info[PEAK_SAMPLE_INDEX] = QStringLiteral("26");
-        info[NB_FEATURES]       = QStringLiteral("3");
-        spikeInfo[gid] = info;
+        if (info.value(NB_SAMPLES).isEmpty())        info[NB_SAMPLES]        = QStringLiteral("52");
+        if (info.value(PEAK_SAMPLE_INDEX).isEmpty()) info[PEAK_SAMPLE_INDEX] = QStringLiteral("26");
+        if (info.value(NB_FEATURES).isEmpty())       info[NB_FEATURES]       = QStringLiteral("3");
+        spikeInfo[it.key()] = info;
     }
     spike->setGroups(newSpike, spikeInfo);
     spike->setModified(true);
