@@ -1296,6 +1296,7 @@ void PipelineDesignerPage::onParamEdited()
             const QString v = paramEdits[i]->text();
             if (n.params[i].second == v) continue;
             n.params[i].second = v;
+            n.editedParams.insert(n.params[i].first);
             changed = true;
         }
         break;
@@ -1316,9 +1317,31 @@ void PipelineDesignerPage::onEnabledToggled(bool checked)
 void PipelineDesignerPage::onApply()
 {
     const QList<ProgramInformation> programs = getPrograms();
+    const PipelineParamEdits edited = editedParameterValues();
     applyPending = false;   // still unsaved: Apply does not write the pipeline file
     refreshApplyState();
-    emit applyRequested(programs);
+    emit applyRequested(programs, edited);
+    // Those edits are now in the Plugins tab.  Edits on disabled nodes were
+    // not exported, so they stay pending for a later Apply.
+    for (PipelineNode& n : nodes)
+        if (n.enabled || n.type == kRootType) n.editedParams.clear();
+}
+
+PipelineParamEdits PipelineDesignerPage::editedParameterValues() const
+{
+    PipelineParamEdits result;
+    for (const PipelineNode& n : topoSort(nodes, edges)) {
+        if (!n.enabled && n.type != kRootType) continue;   // as getPrograms()
+        if (n.editedParams.isEmpty()) continue;
+        QVector<QPair<QString,QString>>& out = result[n.type];
+        for (const auto& pv : n.params) {
+            if (!n.editedParams.contains(pv.first)) continue;
+            bool have = false;
+            for (const auto& o : out) if (o.first == pv.first) { have = true; break; }
+            if (!have) out.append(pv);
+        }
+    }
+    return result;
 }
 
 void PipelineDesignerPage::onClear()

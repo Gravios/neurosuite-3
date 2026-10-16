@@ -197,12 +197,21 @@ public:
  */
     QStringList getFileScriptNames() const;
 
-    /**Replaces all programs with @p programs in the order given.
- * Called by PipelineDesignerPage::applyRequested to push the graph back
- * into the parameter tree so the change is reflected in the Plugins view
- * and persisted on the next save.
+    /**Applies the Pipeline designer's graph to the Plugins tab (connected
+ * to PipelineDesignerPage::applyRequested); persisted on the next save.
+ *  - Programs are ordered as the graph runs them (@p programs order;
+ *    several nodes of one type give one entry, at the first's place).
+ *  - A program already in the Plugins tab keeps its page: its parameter
+ *    values, help and script.  Only the parameters in @p edited (changed
+ *    in the inspector since the last Apply) are written onto it.
+ *  - A program new to the Plugins tab gets a page with its node's
+ *    parameters.
+ *  - Programs not in the graph (or only on disabled nodes) are kept,
+ *    after the graph's programs, in their previous order: their entries
+ *    hold the parameter overrides those plugins read when run.
  */
-    void setProgramList(const QList<ProgramInformation>& programs);
+    void setProgramList(const QList<ProgramInformation>& programs,
+                        const PipelineParamEdits& edited = PipelineParamEdits());
 
     /** Save the current Pipeline Designer graph to
      *  `<session-base>.default.pipeline`.  Invoked from the page's Save

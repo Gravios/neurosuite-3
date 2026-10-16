@@ -990,35 +990,62 @@ void ParameterView::applyProbeLayout(QList<ProbeEntry>     /*probes*/,
 
 // ---------------------------------------------------------------------------
 // ParameterView::setProgramList
-// Called by PipelineDesignerPage::applyRequested to push the graph back
-// into the Plugins tree.  Replaces all existing programs in order.
+// Called by PipelineDesignerPage::applyRequested.  Orders the Plugins tab as
+// the graph runs, without discarding what the Plugins tab already holds —
+// see the header for the rules.
 // ---------------------------------------------------------------------------
-void ParameterView::setProgramList(const QList<ProgramInformation>& newPrograms)
+void ParameterView::setProgramList(const QList<ProgramInformation>& newPrograms,
+                                   const PipelineParamEdits& edited)
 {
-    // ── 1. Remove all existing programs ────────────────────────────────────
-    const QStringList existing = programDict.keys();
-    for (const QString& name : existing) {
-        ProgramPageId pid = programDict[name];
-        // Remove tree item (deleting a QTreeWidgetItem removes it from its parent)
-        delete pid.item;
-        mStackWidget->removeWidget(pid.page);
-        pid.page->deleteLater();
-    }
-    programDict.clear();
-    programOrder.clear();
+    bool changed = false;
 
-    // ── 2. Add each program from the pipeline designer in order ────────────
+    // ── 1. Graph programs, in run order, one entry per plugin type ─────────
+    QStringList graphOrder;
     for (const ProgramInformation& prog : newPrograms) {
-        ProgramPage* page = addProgram(prog.getProgramName(), /*show=*/false);
-        ParameterPage* pp = page->getParameterPage();
-        pp->setProgramName(prog.getProgramName());
-        page->setHelp(prog.getHelp());
-        pp->setParameterInformation(prog.getParameterInformation());
-        page->initialisationOver();
+        const QString name = prog.getProgramName();
+        if (name.isEmpty() || graphOrder.contains(name)) continue;
+        graphOrder.append(name);
+        if (programDict.contains(name)) {
+            // Keep the page (tuned values, help, script); write only what
+            // the user changed in the inspector.
+            ParameterPage* pp = programDict.value(name).page->getParameterPage();
+            for (const auto& kv : edited.value(name)) {
+                if (pp->setParameterValue(kv.first, kv.second, /*createIfMissing=*/true))
+                    changed = true;
+            }
+        } else {
+            ProgramPage* page = addProgram(name, /*show=*/false);
+            ParameterPage* pp = page->getParameterPage();
+            pp->setProgramName(name);
+            page->setHelp(prog.getHelp());
+            pp->setParameterInformation(prog.getParameterInformation());
+            page->initialisationOver();
+            changed = true;
+        }
     }
+
+    // ── 2. Graph programs first, then everything else in its old order ─────
+    QStringList newOrder = graphOrder;
+    for (const QString& name : programOrder)
+        if (!newOrder.contains(name)) newOrder.append(name);
+    if (newOrder != programOrder) {
+        programOrder = newOrder;
+        changed = true;
+    }
+
+    // ── 3. Show the Plugins tree in that order ──────────────────────────────
+    QTreeWidgetItem* current = mParameterTree->currentItem();
+    for (const QString& name : programOrder) {
+        QTreeWidgetItem* item = programDict.value(name).item;
+        const int idx = item ? mScriptsItem->indexOfChild(item) : -1;
+        if (idx < 0) continue;
+        mScriptsItem->takeChild(idx);
+        mScriptsItem->addChild(item);
+    }
+    if (current) mParameterTree->setCurrentItem(current);
 
     mParameterTree->expandItem(mScriptsItem);
-    programsModified = true;
+    if (changed) programsModified = true;
     emit scriptListHasBeenModified(programOrder);
 }
 

@@ -13,7 +13,8 @@
  *   │   ├─ PaletteSidebar  — QListWidget of all ndm_ scripts, drag-enabled
  *   │   ├─ PipelineCanvas  — custom QPainter widget; nodes + bezier edges
  *   │   └─ InspectorPanel  — QFormLayout parameter editor for selected node
- *   └─ (Apply sends QList<ProgramInformation> back to ParameterView)
+ *   └─ (Apply sends the graph's program order, plus the parameters edited
+ *       in the inspector, back to ParameterView::setProgramList)
  *
  * copyright  (C) 2026 Gravios / NeuroSuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -30,6 +31,8 @@
 #include <QPair>
 #include <QString>
 #include <QPainterPath>
+#include <QSet>
+#include <QHash>
 
 #include <klustersshared/programinformation.h>
 
@@ -87,7 +90,15 @@ struct PipelineNode {
     bool                       enabled = true;
     /** name → value, ordered. Index in vector = row in ProgramInformation. */
     QVector<QPair<QString,QString>> params;
+    /** Names of the parameters edited in the inspector since the last
+     *  Apply.  Apply pushes only these onto a plugin that is already in
+     *  the Plugins tab.  Not saved in pipeline files. */
+    QSet<QString> editedParams;
 };
+
+/** Per plugin type, the (name, value) parameters edited in the inspector
+ *  since the last Apply — see PipelineDesignerPage::applyRequested. */
+using PipelineParamEdits = QHash<QString, QVector<QPair<QString,QString>>>;
 
 struct PipelineEdge {
     QString from;  ///< source node id
@@ -282,6 +293,10 @@ public:
      *  Emits nothing — purely a data accessor. */
     QList<ProgramInformation> getPrograms() const;
 
+    /** Per plugin type (first enabled node of the type in run order wins),
+     *  the parameters edited in the inspector since the last Apply. */
+    PipelineParamEdits editedParameterValues() const;
+
     /** True when the graph has edits not yet written to a pipeline file:
      *  set by any edit, cleared by a successful savePipelineFile and by
      *  replacing the graph (load, setPrograms, clearGraphToRoot).  Apply
@@ -295,8 +310,15 @@ public:
 
 signals:
     /** Emitted when "Apply Pipeline" is clicked.
-     *  ParameterView connects this to setProgramList(). */
-    void applyRequested(const QList<ProgramInformation>& programs);
+     *  ParameterView connects this to setProgramList().
+     *  @p programs  getPrograms(): enabled nodes in run order, each with
+     *               its node parameters (used for plugins not yet in the
+     *               Plugins tab).
+     *  @p edited    per type, only the parameters the user edited in the
+     *               inspector since the last Apply (pushed onto plugins
+     *               already in the Plugins tab). */
+    void applyRequested(const QList<ProgramInformation>& programs,
+                        const PipelineParamEdits& edited);
 
     void graphModified();
 
