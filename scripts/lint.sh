@@ -10,7 +10,8 @@
 #    the rules that are defects rather than style: syntax errors (E9),
 #    invalid comparisons/prints (F63), misplaced statements (F7) and
 #    undefined names (F82).  The tree is clean against these; keep it so.
-# 3. The build-system invariants (tests/cmake_invariants.cmake), which need
+# 3. No tracked file matches .gitignore (generated output committed by hand).
+# 4. The build-system invariants (tests/cmake_invariants.cmake), which need
 #    only cmake.
 #
 # Vendored code (libsamplerate) is skipped.  Exits non-zero if any check fails.
@@ -69,6 +70,18 @@ if command -v ruff >/dev/null 2>&1; then
     ruff check --no-cache --quiet --select E9,F63,F7,F82 "${pys[@]}" && echo "ok" || fail=1
 else
     echo "FAIL ruff not installed (python3 -m pip install ruff)"; fail=1
+fi
+
+section "no generated files tracked"
+# A tracked file that .gitignore would ignore is generated output that was
+# committed by hand (configure logs, Doxygen HTML, compile databases, ...).
+mapfile -t ignored < <(git ls-files -ci --exclude-standard)
+if [ ${#ignored[@]} -eq 0 ]; then
+    echo "ok"
+else
+    printf 'FAIL tracked but ignored (generated?): %s\n' "${ignored[@]:0:20}"
+    [ ${#ignored[@]} -gt 20 ] && echo "     ... and $(( ${#ignored[@]} - 20 )) more"
+    fail=1
 fi
 
 section "build-system invariants"

@@ -3,7 +3,8 @@
 *.moc
 Makefile
 build/
-install/
+# the install tree at the repository root (not the doc/*/install/ guides)
+/install/
 *.bak
 __pycache__/
 *.pyc
@@ -12,3 +13,28 @@ __pycache__/
 *~
 .#*
 #*#
+
+# Generated output that must not be committed (scripts/lint.sh checks it):
+# Doxygen HTML (the Doxyfiles are kept; generate into build/ instead)
+/src/neuroscope/neuroscope-api/
+/src/ndmanager/html/
+/src/ndmanager-plugins/src/process_nlxconvert/html/
+# configure output inside the vendored libsamplerate (CMake builds a copy)
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/config.log
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/config.status
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/libtool
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/libsamplerate.spec
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/samplerate.pc
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/src/config.h
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/src/stamp-h1
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/src/Version_script
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/Win32/Makefile.mingw
+/src/ndmanager-plugins/src/process_resample/libsamplerate-0.1.8/doc-pak/
+# tools/run_clazy_connect.sh output (machine-specific paths)
+/tools/clazy_db/
+/tools/clazy_fixes/
+/tools/combined_compile_commands.json
+compile_commands.json
+config.log
+config.status
+CMakeCache.txt
