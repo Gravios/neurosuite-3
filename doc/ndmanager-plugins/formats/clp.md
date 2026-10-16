@@ -35,8 +35,14 @@ On **Save** Klusters rewrites an existing `.clp` from its map (keeping a `.bak`
 copy) whenever the session is hierarchical, even if the hierarchical view was
 never opened. It does not write the `.clp` when the scan found an atom under two
 fibers and the atom layer was never loaded — that map would record an arbitrary
-owner; open the hierarchical view (or use Repair Nesting) and save again. Klusters
-does not create a `.clp` that did not exist.
+owner; open the hierarchical view (or use Repair Nesting) and save again. A Save
+does not create a `.clp` that did not exist; **Promote to Hierarchical Session**
+does (it is the step that makes a flat `.clu` hierarchical), and Save As of a
+hierarchical session writes one under the new name.
+
+Klusters writes the `.clc`/`.clp` to `<file>.saving` and renames them into place
+after the `.clu` is committed, so an interrupted save never leaves a truncated
+file.
 
 ## Naming
 
@@ -47,8 +53,8 @@ Klusters finds it by replacing `.clu.` with `.clp.` in the name of the opened
 
 ## Writers and readers
 
-- **Written** by fiber-kit together with the `.clc`, and rewritten by Klusters
-  on Save.
+- **Written** by fiber-kit together with the `.clc`, by Klusters' Promote to
+  Hierarchical Session, and rewritten by Klusters on Save.
 - **Read** by Klusters.
 
 ## See also

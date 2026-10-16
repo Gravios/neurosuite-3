@@ -44,8 +44,10 @@ atoms.
 
 ## Writers and readers
 
-- **Written** by fiber-kit's over-split stage, and rewritten by Klusters on Save
-  (with a `.bak` copy) when the atom layer was loaded during the session.
+- **Written** by fiber-kit's over-split stage; by Klusters' **Promote to
+  Hierarchical Session** (one atom per unit, atom id = unit id) for a flat
+  `.clu`; rewritten by Klusters on Save (with a `.bak` copy) when the atom
+  layer is loaded, and written under the new name on Save As.
   `process_spikefilter.py` and the other row-dropping steps keep it aligned with
   the `.res`.
 - **Read** by Klusters (hierarchical view, loaded when the view is first

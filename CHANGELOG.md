@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [Klusters: save-system fixes; Promote to Hierarchical Session](#2026-10-16--klusters-save-system-fixes-promote-to-hierarchical-session) |
 | 2026-10-16 | [ndManager: audit fixes — saves, Pipeline tab, Probes tab, Probe Maker](#2026-10-16--ndmanager-audit-fixes--saves-pipeline-tab-probes-tab-probe-maker) |
 | 2026-10-15 | [ndManager: New from Project Template; saves keep comments, inline lists and quoting](#2026-10-15--ndmanager-new-from-project-template-saves-keep-comments-inline-lists-and-quoting) |
 | 2026-10-15 | [Audit fixes: ndmanager keeps unknown YAML keys; aligners and re-extraction follow the .spk convention; re-extraction threshold base](#2026-10-15--audit-fixes-ndmanager-keeps-unknown-yaml-keys-aligners-and-re-extraction-follow-the-spk-convention-re-extraction-threshold-base) |
@@ -51,6 +52,47 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-16 — Klusters: save-system fixes; Promote to Hierarchical Session
+
+<details>
+<summary>Details</summary>
+
+An audit of the Klusters save path (Save, Save As, the pending-file commit,
+the hierarchy siblings, autosave).
+
+**Data that was lost and is now kept.**
+- Save As wrote the clustering as last *saved* under the new name: the
+  pending `.clu` it committed over the new file had not been updated. Every
+  edit since the last save was missing from the new file, and the save
+  reported success.
+- Save As of a session with cluster information failed as "not writable"
+  (the parameter file was looked for inside the new `.clu`'s path).
+- An edit made while a save was running was marked saved, so closing
+  afterwards asked nothing.
+- The pending-file commit removed each original before copying over it; an
+  interruption between the two lost the original, and the next open then
+  deleted the pending copy too. It now copies beside the original and renames.
+
+**Hierarchical sessions.**
+- The `.clc`/`.clp` are taken from the same snapshot as the `.clu`, on the GUI
+  thread (the save used to read the hierarchy maps on the save thread while
+  edits changed them), staged, and installed only after the `.clu` is
+  committed; a failed save leaves all three as they were.
+- A sibling that could not be written failed silently; it now fails the save.
+  A `.clp` kept because atoms straddle units is reported after the save.
+- Save As writes the new triple and continues on it (it used to write the
+  `.clu` alone, then later Saves wrote the new map into the old `.clp`).
+
+**New: Hierarchy ▸ Promote to Hierarchical Session.** Writes a `.clc` (one atom
+per unit, same ids) and `.clp` for a flat `.clu` — or adopts an orphan `.clc`
+that nests in it — saves first if needed, and reopens the session
+hierarchical. See `doc/klusters/hierarchical-clustering.md`.
+
+Also: the hierarchy menu's editing entries were enabled in flat sessions after
+a realign; save errors name the failing file.
+
+</details>
 
 ## 2026-10-16 — ndManager: audit fixes — saves, Pipeline tab, Probes tab, Probe Maker
 

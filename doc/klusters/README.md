@@ -60,7 +60,8 @@ so all edits go back to the same files.
 | `session.res.N` | Spike timestamps — used by Trace View and by nudge/realign |
 | `session.dat` / `session.fil` | Raw / filtered signal — opened by Trace View; read by nudge/realign for waveform re-extraction |
 | `session.pca.<method>.N` | PCA eigenvectors — used by spike realignment and nudge to reproject features after shifting timestamps. **MethodSpecific** (`pca.standard.N` / `pca.stderiv.N`) |
-| `session.<type>.<method>.N.pending` | Transactional working copies (res/spk/fet/clu) — all realign/nudge edits go here first and are atomically renamed on save |
+| `session.<type>.<method>.N.pending` | Transactional working copies (res/spk/fet/clu) — all realign/nudge edits go here first; on save each is copied beside its original and renamed over it |
+| `session.<type>.<method>.N.saving` | Short-lived: a file being replaced on save (`.clu`/`.clc`/`.clp`, committed pending copies). A leftover one is the remains of an interrupted save and can be deleted |
 | `session.curation_log.<group>.<method>` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
 | `session.#.clu.N` | Autosave (crash-recovery) files written periodically |
 
