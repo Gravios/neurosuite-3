@@ -100,8 +100,8 @@ plugins, which read their parameters from the session YAML as always. Edges to
 unknown ids are ignored, and nodes on a cycle never reach in-degree 0 and are
 left out without a message. If the file parses to an empty list, `ndm_start`
 warns and falls back to mode 2/3. When `NDM_PIPELINE` names a file that does
-not exist, `ndm_start` goes straight to mode 2/3 without a warning; it does not
-try `default`.
+not exist, `ndm_start` stops with an error instead of running another
+pipeline; a missing `default` file just selects mode 2/3.
 
 ```bash
 ndm_start RadialMaze.yaml                          # RadialMaze.ndm.default.pipeline

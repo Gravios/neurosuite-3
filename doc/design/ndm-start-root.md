@@ -460,9 +460,11 @@ NDM_PIPELINE=experimental ndm_start Rat.yaml   # uses Rat.ndm.experimental.pipel
 ndm_start Rat.yaml                             # uses Rat.ndm.default.pipeline
 ```
 
-When that file doesn't exist, ndm_start falls through to priority 2/3
-without a message; when it exists but yields no plugins (unparsable,
-or only `ndm_start`), it warns and falls through.
+When the default file doesn't exist, ndm_start falls through to
+priority 2/3 without a message; when a file named with `NDM_PIPELINE`
+doesn't exist it stops with an error, so a mistyped name never runs a
+different pipeline; when the file exists but yields no plugins
+(unparsable, or only `ndm_start`), it warns and falls through.
 
 ### Topological sort in the bash
 

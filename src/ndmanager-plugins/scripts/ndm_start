@@ -511,6 +511,16 @@ GRAPH_PLUGINS=()
 # Resolve a candidate pipeline file path.
 pipeline_default="$template.ndm.${NDM_PIPELINE:-default}.pipeline"
 
+# A pipeline named with NDM_PIPELINE is an explicit choice: if its file is
+# missing (a typo, the wrong directory) running another pipeline instead would
+# go unnoticed, so stop.  The default file is optional.
+if [ -n "$NDM_PIPELINE" ] && [ ! -f "$pipeline_default" ]
+then
+	echo_error "NDM_PIPELINE=$NDM_PIPELINE but '$pipeline_default' does not exist in $(pwd)"
+	echo_error "  (unset NDM_PIPELINE to use $template.ndm.default.pipeline or the session's programs:)"
+	exit $GENERAL_ERROR
+fi
+
 if [ -f "$pipeline_default" ]
 then
 	# Named-pipeline mode.  Plugin order comes from the topological
