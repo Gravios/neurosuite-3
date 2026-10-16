@@ -142,6 +142,8 @@ ProgramPage::ProgramPage(bool expertMode,QWidget *parent, const QString& name)
         connect(scriptView, &QTextEdit::textChanged, this, &ProgramPage::scriptModified);
         connect(help, &QTextEdit::textChanged, this, &ProgramPage::helpModified);
     } else {
+        saveParametersButton = 0;
+        saveScriptButton = 0;
         removeButton = new QPushButton(tr("Remove Plugin"),buttons);
         QSizePolicy policy(QSizePolicy::Fixed,QSizePolicy::Fixed);
         policy.setHorizontalStretch(0);
@@ -180,6 +182,7 @@ QString ProgramPage::loadScript(const QString& path){
     if(!scriptView)
         return QString();
     QString message;
+    setScriptEditable(true);
     QFile file(path);
     if(!file.open(QIODevice::ReadOnly)){
         message = tr("The file %1 is not readable.").arg(path);
@@ -187,7 +190,13 @@ QString ProgramPage::loadScript(const QString& path){
     } else {
         const QByteArray content = file.readAll();
         file.close();
-        if(content.startsWith("#!")){
+        if(content.left(8192).contains('\0')){
+            // A compiled plugin (e.g. the ndm_* executables found by Discover)
+            // is a valid plugin with no script to show or save.
+            scriptView->clear();
+            setScriptEditable(false);
+            scriptView->setPlaceholderText(tr("%1 is a compiled plugin; there is no script to edit.").arg(path));
+        } else if(content.startsWith("#!")){
             // The whole file: the #! line is part of the script, and Save
             // Plugin As writes back what the editor holds.
             scriptView->setPlainText(QString::fromUtf8(content));
@@ -199,6 +208,16 @@ QString ProgramPage::loadScript(const QString& path){
     //Setting the content of the script view triggers scriptModified; loading is not a modification.
     scriptIsModified = false;
     return message;
+}
+
+void ProgramPage::setScriptEditable(bool editable){
+    if(!scriptView)
+        return;
+    scriptView->setReadOnly(!editable);
+    if(editable)
+        scriptView->setPlaceholderText(QString());
+    if(saveScriptButton)
+        saveScriptButton->setEnabled(editable);
 }
 
 QString ProgramPage::defaultSaveDir() const{
@@ -329,6 +348,7 @@ void ProgramPage::nameChanged(const QString& name){
             else{
                 message =  tr("The file %1 could not be found in your PATH.").arg(name);
                 title = tr("IO Error!");
+                setScriptEditable(true);
                 scriptView->clear();
                 //Setting the content of the KTextEdit (named script) will trigger a scriptModified and therefore set scriptIsModified to true. The initial load of the script
                 //should no be considered as a modification.

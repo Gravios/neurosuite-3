@@ -83,7 +83,8 @@ public:
     void initialisationOver(){isInit = false;}
 
     /**Loads the plugin file at @p path into the Plugin tab (expert mode),
- * the whole file, #! line included.  Loading is not an edit.
+ * the whole file, #! line included.  A compiled (binary) plugin leaves the
+ * tab empty and read-only, and Save Plugin As disabled.  Loading is not an edit.
  * @return an error message, empty when the file was loaded.
  */
     QString loadScript(const QString& path);
@@ -132,6 +133,9 @@ private:
  * existing entry of $NDM_PLUGIN_PATH), else the session's directory, else home.
  */
     QString defaultSaveDir() const;
+
+    /**Makes the Plugin tab and Save Plugin As usable (a script) or not (a compiled plugin).*/
+    void setScriptEditable(bool editable);
 
 private slots:
 
