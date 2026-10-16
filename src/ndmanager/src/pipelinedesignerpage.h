@@ -268,8 +268,12 @@ public:
      *  Schema: { nodes: [{id, type, pos, enabled, params{}}],
      *            edges: [{from, to}] }.
      *  Returns true on success.  On failure, @p error (if non-null) is
-     *  populated with a human-readable description and false is returned. */
-    bool savePipelineFile(const QString& path, QString* error = nullptr);
+     *  populated with a human-readable description and false is returned.
+     *  @p markSaved: clear the unsaved-edits flag on success.  Pass false
+     *  when writing a copy that is not the session's default pipeline (Save
+     *  Pipeline As under another name): the default file is still stale. */
+    bool savePipelineFile(const QString& path, QString* error = nullptr,
+                          bool markSaved = true);
 
     /** Replace the current graph with the contents of a pipeline file.
      *  Enforces the sticky-root rules: exactly one ndm_start (synthesised

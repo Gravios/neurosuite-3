@@ -1713,7 +1713,8 @@ except yaml.YAMLError as exc:
 
 }  // namespace
 
-bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error)
+bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error,
+                                            bool markSaved)
 {
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
@@ -1769,7 +1770,7 @@ bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error)
         lastFailedLoad.clear();
         showNotice(QString());
     }
-    unsaved = false;
+    if (markSaved) unsaved = false;
     return true;
 }
 

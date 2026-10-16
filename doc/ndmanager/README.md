@@ -303,9 +303,11 @@ the graph shown is *not* that pipeline, and **Save Pipeline** asks before overwr
 file. Repairs made while loading (unknown plugin types, duplicate ids, a second root, edges
 into the root or closing a cycle) are listed in the notice too.
 
-Graph edits not yet written with Save Pipeline / Save As count as unsaved changes when you
-close the document or quit. Saving the session file (Ctrl+S) does **not** write the
-pipeline file.
+Graph edits not yet written to the default pipeline (Save Pipeline, or Save As named
+`default`) count as unsaved changes when you close the document or quit, and the close prompt
+offers to save them; a Save As copy under another name leaves them unsaved, since the default
+file is still the old graph. Saving the session file (Ctrl+S) does **not** write the pipeline
+file.
 
 ### Apply Pipeline vs Save Pipeline
 
@@ -360,8 +362,9 @@ It chooses its source of plugin order once, in this priority:
    ndm_start Rat.yaml                             # uses Rat.ndm.default.pipeline
    ```
 
-   A missing file falls through to 2 without a message; a file that yields no plugins (empty,
-   unreadable) falls through with a warning.
+   A missing `default` file falls through to 2 without a message; a missing file named with
+   `NDM_PIPELINE` is an error (ndm_start stops rather than run another pipeline). A file that
+   yields no plugins (empty, unreadable) falls through with a warning.
 
 2. **In-YAML graph** (`programs[0]` is `ndm_start`) — the plugins after it, in list order. A
    session file saved by ndmanager after Apply Pipeline has this form; older ndmanager builds

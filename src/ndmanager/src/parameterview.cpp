@@ -1274,7 +1274,11 @@ void ParameterView::savePipelineAs()
     }
 
     QString error;
-    if (!pipelineDesigner->savePipelineFile(path, &error)) {
+    // Only the default pipeline is what the close prompt protects (and what
+    // ndm_start runs without NDM_PIPELINE): a copy under another name leaves
+    // the graph's edits unsaved as far as the default file is concerned.
+    const bool isDefault = (name == QLatin1String(kDefaultPipelineName));
+    if (!pipelineDesigner->savePipelineFile(path, &error, isDefault)) {
         QMessageBox::critical(this, tr("Save Pipeline As"),
             tr("Failed to save pipeline:\n%1").arg(error));
         return;
