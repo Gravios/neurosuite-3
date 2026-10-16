@@ -59,6 +59,7 @@ enum SdiffOrder { SDIFF_NONE=0, SDIFF_FIRST=1, SDIFF_LAPLACIAN=2,
 //   5     custom reference-set — generally full rank, but the last channel is
 //         dropped by convention (place the least informative one there)
 //   2     Laplacian — full rank, every channel kept
+//   6     custom expressions — one written expression per channel, every one kept
 // Mirrors ndm_sdiff_drops_last in ndm_custody; keep the two in step.
 static inline bool dropsLastChannel(int o)
 { return o == 1 || o == 3 || o == 4 || o == 5; }
@@ -98,7 +99,8 @@ static void usage(const char *name)
               << "       is free for orders 1 and 3, a convention for 4 and 5)\n"
               << "  -D   with -d 4, the order applied at extraction: 1=first-diff\n"
               << "       2=Laplacian 3=all-pairwise 4=custom pattern\n"
-              << "       5=custom reference-set (default 3).  Decides whether the\n"
+              << "       5=custom reference-set 6=custom expressions (default 3).\n"
+              << "       Decides whether the\n"
               << "       linearly dependent channel is dropped.\n"
               << "  Reads from stdin if no input file given.\n"
               << "  Writes transformed waveforms to stdout.\n";

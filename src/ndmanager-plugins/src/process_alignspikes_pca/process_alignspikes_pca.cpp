@@ -247,6 +247,20 @@ static bool writeSpkSampleMajor(std::FILE* f, int64_t spikeIdx, int nChan,
 static std::vector<int>              g_customPartner;   // order 4
 static std::vector<std::vector<int>> g_customSets;      // order 5
 static neurosuite::core::ChannelExprSet g_customExpr;   // order 6
+static std::string g_customSpec;                        // -P as given; parsed once --method is known
+
+// Parses -P.  A pattern naming channels is order 6; so is any pattern under a _C6
+// token (a session mixing forms runs order 6, an older-form group extracted as the
+// expressions it computes -- the same values).
+static void loadCustomPattern(const neurosuite::custody::MethodSpec& ms)
+{
+    if (g_customSpec.empty()) return;
+    const char* pat = g_customSpec.c_str();
+    if (sdiffSpecIsExpression(pat) || (ms.kind == 'C' && ms.order == 6))
+        g_customExpr = parseSdiffExprsPerGroup(pat).at(0);
+    else if (sdiffSpecUsesSets(pat)) g_customSets    = parseSdiffSets(pat);
+    else                             g_customPartner = parseSdiffPairs(pat);
+}
 
 // The spatial operator in the form the shared core transform
 // (neurosuite/core/stderiv_transform.hpp) takes.  Chosen exactly as
@@ -461,11 +475,7 @@ static Args parseArgs(int argc, char** argv) {
         else if (s == "-P") {
             // Custom spatial pattern for this group; same grammar as the
             // extractor's -P ("a-b,..." order 4, "a-b+c,..." order 5).
-            const std::string pat = next("-P");
-            if (sdiffSpecIsExpression(pat.c_str()))
-                g_customExpr = parseSdiffExprsPerGroup(pat.c_str()).at(0);
-            else if (sdiffSpecUsesSets(pat.c_str())) g_customSets    = parseSdiffSets(pat.c_str());
-            else                                     g_customPartner = parseSdiffPairs(pat.c_str());
+            g_customSpec = next("-P");          // parsed by loadCustomPattern
         }
         else if (s == "--stderiv") a.method = "stderiv";  // deprecated alias
         else if (s == "--skip-pca") a.skipPca = true;
@@ -493,6 +503,7 @@ static Args parseArgs(int argc, char** argv) {
         const neurosuite::custody::MethodSpec ms =
             neurosuite::custody::parseMethodToken(a.method);
         a.stderivMode = (ms.family == "stderiv");
+        loadCustomPattern(ms);
         if (a.stderivMode && ms.kind == 'C'
             && g_customPartner.empty() && g_customSets.empty() && g_customExpr.empty())
             die("method " + a.method + " applies a custom sdiffPairs pattern but no -P "

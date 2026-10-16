@@ -114,6 +114,21 @@
 static std::vector<int>              g_customPartner;   // order 4: one partner per channel
 static std::vector<std::vector<int>> g_customSets;      // order 5: reference set per channel
 static neurosuite::core::ChannelExprSet g_customExpr;   // order 6: expression per channel
+static std::string g_customSpec;                        // -P as given; parsed once --method is known
+
+// Parses -P.  A pattern naming channels is order 6; so is any pattern under a _C6
+// token: in a session where some groups use expressions the whole run is order 6
+// and an older-form group was extracted as the expressions it computes, so it is
+// read that way here too (the values are the same).
+static void loadCustomPattern(const neurosuite::custody::MethodSpec& ms)
+{
+    if (g_customSpec.empty()) return;
+    const char* pat = g_customSpec.c_str();
+    if (sdiffSpecIsExpression(pat) || (ms.kind == 'C' && ms.order == 6))
+        g_customExpr = parseSdiffExprsPerGroup(pat).at(0);
+    else if (sdiffSpecUsesSets(pat)) g_customSets    = parseSdiffSets(pat);
+    else                             g_customPartner = parseSdiffPairs(pat);
+}
 
 // The spatial operator in the form the shared core transform
 // (neurosuite/core/stderiv_transform.hpp) takes.  Chosen exactly as
@@ -479,7 +494,8 @@ static void usage(const char* prog)
         "  --stderiv           Process .spkD.N with SDIFF_ALLPAIRS re-extraction\n"
         "  -P PATTERN          Custom spatial pattern for this group, matching the\n"
         "                      session's sdiffPairs: 'a-b,...' (order 4) or\n"
-        "                      'a-b+c,...' (order 5).  Required for a _C method so\n"
+        "                      'a-b+c,...' (order 5), or expressions over c0, c1, ...\n"
+        "                      (order 6).  Required for a _C method so\n"
         "                      re-extraction reproduces the .spk's own transform.\n"
         "  --min-score f       Minimum energy score to accept shift [default: 0.0]\n"
         "  --top-channels N    Use only the N highest-amplitude channels per spike\n"
@@ -535,10 +551,7 @@ int main(int argc, char* argv[])
         else if (strcmp(a, "-P") == 0 && i + 1 < argc) {
             // Custom spatial pattern for THIS group, same grammar as the
             // extractor's -P (a-b,... partner map, or a-b+c,... reference sets).
-            const char* pat = argv[++i];
-            if (sdiffSpecIsExpression(pat)) g_customExpr = parseSdiffExprsPerGroup(pat).at(0);
-            else if (sdiffSpecUsesSets(pat)) g_customSets    = parseSdiffSets(pat);
-            else                             g_customPartner = parseSdiffPairs(pat);
+            g_customSpec = argv[++i];           // parsed by loadCustomPattern
         }
         else if (strcmp(a, "--min-score") == 0 && i+1 < argc)
             minScore = atof(argv[++i]);
@@ -581,6 +594,7 @@ int main(int argc, char* argv[])
     const neurosuite::custody::MethodSpec ms =
         neurosuite::custody::parseMethodToken(method);
     const bool stderiv          = (ms.family == "stderiv");
+    loadCustomPattern(ms);
     // ...but this binary only knows SDIFF_ALLPAIRS.  It has no -P, so it cannot
     // reproduce a custom sdiffPairs pattern, and it cannot apply first-difference or
     // Laplacian either.  Aligning anyway would re-extract with a transform the .spk

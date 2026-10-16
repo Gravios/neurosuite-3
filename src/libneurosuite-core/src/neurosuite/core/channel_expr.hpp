@@ -20,9 +20,12 @@
 //      channel := ('c' | 'C') digits
 //      number  := digits [ '.' digits ] [ exponent ] | '.' digits [ exponent ]
 //
-//  so -c0^2 is -(c0^2), 2^3^2 is 2^(3^2) and a-b-c is (a-b)-c.  Blanks are
-//  allowed anywhere between tokens.  Every element must use at least one
-//  channel.  There is no implicit multiplication (2c1 is an error: write 2*c1).
+//  so -c0^2 is -(c0^2), 2^3^2 is 2^(3^2) and a-b-c is (a-b)-c.  Blanks (any
+//  ASCII whitespace) are allowed anywhere between tokens.  Digits are ASCII
+//  0-9, and numbers are read independently of the C locale (a German locale's
+//  decimal comma does not turn 0.5 into 0).  Every element must use at least
+//  one channel.  There is no implicit multiplication (2c1 is an error: write
+//  2*c1).  Parentheses and signs nest at most kMaxNest deep.
 //
 //  Any arithmetic is allowed, so the transform need not be linear.  A result
 //  that is not finite (a division by zero, an overflowing power) is 0, and a
@@ -37,11 +40,11 @@
 #ifndef NEUROSUITE_CORE_CHANNEL_EXPR_HPP
 #define NEUROSUITE_CORE_CHANNEL_EXPR_HPP
 
-#include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
-#include <cstdlib>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace neurosuite {
@@ -53,6 +56,7 @@ struct ChannelExpr {
     struct Ins { Op op; int chan; double num; };
 
     static constexpr int    kMaxDepth = 64;    // evaluation stack; deeper is refused
+    static constexpr int    kMaxNest  = 64;    // nesting of ( ) and signs while parsing
     static constexpr double kLimit    = 1e9;   // results are held within +-kLimit
 
     std::vector<Ins> code;
@@ -115,12 +119,24 @@ struct ChannelExprSet {
     double eval(int out, const double* row) const {
         return exprs[static_cast<size_t>(out)].eval([row](int i) { return row[i]; });
     }
+    double eval(int out, double* row) const { return eval(out, static_cast<const double*>(row)); }
     template <class Get>
     double eval(int out, Get x) const { return exprs[static_cast<size_t>(out)].eval(x); }
 };
 
 // True when @p spec is written in the expression form (it names a channel cN).
 // The older forms ("a-b,…", "a-b+c,…") use bare positions and no letters.
+namespace detail {
+inline bool isBlank(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; }
+inline bool isDigit(char c) { return c >= '0' && c <= '9'; }
+// A character for a message: itself, or a description when it is not printable ASCII.
+inline std::string shown(char c) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    if (u < 0x20 || u >= 0x7f) return "a non-ASCII or control character";
+    return "'" + std::string(1, c) + "'";
+}
+}  // namespace detail
+
 inline bool isChannelExprSpec(const std::string& spec) {
     for (char ch : spec)
         if (ch == 'c' || ch == 'C') return true;
@@ -139,14 +155,17 @@ public:
             skip();
             if (p_ != s_.size())
                 ok = err(s_[p_] == ')' ? "has a ')' without its '('"
-                                       : "has '" + std::string(1, s_[p_]) + "' where an operator is expected");
+                                       : "has " + shown(s_[p_]) + " where an operator is expected");
             else if (out_.maxChan < 0)
                 ok = err("uses no channel (channels are written c0, c1, ...)", false);
             else if (out_.depth > ChannelExpr::kMaxDepth)
                 ok = err("is nested too deeply", false);
         }
-        if (!ok && error)
-            *error = "'" + s_ + "' " + msg_ + (col_ ? " (column " + std::to_string(p_ + 1) + ")" : "");
+        if (!ok && error) {
+            // A long element is shown by its start: the column still locates the problem.
+            const std::string shownText = s_.size() > 60 ? s_.substr(0, 57) + "..." : s_;
+            *error = "'" + shownText + "' " + msg_ + (col_ ? " (column " + std::to_string(p_ + 1) + ")" : "");
+        }
         return ok;
     }
 
@@ -155,11 +174,12 @@ private:
     ChannelExpr& out_;
     size_t p_ = 0;
     int sp_ = 0;
+    int nest_ = 0;
     std::string msg_;
     bool col_ = true;
 
     bool err(const std::string& m, bool col = true) { msg_ = m; col_ = col; return false; }
-    void skip() { while (p_ < s_.size() && (s_[p_] == ' ' || s_[p_] == '\t')) ++p_; }
+    void skip() { while (p_ < s_.size() && isBlank(s_[p_])) ++p_; }
     bool peek(char c) { skip(); return p_ < s_.size() && s_[p_] == c; }
     void emit(ChannelExpr::Op op, int chan = -1, double num = 0.0) {
         out_.code.push_back({op, chan, num});
@@ -188,7 +208,11 @@ private:
         }
         return true;
     }
+    // Every recursion of the descent passes through unary(), so its depth is the
+    // parse's: bounded, so no input can exhaust the stack.
     bool unary() {
+        struct Nest { int& n; explicit Nest(int& x) : n(x) { ++n; } ~Nest() { --n; } } nest(nest_);
+        if (nest_ > ChannelExpr::kMaxNest) return err("is nested too deeply", false);
         if (peek('-')) { ++p_; if (!unary()) return false; emit(ChannelExpr::Op::Neg); return true; }
         if (peek('+')) { ++p_; return unary(); }
         return power();
@@ -217,7 +241,7 @@ private:
             ++p_;
             const size_t start = p_;
             long v = 0;
-            while (p_ < s_.size() && std::isdigit(static_cast<unsigned char>(s_[p_]))) {
+            while (p_ < s_.size() && isDigit(s_[p_])) {
                 v = v * 10 + (s_[p_] - '0');
                 if (v > 1000000) return err("has a channel number that is too large");
                 ++p_;
@@ -228,31 +252,39 @@ private:
             emit(ChannelExpr::Op::Chan, ch);
             return true;
         }
-        if (std::isdigit(static_cast<unsigned char>(c)) || c == '.') {
+        if (isDigit(c) || c == '.') {
             const size_t start = p_;
-            while (p_ < s_.size() && std::isdigit(static_cast<unsigned char>(s_[p_]))) ++p_;
+            while (p_ < s_.size() && isDigit(s_[p_])) ++p_;
             if (p_ < s_.size() && s_[p_] == '.') {
                 ++p_;
-                while (p_ < s_.size() && std::isdigit(static_cast<unsigned char>(s_[p_]))) ++p_;
+                while (p_ < s_.size() && isDigit(s_[p_])) ++p_;
             }
             if (p_ - start == 1 && c == '.') { p_ = start; return err("has a '.' that is not a number"); }
             if (p_ < s_.size() && (s_[p_] == 'e' || s_[p_] == 'E')) {
                 size_t q = p_ + 1;
                 if (q < s_.size() && (s_[q] == '+' || s_[q] == '-')) ++q;
-                if (q < s_.size() && std::isdigit(static_cast<unsigned char>(s_[q]))) {
+                if (q < s_.size() && isDigit(s_[q])) {
                     p_ = q;
-                    while (p_ < s_.size() && std::isdigit(static_cast<unsigned char>(s_[p_]))) ++p_;
+                    while (p_ < s_.size() && isDigit(s_[p_])) ++p_;
                 }
             }
-            const std::string num = s_.substr(start, p_ - start);
-            emit(ChannelExpr::Op::Num, -1, std::strtod(num.c_str(), nullptr));
+            // from_chars: the C locale's decimal point, whatever the process locale
+            // (Qt applications call setlocale), and correctly rounded like Python's float().
+            double value = 0.0;
+            const std::from_chars_result r =
+                std::from_chars(s_.data() + start, s_.data() + p_, value, std::chars_format::general);
+            if (r.ec != std::errc() || r.ptr != s_.data() + p_) {
+                p_ = start;
+                return err("has a number that cannot be read");
+            }
+            emit(ChannelExpr::Op::Num, -1, value);
             // "2c1": a number followed directly by a channel or '(' is not a product.
             skip();
             if (p_ < s_.size() && (s_[p_] == 'c' || s_[p_] == 'C' || s_[p_] == '('))
                 return err("needs a '*' between a number and what follows it");
             return true;
         }
-        return err("has '" + std::string(1, c) + "' where a channel, number or '(' is expected");
+        return err("has " + shown(c) + " where a channel, number or '(' is expected");
     }
 };
 
@@ -263,7 +295,7 @@ private:
 inline bool parseChannelExpr(const std::string& element, ChannelExpr& out, std::string* error = nullptr) {
     out = ChannelExpr();
     // Trim, so messages and text show the element as written without padding.
-    size_t a = element.find_first_not_of(" \t"), b = element.find_last_not_of(" \t");
+    size_t a = element.find_first_not_of(" \t\n\r\f\v"), b = element.find_last_not_of(" \t\n\r\f\v");
     out.text = (a == std::string::npos) ? std::string() : element.substr(a, b - a + 1);
     if (out.text.empty()) { if (error) *error = "an empty expression"; return false; }
     detail::ChannelExprParser parser(out.text, out);
