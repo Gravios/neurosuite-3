@@ -721,12 +721,19 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             << reLog;
     }
 
-    // For a regular Save:  write clu to the pending clu file (crash-safe).
-    // For a SaveAs:        write directly to the new URL (no pending for it).
-    // tmpCluFile is the session's clu write target: the real .clu at open, redirected to
-    // pendingCluPath by initPendingFiles only when the seed SUCCEEDED.  Using pendingCluPath directly
-    // wrote to a phantom path when the seed had failed.
-    const QString cluWritePath = isSaveAs ? saveUrl : tmpCluFile;
+    // The clustering is written to the session's clu write target, tmpCluFile: the
+    // pending copy when a pending set is live (initPendingFiles redirected it there
+    // after a SUCCESSFUL seed), else the real .clu.  commitAndRenewPending below then
+    // copies the pending copy over docUrl -- which a Save As has already pointed at
+    // the new name.
+    //
+    // Save As used to write straight to the new URL and leave the pending copy as it
+    // was at the last save; the commit then copied that stale pending copy over the
+    // file just written, so the new name received the clustering as last SAVED and
+    // every edit since was missing from it (they stayed in memory only).  Without a
+    // pending set there is nothing to commit, and Save As writes the new URL itself.
+    const QString cluWritePath =
+        (isSaveAs && pendingCluPath.isEmpty()) ? saveUrl : tmpCluFile;
 
     //Open the clu file in write mode
     FILE* cluFile = fopen(qPrintable(cluWritePath),"wb");
@@ -818,7 +825,11 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             cluFileSuffix_.clear();
         }
 
-        parameterFile = docUrlFileInfo.absoluteFilePath() + QDir::separator() + baseName + ".yaml";
+        // The directory of the new .clu, not the file itself: absoluteFilePath()
+        // gave "<dir>/<new.clu>/<base>.yaml", which never exists, so a Save As of
+        // any session with cluster-information support failed as "not writable"
+        // after the .clu had been written and docUrl moved.
+        parameterFile = docUrlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
     }
 
     //Save the cluster user information if the parameterFile exists
@@ -830,6 +841,9 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
 
         //Check that the file is writable
         if(!parFileInfo.isWritable()) {
+            lastSaveErrorMessage = tr("The parameter file is missing or not writable, so the "
+                                      "cluster information (structure, type, quality, notes) "
+                                      "could not be saved:\n%1").arg(parameterFile);
             return NOT_WRITABLE;
         }
 
@@ -841,8 +855,11 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             // Build the merged units map: read existing units, overwrite the
             // units for the current electrode group, then write all back.
             ParameterYamlModifier yamlMod;
-            if (!yamlMod.parseFile(parameterFile))
+            if (!yamlMod.parseFile(parameterFile)) {
+                lastSaveErrorMessage = tr("Could not read the parameter file to store the "
+                                          "cluster information:\n%1").arg(parameterFile);
                 return PARSE_ERROR;
+            }
 
             // Read existing units (all groups)
             QMap<int,QStringList> allUnits;
@@ -875,10 +892,11 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
                 filtered.insert(it.key(), row);
             }
 
-            if (!yamlMod.setUnitsInformation(filtered))
+            if (!yamlMod.setUnitsInformation(filtered) || !yamlMod.writeToFile(parameterFile)) {
+                lastSaveErrorMessage = tr("Could not write the cluster information to the "
+                                          "parameter file:\n%1").arg(parameterFile);
                 return CREATION_ERROR;
-            if (!yamlMod.writeToFile(parameterFile))
-                return CREATION_ERROR;
+            }
         }
     }
 
