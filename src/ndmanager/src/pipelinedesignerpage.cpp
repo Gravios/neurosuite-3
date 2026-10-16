@@ -1673,7 +1673,7 @@ except yaml.YAMLError as exc:
 
 }  // namespace
 
-bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error) const
+bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error)
 {
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
@@ -1723,10 +1723,26 @@ bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error)
         if (error) *error = QStringLiteral("Write failed: %1").arg(f.errorString());
         return false;
     }
+    // The file that failed to load now holds this graph: nothing left to
+    // protect, and the failure notice no longer applies.
+    if (!lastFailedLoad.isEmpty() && QFileInfo(path).absoluteFilePath() == lastFailedLoad) {
+        lastFailedLoad.clear();
+        showNotice(QString());
+    }
     return true;
 }
 
 bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
+{
+    QString message;
+    const bool ok = readPipelineFile(path, &message);
+    if (ok) lastFailedLoad.clear();
+    else    lastFailedLoad = QFileInfo(path).absoluteFilePath();
+    if (error) *error = message;
+    return ok;
+}
+
+bool PipelineDesignerPage::readPipelineFile(const QString& path, QString* error)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -1742,14 +1758,37 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
     QProcess py;
     py.start(QStringLiteral("python3"), QStringList{
         QStringLiteral("-c"), QString::fromUtf8(kPipelineParser), path });
-    if (!py.waitForFinished(5000)) {
-        if (error) *error = QStringLiteral("Pipeline file parser timed out");
+    // Tell the failure modes apart: python3 missing / not executable, the
+    // parser hanging, crashing, or rejecting the file.
+    if (!py.waitForStarted(5000)) {
+        if (error) {
+            *error = QStringLiteral("Could not start python3 to read '%1' (%2).  "
+                                    "Pipeline files are read with python3 and PyYAML, "
+                                    "which must be on PATH.")
+                        .arg(path, py.errorString());
+        }
+        return false;
+    }
+    if (!py.waitForFinished(15000)) {
+        py.kill();
+        py.waitForFinished(1000);
+        if (error) {
+            *error = QStringLiteral("Reading '%1' timed out: the python3 parser did not "
+                                    "finish within 15 s.").arg(path);
+        }
+        return false;
+    }
+    if (py.exitStatus() != QProcess::NormalExit) {
+        if (error) {
+            *error = QStringLiteral("The python3 parser crashed while reading '%1'.")
+                        .arg(path);
+        }
         return false;
     }
     if (py.exitCode() != 0) {
         if (error) {
             *error = QStringLiteral("Failed to parse '%1':\n%2")
-                        .arg(path, QString::fromUtf8(py.readAllStandardError()));
+                        .arg(path, QString::fromUtf8(py.readAllStandardError()).trimmed());
         }
         return false;
     }

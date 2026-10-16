@@ -257,7 +257,7 @@ public:
      *            edges: [{from, to}] }.
      *  Returns true on success.  On failure, @p error (if non-null) is
      *  populated with a human-readable description and false is returned. */
-    bool savePipelineFile(const QString& path, QString* error = nullptr) const;
+    bool savePipelineFile(const QString& path, QString* error = nullptr);
 
     /** Replace the current graph with the contents of a pipeline file.
      *  Enforces the sticky-root rules: exactly one ndm_start (synthesised
@@ -265,8 +265,17 @@ public:
      *  unknown node types and cycle-closing edges and renames duplicate
      *  ids.  Every repair is described in @p error (a warning: the call
      *  still returns true).  Node order is kept as in the file — it is
-     *  the order ndm_start's topological sort breaks ties in. */
+     *  the order ndm_start's topological sort breaks ties in.
+     *  On failure the graph is untouched, @p error says why (python3 not
+     *  starting, a timeout and a parse error are told apart) and the
+     *  path is remembered as failedLoadPath(). */
     bool loadPipelineFile(const QString& path, QString* error = nullptr);
+
+    /** Absolute path of the last pipeline file that failed to load, or
+     *  empty.  Cleared by a successful load, and by a successful save to
+     *  that same path.  ParameterView::savePipelineDefault asks before
+     *  overwriting it: the graph on screen is not what that file holds. */
+    QString failedLoadPath() const { return lastFailedLoad; }
 
     /** Read current graph back as an ordered ProgramInformation list.
      *  Emits nothing — purely a data accessor. */
@@ -312,6 +321,7 @@ private slots:
 private:
     void buildPalette();
     void buildInspector();
+    bool readPipelineFile(const QString& path, QString* error);
     void populateInspector(const QString& id);
     void clearInspector();
     void refreshApplyState();
@@ -320,6 +330,7 @@ private:
     QList<PipelineNode> nodes;
     QList<PipelineEdge> edges;
     bool                modified = false;
+    QString             lastFailedLoad;
 
     // canvas
     PipelineCanvas* canvas;

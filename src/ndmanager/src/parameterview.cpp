@@ -488,14 +488,23 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
         if (!base.isEmpty()) {
             const QString defaultPath = base + QLatin1String(".ndm.default.pipeline");
             if (QFileInfo::exists(defaultPath)) {
+                // No modal at open time — it would interrupt the document-load
+                // flow — but never silent either: the Pipeline tab's notice
+                // bar says what happened, and qWarning logs it.
                 QString warning;
-                if (pipelineDesigner->loadPipelineFile(defaultPath, &warning)
-                    && !warning.isEmpty()) {
-                    // Non-fatal warnings (e.g. unknown plugin types dropped)
-                    // are printed to qDebug rather than a modal at open time —
-                    // we don't want to interrupt the document-load flow.
-                    qWarning("Pipeline auto-load warning: %s",
-                             qUtf8Printable(warning));
+                const QString fileName = QFileInfo(defaultPath).fileName();
+                if (!pipelineDesigner->loadPipelineFile(defaultPath, &warning)) {
+                    qWarning("Pipeline auto-load failed: %s", qUtf8Printable(warning));
+                    pipelineDesigner->showNotice(
+                        tr("Could not load %1:\n%2\nThe graph shown is NOT that pipeline; "
+                           "Save Pipeline will ask before overwriting the file.")
+                            .arg(fileName, warning),
+                        /*isError=*/true);
+                } else if (!warning.isEmpty()) {
+                    // Non-fatal repairs (unknown plugin types dropped, ...).
+                    qWarning("Pipeline auto-load warning: %s", qUtf8Printable(warning));
+                    pipelineDesigner->showNotice(
+                        tr("Loaded %1 with changes:\n%2").arg(fileName, warning));
                 }
             }
         }
@@ -1082,6 +1091,19 @@ void ParameterView::savePipelineDefault()
     }
     const QString path = base + kPipelineInfix
                          + QLatin1String(kDefaultPipelineName) + kPipelineSuffix;
+    // If this file failed to load, the graph on screen is not what it holds
+    // (typically the bare root): don't overwrite it unasked.
+    if (!pipelineDesigner->failedLoadPath().isEmpty()
+        && QFileInfo(path).absoluteFilePath() == pipelineDesigner->failedLoadPath()) {
+        if (QMessageBox::question(this, tr("Save Pipeline"),
+                tr("'%1' could not be loaded, so the graph shown is not the pipeline "
+                   "it holds.  Overwrite it with the current graph?")
+                  .arg(QFileInfo(path).fileName()),
+                QMessageBox::Yes | QMessageBox::No,
+                QMessageBox::No) != QMessageBox::Yes) {
+            return;
+        }
+    }
     QString error;
     if (!pipelineDesigner->savePipelineFile(path, &error)) {
         QMessageBox::critical(this, tr("Save Pipeline"),
@@ -1180,6 +1202,9 @@ void ParameterView::loadPipelineDialog()
             tr("Failed to load pipeline:\n%1").arg(warning));
         return;
     }
+    // Replace any notice about the previous graph (e.g. a failed auto-load).
+    pipelineDesigner->showNotice(warning.isEmpty() ? QString()
+        : tr("Loaded %1 with changes:\n%2").arg(QFileInfo(path).fileName(), warning));
     if (!warning.isEmpty()) {
         // Non-fatal: e.g. unknown plugin types were dropped.  Inform the user.
         QMessageBox::warning(this, tr("Load Pipeline"), warning);
