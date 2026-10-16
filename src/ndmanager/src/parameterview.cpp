@@ -641,33 +641,49 @@ void ParameterView::loadProgram(const QString &programUrl) {
 }
 
 void ParameterView::nbChannelsModified(int nbChannels){
-    //All the parameters which use the number of channels are reset
+    //All the parameters which use the number of channels are reset.
+    //Exception: when the count was unset (0, e.g. a session made from a
+    //template that leaves nChannels empty) there are no channel assignments
+    //to invalidate, so the groups, mappings and probes are kept and only the
+    //per-channel tables (attributes, colors, offsets) are sized.
+    const bool countWasUnset = (this->nbChannels == 0);
     this->nbChannels = nbChannels;
 
-    // ── Probe page: clear all probe entries and update channel count ─────
-    // A channel-count change invalidates all probe-to-channel assignments.
     probe->setNbChannels(nbChannels);  // always, so importProbeYaml has it
-    if(expertMode){
-        probe->setProbes(QList<ProbeEntry>());
-        probe->setModified(false);
+    if(!countWasUnset){
+        // ── Probe page: clear all probe entries ──────────────────────────
+        // A channel-count change invalidates all probe-to-channel assignments.
+        if(expertMode){
+            probe->setProbes(QList<ProbeEntry>());
+            probe->setModified(false);
+        }
+
+        //the files page
+        //remove any channel mapping
+        QMap<int, QList<int> > mapping;
+        QList<FilePage*> fileList;
+        files->getFilePages(fileList);
+        for(int i= 0 ; i < fileList.count();++i) {
+            fileList.at(i)->setChannelMapping(mapping);
+        }
+
+        //the anatomical groups page: one group containing all channels 0..(N-1)
+        QMap<int, QList<int> > anatomicalGroups;
+        QList<int> anatomicalGroupOne;
+        for(int i = 0; i<nbChannels;++i) anatomicalGroupOne.append(i);
+        anatomicalGroups.insert(1,anatomicalGroupOne);
+        anatomy->setGroups(anatomicalGroups);
+
+        //the spike groups page
+        //all the channels are put in the undefined group, therefore there is not group in the map (the trash and undefined groups are not shown)
+        QMap<int, QList<int> > spikeGroups;
+        //no other information is provided
+        QMap<int, QMap<QString,QString> > spikeGroupsInformation;
+        spike->setGroups(spikeGroups,spikeGroupsInformation);
     }
 
-    //the files page
-    //remove any channel mapping
-    QMap<int, QList<int> > mapping;
-    QList<FilePage*> fileList;
-    files->getFilePages(fileList);
-    for(int i= 0 ; i < fileList.count();++i) {
-        fileList.at(i)->setChannelMapping(mapping);
-    }
-
-    //the anatomical groups page: one group containing all channels 0..(N-1)
+    //the anatomical attributes: one row per channel
     anatomy->setNbChannels(nbChannels);
-    QMap<int, QList<int> > anatomicalGroups;
-    QList<int> anatomicalGroupOne;
-    for(int i = 0; i<nbChannels;++i) anatomicalGroupOne.append(i);
-    anatomicalGroups.insert(1,anatomicalGroupOne);
-    anatomy->setGroups(anatomicalGroups);
     //For the moment the attribute names and values are hard coded (there is only the skip attribut with a default at 0)
     QMap<QString, QMap<int,QString> > attributes;
     QMap<int,QString> skip;
@@ -675,13 +691,6 @@ void ParameterView::nbChannelsModified(int nbChannels){
         skip.insert(i,"0");
     attributes.insert(SKIP,skip);
     anatomy->setAttributes(attributes);
-
-    //the spike groups page
-    //all the channels are put in the undefined group, therefore there is not group in the map (the trash and undefined groups are not shown)
-    QMap<int, QList<int> > spikeGroups;
-    //no other information is provided
-    QMap<int, QMap<QString,QString> > spikeGroupsInformation;
-    spike->setGroups(spikeGroups,spikeGroupsInformation);
 
     //the channel color page
     this->channelColors->setNbChannels(nbChannels);

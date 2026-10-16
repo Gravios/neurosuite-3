@@ -97,7 +97,9 @@ void AcquisitionSystemPage::nbChannelsChanged(){
     if(isLostFocus && isReturnPressed || isLostFocus && isCheckAsked)
         return;
     if(newNbChannels != nbChannels && !isInit && !reset){
-        if(QMessageBox::warning(this, tr("Change the number of channels?"), tr("Changing the number of channels "
+        // An unset count (0, e.g. from a template) has no groups to reset:
+        // take the new count without the warning.
+        if(nbChannels != 0 && QMessageBox::warning(this, tr("Change the number of channels?"), tr("Changing the number of channels "
                                                                                "will rest all the groups. Do you wish to continue?"),QMessageBox::Cancel|QMessageBox::Ok
                                 )==QMessageBox::Cancel){
             reset = true;
