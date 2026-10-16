@@ -33,6 +33,7 @@
 #include <QList>
 #include <QTableWidgetItem>
 #include <QRegularExpression>
+#include <QVariant>
 
 FilePage::FilePage(QWidget *parent)
     : FileLayout(parent),
@@ -95,9 +96,27 @@ void FilePage::addChannel(){
         return;
     modified = true;
 
-    mappingTable->setRowCount(mappingTable->rowCount()+1);
-    mappingTable->setItem(mappingTable->rowCount()-1,0,new QTableWidgetItem());
-    mappingTable->setVerticalHeaderItem(mappingTable->rowCount()-1,new QTableWidgetItem(QString::number(mappingTable->rowCount()-1)));
+    const int id = nextChannelId();
+    const int row = mappingTable->rowCount();
+    mappingTable->setRowCount(row + 1);
+    QTableWidgetItem* item = new QTableWidgetItem();
+    item->setData(ChannelIdRole, id);
+    mappingTable->setItem(row,0,item);
+    mappingTable->setVerticalHeaderItem(row,new QTableWidgetItem(QString::number(id)));
+}
+
+int FilePage::nextChannelId() const{
+    // One past the highest id held by a row; ids are 1-based when there are none.
+    int next = 1;
+    for(int i = 0; i < mappingTable->rowCount(); ++i){
+        const QTableWidgetItem* item = mappingTable->item(i,0);
+        if(!item)
+            continue;
+        const QVariant id = item->data(ChannelIdRole);
+        if(id.isValid())
+            next = std::max(next, id.toInt() + 1);
+    }
+    return next;
 }
 
 void FilePage::removeChannel(){
@@ -127,9 +146,15 @@ void FilePage::setChannelMapping(const QMap<int, QList<int> >& channels){
     mappingTable->clearContents();
     mappingTable->setRowCount(channels.count());
 
+    // Rows are filled with a counter and each row keeps its channel id (the
+    // map key) as item data, shown in the row header.  Placing a row at
+    // key - 1 left null rows, and wrote past the table, for 0-based or
+    // gapped ids, and getChannelMapping then crashed on the null rows and
+    // renumbered the rest.
+    int row = 0;
     QMap<int,QList<int> >::const_iterator iterator;
     //The iterator gives the keys sorted.
-    for(iterator = channels.begin(); iterator != channels.end(); ++iterator){
+    for(iterator = channels.begin(); iterator != channels.end(); ++iterator, ++row){
         QList<int> channelIds = iterator.value();
         QList<int>::iterator channelIterator;
 
@@ -140,28 +165,38 @@ void FilePage::setChannelMapping(const QMap<int, QList<int> >& channels){
             newChannel.append(" ");
         }
 
-        mappingTable->setItem(iterator.key() - 1,0,new QTableWidgetItem(newChannel));
-
-        mappingTable->resizeColumnToContents(iterator.key() - 1);
+        QTableWidgetItem* item = new QTableWidgetItem(newChannel);
+        item->setData(ChannelIdRole, iterator.key());
+        mappingTable->setItem(row,0,item);
+        mappingTable->setVerticalHeaderItem(row,new QTableWidgetItem(QString::number(iterator.key())));
     }//end of groups loop
+    mappingTable->resizeColumnToContents(0);
 }
 
 QMap<int, QList<int> > FilePage::getChannelMapping()const{
     QMap<int, QList<int> > channelMapping;
 
-    int channelId = 1;
+    // Each row is written under the id it was loaded or added with; a row
+    // without one (or with a duplicate) gets the next free id.
+    int nextId = nextChannelId();
     for(int i =0; i<mappingTable->rowCount();++i){
         QList<int> channels;
-        const QString item = mappingTable->item(i,0)->text();
-        const QString channelList = item.simplified();
-        if(channelList == " " || channelList.isEmpty())
+        const QTableWidgetItem* item = mappingTable->item(i,0);
+        if(!item)
+            continue;
+        const QString channelList = item->text().simplified();
+        if(channelList.isEmpty())
             continue;
 
+        const QVariant storedId = item->data(ChannelIdRole);
+        int channelId = storedId.isValid() ? storedId.toInt() : nextId++;
+        if(channelMapping.contains(channelId))
+            channelId = nextId++;
+
         QStringList channelParts = channelList.split(" ", Qt::SkipEmptyParts);
-        for(uint j = 0;j < channelParts.count(); ++j)
+        for(int j = 0;j < channelParts.count(); ++j)
             channels.append(channelParts.at(j).toInt());
         channelMapping.insert(channelId,channels);
-        channelId++;
     }
 
     return channelMapping;

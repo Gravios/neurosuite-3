@@ -119,6 +119,11 @@ public slots:
     void resetModificationStatus(){modified = false;}
 
 private:
+    /**Item-data role holding a mapping row's channel id (the map key).*/
+    static const int ChannelIdRole = Qt::UserRole;
+    /**One past the highest channel id held by a row (1 if there is none).*/
+    int nextChannelId() const;
+
     bool isIncorrectRow;
     int incorrectRow;
     bool modified;
