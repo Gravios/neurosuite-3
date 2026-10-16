@@ -79,7 +79,9 @@ command line.
 dimensions (width/height) are stored in the top-level `video` YAML section and are separate
 from the neuroscope-specific rotation and flip settings.
 
-**Plugin parameters** — one page per installed `ndm_*` script. Each page exposes the
+**Plugin parameters** — one page per installed `ndm_*` script, listed under **Plugins** in
+collapsible branches by purpose (Conversion, Preparation, Detection, Sorting, …; see
+[Plugins by purpose](#plugins-by-purpose)). Each page exposes the
 parameters that script reads from the parameter file, with Mandatory/Optional/Dynamic status
 indicators. Parameters set here land in the `programs[name=...].parameters` section of the
 YAML (tier-2 of the three-tier resolution: per-group override → global session override → bash
@@ -116,6 +118,32 @@ are kept when the table is edited and written back when the description is saved
 
 A value changed here also reaches the nodes of that plugin in the [Pipeline tab](#pipeline-tab--editable-node-graph),
 replacing any inspector edit of the same parameter not yet applied.
+
+### Plugins by purpose
+
+The Plugins entry of the left-hand tree and the Pipeline tab's palette both group plugins into
+collapsible branches by purpose. A plugin's branch is, in order of precedence:
+
+1. the `category` its description gives (`program.category` in its `.yaml`, or in what it
+   prints for `--ndm-describe`), kept in the session file's `programs:` entry;
+2. its category in the built-in table of the plugins this repository ships
+   (`src/ndmanager/tools/pipeline_script_defs.py`);
+3. **Other**.
+
+Branches follow the built-in table's order (Orchestrator, Conversion, Preparation, Grouping,
+Detection, Alignment, Features, Sorting, Post-sort, Analysis, LFP, Output), then any other
+category a description names, alphabetically, then Other. Within a branch, plugins keep the
+run order. A branch that empties is removed; one you collapse stays collapsed while the list
+changes. Clicking a branch shows the Plugins overview page.
+
+```yaml
+program:
+  name: ndm_myqc
+  help: Unit quality metrics.
+  category: quality          # shown as "Quality"
+  parameters:
+    - {name: minRate, value: 0.1, status: Optional, type: float, default: 0.05}
+```
 
 ---
 
@@ -253,7 +281,10 @@ below); the next time you open the session, the saved pipeline is auto-loaded.
 
 The palette lists every `ndm_*` plugin that reads parameters from the session (except
 `ndm_xml2yaml` and `ndm_recolorchannels`, which edit the parameter file rather than process
-data), grouped by category. A node dropped onto the canvas starts with the parameters of that
+data) as a tree with a collapsible branch per purpose (see [Plugins by purpose](#plugins-by-purpose));
+every category in the built-in table gets a branch. Drag an entry onto the canvas, or
+double-click it or press Enter on it to add it to the right of the graph (Enter on a branch
+opens or closes it). A node dropped onto the canvas starts with the parameters of that
 plugin's block in `templates/template.yaml`, with the template's values; a node loaded from a
 pipeline file keeps the file's values. *Extract Spikes (SDiff / StDeriv)* and *PCA (StDeriv)* are
 aliases that run Detect / Extract Spikes or PCA with that method; they have no parameters of

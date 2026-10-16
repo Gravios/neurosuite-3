@@ -599,6 +599,7 @@ QList<ParameterYamlReader::ProgramEntry> ParameterYamlReader::getPrograms() cons
         ProgramEntry entry;
         entry.name = nodeStr(prog["name"]);
         entry.help = nodeStr(prog["help"]);
+        entry.category = nodeStr(prog["category"]);
 
         auto params = prog["parameters"];
         if (params && params.IsSequence()) {
@@ -607,6 +608,9 @@ QList<ParameterYamlReader::ProgramEntry> ParameterYamlReader::getPrograms() cons
                 pe.name   = nodeStr(p["name"]);
                 pe.value  = nodeStr(p["value"]);
                 pe.status = nodeStr(p["status"]);
+                pe.type         = nodeStr(p["type"]);
+                pe.defaultValue = nodeStr(p["default"]);
+                pe.hidden       = nodeStr(p["hidden"]);
                 entry.parameters.append(pe);
             }
         }
@@ -756,11 +760,18 @@ void ParameterYamlReader::getProgramsInformation(QList<ProgramInformation>& prog
         ProgramInformation pi;
         pi.setProgramName(entry.name);
         pi.setHelp(entry.help);
+        pi.setCategory(entry.category);
         QMap<int,QStringList> params;
         int idx = 0;
         for (const auto& pe : entry.parameters) {
             QStringList row;
             row << pe.name << pe.value << pe.status;
+            // {type, default, hidden} are positional: only up to the last set.
+            const QStringList extra{pe.type, pe.defaultValue, pe.hidden};
+            int last = -1;
+            for (int k = 0; k < extra.size(); ++k)
+                if (!extra.at(k).isEmpty()) last = k;
+            for (int k = 0; k <= last; ++k) row << extra.at(k);
             params.insert(idx++, row);
         }
         pi.setParameterInformation(params);

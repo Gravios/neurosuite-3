@@ -502,6 +502,47 @@ int main()
                "seven-column rows still accepted");
     }
 
+    std::printf("program category and parameter type/default/hidden:\n");
+    {
+        const QString pp = dir.filePath(QStringLiteral("prog.yaml"));
+        std::ofstream(pp.toStdString()) <<
+            "programs:\n"
+            "  - name: ndm_x\n"
+            "    category: Spike-Quality\n"
+            "    parameters:\n"
+            "      - {name: a, value: 1, status: Optional, type: int, default: 4}\n"
+            "      - {name: b, value: x, status: Optional, hidden: true}\n"
+            "      - {name: c, value: y, status: Optional}\n";
+        ParameterYamlReader r;
+        report(r.parseFile(pp), "parse");
+        QList<ProgramInformation> progs;
+        r.getProgramsInformation(progs);
+        report(progs.size() == 1 && progs.at(0).getCategory() == "Spike-Quality", "category read");
+        const QMap<int,QStringList> rows = progs.at(0).getParameterInformation();
+        report(rows.value(0) == (QStringList{"a", "1", "Optional", "int", "4"}), "type and default read, positionally");
+        report(rows.value(1) == (QStringList{"b", "x", "Optional", "", "", "true"}), "hidden read, the missing ones before it empty");
+        report(rows.value(2).size() == 3, "a parameter without them stays three fields");
+
+        QMap<int,QStringList> edited = rows;
+        edited[0] = QStringList{"a", "2", "Optional", "float"};       // default cleared
+        edited[2] = QStringList{"c", "y", "Optional", "choice:y|z"};  // type added
+        progs[0].setParameterInformation(edited);
+        ParameterYamlWriter w;
+        w.setBaseDocument(pp);
+        w.setProgramsInformation(progs);
+        report(w.writeTofile(pp), "written");
+        const YAML::Node d = YAML::LoadFile(pp.toStdString())["programs"][0];
+        report(str(d["category"]) == "Spike-Quality", "category written");
+        report(str(d["parameters"][0]["type"]) == "float" && !d["parameters"][0]["default"], "a changed type written, a cleared default removed");
+        report(str(d["parameters"][1]["hidden"]) == "true", "hidden kept");
+        report(str(d["parameters"][2]["type"]) == "choice:y|z", "a new type written");
+
+        progs[0].setCategory(QString());
+        w.setBaseDocument(pp);
+        w.setProgramsInformation(progs);
+        report(w.writeTofile(pp) && !YAML::LoadFile(pp.toStdString())["programs"][0]["category"], "a cleared category removed");
+    }
+
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

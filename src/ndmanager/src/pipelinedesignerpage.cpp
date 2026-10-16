@@ -2,6 +2,7 @@
  * pipelinedesignerpage.cpp
  ***************************************************************************/
 #include "pipelinedesignerpage.h"
+#include "plugincategory.h"
 
 #include <QAbstractItemView>
 #include <QApplication>
@@ -16,7 +17,8 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
-#include <QListWidget>
+#include <QShortcut>
+#include <QTreeWidget>
 #include <QMap>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -93,6 +95,22 @@ const QMap<QString, CategoryStyle>& categoryStyles()
         { "output",      { "Output",      QColor(0x18,0x18,0x18), QColor(0x94,0xa3,0xb8) } },
     };
     return s_styles;
+}
+
+QStringList ndmCategoryOrder()
+{
+    QStringList order;
+    for (const NdmScriptDef& d : ndmScriptDefs())
+        if (!order.contains(d.category)) order << d.category;
+    return order;
+}
+
+QString ndmCategoryLabel(const QString& category)
+{
+    const auto& m = categoryStyles();
+    const QString key = plugincategory::normalize(category);
+    if (m.contains(key)) return m[key].label;
+    return plugincategory::fallbackLabel(key);
 }
 
 static CategoryStyle catStyle(const QString& cat)
@@ -942,50 +960,50 @@ PipelineDesignerPage::PipelineDesignerPage(QWidget* parent) : QWidget(parent)
 
 void PipelineDesignerPage::buildPalette()
 {
-    palette = new QListWidget;
+    palette = new QTreeWidget;
+    palette->setHeaderHidden(true);
+    palette->setRootIsDecorated(true);
+    palette->setIndentation(12);
     palette->setDragEnabled(true);
     palette->setDragDropMode(QAbstractItemView::DragOnly);
     palette->setStyleSheet(
-        "QListWidget{background:#0d1117;border:none;outline:none;}"
-        "QListWidget::item{padding:5px 10px 5px 14px;border-left:3px solid transparent;}"
-        "QListWidget::item:selected{background:#141c2a;color:#e2e8f0;}"
-        "QListWidget::item:hover{background:#101624;}");
+        "QTreeWidget{background:#0d1117;border:none;outline:none;}"
+        "QTreeWidget::item{padding:4px 6px;}"
+        "QTreeWidget::item:selected{background:#141c2a;color:#e2e8f0;}"
+        "QTreeWidget::item:hover{background:#101624;}");
     palette->setIconSize(QSize(8, 8));
 
-    // Group by category in the order they appear in the palette
-    const QStringList catOrder {
-        "conversion","preparation","grouping","detection","alignment",
-        "features","sorting","postprocess","analysis","lfp","output"
-    };
-
-    // build category → scripts map preserving order
+    // One collapsible branch per purpose, in the built-in table's order
+    // (plugincategory.h); a category without a style is shown, not dropped.
+    // The orchestrator root is never placed from the palette.
     QMap<QString, QVector<const NdmScriptDef*>> bycat;
-    for (const NdmScriptDef& d : ndmScriptDefs())
-        bycat[d.category].append(&d);
+    QStringList present;
+    for (const NdmScriptDef& d : ndmScriptDefs()) {
+        if (d.type == kRootType) continue;
+        const QString cat = plugincategory::normalize(d.category);
+        bycat[cat].append(&d);
+        present << cat;
+    }
 
-    for (const QString& cat : catOrder) {
-        if (!bycat.contains(cat)) continue;
+    for (const QString& cat : plugincategory::order(ndmCategoryOrder(), present)) {
         const CategoryStyle cs = catStyle(cat);
 
-        // Category separator item
-        auto* sepItem = new QListWidgetItem(cs.label.toUpper());
-        sepItem->setFlags(Qt::NoItemFlags);
-        QFont sepFont = sepItem->font();
+        auto* branch = new QTreeWidgetItem(palette, QStringList(ndmCategoryLabel(cat).toUpper()));
+        branch->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);   // not draggable
+        QFont sepFont = branch->font(0);
         sepFont.setPointSizeF(8.0);
         sepFont.setWeight(QFont::Bold);
-        sepItem->setFont(sepFont);
-        sepItem->setForeground(cs.accent);
-        sepItem->setBackground(QColor(0x0a, 0x0f, 0x1a));
-        palette->addItem(sepItem);
+        branch->setFont(0, sepFont);
+        branch->setForeground(0, cs.accent);
 
         for (const NdmScriptDef* def : bycat[cat]) {
-            auto* item = new QListWidgetItem(def->label);
-            item->setData(Qt::UserRole, def->type);
-            item->setToolTip(def->brief);
-            item->setForeground(QColor(0xaa, 0xbb, 0xcc));
-            QFont f = item->font();
+            auto* item = new QTreeWidgetItem(branch, QStringList(def->label));
+            item->setData(0, Qt::UserRole, def->type);
+            item->setToolTip(0, def->brief);
+            item->setForeground(0, QColor(0xaa, 0xbb, 0xcc));
+            QFont f = item->font(0);
             f.setPointSizeF(8.5);
-            item->setFont(f);
+            item->setFont(0, f);
             // Coloured dot icon
             QPixmap dot(8, 8);
             dot.fill(Qt::transparent);
@@ -994,18 +1012,30 @@ void PipelineDesignerPage::buildPalette()
             dotP.setBrush(cs.accent);
             dotP.setPen(Qt::NoPen);
             dotP.drawEllipse(QRectF(0.5, 0.5, 7, 7));
-            item->setIcon(QIcon(dot));
-            palette->addItem(item);
+            item->setIcon(0, QIcon(dot));
         }
+        branch->setExpanded(true);
     }
 
-    // Double-click adds to canvas at a default position
-    connect(palette, &QListWidget::itemDoubleClicked,
-            this,      &PipelineDesignerPage::onPaletteDoubleClicked);
+    // Double-click adds to the canvas at a default position; so does Enter
+    // (a widget shortcut, so a style that activates on a single click does
+    // not add a node every time an entry is pressed to drag it).
+    connect(palette, &QTreeWidget::itemDoubleClicked, this,
+            [this](QTreeWidgetItem* item, int) { onPaletteActivated(item); });
+    for (const int key : { int(Qt::Key_Return), int(Qt::Key_Enter) }) {
+        auto* enter = new QShortcut(QKeySequence(key), palette);
+        enter->setContext(Qt::WidgetShortcut);
+        connect(enter, &QShortcut::activated, this, [this]() {
+            QTreeWidgetItem* item = palette->currentItem();
+            if (!item) return;
+            if (item->childCount() > 0) item->setExpanded(!item->isExpanded());
+            else onPaletteActivated(item);
+        });
+    }
 
     // Custom drag: write program type as text mime data
-    connect(palette, &QListWidget::itemPressed, this, [this](QListWidgetItem* item) {
-        const QString type = item->data(Qt::UserRole).toString();
+    connect(palette, &QTreeWidget::itemPressed, this, [this](QTreeWidgetItem* item, int) {
+        const QString type = item->data(0, Qt::UserRole).toString();
         if (type.isEmpty()) return;
         auto* drag = new QDrag(palette);
         auto* mime = new QMimeData;
@@ -1018,7 +1048,7 @@ void PipelineDesignerPage::buildPalette()
         pp.setRenderHint(QPainter::Antialiasing);
         pp.setPen(QColor(0x4a, 0x9e, 0xff));
         pp.setFont(palette->font());
-        pp.drawText(QRect(6, 4, 108, 20), Qt::AlignLeft | Qt::AlignVCenter, item->text());
+        pp.drawText(QRect(6, 4, 108, 20), Qt::AlignLeft | Qt::AlignVCenter, item->text(0));
         drag->setPixmap(px);
         drag->setHotSpot(QPoint(60, 14));
         drag->exec(Qt::CopyAction);
@@ -1413,9 +1443,10 @@ void PipelineDesignerPage::onPresetChanged(int index)
     presetCombo->setCurrentIndex(0); // reset combo after loading
 }
 
-void PipelineDesignerPage::onPaletteDoubleClicked(QListWidgetItem* item)
+void PipelineDesignerPage::onPaletteActivated(QTreeWidgetItem* item)
 {
-    const QString type = item->data(Qt::UserRole).toString();
+    if (!item) return;
+    const QString type = item->data(0, Qt::UserRole).toString();
     if (type.isEmpty() || !canvas) return;
 
     // Place at a sensible default position (right of last node, or center)
@@ -1427,7 +1458,7 @@ void PipelineDesignerPage::onPaletteDoubleClicked(QListWidgetItem* item)
         x = maxX + PipelineCanvas::NW + 60.f;
     }
 
-    // Manually add node (palette double-click path)
+    // Manually add node (palette double-click / Enter path)
     const NdmScriptDef* def = ndmScriptDef(type);
     PipelineNode n;
     n.id      = canvas->allocateId();

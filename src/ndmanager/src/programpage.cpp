@@ -294,6 +294,7 @@ void ProgramPage::saveProgramParameters(){
         ProgramInformation programInformation;
         programInformation.setProgramName(parameters->getProgramName());
         programInformation.setHelp(help->toPlainText());
+        programInformation.setCategory(category);
         QMap<int, QStringList > parameterInformation = parameters->getParameterInformation();
         programInformation.setParameterInformation(parameterInformation);
         //Create the writer and save the data to disk

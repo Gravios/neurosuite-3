@@ -10,7 +10,7 @@
  *   ├─ toolbar: preset combo, apply, clear
  *   ├─ notice bar: load failures / warnings, refused edges
  *   ├─ QSplitter
- *   │   ├─ PaletteSidebar  — QListWidget of all ndm_ scripts, drag-enabled
+ *   │   ├─ PaletteSidebar  — QTreeWidget of the ndm_ scripts by purpose, drag-enabled
  *   │   ├─ PipelineCanvas  — custom QPainter widget; nodes + bezier edges
  *   │   └─ InspectorPanel  — QFormLayout parameter editor for selected node
  *   └─ (Apply sends the graph's program order, plus the parameters edited
@@ -37,8 +37,8 @@
 #include <klustersshared/programinformation.h>
 
 // ── Forward declarations ─────────────────────────────────────────────────────
-class QListWidget;
-class QListWidgetItem;
+class QTreeWidget;
+class QTreeWidgetItem;
 class QScrollArea;
 class QFormLayout;
 class QLabel;
@@ -80,6 +80,14 @@ struct CategoryStyle {
 };
 
 const QMap<QString, CategoryStyle>& categoryStyles();
+
+/** The categories of the built-in plugins, in the order the table lists them
+ *  (the order purpose branches are shown in; plugincategory.h). */
+QStringList ndmCategoryOrder();
+
+/** The display name of a category ("postprocess" -> "Post-sort"); one the
+ *  built-in table does not style is named from its key. */
+QString ndmCategoryLabel(const QString& category);
 
 // ── Pipeline data model ────────────────────────────────────────────────────────
 
@@ -354,7 +362,9 @@ private slots:
     void onClear();
     void onEdgeRejected(const QString& reason);
     void onPresetChanged(int index);
-    void onPaletteDoubleClicked(QListWidgetItem* item);
+    /** Adds the plugin of a palette entry to the graph (double-click, or
+     *  Enter on it); Enter on a purpose branch opens or closes it. */
+    void onPaletteActivated(QTreeWidgetItem* item);
 
 private:
     void buildPalette();
@@ -377,7 +387,7 @@ private:
     PipelineCanvas* canvas;
 
     // palette
-    QListWidget* palette;
+    QTreeWidget* palette;
 
     // inspector widgets
     QScrollArea* inspScroll;

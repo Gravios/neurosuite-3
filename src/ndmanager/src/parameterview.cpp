@@ -53,6 +53,7 @@
 #include <QTemporaryFile>
 #include <QDir>
 #include <QSet>
+#include <QSignalBlocker>
 
 //include files for the application
 #include "parameterview.h"
@@ -63,6 +64,7 @@
 #include "ndmanagerutils.h"
 
 #include "parametertree.h"
+#include "plugincategory.h"
 
 using namespace ndmanager;
 
@@ -263,10 +265,11 @@ ProgramPage* ParameterView::addProgram(const QString& programName){
     return program;
 }
 
-ProgramPage* ParameterView::addProgram(const QString& programName,bool show){
-    //adding page "Video"
+ProgramPage* ParameterView::addProgram(const QString& programName,bool show,
+                                       const QString& category){
     QWidget *w = new QWidget(this);
     ProgramPage* program = new ProgramPage(expertMode,w,programName);
+    program->setCategory(category);
     if(!doc.url().isEmpty())
         program->setSessionDir(QFileInfo(doc.url()).absolutePath());
     mStackWidget->addWidget(program);
@@ -280,6 +283,7 @@ ProgramPage* ParameterView::addProgram(const QString& programName,bool show){
     programDict.insert(programName,pageId);
     programOrder.removeAll(programName);
     programOrder.append(programName);
+    placeProgramItems();
 
     //set the parameterPage program name
     ParameterPage* parameterPage = program->getParameterPage();
@@ -302,6 +306,65 @@ ProgramPage* ParameterView::addProgram(const QString& programName,bool show){
         mStackWidget->setCurrentWidget(program);
 
     return program;
+}
+
+QString ParameterView::programCategory(const QString& programName) const
+{
+    const ProgramPage* page = programDict.value(programName).page;
+    const NdmScriptDef* def = ndmScriptDef(programName);
+    return plugincategory::resolve(page ? page->getCategory() : QString(),
+                                   def ? def->category : QString());
+}
+
+void ParameterView::placeProgramItems()
+{
+    // Moving items would otherwise change the current item on the way and
+    // flip the page stack back and forth; the current item is put back below.
+    const QSignalBlocker blocker(mParameterTree);
+    QTreeWidgetItem* current = mParameterTree->currentItem();
+
+    QStringList present;
+    for (const QString& name : programOrder) present << programCategory(name);
+    const QStringList cats = plugincategory::order(ndmCategoryOrder(), present);
+
+    // Remember which branches the user collapsed: a moved item loses it.
+    QSet<QString> collapsed;
+    for (auto it = mCategoryItems.cbegin(); it != mCategoryItems.cend(); ++it)
+        if (!it.value()->isExpanded()) collapsed.insert(it.key());
+
+    // Detach the plugins, then drop the branches no plugin needs any more.
+    for (const QString& name : programOrder)
+        if (QTreeWidgetItem* item = programDict.value(name).item)
+            if (QTreeWidgetItem* parent = item->parent())
+                parent->removeChild(item);
+    for (auto it = mCategoryItems.begin(); it != mCategoryItems.end(); ) {
+        if (cats.contains(it.key())) { ++it; continue; }
+        if (current == it.value()) current = mScriptsItem;
+        delete it.value();
+        it = mCategoryItems.erase(it);
+    }
+
+    // The branches in category order, each with its plugins in run order.
+    for (int i = 0; i < cats.size(); ++i) {
+        const QString& cat = cats.at(i);
+        QTreeWidgetItem* branch = mCategoryItems.value(cat);
+        if (!branch) {
+            // A branch shows the Plugins overview page when clicked.
+            branch = mParameterTree->addSubPage(mScriptsItem, ndmCategoryLabel(cat), programs);
+            mCategoryItems.insert(cat, branch);
+        }
+        if (mScriptsItem->indexOfChild(branch) != i) {
+            mScriptsItem->removeChild(branch);
+            mScriptsItem->insertChild(i, branch);
+        }
+    }
+    for (const QString& name : programOrder)
+        if (QTreeWidgetItem* item = programDict.value(name).item)
+            mCategoryItems.value(programCategory(name))->addChild(item);
+    for (auto it = mCategoryItems.cbegin(); it != mCategoryItems.cend(); ++it)
+        it.value()->setExpanded(!collapsed.contains(it.key()));
+
+    if (current) mParameterTree->setCurrentItem(current);
 }
 
 void ParameterView::changeProgramName(ProgramPage* programPage, const QString& newName, const QString &message, const QString &title){
@@ -332,6 +395,7 @@ void ParameterView::changeProgramName(ProgramPage* programPage, const QString& n
     const int orderIdx = programOrder.indexOf(oldName);
     if (orderIdx >= 0) programOrder[orderIdx] = newName;
     else               programOrder.append(newName);
+    placeProgramItems();   // a built-in name may belong to another branch
 
 
     mStackWidget->setCurrentWidget(id.page);
@@ -352,9 +416,9 @@ void ParameterView::removeProgram(ProgramPage* programPage){
     delete id.page;
 
     delete id.item;
-    //mParameterTree->(id.item, 0);
     programDict.remove(name);
     programOrder.removeAll(name);
+    placeProgramItems();   // drops a branch left empty
 
     /*if(name.contains("New Program-") || name.contains("Untitled-"))*/ counter--;
     emit scriptListHasBeenModified(programOrder);
@@ -459,7 +523,8 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
     QList<ProgramInformation>::iterator programIterator;
     for(programIterator = programList.begin(); programIterator != programList.end(); ++programIterator){
         ProgramInformation programInformation = static_cast<ProgramInformation>(*programIterator);
-        ProgramPage* programPage = addProgram(programInformation.getProgramName(),false);
+        ProgramPage* programPage = addProgram(programInformation.getProgramName(),false,
+                                              programInformation.getCategory());
         //set the parameters
         ParameterPage* parameterPage = programPage->getParameterPage();
         QString name = programInformation.getProgramName();
@@ -643,20 +708,14 @@ void ParameterView::loadProgram(const QString &programUrl) {
 
     programsModified = true;
 
-    ProgramPage* program = addProgram(name);
+    ProgramPage* program = addProgram(name, true, programInformation.getCategory());
     // A reloaded plugin keeps its place in the program list (and so in the
     // session file's programs: order, which ndm_start runs in), instead of
     // moving to the end.
     if (reloadIndex >= 0 && reloadIndex < programOrder.size() - 1) {
         programOrder.removeAll(name);
         programOrder.insert(reloadIndex, name);
-        if (QTreeWidgetItem* item = programDict.value(name).item) {
-            const int at = mScriptsItem->indexOfChild(item);
-            if (at >= 0) {
-                mScriptsItem->takeChild(at);
-                mScriptsItem->insertChild(reloadIndex, item);
-            }
-        }
+        placeProgramItems();
         emit scriptListHasBeenModified(programOrder);
     }
 
@@ -893,6 +952,7 @@ void ParameterView::getInformation(QMap<int, QList<int> >& anatomicalGroups,QMap
         ProgramInformation programInformation;
         programInformation.setProgramName(name);
         programInformation.setHelp(program->getHelp());
+        programInformation.setCategory(program->getCategory());
         ParameterPage* parameterPage = program->getParameterPage();
         QMap<int, QStringList > parameterInformation = parameterPage->getParameterInformation();
         programInformation.setParameterInformation(parameterInformation);
@@ -1098,16 +1158,7 @@ void ParameterView::setProgramList(const QList<ProgramInformation>& newPrograms,
     }
 
     // ── 3. Show the Plugins tree in that order ──────────────────────────────
-    QTreeWidgetItem* current = mParameterTree->currentItem();
-    for (const QString& name : programOrder) {
-        QTreeWidgetItem* item = programDict.value(name).item;
-        const int idx = item ? mScriptsItem->indexOfChild(item) : -1;
-        if (idx < 0) continue;
-        mScriptsItem->takeChild(idx);
-        mScriptsItem->addChild(item);
-    }
-    if (current) mParameterTree->setCurrentItem(current);
-
+    placeProgramItems();
     mParameterTree->expandItem(mScriptsItem);
     if (changed) programsModified = true;
     emit scriptListHasBeenModified(programOrder);

@@ -37,6 +37,8 @@ bool DescriptionYamlWriter::writeTofile(const QString& url)
     o << "program:\n";
     o << "  name: " << esc(info.getProgramName()) << '\n';
     o << "  help: " << esc(info.getHelp()) << '\n';
+    if (!info.getCategory().isEmpty())
+        o << "  category: " << esc(info.getCategory()) << '\n';
 
     const auto params = info.getParameterInformation();
     if (params.isEmpty()) {

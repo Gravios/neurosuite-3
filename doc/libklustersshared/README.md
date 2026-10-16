@@ -197,7 +197,7 @@ spikeDetection:
 units:             # list of {group, cluster, structure, type, isolationDistance, quality, notes,
                    #          region, division, atlas, regionId}  (last four optional)
 neuroscope:        # version, miscellaneous, video (rotate/flip/…), spikes, channels
-programs:          # list of {name, parameters: [{name, value, status}], help}
+programs:          # list of {name, category?, parameters: [{name, value, status, type?, default?, hidden?}], help}
 ```
 
 ### `probes:` section

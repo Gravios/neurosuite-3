@@ -558,6 +558,14 @@ void ParameterYamlWriter::setProgramsInformation(
                     else { p.remove("value"); }
                 }
                 p["status"] = row[2].toStdString();
+                // type, default, hidden: written when set, removed when
+                // cleared (a hand-written one was read into the row).
+                static const char* const extraKeys[] = { "type", "default", "hidden" };
+                for (int k = 0; k < 3; ++k) {
+                    const QString x = row.value(3 + k);
+                    if (!x.isEmpty()) p[extraKeys[k]] = x.toStdString();
+                    else p.remove(extraKeys[k]);
+                }
                 paramSeq.push_back(p);
             }
             prog["parameters"] = paramSeq;
@@ -570,6 +578,12 @@ void ParameterYamlWriter::setProgramsInformation(
             prog["help"] = help.toStdString();
         else
             prog.remove("help");
+
+        const QString category = pi.getCategory();
+        if (!category.isEmpty())
+            prog["category"] = category.toStdString();
+        else
+            prog.remove("category");
 
         seq.push_back(prog);
     }

@@ -61,6 +61,13 @@ public:
     /**Sets the content of the help.*/
     void setHelp(const QString& helpContent);
 
+    /**The purpose the plugin is listed under as its description gives it
+     * (`program.category`); empty when the description names none, and the
+     * Plugins tree then uses the built-in table or "Other"
+     * (plugincategory.h).*/
+    QString getCategory() const { return category; }
+    void setCategory(const QString& c) { category = c; }
+
     /**True if the ParameterPage has been modified, false otherwise.*/
     bool areParametersModified()const;
 
@@ -155,6 +162,7 @@ private:
     QString programName;
     QString descriptionUrl;
     QTextEdit* help;
+    QString category;
     bool helpIsModified;
     QTextEdit* scriptView;
     bool descriptionNotSaved;

@@ -77,10 +77,12 @@
  *           defaultOffset: 0
  *   programs:
  *     - name: ndm_hipass
+ *       category: preparation   # optional: what the plugin is listed under
  *       parameters:
  *         - name: windowHalfLength
  *           value: 16
  *           status: Mandatory
+ *           type: int           # optional: type, default, hidden
  *       help: |
  *         High-pass filter …
  *
@@ -298,12 +300,16 @@ public:
         QString name;
         QString value;
         QString status;   ///< "Mandatory" | "Optional" | "Dynamic"
+        QString type;          ///< optional: bool, int, float, choice:a|b, ... (ndmanager parametertype.h)
+        QString defaultValue;  ///< optional "default": the plugin's value when unset
+        QString hidden;        ///< optional: "true" hides the row outside expert mode
     };
 
     struct ProgramEntry {
         QString name;
         QList<ParameterEntry> parameters;
         QString help;
+        QString category;   ///< optional: the purpose ndmanager lists it under
     };
 
     /** Returns all program entries in document order. */

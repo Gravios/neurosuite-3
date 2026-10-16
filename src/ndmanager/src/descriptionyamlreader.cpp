@@ -35,6 +35,9 @@ bool DescriptionYamlReader::parseFile(const QString& path)
         QString::fromStdString(safeGet<std::string>(prog,"name","")));
     info.setHelp(
         QString::fromStdString(safeGet<std::string>(prog,"help","")));
+    // Optional: the purpose ndmanager lists the plugin under (plugincategory.h).
+    info.setCategory(
+        QString::fromStdString(safeGet<std::string>(prog,"category","")));
 
     YAML::Node params = prog["parameters"];
     QMap<int,QStringList> paramMap;

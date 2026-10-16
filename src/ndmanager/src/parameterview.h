@@ -366,9 +366,19 @@ private:
     /**Adds a program to the subtree under the node Program.
    * @param programName name of the program to add.
    * @param show true if the added program page has to been shown, false otherwise.
+   * @param category the purpose its description gives (empty: built-in table or Other).
    * @return a pointer on the added ProgramPage.
    */
-    ProgramPage* addProgram(const QString &programName, bool show);
+    ProgramPage* addProgram(const QString &programName, bool show,
+                            const QString &category = QString());
+
+    /**The purpose @p programName is listed under (plugincategory.h).*/
+    QString programCategory(const QString &programName) const;
+
+    /**Puts the Plugins tree in order: a branch per purpose, in category
+     * order, holding its plugins in programOrder; empty branches removed.
+     * Keeps the current item and each branch's collapsed state.*/
+    void placeProgramItems();
 
     /** The document connected to the view, specified in the constructor */
     ndManagerDoc& doc;
@@ -456,6 +466,8 @@ private:
     /**True if the file is opened in expert mode, false otherwise*/
     bool expertMode;
     QTreeWidgetItem *mScriptsItem;
+    /**The purpose branches under Plugins, by category key.*/
+    QMap<QString, QTreeWidgetItem*> mCategoryItems;
 
     ParameterTree *mParameterTree;
     QStackedWidget *mStackWidget;

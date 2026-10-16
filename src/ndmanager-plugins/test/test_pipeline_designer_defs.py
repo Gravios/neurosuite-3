@@ -11,8 +11,9 @@ template's parameters.
   - every node parameter is one the plugin's script reads (external plugins
     excepted), and none is one the script only reads with a fallback block,
     which a node value would override;
-  - every category is one the palette shows, and every preset names a
-    palette plugin.
+  - the palette shows every category (it groups by the generated list's
+    categories, with no fixed list that could leave one out), every category
+    has a style, and every preset names a palette plugin.
 Exits nonzero on failure (repo test convention).
 """
 import importlib.util
@@ -83,10 +84,10 @@ check("no node parameter overrides a fallback block", not overriding, ", ".join(
 check("aliases carry no parameters", all(not nodes[a] for a in aliases))
 
 cpp = open(CPP, encoding="utf-8").read()
-order = re.search(r"catOrder\s*\{(.*?)\}", cpp, re.S).group(1)
-shown = set(re.findall(r'"(\w+)"', order)) | {"orchestrator"}
-cats = sorted({m[3] for m in gen.META} - shown)
-check("every category is shown in the palette", not cats, ", ".join(cats))
+palette_src = cpp[cpp.index("void PipelineDesignerPage::buildPalette()"):]
+palette_src = palette_src[:palette_src.index("\n}\n")]
+check("every category is shown in the palette",
+      "plugincategory::order(ndmCategoryOrder()" in palette_src and "catOrder" not in palette_src)
 styled = set(re.findall(r'\{\s*"(\w+)",\s*\{\s*"', cpp[cpp.index("categoryStyles()"):]))
 check("every category has a style", {m[3] for m in gen.META} <= styled)
 presets = re.findall(r"QStringList\{([^}]*)\}", cpp)

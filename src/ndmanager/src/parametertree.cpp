@@ -78,9 +78,8 @@ void ParameterTree::slotSelectionChanged()
 void ParameterTree::keyPressEvent(QKeyEvent *event)
 {
     // Map PageUp / PageDown to "previous / next top-level section".
-    // The tree only nests one level deep (Plugins -> per-plugin subpages),
-    // so the navigation rule is simple: find the top-level ancestor of the
-    // current item and step to its sibling.  When no item is selected we
+    // The rule: find the top-level ancestor of the current item (however
+    // deep -- Plugins > purpose > plugin) and step to its sibling.  When no item is selected we
     // pick the first / last top-level entry as a starting point so the
     // shortcut works on a freshly-opened window with nothing focused yet.
     if (event->key() == Qt::Key_PageDown || event->key() == Qt::Key_PageUp) {
