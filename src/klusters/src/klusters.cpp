@@ -1068,6 +1068,17 @@ void KlustersApp::createMenus()
     // parents selected in the main palette; promote / move the children selected
     // in the child palette.  Each regenerates .clu/.clc/.clp on Save.
     QMenu* hierarchyMenu = menuBar()->addMenu(tr("&Hierarchy"));
+    // The one entry for a FLAT session: turn it into a hierarchical one.
+    mPromoteToHierarchy = hierarchyMenu->addAction(tr("Promote to &Hierarchical Session (.clc + .clp)…"));
+    mPromoteToHierarchy->setToolTip(tr(
+        "Make this flat clustering hierarchical: write a .clc child layer and a\n"
+        ".clp parent map next to the .clu, then reopen the session with the child\n"
+        "palette.  Every unit starts as one atom with the same id; split a unit's\n"
+        "atoms in the child palette from there.  An existing .clc that is nested in\n"
+        "the .clu is kept.  Unsaved edits are saved first; the undo history is cleared."));
+    mPromoteToHierarchy->setEnabled(false);
+    connect(mPromoteToHierarchy, &QAction::triggered, this, &KlustersApp::slotPromoteToHierarchy);
+    hierarchyMenu->addSeparator();
     mMergeParents = hierarchyMenu->addAction(tr("&Merge Selected Parents"));
     mPromoteChild = hierarchyMenu->addAction(tr("&Promote Child to New Parent"));
     hierarchyMenu->addSeparator();
@@ -2533,6 +2544,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("hierarchy.compactIds"),         QStringLiteral("Hierarchy"), mCompactIds);
     registerActionCommand(QStringLiteral("hierarchy.mergeOrphanChildren"),QStringLiteral("Hierarchy"), mMergeOrphanChildren);
     registerActionCommand(QStringLiteral("hierarchy.repairNesting"),      QStringLiteral("Hierarchy"), mRepairNesting);
+    registerActionCommand(QStringLiteral("hierarchy.promoteToHierarchical"), QStringLiteral("Hierarchy"), mPromoteToHierarchy);
     registerActionCommand(QStringLiteral("hierarchy.mergeChildren"),      QStringLiteral("Hierarchy"), mMergeChildren);
     registerActionCommand(QStringLiteral("hierarchy.flatten"),            QStringLiteral("Hierarchy"), mMergeAllChildren);
     registerActionCommand(QStringLiteral("hierarchy.undoChildEdit"),      QStringLiteral("Hierarchy"), mUndoChildEdit);
@@ -3431,6 +3443,9 @@ void KlustersApp::initDisplay(){
         else
             doc->setActiveClustering(false);     // flat: parent clustering active (child panel already hidden above)
     }
+    // A flat session can be promoted; the action says why not in its handler.
+    if(mPromoteToHierarchy)
+        mPromoteToHierarchy->setEnabled(!doc->isHierarchicalSession());
 
     // Once the view is shown and the WaveformThread has loaded the first
     // cluster, auto-scale the waveform amplitude. A 350 ms delay is enough
@@ -3962,7 +3977,10 @@ void KlustersApp::customEvent (QEvent* event){
             // if any unit is marked, (re)write their .wtf from the saved files.
             // Deferred: run the generator off this event-handler stack.
             saveTemplateMarks();
-            if(!mTemplateUnits.isEmpty())
+            // A promotion waiting for this save reopens the session, which would
+            // tear down a template run started now; the .wtf is regenerated on
+            // the next save instead.
+            if(!mTemplateUnits.isEmpty() && !mPromoteAfterSave)
                 QTimer::singleShot(0, this, [this]() { runTemplateGeneration(); });
         } else {
             // patch63 — show the actual error rather than a generic "I/O Error"
@@ -3976,6 +3994,20 @@ void KlustersApp::customEvent (QEvent* event){
 
         slotStatusMsg(tr("Ready."));
         slotStateChanged("SavingDoneState");
+
+        // Promote to Hierarchical Session saved the clustering first; finish it
+        // now that the .clu on disk is the one to promote.
+        if(mPromoteAfterSave){
+            mPromoteAfterSave = false;
+            if(!saveEvent->isSaveOk())
+                statusBar()->showMessage(tr("Not promoted: the clustering could not be saved."), 6000);
+            else if(doc->isModified())
+                QMessageBox::information(this, tr("Promote to Hierarchical Session"),
+                    tr("The clustering was edited while it was being saved, so it was not "
+                       "promoted.  Save again and repeat the promotion."));
+            else
+                QTimer::singleShot(0, this, [this]() { promoteSavedClustering(); });
+        }
     }
     //Event sent by klusterDoc to advice that there is some threads still running.
     if(event->type() == QEvent::User + 400){

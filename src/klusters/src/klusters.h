@@ -354,6 +354,9 @@ private Q_SLOTS:
     void slotPromoteChildren();           ///< one new parent per selected child
     void slotDissolveParent();
     void slotRepairNesting();
+    /** Hierarchy > Promote to Hierarchical Session: write the .clc/.clp for the
+     *  open flat clustering (saving it first if it has edits) and reopen it. */
+    void slotPromoteToHierarchy();
     void slotDropChildToNoise();
     void slotMergeChildren();
     /** Hierarchy > Flatten Hierarchy: collapse .clc to .clu -- every parent becomes a single
@@ -794,6 +797,9 @@ private:
      *  thread, then hands the writing to the thread.  Returns false, having told
      *  the user why, when a save is already running or the snapshot is refused. */
     bool startSave(const QString& url, bool saveAs);
+    /** Second half of slotPromoteToHierarchy, once the clustering is saved:
+     *  writes the siblings and reopens the session hierarchical. */
+    void promoteSavedClustering();
     /** Session-dir files written/updated since the run started (prefix-matched to
      *  the session base); used to report what an analysis/export plugin produced. */
     QStringList pluginProducedFiles() const;
@@ -1230,6 +1236,8 @@ private:
     QAction* mDissolveParent = nullptr;      // Hierarchy: explode a parent into its children
     QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise
     QAction* mRepairNesting = nullptr;         // Hierarchy: re-cut atoms onto the current parents
+    QAction* mPromoteToHierarchy = nullptr;    // Hierarchy: flat .clu -> .clu/.clc/.clp triple
+    bool     mPromoteAfterSave = false;        // a promotion is waiting for the save it started
     QAction* mMergeOrphanChildren = nullptr;   // Hierarchy: gather a parent's tiny children
     QAction* mCompactIds = nullptr;            // Hierarchy: compact both layers' ids
     QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)

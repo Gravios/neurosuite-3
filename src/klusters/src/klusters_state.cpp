@@ -118,6 +118,7 @@ void KlustersApp::slotStateChanged(const QString& state)
 {
     if(state == QLatin1String("initState")) {
         viewClusterInfo->setEnabled(false);
+        if (mPromoteToHierarchy) mPromoteToHierarchy->setEnabled(false);   // no document
         mDeleteNoisySpikes->setEnabled(false);
         mOpenAction->setEnabled(true);
         nudgeMinusAction->setEnabled(false);
@@ -550,6 +551,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         if (mRepairNesting)     mRepairNesting->setEnabled(false);
         if (mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(false);
         if (mCompactIds)          mCompactIds->setEnabled(false);
+        if (mPromoteToHierarchy)  mPromoteToHierarchy->setEnabled(false);
         if (mMergeChildren)  mMergeChildren->setEnabled(false);
         if (mUndoChildEdit)  mUndoChildEdit->setEnabled(false);
         if (mRedoChildEdit)  mRedoChildEdit->setEnabled(false);
@@ -593,18 +595,27 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteNoisySpikes->setEnabled(true);
         mIncreaseAmplitudeCorrelation->setEnabled(true);
         mDecreaseAmplitudeCorrelation->setEnabled(true);
-        // Restore the hierarchy-menu mutators locked by realignState.
-        if (mMergeParents)    mMergeParents->setEnabled(true);
-        if (mPromoteChild)   mPromoteChild->setEnabled(true);
-        if (mGroupChildren)  mGroupChildren->setEnabled(true);
-        if (mDissolveParent)  mDissolveParent->setEnabled(true);
-        if (mDropChildNoise) mDropChildNoise->setEnabled(true);
-        if (mRepairNesting)     mRepairNesting->setEnabled(true);
-        if (mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(true);
-        if (mCompactIds)          mCompactIds->setEnabled(true);
-        if (mMergeChildren)  mMergeChildren->setEnabled(true);
-        if (mUndoChildEdit)  mUndoChildEdit->setEnabled(true);
-        if (mRedoChildEdit)  mRedoChildEdit->setEnabled(true);
+        // Restore the hierarchy-menu entries locked by realignState -- to what the
+        // session allows, not unconditionally.  The mutators act on the child
+        // palette, so they need a hierarchical session with its atom layer loaded
+        // (the gate slotHierarchicalViewToggled applies); restoring them all to
+        // true enabled them in every flat session after its first realign.  A
+        // flat session's one entry is Promote.
+        const bool hierEditable = mHierarchicalView && mHierarchicalView->isChecked()
+                                  && doc && doc->hasChildClustering();
+        if (mMergeParents)    mMergeParents->setEnabled(hierEditable);
+        if (mPromoteChild)   mPromoteChild->setEnabled(hierEditable);
+        if (mGroupChildren)  mGroupChildren->setEnabled(hierEditable);
+        if (mDissolveParent)  mDissolveParent->setEnabled(hierEditable);
+        if (mDropChildNoise) mDropChildNoise->setEnabled(hierEditable);
+        if (mRepairNesting)     mRepairNesting->setEnabled(hierEditable);
+        if (mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(hierEditable);
+        if (mCompactIds)          mCompactIds->setEnabled(hierEditable);
+        if (mMergeChildren)  mMergeChildren->setEnabled(hierEditable);
+        if (mUndoChildEdit)  mUndoChildEdit->setEnabled(hierEditable && doc->childUndoCount() > 0);
+        if (mRedoChildEdit)  mRedoChildEdit->setEnabled(hierEditable && doc->childRedoCount() > 0);
+        if (mPromoteToHierarchy)
+            mPromoteToHierarchy->setEnabled(doc && !doc->url().isEmpty() && !doc->isHierarchicalSession());
         // Re-sync with tab state so any tab-specific disabling is reapplied.
         slotTabChange(tabsParent->currentIndex());
 

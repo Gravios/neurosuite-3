@@ -403,6 +403,22 @@ public:
     }
     /** True iff this is a committed hierarchical session (.clc + .clp present). */
     bool isHierarchicalSession() const { return clusteringMode() == ClusteringMode::Hierarchical; }
+    /** Whether this flat session can be made hierarchical with
+     *  promoteToHierarchy(); if not, @p why (when given) says why. */
+    bool canPromoteToHierarchy(QString* why = nullptr) const;
+    /** Makes the saved flat clustering hierarchical by writing its .clc and .clp
+     *  siblings next to the .clu (Hierarchy > Promote to Hierarchical Session).
+     *
+     *  With no .clc yet, every unit becomes one atom with the same id (the
+     *  artefact bin 0 gets atom 0): the atom layer starts as a copy of the unit
+     *  layer, the state Flatten Hierarchy leaves, and the child palette then
+     *  splits real atoms.  An existing .clc that is nested in the .clu is kept
+     *  and only its .clp is written; one that is not nested is refused.
+     *
+     *  Works on the .clu ON DISK -- save first.  The new files are read only
+     *  when the session is opened, so the caller reopens it.  Returns false with
+     *  @p message on failure; on success @p message says what was written. */
+    bool promoteToHierarchy(QString* message);
     /** True once the child clustering has actually been loaded into memory. */
     bool hasChildClustering() const { return childData != nullptr; }
     /** Lazily build childData/childColorList + the parent<->child maps from the

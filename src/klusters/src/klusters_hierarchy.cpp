@@ -600,3 +600,64 @@ void KlustersApp::slotChildSelectionChanged(const QList<int>&){
         doc->shownClustersUpdate(kids, *activeView());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Hierarchy > Promote to Hierarchical Session
+//
+// A session is hierarchical iff its .clu has both a .clc and a .clp beside it,
+// decided once at open.  Promotion writes the two missing files from the saved
+// .clu (KlustersDoc::promoteToHierarchy) and reopens the session through the
+// same path a hierarchy-reload plugin uses, so the atom layer is loaded exactly
+// as for a triple written by fiber-kit.  The document works on the file on
+// disk, so a clustering with edits is saved first; the save is asynchronous, and
+// the save-done event calls promoteSavedClustering().
+// ---------------------------------------------------------------------------
+void KlustersApp::slotPromoteToHierarchy(){
+    const QString title = tr("Promote to Hierarchical Session");
+    if(!doc || doc->url().isEmpty()) return;
+    QString why;
+    if(!doc->canPromoteToHierarchy(&why)){
+        QMessageBox::information(this, title, why);
+        return;
+    }
+    if(saveThread->isRunning() || mPromoteAfterSave){
+        statusBar()->showMessage(tr("Wait for the save in progress to finish."), 4000);
+        return;
+    }
+    const QFileInfo clu(doc->url());
+    QString clc = clu.fileName(); clc.replace(clc.lastIndexOf(QStringLiteral(".clu.")), 5, QStringLiteral(".clc."));
+    QString clp = clu.fileName(); clp.replace(clp.lastIndexOf(QStringLiteral(".clu.")), 5, QStringLiteral(".clp."));
+    QString text = tr("Make %1 hierarchical?\n\n"
+                      "Klusters writes %2 (the child layer) and %3 (the parent map) next to it. "
+                      "Every unit becomes one atom with the same id, so nothing about the "
+                      "clustering changes; the child palette then shows each unit's atoms, ready "
+                      "to be split.  If %2 already exists and nests in the clustering, it is "
+                      "kept.\n\nThe session is then reopened as a hierarchical session, which "
+                      "clears the undo history.").arg(clu.fileName(), clc, clp);
+    const bool unsaved = doc->isModified();
+    if(unsaved)
+        text += tr("\n\nThe clustering has unsaved changes; it is saved first.");
+    if(QMessageBox::question(this, title, text, QMessageBox::Yes | QMessageBox::Cancel,
+                             QMessageBox::Yes) != QMessageBox::Yes)
+        return;
+    if(unsaved){
+        mPromoteAfterSave = true;
+        slotStatusMsg(tr("Saving file…"));
+        if(!startSave(doc->url(), false))
+            mPromoteAfterSave = false;           // startSave told the user why
+        return;
+    }
+    promoteSavedClustering();
+}
+
+void KlustersApp::promoteSavedClustering(){
+    if(!doc || doc->url().isEmpty()) return;
+    QString message;
+    if(!doc->promoteToHierarchy(&message)){
+        QMessageBox::critical(this, tr("Promote to Hierarchical Session"), message);
+        return;
+    }
+    // The new files are read at open: reopen through the hierarchy-reload path.
+    reopenCurrentDocument(tr("promotion to a hierarchical session"));
+    statusBar()->showMessage(message, 8000);
+}

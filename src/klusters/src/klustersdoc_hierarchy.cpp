@@ -77,6 +77,7 @@
 #include "dipsplit.h"
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
+#include "hierarchyfiles.h"
 
 //C, C++ include files
 //#define _LARGEFILE_SOURCE already defined in /usr/include/features.h
@@ -1602,4 +1603,101 @@ bool KlustersDoc::redoChildEditDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
     if (!v || childRedoCount() == 0) return false;
     return redoChildEdit(*v);          // forced atom redo, regardless of active scope
+}
+
+// ── promotion: flat .clu -> hierarchical triple ─────────────────────────────
+
+bool KlustersDoc::canPromoteToHierarchy(QString* why) const {
+    auto no = [why](const QString& w){ if (why) *why = w; return false; };
+    if (!clusteringData || docUrl.isEmpty())
+        return no(tr("No clustering is open."));
+    if (isHierarchicalSession())
+        return no(tr("This session is already hierarchical."));
+    const QString name = QFileInfo(docUrl).fileName();
+    if (!name.contains(QStringLiteral(".clu.")))
+        return no(tr("Only a cluster file named <base>.clu.<group> (with an optional method "
+                     "and suffix) can be promoted: its .clc and .clp are named after it.  "
+                     "\"%1\" is not one.").arg(name));
+    // loadChildClustering() reads the atom layer with the YAML parameter file.
+    if (!siblingYamlForm)
+        return no(tr("A hierarchical session needs the YAML parameter file (%1.yaml); this "
+                     "session was opened from .par files.").arg(baseName));
+    if (!QFileInfo::exists(docUrl))
+        return no(tr("%1 has not been saved yet.  Save the clustering first.").arg(name));
+    return true;
+}
+
+bool KlustersDoc::promoteToHierarchy(QString* message){
+    QString why;
+    if (!canPromoteToHierarchy(&why)) { *message = why; return false; }
+
+    const std::string cluPath = QFile::encodeName(docUrl).toStdString();
+    const std::string clcPath = hierarchyfiles::siblingPath(cluPath, "clc");
+    const std::string clpPath = hierarchyfiles::siblingPath(cluPath, "clp");
+    const QString cluName = QFileInfo(docUrl).fileName();
+    const QString clcName = QFileInfo(QFile::decodeName(QByteArray::fromStdString(clcPath))).fileName();
+    const QString clpName = QFileInfo(QFile::decodeName(QByteArray::fromStdString(clpPath))).fileName();
+    const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+
+    // The saved .clu, not the in-memory clustering: the two new files must nest
+    // in the file they ship with.  The caller saves first when there are edits.
+    const neurofileio::CluFile fibers = neurofileio::readCluBinary(cluPath, nSpikes);
+    if (!fibers.ok) {
+        *message = tr("Could not read %1 as a cluster file of %2 spikes.").arg(cluName).arg(nSpikes);
+        return false;
+    }
+
+    std::string e;
+    if (QFileInfo::exists(QFile::decodeName(QByteArray::fromStdString(clcPath)))) {
+        // A .clc without its .clp opens flat and is ignored; promotion adopts it
+        // when it fits, rather than overwriting someone's atom layer.
+        const neurofileio::CluFile atoms = neurofileio::readCluBinary(clcPath, nSpikes);
+        if (!atoms.ok) {
+            *message = tr("%1 already exists but is not a child layer of this clustering (it "
+                          "holds %2 entries for %3 spikes).  Move it aside to promote from "
+                          "%4 alone.").arg(clcName).arg(atoms.nInFile).arg(nSpikes).arg(cluName);
+            return false;
+        }
+        const hierarchyfiles::NestingScan scan = hierarchyfiles::scanNesting(fibers.ids, atoms.ids);
+        if (!scan.straddlers.empty()) {
+            *message = tr("%1 already exists but is not nested in %2: %n of its atom(s) span "
+                          "more than one unit.  Move it aside to promote from %2 alone.", "",
+                          static_cast<int>(scan.straddlers.size())).arg(clcName, cluName);
+            return false;
+        }
+        const std::vector<int32_t> clp = hierarchyfiles::clpFromMap(scan.childToParent);
+        if (!hierarchyfiles::writeIdFile(clpPath, static_cast<int32_t>(clp.size()), clp, true, &e)) {
+            *message = tr("Could not write %1:\n%2").arg(clpName, QString::fromStdString(e));
+            return false;
+        }
+        *message = tr("Kept the existing child layer %1 (%n atom(s), nested in %2) and wrote "
+                      "its parent map %3.", "", hierarchyfiles::distinctCount(atoms.ids))
+                       .arg(clcName, cluName, clpName);
+        return true;
+    }
+
+    // No atom layer yet: one atom per unit, with the unit's id.
+    const hierarchyfiles::Promotion p = hierarchyfiles::promoteFlat(fibers.ids);
+    if (!hierarchyfiles::stageIdFile(clcPath, p.clcCount, p.clc, &e)
+        || !hierarchyfiles::stageIdFile(clpPath, static_cast<int32_t>(p.clp.size()), p.clp, &e)) {
+        hierarchyfiles::discardStaged(clcPath);
+        hierarchyfiles::discardStaged(clpPath);
+        *message = tr("Could not write the new child layer:\n%1").arg(QString::fromStdString(e));
+        return false;
+    }
+    if (!hierarchyfiles::installStaged(clcPath, true, &e)) {
+        hierarchyfiles::discardStaged(clpPath);
+        *message = tr("Could not write %1:\n%2").arg(clcName, QString::fromStdString(e));
+        return false;
+    }
+    if (!hierarchyfiles::installStaged(clpPath, true, &e)) {
+        // Leave the session flat, as it was: the .clc alone is ignored on open,
+        // but it was not there before, so take it away again.
+        QFile::remove(QFile::decodeName(QByteArray::fromStdString(clcPath)));
+        *message = tr("Could not write %1:\n%2").arg(clpName, QString::fromStdString(e));
+        return false;
+    }
+    *message = tr("Wrote %1 and %2: each of the %n unit(s) of %3 is now one atom with the same id.",
+                  "", p.clcCount).arg(clcName, clpName, cluName);
+    return true;
 }
