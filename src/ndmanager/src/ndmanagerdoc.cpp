@@ -57,15 +57,27 @@ ndManagerDoc::~ndManagerDoc(){
 void ndManagerDoc::closeDocument(){
     docUrl.clear();
     sourceUrl.clear();
+    savedToOwnFile = false;
 }
 
 ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::openDocument(const QString& url){
+    return open(url, true);
+}
+
+ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::openModel(const QString& url){
+    return open(url, false);
+}
+
+ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::open(const QString& url, bool ownFile){
     docUrl = url;
     sourceUrl = url;
+    // Set before loading: the view built by loadFromReader() may ask.
+    savedToOwnFile = ownFile;
 
     NdManagerYamlReader reader;
     if (!reader.parseFile(url)) {
         lastParseError = reader.lastError();
+        savedToOwnFile = false;
         return PARSE_ERROR;
     }
     lastParseError.clear();
@@ -173,8 +185,8 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::newDocument(){
        qDebug()<<" ndManagerDefault.yaml is not found. Verify install";
        QMessageBox::critical (0, QObject::tr("Error!"),QObject::tr("The file ndManagerDefault.yaml does not exist. Please verify installation"));
     }
-    return openDocument(path);
-    
+    // A copy of the default, not a session file: Save asks for a name.
+    return open(path, false);
 }
 
 
@@ -265,8 +277,10 @@ ndManagerDoc::OpenSaveCreateReturnMessage ndManagerDoc::write(const QString& url
 
     // The document now lives at url when it was saved under its own name
     // (Save, Save As); later saves start from that file.
-    if(url == docUrl)
+    if(url == docUrl){
         sourceUrl = url;
+        savedToOwnFile = true;
+    }
 
     //reset the state of the page as saved state
     view->hasBeenSave();

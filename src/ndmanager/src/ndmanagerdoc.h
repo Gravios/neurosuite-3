@@ -43,6 +43,9 @@ private:
     QString sourceUrl;
     /**Reason the last openDocument() failed to parse; empty on success.*/
     QString lastParseError;
+    /**True while the document is backed by its own session file: opened
+     * from it, or saved to it under its own name.  See isSaved().*/
+    bool savedToOwnFile = false;
     
 public:
     /**Constructor.
@@ -63,6 +66,26 @@ public:
   * @return an opensavecreatereturnmessage enum giving the open status.
   */
     OpenSaveCreateReturnMessage openDocument(const QString& url);
+
+    /** opens the file url as the model for a new document (File > Use
+  * Template): loaded like openDocument(), but isSaved() stays false until
+  * the document is saved under a name of its own.
+  * @param url url of the template parameter file.
+  * @return an opensavecreatereturnmessage enum giving the open status.
+  */
+    OpenSaveCreateReturnMessage openModel(const QString& url);
+
+    /**
+     * True only when the document is backed by its own session file: it was
+     * opened from url() (openDocument()), or written to url() by save() or
+     * saveAs().  False with no document, for a new document (newDocument(),
+     * File > New, until saved), for a model (openModel(), Use Template, until
+     * saved), after rename(), and after a failed open.  A failed save or Save
+     * As does not change it; Save as Default does not set it.
+     * Use it to refuse writing files beside url() (e.g. a pipeline) when
+     * url() is an Untitled placeholder or a template.
+     */
+    bool isSaved() const { return savedToOwnFile; }
 
     /**
      * Reason the last openDocument() returned PARSE_ERROR (yaml-cpp message with
@@ -119,9 +142,14 @@ public:
  */
     void rename(const QString& newUrl){
         docUrl = newUrl;
+        // url() no longer names the file the document came from.
+        savedToOwnFile = false;
     }
 
 private:
+
+    /**Loads url; ownFile is what isSaved() reports after a successful load.*/
+    OpenSaveCreateReturnMessage open(const QString& url, bool ownFile);
 
     /**Writes the document to url, starting from the parameter file baseUrl
  * (empty: from nothing), and carrying every key the model does not own.

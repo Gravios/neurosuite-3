@@ -640,7 +640,7 @@ void ndManager::openModelFile(const QString& url){
     }
 
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-    const int returnStatus = doc->openDocument(url);
+    const int returnStatus = doc->openModel(url);
     if(returnStatus != ndManagerDoc::OK){
         QApplication::restoreOverrideCursor();
         QMessageBox::critical (this, tr("Error!"),
