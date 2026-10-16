@@ -441,18 +441,18 @@ void ndManager::openDocumentFile(const QString& url)
 {
     slotStatusMsg(tr("Opening file…"));
 
-    filePath = url;
-    QFileInfo file(filePath);
+    // filePath names the document open in this window: it changes only when
+    // url is opened here, never for a file handed to another instance.
+    QFileInfo file(url);
     if(!file.exists()){
-        QString title = tr("File not found: %1").arg(filePath);
+        QString title = tr("File not found: %1").arg(url);
         const int answer = QMessageBox::question(this,title, tr("The selected file no longer exists. Do you want to remove it from the list of recent opened files ?"), QMessageBox::Yes|QMessageBox::No);
         if(answer == QMessageBox::Yes){
             mFileOpenRecent->removeRecentFile(url);
         } else  {
             mFileOpenRecent->addRecentFile(url); //hack, unselect the item
         }
-        filePath.clear();
-
+        slotStatusMsg(tr("Ready."));
         return;
     }
     //Check if the file exists
@@ -477,11 +477,12 @@ void ndManager::openDocumentFile(const QString& url)
                                    .arg(url, doc->parseError()));
             //close the document
             doc->closeDocument();
+            filePath.clear();
             resetState();
             return;
         }
 
-
+        filePath = url;
         setWindowTitle(url);
         QApplication::restoreOverrideCursor();
     }
@@ -497,7 +498,6 @@ void ndManager::openDocumentFile(const QString& url)
         //If the document asked is not the already open. Open a new instance of the application with it.
         else{
             mFileOpenRecent->addRecentFile(url);
-            filePath = path;
 
             QProcess::startDetached("ndmanager", QStringList()<<url);
             QApplication::restoreOverrideCursor();
