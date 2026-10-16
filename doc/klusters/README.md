@@ -64,6 +64,7 @@ so all edits go back to the same files.
 | `session.<type>.<method>.N.saving` | Short-lived: a new version written by a save before it is installed. A leftover one with no `.commit` journal is the remains of a save that failed before installing anything and can be deleted |
 | `.session.clu.<method>.N.commit`, `<file>.rollback` | Short-lived: the save's journal and the previous versions it moves aside while installing. A journal left by a crash is completed automatically on the next open |
 | `session.curation_log.<group>.<method>` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
+| `session.cli.<method>.N` | Cluster information (structure, type, quality, notes) of the clustering, saved with it — [format](../ndmanager-plugins/formats/cli.md) |
 | `.session.clu.<method>.N.autosave`, `.session.clc.<method>.N.autosave` | Crash-recovery copies of the unit (and atom) ids, written while there are unsaved changes; removed by a save or a normal close |
 
 ### File variant resolution
@@ -219,7 +220,7 @@ The `S` key (S-pin) is specifically designed to accumulate a working set without
 
 ### Colors
 
-Double-click a cluster button to open a color picker. Colors are saved to the YAML parameter file under the `units` section on save.
+Double-click a cluster button to open a color picker. Colors last for the session; they are not saved.
 
 ### Cluster information panel
 
@@ -233,7 +234,7 @@ Double-click a cluster button to open a color picker. Colors are saved to the YA
 | **Quality** | Sorting quality rating (e.g. `1`, `2`, `3`) |
 | **Notes** | Free-form text |
 
-Double-click a cluster button (when the info panel is visible) to edit any field via a dialog. Metadata is persisted in the YAML parameter file's `units` section alongside cluster colors.
+Double-click a cluster button (when the info panel is visible) to edit any field via a dialog. The fields are saved with the clustering, in its own file beside the `.clu` ([`.cli.<method>.N`](../ndmanager-plugins/formats/cli.md)), and read back when it is opened. Klusters does not write the session YAML's `units` table: that is the record of finished curation, filled from these files in ndManager with **Actions ▸ Record Curated Units…**.
 
 ### Focus handling after batch operations
 
@@ -844,7 +845,7 @@ out un-annotated clusters by default.
 | Save As | `Ctrl+Shift+A` | Saves to a new `.clu.N` path |
 | Renumber and Save | `Ctrl+Shift+S` | Renumbers cluster IDs, then saves |
 
-The cluster user information (structure, type, quality, etc.) is saved to the `units` section of the YAML parameter file.
+The cluster user information (structure, type, quality, etc.) is saved to the clustering's [`.cli`](../ndmanager-plugins/formats/cli.md) file beside the `.clu`, not to the YAML parameter file (see [Cluster information panel](#cluster-information-panel)).
 
 A save replaces all its files or none of them, skips files that already match,
 and locks editing while it runs — see [Saving: all or nothing](#saving-all-or-nothing).
@@ -933,7 +934,7 @@ session files. The session files are updated atomically on save:
 
 - On **save**, every file the save changes — the `.clu` (and `.clc`/`.clp`),
   the `.spk`/`.res`/`.fet` a realign or nudge touched, other synced feature
-  spaces, the cluster information in the `.yaml` — is first written in full
+  spaces, the `.cli` file — is first written in full
   next to its target (`<file>.saving`), then all are installed together or
   none is (see [Saving](#saving-all-or-nothing)). A file that already holds
   what the save would write is not rewritten.
@@ -1004,7 +1005,7 @@ middle, the next open finds the journal and completes the save — every new
 version was already complete — and says so.
 
 What is already on disk is not rewritten: the `.clu`, `.clc`, `.clp` and the
-cluster information are compared with what would be written, and each
+`.cli` file are compared with what would be written, and each
 `.spk`/`.res`/`.fet` working copy carries a stamp (size, times, inode) taken
 when it was last known equal to its file, so an untouched 300 MB `.spk` is
 recognised without being read.

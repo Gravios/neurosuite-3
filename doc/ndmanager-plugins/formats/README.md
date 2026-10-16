@@ -24,6 +24,7 @@ naming scheme, `SESSION.<type>.<method>.N` — start with
 | [`.clu.<method>.N`](clu.md) | Cluster assignments |
 | [`.clc.<method>.N`](clc.md) | Child (atom) clusters of a hierarchical clustering |
 | [`.clp.<method>.N`](clp.md) | Atom → fiber map |
+| [`.cli.<method>.N`](cli.md) | Cluster information (structure, type, quality, notes) of one clustering |
 | [`.pxres` / `.pxclu` / `.pxspk.N`](pxspikes.md) | Plexon's online spikes |
 
 ## Post-sorting

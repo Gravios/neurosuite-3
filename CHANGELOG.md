@@ -74,6 +74,12 @@ Each entry is folded — click **Details** to expand it. Newest first.
   restored with them when it fits. Autosave runs on the GUI thread from a
   timer (the old thread read the live clustering), only while there are
   unsaved changes, and follows a Save As.
+- **Cluster information is saved with the clustering, not into the session
+  YAML.** Klusters writes it to `<base>.cli.<method>.<group>[.<tag>]` beside
+  the `.clu` (one per stage, in the same commit) and reads it back on open. The
+  YAML `units` table is the record of finished curation: ndManager fills it on
+  request with **Actions ▸ Record Curated Units…**, choosing per group which
+  clustering's file to record.
 - **No editing during a save.** Input is held while a save runs, with a
   "Saving…" box for a slow one. Closing during a save waits for it ("Waiting
   for the save to finish before closing…"), then asks to save only if the

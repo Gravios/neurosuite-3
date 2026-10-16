@@ -402,6 +402,24 @@ not a fatal error.
 
 ---
 
+## Record Curated Units
+
+The session's `units` table (Units page) is the record of **finished**
+curation. Klusters never writes it: it saves each clustering's cluster
+information (structure, type, isolation distance, quality, notes) beside the
+clustering, as `<session>.cli.<method>.<group>[.<tag>]`
+([format](../ndmanager-plugins/formats/cli.md)).
+
+When a group's curation is done, **Actions ▸ Record Curated Units…** lists
+those files next to the session — group, number of units, when saved — with
+the newest file of each group ticked. Each ticked file replaces its group's
+rows in the Units table; other groups are kept, and one file per group may be
+chosen. The table is then modified like any edit: **File ▸ Save** writes it
+to the session YAML. The session must have been saved once (the files are
+found next to it).
+
+---
+
 ## Query
 
 **Actions ▸ Query…** searches every `*.yaml` / `*.yml` file under a chosen directory

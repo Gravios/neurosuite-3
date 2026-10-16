@@ -188,6 +188,7 @@ explicit path:
 | Files | Named | Notes |
 |---|---|---|
 | [`.clp`](clp.md) | `<base>.clp.<method>.<group>[.<suffix>]` | Klusters derives it from the opened `.clu` name by swapping the type token. |
+| [`.cli`](cli.md) | `<base>.cli.<method>.<group>[.<suffix>]` | Same rule as `.clp`. |
 | [`.pxres`, `.pxclu`, `.pxspk`](pxspikes.md) | `<base>.<type>.<group>` | Deliberately outside the tables so they never stand in for pipeline files. |
 | [`.px<stream>`](pxstream.md), `.emgclean`, `.<ext>.slice.<tag>` | session-wide by convention | Raw signal files read through `inputExtension`; see [`.dat`](dat.md). |
 | [`.evt`](evt.md) | `<base>.<id>.evt` or `<base>.evt.<id>` | NeuroScope convention. |
