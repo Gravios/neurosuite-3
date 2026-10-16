@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [Spike detection: sdiffPairs as arithmetic expressions (stderiv_C6)](#2026-10-16--spike-detection-sdiffpairs-as-arithmetic-expressions-stderiv_c6) |
 | 2026-10-16 | [ndManager: export a session as a template, apply a template to a session](#2026-10-16--ndmanager-export-a-session-as-a-template-apply-a-template-to-a-session) |
 | 2026-10-16 | [ndManager: parameter tables by keyboard, typed values; plugins listed by purpose](#2026-10-16--ndmanager-parameter-tables-by-keyboard-typed-values-plugins-listed-by-purpose) |
 | 2026-10-16 | [Units: brain region, division, atlas and region ID](#2026-10-16--units-brain-region-division-atlas-and-region-id) |
@@ -56,6 +57,48 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-16 — Spike detection: sdiffPairs as arithmetic expressions (stderiv_C6)
+
+<details>
+<summary>Details</summary>
+
+A spike group's `sdiffPairs` may now give one formula per output channel, in
+channel order, over the group's channels `c0`, `c1`, …:
+
+```yaml
+sdiffPairs: "c0 - (c1 + c2)/2, c1 - c0, c2 - 0.5*c3 - 0.5*c1, c3 - c2"
+```
+
+- `+ - * / ^` and parentheses in the usual order of precedence (`^`
+  right-associative, binding tighter than a unary minus); numbers are
+  constants; any arithmetic, so the transform need not be linear. A
+  non-finite result is 0, one beyond ±10⁹ is held there, and the value is
+  rounded and saturated to int16 as for every order.
+- Spatial order 6, method token `stderiv_C6`, PCAE method 9. Every channel
+  is kept for PCA. A group whose element count or channels do not fit is an
+  error naming the group.
+- The older forms keep their meaning (`a-b,…` order 4, `a-b+c,…` order 5);
+  in a run where some group uses expressions, the others are written as the
+  expressions they compute, with the same values to the last bit.
+- Applied everywhere the transform is: detection and extraction, `-R`
+  re-extraction, `ndm_reextractspikes`, both aligners, and Klusters' realign,
+  nudge, re-extract on save and feature-space sync. The scripts pass the
+  pattern quoted, so `*` and parentheses are never globbed.
+- One grammar, `neurosuite/core/channel_expr.hpp`, with cross-language
+  vectors (`sdiff_expr_vectors.tsv`) that fiber-kit runs against its port.
+  Checked end to end: the older forms and their expressions give
+  byte-identical `.res`/`.spk`, and fiber-kit's transform reproduces the
+  engine's `.spk` for a nonlinear pattern.
+- Also fixed on the way: `clampToInt16` saturates before rounding (a value
+  beyond the range of `int` overflowed); fiber-kit's order-4 parser left the
+  root channel at 0 where the extractor writes `x[root] − x[pred]` (fiber-kit
+  patch).
+
+See `doc/ndmanager-plugins/commands/spike-detection.md` — *Expressions
+(order 6)*.
+
+</details>
 
 ## 2026-10-16 — ndManager: export a session as a template, apply a template to a session
 
