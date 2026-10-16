@@ -1772,6 +1772,9 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
     QHash<QString, int> nodeIdx;  // id → index in newNodes
     QStringList unknownTypes;
     QStringList renamedIds;
+    QStringList extraRoots;
+    QStringList rootInEdges;
+    bool haveRoot = false;
     // Fresh ids for renamed duplicates: "n<k>" above every numeric id in
     // the file, so they can't collide with a later node either.
     int freshSeq = 0;
@@ -1799,6 +1802,13 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
             unknownTypes.append(type.isEmpty() ? QStringLiteral("<no type>") : type);
             continue;
         }
+        // One root only (the canvas never makes a second): keep the first
+        // ndm_start, drop the rest together with their edges.
+        if (type == kRootType && haveRoot) {
+            extraRoots.append(o.value(QLatin1String("id")).toString());
+            continue;
+        }
+        haveRoot = haveRoot || type == kRootType;
         PipelineNode n;
         n.id      = o.value(QLatin1String("id")).toString();
         n.type    = type;
@@ -1827,6 +1837,11 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
         const QString from = e.at(0).toString(), to = e.at(1).toString();
         // Skip edges that reference a dropped (unknown-type) node.
         if (!nodeIdx.contains(from) || !nodeIdx.contains(to)) continue;
+        // The root has indegree 0 (the canvas refuses such edges).
+        if (newNodes.at(nodeIdx.value(to)).type == kRootType) {
+            rootInEdges.append(from + QStringLiteral("→") + to);
+            continue;
+        }
         newEdges.append({ from, to });
     }
 
@@ -1863,14 +1878,12 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
         newEdges = kept;
     }
 
-    // Ensure ndm_start is present and at position 0.  A hand-edited pipeline
-    // file might have lost the root; we silently re-insert it rather than
-    // failing the load.
-    int rootIdx = -1;
-    for (int i = 0; i < newNodes.size(); ++i) {
-        if (newNodes[i].type == kRootType) { rootIdx = i; break; }
-    }
-    if (rootIdx < 0) {
+    // Ensure ndm_start is present.  A hand-edited pipeline file might have
+    // lost the root; re-insert it (first) rather than failing the load.  An
+    // existing root stays where the file has it: node order is the order
+    // Kahn's queue is seeded in, here and in ndm_start, and the root is
+    // hoisted to programs[0] by getPrograms() regardless.
+    if (!haveRoot) {
         PipelineNode root;
         root.id      = uniqueFreshId();
         root.type    = kRootType;
@@ -1882,8 +1895,6 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
             }
         }
         newNodes.prepend(root);
-    } else if (rootIdx > 0) {
-        newNodes.move(rootIdx, 0);
     }
 
     // Apply.
@@ -1910,6 +1921,17 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
         warnings << QStringLiteral("Duplicate or empty node id(s) given fresh ids "
                                    "(edges naming a duplicated id attach to its first node): %1")
                     .arg(renamedIds.join(QStringLiteral(", ")));
+    }
+    if (!haveRoot) {
+        warnings << QStringLiteral("The file has no ndm_start node; a root was added.");
+    }
+    if (!extraRoots.isEmpty()) {
+        warnings << QStringLiteral("Extra ndm_start node(s) dropped (only one root is "
+                                   "allowed): %1").arg(extraRoots.join(QStringLiteral(", ")));
+    }
+    if (!rootInEdges.isEmpty()) {
+        warnings << QStringLiteral("Edge(s) into the ndm_start root dropped: %1")
+                    .arg(rootInEdges.join(QStringLiteral(", ")));
     }
     if (!cycleEdges.isEmpty()) {
         warnings << QStringLiteral("Edge(s) closing a cycle dropped: %1.  Until the pipeline "

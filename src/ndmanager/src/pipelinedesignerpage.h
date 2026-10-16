@@ -260,9 +260,12 @@ public:
     bool savePipelineFile(const QString& path, QString* error = nullptr) const;
 
     /** Replace the current graph with the contents of a pipeline file.
-     *  Validates ndm_start presence (auto-prepends if absent), drops
-     *  unknown node types with a warning into @p error, and rewires the
-     *  inspector / Apply state.  Returns true on success. */
+     *  Enforces the sticky-root rules: exactly one ndm_start (synthesised
+     *  if absent, extra ones dropped), no edge into it.  Also drops
+     *  unknown node types and cycle-closing edges and renames duplicate
+     *  ids.  Every repair is described in @p error (a warning: the call
+     *  still returns true).  Node order is kept as in the file — it is
+     *  the order ndm_start's topological sort breaks ties in. */
     bool loadPipelineFile(const QString& path, QString* error = nullptr);
 
     /** Read current graph back as an ordered ProgramInformation list.
