@@ -946,8 +946,10 @@ void ProbePage::saveCurrentProbeFile()
         inspFile->setText(fname);
     }
     modified = true;
-    recalculateAll();   // geometry changed → recompute group memberships
+    // Status first: a warning from the recalculation (missing probe file,
+    // overlapping channels) replaces it.
     setStatus(tr("Saved geometry → %1").arg(fname));
+    recalculateAll();   // geometry changed → recompute group memberships
 }
 
 // ---------------------------------------------------------------------------

@@ -229,14 +229,15 @@ private:
      *  user's (manualOffsetIds); remember each probe's span. */
     void classifyOffsets();
 
-    /** Walk @p list assigning automatic offsets and building one group
-     *  per shank (plus a leftover anatomy group).  Returns false when a
-     *  probe file could not be read -- the layout is then incomplete. */
     /** After a save: delete the session copies of removed probes that the
      *  saved document no longer uses.  Copies of a document saved under
      *  another name, or still listed in the file, are kept. */
     void applyPendingDeletions();
 
+    /** Walk @p list assigning automatic offsets and building one group
+     *  per shank (plus a leftover anatomy group), and record each entry's
+     *  file layout.  Returns false when a probe file could not be read --
+     *  the layout is then incomplete. */
     bool computeLayout(QList<ProbeEntry>&    list,
                        QMap<int,QList<int>>& outAnatomy,
                        QMap<int,QList<int>>& outSpike,
