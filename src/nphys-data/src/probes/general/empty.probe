@@ -19,8 +19,10 @@ probeFile:
   # ── Electrode sites ──────────────────────────────────────────────────────
   # Each entry in geometry is [x_um, y_um] in the probe reference frame:
   #   x — lateral position on the shank face (µm)
-  #   y — depth from the shank head (µm; tip is at y = length)
-  # The single starter site sits 100 µm from the tip on the shank centreline.
+  #   y — height above the shank's tip (µm; the deepest site has the smallest y)
+  # Sites are listed shank by shank, top site first, tip site last
+  # (doc/ndmanager-plugins/formats/probe.md).
+  # The single starter site sits 100 µm above the tip on the shank centreline.
   # Replace with the real layout from your probe's datasheet.
   sites:
     count_per_shank: 1
@@ -28,12 +30,12 @@ probeFile:
     area_um2: 100             # circular pad ≈ 11 µm radius
     spacing_um: null
     geometry:
-      - [0, 100]               # one site, on the centreline, 100 µm from tip
+      - [0, 100]               # one site, on the centreline, 100 µm above the tip
 
   # ── Channel mapping ──────────────────────────────────────────────────────
-  # null → sequential: site 0 wired to channel 0, site 1 to channel 1, etc.
-  # If your headstage scrambles the order, list the permutation here as
-  # [hardware_channel_for_site_0, hardware_channel_for_site_1, ...].
+  # null → sequential: site 0 is channel 0, site 1 channel 1, etc. (relative
+  # to the session's channelOffset).  Otherwise list each site's channel in
+  # geometry order: [channel_of_site_0, channel_of_site_1, ...].
   channelMap:
     description: 'Sequential — site order matches amplifier channel order.'
     map: null
