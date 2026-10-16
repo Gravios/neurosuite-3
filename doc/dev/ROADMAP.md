@@ -113,6 +113,20 @@ cross-applied from ns3.  Estimate: half a session.
 
 ### 💭 considered
 
+**One write path for the session YAML.**
+All three GUIs read and write the session `.yaml` through libklustersshared,
+but through two writers: ndManager saves with `ParameterYamlWriter` (the whole
+document from its model, keeping keys it does not model), NeuroScope with
+`ParameterYamlModifier` (patches its own sections in place). Klusters only
+reads. Both writers share `yamlformat::emitWithLayout`, so the output looks
+the same, but each section's encoding exists twice. Make one a mode of the
+other (e.g. `ParameterYamlWriter` with a "only these sections" set) so a
+section is written by one piece of code. Also: `klusters/src/driftgeometry.cpp`
+and `ndmanager/src/probepage.cpp` parse the session file with yaml-cpp
+themselves before handing the root to the shared `readProbesSection` (read
+only; could go through `ParameterYamlReader::getRawRoot()`), and
+`klusters/src/parameterxmlmodifier.cpp` is unbuilt dead code to delete.
+
 **Klusters — events from spike annotation.**
 Let a user label stretches of the recording from the spiking itself and
 save them as an event file: for example, mark where a unit's waveform
