@@ -112,7 +112,8 @@ public slots:
 
     /**Resets the internal modification status to false.*/
     void resetModificationStatus(){
-        scriptIsModified = false;
+        // The plugin script is not part of the session file; only
+        // saveProgramScript() clears scriptIsModified.
         helpIsModified = false;
         parameters->resetModificationStatus();
     }

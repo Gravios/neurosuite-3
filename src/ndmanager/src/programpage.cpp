@@ -208,6 +208,9 @@ bool ProgramPage::saveProgramScript(){
     //If the change in the programName lineedit has not yet been validated, a call to nameChanged will be done after this call. Therefore
     //programName has to be updated so no message will be display in that call (otherwise there will be conflict in the events)
     if(programName != parameters->getProgramName()) programName = parameters->getProgramName();
+    // Cancelled: nothing was written, so the script is still unsaved.
+    if(scriptUrl.isEmpty())
+        return false;
     if(!title.isEmpty())
         QMessageBox::critical (this, title,message);
     if(recall)
