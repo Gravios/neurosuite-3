@@ -190,7 +190,13 @@ void UnitListPage::currentChanged()
 
 void UnitListPage::unitChanged(int row,int column)
 {
-    const QString unit = unitTable->item(row,column)->text();
+    // An edited cell is a change to the session (setUnits blocks this slot
+    // while loading).
+    modified = true;
+    const QTableWidgetItem* cell = unitTable->item(row,column);
+    if(!cell)
+        return;
+    const QString unit = cell->text();
     //the group and cluster entries should only contain digits
     //the I.D. entry should only contain digits and '.'
     if((column==0||column==1)&&(unit.contains(QRegularExpression("[^\\d]"))!=0)||(column==4&&(unit.contains(QRegularExpression("[^\\d.]"))!=0)))
