@@ -168,7 +168,9 @@ private slots:
     /**Save the current parameter file as the default one in the user .kde directory.*/
     void slotSaveDefault();
 
-    /**Reload the current file without saving the current modified information.*/
+    /**Reloads the current file from disk, after offering to save the
+     * modifications.  A template document is reloaded as a model; an
+     * Untitled document cannot be reloaded.*/
     void slotReload();
 
     /**If need it, warns the user that the spike groups have been modified, then closes the actual file and displayss.*/
@@ -242,6 +244,9 @@ private:
     /**Closes the open document (after confirmCloseDocument()) and its view.
      * @return true when no document is open any more.*/
     bool closeCurrentDocument();
+
+    /**Closes the open document and its view without asking anything.*/
+    void discardCurrentDocument();
 
     /**Shows why an XML parameter file cannot be opened (convert it with
      * ndm_xml2yaml).

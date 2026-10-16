@@ -719,6 +719,11 @@ bool ndManager::closeCurrentDocument(){
         return true;
     if(!confirmCloseDocument())
         return false;
+    discardCurrentDocument();
+    return true;
+}
+
+void ndManager::discardCurrentDocument(){
     delete parameterView;
     parameterView = 0;
     //close the document
@@ -727,7 +732,6 @@ bool ndManager::closeCurrentDocument(){
     delete mainDock;
     mainDock = 0L;
     resetState();
-    return true;
 }
 
 void ndManager::slotFileClose(){
@@ -771,6 +775,7 @@ bool ndManager::slotSave(){
                 setWindowTitle(url);
                 importedFile = false;
                 newFile = false;
+                mReloadAction->setEnabled(true);
                 saved = true;
             }
         }
@@ -805,6 +810,7 @@ bool ndManager::slotSaveAs(){
 
             importedFile = false;
             newFile = false;
+            mReloadAction->setEnabled(true);
             saved = true;
         }
     }
@@ -865,47 +871,39 @@ void ndManager::slotLoadPipeline(){
 }
 
 void ndManager::slotReload(){
+    //An Untitled document has no file to reload from (the action is disabled).
+    if(mainDock == 0L || newFile)
+        return;
     slotStatusMsg(tr("reloading…"));
 
-    //Get the current active page index
-    int currentPage = parameterView->currentPage();
+    //Unsaved changes are lost by a reload: offer to save them, or cancel.
+    if(!confirmCloseDocument()){
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
 
-    //close the current document
-    doc->closeDocument();
-    //Delete the main view
-    delete mainDock;
-    mainDock = 0L;
-    resetState();
-
-    //Reopen the document
-
-    QFileInfo file(filePath);
-
-    if(!file.exists()){
+    //A template stays a model (Save keeps asking for a new name); asked
+    //after the prompt, as saving a model makes it an ordinary document.
+    const bool asModel = importedFile;
+    const QString path = asModel ? importedFileUrl : filePath;
+    if(!QFileInfo(path).isFile()){
         QMessageBox::critical (this, tr("Sorry!"),tr("The selected parameter file could not be reloaded as it appears to have been removed from disk."));
         slotStatusMsg(tr("Ready."));
         return;
     }
 
-    //Open the file (that will also initialize the document)
-    const int returnStatus = doc->openDocument(filePath);
-    if(returnStatus == ndManagerDoc::PARSE_ERROR){
-        QApplication::restoreOverrideCursor();
-        QMessageBox::critical (this, tr("IO Error!"),
-                               tr("The selected parameter file could not be initialized:\n\n%1\n\n%2")
-                               .arg(filePath, doc->parseError()));
-        //close the document
-        doc->closeDocument();
-        resetState();
-        slotStatusMsg(tr("Ready."));
-        return;
-    }
+    //Get the current active page index
+    const int currentPage = parameterView->currentPage();
 
-    setWindowTitle(filePath);
-    QApplication::restoreOverrideCursor();
+    discardCurrentDocument();
+    if(asModel)
+        openModelFile(path);
+    else
+        openDocumentFile(path);
 
     //Raise the previously active page
-    parameterView->setCurrentPage(currentPage);
+    if(mainDock != 0L && parameterView != 0)
+        parameterView->setCurrentPage(currentPage);
 
     slotStatusMsg(tr("Ready."));
 }
@@ -1062,7 +1060,8 @@ void ndManager::slotStateChanged(const QString& state)
         mUseTemplateAction->setEnabled(true);
         mQueryAction->setEnabled(true);
     } else if(state == QLatin1String("documentState")) {
-        mReloadAction->setEnabled(true);
+        //An Untitled document has no file to reload from.
+        mReloadAction->setEnabled(!newFile);
         mSaveAsAction->setEnabled(true);
         mSaveAction->setEnabled(true);
         mCloseAction->setEnabled(true);
