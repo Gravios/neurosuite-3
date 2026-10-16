@@ -27,6 +27,7 @@
 #include <QValidator>
 
 #include <QMap>
+#include <QSet>
 #include <QList>
 
 #include <QFrame>
@@ -155,6 +156,13 @@ public:
      * without the Pipeline designer, whose edits a session save does not
      * write.*/
     bool isSessionModified();
+
+    /** Records finished curation in the Units table: the rows of every group
+     *  in @p groups are replaced by @p rows (group, cluster, structure, type,
+     *  isolation distance, quality, notes -- the table's columns); other groups'
+     *  rows are kept.  The page counts as modified, so the next save writes the
+     *  session's units section.  (ndManager > Actions > Record Curated Units.) */
+    void recordUnits(const QSet<int>& groups, const QList<QStringList>& rows);
 
     /**True when the Pipeline designer graph has edits not yet written to a
      * pipeline file with Save Pipeline / Save Pipeline As.  Saving the

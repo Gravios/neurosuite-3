@@ -58,6 +58,17 @@
 #include "qhelpviewer.h"
 #include "config-ndmanager.h"
 #include "yamlformat.h"   // emitWithLayout: the template is written with its comments
+#include "unitsidecar.h"   // the per-clustering cluster-information files Klusters writes
+#include <QListWidget>
+#include <QDialogButtonBox>
+#include <QVBoxLayout>
+#include <QLabel>
+#include <QDateTime>
+#include <QLocale>
+#include <algorithm>
+#include <QSet>
+#include <fstream>
+#include <iterator>
 #include <yaml-cpp/yaml.h>
 #include <QDirIterator>
 #include <QPair>
@@ -218,6 +229,12 @@ void ndManager::setupActions()
     mDiscoverPluginsAction->setStatusTip(
         tr("Scan $NDM_PLUGIN_PATH and $PATH for ndm_* plugins and add any that self-describe"));
     connect(mDiscoverPluginsAction, &QAction::triggered, this, &ndManager::slotDiscoverPlugins);
+
+    mRecordUnitsAction = actionMenu->addAction(tr("&Record Curated Units…"));
+    mRecordUnitsAction->setStatusTip(
+        tr("Fill the Units table from the cluster information Klusters saved with each "
+           "clustering, once its curation is finished"));
+    connect(mRecordUnitsAction, &QAction::triggered, this, &ndManager::slotRecordCuratedUnits);
 
     //mProcessingManager = actionMenu->addAction(tr("Show Processing Manager"));
 
@@ -987,6 +1004,120 @@ static std::string queryValueText(const YAML::Node& node)
 }
 // --- end of query evaluation ---
 
+void ndManager::slotRecordCuratedUnits(){
+    const QString title = tr("Record Curated Units");
+    if (!doc || !parameterView || !mainDock) return;
+    if (newFile || doc->url().isEmpty()) {
+        QMessageBox::information(this, title,
+            tr("Save the session first: Klusters' cluster-information files are found next to it."));
+        return;
+    }
+    const QFileInfo session(doc->url());
+    QString base = session.fileName();
+    for (const QString suffix : {QStringLiteral(".yaml"), QStringLiteral(".yml")})
+        if (base.endsWith(suffix, Qt::CaseInsensitive)) { base.chop(suffix.size()); break; }
+    const QDir dir = session.absoluteDir();
+
+    struct Found {
+        QString name;
+        int group = -1;
+        std::vector<unitsidecar::Row> rows;
+        QDateTime when;
+        QString error;
+    };
+    QList<Found> found;
+    // Newest first, so the default pick per group is the latest curation.
+    const QFileInfoList entries =
+        dir.entryInfoList(QStringList{base + QStringLiteral(".cli.*")}, QDir::Files, QDir::Time);
+    for (const QFileInfo& fi : entries) {
+        const QString n = fi.fileName();
+        if (n.endsWith(QLatin1String(".saving")) || n.endsWith(QLatin1String(".rollback"))
+            || n.endsWith(QLatin1String(".bak")) || n.endsWith(QLatin1String(".commit")))
+            continue;
+        Found f;
+        f.name = n;
+        f.when = fi.lastModified();
+        std::ifstream in(QFile::encodeName(fi.absoluteFilePath()).toStdString(), std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::string err;
+        if (!unitsidecar::parse(text, f.rows, &err)) f.error = QString::fromStdString(err);
+        if (!f.rows.empty()) f.group = f.rows.front().group;
+        else {
+            // No units in it (cleared): the group is the first all-digit token
+            // after ".cli." in the name.
+            const QStringList parts = n.mid(base.size() + 5).split(QLatin1Char('.'));
+            for (const QString& p : parts) {
+                bool ok = false;
+                const int g = p.toInt(&ok);
+                if (ok) { f.group = g; break; }
+            }
+        }
+        found.append(f);
+    }
+    if (found.isEmpty()) {
+        QMessageBox::information(this, title,
+            tr("There are no cluster-information files (%1.cli.*) next to the session.\n\n"
+               "Klusters writes one beside each clustering when it saves cluster information "
+               "(structure, type, quality, notes).").arg(base));
+        return;
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(title);
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->addWidget(new QLabel(tr(
+        "Choose the clustering whose cluster information is the finished record for its "
+        "group.  Each chosen file replaces that group's rows in the Units table; other "
+        "groups are kept.  The session file is written when you save it."), &dialog));
+    auto* list = new QListWidget(&dialog);
+    QSet<int> picked;
+    for (const Found& f : found) {
+        QString text = f.error.isEmpty()
+            ? tr("%1 — group %2, %n unit(s), saved %3", "", int(f.rows.size()))
+                  .arg(f.name).arg(f.group).arg(QLocale().toString(f.when, QLocale::ShortFormat))
+            : tr("%1 — unreadable (%2)").arg(f.name, f.error);
+        auto* item = new QListWidgetItem(text, list);
+        const bool usable = f.error.isEmpty() && f.group >= 0;
+        item->setFlags(usable ? (Qt::ItemIsEnabled | Qt::ItemIsUserCheckable) : Qt::NoItemFlags);
+        const bool newest = usable && !picked.contains(f.group);
+        if (newest) picked.insert(f.group);
+        item->setCheckState(newest ? Qt::Checked : Qt::Unchecked);
+    }
+    layout->addWidget(list);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    dialog.resize(640, 360);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    QSet<int> groups;
+    QList<QStringList> rows;
+    for (int i = 0; i < list->count(); ++i) {
+        if (list->item(i)->checkState() != Qt::Checked) continue;
+        const Found& f = found.at(i);
+        if (groups.contains(f.group)) {
+            QMessageBox::warning(this, title,
+                tr("Two files were chosen for group %1; choose one per group.").arg(f.group));
+            return;
+        }
+        groups.insert(f.group);
+        for (const unitsidecar::Row& r : f.rows)
+            rows.append(QStringList{QString::number(r.group), QString::number(r.cluster),
+                                    QString::fromStdString(r.structure), QString::fromStdString(r.type),
+                                    QString::fromStdString(r.isolationDistance),
+                                    QString::fromStdString(r.quality), QString::fromStdString(r.notes)});
+    }
+    if (groups.isEmpty()) return;
+    parameterView->recordUnits(groups, rows);
+    QList<int> sorted(groups.begin(), groups.end());
+    std::sort(sorted.begin(), sorted.end());
+    QStringList names;
+    for (int g : sorted) names << QString::number(g);
+    statusBar()->showMessage(tr("Recorded %n unit(s) for group(s) %1; save the session to keep them.",
+                                "", int(rows.size())).arg(names.join(QStringLiteral(", "))), 8000);
+}
+
 void ndManager::slotQuery(){
     slotStatusMsg(tr("Processing query…"));
     const QString startDir = doc->url().isEmpty() ? QDir::currentPath()
@@ -1173,6 +1304,7 @@ void ndManager::slotStateChanged(const QString& state)
         //mProcessingManager->setEnabled(false);
         mExpertMode->setEnabled(false);
         mDiscoverPluginsAction->setEnabled(false);
+        if (mRecordUnitsAction) mRecordUnitsAction->setEnabled(false);
         mOpenAction->setEnabled(true);
         mNewAction->setEnabled(true);
         mNewFromTemplateAction->setEnabled(true);
@@ -1192,6 +1324,7 @@ void ndManager::slotStateChanged(const QString& state)
         //mProcessingManager->setEnabled(true);
         mExpertMode->setEnabled(true);
         mDiscoverPluginsAction->setEnabled(true);
+        if (mRecordUnitsAction) mRecordUnitsAction->setEnabled(true);
     } else if(state == QLatin1String("showManager")) {
         //mProcessingManager->setEnabled(false);
     } else if(state == QLatin1String("hideManger")) {

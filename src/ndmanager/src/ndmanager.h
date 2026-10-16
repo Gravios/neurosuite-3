@@ -224,6 +224,13 @@ private slots:
     /** Discover external ndm_* plugins on the current parameter view. */
     void slotDiscoverPlugins();
 
+    /** Actions > Record Curated Units: lists the cluster-information files
+     *  Klusters wrote next to the session (<session>.cli.<method>.<group>[.tag]),
+     *  and replaces the Units table's rows of each chosen file's group with
+     *  that file's units.  The session YAML is written by the next save; Klusters
+     *  itself never writes the units section. */
+    void slotRecordCuratedUnits();
+
     void slotHanbook();
 
     void slotSaveRecentFiles();
@@ -306,6 +313,7 @@ private:
     QAction* mNewFromTemplateAction;
     QAction* mQueryAction;
     QAction* mDiscoverPluginsAction;
+    QAction* mRecordUnitsAction = nullptr;
     /** Save current pipeline graph to <session>.ndm.default.pipeline.
      *  Bound to File → Save Pipeline (Ctrl+Alt+P).  Requires an open
      *  document and pipelineDesigner to be live; checks both. */

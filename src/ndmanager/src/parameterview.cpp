@@ -1314,3 +1314,22 @@ void ParameterView::loadPipelineDialog()
         QMessageBox::warning(this, tr("Load Pipeline"), warning);
     }
 }
+
+void ParameterView::recordUnits(const QSet<int>& groups, const QList<QStringList>& rows)
+{
+    QMap<int, QStringList> current;
+    unitList->getUnits(current);
+    QMap<int, QStringList> merged;
+    int key = 1;
+    for (auto it = current.constBegin(); it != current.constEnd(); ++it) {
+        const QStringList& row = it.value();
+        bool ok = false;
+        const int group = row.isEmpty() ? 0 : row.at(0).toInt(&ok);
+        if (ok && groups.contains(group)) continue;          // replaced below
+        merged.insert(key++, row);
+    }
+    for (const QStringList& row : rows) merged.insert(key++, row);
+    unitList->setNbUnits(merged.count());
+    unitList->setUnits(merged);
+    unitList->propertyModified();                             // a change to the session
+}
