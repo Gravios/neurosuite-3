@@ -146,8 +146,15 @@ public:
                         NeuroscopeVideoInfo& neuroscopeVideoInfo,QList<ProgramInformation>& programs,
                         double& lfpRate,float& screenGain,int& nbSamples,int& peakSampleIndex,QString& traceBackgroundImage);
 
-    /**True if at least one parameter has been modified, false otherwise.*/
+    /**True if at least one parameter has been modified, false otherwise.
+     * Includes Pipeline designer edits not yet saved to a pipeline file
+     * (isPipelineModified()).*/
     bool isModified();
+
+    /**True when the Pipeline designer graph has edits not yet written to a
+     * pipeline file with Save Pipeline / Save Pipeline As.  Saving the
+     * session file does not clear it.*/
+    bool isPipelineModified() const;
 
     /**Returns the list of the names of the programs for which the script is currently modified.
  * @return list of the names of the programs having their script modified.

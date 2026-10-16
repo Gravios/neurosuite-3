@@ -788,7 +788,12 @@ bool ParameterView::isModified(){
                     this->channelDefaultOffsets->isModified() ||
                     files->isModified() ||
                     parameterModified ||
-                    descriptionModified);
+                    descriptionModified ||
+                    // Pipeline designer edits not yet written with Save
+                    // Pipeline.  Saving the session file does not write the
+                    // pipeline file (hasBeenSave leaves this set), so the
+                    // flag only clears through Save Pipeline / Save As.
+                    isPipelineModified());
 
     return p;
 }
@@ -1057,6 +1062,11 @@ QString sanitisePipelineName(const QString& raw)
 }
 
 }  // namespace
+
+bool ParameterView::isPipelineModified() const
+{
+    return pipelineDesigner && pipelineDesigner->isModified();
+}
 
 QString ParameterView::sessionBasePath() const
 {

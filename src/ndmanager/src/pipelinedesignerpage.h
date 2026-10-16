@@ -193,6 +193,7 @@ private:
     // drag state
     QString  dragId;
     QPointF  dragOffset;
+    QPointF  dragStartPos;
     bool     panActive = false;
     QPointF  panStart;
     QPointF  pan = {40, 40};
@@ -281,7 +282,11 @@ public:
      *  Emits nothing — purely a data accessor. */
     QList<ProgramInformation> getPrograms() const;
 
-    bool isModified() const { return modified; }
+    /** True when the graph has edits not yet written to a pipeline file:
+     *  set by any edit, cleared by a successful savePipelineFile and by
+     *  replacing the graph (load, setPrograms, clearGraphToRoot).  Apply
+     *  does not clear it — Apply does not write the file ndm_start reads. */
+    bool isModified() const { return unsaved; }
 
     /** Show @p text in the notice bar under the toolbar (red when
      *  @p isError).  Empty text hides the bar.  With @p timeoutMs > 0 the
@@ -329,7 +334,10 @@ private:
     // data
     QList<PipelineNode> nodes;
     QList<PipelineEdge> edges;
-    bool                modified = false;
+    /** Graph edited since the last Apply (drives the Apply button). */
+    bool                applyPending = false;
+    /** Graph edited since the last pipeline-file load / save. */
+    bool                unsaved = false;
     QString             lastFailedLoad;
 
     // canvas

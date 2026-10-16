@@ -575,6 +575,7 @@ void PipelineCanvas::mousePressEvent(QMouseEvent* ev)
             selEdgeKey.clear();
             dragId     = hit->id;
             dragOffset = world - hit->pos;
+            dragStartPos = hit->pos;
             emit nodeSelected(hit->id);
             update();
             return;
@@ -630,8 +631,14 @@ void PipelineCanvas::mouseReleaseEvent(QMouseEvent* ev)
     panActive = false;
 
     if (!dragId.isEmpty()) {
+        // A click that selects a node is not an edit; only a real move is.
+        bool moved = false;
+        if (nodes) {
+            for (const PipelineNode& n : *nodes)
+                if (n.id == dragId) { moved = (n.pos != dragStartPos); break; }
+        }
         dragId.clear();
-        emit graphModified();
+        if (moved) emit graphModified();
         return;
     }
 
@@ -1183,7 +1190,8 @@ void PipelineDesignerPage::setPrograms(const QList<ProgramInformation>& programs
         edges.append({ nodes[j].id, nodes[j+1].id });
 
     if (canvas) canvas->update();
-    modified = false;
+    applyPending = false;
+    unsaved = false;
     refreshApplyState();
 }
 
@@ -1209,7 +1217,8 @@ void PipelineDesignerPage::clearGraphToRoot()
     nodes.append(root);
 
     if (canvas) canvas->update();
-    modified = false;
+    applyPending = false;
+    unsaved = false;
     refreshApplyState();
 }
 
@@ -1269,7 +1278,8 @@ void PipelineDesignerPage::onSelectionCleared()
 
 void PipelineDesignerPage::onGraphModified()
 {
-    modified = true;
+    applyPending = true;
+    unsaved = true;
     refreshApplyState();
     emit graphModified();
 }
@@ -1277,13 +1287,20 @@ void PipelineDesignerPage::onGraphModified()
 void PipelineDesignerPage::onParamEdited()
 {
     if (inspectedId.isEmpty()) return;
+    // editingFinished also fires on a plain focus change: only a value
+    // that actually changed is an edit.
+    bool changed = false;
     for (PipelineNode& n : nodes) {
         if (n.id != inspectedId) continue;
-        for (int i = 0; i < paramEdits.size() && i < n.params.size(); ++i)
-            n.params[i].second = paramEdits[i]->text();
+        for (int i = 0; i < paramEdits.size() && i < n.params.size(); ++i) {
+            const QString v = paramEdits[i]->text();
+            if (n.params[i].second == v) continue;
+            n.params[i].second = v;
+            changed = true;
+        }
         break;
     }
-    onGraphModified();
+    if (changed) onGraphModified();
 }
 
 void PipelineDesignerPage::onEnabledToggled(bool checked)
@@ -1299,7 +1316,7 @@ void PipelineDesignerPage::onEnabledToggled(bool checked)
 void PipelineDesignerPage::onApply()
 {
     const QList<ProgramInformation> programs = getPrograms();
-    modified = false;
+    applyPending = false;   // still unsaved: Apply does not write the pipeline file
     refreshApplyState();
     emit applyRequested(programs);
 }
@@ -1456,7 +1473,7 @@ void PipelineDesignerPage::clearInspector()
 void PipelineDesignerPage::refreshApplyState()
 {
     applyBtn->setEnabled(!nodes.isEmpty());
-    applyBtn->setStyleSheet(modified && !nodes.isEmpty() ?
+    applyBtn->setStyleSheet(applyPending && !nodes.isEmpty() ?
         "QPushButton{background:#143060;border:1px solid #4a9eff;color:#7bc8ff;"
         "font-size:11px;font-weight:bold;padding:4px 10px;border-radius:3px;}"
         "QPushButton:hover{background:#1a3a70;}" :
@@ -1729,6 +1746,7 @@ bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error)
         lastFailedLoad.clear();
         showNotice(QString());
     }
+    unsaved = false;
     return true;
 }
 
@@ -1947,7 +1965,8 @@ bool PipelineDesignerPage::readPipelineFile(const QString& path, QString* error)
     clearInspector();
 
     if (canvas) canvas->update();
-    modified = false;
+    applyPending = false;
+    unsaved = false;
     refreshApplyState();
 
     QStringList warnings;
