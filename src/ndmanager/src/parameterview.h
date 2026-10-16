@@ -336,6 +336,12 @@ private:
      *  document has no URL yet. */
     QString sessionBasePath() const;
 
+    /** True when the document is backed by its own session file
+     *  (ndManagerDoc::isSaved()), so pipeline files have a real place to
+     *  go; otherwise warns "Save the session file first" under @p title
+     *  and returns false. */
+    bool checkSessionSavedForPipeline(const QString& title);
+
 
     /**Adds a program to the subtree under the node Program.
    * @param programName name of the program to add.

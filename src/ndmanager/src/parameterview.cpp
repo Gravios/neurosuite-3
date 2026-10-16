@@ -1116,16 +1116,26 @@ QString ParameterView::sessionBasePath() const
     return fi.absolutePath() + QLatin1Char('/') + stem;
 }
 
+bool ParameterView::checkSessionSavedForPipeline(const QString& title)
+{
+    // A New / Untitled document's url is a placeholder in the working
+    // directory, and a Use-Template document's url is the template's: the
+    // pipeline file would land as ./Untitled.ndm.default.pipeline or beside
+    // the template, where neither the session nor ndm_start finds it.
+    // Only a document backed by its own session file has a real base path.
+    if (doc.isSaved() && !sessionBasePath().isEmpty()) return true;
+    QMessageBox::warning(this, title,
+        tr("Save the session file first.\n\nThe pipeline file is written beside "
+           "the session file (<session>.ndm.<name>.pipeline), and this session "
+           "has not been saved to a file of its own yet."));
+    return false;
+}
+
 void ParameterView::savePipelineDefault()
 {
     if (!pipelineDesigner) return;
+    if (!checkSessionSavedForPipeline(tr("Save Pipeline"))) return;
     const QString base = sessionBasePath();
-    if (base.isEmpty()) {
-        QMessageBox::warning(this, tr("Save Pipeline"),
-            tr("Cannot save pipeline: the session has no associated file path. "
-               "Save the session document first."));
-        return;
-    }
     const QString path = base + kPipelineInfix
                          + QLatin1String(kDefaultPipelineName) + kPipelineSuffix;
     // If this file failed to load, the graph on screen is not what it holds
@@ -1164,13 +1174,8 @@ void ParameterView::savePipelineDefault()
 void ParameterView::savePipelineAs()
 {
     if (!pipelineDesigner) return;
+    if (!checkSessionSavedForPipeline(tr("Save Pipeline As"))) return;
     const QString base = sessionBasePath();
-    if (base.isEmpty()) {
-        QMessageBox::warning(this, tr("Save Pipeline As"),
-            tr("Cannot save pipeline: the session has no associated file path. "
-               "Save the session document first."));
-        return;
-    }
 
     bool ok = false;
     const QString rawName = QInputDialog::getText(this,
