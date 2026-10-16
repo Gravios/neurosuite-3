@@ -49,4 +49,16 @@ include(CPack)
 add_subdirectory(scripts)
 add_subdirectory(descriptions)
 add_subdirectory(src)
+
+# Script tests (opt-in, run with ctest).  After src/, so the binaries they
+# cross-check are known targets.
+if(NOT DEFINED NS_BUILD_TESTS)
+    option(NS_BUILD_TESTS "Build the regression test suite (run with ctest)" OFF)
+endif()
+if(NS_BUILD_TESTS)
+    if(PROJECT_IS_TOP_LEVEL)
+        enable_testing()
+    endif()
+    add_subdirectory(test)
+endif()
 # matlab/ holds standalone MATLAB helpers; it is not part of the CMake build.

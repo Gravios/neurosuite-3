@@ -1,11 +1,14 @@
 # ---------------------------------------------------------------------------
-# Continuous integration — CPU build gate.
+# Continuous integration — CPU build and test gate.
 #
 # Builds the whole monorepo on the documented Ubuntu 24.04 toolchain with the
 # GPU backends disabled (GitHub runners have no CUDA / HIP / SYCL device), so it
 # exercises the CPU / OpenMP path that every GPU backend falls back to.  The
 # job's purpose is to catch build-breaking regressions before they land and to
-# surface -Wall -Wextra -Wshadow diagnostics in the build log.
+# surface -Wall -Wextra -Wshadow diagnostics in the build log.  It then runs the
+# regression suite (NS_BUILD_TESTS=ON, ctest; see tests/README.md), including
+# the ndmanager-plugins script tests and core_shared_contract, which compares
+# the vector tables shared with fiber-kit against a fiber-kit checkout.
 #
 # Warnings are NOT errors here.  To promote -Wshadow to a hard gate that locks
 # in the m_-prefix audit, append -Werror=shadow to CMAKE_CXX_FLAGS below — but
@@ -22,10 +25,10 @@ name: ci
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
+    paths: ['src/**', 'tests/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
   pull_request:
     branches: [main]
-    paths: ['src/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
+    paths: ['src/**', 'tests/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -37,6 +40,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
+      # The shared vector tables must match fiber-kit's copies.
+      - name: Check out fiber-kit (for core_shared_contract)
+        uses: actions/checkout@v4
+        with:
+          repository: Gravios/fiber-kit
+          path: .fiber-kit   # hidden: kept out of repo-wide scans (test_docs.py)
 
       - name: Install dependencies
         run: |
@@ -50,12 +60,19 @@ jobs:
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
             ffmpeg python3 python3-yaml python3-numpy
 
-      - name: Configure (GPU backends off; warnings on, non-fatal)
+      - name: Configure (GPU backends off; warnings on, non-fatal; tests on)
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF \
+            -DNS_BUILD_TESTS=ON \
+            -DNS_FIBER_KIT_ROOT="$GITHUB_WORKSPACE/.fiber-kit" \
             -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wshadow"
 
       - name: Build
         run: cmake --build build --parallel
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen   # Qt tests run without a display
+        run: ctest --test-dir build --output-on-failure --parallel 4

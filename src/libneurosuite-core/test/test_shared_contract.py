@@ -2,24 +2,22 @@
 """
 test_shared_contract.py — the cross-repo shared files must be byte-identical.
 
-custody_vectors.tsv and pca_method_vectors.tsv are shipped in BOTH neurosuite-3
-and fiber-kit on purpose: they are one table run by every language mirror, so the
-implementations cannot drift apart.  That only holds while the two copies are the
-same file.  PROJECT-INSTRUCTIONS says to "verify with md5sum", which is a habit,
-and habits are exactly what this table exists to replace -- the token parsers had
-a documented convention too, and drifted anyway.
+custody_vectors.tsv, pca_method_vectors.tsv and sdiff_expr_vectors.tsv are
+shipped in BOTH neurosuite-3 and fiber-kit on purpose: each is one table run by
+every language mirror, so the implementations cannot drift apart.  That only
+holds while the two copies are the same file, so changing a vector file is a
+two-repo change: this test fails until both sides carry it.
 
-So: a test.  It hashes this repo's copies and compares against the hashes
-recorded below, which are the values both repos carry.  Changing a vector file is
-then a two-repo change by construction: update the table, update the hash here,
-and the same in the other repo, or this fails.
+Point FK_ROOT at a fiber-kit checkout and the two copies are compared:
 
-If the other checkout is available, point at it and the comparison is direct
-rather than against a recorded hash:
+    FK_ROOT=/path/to/fiber-kit python3 src/libneurosuite-core/test/test_shared_contract.py
 
-    FK_ROOT=/path/to/neurosuite-3 python3 test/test_shared_contract.py
+A file missing on either side is a failure.  Without FK_ROOT there is nothing
+to compare against: the hashes are listed and the test reports SKIPPED.
 
-Run:  python3 test/test_shared_contract.py
+Under ctest it is registered as core_shared_contract when the build is
+configured with -DNS_FIBER_KIT_ROOT=/path/to/fiber-kit.  fiber-kit carries the
+mirror-image script (NS3_ROOT).
 """
 import hashlib
 import os
@@ -56,7 +54,8 @@ def main():
         if ns3:
             theirs = os.path.join(ns3, rel)
             if not os.path.exists(theirs):
-                print(f"  SKIP {name}: not at {theirs}")
+                print(f"  FAIL {name}: not at {theirs}")
+                bad += 1
                 continue
             t = md5(theirs)
             ok = h == t
@@ -69,10 +68,13 @@ def main():
     if not ns3:
         print("\nFK_ROOT not set, so this listed the hashes rather than comparing.\n"
               "Set it to a fiber-kit checkout to verify the two repos agree:\n"
-              "    FK_ROOT=/path/to/neurosuite-3 python3 test/test_shared_contract.py\n"
+              "    FK_ROOT=/path/to/fiber-kit python3 src/libneurosuite-core/test/test_shared_contract.py\n"
               "The paths on the other side are:")
         for name, rel in sorted(SHARED.items()):
             print(f"    {name:26s} -> {rel}")
+        if not bad:
+            print("\nSKIPPED: nothing compared (FK_ROOT not set)")
+            return 0
 
     print(f"\n{'FAIL' if bad else 'PASS'}: {bad} problem(s)")
     return 1 if bad else 0

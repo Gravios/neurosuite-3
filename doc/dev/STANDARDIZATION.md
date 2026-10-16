@@ -471,10 +471,10 @@ sources does, and must be build-tested per backend.
 
 **The regression suite** is opt-in: configure with `-DNS_BUILD_TESTS=ON` and
 run `ctest --test-dir build --output-on-failure`.  [tests/README.md](../../tests/README.md)
-is the one reference: running one subproject (`ctest -R`), a Qt-free configure
-that builds the core, kiloklustakwik and build-system tests in a few minutes,
-the ndmanager-plugins script tests and the fiber-kit contract check (neither
-runs under ctest).
+is the one reference: running one subproject (`ctest -R`), a Qt-free configure,
+the ndmanager-plugins script tests (`ndm_test_*`) and the fiber-kit contract
+check (`core_shared_contract`, with `-DNS_FIBER_KIT_ROOT`).  CI runs the suite
+on every push.
 
 For terminal/TTY-related features (progressbar):
 - `script(1)` for PTY emulation in container — `script -q -c '<cmd>' /tmp/cap.log`.
@@ -543,8 +543,7 @@ Before shipping any patch series, verify:
    files, or PCA — sanity-check that the relevant invariant from §3
    still holds (read the change, not the test suite).
 4. **Tests**: build with `-DNS_BUILD_TESTS=ON` and run `ctest` for the
-   area touched, plus the ndmanager-plugins script tests it covers
-   ([tests/README.md](../../tests/README.md)).  Where Qt is missing, run the
+   area touched ([tests/README.md](../../tests/README.md)).  Where Qt is missing, run the
    Qt-free set and say which tests could not be built.
 5. **Patch series**: it applies with `git am` onto a fresh checkout of the
    base, the resulting tree matches the working clone, and each patch holds

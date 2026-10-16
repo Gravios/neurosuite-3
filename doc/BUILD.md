@@ -156,8 +156,8 @@ under the top-level [`tests/`](../tests/). Run them with `ctest`.
 
 [tests/README.md](../tests/README.md) covers the rest: how to run one
 subproject's tests (`ctest -R`), a Qt-free configure for a fast loop, the
-ndmanager-plugins script tests and the fiber-kit contract check (neither runs
-under ctest), and how to add a test.
+ndmanager-plugins script tests, the fiber-kit contract check
+(`-DNS_FIBER_KIT_ROOT`), and how to add a test.
 
 ---
 

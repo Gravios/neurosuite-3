@@ -185,3 +185,15 @@ if(BASH_PROGRAM)
                      "${CMAKE_SOURCE_DIR}/src/ndmanager-plugins/test/test_custody_conformance.sh"
                      "${CMAKE_CURRENT_SOURCE_DIR}/custody_vectors.tsv")
 endif()
+
+# The vector tables above are shared, byte for byte, with fiber-kit.  Given a
+# fiber-kit checkout (-DNS_FIBER_KIT_ROOT=/path/to/fiber-kit), ctest compares
+# the two copies; CI checks fiber-kit out next to this repository for it.
+set(NS_FIBER_KIT_ROOT "" CACHE PATH
+    "fiber-kit checkout whose shared vector tables core_shared_contract compares (empty: not registered)")
+if(Python3_Interpreter_FOUND AND NS_FIBER_KIT_ROOT)
+    add_test(NAME core_shared_contract
+             COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_shared_contract.py")
+    set_tests_properties(core_shared_contract PROPERTIES
+        ENVIRONMENT "FK_ROOT=${NS_FIBER_KIT_ROOT}")
+endif()
