@@ -79,23 +79,37 @@ int main(int argc, char **argv)
 
     QStringList args = QApplication::arguments();
     QStringList argsList;
+    // --new: start with a new Untitled document (File > New in a window that
+    // already holds a session starts another instance with it), instead of
+    // opening <cwd>/<dir>.yaml.
+    bool newDocument = false;
     for (int i = 1, n = args.size(); i < n; ++i) {
         const QString arg = args.at(i);
         if (arg == "-h" || arg == "--help" || arg == "-help") {
             qWarning() << "Usage: " << qPrintable(args.at(0))
-                       << " [file]"
+                       << " [--new | file]"
                        << "\n\n"
                        << "Arguments:\n"
+                       << "  file                    parameter file or session directory to open\n"
+                       << "  --new                   start with a new, untitled parameter file\n"
                        << "  -h, --help              print this help\n";
             return 1;
         }
-        argsList.push_back(QString::fromLocal8Bit(argv[i]));
+        if (arg == QLatin1String("--new")) {
+            newDocument = true;
+            continue;
+        }
+        argsList.push_back(arg);
     }
 
 
     ndManager* manager = new ndManager();
     manager->show();
-    if(argsList.count()){
+    if (newDocument) {
+        if (!argsList.isEmpty())
+            qWarning() << "ndmanager: --new given, ignoring" << argsList;
+        manager->newDocumentFile();
+    } else if(argsList.count()){
         QString file = argsList.at(0);
         QFileInfo fInfo(file);
         if (file.startsWith(QLatin1String("-")) ) {

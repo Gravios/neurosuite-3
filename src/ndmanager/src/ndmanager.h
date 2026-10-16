@@ -74,6 +74,10 @@ public:
   */
     void openDocumentFile(const QString& url=QString());
 
+    /**Starts a new (Untitled) document from the default parameter file,
+  * as File > New does; used for the --new command-line option.*/
+    void newDocumentFile();
+
     /**Creates a ParameterView.
   * @param anatomicalGroups map given the composition of the anatomical groups. The trash group is not included, channels which are not part of
   * any group are in the trash group.
@@ -244,6 +248,11 @@ private:
      * @return the file name, with a .yaml suffix unless it ends in .yaml or
      * .yml; empty when the user cancelled.*/
     QString askSaveFileName(const QString& caption, const QString& start);
+
+    /**Starts another instance of this executable with arguments (main.cpp
+     * understands a file, --new and --model FILE).
+     * @return false, after telling the user, when it could not be started.*/
+    bool startInstance(const QStringList& arguments);
 
     /**Resets the state of the application to a none document open state.*/
     void resetState();

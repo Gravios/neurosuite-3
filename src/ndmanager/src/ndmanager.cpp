@@ -452,10 +452,10 @@ void ndManager::slotNewFromTemplate(){
 
 void ndManager::slotNewFile(){
     slotStatusMsg(tr("Initializing new file…"));
-    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
 
     //If no document is open already, create a new parameter file.
     if(!mainDock){
+        QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
         newFile = true;
         int returnStatus = doc->newDocument();
         if(returnStatus == ndManagerDoc::PARSE_ERROR){
@@ -471,13 +471,31 @@ void ndManager::slotNewFile(){
         doc->rename(url);
         filePath = url;
         setWindowTitle(url);
+        QApplication::restoreOverrideCursor();
     }
-    //Open a new instance of the application.
+    //Open a new instance of the application with a new document.
     else{
-        QProcess::startDetached("ndmanager");
+        startInstance(QStringList() << QStringLiteral("--new"));
     }
-    QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
+}
+
+void ndManager::newDocumentFile()
+{
+    slotNewFile();
+}
+
+bool ndManager::startInstance(const QStringList& arguments)
+{
+    // This executable, not whatever "ndmanager" is first on $PATH (an
+    // installed copy, or nothing at all when run from the build tree).
+    const QString program = QCoreApplication::applicationFilePath();
+    if(QProcess::startDetached(program, arguments))
+        return true;
+    QMessageBox::critical(this, tr("Error!"),
+                          tr("A new ndmanager window could not be started:\n\n%1 %2")
+                          .arg(program, arguments.join(QLatin1Char(' '))));
+    return false;
 }
 
 void ndManager::openDocumentFile(const QString& url)
@@ -546,8 +564,8 @@ void ndManager::openDocumentFile(const QString& url)
         else{
             mFileOpenRecent->addRecentFile(url);
 
-            QProcess::startDetached("ndmanager", QStringList()<<url);
             QApplication::restoreOverrideCursor();
+            startInstance(QStringList() << url);
         }
     }
 
