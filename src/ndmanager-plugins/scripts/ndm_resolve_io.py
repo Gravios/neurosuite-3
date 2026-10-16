@@ -192,10 +192,10 @@ def parse_method_token(method):
         if cut == -1:
             break
         suffix = rest[cut + 1:]
-        if len(suffix) < 2 or not suffix[1:].isdigit():
+        if len(suffix) < 2 or not all("0" <= c <= "9" for c in suffix[1:]):   # ASCII, as the C++
             break
         if suffix[0] == "D":
-            if lag or len(suffix) != 3:      # repeated, or not _D<lag><dims>
+            if lag or len(suffix) != 3 or suffix[1] == "0":   # repeated, not _D<lag><dims>, lag 0
                 return MethodSpec(method, None, None, 0, 0)
             lag, dims = int(suffix[1]), int(suffix[2])
         elif suffix[0] in ("S", "C"):
@@ -255,6 +255,14 @@ def resolve_any(base, type_, group, preferred=""):
 def resolved_is_stderiv(resolved):
     """True iff the file actually resolved is in the stderiv domain."""
     return is_stderiv_method(resolved.method)
+
+
+def sdiff_drops_last(order):
+    """True when a spatial derivative of `order` leaves one channel the PCA stage drops:
+    1 and 3 are rank deficient, 4's root output is redundant, 5 drops by convention;
+    2, 6 and 0 keep every channel.  Mirrors sdiffDropsLastChannel (custody.hpp) and
+    ndm_sdiff_drops_last (ndm_custody)."""
+    return int(order) in (1, 3, 4, 5)
 
 
 def stale_after_realign():

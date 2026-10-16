@@ -142,20 +142,32 @@ ndm_parse_method_token() {
     # only the last one made stderiv_C5_D34 opaque -- 'D' is neither S nor C, so
     # the whole string became the family and ndm_is_stderiv_method said no for a
     # session that is plainly stderiv.
+    #
+    # Only an _<char><digits> part is peeled; anything else ends the peeling and
+    # keeps what was peeled.  A part with an unknown letter, a repeated kind or
+    # lag, or a _D without exactly two digits or with lag 0 makes the WHOLE token
+    # opaque, as parseMethodToken (custody.hpp) and parse_method_token
+    # (ndm_resolve_io.py) do (custody_vectors.tsv, method_token / waveform_token).
     while : ; do
-        case "$rest" in
-            *_D[0-9][0-9])
-                [ -n "$NDM_M_LAG" ] && return 0        # repeated: opaque
-                suf="${rest##*_}"
-                NDM_M_LAG="${suf:1:1}"; NDM_M_DIMS="${suf:2:1}"
-                rest="${rest%_*}" ;;
-            *_[SC][0-9]|*_[SC][0-9][0-9])
-                [ -n "$NDM_M_KIND" ] && return 0        # repeated: opaque
-                suf="${rest##*_}"
-                NDM_M_KIND="${suf:0:1}"; NDM_M_ORDER="${suf:1}"
-                rest="${rest%_*}" ;;
-            *) break ;;
+        case "$rest" in *_*) ;; *) break ;; esac
+        suf="${rest##*_}"
+        [ ${#suf} -ge 2 ] || break
+        case "${suf:1}" in *[!0123456789]*) break ;; esac
+        case "${suf:0:1}" in
+            D)  if [ -n "$NDM_M_LAG" ] || [ ${#suf} -ne 3 ] || [ "${suf:1:1}" = 0 ]; then
+                    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
+                    return 0
+                fi
+                NDM_M_LAG="${suf:1:1}"; NDM_M_DIMS="${suf:2:1}" ;;
+            S|C) if [ -n "$NDM_M_KIND" ]; then
+                    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
+                    return 0
+                fi
+                NDM_M_KIND="${suf:0:1}"; NDM_M_ORDER=$((10#${suf:1})) ;;
+            *)  NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
+                return 0 ;;
         esac
+        rest="${rest%_*}"
         NDM_M_FAMILY="$rest"
     done
 }

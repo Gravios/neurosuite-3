@@ -126,6 +126,11 @@ int main(int argc, char** argv) {
         } else if (kind == "is_stderiv") {
             check(isStderivMethod(f[1]) == (f[2] == "1"),
                   "is_stderiv " + f[1] + " -> " + f[2]);
+        } else if (kind == "waveform_token") {
+            check(waveformToken(f[1]) == f[2], "waveform_token " + f[1] + " -> " + f[2]);
+        } else if (kind == "drops_last") {
+            check(sdiffDropsLastChannel(std::atoi(f[1].c_str())) == (f[2] == "1"),
+                  "drops_last " + f[1] + " -> " + f[2]);
         } else {
             std::printf("FAIL: unknown vector kind '%s'\n", kind.c_str());
             ++g_fail;

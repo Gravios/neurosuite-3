@@ -92,6 +92,14 @@ def run_vectors(vpath):
                     got = cst.is_stderiv_method(f[1])
                     ok = got == (f[2] == "1")
                     desc = "is_stderiv {} -> {} (got {})".format(f[1], f[2], got)
+                elif kind == "waveform_token":
+                    got = cst.waveform_token(f[1])
+                    ok = got == f[2]
+                    desc = "waveform_token {} -> {} (got {})".format(f[1], f[2], got)
+                elif kind == "drops_last":
+                    got = cst.sdiff_drops_last(int(f[1]))
+                    ok = got == (f[2] == "1")
+                    desc = "drops_last {} -> {} (got {})".format(f[1], f[2], got)
                 else:
                     ok = False
                     desc = "unknown vector kind '{}'".format(kind)

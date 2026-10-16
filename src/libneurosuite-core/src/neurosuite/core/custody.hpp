@@ -94,8 +94,14 @@ inline bool peelSuffix(std::string& m, char& letter, int& value)
 // the grammar's documented behaviour for a malformed token applied to a token
 // that is not malformed, only newer.
 //
-// An unrecognised suffix still makes the whole string opaque, deliberately: a
-// token nobody understands must not masquerade as a known family.
+// An unrecognised suffix (a letter other than S, C or D), a repeated one, or a
+// _D without exactly two digits or with lag 0 makes the WHOLE string opaque --
+// family = the token, no kind, no lag -- deliberately: a token nobody understands
+// must not masquerade as a known family.  (Peeling stops quietly, keeping what
+// was peeled, only at a part that is not _<char><digits> at all.)  The four mirrors --
+// this, ndm_resolve_io.parse_method_token, ndm_custody's ndm_parse_method_token
+// and fiber-kit's neuro_io.parse_variant_token -- are held to the same rows of
+// custody_vectors.tsv (method_token, waveform_token).
 inline MethodSpec parseMethodToken(const std::string& m)
 {
     MethodSpec spec;
@@ -105,23 +111,29 @@ inline MethodSpec parseMethodToken(const std::string& m)
     spec.lag    = 0;
     spec.dims   = 0;
 
+    const MethodSpec opaque = spec;   // the whole token is the family
     std::string rest = m;
     char letter = '\0'; int value = 0;
     bool sawKind = false, sawDims = false;
 
-    while (peelSuffix(rest, letter, value)) {
-        if (letter == 'D' && !sawDims) {
-            // _D<lag><dims>: single digit each, so 34 is lag 3, 4 dims per channel.
-            if (value < 10) return spec;                 // needs both digits
+    for (;;) {
+        std::string before = rest;
+        if (!peelSuffix(rest, letter, value)) break;      // not _<letter><digits>: stop
+        const std::string digits = before.substr(rest.size() + 2);
+        if (letter == 'D') {
+            // _D<lag><dims>: exactly two digits, lag 1-9, so 34 is lag 3, 4 dims
+            // per channel.
+            if (sawDims || digits.size() != 2 || digits[0] == '0') return opaque;
             spec.lag  = value / 10;
             spec.dims = value % 10;
             sawDims = true;
-        } else if ((letter == 'S' || letter == 'C') && !sawKind) {
+        } else if (letter == 'S' || letter == 'C') {
+            if (sawKind) return opaque;                   // repeated
             spec.kind  = letter;
             spec.order = value;
             sawKind = true;
         } else {
-            return spec;                                  // unknown or repeated: opaque
+            return opaque;                                // unknown letter
         }
         spec.family = rest;
     }
@@ -147,6 +159,17 @@ inline std::string waveformToken(const std::string& m)
     std::string w = s.family;
     if (s.kind != '\0') { w += '_'; w += s.kind; w += std::to_string(s.order); }
     return w;
+}
+
+// True when a spatial derivative of @p order leaves one channel that the PCA stage
+// drops (process_pca_stderiv; ndm_pca's -D): 1 (first difference) and 3
+// (all-pairs) are rank deficient by construction, 4's root output is redundant,
+// and 5 drops its last channel by convention.  2 (Laplacian), 6 (expressions) and
+// 0 keep every channel.  Mirrors ndm_sdiff_drops_last (ndm_custody) and
+// sdiff_drops_last (ndm_resolve_io.py); custody_vectors.tsv, drops_last.
+inline bool sdiffDropsLastChannel(int order)
+{
+    return order == 1 || order == 3 || order == 4 || order == 5;
 }
 
 // ── type classification ─────────────────────────────────────────────────────

@@ -40,6 +40,7 @@
 #include <string>
 #include <iostream>
 
+#include <neurosuite/core/custody.hpp>             // sdiffDropsLastChannel
 #include <neurosuite/core/stderiv_transform.hpp>   // the one spatial derivative
 
 static const char *VERSION = "process_pca_stderiv 1.0";
@@ -54,17 +55,9 @@ static const char *VERSION = "process_pca_stderiv 1.0";
 // recoverable from the data, so pass it with -D.
 static const int kPassArg = 4;
 
-// True when a spatial derivative of this order leaves one linearly dependent
-// channel for the reduction to drop:
-//   1, 3  rank deficient by construction
-//   4     custom pattern — its root is pinned last and that output is redundant
-//   5     custom reference-set — generally full rank, but the last channel is
-//         dropped by convention (place the least informative one there)
-//   2     Laplacian — full rank, every channel kept
-//   6     custom expressions — one written expression per channel, every one kept
-// Mirrors ndm_sdiff_drops_last in ndm_custody; keep the two in step.
-static inline bool dropsLastChannel(int o)
-{ return o == 1 || o == 3 || o == 4 || o == 5; }
+// Whether the order leaves a dependent channel to drop: custody's rule
+// (sdiffDropsLastChannel), shared with ndm_custody and ndm_resolve_io.
+static inline bool dropsLastChannel(int o) { return neurosuite::custody::sdiffDropsLastChannel(o); }
 
 static void usage(const char *name)
 {
