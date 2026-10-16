@@ -3,20 +3,20 @@
 //  first-difference transform, shared by every tool that produces or
 //  reprojects stderiv-domain waveforms.
 //
-//  Today the same math is hand-copied in at least five places: the extractor
-//  (process_extractspikes_stderiv::computeSDiff + fill_sdiff_buffer), the PCA
-//  channel-reducer (process_pca_stderiv::computeSDiff), the klusters nudge
-//  lambda, and two klusters realign/reproject inner loops — each hardcoding the
-//  ALLPAIRS order.  This header is the one definition they can all call, with the
-//  spatial order taken from the PCAE basis (spatialOrder(pca.method)) rather than
-//  hardcoded.
+//  This is the only definition: the extractors (stderiv and sdiff), the
+//  re-extractor, process_pca_stderiv, the aligners and Klusters' realign and
+//  nudge all call it, and fiber-kit's fiber_stderiv mirrors it.  Both sides are
+//  held to test/stderiv_vectors.tsv (core_test_stderiv_vectors here,
+//  test_stderiv_vectors.py in fiber-kit).  Do not copy the switch below into a
+//  tool: call spatialDeriv / applyStderivTransform instead.
 //
-//  Ground truth (matched byte-for-byte):
-//    spatial : process_extractspikes_stderiv::computeSDiff   (double result)
-//    clamp   : round() then saturate to int16                (fill_sdiff_buffer Step 1)
+//  Definition:
+//    spatial : spatialDeriv                                    (double result)
+//    clamp   : round half away from zero, saturate to int16    (clampToInt16)
 //    temporal: out[t] = clamp16( sd[t] − sd[t−1] ), sd[-1] = prevSeed, the
 //              spatial derivative of the sample before the window (stderivSeed)
-//                                                            (fill_sdiff_buffer Step 2)
+//    misfit  : a custom map that does not fit the group (null / wrong size)
+//              degrades to all-pairs, for orders 4, 5 and 6 alike
 // ════════════════════════════════════════════════════════════════════════════
 #ifndef NEUROSUITE_CORE_STDERIV_TRANSFORM_HPP
 #define NEUROSUITE_CORE_STDERIV_TRANSFORM_HPP
@@ -47,8 +47,7 @@ inline int16_t clampToInt16(double v) {
 }
 
 // Spatial derivative of channel `idx` within one time sample's channel row
-// `chanRow[0..nChan)`.  Byte-identical to
-// process_extractspikes_stderiv::computeSDiff (and the process_pca_stderiv copy).
+// `chanRow[0..nChan)`.
 inline double spatialDeriv(SdiffOrder order, const double* chanRow,
                            int idx, int nChan, const int* partner = nullptr,
                            const int* setOff = nullptr, const int* setMem = nullptr,
@@ -71,19 +70,21 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
         case SdiffOrder::Custom:
             // Per-channel custom difference: x[idx] - x[partner[idx]], where
             // partner[] is the within-group index each output channel is
-            // differenced against (from the session's sdiffPairs).  Byte-identical
-            // to process_extractspikes_stderiv's SDIFF_CUSTOM case.  A null map (or
-            // single-channel group) falls back to pass-through so a caller that
-            // mislabels the order can never read out of bounds.
-            return (partner && nChan > 1) ? val - chanRow[partner[idx]] : val;
+            // differenced against (from the session's sdiffPairs).  A null map (or
+            // single-channel group) means the pattern does not fit this group, and
+            // like every custom order it degrades to all-pairs -- the rule the
+            // extractor documents ("a size that does not match the pattern uses
+            // order 3").
+            if (partner && nChan > 1) return val - chanRow[partner[idx]];
+            [[fallthrough]];
         case SdiffOrder::CustomCar: {
             // Per-channel reference set: x[idx] - mean(x[set[idx]]), the session's
             // sdiffPairs written with '+'.  setOff is a (nChan+1) prefix table into
             // the flattened setMem, so the header stays free of std containers.
-            // Byte-identical to process_extractspikes_stderiv's SDIFF_CUSTOM_CAR,
-            // INCLUDING its fall-through: a set map that does not fit the group
-            // degrades to all-pairs rather than reading out of bounds.
-            if (setOff && setMem && nChan > 1) {
+            // A set map that does not fit the group degrades to all-pairs rather
+            // than reading out of bounds.  (Reached by Custom's fall-through only
+            // with order != CustomCar, hence the test.)
+            if (order == SdiffOrder::CustomCar && setOff && setMem && nChan > 1) {
                 const int b = setOff[idx], e = setOff[idx + 1];
                 if (e > b) {
                     double sum = 0.0;

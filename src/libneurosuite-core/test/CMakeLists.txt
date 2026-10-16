@@ -24,6 +24,14 @@ target_include_directories(core_test_sdiff_expr
 add_test(NAME core_test_sdiff_expr
          COMMAND core_test_sdiff_expr "${CMAKE_CURRENT_SOURCE_DIR}/sdiff_expr_vectors.tsv")
 
+# The stderiv transform against the table fiber-kit's fiber_stderiv runs too.
+add_executable(core_test_stderiv_vectors stderiv_vectors_test.cpp)
+target_compile_features(core_test_stderiv_vectors PRIVATE cxx_std_20)
+target_include_directories(core_test_stderiv_vectors
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_stderiv_vectors
+         COMMAND core_test_stderiv_vectors "${CMAKE_CURRENT_SOURCE_DIR}/stderiv_vectors.tsv")
+
 add_executable(core_test_neurofileio_spk neurofileio_spk_test.cpp)
 target_compile_features(core_test_neurofileio_spk PRIVATE cxx_std_20)
 target_include_directories(core_test_neurofileio_spk
