@@ -107,6 +107,7 @@ public:
 
     void setNeuroscopeVideoInformation(NeuroscopeVideoInfo& videoInfo);
 
+    /** A value <= 0 (a blank field) leaves that key as the document has it. */
     void setNeuroscopeSpikeInformation(int nbSamples, int peakSampleIndex);
 
     void setChannelDisplayInformation(const QList<ChannelColorEntry>& colorList,

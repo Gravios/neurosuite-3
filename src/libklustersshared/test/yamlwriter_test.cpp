@@ -297,6 +297,31 @@ int main()
         chk(str(lg[1]["channels"][3]["skip"]) == "0", "(a \"Skip\"-keyed map loses the flag)");
     }
 
+    std::printf("NeuroScope spike fields left blank:\n");
+    {
+        std::string text = kSession;
+        const std::string from = "neuroscope:\n";
+        text.replace(text.find(from), from.size(),
+                     "neuroscope:\n  spikes:\n    nSamples: 54\n    peakSampleIndex: 27\n");
+        std::ofstream(path.toStdString()) << text;
+        Model m = load(path);
+        chk(m.nbSamples == 54 && m.peak == 27, "read 54/27");
+        m.nbSamples = 0; m.peak = 0;                            // both fields blanked
+        YAML::Node spk = save(m, path, path)["neuroscope"]["spikes"];
+        chk(str(spk["nSamples"]) == "54" && str(spk["peakSampleIndex"]) == "27", "blank fields keep the file's values, not 0");
+        Model e = load(path);
+        e.nbSamples = 64; e.peak = 0;
+        spk = save(e, path, path)["neuroscope"]["spikes"];
+        chk(str(spk["nSamples"]) == "64" && str(spk["peakSampleIndex"]) == "27", "a set field is written, a blank one kept");
+
+        writeSession(path);                                     // no neuroscope/spikes in the file
+        Model f = load(path);
+        const QString fresh = dir.filePath(QStringLiteral("fresh-spikes.yaml"));
+        spk = save(f, QString(), fresh)["neuroscope"]["spikes"];
+        chk(str(spk["nSamples"]) == "40" && str(spk["peakSampleIndex"]) == "20",
+            "unset in a new file: derived from the spike groups, not 0");
+    }
+
     std::printf("comments, inline lists and quoting survive a save:\n");
     {
         // The session as a person wrote it: a header note, an end-of-line

@@ -452,10 +452,17 @@ void ParameterYamlWriter::setNeuroscopeVideoInformation(NeuroscopeVideoInfo& vi)
 void ParameterYamlWriter::setNeuroscopeSpikeInformation(int nbSamples,
                                                          int peakSampleIndex)
 {
+    // A value <= 0 is ndmanager's blank field (or an unset value it read as
+    // 0): leave the key as the document has it -- the base file's value, or
+    // the one setSpikeDetectionInformation() derived -- instead of writing 0.
+    if (nbSamples <= 0 && peakSampleIndex <= 0)
+        return;
     YAML::Node ns  = mapAt(doc, "neuroscope");
     YAML::Node spk = mapAt(ns, "spikes");
-    spk["nSamples"]        = nbSamples;
-    spk["peakSampleIndex"] = peakSampleIndex;
+    if (nbSamples > 0)
+        spk["nSamples"]        = nbSamples;
+    if (peakSampleIndex > 0)
+        spk["peakSampleIndex"] = peakSampleIndex;
 }
 
 // ---------------------------------------------------------------------------
