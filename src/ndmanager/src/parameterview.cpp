@@ -704,7 +704,7 @@ void ParameterView::nbChannelsModified(int nbChannels){
     QMap<int,QString> skip;
     for(int i = 0; i<nbChannels;++i)
         skip.insert(i,"0");
-    attributes.insert("Skip",skip);
+    attributes.insert(SKIP,skip);
     anatomy->setAttributes(attributes);
 
     //the spike groups page

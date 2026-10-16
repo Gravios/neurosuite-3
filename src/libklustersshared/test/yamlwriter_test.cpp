@@ -268,6 +268,35 @@ int main()
         chk(YAML::Dump(d2) == YAML::Dump(d), "second save writes the same document");
     }
 
+    std::printf("skip flags through ndmanager's attribute map:\n");
+    writeSession(path);
+    {
+        // ndmanager's Anatomical Groups page shows the flag in a column
+        // labelled "Skip" and hands the writer the map it rebuilds from that
+        // table.  The page keys the map by ndmanager::SKIP, the reader's key,
+        // so a flag read from the file is the flag written back.
+        const QString kSkip = QStringLiteral("skip");          // ndmanager::SKIP
+        Model m = load(path);
+        chk(m.attrs.contains(kSkip) && m.attrs.value(kSkip).value(7) == QStringLiteral("1"),
+            "reader keys the flag \"skip\"");
+        QMap<QString,QMap<int,QString>> fromPage;               // AnatomyPage::getAttributes
+        for (int ch = 0; ch < 8; ++ch)
+            fromPage[kSkip].insert(ch, m.attrs.value(kSkip).value(ch));
+        m.attrs = fromPage;
+        const YAML::Node ag = save(m, path, path)["anatomicalDescription"]["channelGroups"];
+        chk(str(ag[1]["channels"][3]["skip"]) == "1", "skip: 1 stays 1 after a save");
+        chk(str(ag[1]["channels"][2]["skip"]) == "0", "skip: 0 stays 0");
+        Model again = load(path);
+        chk(again.attrs.value(kSkip).value(7) == QStringLiteral("1"), "and reads back as 1");
+
+        // The defect: a map keyed by the column label is not read by the
+        // writer, and every flag is written 0.
+        Model label = load(path);
+        label.attrs.insert(QStringLiteral("Skip"), label.attrs.take(kSkip));
+        const YAML::Node lg = save(label, path, other)["anatomicalDescription"]["channelGroups"];
+        chk(str(lg[1]["channels"][3]["skip"]) == "0", "(a \"Skip\"-keyed map loses the flag)");
+    }
+
     std::printf("comments, inline lists and quoting survive a save:\n");
     {
         // The session as a person wrote it: a header note, an end-of-line

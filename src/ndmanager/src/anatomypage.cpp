@@ -19,6 +19,7 @@
  ***************************************************************************/
 //include files for the application
 #include "anatomypage.h"
+#include "tags.h"
 #include <QTableWidget>
 #include <QPushButton>
 
@@ -32,6 +33,18 @@
 #include <QVector>
 #include <QDebug>
 #include <QRegularExpression>
+
+// The attribute table's column headers are user-facing labels ("Skip", set in
+// anatomylayout.ui); the attribute map exchanged with ParameterView and the
+// YAML reader/writer is keyed by the document key, ndmanager::SKIP ("skip").
+// Matching on the header text kept the two apart: skip flags loaded blank and
+// every save wrote skip: 0.  This is the one place the two names meet.
+static QString attributeKey(const QString& header)
+{
+    if (header.compare(ndmanager::SKIP, Qt::CaseInsensitive) == 0)
+        return ndmanager::SKIP;
+    return header;
+}
 
 AnatomyPage::AnatomyPage(QWidget* parent)
     : AnatomyLayout(parent),
@@ -80,10 +93,14 @@ bool AnatomyPage::eventFilter(QObject* object,QEvent* event) {
 
 void AnatomyPage::setAttributes(const QMap<QString, QMap<int,QString> >& attributes){
     for(int i =0; i<attributesTable->columnCount();++i){
-        QMap<int,QString> values = attributes[attributesTable->horizontalHeaderItem(i)->text()];//the headers have been set in the ui file and the corresponding entries in the map in the xmlreader
+        //the headers have been set in the ui file; the map is keyed by attributeKey()
+        const QString header = attributesTable->horizontalHeaderItem(i)->text();
+        const QString key = attributeKey(header);
+        const QMap<int,QString> values = attributes.contains(key) ? attributes.value(key)
+                                                                  : attributes.value(header);
         //insert the values in the table and set the line headers
         for(int j = 0;j<attributesTable->rowCount();++j){
-            attributesTable->setItem(j,i,new QTableWidgetItem(values[j]));
+            attributesTable->setItem(j,i,new QTableWidgetItem(values.value(j)));
             attributesTable->setVerticalHeaderItem(j,new QTableWidgetItem(QString::number(j)));
         }
         //attributesTable->adjustColumn(i);
@@ -101,7 +118,7 @@ void AnatomyPage::getAttributes(QMap<QString, QMap<int,QString> >& attributesMap
             if(attribut != " ")
                 values.insert(j,attribut);
         }
-        attributesMap.insert(attributesTable->horizontalHeaderItem(i)->text(),values);
+        attributesMap.insert(attributeKey(attributesTable->horizontalHeaderItem(i)->text()),values);
     }
 }
 
@@ -221,8 +238,7 @@ void AnatomyPage::attributeChanged(int row,int column){
     modified = true;
     //hard coded that the skip attribut is an int, later it can be made more dynamic
     QTableWidgetItem * 	header = attributesTable->horizontalHeaderItem ( column );
-    QString attributName = header->text();
-    if(attributName == "Skip"){
+    if(header && attributeKey(header->text()) == ndmanager::SKIP){
         bool ok;
         QTableWidgetItem * item = attributesTable->item ( row, column );
         QString attribut = item->text();
