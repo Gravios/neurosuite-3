@@ -243,8 +243,16 @@ static vector<string> discoverChannels(hid_t file)
             auto* gf = static_cast<GroupFinder*>(data);
             if (!gf->names.empty()) return 0;  // already found
 
+            // The 5-argument H5Oget_info_by_name is HDF5 >= 1.12; Ubuntu 24.04
+            // ships 1.10, where the default maps to the 4-argument form.
+            // Name the versioned call explicitly so both build.
+#if H5_VERSION_GE(1, 12, 0)
+            H5O_info2_t info;
+            if (H5Oget_info_by_name3(loc, name, &info, H5O_INFO_BASIC, H5P_DEFAULT) < 0) return 0;
+#else
             H5O_info_t info;
-            H5Oget_info_by_name(loc, name, &info, H5O_INFO_BASIC, H5P_DEFAULT);
+            if (H5Oget_info_by_name2(loc, name, &info, H5O_INFO_BASIC, H5P_DEFAULT) < 0) return 0;
+#endif
             if (info.type != H5O_TYPE_GROUP) return 0;
 
             hid_t grp = H5Gopen2(loc, name, H5P_DEFAULT);
