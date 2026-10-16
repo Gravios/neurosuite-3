@@ -5,6 +5,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <QDebug>
 #include <QMap>
 #include <QStringList>
 
@@ -40,13 +41,37 @@ bool DescriptionYamlReader::parseFile(const QString& path)
     if (params && params.IsSequence()) {
         int idx = 0;
         for (const auto& p : params) {
+            if (!p.IsMap()) {
+                qWarning() << "DescriptionYamlReader:" << path
+                           << ": a parameter entry is not a mapping; skipped";
+                continue;
+            }
             QStringList row;
             row << QString::fromStdString(safeGet<std::string>(p,"name",""));
             row << QString::fromStdString(safeGet<std::string>(p,"value",""));
             row << QString::fromStdString(safeGet<std::string>(p,"status",""));
-            if (p["type"])    row << QString::fromStdString(p["type"].as<std::string>());
-            if (p["default"]) row << QString::fromStdString(p["default"].as<std::string>());
-            if (p["hidden"])  row << QString::fromStdString(p["hidden"].as<std::string>());
+
+            // The optional columns are positional ({..., type, default,
+            // hidden}): a missing one before a present one is kept as "".
+            // A list or map where a scalar belongs makes the entry unusable.
+            static const char* const optional[] = { "type", "default", "hidden" };
+            QStringList extra;
+            int last = -1;
+            bool bad = false;
+            for (int k = 0; k < 3; ++k) {
+                const YAML::Node v = p[optional[k]];
+                if (!v || v.IsNull()) { extra << QString(); continue; }
+                if (!v.IsScalar()) { bad = true; break; }
+                extra << QString::fromStdString(v.Scalar());
+                last = k;
+            }
+            if (bad) {
+                qWarning() << "DescriptionYamlReader:" << path << ": parameter"
+                           << row.at(0) << "has a list or map as type/default/hidden; skipped";
+                continue;
+            }
+            for (int k = 0; k <= last; ++k)
+                row << extra.at(k);
             paramMap.insert(idx++, row);
         }
     }
