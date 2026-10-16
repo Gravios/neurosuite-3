@@ -199,16 +199,51 @@ bool installOne(const std::string& target, std::string* error)
     return true;
 }
 
-// Puts @p target back from its .rollback (or removes it when it had none).
-void restoreOne(const std::string& target)
+// Undoes @p target's install, if it happened.  Its staged file is consumed by
+// the install, so a target whose staged file still exists was never installed
+// (or its failed install already put it back) and is left alone.  Otherwise
+// the previous version comes back from .rollback, or, when there was none, the
+// new file is removed.
+bool restoreOne(const std::string& target, std::string* out)
 {
     std::error_code ec;
-    if (fs::exists(rollbackOf(target), ec)) fs::rename(rollbackOf(target), target, ec);
-    else fs::remove(target, ec);
+    if (fs::exists(staged(target), ec)) return true;
+    if (fs::exists(rollbackOf(target), ec)) {
+        fs::rename(rollbackOf(target), target, ec);
+        if (ec) { if (out) *out += "could not restore " + target + ": " + ec.message() + "\n"; return false; }
+        if (out) *out += "restored " + target + "\n";
+        return true;
+    }
+    fs::remove(target, ec);
+    if (out) *out += "removed new " + target + "\n";
+    return true;
+}
+
+bool writeJournal(const std::string& path, const std::vector<std::string>& targets)
+{
+    std::ofstream j(path, std::ios::trunc);
+    j << "klusters-commit 2\n";
+    for (const auto& t : targets) j << t << '\n';
+    j << "end " << targets.size() << '\n';          // a journal without this line was never complete
+    j.close();
+    if (!j || !fsyncPath(path, false)) return false;
+    fsyncPath(parentDir(path), true);
+    return true;
+}
+
+// Marks the journals: the commit is being undone, so recovery must roll back.
+void markUndo(const std::vector<std::string>& journals)
+{
+    for (const auto& path : journals) {
+        std::ofstream j(path, std::ios::app);
+        j << "undo\n";
+        j.close();
+        fsyncPath(path, false);
+    }
 }
 } // namespace
 
-bool commitStaged(const std::vector<std::string>& targets, const std::string& journal,
+bool commitStaged(const std::vector<std::string>& targets, const std::vector<std::string>& journals,
                   std::string* error, const std::vector<std::string>& keepBackup)
 {
     std::error_code ec;
@@ -220,21 +255,16 @@ bool commitStaged(const std::vector<std::string>& targets, const std::string& jo
         }
     if (targets.empty()) return true;
 
-    // Before the first rename: the journal names every target, flushed, so a
-    // crash from here on is rolled forward by recoverCommit().
-    {
-        std::ofstream j(journal, std::ios::trunc);
-        j << "klusters-commit 1\n";
-        for (const auto& t : targets) j << t << '\n';
-        j.close();
-        if (!j || !fsyncPath(journal, false)) {
-            if (error) *error = "cannot write the commit journal " + journal;
-            fs::remove(journal, ec);
+    // Before the first rename: every journal names every target and ends with
+    // its count, flushed, so a crash from here on is rolled forward by
+    // recoverCommit() from whichever journal the next open finds.
+    for (const auto& path : journals)
+        if (!writeJournal(path, targets)) {
+            if (error) *error = "cannot write the commit journal " + path;
+            for (const auto& p : journals) fs::remove(p, ec);
             discardStaged(targets);
             return false;
         }
-        fsyncPath(parentDir(journal), true);
-    }
 
     std::size_t done = 0;
     std::string err;
@@ -242,10 +272,20 @@ bool commitStaged(const std::vector<std::string>& targets, const std::string& jo
         if (!installOne(targets[done], &err)) break;
 
     if (done < targets.size()) {
-        // Undo the ones already installed: the old set stands.
-        for (std::size_t k = 0; k < done; ++k) restoreOne(targets[k]);
+        // Undo the ones already installed: the old set stands.  The journals say
+        // so first, so a crash during the undo is finished as an undo.
+        markUndo(journals);
+        std::string undoReport;
+        bool undone = true;
+        for (std::size_t k = 0; k < done; ++k) undone = restoreOne(targets[k], &undoReport) && undone;
+        if (!undone) {
+            // Leave the journals and .rollback files for recoverCommit to retry.
+            if (error) *error = err + "\nand the files already replaced could not all be put back:\n"
+                              + undoReport + "The journal " + journals.front() + " was kept; reopen to retry.";
+            return false;
+        }
         discardStaged(targets);
-        fs::remove(journal, ec);
+        for (const auto& p : journals) fs::remove(p, ec);
         if (error) *error = err;
         return false;
     }
@@ -255,8 +295,14 @@ bool commitStaged(const std::vector<std::string>& targets, const std::string& jo
         if (keep && fs::exists(rollbackOf(t), ec)) fs::rename(rollbackOf(t), t + ".bak", ec);
         else fs::remove(rollbackOf(t), ec);
     }
-    fs::remove(journal, ec);
+    for (const auto& p : journals) fs::remove(p, ec);
     return true;
+}
+
+bool commitStaged(const std::vector<std::string>& targets, const std::string& journal,
+                  std::string* error, const std::vector<std::string>& keepBackup)
+{
+    return commitStaged(targets, std::vector<std::string>{journal}, error, keepBackup);
 }
 
 bool recoverCommit(const std::string& journal, std::string* report)
@@ -270,24 +316,39 @@ bool recoverCommit(const std::string& journal, std::string* report)
         return false;
     }
     std::vector<std::string> targets;
-    while (std::getline(j, line)) if (!line.empty()) targets.push_back(line);
+    bool complete = false, undo = false;
+    while (std::getline(j, line)) {
+        if (line.empty()) continue;
+        if (line.rfind("end ", 0) == 0) {
+            complete = std::to_string(targets.size()) == line.substr(4);
+            continue;
+        }
+        if (line == "undo") { undo = true; continue; }
+        if (!complete) targets.push_back(line);
+    }
     j.close();
 
-    bool ok = true;
     std::string out;
-    for (const auto& t : targets) {
-        if (fs::exists(staged(t), ec)) {
-            // Not installed yet.  Move the old file aside unless that already
-            // happened, then install.
-            if (fs::exists(t, ec) && !fs::exists(rollbackOf(t), ec))
-                fs::rename(t, rollbackOf(t), ec);
-            fs::rename(staged(t), t, ec);
-            if (ec) { ok = false; out += "could not install " + t + ": " + ec.message() + "\n"; }
-            else out += "installed " + t + "\n";
-        } else if (!fs::exists(t, ec) && fs::exists(rollbackOf(t), ec)) {
-            // Moved aside but its staged file is gone: cannot roll forward; keep the old one.
-            fs::rename(rollbackOf(t), t, ec);
-            out += "restored " + t + " (its new version was missing)\n";
+    bool ok = true;
+    if (!complete) {
+        // The journal was still being written: no file had been replaced yet.
+        discardStaged(targets);
+        out += "the save had not started replacing files; its new versions were discarded\n";
+    } else if (undo) {
+        // A failed commit was being undone: finish the undo.
+        for (const auto& t : targets) ok = restoreOne(t, &out) && ok;
+        if (ok) discardStaged(targets);
+    } else {
+        for (const auto& t : targets) {
+            if (fs::exists(staged(t), ec)) {
+                // Not installed yet.  Move the old file aside unless that already
+                // happened, then install.
+                if (fs::exists(t, ec) && !fs::exists(rollbackOf(t), ec))
+                    fs::rename(t, rollbackOf(t), ec);
+                fs::rename(staged(t), t, ec);
+                if (ec) { ok = false; out += "could not install " + t + ": " + ec.message() + "\n"; }
+                else out += "installed " + t + "\n";
+            }
         }
     }
     if (ok) {

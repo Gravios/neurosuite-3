@@ -101,14 +101,24 @@ bool flushFile(const std::string& path, std::string* error);
  *  removed. */
 bool commitStaged(const std::vector<std::string>& targets, const std::string& journal,
                   std::string* error, const std::vector<std::string>& keepBackup = {});
+/** The same with the journal written to several places (a Save As keeps one
+ *  next to the old and one next to the new .clu, so reopening either finds it). */
+bool commitStaged(const std::vector<std::string>& targets, const std::vector<std::string>& journals,
+                  std::string* error, const std::vector<std::string>& keepBackup = {});
 
 /** Removes the staged files of @p targets (an abandoned commit). */
 void discardStaged(const std::vector<std::string>& targets);
 
-/** Finishes a commit interrupted in phase 2, if @p journal exists: installs
- *  every staged file it names, then removes the .rollback files and the
- *  journal.  Returns false only when a journal was found and could not be
- *  completed; @p report lists what was done. */
+/** Finishes a commit interrupted in phase 2, if @p journal exists:
+ *  - a journal without its "end" line was being written when the process
+ *    died, so no file had been replaced: the staged files are discarded;
+ *  - a journal marked "undo" belongs to a failed commit that was being put
+ *    back: the undo is finished (each installed target restored from its
+ *    .rollback, or removed when it is new);
+ *  - otherwise every staged file it names is installed (rolled forward).
+ *  Then the .rollback files and the journal are removed.  Returns false only
+ *  when a journal was found and could not be completed (it is then kept);
+ *  @p report lists what was done. */
 bool recoverCommit(const std::string& journal, std::string* report);
 
 } // namespace filecommit

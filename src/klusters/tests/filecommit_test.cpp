@@ -119,7 +119,8 @@ int main()
 
     // interrupted commit: journal written, t1 installed, t2 moved aside, t3 untouched
     put(staged(t1), "v4-1"); put(staged(t2), "v4-2"); put(staged(t3), "v4-3");
-    { std::ofstream jj(j); jj << "klusters-commit 1\n" << t1 << '\n' << t2 << '\n' << t3 << '\n'; }
+    const std::string j2 = (dir / ".x.other.commit").string();
+    for (const auto& jp : {j, j2}) { std::ofstream jj(jp); jj << "klusters-commit 2\n" << t1 << '\n' << t2 << '\n' << t3 << "\nend 3\n"; }
     fs::rename(t1, t1 + ".rollback"); fs::rename(staged(t1), t1);
     fs::rename(t2, t2 + ".rollback");
     std::string report;
@@ -128,6 +129,28 @@ int main()
     check(!fs::exists(j) && !fs::exists(t1 + ".rollback") && !fs::exists(t2 + ".rollback"),
           "recovery removes the journal and the rollbacks");
     check(recoverCommit(j, &report), "no journal: nothing to do");
+    check(recoverCommit(j2, &report) && !fs::exists(j2) && get(t1) == "v4-1",
+          "the second journal of the same commit finds nothing left to do");
+
+    // a journal cut short (no "end" line): nothing was replaced; discard
+    put(staged(t1), "v5-1"); put(staged(t2), "v5-2");
+    { std::ofstream jj(j); jj << "klusters-commit 2\n" << t1 << '\n' << t2.substr(0, 5); }
+    check(recoverCommit(j, &report), "truncated journal: " + report);
+    check(get(t1) == "v4-1" && get(t2) == "v4-2" && !fs::exists(staged(t1)) && !fs::exists(j),
+          "a truncated journal discards the staged files and touches nothing");
+
+    // a crash while undoing a failed commit: the undo is finished
+    put(staged(t2), "v6-2"); put(staged(t3), "v6-3");
+    fs::rename(t1, t1 + ".rollback"); put(t1, "v6-1");          // t1 was installed
+    { std::ofstream jj(j); jj << "klusters-commit 2\n" << t1 << '\n' << t2 << '\n' << t3 << "\nend 3\nundo\n"; }
+    check(recoverCommit(j, &report), "undo recovery: " + report);
+    check(get(t1) == "v4-1" && get(t2) == "v4-2" && get(t3) == "v4-3", "an interrupted undo is finished: all old");
+    check(!fs::exists(staged(t2)) && !fs::exists(t1 + ".rollback") && !fs::exists(j), "and cleaned up");
+
+    // two journals: a successful commit removes both
+    put(staged(t1), "v7-1");
+    check(commitStaged({t1}, std::vector<std::string>{j, j2}, &err) && !fs::exists(j) && !fs::exists(j2)
+          && get(t1) == "v7-1", "a commit with two journals removes both");
 
     fs::remove_all(dir);
     std::printf("%d/%d checks passed\n", g_ran - g_fail, g_ran);
