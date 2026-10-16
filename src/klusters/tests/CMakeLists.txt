@@ -47,6 +47,13 @@ target_compile_features(klusters_test_hierarchyfiles PRIVATE cxx_std_20)
 target_include_directories(klusters_test_hierarchyfiles PRIVATE "${_klu_src}")
 add_test(NAME klusters_test_hierarchyfiles COMMAND klusters_test_hierarchyfiles)
 
+# filecommit -- the save's all-or-nothing commit (journal, rollback, roll
+# forward) and the parity stamps that let it skip unchanged files.
+add_executable(klusters_test_filecommit filecommit_test.cpp "${_klu_src}/filecommit.cpp")
+target_compile_features(klusters_test_filecommit PRIVATE cxx_std_20)
+target_include_directories(klusters_test_filecommit PRIVATE "${_klu_src}")
+add_test(NAME klusters_test_filecommit COMMAND klusters_test_filecommit)
+
 # DirtyFlag -- the "modified" flag a background save clears only if no edit
 # happened after its snapshot (header-only).
 find_package(Threads)

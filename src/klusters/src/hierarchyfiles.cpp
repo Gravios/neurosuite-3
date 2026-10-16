@@ -10,6 +10,8 @@
 #include <set>
 #include <system_error>
 
+#include <unistd.h>
+
 namespace hierarchyfiles {
 
 namespace fs = std::filesystem;
@@ -83,6 +85,9 @@ bool stageImpl(const std::string& path, int32_t header, const std::vector<int32_
     if (ok && !ids.empty()) {
         ok = std::fwrite(ids.data(), sizeof(int32_t), ids.size(), f) == ids.size();
     }
+    // Flushed to the disk before it can be installed: a staged file that a
+    // crash could leave half-written must never be renamed over a good one.
+    if (ok) ok = std::fflush(f) == 0 && ::fsync(::fileno(f)) == 0;
     const int writeErr = ok ? 0 : errno;
     ok = (std::fclose(f) == 0) && ok;        // a full disk can surface only at the flush
     if (!ok) {
