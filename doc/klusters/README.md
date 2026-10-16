@@ -61,9 +61,10 @@ so all edits go back to the same files.
 | `session.dat` / `session.fil` | Raw / filtered signal — opened by Trace View; read by nudge/realign for waveform re-extraction |
 | `session.pca.<method>.N` | PCA eigenvectors — used by spike realignment and nudge to reproject features after shifting timestamps. **MethodSpecific** (`pca.standard.N` / `pca.stderiv.N`) |
 | `session.<type>.<method>.N.pending` | Transactional working copies (res/spk/fet/clu) — all realign/nudge edits go here first; on save each is copied beside its original and renamed over it |
-| `session.<type>.<method>.N.saving` | Short-lived: a file being replaced on save (`.clu`/`.clc`/`.clp`, committed pending copies). A leftover one is the remains of an interrupted save and can be deleted |
+| `session.<type>.<method>.N.saving` | Short-lived: a new version written by a save before it is installed. A leftover one with no `.commit` journal is the remains of a save that failed before installing anything and can be deleted |
+| `.session.clu.<method>.N.commit`, `<file>.rollback` | Short-lived: the save's journal and the previous versions it moves aside while installing. A journal left by a crash is completed automatically on the next open |
 | `session.curation_log.<group>.<method>` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
-| `session.#.clu.N` | Autosave (crash-recovery) files written periodically |
+| `.session.clu.<method>.N.autosave`, `.session.clc.<method>.N.autosave` | Crash-recovery copies of the unit (and atom) ids, written while there are unsaved changes; removed by a save or a normal close |
 
 ### File variant resolution
 
@@ -839,11 +840,14 @@ out un-annotated clusters by default.
 
 | Action | Shortcut | Description |
 |---|---|---|
-| Save | `Ctrl+S` | Overwrites `session.clu.N` in place |
+| Save | `Ctrl+S` | Replaces `session.clu.N` (and every other file the session changed) |
 | Save As | `Ctrl+Shift+A` | Saves to a new `.clu.N` path |
 | Renumber and Save | `Ctrl+Shift+S` | Renumbers cluster IDs, then saves |
 
 The cluster user information (structure, type, quality, etc.) is saved to the `units` section of the YAML parameter file.
+
+A save replaces all its files or none of them, skips files that already match,
+and locks editing while it runs — see [Saving: all or nothing](#saving-all-or-nothing).
 
 ---
 
@@ -927,16 +931,18 @@ All edits from realign and nudge go into `.pending` sidecar files
 (`spk.<method>.N.pending`, `fet.<method>.N.pending`, etc.) rather than the live
 session files. The session files are updated atomically on save:
 
-- On **Apply** (or save), each `.pending` is renamed over its
-  corresponding session file in one atomic operation per file. The
-  commit window is short (four `mv` calls); an interrupted commit
-  leaves the group indexable by the old cluster labels rather than
-  producing unreadable files.
+- On **save**, every file the save changes — the `.clu` (and `.clc`/`.clp`),
+  the `.spk`/`.res`/`.fet` a realign or nudge touched, other synced feature
+  spaces, the cluster information in the `.yaml` — is first written in full
+  next to its target (`<file>.saving`), then all are installed together or
+  none is (see [Saving](#saving-all-or-nothing)). A file that already holds
+  what the save would write is not rewritten.
 - On **Reject**, the `.pending` files are deleted and the in-memory
   state is rolled back — no on-disk changes.
-- On crash, the autosave-recovery path and the `.bak` files written
-  by upstream scripts (reextract, subcluster) give an independent
-  rollback option.
+- On crash, the autosave-recovery path, the commit journal (an interrupted
+  save is completed on the next open) and the `.bak` files written by
+  upstream scripts (reextract, subcluster) give independent recovery
+  options.
 
 After realignment completes, the **Realignment Review Dialog** shows before/after mean waveforms and reports the number of spikes shifted. The result can be **accepted** (pending files renamed; changes persisted) or **rejected** (pending files discarded).
 
@@ -973,9 +979,41 @@ immediately step to the next cluster with the arrow keys.
 
 ## Autosave and crash recovery
 
-A background thread periodically saves `session.#.clu.N` files (where `#` is a rotating index) to protect against crashes. The autosave interval is configured in **Settings → Preferences → Session**.
+While the clustering has unsaved changes, Klusters writes a rescue copy of it
+every few minutes (**Settings → Preferences → Session**): `.<clu file>.autosave`
+next to the `.clu` and, in a hierarchical session, `.<clc file>.autosave` next
+to the `.clc`. Both come from one snapshot, taken on the GUI thread, so the
+two always belong together; no rescue copy is written while a save runs. A
+successful save, or closing the session normally, removes them.
 
-On opening a session, klusters detects orphaned autosave files and offers to restore from the most recent one.
+On opening a session, a rescue copy newer than the `.clu` means Klusters did
+not close normally; it offers to use it (the old file is kept under a dated
+name). In a hierarchical session the atom rescue copy is restored with it when
+it fits — same spike count, every atom under one unit — otherwise the existing
+`.clc` is kept and Repair Nesting re-cuts what straddles.
+
+### Saving: all or nothing
+
+A save is two phases. First every file it changes is written completely next
+to its target as `<file>.saving` and flushed to disk; nothing is replaced yet,
+and a failure here (a full disk, a permission) leaves every file as it was.
+Then a journal `.<clu file>.commit` naming the files is written, and each file
+is moved aside (`<file>.rollback`) and replaced by its new version. If one
+replacement fails, the ones already made are undone. If Klusters dies in the
+middle, the next open finds the journal and completes the save — every new
+version was already complete — and says so.
+
+What is already on disk is not rewritten: the `.clu`, `.clc`, `.clp` and the
+cluster information are compared with what would be written, and each
+`.spk`/`.res`/`.fet` working copy carries a stamp (size, times, inode) taken
+when it was last known equal to its file, so an untouched 300 MB `.spk` is
+recognised without being read.
+
+While a save runs, the clustering cannot be edited: input to the window is
+held, the cursor shows the wait state, and a "Saving…" box appears if it takes
+more than a moment. Closing the window then shows "Waiting for the save to
+finish before closing…", and afterwards asks to save only if the clustering
+still differs from the files (an edit that was undone does not count).
 
 ---
 

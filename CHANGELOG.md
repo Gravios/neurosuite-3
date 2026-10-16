@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [Klusters: saves are all-or-nothing and skip unchanged files; autosave covers hierarchical sessions; editing locked during a save](#2026-10-16--klusters-saves-are-all-or-nothing-and-skip-unchanged-files-autosave-covers-hierarchical-sessions-editing-locked-during-a-save) |
 | 2026-10-16 | [Klusters: save-system fixes; Promote to Hierarchical Session](#2026-10-16--klusters-save-system-fixes-promote-to-hierarchical-session) |
 | 2026-10-16 | [ndManager: audit fixes — saves, Pipeline tab, Probes tab, Probe Maker](#2026-10-16--ndmanager-audit-fixes--saves-pipeline-tab-probes-tab-probe-maker) |
 | 2026-10-15 | [ndManager: New from Project Template; saves keep comments, inline lists and quoting](#2026-10-15--ndmanager-new-from-project-template-saves-keep-comments-inline-lists-and-quoting) |
@@ -52,6 +53,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-16 — Klusters: saves are all-or-nothing and skip unchanged files; autosave covers hierarchical sessions; editing locked during a save
+
+<details>
+<summary>Details</summary>
+
+- **All or nothing.** A save writes every file it changes (`.clu`, `.clc`,
+  `.clp`, realigned `.spk`/`.res`/`.fet`, synced feature spaces, the units in
+  the `.yaml`) in full beside its target first, then installs them together
+  under a journal. A failure puts back what was already replaced; a crash in
+  the middle is completed on the next open.
+- **Unchanged files are not rewritten.** The ids are compared with the files;
+  each working copy carries a stamp from when it last matched its file, so an
+  untouched `.spk` is recognised without being read. A save with nothing to
+  change writes nothing, and the readers are rebuilt only when waveforms were
+  committed.
+- **Autosave for hierarchical sessions.** The rescue copy now holds the atom
+  ids too (`.<clc>.autosave`), from the same snapshot as the unit ids, and is
+  restored with them when it fits. Autosave runs on the GUI thread from a
+  timer (the old thread read the live clustering), only while there are
+  unsaved changes, and follows a Save As.
+- **No editing during a save.** Input is held while a save runs, with a
+  "Saving…" box for a slow one. Closing during a save waits for it ("Waiting
+  for the save to finish before closing…"), then asks to save only if the
+  clustering still differs from the files.
+
+</details>
 
 ## 2026-10-16 — Klusters: save-system fixes; Promote to Hierarchical Session
 

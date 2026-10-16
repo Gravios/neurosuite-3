@@ -125,12 +125,15 @@ the layers never drift apart:
 - `.clp.N` — the atom→fiber map the two per-spike layers imply.
 
 All three are taken from one snapshot on the GUI thread when the save
-starts, so editing can continue while it runs; an edit made during the save
-leaves the document modified. The `.clc.N` and `.clp.N` are written to
-`<file>.saving` first and renamed into place, each after a `.bak` copy of
-the previous version, only once the `.clu` has been committed — a save that
-fails earlier leaves all three files as they were. If a sibling cannot be
-written, the save is reported as failed with the file named.
+starts (editing is locked until it finishes) and are replaced together with
+every other file the save changes, all or nothing (see
+[Saving: all or nothing](README.md#saving-all-or-nothing)); a file that
+already holds what would be written is left alone. The `.clc.N` and `.clp.N`
+keep their previous version as `.bak`. If a sibling cannot be written, the
+save fails, names the file, and nothing is replaced.
+
+Autosave protects both layers: the rescue copies of the unit ids and of the
+atom ids are written together and restored together.
 
 When the atom layer is not loaded (its load failed) and an edit has left an
 atom under two fibers, nothing has re-cut it: the `.clp` is left as it was
