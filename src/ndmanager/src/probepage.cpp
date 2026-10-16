@@ -238,8 +238,14 @@ void ProbePage::buildUi()
     connect(inspOffset, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int){ onOffsetEdited(); });
 
-    connect(maker, &ProbeMakerPage::modified,
-            this, &ProbePage::onMakerModified);
+    // Every maker edit is written to the session's probe file at once;
+    // the maker's Save button writes it again on demand.
+    connect(maker, &ProbeMakerPage::edited,
+            this, &ProbePage::onMakerEdited);
+    connect(maker, &ProbeMakerPage::saveRequested,
+            this, &ProbePage::saveCurrentProbeFile);
+    connect(maker, &ProbeMakerPage::statusMessage,
+            this, &ProbePage::setStatus);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -296,6 +302,7 @@ void ProbePage::onListSelectionChanged()
     const int row = list->currentRow();
     if (row < 0 || row >= probes.size()) {
         currentIndex = -1;
+        makerHasProbe = false;
         refreshInspector();
         maker->clearToConnector();
         return;
@@ -598,6 +605,10 @@ void ProbePage::refreshInspector()
     const bool hasSel = (currentIndex >= 0 && currentIndex < probes.size());
 
     inspLabel ->setEnabled(hasSel);
+    // With no probe selected, or a probe file that could not be read, an
+    // edit in the geometry editor would have no file to go to -- or would
+    // overwrite the unreadable one with an empty probe.
+    maker     ->setEnabled(hasSel && makerHasProbe);
     inspFile  ->setEnabled(hasSel);
     inspOffset->setEnabled(hasSel);
     browseBtn ->setEnabled(hasSel);
@@ -666,8 +677,12 @@ void ProbePage::loadProbeIntoMaker(int probeIndex)
 
     const ProbeEntry& e = probes[probeIndex];
     const QString resolved = resolveProbePath(e.probeFile);
+    makerHasProbe = false;
     if (resolved.isEmpty()) {
         maker->clearToConnector();
+        maker->setEnabled(false);
+        setStatus(tr("Probe %1: file %2 not found — geometry editor disabled.")
+                    .arg(e.id).arg(e.probeFile), /*err=*/true);
         return;
     }
 
@@ -679,19 +694,25 @@ void ProbePage::loadProbeIntoMaker(int probeIndex)
     if (!ok) {
         qWarning() << "ProbePage: maker failed to load" << resolved << ":" << err;
         maker->clearToConnector();
+        maker->setEnabled(false);
+        setStatus(tr("Probe %1: cannot read %2: %3 — geometry editor disabled.")
+                    .arg(e.id).arg(resolved, err), /*err=*/true);
+        return;
     }
+    makerHasProbe = true;
+    maker->setEnabled(true);
 }
 
-void ProbePage::onMakerModified()
+void ProbePage::onMakerEdited()
 {
-    if (loadingMaker) return;
+    if (loadingMaker || !makerHasProbe) return;
     if (currentIndex < 0 || currentIndex >= probes.size()) return;
     saveCurrentProbeFile();
 }
 
 void ProbePage::saveCurrentProbeFile()
 {
-    if (currentIndex < 0 || currentIndex >= probes.size()) return;
+    if (currentIndex < 0 || currentIndex >= probes.size() || !makerHasProbe) return;
     ProbeEntry& e = probes[currentIndex];
     if (e.id < 0) return;
 
@@ -700,9 +721,10 @@ void ProbePage::saveCurrentProbeFile()
     QString err;
     if (!maker->saveToFile(fpath, &err)) {
         qWarning() << "ProbePage: maker save failed for" << fpath << ":" << err;
-        setStatus(tr("Save failed for %1: %2").arg(fname, err), /*err=*/true);
+        setStatus(tr("Not saved — %1: %2").arg(fname, err), /*err=*/true);
         return;
     }
+    maker->markSaved();
 
     if (e.probeFile != fname) {
         e.probeFile = fname;

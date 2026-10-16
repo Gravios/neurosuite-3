@@ -123,7 +123,7 @@ private slots:
     void onBrowseLibraryClicked();///< replace current probe's geometry from a chosen file
     void onLabelEdited();
     void onOffsetEdited();
-    void onMakerModified();       ///< maker reports an edit → save .probe.N
+    void onMakerEdited();         ///< maker reports an edit → save .probe.N
 
 private:
     void buildUi();
@@ -131,6 +131,8 @@ private:
     void loadProbeIntoMaker(int probeIndex);
     void refreshInspector();      ///< populate inspector fields from the current selection
     void updateGroupsLabels();    ///< populate the anat/spike read-only labels
+
+private slots:
     void saveCurrentProbeFile();  ///< write maker state to <session>.probe.<id>.probe
 
     /** Show a transient feedback line in the inspector status area.
@@ -138,6 +140,7 @@ private:
      *  out from successful ones.  Pass an empty string to clear. */
     void setStatus(const QString& msg, bool isError = false);
 
+private:
     /** Helper used by Add/Add-from-library/Add-from-file: allocates a
      *  fresh probe id, copies @p sourcePath (or the empty template if
      *  empty) into the session, appends a ProbeEntry, selects it, and
@@ -190,6 +193,7 @@ private:
     QString           libraryPath;
     int               nbChannels   = 0;
     bool              loadingMaker = false;  ///< suppress save during programmatic load
+    bool              makerHasProbe = false; ///< maker holds the current probe's file
 
     // ── UI ───────────────────────────────────────────────────────────────
     QSplitter*       split          = nullptr;

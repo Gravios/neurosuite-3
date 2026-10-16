@@ -7,8 +7,8 @@
  *
  * Reads and writes the canonical `.probe` YAML schema (the same format
  * used by the library files in src/nphys-data/src/probes/).  Session-
- * local probes are saved as `<session>.ndm.<n>.probe` next to the
- * session YAML.
+ * local probes are saved as `<session>.probe.<id>.probe` next to the
+ * session YAML by the Probes tab (ProbePage), which embeds this page.
  *
  * See doc/design/probe-maker.md for the design rationale.
  *
@@ -80,6 +80,10 @@ public:
     /** True if the data has been edited since last load/save. */
     bool isModified() const { return m_modified; }
 
+    /** Clear the modified flag -- called by the owner once it has written
+     *  the edits to disk. */
+    void markSaved() { m_modified = false; }
+
     // ── File I/O ─────────────────────────────────────────────────────────
 
     /** Read a `.probe` YAML file (canonical schema with `probeFile:`
@@ -100,19 +104,18 @@ public:
     void clearToConnector();
 
 signals:
-    /** Emitted whenever the data model changes, whether by user
-     *  action or by a load/clear.  Connected by the parameter view to
-     *  drive the document's modified flag. */
-    void modified();
+    /** Emitted after every user edit of the probe data: inspector
+     *  fields, add / delete, undo / redo and pad or shank drags.  Not
+     *  emitted by a load or clear.  The Probes tab saves the session's
+     *  probe file on each one. */
+    void edited();
 
-    /** Emitted when the toolbar Save button is pressed.  ParameterView
-     *  resolves the session base path and writes
-     *  <session>.ndm.default.probe. */
-    void savePipelineRequested();   // intentionally same idiom as PipelineDesignerPage
+    /** Emitted when the toolbar Save button is pressed.  The Probes tab
+     *  writes the session's probe file (<session>.probe.<id>.probe). */
+    void saveRequested();
 
-    /** Emitted when Save As… is pressed.  ParameterView prompts for a
-     *  name and writes <session>.ndm.<n>.probe. */
-    void saveAsPipelineRequested();
+    /** A one-line result for the owner's status line. */
+    void statusMessage(const QString& message, bool isError);
 
 private slots:
     void onLogicalSelectionChanged();
@@ -123,6 +126,7 @@ private slots:
     void onDeleteSelectedClicked();
     void onUndoClicked();
     void onRedoClicked();
+    void onSaveAsClicked();      ///< write the geometry to a chosen file
 
     /** Inspector commit handlers — bound to editingFinished on each
      *  inspector field.  Each one reads the selected item, writes the
@@ -157,7 +161,8 @@ private:
      *  own FormLayout. */
     void refreshInspector();
 
-    void setModified(bool b);
+    /** Set the modified flag and emit edited(). */
+    void markEdited();
 
     /** Number of sites over all shanks -- the probe's channel count. */
     int siteCount() const;
@@ -168,6 +173,7 @@ private:
     // ── Data ─────────────────────────────────────────────────────────────
     ProbeConnector data;
     bool           m_modified = false;
+    QString        lastExportPath;   ///< last Save As target
 
     // ── Views ────────────────────────────────────────────────────────────
     probemaker::ProbeLogicalView*  logicalView  = nullptr;

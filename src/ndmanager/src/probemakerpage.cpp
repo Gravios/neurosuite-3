@@ -29,6 +29,7 @@
 #include <QDoubleSpinBox>
 #include <QEvent>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGraphicsScene>
@@ -37,6 +38,7 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
@@ -208,10 +210,16 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
     tbox->setContentsMargins(8, 0, 8, 0);
     tbox->setSpacing(8);
 
+    // Every edit is already written to the session's copy of the probe
+    // file (<session>.probe.<id>.probe) by the Probes tab; Save writes it
+    // again on demand (e.g. after fixing what made a save fail), Save As
+    // writes the geometry to another file, e.g. into a probe library.
     saveBtn = new QPushButton(tr("💾 Save"));
-    saveBtn->setToolTip(tr("Save probe as <session>.ndm.default.probe"));
+    saveBtn->setToolTip(tr("Write this probe's geometry to the session's probe "
+                           "file now (edits are also saved as you make them)"));
     saveAsBtn = new QPushButton(tr("Save As…"));
-    saveAsBtn->setToolTip(tr("Save probe under a custom name"));
+    saveAsBtn->setToolTip(tr("Write this probe's geometry to a .probe file of "
+                             "your choice (the session keeps its own copy)"));
 
     const QString tealBtn =
         "QPushButton{background:#102a18;border:1px solid #2dd4bf;color:#2dd4bf;"
@@ -241,9 +249,9 @@ ProbeMakerPage::ProbeMakerPage(QWidget* parent)
         "QPushButton:hover{background:#2d1010;}");
 
     connect(saveBtn,       &QPushButton::clicked,
-            this, &ProbeMakerPage::savePipelineRequested);
+            this, &ProbeMakerPage::saveRequested);
     connect(saveAsBtn,     &QPushButton::clicked,
-            this, &ProbeMakerPage::saveAsPipelineRequested);
+            this, &ProbeMakerPage::onSaveAsClicked);
     connect(addShankBtn,   &QPushButton::clicked,
             this, &ProbeMakerPage::onAddShankClicked);
     connect(addChannelBtn, &QPushButton::clicked,
@@ -930,7 +938,7 @@ void ProbeMakerPage::onAddShankClicked()
     rebuildLogicalScene();
     rebuildPhysicalScene();
     refreshInspector();
-    setModified(true);
+    markEdited();
 }
 
 void ProbeMakerPage::onAddChannelClicked()
@@ -994,7 +1002,7 @@ void ProbeMakerPage::onAddChannelClicked()
     rebuildLogicalScene();
     rebuildPhysicalScene();
     refreshInspector();
-    setModified(true);
+    markEdited();
 }
 
 void ProbeMakerPage::onAddArrayClicked()
@@ -1079,7 +1087,7 @@ void ProbeMakerPage::onAddArrayClicked()
     rebuildLogicalScene();
     rebuildPhysicalScene();
     refreshInspector();
-    setModified(true);
+    markEdited();
 }
 
 void ProbeMakerPage::onDeleteSelectedClicked()
@@ -1095,7 +1103,7 @@ void ProbeMakerPage::onDeleteSelectedClicked()
                     selectedChannel = nullptr;
                     rebuildLogicalScene();
                     rebuildPhysicalScene();
-                    setModified(true);
+                    markEdited();
                     return;
                 }
             }
@@ -1109,7 +1117,7 @@ void ProbeMakerPage::onDeleteSelectedClicked()
                 selectedShank = nullptr;
                 rebuildLogicalScene();
                 rebuildPhysicalScene();
-                setModified(true);
+                markEdited();
                 return;
             }
         }
@@ -1168,6 +1176,9 @@ void ProbeMakerPage::refreshInspector()
 void ProbeMakerPage::onConnectorFieldEdited()
 {
     if (!connectorSelected) return;
+    if (data.vendor == connVendor->text() && data.model == connModel->text()
+        && data.notes == connNotes->text())
+        return;   // editingFinished without a change
     pushUndoSnapshotCoalesced(tr("Edit connector"),
                               QStringLiteral("connector"),
                               static_cast<void*>(&data));
@@ -1183,7 +1194,7 @@ void ProbeMakerPage::onConnectorFieldEdited()
         if (it->type() == ItemTypeConnector)
             static_cast<ConnectorItem*>(it)->refreshFromModel();
     }
-    setModified(true);
+    markEdited();
 }
 
 void ProbeMakerPage::onShankFieldEdited()
@@ -1217,7 +1228,7 @@ void ProbeMakerPage::onShankFieldEdited()
     // a refresh (channel-count subtitle) too.
     rebuildLogicalScene();
     rebuildPhysicalScene();
-    setModified(true);
+    markEdited();
 }
 
 void ProbeMakerPage::onChannelFieldEdited()
@@ -1246,7 +1257,7 @@ void ProbeMakerPage::onChannelFieldEdited()
         }
     }
     rebuildLogicalScene();   // hw-id label might have changed
-    setModified(true);
+    markEdited();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1273,7 +1284,7 @@ void ProbeMakerPage::setConnector(const ProbeConnector& connector)
     resetEditIdentity();
     rebuildLogicalScene();
     rebuildPhysicalScene();
-    setModified(false);
+    m_modified = false;   // a load is not an edit
     updateUndoRedoButtons();
 }
 
@@ -1313,15 +1324,37 @@ void ProbeMakerPage::clearToConnector()
     resetEditIdentity();
     rebuildLogicalScene();
     rebuildPhysicalScene();
-    setModified(false);
+    m_modified = false;   // a load is not an edit
     updateUndoRedoButtons();
 }
 
-void ProbeMakerPage::setModified(bool b)
+void ProbeMakerPage::markEdited()
 {
-    if (m_modified == b) return;
-    m_modified = b;
-    if (b) emit modified();
+    // Emitted on every edit, not only on the first: the Probes tab saves
+    // the probe file on each one and clears the flag with markSaved().
+    m_modified = true;
+    emit edited();
+}
+
+void ProbeMakerPage::onSaveAsClicked()
+{
+    QString start = lastExportPath;
+    if (start.isEmpty() && !data.model.isEmpty())
+        start = data.model + QStringLiteral(".probe");
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("Save Probe Geometry As"), start,
+        tr("Probe files (*.probe);;All files (*)"));
+    if (path.isEmpty()) return;
+    QString err;
+    if (!saveToFile(path, &err)) {
+        QMessageBox::warning(this, tr("Save Probe Geometry As"),
+                             tr("Cannot save %1:\n%2").arg(path, err));
+        emit statusMessage(tr("Save As failed: %1").arg(err), true);
+        return;
+    }
+    lastExportPath = path;
+    emit statusMessage(tr("Probe geometry saved as %1.  The session still "
+                          "uses its own copy.").arg(path), false);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1459,7 +1492,7 @@ void ProbeMakerPage::onUndoClicked()
     rebuildLogicalScene();
     rebuildPhysicalScene();
     refreshInspector();
-    setModified(true);
+    markEdited();
     undoInProgress = false;
 
     resetEditIdentity();
@@ -1496,7 +1529,7 @@ void ProbeMakerPage::onRedoClicked()
     rebuildLogicalScene();
     rebuildPhysicalScene();
     refreshInspector();
-    setModified(true);
+    markEdited();
     undoInProgress = false;
 
     resetEditIdentity();
@@ -1591,6 +1624,11 @@ bool ProbeMakerPage::eventFilter(QObject* obj, QEvent* ev)
             // was cleared by the push; nothing else to clean up.
             undoStack.removeLast();
             updateUndoRedoButtons();
+        } else if (moved && view == physicalView) {
+            // A pad or shank drag changed posUm / originUm in place
+            // (ChannelItem / ShankItem::itemChange); that is an edit of
+            // the probe file.  Logical-graph drags only move the diagram.
+            markEdited();
         }
         dragSnapshotPushed = false;
         dragItem           = nullptr;
