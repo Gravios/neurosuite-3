@@ -82,6 +82,15 @@ public:
     /**Indicates that the initialisation is finished.*/
     void initialisationOver(){isInit = false;}
 
+    /**Loads the plugin file at @p path into the Plugin tab (expert mode),
+ * the whole file, #! line included.  Loading is not an edit.
+ * @return an error message, empty when the file was loaded.
+ */
+    QString loadScript(const QString& path);
+
+    /**Sets the session's directory, the fallback location offered by Save Plugin As.*/
+    void setSessionDir(const QString& dir){sessionDir = dir;}
+
 signals:
     void programToRemove(ProgramPage* programPage);
     void programNameChanged(ProgramPage* programPage,const QString& name,const QString& message,const QString& title);
@@ -118,6 +127,12 @@ public slots:
         parameters->resetModificationStatus();
     }
 
+private:
+    /**Where Save Plugin As starts: the user's plugin directory (the first
+ * existing entry of $NDM_PLUGIN_PATH), else the session's directory, else home.
+ */
+    QString defaultSaveDir() const;
+
 private slots:
 
     /**Updates the menus and actions when the script becomes the active tab.*/
@@ -142,6 +157,8 @@ private:
 
     /**True if the file is opened in expert mode, false otherwise*/
     bool expertMode;
+    /**The session's directory (empty for an unsaved session).*/
+    QString sessionDir;
 };
 
 #endif

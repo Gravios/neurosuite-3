@@ -173,22 +173,56 @@ QString ProgramPage::getHelp() const
 }
 
 void ProgramPage::setHelp(const QString& helpContent){
-    help->setText(helpContent);
+    help->setPlainText(helpContent);
+}
+
+QString ProgramPage::loadScript(const QString& path){
+    if(!scriptView)
+        return QString();
+    QString message;
+    QFile file(path);
+    if(!file.open(QIODevice::ReadOnly)){
+        message = tr("The file %1 is not readable.").arg(path);
+        scriptView->clear();
+    } else {
+        const QByteArray content = file.readAll();
+        file.close();
+        if(content.startsWith("#!")){
+            // The whole file: the #! line is part of the script, and Save
+            // Plugin As writes back what the editor holds.
+            scriptView->setPlainText(QString::fromUtf8(content));
+        } else {
+            message = tr("The file %1 does not appear to be a plugin file (a script file should begin with #!).").arg(path);
+            scriptView->clear();
+        }
+    }
+    //Setting the content of the script view triggers scriptModified; loading is not a modification.
+    scriptIsModified = false;
+    return message;
+}
+
+QString ProgramPage::defaultSaveDir() const{
+    const QStringList pluginDirs = QString::fromLocal8Bit(qgetenv("NDM_PLUGIN_PATH")).split(QDir::listSeparator(), Qt::SkipEmptyParts);
+    for(const QString& dir : pluginDirs){
+        if(QFileInfo(dir).isDir())
+            return dir;
+    }
+    if(!sessionDir.isEmpty() && QFileInfo(sessionDir).isDir())
+        return sessionDir;
+    return QDir::homePath();
 }
 
 bool ProgramPage::saveProgramScript(){
     bool recall = false;
-    //find the file corresponding to the program name
     QString name = parameters->getProgramName();
-    QString path = NdManagerUtils::findExecutable(name);
+    QString path;
     QString message;
     QString title;
-    QString scriptUrl;
-
-    if(!path.isNull())
-        scriptUrl = QFileDialog::getSaveFileName( this, tr("Save as…"),path,QLatin1String("*.*"));
-    else
-        scriptUrl = QFileDialog::getSaveFileName(this, tr("Save as…"),QString(),QLatin1String("*.*"));
+    // Offer the user's plugin directory (or the session's), never the
+    // installed copy found on $PATH: that is usually the system install.
+    const QString scriptUrl = QFileDialog::getSaveFileName(this, tr("Save as…"),
+                                                           QDir(defaultSaveDir()).filePath(name),
+                                                           QLatin1String("*.*"));
 
     if(!scriptUrl.isEmpty()){
         path = scriptUrl;
@@ -288,27 +322,9 @@ void ProgramPage::nameChanged(const QString& name){
             QString path = NdManagerUtils::findExecutable(name);
 
             if(!path.isNull()){
-                QFile file(path);
-                if(!file.open(QIODevice::ReadOnly)){
-                    message = tr("The file %1 is not readable.").arg(name);
+                message = loadScript(path);
+                if(!message.isEmpty())
                     title = tr("IO Error!");
-                    scriptView->clear();
-                } else {
-                    QTextStream stream(&file);
-                    QString firstLine = stream.readLine();
-                    const int i = firstLine.indexOf(QRegularExpression("^#!"));
-                    if(i != -1){
-                        scriptView->setPlainText(stream.readAll());
-                        file.close();
-                        //Setting the content of the KTextEdit (named script) will trigger a scriptModified and therefore set scriptIsModified to true. The initial load of the script
-                        //should no be considered as a modification.
-                        scriptIsModified = false;
-                    } else {
-                        message =  tr("The file %1 does not appear to be a plugin file (a script file should begin with #!).").arg(name);
-                        title = tr("IO Error!");
-                        scriptView->clear();
-                    }
-                }
             }
             else{
                 message =  tr("The file %1 could not be found in your PATH.").arg(name);

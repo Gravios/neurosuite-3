@@ -55,12 +55,12 @@ public:
     
     /**SSets the description.*/
     void setDescription(const QString& description){
-        descriptionTextEdit->setText(description);
+        descriptionTextEdit->setPlainText(description);
     }
     
     /**Sets the notes.*/
     void setNotes(const QString& notes){
-        notesTextEdit->setText(notes);
+        notesTextEdit->setPlainText(notes);
     }
     
     

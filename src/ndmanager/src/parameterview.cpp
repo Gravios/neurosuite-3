@@ -265,6 +265,8 @@ ProgramPage* ParameterView::addProgram(const QString& programName,bool show){
     //adding page "Video"
     QWidget *w = new QWidget(this);
     ProgramPage* program = new ProgramPage(expertMode,w,programName);
+    if(!doc.url().isEmpty())
+        program->setSessionDir(QFileInfo(doc.url()).absolutePath());
     mStackWidget->addWidget(program);
 
     QTreeWidgetItem * item = mParameterTree->addSubPage(mScriptsItem,programName, program);
@@ -450,29 +452,12 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
         QMap<int, QStringList > info = programInformation.getParameterInformation();
         parameterPage->setParameterInformation(info);
         if(expertMode){
-            //set the script if any
-            QTextEdit* scriptView = programPage->getScriptView();
-            //find the file corresponding to the program name
-            QString path = NdManagerUtils::findExecutable(name);
+            //set the script if any: the file corresponding to the program name
+            const QString path = NdManagerUtils::findExecutable(name);
             if(!path.isNull()){
-                QFile file(path);
-                if(!file.open(QIODevice::ReadOnly)){
-                    const QString message = tr("The file %1 is not readable.").arg(name);
+                const QString message = programPage->loadScript(path);
+                if(!message.isEmpty())
                     QMessageBox::critical (this,tr("IO Error!"),message);
-                } else {
-                    QTextStream stream(&file);
-                    QString firstLine = stream.readLine();
-                    const int i = firstLine.indexOf(QRegularExpression("^#!"));
-
-                    if(i != -1) {
-                        scriptView->setText(stream.readAll());
-                        file.close();
-                    } else {
-                        const QString message = tr("The file %1  does not appear to be a plugin file (a script file should begin with #!).").arg(name);
-                        QMessageBox::critical (this,tr("IO Error!"),message);
-                        scriptView->clear();
-                    }
-                }
             }
             programPage->initialisationOver();
         }
@@ -641,30 +626,12 @@ void ParameterView::loadProgram(const QString &programUrl) {
     //set the help
     program->setHelp(programInformation.getHelp());
     if(expertMode){
-        //set the script if any
-        QTextEdit* scriptView = program->getScriptView();
-        //find the file corresponding to the program name
+        //set the script if any: the file corresponding to the program name
         const QString path = NdManagerUtils::findExecutable(name);
         if(!path.isNull()){
-            QFile file(path);
-            if(!file.open(QIODevice::ReadOnly)){
-                const QString message = tr("The file %1 is not readable.").arg(name);
-                QMessageBox::critical (this,message, tr("IO Error!"));
-            }
-            else{
-                QTextStream stream(&file);
-                QString firstLine = stream.readLine();
-                const int i = firstLine.indexOf(QRegularExpression("^#!"));
-
-                if(i != -1){
-                    scriptView->setText(stream.readAll());
-                    file.close();
-                } else {
-                    const QString message =  tr("The file %1  does not appear to be a plugin file (a script file should begin with #!).").arg(name);
-                    QMessageBox::critical (this,tr("IO Error!"),message);
-                    scriptView->clear();
-                }
-            }
+            const QString message = program->loadScript(path);
+            if(!message.isEmpty())
+                QMessageBox::critical (this,tr("IO Error!"),message);
         }
         program->initialisationOver();
     }
