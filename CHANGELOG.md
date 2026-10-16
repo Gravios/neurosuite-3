@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [ndManager: audit fixes — saves, Pipeline tab, Probes tab, Probe Maker](#2026-10-16--ndmanager-audit-fixes--saves-pipeline-tab-probes-tab-probe-maker) |
 | 2026-10-15 | [ndManager: New from Project Template; saves keep comments, inline lists and quoting](#2026-10-15--ndmanager-new-from-project-template-saves-keep-comments-inline-lists-and-quoting) |
 | 2026-10-15 | [Audit fixes: ndmanager keeps unknown YAML keys; aligners and re-extraction follow the .spk convention; re-extraction threshold base](#2026-10-15--audit-fixes-ndmanager-keeps-unknown-yaml-keys-aligners-and-re-extraction-follow-the-spk-convention-re-extraction-threshold-base) |
 | 2026-10-15 | [Klusters: t-SNE of the oblique coordinates](#2026-10-15--klusters-t-sne-of-the-oblique-coordinates) |
@@ -50,6 +51,66 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-16 — ndManager: audit fixes — saves, Pipeline tab, Probes tab, Probe Maker
+
+<details>
+<summary>Details</summary>
+
+An audit of ndManager, every finding checked a second time before it was
+fixed (`claude/ndmanager-audit-2026-10-16.md` in the project notes).
+
+**Crashes fixed.** Saving a session with two or more units (the units table
+was filled with sorting on, scrambling rows and leaving empty cells), saving a
+file channel mapping whose ids start at 0 or have gaps, opening a probe file
+with a per-shank channel map or null fields, and malformed plugin
+descriptions.
+
+**Data that was lost and is now kept.**
+- Skip flags: the page and the file used different keys, so every save
+  wrote `skip: 0`.
+- Failed saves were silent; "Save" in the close prompt closed even when
+  nothing was saved; Save as Default marked the session saved; Reload
+  discarded edits without asking and could turn a template into the file
+  Ctrl+S overwrites; New from Project Template and Save could replace an
+  existing file without asking.
+- The session's `programs:` list was written alphabetically, so `ndm_start`
+  was no longer first and ran steps in the wrong order. It keeps its order now.
+- Pipeline tab: a node added after loading a pipeline file could reuse an
+  existing id and replace another plugin; Apply replaced the Plugins tab
+  (tuned values, help, programs outside the graph); graph edits were not
+  counted as unsaved (the close prompt now offers to save the pipeline).
+- Probe Maker: only the first edit after loading a probe was written.
+- Probe changes rebuilt every group with default nSamples/peak/features and
+  dropped `sdiffPairs`; unchanged groups now keep their settings, and groups
+  get `probeId`/`shankIndex`.
+- Plugin scripts lost their `#!` line; a session save cleared the "script
+  modified" flag.
+
+**Behaviour changes to know about.**
+- ndManager reads and writes YAML only; convert XML sessions with
+  `ndm_xml2yaml`. Saves always end in `.yaml`/`.yml`.
+- Session-local probe files live next to the session file
+  (`<session>.probe.<id>.probe`), not in the directory ndManager was started
+  from; a session must be saved before probes are added. A removed probe's
+  copy is deleted only when the session is saved.
+- The probe library is searched in the session directory, `SESSION/probes`,
+  `probeLibraryPath`, `$NEUROSUITE_PROBE_PATH`, then every XDG data
+  directory; a typed channel offset is kept.
+- `ndm_setupgroups` reads `channelOffset` as absolute (it added it to a
+  running offset, so a second probe landed on the wrong channels) and finds
+  ndManager's session-local probe files.
+- The Probe Maker keeps each site's channel, writes sites top first, and a
+  shank-length change keeps sites fixed relative to the tip.
+- Pipeline tab: Clear keeps the root, cycles are refused, Apply orders the
+  Plugins tab without discarding it, a pipeline file that fails to load is
+  reported and protected, and Save Pipeline needs a saved session.
+- Actions ▸ Query works again, on YAML files (paths like
+  `acquisitionSystem/samplingRate`).
+- `ndmanager --new` and `--model FILE`; Save as Default writes where File ▸ New
+  reads; session YAML files are registered as `application/nphys-yaml`.
+
+</details>
 
 ## 2026-10-15 — ndManager: New from Project Template; saves keep comments, inline lists and quoting
 
