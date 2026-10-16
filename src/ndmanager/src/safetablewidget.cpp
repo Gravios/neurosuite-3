@@ -6,32 +6,31 @@
 #include "safetablewidget.h"
 
 #include <QHeaderView>
+#include <QPair>
 
-QModelIndex SafeTableWidget::edgeIndex(bool last) const
+bool SafeTableWidget::atEdge(bool forward)
 {
-    auto pick = [last](const QHeaderView* h, auto hidden) {
-        const int n = h->count();
-        for (int i = 0; i < n; ++i) {
-            const int logical = h->logicalIndex(last ? n - 1 - i : i);
-            if (!hidden(logical)) return logical;
-        }
-        return -1;
+    const QModelIndex current = currentIndex();
+    if (!current.isValid()) return false;
+    // Ask the table where Tab would go.  It skips hidden, disabled and
+    // unselectable cells and wraps around at the end; a wrap (or nowhere to
+    // go) means the current cell is the last one Tab visits in that direction.
+    const QModelIndex next = QTableWidget::moveCursor(forward ? MoveNext : MovePrevious, Qt::NoModifier);
+    if (!next.isValid() || next == current) return true;
+    auto pos = [this](const QModelIndex& i) {
+        return qMakePair(verticalHeader()->visualIndex(i.row()),
+                         horizontalHeader()->visualIndex(i.column()));
     };
-    const int column = pick(horizontalHeader(), [this](int c) { return isColumnHidden(c); });
-    const int row = pick(verticalHeader(), [this](int r) { return isRowHidden(r); });
-    if (row < 0 || column < 0) return QModelIndex();
-    return model()->index(row, column);
+    return forward ? pos(next) < pos(current) : pos(current) < pos(next);
 }
 
 QModelIndex SafeTableWidget::moveCursor(CursorAction cursorAction, Qt::KeyboardModifiers modifiers)
 {
-    if ((cursorAction == MoveNext || cursorAction == MovePrevious) && tabKeyNavigation()) {
-        const QModelIndex current = currentIndex();
-        // At the edge, no next cell: QAbstractItemView then lets the Tab go to
-        // the next widget in the focus chain.
-        if (current.isValid() && current == edgeIndex(cursorAction == MoveNext))
-            return QModelIndex();
-    }
+    // At the edge, no next cell: QAbstractItemView then lets the Tab go to
+    // the next widget in the focus chain instead of wrapping around.
+    if ((cursorAction == MoveNext || cursorAction == MovePrevious) && tabKeyNavigation()
+            && atEdge(cursorAction == MoveNext))
+        return QModelIndex();
     return QTableWidget::moveCursor(cursorAction, modifiers);
 }
 
@@ -40,7 +39,7 @@ void SafeTableWidget::closeEditor(QWidget* editor, QAbstractItemDelegate::EndEdi
     const bool next = hint == QAbstractItemDelegate::EditNextItem;
     const bool previous = hint == QAbstractItemDelegate::EditPreviousItem;
     const bool leave = (next || previous) && tabKeyNavigation()
-                       && currentIndex() == edgeIndex(next);
+                       && atEdge(next);
     QTableWidget::closeEditor(editor, leave ? QAbstractItemDelegate::NoHint : hint);
     if (leave)
         QWidget::focusNextPrevChild(next);

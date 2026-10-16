@@ -53,9 +53,9 @@ protected:
     }
 
 private:
-    /** The first or last cell Tab visits: visual order, hidden rows and
-     *  columns skipped.  Invalid for an empty table. */
-    QModelIndex edgeIndex(bool last) const;
+    /** True when the current cell is the last (@p forward) or first cell
+     *  Tab visits: moving on from it would wrap around. */
+    bool atEdge(bool forward);
 
     bool editingInProgress;
 };

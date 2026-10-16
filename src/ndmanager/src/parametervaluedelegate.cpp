@@ -47,15 +47,17 @@ QWidget* ParameterValueDelegate::createEditor(QWidget* parent, const QStyleOptio
     case ParameterType::Int: {
         auto* edit = new QLineEdit(parent);
         edit->setValidator(new QRegularExpressionValidator(
-            QRegularExpression(QStringLiteral("[+-]?\\d*")), edit));
+            QRegularExpression(QStringLiteral("([+-]?\\d+)?")), edit));
         return edit;
     }
     case ParameterType::Float: {
         // QDoubleValidator follows the locale's decimal separator; plugins
-        // read a C-locale number, so the pattern is spelled out.
+        // read a C-locale number, so the pattern is spelled out.  Empty is
+        // acceptable (unset); a partial "-" or "1e" is not, so it is never
+        // committed (the delegate commits only acceptable input).
         auto* edit = new QLineEdit(parent);
         edit->setValidator(new QRegularExpressionValidator(
-            QRegularExpression(QStringLiteral("[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d*)?|[+-]?")),
+            QRegularExpression(QStringLiteral("([+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?)?")),
             edit));
         return edit;
     }

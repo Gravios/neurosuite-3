@@ -35,7 +35,8 @@ public:
 
     /** Validates the cell just edited.  Valid: remembers it, returns true.
      *  Invalid: puts the last good text back (without emitting cellChanged),
-     *  shows the reason next to the cell, returns false. */
+     *  shows the reason next to the cell, returns false.  A cell with no
+     *  remembered value is accepted (there is nothing to put back). */
     bool accept(int row, int column);
 
     /** The reason the last rejected entry was refused (empty if none). */

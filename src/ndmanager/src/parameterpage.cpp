@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QDebug>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTableWidget>
@@ -139,6 +140,15 @@ bool ParameterPage::setParameterValue(const QString& parameterName,
             parameterTable->setItem(row, ValueColumn, valueItem);
         }
         if(valueItem->text() == newValue) return false;
+        // The pipeline inspector edits plain text: a value this row's type
+        // does not take is not written (it would be saved, and then become
+        // the value a later bad edit is put back to).
+        const QString why = typeOfRow(row).check(newValue);
+        if(!why.isEmpty()) {
+            qWarning() << "ParameterPage:" << getProgramName() << parameterName
+                       << "refused" << newValue << "-" << why;
+            return false;
+        }
         // Block the itemChanged → itemModified → parameterValueChanged
         // signal chain so we don't bounce back to whoever called us.
         const bool wasBlocked = parameterTable->blockSignals(true);

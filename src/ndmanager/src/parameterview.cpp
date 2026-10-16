@@ -1138,7 +1138,7 @@ void ParameterView::setProgramList(const QList<ProgramInformation>& newPrograms,
                     changed = true;
             }
         } else {
-            ProgramPage* page = addProgram(name, /*show=*/false);
+            ProgramPage* page = addProgram(name, /*show=*/false, prog.getCategory());
             ParameterPage* pp = page->getParameterPage();
             pp->setProgramName(name);
             page->setHelp(prog.getHelp());

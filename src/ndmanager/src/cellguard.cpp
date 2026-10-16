@@ -24,7 +24,10 @@ bool CellGuard::accept(int row, int column)
     QTableWidgetItem* item = table->item(row, column);
     if (!item) return true;
     const QString why = check ? check(row, column, item->text()) : QString();
-    if (why.isEmpty()) {
+    // A cell never recorded (a row a page added without remember(), an item
+    // Qt created for an edit) has no good value to go back to: accept it
+    // rather than blank it.
+    if (why.isEmpty() || !good.contains(item)) {
         good.insert(item, item->text());
         return true;
     }

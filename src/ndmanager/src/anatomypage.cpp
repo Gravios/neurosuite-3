@@ -117,8 +117,8 @@ AnatomyPage::AnatomyPage(QWidget* parent)
 
     connect(addGroupButton, &QAbstractButton::clicked, this, &AnatomyPage::addGroup);
     connect(removeGroupButton, &QAbstractButton::clicked, this, &AnatomyPage::removeGroup);
-    // currentCellChanged fires for keyboard, mouse-click and double-click navigation;
-    // the three finer-grained press/click/double-click signals are redundant here.
+    // An edit is checked when it is committed (the CellGuard); moving between
+    // cells is never blocked.
     connect(groupTable, &QTableWidget::cellChanged, this, &AnatomyPage::groupChanged);
 
     connect(attributesTable, &QTableWidget::cellChanged, this, &AnatomyPage::attributeChanged);
