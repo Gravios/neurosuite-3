@@ -148,8 +148,8 @@ QMap<int, QStringList > ParameterPage::getParameterInformation(){
         QTableWidgetItem* col0 = parameterTable->item(i,0);
         if(!col0) continue;
         QString name = col0->text().simplified();
-        if(name == " ")
-            continue;
+        if(name.isEmpty())
+            continue;  // a blank row is not a parameter
         information.append(name);
         for(int j = 1;j < parameterTable->columnCount(); ++j){
             QString text;

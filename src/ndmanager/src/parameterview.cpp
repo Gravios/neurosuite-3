@@ -405,6 +405,7 @@ void ParameterView::initialize(QMap<int, QList<int> >& anatomicalGroups,QMap<QSt
     anatomy->setModified(false);
 
     //Initialize the spike groups page
+    spike->setNbChannels(nbChannels);
     spike->setGroups(spikeGroups,spikeGroupsInformation);
     spike->setModified(false);
 
@@ -650,6 +651,7 @@ void ParameterView::nbChannelsModified(int nbChannels){
     this->nbChannels = nbChannels;
 
     probe->setNbChannels(nbChannels);  // always, so importProbeYaml has it
+    spike->setNbChannels(nbChannels);
     if(!countWasUnset){
         // ── Probe page: clear all probe entries ──────────────────────────
         // A channel-count change invalidates all probe-to-channel assignments.

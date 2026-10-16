@@ -33,6 +33,8 @@
 #include <QVector>
 #include <QDebug>
 #include <QRegularExpression>
+#include <QMessageBox>
+#include <QSignalBlocker>
 
 // The attribute table's column headers are user-facing labels ("Skip", set in
 // anatomylayout.ui); the attribute map exchanged with ParameterView and the
@@ -46,11 +48,57 @@ static QString attributeKey(const QString& header)
     return header;
 }
 
+// The channel ids listed in a group cell ("0 1 2 ").
+static QList<int> channelIds(const QString& text)
+{
+    QList<int> ids;
+    const QStringList parts = text.simplified().split(" ", Qt::SkipEmptyParts);
+    for (const QString& part : parts)
+        ids.append(part.toInt());
+    return ids;
+}
+
+// A group cell holds only digits and whitespace, and (once the channel count
+// is known) only ids of existing channels.
+static bool isValidGroup(const QString& text, int nbChannels)
+{
+    if (text.contains(QRegularExpression("[^\\d\\s]")))
+        return false;
+    if (nbChannels > 0) {
+        const QList<int> ids = channelIds(text);
+        for (int id : ids)
+            if (id >= nbChannels)
+                return false;
+    }
+    return true;
+}
+
+// The ids of row @p row's group that also appear in another row of column 0.
+static QStringList channelsInOtherRows(const QTableWidget* table, int row)
+{
+    QStringList shared;
+    const QTableWidgetItem* cell = table->item(row, 0);
+    if (!cell)
+        return shared;
+    const QList<int> ids = channelIds(cell->text());
+    for (int r = 0; r < table->rowCount(); ++r) {
+        const QTableWidgetItem* other = r == row ? nullptr : table->item(r, 0);
+        if (!other)
+            continue;
+        const QList<int> otherIds = channelIds(other->text());
+        for (int id : ids)
+            if (otherIds.contains(id) && !shared.contains(QString::number(id)))
+                shared << QString::number(id);
+    }
+    return shared;
+}
+
 AnatomyPage::AnatomyPage(QWidget* parent)
     : AnatomyLayout(parent),
       incorrectRow(0),
       isIncorrectRow(false),
-      modified(false)
+      modified(false),
+      nbChannels(0)
 {
     attributesTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
     groupTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
@@ -115,7 +163,7 @@ void AnatomyPage::getAttributes(QMap<QString, QMap<int,QString> >& attributesMap
             QTableWidgetItem* it = attributesTable->item(j,i);
             if (!it) continue;  // cell is null if setItem was never called for it
             QString attribut = it->text().simplified();
-            if(attribut != " ")
+            if(!attribut.isEmpty())
                 values.insert(j,attribut);
         }
         attributesMap.insert(attributeKey(attributesTable->horizontalHeaderItem(i)->text()),values);
@@ -124,6 +172,8 @@ void AnatomyPage::getAttributes(QMap<QString, QMap<int,QString> >& attributesMap
 
 void AnatomyPage::setGroups(const QMap<int, QList<int> >& groups)
 {
+    // Filling the table is not an edit: no validation, no duplicate warning.
+    const QSignalBlocker blocker(groupTable);
     groupTable->clearContents();
     groupTable->setRowCount(groups.count());
 
@@ -154,10 +204,10 @@ void AnatomyPage::getGroups(QMap<int, QList<int> >& groups)const{
     for(int i =0; i<groupTable->rowCount();++i){
         QList<int> channels;
         QTableWidgetItem* it = groupTable->item(i, 0);
-        if (!it) { ++groupId; continue; }  // null if row was added but never populated
+        if (!it) continue;  // null if row was added but never populated: a blank row
         QString channelList = it->text().simplified();
-        if(channelList == " ")
-            continue;
+        if(channelList.isEmpty())
+            continue;  // a blank row is not a group
         const QStringList channelParts = channelList.split(" ", Qt::SkipEmptyParts);
 
         for(uint j = 0;j < channelParts.count(); ++j) {
@@ -214,7 +264,7 @@ void AnatomyPage::groupChanged(int row,int column){
         else if(widget == 0)
             incorrectGroup = groupTable->item(incorrectRow,0)->text();
 
-        if(incorrectGroup.contains(QRegularExpression("[^\\d\\s]")) != 0){
+        if(!isValidGroup(incorrectGroup, nbChannels)){
             groupTable->selectRow(incorrectRow);
             groupTable->setCurrentCell(incorrectRow,0);
             return;
@@ -224,12 +274,17 @@ void AnatomyPage::groupChanged(int row,int column){
     incorrectRow = 0;
     //groupTable->adjustRow(row);
 
-    //the group entry should only contain digits and whitespaces
-    if(group.contains(QRegularExpression("[^\\d\\s]")) != 0){
+    //the group entry should only contain digits and whitespaces, and ids of existing channels
+    if(!isValidGroup(group, nbChannels)){
         isIncorrectRow = true;
         incorrectRow = row;
         groupTable->selectRow(incorrectRow);
         groupTable->setCurrentCell(incorrectRow,0);
+    } else {
+        const QStringList shared = channelsInOtherRows(groupTable, row);
+        if(!shared.isEmpty())
+            QMessageBox::warning(this, tr("Channel in several groups"),
+                                 tr("Channel(s) %1 also belong to another anatomical group.").arg(shared.join(", ")));
     }
 
 }
@@ -263,6 +318,7 @@ void AnatomyPage::slotValidate(){
 }
 
 void AnatomyPage::setNbChannels(int nbChannels){
+    this->nbChannels = nbChannels;
     // Clear all rows at once. The old loop called removeRow(i) while iterating
     // 0..rowCount-1: each removal shrinks the table, so odd rows were silently
     // skipped and the final removeRow could write past the end of the table.

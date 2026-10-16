@@ -73,6 +73,9 @@ public:
 */
     inline int getNbGroups() const {return groupTable->rowCount();}
 
+    /**Sets the number of channels, used to reject channel ids that do not exist.*/
+    void setNbChannels(int nb){nbChannels = nb;}
+
 signals:
     void nbGroupsModified(int nbGroups);
 
@@ -106,10 +109,15 @@ public slots:
     void resetModificationStatus(){modified = false;}
 
 private:
+    /**True if @p text is a valid entry for @p column (the channel list or a number).*/
+    bool isValidCell(const QString& text, int column) const;
+
     bool isIncorrectRow;
     int incorrectRow;
     int incorrectColumn;
     bool modified;
+    /**Number of channels, for validating channel lists (0 = unknown).*/
+    int nbChannels;
 };
 
 #endif

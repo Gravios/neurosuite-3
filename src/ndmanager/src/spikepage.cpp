@@ -34,15 +34,62 @@
 #include <QList>
 #include <QDebug>
 #include <QRegularExpression>
+#include <QSignalBlocker>
 
 using namespace ndmanager;
+
+// The channel ids listed in a group cell ("0 1 2 ").
+static QList<int> channelIds(const QString& text)
+{
+    QList<int> ids;
+    const QStringList parts = text.simplified().split(" ", Qt::SkipEmptyParts);
+    for (const QString& part : parts)
+        ids.append(part.toInt());
+    return ids;
+}
+
+// A group cell holds only digits and whitespace, and (once the channel count
+// is known) only ids of existing channels.
+static bool isValidGroup(const QString& text, int nbChannels)
+{
+    if (text.contains(QRegularExpression("[^\\d\\s]")))
+        return false;
+    if (nbChannels > 0) {
+        const QList<int> ids = channelIds(text);
+        for (int id : ids)
+            if (id >= nbChannels)
+                return false;
+    }
+    return true;
+}
+
+// The ids of row @p row's group that also appear in another row of column 0.
+static QStringList channelsInOtherRows(const QTableWidget* table, int row)
+{
+    QStringList shared;
+    const QTableWidgetItem* cell = table->item(row, 0);
+    if (!cell)
+        return shared;
+    const QList<int> ids = channelIds(cell->text());
+    for (int r = 0; r < table->rowCount(); ++r) {
+        const QTableWidgetItem* other = r == row ? nullptr : table->item(r, 0);
+        if (!other)
+            continue;
+        const QList<int> otherIds = channelIds(other->text());
+        for (int id : ids)
+            if (otherIds.contains(id) && !shared.contains(QString::number(id)))
+                shared << QString::number(id);
+    }
+    return shared;
+}
 
 SpikePage::SpikePage(QWidget* parent)
     : SpikeLayout(parent),
       isIncorrectRow(false),
       incorrectRow(0),
       incorrectColumn(0),
-      modified(false)
+      modified(false),
+      nbChannels(0)
 {
     groupTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
     //install a filter on the groupTable in order to validate the entries
@@ -87,6 +134,8 @@ bool SpikePage::eventFilter(QObject* object,QEvent* event)
 }
 
 void SpikePage::setGroups(const QMap<int, QList<int> >& groups,const QMap<int, QMap<QString,QString> >& information){
+    // Filling the table is not an edit: no validation, no duplicate warning.
+    const QSignalBlocker blocker(groupTable);
     //Clean the groupTable, just in case, before creating empty rows.
     groupTable->clearContents();
     groupTable->setRowCount(groups.count());
@@ -137,10 +186,10 @@ void SpikePage::getGroups(QMap<int, QList<int> >& groups)const{
     for(int i =0; i<groupTable->rowCount();++i){
         QList<int> channels;
         QTableWidgetItem* it = groupTable->item(i, 0);
-        if (!it) { ++groupId; continue; }  // null if row was added but never populated
+        if (!it) continue;  // null if row was added but never populated: a blank row
         QString channelList = it->text().simplified();
-        if(channelList == " ")
-            continue;
+        if(channelList.isEmpty())
+            continue;  // a blank row is not a group (getGroupInformation skips it too)
         QStringList channelParts = channelList.split(" ", Qt::SkipEmptyParts);
         for(uint j = 0;j < channelParts.count(); ++j)
             channels.append(channelParts[j].toInt());
@@ -154,16 +203,16 @@ void SpikePage::getGroupInformation(QMap<int,  QMap<QString,QString> >& groupInf
     for(int i =0; i<groupTable->rowCount();++i){
         QMap<QString,QString> information;
         QTableWidgetItem* col0 = groupTable->item(i, 0);
-        if (!col0) { ++groupId; continue; }  // unpopulated row
+        if (!col0) continue;  // unpopulated row: blank, as in getGroups
         QString channelList = col0->text().simplified();
-        if(channelList == " ")
+        if(channelList.isEmpty())
             continue;
         //The positions of the information in the table are hard coded
         for(int j = 1;j < groupTable->columnCount(); ++j){
             QTableWidgetItem* cell = groupTable->item(i, j);
             if (!cell) continue;  // manually added rows may have null cells
             const QString infoItem = cell->text().simplified();
-            if(infoItem == " ")
+            if(infoItem.isEmpty())
                 continue;
             if(j == 1)
                 information.insert(NB_SAMPLES,infoItem);
@@ -277,7 +326,7 @@ void SpikePage::groupChanged(int row,int column){
             incorrectGroup = static_cast<QLineEdit*>(widget)->text();
         else if(widget == 0)
             incorrectGroup = groupTable->item(incorrectRow,incorrectColumn)->text();
-        if(incorrectGroup.contains(QRegularExpression("[^\\d\\s]")) != 0){
+        if(!isValidCell(incorrectGroup, incorrectColumn)){
             groupTable->selectRow(incorrectRow);
             groupTable->setCurrentCell(incorrectRow,incorrectColumn);
             return;
@@ -289,14 +338,26 @@ void SpikePage::groupChanged(int row,int column){
     incorrectColumn = column;
     //groupTable->adjustRow(row);
 
-    //the group entry should only contain digits and whitespaces
-    if(group.contains(QRegularExpression("[^\\d\\s]")) != 0){
+    //the entry should only contain digits and whitespaces (and, for the
+    //channel list, ids of existing channels)
+    if(!isValidCell(group, column)){
         isIncorrectRow = true;
         incorrectRow = row;
         incorrectColumn = column;
         groupTable->selectRow(incorrectRow);
         groupTable->setCurrentCell(incorrectRow,incorrectColumn);
+    } else if(column == 0){
+        const QStringList shared = channelsInOtherRows(groupTable, row);
+        if(!shared.isEmpty())
+            QMessageBox::warning(this, tr("Channel in several groups"),
+                                 tr("Channel(s) %1 also belong to another spike group.").arg(shared.join(", ")));
     }
+}
+
+bool SpikePage::isValidCell(const QString& text, int column) const{
+    if(column == 0)
+        return isValidGroup(text, nbChannels);
+    return !text.contains(QRegularExpression("[^\\d\\s]"));
 }
 
 void SpikePage::slotValidate(){

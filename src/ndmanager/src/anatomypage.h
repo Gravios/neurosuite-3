@@ -111,6 +111,8 @@ private:
     int incorrectRow;
     bool isIncorrectRow;
     bool modified;
+    /**Number of channels, for validating group entries (0 = unknown).*/
+    int nbChannels;
 };
 
 
