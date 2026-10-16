@@ -39,6 +39,135 @@
 #include <QVBoxLayout>
 #include <QSignalBlocker>
 
+#include <exception>
+
+namespace {
+
+// ── .probe parsing, the rule every reader shares ───────────────────────────
+// (scripts/probe_geometry.py, doc/ndmanager-plugins/formats/probe.md):
+// sites.geometry lists the sites shank by shank; count_per_shank is one
+// integer for every shank, or a list with one entry per shank (which then
+// also fixes the number of shanks); site j is channel map[j] when
+// channelMap.map is given -- a flat list, or one list per shank, flattened
+// -- and channel j otherwise, both relative to the session's channelOffset.
+
+struct ProbeLayout {
+    QList<QList<int>>     shankChannels;   ///< per shank, file order, relative channels
+    QList<QList<QPointF>> shankPositions;  ///< [x, y above tip] per site, parallel
+    QList<QList<bool>>    shankHasPos;     ///< false where geometry is missing
+    int                   nSites = 0;
+    int                   span   = 0;      ///< channels used from the offset: max(sites, max(map) + 1)
+    QString               model;
+};
+
+int yamlInt(const YAML::Node& n, int def)
+{
+    if (!n || !n.IsScalar()) return def;
+    try { return n.as<int>(); } catch (...) { return def; }
+}
+
+bool yamlDouble(const YAML::Node& n, double& out)
+{
+    if (!n || !n.IsScalar()) return false;
+    try { out = n.as<double>(); return true; } catch (...) { return false; }
+}
+
+// Fills @p out from the .probe file at @p path.  Never throws: a file that
+// cannot be parsed, or a map that does not cover every site, returns false
+// with the reason in @p err.
+bool readProbeLayout(const QString& path, ProbeLayout& out, QString* err)
+{
+    out = ProbeLayout{};
+    if (path.isEmpty() || !QFileInfo(path).isFile()) {
+        if (err) *err = QStringLiteral("no such file");
+        return false;
+    }
+    try {
+        const YAML::Node root = YAML::LoadFile(path.toStdString());
+        const YAML::Node pf = root.IsMap() ? root["probeFile"] : YAML::Node();
+        if (!pf || !pf.IsMap()) {
+            if (err) *err = QStringLiteral("no probeFile: section");
+            return false;
+        }
+        if (pf["model"] && pf["model"].IsScalar())
+            out.model = QString::fromStdString(pf["model"].Scalar());
+
+        const YAML::Node shanks = pf["shanks"];
+        const YAML::Node sites  = pf["sites"];
+        int nShanks = 1;
+        if (shanks && shanks.IsMap())
+            nShanks = qMax(1, yamlInt(shanks["count"], 1));
+        const YAML::Node cps  = (sites && sites.IsMap()) ? sites["count_per_shank"] : YAML::Node();
+        const YAML::Node geom = (sites && sites.IsMap()) ? sites["geometry"] : YAML::Node();
+        QList<int> counts;
+        if (cps && cps.IsSequence()) {
+            for (std::size_t i = 0; i < cps.size(); ++i)
+                counts.append(qMax(0, yamlInt(cps[i], 0)));
+        } else {
+            const int n = qMax(0, yamlInt(cps, 0));
+            for (int i = 0; i < nShanks; ++i) counts.append(n);
+        }
+        for (int n : counts) out.nSites += n;
+
+        QList<int> chans;
+        const YAML::Node cm = pf["channelMap"];
+        const YAML::Node m  = (cm && cm.IsMap()) ? cm["map"] : YAML::Node();
+        if (m && m.IsSequence() && m.size() > 0) {
+            for (std::size_t i = 0; i < m.size(); ++i) {
+                const YAML::Node v = m[i];
+                if (v.IsSequence()) {
+                    for (std::size_t k = 0; k < v.size(); ++k)
+                        chans.append(yamlInt(v[k], -1));
+                } else {
+                    chans.append(yamlInt(v, -1));
+                }
+            }
+            if (chans.size() != out.nSites) {
+                if (err) *err = QStringLiteral("channelMap.map has %1 entries, the probe has %2 sites")
+                                    .arg(chans.size()).arg(out.nSites);
+                return false;
+            }
+            if (chans.contains(-1)) {
+                if (err) *err = QStringLiteral("channelMap.map holds a non-channel entry");
+                return false;
+            }
+        } else {
+            for (int j = 0; j < out.nSites; ++j) chans.append(j);
+        }
+
+        out.span = out.nSites;
+        for (int c : chans) out.span = qMax(out.span, c + 1);
+
+        const int nGeom = (geom && geom.IsSequence()) ? static_cast<int>(geom.size()) : 0;
+        int j = 0;
+        for (int n : counts) {
+            QList<int> sc; QList<QPointF> sp; QList<bool> sh;
+            for (int k = 0; k < n; ++k, ++j) {
+                sc.append(chans[j]);
+                double x = 0.0, y = 0.0;
+                bool known = false;
+                if (j < nGeom) {
+                    const YAML::Node p = geom[static_cast<std::size_t>(j)];
+                    known = p.IsSequence() && p.size() >= 2
+                            && yamlDouble(p[0], x) && yamlDouble(p[1], y);
+                }
+                sp.append(known ? QPointF(x, y) : QPointF());
+                sh.append(known);
+            }
+            out.shankChannels.append(sc);
+            out.shankPositions.append(sp);
+            out.shankHasPos.append(sh);
+        }
+        return true;
+    } catch (const std::exception& e) {
+        if (err) *err = QString::fromUtf8(e.what());
+        out = ProbeLayout{};
+        return false;
+    }
+}
+
+}  // namespace
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Construction
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1057,96 +1186,29 @@ bool ProbePage::importProbeYaml(const QString&        path,
                                 QMap<int,QList<int>>& outAnatomy,
                                 QMap<int,QList<int>>& outSpike)
 {
-    YAML::Node doc;
-    try {
-        doc = YAML::LoadFile(path.toStdString());
-    } catch (const YAML::Exception& e) {
-        qWarning() << "ProbePage: YAML parse error in" << path << ":" << e.what();
+    ProbeLayout layout;
+    QString err;
+    if (!readProbeLayout(path, layout, &err)) {
+        qWarning() << "ProbePage:" << path << ":" << err;
+        return false;
+    }
+    if (layout.nSites < 1) {
+        qWarning() << "ProbePage: no sites in" << path;
         return false;
     }
 
-    const YAML::Node pf = doc["probeFile"];
-    if (!pf || !pf.IsMap()) {
-        qWarning() << "ProbePage: no probeFile root in" << path;
-        return false;
-    }
+    if (entry.label.isEmpty() && !layout.model.isEmpty())
+        entry.label = layout.model;
 
-    if (pf["model"] && entry.label.isEmpty())
-        entry.label = QString::fromStdString(pf["model"].as<std::string>());
-
-    const YAML::Node shanksNode = pf["shanks"];
-    const YAML::Node sitesNode  = pf["sites"];
-    if (!shanksNode || !sitesNode) {
-        qWarning() << "ProbePage: missing shanks/sites in" << path;
-        return false;
-    }
-
-    const int nShanks = shanksNode["count"] ? shanksNode["count"].as<int>() : 1;
-
-    // sites.count_per_shank may be a scalar (uniform) or sequence (per-shank).
-    QVector<int> sitesPerShank(nShanks, 0);
-    const YAML::Node cps = sitesNode["count_per_shank"];
-    if (cps) {
-        if (cps.IsSequence()) {
-            for (int s = 0; s < nShanks && s < (int)cps.size(); ++s)
-                sitesPerShank[s] = cps[(std::size_t)s].as<int>(0);
-        } else {
-            const int v = cps.as<int>(0);
-            for (int s = 0; s < nShanks; ++s) sitesPerShank[s] = v;
-        }
-    }
-    int totalSites = 0;
-    for (int v : sitesPerShank) totalSites += v;
-    if (nShanks < 1 || totalSites < 1) {
-        qWarning() << "ProbePage: invalid shank/site counts in" << path;
-        return false;
-    }
-
-    // Channel map: optional explicit assignment.
-    // Format: list of lists [[ch_s0_0, ch_s0_1, ...], [ch_s1_0, ...], ...]
-    // OR flat list [ch_0, ch_1, ..., ch_total-1] (shank-major).
-    // When null, use sequential assignment starting at channelOffset.
-    QVector<QVector<int>> channelMap(nShanks);
-    for (int s = 0; s < nShanks; ++s)
-        channelMap[s].resize(sitesPerShank[s], -1);
-    bool hasMap = false;
-
-    const YAML::Node cmNode = pf["channelMap"];
-    if (cmNode && cmNode.IsMap()) {
-        const YAML::Node mapSeq = cmNode["map"];
-        if (mapSeq && mapSeq.IsSequence() && (int)mapSeq.size() > 0) {
-            hasMap = true;
-            if (mapSeq[0].IsSequence()) {
-                for (int s = 0; s < nShanks && s < (int)mapSeq.size(); ++s) {
-                    const YAML::Node row = mapSeq[(std::size_t)s];
-                    for (int c = 0; c < sitesPerShank[s] && c < (int)row.size(); ++c)
-                        channelMap[s][c] = row[(std::size_t)c].as<int>();
-                }
-            } else {
-                int idx = 0;
-                for (int s = 0; s < nShanks; ++s)
-                    for (int c = 0; c < sitesPerShank[s]; ++c, ++idx)
-                        if (idx < (int)mapSeq.size())
-                            channelMap[s][c] = mapSeq[(std::size_t)idx].as<int>();
-            }
-        }
-    }
-
-    if (!hasMap) {
-        int siteCursor = 0;
-        for (int s = 0; s < nShanks; ++s)
-            for (int c = 0; c < sitesPerShank[s]; ++c, ++siteCursor)
-                channelMap[s][c] = entry.channelOffset + siteCursor;
-    }
-
+    // Site j of the file is channel channelOffset + map[j] (or + j without
+    // a map) -- the channelOffset shift applies to mapped channels too.
     entry.anatomicalGroups.clear();
     entry.spikeGroups.clear();
-
-    for (int s = 0; s < nShanks; ++s) {
+    for (int s = 0; s < layout.shankChannels.size(); ++s) {
         const int gid = nextGroupId + s;
         entry.anatomicalGroups.append(gid);
         QList<int> chs;
-        for (int ch : channelMap[s]) chs.append(ch);
+        for (int rel : layout.shankChannels[s]) chs.append(entry.channelOffset + rel);
         outAnatomy[gid] = chs;
         outSpike[gid]   = chs;
     }
@@ -1155,24 +1217,7 @@ bool ProbePage::importProbeYaml(const QString&        path,
 
 int ProbePage::probeChannelCount(const QString& probePath)
 {
-    if (probePath.isEmpty() || !QFile::exists(probePath)) return 0;
-    try {
-        YAML::Node doc = YAML::LoadFile(probePath.toStdString());
-        const YAML::Node pf = doc["probeFile"];
-        if (!pf || !pf.IsMap()) return 0;
-        if (pf["totalChannels"] && pf["totalChannels"].IsScalar())
-            return pf["totalChannels"].as<int>();
-        const YAML::Node shanks = pf["shanks"];
-        const YAML::Node sites  = pf["sites"];
-        if (!shanks || !sites) return 0;
-        const int nShanks = shanks["count"] ? shanks["count"].as<int>() : 1;
-        const YAML::Node cps = sites["count_per_shank"];
-        if (!cps) return 0;
-        if (cps.IsSequence()) {
-            int total = 0;
-            for (std::size_t i = 0; i < cps.size(); ++i) total += cps[i].as<int>();
-            return total;
-        }
-        return nShanks * cps.as<int>();
-    } catch (...) { return 0; }
+    ProbeLayout layout;
+    if (!readProbeLayout(probePath, layout, nullptr)) return 0;
+    return layout.span;
 }
