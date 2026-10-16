@@ -394,8 +394,18 @@ private:
         QTreeWidgetItem *item;
     };
 
-    /**Dictionary containing all the programs.*/
+    /**Dictionary containing all the programs, keyed by name.  A QMap
+     * iterates alphabetically, so never list programs by iterating it:
+     * use programOrder.*/
     QMap<QString,ProgramPageId> programDict;
+
+    /**Program names in insertion / Apply order — the order the session
+     * file's programs: list is written in (getInformation) and the order
+     * the Plugins tree shows.  Kept in step with programDict by
+     * addProgram, changeProgramName, removeProgram and setProgramList.
+     * Matters at run time: ndm_start's in-YAML graph mode requires
+     * programs[0] == ndm_start and dispatches the rest in list order.*/
+    QStringList programOrder;
 
     /**Counter given the number existing programs. */
     int counter;

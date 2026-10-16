@@ -278,6 +278,8 @@ ProgramPage* ParameterView::addProgram(const QString& programName,bool show){
     pageId.page = program;
 
     programDict.insert(programName,pageId);
+    programOrder.removeAll(programName);
+    programOrder.append(programName);
 
     //set the parameterPage program name
     ParameterPage* parameterPage = program->getParameterPage();
@@ -319,6 +321,10 @@ void ParameterView::changeProgramName(ProgramPage* programPage, const QString& n
 
     programDict.remove(oldName);
     programDict.insert(newName,id);
+    // Rename in place: the program keeps its position in the list.
+    const int orderIdx = programOrder.indexOf(oldName);
+    if (orderIdx >= 0) programOrder[orderIdx] = newName;
+    else               programOrder.append(newName);
 
 
     mStackWidget->setCurrentWidget(id.page);
@@ -326,7 +332,7 @@ void ParameterView::changeProgramName(ProgramPage* programPage, const QString& n
     if(!message.isEmpty())
         QMessageBox::critical (this,title,message );
 
-    emit scriptListHasBeenModified(QStringList()<<programDict.keys());
+    emit scriptListHasBeenModified(programOrder);
 }
 
 
@@ -341,9 +347,10 @@ void ParameterView::removeProgram(ProgramPage* programPage){
     delete id.item;
     //mParameterTree->(id.item, 0);
     programDict.remove(name);
+    programOrder.removeAll(name);
 
     /*if(name.contains("New Program-") || name.contains("Untitled-"))*/ counter--;
-    emit scriptListHasBeenModified(QStringList()<<programDict.keys());
+    emit scriptListHasBeenModified(programOrder);
     //mParameterTree->setCurrentItem(mScriptsItem);
 }
 
@@ -841,11 +848,11 @@ void ParameterView::getInformation(QMap<int, QList<int> >& anatomicalGroups,QMap
         files.append(fileInformation);
     }
 
-    QMapIterator<QString, ProgramPageId> i(programDict);
-    while (i.hasNext())  {
-        i.next();
-        const QString name = i.key();
-        ProgramPage* program = i.value().page;
+    // Write programs in list order, not programDict's alphabetical order:
+    // ndm_start must stay programs[0] and the rest keep their run order.
+    for (const QString& name : programOrder) {
+        if (!programDict.contains(name)) continue;
+        ProgramPage* program = programDict.value(name).page;
         ProgramInformation programInformation;
         programInformation.setProgramName(name);
         programInformation.setHelp(program->getHelp());
@@ -888,7 +895,7 @@ void ParameterView::scriptHidden(){
 
 QStringList ParameterView::getFileScriptNames()const
 {
-    return QStringList()<<programDict.keys();
+    return programOrder;
 }
 
 void ParameterView::setCurrentPage(int index)
@@ -984,6 +991,7 @@ void ParameterView::setProgramList(const QList<ProgramInformation>& newPrograms)
         pid.page->deleteLater();
     }
     programDict.clear();
+    programOrder.clear();
 
     // ── 2. Add each program from the pipeline designer in order ────────────
     for (const ProgramInformation& prog : newPrograms) {
@@ -997,7 +1005,7 @@ void ParameterView::setProgramList(const QList<ProgramInformation>& newPrograms)
 
     mParameterTree->expandItem(mScriptsItem);
     programsModified = true;
-    emit scriptListHasBeenModified(programDict.keys());
+    emit scriptListHasBeenModified(programOrder);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
