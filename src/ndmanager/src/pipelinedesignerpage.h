@@ -297,6 +297,13 @@ public:
      *  Emits nothing — purely a data accessor. */
     QList<ProgramInformation> getPrograms() const;
 
+    /** A plugin's parameter was changed on its Plugins page: every node of
+     *  type @p type that carries @p name takes @p value, and an inspector
+     *  edit of it not yet applied is dropped (the newer value wins).  The
+     *  pipeline counts as unsaved; Apply is not needed (both sides agree).
+     *  Returns true when a node changed. */
+    bool setProgramParameter(const QString& type, const QString& name, const QString& value);
+
     /** Per plugin type (first enabled node of the type in run order wins),
      *  the parameters edited in the inspector since the last Apply. */
     PipelineParamEdits editedParameterValues() const;

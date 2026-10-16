@@ -89,6 +89,34 @@ priority) — these are typically written by `ndm_aom2dat` from probe topology. 
 [ndmanager-plugins](../ndmanager-plugins/README.md) for the complete parameter reference per
 script.
 
+### Editing a plugin's parameters
+
+The parameter table edits like a spreadsheet: double-click a cell, press F2, or just start
+typing over the selected one. Tab and Shift+Tab move from cell to cell and leave the table
+after the last one (or before the first one), so the keyboard never gets stuck in it. In
+expert mode, **Add** appends a row with its name ready for typing, **Remove** deletes the
+selected rows, and **Move Up** / **Move Down** change the order the description lists the
+parameters in. Outside expert mode only the Value column can be edited.
+
+A program description (its `.yaml`, or what the plugin prints for `--ndm-describe`) may give each
+parameter three optional keys after `name`, `value` and `status`:
+
+| Key | Meaning |
+| --- | --- |
+| `type` | `bool`, `int`, `float` or `choice:a\|b\|c` (also `boolean`, `integer`, `double`, `number`, `enum:…`); anything else, or none, is free text |
+| `default` | the value the plugin uses when the field is left empty; shown in the Value cell's tooltip |
+| `hidden` | `true` hides the row outside expert mode (it is still saved) |
+
+The Value cell's editor follows the type: a list for `bool` (true/false, or 1/0, yes/no, on/off —
+whichever spelling the value already uses) and for `choice`, a field that only takes a number for
+`int` and `float` (C-locale, `1e-3` included), a plain field otherwise. A value the type does
+not take — typed, pasted or set any other way — is put back to its last good value, with the
+reason next to the cell. An empty value is always accepted: it means "not set". The three keys
+are kept when the table is edited and written back when the description is saved.
+
+A value changed here also reaches the nodes of that plugin in the [Pipeline tab](#pipeline-tab--editable-node-graph),
+replacing any inspector edit of the same parameter not yet applied.
+
 ---
 
 ## The Probes tab

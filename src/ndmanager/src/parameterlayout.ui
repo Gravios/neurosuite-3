@@ -87,6 +87,56 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="moveUpButton">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>104</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>104</width>
+             <height>32767</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>Move Up</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="moveDownButton">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>104</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>104</width>
+             <height>32767</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>Move Down</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="spacer28">
            <property name="orientation">
             <enum>Qt::Vertical</enum>
@@ -285,5 +335,7 @@
   <tabstop>parameterTable</tabstop>
   <tabstop>addButton</tabstop>
   <tabstop>removeButton</tabstop>
+  <tabstop>moveUpButton</tabstop>
+  <tabstop>moveDownButton</tabstop>
  </tabstops>
 </ui>

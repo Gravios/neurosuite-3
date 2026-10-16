@@ -416,7 +416,7 @@ private:
     ProbePage* probe;
 
     /**Pointer on the pipeline designer page.*/
-    PipelineDesignerPage* pipelineDesigner;
+    PipelineDesignerPage* pipelineDesigner = nullptr;
 
     /**Pointer on the page containing information for the programs.*/
     ProgramsPage* programs;

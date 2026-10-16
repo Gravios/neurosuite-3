@@ -289,6 +289,13 @@ ProgramPage* ParameterView::addProgram(const QString& programName,bool show){
     connect(program, &ProgramPage::programNameChanged, this, &ParameterView::changeProgramName);
     connect(program, &ProgramPage::programToRemove, this, &ParameterView::removeProgram);
     connect(program, &ProgramPage::scriptHidden, this, &ParameterView::scriptHidden);
+    // A value edited on the plugin's page reaches the pipeline graph's nodes
+    // of that plugin (the name is read at the time: the program may be renamed).
+    connect(parameterPage, &ParameterPage::parameterValueChanged, this,
+            [this, parameterPage](const QString& name, const QString& value) {
+        if (pipelineDesigner)
+            pipelineDesigner->setProgramParameter(parameterPage->getProgramName(), name, value);
+    });
 
     //Show the new page
     if(show)

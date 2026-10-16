@@ -1308,6 +1308,28 @@ void PipelineDesignerPage::onParamEdited()
     if (changed) onGraphModified();
 }
 
+bool PipelineDesignerPage::setProgramParameter(const QString& type, const QString& name,
+                                               const QString& value)
+{
+    bool changed = false, inspected = false;
+    for (PipelineNode& n : nodes) {
+        if (n.type != type) continue;
+        for (auto& pv : n.params) {
+            if (pv.first != name || pv.second == value) continue;
+            pv.second = value;
+            n.editedParams.remove(name);
+            changed = true;
+            if (n.id == inspectedId) inspected = true;
+        }
+    }
+    if (!changed) return false;
+    unsaved = true;
+    if (inspected) populateInspector(inspectedId);
+    if (canvas) canvas->update();
+    emit graphModified();
+    return true;
+}
+
 void PipelineDesignerPage::onEnabledToggled(bool checked)
 {
     if (inspectedId.isEmpty()) return;

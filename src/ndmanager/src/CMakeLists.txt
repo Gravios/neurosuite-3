@@ -44,6 +44,7 @@ set(_srcs
     descriptionyamlreader.cpp
     safetablewidget.cpp
     cellguard.cpp               # puts an invalid table entry back instead of trapping the focus
+    parametervaluedelegate.cpp  # typed editors for a plugin parameter's Value cell
     ndmanagerutils.cpp
     colortable.cpp
     parametertree.cpp

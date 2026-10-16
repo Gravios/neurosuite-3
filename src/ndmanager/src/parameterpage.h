@@ -31,7 +31,9 @@
 
 #include <QList>
 #include <safetablewidget.h>
+#include "cellguard.h"
 class QComboBox;
+struct ParameterType;
 class QTableWidgetItem;
 
 /**
@@ -107,6 +109,11 @@ public slots:
     void addParameter();
     /**Removes the selected lines from the parameter table.*/
     void removeParameter();
+    /**Moves the current line one row up (the order is the order the
+     * description lists the parameters in).*/
+    void moveParameterUp();
+    /**Moves the current line one row down.*/
+    void moveParameterDown();
 
     /** Will be called when any item in the table is modified.*/
     void itemModified(QTableWidgetItem* item);
@@ -124,12 +131,25 @@ public slots:
 
 private:
     QComboBox *createCombobox();
+    /** Appends a row; @p extra is {type, default, hidden}, kept on the name
+     *  cell.  Signals are the caller's to block.  Returns the row. */
+    int appendRow(const QString& name, const QString& value, const QString& statusText,
+                  const QStringList& extra = QStringList());
+    /** The declared type of @p row's parameter (text when none). */
+    ParameterType typeOfRow(int row) const;
+    /** Sets the value cell's tooltip from the type and default. */
+    void describeRow(int row);
+    /** Swaps the current row with the one @p step away; false at an end. */
+    bool moveCurrentRow(int step);
+
     QStringList status;
     /**Stores the list of column containing drop down list.*/
     QList<int> ddList;
     bool valueModified;
     bool descriptionModified;
     bool mExpertMode;
+    /** Puts back a value its declared type does not take. */
+    CellGuard guard;
 };
 
 #endif
