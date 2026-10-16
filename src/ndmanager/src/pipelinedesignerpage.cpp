@@ -1434,37 +1434,175 @@ void PipelineDesignerPage::refreshApplyState()
 
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTextStream>
 
 namespace {
 
-// Quote a string for safe YAML scalar output.  Always single-quoted for
-// determinism — the values are short flag-like strings (true, false, 0.75)
-// so we don't need block-scalar handling.  Escapes embedded single quotes
-// per YAML 1.2 §7.3.2.
-QString yamlQuote(const QString& s) {
-    QString out = s;
-    out.replace(QLatin1String("'"), QLatin1String("''"));
-    return QLatin1Char('\'') + out + QLatin1Char('\'');
+// True for a UTF-16 unit that PyYAML will not read back unchanged inside a
+// single-quoted scalar: C0 controls (tab, newline and CR included — a
+// newline inside a flow scalar is folded to a space), DEL and the C1 block
+// (U+0085 NEL is a YAML 1.1 line break), the U+2028/U+2029 line/paragraph
+// separators, BOM and U+FFFE/U+FFFF.  Surrogates are handled by the caller.
+bool needsEscape(char16_t c)
+{
+    return c < 0x20 || (c >= 0x7f && c <= 0x9f) ||
+           c == 0x2028 || c == 0x2029 || c == 0xfeff || c >= 0xfffe;
 }
 
-// Strip a leading/trailing pair of matching quote characters and undo
-// the YAML doubled-single-quote escape used by yamlQuote().
-QString yamlUnquote(QString s) {
-    s = s.trimmed();
-    if (s.size() >= 2) {
-        const QChar q = s.front();
-        if ((q == QLatin1Char('\'') || q == QLatin1Char('"')) && s.back() == q) {
-            s = s.mid(1, s.size() - 2);
-            if (q == QLatin1Char('\'')) {
-                s.replace(QLatin1String("''"), QLatin1String("'"));
-            }
+// Quote a string as a YAML scalar that PyYAML reads back as exactly the
+// same string.  Single-quoted (only ' needs doubling) when every character
+// is printable on one line; otherwise double-quoted with escapes, so tabs,
+// newlines and control characters survive the round trip.
+QString yamlQuote(const QString& s)
+{
+    bool plainOk = true;
+    for (int i = 0; i < s.size() && plainOk; ++i) {
+        const QChar c = s.at(i);
+        if (c.isHighSurrogate() && i + 1 < s.size() && s.at(i + 1).isLowSurrogate()) {
+            ++i;                      // a valid pair is a printable astral char
+        } else if (c.isSurrogate() || needsEscape(c.unicode())) {
+            plainOk = false;
         }
     }
-    return s;
+    if (plainOk) {
+        QString out = s;
+        out.replace(QLatin1String("'"), QLatin1String("''"));
+        return QLatin1Char('\'') + out + QLatin1Char('\'');
+    }
+    QString out;
+    out.reserve(s.size() + 8);
+    out += QLatin1Char('"');
+    for (int i = 0; i < s.size(); ++i) {
+        const QChar c = s.at(i);
+        const char16_t u = c.unicode();
+        if (c.isHighSurrogate() && i + 1 < s.size() && s.at(i + 1).isLowSurrogate()) {
+            out += c;
+            out += s.at(++i);
+        } else if (u == '\\') { out += QLatin1String("\\\\"); }
+        else if (u == '"')    { out += QLatin1String("\\\""); }
+        else if (u == '\n')   { out += QLatin1String("\\n"); }
+        else if (u == '\t')   { out += QLatin1String("\\t"); }
+        else if (u == '\r')   { out += QLatin1String("\\r"); }
+        else if (c.isSurrogate() || needsEscape(u)) {
+            out += (u < 0x100)
+                ? QStringLiteral("\\x%1").arg(uint(u), 2, 16, QLatin1Char('0'))
+                : QStringLiteral("\\u%1").arg(uint(u), 4, 16, QLatin1Char('0'));
+        } else {
+            out += c;
+        }
+    }
+    out += QLatin1Char('"');
+    return out;
 }
+
+// A node id, plugin type or parameter name: written bare when it is an
+// identifier PyYAML reads back as that same string (not a bool / null
+// word), otherwise quoted.  Generated ids (n12) and plugin / parameter
+// names are always bare, so files look as before.
+QString yamlName(const QString& s)
+{
+    static const QRegularExpression ident(QStringLiteral("^[A-Za-z_][A-Za-z0-9_.\\-]*$"));
+    static const QStringList reserved{
+        QStringLiteral("true"), QStringLiteral("false"), QStringLiteral("yes"),
+        QStringLiteral("no"),   QStringLiteral("on"),    QStringLiteral("off"),
+        QStringLiteral("null"), QStringLiteral("y"),     QStringLiteral("n") };
+    if (ident.match(s).hasMatch() && !reserved.contains(s.toLower()))
+        return s;
+    return yamlQuote(s);
+}
+
+// Parser run by loadPipelineFile (python3 -c <this> <file>).  PyYAML is
+// already a dependency of the ndm_* scripts.  It walks the composed node
+// tree rather than safe_load's Python objects so a parameter value comes
+// back as its YAML text — 0.50 stays "0.50", yes stays "yes", ~ becomes ""
+// — instead of a Python repr; a list or mapping value becomes flow-style
+// YAML text.  id / type / enabled / pos / edges are read the way the bash
+// ndm_start reads them (safe_load semantics, e.g. bool(enabled)), so the
+// designer shows what ndm_start will run.  The result is one JSON object on
+// stdout: {"nodes": [{"id","type","pos":[x,y],"enabled","params":[[k,v]..]}],
+//          "edges": [[from,to]..]} — JSON is lossless for any string, unlike
+// the old tab-separated lines.
+const char* const kPipelineParser = R"PY(
+import sys, json, math, yaml
+
+def main(path):
+    with open(path, encoding='utf-8') as f:
+        loader = yaml.SafeLoader(f.read())
+    try:
+        root = loader.get_single_node()
+
+        def get(m, key):
+            if isinstance(m, yaml.MappingNode):
+                for k, v in m.value:
+                    if isinstance(k, yaml.ScalarNode) and k.value == key:
+                        return v
+            return None
+
+        def obj(node):
+            return loader.construct_object(node, deep=True)
+
+        def name(node):
+            if node is None:
+                return ''
+            v = obj(node)
+            return '' if v is None else str(v)
+
+        def text(node):
+            if isinstance(node, yaml.ScalarNode):
+                if node.tag == 'tag:yaml.org,2002:null':
+                    return ''
+                return node.value
+            return yaml.safe_dump(obj(node), default_flow_style=True,
+                                  allow_unicode=True, width=1 << 30).strip()
+
+        out = {'nodes': [], 'edges': []}
+        seq = get(root, 'nodes')
+        for n in (seq.value if isinstance(seq, yaml.SequenceNode) else []):
+            if not isinstance(n, yaml.MappingNode):
+                continue
+            pos = [0.0, 0.0]
+            pn = get(n, 'pos')
+            if isinstance(pn, yaml.SequenceNode):
+                for i, c in enumerate(pn.value[:2]):
+                    try:
+                        x = float(obj(c))
+                        if math.isfinite(x):    # JSON has no NaN / inf
+                            pos[i] = x
+                    except Exception:
+                        pass
+            en = get(n, 'enabled')
+            params = []
+            pm = get(n, 'params')
+            if isinstance(pm, yaml.MappingNode):
+                for k, v in pm.value:
+                    params.append([text(k), text(v)])
+            out['nodes'].append({
+                'id': name(get(n, 'id')),
+                'type': name(get(n, 'type')),
+                'pos': pos,
+                'enabled': True if en is None else bool(obj(en)),
+                'params': params,
+            })
+        seq = get(root, 'edges')
+        for e in (seq.value if isinstance(seq, yaml.SequenceNode) else []):
+            if isinstance(e, yaml.MappingNode):
+                out['edges'].append([name(get(e, 'from')), name(get(e, 'to'))])
+    finally:
+        loader.dispose()
+    json.dump(out, sys.stdout, ensure_ascii=True)
+
+try:
+    main(sys.argv[1])
+except yaml.YAMLError as exc:
+    sys.stderr.write('%s\n' % exc)
+    sys.exit(2)
+)PY";
 
 }  // namespace
 
@@ -1488,8 +1626,8 @@ bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error)
     // Nodes ──────────────────────────────────────────────────────────────
     out << "nodes:\n";
     for (const PipelineNode& n : nodes) {
-        out << "  - id: "      << n.id   << "\n";
-        out << "    type: "    << n.type << "\n";
+        out << "  - id: "      << yamlName(n.id)   << "\n";
+        out << "    type: "    << yamlName(n.type) << "\n";
         out << "    pos: ["    << QString::number(n.pos.x(), 'f', 1)
             << ", "            << QString::number(n.pos.y(), 'f', 1) << "]\n";
         out << "    enabled: " << (n.enabled ? "true" : "false") << "\n";
@@ -1498,7 +1636,7 @@ bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error)
         } else {
             out << "    params:\n";
             for (const auto& pv : n.params) {
-                out << "      " << pv.first << ": " << yamlQuote(pv.second) << "\n";
+                out << "      " << yamlName(pv.first) << ": " << yamlQuote(pv.second) << "\n";
             }
         }
     }
@@ -1509,7 +1647,7 @@ bool PipelineDesignerPage::savePipelineFile(const QString& path, QString* error)
     } else {
         out << "edges:\n";
         for (const PipelineEdge& e : edges) {
-            out << "  - {from: " << e.from << ", to: " << e.to << "}\n";
+            out << "  - {from: " << yamlName(e.from) << ", to: " << yamlName(e.to) << "}\n";
         }
     }
 
@@ -1531,29 +1669,12 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
         }
         return false;
     }
+    f.close();
 
-    // Use Python (already a hard dep of the toolchain) to parse the YAML
-    // robustly, including comments and multi-line params blocks.  The
-    // helper on stdout emits a flat key=value listing that's trivial to
-    // walk in C++.  Falls back to a plain failure if Python is missing.
+    // Parse with PyYAML (see kPipelineParser) and read its JSON.
     QProcess py;
     py.start(QStringLiteral("python3"), QStringList{
-        QStringLiteral("-c"),
-        QStringLiteral(
-            "import sys, yaml\n"
-            "doc = yaml.safe_load(open(sys.argv[1])) or {}\n"
-            "for n in doc.get('nodes', []) or []:\n"
-            "    nid = n.get('id', '')\n"
-            "    typ = n.get('type', '')\n"
-            "    pos = n.get('pos', [0, 0]) or [0, 0]\n"
-            "    en  = bool(n.get('enabled', True))\n"
-            "    print(f'NODE\\t{nid}\\t{typ}\\t{pos[0]}\\t{pos[1]}\\t{int(en)}')\n"
-            "    for k, v in (n.get('params') or {}).items():\n"
-            "        print(f'PARAM\\t{nid}\\t{k}\\t{v}')\n"
-            "for e in doc.get('edges', []) or []:\n"
-            "    print(f'EDGE\\t{e.get(\"from\",\"\")}\\t{e.get(\"to\",\"\")}')\n"),
-        path
-    });
+        QStringLiteral("-c"), QString::fromUtf8(kPipelineParser), path });
     if (!py.waitForFinished(5000)) {
         if (error) *error = QStringLiteral("Pipeline file parser timed out");
         return false;
@@ -1565,10 +1686,20 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
         }
         return false;
     }
+    QJsonParseError jerr;
+    const QJsonDocument jdoc = QJsonDocument::fromJson(py.readAllStandardOutput(), &jerr);
+    if (jerr.error != QJsonParseError::NoError || !jdoc.isObject()) {
+        if (error) {
+            *error = QStringLiteral("Failed to parse '%1': unexpected parser output (%2)")
+                        .arg(path, jerr.errorString());
+        }
+        return false;
+    }
+    const QJsonArray jnodes = jdoc.object().value(QLatin1String("nodes")).toArray();
+    const QJsonArray jedges = jdoc.object().value(QLatin1String("edges")).toArray();
 
     // Replace the graph atomically — only mutate nodes/edges if the
     // parse succeeds.
-    QString parsedOutput;
     QList<PipelineNode> newNodes;
     QList<PipelineEdge> newEdges;
     QHash<QString, int> nodeIdx;  // id → index in newNodes
@@ -1578,11 +1709,12 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
     // the file, so they can't collide with a later node either.
     int freshSeq = 0;
     {
-        static const QRegularExpression numericId(QStringLiteral("(?m)^NODE\\tn(\\d{1,9})\\t"));
-        const QString all = QString::fromUtf8(py.readAllStandardOutput());
-        auto it = numericId.globalMatch(all);
-        while (it.hasNext()) freshSeq = qMax(freshSeq, it.next().captured(1).toInt());
-        parsedOutput = all;
+        static const QRegularExpression numericId(QStringLiteral("^n(\\d{1,9})$"));
+        for (const QJsonValue& v : jnodes) {
+            const QRegularExpressionMatch m =
+                numericId.match(v.toObject().value(QLatin1String("id")).toString());
+            if (m.hasMatch()) freshSeq = qMax(freshSeq, m.captured(1).toInt());
+        }
     }
     auto uniqueFreshId = [&]() {
         QString id;
@@ -1590,48 +1722,45 @@ bool PipelineDesignerPage::loadPipelineFile(const QString& path, QString* error)
         return id;
     };
 
-    const QString output = parsedOutput;
-    int curNode = -1;   // index of the node the following PARAM lines belong to
-    for (const QString& line : output.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
-        const QStringList parts = line.split(QLatin1Char('\t'));
-        if (parts.isEmpty()) continue;
-        if (parts[0] == QLatin1String("NODE") && parts.size() >= 6) {
-            // Drop unknown types with a warning rather than failing the load —
-            // this can happen when a pipeline file references a plugin that
-            // was renamed or removed since it was saved.
-            if (!ndmScriptDef(parts[2])) {
-                unknownTypes.append(parts[2]);
-                curNode = -1;
-                continue;
-            }
-            PipelineNode n;
-            n.id      = parts[1];
-            n.type    = parts[2];
-            n.pos     = QPointF(parts[3].toDouble(), parts[4].toDouble());
-            n.enabled = (parts[5] == QLatin1String("1"));
-            if (n.id.isEmpty() || nodeIdx.contains(n.id)) {
-                // A second node with the same id (or none): edges and
-                // params naming the id belong to the first node; this one
-                // keeps its type and position under a fresh id.
-                renamedIds.append(QStringLiteral("%1 (%2)")
-                    .arg(n.id.isEmpty() ? QStringLiteral("<empty>") : n.id, n.type));
-                n.id = uniqueFreshId();
-            }
-            curNode = newNodes.size();
-            nodeIdx.insert(n.id, curNode);
-            newNodes.append(n);
-        } else if (parts[0] == QLatin1String("PARAM") && parts.size() >= 4) {
-            // PARAM lines follow their NODE line; attach by position, not
-            // by id, so a renamed duplicate keeps its own parameters.
-            if (curNode < 0) continue;  // unknown-type drop
-            const QString val = yamlUnquote(parts[3]);
-            newNodes[curNode].params.append({ parts[2], val });
-        } else if (parts[0] == QLatin1String("EDGE") && parts.size() >= 3) {
-            // Skip edges that reference a dropped (unknown-type) node.
-            if (!nodeIdx.contains(parts[1])) continue;
-            if (!nodeIdx.contains(parts[2])) continue;
-            newEdges.append({ parts[1], parts[2] });
+    for (const QJsonValue& v : jnodes) {
+        const QJsonObject o = v.toObject();
+        const QString type = o.value(QLatin1String("type")).toString();
+        // Drop unknown types with a warning rather than failing the load —
+        // this can happen when a pipeline file references a plugin that
+        // was renamed or removed since it was saved.
+        if (!ndmScriptDef(type)) {
+            unknownTypes.append(type.isEmpty() ? QStringLiteral("<no type>") : type);
+            continue;
         }
+        PipelineNode n;
+        n.id      = o.value(QLatin1String("id")).toString();
+        n.type    = type;
+        const QJsonArray pos = o.value(QLatin1String("pos")).toArray();
+        n.pos     = QPointF(pos.at(0).toDouble(), pos.at(1).toDouble());
+        n.enabled = o.value(QLatin1String("enabled")).toBool(true);
+        if (n.id.isEmpty() || nodeIdx.contains(n.id)) {
+            // A second node with the same id (or none): edges naming the id
+            // belong to the first node; this one keeps its type, position
+            // and parameters under a fresh id.
+            renamedIds.append(QStringLiteral("%1 (%2)")
+                .arg(n.id.isEmpty() ? QStringLiteral("<empty>") : n.id, n.type));
+            n.id = uniqueFreshId();
+        }
+        for (const QJsonValue& pv : o.value(QLatin1String("params")).toArray()) {
+            const QJsonArray kv = pv.toArray();
+            if (kv.size() == 2)
+                n.params.append({ kv.at(0).toString(), kv.at(1).toString() });
+        }
+        nodeIdx.insert(n.id, newNodes.size());
+        newNodes.append(n);
+    }
+    for (const QJsonValue& v : jedges) {
+        const QJsonArray e = v.toArray();
+        if (e.size() != 2) continue;
+        const QString from = e.at(0).toString(), to = e.at(1).toString();
+        // Skip edges that reference a dropped (unknown-type) node.
+        if (!nodeIdx.contains(from) || !nodeIdx.contains(to)) continue;
+        newEdges.append({ from, to });
     }
 
     // Ensure ndm_start is present and at position 0.  A hand-edited pipeline
