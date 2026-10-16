@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [One stderiv transform, one token rule: shared tables for both](#2026-10-16--one-stderiv-transform-one-token-rule-shared-tables-for-both) |
 | 2026-10-16 | [CI runs the tests and a lint job; HDF5 1.10 build fix; generated files removed](#2026-10-16--ci-runs-the-tests-and-a-lint-job-hdf5-110-build-fix-generated-files-removed) |
 | 2026-10-16 | [Build and docs: one C++ standard, standard test layout, how to run the tests](#2026-10-16--build-and-docs-one-c-standard-standard-test-layout-how-to-run-the-tests) |
 | 2026-10-16 | [Spike detection: sdiffPairs as arithmetic expressions (stderiv_C6)](#2026-10-16--spike-detection-sdiffpairs-as-arithmetic-expressions-stderiv_c6) |
@@ -57,6 +58,54 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-10-16 — One stderiv transform, one token rule: shared tables for both
+
+<details>
+<summary>Details</summary>
+
+- **One spatial derivative.** The stderiv transform was written out in nine
+  places:
+  - four sites in the extractor;
+  - the re-extractor;
+  - the sdiff extractor;
+  - `process_pca_stderiv`;
+  - the Klusters nudge;
+  - KK's all-pairs helper.
+
+  All now call `stderiv_transform.hpp`. Its new `spatialDerivBy` reads
+  channels through an accessor, so detectors read the record in place.
+  Every tool's output is byte-identical before and after on the synthetic
+  session, over 13 extractor configurations. The extractor is about 8%
+  faster, and the re-extractor is no slower.
+- **One misfit rule.** A custom map that does not fit the group gives
+  all-pairs for orders 4, 5 and 6. Core used to return the raw value for
+  order 4. The Klusters nudge on an order-4/5 basis without a session
+  pattern now follows the engines.
+- **`process_pca_stderiv -d 4`** is a pass-through flag in the code, no
+  longer a value that collided with order 4 (custom). The command line is
+  unchanged.
+- **New shared tables**, each run on both sides:
+  - `stderiv_vectors.tsv`: 34 transform cases, including saturation,
+    halves and maps that do not fit;
+  - `sdiff_grammar_vectors.tsv`: 39 order-4/5 patterns, also run by
+    `ndm_custody`.
+
+  `custody_vectors.tsv` gains `waveform_token` and `drops_last` rows and
+  more `method_token` rows.
+- **Fixed drift these tables found:**
+  - The method-token parsers disagreed on unknown, repeated and malformed
+    suffixes, so `stderiv_X1_D34` had waveform token `stderiv_X1` in C++
+    and bash. All four parsers now make such a token wholly opaque, as
+    custody.hpp documented.
+  - `process_pca_stderiv`'s dropped-channel rule is now
+    `custody::sdiffDropsLastChannel`.
+- **STANDARDIZATION.md §2.10** lists each shared rule's single home, its
+  mirrors and its table.
+
+</details>
 
 ---
 

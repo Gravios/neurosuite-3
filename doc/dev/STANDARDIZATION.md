@@ -178,6 +178,28 @@ standard shape:
 - `build_invariants` (check 8) enforces this.  Syntax checks use
   `-std=c++20` (§7.5, §9).
 
+### 2.10 Shared rules: one home each
+
+A rule that more than one program applies has **one** implementation, and
+every other language carries a mirror held to a shared vector table.  Do not
+write a second copy in a tool: call the home, or extend the table and the
+mirrors in the same change.
+
+| Rule | Home | Mirrors | Pinned by |
+|---|---|---|---|
+| stderiv spatial derivative + temporal difference | `core/stderiv_transform.hpp` (`spatialDeriv`, `spatialDerivBy`, `applyStderivTransform`) | fiber-kit `fiber_stderiv` | `stderiv_vectors.tsv` |
+| sdiffPairs expressions (order 6) | `core/channel_expr.hpp` | fiber-kit `fiber_stderiv` | `sdiff_expr_vectors.tsv` |
+| sdiffPairs pairs / sets (orders 4, 5), pattern → order | `libklustersshared/sdiff_pairs.h` | fiber-kit `fiber_stderiv`; `ndm_custody` (order) | `sdiff_grammar_vectors.tsv` |
+| file naming, method tokens, waveform token, dropped channel | `core/custody.hpp` | `ndm_resolve_io.py`, `ndm_custody`, fiber-kit `neuro_io` | `custody_vectors.tsv` |
+| PCAE `Method` values and helpers | `core/pca_projection.hpp` | fiber-kit `fiber_pca` | `pca_method_vectors.tsv` |
+| on-disk formats | `core/neurofileio.{h,cpp}` | fiber-kit `neuro_io` | format tests on each side (`.wtl` v2: a writer-made fixture in fiber-kit) |
+
+The tables live in `src/libneurosuite-core/test/` and, byte for byte, in
+fiber-kit's `test/`; `test_shared_contract.py` (both repositories, and
+`core_shared_contract` in ctest) fails when the copies differ.  The procedure
+for changing one is in [CORE_API.md](../../src/libneurosuite-core/docs/CORE_API.md)
+§4.3.
+
 ---
 
 ## 3. Domain invariants

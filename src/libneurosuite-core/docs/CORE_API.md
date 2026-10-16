@@ -177,6 +177,7 @@ Resolved    resolve(base, type, group, method);
 Resolved    resolveAny(base, type, group, preferred = "");
 bool        resolvedIsStderiv(const Resolved&);
 std::vector<std::string> staleAfterRealign();         // {"fet","pca"}
+bool        sdiffDropsLastChannel(int order);         // 1, 3, 4, 5
 ```
 
 **Consumers.** kiloklustakwik (`KlustaKwik.cpp`); klusters (`klusters*.cpp`, `klustersdoc*.cpp/.h`, `clustersprovider.cpp`, `clusterview.cpp`, `templateview.cpp`, `templateclassstore.cpp`, `templatelineagestore.cpp`); plugins `process_alignspikes`, `process_alignspikes_pca`, `process_decomposecollisions`, `process_initeap`; `neurofileio.cpp` (delegates `methodPath`/`stagePath`/`methodFromPath`); `template_generate.hpp`.
@@ -405,29 +406,40 @@ std::int64_t extractSpikeWindows(std::FILE* fil, std::int64_t nSpikes, const Spi
 Namespace `neurosuite::core`. Header-only, std only (includes `pca_projection.hpp` for `SdiffOrder`).
 
 ```cpp
-int16_t clampToInt16(double v);      // lround, then saturate
+int16_t clampToInt16(double v);      // saturate, then lround (NaN -> 0)
+template <class X>
+double  spatialDerivBy(SdiffOrder order, X x, int idx, int nChan,            // x(j): channel j's value
+                       const int* partner = nullptr, const int* setOff = nullptr,
+                       const int* setMem = nullptr, const ChannelExprSet* expr = nullptr);
 double  spatialDeriv(SdiffOrder order, const double* chanRow, int idx, int nChan,
-                     const int* partner = nullptr, const int* setOff = nullptr, const int* setMem = nullptr);
+                     const int* partner = nullptr, const int* setOff = nullptr,
+                     const int* setMem = nullptr, const ChannelExprSet* expr = nullptr);
+void    stderivSeed(SdiffOrder order, const int16_t* groupRow, int nChan, int16_t* seedOut, ...);
 void    applyStderivTransform(SdiffOrder order, const int16_t* in, int nChan, int nSamp, int16_t* out,
                               const int* partner = nullptr, const int16_t* prevSeed = nullptr,
-                              const int* setOff = nullptr, const int* setMem = nullptr);
+                              const int* setOff = nullptr, const int* setMem = nullptr,
+                              const ChannelExprSet* expr = nullptr);
 ```
+
+**The only definition.** Every tool takes its spatial derivative from here: the stderiv and sdiff extractors, the re-extractor, `process_pca_stderiv`, the aligners, Klusters' realign and nudge, and kiloklustakwik's `ApplySdiffAllpairsTemporalDiff`. `spatialDerivBy` reads channel `j` through an accessor, so a detector can read an interleaved record in place (`[&](int j){ return rec[chans[j]]; }`); `spatialDeriv` is the same over a contiguous row. fiber-kit's `fiber_stderiv.apply_stderiv_transform` mirrors it. Both are held to `stderiv_vectors.tsv` (§4.3).
 
 **Spatial derivative of channel `i` in one time sample** (`n = nChan`):
 
 | Order | Value |
 |---|---|
 | `None` | `x[i]` |
-| `First` | `x[i] − x[i+1]`; last channel `x[i] − x[i−1]` |
+| `First` | `x[i] − x[i+1]`; last channel `x[i] − x[i−1]`; `n == 1` → `x[i]` |
 | `Laplacian` | `x[i] − ½(x[i−1] + x[i+1])`; edges use the single neighbour; `n == 1` → `x[i]` |
-| `Custom` | `x[i] − x[partner[i]]`; null `partner` or `n == 1` → `x[i]` |
-| `CustomCar` | `x[i] − mean(x[setMem[setOff[i] .. setOff[i+1])])`; null/empty set or `n == 1` falls through to `AllPairs` |
+| `Custom` | `x[i] − x[partner[i]]` |
+| `CustomCar` | `x[i] − mean(x[setMem[setOff[i] .. setOff[i+1])])` |
+| `Expr` | expression `i` of `expr` over the group's channels |
 | `AllPairs` (default) | `n·x[i] − Σ_j x[j]`; `n == 1` → 0 |
 
-**Transform.** Per time sample: spatial derivative → `clampToInt16`; then per channel `out[t] = clampToInt16(sd[t] − sd[t−1])` with `sd[−1] = prevSeed[c]` (0 when `prevSeed` is null). Layout is channel-major in and out; `out` may alias `in`. `partner` and the set tables are within-group channel indices and are not bounds-checked. The header names `process_extractspikes_stderiv::computeSDiff` + `fill_sdiff_buffer` as the byte-exact ground truth.
+**Misfit rule.** A custom order whose map is missing or does not fit the group (null `partner`, null or empty set tables, an empty set for channel `i`, expressions that do not fit `n`, or `n == 1`) gives `AllPairs`, for orders 4, 5 and 6 alike. This is the rule `-P` documents ("a size that does not match the pattern uses order 3"). The engines refuse a misfit expression set up front.
 
-**Consumers.** `spike_extract.hpp`; klusters `klustersdoc_internal.h` (`spatialDeriv`), `klustersdoc_realign.cpp` (`applyStderivTransform`), `klustersdoc.h`.
-**Twins (hand copies, must match byte for byte):** `computeSDiff` in `process_extractspikes_stderiv.cpp`, `process_pca_stderiv.cpp` and `process_reextractspikes_stderiv.cpp`; fiber-kit `fiber_stderiv.apply_stderiv_transform`.
+**Transform.** Per time sample: spatial derivative → `clampToInt16`; then per channel `out[t] = clampToInt16(sd[t] − sd[t−1])` with `sd[−1] = prevSeed[c]` (0 when `prevSeed` is null). A window cut from a recording should pass `stderivSeed` of the sample before it, which is what the extractor writes. Layout is channel-major in and out; `out` may alias `in`. `partner` and the set tables are within-group channel indices and are not bounds-checked.
+
+**Consumers.** `spike_extract.hpp`; `process_extractspikes_stderiv`, `process_reextractspikes_stderiv`, `process_extractspikes_sdiff`, `process_pca_stderiv`, `process_alignspikes`, `process_alignspikes_pca`; klusters `klustersdoc_internal.h`, `klustersdoc_realign.cpp`, `klustersdoc.h`; kiloklustakwik `KK_timeshift.cpp`. **Mirror:** fiber-kit `fiber_stderiv.apply_stderiv_transform`. No hand copies remain; do not add one.
 
 ### 3.11 `template_generate.hpp` — template library generation and lineage rendering
 
@@ -540,6 +552,8 @@ ctest --test-dir build -R '^core_test_|custody_conformance'   # this library onl
 | `core_test_custody_conformance` | `custody_conformance_test.cpp` | no | runs `custody_vectors.tsv` (argument) against `custody.hpp`; creates files in a `mkdtemp` directory for the `resolve`/`resolve_any` rows |
 | `custody_conformance_python` | `../../ndmanager-plugins/test/test_custody_conformance.py` | — | same vectors against `ndm_resolve_io.py` (registered only if Python 3 is found) |
 | `custody_conformance_bash` | `../../ndmanager-plugins/test/test_custody_conformance.sh` | — | same vectors against `ndm_custody` (registered only if bash is found) |
+| `core_test_stderiv_vectors` | `stderiv_vectors_test.cpp` | no | runs `stderiv_vectors.tsv` (argument) against `stderivSeed` + `applyStderivTransform`, out of place and in place; null seed = zero seed |
+| `core_shared_contract` | `test_shared_contract.py` | — | the shared tables are byte-identical to fiber-kit's (registered only with `-DNS_FIBER_KIT_ROOT`) |
 | `core_test_pca_method_conformance` | `pca_method_conformance_test.cpp` | no | runs `pca_method_vectors.tsv` against `Method`, `spatialOrder`, `hasTemporalDiff`, `methodTag`, `kPcaeMagic`/`kPcaeVersion` |
 | `core_test_neurofileio_spk` | `neurofileio_spk_test.cpp` | yes | `.spk` round trip, binary `.fet`, `.col` accepted-record parse, `.wti` + `.wtf` alignment, `.eap` (sentinel, grow, queries), `.tcl` statuses, `stagePath` composition |
 | `core_test_wti` | `wti_test.cpp` | yes | `.wti` v1/v2 round trip, `parent` column, `collision` link, hand-written files, version-3 rejection |
@@ -554,11 +568,11 @@ ctest --test-dir build -R '^core_test_|custody_conformance'   # this library onl
 | `core_test_template_lineage` | `template_lineage_test.cpp` | no | `renderLineage`: kind→link, bin ordinals, parent rows, `nSpikes`, stored mean copied, empty placeholder |
 | `core_test_template_lineage_io` | `template_lineage_io_test.cpp` | yes | `renderLineageToFiles`: `.wtl` v2 + `.mti` + `.mtf` written and read back |
 
-Not covered by any test in this directory: `stderiv_transform.hpp`, `spike_extract.hpp`, and `pca_projection.hpp`'s `loadPca`/`writePca`/`pcaProjectScores` (only the `Method` enum is pinned). Tests in other subprojects that exercise core code: `klusters_test_pcarowprojection` (`PcaBasis` via `pca_row_projection.h`), `klusters_test_templatelineagestore` and `klusters_test_templateclassstore` (both link `Neurosuite::core`), in `src/klusters/test/`.
+Not covered by any test in this directory: `spike_extract.hpp` beyond all-pairs windows, and `pca_projection.hpp`'s `loadPca`/`writePca`/`pcaProjectScores` (only the `Method` enum is pinned). Tests in other subprojects that exercise core code: `klusters_test_pcarowprojection` (`PcaBasis` via `pca_row_projection.h`), `klusters_test_templatelineagestore` and `klusters_test_templateclassstore` (both link `Neurosuite::core`), in `src/klusters/test/`.
 
 ### 4.3 Cross-language conformance vectors
 
-Two tab-separated tables are the shared contract between implementations in different languages and repositories. Lines starting with `#` and empty lines are comments; column 1 is the case kind; empty fields are real (trailing tabs matter, so runners split on every tab rather than on whitespace).
+Tab-separated tables are the shared contract between implementations in different languages and repositories: the two below, plus `sdiff_expr_vectors.tsv` (the expression grammar, `core_test_sdiff_expr`), `sdiff_grammar_vectors.tsv` (the order-4/5 pattern grammar, `klustersshared_sdiff_pairs_test` and `ndm_test_sdiff_grammar`) and `stderiv_vectors.tsv` (the transform, `core_test_stderiv_vectors`). fiber-kit runs every one of them. Lines starting with `#` and empty lines are comments; column 1 is the case kind; empty fields are real (trailing tabs matter, so runners split on every tab rather than on whitespace).
 
 **`custody_vectors.tsv`** — naming policy.
 
@@ -569,8 +583,10 @@ Two tab-separated tables are the shared contract between implementations in diff
 | `parse_anchor` | `path`, `base`, `type`, `method`, `group`, `suffix`, `ok` 0/1 |
 | `resolve` | comma-separated suffixes to create under `<tmp>/sess.`, `type`, `group`, `method`, expected basename, `found` 0/1 |
 | `resolve_any` | same as `resolve`, with the preferred method in the method column |
-| `method_token` | token, `family`, `kind`, `order` (lag/dims are not columns; they are covered only by C++) |
+| `method_token` | token, `family`, `kind`, `order` (lag/dims are not columns; `waveform_token` covers them) |
 | `is_stderiv` | method, 0/1 |
+| `waveform_token` | token, its waveform token (`waveformToken`) |
+| `drops_last` | spatial order, 0/1 (`sdiffDropsLastChannel`) |
 
 Readers: `custody_conformance_test.cpp` (C++, all kinds), `ndmanager-plugins/test/test_custody_conformance.py` (Python `ndm_resolve_io`, all kinds), `ndmanager-plugins/test/test_custody_conformance.sh` (bash `ndm_custody`, all kinds), and fiber-kit `test/test_custody_token_conformance.py` (only `method_token`, `is_stderiv`, `resolve_any`; it reports the skipped kinds).
 
@@ -669,7 +685,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | D5 | `custody_vectors.tsv` header, `custody_conformance_test.cpp` | Both describe the bash runner as "(future)"; it exists and is registered as `custody_conformance_bash`. The table header's kind list omits `resolve_any` (documented further down). |
 | D6 | `test_shared_contract.py` | **Resolved** (registered as `core_shared_contract`, docstring and usage corrected, missing file fails). Was: the docstring said it compares against "the hashes recorded below"; no hashes are recorded, so without `FK_ROOT` it always passes. Its usage text says `FK_ROOT=/path/to/neurosuite-3`, but `FK_ROOT` must point at fiber-kit (a rename of fiber-kit's `NS3_ROOT` copy), and ctest did not run it. |
 | D7 | `pca_projection.hpp` | Refers to `docs/pca-align-refine-behavioral-diff.md`, which does not exist in the repository. States that the `sampleShift` equality "is asserted in the unit test"; no test calls `pcaProjectScores` or uses `sampleShift`. |
-| D8 | `stderiv_transform.hpp`, `spike_extract.hpp` | Both present themselves as the single implementation, but `process_extractspikes_stderiv`, `process_pca_stderiv` and `process_reextractspikes_stderiv` still use their own `computeSDiff` and window-cutting code; only Klusters calls the headers. |
+| D8 | `stderiv_transform.hpp`, `spike_extract.hpp` | **Transform resolved (2026-10-16):** every engine now calls `spatialDeriv`/`spatialDerivBy`, and `stderiv_vectors.tsv` pins the result. Still open: the extractors cut their own windows rather than calling `spike_extract.hpp`. |
 | D9 | `neurofileio.h` `.wtl` comment | Says the node's spike set is "the source of truth" that "the native generator re-medians", and attributes the parallel-variance combine to `template_generate.hpp`. In v2 there are no spike sets, rendering copies the mean, and the combine is in `running_stats.hpp`. [FILE_FORMATS §4.5](FILE_FORMATS.md#45-wtl--manual-template-lineage-forest-version-tagged-text) repeats "re-medians". |
 | D10 | `neurofileio.h` "Mandatory-method resolution" comment | Says there is no untagged form for `res`/`spk`/`clu`/`fet`/`pca`; `custody::resolve`/`resolveAny` still fall back to the untagged name for the Shared types `res` and `spk`. |
 | D11 | FILE_FORMATS.md | Line citations into `custody.hpp` are stale (`custody.hpp:140-152` and `:149-152` for the type tables; they are now around lines 155–169). §4.7 says `.mti`/`.mtf` are written by "klusters' `renderLineageToFiles`" and marks it unverified; the writer is `templategen::renderLineageToFiles` in this library (`template_generate.hpp`), called from klusters' `templatelineagestore.cpp`. |
