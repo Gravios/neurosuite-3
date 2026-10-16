@@ -151,6 +151,11 @@ public:
      * (isPipelineModified()).*/
     bool isModified();
 
+    /**True if a session-file parameter has been modified: isModified()
+     * without the Pipeline designer, whose edits a session save does not
+     * write.*/
+    bool isSessionModified();
+
     /**True when the Pipeline designer graph has edits not yet written to a
      * pipeline file with Save Pipeline / Save Pipeline As.  Saving the
      * session file does not clear it.*/
@@ -215,8 +220,9 @@ public:
 
     /** Save the current Pipeline Designer graph to
      *  `<session-base>.ndm.default.pipeline`.  Invoked from the page's Save
-     *  button and from ndManager's File menu (Ctrl+Alt+P). */
-    void savePipelineDefault();
+     *  button and from ndManager's File menu (Ctrl+Alt+P).  Returns true
+     *  when the file was written. */
+    bool savePipelineDefault();
 
     /** Save under a custom name.  Prompts the user for `<n>` and writes
      *  `<session-base>.ndm.<n>.pipeline`.  Sanitises the name to a safe

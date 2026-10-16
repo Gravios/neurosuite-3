@@ -615,6 +615,7 @@ void ParameterView::loadProgram(const QString &programUrl) {
     ProgramInformation programInformation;
     reader.getProgramInformation(programInformation);
 
+    int reloadIndex = -1;   // place of a plugin being reloaded
     QString name = programInformation.getProgramName();
     //If the description file was incorrect, no name was supplied
     if(name.isEmpty())
@@ -627,6 +628,7 @@ void ParameterView::loadProgram(const QString &programUrl) {
             counter--;
             return;
         } else {
+            reloadIndex = programOrder.indexOf(name);
             ProgramPage* programPage = programDict[name].page;
             removeProgram(programPage);
         }
@@ -635,6 +637,21 @@ void ParameterView::loadProgram(const QString &programUrl) {
     programsModified = true;
 
     ProgramPage* program = addProgram(name);
+    // A reloaded plugin keeps its place in the program list (and so in the
+    // session file's programs: order, which ndm_start runs in), instead of
+    // moving to the end.
+    if (reloadIndex >= 0 && reloadIndex < programOrder.size() - 1) {
+        programOrder.removeAll(name);
+        programOrder.insert(reloadIndex, name);
+        if (QTreeWidgetItem* item = programDict.value(name).item) {
+            const int at = mScriptsItem->indexOfChild(item);
+            if (at >= 0) {
+                mScriptsItem->takeChild(at);
+                mScriptsItem->insertChild(reloadIndex, item);
+            }
+        }
+        emit scriptListHasBeenModified(programOrder);
+    }
 
     //Set the parameters
     ParameterPage* parameterPage = program->getParameterPage();
@@ -758,6 +775,10 @@ QStringList ParameterView::modifiedProgramDescription() const{
 
 
 bool ParameterView::isModified(){
+    return isSessionModified() || isPipelineModified();
+}
+
+bool ParameterView::isSessionModified(){
     bool parameterModified = false;
     bool descriptionModified = false;
 
@@ -788,12 +809,7 @@ bool ParameterView::isModified(){
                     this->channelDefaultOffsets->isModified() ||
                     files->isModified() ||
                     parameterModified ||
-                    descriptionModified ||
-                    // Pipeline designer edits not yet written with Save
-                    // Pipeline.  Saving the session file does not write the
-                    // pipeline file (hasBeenSave leaves this set), so the
-                    // flag only clears through Save Pipeline / Save As.
-                    isPipelineModified());
+                    descriptionModified);
 
     return p;
 }
@@ -1172,10 +1188,10 @@ bool ParameterView::checkSessionSavedForPipeline(const QString& title)
     return false;
 }
 
-void ParameterView::savePipelineDefault()
+bool ParameterView::savePipelineDefault()
 {
-    if (!pipelineDesigner) return;
-    if (!checkSessionSavedForPipeline(tr("Save Pipeline"))) return;
+    if (!pipelineDesigner) return false;
+    if (!checkSessionSavedForPipeline(tr("Save Pipeline"))) return false;
     const QString base = sessionBasePath();
     const QString path = base + kPipelineInfix
                          + QLatin1String(kDefaultPipelineName) + kPipelineSuffix;
@@ -1189,14 +1205,14 @@ void ParameterView::savePipelineDefault()
                   .arg(QFileInfo(path).fileName()),
                 QMessageBox::Yes | QMessageBox::No,
                 QMessageBox::No) != QMessageBox::Yes) {
-            return;
+            return false;
         }
     }
     QString error;
     if (!pipelineDesigner->savePipelineFile(path, &error)) {
         QMessageBox::critical(this, tr("Save Pipeline"),
             tr("Failed to save pipeline:\n%1").arg(error));
-        return;
+        return false;
     }
     // Lightweight success feedback — a full message box would be too noisy
     // for a frequently-used save action.  Use the window title bar via the
@@ -1210,6 +1226,7 @@ void ParameterView::savePipelineDefault()
             }
         }
     }
+    return true;
 }
 
 void ParameterView::savePipelineAs()

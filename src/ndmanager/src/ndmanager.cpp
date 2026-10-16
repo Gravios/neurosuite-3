@@ -708,7 +708,7 @@ bool ndManager::confirmCloseDocument(){
     }
 
     //if at least one parameter has been modified, prompt the user to save the information
-    if(parameterView->isModified()){
+    if(parameterView->isSessionModified()){
         switch(QMessageBox::question(this,tr("Parameters modification"),tr("Some parameters have changed, do you want to save the parameter file?"),QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
         case QMessageBox::Save://<=> Save
             // A cancelled Save As dialog or a failed write keeps the document open.
@@ -716,6 +716,26 @@ bool ndManager::confirmCloseDocument(){
                 return false;
             break;
         case QMessageBox::Discard://<=> Discard
+            break;
+        case QMessageBox::Cancel:
+            return false;
+        default: break;
+        }
+    }
+
+    // Pipeline designer edits live in <session>.ndm.default.pipeline, which a
+    // session save does not write: ask about them separately.
+    if(parameterView->isPipelineModified()){
+        switch(QMessageBox::question(this,tr("Pipeline modification"),
+                                     tr("The pipeline graph has changed, do you want to save it as the default pipeline?"),
+                                     QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel)){
+        case QMessageBox::Save:
+            // Refuses (with a message) until the session has a file of its
+            // own, and reports a failed write: either way keep the document.
+            if(!parameterView->savePipelineDefault())
+                return false;
+            break;
+        case QMessageBox::Discard:
             break;
         case QMessageBox::Cancel:
             return false;
