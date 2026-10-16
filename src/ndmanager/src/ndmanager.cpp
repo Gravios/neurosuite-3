@@ -58,6 +58,12 @@
 #include "qhelpviewer.h"
 #include "config-ndmanager.h"
 #include "yamlformat.h"   // emitWithLayout: the template is written with its comments
+#include <yaml-cpp/yaml.h>
+#include <QDirIterator>
+#include <QPair>
+#include <string>
+#include <utility>
+#include <vector>
 
 
 ndManager::ndManager()
@@ -203,10 +209,9 @@ void ndManager::setupActions()
 
 
     QMenu *actionMenu = menuBar()->addMenu(tr("&Actions"));
-    mQueryAction = actionMenu->addAction(tr("&Query"));
-#ifndef Q_OS_UNIX
-    mQueryAction->setEnabled(false);
-#endif
+    mQueryAction = actionMenu->addAction(tr("&Query…"));
+    mQueryAction->setStatusTip(tr("List a value (a path such as acquisitionSystem/samplingRate) "
+                                  "from every YAML parameter file under a directory"));
     connect(mQueryAction, &QAction::triggered, this, &ndManager::slotQuery);
 
     mDiscoverPluginsAction = actionMenu->addAction(tr("Discover &Plugins"));
@@ -914,56 +919,141 @@ void ndManager::slotReload(){
     slotStatusMsg(tr("Ready."));
 }
 
-void ndManager::slotQuery(){
-#ifdef Q_OS_UNIX
-    slotStatusMsg(tr("Processing query…"));
-    QPointer<QueryInputDialog> queryInputDialog = new QueryInputDialog();
-    if(queryInputDialog->exec() == QDialog::Accepted)
-    {
-        // Run query
-        QProcess process;
-
-        //Not portable
-        //process.setUseShell(true);
-        const QString program("find");
-        QStringList arguments;
-        arguments<<queryInputDialog->getPath();
-        arguments<<QString::fromLatin1(" -name '*.yaml' -exec xpathReader --html {} \"%1\" \\; | sed 'N;s/<tr>/<tr class=\"tr1\">/;s/<tr>/<tr class=\"tr2\">/'").arg(queryInputDialog->getQuery());
-        //process << "find " + queryInputDialog->getPath() + " -name '*.yaml' -exec xpathReader --html {} \"" + queryInputDialog->getQuery() + "\" \\; | sed 'N;s/<tr>/<tr class=\"tr1\">/;s/<tr>/<tr class=\"tr2\">/'";
-        process.start(program, arguments);
-        QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
-        if (!process.waitForFinished()) {
-            // Process timed out or failed to start — nothing to display.
-            // A future improvement could show an error message here.
-            delete queryInputDialog;
-            return;
-        }
-        QString queryResult = process.readAll();
-        QApplication::restoreOverrideCursor();
-
-        // Read HTML footer from file
-        QFile htmlFile(":/queryreport.html");
-        if(htmlFile.open(QIODevice::ReadOnly))
-        {
-            QTextStream stream(&htmlFile);
-            html = stream.readAll();
-            htmlFile.close();
-        }
-        // Display query result
-        // 1) Insert HTML table into HTML template
-        html.replace("QUERY_RESULTS",queryResult);
-        html.replace("QUERY",queryInputDialog->getQuery());
-        // 2) Convert HTML table to plain text (so the user can save the results as text)
-        queryResult.replace(QRegularExpression("<tr[^>]*><td><a[^>]*>"),"");
-        queryResult.replace("</a>","");
-        queryResult.replace("</td><td>","\t");
-        queryResult.replace("</td></tr>","");
-        QueryOutputDialog queryOutputDialog(html,queryResult);
-        queryOutputDialog.exec();
+// --- query evaluation (std + yaml-cpp only) ---
+// Actions > Query: every node of a YAML document reached by a path of
+// '/'-separated segments.  A segment is a map key, the index of a sequence
+// element, or '*' for every key of a map / every element of a sequence.
+// Each match is stored with its concrete path (e.g. "a/2/b").
+static void queryYamlPath(const YAML::Node& node, const std::vector<std::string>& segments,
+                          std::size_t index, const std::string& at,
+                          std::vector<std::pair<std::string, YAML::Node> >& matches)
+{
+    if (index == segments.size()) {
+        matches.emplace_back(at, node);
+        return;
     }
-    delete queryInputDialog;
+    const std::string& segment = segments[index];
+    const std::string prefix = at.empty() ? std::string() : at + "/";
+    if (node.IsMap()) {
+        for (YAML::const_iterator it = node.begin(); it != node.end(); ++it) {
+            if (!it->first.IsScalar())
+                continue;
+            const std::string key = it->first.Scalar();
+            if (segment == "*" || segment == key)
+                queryYamlPath(it->second, segments, index + 1, prefix + key, matches);
+        }
+    } else if (node.IsSequence()) {
+        for (std::size_t k = 0; k < node.size(); ++k) {
+            const std::string key = std::to_string(k);
+            if (segment == "*" || segment == key)
+                queryYamlPath(node[k], segments, index + 1, prefix + key, matches);
+        }
+    }
+}
+
+// A matched node as one line of text: a scalar as it is written, anything
+// else in YAML flow style.
+static std::string queryValueText(const YAML::Node& node)
+{
+    if (node.IsScalar())
+        return node.Scalar();
+    if (node.IsNull())
+        return std::string();
+    YAML::Node copy = YAML::Clone(node);
+    copy.SetStyle(YAML::EmitterStyle::Flow);
+    YAML::Emitter out;
+    out << copy;
+    return out.c_str();
+}
+// --- end of query evaluation ---
+
+void ndManager::slotQuery(){
+    slotStatusMsg(tr("Processing query…"));
+    const QString startDir = doc->url().isEmpty() ? QDir::currentPath()
+                                                  : QFileInfo(doc->url()).absolutePath();
+    QueryInputDialog queryInputDialog(this, tr("Query"), startDir);
+    if(queryInputDialog.exec() != QDialog::Accepted){
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+    const QString query = queryInputDialog.getQuery().trimmed();
+    const QString root = queryInputDialog.getPath();
+    std::vector<std::string> segments;
+    for (const QString& part : query.split(QLatin1Char('/'), Qt::SkipEmptyParts))
+        segments.push_back(part.trimmed().toStdString());
+    if(segments.empty() || !QFileInfo(root).isDir()){
+        QMessageBox::warning(this, tr("Query"),
+                             tr("Enter a path such as acquisitionSystem/samplingRate and an existing directory."));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    QStringList files;
+    QDirIterator it(root, QStringList() << QStringLiteral("*.yaml") << QStringLiteral("*.yml"),
+                    QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext())
+        files << it.next();
+    files.sort();
+
+    const QDir rootDir(root);
+    QString rows;
+    QString text = tr("File") + QLatin1Char('\t') + tr("Path") + QLatin1Char('\t') + tr("Value") + QLatin1Char('\n');
+    int nbMatches = 0;
+    QStringList unreadable;
+    for (const QString& file : files) {
+        std::vector<std::pair<std::string, YAML::Node> > matches;
+        QList<QPair<QString, QString> > found;
+        try {
+            const YAML::Node document = YAML::LoadFile(file.toStdString());
+            queryYamlPath(document, segments, 0, std::string(), matches);
+            for (const auto& match : matches)
+                found.append(qMakePair(QString::fromStdString(match.first),
+                                       QString::fromStdString(queryValueText(match.second))));
+        } catch (const std::exception&) {
+            unreadable << rootDir.relativeFilePath(file);
+            continue;
+        }
+        const QString shown = rootDir.relativeFilePath(file);
+        for (const auto& match : found) {
+            rows += QStringLiteral("<tr class=\"%1\"><td>%2</td><td>%3</td><td>%4</td></tr>\n")
+                    .arg(nbMatches % 2 ? QStringLiteral("tr2") : QStringLiteral("tr1"),
+                         shown.toHtmlEscaped(), match.first.toHtmlEscaped(), match.second.toHtmlEscaped());
+            QString value = match.second;
+            value.replace(QLatin1Char('\n'), QLatin1Char(' '));
+            text += shown + QLatin1Char('\t') + match.first + QLatin1Char('\t') + value + QLatin1Char('\n');
+            ++nbMatches;
+        }
+    }
+    QApplication::restoreOverrideCursor();
+
+    QString summary = tr("%n match(es) in %1 YAML file(s).", "", nbMatches).arg(files.size());
+    if(!unreadable.isEmpty())
+        summary += QLatin1Char(' ') + tr("Not readable as YAML: %1.").arg(unreadable.join(QLatin1String(", ")));
+    rows = QStringLiteral("<tr><th>%1</th><th>%2</th><th>%3</th></tr>\n").arg(tr("File"), tr("Path"), tr("Value"))
+         + rows
+         + QStringLiteral("<tr><td colspan=\"3\">%1</td></tr>\n").arg(summary.toHtmlEscaped());
+
+    // Read the HTML frame of the report
+    QString html;
+    QFile htmlFile(QStringLiteral(":/queryreport.html"));
+    if(htmlFile.open(QIODevice::ReadOnly))
+    {
+        QTextStream stream(&htmlFile);
+        html = stream.readAll();
+        htmlFile.close();
+    }
+    if(html.isEmpty())
+        html = QStringLiteral("<html><body><h2>Results for Query QUERY</h2><table>QUERY_RESULTS</table></body></html>");
+    // The heading first: the rows may contain the word QUERY.
+    html.replace(QLatin1String("Results for Query QUERY"),
+                 tr("Results for %1 under %2").arg(query.toHtmlEscaped(), root.toHtmlEscaped()));
+    html.replace(QLatin1String("QUERY_RESULTS"), rows);
+    text += summary + QLatin1Char('\n');
+
+    QueryOutputDialog queryOutputDialog(html, text, this);
+    queryOutputDialog.exec();
     slotStatusMsg(tr("Ready."));
-#endif
 }
 
 void ndManager::slotExpertMode(){

@@ -63,7 +63,8 @@ public:
 
 
 private slots:
-    void pathChanged(const QString & newPath);
+    /** Enables OK when both the query and the directory are filled in. */
+    void pathChanged(const QString &);
 
 private:
     QWidget			*page;

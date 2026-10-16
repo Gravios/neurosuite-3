@@ -81,7 +81,10 @@ QueryInputDialog::QueryInputDialog(QWidget *parent,const QString& caption,const 
     QVBoxLayout *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
 
-    QLabel *label1 = new QLabel(tr("Query"),page);
+    QLabel *label1 = new QLabel(tr("Query: a path in the parameter files, keys separated by '/'; "
+                                   "a number selects a list element, * matches every key or element "
+                                   "(e.g. acquisitionSystem/samplingRate or spikeDetection/channelGroups/*/nSamples)"),page);
+    label1->setWordWrap(true);
     label1->setObjectName("query_label");
     layout->addWidget(label1);
 
@@ -91,7 +94,8 @@ QueryInputDialog::QueryInputDialog(QWidget *parent,const QString& caption,const 
     query->setFocus();
     layout->addWidget(query);
 
-    QLabel *label2 = new QLabel(tr("Path"),page);
+    QLabel *label2 = new QLabel(tr("Directory searched, with its subdirectories, for *.yaml and *.yml files"),page);
+    label2->setWordWrap(true);
     label2->setObjectName("path_label");
     layout->addWidget(label2);
 
@@ -104,21 +108,24 @@ QueryInputDialog::QueryInputDialog(QWidget *parent,const QString& caption,const 
 
     //connections
     connect(path, &QueryInputPathWidget::textChanged, this, &QueryInputDialog::pathChanged);
+    connect(query, &QLineEdit::textChanged, this, &QueryInputDialog::pathChanged);
     buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok
                                      | QDialogButtonBox::Cancel);
     layout->addWidget(buttonBox);
     connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
+    pathChanged(QString());
 }
 
 QueryInputDialog::~QueryInputDialog()
 {
 }
 
-void QueryInputDialog::pathChanged(const QString & newPath){
-
-    buttonBox->button(QDialogButtonBox::Ok)->setEnabled(!newPath.isEmpty());
+void QueryInputDialog::pathChanged(const QString &){
+    // Both a query and a directory are needed (the path may have been set
+    // before the connection was made).
+    buttonBox->button(QDialogButtonBox::Ok)->setEnabled(!path->path().trimmed().isEmpty()
+                                                        && !query->text().trimmed().isEmpty());
 }
 
 QString QueryInputDialog::getQuery() const

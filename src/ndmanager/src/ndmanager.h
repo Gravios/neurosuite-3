@@ -217,7 +217,8 @@ private slots:
     /**Shift between the user and expert mode.*/
     void slotExpertMode();
 
-    /**Process query.*/
+    /**Actions > Query: lists the value at a YAML path (a/b/c, '*' for any
+     * key or element) in every *.yaml / *.yml file under a directory.*/
     void slotQuery();
 
     /** Discover external ndm_* plugins on the current parameter view. */
@@ -338,7 +339,6 @@ private:
      * was loaded from; used to reload it as a model.*/
     QString importedFileUrl;
 
-    QString html;
 };
 
 #endif // _NDMANAGER_H_
