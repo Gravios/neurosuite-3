@@ -159,7 +159,8 @@ case "$methodFamily" in
 			1|2|3) pcaMethod=$((methodOrder + 3)) ;;     # 4/5/6
 			4)     pcaMethod=7 ;;                        # StderivCustom
 			5)     pcaMethod=8 ;;                        # StderivCustomCar
-			*) echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-5)"
+			6)     pcaMethod=9 ;;                        # StderivExpr
+			*) echo_error "methodOrder '$methodOrder' invalid for method '$method' (expected 1-6)"
 			   exit $GENERAL_ERROR ;;
 		esac ;;
 esac

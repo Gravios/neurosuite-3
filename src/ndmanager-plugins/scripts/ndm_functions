@@ -1677,6 +1677,7 @@ ndm_process_spikes()
 		electrodes=$(echo $electrodes | sed 's/ /,/g')
 		electrodeList="$electrodeList:$electrodes"
 		_pairs=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/sdiffPairs")
+		_pairs=${_pairs//[[:space:]]/}   # blanks are insignificant in every form
 		sdiffPairsList="$sdiffPairsList:$_pairs"
 		_ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
 		_ps=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
@@ -1693,7 +1694,9 @@ ndm_process_spikes()
 	done
 	n=$((${#electrodeList}-1)); electrodeList=${electrodeList:1:$n}
 	sdiffPairsList=${sdiffPairsList#:}
-	sdiffPairsArg=
+	# An array, quoted where it is used: an expression pattern holds '*' and
+	# parentheses, which an unquoted expansion would glob or split.
+	sdiffPairsArg=()
 	if [ "$methodFamily" = stderiv ]; then
 		havePairs=0
 		case "$sdiffPairsList" in *[!:]*) havePairs=1 ;; esac
@@ -1703,17 +1706,16 @@ ndm_process_spikes()
 					echo_error "method '$method' asks for the custom difference pattern, but no spike group defines sdiffPairs."
 					exit $GENERAL_ERROR
 				fi
-				sdiffPairsArg="-P $sdiffPairsList"
-				# The engine takes the order from the pattern syntax: a reference-set spec
-				# (a-b+c+d) is order 5, a single-partner spec order 4.  Refuse a token whose
-				# digit disagrees rather than let the name lie.
-				case "$sdiffPairsList" in
-					*+*) impliedOrder=5 ;;
-					*)   impliedOrder=4 ;;
-				esac
+				sdiffPairsArg=(-P "$sdiffPairsList")
+				# The engine takes the order from the pattern syntax: expressions over
+				# c0, c1, ... are order 6, a reference-set spec (a-b+c+d) order 5, a
+				# single-partner spec order 4.  Refuse a token whose digit disagrees
+				# rather than let the name lie.
+				impliedOrder=$(ndm_sdiff_pattern_order "$sdiffPairsList")
 				if [ -n "$methodTokenOrder" ] && [ "$methodTokenOrder" != "$impliedOrder" ]; then
 					echo_error "method '$method' states order $methodTokenOrder but the session's sdiffPairs imply order $impliedOrder"
-					echo_error "  (single-partner pattern = order 4; reference-set pattern using '+' = order 5)"
+					echo_error "  (single-partner pattern = order 4; reference-set pattern using '+' = order 5;"
+					echo_error "   expressions naming channels c0, c1, ... = order 6)"
 					exit $GENERAL_ERROR
 				fi
 				methodOrder=$impliedOrder
@@ -1724,14 +1726,11 @@ ndm_process_spikes()
 			*)
 				# Bare legacy token: historical behaviour, apply the pattern when present.
 				if [ "$havePairs" = 1 ]; then
-					sdiffPairsArg="-P $sdiffPairsList"
+					sdiffPairsArg=(-P "$sdiffPairsList")
 					# The pattern decides the order, so a methodOrder asking for something
 					# else is not honoured.  Say so rather than quietly running a different
 					# transform than the node requests.
-					case "$sdiffPairsList" in
-						*+*) impliedOrder=5 ;;
-						*)   impliedOrder=4 ;;
-					esac
+					impliedOrder=$(ndm_sdiff_pattern_order "$sdiffPairsList")
 					if [ "$methodOrder" != "$impliedOrder" ]; then
 						echo_warning "methodOrder=$methodOrder ignored: the sdiffPairs pattern determines the order (=$impliedOrder)"
 						echo_warning "  use method stderiv_C$impliedOrder to state it, or stderiv_S<order> to skip the pattern"
@@ -1749,15 +1748,15 @@ ndm_process_spikes()
 	# passing -d 4 alongside -P exits with "-d must be 0, 1, 2, or 3" before -P is
 	# ever seen.
 	sdiffOrderArg="-d $methodOrder"
-	if [ -n "$sdiffPairsArg" ]; then
+	if [ ${#sdiffPairsArg[@]} -gt 0 ]; then
 		sdiffOrderArg=
 	elif [ "$methodFamily" != standard ]; then
 		case "$methodOrder" in
 			0|1|2|3) : ;;
 			*) echo_error "methodOrder '$methodOrder' cannot be requested by number for method '$method' (-d accepts 0-3)"
-			   echo_error "  orders 4 and 5 ARE the custom-pattern forms and come from the pattern itself:"
-			   echo_error "  define sdiffPairs on the spike groups, then use method stderiv_C4 (single-partner)"
-			   echo_error "  or stderiv_C5 (reference-set, written with '+')"
+			   echo_error "  orders 4, 5 and 6 ARE the custom-pattern forms and come from the pattern itself:"
+			   echo_error "  define sdiffPairs on the spike groups, then use method stderiv_C4 (single-partner),"
+			   echo_error "  stderiv_C5 (reference-set, written with '+') or stderiv_C6 (expressions over c0, c1, ...)"
 			   exit $GENERAL_ERROR ;;
 		esac
 	fi
@@ -1874,7 +1873,7 @@ ndm_process_spikes()
 
 	echo_info "Processing channels $electrodeList"
 	[ "$methodFamily" != standard ] && echo_info " Spatial derivative order   : $methodOrder"
-	[ -n "$sdiffPairsArg" ] && echo_info " Custom difference patterns : $sdiffPairsList"
+	[ ${#sdiffPairsArg[@]} -gt 0 ] && echo_info " Custom difference patterns : $sdiffPairsList"
 	if [ "$methodKind" = S ] && [ "$havePairs" = 1 ]; then
 		echo_info " Custom difference patterns : not applied (method $method)"
 	fi
@@ -1982,13 +1981,13 @@ ndm_process_spikes()
 					-r $refractoryPeriod -l $peakSearchLength \
 					-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
 					$thresholdNoiseArg $recenterArg $hybridArg $cleanupArg \
-					$sdiffOrderArg $sdiffPairsArg \
+					$sdiffOrderArg "${sdiffPairsArg[@]}" \
 					$tmp
 			else
 				$binary \
 					-n $nChannels -c $electrodeList \
 					-w $samplesInWaveform -p $peakSample \
-					$sdiffOrderArg $sdiffPairsArg \
+					$sdiffOrderArg "${sdiffPairsArg[@]}" \
 					-R $tmp
 			fi
 			;;

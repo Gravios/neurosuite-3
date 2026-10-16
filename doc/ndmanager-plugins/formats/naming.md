@@ -140,7 +140,8 @@ parsed from the right, so a token may carry both.
 | `_D<lag><dims>` | one digit each | lagged PCA feature space: per channel PC1 at −lag/0/+lag samples, plus PC2 when dims is 4 |
 
 Examples: `stderiv_S3` (plain all-pairs), `stderiv_C4` (single-partner
-pattern), `stderiv_C5` (reference-set pattern), `stderiv_C5_D34` (lag-3,
+pattern), `stderiv_C5` (reference-set pattern), `stderiv_C6` (expression
+pattern), `stderiv_C5_D34` (lag-3,
 4-column feature space over the `stderiv_C5` waveforms, written by
 [`ndm_pca`](../commands/pca.md) or fiber-kit). The waveform token of a `_D`
 token is the token without the suffix (`custody::waveformToken`,

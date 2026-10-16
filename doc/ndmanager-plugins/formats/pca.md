@@ -51,6 +51,7 @@ A v1 file has no fields 7–8 and loads as `method` 0 with
 | 4 / 5 / 6 | spatial derivative order 1 / 2 / 3 + temporal first difference | `stderiv` (`_S1`–`_S3`, or bare with `methodOrder`) |
 | 7 | custom single-partner pattern + temporal difference | `stderiv_C4` |
 | 8 | custom reference-set pattern + temporal difference | `stderiv_C5` |
+| 9 | custom expression pattern + temporal difference | `stderiv_C6` |
 
 A **lagged** basis (`.pca.<token>_D<lag><dims>.N`) uses the same format: `K` is
 3 or 4, the window is widened by `lag` on each side (`D` = the ordinary window

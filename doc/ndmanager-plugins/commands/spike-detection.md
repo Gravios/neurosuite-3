@@ -406,7 +406,7 @@ Spatial-derivative orders (`methodOrder`, engine `-d`; default 3):
 | `3` | SDIFF_ALLPAIRS | `s[i] = n × x[i] − Σⱼ x[j]` (default; no probe-order requirement) |
 
 Orders 1 and 3 (and the custom orders 4 and 5) leave one linearly dependent
-channel, which the PCA step drops.  Orders 1 and 2 depend on the channel order
+channel, which the PCA step drops; order 6 (expressions) keeps every channel.  Orders 1 and 2 depend on the channel order
 of the group.  A one-channel group has no neighbours, so `sdiff` and `stderiv`
 refuse any order but 0 on it, naming the group: use order 0, the `standard`
 method, or group the channel with its neighbours.
@@ -417,7 +417,7 @@ Qualified `stderiv` tokens state the transform in the file name:
 |---|---|
 | `stderiv` | `methodOrder`; if any group defines `sdiffPairs`, that pattern is applied instead (and a disagreeing `methodOrder` is reported as ignored) |
 | `stderiv_S<1-3>` | plain spatial derivative of that order; `sdiffPairs` deliberately unused.  The token's order overrides `methodOrder` |
-| `stderiv_C4`, `stderiv_C5` | the groups' `sdiffPairs` pattern: order 4 single-partner, order 5 reference-set.  Refused when no group defines `sdiffPairs` or when the digit disagrees with the pattern |
+| `stderiv_C4`, `stderiv_C5`, `stderiv_C6` | the groups' `sdiffPairs` pattern: order 4 single-partner, order 5 reference-set, order 6 expressions.  Refused when no group defines `sdiffPairs` or when the digit disagrees with the pattern |
 
 ### Custom difference patterns and alignment
 
@@ -427,7 +427,13 @@ engine `-P`).  Its grammar fixes the order:
 
 - `a-b,c-d,…` — single-partner map (order 4): output channel a = x[a] − x[b];
 - `a-b+c+d,…` — per-channel reference set (order 5): output channel a =
-  x[a] − mean(x[b], x[c], x[d]); every channel needs a set.
+  x[a] − mean(x[b], x[c], x[d]); every channel needs a set;
+- `expr0, expr1, …` — one arithmetic expression per output channel, in
+  channel order (order 6), over the group's channels written `c0`, `c1`, …
+  (see [Expressions](#expressions-order-6) below).
+
+A pattern that names a channel (`c0`, `c1`, …) is an expression list; the
+other two forms use bare positions and keep the meanings above.
 
 Positions are plain non-negative integers.  An order-4 pattern must be a tree:
 every channel's chain of partners reaches the root, which must be the last
@@ -439,12 +445,54 @@ group makes every group order 5 (a group written `a-b` then has the
 one-member set `{b}`).
 
 A group whose pattern is empty or does not match its size falls back to
-order 3.  Select the pattern with a `_C` token — `stderiv_C4` or `stderiv_C5`.
+order 3 (for expressions, a size mismatch is an error instead).  Select the
+pattern with a `_C` token — `stderiv_C4`, `stderiv_C5` or `stderiv_C6`.
 
-Orders 4 and 5 are **not** selectable through `methodOrder`: the engines' `-d`
-accepts 0–3 only, and `-d` is never passed alongside `-P` (it is range-checked
-first and would exit before `-P` is read).  `methodOrder: 4` or `5` is refused
-with a pointer to the `_C` tokens.
+Orders 4, 5 and 6 are **not** selectable through `methodOrder`: the engines'
+`-d` accepts 0–3 only, and `-d` is never passed alongside `-P` (it is
+range-checked first and would exit before `-P` is read).  `methodOrder: 4`,
+`5` or `6` is refused with a pointer to the `_C` tokens.
+
+#### Expressions (order 6)
+
+Each comma-separated element is the formula of one output channel: element 0
+is output channel 0, element 1 output channel 1, and so on, one element per
+channel of the group.  Channels are the group's positions `c0`, `c1`, …
+(0-based, in the order of the group's `channels` list; `C0` works too);
+numbers are constants.  The usual order of precedence applies:
+
+| Precedence | Operators | Notes |
+|---|---|---|
+| highest | `( … )` | grouping |
+| | `^` | power, right-associative: `2^3^2` = 2^(3^2) |
+| | unary `-`, `+` | `-c0^2` = −(c0²) |
+| | `*`, `/` | left to right: `c0/c1/2` = (c0/c1)/2 |
+| lowest | `+`, `-` | left to right: `c0-c1-c2` = (c0−c1)−c2 |
+
+```yaml
+spikeDetection:
+  channelGroups:
+    - channels: [12, 13, 14, 15]
+      sdiffPairs: "c0 - (c1 + c2)/2, c1 - c0, c2 - 0.5*c3 - 0.5*c1, c3 - c2"
+```
+
+Any arithmetic is allowed, so the transform need not be linear
+(`(c1 - c2)^2/50` is valid).  Write products explicitly (`2*c1`, not `2c1`);
+every element must use at least one channel; blanks are free.  A result that
+is not finite (a division by zero) is 0, and one beyond ±10⁹ is held there;
+like every order the value is then rounded and saturated to int16.  Every
+channel is kept for PCA.  An element naming a channel the group lacks, or a
+count of elements other than the group's channel count, stops the engines
+with an error naming the group.
+
+Quote the value in YAML: an expression that starts with `-` followed by a
+blank, or with `*`, would otherwise not read as a string.
+
+When one group uses expressions and another an older form, the older form is
+written as the expressions it computes (`0-1` as `c0-c1`, `0-1+2` as
+`c0-(c1+c2)/2`) — the same values to the last bit — so the whole run is order
+6.  The grammar is `neurosuite/core/channel_expr.hpp`; its cross-language test
+vectors are `src/libneurosuite-core/test/sdiff_expr_vectors.tsv`.
 
 `ndm_alignspikes` and `ndm_alignspikes_pca` re-extract from `.fil`, so they
 must apply the *same* spatial operator the `.spk` was built with; for a `_C`

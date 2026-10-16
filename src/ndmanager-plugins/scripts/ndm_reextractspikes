@@ -212,6 +212,7 @@ for group in $(seq 1 $nElectrodeGroups); do
     # Kept for every group (active or not) so position N of -P lines up with
     # position N of -c.
     _pairs=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/sdiffPairs")
+    _pairs=${_pairs//[[:space:]]/}   # blanks are insignificant in every form
     sdiffPairsList="$sdiffPairsList:$_pairs"
 
     _ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/nSamples")
@@ -295,7 +296,7 @@ if [ "$methodFamily" = stderiv ]; then
                 echo_error "method '$method' asks for the custom difference pattern, but no spike group defines sdiffPairs."
                 exit $GENERAL_ERROR
             fi
-            case "$sdiffPairsList" in *+*) impliedOrder=5 ;; *) impliedOrder=4 ;; esac
+            impliedOrder=$(ndm_sdiff_pattern_order "$sdiffPairsList")
             if [ "$NDM_M_ORDER" != "$impliedOrder" ]; then
                 echo_error "method '$method' states order $NDM_M_ORDER but the session's sdiffPairs imply order $impliedOrder"
                 exit $GENERAL_ERROR

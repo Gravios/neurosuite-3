@@ -1244,8 +1244,8 @@ programs:
     # has to infer it: stderiv_S<order> runs the plain spatial derivative (1-3) and
     # leaves any sdiffPairs unused; stderiv_C<order> applies the group's sdiffPairs
     # pattern, order 4 for a single-partner pattern, 5 for a reference-set one
-    # (written with '+').  Orders 4 and 5 come from the pattern and cannot be
-    # requested through methodOrder.
+    # (written with '+'), 6 for expressions over the channels c0, c1, ...
+    # Orders 4-6 come from the pattern and cannot be requested through methodOrder.
       - name: method
         value: standard
         status: Optional
@@ -1396,8 +1396,8 @@ programs:
       # has to infer it: stderiv_S<order> runs the plain spatial derivative (1-3) and
       # leaves any sdiffPairs unused; stderiv_C<order> applies the group's sdiffPairs
       # pattern, order 4 for a single-partner pattern, 5 for a reference-set one
-      # (written with '+').  Orders 4 and 5 come from the pattern and cannot be
-      # requested through methodOrder.
+      # (written with '+'), 6 for expressions over the channels c0, c1, ...
+      # Orders 4-6 come from the pattern and cannot be requested through methodOrder.
       - name: method
         value: standard
         status: Optional
@@ -2346,8 +2346,8 @@ programs:
     # has to infer it: stderiv_S<order> runs the plain spatial derivative (1-3) and
     # leaves any sdiffPairs unused; stderiv_C<order> applies the group's sdiffPairs
     # pattern, order 4 for a single-partner pattern, 5 for a reference-set one
-    # (written with '+').  Orders 4 and 5 come from the pattern and cannot be
-    # requested through methodOrder.
+    # (written with '+'), 6 for expressions over the channels c0, c1, ...
+    # Orders 4-6 come from the pattern and cannot be requested through methodOrder.
     # A trailing _D<lag><dims> (e.g. stderiv_C5_D34) ALSO writes the lagged feature
     # space -- per channel PC1 at -lag/0/+lag samples (+ PC2 when dims is 4) -- as
     # .fet/.pca.<method>.<group>, beside the ordinary .fet/.pca of the token without

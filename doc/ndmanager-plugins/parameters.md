@@ -80,7 +80,7 @@ name, `SESSION.<type>.<method>.N` (see [file naming](formats/naming.md)):
 | `standard` | raw waveforms (default) |
 | `sdiff` | spatial derivative across the group's channels |
 | `stderiv` | spatial then temporal derivative |
-| `stderiv_S<n>` / `stderiv_C<n>` | stderiv with a fixed order, plain (`S`) or with the group's `sdiffPairs` patterns (`C4`, `C5`) |
+| `stderiv_S<n>` / `stderiv_C<n>` | stderiv with a fixed order, plain (`S`) or with the group's `sdiffPairs` patterns (`C4`, `C5`, `C6` for expressions) |
 
 `methodOrder` (1–3, default 3) is the spatial-derivative order for
 `sdiff` / `stderiv`. Every step of one sort must use the same `method`: a

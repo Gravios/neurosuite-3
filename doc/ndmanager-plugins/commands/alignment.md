@@ -82,7 +82,7 @@ pattern, so:
 
 - `stderiv_S1` and `stderiv_S2` are refused (first difference and Laplacian
   are not implemented here).
-- `stderiv_C4` / `stderiv_C5` pass the group's `sdiffPairs` to the aligner as
+- `stderiv_C4` / `stderiv_C5` / `stderiv_C6` pass the group's `sdiffPairs` to the aligner as
   `-P`. A group without `sdiffPairs` is skipped with a warning. A token whose
   order disagrees with the pattern (`_C4` with a reference-set pattern) is
   refused.
@@ -221,7 +221,7 @@ write leaves the previous files intact. Group geometry (`channels`, `nSamples`,
 `peakSampleIndex`) and `nChannels` come from the session YAML.
 
 **Methods.** Same as for `ndm_alignspikes`: an invalid token is an error;
-`stderiv_C4` / `stderiv_C5` pass the group's `sdiffPairs` to
+`stderiv_C4` / `stderiv_C5` / `stderiv_C6` pass the group's `sdiffPairs` to
 `process_alignspikes_pca` as `-P` (a group without one is skipped with a
 warning, a token whose order disagrees with the pattern is refused); a bare
 `stderiv` passes the pattern when the group defines one; `stderiv_S3` never
