@@ -3,7 +3,7 @@
 #include <QColorDialog>
 
 ColorTable::ColorTable(QWidget *parent) :
-    QTableWidget(parent)
+    SafeTableWidget(parent)
 {
 }
 

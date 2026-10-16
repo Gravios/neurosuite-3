@@ -137,7 +137,7 @@
         </layout>
        </item>
        <item row="1" column="0" colspan="2">
-        <widget class="QTableWidget" name="groupTable">
+        <widget class="SafeTableWidget" name="groupTable">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
            <horstretch>0</horstretch>
@@ -230,7 +230,7 @@
       </widget>
      </item>
      <item row="1" column="0">
-      <widget class="QTableWidget" name="attributesTable">
+      <widget class="SafeTableWidget" name="attributesTable">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
          <horstretch>0</horstretch>
@@ -275,4 +275,11 @@
  <layoutdefault spacing="6" margin="11"/>
  <resources/>
  <connections/>
+ <customwidgets>
+  <customwidget>
+   <class>SafeTableWidget</class>
+   <extends>QTableWidget</extends>
+   <header>safetablewidget.h</header>
+  </customwidget>
+ </customwidgets>
 </ui>

@@ -20,12 +20,12 @@
 #include "unittable.h"
 
 UnitTable::UnitTable(QWidget * parent)
-    : QTableWidget(parent)
+    : SafeTableWidget(parent)
 {
 }
 
 UnitTable::UnitTable( int numRows, int numCols, QWidget * parent)
-    : QTableWidget(parent)
+    : SafeTableWidget(parent)
 {
    setColumnCount(numCols);
    setRowCount(numRows);

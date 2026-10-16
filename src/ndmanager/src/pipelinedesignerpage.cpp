@@ -108,7 +108,9 @@ static CategoryStyle catStyle(const QString& cat)
 
 PipelineCanvas::PipelineCanvas(QWidget* parent) : QWidget(parent)
 {
-    setFocusPolicy(Qt::ClickFocus);
+    // Tab reaches the canvas too (it was click-only), so Delete can remove the
+    // selected node or edge from the keyboard.
+    setFocusPolicy(Qt::StrongFocus);
     setAcceptDrops(true);
     setMinimumSize(400, 300);
     setMouseTracking(true);
@@ -683,6 +685,8 @@ void PipelineCanvas::keyPressEvent(QKeyEvent* ev)
 {
     if (ev->key() == Qt::Key_Delete || ev->key() == Qt::Key_Backspace)
         deleteSelected();
+    else
+        QWidget::keyPressEvent(ev);         // Tab, shortcuts: not swallowed
 }
 
 void PipelineCanvas::wheelEvent(QWheelEvent* ev)

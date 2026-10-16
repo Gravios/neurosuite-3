@@ -18,7 +18,7 @@
        <property name="title"><string>Implanted Probes</string></property>
        <layout class="QVBoxLayout" name="probeGroupLayout">
         <item>
-         <widget class="QTableWidget" name="probeTable">
+         <widget class="SafeTableWidget" name="probeTable">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
             <horstretch>0</horstretch><verstretch>1</verstretch>
@@ -150,4 +150,11 @@
  </widget>
  <resources/>
  <connections/>
+ <customwidgets>
+  <customwidget>
+   <class>SafeTableWidget</class>
+   <extends>QTableWidget</extends>
+   <header>safetablewidget.h</header>
+  </customwidget>
+ </customwidgets>
 </ui>

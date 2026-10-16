@@ -85,19 +85,19 @@ static QStringList channelsInOtherRows(const QTableWidget* table, int row)
 
 SpikePage::SpikePage(QWidget* parent)
     : SpikeLayout(parent),
-      isIncorrectRow(false),
-      incorrectRow(0),
-      incorrectColumn(0),
+      guard(groupTable, [this](int, int column, const QString& text) -> QString {
+          // The "Diff pairs" column holds an "a-b,c-d,..." pattern, checked by
+          // process_extractspikes_stderiv when the pipeline runs.
+          if (column == 4 || isValidCell(text, column)) return QString();
+          return column == 0
+              ? tr("Give the group's channels as ids of existing channels (0 to %1), "
+                   "separated by spaces.").arg(qMax(0, nbChannels - 1))
+              : tr("Only a whole number is allowed here.");
+      }),
       modified(false),
       nbChannels(0)
 {
     groupTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-    //install a filter on the groupTable in order to validate the entries
-    groupTable->installEventFilter(this);
-
-    // currentCellChanged fires for keyboard, mouse-click and double-click navigation;
-    // the three finer-grained press/click/double-click signals are redundant here.
-    connect(groupTable, &QTableWidget::currentCellChanged, this, &SpikePage::slotValidate);
     connect(addGroupButton, &QAbstractButton::clicked, this, &SpikePage::addGroup);
     connect(removeGroupButton, &QAbstractButton::clicked, this, &SpikePage::removeGroup);
     connect(applyToAllButton, &QAbstractButton::clicked, this, &SpikePage::applyToAllGroups);
@@ -109,29 +109,6 @@ SpikePage::SpikePage(QWidget* parent)
 SpikePage::~SpikePage(){}
 
 
-bool SpikePage::eventFilter(QObject* object,QEvent* event)
-{
-    QString name = object->objectName();
-    if(name.indexOf("groupTable") != -1 && isIncorrectRow) {
-        groupTable->selectRow(incorrectRow);
-        //groupTable->selectColumn(incorrectColumn);
-        groupTable->setCurrentCell(incorrectRow,incorrectColumn);
-        return true;
-    } else if(name.indexOf("groupTable") != -1 && event->type() == QEvent::Leave) {
-        if(groupTable->currentRow() != -1){
-            int row = groupTable->currentRow();
-            int column = groupTable->currentColumn();
-            QWidget* widget = groupTable->cellWidget(row,column);
-            if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit")){
-                groupTable->setCellWidget(row,column,widget);
-                return true;
-            }
-            else return QWidget::eventFilter(object,event);
-        }
-        else return QWidget::eventFilter(object,event);
-    }
-    else return QWidget::eventFilter(object,event);
-}
 
 void SpikePage::setGroups(const QMap<int, QList<int> >& groups,const QMap<int, QMap<QString,QString> >& information){
     // Filling the table is not an edit: no validation, no duplicate warning.
@@ -177,6 +154,7 @@ void SpikePage::setGroups(const QMap<int, QList<int> >& groups,const QMap<int, Q
                 groupTable->setItem(row, 4, new QTableWidgetItem(iterator2.value()));
         }
     }//end of groups loop
+    guard.remember();
 }
 
 
@@ -229,8 +207,6 @@ void SpikePage::getGroupInformation(QMap<int,  QMap<QString,QString> >& groupInf
 }
 
 void SpikePage::removeGroup(){
-    if(isIncorrectRow)
-        return;
     modified = true;
     const QList<QTableWidgetSelectionRange> range = groupTable->selectedRanges();
     if(!range.isEmpty()) {
@@ -249,6 +225,7 @@ void SpikePage::removeGroup(){
            groupTable->removeRow(lst.at(i));
         }
     }
+    guard.remember();
     emit nbGroupsModified(groupTable->rowCount());
 }
 
@@ -301,52 +278,17 @@ void SpikePage::applyToAllGroups(){
         }
     }
     groupTable->blockSignals(blocked);
+    guard.remember();
     modified = true;
 }
 
 void SpikePage::groupChanged(int row,int column){
-    modified = true;
-
-    // The "Diff pairs" column (SDIFF_PAIRS, col 4) holds an "a-b,c-d,..." custom
-    // difference pattern, not a numeric channel list, so it is exempt from the
-    // digits/whitespace check below.  Validating a pattern against that charset
-    // flags every valid pattern (it contains '-' and ',') as an incorrect row,
-    // and the eventFilter then traps focus in the cell and consumes the table's
-    // events -- which presents as a freeze.  The pattern is structurally
-    // validated by process_extractspikes_stderiv when the pipeline runs.
-    if(column == 4)
+    // An invalid entry is put back to its last good value with the reason
+    // shown at the cell; nothing holds the focus (CellGuard).
+    if(!guard.accept(row, column))
         return;
-
-    QString group = groupTable->item(row,column)->text();
-
-    if(isIncorrectRow){
-        QWidget* widget = groupTable->cellWidget(incorrectRow,incorrectColumn);
-        QString incorrectGroup;
-        if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit"))
-            incorrectGroup = static_cast<QLineEdit*>(widget)->text();
-        else if(widget == 0)
-            incorrectGroup = groupTable->item(incorrectRow,incorrectColumn)->text();
-        if(!isValidCell(incorrectGroup, incorrectColumn)){
-            groupTable->selectRow(incorrectRow);
-            groupTable->setCurrentCell(incorrectRow,incorrectColumn);
-            return;
-        }
-    }
-
-    isIncorrectRow = false;
-    incorrectRow = 0;
-    incorrectColumn = column;
-    //groupTable->adjustRow(row);
-
-    //the entry should only contain digits and whitespaces (and, for the
-    //channel list, ids of existing channels)
-    if(!isValidCell(group, column)){
-        isIncorrectRow = true;
-        incorrectRow = row;
-        incorrectColumn = column;
-        groupTable->selectRow(incorrectRow);
-        groupTable->setCurrentCell(incorrectRow,incorrectColumn);
-    } else if(column == 0){
+    modified = true;
+    if(column == 0){
         const QStringList shared = channelsInOtherRows(groupTable, row);
         if(!shared.isEmpty())
             QMessageBox::warning(this, tr("Channel in several groups"),
@@ -360,24 +302,15 @@ bool SpikePage::isValidCell(const QString& text, int column) const{
     return !text.contains(QRegularExpression("[^\\d\\s]"));
 }
 
-void SpikePage::slotValidate(){
-    // Moving between cells is not an edit (groupChanged marks real ones).
-    if(isIncorrectRow){
-        groupTable->selectRow(incorrectRow);
-        // groupTable->selectColumn(incorrectColumn);
-        groupTable->setCurrentCell(incorrectRow,incorrectColumn);
-    }
-}
 
 void SpikePage::addGroup(){
-    if(isIncorrectRow)
-        return;
     modified = true;
     groupTable->insertRow(groupTable->rowCount());
     for(int i = 0;i<groupTable->columnCount();++i){
         groupTable->setItem(groupTable->rowCount()-1,i,new QTableWidgetItem());
         groupTable->update();
     }
+    guard.remember();
     emit nbGroupsModified(groupTable->rowCount());
 }
 

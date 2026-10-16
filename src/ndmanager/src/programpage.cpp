@@ -70,6 +70,9 @@ ProgramPage::ProgramPage(bool expertMode,QWidget *parent, const QString& name)
     // script = new KTextEdit(tabWidget);
     help = new QTextEdit(tabWidget);
     help->setAcceptRichText(false);
+    // Tab leaves the help text for the next control instead of typing a tab
+    // (the plugin script editor keeps Tab for indentation; Ctrl+Tab leaves it).
+    help->setTabChangesFocus(true);
     if(!expertMode)
         help->setReadOnly(true);
     parameters = new ParameterPage(expertMode,tabWidget);

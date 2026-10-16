@@ -30,7 +30,7 @@
 
 
 #include <QList>
-#include "safetablewidget.h"
+#include <safetablewidget.h>
 class QComboBox;
 class QTableWidgetItem;
 

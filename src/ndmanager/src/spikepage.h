@@ -22,6 +22,7 @@
 
 //include files for the application
 #include <spikelayout.h>
+#include "cellguard.h"
 
 // include files for QT
 #include <QWidget>
@@ -79,13 +80,6 @@ public:
 signals:
     void nbGroupsModified(int nbGroups);
 
-protected:
-    /** Event filter to validate the entries in the group table.
- * @param object target object for the event.
- * @param event event sent.
- */
-    bool eventFilter(QObject* object,QEvent* event);
-
 public slots:
     /**Adds a new line to the group table.*/
     void addGroup();
@@ -96,9 +90,6 @@ public slots:
     /**Copies the selected group's parameter columns (samples, peak, features and
        difference pattern) to every other group, leaving each group's channels.*/
     void applyToAllGroups();
-
-    /**Validates the current entry in the group table.*/
-    void slotValidate();
 
     /**Validates the current entry in the group table.*/
     void groupChanged(int row,int column);
@@ -112,9 +103,8 @@ private:
     /**True if @p text is a valid entry for @p column (the channel list or a number).*/
     bool isValidCell(const QString& text, int column) const;
 
-    bool isIncorrectRow;
-    int incorrectRow;
-    int incorrectColumn;
+    /**Puts an invalid entry back to its last good value (no focus trap).*/
+    CellGuard guard;
     bool modified;
     /**Number of channels, for validating channel lists (0 = unknown).*/
     int nbChannels;

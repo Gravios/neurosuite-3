@@ -25,6 +25,7 @@
 //include files for the application
 #include <unitlistlayout.h>
 #include "unittable.h"
+#include "cellguard.h"
 
 // include files for QT
 #include <QWidget>
@@ -69,22 +70,12 @@ public:
     /**True if at least one property has been modified, false otherwise.*/
     inline bool isModified()const{return modified;}
 
-protected:
-    /** Event filter to validate the entries in the unit table.
-        * @param object target object for the event.
-        * @param event event sent.
-        */
-    bool eventFilter(QObject* object,QEvent* event);
-
 public slots:
     /**Adds a new line to the unit table.*/
     void addUnit();
 
     /**Removes the selected lines from the unit table.*/
     void removeUnit();
-    /**selection moved to a different entry in the unit table.*/
-    void currentChanged();
-
     /**Validates an entry in the unit table.*/
     void unitChanged(int row,int column);
 
@@ -94,8 +85,8 @@ public slots:
     void resetModificationStatus(){modified = false;}
 
 private:
-    bool	isIncorrect;
-    int	incorrectRow,incorrectColumn;
+    /**Puts an invalid entry back to its last good value (no focus trap).*/
+    CellGuard guard;
     bool	modified;
 };
 

@@ -21,6 +21,7 @@
 #define UNITTABLE_H
 
 #include <QTableWidget>
+#include <safetablewidget.h>
 #include <QDebug>
 
 /**
@@ -53,7 +54,7 @@ public:
     }
 };
 
-class UnitTable : public QTableWidget
+class UnitTable : public SafeTableWidget
 {
 public:
     explicit UnitTable(QWidget * parent = 0 );

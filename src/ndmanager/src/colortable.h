@@ -2,8 +2,9 @@
 #define COLORTABLE_H
 
 #include <QTableWidget>
+#include <safetablewidget.h>
 
-class ColorTable : public QTableWidget
+class ColorTable : public SafeTableWidget
 {
     Q_OBJECT
 public:

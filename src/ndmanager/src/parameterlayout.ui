@@ -280,4 +280,10 @@
    <header>safetablewidget.h</header>
   </customwidget>
  </customwidgets>
+ <tabstops>
+  <tabstop>nameLineEdit</tabstop>
+  <tabstop>parameterTable</tabstop>
+  <tabstop>addButton</tabstop>
+  <tabstop>removeButton</tabstop>
+ </tabstops>
 </ui>

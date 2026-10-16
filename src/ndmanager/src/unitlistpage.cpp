@@ -38,17 +38,20 @@
 #include <QSignalBlocker>
 
 UnitListPage::UnitListPage(QWidget* parent) :
-    UnitListLayout(parent),isIncorrect(false),incorrectRow(0),modified(false)
+    UnitListLayout(parent),
+    guard(unitTable, [](int, int column, const QString& unit) -> QString {
+        // group and cluster are whole numbers, the isolation distance a number
+        if((column == 0 || column == 1) && unit.contains(QRegularExpression("[^\\d]")))
+            return tr("Only a whole number is allowed here.");
+        if(column == 4 && unit.contains(QRegularExpression("[^\\d.]")))
+            return tr("Only a number is allowed here.");
+        return QString();
+    }),
+    modified(false)
 {
     unitTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-    //install a filter on the unitTable in order to validate the entries
-    unitTable->installEventFilter(this);
     unitTable->setSortingEnabled(true);
 
-    connect(unitTable, &QTableWidget::currentCellChanged, this, &UnitListPage::currentChanged);
-    connect(unitTable, &QTableWidget::cellPressed, this, &UnitListPage::currentChanged);
-    connect(unitTable, &QTableWidget::cellClicked, this, &UnitListPage::currentChanged);
-    connect(unitTable, &QTableWidget::cellDoubleClicked, this, &UnitListPage::currentChanged);
     connect(unitTable, &QTableWidget::cellChanged, this, &UnitListPage::unitChanged);
 
     connect(addUnitButton, &QAbstractButton::clicked, this, &UnitListPage::addUnit);
@@ -58,35 +61,6 @@ UnitListPage::UnitListPage(QWidget* parent) :
 UnitListPage::~UnitListPage(){}
 
 
-bool UnitListPage::eventFilter(QObject* object,QEvent* event)
-{
-    QString name = object->objectName();
-
-    if (name.indexOf("unitTable") != -1 && isIncorrect)
-    {
-        unitTable->selectRow(incorrectRow);
-        unitTable->setCurrentCell(incorrectRow,incorrectColumn);
-        return true;
-    }
-    else if (name.indexOf("unitTable") != -1 && event->type() == QEvent::Leave)
-    {
-        if(unitTable->currentRow() != -1)
-        {
-            int row = unitTable->currentRow();
-            int column = unitTable->currentColumn();
-            QWidget* widget = unitTable->cellWidget(row,column);
-            if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit"))
-            {
-                if(!static_cast<QLineEdit*>(widget)->text().isEmpty())
-                    unitTable->setCellWidget(row,column,widget);
-                return true;
-            }
-            else return QWidget::eventFilter(object,event);
-        }
-        else return QWidget::eventFilter(object,event);
-    }
-    else return QWidget::eventFilter(object,event);
-}
 
 void UnitListPage::setUnits(const QMap<int, QStringList >& units)
 {
@@ -118,6 +92,7 @@ void UnitListPage::setUnits(const QMap<int, QStringList >& units)
     }
     unitTable->setSortingEnabled(sorting);
     modified = false;
+    guard.remember();
 }
 
 void UnitListPage::getUnits(QMap<int, QStringList >& units)const
@@ -138,8 +113,6 @@ void UnitListPage::getUnits(QMap<int, QStringList >& units)const
 
 void UnitListPage::removeUnit()
 {
-    if (isIncorrect)
-        return;
     modified = true;
     const QList<QTableWidgetSelectionRange> range = unitTable->selectedRanges();
     if(!range.isEmpty()) {
@@ -158,6 +131,7 @@ void UnitListPage::removeUnit()
             unitTable->removeRow(lst.at(i));
         }
     }
+    guard.remember();
 }
 
 void UnitListPage::setNbUnits(int nbUnits)
@@ -169,8 +143,6 @@ void UnitListPage::setNbUnits(int nbUnits)
 
 void UnitListPage::addUnit()
 {
-    if(isIncorrect)
-        return;
     modified = true;
     unitTable->insertRow(unitTable->rowCount());
 
@@ -178,40 +150,19 @@ void UnitListPage::addUnit()
         UnitTableItem* item = new UnitTableItem("");
         unitTable->setItem(unitTable->rowCount() - 1,i,item);
     }
+    guard.remember();
 }
 
-void UnitListPage::currentChanged()
-{
-    if(isIncorrect) {
-        unitTable->selectRow(incorrectRow);
-        unitTable->setCurrentCell(incorrectRow,incorrectColumn);
-    }
-}
 
 void UnitListPage::unitChanged(int row,int column)
 {
+    // An invalid entry is put back to its last good value with the reason
+    // shown at the cell; nothing holds the focus (CellGuard).
+    if(!guard.accept(row, column))
+        return;
     // An edited cell is a change to the session (setUnits blocks this slot
     // while loading).
     modified = true;
-    const QTableWidgetItem* cell = unitTable->item(row,column);
-    if(!cell)
-        return;
-    const QString unit = cell->text();
-    //the group and cluster entries should only contain digits
-    //the I.D. entry should only contain digits and '.'
-    if((column==0||column==1)&&(unit.contains(QRegularExpression("[^\\d]"))!=0)||(column==4&&(unit.contains(QRegularExpression("[^\\d.]"))!=0)))
-    {
-        isIncorrect = true;
-        incorrectRow = row;
-        incorrectColumn = column;
-        /*				unitTable->selectRow(row);
-            unitTable->setCurrentCell(row,column);*/
-    }
-    else
-    {
-        isIncorrect = false;
-        //unitTable->adjustRow(row);
-    }
 }
 
 

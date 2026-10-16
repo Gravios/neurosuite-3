@@ -22,6 +22,7 @@
 
 //include files for the application
 #include <filelayout.h>
+#include "cellguard.h"
 #include <helper.h>
 
 // include files for QT
@@ -85,13 +86,6 @@ signals:
  */
     void extensionChanged(const QString& extension,FilePage* filePage);
 
-protected:
-    /** Event filter to validate the entries in the mapping table.
- * @param object target object for the event.
- * @param event event sent.
- */
-    bool eventFilter(QObject* object,QEvent* event);
-
 public slots:
 
     /**Notifies that the file extension has changed.*/
@@ -102,9 +96,6 @@ public slots:
 
     /**Removes the selected lines from the mapping table.*/
     void removeChannel();
-
-    /**Validates the current entry in the mapping table.*/
-    void slotValidate();
 
     /**Validates the current entry in the mapping table.*/
     void mappingChanged(int row,int column);
@@ -124,8 +115,8 @@ private:
     /**One past the highest channel id held by a row (1 if there is none).*/
     int nextChannelId() const;
 
-    bool isIncorrectRow;
-    int incorrectRow;
+    /**Puts an invalid entry back to its last good value (no focus trap).*/
+    CellGuard guard;
     bool modified;
     bool isInit;
     QString extension;

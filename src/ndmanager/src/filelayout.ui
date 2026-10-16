@@ -83,7 +83,7 @@
        <item row="1" column="0">
         <layout class="QGridLayout">
          <item row="0" column="0">
-          <widget class="QTableWidget" name="mappingTable">
+          <widget class="SafeTableWidget" name="mappingTable">
            <property name="sizePolicy">
             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
              <horstretch>0</horstretch>
@@ -280,4 +280,11 @@
  <layoutdefault spacing="6" margin="11"/>
  <resources/>
  <connections/>
+ <customwidgets>
+  <customwidget>
+   <class>SafeTableWidget</class>
+   <extends>QTableWidget</extends>
+   <header>safetablewidget.h</header>
+  </customwidget>
+ </customwidgets>
 </ui>

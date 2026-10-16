@@ -37,7 +37,10 @@
 
 FilePage::FilePage(QWidget *parent)
     : FileLayout(parent),
-      isIncorrectRow(false),
+      guard(mappingTable, [](int, int, const QString& text) -> QString {
+          return text.contains(QRegularExpression("[^\\d\\s]"))
+              ? tr("Give the channels as numbers separated by spaces.") : QString();
+      }),
       modified(false),
       isInit(true)
 {
@@ -51,14 +54,8 @@ FilePage::FilePage(QWidget *parent)
     connect(extensionLineEdit, &QLineEdit::textChanged, this, &FilePage::propertyModified);
     connect(samplingRateLineEdit, &QLineEdit::textChanged, this, &FilePage::propertyModified);
 
-    //install a filter on the mappingTable in order to validate the entries
-    mappingTable->installEventFilter(this);
-
     //For validation
     connect(mappingTable, &QTableWidget::cellChanged, this, &FilePage::mappingChanged);
-    connect(mappingTable, &QTableWidget::cellPressed, this, &FilePage::slotValidate);
-    connect(mappingTable, &QTableWidget::cellClicked, this, &FilePage::slotValidate);
-    connect(mappingTable, &QTableWidget::cellDoubleClicked, this, &FilePage::slotValidate);
 
 }
 
@@ -68,32 +65,8 @@ FilePage::~FilePage(){
     samplingRateLineEdit->clearFocus();
 }
 
-bool FilePage::eventFilter(QObject* object,QEvent* event){
-    const QString name = object->objectName();
-    if(name.indexOf("mappingTable") != -1 && isIncorrectRow){
-        mappingTable->editItem(mappingTable->item(incorrectRow,0));
-        return true;
-    }
-    else if(name.indexOf("mappingTable") != -1 && event->type() == QEvent::Leave){
-        if(mappingTable->currentRow() != -1){
-            int row = mappingTable->currentRow();
-            int column = mappingTable->currentColumn();
-            QWidget* widget = mappingTable->cellWidget(row,column);
-            if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit")){
-                mappingTable->editItem(mappingTable->item(row,column));
-                return true;
-            }
-            else return QWidget::eventFilter(object,event);
-        }
-        else return QWidget::eventFilter(object,event);
-    }
-    else
-        return QWidget::eventFilter(object,event);
-}
 
 void FilePage::addChannel(){
-    if(isIncorrectRow)
-        return;
     modified = true;
 
     const int id = nextChannelId();
@@ -103,6 +76,7 @@ void FilePage::addChannel(){
     item->setData(ChannelIdRole, id);
     mappingTable->setItem(row,0,item);
     mappingTable->setVerticalHeaderItem(row,new QTableWidgetItem(QString::number(id)));
+    guard.remember();
 }
 
 int FilePage::nextChannelId() const{
@@ -120,8 +94,6 @@ int FilePage::nextChannelId() const{
 }
 
 void FilePage::removeChannel(){
-    if(isIncorrectRow)
-        return;
     modified = true;
 
     QList<QTableWidgetSelectionRange> range = mappingTable->selectedRanges ();
@@ -140,6 +112,7 @@ void FilePage::removeChannel(){
         }
 
     }
+    guard.remember();
 }
 
 void FilePage::setChannelMapping(const QMap<int, QList<int> >& channels){
@@ -202,39 +175,21 @@ QMap<int, QList<int> > FilePage::getChannelMapping()const{
     return channelMapping;
 }
 
-void FilePage::slotValidate(){
-    // Clicking a cell is not an edit (mappingChanged marks real ones).
-    if(isIncorrectRow){
-        mappingTable->selectRow(incorrectRow);
-        mappingTable->editItem(mappingTable->item(incorrectRow,0));
-    }
-}
 
 /**Validates the current entry in the mapping table.*/
 void FilePage::mappingChanged(int row,int column){
     // setChannelMapping fills the table while the page is initialised:
-    // that is the loaded session, not an edit.
-    if(!isInit)
-        modified = true;
-    const QTableWidgetItem* cell = mappingTable->item(row,column);
-    if(!cell)
+    // that is the loaded session, not an edit, and it is not re-validated.
+    if(isInit){
+        guard.remember(row, column);
         return;
-    QString channel = cell->text();
-    //the group entry should only contain digits and whitespaces
-    if(channel.contains(QRegularExpression("[^\\d\\s]")) != 0){
-        isIncorrectRow = true;
-        incorrectRow = row;
-        mappingTable->selectRow(row);
     }
-    else{
-        if(isIncorrectRow){
-            QString incorrectMapping = mappingTable->item(incorrectRow,0)->text();
-            if(incorrectMapping.contains(QRegularExpression("[^\\d\\s]")) != 0)
-                return;
-        }
-        isIncorrectRow = false;
-        mappingTable->resizeColumnToContents(column);
-    }
+    // An invalid entry is put back to its last good value with the reason
+    // shown at the cell; nothing holds the focus (CellGuard).
+    if(!guard.accept(row, column))
+        return;
+    modified = true;
+    mappingTable->resizeColumnToContents(column);
 }
 
 

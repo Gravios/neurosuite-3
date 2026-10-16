@@ -22,6 +22,7 @@
 
 //include files for the application
 #include <anatomylayout.h>
+#include "cellguard.h"
 
 // include files for QT
 #include <QWidget>
@@ -78,13 +79,6 @@ public:
     /**True if at least one property has been modified, false otherwise.*/
     bool isModified()const{return modified;}
     void setModified(bool b) { modified = b; }
-protected:
-    /** Event filter to validate the entries in the group table.
- * @param object target object for the event.
- * @param event event sent.
- */
-    bool eventFilter(QObject* object,QEvent* event);
-
 public slots:
     /**Adds a new line to the group table.*/
     void addGroup();
@@ -92,8 +86,6 @@ public slots:
     /**Removes the selected lines from the group table.*/
     void removeGroup();
 
-    /**Validates the current entry in the group table.*/
-    void slotValidate();
 
     /**Validates the current entry in the group table.*/
     void groupChanged(int row,int column);
@@ -108,8 +100,9 @@ public slots:
     void resetModificationStatus(){modified = false;}
 
 private:
-    int incorrectRow;
-    bool isIncorrectRow;
+    /**Put an invalid entry back to its last good value (no focus trap).*/
+    CellGuard guard;
+    CellGuard attributeGuard;
     bool modified;
     /**Number of channels, for validating group entries (0 = unknown).*/
     int nbChannels;

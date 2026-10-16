@@ -43,6 +43,7 @@ set(_srcs
     descriptionyamlwriter.cpp
     descriptionyamlreader.cpp
     safetablewidget.cpp
+    cellguard.cpp               # puts an invalid table entry back instead of trapping the focus
     ndmanagerutils.cpp
     colortable.cpp
     parametertree.cpp

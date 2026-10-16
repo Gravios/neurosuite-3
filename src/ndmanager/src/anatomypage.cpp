@@ -95,21 +95,30 @@ static QStringList channelsInOtherRows(const QTableWidget* table, int row)
 
 AnatomyPage::AnatomyPage(QWidget* parent)
     : AnatomyLayout(parent),
-      incorrectRow(0),
-      isIncorrectRow(false),
+      guard(groupTable, [this](int, int, const QString& text) -> QString {
+          return isValidGroup(text, nbChannels) ? QString()
+              : tr("Give the group's channels as ids of existing channels (0 to %1), "
+                   "separated by spaces.").arg(qMax(0, nbChannels - 1));
+      }),
+      attributeGuard(attributesTable, [this](int, int column, const QString& text) -> QString {
+          // The skip flag is a number; the other attributes are free text.
+          const QTableWidgetItem* header = attributesTable->horizontalHeaderItem(column);
+          if (!header || attributeKey(header->text()) != ndmanager::SKIP || text.isEmpty())
+              return QString();
+          bool ok = false;
+          text.toInt(&ok);
+          return ok ? QString() : tr("Skip is 0 or 1.");
+      }),
       modified(false),
       nbChannels(0)
 {
     attributesTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
     groupTable->horizontalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
-    //install a filter on the groupTable in order to validate the entries
-    groupTable->installEventFilter(this);
 
     connect(addGroupButton, &QAbstractButton::clicked, this, &AnatomyPage::addGroup);
     connect(removeGroupButton, &QAbstractButton::clicked, this, &AnatomyPage::removeGroup);
     // currentCellChanged fires for keyboard, mouse-click and double-click navigation;
     // the three finer-grained press/click/double-click signals are redundant here.
-    connect(groupTable, &QTableWidget::currentCellChanged, this, &AnatomyPage::slotValidate);
     connect(groupTable, &QTableWidget::cellChanged, this, &AnatomyPage::groupChanged);
 
     connect(attributesTable, &QTableWidget::cellChanged, this, &AnatomyPage::attributeChanged);
@@ -117,29 +126,10 @@ AnatomyPage::AnatomyPage(QWidget* parent)
 
 AnatomyPage::~AnatomyPage(){}
 
-bool AnatomyPage::eventFilter(QObject* object,QEvent* event) {
-    const QString name = object->objectName();
-    if (name.indexOf("groupTable") != -1 && isIncorrectRow) {
-        groupTable->selectRow(incorrectRow);
-        groupTable->setCurrentCell(incorrectRow,0);
-        return true;
-    } else if(name.indexOf("groupTable") != -1 && event->type() == QEvent::Leave) {
-        if(groupTable->currentRow() != -1){
-            int row = groupTable->currentRow();
-            int column = groupTable->currentColumn();
-            QWidget* widget = groupTable->cellWidget(row,column);
-            if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit")) {
-                groupTable->editItem(groupTable->item(row,column));
-                return true;
-            }
-            else return QWidget::eventFilter(object,event);
-        }
-        else return QWidget::eventFilter(object,event);
-    }
-    else return QWidget::eventFilter(object,event);
-}
 
 void AnatomyPage::setAttributes(const QMap<QString, QMap<int,QString> >& attributes){
+    // Filling the table is not an edit (and a loaded value is not re-validated).
+    const QSignalBlocker blocker(attributesTable);
     for(int i =0; i<attributesTable->columnCount();++i){
         //the headers have been set in the ui file; the map is keyed by attributeKey()
         const QString header = attributesTable->horizontalHeaderItem(i)->text();
@@ -153,6 +143,7 @@ void AnatomyPage::setAttributes(const QMap<QString, QMap<int,QString> >& attribu
         }
         //attributesTable->adjustColumn(i);
     }
+    attributeGuard.remember();
 }
 
 void AnatomyPage::getAttributes(QMap<QString, QMap<int,QString> >& attributesMap)const
@@ -196,6 +187,7 @@ void AnatomyPage::setGroups(const QMap<int, QList<int> >& groups)
 
         groupTable->setItem(row, 0, new QTableWidgetItem(group));
     }//end of groups loop
+    guard.remember();
 }
 
 void AnatomyPage::getGroups(QMap<int, QList<int> >& groups)const{
@@ -221,9 +213,6 @@ void AnatomyPage::getGroups(QMap<int, QList<int> >& groups)const{
 
 void AnatomyPage::removeGroup()
 {
-    if(isIncorrectRow)
-        return;
-
     modified = true;
     const QList<QTableWidgetSelectionRange> range = groupTable->selectedRanges();
     if (!range.isEmpty()) {
@@ -242,80 +231,34 @@ void AnatomyPage::removeGroup()
             groupTable->removeRow(lst.at(i));
         }
     }
+    guard.remember();
 }
 
 void AnatomyPage::addGroup(){
-    if(isIncorrectRow) return;
     modified = true;
     groupTable->insertRow(groupTable->rowCount());
     groupTable->setItem(groupTable->rowCount() - 1,0,new QTableWidgetItem());
+    guard.remember();
 }
 
 void AnatomyPage::groupChanged(int row,int column){
+    // An invalid entry is put back to its last good value with the reason
+    // shown at the cell; nothing holds the focus (CellGuard).
+    if(!guard.accept(row, column))
+        return;
     modified = true;
-    const QString group = groupTable->item(row,column)->text();
-
-    if(isIncorrectRow){
-        QWidget* widget = groupTable->cellWidget(incorrectRow,0);
-        QString incorrectGroup;
-
-        if(widget != 0 && widget->metaObject()->className() == QLatin1String("QLineEdit"))
-            incorrectGroup = static_cast<QLineEdit*>(widget)->text();
-        else if(widget == 0)
-            incorrectGroup = groupTable->item(incorrectRow,0)->text();
-
-        if(!isValidGroup(incorrectGroup, nbChannels)){
-            groupTable->selectRow(incorrectRow);
-            groupTable->setCurrentCell(incorrectRow,0);
-            return;
-        }
-    }
-    isIncorrectRow = false;
-    incorrectRow = 0;
-    //groupTable->adjustRow(row);
-
-    //the group entry should only contain digits and whitespaces, and ids of existing channels
-    if(!isValidGroup(group, nbChannels)){
-        isIncorrectRow = true;
-        incorrectRow = row;
-        groupTable->selectRow(incorrectRow);
-        groupTable->setCurrentCell(incorrectRow,0);
-    } else {
-        const QStringList shared = channelsInOtherRows(groupTable, row);
-        if(!shared.isEmpty())
-            QMessageBox::warning(this, tr("Channel in several groups"),
-                                 tr("Channel(s) %1 also belong to another anatomical group.").arg(shared.join(", ")));
-    }
-
+    const QStringList shared = channelsInOtherRows(groupTable, row);
+    if(!shared.isEmpty())
+        QMessageBox::warning(this, tr("Channel in several groups"),
+                             tr("Channel(s) %1 also belong to another anatomical group.").arg(shared.join(", ")));
 }
 
 void AnatomyPage::attributeChanged(int row,int column){
+    if(!attributeGuard.accept(row, column))
+        return;
     modified = true;
-    //hard coded that the skip attribut is an int, later it can be made more dynamic
-    QTableWidgetItem * 	header = attributesTable->horizontalHeaderItem ( column );
-    if(header && attributeKey(header->text()) == ndmanager::SKIP){
-        bool ok;
-        QTableWidgetItem * item = attributesTable->item ( row, column );
-        QString attribut = item->text();
-        attribut.toInt(&ok);
-        if(ok) {
-            //attributesTable->adjustRow(row);
-        } else {
-            attributesTable->selectRow(row);
-            attributesTable->setCurrentCell(row,column);
-        }
-    } else {
-        //attributesTable->adjustRow(row);
-    }
 }
 
-void AnatomyPage::slotValidate(){
-    // Moving between cells is not an edit (groupChanged marks real ones).
-    if(isIncorrectRow){
-        groupTable->selectRow(incorrectRow);
-        groupTable->setCurrentCell(incorrectRow,0);
-    }
-}
 
 void AnatomyPage::setNbChannels(int nbChannels){
     this->nbChannels = nbChannels;

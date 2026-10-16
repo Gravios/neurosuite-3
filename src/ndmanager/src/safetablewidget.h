@@ -17,6 +17,7 @@
 
 #include <QTableWidget>
 #include <QInputMethodEvent>
+#include <QAbstractItemDelegate>
 
 class SafeTableWidget : public QTableWidget
 {
@@ -29,6 +30,13 @@ public:
         : QTableWidget(rows, columns, parent), editingInProgress(false) {}
 
 protected:
+    /** Tab moves cell to cell and, from the last cell, on to the next control;
+     *  Shift+Tab mirrors it from the first cell.  (QTableView's own MoveNext
+     *  wraps around inside the table, so Tab could never leave it.) */
+    QModelIndex moveCursor(CursorAction cursorAction, Qt::KeyboardModifiers modifiers) override;
+    /** The same when Tab ends an edit in the last (or Shift+Tab in the first) cell. */
+    void closeEditor(QWidget* editor, QAbstractItemDelegate::EndEditHint hint) override;
+
     void inputMethodEvent(QInputMethodEvent *event) override
     {
         // Re-entrancy guard: if we are already inside edit() (which called setFocus()
@@ -45,6 +53,10 @@ protected:
     }
 
 private:
+    /** The first or last cell Tab visits: visual order, hidden rows and
+     *  columns skipped.  Invalid for an empty table. */
+    QModelIndex edgeIndex(bool last) const;
+
     bool editingInProgress;
 };
 
