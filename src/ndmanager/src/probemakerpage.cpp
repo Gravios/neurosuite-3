@@ -25,6 +25,7 @@
 #include <algorithm>
 
 #include <QApplication>
+#include <QDebug>
 #include <QDoubleSpinBox>
 #include <QEvent>
 #include <QFile>
@@ -39,6 +40,7 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSet>
 #include <QShortcut>
 #include <QSpinBox>
 #include <QSplitter>
@@ -122,6 +124,10 @@ inline QString yamlEscape(const QString& s)
     }
     if (plain) {
         if (s.front().isSpace() || s.back().isSpace()) plain = false;
+        // A value starting like a number (version 1.0, catalogPage 101)
+        // would read back as a number, not as the string it was.
+        const QChar c0 = s.front();
+        if (c0.isDigit() || c0 == '-' || c0 == '.') plain = false;
         const QString lower = s.toLower();
         if (lower == QLatin1String("true")  || lower == QLatin1String("false")
          || lower == QLatin1String("null")  || lower == QLatin1String("~")
@@ -141,6 +147,32 @@ inline QString yamlEscape(const QString& s)
     }
     out += '"';
     return out;
+}
+
+// Scalar readers for .probe files.  Hand-written and library files carry
+// nulls (`vendor: null`, `length_mm: null`) and the odd non-scalar where a
+// scalar is expected; each of these returns @p def instead of throwing.
+QString probeString(const YAML::Node& n, const QString& def = QString())
+{
+    if (!n || !n.IsScalar()) return def;
+    return QString::fromStdString(n.Scalar());
+}
+
+int probeInt(const YAML::Node& n, int def)
+{
+    if (!n || !n.IsScalar()) return def;
+    try { return n.as<int>(); } catch (...) { return def; }
+}
+
+double probeDouble(const YAML::Node& n, double def, bool* ok = nullptr)
+{
+    if (ok) *ok = false;
+    if (!n || !n.IsScalar()) return def;
+    try {
+        const double v = n.as<double>();
+        if (ok) *ok = true;
+        return v;
+    } catch (...) { return def; }
 }
 
 }  // namespace
@@ -457,6 +489,11 @@ void ProbeMakerPage::buildInspector(QSplitter* inner)
     connModel     = new QLineEdit;
     connTotalChan = new QSpinBox;
     connTotalChan->setRange(0, 100000);
+    // The channel count is the number of sites; it follows the shanks and
+    // is shown here, not edited.
+    connTotalChan->setReadOnly(true);
+    connTotalChan->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    connTotalChan->setToolTip(tr("Number of sites on the probe (written as totalChannels)."));
     connNotes     = new QLineEdit;
     for (auto* w : { static_cast<QWidget*>(connVendor),
                      static_cast<QWidget*>(connModel),
@@ -472,8 +509,6 @@ void ProbeMakerPage::buildInspector(QSplitter* inner)
         connect(le, &QLineEdit::editingFinished,
                 this, &ProbeMakerPage::onConnectorFieldEdited);
     }
-    connect(connTotalChan, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, &ProbeMakerPage::onConnectorFieldEdited);
 
     // Shank form
     shankGroup = new QWidget;
@@ -931,9 +966,7 @@ void ProbeMakerPage::onAddChannelClicked()
     ch.posUm = QPointF(0.0, qMax<qreal>(tipMargin, y));   // clamp away from head
 
     targetShank->channels.append(ch);
-    int totalSites = 0;
-    for (const ProbeShank& s : data.shanks) totalSites += s.channels.size();
-    data.totalChannels = qMax(data.totalChannels, totalSites);
+    data.totalChannels = siteCount();
 
     // Update selection so the inspector immediately shows the new
     // channel and Delete acts on it.  Using the model pointer directly
@@ -1014,9 +1047,7 @@ void ProbeMakerPage::onAddArrayClicked()
         targetShank->channels.append(ch);
     }
 
-    int totalSites = 0;
-    for (const ProbeShank& s : data.shanks) totalSites += s.channels.size();
-    data.totalChannels = qMax(data.totalChannels, totalSites);
+    data.totalChannels = siteCount();
 
     // Select the last channel of the new array so the inspector shows
     // a representative member; user can navigate from there.
@@ -1038,6 +1069,7 @@ void ProbeMakerPage::onDeleteSelectedClicked()
                 if (&s.channels[i] == selectedChannel) {
                     pushUndoSnapshot(tr("Delete channel"));
                     s.channels.removeAt(i);
+                    data.totalChannels = siteCount();
                     selectedChannel = nullptr;
                     rebuildLogicalScene();
                     rebuildPhysicalScene();
@@ -1051,6 +1083,7 @@ void ProbeMakerPage::onDeleteSelectedClicked()
             if (&data.shanks[i] == selectedShank) {
                 pushUndoSnapshot(tr("Delete shank"));
                 data.shanks.removeAt(i);
+                data.totalChannels = siteCount();
                 selectedShank = nullptr;
                 rebuildLogicalScene();
                 rebuildPhysicalScene();
@@ -1117,7 +1150,6 @@ void ProbeMakerPage::onConnectorFieldEdited()
                               static_cast<void*>(&data));
     data.vendor        = connVendor->text();
     data.model         = connModel->text();
-    data.totalChannels = connTotalChan->value();
     data.notes         = connNotes->text();
     // Refresh just the connector header — no need to rebuild scenes.
     for (QGraphicsItem* it : logicalView->scene()->items()) {
@@ -1206,6 +1238,13 @@ void ProbeMakerPage::setConnector(const ProbeConnector& connector)
 ProbeConnector ProbeMakerPage::connector() const
 {
     return data;
+}
+
+int ProbeMakerPage::siteCount() const
+{
+    int n = 0;
+    for (const ProbeShank& s : data.shanks) n += s.channels.size();
+    return n;
 }
 
 void ProbeMakerPage::clearToConnector()
@@ -1518,182 +1557,202 @@ bool ProbeMakerPage::eventFilter(QObject* obj, QEvent* ev)
 
 bool ProbeMakerPage::loadFromFile(const QString& path, QString* error)
 {
-    YAML::Node root;
-    try {
-        root = YAML::LoadFile(path.toStdString());
-    } catch (const YAML::Exception& e) {
-        if (error) *error = QStringLiteral("Parse error: %1").arg(e.what());
-        return false;
-    }
-
-    if (!root["probeFile"]) {
-        if (error) {
-            *error = QStringLiteral("Missing top-level 'probeFile:' key in %1")
-                        .arg(path);
-        }
-        return false;
-    }
-    YAML::Node pf = root["probeFile"];
-
+    // The whole parse runs inside one try block: yaml-cpp throws on a
+    // conversion it cannot make (a nested channelMap read as ints, a
+    // null count read as int), and an exception escaping into the Qt
+    // event loop would take ndmanager down with it.  The probeX helpers
+    // fall back to a default for null / non-scalar values instead.
     ProbeConnector c;
-    if (pf["version"])       c.version = QString::fromStdString(pf["version"].as<std::string>());
-    if (pf["vendor"])        c.vendor  = QString::fromStdString(pf["vendor"].as<std::string>());
-    if (pf["model"])         c.model   = QString::fromStdString(pf["model"].as<std::string>());
-    if (pf["catalogPage"])   c.catalogPage = QString::fromStdString(pf["catalogPage"].as<std::string>());
-    if (pf["totalChannels"]) c.totalChannels = pf["totalChannels"].as<int>();
-    if (pf["substrate"]) {
-        if (pf["substrate"]["material"])
-            c.substrateMaterial = QString::fromStdString(pf["substrate"]["material"].as<std::string>());
-        if (pf["substrate"]["thickness_um"] && !pf["substrate"]["thickness_um"].IsNull())
-            c.substrateThicknessUm = pf["substrate"]["thickness_um"].as<double>();
-    }
-    if (pf["notes"]) c.notes = QString::fromStdString(pf["notes"].as<std::string>());
+    try {
+        const YAML::Node root = YAML::LoadFile(path.toStdString());
+        const YAML::Node pf = root.IsMap() ? root["probeFile"] : YAML::Node();
+        if (!pf || !pf.IsMap()) {
+            if (error) {
+                *error = QStringLiteral("Missing top-level 'probeFile:' key in %1")
+                            .arg(path);
+            }
+            return false;
+        }
 
-    // Shanks: build N empty shanks from `shanks.count`, then fill in
-    // sites from `sites.geometry`.  count_per_shank tells us how to
-    // distribute geometry entries across shanks.
-    int nShanks = 1;
-    if (pf["shanks"] && pf["shanks"]["count"])
-        nShanks = pf["shanks"]["count"].as<int>();
+        const YAML::Node shanksNode = pf["shanks"];
+        const YAML::Node sitesNode  = pf["sites"];
+        const YAML::Node substrate  = pf["substrate"];
 
-    QList<int> perShank;
-    if (pf["sites"] && pf["sites"]["count_per_shank"]) {
-        YAML::Node cps = pf["sites"]["count_per_shank"];
-        if (cps.IsScalar()) {
-            const int n = cps.as<int>();
+        c.version     = probeString(pf["version"], QStringLiteral("1.0"));
+        c.vendor      = probeString(pf["vendor"]);
+        c.model       = probeString(pf["model"]);
+        c.catalogPage = probeString(pf["catalogPage"]);
+        if (substrate && substrate.IsMap()) {
+            c.substrateMaterial    = probeString(substrate["material"],
+                                                 QStringLiteral("silicon"));
+            c.substrateThicknessUm = probeDouble(substrate["thickness_um"], 0.0);
+        }
+        c.notes = probeString(pf["notes"]);
+
+        // Sites per shank, the rule every reader shares
+        // (scripts/probe_geometry.py): count_per_shank is one integer for
+        // every shank alike, or a list with one entry per shank -- the
+        // list then also fixes the number of shanks.
+        int nShanks = 1;
+        if (shanksNode && shanksNode.IsMap())
+            nShanks = qMax(1, probeInt(shanksNode["count"], 1));
+        const YAML::Node cps = (sitesNode && sitesNode.IsMap())
+                             ? sitesNode["count_per_shank"] : YAML::Node();
+        const YAML::Node geom = (sitesNode && sitesNode.IsMap())
+                              ? sitesNode["geometry"] : YAML::Node();
+        const int nGeom = (geom && geom.IsSequence())
+                        ? static_cast<int>(geom.size()) : 0;
+        QList<int> perShank;
+        if (cps && cps.IsSequence() && cps.size() > 0) {
+            for (std::size_t i = 0; i < cps.size(); ++i)
+                perShank.append(qMax(0, probeInt(cps[i], 0)));
+            nShanks = perShank.size();
+        } else if (cps && cps.IsScalar()) {
+            const int n = qMax(0, probeInt(cps, 0));
             for (int i = 0; i < nShanks; ++i) perShank.append(n);
-        } else if (cps.IsSequence()) {
-            for (auto it = cps.begin(); it != cps.end(); ++it)
-                perShank.append(it->as<int>());
+        } else if (nShanks == 1) {
+            // No count at all on a one-shank probe: every geometry entry
+            // is a site of that shank.
+            perShank.append(nGeom);
+        } else {
+            for (int i = 0; i < nShanks; ++i) perShank.append(0);
         }
-    }
-    while (perShank.size() < nShanks) perShank.append(0);
+        int totalSites = 0;
+        for (int n : perShank) totalSites += n;
 
-    qreal lengthMm = 0.0;
-    if (pf["shanks"] && pf["shanks"]["length_mm"]
-        && !pf["shanks"]["length_mm"].IsNull()) {
-        lengthMm = pf["shanks"]["length_mm"].as<double>();
-    }
-    qreal spacingUm = 0.0;
-    if (pf["shanks"] && pf["shanks"]["spacing_um"]
-        && !pf["shanks"]["spacing_um"].IsNull()) {
-        spacingUm = pf["shanks"]["spacing_um"].as<double>();
-    }
-
-    for (int si = 0; si < nShanks; ++si) {
-        ProbeShank s;
-        s.id    = QStringLiteral("shank%1").arg(si + 1);
-        s.label = QStringLiteral("Shank %1").arg(QChar('A' + si));
-        s.lengthUm = lengthMm > 0 ? lengthMm * 1000.0 : 1500.0;
-        s.widthUm  = 70.0;
-        s.originUm = QPointF(spacingUm * si, 0.0);
-        if (pf["sites"] && pf["sites"]["layout"])
-            s.layout = QString::fromStdString(pf["sites"]["layout"].as<std::string>());
-        c.shanks.append(s);
-    }
-
-    // Sites: walk the geometry, distributing into shanks per perShank.
-    //
-    // Schema conventions (see canonical files in nphys-data/.../probes):
-    //   x = lateral position from FIRST shank's centreline, in a single
-    //       global frame across all shanks.  Multi-shank probes have
-    //       sites at x = k * spacing_um ± (within-shank lateral offset)
-    //       for shank k.  Single-shank probes have x in a small range
-    //       (typically -W/2 to +W/2) around the shank's centreline.
-    //   y = height above the TIP of the shank, growing toward the head.
-    //       The library files list each shank's sites top first (y
-    //       descending), so channel numbers ascend with depth.
-    //
-    // Internal model conventions (see ProbeShank/ProbeChannel docs):
-    //   Each ProbeChannel::posUm is in the shank's LOCAL frame, with
-    //   x = 0 at the centreline and y = 0 at the head growing toward
-    //   the tip (y = lengthUm at the tip).  This matches Qt's natural
-    //   "y grows downward in screen coords" so the polygon renders
-    //   head-up and tip-down without any inversion.
-    //
-    // The translation is therefore:
-    //   localX = schemaX - shankOriginX   (shank k centreline is at k * spacing_um)
-    //   localY = lengthUm - schemaY       (flip "depth from tip" → "depth from head")
-    //
-    // When no spacing_um is given (single-shank probes, or files that
-    // omit the field), we derive each shank's origin from the median
-    // x of its assigned sites — that's robust to both centred and
-    // off-centre lateral layouts.
-    if (pf["sites"] && pf["sites"]["geometry"] && pf["sites"]["geometry"].IsSequence()) {
-        // First pass: distribute raw [x, y] pairs into per-shank buckets
-        // by simple cursor advance using count_per_shank.
-        struct RawSite { double x; double y; };
-        QVector<QVector<RawSite>> rawByShank(nShanks);
-        {
-            int shankIdx = 0;
-            for (auto it = pf["sites"]["geometry"].begin();
-                 it != pf["sites"]["geometry"].end(); ++it) {
-                const YAML::Node& pair = *it;
-                if (!pair.IsSequence() || pair.size() < 2) continue;
-                while (shankIdx < nShanks
-                       && rawByShank[shankIdx].size() >= perShank.value(shankIdx, 0))
-                    shankIdx++;
-                if (shankIdx >= nShanks) shankIdx = nShanks - 1;   // overflow
-                rawByShank[shankIdx].append(
-                    { pair[0].as<double>(), pair[1].as<double>() });
+        // Channel map: site j is channel map[j] (relative to the
+        // session's channelOffset), or channel j when there is no map.
+        // A nested map (one list per shank) is flattened shank by shank.
+        // A map that does not cover every site is an error, as it is for
+        // probe_geometry.py, rather than a guess.
+        QList<int> siteChannel;
+        const YAML::Node cm = pf["channelMap"];
+        if (cm && cm.IsMap()) {
+            c.channelMapDescription = probeString(cm["description"]);
+            const YAML::Node m = cm["map"];
+            if (m && m.IsSequence() && m.size() > 0) {
+                for (std::size_t i = 0; i < m.size(); ++i) {
+                    const YAML::Node v = m[i];
+                    if (v.IsSequence()) {
+                        for (std::size_t k = 0; k < v.size(); ++k)
+                            siteChannel.append(probeInt(v[k], -1));
+                    } else {
+                        siteChannel.append(probeInt(v, -1));
+                    }
+                }
+                if (siteChannel.size() != totalSites) {
+                    if (error) {
+                        *error = QStringLiteral(
+                            "channelMap.map has %1 entries but the probe has %2 sites")
+                            .arg(siteChannel.size()).arg(totalSites);
+                    }
+                    return false;
+                }
+                for (int ch : siteChannel) {
+                    if (ch < 0) {
+                        if (error) *error = QStringLiteral(
+                            "channelMap.map holds an entry that is not a channel number");
+                        return false;
+                    }
+                }
             }
         }
+        if (siteChannel.isEmpty())
+            for (int j = 0; j < totalSites; ++j) siteChannel.append(j);
 
-        // Second pass: derive shank origins.  spacing_um wins if set;
-        // otherwise we use the median x of each shank's sites as its
-        // centreline (robust against ±-staggered designs).
-        for (int si = 0; si < nShanks; ++si) {
-            qreal originX;
-            if (spacingUm > 0.0) {
-                originX = spacingUm * si;
-            } else if (!rawByShank[si].isEmpty()) {
-                QVector<double> xs;
-                xs.reserve(rawByShank[si].size());
-                for (const auto& r : rawByShank[si]) xs.append(r.x);
-                std::sort(xs.begin(), xs.end());
-                // Median: average of the two middle values (or the
-                // single middle value for odd-sized lists).
-                const int n = xs.size();
-                originX = (n % 2 == 0) ? 0.5 * (xs[n/2 - 1] + xs[n/2])
-                                       : xs[n/2];
-            } else {
-                originX = 0.0;
+        // Raw [x, y] per site.  y is the height above the shank's tip
+        // (doc/ndmanager-plugins/formats/probe.md).  A site with no usable
+        // geometry entry keeps its slot (so every later site keeps its
+        // channel) and is placed at the tip on the shank's centreline.
+        struct RawSite { double x; double y; bool known; };
+        QVector<RawSite> raw;
+        raw.reserve(totalSites);
+        double maxY = 0.0;
+        for (int j = 0; j < totalSites; ++j) {
+            RawSite r{0.0, 0.0, false};
+            if (j < nGeom) {
+                const YAML::Node p = geom[static_cast<std::size_t>(j)];
+                if (p.IsSequence() && p.size() >= 2) {
+                    bool okX = false, okY = false;
+                    r.x = probeDouble(p[0], 0.0, &okX);
+                    r.y = probeDouble(p[1], 0.0, &okY);
+                    r.known = okX && okY;
+                }
             }
-            c.shanks[si].originUm = QPointF(originX, 0.0);
+            if (!r.known) {
+                r.x = 0.0; r.y = 0.0;
+                qWarning() << "ProbeMakerPage:" << path << "site" << j
+                           << "has no [x, y] geometry; placed at the tip";
+            }
+            maxY = qMax(maxY, r.y);
+            raw.append(r);
         }
 
-        // Third pass: emit ProbeChannel objects in shank-local coords,
-        // flipping y from depth-from-tip to depth-from-head.
-        const qreal area = pf["sites"]["area_um2"]
-            ? pf["sites"]["area_um2"].as<double>()
+        qreal lengthUm = 0.0;
+        qreal spacingUm = 0.0;
+        if (shanksNode && shanksNode.IsMap()) {
+            lengthUm  = probeDouble(shanksNode["length_mm"], 0.0) * 1000.0;
+            spacingUm = probeDouble(shanksNode["spacing_um"], 0.0);
+        }
+        // No length in the file: draw a shank long enough to hold every
+        // site.  Positions are kept relative to the tip either way.
+        if (lengthUm <= 0.0)
+            lengthUm = qMax<qreal>(1500.0, maxY + 100.0);
+
+        const QString layout = (sitesNode && sitesNode.IsMap())
+            ? probeString(sitesNode["layout"], QStringLiteral("linear"))
+            : QStringLiteral("linear");
+        const qreal area = (sitesNode && sitesNode.IsMap())
+            ? probeDouble(sitesNode["area_um2"], 177.0)
             : 177.0;
-        int nextHw = 0;
-        for (int si = 0; si < nShanks; ++si) {
-            const qreal originX = c.shanks[si].originUm.x();
-            const qreal lengthUm = c.shanks[si].lengthUm;
-            int siteCursor = 0;
-            for (const auto& r : rawByShank[si]) {
-                ProbeChannel ch;
-                ch.hardwareId = nextHw++;
-                ch.posUm = QPointF(r.x - originX, lengthUm - r.y);
-                ch.areaUm2 = area;
-                ch.siteIndex = siteCursor++;
-                c.shanks[si].channels.append(ch);
-            }
-        }
-    }
 
-    // Channel map (optional)
-    if (pf["channelMap"]) {
-        if (pf["channelMap"]["description"])
-            c.channelMapDescription = QString::fromStdString(
-                pf["channelMap"]["description"].as<std::string>());
-        if (pf["channelMap"]["map"] && pf["channelMap"]["map"].IsSequence()) {
-            for (auto it = pf["channelMap"]["map"].begin();
-                 it != pf["channelMap"]["map"].end(); ++it) {
-                c.channelMap.append(it->as<int>());
+        int j = 0;
+        for (int si = 0; si < nShanks; ++si) {
+            ProbeShank s;
+            s.id       = QStringLiteral("shank%1").arg(si + 1);
+            s.label    = QStringLiteral("Shank %1").arg(QChar('A' + (si % 26)));
+            s.lengthUm = lengthUm;
+            s.widthUm  = 70.0;
+            s.layout   = layout;
+
+            // Shank origin (centreline x): spacing_um when given,
+            // otherwise the median x of the shank's sites -- robust to
+            // both centred and staggered layouts.
+            qreal originX = spacingUm > 0.0 ? spacingUm * si : 0.0;
+            if (spacingUm <= 0.0) {
+                QVector<double> xs;
+                for (int k = 0; k < perShank[si]; ++k)
+                    if (raw[j + k].known) xs.append(raw[j + k].x);
+                if (!xs.isEmpty()) {
+                    std::sort(xs.begin(), xs.end());
+                    const int n = xs.size();
+                    originX = (n % 2 == 0) ? 0.5 * (xs[n/2 - 1] + xs[n/2])
+                                           : xs[n/2];
+                }
             }
+            s.originUm = QPointF(originX, 0.0);
+
+            // Model frame: x from the shank centreline, y down from the
+            // shank head (y = lengthUm at the tip).
+            for (int k = 0; k < perShank[si]; ++k, ++j) {
+                ProbeChannel ch;
+                ch.hardwareId = siteChannel[j];
+                ch.posUm      = QPointF(raw[j].known ? raw[j].x - originX : 0.0,
+                                        lengthUm - raw[j].y);
+                ch.areaUm2    = area;
+                ch.siteIndex  = k;
+                s.channels.append(ch);
+            }
+            c.shanks.append(s);
         }
+        c.totalChannels = totalSites;
+        // The channel numbers now live on the sites (hardwareId);
+        // saveToFile rebuilds the map from them.
+        c.channelMap.clear();
+    } catch (const std::exception& e) {
+        if (error) *error = QStringLiteral("Cannot read %1: %2")
+                               .arg(path, QString::fromUtf8(e.what()));
+        return false;
     }
 
     setConnector(c);
@@ -1702,6 +1761,51 @@ bool ProbeMakerPage::loadFromFile(const QString& path, QString* error)
 
 bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
 {
+    // Every site needs its own channel number: two sites on one channel
+    // cannot be written as a channel map, and a negative number is no
+    // channel at all.  Checked before the file is opened so a refused save
+    // leaves the previous file intact.
+    QSet<int> seen;
+    int total = 0;
+    for (const ProbeShank& s : data.shanks) {
+        for (const ProbeChannel& ch : s.channels) {
+            ++total;
+            if (ch.hardwareId < 0) {
+                if (error) *error = QStringLiteral(
+                    "a site has no channel number (%1)").arg(ch.hardwareId);
+                return false;
+            }
+            if (seen.contains(ch.hardwareId)) {
+                if (error) *error = QStringLiteral(
+                    "channel %1 is assigned to two sites; give each site its "
+                    "own channel before saving").arg(ch.hardwareId);
+                return false;
+            }
+            seen.insert(ch.hardwareId);
+        }
+    }
+
+    // File order (doc/ndmanager-plugins/formats/probe.md): shank by shank,
+    // and within a shank the top site first, the tip site last.  The model
+    // keeps y as depth below the shank head, so top first is ascending
+    // posUm.y; sites at one height keep their model order.
+    QList<QList<int>> order;           // per shank: model indices in file order
+    QList<int>        fileChannels;    // channel of each site, in file order
+    for (const ProbeShank& s : data.shanks) {
+        QList<int> idx;
+        for (int i = 0; i < s.channels.size(); ++i) idx.append(i);
+        std::stable_sort(idx.begin(), idx.end(), [&s](int a, int b) {
+            return s.channels[a].posUm.y() < s.channels[b].posUm.y();
+        });
+        for (int i : idx) fileChannels.append(s.channels[i].hardwareId);
+        order.append(idx);
+    }
+    // Site j is channel j unless a map says otherwise; the map is rebuilt
+    // from the sites' channel numbers on every save, so it never goes stale.
+    bool sequential = true;
+    for (int j = 0; j < fileChannels.size(); ++j)
+        if (fileChannels[j] != j) { sequential = false; break; }
+
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
         if (error) *error = QStringLiteral("Could not open '%1' for writing: %2")
@@ -1719,7 +1823,7 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
     // descriptions) are passed through yamlEscape() to handle special
     // characters that would otherwise produce malformed YAML.
     out << "# neurosuite-3 probe file — generated by ndmanager Probe Maker\n";
-    out << "# Canonical schema: matches src/nphys-data/src/probes/*.probe.\n";
+    out << "# Format: doc/ndmanager-plugins/formats/probe.md\n";
     out << "probeFile:\n";
     out << "  version: " << yamlEscape(data.version) << "\n";
     if (!data.vendor.isEmpty())
@@ -1729,10 +1833,9 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
     if (!data.catalogPage.isEmpty())
         out << "  catalogPage: " << yamlEscape(data.catalogPage) << "\n";
 
-    // Compute totalChannels from the model in case the field is stale.
-    int total = 0;
-    for (const ProbeShank& s : data.shanks) total += s.channels.size();
-    out << "  totalChannels: " << qMax(data.totalChannels, total) << "\n";
+    // The number of sites the file describes -- what every reader takes
+    // as the probe's channel count.
+    out << "  totalChannels: " << total << "\n";
 
     out << "  substrate:\n";
     out << "    material: "
@@ -1767,12 +1870,16 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
         out << "    spacing_um: " << spacing << "\n";
     else
         out << "    spacing_um: null\n";
-    if (!data.shanks.isEmpty()) {
-        out << "    length_mm: "
-            << (data.shanks.first().lengthUm / 1000.0) << "\n";
-    } else {
+    // The format has one length for all shanks; the longest is written.
+    // Site heights are measured from each shank's own tip, so a shorter
+    // shank's sites keep their place; it is only drawn longer on reload.
+    qreal maxLengthUm = 0.0;
+    for (const ProbeShank& s : data.shanks)
+        maxLengthUm = qMax(maxLengthUm, s.lengthUm);
+    if (maxLengthUm > 0.0)
+        out << "    length_mm: " << (maxLengthUm / 1000.0) << "\n";
+    else
         out << "    length_mm: null\n";
-    }
 
     // Sites
     out << "  sites:\n";
@@ -1802,38 +1909,45 @@ bool ProbeMakerPage::saveToFile(const QString& path, QString* error) const
     if (!data.shanks.isEmpty())
         out << "    layout: " << yamlEscape(data.shanks.first().layout) << "\n";
     qreal area = 177.0;
-    if (!data.shanks.isEmpty() && !data.shanks.first().channels.isEmpty())
-        area = data.shanks.first().channels.first().areaUm2;
+    for (const ProbeShank& s : data.shanks) {
+        if (!s.channels.isEmpty()) { area = s.channels.first().areaUm2; break; }
+    }
     out << "    area_um2: " << area << "\n";
     out << "    spacing_um: null\n";
-    out << "    geometry:\n";
-    // Convert each site from internal shank-local (x = lateral from
-    // centreline, y = depth from head) back to the schema's global
-    // frame (x = lateral from first-shank centreline, y = depth from
-    // tip).  This is the inverse of the loadFromFile transformation.
-    for (const ProbeShank& s : data.shanks) {
-        const qreal originX = s.originUm.x();
-        const qreal lengthUm = s.lengthUm;
-        for (const ProbeChannel& ch : s.channels) {
-            const qreal globalX = ch.posUm.x() + originX;
-            const qreal schemaY = lengthUm - ch.posUm.y();
+    out << "    geometry:               # [x_um, y_um], y = height above the tip\n";
+    // Convert each site from the model frame (x from the shank
+    // centreline, y down from the head) to the file's frame (x in the
+    // probe frame, y up from the shank's tip) -- the inverse of
+    // loadFromFile.
+    for (int si = 0; si < data.shanks.size(); ++si) {
+        const ProbeShank& s = data.shanks[si];
+        for (int i : order[si]) {
+            const ProbeChannel& ch = s.channels[i];
+            const qreal globalX = ch.posUm.x() + s.originUm.x();
+            const qreal schemaY = s.lengthUm - ch.posUm.y();
             out << "      - [" << globalX << ", " << schemaY << "]\n";
         }
     }
 
+    // A description written for the other kind of map is replaced.
+    const QString seqDesc = QStringLiteral("Sequential — site index = hardware channel.");
+    const QString mapDesc = QStringLiteral(
+        "Site j is channel map[j] (relative to the session's channelOffset).");
+    QString desc = data.channelMapDescription;
+    if (sequential) {
+        if (desc.isEmpty() || desc == mapDesc) desc = seqDesc;
+    } else if (desc.isEmpty() || desc.startsWith(QStringLiteral("Sequential"))) {
+        desc = mapDesc;
+    }
     out << "  channelMap:\n";
-    out << "    description: "
-        << yamlEscape(data.channelMapDescription.isEmpty()
-                       ? QStringLiteral("Sequential — site index = hardware channel.")
-                       : data.channelMapDescription)
-        << "\n";
-    if (data.channelMap.isEmpty()) {
+    out << "    description: " << yamlEscape(desc) << "\n";
+    if (sequential) {
         out << "    map: null\n";
     } else {
         out << "    map: [";
-        for (int i = 0; i < data.channelMap.size(); ++i) {
-            out << data.channelMap[i];
-            if (i + 1 < data.channelMap.size()) out << ", ";
+        for (int j = 0; j < fileChannels.size(); ++j) {
+            out << fileChannels[j];
+            if (j + 1 < fileChannels.size()) out << ", ";
         }
         out << "]\n";
     }

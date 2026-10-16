@@ -159,6 +159,9 @@ private:
 
     void setModified(bool b);
 
+    /** Number of sites over all shanks -- the probe's channel count. */
+    int siteCount() const;
+
     // ── Data ─────────────────────────────────────────────────────────────
     ProbeConnector data;
     bool           m_modified = false;

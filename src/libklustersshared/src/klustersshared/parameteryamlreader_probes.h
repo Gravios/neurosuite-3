@@ -63,11 +63,14 @@ struct ProbeGroupMeta {
  *
  *  Coordinates are µm in the parent shank's local frame: x is lateral
  *  across the shank face, y is depth from the shank head (y = 0 at the
- *  top, y = lengthUm at the tip).  This matches the convention in the
- *  canonical probe library files (src/nphys-data/src/probes/).
+ *  top, y = lengthUm at the tip).  The `.probe` files measure y the other
+ *  way, as the height above the tip (doc/ndmanager-plugins/formats/
+ *  probe.md); the Probe Maker converts on load and save.
  */
 struct ProbeChannel {
-    int     hardwareId    = 0;     ///< 0-based hardware channel index
+    /// Channel of this site relative to the probe's channelOffset: the
+    /// site's channelMap.map entry, or its index in the file without a map.
+    int     hardwareId    = 0;
     QPointF posUm;                 ///< (x, y) on the shank, µm
     int     siteIndex     = -1;    ///< probe-numbered site (display only)
     qreal   areaUm2       = 177.0; ///< pad area, µm²
@@ -110,7 +113,9 @@ struct ProbeConnector {
     qreal   substrateThicknessUm = 0.0;
     QList<ProbeShank> shanks;
     QString channelMapDescription;
-    QList<int> channelMap;        ///< empty = sequential (hw == site)
+    /// Unused by the Probe Maker, which keeps each site's channel in
+    /// ProbeChannel::hardwareId and rebuilds the file's map from those.
+    QList<int> channelMap;
     QString notes;
 };
 
