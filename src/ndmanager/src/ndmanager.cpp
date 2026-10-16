@@ -410,11 +410,17 @@ void ndManager::slotNewFromTemplate(){
     const QFileInfo last(settings.value("CurrentDirectory").toString());
     const QString startDir = last.isDir() ? last.absoluteFilePath()
                            : (last.fileName().isEmpty() ? QDir::currentPath() : last.absolutePath());
-    QString target = QFileDialog::getSaveFileName(this, tr("New Session Parameter File"),
-                                                  QDir(startDir).filePath(QStringLiteral("session.yaml")),
-                                                  tr("YAML files (*.yaml *.yml)"));
+    // A .yaml suffix is added when missing, and replacing an existing file
+    // the dialog did not confirm is asked about.
+    const QString target = askSaveFileName(tr("New Session Parameter File"),
+                                           QDir(startDir).filePath(QStringLiteral("session.yaml")));
     if (target.isEmpty()) { slotStatusMsg(tr("Ready.")); return; }
-    if (QFileInfo(target).suffix().isEmpty()) target += QStringLiteral(".yaml");
+    if (mainDock && QFileInfo(target) == QFileInfo(doc->url())) {
+        QMessageBox::critical(this, tr("Error!"), tr("%1 is the parameter file open in this window; "
+                                                     "choose another name.").arg(target));
+        slotStatusMsg(tr("Ready."));
+        return;
+    }
 
     // The template as it is -- its comments document every parameter and keep
     // the optional ones commented out -- with today's date filled in.
