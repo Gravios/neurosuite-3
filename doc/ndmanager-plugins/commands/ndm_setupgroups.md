@@ -22,9 +22,12 @@ groups itself.
 
 For each `probes:` entry:
 
-- `probeFile` is a path relative to the probe library (e.g.
-  `neuronexus/Buzsaki64.probe`). An entry without `probeFile` is skipped with
-  a warning; a file that cannot be found is an error.
+- `probeFile` is a path relative to the session directory or a probe library
+  (e.g. `neuronexus/Buzsaki64.probe`, or ndmanager's own copy
+  `SESSION.probe.0.probe`), or an absolute path. An entry without `probeFile`
+  is skipped with a warning; a file that cannot be found is an error.
+- `channelOffset` is the probe's first channel, absolute (see below). An entry
+  without one follows the previous probe, and the offset used is written back.
 - `probeId` is the probe's id (the legacy key `id` is still read; it is
   rewritten as `probeId`).
 - `anatomicalGroups` is replaced with the ids of the groups created for it.
@@ -50,9 +53,11 @@ drift and localisation tools and Klusters (`scripts/probe_geometry.py`):
 - `sites.count_per_shank` decides which sites belong to which shank: one
   number (every shank the same) or a list with one entry per shank, e.g.
   `[10, 10, 10, 14, 10, 10]`.
-- `offset` is the number of channels of all preceding probes plus this entry's
-  `channelOffset` (default 0). For probes recorded on consecutive channels,
-  leave `channelOffset` at 0; set it only to skip channels between probes.
+- `offset` is the entry's `channelOffset`, an absolute channel number — the
+  value ndmanager's Probes tab writes and the one Klusters and the drift tools
+  read. For two 64-channel probes on consecutive channels the offsets are 0
+  and 64. An entry without `channelOffset` starts right after the previous
+  probe's highest channel (the first at 0).
 
 With the library files (`map: null`), channel numbers therefore ascend with
 depth on every shank: Buzsaki64 shank 0 is channels 0–7 at y = 162 … 22 µm.
@@ -73,16 +78,19 @@ formatting of the file are not preserved.
 
 ### Probe library search
 
-A `probeFile` is looked up in these directories; when it exists in several,
-the last one wins:
+An absolute `probeFile` is used as is. A relative one is looked up in these
+directories; the first that holds it wins (the order ndmanager's Probes tab
+uses):
 
 ```
-/usr/share/neurosuite/probes/
-/usr/local/share/neurosuite/probes/
-~/.local/share/neurosuite/probes/
-$NEUROSUITE_PROBE_PATH          (colon-separated, in order)
-probeLibrary                    (parameter below)
+<session directory>/            (ndmanager's SESSION.probe.ID.probe)
 <session directory>/probes/
+probeLibrary                    (parameter below)
+probeLibraryPath                (top-level key of the session YAML)
+$NEUROSUITE_PROBE_PATH          (colon-separated, in order)
+$NS3_PROBE_LIBRARY_PATH         (legacy name, colon-separated)
+$XDG_DATA_HOME/neurosuite/probes/            (default ~/.local/share/…)
+$XDG_DATA_DIRS/neurosuite/probes/, in order  (default /usr/local/share/…, /usr/share/…)
 ```
 
 ## Parameters
@@ -94,7 +102,7 @@ See [parameters](../parameters.md) for how values are resolved.
 | `nSamples` | 52 | Waveform length written to every spike group (use 32 at 20 kHz). |
 | `peakSampleIndex` | 26 | 0-based peak position within the waveform, written to every spike group. |
 | `nFeatures` | 3 | PCA components per channel, written to every spike group. |
-| `probeLibrary` | — | Extra library directory, searched after `$NEUROSUITE_PROBE_PATH` and before `<session>/probes/`. |
+| `probeLibrary` | — | Extra library directory, searched after the session directory and `<session>/probes/`, before `probeLibraryPath` and the environment. |
 | `overwrite` | `false` | Replace existing groups (`true`, `1` or `yes`); otherwise stop if groups exist. |
 
 ```yaml

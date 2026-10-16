@@ -82,6 +82,11 @@
   <para>
     where <replaceable>offset</replaceable> = <literal>probes[].channelOffset</literal>
     and <replaceable>n</replaceable> = <literal>probeFile.sites.count_per_shank</literal>.
+    <literal>channelOffset</literal> is the probe's first channel, absolute
+    (the value ndmanager writes, and the one Klusters and the drift tools
+    read).  An entry without <literal>channelOffset</literal> follows the
+    previous probe (that probe's offset plus its channel count); the offset
+    used is written back to the entry.
   </para>
   <para>
     When <literal>channelMap.map</literal> is present it is used directly
@@ -138,13 +143,22 @@
       <term><parameter>probeLibrary</parameter></term>
       <listitem>
         <para>
-          Override the probe library search path.  By default the plugin
-          searches (in order, highest priority last):
-          <filename>/usr/share/neurosuite/probes/</filename>,
-          <filename>/usr/local/share/neurosuite/probes/</filename>,
-          <filename>~/.local/share/neurosuite/probes/</filename>,
-          <envar>NEUROSUITE_PROBE_PATH</envar> (colon-separated), and
-          <filename>SESSION_DIR/probes/</filename>.
+          An extra probe library directory.  A relative
+          <literal>probeFile</literal> is looked up in these directories,
+          first match wins (the order ndmanager uses):
+          the session directory (where ndmanager keeps
+          <filename>SESSION.probe.ID.probe</filename>),
+          <filename>SESSION_DIR/probes/</filename>,
+          <parameter>probeLibrary</parameter>,
+          the session's top-level <literal>probeLibraryPath</literal>,
+          <envar>NEUROSUITE_PROBE_PATH</envar> and the legacy
+          <envar>NS3_PROBE_LIBRARY_PATH</envar> (colon-separated),
+          then <filename>neurosuite/probes/</filename> under
+          <envar>XDG_DATA_HOME</envar> (<filename>~/.local/share</filename>)
+          and each of <envar>XDG_DATA_DIRS</envar>
+          (<filename>/usr/local/share</filename>,
+          <filename>/usr/share</filename>).  An absolute
+          <literal>probeFile</literal> is used as is.
         </para>
       </listitem>
     </varlistentry>
@@ -171,14 +185,16 @@
   <itemizedlist>
     <listitem>
       <para>
-        <literal>probeFile</literal> — path relative to the probe library
-        (e.g. <filename>neuronexus/Buzsaki64.probe</filename>).
+        <literal>probeFile</literal> — path relative to the session directory
+        or a probe library (e.g. <filename>neuronexus/Buzsaki64.probe</filename>,
+        or ndmanager's <filename>SESSION.probe.0.probe</filename>), or absolute.
       </para>
     </listitem>
     <listitem>
       <para>
-        <literal>channelOffset</literal> — first ADC channel index for this
-        probe (0-based).  Default: <literal>0</literal>.
+        <literal>channelOffset</literal> — first channel of this probe,
+        absolute and 0-based.  When absent the probe follows the previous one
+        (the first probe starts at 0).
       </para>
     </listitem>
   </itemizedlist>

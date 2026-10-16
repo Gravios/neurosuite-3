@@ -9,13 +9,17 @@ Algorithm
 ---------
 For each entry in probes[]:
 
-  1.  Locate the .probe file by searching (lowest → highest priority):
-        /usr/share/neurosuite/probes/
-        /usr/local/share/neurosuite/probes/
-        ~/.local/share/neurosuite/probes/
-        $NEUROSUITE_PROBE_PATH          (colon-separated)
-        --probe-library argument
+  1.  Locate the .probe file: an absolute probeFile is used as is; a
+      relative one is looked up in these directories, first match wins
+      (the order ndmanager's Probes tab uses):
+        SESSION_DIR/                    (ndmanager's <session>.probe.<id>.probe)
         SESSION_DIR/probes/
+        --probe-library argument
+        probeLibraryPath                (session YAML, top level)
+        $NEUROSUITE_PROBE_PATH          (colon-separated, in order)
+        $NS3_PROBE_LIBRARY_PATH         (legacy name, colon-separated)
+        $XDG_DATA_HOME/neurosuite/probes/        (~/.local/share/...)
+        $XDG_DATA_DIRS/neurosuite/probes/        (/usr/local/share/..., /usr/share/...)
 
   2.  Extract from the .probe file (rule shared with the other plugins and
       Klusters, see probe_geometry.py):
@@ -26,7 +30,10 @@ For each entry in probes[]:
 
       Sites are listed shank by shank in channel order (the library files list
       the top site first): site j belongs to channel offset + j, where
-      offset = probes[].channelOffset.
+      offset = probes[].channelOffset -- an absolute channel, as every other
+      reader (ndmanager, Klusters, the drift tools) takes it.  An entry
+      without channelOffset follows the previous probe (its offset plus its
+      channel count).
 
       If channelMap.map is provided (flat list, or one sublist per shank),
       site j belongs to channel offset + map[j]; its position is still
@@ -73,38 +80,46 @@ import probe_geometry  # noqa: E402
 # Probe library search
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROBE_DIRS = [
-    Path("/usr/share/neurosuite/probes"),
-    Path("/usr/local/share/neurosuite/probes"),
-    Path.home() / ".local/share/neurosuite/probes",
-]
+def data_dirs() -> list[Path]:
+    """Generic data directories, as QStandardPaths::GenericDataLocation lists
+    them on Linux: $XDG_DATA_HOME (~/.local/share), then $XDG_DATA_DIRS
+    (/usr/local/share:/usr/share)."""
+    home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local/share")
+    system = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    return [Path(home)] + [Path(p) for p in system.split(":") if p]
 
 
-def probe_search_dirs(probe_library_arg: str | None, session_dir: Path) -> list[Path]:
-    """Return ordered list of directories to search for .probe files."""
-    dirs: list[Path] = list(SYSTEM_PROBE_DIRS)
-
-    env_path = os.environ.get("NEUROSUITE_PROBE_PATH", "")
-    if env_path:
-        for p in env_path.split(":"):
-            if p:
-                dirs.append(Path(p))
-
+def probe_search_dirs(probe_library_arg: str | None, session_dir: Path,
+                      doc_library: str | None = None) -> list[Path]:
+    """Directories to search for a relative probeFile, first match wins."""
+    dirs: list[Path] = [session_dir, session_dir / "probes"]
     if probe_library_arg:
         dirs.append(Path(probe_library_arg))
-
-    dirs.append(session_dir / "probes")
-    return dirs
+    if doc_library:
+        dirs.append(Path(doc_library))
+    for var in ("NEUROSUITE_PROBE_PATH", "NS3_PROBE_LIBRARY_PATH"):
+        for p in os.environ.get(var, "").split(":"):
+            if p:
+                dirs.append(Path(p))
+    dirs += [d / "neurosuite/probes" for d in data_dirs()]
+    out: list[Path] = []
+    for d in dirs:
+        if d not in out:
+            out.append(d)
+    return out
 
 
 def find_probe_file(probe_rel: str, search_dirs: list[Path]) -> Path | None:
-    """Locate probe_rel in search_dirs (highest-priority last wins)."""
-    found = None
+    """Locate probe_rel: an absolute path as is, else the first of search_dirs
+    that holds it."""
+    if os.path.isabs(probe_rel):
+        p = Path(probe_rel)
+        return p if p.is_file() else None
     for d in search_dirs:
         candidate = d / probe_rel
-        if candidate.exists():
-            found = candidate
-    return found
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -195,11 +210,15 @@ def main() -> None:
     overwrite = args.overwrite.lower() in ("true", "1", "yes")
 
     param_file   = Path(args.param_file)
-    session_dir  = param_file.parent
-    search_dirs  = probe_search_dirs(args.probe_library, session_dir)
+    session_dir  = param_file.resolve().parent
 
     with open(param_file) as fh:
         doc = yaml.safe_load(fh) or {}
+
+    doc_library = doc.get("probeLibraryPath") or None
+    if doc_library:
+        doc_library = str(session_dir / os.path.expanduser(str(doc_library)))
+    search_dirs  = probe_search_dirs(args.probe_library, session_dir, doc_library)
 
     # ------------------------------------------------------------------
     # Guard: refuse to clobber existing groups unless --overwrite
@@ -226,17 +245,17 @@ def main() -> None:
     spike_groups: list[dict] = []
     next_group_id = 1
 
-    running_offset = 0   # cumulative channels consumed by preceding probes
+    running_offset = 0   # end of the preceding probe: its offset + its channel count
 
     for probe_entry in probes_list:
         probe_id     = int(probe_entry.get("probeId",
                            probe_entry.get("id", 0)))
         probe_rel    = str(probe_entry.get("probeFile") or "")
-        # probes[].channelOffset is an *additional* per-probe base (e.g. to match
-        # hardware ADC numbering).  The inter-probe offset is accumulated
-        # automatically from the actual channel count of each preceding probe.
-        extra_off    = int(probe_entry.get("channelOffset", 0))
-        channel_off  = running_offset + extra_off
+        # probes[].channelOffset is the probe's first channel, absolute -- the
+        # value ndmanager writes and every other reader uses.  An entry
+        # without one follows the preceding probe.
+        stored_off   = probe_entry.get("channelOffset")
+        channel_off  = int(stored_off) if stored_off is not None else running_offset
 
         if not probe_rel:
             print(f"WARNING: probe entry id={probe_id} has no probeFile, skipping.",
@@ -256,8 +275,11 @@ def main() -> None:
         # regardless of whether the input used 'id' or 'probeId'.
         probe_entry["probeId"] = probe_id
         probe_entry.pop("id", None)  # remove legacy 'id' key if present
-        print(f"  probe {probe_id}: {probe_path.name}  running_offset={running_offset}"
-              f"  extra_off={extra_off}  effective_offset={channel_off}")
+        # Record the offset used, so every reader (which takes a missing
+        # channelOffset as 0) binds the same channels.
+        probe_entry["channelOffset"] = channel_off
+        print(f"  probe {probe_id}: {probe_path}  channelOffset={channel_off}"
+              + ("" if stored_off is not None else " (follows the previous probe)"))
 
         try:
             shanks, geometries = parse_probe(probe_path, channel_off)
@@ -265,8 +287,10 @@ def main() -> None:
             print(f"ERROR parsing {probe_path}: {exc}", file=sys.stderr)
             sys.exit(1)
 
-        # Advance the running offset by the total number of channels in this probe.
-        running_offset += sum(len(s) for s in shanks)
+        # The next probe without a channelOffset starts after this one's
+        # highest channel.
+        used = [c for s in shanks for c in s]
+        running_offset = max(used) + 1 if used else channel_off
 
         assigned_group_ids: list[int] = []
 
