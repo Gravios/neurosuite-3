@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [ndManager: export a session as a template, apply a template to a session](#2026-10-16--ndmanager-export-a-session-as-a-template-apply-a-template-to-a-session) |
 | 2026-10-16 | [ndManager: parameter tables by keyboard, typed values; plugins listed by purpose](#2026-10-16--ndmanager-parameter-tables-by-keyboard-typed-values-plugins-listed-by-purpose) |
 | 2026-10-16 | [Units: brain region, division, atlas and region ID](#2026-10-16--units-brain-region-division-atlas-and-region-id) |
 | 2026-10-16 | [Klusters: saves are all-or-nothing and skip unchanged files; autosave covers hierarchical sessions; editing locked during a save](#2026-10-16--klusters-saves-are-all-or-nothing-and-skip-unchanged-files-autosave-covers-hierarchical-sessions-editing-locked-during-a-save) |
@@ -55,6 +56,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-16 — ndManager: export a session as a template, apply a template to a session
+
+<details>
+<summary>Details</summary>
+
+- **File ▸ Export Session as Template…** saves chosen sections of the open
+  session (unsaved edits included) with a name and description to your
+  template folder (`<AppDataLocation>/templates/<name>.template.yaml`) or any
+  file, in the session's layout. Session-specific sections (general
+  information, source recording, units) start unchecked.
+- **File ▸ Apply Template to Session…** lists your templates by name (or takes
+  any file) and replaces the checked sections of the open session with the
+  template's, keeping the rest. Processing sections (groups, display,
+  plugins, LFP rate) start checked; the recording's setup (acquisition, files,
+  video, probes) and units do not. Warns when groups made for another channel
+  count would be applied. The session counts as modified until saved; the
+  applied sections keep the template's comments.
+- A template is an ordinary parameter file plus a `template:` block; a session
+  saved from one does not carry the block. The rules are in
+  `libklustersshared` (`sessiontemplate.h`, tested by
+  `klustersshared_sessiontemplate_test`).
+
+See `doc/ndmanager/README.md` — *Your own templates*.
+
+</details>
 
 ## 2026-10-16 — ndManager: parameter tables by keyboard, typed values; plugins listed by purpose
 
