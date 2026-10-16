@@ -165,6 +165,113 @@ void readAnatomyGroupMeta(const YAML::Node& root,
 }
 
 // ---------------------------------------------------------------------------
+// stampGroupProbeMeta  (writeProbesSection's group pass)
+// ---------------------------------------------------------------------------
+// Channel groups (anatomy and spike) get probeId / shankIndex from the probe
+// whose layout holds all their channels.  ParameterYamlWriter carries a
+// group's keys across by pairing it with an old group (same channel set,
+// else position); without this pass a group the probe tab generated in a
+// removed probe's place inherited that probe's probeId.
+
+static QList<int> groupChannels(const YAML::Node& g)
+{
+    QList<int> out;
+    const YAML::Node chs = g["channels"];
+    if (!chs || !chs.IsSequence()) return out;
+    for (std::size_t i = 0; i < chs.size(); ++i) {
+        const YAML::Node c = chs[i];
+        const int id = c.IsMap() ? yi(c["id"], -1) : yi(c, -1);
+        if (id >= 0) out.append(id);
+    }
+    return out;
+}
+
+static void stampGroups(YAML::Node groups, const QList<ProbeEntry>& probes,
+                        bool spikeGroups)
+{
+    if (!groups || !groups.IsSequence()) return;
+    for (std::size_t i = 0; i < groups.size(); ++i) {
+        YAML::Node g = groups[i];
+        if (!g.IsMap()) continue;
+        const YAML::Node& cg = g;      // const lookups never add keys
+        const QList<int> chs = groupChannels(cg);
+        if (chs.isEmpty()) continue;
+
+        const ProbeEntry* owner = nullptr;
+        int shank = -1;
+        for (const ProbeEntry& e : probes) {
+            if (!e.layoutKnown) continue;
+            bool all = true;
+            for (int ch : chs) {
+                bool found = false;
+                for (const QList<int>& s : e.shankChannels)
+                    if (s.contains(ch)) { found = true; break; }
+                if (!found) { all = false; break; }
+            }
+            if (!all) continue;
+            owner = &e;
+            for (int s = 0; s < e.shankChannels.size(); ++s) {
+                bool inShank = true;
+                for (int ch : chs)
+                    if (!e.shankChannels[s].contains(ch)) { inShank = false; break; }
+                if (inShank) { shank = s; break; }
+            }
+            break;
+        }
+
+        if (owner) {
+            g["probeId"] = owner->id;
+            if (shank >= 0) g["shankIndex"] = shank;
+            else            g.remove("shankIndex");
+            if (spikeGroups && cg["sitePositions_um"]) {
+                YAML::Node pos(YAML::NodeType::Sequence);
+                for (int ch : chs) {
+                    if (owner->channelPositions.contains(ch)) {
+                        const QPointF p = owner->channelPositions.value(ch);
+                        YAML::Node xy(YAML::NodeType::Sequence);
+                        xy.push_back(p.x());
+                        xy.push_back(p.y());
+                        xy.SetStyle(YAML::EmitterStyle::Flow);
+                        pos.push_back(xy);
+                    } else {
+                        pos.push_back(YAML::Node(YAML::NodeType::Null));
+                    }
+                }
+                g["sitePositions_um"] = pos;
+            }
+            continue;
+        }
+
+        if (!cg["probeId"]) continue;
+        const int pid = yi(cg["probeId"], -1);
+        bool listed = false, known = false;
+        for (const ProbeEntry& e : probes) {
+            if (e.id != pid) continue;
+            listed = true;
+            known  = e.layoutKnown;
+        }
+        if (listed && !known) continue;   // that probe's layout is unknown: leave it
+        g.remove("probeId");
+        g.remove("shankIndex");
+        g.remove("sitePositions_um");
+    }
+}
+
+static void stampGroupProbeMeta(YAML::Node& root, const QList<ProbeEntry>& probes)
+{
+    bool anyKnown = false;
+    for (const ProbeEntry& e : probes) anyKnown = anyKnown || e.layoutKnown;
+    if (!anyKnown) return;
+    const YAML::Node& croot = root;
+    for (const char* section : { "anatomicalDescription", "spikeDetection" }) {
+        const YAML::Node sec = croot.IsMap() ? croot[section] : YAML::Node();
+        if (!sec || !sec.IsMap()) continue;
+        const YAML::Node groups = sec["channelGroups"];
+        stampGroups(groups, probes, std::string(section) == "spikeDetection");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // writeProbesSection  (for ParameterYamlWriter)
 // ---------------------------------------------------------------------------
 
@@ -232,6 +339,8 @@ void writeProbesSection(YAML::Node& root,
         seq.push_back(entry);
     }
     root["probes"] = seq;
+
+    stampGroupProbeMeta(root, probes);
 }
 
 // ---------------------------------------------------------------------------

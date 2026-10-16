@@ -39,6 +39,14 @@ struct ProbeEntry {
     int        channelOffset = 0;   ///< first ADC channel from this probe
     QList<int> anatomicalGroups;    ///< 1-based group IDs belonging to this probe
     QList<int> spikeGroups;         ///< spike group IDs; empty = same as anatomicalGroups
+
+    // Layout of the probe's .probe file, filled by ndmanager's Probes tab
+    // when it can read the file; never read from or written to the session
+    // YAML.  writeProbesSection uses it to give each channel group the
+    // probeId / shankIndex of the probe shank its channels are on.
+    bool                layoutKnown = false;  ///< the fields below are valid
+    QList<QList<int>>   shankChannels;        ///< absolute channels, per shank
+    QMap<int, QPointF>  channelPositions;     ///< absolute channel -> (x, y above tip) µm
 };
 
 /**
@@ -154,6 +162,16 @@ void readAnatomyGroupMeta(const YAML::Node& root,
  * empty @p libraryPath leaves `probeLibraryPath` as it is.  A probe entry
  * @p root already holds (matched by id) is updated in place, so keys the
  * caller does not model survive.
+ *
+ * When entries carry their layout (ProbeEntry::layoutKnown), the channel
+ * groups already in @p root (anatomicalDescription and spikeDetection --
+ * write those first) are matched to it: a group whose channels all lie on
+ * one probe gets that probe's probeId, and the shankIndex of the shank
+ * holding them all (removed when they span shanks); an existing
+ * sitePositions_um is rewritten from the probe file.  A group that lies on
+ * no probe loses a probeId that names a probe with a known layout or no
+ * probe at all, with its shankIndex and sitePositions_um.  Entries without
+ * a layout leave every group as it is.
  */
 KLUSTERSSHARED_EXPORT void writeProbesSection(YAML::Node& root,
                         const QList<ProbeEntry>& probes,

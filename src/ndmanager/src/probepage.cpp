@@ -397,6 +397,13 @@ void ProbePage::setProbes(const QList<ProbeEntry>& probes)
             lastAnatomy = a;
             lastSpike   = s;
         }
+        // Only the file layouts are taken over: offsets and group lists
+        // stay as the session has them until something is recalculated.
+        for (int i = 0; i < copy.size(); ++i) {
+            this->probes[i].layoutKnown      = copy[i].layoutKnown;
+            this->probes[i].shankChannels    = copy[i].shankChannels;
+            this->probes[i].channelPositions = copy[i].channelPositions;
+        }
     }
 
     rebuildList();
@@ -1267,6 +1274,9 @@ bool ProbePage::computeLayout(QList<ProbeEntry>&    list,
             e.channelOffset = prevEnd;
         e.anatomicalGroups.clear();
         e.spikeGroups.clear();
+        e.layoutKnown = false;
+        e.shankChannels.clear();
+        e.channelPositions.clear();
 
         const QString resolved = resolveProbePath(e.probeFile);
         ProbeLayout layout;
@@ -1296,7 +1306,14 @@ bool ProbePage::computeLayout(QList<ProbeEntry>&    list,
                 }
                 outAnatomy[gid] = chs;
                 outSpike[gid]   = chs;
+                // The layout travels with the entry so the writer can give
+                // each channel group its probeId / shankIndex.
+                e.shankChannels.append(chs);
+                for (int k = 0; k < chs.size(); ++k)
+                    if (layout.shankHasPos[s][k])
+                        e.channelPositions.insert(chs[k], layout.shankPositions[s][k]);
             }
+            e.layoutKnown = true;
         } else if (err.isEmpty()) {
             err = tr("%1 has no sites").arg(e.probeFile);
         }
