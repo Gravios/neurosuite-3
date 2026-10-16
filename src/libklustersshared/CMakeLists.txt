@@ -124,7 +124,8 @@ if(NS_BUILD_TESTS)
     target_include_directories(klustersshared_sdiff_pairs_test
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared"
                 "${CMAKE_CURRENT_SOURCE_DIR}/../libneurosuite-core/src")   # channel_expr.hpp
-    add_test(NAME klustersshared_sdiff_pairs_test COMMAND klustersshared_sdiff_pairs_test)
+    add_test(NAME klustersshared_sdiff_pairs_test COMMAND klustersshared_sdiff_pairs_test
+             "${CMAKE_CURRENT_SOURCE_DIR}/../libneurosuite-core/test/sdiff_grammar_vectors.tsv")
 
     # The per-clustering cluster-information file (unitsidecar.h, header-only,
     # no Qt) Klusters writes and ndManager records into the units table.

@@ -10,6 +10,8 @@
 #include "sdiff_pairs.h"
 
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -40,7 +42,52 @@ static void setsBad(const char* spec) {
     check(!ok && got.empty(), std::string("sets rejected: ") + spec);
 }
 
-int main() {
+// The shared table (libneurosuite-core/test/sdiff_grammar_vectors.tsv), which
+// fiber-kit's fiber_stderiv and ndm_custody run too.
+static std::string joinPairs(const std::vector<int>& v) {
+    std::string out;
+    for (size_t i = 0; i < v.size(); ++i) out += (i ? " " : "") + std::to_string(v[i]);
+    return out;
+}
+static std::string joinSets(const std::vector<std::vector<int> >& v) {
+    std::string out;
+    for (size_t i = 0; i < v.size(); ++i) {
+        if (i) out += " ";
+        for (size_t k = 0; k < v[i].size(); ++k) out += (k ? "+" : "") + std::to_string(v[i][k]);
+    }
+    return out;
+}
+static void runTable(const char* path) {
+    std::ifstream in(path);
+    check(static_cast<bool>(in), std::string("open ") + path);
+    std::string line;
+    int rows = 0;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::vector<std::string> f;
+        std::stringstream ss(line);
+        std::string cell;
+        while (std::getline(ss, cell, '\t')) f.push_back(cell);
+        if (f.size() != 4) { check(false, "4 columns: " + line); continue; }
+        ++rows;
+        const std::string& spec = f[0];
+        check(std::to_string(sdiffSpecOrder(spec.c_str())) == f[1], "order of '" + spec + "'");
+        if (f[2] != "-") {
+            bool ok = true;
+            const std::vector<int> p = parseSdiffPairs(spec.c_str(), &ok);
+            check((ok ? joinPairs(p) : std::string("ERR")) == f[2], "pairs of '" + spec + "'");
+        }
+        if (f[3] != "-") {
+            bool ok = true;
+            const std::vector<std::vector<int> > st = parseSdiffSets(spec.c_str(), &ok);
+            check((ok ? joinSets(st) : std::string("ERR")) == f[3], "sets of '" + spec + "'");
+        }
+    }
+    check(rows >= 30, "the grammar table has its rows");
+}
+
+int main(int argc, char** argv) {
+    if (argc > 1) runTable(argv[1]);
     // order 4: chain and star trees rooted at the last position; the root is
     // wired to its first predecessor
     pairsOk("0-1,1-2,2-3", {1, 2, 3, 2});
