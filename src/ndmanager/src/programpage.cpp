@@ -281,19 +281,12 @@ bool ProgramPage::saveProgramScript(){
 void ProgramPage::saveProgramParameters(){
     //Always ask the user where to save the information. If as save has already be done, set the save location as the default location
     //for the new save
-    if(descriptionUrl.isEmpty()){
-        QString descriptionUrlTmp;
-        descriptionUrlTmp = QDir::currentPath();
-        QString name = parameters->getProgramName();
-        name.append(".xml");
-        descriptionUrlTmp += QDir::separator() + name;
-        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as…"),descriptionUrlTmp,tr("YAML Files (*.yaml)"));
-    }
-    else{
-        descriptionUrl = QFileDialog::getSaveFileName(this, tr("Save as…"),descriptionUrl,tr("YAML Files (*.yaml)"));
-    }
+    QString startUrl = descriptionUrl;
+    if(startUrl.isEmpty())
+        startUrl = QDir::currentPath() + QDir::separator() + parameters->getProgramName() + QLatin1String(".yaml");
+    const QString url = QFileDialog::getSaveFileName(this, tr("Save as…"),startUrl,tr("YAML Files (*.yaml)"));
     //a location has been chosen
-    if(!descriptionUrl.isEmpty()){
+    if(!url.isEmpty()){
         //Get the information
         ProgramInformation programInformation;
         programInformation.setProgramName(parameters->getProgramName());
@@ -303,12 +296,18 @@ void ProgramPage::saveProgramParameters(){
         //Create the writer and save the data to disk
         DescriptionYamlWriter descriptionWriter;
         descriptionWriter.setProgramInformation(programInformation);
-        bool status = descriptionWriter.writeTofile(descriptionUrl);
+        bool status = descriptionWriter.writeTofile(url);
         if(!status){
-            QString message = tr("The file %1 could not be saved possibly because of insufficient file access permissions.").arg(descriptionUrl);
+            QString message = tr("The file %1 could not be saved possibly because of insufficient file access permissions.").arg(url);
             QMessageBox::critical (this, tr("IO Error!"),message);
+            return;
         }
+        // Saved: remember where, and what, so a later edit counts as unsaved again.
+        descriptionUrl = url;
         descriptionNotSaved = false;
+        savedName = programInformation.getProgramName();
+        savedHelp = programInformation.getHelp();
+        savedParameters = parameterInformation;
     }
 }
 
@@ -322,7 +321,14 @@ bool ProgramPage::isDescriptionModified()const{
 }
 
 bool ProgramPage::isDescriptionModifiedAndNotSaved()const{
-    return (descriptionNotSaved && (parameters->isDescriptionModified() || helpIsModified));
+    if(!isDescriptionModified())
+        return false;
+    if(descriptionNotSaved)
+        return true;
+    // Saved once: unsaved again if it differs from what was saved.
+    return parameters->getProgramName() != savedName
+            || help->toPlainText() != savedHelp
+            || parameters->getParameterInformation() != savedParameters;
 }
 
 void ProgramPage::nameChanged(const QString& name){

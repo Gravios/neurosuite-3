@@ -163,6 +163,10 @@ private:
     bool expertMode;
     /**The session's directory (empty for an unsaved session).*/
     QString sessionDir;
+    /**The description as last saved by saveProgramParameters().*/
+    QString savedName;
+    QString savedHelp;
+    QMap<int, QStringList > savedParameters;
 };
 
 #endif
