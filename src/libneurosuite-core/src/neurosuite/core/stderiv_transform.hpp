@@ -46,27 +46,31 @@ inline int16_t clampToInt16(double v) {
     return static_cast<int16_t>(iv);
 }
 
-// Spatial derivative of channel `idx` within one time sample's channel row
-// `chanRow[0..nChan)`.
-inline double spatialDeriv(SdiffOrder order, const double* chanRow,
-                           int idx, int nChan, const int* partner = nullptr,
-                           const int* setOff = nullptr, const int* setMem = nullptr,
-                           const ChannelExprSet* expr = nullptr) {
-    const double val = chanRow[idx];
+// Spatial derivative of channel `idx` at one time sample, reading that sample's
+// value on group channel j as x(j) (j in [0, nChan)).  The accessor lets a tool
+// read an interleaved record in place (x = [&](int j){ return rec[chans[j]]; })
+// instead of gathering the row first; spatialDeriv below is the same thing over
+// a contiguous row.
+template <class X>
+inline double spatialDerivBy(SdiffOrder order, X x,
+                             int idx, int nChan, const int* partner = nullptr,
+                             const int* setOff = nullptr, const int* setMem = nullptr,
+                             const ChannelExprSet* expr = nullptr) {
+    const double val = static_cast<double>(x(idx));
     switch (order) {
         case SdiffOrder::None:
             return val;
         case SdiffOrder::First:
             // A single-channel group has no neighbour: pass through, like
-            // Laplacian (the ternary below would read chanRow[-1]).
+            // Laplacian (the ternary below would read channel -1).
             if (nChan == 1) return val;
-            return (idx < nChan - 1) ? val - chanRow[idx + 1]
-                                     : val - chanRow[idx - 1];
+            return (idx < nChan - 1) ? val - static_cast<double>(x(idx + 1))
+                                     : val - static_cast<double>(x(idx - 1));
         case SdiffOrder::Laplacian:
             if (nChan == 1)        return val;
-            if (idx == 0)          return val - chanRow[1];
-            if (idx == nChan - 1)  return val - chanRow[nChan - 2];
-            return val - 0.5 * (chanRow[idx - 1] + chanRow[idx + 1]);
+            if (idx == 0)          return val - static_cast<double>(x(1));
+            if (idx == nChan - 1)  return val - static_cast<double>(x(nChan - 2));
+            return val - 0.5 * (static_cast<double>(x(idx - 1)) + static_cast<double>(x(idx + 1)));
         case SdiffOrder::Custom:
             // Per-channel custom difference: x[idx] - x[partner[idx]], where
             // partner[] is the within-group index each output channel is
@@ -75,7 +79,7 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
             // like every custom order it degrades to all-pairs -- the rule the
             // extractor documents ("a size that does not match the pattern uses
             // order 3").
-            if (partner && nChan > 1) return val - chanRow[partner[idx]];
+            if (partner && nChan > 1) return val - static_cast<double>(x(partner[idx]));
             [[fallthrough]];
         case SdiffOrder::CustomCar: {
             // Per-channel reference set: x[idx] - mean(x[set[idx]]), the session's
@@ -88,7 +92,7 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
                 const int b = setOff[idx], e = setOff[idx + 1];
                 if (e > b) {
                     double sum = 0.0;
-                    for (int k = b; k < e; ++k) sum += chanRow[setMem[k]];
+                    for (int k = b; k < e; ++k) sum += static_cast<double>(x(setMem[k]));
                     return val - sum / static_cast<double>(e - b);
                 }
             }
@@ -102,17 +106,27 @@ inline double spatialDeriv(SdiffOrder order, const double* chanRow,
             // such a group up front.  (Reached by CustomCar's fall-through only
             // with order != Expr, hence the test.)
             if (order == SdiffOrder::Expr && expr && nChan > 1 && expr->fits(nChan))
-                return expr->eval(idx, chanRow);
+                return expr->eval(idx, [&x](int j) { return static_cast<double>(x(j)); });
             [[fallthrough]];
         case SdiffOrder::AllPairs:
         default: {
             // Single-channel group has no pairs; the extractor returns 0 here.
             if (nChan == 1) return 0.0;
             double sum = 0.0;
-            for (int j = 0; j < nChan; ++j) sum += chanRow[j];
+            for (int j = 0; j < nChan; ++j) sum += static_cast<double>(x(j));
             return static_cast<double>(nChan) * val - sum;  // n·x_i − Σx
         }
     }
+}
+
+// Spatial derivative of channel `idx` within one time sample's channel row
+// `chanRow[0..nChan)`.
+inline double spatialDeriv(SdiffOrder order, const double* chanRow,
+                           int idx, int nChan, const int* partner = nullptr,
+                           const int* setOff = nullptr, const int* setMem = nullptr,
+                           const ChannelExprSet* expr = nullptr) {
+    return spatialDerivBy(order, [chanRow](int j) { return chanRow[j]; },
+                          idx, nChan, partner, setOff, setMem, expr);
 }
 
 // The prevSeed of a window cut out of a continuous recording: the clamped
