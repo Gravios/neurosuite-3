@@ -531,21 +531,22 @@ void ProbeMakerPage::buildInspector(QSplitter* inner)
     shankWidth    = new QDoubleSpinBox;  shankWidth->setRange(1, 5000);     shankWidth->setSuffix(" µm");
     shankTipAngle = new QDoubleSpinBox;  shankTipAngle->setRange(30, 180);  shankTipAngle->setSuffix("°");
     shankOriginX  = new QDoubleSpinBox;  shankOriginX->setRange(-50000, 50000); shankOriginX->setSuffix(" µm");
-    shankOriginY  = new QDoubleSpinBox;  shankOriginY->setRange(-50000, 50000); shankOriginY->setSuffix(" µm");
     shankOriginX->setToolTip(tr("Lateral position of this shank's centreline "
                                    "in the global probe frame (e.g. shank N at "
                                    "N × spacing_um for evenly-spaced multi-"
                                    "shank arrays)."));
-    shankOriginY->setToolTip(tr("Vertical offset of this shank's head in the "
-                                   "global probe frame.  Usually 0; non-zero only "
-                                   "for staggered designs."));
+    // No "origin y": the .probe format measures every site from its own
+    // shank's tip and has no field for a shank's vertical offset, so an
+    // offset could not be saved.  Shanks only move sideways.
+    shankLength->setToolTip(tr("Shank length.  Sites keep their height above "
+                               "the tip when it changes.  The file stores one "
+                               "length for all shanks (the longest)."));
     shankLayout   = new QLineEdit;
     for (auto* w : { static_cast<QWidget*>(shankLabel),
                      static_cast<QWidget*>(shankLength),
                      static_cast<QWidget*>(shankWidth),
                      static_cast<QWidget*>(shankTipAngle),
                      static_cast<QWidget*>(shankOriginX),
-                     static_cast<QWidget*>(shankOriginY),
                      static_cast<QWidget*>(shankLayout) }) {
         w->setStyleSheet(fldStyle);
     }
@@ -554,14 +555,13 @@ void ProbeMakerPage::buildInspector(QSplitter* inner)
     sf->addRow(mkLbl(tr("Width")),      shankWidth);
     sf->addRow(mkLbl(tr("Tip angle")),  shankTipAngle);
     sf->addRow(mkLbl(tr("Origin x")),   shankOriginX);
-    sf->addRow(mkLbl(tr("Origin y")),   shankOriginY);
     sf->addRow(mkLbl(tr("Layout")),     shankLayout);
     connect(shankLabel,    &QLineEdit::editingFinished,
             this, &ProbeMakerPage::onShankFieldEdited);
     connect(shankLayout,   &QLineEdit::editingFinished,
             this, &ProbeMakerPage::onShankFieldEdited);
     for (QDoubleSpinBox* sb : { shankLength, shankWidth, shankTipAngle,
-                                 shankOriginX, shankOriginY }) {
+                                 shankOriginX }) {
         connect(sb, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                 this, &ProbeMakerPage::onShankFieldEdited);
     }
@@ -574,6 +574,8 @@ void ProbeMakerPage::buildInspector(QSplitter* inner)
     chanHwId    = new QSpinBox;       chanHwId->setRange(0, 99999);
     chanX       = new QDoubleSpinBox; chanX->setRange(-50000, 50000); chanX->setSuffix(" µm");
     chanY       = new QDoubleSpinBox; chanY->setRange(-50000, 50000); chanY->setSuffix(" µm");
+    chanY->setToolTip(tr("Height of the site above its shank's tip, as the "
+                         ".probe file stores it."));
     chanSiteIdx = new QSpinBox;       chanSiteIdx->setRange(-1, 99999);
     chanArea    = new QDoubleSpinBox; chanArea->setRange(0, 100000);  chanArea->setSuffix(" µm²");
     for (auto* w : { static_cast<QWidget*>(chanHwId),
@@ -585,7 +587,7 @@ void ProbeMakerPage::buildInspector(QSplitter* inner)
     }
     chf->addRow(mkLbl(tr("Hw channel")),  chanHwId);
     chf->addRow(mkLbl(tr("Pos x")),       chanX);
-    chf->addRow(mkLbl(tr("Pos y")),       chanY);
+    chf->addRow(mkLbl(tr("Above tip")),   chanY);
     chf->addRow(mkLbl(tr("Site index")),  chanSiteIdx);
     chf->addRow(mkLbl(tr("Area")),        chanArea);
     for (QSpinBox* sb : { chanHwId, chanSiteIdx }) {
@@ -1139,14 +1141,13 @@ void ProbeMakerPage::refreshInspector()
     QSignalBlocker bSL(shankLabel);    QSignalBlocker bSLn(shankLength);
     QSignalBlocker bSW(shankWidth);    QSignalBlocker bST(shankTipAngle);
     QSignalBlocker bSY(shankLayout);
-    QSignalBlocker bSOX(shankOriginX); QSignalBlocker bSOY(shankOriginY);
+    QSignalBlocker bSOX(shankOriginX);
     if (selectedShank) {
         shankLabel->setText(selectedShank->label);
         shankLength->setValue(selectedShank->lengthUm);
         shankWidth->setValue(selectedShank->widthUm);
         shankTipAngle->setValue(selectedShank->tipAngle);
         shankOriginX->setValue(selectedShank->originUm.x());
-        shankOriginY->setValue(selectedShank->originUm.y());
         shankLayout->setText(selectedShank->layout);
     }
 
@@ -1156,7 +1157,9 @@ void ProbeMakerPage::refreshInspector()
     if (selectedChannel) {
         chanHwId->setValue(selectedChannel->hardwareId);
         chanX->setValue(selectedChannel->posUm.x());
-        chanY->setValue(selectedChannel->posUm.y());
+        const ProbeShank* owner = shankOf(selectedChannel);
+        chanY->setValue(owner ? owner->lengthUm - selectedChannel->posUm.y()
+                              : selectedChannel->posUm.y());
         chanSiteIdx->setValue(selectedChannel->siteIndex);
         chanArea->setValue(selectedChannel->areaUm2);
     }
@@ -1186,16 +1189,30 @@ void ProbeMakerPage::onConnectorFieldEdited()
 void ProbeMakerPage::onShankFieldEdited()
 {
     if (!selectedShank) return;
+    ProbeShank& sh = *selectedShank;
+    const qreal newLength = shankLength->value();
+    const QPointF newOrigin(shankOriginX->value(), sh.originUm.y());
+    if (sh.label == shankLabel->text() && sh.lengthUm == newLength
+        && sh.widthUm == shankWidth->value() && sh.tipAngle == shankTipAngle->value()
+        && sh.originUm == newOrigin && sh.layout == shankLayout->text())
+        return;   // editingFinished without a change
     pushUndoSnapshotCoalesced(tr("Edit shank"),
                               QStringLiteral("shank"),
                               static_cast<void*>(selectedShank));
-    selectedShank->label    = shankLabel->text();
-    selectedShank->lengthUm = shankLength->value();
-    selectedShank->widthUm  = shankWidth->value();
-    selectedShank->tipAngle = shankTipAngle->value();
-    selectedShank->originUm = QPointF(shankOriginX->value(),
-                                         shankOriginY->value());
-    selectedShank->layout   = shankLayout->text();
+    // The model measures y down from the shank head, the file up from the
+    // tip.  A new length moves the tip, so every site moves with it and
+    // keeps its height above the tip -- the quantity the file stores.
+    const qreal dLength = newLength - sh.lengthUm;
+    if (dLength != 0.0) {
+        for (ProbeChannel& ch : sh.channels)
+            ch.posUm.ry() += dLength;
+    }
+    sh.label    = shankLabel->text();
+    sh.lengthUm = newLength;
+    sh.widthUm  = shankWidth->value();
+    sh.tipAngle = shankTipAngle->value();
+    sh.originUm = newOrigin;
+    sh.layout   = shankLayout->text();
     // Geometry change → rebuild physical scene; logical labels need
     // a refresh (channel-count subtitle) too.
     rebuildLogicalScene();
@@ -1210,7 +1227,12 @@ void ProbeMakerPage::onChannelFieldEdited()
                               QStringLiteral("channel"),
                               static_cast<void*>(selectedChannel));
     selectedChannel->hardwareId = chanHwId->value();
-    selectedChannel->posUm      = QPointF(chanX->value(), chanY->value());
+    // The inspector shows the height above the tip; the model keeps the
+    // depth below the head.
+    const ProbeShank* owner = shankOf(selectedChannel);
+    selectedChannel->posUm      = QPointF(chanX->value(),
+                                          owner ? owner->lengthUm - chanY->value()
+                                                : chanY->value());
     selectedChannel->siteIndex  = chanSiteIdx->value();
     selectedChannel->areaUm2    = chanArea->value();
     // Channel pad position lives in the physical scene.  Refresh the
@@ -1258,6 +1280,14 @@ void ProbeMakerPage::setConnector(const ProbeConnector& connector)
 ProbeConnector ProbeMakerPage::connector() const
 {
     return data;
+}
+
+ProbeShank* ProbeMakerPage::shankOf(const ProbeChannel* ch)
+{
+    for (ProbeShank& s : data.shanks)
+        for (const ProbeChannel& c : s.channels)
+            if (&c == ch) return &s;
+    return nullptr;
 }
 
 int ProbeMakerPage::siteCount() const

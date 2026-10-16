@@ -218,6 +218,12 @@ void ShankItem::paint(QPainter* p,
 QVariant ShankItem::itemChange(GraphicsItemChange change,
                                const QVariant& value)
 {
+    if (change == ItemPositionChange && model) {
+        // Shanks move sideways only: the .probe format measures every
+        // site from its own shank's tip and has no field for a shank's
+        // vertical offset, so a vertical drag could not be saved.
+        return QPointF(value.toPointF().x(), model->originUm.y());
+    }
     if (change == ItemPositionHasChanged && model) {
         // User dragged the shank in the physical scene; mirror the new
         // origin into the model so the inspector and serializer see

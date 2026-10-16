@@ -162,6 +162,9 @@ private:
     /** Number of sites over all shanks -- the probe's channel count. */
     int siteCount() const;
 
+    /** The shank holding @p ch (by address), or nullptr. */
+    ProbeShank* shankOf(const ProbeChannel* ch);
+
     // ── Data ─────────────────────────────────────────────────────────────
     ProbeConnector data;
     bool           m_modified = false;
@@ -188,7 +191,6 @@ private:
     QDoubleSpinBox*shankWidth    = nullptr;
     QDoubleSpinBox*shankTipAngle = nullptr;
     QDoubleSpinBox*shankOriginX  = nullptr;
-    QDoubleSpinBox*shankOriginY  = nullptr;
     QLineEdit*     shankLayout   = nullptr;
 
     // Channel field group
