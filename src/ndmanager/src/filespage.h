@@ -92,6 +92,8 @@ private:
     QTabWidget* tabWidget;
     QPushButton* addButton;
     QPushButton* removeButton;
+    /**True once a file has been added or removed since the last save.*/
+    bool listModified;
 };
 
 #endif

@@ -35,7 +35,7 @@
 
 
 FilesPage::FilesPage(QWidget* parent)
-    : QFrame(parent){
+    : QFrame(parent),listModified(false){
 
     QVBoxLayout* frameLayout = new QVBoxLayout(this);
     frameLayout->setContentsMargins(0, 0, 0, 0);
@@ -83,6 +83,7 @@ void FilesPage::addNewFile(){
     //set the connection
     connect(filePage, &FilePage::extensionChanged, this, &FilesPage::changeCaption);
     filePage->initialisationOver();
+    listModified = true;
 
     //make sure to show the content of the new page
     tabWidget->setCurrentIndex(tabWidget->indexOf(filePage));
@@ -101,8 +102,11 @@ FilePage* FilesPage::addFile(const QString &title){
 
 void FilesPage::removeFile(){
     FilePage* filePage = static_cast<FilePage*>(tabWidget->currentWidget());
+    if(!filePage)
+        return;
     tabWidget->removeTab(tabWidget->indexOf(filePage));
     delete filePage;
+    listModified = true;
     emit fileModification(getFileExtensions());
 }
 
@@ -118,7 +122,10 @@ void FilesPage::getFilePages(QList<FilePage*>& fileList){
 }
 
 bool FilesPage::isModified()const{
-    bool modified = false;
+    // A file added or removed is a change even when no remaining page is.
+    bool modified = listModified;
+    if(modified)
+        return true;
     for(int i = 0; i<tabWidget->count();++i){
         modified = static_cast<FilePage*>(tabWidget->widget(i))->isModified();
         if(modified)
@@ -129,6 +136,7 @@ bool FilesPage::isModified()const{
 }
 
 void FilesPage::resetModificationStatus(){
+    listModified = false;
     for(int i = 0; i<tabWidget->count();++i){
         static_cast<FilePage*>(tabWidget->widget(i))->resetModificationStatus();
     }

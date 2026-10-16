@@ -255,7 +255,7 @@ void AnatomyPage::attributeChanged(int row,int column){
 }
 
 void AnatomyPage::slotValidate(){
-    modified = true;
+    // Moving between cells is not an edit (groupChanged marks real ones).
     if(isIncorrectRow){
         groupTable->selectRow(incorrectRow);
         groupTable->setCurrentCell(incorrectRow,0);

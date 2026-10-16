@@ -203,7 +203,7 @@ QMap<int, QList<int> > FilePage::getChannelMapping()const{
 }
 
 void FilePage::slotValidate(){
-    modified = true;
+    // Clicking a cell is not an edit (mappingChanged marks real ones).
     if(isIncorrectRow){
         mappingTable->selectRow(incorrectRow);
         mappingTable->editItem(mappingTable->item(incorrectRow,0));
@@ -212,8 +212,14 @@ void FilePage::slotValidate(){
 
 /**Validates the current entry in the mapping table.*/
 void FilePage::mappingChanged(int row,int column){
-    modified = true;
-    QString channel = mappingTable->item(row,column)->text();
+    // setChannelMapping fills the table while the page is initialised:
+    // that is the loaded session, not an edit.
+    if(!isInit)
+        modified = true;
+    const QTableWidgetItem* cell = mappingTable->item(row,column);
+    if(!cell)
+        return;
+    QString channel = cell->text();
     //the group entry should only contain digits and whitespaces
     if(channel.contains(QRegularExpression("[^\\d\\s]")) != 0){
         isIncorrectRow = true;

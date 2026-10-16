@@ -300,7 +300,7 @@ void SpikePage::groupChanged(int row,int column){
 }
 
 void SpikePage::slotValidate(){
-    modified = true;
+    // Moving between cells is not an edit (groupChanged marks real ones).
     if(isIncorrectRow){
         groupTable->selectRow(incorrectRow);
         // groupTable->selectColumn(incorrectColumn);
