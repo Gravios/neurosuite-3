@@ -3,8 +3,18 @@ import os, struct, subprocess, tempfile
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BIN  = os.environ.get("PROCESS_PCA_BIN",
-                      os.path.normpath(os.path.join(HERE, "..", "..", "..", "build", "src", "ndmanager-plugins", "src", "process_pca", "process_pca")))
+_ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
+# ctest passes PROCESS_PCA_BIN; standalone, look in a build/ at the repo root
+# (monorepo layout first, then a standalone ndmanager-plugins build).
+BIN = os.environ.get("PROCESS_PCA_BIN") or next(
+    (p for p in (os.path.join(_ROOT, "build", "ndmanager-plugins", "src", "process_pca", "process_pca"),
+                 os.path.join(_ROOT, "build", "src", "process_pca", "process_pca"))
+     if os.path.isfile(p)),
+    os.path.join(_ROOT, "build", "ndmanager-plugins", "src", "process_pca", "process_pca"))
+
+if not os.path.isfile(BIN):
+    print(f"SKIPPED: process_pca not found at {BIN} (set PROCESS_PCA_BIN)")
+    raise SystemExit(0)
 
 def make_waveform(kind, nSamples=32, nChan=8, rng=None):
     t = np.arange(nSamples, dtype=np.float32)
@@ -60,12 +70,24 @@ def parse_fet(path):
     rows = len(body) // (nDim * 8)
     return np.frombuffer(body, dtype="<i8").reshape(rows, nDim), nDim
 
+PCAE_MAGIC = 0x50434145  # "PCAE"
+
 def parse_pca(path):
-    """.pca format: 5 int32 header (nC, data2use, nComp, isCent, recShift),
-       then per-channel: data2use doubles (mean), then per-channel:
-       data2use * nComp doubles (eigenvectors, col-major)."""
+    """.pca format (PCAE, neurosuite/core/pca_projection.hpp): int32 header
+       magic, version, nC, data2use, nComp, recShift, isCentered, and from
+       version 2 method, nInputChannels; then per-channel data2use doubles
+       (means), then per-channel data2use * nComp doubles (eigenvectors,
+       col-major).  The pre-PCAE 5-int header (nC, data2use, nComp, isCent,
+       recShift) is still read, for old files."""
     with open(path, "rb") as f:
-        nC, d2u, nComp, isCent, rsh = struct.unpack("<iiiii", f.read(20))
+        first = struct.unpack("<i", f.read(4))[0]
+        if first == PCAE_MAGIC:
+            version, nC, d2u, nComp, rsh, isCent = struct.unpack("<iiiiii", f.read(24))
+            if version >= 2:
+                f.read(8)   # method, nInputChannels
+        else:
+            d2u, nComp, isCent, rsh = struct.unpack("<iiii", f.read(16))
+            nC = first
         means = np.frombuffer(f.read(nC * d2u * 8), dtype="<f8").reshape(nC, d2u)
         evecs_flat = np.frombuffer(f.read(nC * d2u * nComp * 8), dtype="<f8")
         evecs = evecs_flat.reshape(nC, nComp, d2u)  # col-major: shape (chan,comp,sample)
