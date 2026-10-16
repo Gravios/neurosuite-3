@@ -39,6 +39,14 @@ target_include_directories(klusters_test_templatelineagestore
 target_link_libraries(klusters_test_templatelineagestore PRIVATE Neurosuite::core)
 add_test(NAME klusters_test_templatelineagestore COMMAND klusters_test_templatelineagestore)
 
+# hierarchyfiles -- the Qt-free .clu/.clc/.clp helpers shared by Save and
+# "Promote to Hierarchical Session" (nesting scan, promotion, staged writes).
+add_executable(klusters_test_hierarchyfiles
+    hierarchyfiles_test.cpp "${_klu_src}/hierarchyfiles.cpp")
+target_compile_features(klusters_test_hierarchyfiles PRIVATE cxx_std_20)
+target_include_directories(klusters_test_hierarchyfiles PRIVATE "${_klu_src}")
+add_test(NAME klusters_test_hierarchyfiles COMMAND klusters_test_hierarchyfiles)
+
 # TemplateClassStore — the Qt-free EAP template-class model (phase 4).  Same
 # shape as the lineage-store test: compiles the store source and LINKS
 # Neurosuite::core (readEap/readTcl/writeEap/writeTcl + the templateclass engine

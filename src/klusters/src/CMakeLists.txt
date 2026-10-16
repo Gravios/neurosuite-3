@@ -41,6 +41,7 @@ set(klusters_SRCS
     templatepalette.cpp        # left-column template-class palette (§11.5)
     templateclassstore.cpp     # EAP template-class state model (.eap/.tcl over neurosuite-core)
     templatelineagestore.cpp   # manual template-lineage model (.wtl over neurosuite-core)
+    hierarchyfiles.cpp         # .clu/.clc/.clp triple on disk: nesting scan, promotion, staged writes
     residualmatrixthread.cpp
     residualmatrixview.cpp
     pairxcorrthread.cpp
