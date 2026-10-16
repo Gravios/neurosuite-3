@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-16 | [Build and docs: one C++ standard, standard test layout, how to run the tests](#2026-10-16--build-and-docs-one-c-standard-standard-test-layout-how-to-run-the-tests) |
 | 2026-10-16 | [Spike detection: sdiffPairs as arithmetic expressions (stderiv_C6)](#2026-10-16--spike-detection-sdiffpairs-as-arithmetic-expressions-stderiv_c6) |
 | 2026-10-16 | [ndManager: export a session as a template, apply a template to a session](#2026-10-16--ndmanager-export-a-session-as-a-template-apply-a-template-to-a-session) |
 | 2026-10-16 | [ndManager: parameter tables by keyboard, typed values; plugins listed by purpose](#2026-10-16--ndmanager-parameter-tables-by-keyboard-typed-values-plugins-listed-by-purpose) |
@@ -55,6 +56,42 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-10-16 — Build and docs: one C++ standard, standard test layout, how to run the tests
+
+<details>
+<summary>Details</summary>
+
+- **C++20 everywhere.** The 34 targets that still declared `cxx_std_17` (all
+  of them were already built as C++20) now declare `cxx_std_20`. The rule
+  that core headers had to stay C++17-clean is dropped, since nothing
+  needed it. `process_smrconvert` and libsamplerate are untouched.
+- **klusters tests** moved from `src/klusters/tests/` to
+  `src/klusters/test/`, like every other subproject. Test names are
+  unchanged.
+- **`build_invariants`** gains two checks. One is for the C++ standard: every
+  root has `CMAKE_CXX_STANDARD 20` and nothing asks for another standard.
+  The other is for the layout: `test/` and never `tests/`, and no sources at
+  a subproject root. The `cmake -DREPO=. -P tests/cmake_invariants.cmake`
+  form now works.
+- **STANDARDIZATION.md** now matches the tree:
+  - the syntax gate is `-std=c++20`;
+  - a new §2.9 sets out the standard;
+  - libneurosuite-core is in the project map;
+  - the hue formula is balanced;
+  - §4 describes the patch-series loop in place of the old tarball one;
+  - §9 has a tests gate.
+- **[tests/README.md](tests/README.md)** is the one page on running tests. It
+  covers:
+  - ctest flags and test-name prefixes;
+  - a Qt-free configure;
+  - the ndmanager-plugins script tests and the fiber-kit contract check,
+    which do not run under ctest;
+  - where to add a test.
+
+</details>
 
 ---
 
