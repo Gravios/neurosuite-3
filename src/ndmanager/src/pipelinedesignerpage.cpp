@@ -845,13 +845,13 @@ PipelineDesignerPage::PipelineDesignerPage(QWidget* parent) : QWidget(parent)
     tbox->addSpacing(12);
 
     // Save / Save As — write the current graph to a `.pipeline` YAML
-    // alongside the session.  Save targets `<session>.default.pipeline`;
+    // alongside the session.  Save targets `<session>.ndm.default.pipeline`;
     // Save As prompts for a name (e.g. "best", "experimental") and
-    // writes `<session>.<name>.pipeline`.  The actual filesystem path
+    // writes `<session>.ndm.<name>.pipeline`.  The actual filesystem path
     // resolution and prompting happen in ParameterView, which knows
     // doc->url(); we just emit signals.
     auto* saveBtn = new QPushButton(tr("💾 Save"));
-    saveBtn->setToolTip(tr("Save pipeline as <session>.default.pipeline (Ctrl+Alt+P)"));
+    saveBtn->setToolTip(tr("Save pipeline as <session>.ndm.default.pipeline (Ctrl+Alt+P)"));
     saveBtn->setStyleSheet(
         "QPushButton{background:#102a18;border:1px solid #2dd4bf;color:#2dd4bf;"
         "font-size:11px;padding:3px 10px;border-radius:3px;}"
@@ -1510,8 +1510,8 @@ void PipelineDesignerPage::refreshApplyState()
 // Pipeline file I/O
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Pipeline files live alongside the session YAML as `<session>.<name>.pipeline`
-// (default name is "default", e.g. session.default.pipeline).  They are
+// Pipeline files live alongside the session YAML as `<session>.ndm.<name>.pipeline`
+// (default name is "default", e.g. session.ndm.default.pipeline).  They are
 // minimal YAML carrying only the graph — node positions, edges, parameter
 // values — independent of the session-wide schema in session.yaml.  This
 // lets a user maintain multiple named pipelines per session

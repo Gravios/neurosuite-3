@@ -214,12 +214,12 @@ public:
                         const PipelineParamEdits& edited = PipelineParamEdits());
 
     /** Save the current Pipeline Designer graph to
-     *  `<session-base>.default.pipeline`.  Invoked from the page's Save
+     *  `<session-base>.ndm.default.pipeline`.  Invoked from the page's Save
      *  button and from ndManager's File menu (Ctrl+Alt+P). */
     void savePipelineDefault();
 
     /** Save under a custom name.  Prompts the user for `<n>` and writes
-     *  `<session-base>.<n>.pipeline`.  Sanitises the name to a safe
+     *  `<session-base>.ndm.<n>.pipeline`.  Sanitises the name to a safe
      *  filesystem-friendly form.  Bound to File → Save Pipeline As… and
      *  Ctrl+Alt+Shift+P. */
     void savePipelineAs();
@@ -332,7 +332,7 @@ private:
 
     /** Returns "/path/to/session" — the doc URL with its parameter-file
      *  extension stripped.  Used to build pipeline-file paths
-     *  (e.g. session-base + ".default.pipeline").  Empty string if the
+     *  (e.g. session-base + ".ndm.default.pipeline").  Empty string if the
      *  document has no URL yet. */
     QString sessionBasePath() const;
 

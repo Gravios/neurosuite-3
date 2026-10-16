@@ -150,23 +150,24 @@ error.
 
 ## Pipeline tab — editable node graph
 
-The **Pipeline** entry in the parameter tree (peer to *Plugins*) shows the session's plugin
-list as an editable directed graph. The root is **`ndm_start`** — pinned at position 0,
-permanently visible, gold-accented with a "★ ROOT" badge so the entry point is unmistakable.
-Every other node is a freely editable `ndm_*` plugin: drag from the palette to add, drag node
-bodies to position, drag from a node's output port to another's input port to connect, click
-edges to select, **Delete** to remove the selected node or edge.
+The **Pipeline** entry in the parameter tree (peer to *Plugins*) shows the session's pipeline
+as an editable directed graph. The root is **`ndm_start`** — always present, gold-accented
+with a "★ ROOT" badge so the entry point is unmistakable. Every other node is a freely
+editable `ndm_*` plugin: drag from the palette to add, drag node bodies to position, drag
+from a node's output port to another's input port to connect, click edges to select,
+**Delete** to remove the selected node or edge. An edge that would close a cycle, or that
+ends on the root, is refused; the reason appears in a notice bar under the toolbar.
 
 When you open a session for the first time, the graph contains **only the `ndm_start` root**.
 You build the pipeline from scratch by dragging plugins from the palette. The result is saved
-to a separate `<session>.ndm.<n>.pipeline` YAML file (see [Saving the graph](#saving-the-graph)
+to a separate `<session>.ndm.<name>.pipeline` YAML file (see [Saving the graph](#saving-the-graph)
 below); the next time you open the session, the saved pipeline is auto-loaded.
 
 The palette lists every `ndm_*` plugin that reads parameters from the session (except
 `ndm_xml2yaml` and `ndm_recolorchannels`, which edit the parameter file rather than process
 data), grouped by category. A node dropped onto the canvas starts with the parameters of that
-plugin's block in `templates/template.yaml`, with the template's values; a node loaded from the
-session keeps the session's values. *Extract Spikes (SDiff / StDeriv)* and *PCA (StDeriv)* are
+plugin's block in `templates/template.yaml`, with the template's values; a node loaded from a
+pipeline file keeps the file's values. *Extract Spikes (SDiff / StDeriv)* and *PCA (StDeriv)* are
 aliases that run Detect / Extract Spikes or PCA with that method; they have no parameters of
 their own — set them on *Detect Spikes*, *Extract Spikes* and *PCA*.
 
@@ -178,26 +179,32 @@ its row to that table, and rerun the script; `test_template_parameters.py` and
 the template and the designer agree.
 
 The toolbar carries a preset combo (Pipeline A / C / D / Full), **Save** / **Save As**
-buttons, an **Apply Pipeline** button (pushes the graph into the Plugins tab), and a
-**Clear** button (empties the graph back to just the root).
+buttons, an **Apply Pipeline** button (pushes the graph's order into the Plugins tab, see
+below), and a **Clear** button, which empties the graph back to a fresh `ndm_start` root (its
+flags reset to their defaults) and counts as an unsaved edit.
 
 ```
-   ┌─────────────┐    ┌──────────┐    ┌───────────────┐    ┌─────────┐    ┌────────────┐
-   │ ndm_start ★ │ ─→ │ ndm_hipass│ ─→ │ ndm_extractspikes│ ─→ │ ndm_pca │ ─→ │ ndm_klustakwik │
-   └─────────────┘    └──────────┘    └───────────────┘    └─────────┘    └────────────┘
+   ┌─────────────┐    ┌────────────┐    ┌───────────────────┐    ┌─────────┐    ┌────────────────┐
+   │ ndm_start ★ │ ─→ │ ndm_hipass │ ─→ │ ndm_extractspikes │ ─→ │ ndm_pca │ ─→ │ ndm_klustakwik │
+   └─────────────┘    └────────────┘    └───────────────────┘    └─────────┘    └────────────────┘
         ROOT
 ```
 
 ### Sticky-root semantics
 
-`ndm_start` is the orchestrator entry point. The Pipeline canvas enforces four invariants:
+`ndm_start` is the orchestrator entry point. The Pipeline tab enforces these invariants:
 
-| Invariant | Why |
+| Invariant | How |
 |---|---|
-| Always present, position 0 | Topological sort emits `ndm_start` first; the YAML's `programs[0]` is always `ndm_start` |
-| Never deletable | Backspace/Delete are silently ignored when the root is selected |
-| Indegree 0 | Edge-completion rejects any drag that ends on the root's input port (the input port itself is hidden) |
-| One per graph | The palette doesn't surface `ndm_start`; drops via mime payload are rejected when one already exists |
+| Always present | Clear rebuilds the root; loading a pipeline file without one adds one (and says so) |
+| Exactly one | The palette doesn't offer `ndm_start` and drops of a second are rejected; loading a file keeps its first `ndm_start` and drops any other (with its edges), with a warning |
+| Never deletable | Backspace/Delete are ignored when the root is selected |
+| Indegree 0 | Edge-completion refuses any drag that ends on the root (its input port is hidden); loading drops edges into it, with a warning |
+| First in the exported list | **Apply** puts `ndm_start` first, and the session file's `programs:` list is written in the Plugins tab's order, so after Apply + save `programs[0]` is `ndm_start` |
+
+The graph must also be acyclic: the canvas refuses an edge that closes a cycle, and loading a
+hand-edited file drops, in file order, each edge that would (`ndm_start` would otherwise skip
+every node on or after the cycle).
 
 Selecting the root in the inspector exposes its seven legacy flag parameters (`wideband`,
 `events`, `video`, `concatenation`, `spikes`, `lfp`, `clean`). These are no longer used to
@@ -213,58 +220,97 @@ independent of the session schema and lets you keep multiple named variants per 
 | Action | Where | Shortcut | Writes |
 |---|---|---|---|
 | **Save Pipeline** | File menu, Pipeline toolbar | Ctrl+Alt+P | `<session>.ndm.default.pipeline` |
-| **Save Pipeline As…** | File menu, Pipeline toolbar | Ctrl+Alt+Shift+P | `<session>.ndm.<name>.pipeline` (prompts for name) |
+| **Save Pipeline As…** | File menu, Pipeline toolbar | Ctrl+Alt+Shift+P | `<session>.ndm.<name>.pipeline` (prompts for name; asks before overwriting) |
 | **Load Pipeline…** | File menu | — | replaces graph from selected `*.pipeline` file |
 
+`<session>` is the session file's path without its `.yaml` / `.yml` / `.xml` extension, so
+both saves need a session file of their own: on a document made with **New** or from a
+template that has not been saved yet, they refuse with "Save the session file first".
+
 Pipeline files are minimal YAML — `nodes` (id, type, pos, enabled, params) and `edges`
-(from, to). Names are sanitised to `[a-z0-9_-]` (lowercased, whitespace → underscore,
+(from, to). Parameter values are written so they read back exactly (quotes, spaces, tabs and
+newlines included); in a hand-edited file a non-string value such as `0.50` or `yes` is read
+as its YAML text. Names are sanitised to `[a-z0-9_-]` (lowercased, whitespace → underscore,
 other characters dropped). The `.ndm.` infix namespaces our pipeline files so they don't
 collide with `.pipeline` files produced by other tools (Klusters, snakemake, nextflow, …)
-in the same session directory.
+in the same session directory. Reading a pipeline file needs `python3` with PyYAML on `PATH`.
 
 When you open a session, ndmanager auto-loads `<session>.ndm.default.pipeline` if it
 exists. If no such file exists, the Pipeline tab shows just the `ndm_start` root node —
-you build the graph from scratch via the palette.
+you build the graph from scratch via the palette. If the file exists but cannot be loaded
+(YAML error, `python3` or PyYAML missing), a red notice in the Pipeline tab says why and that
+the graph shown is *not* that pipeline, and **Save Pipeline** asks before overwriting the
+file. Repairs made while loading (unknown plugin types, duplicate ids, a second root, edges
+into the root or closing a cycle) are listed in the notice too.
+
+Graph edits not yet written with Save Pipeline / Save As count as unsaved changes when you
+close the document or quit. Saving the session file (Ctrl+S) does **not** write the
+pipeline file.
 
 ### Apply Pipeline vs Save Pipeline
 
 These are two separate actions:
 
-- **Apply Pipeline** (existing button) — pushes the topo-sorted plugin list back into the
-  Plugins tab, replacing any existing entries. The next document save (Ctrl+S) writes them
-  to the session YAML's `programs:` block. Use this when you want the session YAML to
-  reflect the graph (so the legacy `programs:`-driven Run All path uses the new order).
+- **Apply Pipeline** — orders the Plugins tab as the graph runs; the next document save
+  (Ctrl+S) writes that order to the session YAML's `programs:` block, with `ndm_start` first.
+  It does not throw away what the Plugins tab holds:
+  - a plugin already in the Plugins tab keeps its page — its tuned values, help text and
+    script; only parameters you edited in the node inspector since the last Apply are
+    written onto it;
+  - a plugin new to the Plugins tab gets a page with its node's values;
+  - several nodes of one plugin type give one entry, at the first one's place;
+  - plugins that are not in the graph, or only on disabled nodes, stay in the list after the
+    graph's plugins — their entries hold the parameter overrides those plugins read.
 
-- **Save Pipeline** — writes the graph itself (positions, edges, params) to a
-  `.pipeline` file. Doesn't touch the session YAML, doesn't change anything in the Plugins
-  tab. The runtime `ndm_start` reads this file directly without going through the Plugins
-  flow.
+- **Save Pipeline** — writes the graph itself (positions, edges, node params) to a
+  `.pipeline` file. Doesn't touch the session YAML or the Plugins tab. The runtime
+  `ndm_start` reads the plugin *order* from this file directly.
 
-A typical workflow: design a graph, **Save Pipeline**, then run `ndm_start session.yaml`
-from the command line — the dispatcher reads `session.ndm.default.pipeline` directly. Use
-**Apply Pipeline** only when you want the change to reflect in the Plugins tab and the
-session YAML.
+At run time every plugin reads its **parameters** from its entry in the session file's
+`programs:` block, never from the pipeline file — the node parameters in a pipeline file are
+only the designer's copy. So: change parameters in the Plugins tab (or edit them in the node
+inspector and **Apply**), and save the session; design the order in the graph and **Save
+Pipeline**.
 
 ### Runtime behavior: `ndm_start` reads its own program list
 
-The `ndm_start` bash chooses its source of plugin order in this priority:
+```sh
+cd /data/Rat               # the directory holding Rat.yaml and the session directories
+ndm_start Rat.yaml         # or: ndm_start Rat  — or plain ndm_start when the directory is named Rat
+ndm_start Rat.yaml Rat-20200101 Rat-20200102   # only these directories
+```
 
-1. `<template>.ndm.${NDM_PIPELINE:-default}.pipeline` — the pipeline file produced by Save
-   Pipeline. The `NDM_PIPELINE` env var lets a CI run select between named variants:
+`ndm_start [parameter_file] [directory ...]` runs in the current directory. The parameter
+file argument is reduced to its stem (directory part and `.yaml` / `.yml` / `.xml` dropped)
+and `<stem>.yaml`, `.yml` or `.xml` must exist **in the current directory** — `ndm_start
+/elsewhere/Rat.yaml` does not read `/elsewhere`. Without arguments the stem is the current
+directory's name. Without directory arguments, the directories are discovered as `*-<suffix>`
+entries (first suffix of `ndm_start`'s `suffixes` parameter) with that suffix stripped; each is
+created if needed and gets a copy of the parameter file as `<directory>.yaml`.
+
+It chooses its source of plugin order once, in this priority:
+
+1. `<stem>.ndm.${NDM_PIPELINE:-default}.pipeline` in the current directory — the file
+   ndmanager's Save Pipeline writes beside the same parameter file. The `NDM_PIPELINE` env
+   var selects a named variant:
 
    ```sh
-   NDM_PIPELINE=best ndm_start session/             # uses .ndm.best.pipeline
-   NDM_PIPELINE=experimental ndm_start session/     # uses .ndm.experimental.pipeline
-   ndm_start session/                                # uses .ndm.default.pipeline
+   NDM_PIPELINE=best ndm_start Rat.yaml           # uses Rat.ndm.best.pipeline
+   NDM_PIPELINE=experimental ndm_start Rat.yaml   # uses Rat.ndm.experimental.pipeline
+   ndm_start Rat.yaml                             # uses Rat.ndm.default.pipeline
    ```
 
-2. **In-YAML graph** (`programs[0]==ndm_start`) — the legacy form, kept for backward
-   compatibility with sessions saved before the `.pipeline` files existed (or after Apply
-   Pipeline + Ctrl+S).
+   A missing file falls through to 2 without a message; a file that yields no plugins (empty,
+   unreadable) falls through with a warning.
+
+2. **In-YAML graph** (`programs[0]` is `ndm_start`) — the plugins after it, in list order. A
+   session file saved by ndmanager after Apply Pipeline has this form; older ndmanager builds
+   saved the programs in alphabetical order, which puts `ndm_start` after `ndm_a…` – `ndm_s…`
+   plugins, so such files usually take path 3 until re-saved after Apply.
 
 3. **Hard-coded flag-driven `do_*` sequence** — original ndm_start, kept for sessions
    with no graph at all. The seven flag parameters (`wideband`, `events`, `video`,
-   `concatenation`, `spikes`, `lfp`, `clean`) on the `ndm_start` node still gate this
+   `concatenation`, `spikes`, `lfp`, `clean`) on the `ndm_start` entry still gate this
    path.
 
 Plugins are classified per-session or per-directory inside the bash; per-session plugins
@@ -280,8 +326,9 @@ not a fatal error.
 
 ### Notes
 
-- The graph order **is** the runtime order. Re-running `ndm_start /path/to/session` after
-  Save Pipeline respects the order saved in the file.
+- The graph order **is** the runtime order: the designer and `ndm_start` run the same
+  topological sort (Kahn's algorithm, ties broken in node order — file order for a loaded
+  pipeline), so Apply and the saved file agree with what `ndm_start` dispatches.
 - Disabling a node in the inspector skips it at runtime — the topo-sort still emits the
   node (so positions are preserved), but the dispatcher checks `enabled` and skips it.
   (`ndm_start` itself is never disable-able.)

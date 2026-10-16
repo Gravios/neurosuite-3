@@ -6,7 +6,10 @@ inspector, presets, topo-sorted Apply→YAML round-trip via
 `PipelineDesignerPage::applyRequested` → `ParameterView::setProgramList`).
 This change pins **`ndm_start` as the sticky entry node** of every
 graph, then rewrites `ndm_start` the bash to read its own program
-list from the YAML and dispatch in graph order.
+list and dispatch in graph order.  (The graph itself later moved to
+separate pipeline files, which `ndm_start` reads first — see
+[Pipeline files](#pipeline-files-sessionndmnpipeline); the in-YAML
+form below remains its second source.)
 
 For the operational walkthrough, see
 [`../ndmanager/README.md` → Pipeline tab](../ndmanager/README.md#pipeline-tab--editable-node-graph).
@@ -22,8 +25,11 @@ plugins on **Apply**. Without a privileged starting node, the
 ordering of a disconnected DAG is ambiguous (the topo sort breaks
 ties by insertion order, which depends on user click history).
 Pinning `ndm_start` as the entry node makes the graph's execution
-order canonical: the YAML's `programs[0]` is always `ndm_start`, and
-the rest follow in graph order.
+order canonical: after **Apply** the Plugins tab lists `ndm_start`
+first and the rest in graph order, and ndmanager writes the session
+file's `programs:` list in that order (`ParameterView::programOrder`;
+before that fix the list was written alphabetically from a `QMap`),
+so the saved `programs[0]` is `ndm_start`.
 
 Once `ndm_start` is pinned in the GUI, the bash script needs to read
 that order back. This makes `ndm_start` a thin abstraction layer:
@@ -45,10 +51,13 @@ clicks the root). The category is intentionally not in `catOrder`
 
 ### Sticky-root invariants enforced by the canvas
 
-- **Always present.** `setPrograms()` hoists an existing
-  `ndm_start` to position 0; if the loaded YAML has no `ndm_start`
-  entry, a defaults-only `ProgramInformation` is synthesised and
-  prepended before laying out.
+- **Always present.** `setPrograms()` lays the session's `programs:`
+  list out as a chain only when `programs[0]` is `ndm_start` (the
+  in-YAML form); otherwise — the usual case, `programs:` being a
+  parameter store — the graph is just a synthesised defaults-only root
+  (`clearGraphToRoot()`).  **Clear** also calls `clearGraphToRoot()`,
+  and `loadPipelineFile()` adds a root to a file that has none (with a
+  warning).
 
 - **Always position 0.** `getPrograms()` topo-sorts as before and
   belt-and-braces hoists `ndm_start` to position 0 of the output
@@ -70,6 +79,15 @@ clicks the root). The category is intentionally not in `catOrder`
 - **No second instance.** `dropEvent()` rejects drops of
   `ndm_start` when one already exists. (The palette doesn't show
   it, but the mime payload is still possible from external sources.)
+  `loadPipelineFile()` keeps a file's first `ndm_start` and drops any
+  other with its edges, and drops edges into the root, with warnings.
+
+- **Acyclic.** Edge-completion refuses an edge whose target already
+  reaches its source (`PipelineCanvas::wouldCreateCycle`), with the
+  reason in the page's notice bar; `loadPipelineFile()` drops, in file
+  order, each edge that would close a cycle.  `ndm_start`'s sort never
+  emits the nodes of a cycle (or anything after them), so the two sorts
+  only agree on acyclic graphs.
 
 - **`loadPreset` integration.** Every preset prepends `ndm_start`
   if absent, then chains the rest. Presets stay declarative —
@@ -230,13 +248,13 @@ fi
 
 | Action | Result |
 |---|---|
-| Open a session YAML with `programs[0] == ndm_start` | Graph loads with root pinned at position 0; rest of nodes laid out in YAML order |
-| Open a session YAML without `ndm_start` | Graph synthesises a defaults-only `ndm_start` and prepends it; rest laid out in YAML order |
-| Open a session YAML with no `programs:` | Graph shows just `ndm_start` |
-| Edit graph (add/remove/connect/move) | `m_modified` flips true; **Apply** button enables |
-| Click **Apply Pipeline** | `getPrograms()` topo-sorts → `applyRequested` → `setProgramList` rewrites `programs:` block |
-| Save document (Ctrl+S) | `programs:` written with `ndm_start` at position 0 |
-| Run `ndm_start session.yaml` | Bash detects root, reads remaining programs, dispatches per-session and per-directory phases |
+| Open a session YAML with `programs[0] == ndm_start` | Graph loads as a chain in YAML order, root first |
+| Open a session YAML whose `programs[0]` is anything else, or with no `programs:` | Graph shows just a defaults-only `ndm_start` |
+| …and `<session>.ndm.default.pipeline` exists | That file replaces the graph; if it fails to load, a red notice says so and Save Pipeline asks before overwriting it |
+| Edit graph (add/remove/connect/move, inspector edit, Clear) | Apply is highlighted; the document counts as modified until Save Pipeline |
+| Click **Apply Pipeline** | `getPrograms()` topo-sorts → `applyRequested` → `setProgramList` reorders the Plugins tab (existing pages kept, inspector edits applied, new plugins added, others kept after) |
+| Save document (Ctrl+S) | `programs:` written in Plugins-tab order, `ndm_start` first after Apply; the pipeline file is *not* written |
+| Run `ndm_start session.yaml` in the session file's directory | Bash takes the pipeline file if present, else the in-YAML list, and dispatches per-session and per-directory phases |
 
 ---
 
@@ -299,7 +317,7 @@ nodes:
     enabled: true
     params:
       wideband: 'true'
-      events:   'true'
+      events: 'true'
       ...
   - id: n2
     type: ndm_hipass
@@ -312,6 +330,20 @@ edges:
   - {from: n1, to: n2}
 ```
 
+Values are written single-quoted when every character is printable on
+one line and double-quoted with escapes (`\n`, `\t`, `\xHH`, `\uHHHH`, …)
+otherwise, so any string reads back exactly; ids, types and parameter
+names are written bare when they are plain identifiers.  The reader is a
+small PyYAML program run with `python3` (`kPipelineParser` in
+`pipelinedesignerpage.cpp`) that prints the graph as JSON; it reads a
+parameter value as its YAML text (`0.50` stays `0.50`, `~` becomes
+empty) and `enabled`, ids and edges the way `ndm_start`'s
+`read_pipeline_file` does.
+
+Node parameters in the file are the designer's copy only: at run time
+each plugin reads its parameters from its entry in the session file's
+`programs:` block.
+
 ### Why a separate file?
 
 - **Independence from session schema.** Pipeline editing doesn't dirty
@@ -323,8 +355,8 @@ edges:
   without copying YAMLs. The Save As menu writes
   `<session>.ndm.<n>.pipeline`; Load Pipeline lets the user pick.
 - **CI friendliness.** A workflow runner can override which pipeline to
-  use via `NDM_PIPELINE=experimental ndm_start session.yaml` without
-  modifying the session.
+  use via `NDM_PIPELINE=experimental ndm_start session.yaml` (run in the
+  session file's directory) without modifying the session.
 - **Namespace cleanliness.** The `.ndm.` infix is intentional. Other
   tools in the same session directory might also produce `.pipeline`
   files (Klusters export, snakemake workflow descriptions, nextflow
@@ -351,25 +383,44 @@ with a re-prompt.
 to seed the empty graph + root, then opportunistically calls
 `loadPipelineFile("<session>.ndm.default.pipeline")` if it exists.
 File-exists is the only signal — every session starts without a
-pipeline file the first time.
+pipeline file the first time.  A failed load is logged (`qWarning`)
+and shown in the Pipeline tab's notice bar, and the path is remembered
+(`failedLoadPath()`) so Save Pipeline asks before overwriting it; load
+repairs (dropped unknown types, renamed duplicate ids, a second root,
+edges into the root or closing a cycle) are shown there too.  Loading
+keeps the file's node order, keeps its ids and moves the id counter
+past them (`reserveIds()`; `allocateId()` also skips any id in use).
 
 ### Save / Save As / Load actions
 
 | Action | Where | Shortcut | Behavior |
 |---|---|---|---|
-| Save Pipeline | File menu, page toolbar | Ctrl+Alt+P | Overwrite `<session>.ndm.default.pipeline` |
+| Save Pipeline | File menu, page toolbar | Ctrl+Alt+P | Overwrite `<session>.ndm.default.pipeline` (asks first if that file failed to load) |
 | Save Pipeline As… | File menu, page toolbar | Ctrl+Alt+Shift+P | Prompt for `<n>`, write `<session>.ndm.<n>.pipeline`, confirm overwrite if file exists |
 | Load Pipeline… | File menu | — | File dialog filtered to `*.pipeline` beside the session directory |
+
+Both saves require a document backed by its own session file
+(`ndManagerDoc::isSaved()`): a New / Untitled document or one started
+from a template would otherwise write `./Untitled.ndm.default.pipeline`
+or a file beside the template, so they refuse with "Save the session
+file first".  A successful save clears the designer's unsaved flag,
+which `ParameterView::isModified()` includes; saving the session file
+does not write the pipeline file and leaves the flag set.
 
 ### Apply Pipeline vs Save Pipeline
 
 These are two separate operations with different semantics:
 
-- **Apply Pipeline** (existing button) → writes the topo-sorted plugin
-  list back into `parameterView->programDict`, replacing whatever was
-  in the Plugins tab. The next document save (Ctrl+S) writes them to
-  the session YAML's `programs:` block. Used when the user wants the
-  session YAML to reflect the graph.
+- **Apply Pipeline** (existing button) → `ParameterView::setProgramList`
+  orders the Plugins tab (`programOrder`) as the graph runs.  It keeps
+  each existing plugin page (values, help, script) and writes onto it
+  only the parameters edited in the inspector since the last Apply; adds
+  pages, with the node's values, for plugins new to the tab; maps
+  several nodes of one type to one entry; and keeps plugins not in the
+  graph (or only on disabled nodes) after the graph's plugins, since
+  their entries hold the overrides those plugins read.  The next
+  document save (Ctrl+S) writes the list to the session YAML's
+  `programs:` block in that order.
 
 - **Save Pipeline / Save As** (new) → writes the graph itself
   (positions, edges, params) to a `.pipeline` file. Doesn't touch
@@ -377,10 +428,11 @@ These are two separate operations with different semantics:
   for keeping the graph as a reusable artefact.
 
 A typical workflow: design a graph, **Save Pipeline** it as `default`,
-then run the bash `ndm_start session.yaml` and the dispatcher reads
-`session.ndm.default.pipeline` directly. **Apply Pipeline** is only
-needed when integrating with the Run-All flow that walks
-`programDict` rather than the dispatch script.
+then run `ndm_start session.yaml` in the session file's directory and
+the dispatcher reads `session.ndm.default.pipeline` directly.
+**Apply Pipeline** (then Ctrl+S) is needed to carry inspector
+parameter edits into the session file, which is where plugins read
+their parameters, and to give the session file the in-YAML graph form.
 
 ### Bash dispatch priority
 
@@ -392,22 +444,34 @@ The new `ndm_start` chooses its source of plugin order in this order:
 3. Hard-coded flag-driven `do_*` sequence — original ndm_start, kept
    for sessions with no graph at all
 
-The `NDM_PIPELINE` environment variable lets a CI run select between
-named variants without editing files:
+`ndm_start [parameter_file] [directory ...]` works in the current
+directory: the argument is reduced to its stem (directory part and
+extension dropped), `<stem>.yaml|.yml|.xml` must exist there (no
+argument: the stem is the current directory's name), and the pipeline
+file is `<stem>.ndm.${NDM_PIPELINE:-default}.pipeline` in that same
+directory — exactly where ndmanager's Save Pipeline puts it for that
+parameter file.  The `NDM_PIPELINE` environment variable lets a CI run
+select between named variants without editing files:
 
 ```sh
-NDM_PIPELINE=best ndm_start session/             # uses .ndm.best.pipeline
-NDM_PIPELINE=experimental ndm_start session/     # uses .ndm.experimental.pipeline
-ndm_start session/                                # uses .ndm.default.pipeline
+cd /data/Rat
+NDM_PIPELINE=best ndm_start Rat.yaml           # uses Rat.ndm.best.pipeline
+NDM_PIPELINE=experimental ndm_start Rat.yaml   # uses Rat.ndm.experimental.pipeline
+ndm_start Rat.yaml                             # uses Rat.ndm.default.pipeline
 ```
 
-When the file pointed at by `$NDM_PIPELINE` doesn't exist, ndm_start
-falls through to priority 2/3 with a warning.
+When that file doesn't exist, ndm_start falls through to priority 2/3
+without a message; when it exists but yields no plugins (unparsable,
+or only `ndm_start`), it warns and falls through.
 
 ### Topological sort in the bash
 
 The `read_pipeline_file` helper does a Kahn's-algorithm topological
 sort in Python: indegree-0 nodes go on the queue, each emit decrements
-successor indegrees, ties break by YAML insertion order. This matches
-the GUI's `topoSort` (used by `getPrograms` for Apply) so the runtime
-order is identical to what the user sees.
+successor indegrees, ties break by YAML insertion order. The GUI's
+`topoSort` (used by `getPrograms` for Apply) does the same, seeding its
+queue in node order — which for a loaded pipeline is the file order,
+since loading no longer moves the root — so the runtime order is
+identical to what the user sees.  (It used to seed in `QMap` id order,
+`n10` before `n2`.)  Nodes on a cycle are never emitted by the bash
+sort; the GUI keeps graphs acyclic (see the sticky-root invariants).

@@ -325,12 +325,12 @@ signals:
     /** Emitted when the user clicks the toolbar Save button (or hits the
      *  Ctrl+Alt+P shortcut routed through ndManager).  ParameterView
      *  resolves the session base path and writes
-     *  <session>.default.pipeline. */
+     *  <session>.ndm.default.pipeline. */
     void savePipelineRequested();
 
     /** Emitted when the user clicks Save As… (Ctrl+Alt+Shift+P).
      *  ParameterView prompts for a name and writes
-     *  <session>.<n>.pipeline. */
+     *  <session>.ndm.<n>.pipeline. */
     void saveAsPipelineRequested();
 
 private slots:
