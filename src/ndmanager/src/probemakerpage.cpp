@@ -175,6 +175,17 @@ double probeDouble(const YAML::Node& n, double def, bool* ok = nullptr)
     } catch (...) { return def; }
 }
 
+// Index at which @p ch goes in @p s so the shank's sites stay in file
+// order -- top site first (ascending depth below the head), a site at the
+// same height as others after them.
+int topFirstIndex(const ProbeShank& s, const ProbeChannel& ch)
+{
+    int i = 0;
+    while (i < s.channels.size() && s.channels[i].posUm.y() <= ch.posUm.y())
+        ++i;
+    return i;
+}
+
 }  // namespace
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -965,7 +976,10 @@ void ProbeMakerPage::onAddChannelClicked()
     const qreal y   = targetShank->lengthUm - (tipMargin + pitch * idx);
     ch.posUm = QPointF(0.0, qMax<qreal>(tipMargin, y));   // clamp away from head
 
-    targetShank->channels.append(ch);
+    // Inserted where it keeps the shank top site first, the order the
+    // file lists sites in.
+    const int at = topFirstIndex(*targetShank, ch);
+    targetShank->channels.insert(at, ch);
     data.totalChannels = siteCount();
 
     // Update selection so the inspector immediately shows the new
@@ -973,7 +987,7 @@ void ProbeMakerPage::onAddChannelClicked()
     // is safe here because the rebuilds below recreate all graphics
     // items from scratch using fresh pointers from the same QVector.
     selectedShank   = nullptr;
-    selectedChannel = &targetShank->channels.last();
+    selectedChannel = &targetShank->channels[at];
 
     rebuildLogicalScene();
     rebuildPhysicalScene();
@@ -1033,26 +1047,32 @@ void ProbeMakerPage::onAddArrayClicked()
     // Lay out tip-up: the first new site goes 25 µm above the tip
     // wedge, subsequent sites march toward the head with the requested
     // pitch.  This matches the convention in the canonical probe
-    // library (sites concentrate near the tip).
+    // library (sites concentrate near the tip).  Channels are numbered
+    // top site first, so they ascend with depth as in the library files
+    // (a fresh array saves with no channel map), and each site is
+    // inserted where it keeps the shank top site first.
     constexpr qreal tipMargin = 25.0;
     const qreal lengthUm = targetShank->lengthUm;
     int siteIdxBase = targetShank->channels.size();
+    const int topHw = maxHw + 1;
     for (int i = 0; i < count; ++i) {
         ProbeChannel ch;
-        ch.hardwareId = ++maxHw;
+        ch.hardwareId = maxHw + count - i;      // i = count-1 is the top site
         ch.areaUm2    = 177.0;
         ch.siteIndex  = siteIdxBase + i;
         const qreal y = lengthUm - tipMargin - i * pitchUm;
         ch.posUm      = QPointF(xOffsetUm, qMax<qreal>(tipMargin, y));
-        targetShank->channels.append(ch);
+        targetShank->channels.insert(topFirstIndex(*targetShank, ch), ch);
     }
 
     data.totalChannels = siteCount();
 
-    // Select the last channel of the new array so the inspector shows
-    // a representative member; user can navigate from there.
+    // Select the top site of the new array so the inspector shows a
+    // representative member; user can navigate from there.
     selectedShank   = nullptr;
-    selectedChannel = &targetShank->channels.last();
+    selectedChannel = nullptr;
+    for (ProbeChannel& c : targetShank->channels)
+        if (c.hardwareId == topHw) { selectedChannel = &c; break; }
 
     rebuildLogicalScene();
     rebuildPhysicalScene();
