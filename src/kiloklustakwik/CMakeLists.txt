@@ -183,7 +183,6 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}/src")
 # Common sources and dependencies
 # =============================================================================
 set(_cpu_srcs src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_quality.cpp src/KK_io.cpp src/KK_timeshift.cpp src/KK_vbgmm.cpp src/KK_refeaturize.cpp src/KK_split.cpp src/KK_chunked.cpp src/KlustaKwikYaml.cpp src/KK_prior.cpp src/param.c
-    src/dipsplit.cpp
     src/proxy_isi.cpp
     src/wave_knn_split.cpp
     src/cluster_hull_split.cpp
@@ -200,7 +199,6 @@ set(_cpu_srcs src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_qual
     ${_neurofileio_dir}/neurofileio.cpp)
 set(_headers  src/KlustaKwik.h src/KK.h src/KK_internal.h src/KK_cuda.h src/KK_sycl.h src/KK_hip.h
               src/Array.h src/KlustaSave.h src/KlustaKwikYaml.h src/param.h
-              src/dipsplit.h
               src/proxy_isi.h
               src/wave_knn_split.h
               src/fiber_stage.h
@@ -421,7 +419,6 @@ if(_SYCL_ACTIVE)
     # for the rationale.
     add_executable(KiloKlustaKwik_sycl
         src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_quality.cpp src/KK_io.cpp src/KK_timeshift.cpp src/KK_vbgmm.cpp src/KK_refeaturize.cpp src/KK_split.cpp src/KK_chunked.cpp src/KK_sycl.cpp src/KK_prior.cpp
-        src/dipsplit.cpp
         src/proxy_isi.cpp
         src/wave_knn_split.cpp
         src/cluster_hull_split.cpp

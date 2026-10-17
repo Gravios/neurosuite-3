@@ -74,13 +74,13 @@
 #include "minmaxthread.h"   // complete type for the finished-signal connect
 #include "configuration.h"
 #include "klustersview.h"
-#include "watershed2d.h"
+#include <neurosuite/core/watershed2d.hpp>
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
 #include "parameteryamlmodifier.h"
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
 #include "hierarchyfiles.h"

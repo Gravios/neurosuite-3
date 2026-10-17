@@ -26,7 +26,7 @@
 #include <klustersshared/channelcolors.h>
 #include "clustersprovider.h"
 #include "curationlogger.h"
-#include "watershed2d.h"
+#include <neurosuite/core/watershed2d.hpp>
 #include "dirtyflag.h"
 #include "filecommit.h"
 
@@ -1997,7 +1997,7 @@ public Q_SLOTS:
      *  peak height, and minimum basin size; passing 0 for minPeakHeight
      *  or minBasinSize requests data-driven auto-tuning. */
     int watershedSelectedClusters(const QList<int>& selectedClusters,
-                                  const Watershed2D::Config& cfg);
+                                  const neurosuite::watershed2d::Config& cfg);
 
     /** The ATOM-layer watershed: split the selected atoms (children) of ONE
      *  parent into one new sibling atom per density basin, in the active
@@ -2017,7 +2017,7 @@ public Q_SLOTS:
      *  parent-stage curation log stays out of the atom layer by design (its
      *  ids collide with atom numerals -- see createNewCluster's child branch). */
     int watershedSelectedChildren(const QList<int>& selectedChildren,
-                                  const Watershed2D::Config& cfg);
+                                  const neurosuite::watershed2d::Config& cfg);
 
     /** One crash-recovery tick (GUI thread): writes the rescue copy of the unit
      *  ids and, in a hierarchical session, of the atom ids.  Skipped while a save

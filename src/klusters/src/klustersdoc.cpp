@@ -64,7 +64,7 @@
 #include "clusterPalette.h"
 #include "types.h"
 #include "parameteryamlmodifier.h"
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
 

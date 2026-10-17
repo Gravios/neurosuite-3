@@ -5029,9 +5029,9 @@ bool KlustersApp::wsEnter()
     // sensible default.  We discover what the kernel chose, then write
     // it back into wsSigmaCells.
     {
-        Watershed2D::Config cfg;
+        neurosuite::watershed2d::Config cfg;
         cfg.keepGrid = true;
-        wsResult = Watershed2D::run(
+        wsResult = neurosuite::watershed2d::run(
             std::vector<double>(wsXs.begin(), wsXs.end()),
             std::vector<double>(wsYs.begin(), wsYs.end()),
             cfg);
@@ -5062,7 +5062,7 @@ void KlustersApp::wsExit(bool commit)
 
     // Snapshot the bits we still need before clearing state.
     const QList<int>          sel    = wsSel;
-    const Watershed2D::Result result = wsResult;      // the basins as PREVIEWED
+    const neurosuite::watershed2d::Result result = wsResult;      // the basins as PREVIEWED
     const QVector<int>        rows   = wsRows;
     const bool                onEmbedding = wsOnEmbedding;
     const bool                onChild = wsOnChild;
@@ -5082,7 +5082,7 @@ void KlustersApp::wsExit(bool commit)
     wsRows.clear();
     wsOnEmbedding = false;
     wsOnChild = false;
-    wsResult = Watershed2D::Result{};
+    wsResult = neurosuite::watershed2d::Result{};
 
     if (!commit) {
         // Focus returns to the palette the selection came from.
@@ -5094,7 +5094,7 @@ void KlustersApp::wsExit(bool commit)
     }
 
     // Apply.  Build the same Config the live-preview was using.
-    Watershed2D::Config cfg;
+    neurosuite::watershed2d::Config cfg;
     cfg.gridSize      = 256;
     cfg.smoothSigma   = sigma;
     cfg.minPeakHeight = (thresh / 100.0) * gridMax;
@@ -5193,16 +5193,16 @@ void KlustersApp::wsRecompute()
     // grid maximum changes — re-discover it via a probe pass with the
     // auto-tune sentinel.  If sigma is unchanged, reuse the cached
     // gridMax to halve the work per arrow press.
-    Watershed2D::Config cfg;
+    neurosuite::watershed2d::Config cfg;
     cfg.gridSize      = 256;
     cfg.smoothSigma   = wsSigmaCells;
     cfg.minBasinSize  = 0;     // auto
     cfg.keepGrid      = true;
 
     if (wsCachedSigma != wsSigmaCells) {
-        Watershed2D::Config probeCfg = cfg;
+        neurosuite::watershed2d::Config probeCfg = cfg;
         probeCfg.minPeakHeight = 0;     // auto = 5% of max — used to learn max
-        const Watershed2D::Result probe = Watershed2D::run(
+        const neurosuite::watershed2d::Result probe = neurosuite::watershed2d::run(
             std::vector<double>(wsXs.begin(), wsXs.end()),
             std::vector<double>(wsYs.begin(), wsYs.end()),
             probeCfg);
@@ -5213,7 +5213,7 @@ void KlustersApp::wsRecompute()
     cfg.minPeakHeight = (wsThreshPct / 100.0) * wsGridMax;
     if (cfg.minPeakHeight < 1e-6) cfg.minPeakHeight = 0;     // 0% slider → auto
 
-    wsResult = Watershed2D::run(
+    wsResult = neurosuite::watershed2d::run(
         std::vector<double>(wsXs.begin(), wsXs.end()),
         std::vector<double>(wsYs.begin(), wsYs.end()),
         cfg);

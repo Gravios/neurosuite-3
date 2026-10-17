@@ -12,7 +12,7 @@
  ***************************************************************************/
 #include "KK.h"
 #include "KlustaKwik.h"
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 #include "cluster_hull_split.h"
 #include "per_channel_split.h"
 #include "wave_knn_split.h"
@@ -126,7 +126,7 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
     constexpr int kPCA = 3;
     std::vector<double> pcs(static_cast<size_t>(kPCA) * dPCA, 0.0);
     std::vector<double> eigs(kPCA, 0.0);
-    dipsplit::top_pcs_with_eigenvalues(Xmem.data(), M, dPCA, kPCA,
+    neurosuite::dipsplit::top_pcs_with_eigenvalues(Xmem.data(), M, dPCA, kPCA,
                                         pcs.data(), eigs.data());
 
     // ── Gate A': elongation (covariance-eccentricity) ────────────────────
@@ -220,7 +220,7 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
             for (int i = 0; i < M; ++i)
                 proj[static_cast<size_t>(i)] =
                     c * s1[static_cast<size_t>(i)] + sn * s2[static_cast<size_t>(i)];
-            const dipsplit::ValleyResult vr = dipsplit::valley_test(
+            const neurosuite::dipsplit::ValleyResult vr = neurosuite::dipsplit::valley_test(
                 proj.data(), M, DipSplitValleyThresh);
             if (vr.depth > best_depth) {
                 best_pc         = 0;                       // sentinel; "2D-PC12"
@@ -243,7 +243,7 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
                          * u[j];
                 proj[i] = s;
             }
-            const dipsplit::ValleyResult vr = dipsplit::valley_test(
+            const neurosuite::dipsplit::ValleyResult vr = neurosuite::dipsplit::valley_test(
                 proj.data(), M, DipSplitValleyThresh);
             if (vr.depth > best_depth) {
                 best_pc         = pc;
@@ -283,7 +283,7 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
     for (int j = 0; j < dPCA; ++j) { c0[j] /= n0; c1[j] /= n1; }
 
     // ── Refine with k-means k=2 ──────────────────────────────────────────
-    dipsplit::kmeans2_refine(Xmem.data(), M, dPCA, c0.data(), c1.data(),
+    neurosuite::dipsplit::kmeans2_refine(Xmem.data(), M, dPCA, c0.data(), c1.data(),
                              labels.data(), /*max_iters=*/20);
 
     // Recount post-refine
@@ -297,7 +297,7 @@ bool KK::DipSplitAttemptEx(int clusterId, const char*& reason_out)
     }
 
     // ── BIC gate ─────────────────────────────────────────────────────────
-    const dipsplit::BicPair bp = dipsplit::bic_two_vs_one(
+    const neurosuite::dipsplit::BicPair bp = neurosuite::dipsplit::bic_two_vs_one(
         Xmem.data(), M, dPCA, labels.data());
     if (!(bp.bic_k2 < bp.bic_k1)) {
         reason_out = "bic_worse";
@@ -1335,8 +1335,8 @@ void KK::FullCemSplitPerChunk(
                 }
                 // threshold 0 so valley_test always reports the raw depth;
                 // we apply our own gate below.
-                const dipsplit::ValleyResult vr =
-                    dipsplit::valley_test(proj.data(), nMem, 0.0);
+                const neurosuite::dipsplit::ValleyResult vr =
+                    neurosuite::dipsplit::valley_test(proj.data(), nMem, 0.0);
                 depthRank[static_cast<size_t>(d)] = { vr.depth, d };
             }
             std::sort(depthRank.begin(), depthRank.end(),

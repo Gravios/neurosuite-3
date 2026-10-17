@@ -12,7 +12,7 @@
 #include "KK.h"
 #include "KK_internal.h"
 #include "KlustaKwik.h"
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 #include "realign_xcorr.h"
 #include "realign_center.h"
 #include "klusters_realign.h"
@@ -332,7 +332,7 @@ float KK::RefineExistingClustering(
                         X[static_cast<size_t>(i) * nSpatialDims + d] =
                             Data[p * nDims + d];
                 }
-                const dipsplit::BicPair bp = dipsplit::bic_two_vs_one(
+                const neurosuite::dipsplit::BicPair bp = neurosuite::dipsplit::bic_two_vs_one(
                     X.data(), M, nSpatialDims, memberLabels.data());
 
                 // Lower BIC is better.  Accept merger if k=1 BIC <= k=2 BIC

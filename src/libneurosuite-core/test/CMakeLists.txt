@@ -175,6 +175,18 @@ add_test(NAME core_test_pca_method_conformance
          COMMAND core_test_pca_method_conformance
                  "${CMAKE_CURRENT_SOURCE_DIR}/pca_method_vectors.tsv")
 
+# dipsplit.hpp (bimodality gate, PCs, two-way k-means, BIC) on known point sets.
+add_executable(core_test_dipsplit dipsplit_test.cpp)
+target_compile_features(core_test_dipsplit PRIVATE cxx_std_20)
+target_include_directories(core_test_dipsplit PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_dipsplit COMMAND core_test_dipsplit)
+
+# watershed2d.hpp on clouds with a known number of density basins.
+add_executable(core_test_watershed2d watershed2d_test.cpp)
+target_compile_features(core_test_watershed2d PRIVATE cxx_std_20)
+target_include_directories(core_test_watershed2d PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_watershed2d COMMAND core_test_watershed2d)
+
 # contract.yaml (repository root) against version_contract.hpp, and the format
 # writers and readers against the versions it names.
 add_executable(core_test_contract contract_test.cpp)

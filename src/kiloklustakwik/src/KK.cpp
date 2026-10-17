@@ -21,7 +21,7 @@
 #include <cstdint>
 #include "KlustaKwik.h"
 #include "KlustaSave.h"
-#include "dipsplit.h"        // BicPair / bic_two_vs_one — used by RefineExistingClustering
+#include <neurosuite/core/dipsplit.hpp>        // BicPair / bic_two_vs_one — used by RefineExistingClustering
 #include "realign_xcorr.h"   // XcorrDispatch::compute — shared normalised circular xcorr
 #include "realign_center.h"  // realign_center::circularRecenterShift (shared)
 
@@ -1530,9 +1530,9 @@ float KK::CEMTwoPhase(int timeMergeIter) {
 // DipSplit (Phase 8) — bimodal-cluster detection & split
 // ===========================================================================
 //
-// See dipsplit.h for the algorithm overview.  This file implements the
+// See neurosuite/core/dipsplit.hpp for the algorithm overview.  This file implements the
 // driver that integrates DipSplit into the CEM flow.  Two-stage gating
 // (bloat → dip) keeps cost proportional to actually-bimodal clusters.
 // ---------------------------------------------------------------------------
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 

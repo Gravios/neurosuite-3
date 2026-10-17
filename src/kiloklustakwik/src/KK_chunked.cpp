@@ -16,7 +16,7 @@
 #include "KK.h"
 #include "KK_internal.h"
 #include "KlustaKwik.h"
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 #include "proxy_isi.h"
 #include "clust_quality.h"
 #include "realign_xcorr.h"

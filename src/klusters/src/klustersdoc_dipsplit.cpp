@@ -67,13 +67,13 @@
 #include "klustersdoc.h"
 #include "configuration.h"
 #include "klustersview.h"
-#include "watershed2d.h"
+#include <neurosuite/core/watershed2d.hpp>
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
 #include "parameteryamlmodifier.h"
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
 
@@ -268,7 +268,7 @@ KlustersDoc::dipSplitDecide(int   clusterId,
     // -------------------------------------------------------------------
     constexpr int kPCA = 3;
     std::vector<double> pcs(static_cast<size_t>(kPCA) * dPCA, 0.0);
-    dipsplit::top_pcs_power_iteration(X.data(), M, dPCA, kPCA, pcs.data());
+    neurosuite::dipsplit::top_pcs_power_iteration(X.data(), M, dPCA, kPCA, pcs.data());
 
     // Gate B — valley test on each PC; keep the deepest valley.
     int    bestPC         = -1;
@@ -285,8 +285,8 @@ KlustersDoc::dipSplitDecide(int   clusterId,
                 s += (row[j] - mu[j]) * u[j];
             proj[static_cast<size_t>(i)] = s;
         }
-        const dipsplit::ValleyResult vr =
-            dipsplit::valley_test(proj.data(), M, valleyThresh);
+        const neurosuite::dipsplit::ValleyResult vr =
+            neurosuite::dipsplit::valley_test(proj.data(), M, valleyThresh);
         if (vr.depth > bestDepth) {
             bestPC        = pc;
             bestDepth     = vr.depth;
@@ -329,7 +329,7 @@ KlustersDoc::dipSplitDecide(int   clusterId,
     for (int j = 0; j < dPCA; ++j) { c0[j] /= n0; c1[j] /= n1; }
 
     // Refine with k-means.
-    dipsplit::kmeans2_refine(X.data(), M, dPCA, c0.data(), c1.data(),
+    neurosuite::dipsplit::kmeans2_refine(X.data(), M, dPCA, c0.data(), c1.data(),
                              labels.data(), /*max_iters=*/20);
 
     n0 = n1 = 0;
@@ -342,7 +342,7 @@ KlustersDoc::dipSplitDecide(int   clusterId,
     }
 
     // Gate C — BIC: accept only if two-cluster model beats one-cluster.
-    const dipsplit::BicPair bp = dipsplit::bic_two_vs_one(
+    const neurosuite::dipsplit::BicPair bp = neurosuite::dipsplit::bic_two_vs_one(
         X.data(), M, dPCA, labels.data());
     D.deltaBIC = bp.bic_k1 - bp.bic_k2;
     if (!(bp.bic_k2 < bp.bic_k1)) {

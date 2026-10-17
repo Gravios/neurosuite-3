@@ -103,6 +103,7 @@ drift_partition.hpp ─── neurofileio.h, running_stats.hpp
 template_generate.hpp ─── neurofileio.h, custody.hpp, running_stats.hpp
 spike_extract.hpp ─── stderiv_transform.hpp ─── pca_projection.hpp (for SdiffOrder)
 version_contract.hpp ─── neurofileio.h, pca_projection.hpp
+dipsplit.hpp, watershed2d.hpp ─── std only
 custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp ─── std only
 ```
 
@@ -148,6 +149,8 @@ custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp ─── std 
 ---
 
 ## 3. Header reference
+
+Sections 3.1–3.13 are in alphabetical order. Headers added after them are appended (3.14 on), so the existing section numbers stay valid.
 
 ### 3.1 `custody.hpp` — file-naming policy
 
@@ -552,6 +555,46 @@ std::vector<std::string> formatMismatches(const std::vector<FormatVersion>& host
 **Consumers.** ndmanager `parameterview.cpp` (plugin discovery: protocol gate and format warnings); `ParameterYamlWriter` and `ParameterYamlModifier` (`kSessionSchema`).
 **Twin.** fiber-kit's `contract.yaml` and the version constants it is checked against (`test/test_contract.py`); `ndm_fiber_kit.py --ndm-version` prints the format lines.
 
+### 3.14 `dipsplit.hpp` — bimodality gate and two-way split of a cluster
+
+Namespace `neurosuite::dipsplit`. Header-only, std only. kiloklustakwik and Klusters each carried a copy (`src/*/src/dipsplit.{h,cpp}`); the copies had drifted, and this header is their union, checked identical to both on 300 random point sets.
+
+```cpp
+struct ValleyResult { bool is_bimodal; double depth, valley_loc, left_peak, right_peak; };
+ValleyResult valley_test(const double* samples, int n, double threshold);
+void top_pcs_with_eigenvalues(const float* X, int nPoints, int d, int k,
+                              double* pcs_out, double* eigs_out, int max_iters = 50, double tol = 1e-6);
+void top_pcs_power_iteration (const float* X, int nPoints, int d, int k,
+                              double* pcs_out, int max_iters = 50, double tol = 1e-6);
+int  kmeans2_refine(const float* X, int nPoints, int d, const double* c0, const double* c1,
+                    int* labels_out, int max_iters = 20);
+struct BicPair { double bic_k1, bic_k2; };
+BicPair bic_two_vs_one(const float* X, int nPoints, int d, const int* labels_k2);
+```
+
+`valley_test` builds a Gaussian KDE (Silverman bandwidth, 301-point grid) and returns the deepest valley between adjacent peaks as `depth = 1 − valley / min(left peak, right peak)`; fewer than 10 samples or zero spread give depth 0. `top_pcs_*` run power iteration with deflation on the centred d×d covariance of the row-major `X`; the eigenvalue is the Rayleigh quotient (the variance along the PC). `kmeans2_refine` runs Lloyd iterations from the two seeds, writes labels 0/1 and returns the iteration count; it never reads `labels_out` before writing it. `bic_two_vs_one` is the diagonal-covariance Gaussian BIC for one cluster and for the given two-way labelling.
+
+**Consumers.** kiloklustakwik `KK_split.cpp` (DipSplit phase: all four), `per_channel_split.cpp`, `KK_refeaturize.cpp`, `KK.cpp`; Klusters `klustersdoc_dipsplit.cpp`.
+**Test.** `core_test_dipsplit`.
+
+### 3.15 `watershed2d.hpp` — 2D density watershed
+
+Namespace `neurosuite::watershed2d`. Header-only, std only. Moved from Klusters (`src/klusters/src/watershed2d.{h,cpp}`, namespace `Watershed2D`) unchanged, checked identical on 200 random clouds.
+
+```cpp
+struct Config { int gridSize = 256; double smoothSigma = 0; double minPeakHeight = 0;
+                int minBasinSize = 0; bool useLocalMaxima = true; bool keepGrid = false; };
+struct Result { std::vector<int> pointLabels; int numBasins, numPeaks; bool ok;
+                double xMin, xMax, yMin, yMax, effSigma, effPeakHeight; int effMinBasinSize;
+                std::vector<float> smoothedGrid; int gridSize; std::vector<int> cellLabels; };
+Result run(const std::vector<double>& xs, const std::vector<double>& ys, const Config& cfg = Config());
+```
+
+Histogram on a square grid over the points' bounding box, Gaussian smoothing, local maxima as seeds, a priority-queue flood from the seeds, small basins merged, and each point labelled with its cell's basin (1-based; 0 = none). Zero parameters are auto-tuned and reported back in `eff*`. `ok` is false for degenerate input (no points, or all at one place).
+
+**Consumers.** Klusters `klustersdoc_watershed.cpp` (watershed split), `klusters.cpp` (live preview).
+**Test.** `core_test_watershed2d`.
+
 ---
 
 ## 4. Tests
@@ -578,6 +621,8 @@ ctest --test-dir build -R '^core_test_|custody_conformance'   # this library onl
 | `custody_conformance_bash` | `../../ndmanager-plugins/test/test_custody_conformance.sh` | — | same vectors against `ndm_custody` (registered only if bash is found) |
 | `core_test_stderiv_vectors` | `stderiv_vectors_test.cpp` | no | runs `stderiv_vectors.tsv` (argument) against `stderivSeed` + `applyStderivTransform`, out of place and in place; null seed = zero seed |
 | `core_shared_contract` | `test_shared_contract.py` | — | the shared tables match the hashes in `contract.yaml`; with `-DNS_FIBER_KIT_ROOT`, they are byte-identical to fiber-kit's and the two `contract.yaml` files agree |
+| `core_test_dipsplit` | `dipsplit_test.cpp` | no | `dipsplit.hpp` on point sets with a known answer: valley depth for one and two modes, PCs and eigenvalues of an axis-aligned cloud, two-way k-means, BIC |
+| `core_test_watershed2d` | `watershed2d_test.cpp` | no | `watershed2d.hpp`: 1–3 blobs give 1–3 basins, each blob one basin; preview grid; degenerate input |
 | `core_test_contract` | `contract_test.cpp` | yes | `contract.yaml` (argument) equals `version_contract.hpp`; each format writer writes the version named and each reader rejects the next one; `parseNdmVersion`, `formatMismatches` |
 | `core_test_pca_method_conformance` | `pca_method_conformance_test.cpp` | no | runs `pca_method_vectors.tsv` against `Method`, `spatialOrder`, `hasTemporalDiff`, `methodTag`, `kPcaeMagic`/`kPcaeVersion` |
 | `core_test_neurofileio_spk` | `neurofileio_spk_test.cpp` | yes | `.spk` round trip, binary `.fet`, `.col` accepted-record parse, `.wti` + `.wtf` alignment, `.eap` (sentinel, grow, queries), `.tcl` statuses, `stagePath` composition |
@@ -684,6 +729,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | C10 | `custody.hpp` `staleAfterRealign` | Unused by any C++ code (only the Python mirror's `stale_after_realign` exists). |
 | C11 | `test/CMakeLists.txt` | **Resolved.** The core tests asked for `cxx_std_17` while the directory sets `CMAKE_CXX_STANDARD 20`, so they never proved the C++17 compatibility the docs claimed. Nothing needed C++17 (the plugins build as C++20 too), so the claim was dropped and the tests declare `cxx_std_20`; `build_invariants` keeps the tree on one standard. |
 | C21 | `channel_expr.hpp` | Has no section in §3. Its file comment is the reference for the API; the grammar as a user writes it is in [spike-detection.md](../../../doc/ndmanager-plugins/commands/spike-detection.md#expressions-order-6), and the table that pins it is `sdiff_expr_vectors.tsv` (§4.3). |
+| C22 | `dipsplit.hpp` `valley_test` | An isolated sample in a tail makes its own small KDE peak, and the valley next to it scores as deep because depth is measured against the smaller peak. A plain Gaussian sample of 4000 points scores depth ≈ 0.6. The callers add other gates (bloat, BIC, minimum sizes), and the behaviour is unchanged from both former copies; a peak-height floor would change kiloklustakwik's splits and needs checking on the reference sessions first. |
 
 **Found by the 2026-10-15 audit (all fixed)**
 

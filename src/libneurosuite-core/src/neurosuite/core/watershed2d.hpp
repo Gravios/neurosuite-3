@@ -1,14 +1,99 @@
-#include "watershed2d.h"
+// ---------------------------------------------------------------------------
+// watershed2d.hpp — 2D density watershed of a point cloud.
+//
+// Used by Klusters (watershed split and its live preview).  Header-only, std
+// only; core_test_watershed2d.
+//
+// Build a histogram on a configurable square grid (default 256×256) over
+// the active scatter view's two feature dimensions; smooth with a small
+// Gaussian; find local maxima (peaks); region-grow each peak using a
+// priority queue to assign every grid cell to one basin (the "rainfall"
+// formulation); then map each input point back to the basin its cell
+// belongs to.
+//
+// Public API:
+//   - watershed2d::Config — algorithm tuning
+//   - watershed2d::Result — basin labels per input point + diagnostic
+//     fields for status display
+//   - watershed2d::run    — performs the segmentation
+//
+// The algorithm operates on (x, y) coordinates already projected to the
+// scatter-view's two chosen dimensions.  No knowledge of clusters or
+// of klusters' Data layer.  Caller maps the resulting basin labels back
+// to feature-row indices and feeds them to
+// Data::createNewClustersFromLabeling.
+//
+// Performance: O(N) for histogram + smoothing + label assignment, plus
+// the priority-queue flood from peaks; for typical N≤500k spikes and
+// 256×256 grid this completes in tens of milliseconds — fast enough to
+// run on the GUI thread without a worker.
+// ---------------------------------------------------------------------------
+
+#ifndef NEUROSUITE_CORE_WATERSHED2D_HPP
+#define NEUROSUITE_CORE_WATERSHED2D_HPP
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <queue>
 #include <unordered_map>
+#include <vector>
 
-namespace Watershed2D {
+namespace neurosuite {
+namespace watershed2d {
 
-namespace {
+
+struct Config {
+    int    gridSize        = 256;     ///< sqrt of histogram bins (square grid)
+    double smoothSigma     = 0;       ///< gaussian sigma in cells; 0 = auto
+    double minPeakHeight   = 0;       ///< drop peaks below this absolute density; 0 = auto (5% of grid max)
+    int    minBasinSize    = 0;       ///< merge basins smaller than this; 0 = auto from N
+    bool   useLocalMaxima  = true;    ///< treat 8-connected local maxima as seeds (vs. h-maxima)
+    bool   keepGrid        = false;   ///< populate Result::smoothedGrid + cellLabels (for UI preview)
+};
+
+struct Result {
+    /// basin label per input point, 1-indexed.  0 = unassigned (point
+    /// fell outside any basin, e.g. on the histogram floor of zero
+    /// density after smoothing).
+    std::vector<int>  pointLabels;
+
+    int               numBasins   = 0;     ///< distinct labels >= 1 in pointLabels
+    int               numPeaks    = 0;     ///< pre-merge peak count
+    bool              ok          = false; ///< false if input degenerate (all points same coord, etc.)
+    double            xMin = 0, xMax = 0;
+    double            yMin = 0, yMax = 0;
+
+    /// Echoed-back effective parameters (after auto-tune, if requested)
+    /// so callers can show them in a UI and use them as initial slider
+    /// positions for follow-up runs.
+    double            effSigma       = 0;
+    double            effPeakHeight  = 0;
+    int               effMinBasinSize = 0;
+
+    /// 256x256 (or whatever gridSize) row-major float densities AFTER
+    /// smoothing.  Useful for rendering a preview heatmap in the UI.
+    /// Empty if not requested via Config::keepGrid.
+    std::vector<float> smoothedGrid;
+    int                gridSize  = 0;
+    /// Per-cell basin label (matching smoothedGrid, row-major). 0 = unassigned.
+    /// Empty if not requested via Config::keepGrid.
+    std::vector<int>   cellLabels;
+};
+
+/// Run watershed on the given (x, y) point cloud.
+/// @param xs  input x coordinates, length N
+/// @param ys  input y coordinates, length N
+/// @param cfg algorithm parameters (defaults are sensible for spike-feature data)
+inline Result run(const std::vector<double>& xs,
+           const std::vector<double>& ys,
+           const Config& cfg = Config());
+
+// ── implementation ──────────────────────────────────────────────────────────
+
+
+namespace detail {
 
 inline int idx(int x, int y, int W) { return y * W + x; }
 
@@ -17,7 +102,7 @@ inline int idx(int x, int y, int W) { return y * W + x; }
 /// boundaries.  `sigma` is the Gaussian standard deviation in cells.
 /// Kernel half-window is set to ceil(3*sigma) so >99% of the mass is
 /// captured.
-void gaussianBlur(std::vector<float>& grid, int size, double sigma)
+inline void gaussianBlur(std::vector<float>& grid, int size, double sigma)
 {
     if (sigma < 0.5) return;
 
@@ -66,9 +151,9 @@ void gaussianBlur(std::vector<float>& grid, int size, double sigma)
     }
 }
 
-}  // namespace
+}  // namespace detail
 
-Result run(const std::vector<double>& xs,
+inline Result run(const std::vector<double>& xs,
            const std::vector<double>& ys,
            const Config& cfg)
 {
@@ -99,7 +184,7 @@ Result run(const std::vector<double>& xs,
         int gy = static_cast<int>((ys[i] - yMin) * sy);
         if (gx < 0) gx = 0; else if (gx >= W) gx = W - 1;
         if (gy < 0) gy = 0; else if (gy >= W) gy = W - 1;
-        cellOf[i] = idx(gx, gy, W);
+        cellOf[i] = detail::idx(gx, gy, W);
         grid[cellOf[i]] += 1.0f;
     }
 
@@ -113,7 +198,7 @@ Result run(const std::vector<double>& xs,
     double sigma = cfg.smoothSigma;
     if (sigma <= 0.0) sigma = std::max(1.5, double(W) / 32.0);
     R.effSigma = sigma;
-    gaussianBlur(grid, W, sigma);
+    detail::gaussianBlur(grid, W, sigma);
 
     // Compute global max of smoothed grid for auto-tuning of peak height.
     float gridMax = 0.0f;
@@ -138,7 +223,7 @@ Result run(const std::vector<double>& xs,
     std::vector<std::pair<int,int>> peakCoords;     // (x, y)
     for (int y = 0; y < W; ++y) {
         for (int x = 0; x < W; ++x) {
-            const float v = grid[idx(x, y, W)];
+            const float v = grid[detail::idx(x, y, W)];
             if (v < effPeakHeight) continue;
             bool isMax       = true;
             bool hasStrictLt = false;
@@ -147,13 +232,13 @@ Result run(const std::vector<double>& xs,
                     if (dx == 0 && dy == 0) continue;
                     const int nx = x + dx, ny = y + dy;
                     if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue;
-                    const float nv = grid[idx(nx, ny, W)];
+                    const float nv = grid[detail::idx(nx, ny, W)];
                     if (nv > v)   { isMax = false; break; }
                     if (nv < v)   { hasStrictLt = true; }
                 }
             }
             if (isMax && hasStrictLt) {
-                labels[idx(x, y, W)] = nextLabel++;
+                labels[detail::idx(x, y, W)] = nextLabel++;
                 peakCoords.push_back({x, y});
             }
         }
@@ -183,8 +268,8 @@ Result run(const std::vector<double>& xs,
                 if (dx == 0 && dy == 0) continue;
                 const int nx = x + dx, ny = y + dy;
                 if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue;
-                if (labels[idx(nx, ny, W)] != 0) continue;
-                Cell c{ grid[idx(nx, ny, W)], nx, ny };
+                if (labels[detail::idx(nx, ny, W)] != 0) continue;
+                Cell c{ grid[detail::idx(nx, ny, W)], nx, ny };
                 pq.push(c);
             }
         }
@@ -192,7 +277,7 @@ Result run(const std::vector<double>& xs,
 
     while (!pq.empty()) {
         Cell c = pq.top(); pq.pop();
-        const int cellIdx = idx(c.x, c.y, W);
+        const int cellIdx = detail::idx(c.x, c.y, W);
         if (labels[cellIdx] != 0) continue;
 
         // Inspect 8-neighbours: collect the set of distinct labels
@@ -204,7 +289,7 @@ Result run(const std::vector<double>& xs,
                 if (dx == 0 && dy == 0) continue;
                 const int nx = c.x + dx, ny = c.y + dy;
                 if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue;
-                const int lab = labels[idx(nx, ny, W)];
+                const int lab = labels[detail::idx(nx, ny, W)];
                 if (lab == 0) continue;
                 if (neighborLabel == 0) {
                     neighborLabel = lab;
@@ -230,8 +315,8 @@ Result run(const std::vector<double>& xs,
         for (int n = 0; n < 4; ++n) {
             const int nx = c.x + dxs[n], ny = c.y + dys[n];
             if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue;
-            if (labels[idx(nx, ny, W)] != 0) continue;
-            Cell next{ grid[idx(nx, ny, W)], nx, ny };
+            if (labels[detail::idx(nx, ny, W)] != 0) continue;
+            Cell next{ grid[detail::idx(nx, ny, W)], nx, ny };
             pq.push(next);
         }
     }
@@ -294,4 +379,7 @@ Result run(const std::vector<double>& xs,
     return R;
 }
 
-}  // namespace Watershed2D
+}  // namespace watershed2d
+}  // namespace neurosuite
+
+#endif  // NEUROSUITE_CORE_WATERSHED2D_HPP

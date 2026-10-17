@@ -17,7 +17,7 @@ add_executable(kk_test_proxy_isi          test_proxy_isi.cpp          ${_src}/pr
 add_executable(kk_test_wave_knn_split     test_wave_knn_split.cpp     ${_src}/wave_knn_split.cpp)
 add_executable(kk_test_xcorr_match        test_xcorr_match.cpp        ${_src}/xcorr_match.cpp)
 add_executable(kk_test_refine_logic       refine_logic_test.cpp)
-add_executable(kk_test_per_channel_split  test_per_channel_split.cpp  ${_src}/per_channel_split.cpp ${_src}/dipsplit.cpp)
+add_executable(kk_test_per_channel_split  test_per_channel_split.cpp  ${_src}/per_channel_split.cpp)
 add_executable(kk_test_klusters_realign   test_klusters_realign.cpp   ${_src}/klusters_realign.cpp
     ${_xcorr}/realign_xcorr_omp.cpp ${_xcorr}/realign_xcorr_dispatch.cpp ${_xcorr}/realign_center.cpp)
 

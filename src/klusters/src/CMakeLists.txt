@@ -31,7 +31,6 @@ set(klusters_SRCS
     spkmemory.cpp               # every .spk of the open group held in memory (SpkMemoryCache)
     klustersjobpool.cpp         # shared worker pool for compute jobs (worker-pool step 2)
     dataprovider.cpp
-    dipsplit.cpp
     errormatrixthread.cpp
     errormatrixview.cpp
     templatematrixthread.cpp
@@ -120,7 +119,6 @@ set(klusters_SRCS
     viewwidget.cpp
     waveformthread.cpp
     waveformview.cpp
-    watershed2d.cpp
     prefdisplaylayout.cpp
     prefsessionlayout.cpp
     prefreclusteringlayout.cpp

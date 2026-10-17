@@ -38,7 +38,7 @@
 //   • Min-size gate on both halves.
 // =============================================================================
 #include "per_channel_split.h"
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 #include <cstdio>
 
 #include <algorithm>
@@ -143,7 +143,7 @@ struct Scan1D {
 
 static Scan1D scan_1d(const double* col, int n, int minHalf)
 {
-    const auto vr = dipsplit::valley_test(col, n, /*threshold=*/0.0);
+    const auto vr = neurosuite::dipsplit::valley_test(col, n, /*threshold=*/0.0);
     Scan1D out;
     if (vr.depth <= 0.0) return out;
     // Mass-filter: count points on each side of valley_loc.
@@ -182,7 +182,7 @@ static Scan2D scan_2d_angle_sweep(
         const double c  = std::cos(th);
         const double s  = std::sin(th);
         for (int i = 0; i < n; ++i) proj[i] = c * xcol[i] + s * ycol[i];
-        const auto vr = dipsplit::valley_test(proj, n, /*threshold=*/0.0);
+        const auto vr = neurosuite::dipsplit::valley_test(proj, n, /*threshold=*/0.0);
         if (vr.depth <= best.depth) continue;
         // Mass-filter same as 1D.
         int nLeft = 0, nRight = 0;
@@ -446,7 +446,7 @@ static bool try_split_one_cluster(
                 static_cast<float>((v - mean) / sd);
         }
     }
-    const auto bic = dipsplit::bic_two_vs_one(X.data(), n, 4, tentative.data());
+    const auto bic = neurosuite::dipsplit::bic_two_vs_one(X.data(), n, 4, tentative.data());
     const double bicDelta = bic.bic_k1 - bic.bic_k2;
     const double margin   = static_cast<double>(cfg.bicMarginConstant) +
                             static_cast<double>(cfg.bicMarginPerLogN) *

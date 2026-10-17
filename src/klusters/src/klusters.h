@@ -31,7 +31,7 @@
 #include "klustersdoc.h"   // needed by inline slot methods on KlustersDoc
 #include "pluginregistry.h"  // Plugins menu (discovery + descriptors)
 class QMenu;
-#include "watershed2d.h"   // for Result struct used in live-preview state
+#include <neurosuite/core/watershed2d.hpp>   // for Result struct used in live-preview state
 
 
 // include files for Qt
@@ -1053,7 +1053,7 @@ private:
     int                 wsThreshPct  = 5;     // current threshold (% of grid max)
     double              wsGridMax    = 1.0;   // last-discovered absolute gridMax
     int                 wsCachedSigma = -1;   // sigma at which gridMax was discovered
-    Watershed2D::Result wsResult;
+    neurosuite::watershed2d::Result wsResult;
     ClusterView*        wsScatter  = nullptr; // borrowed pointer into the active view
     KlustersView*       wsView     = nullptr; // active KlustersView at preview-entry time
 

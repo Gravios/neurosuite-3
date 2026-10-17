@@ -1,17 +1,134 @@
 // =============================================================================
-// dipsplit.cpp — implementations for the bimodality-detection helpers.
-// See dipsplit.h for algorithm overview.
+// dipsplit.hpp  —  bimodality detection and two-way splitting of a cluster
+//
+// Helpers for detecting and partitioning "flat" clusters — cases where CEM's
+// single-Gaussian model masks a bimodal sub-structure because the full-dim
+// joint distribution looks approximately Gaussian even though a 2D projection
+// reveals a valley.
+//
+// The one implementation, used by kiloklustakwik (KK_split.cpp: DipSplitPhase,
+// per_channel_split, KK_refeaturize, KK.cpp) and Klusters (klustersdoc_dipsplit.cpp).
+// Each used to carry its own copy; they had drifted (only kiloklustakwik had
+// the eigenvalues, only Klusters the kmeans2_refine fix).  core_test_dipsplit.
+// Header-only, std only.
+//
+// Algorithm (as kiloklustakwik applies it):
+//
+//   1. GATE A  (bloat):   χ²-calibrated Mahalanobis-90th-percentile test on
+//                         the cluster.  Skip unless mahal²₉₀ > F · χ²(d, 0.9).
+//   2. TOP PCs:           compute top-3 principal components of the cluster's
+//                         spatial features via power iteration with deflation.
+//   3. GATE B  (dip):     project onto each PC and run `valley_test()`.  If
+//                         the deepest valley depth ≥ `valley_thresh`, we have
+//                         a candidate bimodal axis.
+//   4. SEED:              initialise a k=2 partition at the valley location.
+//   5. REFINE:            a few iterations of k-means seeded at the valley.
+//   6. BIC GATE:          accept only if BIC(k=2) < BIC(k=1) AND both halves
+//                         pass min-size.
+//
+// The first two gates are cheap.  The expensive steps (k-means + BIC) only
+// run on flagged candidates, so steady-state cost scales with the number of
+// actually-bimodal clusters, not the cluster count.
 // =============================================================================
-#include "dipsplit.h"
+#ifndef NEUROSUITE_CORE_DIPSPLIT_HPP
+#define NEUROSUITE_CORE_DIPSPLIT_HPP
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <numeric>
 #include <random>
+#include <vector>
 
+namespace neurosuite {
 namespace dipsplit {
+
+
+// -----------------------------------------------------------------------------
+// valley_test — KDE-based bimodality detector
+//
+// Projects the 1D sample array onto a grid, computes a Gaussian KDE with
+// Silverman-rule bandwidth, and measures the deepest valley between adjacent
+// peaks.
+//
+// The "depth" is defined as:
+//      depth = 1 − (valley_density / min(left_peak, right_peak))
+//
+// depth = 0.0  → perfectly unimodal (no valley)
+// depth = 0.5  → valley is half the height of the shorter peak
+// depth = 1.0  → complete separation
+//
+// Cost: O(n log n) sort + O(G) KDE grid (G≈300).  For n=5000 ≈ 0.5 ms.
+// -----------------------------------------------------------------------------
+struct ValleyResult {
+    bool   is_bimodal   = false;   // depth >= threshold
+    double depth        = 0.0;     // 0..1  (see above)
+    double valley_loc   = 0.0;     // position along axis where valley sits
+    double left_peak    = 0.0;     // mode positions on each side of the valley
+    double right_peak   = 0.0;
+};
+
+inline ValleyResult valley_test(const double* samples, int n, double threshold);
+
+// -----------------------------------------------------------------------------
+// top_pcs_with_eigenvalues — top-k principal components via power iteration
+// with Gram-Schmidt deflation on the d×d covariance matrix, plus the
+// eigenvalue (Rayleigh quotient λ = uᵀ C u, which equals the variance of
+// the cluster's data along that principal direction) for each PC.
+//
+// X is row-major nPoints × d; output PCs are row-major k × d (each row a PC).
+// Centres X internally.  O(n·d²) for cov build + O(k·d²·iters) for iteration
+// + k·d² for the Rayleigh quotient — negligible.
+//
+// Used by the elongation gate in KK::DipSplitAttemptEx — a cluster whose top
+// eigenvalue dominates its second/third eigenvalue by a wide margin is the
+// classic signature of two sub-modes well-separated along one axis but fitted
+// as a single inflated Gaussian by CEM.  This catches the failure mode that
+// the χ²-based bloat gate misses (when CEM's covariance has been so inflated
+// that mahal²₉₀ stays near the unimodal Gaussian expectation).
+// -----------------------------------------------------------------------------
+inline void top_pcs_with_eigenvalues(
+    const float* X, int nPoints, int d, int k,
+    double* pcs_out,            // [k * d]   (each row: a PC)
+    double* eigs_out,           // [k]       (variance along each PC)
+    int max_iters = 50,
+    double tol    = 1e-6);
+
+// top_pcs_power_iteration — the same PCs without the eigenvalues.
+inline void top_pcs_power_iteration(
+    const float* X, int nPoints, int d, int k,
+    double* pcs_out,            // [k * d]
+    int max_iters = 50,
+    double tol    = 1e-6);
+
+// -----------------------------------------------------------------------------
+// kmeans2_refine — single-pass k=2 k-means refinement seeded at init centroids.
+// Writes labels ∈ {0,1} into `labels_out`.  Returns number of iterations until
+// convergence (labels unchanged).
+// -----------------------------------------------------------------------------
+inline int kmeans2_refine(
+    const float* X, int nPoints, int d,
+    const double* init_centroid0,   // [d]
+    const double* init_centroid1,   // [d]
+    int*   labels_out,              // [nPoints]
+    int    max_iters = 20);
+
+// -----------------------------------------------------------------------------
+// bic_two_vs_one — returns (BIC_1cluster, BIC_2cluster) for the given point
+// set under the diagonal-covariance Gaussian assumption.  Caller compares.
+// -----------------------------------------------------------------------------
+struct BicPair {
+    double bic_k1 = 0.0;
+    double bic_k2 = 0.0;
+};
+inline BicPair bic_two_vs_one(
+    const float* X, int nPoints, int d,
+    const int* labels_k2);
+
+// ── implementation ──────────────────────────────────────────────────────────
+
 
 // -----------------------------------------------------------------------------
 // valley_test
@@ -19,13 +136,13 @@ namespace dipsplit {
 // 1. Standard-deviation & Silverman bandwidth:
 //      h = 1.06 · σ · n^(-1/5)
 //    (use inter-quartile range when σ is very small relative to range)
-// 2. Grid of G=300 points spanning [min−3h, max+3h]
+// 2. Grid of G=301 points spanning [min−3h, max+3h]
 // 3. KDE with Gaussian kernel at each grid point
 // 4. Scan for local maxima (peaks) and local minima (valleys)
 // 5. For each valley between two adjacent peaks, depth = 1 − v / min(p_left, p_right)
 // 6. Return the deepest valley.
 // -----------------------------------------------------------------------------
-ValleyResult valley_test(const double* samples, int n, double threshold)
+inline ValleyResult valley_test(const double* samples, int n, double threshold)
 {
     ValleyResult result;
     if (n < 10) return result;   // too few samples for meaningful KDE
@@ -142,7 +259,7 @@ ValleyResult valley_test(const double* samples, int n, double threshold)
 // non-null, each converged eigenvector's Rayleigh quotient λᵢ = uᵢᵀ C uᵢ
 // is also written out (the variance of the data along that PC direction).
 // -----------------------------------------------------------------------------
-static void top_pcs_impl(
+inline void top_pcs_impl(
     const float* X, int nPoints, int d, int k,
     double* pcs_out, double* eigs_out,
     int max_iters, double tol)
@@ -250,17 +367,24 @@ static void top_pcs_impl(
 }
 
 
-void top_pcs_with_eigenvalues(
+inline void top_pcs_with_eigenvalues(
     const float* X, int nPoints, int d, int k,
     double* pcs_out, double* eigs_out, int max_iters, double tol)
 {
     top_pcs_impl(X, nPoints, d, k, pcs_out, eigs_out, max_iters, tol);
 }
 
+inline void top_pcs_power_iteration(
+    const float* X, int nPoints, int d, int k,
+    double* pcs_out, int max_iters, double tol)
+{
+    top_pcs_impl(X, nPoints, d, k, pcs_out, nullptr, max_iters, tol);
+}
+
 // -----------------------------------------------------------------------------
 // kmeans2_refine — Lloyd iterations with hard assignments, 2 clusters.
 // -----------------------------------------------------------------------------
-int kmeans2_refine(
+inline int kmeans2_refine(
     const float* X, int nPoints, int d,
     const double* c0_in, const double* c1_in,
     int* labels_out, int max_iters)
@@ -282,7 +406,9 @@ int kmeans2_refine(
                 d1 += a1 * a1;
             }
             const int new_lbl = (d1 < d0) ? 1 : 0;
-            if (labels_out[i] != new_lbl) ++changed;
+            // iter 0 writes labels_out for the first time; only count changes
+            // afterwards so the pre-init value is never read.
+            if (iter > 0 && labels_out[i] != new_lbl) ++changed;
             labels_out[i] = new_lbl;
         }
         if (iter > 0 && changed == 0) break;
@@ -315,7 +441,7 @@ int kmeans2_refine(
 // ln L(θ | X) = −(n/2) Σ_d [ln(2π) + ln(σ_d²) + 1]    for a single cluster
 // BIC = −2 ln L + p · ln n,  p = d (mean) + d (variance)  per cluster (+ mix if k>1)
 // -----------------------------------------------------------------------------
-static double log_likelihood_diag(
+inline double log_likelihood_diag(
     const float* X, int n, int d,
     const int* labels, int k)
 {
@@ -352,7 +478,7 @@ static double log_likelihood_diag(
     return logL;
 }
 
-BicPair bic_two_vs_one(const float* X, int n, int d, const int* labels_k2)
+inline BicPair bic_two_vs_one(const float* X, int n, int d, const int* labels_k2)
 {
     BicPair out;
     // k=1: treat all points as one cluster (zero labels)
@@ -371,3 +497,6 @@ BicPair bic_two_vs_one(const float* X, int n, int d, const int* labels_k2)
 }
 
 }  // namespace dipsplit
+}  // namespace neurosuite
+
+#endif  // NEUROSUITE_CORE_DIPSPLIT_HPP

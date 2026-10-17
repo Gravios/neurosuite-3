@@ -1,12 +1,12 @@
 // klustersdoc_watershed.cpp — KlustersDoc 2D density-watershed cluster split.
 //
 // Part of the klustersdoc.cpp decomposition: this translation unit implements
-// watershedSelectedClusters — runs a 2D density watershed (Watershed2D) on the
+// watershedSelectedClusters — runs a 2D density watershed (core watershed2d.hpp) on the
 // selected clusters using the active scatter view's X/Y feature dimensions, turning
 // each basin into a new cluster and dissolving the sources.  Declarations remain in
-// klustersdoc.h (which also includes watershed2d.h for the Config/Result types in the
+// klustersdoc.h (which also includes core watershed2d.hpp for the Config/Result types in the
 // signature); mechanical relocation, no logic change.  The realign-style include for
-// watershed2d.h travels with this TU via the shared preamble; the block uses no
+// watershed2d.hpp travels with this TU via the shared preamble; the block uses no
 // custody helpers, core PCA headers, or nbUndo.
 //
 #include <algorithm>
@@ -67,13 +67,13 @@
 #include "klustersdoc.h"
 #include "configuration.h"
 #include "klustersview.h"
-#include "watershed2d.h"
+#include <neurosuite/core/watershed2d.hpp>
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
 #include "parameteryamlmodifier.h"
-#include "dipsplit.h"
+#include <neurosuite/core/dipsplit.hpp>
 #include "parameteryamlreader.h"
 #include "clusteruserinformation.h"
 
@@ -102,7 +102,7 @@
 // Returns the number of new clusters created (0 on failure / no basins).
 // ---------------------------------------------------------------------------
 int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
-                                           const Watershed2D::Config& cfg)
+                                           const neurosuite::watershed2d::Config& cfg)
 {
     KlustersView* activeView = app()->activeView();
     if (!activeView) return 0;
@@ -145,13 +145,13 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     // ── Run watershed.  Caller-supplied config is taken as-is, but if
     // ── the caller left minPeakHeight / minBasinSize at sentinel 0
     // ── values we auto-tune them from the data size.
-    Watershed2D::Config c = cfg;
+    neurosuite::watershed2d::Config c = cfg;
     if (c.minPeakHeight <= 0)
         c.minPeakHeight = std::max(3, static_cast<int>(xs.size() / 2000));
     if (c.minBasinSize <= 0)
         c.minBasinSize  = std::max(20, static_cast<int>(xs.size() / 500));
 
-    Watershed2D::Result res = Watershed2D::run(xs, ys, c);
+    neurosuite::watershed2d::Result res = neurosuite::watershed2d::run(xs, ys, c);
     if (!res.ok || res.numBasins == 0) return 0;
     if (res.numBasins == 1) {
         // Watershed returns just one basin: pointless to "split" — bail.
@@ -374,7 +374,7 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
 // maps re-derive -- nothing straddles and repairNesting has nothing to do.
 // ---------------------------------------------------------------------------
 int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
-                                           const Watershed2D::Config& cfg)
+                                           const neurosuite::watershed2d::Config& cfg)
 {
     if (!childData) return 0;
     KlustersView* activeView = app()->activeView();
@@ -423,13 +423,13 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
     if (xs.size() < 50) return 0;     // not enough points to cluster
 
     // ── Run watershed, with the same auto-tune the parent path uses.
-    Watershed2D::Config c = cfg;
+    neurosuite::watershed2d::Config c = cfg;
     if (c.minPeakHeight <= 0)
         c.minPeakHeight = std::max(3, static_cast<int>(xs.size() / 2000));
     if (c.minBasinSize <= 0)
         c.minBasinSize  = std::max(20, static_cast<int>(xs.size() / 500));
 
-    Watershed2D::Result res = Watershed2D::run(xs, ys, c);
+    neurosuite::watershed2d::Result res = neurosuite::watershed2d::run(xs, ys, c);
     if (!res.ok || res.numBasins == 0) return 0;
     if (res.numBasins == 1) return 0;             // one basin: nothing to split
 
