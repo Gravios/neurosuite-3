@@ -69,6 +69,10 @@ struct SpikeWindowSpec {
     // written by the older single-pass extractor; use detectStderivSeeding()
     // to tell which one an existing file follows.
     bool seedFromPrevious = true;
+    // With applyTransform: false = the spatial derivative only (rounded and
+    // saturated per sample, no temporal difference, no seed), which is what
+    // process_extractspikes_sdiff writes.
+    bool temporalDiff = true;
 
     // Read budget for the sliding buffer, in bytes.  Only affects speed.
     std::size_t bufferBytes = 8u << 20;
@@ -79,7 +83,8 @@ struct SpikeWindowSpec {
 // sample-major int16 [s * nChan + ch], nChan * nSamp entries.
 //
 // A window that would fall outside the file is emitted as zeros and counted in
-// outOfRange, matching what both previous implementations did.
+// outOfRange, so there is always one row per timestamp and the rows stay aligned
+// with the .res (and .clu).
 //
 // With applyTransform and seedFromPrevious, each window's temporal difference
 // is seeded with the spatial derivative of the sample before it (stderivSeed),
@@ -118,6 +123,7 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
     std::vector<std::int16_t> row(static_cast<std::size_t>(spec.nChan) * spec.nSamp);
     std::vector<std::int16_t> leadRow(static_cast<std::size_t>(spec.nChan));
     std::vector<std::int16_t> seed(static_cast<std::size_t>(spec.nChan));
+    std::vector<double>       spatialRow(static_cast<std::size_t>(spec.nChan));
 
     std::int64_t emitted = 0, bad = 0;
     for (std::int64_t i = 0; i < nSpikes; ++i) {
@@ -126,7 +132,8 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
         bool got = false;
         // With the transform, also hold the sample before the window (its seed).
         const std::int64_t lead =
-            (spec.applyTransform && spec.seedFromPrevious && startSample >= 1) ? 1 : 0;
+            (spec.applyTransform && spec.temporalDiff && spec.seedFromPrevious
+             && startSample >= 1) ? 1 : 0;
         const std::int64_t first = startSample - lead;
 
         if (startSample >= 0 && startSample + spec.nSamp <= totalSamples) {
@@ -171,7 +178,19 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
         }
 
         if (got) {
-            if (spec.applyTransform) {
+            if (spec.applyTransform && !spec.temporalDiff) {
+                std::vector<double>& r = spatialRow;
+                for (int s = 0; s < spec.nSamp; ++s) {
+                    for (int ci = 0; ci < spec.nChan; ++ci)
+                        r[static_cast<std::size_t>(ci)] =
+                            wavCM[static_cast<std::size_t>(ci) * spec.nSamp + s];
+                    for (int ci = 0; ci < spec.nChan; ++ci)
+                        wavCM[static_cast<std::size_t>(ci) * spec.nSamp + s] =
+                            clampToInt16(spatialDeriv(spec.order, r.data(), ci, spec.nChan,
+                                                      spec.partner, spec.setOff, spec.setMem,
+                                                      spec.expr));
+                }
+            } else if (spec.applyTransform) {
                 const std::int16_t* seedPtr = nullptr;
                 if (lead) {
                     stderivSeed(spec.order, leadRow.data(), spec.nChan, seed.data(),

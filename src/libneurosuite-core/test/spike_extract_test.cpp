@@ -9,7 +9,8 @@
 // A synthetic .fil is cut with the reference algorithm (written out here as the
 // extractor does it) and with extractSpikeWindows, for every spatial order,
 // for a window at sample 0 (seed 0 by definition), windows straddling the read
-// buffer, and the raw (untransformed) path.  Self-contained (own main), run via
+// buffer, the raw (untransformed) path and the spatial-only path
+// (temporalDiff = false, process_extractspikes_sdiff).  Self-contained (own main), run via
 // ctest.
 
 #include "neurosuite/core/spike_extract.hpp"
@@ -139,6 +140,46 @@ int main() {
             });
         std::fclose(f);
         check(same, "raw windows are copied unchanged");
+    }
+
+    // temporalDiff = false: the spatial derivative only (process_extractspikes_sdiff),
+    // and a window outside the file is a row of zeros, so the rows stay aligned
+    // with the timestamps.
+    for (SdiffOrder order : {SdiffOrder::None, SdiffOrder::First,
+                             SdiffOrder::Laplacian, SdiffOrder::AllPairs}) {
+        SpikeWindowSpec spec;
+        spec.nSamp = nSamp; spec.peakSample = peak; spec.totalNbChannels = totalCh;
+        spec.groupChannels = chans.data(); spec.nChan = static_cast<int>(chans.size());
+        spec.applyTransform = true; spec.temporalDiff = false; spec.order = order;
+        const std::vector<int64_t> t2 = {peak - 1, peak, 50, 2999, nTotal - nSamp + peak,
+                                         nTotal - nSamp + peak + 1};   // first/last out of range
+        std::FILE* f = std::fopen(path, "rb");
+        bool same = true, zeros = true;
+        int64_t n = 0, oor = -1;
+        extractSpikeWindows(f, static_cast<int64_t>(t2.size()), spec,
+            [&](int64_t i) { return t2[static_cast<size_t>(i)]; },
+            [&](int64_t i, const int16_t* r) {
+                ++n;
+                const int64_t ws = t2[static_cast<size_t>(i)] - peak;
+                const bool out = ws < 0 || ws + nSamp > nTotal;
+                std::vector<double> row(chans.size());
+                for (int s = 0; s < nSamp; ++s) {
+                    if (!out)
+                        for (size_t ci = 0; ci < chans.size(); ++ci)
+                            row[ci] = fil[static_cast<size_t>(ws + s) * totalCh + chans[ci]];
+                    for (size_t ci = 0; ci < chans.size(); ++ci) {
+                        const int16_t v = r[static_cast<size_t>(s) * chans.size() + ci];
+                        if (out) zeros &= v == 0;
+                        else same &= v == clampToInt16(spatialDeriv(order, row.data(),
+                                               static_cast<int>(ci), static_cast<int>(chans.size())));
+                    }
+                }
+            }, &oor);
+        std::fclose(f);
+        const std::string tag = "spatial only, order " + std::to_string(static_cast<int>(order));
+        check(same, tag + ": each sample is the clamped spatial derivative");
+        check(zeros && oor == 2 && n == static_cast<int64_t>(t2.size()),
+              tag + ": the two windows outside the file are zero rows, one row per timestamp");
     }
 
     // seedFromPrevious = false: every window seeded with 0 (older .spk files)
