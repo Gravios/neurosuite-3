@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-17 | [neurosuite-3 3.1.0: a version contract with fiber-kit and ndm plugins](#2026-10-17--neurosuite-3-310-a-version-contract-with-fiber-kit-and-ndm-plugins) |
 | 2026-10-17 | [Recipes and canonical references; process_pca records the right input channel count; Qt build fix](#2026-10-17--recipes-and-canonical-references-process_pca-records-the-right-input-channel-count-qt-build-fix) |
 | 2026-10-16 | [One stderiv transform, one token rule: shared tables for both](#2026-10-16--one-stderiv-transform-one-token-rule-shared-tables-for-both) |
 | 2026-10-16 | [CI runs the tests and a lint job; HDF5 1.10 build fix; generated files removed](#2026-10-16--ci-runs-the-tests-and-a-lint-job-hdf5-110-build-fix-generated-files-removed) |
@@ -61,6 +62,40 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-17 — neurosuite-3 3.1.0: a version contract with fiber-kit and ndm plugins
+
+<details>
+<summary>Details</summary>
+
+- **Releases are numbered and tagged** from here on. This is 3.1.0 (the
+  root `project()` version; it was 3.0.0 and never tagged). Its tag is
+  `v3.1.0`. The matching fiber-kit release is 0.44.0 (`v0.44.0`).
+- **`contract.yaml`** at the repository root records what neurosuite-3
+  promises at its boundaries:
+  - the ndm plugin protocol (1);
+  - the session-schema version (`1.0`);
+  - for `.pca`, `.wti`, `.wtl`, `.tcl` and `.eap`, the highest version read
+    and the version written;
+  - the hashes of the tables shared with fiber-kit.
+
+  fiber-kit keeps its own. `core_test_contract` checks the file against
+  `core/version_contract.hpp` and against what the writers actually put on
+  disk. `core_shared_contract` checks the table hashes on every run; with a
+  fiber-kit checkout it also checks that each side reads every version the
+  other writes.
+- **ndmanager warns about plugin format versions.** A plugin can list
+  `format <name> <read> <write>` lines in its `--ndm-version` answer
+  (fiber-kit 0.44.0 does). ndmanager logs any format one side writes and the
+  other cannot read, and says so in the status bar. The plugin is still
+  loaded. The protocol number and the session schema written by the YAML
+  layer now come from the same header. *Not compiled here (no Qt).*
+- **Standalone core tests.** `cmake -S src/libneurosuite-core
+  -DNS_BUILD_TESTS=ON` now registers and passes its 23 tests.
+- **Docs:** [RECIPES.md](doc/dev/RECIPES.md) §2.5 (changing a version),
+  CORE_API.md §3.13.
+
+</details>
 
 ## 2026-10-17 — Recipes and canonical references; process_pca records the right input channel count; Qt build fix
 

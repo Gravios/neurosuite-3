@@ -108,7 +108,7 @@ if(_cuda_lang)
     ns_gpu_select_cuda_arch()
 endif()
 
-project(neurosuite-3 VERSION 3.0.0 LANGUAGES CXX C ${_cuda_lang})
+project(neurosuite-3 VERSION 3.1.0 LANGUAGES CXX C ${_cuda_lang})
 
 # Regression test suite (opt-in; run with ctest).  OFF by default so normal
 # builds are unaffected.  When ON it builds the C++ unit tests under each

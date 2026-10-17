@@ -163,6 +163,11 @@ standard shape:
   purpose; the top-level changelog references them but does not absorb
   them.
 - Vendored third-party changelogs (e.g. libsamplerate) are never touched.
+- **Releases.** The repository's version is the root `project()` VERSION.
+  A release bumps it, adds a `CHANGELOG.md` entry naming it, and is tagged
+  `v<version>` (annotated) once applied.  fiber-kit releases the same way
+  (`pyproject.toml`, `__version__`, its CHANGELOG, `test_version.py`).  When
+  `contract.yaml` changes, both repositories release together.
 
 ### 2.9 Language standard
 
