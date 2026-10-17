@@ -47,16 +47,13 @@ This is the sibling of the cluster/spike document reference, [DOCUMENT_MODEL.md]
 
 ### 1.1 Per-group naming and chain-of-custody
 
-Per-group artifacts carry an explicit **method** (variant) token; the group is always the trailing all-digit field (`neurofileio.h:432-468`, `naming.md`). Three shapes are recognized, newest first:
+Per-group artifacts carry an explicit **method** token; the group is always the trailing all-digit field (`naming.md`):
 
-```cpp
-// neurofileio.h:437-439  (resolveInput, neurofileio.cpp:895-927)
-//   <base>.<type>.<group>              canonical (no variant)
-//   <base>.<type>.<variant>.<group>    dotted variant   (preferred)
-//   <base>.<type><variant>.<group>     legacy glued      (.fetD.N — READ only)
+```
+<base>.<type>.<method>.<group>[.<stage>]
 ```
 
-The method-pinned helpers `methodPath` → `<base>.<type>.<method>.<group>` and `stagePath` (adds a trailing `.<stage>`) compose paths directly and supersede `resolveInput`/`preferDerived`/`preferCanonical` (`neurofileio.cpp:941-951`, `neurofileio.h:470-496`); `methodFromPath` parses from the right — last field is the group, method is second-to-last — delegating to `custody::methodOf` (`neurofileio.cpp:964-970`). `custody.hpp` fixes the type classes: per-group `{res,spk,clu,clc,fet,pca,col,model,klg}` vs session-wide `{fil,dat,xml,yaml,nrs,par,eeg,lfp}` (`custody.hpp:140-152`). The EAP template family (`.eap`/`.tcl`/`.wti`) is *not* registered in `custody.hpp` and is composed by hand per-group/per-stage; only `.wtf` is method-tagged (`naming.md`, "EAP template-library family").
+`methodPath` → `<base>.<type>.<method>.<group>` and `stagePath` (adds a trailing `.<stage>`) compose paths, and `resolveInputForMethod` composes one and reports whether it exists; all three delegate to `custody.hpp`. Untagged names are read only through the custody fallbacks (`custody::resolve`). The older preference-list resolver (`resolveInput`/`preferDerived`/`preferCanonical`, which also probed the glued `.fetD.N` form) was removed on 2026-10-17. `methodFromPath` parses from the right — last field is the group, method is second-to-last — delegating to `custody::methodOf`. `custody.hpp` fixes the type classes: per-group `{res,spk,clu,clc,fet,pca,col,model,klg}` vs session-wide `{fil,dat,xml,yaml,nrs,par,eeg,lfp}` (`custody.hpp:140-152`). The EAP template family (`.eap`/`.tcl`/`.wti`) is *not* registered in `custody.hpp` and is composed by hand per-group/per-stage; only `.wtf` is method-tagged (`naming.md`, "EAP template-library family").
 
 ---
 

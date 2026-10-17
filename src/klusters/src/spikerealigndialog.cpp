@@ -9,7 +9,7 @@
 #include "data.h"
 #include "sortabletable.h"
 #include "realign_xcorr.h"
-#include <neurosuite/core/neurofileio.h>
+#include "klustersdoc_internal.h"   // featureMethod / resolveFeature (custody)
 
 #include <QVBoxLayout>
 #include <QGridLayout>
@@ -202,24 +202,19 @@ void SpikeRealignDialog::buildUi()
         nbSpikes = static_cast<int>(st.nbOfRows());
     spikeCountLabel->setText(QString::number(nbSpikes));
 
-    // Resolve the PCA eigenvector basis across canonical / dotted-stderiv /
-    // legacy-glued forms (.pca.N / .pca.stderiv.N / .pcaD.N), preferring the
-    // derived basis for stderiv sessions — matches klustersdoc.cpp::realignSpikes.
-    // (ndm_pca_stderiv now writes .pca.stderiv.N, not the legacy .pcaD.N.)
-    const QString grpId  = doc.currentElectrodeGroupID();
-    const bool isStderiv = doc.isStderivSession();
-    const std::string fullBase =
-        (doc.documentDirectory() + QStringLiteral("/") + doc.documentBaseName())
-            .toStdString();
-    const neurofileio::ResolvedInput pcaRes = neurofileio::resolveInput(
-        fullBase, "pca", grpId.toInt(),
-        isStderiv ? neurofileio::preferDerived() : neurofileio::preferCanonical());
-    // Expected path for the "not found" message: the dotted derived form for
-    // stderiv sessions, canonical otherwise.
-    const QString pcaPath = pcaRes.found
-        ? QString::fromStdString(pcaRes.path)
-        : (isStderiv ? (QString::fromStdString(fullBase) + QStringLiteral(".pca.stderiv.") + grpId)
-                     : (QString::fromStdString(fullBase) + QStringLiteral(".pca.")         + grpId));
+    // The PCA basis realignSpikes will use: <base>.pca.<method>.<group>, with
+    // the method read off the session's .fet, resolved through the custody
+    // policy exactly as klustersdoc_realign.cpp does.  (This used the retired
+    // neurofileio::resolveInput preference lists, which probe the untagged
+    // .pca.N and the glued .pcaD.N but not .pca.stderiv_C5.N, so a suffixed
+    // session was reported NOT FOUND here while the realign itself found it.)
+    // When the file is missing, the path is still the one realign would read,
+    // so the message names it.
+    const QString grpId   = doc.currentElectrodeGroupID();
+    const QString fullBase = doc.documentDirectory() + QStringLiteral("/") + doc.documentBaseName();
+    const QString pcaPath = klustersdoc_internal::resolveFeature(
+        fullBase, QStringLiteral("pca"), grpId,
+        klustersdoc_internal::featureMethod(doc.origFetFilePath()));
 
     bool pcaOk = QFileInfo::exists(pcaPath);
     if (pcaOk)
