@@ -25,10 +25,10 @@ name: ci
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'tests/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
+    paths: ['src/**', 'tests/**', 'doc/**', 'templates/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
   pull_request:
     branches: [main]
-    paths: ['src/**', 'tests/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
+    paths: ['src/**', 'tests/**', 'doc/**', 'templates/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci.yml']
 
 concurrency:
   group: ci-${{ github.ref }}
