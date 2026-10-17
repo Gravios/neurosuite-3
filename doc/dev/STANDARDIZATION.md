@@ -193,6 +193,7 @@ mirrors in the same change.
 | file naming, method tokens, waveform token, dropped channel | `core/custody.hpp` | `ndm_resolve_io.py`, `ndm_custody`, fiber-kit `neuro_io` | `custody_vectors.tsv` |
 | PCAE `Method` values and helpers | `core/pca_projection.hpp` | fiber-kit `fiber_pca` | `pca_method_vectors.tsv` |
 | on-disk formats | `core/neurofileio.{h,cpp}` | fiber-kit `neuro_io` | format tests on each side (`.wtl` v2: a writer-made fixture in fiber-kit) |
+| plugin protocol, session schema, format versions | `core/version_contract.hpp` and `contract.yaml` | fiber-kit `contract.yaml` (`neuro_io`, `fiber_pca`, `ndm_fiber_kit` constants) | `core_test_contract`, `test_contract.py`; the two contracts by `test_shared_contract.py` |
 
 The tables live in `src/libneurosuite-core/test/` and, byte for byte, in
 fiber-kit's `test/`; `test_shared_contract.py` (both repositories, and

@@ -102,6 +102,7 @@ projectionscope.hpp ─── neurofileio.h
 drift_partition.hpp ─── neurofileio.h, running_stats.hpp
 template_generate.hpp ─── neurofileio.h, custody.hpp, running_stats.hpp
 spike_extract.hpp ─── stderiv_transform.hpp ─── pca_projection.hpp (for SdiffOrder)
+version_contract.hpp ─── neurofileio.h, pca_projection.hpp
 custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp ─── std only
 ```
 
@@ -530,6 +531,27 @@ bool mergeClasses(EapFile& e, TclRegistry& reg, int survivor, int victim);
 **Consumers.** klusters `templateclassstore.cpp` (wraps every function), `decollide_eap.hpp` (`firstFree`, `createClass`).
 **Twin.** None in code; the formats are mirrored by fiber-kit `neuro_io`.
 
+### 3.13 `version_contract.hpp` — versions at the boundary
+
+Namespace `neurosuite::contract`. Header-only; it includes `neurofileio.h` only for its version constants, so using it needs no link. It states in code what `contract.yaml` at the repository root states for people and for fiber-kit ([RECIPES.md §2.5](../../../doc/dev/RECIPES.md#25-change-a-format-version-the-plugin-protocol-or-the-session-schema)).
+
+```cpp
+inline constexpr int         kContractVersion   = 1;      // contract.yaml `contract`
+inline constexpr int         kNdmPluginProtocol = 1;      // the ndm-plugin-protocol ndmanager speaks
+inline constexpr const char* kSessionSchema     = "1.0";  // parameters.version a session YAML gets
+struct FormatVersion { std::string name; int read; int write; };
+std::vector<FormatVersion> formats();   // pca, wti, wtl, tcl, eap from kPcaeVersion and neurofileio's kWtiVersion, …
+struct PluginVersion { bool ok; int protocol; std::vector<FormatVersion> formats; };
+PluginVersion            parseNdmVersion(const std::string& text);
+std::vector<std::string> formatMismatches(const std::vector<FormatVersion>& host,
+                                          const std::vector<FormatVersion>& plugin);
+```
+
+`read` is the highest version a reader accepts (it accepts every version from 1 up) and `write` the version written. A plugin's `--ndm-version` output is `ndm-plugin-protocol <N>` on the first line, then any lines, among them `format <name> <read> <write>`. `parseNdmVersion` returns `ok = false` when the first line is not a protocol line and skips malformed `format` lines. `formatMismatches` reports, for each format both sides list, a side that writes a version the other cannot read.
+
+**Consumers.** ndmanager `parameterview.cpp` (plugin discovery: protocol gate and format warnings); `ParameterYamlWriter` and `ParameterYamlModifier` (`kSessionSchema`).
+**Twin.** fiber-kit's `contract.yaml` and the version constants it is checked against (`test/test_contract.py`); `ndm_fiber_kit.py --ndm-version` prints the format lines.
+
 ---
 
 ## 4. Tests
@@ -555,7 +577,8 @@ ctest --test-dir build -R '^core_test_|custody_conformance'   # this library onl
 | `custody_conformance_python` | `../../ndmanager-plugins/test/test_custody_conformance.py` | — | same vectors against `ndm_resolve_io.py` (registered only if Python 3 is found) |
 | `custody_conformance_bash` | `../../ndmanager-plugins/test/test_custody_conformance.sh` | — | same vectors against `ndm_custody` (registered only if bash is found) |
 | `core_test_stderiv_vectors` | `stderiv_vectors_test.cpp` | no | runs `stderiv_vectors.tsv` (argument) against `stderivSeed` + `applyStderivTransform`, out of place and in place; null seed = zero seed |
-| `core_shared_contract` | `test_shared_contract.py` | — | the shared tables are byte-identical to fiber-kit's (registered only with `-DNS_FIBER_KIT_ROOT`) |
+| `core_shared_contract` | `test_shared_contract.py` | — | the shared tables match the hashes in `contract.yaml`; with `-DNS_FIBER_KIT_ROOT`, they are byte-identical to fiber-kit's and the two `contract.yaml` files agree |
+| `core_test_contract` | `contract_test.cpp` | yes | `contract.yaml` (argument) equals `version_contract.hpp`; each format writer writes the version named and each reader rejects the next one; `parseNdmVersion`, `formatMismatches` |
 | `core_test_pca_method_conformance` | `pca_method_conformance_test.cpp` | no | runs `pca_method_vectors.tsv` against `Method`, `spatialOrder`, `hasTemporalDiff`, `methodTag`, `kPcaeMagic`/`kPcaeVersion` |
 | `core_test_neurofileio_spk` | `neurofileio_spk_test.cpp` | yes | `.spk` round trip, binary `.fet`, `.col` accepted-record parse, `.wti` + `.wtf` alignment, `.eap` (sentinel, grow, queries), `.tcl` statuses, `stagePath` composition |
 | `core_test_wti` | `wti_test.cpp` | yes | `.wti` v1/v2 round trip, `parent` column, `collision` link, hand-written files, version-3 rejection |
@@ -601,7 +624,7 @@ Readers: `custody_conformance_test.cpp` (C++, all kinds), `ndmanager-plugins/tes
 
 Readers: `pca_method_conformance_test.cpp` and fiber-kit `test/test_pca_method_conformance.py` (`fiber_pca.Method`).
 
-**`test_shared_contract.py`.** Both tables are shipped as byte-identical copies in neurosuite-3 (`src/libneurosuite-core/test/`) and fiber-kit (`test/`). This script prints their MD5 hashes; with `FK_ROOT` pointing at a fiber-kit checkout it compares the two copies and fails on a difference (`FK_ROOT=/path/to/fiber-kit python3 src/libneurosuite-core/test/test_shared_contract.py`). A file missing on either side fails; without `FK_ROOT` it reports `SKIPPED`. ctest runs it as `core_shared_contract` when the build is configured with `-DNS_FIBER_KIT_ROOT=/path/to/fiber-kit` (CI does). fiber-kit carries the mirror-image script (`NS3_ROOT`).
+**`test_shared_contract.py`.** The tables are shipped as byte-identical copies in neurosuite-3 (`src/libneurosuite-core/test/`) and fiber-kit (`test/`), and each repository's `contract.yaml` records their MD5s. The script always checks the local tables against those hashes, so a table cannot change without the contract saying so. With `FK_ROOT` pointing at a fiber-kit checkout it also compares the two copies of each table and the two `contract.yaml` files: contract number, plugin protocol, session schema and hashes equal, and each side reads every format version the other writes (`FK_ROOT=/path/to/fiber-kit python3 src/libneurosuite-core/test/test_shared_contract.py`). A file missing on either side fails. ctest runs it as `core_shared_contract`; `-DNS_FIBER_KIT_ROOT=/path/to/fiber-kit` sets `FK_ROOT` (CI does). fiber-kit carries the mirror-image script (`NS3_ROOT`).
 
 **Rule for changing shared behaviour.** A change to anything a vector table pins (type classes, path shapes, the resolution order, the method-token grammar, `Method` values/helpers, the PCAE magic/version) is one change across all implementations:
 

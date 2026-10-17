@@ -17,7 +17,8 @@ fix the recipe in the same patch.
 [2.2 Add a PCAE method](#22-add-a-pcae-method) ·
 [2.3 Add a session-YAML section](#23-add-a-session-yaml-section) ·
 [2.4 Add an ndmanager plugin step](#24-add-an-ndmanager-plugin-step) ·
-[2.5 Recipes on other pages](#25-recipes-on-other-pages)
+[2.5 Change a format version, the plugin protocol or the session schema](#25-change-a-format-version-the-plugin-protocol-or-the-session-schema) ·
+[2.6 Recipes on other pages](#26-recipes-on-other-pages)
 
 ---
 
@@ -56,6 +57,7 @@ differ, fix the page.
 
 | Subject | Canonical page |
 |---|---|
+| Versions at the boundary with fiber-kit and ndm plugins: plugin protocol, session schema, format versions, shared-table hashes | `contract.yaml` at the repository root (one in each repository), stated in code by `core/version_contract.hpp`; §2.5 here |
 | Rules with one implementation and mirrors in other languages (stderiv transform, sdiff grammars, custody, PCAE `Method`, formats) | [STANDARDIZATION.md](STANDARDIZATION.md) §2.10 (the table of homes); the change procedure is CORE_API.md §4.3 |
 | Code conventions, directory layout, language standard | [STANDARDIZATION.md](STANDARDIZATION.md) §2 |
 | Running and adding tests | [tests/README.md](../../tests/README.md) |
@@ -100,16 +102,19 @@ empty fields count, so never align columns with spaces.
      change the home and every mirror in the same patch.
 3. Copy the table unchanged to `fiber-kit:test/<table>.tsv` in a separate
    fiber-kit patch. Run `python3 test/run_all.py` there.
-4. Prove the two copies are identical:
+4. Record the table's new MD5 (`md5sum`) under `vectors:` in `contract.yaml`
+   in both repositories. `core_shared_contract` fails, even without a
+   fiber-kit checkout, while the table and the hash differ.
+5. Prove the two copies, and the two contracts, agree:
    `FK_ROOT=/path/to/fiber-kit python3 src/libneurosuite-core/test/test_shared_contract.py`.
    In ctest this is `core_shared_contract` (configure with
-   `-DNS_FIBER_KIT_ROOT`).
+   `-DNS_FIBER_KIT_ROOT` for the cross-repository part).
 
 Adding a column, or a new row kind, changes every runner in both
 repositories. Prefer a new kind only when no existing kind can express the
 case. A new table must also be added to the file list in both
-`test_shared_contract.py` scripts (neurosuite-3 and fiber-kit), or the copies
-are never compared.
+`test_shared_contract.py` scripts (neurosuite-3 and fiber-kit) and to
+`vectors:` in both `contract.yaml` files, or the copies are never compared.
 
 ### 2.2 Add a PCAE method
 
@@ -273,7 +278,58 @@ designer and the docs in step. They fail until all four agree.
 `ctest -R 'ndm_test_(template_parameters|pipeline_designer_defs|docs|<name>)'`,
 plus `python3 src/ndmanager/tools/pipeline_script_defs.py --check`.
 
-### 2.5 Recipes on other pages
+### 2.5 Change a format version, the plugin protocol or the session schema
+
+`contract.yaml` at the root of each repository states what that repository
+promises at the boundary:
+
+- `plugin_protocol`: the ndm-plugin-protocol it speaks;
+- `session_schema`: the `parameters.version` it writes;
+- `formats`: for each version-tagged format (`pca`, `wti`, `wtl`, `tcl`,
+  `eap`), the highest version it reads and the version it writes;
+- `vectors`: the MD5 of each shared table.
+
+The code states the same values: in neurosuite-3, the constants in
+`core/version_contract.hpp`, `neurofileio.h` (`kWtiVersion`, `kWtlVersion`,
+`kTclVersion`, `kEapVersion`) and `core/pca_projection.hpp` (`kPcaeVersion`).
+In fiber-kit they are the version constants in `src/fiber_kit/neuro_io.py`,
+`fiber_pca.py` and `ndm_fiber_kit.py`. The rule between the repositories is
+that each reads every version the other writes.
+
+**A new version of a format** (say `.wtl` v3):
+
+1. Teach the readers the new version first, in both repositories, and release
+   that. Then the reader side can already take what the writer will write.
+2. neurosuite-3: change the reader and writer in `neurofileio.cpp`, bump the
+   constant in `neurofileio.h` (or `kPcaeVersion`), and update the format page
+   under `doc/ndmanager-plugins/formats/`.
+3. Update `formats:` in `contract.yaml` and bump `contract:` (and
+   `kContractVersion`).
+4. fiber-kit, separately: the same in `neuro_io.py` / `fiber_pca.py`, its
+   `contract.yaml`, and the format lines `ndm_fiber_kit.py --ndm-version`
+   prints.
+
+**The plugin protocol or the session schema:** change `kNdmPluginProtocol` or
+`kSessionSchema` in `core/version_contract.hpp`, the matching line of
+`contract.yaml`, and bump `contract:`. ndmanager reads the protocol from that
+header; the YAML writer and modifier stamp the schema from it. fiber-kit's
+`PROTOCOL` (`ndm_fiber_kit.py`) and its `contract.yaml` change in the same
+release.
+
+**Test:**
+
+- neurosuite-3: `ctest -R 'core_test_contract|core_shared_contract'`.
+  `core_test_contract` writes each format and checks the version on disk, and
+  checks that each reader rejects the version after the one it claims.
+- fiber-kit: `test/test_contract.py`.
+- Both, with the other checkout: `core_shared_contract` / fiber-kit's
+  `test_shared_contract.py`.
+
+ndmanager warns when a plugin's `--ndm-version` format lines do not match this
+build (`contract::formatMismatches`), so a mismatch that reaches users is
+visible there too.
+
+### 2.6 Recipes on other pages
 
 | Change | Recipe |
 |---|---|

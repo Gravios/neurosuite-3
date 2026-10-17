@@ -33,7 +33,7 @@ Test names start with their subproject, so `-R` selects a part:
 | Prefix | Subproject | Needs |
 |---|---|---|
 | `core_test_`, `custody_conformance_` | libneurosuite-core | C++ compiler; Python 3 and bash for the custody runners |
-| `core_shared_contract` | libneurosuite-core ↔ fiber-kit | Python 3 and `-DNS_FIBER_KIT_ROOT=/path/to/fiber-kit` |
+| `core_shared_contract` | libneurosuite-core ↔ fiber-kit | Python 3; `-DNS_FIBER_KIT_ROOT=/path/to/fiber-kit` for the comparison with fiber-kit |
 | `ndm_test_` | ndmanager-plugins scripts | Python 3 (numpy, PyYAML), bash; a few use the built plugin binaries |
 | `kk_test_` | kiloklustakwik | C++ compiler, OpenMP (GPU backends optional) |
 | `klustersshared_` | libklustersshared | Qt 6, yaml-cpp |
@@ -49,7 +49,7 @@ ctest --test-dir build -R klustersshared_sessiontemplate --output-on-failure
 ### Without Qt (a fast loop)
 
 The core library, kiloklustakwik, ndmanager-plugins and the build-system checks
-configure without Qt or a GPU toolkit. That covers about 46 tests:
+configure without Qt or a GPU toolkit. That covers about 50 tests:
 
 ```sh
 cmake -B build-tests -S . -DNS_BUILD_TESTS=ON \
@@ -61,11 +61,12 @@ cmake --build build-tests --parallel
 ctest --test-dir build-tests --output-on-failure
 ```
 
-Add `-DNS_SKIP_NDMANAGER_PLUGINS=ON` to leave the plugins out (27 tests, a
+Add `-DNS_SKIP_NDMANAGER_PLUGINS=ON` to leave the plugins out (32 tests, a
 quicker build).
 
 The same `-DNS_BUILD_TESTS=ON` works for a standalone subproject configure
-(for example `cmake -B build -S src/kiloklustakwik -DNS_BUILD_TESTS=ON`).
+(for example `cmake -B build -S src/kiloklustakwik -DNS_BUILD_TESTS=ON`, or
+`-S src/libneurosuite-core`).
 
 To check the build system alone, with no configure at all:
 
@@ -90,15 +91,19 @@ binary's variable (`PROCESS_PCA_BIN`, `PROCESS_PLXCONVERT_BIN`,
 
 **Shared contract with fiber-kit.** The vector tables in
 `src/libneurosuite-core/test/*.tsv` must be byte-identical to fiber-kit's
-`test/` copies. With `-DNS_FIBER_KIT_ROOT` set, ctest runs
-`core_shared_contract`; standalone:
+`test/` copies, and `contract.yaml` at the repository root records their
+hashes along with the plugin protocol, the session schema and the format
+versions. `core_shared_contract` always checks the tables against those
+hashes. With `-DNS_FIBER_KIT_ROOT` set it also compares the tables and the two
+`contract.yaml` files with fiber-kit's. Standalone:
 
 ```sh
 FK_ROOT=/path/to/fiber-kit python3 src/libneurosuite-core/test/test_shared_contract.py
 ```
 
-A file missing on either side fails. Without `FK_ROOT` there is nothing to
-compare, and the script reports `SKIPPED`.
+A file missing on either side fails. `core_test_contract` checks
+`contract.yaml` against the code. Changing either is a recipe in
+[RECIPES.md](../doc/dev/RECIPES.md) §2.1 and §2.5.
 
 ## Build-system invariants
 
