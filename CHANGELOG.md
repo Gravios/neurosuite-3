@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-17 | [kiloklustakwik: heap overflow and -PriorFile fixes; KK_chunked.cpp split; driver comparison](#2026-10-17--kiloklustakwik-heap-overflow-and--priorfile-fixes-kk_chunkedcpp-split-driver-comparison) |
 | 2026-10-17 | [Qt-free code moves into libneurosuite-core, with tests; merge ranking fix](#2026-10-17--qt-free-code-moves-into-libneurosuite-core-with-tests-merge-ranking-fix) |
 | 2026-10-17 | [neurosuite-3 3.1.0: a version contract with fiber-kit and ndm plugins](#2026-10-17--neurosuite-3-310-a-version-contract-with-fiber-kit-and-ndm-plugins) |
 | 2026-10-17 | [Recipes and canonical references; process_pca records the right input channel count; Qt build fix](#2026-10-17--recipes-and-canonical-references-process_pca-records-the-right-input-channel-count-qt-build-fix) |
@@ -63,6 +64,42 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-17 — kiloklustakwik: heap overflow and -PriorFile fixes; KK_chunked.cpp split; driver comparison
+
+<details>
+<summary>Details</summary>
+
+- **Fix: heap overflow when `MaxClusters > MaxPossibleClusters`.** Every
+  per-cluster array is sized `MaxPossibleClusters`, but a run starts up to
+  `MaxClusters` clusters. With `-MaxPossibleClusters` below the default
+  `MaxClusters` (200), MStep wrote past its buffer and KK crashed later
+  (AddressSanitizer: KK.cpp:193). KK now refuses that combination with a
+  message.
+- **Fix: `-PriorFile` now replaces `MaxClusters` and `MergeThresh`.** The
+  prior compared them against stale copies of the defaults (10 and 30, where
+  the defaults are 200 and 0 = auto). It never replaced either, and it
+  overrode a user who passed exactly those values. The defaults now have one
+  home (`KlustaKwik.h`).
+- **`KK_chunked.cpp` split** (7,463 → 5,070 lines). `MergeChunkModels` moves
+  to `KK_chunk_merge.cpp` and `RunPhase2bMode3Chunk` to
+  `KK_phase2b_mode3.cpp`, verbatim. Old and new binaries give a
+  byte-identical `.clu` (and `.spk` with Phase 2b mode 3) on a synthetic
+  chunked session.
+- **The two `RunChunkedCEM` drivers have drifted**
+  ([runchunkedcem-drivers.md](doc/design/runchunkedcem-drivers.md)).
+  - With `-ChunkFile` there is no preseed, the deletion floor is the
+    starting K, and `-FusePerChunkStages` and
+    `-AlternatingSplitCooldownIters` are ignored.
+  - With `-ChunkMinutes`, `-FiberStageEnable` is ignored.
+  - The two drivers run the K-template split and DipSplit in opposite
+    orders.
+
+  Merging the drivers waits on decisions and on the reference sessions.
+- `ARCHITECTURE.md` is brought up to date: the `KK.cpp` split is done and
+  the line counts are current.
+
+</details>
 
 ## 2026-10-17 — Qt-free code moves into libneurosuite-core, with tests; merge ranking fix
 
