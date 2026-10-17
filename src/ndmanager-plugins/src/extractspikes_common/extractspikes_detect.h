@@ -1,11 +1,13 @@
-// extractspikes_detect.h — what process_extractspikes_sdiff and
-// process_extractspikes_stderiv share: the peak search on a detection buffer,
+// extractspikes_detect.h — what process_extractspikes, process_extractspikes_sdiff
+// and process_extractspikes_stderiv share: the peak search on a detection buffer,
 // the refractory rule, the -c channel list, and the argument checks.
 //
-// Each tool used to carry its own copy of these (about 340 lines, identical
-// in the two, themselves "verbatim from process_extractspikes").  The
-// functions are unchanged; the three that read the tool's `arguments` struct
-// are templates over it, so the two structs need not be the same type.
+// Each tool used to carry its own copy (the two spatial-derivative ones
+// byte-identical, process_extractspikes the same logic with its own comments
+// and messages).  The error messages are
+// process_extractspikes', which give the values.  The functions that read the
+// tool's `arguments` struct are templates over it, so the structs need not be
+// the same type.
 //
 // The peak helpers work on an interleaved int16 buffer (nChanTot values per
 // sample) and the previous buffer, so a peak at a buffer boundary is found in
@@ -169,8 +171,11 @@ inline int lookForMaxNegative(const short *buf, const int start, const int stop,
                                const double *thresholds, const short prevVal[],
                                bool &isNegativeMax)
 {
-    if(chanId < 0) { cerr << "lookForMaxNegative: negative chanId\n"; exit(1); }
-    if(start > stop) { cerr << "lookForMaxNegative: start>stop\n"; exit(1); }
+    if(chanId < 0) { cerr << "Error: negative channel ID (" << chanId << ")." << endl; exit(1); }
+    if(start > stop) {
+        cerr << "Error: starting point (" << start << ") greater than end point(" << stop << ")." << endl;
+        exit(1);
+    }
 
     int  maxID      = start;
     bool isFirstMax = true;
@@ -229,8 +234,11 @@ inline int lookForMax(const short *buf, const int start, const int stop,
                        const int *channelList, const int nChanTot,
                        const short prevVal[])
 {
-    if(chanId < 0) { cerr << "lookForMax: negative chanId\n"; exit(1); }
-    if(start > stop) { cerr << "lookForMax: start>stop\n"; exit(1); }
+    if(chanId < 0) { cerr << "Error: negative channel ID (" << chanId << ")." << endl; exit(1); }
+    if(start > stop) {
+        cerr << "Error: starting point (" << start << ") greater than end point(" << stop << ")." << endl;
+        exit(1);
+    }
 
     int  maxID    = start;
     bool isMaxPeak = false;
@@ -279,7 +287,9 @@ inline double getThresholdFromChan(int chanId, int nChanGrp,
 {
     for(int i = 0; i < nChanGrp; i++)
         if(channelList[i] == chanId) return thresholds[i];
-    cerr << "getThresholdFromChan: channel " << chanId << " not found." << endl;
+    cerr << "Error : Channel Id : " << chanId << " was not found in channel list : ";
+    for(int i = 0; i < nChanGrp; i++) cerr << (i ? ", " : "") << channelList[i];
+    cerr << " !" << endl;
     return -1.0;
 }
 
@@ -321,15 +331,14 @@ inline int getChannelsFromArg(int *channelNb_group, int **channelList,
 inline bool checkChanAndThres(int ** /*cList*/, int *cNb, int nbC, int *tNb, int nbT)
 {
     if(nbC != nbT) {
-        cerr << "error: groups mismatch channels=" << nbC
-             << " thresholds=" << nbT << endl;
+        cerr << "error: incoherent number of electrode groups (" << nbC
+             << ") and thresholds (" << nbT << ")." << endl;
         return false;
     }
     for(int g = 0; g < nbC; g++) {
         if(cNb[g] != tNb[g]) {
-            cerr << "error: group " << g
-                 << " channels=" << cNb[g]
-                 << " thresholds=" << tNb[g] << endl;
+            cerr << "error: incoherent number of channels (" << cNb[g]
+                 << ") and thresholds (" << tNb[g] << ") for electrode group " << g << "." << endl;
             return false;
         }
     }
@@ -340,29 +349,37 @@ template <class Args>
 inline bool checkInputs(const Args &a, int buf_sz, const FILE *fp)
 {
     if(!fp) {
-        cerr << "error: cannot open '" << a.inputFileName << "'" << endl;
+        cerr << "error: cannot open input file ('" << a.inputFileName << "')." << endl;
         return false;
     }
     if(a.peakLength < 1) {
-        cerr << "error: peak search length < 1" << endl; return false;
+        cerr << "error: negative peak search length (" << a.peakLength << ")" << endl; return false;
     }
     if(a.peakLength * a.totalChannelNumber > buf_sz) {
-        cerr << "error: peak search length > buffer" << endl; return false;
+        cerr << "error: peak search length (" << a.peakLength << ") greater than buffer size ("
+             << buf_sz << ")." << endl;
+        return false;
     }
     if(a.spikeLength > buf_sz / 2) {
-        cerr << "error: waveform length > buffer/2" << endl; return false;
+        cerr << "error: waveform length (" << a.spikeLength << ") greater than buffer size/2 ("
+             << (buf_sz / 2) << ")." << endl;
+        return false;
     }
     if(a.timeBeforeSpike > a.spikeLength) {
-        cerr << "error: peak position > waveform length" << endl; return false;
+        cerr << "error: peak position (" << (a.timeBeforeSpike + 1) << ") greater than waveform length ("
+             << a.spikeLength << ")." << endl;
+        return false;
     }
     if(a.timeBeforeSpike < 0) {
-        cerr << "error: peak position == 0" << endl; return false;
+        cerr << "error: peak position (" << (a.timeBeforeSpike + 1) << ") equal 0 !" << endl; return false;
     }
     if(a.timeBeforeSpike > a.peakLength) {
-        cerr << "error: peak position > peak search length" << endl; return false;
+        cerr << "error: peak position (" << (a.timeBeforeSpike + 1) << ") greater than peak search length ("
+             << a.peakLength << ")." << endl;
+        return false;
     }
     if(a.refractoryPeriod < 0) {
-        cerr << "error: negative refractory period" << endl; return false;
+        cerr << "error: negative refractory period (" << a.refractoryPeriod << ")." << endl; return false;
     }
     return true;
 }

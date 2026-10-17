@@ -65,36 +65,13 @@ struct arguments {
 	bool useExistingRes;
 };
 
-// Write a spike apparition time (in timestamp)
-// Determine if the refractory period is resolved
-bool isRefractoryPeriod(const off_t, const off_t, const arguments);
-// Does the max is a peak or an artefact ?
-bool isRealPeak(const double, const double, const double);
-// Give the full id of a supposed spike (keep the negative peak if it is possible). Return -1 if there is no peak.
-off_t getNegativePeakFullId(	const int, const short*, const bool, const int, const int, const short*, const bool,
-						const int, const int, const int, const int, const double, const double, bool &);
-// Give the full id of a supposed spike. Return -1 if there is no peak.
-off_t getPeakFullId(const int, const short*, const int, const int, const short*, const int, const int, const int,
-				const int, const double, const double, bool &);
-// Search the maximum negative (or positive if there is not) over-threshold value in a given
-// interval for a given channel.
-int lookForMaxNegative(	const short *, const int, const int, int &, const int, const int *, const int, const double *,
-					const short[], bool &);
-// Look for the max absolute value index in a given interval for a channel
-int lookForMax(const short *, const int, const int, int &, const int, const int *, const int, const short[]);
-// Look for a spike at the current time
-int searchSpikeInChannels(const short *, const int, const int *, const double *, bool &);
-// Give the threshold value corresponding to a given channel
-double getThresholdFromChan(const int, const int, const int *, const double *);
+// isRefractoryPeriod, isRealPeak, getNegativePeakFullId, getPeakFullId,
+// lookForMaxNegative, lookForMax, searchSpikeInChannels, getThresholdFromChan,
+// checkInputs, checkChanAndThres and getChannelsFromArg:
+// extractspikes_common/extractspikes_detect.h.
 // Parse arguments and store them in arguments
 void parseArgs(const int, char**, arguments &);
-// Check arguments values
-bool checkInputs(const arguments, const int, const FILE *);
-// Check channels and thresholds lists
-bool checkChanAndThres(int **, int *, int, int *, int);
 // Extract thresholds from arguments
 int getThresholdsFromArg(int *, double **, const arguments);
-// Extract channels ids from arguments
-int getChannelsFromArg(int *, int **, const arguments);
 
 #endif
