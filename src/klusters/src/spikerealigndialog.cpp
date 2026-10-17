@@ -225,13 +225,14 @@ void SpikeRealignDialog::buildUi()
 
     startBtn->setEnabled(pcaOk && nbSpikes > 0);
     if (!pcaOk) {
-        const QString ext = isStderiv ? QStringLiteral(".pca.stderiv.") : QStringLiteral(".pca.");
-        const QString tool = isStderiv ? QStringLiteral("ndm_pca_stderiv")
-                                       : QStringLiteral("ndm_pca");
+        // Name the file realign would read (pcaPath carries the session's own
+        // method token, e.g. .pca.stderiv_C5.N) rather than a guessed extension.
+        const QString tool = doc.isStderivSession() ? QStringLiteral("ndm_pca_stderiv")
+                                                    : QStringLiteral("ndm_pca");
         desc->setText(desc->text() +
             tr("<br><br><b><font color='red'>Cannot start: the PCA eigenvector "
-               "file (%1%2) was not found. Run %3 first.</font></b>")
-            .arg(ext).arg(grpId).arg(tool));
+               "file (%1) was not found. Run %2 first.</font></b>")
+            .arg(QFileInfo(pcaPath).fileName(), tool));
     }
 }
 
