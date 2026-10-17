@@ -122,7 +122,6 @@ reads the same settings as the main sort.
 | `ndm_input_extension default [override]` | `$inputExtension` from `override`, else the `inputExtension` parameter, else `default`; leading dots removed. `$NDM_INPUT_EXPLICIT=1` when the value was given rather than defaulted |
 | `ndm_input_missing` | Like `inputs_missing "$session.$param_ext" "$session.$inputExtension"`, except that an explicitly given input that does not exist **exits 1** with an error instead of returning 0 for a skip |
 | `ndm_parse_method "$@"` | `$NDM_METHOD` from `--method M` / `--method=M`; the other arguments in `$NDM_ARGS` |
-| `ndm_resolve_input base type group [variant…]` | First existing per-group file among `base.type.<variant>.group`, the legacy glued `base.typeVARIANT.group` (e.g. `.fetD.N`), and `base.type.group`; variants default to `stderiv D`. Prints the plain path and returns 1 if none exists |
 | `ndm_process_spikes detect\|extract [file] [--method M] [--methodOrder N] [--inputExtension EXT] [--force]` | The driver behind [`ndm_detectspikes` / `ndm_extractspikes`](spike-detection.md) |
 
 Directory and file-name helpers used by `ndm_start` (layout

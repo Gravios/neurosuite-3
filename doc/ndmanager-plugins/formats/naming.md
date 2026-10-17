@@ -229,9 +229,10 @@ must be run again.
   untagged file is the last fallback. MethodSpecific types never fall back to
   it.
 - **Glued names** (`.fetD.N`, `.spkD.N`, `.pcaD.N`) are not part of the custody
-  model. A few legacy readers still probe them: `resolve_input` in
-  `process_autoklusta.py` and `ndm_resolve_input` in `ndm_functions`.
-  (`neurofileio::resolveInput` did too until it was removed on 2026-10-17.)
+  model. `resolve_input` in `process_autoklusta.py` still probes them.
+  (`neurofileio::resolveInput` and `ndm_functions`' `ndm_resolve_input` did
+  too until they were removed on 2026-10-17; per-group files are resolved
+  with `ndm_resolve` / `ndm_resolve_any` from `ndm_custody`.)
   `process_pca` invoked directly with a `.fetD.N` output name writes `.pcaD.N`.
 - New files are always written method-tagged.
 
