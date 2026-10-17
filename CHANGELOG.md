@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-17 | [Core fixes: long tokens and groups, resolveAny order, int16 saturation, deterministic t-SNE; old resolver removed](#2026-10-17--core-fixes-long-tokens-and-groups-resolveany-order-int16-saturation-deterministic-t-sne-old-resolver-removed) |
 | 2026-10-17 | [kiloklustakwik: heap overflow and -PriorFile fixes; KK_chunked.cpp split; driver comparison](#2026-10-17--kiloklustakwik-heap-overflow-and--priorfile-fixes-kk_chunkedcpp-split-driver-comparison) |
 | 2026-10-17 | [Qt-free code moves into libneurosuite-core, with tests; merge ranking fix](#2026-10-17--qt-free-code-moves-into-libneurosuite-core-with-tests-merge-ranking-fix) |
 | 2026-10-17 | [neurosuite-3 3.1.0: a version contract with fiber-kit and ndm plugins](#2026-10-17--neurosuite-3-310-a-version-contract-with-fiber-kit-and-ndm-plugins) |
@@ -64,6 +65,45 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-17 — Core fixes: long tokens and groups, resolveAny order, int16 saturation, deterministic t-SNE; old resolver removed
+
+<details>
+<summary>Details</summary>
+
+Known issues C3–C6 and C8–C10 in `CORE_API.md` §5 are fixed; each fix has a
+shared-table row or a unit test that fails on the old code.
+
+- **Method tokens with a long order.** An `S`/`C` order longer than 9 digits
+  (`stderiv_C1234567890`) makes the token opaque. The C++ parser overflowed
+  `int`; C++, Python, bash and fiber-kit now agree (`custody_vectors.tsv`).
+- **`parseAnchor`: long or non-ASCII groups.** A group longer than 9 digits
+  threw from `std::stoi`; it is now "not an anchor" in every mirror. Python
+  no longer accepts non-ASCII digits (`٣`), and bash reads `007` as 7, not as
+  octal.
+- **`resolveAny` picks the same copy everywhere.** With several methods'
+  copies present, the first in byte order of the file name wins, not the first
+  the filesystem lists. bash no longer matches a dotted middle
+  (`res.x.y.5`).
+- **An out-of-range `.eap` class is refused** by `template_generate` (it read
+  outside the matrix).
+- **Decollide output saturates to int16** instead of wrapping.
+- **t-SNE gives the same embedding on any number of threads**: the
+  normalising sum is added in point order.
+- **One `classForUnit`** in `templateclass.hpp`; `staleAfterRealign` (and its
+  Python twin) and two unused drift helpers removed.
+- **`neurofileio::resolveInput` / `preferDerived` / `preferCanonical`
+  removed.** Their last caller, Klusters' spike-realign dialog, reported the
+  PCA basis NOT FOUND for a suffixed stderiv session (`.pca.stderiv_C5.N`)
+  that the realign itself found. The dialog now resolves through custody, as
+  the realign does. (Not compiled here: no Qt.)
+- `contract.yaml`: the contract number is bumped only when the protocol, the
+  session schema or a format changes; a table change shows in its hash.
+
+fiber-kit 0.44.1 carries the same token bound, eap-class check and
+saturation.
+
+</details>
 
 ## 2026-10-17 — kiloklustakwik: heap overflow and -PriorFile fixes; KK_chunked.cpp split; driver comparison
 
