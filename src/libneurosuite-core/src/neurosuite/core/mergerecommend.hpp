@@ -74,6 +74,10 @@ inline std::vector<double> mrPercentileRanks(const std::vector<double>& v,
     std::sort(idx.begin(), idx.end(), [&](std::size_t x, std::size_t y){
         return bestIsHigh ? (v[x] > v[y]) : (v[x] < v[y]);
     });
+    // Every value equal: the metric abstains (all 1), as documented above.  The
+    // tie walk below would give them the middle rank, 0.5, which as the smaller
+    // witness in min(errorRank, overlapRank) vetoes every pair instead.
+    if (v[idx.front()] == v[idx.back()]) return out;
 
     // Walk runs of equal value so ties get the same rank.
     std::size_t i = 0;

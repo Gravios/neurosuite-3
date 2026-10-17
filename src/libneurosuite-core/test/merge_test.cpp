@@ -55,6 +55,8 @@ int main() {
         check(r.size() == 3 && r[1] == 1.0 && r[2] == 0.5 && r[0] == 0.0, "ranks: best 1, worst 0");
         const auto t = nm::mrPercentileRanks({2.0, 2.0, 1.0}, true);
         check(t[0] == t[1] && t[0] > t[2], "ties share their rank");
+        const auto f = nm::mrPercentileRanks({4.0, 4.0, 4.0}, true);
+        check(f[0] == 1.0 && f[1] == 1.0 && f[2] == 1.0, "no spread: every rank 1 (the metric abstains)");
     }
 
     // ── mrRecommendMerges ──────────────────────────────────────────────────
@@ -87,6 +89,14 @@ int main() {
         check(only13 && sel[0].a == 12, "restrictTo keeps pairs with a selected member, ranked over all pairs");
         const auto floor = nm::mrRecommendMerges(ids, errAt, ov, 10, 0.05, 0.99);
         check(floor.size() == 1, "qualityFloor keeps only pairs at or above it");
+
+        // When one witness cannot tell the pairs apart it abstains, and the
+        // other decides: equal overlaps leave the error ranking in charge.
+        auto flat = [](int a, int b, double& o) { (void)a; (void)b; o = 0.5; return true; };
+        const auto byError = nm::mrRecommendMerges(ids, errAt, flat, 10, 0.05, 0.9);
+        check(byError.size() == 1 && byError[0].a == 10 && byError[0].b == 11,
+              "equal overlaps: the error witness alone passes the best pair at floor 0.9 ("
+                  + std::to_string(byError.size()) + ")");
     }
 
     if (fails) { std::printf("%d check(s) failed\n", fails); return 1; }
