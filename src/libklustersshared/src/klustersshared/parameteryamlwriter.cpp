@@ -7,6 +7,8 @@
 #include "parameteryamlreader_probes.h"  // writeProbesSection, ProbeEntry
 #include "yamlformat.h"                  // emitWithLayout
 
+#include <neurosuite/core/version_contract.hpp>   // kSessionSchema
+
 #include <QDebug>
 #include <QFile>
 #include <QDir>
@@ -86,7 +88,7 @@ ParameterYamlWriter::ParameterYamlWriter()
     // yaml-cpp 0.8: chained operator[] on a new map creates sub-maps in-place
     // only when the intermediate node is fetched as a live reference first.
     YAML::Node params = doc["parameters"];
-    params["version"] = "1.0";
+    params["version"] = neurosuite::contract::kSessionSchema;
     params["version"].SetTag("!");   // a string: written '1.0', not the number 1.0
     params["creator"] = "ndManager-yaml";
 }
@@ -115,7 +117,7 @@ bool ParameterYamlWriter::setBaseDocument(const QString& path)
     // The version/creator header is only filled in where the file lacks it:
     // like ParameterYamlModifier, a save does not restamp what it did not model.
     YAML::Node params = mapAt(doc, "parameters");
-    if (!params["version"]) { params["version"] = "1.0"; params["version"].SetTag("!"); }
+    if (!params["version"]) { params["version"] = neurosuite::contract::kSessionSchema; params["version"].SetTag("!"); }
     if (!params["creator"]) params["creator"] = "ndManager-yaml";
     return true;
 }

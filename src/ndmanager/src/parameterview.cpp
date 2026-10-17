@@ -66,6 +66,8 @@
 #include "parametertree.h"
 #include "plugincategory.h"
 
+#include <neurosuite/core/version_contract.hpp>   // plugin protocol, format versions
+
 using namespace ndmanager;
 
 const QString ParameterView::DEFAULT_COLOR = "#0080ff";
@@ -589,7 +591,8 @@ void ParameterView::discoverPlugins() {
     // not run `--ndm-describe` on arbitrary ndm_* binaries), skip any plugin declaring a protocol newer
     // than this build understands, then hand `--ndm-describe`'s YAML to the same DescriptionYamlReader /
     // loadProgram path used for installed descriptions, adding any not already loaded.
-    const int kNdmProtocol = 1;          // highest ndm-plugin protocol this build understands
+    // highest ndm-plugin protocol this build understands (contract.yaml, plugin_protocol)
+    const int kNdmProtocol = neurosuite::contract::kNdmPluginProtocol;
 
     auto runPluginCmd = [](const QString &exePath, const QString &arg, QByteArray *out) -> bool {
         QProcess proc;
@@ -612,6 +615,7 @@ void ParameterView::discoverPlugins() {
     QSet<QString> tried;
     int added = 0;
     int skipped = 0;
+    int formatWarned = 0;
     for (const QString &dirPath : dirs) {
         const QFileInfoList entries = QDir(dirPath).entryInfoList(
             QStringList() << QStringLiteral("ndm_*"), QDir::Files | QDir::Executable);
@@ -641,6 +645,19 @@ void ParameterView::discoverPlugins() {
                     .arg(exe).arg(proto).arg(kNdmProtocol);
                 continue;
             }
+
+            // A plugin may list the versions of the file formats it reads and
+            // writes ("format <name> <read> <write>").  One this build cannot
+            // read, or that cannot read what this build writes, is still loaded,
+            // with a warning.
+            const std::vector<std::string> mismatches = neurosuite::contract::formatMismatches(
+                neurosuite::contract::formats(),
+                neurosuite::contract::parseNdmVersion(vout.toStdString()).formats);
+            for (const std::string &m : mismatches)
+                qWarning().noquote() << QStringLiteral("ndm discovery: %1: %2")
+                    .arg(exe, QString::fromStdString(m));
+            if (!mismatches.empty())
+                ++formatWarned;
 
             QByteArray out;
             if (!runPluginCmd(fi.absoluteFilePath(), QStringLiteral("--ndm-describe"), &out)
@@ -672,6 +689,9 @@ void ParameterView::discoverPlugins() {
             QString msg = tr("Discovered %1 ndm_* plugin(s) on $PATH").arg(added);
             if (skipped > 0)
                 msg += tr("; skipped %1 with a newer protocol").arg(skipped);
+            if (formatWarned > 0)
+                msg += tr("; %1 with file-format versions this build does not match "
+                          "(details on the console)").arg(formatWarned);
             mw->statusBar()->showMessage(msg, 4000);
         }
 }

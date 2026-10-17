@@ -6,6 +6,8 @@
 #include "channelcolors.h"
 #include "yamlformat.h"   // emitWithLayout
 
+#include <neurosuite/core/version_contract.hpp>   // kSessionSchema
+
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
@@ -67,7 +69,7 @@ bool ParameterYamlModifier::writeToFile(const QString& path)
 {
     // Ensure the version/creator header is present (needed for new files)
     if (!root["parameters"]) {
-        root["parameters"]["version"] = "1.0";
+        root["parameters"]["version"] = neurosuite::contract::kSessionSchema;
         root["parameters"]["version"].SetTag("!");  // a string: '1.0', not 1.0
         root["parameters"]["creator"] = "neuroscope-3";
     }
