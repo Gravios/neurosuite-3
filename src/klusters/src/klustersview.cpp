@@ -911,19 +911,15 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
 
         QMouseEvent* mouseEvent = dynamic_cast<QMouseEvent*>(event);
         if(mouseEvent->button() == Qt::RightButton){
-            // A right press that the input registry binds (e.g. Shift+Right ->
-            // app.radialMenu, or Right -> cluster.lassoUndoVertex while a lasso is
-            // being drawn) belongs to that command: let it through to the view, whose
-            // mousePressEvent resolves it via dispatchInput.  This filter runs first,
-            // so without this check the Sort Clusters popup below shadowed every
-            // registry-bound right-click.  Unbound right presses keep the popup.
-            if(auto* w = qobject_cast<QWidget*>(object)){
-                input::Ctx ctx;
-                ctx.view  = w;
-                ctx.event = event;
-                if(input::registry().resolve(input::chordFromEvent(event), ctx))
-                    return DockArea::eventFilter(object,event);
-            }
+            // A right press that the input registry binds (Right -> app.radialMenu,
+            // or Right -> cluster.lassoUndoVertex while a lasso is being drawn, which
+            // outranks it) belongs to that command, so run it here.  Dispatching from
+            // the filter rather than passing the press on means every view that carries
+            // this filter gets it, including those whose mousePressEvent never consults
+            // the registry (TraceWidget).  Unbound right presses keep the Sort Clusters
+            // popup below (e.g. after app.radialMenu is rebound away from Right).
+            if(auto* w = qobject_cast<QWidget*>(object))
+                if(input::dispatch(w, event)) return true;
             // The lineage overlay (Shift+E) owns the right-click while it is engaged:
             // its own context menu adds drift/adapt/collision nodes and splits/commits
             // the region.  This filter runs BEFORE ClusterView::mousePressEvent, so

@@ -74,7 +74,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 <details>
 <summary>Details</summary>
 
-- **Shift+Right-click** in a view opens a hierarchical radial menu: the root
+- **Right-click** in a view opens a hierarchical radial menu: the root
   actions on a ring around the cursor, and each group's actions on the next
   ring out when hovered (up to four rings). It supports press-drag-release
   (pick by direction in one motion) and click mode, and Esc backs out one ring.
@@ -85,10 +85,16 @@ Each entry is folded — click **Details** to expand it. Newest first.
   Clusters (with Sort Clusters as a third ring), Recluster, Undo, Redo,
   Hierarchy, Displays. The chord is the app-scope command `app.radialMenu`, so
   it appears in Preferences ▸ Input and Help ▸ Shortcuts and can be rebound.
-  Plain Right-click keeps its existing meanings.
-- Built on Qt 6.4.2; the widget's ring layout, hit-testing, disabled-leaf
-  refusal, hub cancel and screen-edge clamp were exercised offscreen. Not yet
-  tried on a real desktop or the reference session.
+  Right while drawing a lasso still removes the last vertex, and the engaged
+  lineage overlay keeps its own menu. Rebound away from Right, plain
+  Right-click opens the older Sort Clusters list again.
+- Fix: the views' right-click filter (`KlustersView::eventFilter`) opened Sort
+  Clusters for every right press and swallowed it, so the radial menu never
+  appeared. It now runs any registry-bound right press itself.
+- Tested in the running app on Xvfb (Qt 6.4.2) with a synthetic session and
+  real mouse input: cluster, waveform and correlogram views, flick and click
+  picks, lasso undo-vertex. Not yet tried on a real desktop or the reference
+  session; the lineage-overlay case is by code reading.
 
 </details>
 

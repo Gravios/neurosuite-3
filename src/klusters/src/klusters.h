@@ -765,7 +765,7 @@ private:
      *  Called from eventFilter for the ported cluster-view keys (Shift+O/E, F, A). */
     bool tryViewKeyCommand(QKeyEvent* ke, bool shortcutOverride);
 
-    // Radial context menu (proof of concept, radialmenu.h): Shift+Right-click in a view
+    // Radial context menu (proof of concept, radialmenu.h): Right-click in a view
     // (rebindable: app.radialMenu) opens a hierarchical ring menu over a curated tree of
     // the existing actions.  Both built lazily on the first popup.
     RadialMenu* mRadialMenu = nullptr;

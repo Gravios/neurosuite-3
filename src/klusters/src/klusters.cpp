@@ -2823,21 +2823,25 @@ void KlustersApp::registerInputBindings()
         reg.addCommand(c);
     }
 
-    {   // Shift+Right-click — the radial context menu (proof of concept,
-        // klusters_radialmenu.cpp).  App scope, so it resolves on a press in every view
-        // that funnels presses through dispatchInput (cluster, waveform, correlation,
-        // trace, error matrix ...).  Exact modifiers: plain Right keeps its view-local
-        // meanings (lasso undo-vertex, lineage overlay menu).  The popup opens during the
-        // press, so press-drag-release picks in one motion.
+    {   // Right-click — the radial context menu (proof of concept,
+        // klusters_radialmenu.cpp).  App scope: KlustersView's event filter dispatches
+        // right presses on every view.  Plain Right's view-local meanings keep
+        // priority: the lasso undo-vertex lives in a higher (ToolMode) scope, and the
+        // lineage overlay keeps its own menu via enabled() below.  The popup opens
+        // during the press, so press-drag-release picks in one motion.
         input::Command c;
         c.id       = QStringLiteral("app.radialMenu");
         c.scopeId  = QStringLiteral("app");
         c.label    = tr("Radial context menu");
         c.category = tr("Menus");
         c.kind     = input::Kind::Action;
-        c.defaultChord = input::Chord::button(Qt::RightButton, Qt::ShiftModifier);
+        c.defaultChord = input::Chord::button(Qt::RightButton);
         c.enabled  = [](const input::Ctx& ctx){
-            return ctx.event && ctx.event->type() == QEvent::MouseButtonPress;
+            if (!ctx.event || ctx.event->type() != QEvent::MouseButtonPress) return false;
+            // The engaged lineage overlay owns the right-click (its node / boundary /
+            // region menu, ClusterView::showLineageContextMenu).
+            const auto* cv = qobject_cast<ClusterView*>(ctx.view);
+            return !(cv && cv->lineageOverlayActive());
         };
         c.invoke   = [this](const input::Ctx& ctx){
             const auto* me = static_cast<QMouseEvent*>(ctx.event);

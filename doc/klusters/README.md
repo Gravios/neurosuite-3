@@ -200,8 +200,10 @@ The window is divided into:
 
 ### Radial context menu (experimental)
 
-**Shift+Right-click** in a view (cluster, waveform, correlogram, trace, error
-matrix) opens a ring menu centred on the cursor. The root ring holds Tools,
+**Right-click** in a view (cluster, waveform, correlogram, trace, the curation
+matrices) opens a ring menu centred on the cursor. Two right-clicks keep their
+own meaning: while a lasso is being drawn, Right still removes the last point,
+and with the lineage overlay engaged it opens the overlay's menu. The root ring holds Tools,
 Clusters, Recluster, Undo, Redo, Hierarchy and Displays; hovering a group opens
 its actions as the next ring out (Clusters ▸ Sort Clusters is a third ring).
 Each wedge is the menu-bar action itself, so a greyed wedge is an action that is
@@ -213,7 +215,9 @@ full name and shortcut of the wedge under the cursor.
 - **Cancel:** release or click in the hub, click outside, or press Esc (Esc
   first closes the outermost ring).
 
-The chord is `app.radialMenu` in **Preferences ▸ Input** and can be rebound. On
+The chord is `app.radialMenu` in **Preferences ▸ Input** and can be rebound
+(for example to Shift+Right); plain Right-click then opens the older Sort
+Clusters list again. On
 an X11 desktop without a compositor the corners around the rings may show as
 black instead of transparent.
 

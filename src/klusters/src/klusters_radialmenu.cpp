@@ -1,9 +1,10 @@
 /***************************************************************************
     klusters_radialmenu.cpp
     -----------------------
-    KlustersApp radial context menu (proof of concept).  Shift+Right-click in
-    any view that routes its presses through the input registry opens a
-    RadialMenu (radialmenu.h) centred on the cursor.  The command is
+    KlustersApp radial context menu (proof of concept).  Right-click in any
+    view opens a RadialMenu (radialmenu.h) centred on the cursor; KlustersView's
+    event filter dispatches the press, and the lasso undo-vertex and the
+    lineage overlay keep their own right-click.  The command is
     app.radialMenu, so it is listed and rebindable in Preferences ▸ Input and
     shown in Help ▸ Shortcuts like every other binding.
 
