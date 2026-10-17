@@ -47,9 +47,16 @@ write_basic_package_version_file(
 add_subdirectory(src)
 
 # ---------------------------------------------------------------------------
-# Regression tests (custody policy conformance) — built only with NS_BUILD_TESTS.
+# Regression tests — built only with NS_BUILD_TESTS.  A standalone configure
+# of this directory enables testing itself (the monorepo root does it there).
 # ---------------------------------------------------------------------------
+if(NOT DEFINED NS_BUILD_TESTS)
+    option(NS_BUILD_TESTS "Build the regression test suite (run with ctest)" OFF)
+endif()
 if(NS_BUILD_TESTS)
+    if(PROJECT_IS_TOP_LEVEL)
+        enable_testing()
+    endif()
     add_subdirectory(test)
 endif()
 

@@ -175,13 +175,22 @@ add_test(NAME core_test_pca_method_conformance
          COMMAND core_test_pca_method_conformance
                  "${CMAKE_CURRENT_SOURCE_DIR}/pca_method_vectors.tsv")
 
+# contract.yaml (repository root) against version_contract.hpp, and the format
+# writers and readers against the versions it names.
+add_executable(core_test_contract contract_test.cpp)
+target_compile_features(core_test_contract PRIVATE cxx_std_20)
+target_include_directories(core_test_contract PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_contract PRIVATE Neurosuite::core)
+add_test(NAME core_test_contract
+         COMMAND core_test_contract "${CMAKE_CURRENT_SOURCE_DIR}/../../../contract.yaml")
+
 # Run the Python mirror (ndm_resolve_io) against the SAME vectors, so the C++
 # and Python implementations are kept in lock-step by `ctest`.
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
     add_test(NAME custody_conformance_python
              COMMAND ${Python3_EXECUTABLE}
-                     "${CMAKE_SOURCE_DIR}/src/ndmanager-plugins/test/test_custody_conformance.py")
+                     "${CMAKE_CURRENT_SOURCE_DIR}/../../ndmanager-plugins/test/test_custody_conformance.py")
 endif()
 
 # Run the bash mirror (ndm_custody) against the SAME vectors, completing the
@@ -190,20 +199,24 @@ find_program(BASH_PROGRAM bash)
 if(BASH_PROGRAM)
     add_test(NAME custody_conformance_bash
              COMMAND ${BASH_PROGRAM}
-                     "${CMAKE_SOURCE_DIR}/src/ndmanager-plugins/test/test_custody_conformance.sh"
+                     "${CMAKE_CURRENT_SOURCE_DIR}/../../ndmanager-plugins/test/test_custody_conformance.sh"
                      "${CMAKE_CURRENT_SOURCE_DIR}/custody_vectors.tsv")
 endif()
 
-# The vector tables above are shared, byte for byte, with fiber-kit.  Given a
-# fiber-kit checkout (-DNS_FIBER_KIT_ROOT=/path/to/fiber-kit), ctest compares
-# the two copies; CI checks fiber-kit out next to this repository for it.
+# The vector tables above are shared, byte for byte, with fiber-kit, and
+# contract.yaml records their hashes.  core_shared_contract always checks the
+# tables against those hashes; given a fiber-kit checkout
+# (-DNS_FIBER_KIT_ROOT=/path/to/fiber-kit) it also compares the two copies and
+# the two contract.yaml files.  CI checks fiber-kit out next to this repository.
 set(NS_FIBER_KIT_ROOT "" CACHE PATH
-    "fiber-kit checkout whose shared vector tables core_shared_contract compares (empty: not registered)")
-if(Python3_Interpreter_FOUND AND NS_FIBER_KIT_ROOT)
+    "fiber-kit checkout core_shared_contract compares against (empty: local checks only)")
+if(Python3_Interpreter_FOUND)
     add_test(NAME core_shared_contract
              COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_shared_contract.py")
-    set_tests_properties(core_shared_contract PROPERTIES
-        ENVIRONMENT "FK_ROOT=${NS_FIBER_KIT_ROOT}")
+    if(NS_FIBER_KIT_ROOT)
+        set_tests_properties(core_shared_contract PROPERTIES
+            ENVIRONMENT "FK_ROOT=${NS_FIBER_KIT_ROOT}")
+    endif()
 endif()
 
 # Every core header must compile inside a Qt translation unit, where Qt defines

@@ -524,7 +524,7 @@ WtiIndex readWti(const std::string& path)
             // The first non-blank, non-comment line MUST be "wti <version>".
             if (key != "wti") return WtiIndex{};
             int ver = 0;
-            if (!(ls >> ver) || (ver != 1 && ver != 2)) return WtiIndex{};  // v1 + v2 implemented
+            if (!(ls >> ver) || ver < 1 || ver > kWtiVersion) return WtiIndex{};
             idx.version = ver;
             haveHeader = true;
             continue;
@@ -563,7 +563,7 @@ bool writeWti(const std::string& path, const WtiIndex& idx)
     // lineage parent; otherwise v1, byte-identical to pre-v2 output.
     bool anyParent = false;
     for (const WtiRow& r : idx.rows) if (r.parent >= 0) { anyParent = true; break; }
-    const int ver = anyParent ? 2 : 1;
+    const int ver = anyParent ? kWtiVersion : 1;
     out << "wti " << ver << "\n";
     out << "nSamples "   << idx.nSamples   << "\n";
     out << "nChannels "  << idx.nChannels  << "\n";
@@ -635,7 +635,7 @@ WtlForest readWtl(const std::string& path)
             // The first non-blank, non-comment line MUST be "wtl <version>".
             if (key != "wtl") return WtlForest{};
             int ver = 0;
-            if (!(ls >> ver) || (ver != 1 && ver != 2)) return WtlForest{};  // v1 (spikes) + v2 (summary)
+            if (!(ls >> ver) || ver < 1 || ver > kWtlVersion) return WtlForest{};  // v1 (spikes), v2 (summary)
             f.version = ver;
             haveHeader = true;
             continue;
@@ -694,7 +694,7 @@ bool writeWtl(const std::string& path, const WtlForest& f)
 {
     std::ofstream out(path);
     if (!out) return false;
-    out << "wtl 2\n";                               // always the current (summary) version
+    out << "wtl " << kWtlVersion << "\n";             // always the current (summary) version
     out << "nSamples " << f.nSamples << "\n";
     out << "nChannels " << f.nChannels << "\n";
     out << "nNodes " << f.nodes.size() << "\n";
@@ -748,7 +748,7 @@ EapFile readEap(const std::string& path)
 
     unsigned char magic[4] = {0, 0, 0, 0};
     in.read(reinterpret_cast<char*>(magic), 4);
-    if (!in || magic[0] != 'E' || magic[1] != 'A' || magic[2] != 'P' || magic[3] != 0x01)
+    if (!in || magic[0] != 'E' || magic[1] != 'A' || magic[2] != 'P' || magic[3] != kEapVersion)
         return e;
     uint32_t nSpikes = 0, nClasses = 0, group = 0, flags = 0;
     auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };
@@ -789,7 +789,7 @@ bool writeEap(const std::string& path, int64_t nSpikes, int nClasses, int group,
         return false;                                       // not a whole N×T matrix
     std::ofstream out(path, std::ios::binary);
     if (!out) return false;
-    const unsigned char magic[4] = {'E', 'A', 'P', 0x01};
+    const unsigned char magic[4] = {'E', 'A', 'P', static_cast<unsigned char>(kEapVersion)};
     out.write(reinterpret_cast<const char*>(magic), 4);
     const uint32_t hs = static_cast<uint32_t>(nSpikes), hc = static_cast<uint32_t>(nClasses),
                    hg = static_cast<uint32_t>(group),   hf = flags;
@@ -892,7 +892,7 @@ TclRegistry readTcl(const std::string& path)
         if (!haveHeader) {
             std::istringstream hs(line);
             std::string key; int ver = 0;
-            if (!(hs >> key >> ver) || key != "tcl" || ver != 1) return TclRegistry{};
+            if (!(hs >> key >> ver) || key != "tcl" || ver < 1 || ver > kTclVersion) return TclRegistry{};
             reg.version = ver; haveHeader = true; continue;
         }
         // nClasses header line (space-separated) vs a col row (TAB-separated).
@@ -968,7 +968,7 @@ bool writeTcl(const std::string& path, const TclRegistry& reg)
 TclRegistry initTcl(int nClasses)
 {
     TclRegistry reg;
-    reg.version = 1;
+    reg.version = kTclVersion;
     reg.nClasses = (nClasses < 0) ? 0 : nClasses;
     reg.entries.resize(static_cast<std::size_t>(reg.nClasses));
     for (int i = 0; i < reg.nClasses; ++i) {

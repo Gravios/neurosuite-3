@@ -34,6 +34,17 @@
 
 namespace neurofileio {
 
+// ── Versions of the version-tagged formats ─────────────────────────────────
+// The highest version each reader accepts; a reader takes every version from 1
+// up to it.  The writers write this version, except .wti, which writes v1 when
+// no row has a lineage parent (writeWti).  contract.yaml at the repository root
+// records them, and core_test_contract holds the two together.  A format
+// change bumps the constant here and the contract (doc/dev/RECIPES.md §2.5).
+inline constexpr int kWtiVersion = 2;   // "wti <v>"; v2 adds the parent column
+inline constexpr int kWtlVersion = 2;   // "wtl <v>"; v2 stores node summaries
+inline constexpr int kTclVersion = 1;   // "tcl <v>"
+inline constexpr int kEapVersion = 1;   // 4th byte of the 'E','A','P' magic
+
 // ── .clu.N ────────────────────────────────────────────────────────────────
 struct CluFile {
     int              nClusters = 0;  ///< value on the header line
@@ -346,7 +357,7 @@ struct WtlNode {
     std::vector<float> std;            ///< running std  waveform (nSamples*nChannels, empty when count==0)
 };
 struct WtlForest {
-    int                  version   = 2;
+    int                  version   = kWtlVersion;
     int                  nSamples  = 0;  ///< waveform geometry stamped in the v2 header (0 = unknown)
     int                  nChannels = 0;
     std::vector<WtlNode> nodes;          ///< file order (a tree root precedes its leaves by convention)
@@ -435,7 +446,7 @@ struct TclEntry {
     int          mergedInto    = -1;    ///< survivor column when status==Merged, else -1
 };
 struct TclRegistry {
-    int                   version  = 1;
+    int                   version  = kTclVersion;
     int                   nClasses = 0;
     std::vector<TclEntry> entries;      ///< size nClasses, indexed by col
     bool                  ok = false;
