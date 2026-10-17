@@ -27,7 +27,7 @@ int RunVBGMM(const float* data, int* labels, int K_init,
 
 // Top-K eigenpairs of a symmetric D x D matrix by power iteration with
 // deflation (defined in KK_vbgmm.cpp).  Used by RunPhase2bMode3Chunk
-// (KK_chunked.cpp) to seed mode-3 residual-covariance splits.
+// (KK_phase2b_mode3.cpp) to seed mode-3 residual-covariance splits.
 void TopKEigenPowerDeflation(std::vector<double>& A, int D, int K,
                              int maxIter, double relTol,
                              std::vector<double>& V, std::vector<double>& eigvals);
