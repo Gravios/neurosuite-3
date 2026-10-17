@@ -101,12 +101,12 @@ decollide_eap.hpp ─── decollide.hpp, templateclass.hpp, neurofileio.h
 projectionscope.hpp ─── neurofileio.h
 drift_partition.hpp ─── neurofileio.h, running_stats.hpp
 template_generate.hpp ─── neurofileio.h, custody.hpp, running_stats.hpp
-spike_extract.hpp ─── stderiv_transform.hpp ─── pca_projection.hpp (for SdiffOrder)
+spike_extract.hpp ─── stderiv_transform.hpp ─── pca_projection.hpp (for SdiffOrder), channel_expr.hpp
 version_contract.hpp ─── neurofileio.h, pca_projection.hpp
 dipsplit.hpp, watershed2d.hpp ─── std only
 tsne_embed.hpp, oblique_embed.hpp, waveformiou.hpp, mergerecommend.hpp ─── std only (tsne_embed: OpenMP if the includer uses it)
 spectral/*.h (static target Neurosuite::spectral) ─── std only (+ optional FFTW, CUDA, OpenMP)
-custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp ─── std only
+custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp, channel_expr.hpp ─── std only
 ```
 
 ---
@@ -684,6 +684,39 @@ Two witnesses, the symmetrised error-matrix probability and the envelope IOU, ar
 
 **Consumers.** Klusters `mergerecommendview.cpp`, `mergerecommendthread.{h,cpp}`. **Test.** `core_test_merge`.
 
+### 3.21 `channel_expr.hpp` — custom spatial patterns as expressions (order 6)
+
+Namespace `neurosuite::core`. Header-only, std only. The expression form of `sdiffPairs` (spatial order 6, method `stderiv_C6`): one arithmetic expression per output channel, in channel order, over the group's channels `c0`, `c1`, …
+
+```cpp
+struct ChannelExpr {                       // one output channel, compiled to postfix
+    static constexpr int kMaxDepth = 64, kMaxNest = 64;
+    static constexpr double kLimit = 1e9;
+    std::vector<Ins> code; int maxChan = -1; int depth = 0; std::string text;
+    template <class Get> double eval(Get x) const;            // x(i): channel i's value
+};
+struct ChannelExprSet {                    // one group's pattern: output k = exprs[k]
+    std::vector<ChannelExpr> exprs; int maxChan = -1;
+    int size() const; bool empty() const;
+    bool fits(int nChan, std::string* why = nullptr) const;
+    double eval(int out, const double* row) const;            // compact row of the group
+    template <class Get> double eval(int out, Get x) const;   // any accessor
+};
+bool isChannelExprSpec(const std::string& spec);              // names a channel cN
+bool parseChannelExpr(const std::string& element, ChannelExpr& out, std::string* error = nullptr);
+bool parseChannelExprs(const std::string& spec, ChannelExprSet& out, std::string* error = nullptr);
+```
+
+**Grammar.** The header's file comment gives it in full: `+ - * /`, `^` (right-associative, binding tighter than a unary sign, so `-c0^2` is `-(c0^2)`), parentheses, decimal and exponent numbers read independently of the C locale, ASCII blanks anywhere between tokens, `c`/`C` followed by digits for a channel. Every element must name a channel; there is no implicit multiplication; signs and parentheses nest at most `kMaxNest` deep and a program needing more than `kMaxDepth` stack slots is refused. `parseChannelExprs` splits on commas (the grammar has none inside an element) and stops at the first bad element, with `error` naming its index, the problem and the column.
+
+**Evaluation.** `eval` runs the postfix program in a fixed stack, so it allocates nothing per sample. A result that is not finite (division by zero, an overflowing power) is 0, and one beyond ±`kLimit` is held there, so no caller's integer conversion can overflow; the transform then rounds and saturates to int16 like every other order. The accessor form lets a compact row, a strided interleaved frame and a channel-major window share one evaluator.
+
+**Fit.** `fits(nChan)` holds when there is exactly one expression per channel and none names a channel past `nChan − 1`; `why` says which rule failed. `stderiv_transform.hpp` checks it per group and treats a set that does not fit as absent (all-pairs), as for the other custom orders; the extractor refuses such a group with the `why` text.
+
+`isChannelExprSpec` tells the expression form from the older ones (`a-b,…`, `a-b+c,…`), which use bare positions and no letters; `libklustersshared/sdiff_pairs.h` uses it to route a spec, and converts the older forms to the expressions they compute.
+
+**Consumers.** `stderiv_transform.hpp` (`SdiffOrder::Expr`, so every user of the transform); `libklustersshared/sdiff_pairs.h`; `process_extractspikes_stderiv`. **Mirror:** fiber-kit `fiber_stderiv.ChannelExpr` / `parse_sdiff_exprs`. **Tests.** `core_test_sdiff_expr` and fiber-kit's `test_sdiff_expr.py`, both on `sdiff_expr_vectors.tsv` (§4.3). The grammar as a user writes it is in [spike-detection.md](../../../doc/ndmanager-plugins/commands/spike-detection.md#expressions-order-6).
+
 ---
 
 ## 4. Tests
@@ -820,7 +853,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | C9 | `drift_partition.hpp` | `detail::timeOf` and `detail::medianTime`, unused, are **removed**. Still open: `regrainForest` flattens any deeper tree (a leaf's child is re-parented to the region root) and turns a non-drift root (`parent < 0`, kind not `drift*`) into a child of region 0. |
 | C10 | `custody.hpp` `staleAfterRealign` | **Removed**, with its Python twin `stale_after_realign`: nothing called either (`ndm_alignspikes` names `.fet`/`.pca` itself). naming.md states the rule. |
 | C11 | `test/CMakeLists.txt` | **Resolved.** The core tests asked for `cxx_std_17` while the directory sets `CMAKE_CXX_STANDARD 20`, so they never proved the C++17 compatibility the docs claimed. Nothing needed C++17 (the plugins build as C++20 too), so the claim was dropped and the tests declare `cxx_std_20`; `build_invariants` keeps the tree on one standard. |
-| C21 | `channel_expr.hpp` | Has no section in §3. Its file comment is the reference for the API; the grammar as a user writes it is in [spike-detection.md](../../../doc/ndmanager-plugins/commands/spike-detection.md#expressions-order-6), and the table that pins it is `sdiff_expr_vectors.tsv` (§4.3). |
+| C21 | `channel_expr.hpp` | **Fixed.** It had no section in §3; it is §3.21. |
 | C22 | `dipsplit.hpp` `valley_test` | An isolated sample in a tail makes its own small KDE peak, and the valley next to it scores as deep because depth is measured against the smaller peak. A plain Gaussian sample of 4000 points scores depth ≈ 0.6. The callers add other gates (bloat, BIC, minimum sizes), and the behaviour is unchanged from both former copies; a peak-height floor would change kiloklustakwik's splits and needs checking on the reference sessions first. |
 | C23 | `tsne_embed.hpp` | **Fixed.** The header said identical seeds give bit-identical output, but with OpenMP the normaliser Z was a reduction whose partial sums were added in finishing order, so runs on several threads differed. Each point's share is now stored and summed in index order: the result equals the old one-thread result, on any number of threads. `core_test_embed` compares 1 and several threads. |
 
