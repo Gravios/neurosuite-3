@@ -32,6 +32,7 @@
 #define RADIALMENU_H
 
 #include <QList>
+#include <QHash>
 #include <QPointer>
 #include <QPointF>
 #include <QWidget>
@@ -49,6 +50,10 @@ public:
     /** The tree to show (not owned).  May be changed between popups. */
     void setMenu(QMenu* root);
     QMenu* menu() const;
+
+    /** A shorter wedge label for @p action (the QAction's own text, shown in
+     *  the menu bar, is left alone).  An empty @p text clears it. */
+    void setLabel(const QAction* action, const QString& text);
 
     /** Show the menu centred on @p globalPos.  When a mouse button is down at
      *  this moment the press-drag-release gesture is armed. */
@@ -82,6 +87,7 @@ private:
     static QList<QAction*> visibleActions(const QMenu* m);
     static int  treeDepth(const QMenu* m, int level = 1);
     static QString plainText(const QAction* a);
+    QString labelFor(const QAction* a) const;
 
     Ring  makeRing(const QMenu* m, double parentMid, double parentStep, int ringIndex) const;
     double innerRadius(int ringIndex) const;
@@ -102,6 +108,7 @@ private:
     bool dragged = false;       ///< the cursor has left the hub since opening
     bool clickPressed = false;  ///< click mode: a press landed inside the widget
     QAction* lastHovered = nullptr;
+    QHash<const QAction*, QString> labels;   ///< setLabel() overrides
 };
 
 #endif // RADIALMENU_H

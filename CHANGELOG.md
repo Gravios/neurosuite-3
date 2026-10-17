@@ -82,8 +82,9 @@ Each entry is folded — click **Details** to expand it. Newest first.
   the existing `QAction`: enabled and checked state, icons and shortcuts are
   the live ones. Hidden actions and submenus they leave empty are skipped.
 - The tree (`klusters_radialmenu.cpp`) reuses menu-bar actions: Tools,
-  Clusters (with Sort Clusters as a third ring), Recluster, Undo, Redo,
-  Hierarchy, Displays. The chord is the app-scope command `app.radialMenu`, so
+  Clusters, Recluster, Undo, Redo, Hierarchy, Sort. Sort holds the Actions ▸
+  Sort Clusters entries under short wedge labels (`RadialMenu::setLabel`; the
+  menu bar keeps the full names and the status bar shows them on hover). The chord is the app-scope command `app.radialMenu`, so
   it appears in Preferences ▸ Input and Help ▸ Shortcuts and can be rebound.
   Right while drawing a lasso still removes the last vertex, and the engaged
   lineage overlay keeps its own menu. Rebound away from Right, plain

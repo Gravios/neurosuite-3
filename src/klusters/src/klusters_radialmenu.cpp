@@ -47,7 +47,6 @@ void KlustersApp::buildRadialMenuTree()
     add(clusters, mDeleteNoisy);
     add(clusters, mGroupeClusters);
     add(clusters, mPurgeSmallClusters);
-    if (mClusterSortMenu) clusters->addMenu(mClusterSortMenu);   // third ring
 
     QMenu* recluster = mRadialMenuTree->addMenu(tr("Recluster"));
     add(recluster, mReCluster);
@@ -69,18 +68,35 @@ void KlustersApp::buildRadialMenuTree()
     add(hierarchy, mDissolveParent);
     add(hierarchy, mDropChildNoise);
 
-    QMenu* displays = mRadialMenuTree->addMenu(tr("Displays"));
-    add(displays, newClusterDisplay);
-    add(displays, newWaveformDisplay);
-    add(displays, newCrosscorrelationDisplay);
-    add(displays, mNewTraceDisplay);
+    // The Actions ▸ Sort Clusters entries under short wedge labels (the menu
+    // bar keeps the full names; the status bar shows them on hover).  Hidden
+    // or missing entries drop out like any other.
+    QMenu* sort = mRadialMenuTree->addMenu(tr("Sort"));
+    const struct { QAction* action; const char* label; } sortEntries[] = {
+        { mReorderClustersBySimilarity,       QT_TR_NOOP("Similarity") },
+        { mSortClustersBySpikeCount,          QT_TR_NOOP("Count") },
+        { mSortClustersByTime,                QT_TR_NOOP("Time") },
+        { mSortClustersByContamination,       QT_TR_NOOP("Contam.") },
+        { mSortClustersBySnr,                 QT_TR_NOOP("SNR") },
+        { mSortClustersByAmplitude,           QT_TR_NOOP("Amplitude") },
+        { mSortClustersByAmplitudeByChannel,  QT_TR_NOOP("Amp. / channel") },
+        { mSortClustersByErrorPval,           QT_TR_NOOP("Error p") },
+        { mSortByResidualGated,               QT_TR_NOOP("Residual") },
+        { mSortByWaveformNN,                  QT_TR_NOOP("Waveform NN") },
+        { mSortByWaveformSpectral,            QT_TR_NOOP("Spectral") },
+    };
+    for (const auto& e : sortEntries) {
+        if (!e.action) continue;
+        sort->addAction(e.action);
+        mRadialMenu->setLabel(e.action, tr(e.label));
+    }
 }
 
 void KlustersApp::showRadialMenu(const QPoint& globalPos)
 {
     if (!mRadialMenu) {
-        buildRadialMenuTree();
         mRadialMenu = new RadialMenu(this);
+        buildRadialMenuTree();               // also sets the Sort wedges' short labels
         mRadialMenu->setMenu(mRadialMenuTree);
         // The wedge labels are short; the status bar carries the full name + shortcut.
         connect(mRadialMenu, &RadialMenu::hovered, this, [this](QAction* a) {

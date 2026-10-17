@@ -204,8 +204,10 @@ The window is divided into:
 matrices) opens a ring menu centred on the cursor. Two right-clicks keep their
 own meaning: while a lasso is being drawn, Right still removes the last point,
 and with the lineage overlay engaged it opens the overlay's menu. The root ring holds Tools,
-Clusters, Recluster, Undo, Redo, Hierarchy and Displays; hovering a group opens
-its actions as the next ring out (Clusters ▸ Sort Clusters is a third ring).
+Clusters, Recluster, Undo, Redo, Hierarchy and Sort; hovering a group opens
+its actions as the next ring out. Sort holds the Actions ▸ Sort Clusters entries
+under short labels (Count, Time, SNR, Spectral, …); the status bar shows each
+one's full name.
 Each wedge is the menu-bar action itself, so a greyed wedge is an action that is
 unavailable right now, a dot marks a checked tool, and the status bar shows the
 full name and shortcut of the wedge under the cursor.

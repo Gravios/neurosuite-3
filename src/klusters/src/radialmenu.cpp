@@ -97,6 +97,20 @@ int RadialMenu::treeDepth(const QMenu* m, int level)
     return deepest;
 }
 
+void RadialMenu::setLabel(const QAction* action, const QString& text)
+{
+    if (!action) return;
+    if (text.isEmpty()) labels.remove(action);
+    else labels.insert(action, text);
+    update();
+}
+
+QString RadialMenu::labelFor(const QAction* a) const
+{
+    const auto it = labels.constFind(a);
+    return it != labels.constEnd() ? it.value() : plainText(a);
+}
+
 QString RadialMenu::plainText(const QAction* a)
 {
     // Drop mnemonic markers ("&Split" -> "Split") but keep a literal "&&" as "&".
@@ -445,7 +459,7 @@ void RadialMenu::paintEvent(QPaintEvent*)
                 box.setTop(box.top() + is + 3.0);
             }
             p.setPen(!a->isEnabled() ? textOff : ((isHover && !onPath) ? textHi : text));
-            p.drawText(box, Qt::AlignHCenter | Qt::AlignVCenter | Qt::TextWordWrap, plainText(a));
+            p.drawText(box, Qt::AlignHCenter | Qt::AlignVCenter | Qt::TextWordWrap, labelFor(a));
         }
     }
 
