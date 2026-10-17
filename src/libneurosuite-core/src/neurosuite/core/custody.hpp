@@ -62,7 +62,13 @@ struct MethodSpec {
 };
 
 // Peel one <letter><digits> suffix off the end of @p m, if the LAST underscore
-// introduces one.  Returns false and leaves @p m alone otherwise.
+// introduces one.  Returns false and leaves @p m alone otherwise.  The value is
+// accumulated only while it fits: with more than kMaxOrderDigits digits it is
+// -1 (the caller rejects it), instead of overflowing int.
+// An order (or lag+dims) longer than this is malformed: it makes the whole token
+// opaque in all four parsers (custody_vectors.tsv, method_token).
+inline constexpr std::string::size_type kMaxOrderDigits = 9;
+
 inline bool peelSuffix(std::string& m, char& letter, int& value)
 {
     const std::string::size_type u = m.rfind('_');
@@ -70,10 +76,12 @@ inline bool peelSuffix(std::string& m, char& letter, int& value)
     const std::string suffix = m.substr(u + 1);
     if (suffix.size() < 2) return false;
     int val = 0;
+    const bool fits = suffix.size() - 1 <= kMaxOrderDigits;
     for (std::string::size_type i = 1; i < suffix.size(); ++i) {
         if (suffix[i] < '0' || suffix[i] > '9') return false;
-        val = val * 10 + (suffix[i] - '0');
+        if (fits) val = val * 10 + (suffix[i] - '0');
     }
+    if (!fits) val = -1;
     letter = suffix[0];
     value  = val;
     m      = m.substr(0, u);
@@ -94,8 +102,9 @@ inline bool peelSuffix(std::string& m, char& letter, int& value)
 // the grammar's documented behaviour for a malformed token applied to a token
 // that is not malformed, only newer.
 //
-// An unrecognised suffix (a letter other than S, C or D), a repeated one, or a
-// _D without exactly two digits or with lag 0 makes the WHOLE string opaque --
+// An unrecognised suffix (a letter other than S, C or D), a repeated one, an order
+// longer than kMaxOrderDigits (9), or a _D without exactly two digits or with
+// lag 0 makes the WHOLE string opaque --
 // family = the token, no kind, no lag -- deliberately: a token nobody understands
 // must not masquerade as a known family.  (Peeling stops quietly, keeping what
 // was peeled, only at a part that is not _<char><digits> at all.)  The four mirrors --
@@ -129,6 +138,7 @@ inline MethodSpec parseMethodToken(const std::string& m)
             sawDims = true;
         } else if (letter == 'S' || letter == 'C') {
             if (sawKind) return opaque;                   // repeated
+            if (digits.size() > kMaxOrderDigits) return opaque;   // order does not fit
             spec.kind  = letter;
             spec.order = value;
             sawKind = true;

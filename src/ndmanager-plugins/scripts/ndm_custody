@@ -145,9 +145,10 @@ ndm_parse_method_token() {
     #
     # Only an _<char><digits> part is peeled; anything else ends the peeling and
     # keeps what was peeled.  A part with an unknown letter, a repeated kind or
-    # lag, or a _D without exactly two digits or with lag 0 makes the WHOLE token
-    # opaque, as parseMethodToken (custody.hpp) and parse_method_token
-    # (ndm_resolve_io.py) do (custody_vectors.tsv, method_token / waveform_token).
+    # lag, an order longer than 9 digits, or a _D without exactly two digits or
+    # with lag 0 makes the WHOLE token opaque, as parseMethodToken (custody.hpp)
+    # and parse_method_token (ndm_resolve_io.py) do (custody_vectors.tsv,
+    # method_token / waveform_token).
     while : ; do
         case "$rest" in *_*) ;; *) break ;; esac
         suf="${rest##*_}"
@@ -159,7 +160,7 @@ ndm_parse_method_token() {
                     return 0
                 fi
                 NDM_M_LAG="${suf:1:1}"; NDM_M_DIMS="${suf:2:1}" ;;
-            S|C) if [ -n "$NDM_M_KIND" ]; then
+            S|C) if [ -n "$NDM_M_KIND" ] || [ ${#suf} -gt 10 ]; then   # repeated, or order > 9 digits
                     NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
                     return 0
                 fi

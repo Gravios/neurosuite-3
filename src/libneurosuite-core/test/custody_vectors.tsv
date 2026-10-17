@@ -113,6 +113,11 @@ method_token	stderiv_D34_C5	stderiv	C	5
 method_token	stderiv_C123	stderiv	C	123
 method_token	stderiv_C007	stderiv	C	7
 method_token	stderiv_C٣	stderiv_C٣		
+# An order longer than 9 digits is malformed (it would overflow a 32-bit int in
+# C++), so the whole token is opaque; 9 digits is the longest order accepted.
+method_token	stderiv_C123456789	stderiv	C	123456789
+method_token	stderiv_C1234567890	stderiv_C1234567890		
+method_token	stderiv_S99999999999999999999	stderiv_S99999999999999999999		
 # -- waveform_token: the waveform space of a feature-space token -------------
 #   waveform_token  <token>  <waveform token>
 # A _D<lag><dims> token names features over the waveforms of the token without
@@ -132,6 +137,7 @@ waveform_token	stderiv_X1_D34	stderiv_X1_D34
 waveform_token	stderiv_D34_D21	stderiv_D34_D21
 waveform_token	stderiv_foo_D34	stderiv_foo
 waveform_token	foo_D34	foo
+waveform_token	stderiv_C1234567890_D34	stderiv_C1234567890_D34
 # -- drops_last: does a spatial order leave a channel PCA drops? -------------
 #   drops_last  <order>  <0|1>
 # 1 and 3 are rank deficient; 4's root output is redundant; 5 drops by

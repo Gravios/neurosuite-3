@@ -199,7 +199,7 @@ def parse_method_token(method):
                 return MethodSpec(method, None, None, 0, 0)
             lag, dims = int(suffix[1]), int(suffix[2])
         elif suffix[0] in ("S", "C"):
-            if kind:
+            if kind or len(suffix) - 1 > 9:   # repeated, or an order longer than 9 digits
                 return MethodSpec(method, None, None, 0, 0)
             kind, order = suffix[0], int(suffix[1:])
         else:
