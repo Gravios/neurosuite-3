@@ -82,6 +82,16 @@ Each entry is folded — click **Details** to expand it. Newest first.
   one helper on `core/spike_extract.hpp`, the code Klusters re-extracts with;
   `SpikeWindowSpec::temporalDiff = false` gives sdiff's spatial-only
   transform. Every other `.spk` byte is unchanged (39 regression runs).
+- **Fix: `process_extractspikes` read overlapping windows late.** Its
+  detection run's waveform pass reads the `.fil` forward; a window starting
+  before the previous one ended (two spikes closer than the waveform length,
+  in any groups) was read from the current position instead, and the error
+  carried on to later windows: 4.5 % of waveforms wrong at the default
+  threshold on a synthetic session, nearly all of them with a low threshold.
+  The `.res` was right. The pipeline discards this `.spk` (`ndm_extractspikes`
+  re-cuts it), but `ndm_redetectspikes` merges it into the session's `.spk`:
+  re-extract after a redetection. `ndm_test_extract_alignment` checks every
+  row of the three extractors' output against its `.res` time.
 - **`process_extractspikes` uses the shared peak-search and argument
   helpers** too. Fixed on the way: a trailing empty electrode group
   (`-c 0,1,2,3:`) aborted the run (a `delete[]` on stack memory); the
