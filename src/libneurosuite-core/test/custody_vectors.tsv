@@ -197,6 +197,12 @@ resolve_any	res.sdiff_S2.5	res	5		sess.res.sdiff_S2.5	1
 resolve_any	spk.stderiv_C5.5	spk	5		sess.spk.stderiv_C5.5	1
 # a known token still beats an arbitrary one
 resolve_any	res.stderiv_C5.5,res.standard.5	res	5		sess.res.standard.5	1
+# several other tagged copies: the first in byte order of the file name wins
+# (not the filesystem's listing order, nor the locale's collation: 'S' < 's')
+resolve_any	res.stderiv_C5.5,res.stderiv_C4.5	res	5		sess.res.stderiv_C4.5	1
+resolve_any	res.stderiv_C5.5,res.Stderiv_C9.5	res	5		sess.res.Stderiv_C9.5	1
+# a dotted middle part is not a bare token and is never resolved to
+resolve_any	res.x.y.5	res	5		sess.res.standard.5	0
 # untagged legacy name is the last resort, after every tagged copy
 resolve_any	res.5	res	5		sess.res.5	1
 resolve_any	res.5,res.stderiv_C5.5	res	5		sess.res.stderiv_C5.5	1

@@ -31,6 +31,7 @@
 #ifndef NEUROSUITE_CUSTODY_HPP
 #define NEUROSUITE_CUSTODY_HPP
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -431,8 +432,10 @@ inline Resolved resolve(const std::string& base, const std::string& type,
 // including any suffixed token, which no fixed list can enumerate.
 //
 // Order: preferred method, then standard / stderiv / sdiff, then any other
-// method-tagged copy present in the directory, then the untagged legacy name.
-// Mirrors ndm_resolve_any in ndm_custody; keep the two in step.
+// method-tagged copy present in the directory -- the first in byte order of the
+// file name, so the answer does not depend on the filesystem's listing order --
+// then the untagged legacy name.  Mirrors ndm_resolve_any (ndm_custody) and
+// resolve_any (ndm_resolve_io.py, fiber-kit neuro_io); custody_vectors.tsv.
 inline Resolved resolveAny(const std::string& base, const std::string& type,
                            int group, const std::string& preferred = std::string())
 {
@@ -454,6 +457,7 @@ inline Resolved resolveAny(const std::string& base, const std::string& type,
     const std::string suffix = "." + std::to_string(group);
     const fs::path dir = bp.has_parent_path() ? bp.parent_path() : fs::path(".");
     std::error_code ec;
+    std::vector<std::string> names;   // every match; the first in byte order wins
     for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
         const std::string name = it->path().filename().string();
         if (name.size() <= stem.size() + suffix.size())               continue;
@@ -462,7 +466,13 @@ inline Resolved resolveAny(const std::string& base, const std::string& type,
         const std::string m = name.substr(stem.size(),
                                           name.size() - stem.size() - suffix.size());
         if (m.empty() || m.find('.') != std::string::npos) continue;  // not a bare token
-        r.path = it->path().string(); r.method = m; r.found = true;
+        names.push_back(name);
+    }
+    if (!names.empty()) {
+        const std::string name = *std::min_element(names.begin(), names.end());
+        r.path   = (dir / name).string();
+        r.method = name.substr(stem.size(), name.size() - stem.size() - suffix.size());
+        r.found  = true;
         return r;
     }
 
