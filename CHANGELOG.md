@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-17 | [Reference files for the template-library formats; one copy of the extractor helpers; plugins configure on their own](#2026-10-17--reference-files-for-the-template-library-formats-one-copy-of-the-extractor-helpers-plugins-configure-on-their-own) |
 | 2026-10-17 | [Core fixes: long tokens and groups, resolveAny order, int16 saturation, deterministic t-SNE; old resolver removed](#2026-10-17--core-fixes-long-tokens-and-groups-resolveany-order-int16-saturation-deterministic-t-sne-old-resolver-removed) |
 | 2026-10-17 | [kiloklustakwik: heap overflow and -PriorFile fixes; KK_chunked.cpp split; driver comparison](#2026-10-17--kiloklustakwik-heap-overflow-and--priorfile-fixes-kk_chunkedcpp-split-driver-comparison) |
 | 2026-10-17 | [Qt-free code moves into libneurosuite-core, with tests; merge ranking fix](#2026-10-17--qt-free-code-moves-into-libneurosuite-core-with-tests-merge-ranking-fix) |
@@ -65,6 +66,39 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-17 — Reference files for the template-library formats; one copy of the extractor helpers; plugins configure on their own
+
+<details>
+<summary>Details</summary>
+
+- **Reference files for `.wti`/`.wtf`/`.wtl`/`.eap`/`.tcl`**
+  (`src/libneurosuite-core/test/golden/`, shared byte for byte with
+  fiber-kit, hashes in `contract.yaml`). `golden.*` are written by the C++
+  writers, `fk.*` by fiber-kit's `neuro_io`. `core_test_golden_formats`
+  checks that the C++ writers still produce `golden.*` and reads every file
+  field by field, including fiber-kit's v1 `.wtl`; fiber-kit's
+  `test_golden_formats.py` does the mirror image. RECIPES §2.1 says how to
+  regenerate them.
+- **Fix: `.wtl` running means and stds keep full float precision.** They were
+  written with 6 significant digits, so every save rounded them
+  (1234.5678 → 1234.57). Now the shortest text that reads back as the same
+  float. Found by the reference-file test.
+- **One copy of the extractor helpers.** `process_extractspikes_sdiff` and
+  `process_extractspikes_stderiv` shared 338 identical lines (peak search,
+  refractory rule, `-c` parsing, argument checks). They are now in
+  `src/ndmanager-plugins/src/extractspikes_common/extractspikes_detect.h`.
+  Old and new binaries give byte-identical `.res`/`.spk` in 25 runs on a
+  synthetic session.
+- **ndmanager-plugins configure on their own** (`cmake -S
+  src/ndmanager-plugins`). The plugin CMake files assumed the monorepo root
+  was the top-level project; standalone configure failed. BUILD.md §5.
+- **CORE_API §3.21** documents `channel_expr.hpp` (C21).
+
+fiber-kit 0.45.0: the same reference files, `neuro_io.read_mti` /
+`read_mtf` for the committed template model, `doc/` merged into `docs/`.
+
+</details>
 
 ## 2026-10-17 — Core fixes: long tokens and groups, resolveAny order, int16 saturation, deterministic t-SNE; old resolver removed
 
