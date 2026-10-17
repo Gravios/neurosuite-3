@@ -617,7 +617,7 @@ A static library of its own, beside the `neurosuite-core` shared library, becaus
 
 ### 3.17 `tsne_embed.hpp` — Barnes-Hut t-SNE to 2-D
 
-Namespace `neurosuite::embed`. Header-only; OpenMP when the including target compiles with it. Moved from Klusters (`src/klusters/src/tsne_embed.{h,cpp}`) unchanged; bit-identical to the old code on one thread.
+Namespace `neurosuite::embed`. Header-only; OpenMP when the including target compiles with it. Moved from Klusters (`src/klusters/src/tsne_embed.{h,cpp}`); bit-identical to the old code on one thread, and since C23 the same on any number of threads.
 
 ```cpp
 struct TsneParams { int nIter = 500; double perplexity = 30; double theta = 0.5; unsigned seed = 42;
@@ -822,7 +822,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | C11 | `test/CMakeLists.txt` | **Resolved.** The core tests asked for `cxx_std_17` while the directory sets `CMAKE_CXX_STANDARD 20`, so they never proved the C++17 compatibility the docs claimed. Nothing needed C++17 (the plugins build as C++20 too), so the claim was dropped and the tests declare `cxx_std_20`; `build_invariants` keeps the tree on one standard. |
 | C21 | `channel_expr.hpp` | Has no section in §3. Its file comment is the reference for the API; the grammar as a user writes it is in [spike-detection.md](../../../doc/ndmanager-plugins/commands/spike-detection.md#expressions-order-6), and the table that pins it is `sdiff_expr_vectors.tsv` (§4.3). |
 | C22 | `dipsplit.hpp` `valley_test` | An isolated sample in a tail makes its own small KDE peak, and the valley next to it scores as deep because depth is measured against the smaller peak. A plain Gaussian sample of 4000 points scores depth ≈ 0.6. The callers add other gates (bloat, BIC, minimum sizes), and the behaviour is unchanged from both former copies; a peak-height floor would change kiloklustakwik's splits and needs checking on the reference sessions first. |
-| C23 | `tsne_embed.hpp` | The header says identical seeds give bit-identical output. That holds on one thread only: with OpenMP, the parallel reduction of the normalisation term Z sums in a different order each run, so the embedding differs slightly (seen with 4 threads on every input tried). Unchanged by the move. |
+| C23 | `tsne_embed.hpp` | **Fixed.** The header said identical seeds give bit-identical output, but with OpenMP the normaliser Z was a reduction whose partial sums were added in finishing order, so runs on several threads differed. Each point's share is now stored and summed in index order: the result equals the old one-thread result, on any number of threads. `core_test_embed` compares 1 and several threads. |
 
 **Found by the 2026-10-15 audit (all fixed)**
 

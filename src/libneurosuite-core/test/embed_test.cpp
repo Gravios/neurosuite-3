@@ -42,11 +42,6 @@ static double knnPurity(const std::vector<double>& xy, const std::vector<int>& l
 }
 
 int main() {
-#ifdef _OPENMP
-    // One thread: t-SNE repeats bit-identically only then (CORE_API C23), and
-    // the checks below should not depend on scheduling.
-    omp_set_num_threads(1);
-#endif
     std::mt19937 g(3);
     std::normal_distribution<double> N(0.0, 1.0);
 
@@ -72,10 +67,19 @@ int main() {
         const double ctrl = knnPurity(xy, shuffled);
         check(ctrl < 0.5, "shuffled labels: purity near chance (" + std::to_string(ctrl) + ")");
 
+        // The same seed gives the same embedding, whatever the thread count
+        // (CORE_API C23: the normaliser used to be an OpenMP reduction).
         std::vector<double> a, b;
+#ifdef _OPENMP
+        const int nThreads = omp_get_max_threads();
+        omp_set_num_threads(1);
+#endif
         ne::tsneEmbed2D(X, n, D, a, p);
+#ifdef _OPENMP
+        omp_set_num_threads(nThreads > 1 ? nThreads : 4);
+#endif
         ne::tsneEmbed2D(X, n, D, b, p);
-        check(a == b, "the same seed gives the same embedding (one thread)");
+        check(a == b, "the same seed gives the same embedding on 1 and on several threads");
 
         std::atomic<bool> cancel{true};
         std::vector<double> c;

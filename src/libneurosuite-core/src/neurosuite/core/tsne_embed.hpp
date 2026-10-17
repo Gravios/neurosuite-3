@@ -438,6 +438,7 @@ inline bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
     std::vector<double> uY(static_cast<size_t>(N) * 2, 0.0);
     std::vector<double> gains(static_cast<size_t>(N) * 2, 1.0);
     std::vector<double> grad(static_cast<size_t>(N) * 2, 0.0);
+    std::vector<double> zPer(static_cast<size_t>(N), 0.0);   // per-point share of Z
     const double theta2 = params.theta * params.theta;
 
     QuadTree qt;
@@ -447,18 +448,23 @@ inline bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
 
         qt.init(Y.data(), N);
 
-        // Repulsive pass (Barnes-Hut) — thread-local Z, reduced after.
-        double Z = 0.0;
+        // Repulsive pass (Barnes-Hut).  Each point's share of the normaliser Z
+        // is stored and summed afterwards in index order: an OpenMP reduction
+        // adds the threads' partial sums in whatever order they finish, so the
+        // embedding differed slightly from run to run on more than one thread.
+        // The serial sum is the one the one-thread reduction computed.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic, 128) reduction(+:Z)
+#pragma omp parallel for schedule(dynamic, 128)
 #endif
         for (int i = 0; i < N; ++i) {
             double fx = 0, fy = 0, zi = 0;
             qt.forces(i, theta2, fx, fy, zi);
             grad[static_cast<size_t>(2 * i)]     = -fx;   // repulsion stored negative;
             grad[static_cast<size_t>(2 * i) + 1] = -fy;   // normalised and combined below
-            Z += zi;
+            zPer[static_cast<size_t>(i)] = zi;
         }
+        double Z = 0.0;
+        for (int i = 0; i < N; ++i) Z += zPer[static_cast<size_t>(i)];
         Z = std::max(Z, 1e-300);
 
         // Attractive pass over the sparse P.
