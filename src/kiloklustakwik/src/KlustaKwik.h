@@ -87,6 +87,17 @@ void TriSolve(const float *M, const float *x, float *Out, int D);
 void SaveOutput(const Array<int> &OutputClass);
 
 // ---- Parameters (defined in KlustaKwik.cpp) --------------------------------
+// Built-in defaults of the parameters an empirical prior (-PriorFile) may
+// replace.  KlustaKwik.cpp initialises the globals from these and
+// applyKKPrior (KK_prior.cpp) treats a parameter still at its default as
+// "not set", so the two cannot disagree.
+inline constexpr int   kDefaultMinClusters = 2;
+inline constexpr int   kDefaultMaxClusters = 200;
+inline constexpr float kDefaultMergeThresh = 0.0f;   // 0 = auto-calibrate (chi-square)
+inline constexpr float kDefaultPenaltyMix  = 0.0f;
+// True when MergeThresh was auto-calibrated from the data (it was 0), so it
+// still counts as a default for the prior.
+extern bool  MergeThreshAuto;
 extern char  FileBase[];
 extern char  Method[];        // chain-of-custody method tag (standard|sdiff|stderiv)
 extern int   ElecNo;

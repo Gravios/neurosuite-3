@@ -40,8 +40,8 @@ char HelpString[] =
 char  FileBase[STRLEN]       = "tetrode";
 char  Method[STRLEN]         = "standard";  // chain-of-custody: artifacts are <base>.<type>.<Method>.<elec>
 int   ElecNo                 = 1;
-int   MinClusters            = 2;
-int   MaxClusters            = 200;       // canonical jg05/eb05 sweep value
+int   MinClusters            = kDefaultMinClusters;
+int   MaxClusters            = kDefaultMaxClusters;   // canonical jg05/eb05 sweep value
 int   MaxPossibleClusters    = 500;       // ≈ 2.5× MaxClusters; hard cap on cluster ID space
 int   nStarts                = 1;
 int   ParallelK              = 0;    // 0 = serial; N = concurrent (K,start) workers
@@ -75,7 +75,7 @@ float RefineMergeThresh      = 0.0f;     // 0 = inherit from MergeThresh (auto-�
 float RefineSplitMinDepth    = 0.4f;     // DipSplit valley depth threshold
 int   RefineLockNoiseClu     = 1;        // never modify cluster ids 0 and 1
                                          // (artefact / MUA bins per neurosuite convention)
-float PenaltyMix             = 0.0f;
+float PenaltyMix             = kDefaultPenaltyMix;
 char  InitMethod[STRLEN]     = "farthest";  // "farthest" (default, deterministic),
                                             // "kmeans++" (D²-weighted random, useful
                                             // for diversifying nRuns), or "random"
@@ -89,7 +89,8 @@ float ChunkPreseedFraction   = 0.1f;    // fraction of spikes for Phase 0 presee
 char  ChunkFile[STRLEN]      = "";      // path to .chunks.N boundary file; overrides ChunkMinutes
 char  PreseedCacheFile[STRLEN] = "";    // path to preseed cache file; empty = disabled
 float SamplingRate           = 0.0f;    // samples/sec; auto-filled from YAML at startup
-float MergeThresh            = 0.0f;    // 0 = auto-calibrate to χ²(nDims, 0.99) at runtime
+float MergeThresh            = kDefaultMergeThresh;    // 0 = auto-calibrate to χ²(nDims, 0.99) at runtime
+bool  MergeThreshAuto        = false;   // set when MergeThresh was auto-calibrated
 int   GlobalMergeIter        = 0;       // Phase 6 warm-start EM iterations; 0 skips Phase 7 entirely
 int   SaveIntermediates      = 0;       // 0 = final-write only; 1 = also write per-phase .clu
 // Phase 1a waveform realignment parameters
@@ -1782,6 +1783,7 @@ int main(int argc, char **argv) {
                 1.0f - 2.0f / (9.0f * d) + 2.326347874f * std::sqrt(2.0f / (9.0f * d)),
                 3.0f);
             MergeThresh = t;
+            MergeThreshAuto = true;
             fprintf(stderr,
                     "[auto] MergeThresh = %.2f  (χ²(%d, 0.99); auto-calibrated "
                     "from .fet header%s)\n",

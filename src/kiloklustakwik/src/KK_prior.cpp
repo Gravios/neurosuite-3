@@ -131,12 +131,12 @@ KKPrior loadKKPrior(const char* path)
 // ---------------------------------------------------------------------------
 // applyKKPrior
 // ---------------------------------------------------------------------------
-// Compiled-default sentinel values.  A parameter equals its default when
-// it was not set on the command line, so it's safe to override from the prior.
-static constexpr int   kDefaultMinClusters = 2;
-static constexpr int   kDefaultMaxClusters = 10;
-static constexpr float kDefaultMergeThresh = 30.0f;
-static constexpr float kDefaultPenaltyMix  = 0.0f;
+// A parameter still at its built-in default (kDefault*, KlustaKwik.h) was not
+// set on the command line, so the prior may replace it.  These used to be
+// private copies here that had drifted from the real defaults (MaxClusters 10
+// against 200, MergeThresh 30 against 0 = auto): the prior never set either
+// unless the user happened to pass exactly those values, in which case it
+// overrode them.
 
 void applyKKPrior(const KKPrior& prior)
 {
@@ -168,7 +168,9 @@ void applyKKPrior(const KKPrior& prior)
     // per-pair calibration at runtime.  Here we set the global MergeThresh
     // as the calibrated median d_eff value, which acts as the floor for the
     // adaptive path and as the fallback when AdaptiveMerge=0.
-    if (MergeThresh == kDefaultMergeThresh &&
+    // MergeThresh's default is 0 = auto; by now main has replaced it with the
+    // chi-square value (MergeThreshAuto), which is still the default.
+    if ((MergeThreshAuto || MergeThresh == kDefaultMergeThresh) &&
         prior.merge_thresh_from_median_d_eff > 0.0f) {
         MergeThresh = prior.merge_thresh_from_median_d_eff;
         fprintf(stderr, "  MergeThresh  <- %.1f  (chi2(d_eff_median=%.1f, 0.9999))\n",
