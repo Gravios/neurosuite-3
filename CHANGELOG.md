@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-17 | [Recipes and canonical references; process_pca records the right input channel count; Qt build fix](#2026-10-17--recipes-and-canonical-references-process_pca-records-the-right-input-channel-count-qt-build-fix) |
 | 2026-10-16 | [One stderiv transform, one token rule: shared tables for both](#2026-10-16--one-stderiv-transform-one-token-rule-shared-tables-for-both) |
 | 2026-10-16 | [CI runs the tests and a lint job; HDF5 1.10 build fix; generated files removed](#2026-10-16--ci-runs-the-tests-and-a-lint-job-hdf5-110-build-fix-generated-files-removed) |
 | 2026-10-16 | [Build and docs: one C++ standard, standard test layout, how to run the tests](#2026-10-16--build-and-docs-one-c-standard-standard-test-layout-how-to-run-the-tests) |
@@ -60,6 +61,40 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-17 — Recipes and canonical references; process_pca records the right input channel count; Qt build fix
+
+<details>
+<summary>Details</summary>
+
+- **`doc/dev/RECIPES.md`.** One page that names the canonical reference
+  for each file format, shared rule and schema. It also gives step-by-step
+  recipes for the changes made most often:
+  - a row of a shared vector table;
+  - a PCAE method;
+  - a session-YAML section;
+  - an ndmanager plugin step.
+
+  Each recipe lists every file to touch and the test that proves the change.
+  Linked from CLAUDE.md, the Developer Guide, STANDARDIZATION.md and
+  tests/README.md.
+- **Drifted copies replaced by links.** `doc/libklustersshared/README.md`
+  carried an older `.probe` layout and an incomplete probe-library search
+  order. Both now point to `formats/probe.md` and `ndm_setupgroups.md`. Its
+  schema list gains `sourceRecording`, `probeLibraryPath` and `template`.
+  CORE_API.md §3.6 now lists `StderivExpr` (9) and `SdiffOrder::Expr` (6).
+- **`process_pca`** wrote `nInputChannels` one short for `--pca-method 7`
+  and `8` (custom pairs and sets). It now takes the dropped-channel rule
+  from `custody::sdiffDropsLastChannel`. Its usage text lists method 9.
+  `test_subset_pca` checks the header for methods 0 and 4–9.
+- **CI** also runs when only `doc/` or `templates/` change. The doc-link and
+  template checks read those directories.
+- **Qt build fix.** `channel_expr.hpp` had a method named `emit`, which is a
+  macro in every Qt translation unit, so Klusters failed to compile. It is
+  now `push`. A new ctest, `core_test_qt_keywords`, compiles every core header
+  with Qt's keyword macros defined.
+
+</details>
 
 ## 2026-10-16 — One stderiv transform, one token rule: shared tables for both
 
