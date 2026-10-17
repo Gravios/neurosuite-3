@@ -10,8 +10,8 @@
 // the first channel is at the top (image row 0 -> top). The returned QImage is
 // cols x rows; the view scales it to the plot rectangle.
 
-#include "colormap.h"
-#include "spectralengine.h"
+#include <neurosuite/spectral/colormap.h>
+#include <neurosuite/spectral/spectralengine.h>
 
 #include <QImage>
 

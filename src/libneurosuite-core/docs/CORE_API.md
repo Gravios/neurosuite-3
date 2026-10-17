@@ -104,6 +104,7 @@ template_generate.hpp ─── neurofileio.h, custody.hpp, running_stats.hpp
 spike_extract.hpp ─── stderiv_transform.hpp ─── pca_projection.hpp (for SdiffOrder)
 version_contract.hpp ─── neurofileio.h, pca_projection.hpp
 dipsplit.hpp, watershed2d.hpp ─── std only
+spectral/*.h (static target Neurosuite::spectral) ─── std only (+ optional FFTW, CUDA, OpenMP)
 custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp ─── std only
 ```
 
@@ -595,6 +596,25 @@ Histogram on a square grid over the points' bounding box, Gaussian smoothing, lo
 **Consumers.** Klusters `klustersdoc_watershed.cpp` (watershed split), `klusters.cpp` (live preview).
 **Test.** `core_test_watershed2d`.
 
+### 3.16 `neurosuite/spectral/` — multitaper spectral estimation (`Neurosuite::spectral`)
+
+A static library of its own, beside the `neurosuite-core` shared library, because it brings optional FFTW (real FFTs at any size), CUDA (cuFFT backend) and OpenMP with it. Without them it uses an in-tree radix-2 FFT and a CPU backend that runs serially. Moved from NeuroScope (`src/neuroscope/src/spectral/`) unchanged, so that it builds and is tested without Qt; its namespace is still `neuroscope::spectral`. Link `Neurosuite::spectral` and include `<neurosuite/spectral/…>`.
+
+| Header | What it gives |
+|---|---|
+| `dpss.h` | `computeDpss(N, NW, K)`: DPSS (Slepian) tapers and their eigenvalues |
+| `multitaper.h` | `multitaperPsd`, `multitaperSpectrogram`, `psdFrequencies`; cross-channel `commonWhiten` (ZCA), `commonAverageReference`, `referenceRegress` |
+| `spectralfft.h`, `realfft.h` | `RealFftPlan` (FFTW when available, else radix-2), `fftwAvailable()` |
+| `decimate.h` | `decimationFactor`, `decimate` (anti-aliased) |
+| `spectralengine.h` | `SpectralEngine`: the two display images (band power across channels; one channel's spectrogram), with taper and result caching; `SpectralParams`, `SpectralImage` |
+| `chunkcache.h` | `SpectralChunkCache`: background fill of engine results by time chunk (`std::thread`) |
+| `colormap.h` | colormaps for the images |
+| `spectralwindow.h` | the spectral view's time window from the trace window (centring, clamping) |
+| `spectralgpu.h` (+ `spectralgpu.cu` / `spectralgpu_cpu.cpp`, `spectralgpu_kernels.h`) | the CUDA backend, or a stub that declines |
+
+**Consumers.** NeuroScope's spectral view (`spectralview.{h,cpp}`, `spectralinspector.cpp`) and its Qt rendering layer `neuroscope-spectral-render` (`src/neuroscope/src/spectral/`, test `neuroscope_spectral_render_test`).
+**Test.** `core_test_spectral` (formerly `neuroscope_spectral_selftest`, which only ran when NeuroScope was configured).
+
 ---
 
 ## 4. Tests
@@ -621,6 +641,7 @@ ctest --test-dir build -R '^core_test_|custody_conformance'   # this library onl
 | `custody_conformance_bash` | `../../ndmanager-plugins/test/test_custody_conformance.sh` | — | same vectors against `ndm_custody` (registered only if bash is found) |
 | `core_test_stderiv_vectors` | `stderiv_vectors_test.cpp` | no | runs `stderiv_vectors.tsv` (argument) against `stderivSeed` + `applyStderivTransform`, out of place and in place; null seed = zero seed |
 | `core_shared_contract` | `test_shared_contract.py` | — | the shared tables match the hashes in `contract.yaml`; with `-DNS_FIBER_KIT_ROOT`, they are byte-identical to fiber-kit's and the two `contract.yaml` files agree |
+| `core_test_spectral` | `spectral_selftest.cpp` | `Neurosuite::spectral` | the multitaper library: FFT, DPSS, PSD and spectrogram, whitening, decimation, chunk cache, colormap, time window, against analytic values |
 | `core_test_dipsplit` | `dipsplit_test.cpp` | no | `dipsplit.hpp` on point sets with a known answer: valley depth for one and two modes, PCs and eigenvalues of an axis-aligned cloud, two-way k-means, BIC |
 | `core_test_watershed2d` | `watershed2d_test.cpp` | no | `watershed2d.hpp`: 1–3 blobs give 1–3 basins, each blob one basin; preview grid; degenerate input |
 | `core_test_contract` | `contract_test.cpp` | yes | `contract.yaml` (argument) equals `version_contract.hpp`; each format writer writes the version named and each reader rejects the next one; `parseNdmVersion`, `formatMismatches` |

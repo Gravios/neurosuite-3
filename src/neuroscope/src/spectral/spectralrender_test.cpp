@@ -2,7 +2,7 @@
 // does not require a QApplication. Exits non-zero on failure.
 
 #include "spectralrender.h"
-#include "spectralengine.h"
+#include <neurosuite/spectral/spectralengine.h>
 
 #include <QImage>
 #include <cstdio>

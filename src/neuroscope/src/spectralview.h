@@ -9,10 +9,10 @@
 #include "baseframe.h"
 #include "tracesprovider.h"
 
-#include "spectral/spectralengine.h"
+#include <neurosuite/spectral/spectralengine.h>
 #include "spectral/spectralrender.h"
-#include "spectral/colormap.h"
-#include "spectral/spectralwindow.h"
+#include <neurosuite/spectral/colormap.h>
+#include <neurosuite/spectral/spectralwindow.h>
 
 #include <QImage>
 #include <QList>

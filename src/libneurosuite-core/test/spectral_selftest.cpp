@@ -7,14 +7,14 @@
 // multitaper PSD Parseval normalisation and peak localisation for a pure
 // tone, white-noise flatness, and ZCA common-whitening of correlated data.
 
-#include "realfft.h"
-#include "dpss.h"
-#include "multitaper.h"
-#include "spectralengine.h"
-#include "chunkcache.h"
-#include "colormap.h"
-#include "spectralgpu_kernels.h"
-#include "spectralwindow.h"
+#include <neurosuite/spectral/realfft.h>
+#include <neurosuite/spectral/dpss.h>
+#include <neurosuite/spectral/multitaper.h>
+#include <neurosuite/spectral/spectralengine.h>
+#include <neurosuite/spectral/chunkcache.h>
+#include <neurosuite/spectral/colormap.h>
+#include <neurosuite/spectral/spectralgpu_kernels.h>
+#include <neurosuite/spectral/spectralwindow.h>
 
 #include <cmath>
 #include <cstdio>

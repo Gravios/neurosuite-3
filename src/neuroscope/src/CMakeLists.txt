@@ -54,7 +54,14 @@ set(_srcs
 
 qt_add_resources(_srcs neuroscope-icons.qrc neuroscope-keymaps.qrc)   # S6: bundled :/keymaps presets
 
-# Spectral DSP core (Qt-free static library; used by the spectral view).
+# The spectral view's rendering layer (Qt).  The DSP it renders is
+# Neurosuite::spectral, from libneurosuite-core.  The monorepo build has the
+# target already; a standalone neuroscope configure (against an installed
+# libklustersshared) builds it from the source tree, as it always did.
+if(NOT TARGET Neurosuite::spectral)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../libneurosuite-core/src/neurosuite/spectral"
+                     "${CMAKE_CURRENT_BINARY_DIR}/neurosuite-spectral")
+endif()
 add_subdirectory(spectral)
 
 # WIN32 suppresses the console window on Windows; no-op on Linux/macOS
@@ -66,7 +73,7 @@ target_include_directories(neuroscope PRIVATE
 
 target_link_libraries(neuroscope PRIVATE
     KlustersShared::klustersshared
-    neuroscope-spectral
+    Neurosuite::spectral
     neuroscope-spectral-render
     Qt6::Core
     Qt6::Gui

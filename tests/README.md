@@ -38,7 +38,7 @@ Test names start with their subproject, so `-R` selects a part:
 | `kk_test_` | kiloklustakwik | C++ compiler, OpenMP (GPU backends optional) |
 | `klustersshared_` | libklustersshared | Qt 6, yaml-cpp |
 | `klusters_test_` | klusters | Qt 6 |
-| `neuroscope_spectral_` | neuroscope | Qt 6 (to configure neuroscope) |
+| `neuroscope_spectral_render_test` | neuroscope | Qt 6 (the spectral DSP itself is `core_test_spectral`) |
 | `build_invariants` | the build system | CMake only |
 
 ```sh
@@ -49,7 +49,7 @@ ctest --test-dir build -R klustersshared_sessiontemplate --output-on-failure
 ### Without Qt (a fast loop)
 
 The core library, kiloklustakwik, ndmanager-plugins and the build-system checks
-configure without Qt or a GPU toolkit. That covers about 50 tests:
+configure without Qt or a GPU toolkit. That covers about 55 tests:
 
 ```sh
 cmake -B build-tests -S . -DNS_BUILD_TESTS=ON \
@@ -61,7 +61,7 @@ cmake --build build-tests --parallel
 ctest --test-dir build-tests --output-on-failure
 ```
 
-Add `-DNS_SKIP_NDMANAGER_PLUGINS=ON` to leave the plugins out (32 tests, a
+Add `-DNS_SKIP_NDMANAGER_PLUGINS=ON` to leave the plugins out (35 tests, a
 quicker build).
 
 The same `-DNS_BUILD_TESTS=ON` works for a standalone subproject configure

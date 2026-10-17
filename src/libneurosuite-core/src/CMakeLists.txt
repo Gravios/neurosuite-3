@@ -19,6 +19,10 @@ set(_core_srcs
     neurosuite/core/neurofileio.cpp)
 
 add_library(neurosuite-core SHARED ${_core_srcs})
+
+# The multitaper spectral library: a static target of its own (optional FFTW,
+# CUDA, OpenMP), see neurosuite/spectral/CMakeLists.txt.
+add_subdirectory(neurosuite/spectral)
 add_library(Neurosuite::core ALIAS neurosuite-core)
 
 # Emit the export side of the visibility macro while building the lib.
