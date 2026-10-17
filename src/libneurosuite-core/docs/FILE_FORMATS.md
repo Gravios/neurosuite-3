@@ -157,6 +157,8 @@ So the "1-based in one place, 0-based in another" tension is real but not an I/O
 
 These implement the EAP template-class model: a stable template-class id space that coexists with `.clu` and survives cluster-id churn. The design is in `claude/eap-template-class-design.md` and `claude/template-curation-plan.md`, but the **code is authoritative**; the design notes agree with it on every point checked below (including the 32 B `.eap` header, which the notes record as "fixed at 0559 — the 0558 writer emitted 28 B"). A template-class id **is its `.eap` column index** (`neurofileio.h:335-350`).
 
+Reference files for all five, written by the C++ writers and by fiber-kit's, are in `src/libneurosuite-core/test/golden/` and read by both sides' tests (`core_test_golden_formats`; RECIPES.md §2.1).
+
 ### 4.1 `.eap` — membership + offset matrix (binary `int8`)
 
 Little-endian; 32-byte header then an `nSpikes × nClasses` `int8` row-major body:

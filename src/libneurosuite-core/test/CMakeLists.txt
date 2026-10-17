@@ -32,6 +32,16 @@ target_include_directories(core_test_stderiv_vectors
 add_test(NAME core_test_stderiv_vectors
          COMMAND core_test_stderiv_vectors "${CMAKE_CURRENT_SOURCE_DIR}/stderiv_vectors.tsv")
 
+# Reference files for .wti/.wtf/.wtl/.eap/.tcl (test/golden/), written by the
+# C++ writers and read by fiber-kit too; contract.yaml records their hashes.
+add_executable(core_test_golden_formats golden_formats_test.cpp)
+target_compile_features(core_test_golden_formats PRIVATE cxx_std_20)
+target_include_directories(core_test_golden_formats
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_golden_formats PRIVATE Neurosuite::core)
+add_test(NAME core_test_golden_formats
+         COMMAND core_test_golden_formats "${CMAKE_CURRENT_SOURCE_DIR}/golden")
+
 add_executable(core_test_neurofileio_spk neurofileio_spk_test.cpp)
 target_compile_features(core_test_neurofileio_spk PRIVATE cxx_std_20)
 target_include_directories(core_test_neurofileio_spk

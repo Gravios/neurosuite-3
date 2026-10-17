@@ -116,6 +116,16 @@ case. A new table must also be added to the file list in both
 `test_shared_contract.py` scripts (neurosuite-3 and fiber-kit) and to
 `vectors:` in both `contract.yaml` files, or the copies are never compared.
 
+**Reference files for the template-library formats.** `test/golden/` (in both
+repositories) holds small `.wti`/`.wtf`/`.wtl`/`.eap`/`.tcl` files: `golden.*`
+written by the C++ writers, `fk.*` by fiber-kit's `neuro_io`. Each side's
+test reads all of them and checks that its own writers still produce its own
+files byte for byte: `core_test_golden_formats` here, `test/test_golden_formats.py`
+in fiber-kit. The content is spelled out in both tests. When a writer's output
+changes on purpose, regenerate (`core_test_golden_formats <dir> --write`, or
+`test_golden_formats.py --write`), copy the files to the other repository and
+record their new MD5s in both `contract.yaml` files, as for a table.
+
 ### 2.2 Add a PCAE method
 
 A PCAE `Method` value is stored in every `.pca` basis header. Readers in two
@@ -287,7 +297,7 @@ promises at the boundary:
 - `session_schema`: the `parameters.version` it writes;
 - `formats`: for each version-tagged format (`pca`, `wti`, `wtl`, `tcl`,
   `eap`), the highest version it reads and the version it writes;
-- `vectors`: the MD5 of each shared table.
+- `vectors`: the MD5 of each shared table and reference file.
 
 The code states the same values: in neurosuite-3, the constants in
 `core/version_contract.hpp`, `neurofileio.h` (`kWtiVersion`, `kWtlVersion`,
