@@ -144,6 +144,13 @@ static void test_eap_align()
     for (int i=0;i<4 && aligned;++i) if (s[i]!=want[i]) aligned=false;
     CHECK(aligned, "eap_align median is the offset-aligned peak [0,10,0,0]");
 
+    // An explicit class that is not a column of the .eap is refused (it used to
+    // read past the row).
+    Result Rbad = generate(times, {"standard"}, spk, "", nullptr, &e, {1}, p);
+    CHECK(!Rbad.ok && Rbad.err.find("not a column") != std::string::npos, "eap: class 1 of a 1-column .eap refused");
+    Result Rneg = generate(times, {"standard"}, spk, "", nullptr, &e, {-1}, p);
+    CHECK(!Rneg.ok, "eap: class -1 refused");
+
     // Cross-check: clu-mode on the SAME waveforms (no alignment) -> [0,5,5,0].
     std::vector<int> clu = {2,2};
     Params pc = p; pc.eap=false;

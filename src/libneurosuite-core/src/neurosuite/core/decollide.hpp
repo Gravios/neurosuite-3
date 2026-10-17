@@ -155,7 +155,9 @@ inline std::vector<OutRow> planGrow(
 // templates are the mean of that method's spk.  A constituent's waveform is the
 // mutual-subtraction clean1/clean2 (a missing template — not expected for real
 // basis units — degrades to the collision waveform, preserving row alignment).
-// Output int16, round-half-to-even (numpy rint).
+// Output int16, round-half-to-even (numpy rint), saturated to the int16 range: a
+// large amplitude subtracting an opposite-sign template can leave the range,
+// and a plain cast of such a value is undefined (fiber-kit's twin clips too).
 inline Grown applyMethod(
     const std::vector<int64_t>& res, const std::vector<int>& clu,
     const std::vector<int16_t>& spk, int nSamples, int nChannels,
@@ -201,8 +203,13 @@ inline Grown applyMethod(
                 roll0(mid, nSamples, nChannels, -d.c2.tau, out);
             }
         }
-        for (std::size_t j = 0; j < rec; ++j)
-            g.spk[o * rec + j] = static_cast<int16_t>(std::nearbyint(out[j]));
+        for (std::size_t j = 0; j < rec; ++j) {
+            const double v = std::nearbyint(static_cast<double>(out[j]));
+            g.spk[o * rec + j] = !(v == v)     ? int16_t(0)          // NaN
+                               : v >=  32767.0 ? int16_t( 32767)
+                               : v <= -32768.0 ? int16_t(-32768)
+                               : static_cast<int16_t>(v);
+        }
     }
     g.ok = true;
     return g;

@@ -126,6 +126,27 @@ int main()
         check(t1 && t2, "shifted apply: events land at det+tau1 / det+tau2");
     }
 
+    // ── an amplitude that drives the subtraction past int16 saturates instead
+    //    of wrapping (the cast of an out-of-range float was undefined) ─────────
+    {
+        std::vector<Decomp> ds;
+        const double big = 20000.0;
+        Decomp d; d.spikeIndex = 4; d.c1 = {2, 0, -big}; d.c2 = {3, 0, -big}; ds.push_back(d);
+        const Grown gb = applyMethod(res, clu, spk, NS, NC, ds);
+        bool sat = gb.ok, sawHigh = false;
+        for (std::size_t o = 0; sat && o < gb.res.size(); ++o) {
+            if (gb.res[o] != collTime || gb.clu[o] != 2) continue;   // constituent 1 = c + big*T3
+            for (std::size_t j = 0; j < REC(); ++j) {
+                const float want = static_cast<float>(collision[j]) + static_cast<float>(big) * static_cast<float>(T3[j]);
+                const double r = std::nearbyint(static_cast<double>(want));
+                const int16_t e = r >= 32767.0 ? int16_t(32767) : r <= -32768.0 ? int16_t(-32768) : static_cast<int16_t>(r);
+                sat = sat && gb.spk[o * REC() + j] == e;
+                sawHigh = sawHigh || e == 32767;
+            }
+        }
+        check(sat && sawHigh, "out-of-range constituent samples saturate to the int16 range");
+    }
+
     // ── missing template -> still grows (+1), constituents copy the collision;
     //    row alignment across methods is preserved regardless of templates ─────
     {

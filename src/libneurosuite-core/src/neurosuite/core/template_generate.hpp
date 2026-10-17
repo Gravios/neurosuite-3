@@ -244,6 +244,15 @@ inline Result generate(const std::vector<int64_t>&                       times,
                 if (any) units.push_back(j);
             }
         }
+        // An explicit class id is a column of the .eap; one outside it would read
+        // past the row (and, in the Python twin, a negative one would wrap to a
+        // column from the end).  Refuse it, as fiber_template.generate does.
+        for (int u : units)
+            if (u < 0 || u >= eapPtr->nClasses) {
+                R.err = "class " + std::to_string(u) + " is not a column of the .eap (0.."
+                      + std::to_string(eapPtr->nClasses - 1) + ")";
+                return R;
+            }
     } else {
         if (!clu || static_cast<int64_t>(clu->size()) != N) { R.err = "res/clu length mismatch"; return R; }
         if (units.empty()) {
