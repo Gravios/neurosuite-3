@@ -772,6 +772,12 @@ private:
     QMenu* mRadialMenuTree = nullptr;   ///< container only; holds the shared QActions
     void buildRadialMenuTree();
     void showRadialMenu(const QPoint& globalPos);
+    // The X / Y value wedges: the wheel over one steps the Parameters toolbar's
+    // dimension spinbox (dimensionX / dimensionY), so the scatter follows live.
+    QAction* mRadialDimX = nullptr;
+    QAction* mRadialDimY = nullptr;
+    void refreshRadialDimensions();
+    void showRadialStatus(QAction* a);
 
     // Plugins (descriptor discovery; read-only listing in v1).
     PluginRegistry mPluginRegistry;

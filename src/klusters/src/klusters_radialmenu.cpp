@@ -32,8 +32,8 @@ void KlustersApp::buildRadialMenuTree()
     mRadialMenuTree = new QMenu(this);
     auto add = [](QMenu* m, QAction* a) { if (a) m->addAction(a); };
 
-    // Clockwise from 12 o'clock.  A short root (7 wedges) keeps each direction
-    // distinct enough to flick without looking.
+    // Clockwise from 12 o'clock.  A short root (9 wedges, 40° each) keeps each
+    // direction distinct enough to flick without looking.
     QMenu* tools = mRadialMenuTree->addMenu(tr("Tools"));
     add(tools, mNewCluster);
     add(tools, mSplitClusters);
@@ -90,6 +90,48 @@ void KlustersApp::buildRadialMenuTree()
         sort->addAction(e.action);
         mRadialMenu->setLabel(e.action, tr(e.label));
     }
+
+    // The feature-space axes as value wedges: hover one and turn the wheel.  These
+    // two actions exist only here (the toolbar spinboxes are the menu-bar-side
+    // control); triggering them does nothing, and RadialMenu never picks them.
+    mRadialDimX = new QAction(tr("X axis feature dimension"), mRadialMenuTree);
+    mRadialDimY = new QAction(tr("Y axis feature dimension"), mRadialMenuTree);
+    for (QAction* a : { mRadialDimX, mRadialDimY }) {
+        mRadialMenuTree->addAction(a);
+        mRadialMenu->setAdjustable(a);
+    }
+}
+
+void KlustersApp::refreshRadialDimensions()
+{
+    if (!mRadialDimX || !dimensionX || !dimensionY) return;
+    // Live only where the toolbar shows the spinboxes (a display with a cluster view).
+    const bool live = dimensionXAction && dimensionXAction->isVisible()
+                   && dimensionX->isEnabled() && dimensionX->maximum() > 1;
+    mRadialDimX->setEnabled(live);
+    mRadialDimY->setEnabled(live);
+    mRadialMenu->setLabel(mRadialDimX, tr("X: %1").arg(dimensionX->value()));
+    mRadialMenu->setLabel(mRadialDimY, tr("Y: %1").arg(dimensionY->value()));
+}
+
+void KlustersApp::showRadialStatus(QAction* a)
+{
+    // The wedge labels are short; the status bar carries the full name + shortcut.
+    if (!a) { statusBar()->clearMessage(); return; }
+    if (a == mRadialDimX || a == mRadialDimY) {
+        const SpinBox* spin = (a == mRadialDimX) ? dimensionX : dimensionY;
+        statusBar()->showMessage(a->isEnabled()
+            ? tr("%1: %2 of %3 — scroll to change")
+                  .arg(a == mRadialDimX ? tr("X axis") : tr("Y axis"))
+                  .arg(spin->value()).arg(spin->maximum())
+            : tr("Feature dimensions — no cluster view in this display"));
+        return;
+    }
+    QString msg = a->text().remove(QLatin1Char('&'));
+    if (!a->shortcut().isEmpty())
+        msg += QStringLiteral("    (%1)").arg(a->shortcut().toString(QKeySequence::NativeText));
+    if (!a->isEnabled()) msg += tr("  — not available now");
+    statusBar()->showMessage(msg);
 }
 
 void KlustersApp::showRadialMenu(const QPoint& globalPos)
@@ -98,15 +140,19 @@ void KlustersApp::showRadialMenu(const QPoint& globalPos)
         mRadialMenu = new RadialMenu(this);
         buildRadialMenuTree();               // also sets the Sort wedges' short labels
         mRadialMenu->setMenu(mRadialMenuTree);
-        // The wedge labels are short; the status bar carries the full name + shortcut.
-        connect(mRadialMenu, &RadialMenu::hovered, this, [this](QAction* a) {
-            if (!a) { statusBar()->clearMessage(); return; }
-            QString msg = a->text().remove(QLatin1Char('&'));
-            if (!a->shortcut().isEmpty())
-                msg += QStringLiteral("    (%1)").arg(a->shortcut().toString(QKeySequence::NativeText));
-            if (!a->isEnabled()) msg += tr("  — not available now");
-            statusBar()->showMessage(msg);
+        connect(mRadialMenu, &RadialMenu::hovered, this, &KlustersApp::showRadialStatus);
+        // Wheel over X / Y: step the toolbar spinbox (it wraps, like the spinbox's own
+        // wheel); its valueChanged runs the usual slotUpdateDimensionX/Y, so the
+        // active cluster view redraws behind the menu.
+        connect(mRadialMenu, &RadialMenu::adjusted, this, [this](QAction* a, int steps) {
+            SpinBox* spin = (a == mRadialDimX) ? dimensionX
+                          : (a == mRadialDimY) ? dimensionY : nullptr;
+            if (!spin) return;
+            spin->stepBy(steps);
+            refreshRadialDimensions();
+            showRadialStatus(a);
         });
     }
+    refreshRadialDimensions();
     mRadialMenu->popup(globalPos);
 }

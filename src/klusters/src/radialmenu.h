@@ -33,6 +33,7 @@
 
 #include <QList>
 #include <QHash>
+#include <QSet>
 #include <QPointer>
 #include <QPointF>
 #include <QWidget>
@@ -55,6 +56,11 @@ public:
      *  the menu bar, is left alone).  An empty @p text clears it. */
     void setLabel(const QAction* action, const QString& text);
 
+    /** Make @p action a value wedge: turning the mouse wheel over it emits
+     *  adjusted(), and a click or release on it never picks it (the menu stays
+     *  open, so the value can be stepped repeatedly). */
+    void setAdjustable(const QAction* action, bool on = true);
+
     /** Show the menu centred on @p globalPos.  When a mouse button is down at
      *  this moment the press-drag-release gesture is armed. */
     void popup(const QPoint& globalPos);
@@ -64,6 +70,9 @@ Q_SIGNALS:
     void triggered(QAction* action);
     /** The wedge under the cursor changed (nullptr: none) — for a status bar. */
     void hovered(QAction* action);
+    /** The wheel turned over an adjustable wedge: @p steps notches, positive
+     *  for wheel-up / away from the user. */
+    void adjusted(QAction* action, int steps);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -71,6 +80,7 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
     void hideEvent(QHideEvent* event) override;
 
 private:
@@ -109,6 +119,8 @@ private:
     bool clickPressed = false;  ///< click mode: a press landed inside the widget
     QAction* lastHovered = nullptr;
     QHash<const QAction*, QString> labels;   ///< setLabel() overrides
+    QSet<const QAction*> adjustable;         ///< setAdjustable() value wedges
+    int wheelRemainder = 0;                  ///< sub-notch wheel delta (touchpads)
 };
 
 #endif // RADIALMENU_H

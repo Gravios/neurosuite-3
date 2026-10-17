@@ -20,6 +20,7 @@
 #include <QPainterPath>
 #include <QScreen>
 #include <QTimer>
+#include <QWheelEvent>
 
 #include <algorithm>
 #include <cmath>
@@ -102,6 +103,14 @@ void RadialMenu::setLabel(const QAction* action, const QString& text)
     if (!action) return;
     if (text.isEmpty()) labels.remove(action);
     else labels.insert(action, text);
+    update();
+}
+
+void RadialMenu::setAdjustable(const QAction* action, bool on)
+{
+    if (!action) return;
+    if (on) adjustable.insert(action);
+    else adjustable.remove(action);
     update();
 }
 
@@ -256,7 +265,7 @@ QAction* RadialMenu::leafAt(const QPointF& p)
     const Hit hit = hitTest(p);
     if (hit.ring < 0) return nullptr;
     QAction* a = rings.at(hit.ring).items.at(hit.item);
-    if (!a->isEnabled() || a->menu()) return nullptr;
+    if (!a->isEnabled() || a->menu() || adjustable.contains(a)) return nullptr;
     return a;
 }
 
@@ -338,6 +347,28 @@ void RadialMenu::mouseReleaseEvent(QMouseEvent* event)
         clickPressed = false;
         if (QAction* a = leafAt(p)) activate(a);
     }
+}
+
+void RadialMenu::wheelEvent(QWheelEvent* event)
+{
+    const QPointF p = event->position();
+    updateHover(p);
+    const Hit hit = hitTest(p);
+    QAction* a = (hit.ring >= 0) ? rings.at(hit.ring).items.at(hit.item) : nullptr;
+    if (!a || !a->isEnabled() || !adjustable.contains(a)) {
+        wheelRemainder = 0;
+        event->accept();                 // a popup: never let the wheel scroll what is behind
+        return;
+    }
+    // One step per 120 units (a notch); touchpads deliver fractions, so keep the rest.
+    wheelRemainder += event->angleDelta().y();
+    const int steps = wheelRemainder / 120;
+    wheelRemainder -= steps * 120;
+    if (steps != 0) {
+        Q_EMIT adjusted(a, steps);
+        update();
+    }
+    event->accept();
 }
 
 void RadialMenu::keyPressEvent(QKeyEvent* event)
@@ -431,6 +462,21 @@ void RadialMenu::paintEvent(QPaintEvent*)
                 p.setPen(Qt::NoPen);
                 p.setBrush(isHover && !onPath ? textHi : (a->isEnabled() ? text : textOff));
                 p.drawPolygon(tri);
+            }
+            // Value-wedge marker: a pair of opposed triangles on the outer edge (the
+            // wheel steps it up / down).
+            if (adjustable.contains(a)) {
+                const QPointF side(-dir.y() * 4.0, dir.x() * 4.0);
+                const QPointF upTip   = centre + dir * (r1 - 3.0);
+                const QPointF upBack  = centre + dir * (r1 - 9.0);
+                const QPointF dnTip   = centre + dir * (r1 - 17.0);
+                const QPointF dnBack  = centre + dir * (r1 - 11.0);
+                QPolygonF up; up << upTip << upBack + side << upBack - side;
+                QPolygonF dn; dn << dnTip << dnBack + side << dnBack - side;
+                p.setPen(Qt::NoPen);
+                p.setBrush(isHover ? textHi : (a->isEnabled() ? text : textOff));
+                p.drawPolygon(up);
+                p.drawPolygon(dn);
             }
             // Checked marker: a dot on the inner edge.
             if (a->isCheckable() && a->isChecked()) {
