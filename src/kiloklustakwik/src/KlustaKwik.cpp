@@ -1137,6 +1137,21 @@ void SetupParams(int argc, char **argv) {
         if (SamplingRate      <= 0) Error("SamplingRate not set: pass -SamplingRate or fix YAML\n");
     }
 
+    // Cluster-count bounds.  Every per-cluster array (Mean, Cov, Weight, the
+    // MStep member counts, ...) is sized MaxPossibleClusters, and a run starts
+    // up to MaxClusters clusters (ids 0 .. MaxClusters-1): the K sweep and the
+    // chunked pipeline's global preseed both do.  MaxClusters above
+    // MaxPossibleClusters therefore wrote past those arrays and corrupted the
+    // heap; refuse it instead.  (The empirical-prior path clamps MaxClusters to
+    // MaxPossibleClusters itself, KK_prior.cpp.)
+    if (MaxPossibleClusters < 2)
+        Error("MaxPossibleClusters (%d) must be at least 2 (noise + one cluster)\n",
+              MaxPossibleClusters);
+    if (MaxClusters > MaxPossibleClusters)
+        Error("MaxClusters (%d) exceeds MaxPossibleClusters (%d), the size of every "
+              "per-cluster array.  Raise -MaxPossibleClusters or lower -MaxClusters.\n",
+              MaxClusters, MaxPossibleClusters);
+
     // -----------------------------------------------------------------
     // Time-shift probe — force-disabled UNLESS per-phase alignment opt-in
     // -----------------------------------------------------------------
