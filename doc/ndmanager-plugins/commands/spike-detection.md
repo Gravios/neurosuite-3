@@ -299,6 +299,12 @@ A group is processed only if `session.spk.<method>.N` does not exist yet;
 the step prints "nothing to do" and exits 0.  A group with no channels is
 skipped, as in detection.
 
+One waveform is written per `.res` time, so `.spk` rows line up with `.res`
+and `.clu`.  A time whose window does not lie inside the `.fil` (within
+`peakSampleIndex` of the start, or a window's length of the end) gets a row of
+zeros and a warning; before 2026-10-17 such a time was skipped, which shifted
+every later waveform against its spike.
+
 All groups are extracted with the `nSamples`/`peakSampleIndex` of the first
 group processed; a group with different values gets a warning.
 

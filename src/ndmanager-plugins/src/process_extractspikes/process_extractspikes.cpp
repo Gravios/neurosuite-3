@@ -39,6 +39,7 @@
 
 #include "process_extractspikes.h"
 #include "extractspikes_detect.h"   // peak search, refractory rule, -c parsing
+#include "extractspikes_reextract.h" // -R: re-cut windows at the .res times
 #include "progressbar.h"      // BlockProgress — defrag-style stage progress
 #include <cmath>
 #include <cstdlib>
@@ -50,12 +51,8 @@
 #include <vector>
 #include <algorithm>
 
-// patch86: for -R mode (mmap .fil)
 #include <cerrno>
 #include <cstdio>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 using namespace std;
@@ -117,177 +114,16 @@ void help(const char* name) {
 } // help
 
 
-// patch86 ---------------------------------------------------------------
-// runFromRes: re-extract waveforms at timestamps from existing .res files.
-// Skips detection entirely.  Used by the -R flag.
-//
-// Per group:
-//   1. open <outputBaseFileName>.res.<grp+1> and read int64 timestamps
-//   2. for each timestamp ts, extract a spikeLength-sample window from
-//      .fil starting at sample (ts - timeBeforeSpike), copying only
-//      group channels into the destination spike record
-//   3. write the spike record to <outputBaseFileName>.spk.<grp+1>
-//
-// The .fil is mmap'd read-only so seeks are free; waveforms are appended
-// to the .spk file in .res chronological order (which is also disk
-// chronological order, since .res is sorted).
-//
-// Returns 0 on success, non-zero on I/O error.
+// -R: re-extract the raw waveforms at the times in <base>.res.<g>
+// (extractspikes_reextract.h; one .spk row per .res time).
 static int runFromRes(const arguments &args,
                       int **channelList,
                       const int *channelNb_group,
                       int nbGroups,
                       bool verboseFlag)
 {
-	using std::string;
-	using std::vector;
-	using std::ostringstream;
-
-	const int nChanTot   = args.totalChannelNumber;
-	const int spikeLen   = args.spikeLength;
-	const int timeBefore = args.timeBeforeSpike;
-
-	// mmap the .fil
-	int fd = open(args.inputFileName, O_RDONLY);
-	if(fd < 0) {
-		fprintf(stderr, "[-R] cannot open '%s' for reading: %s\n",
-		        args.inputFileName, strerror(errno));
-		return 1;
-	}
-	struct stat st;
-	if(fstat(fd, &st) < 0) {
-		fprintf(stderr, "[-R] fstat failed on '%s': %s\n",
-		        args.inputFileName, strerror(errno));
-		close(fd);
-		return 1;
-	}
-	const size_t filBytes  = (size_t)st.st_size;
-	const size_t bytesPerSample = (size_t)nChanTot * sizeof(short);
-	if(bytesPerSample == 0) { close(fd); return 1; }
-	const int64_t nSamples = (int64_t)(filBytes / bytesPerSample);
-
-	const short *fil = (const short *)mmap(nullptr, filBytes,
-	                                       PROT_READ, MAP_PRIVATE, fd, 0);
-	if(fil == MAP_FAILED) {
-		fprintf(stderr, "[-R] mmap failed on '%s': %s\n",
-		        args.inputFileName, strerror(errno));
-		close(fd);
-		return 1;
-	}
-
-	if(verboseFlag) {
-		cout << "[-R] re-extract mode active" << endl;
-		cout << "[-R]   .fil          = " << args.inputFileName
-		     << " (" << nSamples << " samples, " << nChanTot << " ch)" << endl;
-		cout << "[-R]   output stem   = " << args.outputBaseFileName << endl;
-		cout << "[-R]   spikeLength   = " << spikeLen
-		     << ", peakSampleIndex (timeBefore+1) = " << (timeBefore + 1) << endl;
-	}
-
-	int errors    = 0;
-	int64_t totalSpikes = 0;
-	int64_t totalSkipped = 0;
-
-	BlockProgress prog(args.outputBaseFileName);
-
-	for(int grp = 0; grp < nbGroups; grp++) {
-		const int nCG = channelNb_group[grp];
-		if(nCG <= 0) continue;
-
-		ostringstream resPath;
-		resPath << args.outputBaseFileName << "." << SPIKE_TIME_OUT_EXT
-		        << "." << (grp + 1);
-		FILE *resFp = fopen(resPath.str().c_str(), "rb");
-		if(!resFp) {
-			fprintf(stderr, "[-R] cannot open '%s' for reading: %s\n",
-			        resPath.str().c_str(), strerror(errno));
-			errors++;
-			continue;
-		}
-		fseeko(resFp, 0, SEEK_END);
-		const off_t resBytes = ftello(resFp);
-		fseeko(resFp, 0, SEEK_SET);
-		const size_t nResSpikes = (size_t)(resBytes / (off_t)sizeof(int64_t));
-		vector<int64_t> resTs(nResSpikes);
-		if(nResSpikes > 0) {
-			size_t r = fread(resTs.data(), sizeof(int64_t), nResSpikes, resFp);
-			if(r != nResSpikes) {
-				fprintf(stderr, "[-R] short read on '%s' (%zu/%zu)\n",
-				        resPath.str().c_str(), r, nResSpikes);
-				fclose(resFp);
-				errors++;
-				continue;
-			}
-		}
-		fclose(resFp);
-
-		// Open .spk.<grp+1> for writing
-		ostringstream spkPath;
-		spkPath << args.outputBaseFileName << "." << "spk" << "." << (grp + 1);
-		FILE *spkFp = fopen(spkPath.str().c_str(), "wb");
-		if(!spkFp) {
-			fprintf(stderr, "[-R] cannot open '%s' for writing: %s\n",
-			        spkPath.str().c_str(), strerror(errno));
-			errors++;
-			continue;
-		}
-
-		vector<short> waveBuf((size_t)spikeLen * (size_t)nCG);
-		int64_t nWritten   = 0;
-		int64_t nSkippedBd = 0;
-
-		prog.beginStage("G" + std::to_string(grp + 1), (long long)nResSpikes);
-
-		for(size_t i = 0; i < nResSpikes; i++) {
-			prog.setPosition((long long)i);
-			const int64_t ts = resTs[i];
-			const int64_t ws = ts - (int64_t)timeBefore;
-			if(ws < 0 || ws + spikeLen > nSamples) {
-				nSkippedBd++;
-				continue;
-			}
-			for(int s = 0; s < spikeLen; s++) {
-				const short *frame =
-				    fil + (size_t)(ws + s) * (size_t)nChanTot;
-				short *out = waveBuf.data() + (size_t)s * (size_t)nCG;
-				for(int c = 0; c < nCG; c++)
-					out[c] = frame[ channelList[grp][c] ];
-			}
-			if(fwrite(waveBuf.data(), sizeof(short),
-			          (size_t)spikeLen * (size_t)nCG, spkFp)
-			   != (size_t)spikeLen * (size_t)nCG) {
-				fprintf(stderr, "[-R] short write on '%s'\n",
-				        spkPath.str().c_str());
-				errors++;
-				break;
-			}
-			nWritten++;
-		}
-		fclose(spkFp);
-		prog.endStage();
-
-		totalSpikes  += nWritten;
-		totalSkipped += nSkippedBd;
-
-		if(verboseFlag)
-			cout << "[-R] group " << (grp + 1) << ": "
-			     << nResSpikes << " timestamps -> wrote " << nWritten
-			     << " spikes to " << spkPath.str()
-			     << " (skipped " << nSkippedBd << " at .fil boundary)"
-			     << endl;
-	}
-
-	prog.finish();
-
-	munmap((void*)fil, filBytes);
-	close(fd);
-
-	if(verboseFlag)
-		cout << "[-R] DONE. Total: " << totalSpikes << " spikes written, "
-		     << totalSkipped << " skipped (out-of-range), "
-		     << errors << " errors." << endl;
-
-	return errors;
+	return reextractFromRes(args, channelList, channelNb_group, nbGroups, verboseFlag,
+	                        [](int, neurosuite::core::SpikeWindowSpec&) {});   // raw copy
 }
 
 
@@ -420,7 +256,7 @@ int main(int argc,char *argv[]) {
 			cerr << "error: -R mode requires .fil input file." << endl;
 			return 1;
 		}
-		// inputFile FILE* not needed for mmap; close the duplicate fopen handle
+		// reextractFromRes opens the .fil itself; close this handle
 		fclose(inputFile);
 		inputFile = nullptr;
 		int rc = runFromRes(arguments, channelList, channelNb_group,
