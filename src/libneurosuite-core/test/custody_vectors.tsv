@@ -53,6 +53,14 @@ parse_anchor	exp.v2.clu.sdiff.8	exp.v2	clu	sdiff	8		1
 parse_anchor	/d/sirotaA-jg-000005-20120312.spk.stderiv.5	sirotaA-jg-000005-20120312	spk	stderiv	5		1
 parse_anchor	sess.fil						0
 parse_anchor	garbage						0
+# The group is ASCII digits, at most 9 of them (it must fit an int); leading
+# zeros are read as decimal.  A longer group used to throw std::out_of_range in
+# C++; a non-ASCII digit was a group in Python only.
+parse_anchor	sess.clu.123456789	sess	clu		123456789		1
+parse_anchor	sess.clu.stderiv.007	sess	clu	stderiv	7		1
+parse_anchor	sess.clu.stderiv.1234567890						0
+parse_anchor	sess.clu.99999999999999999999						0
+parse_anchor	sess.clu.stderiv.٣						0
 # ── resolve ─────────────────────────────────────────────────────────────────
 resolve	spk.5,res.standard.5,fet.stderiv.5,pca.stderiv.5,clu.stderiv.5,fil	spk	5	stderiv	sess.spk.5	1
 resolve	spk.5,res.standard.5,fet.stderiv.5,pca.stderiv.5,clu.stderiv.5,fil	res	5	stderiv	sess.res.standard.5	1

@@ -345,7 +345,10 @@ inline Anchor parseAnchor(const std::string& path)
         a.method = p[idx];
         ++idx;
     }
-    if (idx >= static_cast<long>(p.size()) || !isAllDigits(p[idx])) return a;
+    // The group must fit an int: at most kMaxOrderDigits (9) ASCII digits, so
+    // std::stoi cannot throw (it did, with std::out_of_range, for a longer one).
+    if (idx >= static_cast<long>(p.size()) || !isAllDigits(p[idx])
+        || p[idx].size() > kMaxOrderDigits) return a;
     a.group = std::stoi(p[idx]);
     ++idx;
     for (long i = idx; i < static_cast<long>(p.size()); ++i) {

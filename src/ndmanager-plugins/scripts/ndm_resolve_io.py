@@ -102,8 +102,16 @@ def method_of(path):
 Anchor = namedtuple("Anchor", "base type method group suffix ok")
 
 
+def _ascii_digits(s):
+    """Non-empty and only 0-9 (str.isdigit also accepts other scripts' digits;
+    the C++ isAllDigits does not)."""
+    return bool(s) and all("0" <= c <= "9" for c in s)
+
+
 def parse_anchor(path):
-    """Parse ``<base>.<type>.<method>.<grp>[.<suffix>]`` (or untagged)."""
+    """Parse ``<base>.<type>.<method>.<grp>[.<suffix>]`` (or untagged).
+
+    The group is at most 9 ASCII digits, as in custody.hpp."""
     p = os.path.basename(path).split(".")
     type_idx = -1
     for i in range(len(p) - 2, 0, -1):
@@ -117,10 +125,10 @@ def parse_anchor(path):
     base = ".".join(p[:type_idx])
     idx = type_idx + 1
     method = ""
-    if idx < len(p) and not p[idx].isdigit():
+    if idx < len(p) and not _ascii_digits(p[idx]):
         method = p[idx]
         idx += 1
-    if idx >= len(p) or not p[idx].isdigit():
+    if idx >= len(p) or not _ascii_digits(p[idx]) or len(p[idx]) > 9:
         return Anchor(base, type_, method, -1, "", False)
     group = int(p[idx])
     idx += 1

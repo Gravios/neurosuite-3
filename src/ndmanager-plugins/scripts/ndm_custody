@@ -67,11 +67,12 @@ ndm_parse_anchor()
     [ "$idx" -ge "$n" ] && return
     # method present iff p[idx] is not all-digits (matches C++ !isAllDigits)
     case "${p[idx]}" in
-        ''|*[!0-9]*) NDM_A_METHOD="${p[idx]}"; idx=$((idx+1)) ;;
+        ''|*[!0123456789]*) NDM_A_METHOD="${p[idx]}"; idx=$((idx+1)) ;;
     esac
     [ "$idx" -ge "$n" ] && return
-    case "${p[idx]}" in ''|*[!0-9]*) return ;; esac     # need an integer group
-    NDM_A_GROUP="${p[idx]}"; idx=$((idx+1))
+    case "${p[idx]}" in ''|*[!0123456789]*) return ;; esac     # need an integer group
+    [ ${#p[idx]} -le 9 ] || return                       # that fits an int (custody.hpp)
+    NDM_A_GROUP=$((10#${p[idx]})); idx=$((idx+1))       # decimal: 007 is 7
     local suf=""
     for (( i=idx; i<n; i++ )); do
         if [ -z "$suf" ]; then suf="${p[i]}"; else suf="${suf}.${p[i]}"; fi
