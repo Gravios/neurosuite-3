@@ -3,8 +3,8 @@
 #
 # Every test_*.py and test_*.sh here is a self-contained program that exits
 # non-zero on failure and prints "SKIPPED" when something it needs is missing.
-# Each one is registered as ndm_test_<name>.  The three that cross-check a C++
-# binary get its path from the build, so under ctest they test this build's
+# Each one is registered as ndm_test_<name>.  The ones that cross-check C++
+# binaries get their paths from the build, so under ctest they test this build's
 # binaries, not whatever is on PATH.
 #
 # test_custody_conformance.{py,sh} are registered by libneurosuite-core
@@ -18,10 +18,14 @@ file(GLOB _ndm_tests CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/test_*.sh")
 list(FILTER _ndm_tests EXCLUDE REGEX "test_custody_conformance\\.(py|sh)$")
 
-# test script -> the binary it cross-checks (environment variable, target)
+# test script -> the binaries it cross-checks (environment variable, target pairs)
 set(_ndm_bin_test_adapt_format PROCESS_REASSIGNSPIKES_BIN process_reassignspikes)
 set(_ndm_bin_test_plx2dat      PROCESS_PLXCONVERT_BIN     process_plxconvert)
 set(_ndm_bin_test_subset_pca   PROCESS_PCA_BIN            process_pca)
+set(_ndm_bin_test_extract_alignment
+    PROCESS_EXTRACTSPIKES_BIN         process_extractspikes
+    PROCESS_EXTRACTSPIKES_SDIFF_BIN   process_extractspikes_sdiff
+    PROCESS_EXTRACTSPIKES_STDERIV_BIN process_extractspikes_stderiv)
 
 foreach(_t IN LISTS _ndm_tests)
     get_filename_component(_name "${_t}" NAME_WE)
@@ -44,11 +48,13 @@ foreach(_t IN LISTS _ndm_tests)
         SKIP_REGULAR_EXPRESSION "SKIPPED"
         LABELS "ndmanager-plugins")
     if(DEFINED _ndm_bin_${_name})
-        list(GET _ndm_bin_${_name} 0 _var)
-        list(GET _ndm_bin_${_name} 1 _target)
-        if(TARGET ${_target})
-            set_property(TEST ndm_test_${_short} APPEND PROPERTY
-                ENVIRONMENT "${_var}=$<TARGET_FILE:${_target}>")
-        endif()
+        set(_pairs ${_ndm_bin_${_name}})          # variable, target, variable, target ...
+        while(_pairs)
+            list(POP_FRONT _pairs _var _target)
+            if(TARGET ${_target})
+                set_property(TEST ndm_test_${_short} APPEND PROPERTY
+                    ENVIRONMENT "${_var}=$<TARGET_FILE:${_target}>")
+            endif()
+        endwhile()
     endif()
 endforeach()

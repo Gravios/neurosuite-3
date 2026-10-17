@@ -1093,8 +1093,23 @@ int main(int argc,char *argv[]) {
 			const int nChanGrp = channelNb_group[grp];
 			const int wavLen   = arguments.spikeLength * nChanGrp;
 
+			// Two windows closer than spikeLength samples (in any two groups --
+			// the event list merges them all) overlap: the previous read has
+			// already passed this window's start.  Seek back to it.  This used
+			// to read on from the current position instead, so the waveform of
+			// every spike within a window's length after another one started
+			// late, by up to spikeLength samples, against its .res time.
+			if(ev.fileOffset < filePos) {
+				if(fseeko(seqFile, ev.fileOffset, SEEK_SET) != 0) {
+					fprintf(stderr, "error: cannot seek to offset %lld\n",
+					        (long long)ev.fileOffset);
+					fclose(seqFile);
+					exit(1);
+				}
+				filePos = ev.fileOffset;
+			}
 			// Skip forward to this waveform's start by reading and discarding
-			// the gap — keeps the FILE* strictly sequential, never fseeko.
+			// the gap, so the reads stay sequential between overlaps.
 			if(ev.fileOffset > filePos) {
 				off_t gap = ev.fileOffset - filePos;
 				while(gap > 0) {
