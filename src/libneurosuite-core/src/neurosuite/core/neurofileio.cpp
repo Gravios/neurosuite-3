@@ -31,6 +31,21 @@ static std::string fmtExact(double x)
     return os.str();
 }
 
+// The shortest text that reads back as the identical float (1234.5678f ->
+// "1234.5678", 0.1f -> "0.1").  The stream default (6 significant digits)
+// rounded .wtl running means/stds on every save (1234.5678 -> 1234.57), and a
+// node re-folded after a reload combined the rounded values.
+static std::string fmtFloat(float x)
+{
+    char buf[64];
+    const std::to_chars_result r = std::to_chars(buf, buf + sizeof buf, x);
+    if (r.ec == std::errc()) return std::string(buf, r.ptr);
+    std::ostringstream os;
+    os.precision(std::numeric_limits<float>::max_digits10);
+    os << x;
+    return os.str();
+}
+
 // ── .clu.N ────────────────────────────────────────────────────────────────
 CluFile readClu(const std::string& path)
 {
@@ -705,10 +720,10 @@ bool writeWtl(const std::string& path, const WtlForest& f)
             << (n.kind.empty() ? std::string("drift-root") : n.kind) << ' '
             << n.parent << ' ' << fmtExact(n.a) << ' ' << fmtExact(n.b) << ' ' << n.count << "\n";
         out << "mean " << n.mean.size();
-        for (float x : n.mean) out << ' ' << x;
+        for (float x : n.mean) out << ' ' << fmtFloat(x);
         out << "\n";
         out << "std " << n.std.size();
-        for (float x : n.std) out << ' ' << x;
+        for (float x : n.std) out << ' ' << fmtFloat(x);
         out << "\n";
     }
     return static_cast<bool>(out);

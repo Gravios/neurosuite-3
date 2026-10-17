@@ -333,7 +333,9 @@ NEUROSUITE_CORE_EXPORT std::vector<WtiRow> wtiSeries(const WtiIndex& idx, int un
 // `mean <N> …` and a `std <N> …` line carrying the node's running mean and std
 // waveforms (N = nSamples*nChannels, 0 for a placeholder) in .spk element order.
 // a/b are written at round-trip precision in fixed notation (older files carry
-// 6 significant digits; drift::partitionFromWindows absorbs that rounding).
+// 6 significant digits; drift::partitionFromWindows absorbs that rounding), and
+// mean/std values as the shortest text that reads back as the same float (files
+// written before 2026-10-17 carry 6 significant digits).
 //
 // v2 stores these SUMMARIES, not the spike indices: a node is updated by folding
 // a new selection's (mean,std,count) into its own with the exact parallel-variance
