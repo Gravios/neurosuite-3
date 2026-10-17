@@ -23,6 +23,7 @@
 #include <QEvent>
 #include <QCloseEvent>
 #include <QAction>
+#include <QMainWindow>     // eventFilter: the dock container's presses go to Qt
 #include <QMenu>
 #include <QWidgetAction>
 #include <QTimer>
@@ -910,6 +911,13 @@ bool KlustersView::eventFilter(QObject* object,QEvent* event){
         }
 
         QMouseEvent* mouseEvent = dynamic_cast<QMouseEvent*>(event);
+        // A press on a display's dock container (the inner QMainWindow that owns the
+        // panels: their title bars and separators) is not a press on a view.  Leave a
+        // right-click there to Qt, whose context menu on a title bar is the panel
+        // show/hide list (how a closed panel comes back).  Handling it here opened
+        // our menu as well, and then Qt's on top of it.
+        if(mouseEvent->button() == Qt::RightButton && qobject_cast<QMainWindow*>(object))
+            return DockArea::eventFilter(object,event);
         if(mouseEvent->button() == Qt::RightButton){
             // A right press that the input registry binds (Right -> app.radialMenu,
             // or Right -> cluster.lassoUndoVertex while a lasso is being drawn, which

@@ -91,7 +91,9 @@ Each entry is folded — click **Details** to expand it. Newest first.
   Right-click opens the older Sort Clusters list again.
 - Fix: the views' right-click filter (`KlustersView::eventFilter`) opened Sort
   Clusters for every right press and swallowed it, so the radial menu never
-  appeared. It now runs any registry-bound right press itself.
+  appeared. It now runs any registry-bound right press itself. A right-click
+  on a panel's title bar is left to Qt (its panel show/hide list); the filter
+  used to open its own menu there too, so two menus came up at once.
 - Tested in the running app on Xvfb (Qt 6.4.2) with a synthetic session and
   real mouse input: cluster, waveform and correlogram views, flick and click
   picks, lasso undo-vertex. Not yet tried on a real desktop or the reference
