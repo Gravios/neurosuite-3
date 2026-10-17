@@ -77,7 +77,7 @@ with a `.fetD.N` output still writes `.pcaD.N`.
   `process_alignspikes_pca`, `process_shadowcluster`, and fiber-kit.
 
 Realigning waveforms makes the `.pca` and `.fet` stale
-([`staleAfterRealign`](naming.md#derivation-and-staleness)).
+([derivation and staleness](naming.md#derivation-and-staleness)).
 
 ## See also
 

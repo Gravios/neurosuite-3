@@ -15,6 +15,7 @@
 #define NEUROSUITE_CORE_PROJECTIONSCOPE_HPP
 
 #include "neurosuite/core/neurofileio.h"   // WtiIndex / WtiRow / TclRegistry / TclStatus
+#include "neurosuite/core/templateclass.hpp"   // classForUnit
 
 #include <algorithm>
 #include <string>
@@ -26,17 +27,8 @@ namespace projectionscope {
 // A closed time window [a, b] in absolute session seconds.
 struct Interval { double a = 0.0; double b = 0.0; };
 
-// The lowest-id Active class in `reg` whose provenanceClu == `unit`, or -1 if the
-// unit has no class (the same reuse key decollide_eap uses).
-inline int classForUnit(const neurofileio::TclRegistry& reg, int unit)
-{
-    int found = -1;
-    for (const neurofileio::TclEntry& e : reg.entries)
-        if (e.status == neurofileio::TclStatus::Active && e.provenanceClu == unit &&
-            (found < 0 || e.col < found))
-            found = e.col;
-    return found;
-}
+// A unit's class: templateclass::classForUnit (the one definition).
+using templateclass::classForUnit;
 
 // Merge a set of windows into sorted, non-overlapping intervals (abutting/
 // overlapping windows coalesce).  Degenerate (b < a) inputs are dropped.

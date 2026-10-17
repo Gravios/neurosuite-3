@@ -182,7 +182,6 @@ Anchor      parseAnchor(const std::string& path);
 Resolved    resolve(base, type, group, method);
 Resolved    resolveAny(base, type, group, preferred = "");
 bool        resolvedIsStderiv(const Resolved&);
-std::vector<std::string> staleAfterRealign();         // {"fet","pca"}
 bool        sdiffDropsLastChannel(int order);         // 1, 3, 4, 5
 ```
 
@@ -817,9 +816,9 @@ Inconsistencies found while writing this page. None has been fixed here.
 | C5 | `template_generate.hpp` `generate` | **Fixed.** In eap mode, explicit `units` were not checked against `eapPtr->nClasses`, so an out-of-range id read past the row (`cells[i*T + u]`). An id outside the .eap's columns is now an error (`R.err`); fiber-kit's `generate` raises the same (it used to wrap a negative id to a column from the end). |
 | C6 | `decollide.hpp` `applyMethod` | **Fixed.** The int16 conversion was `static_cast<int16_t>(std::nearbyint(x))` with no saturation, undefined for a reconstructed sample outside the int16 range. It now saturates (round half to even, as before, within range); fiber-kit's `fiber_decollide` clips the same way. `core_test_decollide` covers it. |
 | C7 | `spike_extract.hpp` | **Fixed (0489).** Offsets went through `long` (`std::fseek` / `std::ftell`), so on Windows windows past 2 GiB were emitted as zeros; now 64-bit `fseeko` / `_fseeki64`. |
-| C8 | `projectionscope.hpp` / `decollide_eap.hpp` | `projectionscope::classForUnit` and `decollide::eapClassForUnit` are two copies of the same lookup in one library. |
-| C9 | `drift_partition.hpp` | `detail::timeOf` and `detail::medianTime` are unused anywhere in the repository. `regrainForest` flattens any deeper tree (a leaf's child is re-parented to the region root) and turns a non-drift root (`parent < 0`, kind not `drift*`) into a child of region 0. |
-| C10 | `custody.hpp` `staleAfterRealign` | Unused by any C++ code (only the Python mirror's `stale_after_realign` exists). |
+| C8 | `projectionscope.hpp` / `decollide_eap.hpp` | **Fixed.** `projectionscope::classForUnit` and `decollide::eapClassForUnit` were two copies of one lookup. It is now `templateclass::classForUnit`; the other two names forward to it. |
+| C9 | `drift_partition.hpp` | `detail::timeOf` and `detail::medianTime`, unused, are **removed**. Still open: `regrainForest` flattens any deeper tree (a leaf's child is re-parented to the region root) and turns a non-drift root (`parent < 0`, kind not `drift*`) into a child of region 0. |
+| C10 | `custody.hpp` `staleAfterRealign` | **Removed**, with its Python twin `stale_after_realign`: nothing called either (`ndm_alignspikes` names `.fet`/`.pca` itself). naming.md states the rule. |
 | C11 | `test/CMakeLists.txt` | **Resolved.** The core tests asked for `cxx_std_17` while the directory sets `CMAKE_CXX_STANDARD 20`, so they never proved the C++17 compatibility the docs claimed. Nothing needed C++17 (the plugins build as C++20 too), so the claim was dropped and the tests declare `cxx_std_20`; `build_invariants` keeps the tree on one standard. |
 | C21 | `channel_expr.hpp` | Has no section in §3. Its file comment is the reference for the API; the grammar as a user writes it is in [spike-detection.md](../../../doc/ndmanager-plugins/commands/spike-detection.md#expressions-order-6), and the table that pins it is `sdiff_expr_vectors.tsv` (§4.3). |
 | C22 | `dipsplit.hpp` `valley_test` | An isolated sample in a tail makes its own small KDE peak, and the valley next to it scores as deep because depth is measured against the smaller peak. A plain Gaussian sample of 4000 points scores depth ≈ 0.6. The callers add other gates (bloat, BIC, minimum sizes), and the behaviour is unchanged from both former copies; a peak-height floor would change kiloklustakwik's splits and needs checking on the reference sessions first. |

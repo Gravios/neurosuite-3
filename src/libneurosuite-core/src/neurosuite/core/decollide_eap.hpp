@@ -32,16 +32,10 @@ struct EapApply {
     int  grows          = 0;   ///< times the column pool was widened on exhaustion
 };
 
-// The lowest-id Active class in `reg` whose provenanceClu == `unit`, or -1 if the
-// unit has no class yet.  This is the "same unit -> same column" reuse rule.
+// The "same unit -> same column" reuse rule: templateclass::classForUnit.
 inline int eapClassForUnit(const neurofileio::TclRegistry& reg, int unit)
 {
-    int found = -1;
-    for (const neurofileio::TclEntry& t : reg.entries)
-        if (t.status == neurofileio::TclStatus::Active && t.provenanceClu == unit &&
-            (found < 0 || t.col < found))
-            found = t.col;
-    return found;
+    return templateclass::classForUnit(reg, unit);
 }
 
 // Clamp an integer sample shift into the .eap int8 offset range, never emitting the

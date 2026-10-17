@@ -487,16 +487,6 @@ inline Resolved resolveAny(const std::string& base, const std::string& type,
 
 inline bool resolvedIsStderiv(const Resolved& r) { return isStderivMethod(r.method); }
 
-// ── derivation relationships ────────────────────────────────────────────────
-
-// Per-group artifacts invalidated when the waveforms are realigned (their old
-// position/feature values become stale).  Wrappers use this to archive
-// downstream files after a realign instead of hand-rolling the list.
-inline std::vector<std::string> staleAfterRealign()
-{
-    return { "fet", "pca" };
-}
-
 } // namespace custody
 } // namespace neurosuite
 

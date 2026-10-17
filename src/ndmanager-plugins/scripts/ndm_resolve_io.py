@@ -30,7 +30,6 @@ __all__ = [
     "method_path", "untagged_path", "session_path", "file_exists",
     "method_of", "parse_anchor", "resolve", "resolve_any", "resolved_is_stderiv",
     "parse_method_token", "is_stderiv_method",
-    "stale_after_realign",
     # backward-compatible Stage-1 names
     "resolve_input", "method_from_path",
 ]
@@ -271,11 +270,6 @@ def sdiff_drops_last(order):
     2, 6 and 0 keep every channel.  Mirrors sdiffDropsLastChannel (custody.hpp) and
     ndm_sdiff_drops_last (ndm_custody)."""
     return int(order) in (1, 3, 4, 5)
-
-
-def stale_after_realign():
-    """Per-group artifacts invalidated when waveforms are realigned."""
-    return ["fet", "pca"]
 
 
 # ── backward-compatible Stage-1 names ────────────────────────────────────────

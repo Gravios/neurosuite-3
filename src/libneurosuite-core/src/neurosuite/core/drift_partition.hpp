@@ -177,25 +177,6 @@ inline bool mergeRegion(Partition& p, int i)
 // ── forest re-grain ──────────────────────────────────────────────────────────
 namespace detail {
 inline bool isDriftKind(const std::string& kind) { return kind.rfind("drift", 0) == 0; }
-
-// Res time (seconds) of a spike index, or a sentinel for out-of-range.
-inline double timeOf(const std::vector<int64_t>& times, double sr, int64_t i)
-{
-    if (sr <= 0.0 || i < 0 || i >= static_cast<int64_t>(times.size())) return -1.0;
-    return static_cast<double>(times[static_cast<std::size_t>(i)]) / sr;
-}
-
-// Median time (seconds) of a spike set, or -1 if none are in range.
-inline double medianTime(const std::vector<int64_t>& spikes,
-                         const std::vector<int64_t>& times, double sr)
-{
-    std::vector<double> ts;
-    ts.reserve(spikes.size());
-    for (int64_t s : spikes) { const double t = timeOf(times, sr, s); if (t >= 0.0) ts.push_back(t); }
-    if (ts.empty()) return -1.0;
-    std::sort(ts.begin(), ts.end());
-    return ts[ts.size() / 2];
-}
 } // namespace detail
 
 namespace detail {

@@ -218,9 +218,9 @@ stage.
 
 ## Derivation and staleness
 
-Realigning waveforms invalidates the features computed from them:
-`staleAfterRealign()` = `{fet, pca}` (`stale_after_realign` in Python).
-Wrappers archive these after a realign rather than hand-rolling the list.
+Realigning waveforms invalidates the features computed from them, the `.fet`
+and the `.pca`. `ndm_alignspikes` renames them to `.prealign`, so `ndm_pca`
+must be run again.
 
 ## Backward compatibility
 

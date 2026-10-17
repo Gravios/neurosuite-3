@@ -34,6 +34,20 @@ inline std::vector<int> activeCols(const TclRegistry& reg)
     return v;
 }
 
+// The lowest-id Active class whose provenanceClu == `unit`, or -1 if the unit has
+// no class: the "same unit -> same column" rule.  decollide_eap (reusing a unit's
+// column) and projectionscope (scoping a unit to its class's windows) both use
+// it; each used to carry its own copy.
+inline int classForUnit(const TclRegistry& reg, int unit)
+{
+    int found = -1;
+    for (const TclEntry& e : reg.entries)
+        if (e.status == neurofileio::TclStatus::Active && e.provenanceClu == unit &&
+            (found < 0 || e.col < found))
+            found = e.col;
+    return found;
+}
+
 // The next Free column (the id a create would take), or -1 if the pool is
 // exhausted — the caller then grows (neurofileio::growEap + extend the registry).
 inline int firstFree(const TclRegistry& reg)

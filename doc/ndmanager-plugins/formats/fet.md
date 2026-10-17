@@ -64,7 +64,7 @@ The retired `.fetD.N` corresponds to `.fet.stderiv.N`.
 | KiloKlustaKwik, fiber-kit | re-featurisation after time shifts / their own feature spaces |
 
 After a realignment the `.fet` (and `.pca`) of the realigned waveforms are stale
-([`staleAfterRealign`](naming.md#derivation-and-staleness)).
+([derivation and staleness](naming.md#derivation-and-staleness)).
 
 ## Readers
 
