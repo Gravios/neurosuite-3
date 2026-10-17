@@ -11,7 +11,8 @@ add_executable(process_extractspikes_sdiff
     "${_klustersshared_dir}/progressbar.cpp"
 )
 target_include_directories(process_extractspikes_sdiff
-    PRIVATE "${_klustersshared_dir}")
+    PRIVATE "${_klustersshared_dir}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../extractspikes_common")
 
 target_compile_features(process_extractspikes_sdiff PRIVATE cxx_std_20)
 

@@ -189,14 +189,8 @@ void computeSdiffThresholds(FILE *fp, off_t startByte, off_t sizeByte,
                              double **outThresholds,
                              std::vector<std::vector<double>> *outCarSigma = nullptr);
 
-int  getChannelsFromArg(int *channelNb_group, int **channelList,
-                         const arguments &args);
-bool checkChanAndThres(int **cList, int *cNb, int nbC, int *tNb, int nbT);
-bool checkInputs(const arguments &args, int buf_sz, const FILE *fp);
 void parseArgs(int argc, char **argv, arguments &args);
-
-bool   isRefractoryPeriod(off_t lastId, off_t curId, const arguments &args);
-double getThresholdFromChan(int chanId, int nChanGrp,
-                             const int *chanList, const double *thresholds);
+// getChannelsFromArg, checkChanAndThres, checkInputs, isRefractoryPeriod and
+// getThresholdFromChan: extractspikes_common/extractspikes_detect.h
 
 #endif // PROCESS_EXTRACTSPIKES_STDERIV_H

@@ -11,7 +11,8 @@ add_executable(process_extractspikes_stderiv
     "${_klustersshared_dir}/progressbar.cpp"
 )
 target_include_directories(process_extractspikes_stderiv
-    PRIVATE "${_klustersshared_dir}")
+    PRIVATE "${_klustersshared_dir}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../extractspikes_common")
 target_compile_features(process_extractspikes_stderiv PRIVATE cxx_std_20)
 
 find_package(OpenMP)
