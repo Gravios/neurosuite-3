@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-17 | [Spike extraction: one .spk row per .res time; shared extractor code](#2026-10-17--spike-extraction-one-spk-row-per-res-time-shared-extractor-code) |
 | 2026-10-17 | [Reference files for the template-library formats; one copy of the extractor helpers; plugins configure on their own](#2026-10-17--reference-files-for-the-template-library-formats-one-copy-of-the-extractor-helpers-plugins-configure-on-their-own) |
 | 2026-10-17 | [Core fixes: long tokens and groups, resolveAny order, int16 saturation, deterministic t-SNE; old resolver removed](#2026-10-17--core-fixes-long-tokens-and-groups-resolveany-order-int16-saturation-deterministic-t-sne-old-resolver-removed) |
 | 2026-10-17 | [kiloklustakwik: heap overflow and -PriorFile fixes; KK_chunked.cpp split; driver comparison](#2026-10-17--kiloklustakwik-heap-overflow-and--priorfile-fixes-kk_chunkedcpp-split-driver-comparison) |
@@ -66,6 +67,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-17 — Spike extraction: one .spk row per .res time; shared extractor code
+
+<details>
+<summary>Details</summary>
+
+- **Fix: re-extraction (`-R`, what `ndm_extractspikes` runs) skipped spikes
+  near the ends of the recording.** A `.res` time whose window was not inside
+  the `.fil` got no `.spk` row, so the `.spk` was shorter than the `.res`, and
+  an early skip shifted every later waveform against its spike and `.clu`
+  row. Each time now gets a row; a window outside the `.fil` is zeros, with a
+  warning. The three extractors' `-R` code (one mmap copy each) is replaced by
+  one helper on `core/spike_extract.hpp`, the code Klusters re-extracts with;
+  `SpikeWindowSpec::temporalDiff = false` gives sdiff's spatial-only
+  transform. Every other `.spk` byte is unchanged (39 regression runs).
+- **`process_extractspikes` uses the shared peak-search and argument
+  helpers** too. Fixed on the way: a trailing empty electrode group
+  (`-c 0,1,2,3:`) aborted the run (a `delete[]` on stack memory); the
+  "basename -" stdin form, which never worked, is refused with a message.
+- `ndm_functions`: `ndm_resolve_input`, unused, is removed (`ndm_resolve` /
+  `ndm_resolve_any` resolve per-group files).
+
+</details>
 
 ## 2026-10-17 — Reference files for the template-library formats; one copy of the extractor helpers; plugins configure on their own
 
