@@ -131,7 +131,7 @@ endif()
 # compiled in (Qt-free) as the other CLI plugins do -- linking the Qt
 # library would drag Qt into a command-line tool.
 set(_klustersshared_dir
-    "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
+    "${NDM_NS3_ROOT}/src/libklustersshared/src/klustersshared")
 list(APPEND _emg_srcs "${_klustersshared_dir}/progressbar.cpp")
 
 add_executable(process_extractemg ${_emg_srcs})

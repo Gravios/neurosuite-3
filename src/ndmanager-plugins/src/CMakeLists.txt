@@ -4,7 +4,7 @@
 # Make the dependency-free libneurosuite-core headers (notably custody.hpp, the
 # shared chain-of-custody resolver) available to every plugin by #include — the
 # standalone binaries consume it header-only and do not link the core library.
-include_directories(${CMAKE_SOURCE_DIR}/src/libneurosuite-core/src)
+include_directories(${NDM_NS3_ROOT}/src/libneurosuite-core/src)
 
 add_subdirectory(process)
 add_subdirectory(process_butterworth)

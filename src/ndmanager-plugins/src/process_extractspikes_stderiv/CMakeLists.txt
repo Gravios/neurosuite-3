@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 # stage display) as shared source — not linking the Qt libklustersshared,
 # matching process_pca / process_extractspikes.
 set(_klustersshared_dir
-    "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
+    "${NDM_NS3_ROOT}/src/libklustersshared/src/klustersshared")
 
 add_executable(process_extractspikes_stderiv
     process_extractspikes_stderiv.cpp

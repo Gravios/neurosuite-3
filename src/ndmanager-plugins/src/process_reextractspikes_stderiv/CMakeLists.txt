@@ -8,8 +8,8 @@ target_compile_features(process_reextractspikes_stderiv PRIVATE cxx_std_20)
 # extra source is compiled — only the include directory is needed).
 # neurosuite/core/spike_extract.hpp (detectStderivSeeding) is header-only too.
 target_include_directories(process_reextractspikes_stderiv
-    PRIVATE "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared"
-            "${CMAKE_SOURCE_DIR}/src/libneurosuite-core/src")
+    PRIVATE "${NDM_NS3_ROOT}/src/libklustersshared/src/klustersshared"
+            "${NDM_NS3_ROOT}/src/libneurosuite-core/src")
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)

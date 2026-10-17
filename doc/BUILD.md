@@ -138,6 +138,14 @@ cmake -B build -DNS_SKIP_KILOKLUSTAKWIK=ON -DNS_SKIP_NDMANAGER=ON
 Valid names: `NPHYS_DATA`, `LIBNEUROSUITE_CORE`, `LIBKLUSTERSSHARED`,
 `KLUSTERS`, `NEUROSCOPE`, `NDMANAGER`, `NDMANAGER_PLUGINS`, `KILOKLUSTAKWIK`.
 
+The plugins (no Qt) also configure on their own, which adds
+`libneurosuite-core` for them:
+
+```sh
+cmake -S src/ndmanager-plugins -B build-plugins -DNS_BUILD_TESTS=ON
+cmake --build build-plugins -j && ctest --test-dir build-plugins
+```
+
 ---
 
 ## 6. Tests

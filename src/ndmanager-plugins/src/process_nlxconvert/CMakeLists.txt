@@ -4,7 +4,7 @@
 # tool with no Qt dependency, and libklustersshared is a Qt library —
 # linking it would drag in Qt at runtime for a tool that doesn't need it.
 set(_klustersshared_dir
-    "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
+    "${NDM_NS3_ROOT}/src/libklustersshared/src/klustersshared")
 
 add_executable(process_nlxconvert
     ncsfilecollection.cpp ncsfile.cpp nevfile.cpp

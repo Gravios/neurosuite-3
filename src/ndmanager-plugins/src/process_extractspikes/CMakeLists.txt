@@ -4,7 +4,7 @@
 # would drag Qt into a command-line plugin.  progressbar.cpp (and its
 # BlockProgress defrag-style stage display) is Qt-free, so we compile it in.
 set(_klustersshared_dir
-    "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
+    "${NDM_NS3_ROOT}/src/libklustersshared/src/klustersshared")
 
 add_executable(process_extractspikes
     process_extractspikes.cpp

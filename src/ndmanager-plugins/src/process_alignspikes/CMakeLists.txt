@@ -2,7 +2,7 @@
 # as an include dir rather than linking the Qt libklustersshared, exactly as
 # process_extractspikes_stderiv does.
 set(_klustersshared_dir
-    "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
+    "${NDM_NS3_ROOT}/src/libklustersshared/src/klustersshared")
 add_executable(process_alignspikes process_alignspikes.cpp)
 target_include_directories(process_alignspikes PRIVATE "${_klustersshared_dir}")
 target_compile_features(process_alignspikes PRIVATE cxx_std_20)

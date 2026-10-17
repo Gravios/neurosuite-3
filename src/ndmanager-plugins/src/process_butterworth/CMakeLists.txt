@@ -21,7 +21,7 @@ if(OpenMP_CXX_FOUND)
 endif()
 # Stage progress bar: klustersshared's Qt-free progressbar source, compiled in
 # as the other CLI plugins do.
-set(_klustersshared_dir "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
+set(_klustersshared_dir "${NDM_NS3_ROOT}/src/libklustersshared/src/klustersshared")
 target_sources(process_butterworth PRIVATE "${_klustersshared_dir}/progressbar.cpp")
 target_include_directories(process_butterworth PRIVATE "${_klustersshared_dir}")
 target_compile_features(process_butterworth PRIVATE cxx_std_20)

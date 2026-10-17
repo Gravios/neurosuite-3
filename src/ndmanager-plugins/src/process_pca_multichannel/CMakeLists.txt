@@ -4,7 +4,7 @@ find_package(OpenMP)
 # Reference the canonical klustersshared progressbar source directly.  No
 # Qt dependency.
 set(_klustersshared_dir
-    "${CMAKE_SOURCE_DIR}/src/libklustersshared/src/klustersshared")
+    "${NDM_NS3_ROOT}/src/libklustersshared/src/klustersshared")
 
 add_executable(process_pca_multichannel
     process_pca_multichannel.cpp
