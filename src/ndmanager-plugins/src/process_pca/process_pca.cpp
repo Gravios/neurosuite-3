@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <string>
 #include <neurosuite/core/pca_projection.hpp> // canonical PCAE PcaBasis/writePca
+#include <neurosuite/core/custody.hpp>        // sdiffDropsLastChannel
 using namespace std;
 
 
@@ -228,7 +229,8 @@ void help(const char* name)
 	cout << " --varimax-tol T      relative change in criterion to call convergence (default 1e-6)" << endl;
 	cout << " --pca-method M       transform tag baked into the PCAE basis header: 0=standard," << endl;
 	cout << "                      1-3=sdiff{first,laplacian,allpairs}, 4-6=stderiv{...}," << endl;
-	cout << "                      7=stderiv custom pattern, 8=stderiv custom reference-set." << endl;
+	cout << "                      7=stderiv custom pattern, 8=stderiv custom reference-set," << endl;
+	cout << "                      9=stderiv expressions." << endl;
 	cout << "                      Default: inferred from the output name (.pcaD=>stderiv-allpairs)" << endl;
 	cout << " --lag L         ALSO write the lagged feature space: per channel PC1 at -L, 0, +L" << endl;
 	cout << "                 samples (+ PC2 at 0), the fiber-kit --feat-lag space, as its own" << endl;
@@ -869,12 +871,14 @@ int main(int argc,char *argv[])
 		const Method method = arguments.isPcaMethodProvided
 			? static_cast<Method>(arguments.pcaMethod)
 			: (isStderivPath ? Method::StderivAllPairs : Method::Standard);
-		// nInputChannels = raw channels the transform consumed.  The FIRST and
-		// ALLPAIRS spatial orders drop the trailing linearly-dependent channel
-		// upstream (process_pca_stderiv), so the basis has one fewer channel than
-		// the input; NONE/LAPLACIAN and Standard drop nothing.
+		// nInputChannels = raw channels the transform consumed.  The spatial
+		// orders that leave a linearly dependent channel (first, all-pairs and
+		// the custom pairs/sets, 1/3/4/5) have it dropped upstream
+		// (process_pca_stderiv), so the basis has one fewer channel than the
+		// input.  custody::sdiffDropsLastChannel is the one statement of which
+		// orders those are; a local list here once left out 4 and 5.
 		const SdiffOrder so = neurosuite::core::spatialOrder(method);
-		const bool dropped = (so == SdiffOrder::First || so == SdiffOrder::AllPairs);
+		const bool dropped = neurosuite::custody::sdiffDropsLastChannel(static_cast<int>(so));
 		neurosuite::core::PcaBasis basis;
 		basis.nCh            = arguments.nChannels;
 		basis.data2use       = data2use;

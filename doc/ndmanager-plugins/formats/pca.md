@@ -24,7 +24,7 @@ Header, `int32` fields:
 | 5 | `recShift` | first waveform sample (0-based) the basis applies to |
 | 6 | `isCentered` | 1: subtract the means before projecting |
 | 7 | `method` | *(v2)* transform the basis was fitted on, see below |
-| 8 | `nInputChannels` | *(v2)* raw channels the transform consumes (`C`, or `C + 1` when a channel was dropped) |
+| 8 | `nInputChannels` | *(v2)* raw channels the transform consumes: `C + 1` for the methods whose spatial order drops a channel (1, 3, 4, 6, 7, 8: orders 1, 3, 4, 5), else `C` |
 
 Body, block-wise:
 

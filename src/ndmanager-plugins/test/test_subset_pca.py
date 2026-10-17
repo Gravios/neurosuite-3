@@ -187,5 +187,20 @@ with tempfile.TemporaryDirectory() as tmp:
     check("rc != 0", r.returncode != 0)
     check("mentions the missing file", "open" in r.stderr.lower())
 
+    print("\n=== Test 9: the header records the channels the transform consumed ===")
+    # The spatial orders that drop a channel upstream (1, 3, 4, 5:
+    # custody::sdiffDropsLastChannel) leave a basis of nC channels made from
+    # nC + 1 inputs.  --pca-method 7/8 (custom pairs / sets) once recorded nC.
+    for m, n_in in ((0, 8), (4, 9), (5, 8), (6, 9), (7, 9), (8, 9), (9, 8)):
+        r, _ = run_pca(tmp, spk, f"test_m{m}.fet.7.tmp", extra_args=["--pca-method", str(m)])
+        pca_m = os.path.join(tmp, f"test_m{m}.pca.7")
+        if r.returncode != 0 or not os.path.exists(pca_m):
+            check(f"--pca-method {m} writes a basis", False, r.stderr[:300])
+            continue
+        with open(pca_m, "rb") as f:
+            hdr = struct.unpack("<9i", f.read(36))
+        check(f"--pca-method {m}: method {hdr[7]}, nInputChannels {hdr[8]} == {n_in}",
+              hdr[7] == m and hdr[8] == n_in)
+
 print(f"\n{'PASS' if fails == 0 else 'FAIL'} — {fails} failures")
 import sys; sys.exit(fails)
