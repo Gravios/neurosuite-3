@@ -13,7 +13,7 @@
 #include <memory>
 #include <vector>
 
-#include "mergerecommend.h"
+#include <neurosuite/core/mergerecommend.hpp>
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the view)
 
 class MergeRecommendView;
@@ -67,7 +67,7 @@ public:
         bool completed() const { return finishedOk; }
         /// Ranked, capped, selection-filtered result.  Mutable on purpose:
         /// the accepting handler moves it out.
-        std::vector<MergeCandidate>& getResults() { return resultsPayload; }
+        std::vector<neurosuite::merge::MergeCandidate>& getResults() { return resultsPayload; }
     private:
         explicit MergeRecommendEvent(MergeRecommendThread& job)
             : QEvent(QEvent::Type(QEvent::User + 605)),
@@ -77,7 +77,7 @@ public:
 
         int eventGeneration;
         bool finishedOk;
-        std::vector<MergeCandidate> resultsPayload;
+        std::vector<neurosuite::merge::MergeCandidate> resultsPayload;
     };
 
     /**Executed by a pool worker; ranks the pairs, posts the completion event
@@ -98,7 +98,7 @@ private:
      */
     MergeRecommendThread(MergeRecommendView& v,
                          const std::shared_ptr<KlustersJobToken>& viewToken,
-                         std::vector<MergePair> gated,
+                         std::vector<neurosuite::merge::MergePair> gated,
                          std::vector<int> tplId,
                          std::vector<std::vector<double>> tplMean,
                          std::vector<std::vector<double>> tplSd,
@@ -126,7 +126,7 @@ private:
     /**The view's request generation this job was enqueued under.*/
     int                              jobGeneration = 0;
 
-    std::vector<MergePair>           gated;      // error-gated pairs to score
+    std::vector<neurosuite::merge::MergePair>           gated;      // error-gated pairs to score
     std::vector<int>                 tplId;      // snapshot slot -> cluster id
     std::vector<std::vector<double>> tplMean;    // [idx][nSamp*nChan]
     std::vector<std::vector<double>> tplSd;      // [idx][nSamp*nChan]
@@ -138,7 +138,7 @@ private:
     std::vector<int>                 restrictTo;
 
     bool                             finished_ok;
-    std::vector<MergeCandidate>      results;
+    std::vector<neurosuite::merge::MergeCandidate>      results;
 };
 
 #endif // MERGERECOMMENDTHREAD_H

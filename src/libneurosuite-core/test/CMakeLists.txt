@@ -189,6 +189,23 @@ add_executable(core_test_spectral spectral_selftest.cpp)
 target_link_libraries(core_test_spectral PRIVATE Neurosuite::spectral)
 add_test(NAME core_test_spectral COMMAND core_test_spectral)
 
+# tsne_embed.hpp and oblique_embed.hpp (Klusters' feature-view presentations)
+# on clouds with known structure.  OpenMP when found, as Klusters builds them.
+add_executable(core_test_embed embed_test.cpp)
+target_compile_features(core_test_embed PRIVATE cxx_std_20)
+target_include_directories(core_test_embed PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+find_package(OpenMP QUIET COMPONENTS CXX)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(core_test_embed PRIVATE OpenMP::OpenMP_CXX)
+endif()
+add_test(NAME core_test_embed COMMAND core_test_embed)
+
+# waveformiou.hpp and mergerecommend.hpp (Klusters' merge recommendations).
+add_executable(core_test_merge merge_test.cpp)
+target_compile_features(core_test_merge PRIVATE cxx_std_20)
+target_include_directories(core_test_merge PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_merge COMMAND core_test_merge)
+
 # watershed2d.hpp on clouds with a known number of density basins.
 add_executable(core_test_watershed2d watershed2d_test.cpp)
 target_compile_features(core_test_watershed2d PRIVATE cxx_std_20)

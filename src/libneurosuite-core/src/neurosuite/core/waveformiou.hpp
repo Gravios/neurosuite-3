@@ -1,5 +1,5 @@
 /***************************************************************************
- * waveformiou.h — overlap between two clusters' waveform envelopes.
+ * waveformiou.hpp — overlap between two clusters' waveform envelopes.
  *
  * Intersection-over-union of the mean +/- SD bands, per sample per channel,
  * accumulated over the whole template.  1 = the two envelopes coincide, 0 = they
@@ -26,12 +26,19 @@
  *
  * Copyright (C) 2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Moved from Klusters (src/klusters/src/waveformiou.h) into libneurosuite-core,
+ * namespace neurosuite::merge, unchanged; core_test_waveformiou.
  ***************************************************************************/
-#ifndef WAVEFORMIOU_H
-#define WAVEFORMIOU_H
+#ifndef NEUROSUITE_CORE_WAVEFORMIOU_HPP
+#define NEUROSUITE_CORE_WAVEFORMIOU_HPP
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
+
+namespace neurosuite {
+namespace merge {
 
 /**Intersection-over-union of two mean +/- k*SD envelopes, maximised over a lag.
  *
@@ -118,4 +125,7 @@ inline double wfEnvelopeIouBestShift(const std::function<double(int)>& meanA,
     return best;
 }
 
-#endif // WAVEFORMIOU_H
+}  // namespace merge
+}  // namespace neurosuite
+
+#endif  // NEUROSUITE_CORE_WAVEFORMIOU_HPP

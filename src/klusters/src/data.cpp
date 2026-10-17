@@ -23,7 +23,7 @@
 //Application include files
 #include "data.h"
 #include "spkmemory.h"
-#include "waveformiou.h"
+#include <neurosuite/core/waveformiou.hpp>
 #include "binfile.h"
 #include "minmaxthread.h"
 #include "waveformview.h"
@@ -987,7 +987,7 @@ bool Data::clusterEnvelopeOverlap(int clusterA, int clusterB, double& iou,
     if (static_cast<int>(ta.mean.size()) != nTotal) return false;
     if (static_cast<int>(tb.mean.size()) != nTotal) return false;
 
-    iou = wfEnvelopeIouBestShift(
+    iou = neurosuite::merge::wfEnvelopeIouBestShift(
         [&ta](int i){ return ta.mean[static_cast<size_t>(i)]; },
         [&ta](int i){ return ta.sd  [static_cast<size_t>(i)]; },
         [&tb](int i){ return tb.mean[static_cast<size_t>(i)]; },

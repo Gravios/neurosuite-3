@@ -4,7 +4,7 @@
  * Sits in the third section of the palette stack, under the main palette and
  * the child palette.  It reads the error matrix of the active display and the
  * cached waveform envelopes, and lists the pairs both agree on; the ranking
- * itself lives in mergerecommend.h, which is Qt-free and unit-tested.
+ * itself lives in neurosuite/core/mergerecommend.hpp (Qt-free; core_test_merge).
  *
  * Copyright (C) 2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -21,7 +21,7 @@
 #include <vector>
 #include <memory>
 
-#include "mergerecommend.h"
+#include <neurosuite/core/mergerecommend.hpp>
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 
 class Data;
@@ -72,7 +72,7 @@ private Q_SLOTS:
 private:
     void setNotice(const QString& text);
     /**Fill the tree from a finished ranking.*/
-    void populate(const std::vector<MergeCandidate>& recs);
+    void populate(const std::vector<neurosuite::merge::MergeCandidate>& recs);
     /**Cancel and reap every worker still in flight.*/
     void stopThreads();
 

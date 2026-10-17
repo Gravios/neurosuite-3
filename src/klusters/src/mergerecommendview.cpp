@@ -11,7 +11,7 @@
 #include "errormatrixview.h"
 #include "data.h"
 #include "klustersview.h"
-#include "mergerecommend.h"
+#include <neurosuite/core/mergerecommend.hpp>
 
 #include <QApplication>
 #include <QMutexLocker>
@@ -137,7 +137,7 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* viewData,
     // cheap per pair -- two array reads, an average and a compare -- and it is
     // what lets half 2 be handed off without copying the matrix (610 MB at 8736
     // clusters) or risking a use-after-free on it.
-    const std::vector<MergePair> gated = mrGatePairsByError(eIds, errAt, eFloor);
+    const std::vector<neurosuite::merge::MergePair> gated = neurosuite::merge::mrGatePairsByError(eIds, errAt, eFloor);
 
     if (gated.empty()) {
         setNotice(selected.isEmpty()
@@ -157,7 +157,7 @@ void MergeRecommendView::refreshFrom(KlustersView* view, Data* viewData,
     {
         std::vector<int> need;
         need.reserve(gated.size() * 2);
-        for (const MergePair& p : gated) { need.push_back(p.a); need.push_back(p.b); }
+        for (const neurosuite::merge::MergePair& p : gated) { need.push_back(p.a); need.push_back(p.b); }
         std::sort(need.begin(), need.end());
         need.erase(std::unique(need.begin(), need.end()), need.end());
         tplId.reserve(need.size());
@@ -230,7 +230,7 @@ void MergeRecommendView::customEvent(QEvent* event)
     populate(std::move(ev->getResults()));
 }
 
-void MergeRecommendView::populate(const std::vector<MergeCandidate>& recs)
+void MergeRecommendView::populate(const std::vector<neurosuite::merge::MergeCandidate>& recs)
 {
     tree->clear();
 
@@ -244,7 +244,7 @@ void MergeRecommendView::populate(const std::vector<MergeCandidate>& recs)
     }
     setNotice(QString());
 
-    for (const MergeCandidate& c : recs) {
+    for (const neurosuite::merge::MergeCandidate& c : recs) {
         QTreeWidgetItem* it = new QTreeWidgetItem(tree);
         it->setText(0, tr("%1 + %2").arg(c.a).arg(c.b));
         it->setText(1, QString::number(c.errorScore,    'f', 3));

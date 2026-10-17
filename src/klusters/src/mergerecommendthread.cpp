@@ -6,7 +6,7 @@
  ***************************************************************************/
 #include "mergerecommendthread.h"
 #include "mergerecommendview.h"
-#include "waveformiou.h"
+#include <neurosuite/core/waveformiou.hpp>
 
 #include <QApplication>
 #include <QThreadPool>
@@ -15,7 +15,7 @@
 
 MergeRecommendThread::MergeRecommendThread(MergeRecommendView& v,
                                            const std::shared_ptr<KlustersJobToken>& viewToken,
-                                           std::vector<MergePair> gatedPairs,
+                                           std::vector<neurosuite::merge::MergePair> gatedPairs,
                                            std::vector<int> ids,
                                            std::vector<std::vector<double>> means,
                                            std::vector<std::vector<double>> sds,
@@ -96,7 +96,7 @@ void MergeRecommendThread::process()
             if (ma.size() != nTotal || mb.size() != nTotal) return false;
             if (sa.size() != nTotal || sb.size() != nTotal) return false;
 
-            iou = wfEnvelopeIouBestShift(
+            iou = neurosuite::merge::wfEnvelopeIouBestShift(
                 [&ma](int i){ return ma[static_cast<std::size_t>(i)]; },
                 [&sa](int i){ return sa[static_cast<std::size_t>(i)]; },
                 [&mb](int i){ return mb[static_cast<std::size_t>(i)]; },
@@ -105,7 +105,7 @@ void MergeRecommendThread::process()
             return true;
         };
 
-    results = mrRankGatedPairs(gated, overlapOf, maxCount, qualityFloor,
+    results = neurosuite::merge::mrRankGatedPairs(gated, overlapOf, maxCount, qualityFloor,
                                restrictTo, stopPoll);
     finished_ok = !cancelled();
 

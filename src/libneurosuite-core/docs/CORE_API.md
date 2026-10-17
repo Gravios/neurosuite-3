@@ -104,6 +104,7 @@ template_generate.hpp ─── neurofileio.h, custody.hpp, running_stats.hpp
 spike_extract.hpp ─── stderiv_transform.hpp ─── pca_projection.hpp (for SdiffOrder)
 version_contract.hpp ─── neurofileio.h, pca_projection.hpp
 dipsplit.hpp, watershed2d.hpp ─── std only
+tsne_embed.hpp, oblique_embed.hpp, waveformiou.hpp, mergerecommend.hpp ─── std only (tsne_embed: OpenMP if the includer uses it)
 spectral/*.h (static target Neurosuite::spectral) ─── std only (+ optional FFTW, CUDA, OpenMP)
 custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp ─── std only
 ```
@@ -615,6 +616,75 @@ A static library of its own, beside the `neurosuite-core` shared library, becaus
 **Consumers.** NeuroScope's spectral view (`spectralview.{h,cpp}`, `spectralinspector.cpp`) and its Qt rendering layer `neuroscope-spectral-render` (`src/neuroscope/src/spectral/`, test `neuroscope_spectral_render_test`).
 **Test.** `core_test_spectral` (formerly `neuroscope_spectral_selftest`, which only ran when NeuroScope was configured).
 
+### 3.17 `tsne_embed.hpp` — Barnes-Hut t-SNE to 2-D
+
+Namespace `neurosuite::embed`. Header-only; OpenMP when the including target compiles with it. Moved from Klusters (`src/klusters/src/tsne_embed.{h,cpp}`) unchanged; bit-identical to the old code on one thread.
+
+```cpp
+struct TsneParams { int nIter = 500; double perplexity = 30; double theta = 0.5; unsigned seed = 42;
+                    int exagIter = 250; double exag = 12; double eta = 200; };
+bool tsneEmbed2D(const std::vector<double>& data, int N, int D, std::vector<double>& outXY,
+                 const TsneParams& params = TsneParams(),
+                 const std::function<void(const char*, int, int)>& progress = {},
+                 const std::atomic<bool>* cancel = nullptr, std::string* err = nullptr);
+```
+
+Per-dimension z-score, exact kNN on a VP-tree (k = 3·perplexity), per-point bandwidth by bisection, symmetrised sparse affinities, then gradient descent with early exaggeration and a Barnes-Hut quadtree for the repulsion. `progress` reports the phase ("neighbours", "bandwidths", "embedding"); `*cancel` is polled in every phase and aborts with `err = "cancelled"`. Returns false on invalid input.
+
+**Consumers.** Klusters `clusterview.cpp` (the feature view's t-SNE presentation). **Test.** `core_test_embed`.
+
+### 3.18 `oblique_embed.hpp` — projection onto cluster templates
+
+Namespace `neurosuite::embed`. Header-only, std only. Moved from Klusters (`src/klusters/src/oblique_embed.{h,cpp}`) unchanged.
+
+```cpp
+bool obliqueProject(const std::vector<double>& data, int N, int D,
+                    const std::vector<int>& rowCluster, const std::vector<int>& basisClusters,
+                    const std::vector<double>& featMean, const std::vector<double>& featInvStd,
+                    std::vector<double>& outXY, double& condNumber,
+                    std::string* err = nullptr, std::vector<double>* outCoords = nullptr);
+```
+
+Each point's least-squares coordinates on the basis of the selected clusters' standardised mean templates, `a = (BᵀB)⁻¹Bᵀx`. With two clusters the 2-D output is those two coordinates; with more, the two principal axes of the coordinate cloud. `condNumber` is the Gram matrix's condition number (≈1 separable, large when the templates are collinear). The standardising mean and 1/std are the caller's and must be global over the group (see the header).
+
+**Consumers.** Klusters `clusterview.cpp` (the oblique presentation, Shift+O). **Test.** `core_test_embed`.
+
+### 3.19 `waveformiou.hpp` — overlap of two waveform envelopes
+
+Namespace `neurosuite::merge`. Header-only, std only. Moved from Klusters (`src/klusters/src/waveformiou.h`) unchanged.
+
+```cpp
+double wfEnvelopeIouBestShift(const std::function<double(int)>& meanA, const std::function<double(int)>& sdA,
+                              const std::function<double(int)>& meanB, const std::function<double(int)>& sdB,
+                              int nSamp, int nChan, int maxShift, double k = 1.0, int* bestShift = nullptr);
+```
+
+Intersection over union of the mean ± k·SD bands, summed over samples and channels, maximised over lags in `[-maxShift, maxShift]` (ties go to the smaller lag). Symmetric, in [0, 1]. Arrays are sample-major (`s·nChan + c`).
+
+**Consumers.** Klusters `data.cpp`, `mergerecommendthread.cpp`. **Test.** `core_test_merge`.
+
+### 3.20 `mergerecommend.hpp` — rank candidate merges
+
+Namespace `neurosuite::merge`. Header-only, std only. Moved from Klusters (`src/klusters/src/mergerecommend.h`).
+
+```cpp
+struct MergeCandidate { int a, b; double errorScore, overlapScore, quality; };
+struct MergePair { int a, b; double errorScore; };
+std::vector<double>         mrPercentileRanks(const std::vector<double>& v, bool bestIsHigh);
+std::vector<MergePair>      mrGatePairsByError(const std::vector<int>& errIds,
+                                               const std::function<double(int,int)>& errAt, double errorMin);
+std::vector<MergeCandidate> mrRankGatedPairs(const std::vector<MergePair>& gated,
+                                             const std::function<bool(int,int,double&)>& overlapOf,
+                                             std::size_t maxCount, double qualityFloor,
+                                             const std::vector<int>& restrictTo = {},
+                                             const std::function<bool()>& cancelled = {});
+std::vector<MergeCandidate> mrRecommendMerges(/* the two halves in one call */);
+```
+
+Two witnesses, the symmetrised error-matrix probability and the envelope IOU, are combined by percentile rank. `quality = min(errorRank, overlapRank)`. `errorMin` is an absolute gate applied before ranking. Pairs whose overlap is unavailable are dropped. `restrictTo` filters the output after ranking over every pair. The split into `mrGatePairsByError` (GUI thread) and `mrRankGatedPairs` (worker) lets the ranking run without the error matrix.
+
+**Consumers.** Klusters `mergerecommendview.cpp`, `mergerecommendthread.{h,cpp}`. **Test.** `core_test_merge`.
+
 ---
 
 ## 4. Tests
@@ -641,6 +711,8 @@ ctest --test-dir build -R '^core_test_|custody_conformance'   # this library onl
 | `custody_conformance_bash` | `../../ndmanager-plugins/test/test_custody_conformance.sh` | — | same vectors against `ndm_custody` (registered only if bash is found) |
 | `core_test_stderiv_vectors` | `stderiv_vectors_test.cpp` | no | runs `stderiv_vectors.tsv` (argument) against `stderivSeed` + `applyStderivTransform`, out of place and in place; null seed = zero seed |
 | `core_shared_contract` | `test_shared_contract.py` | — | the shared tables match the hashes in `contract.yaml`; with `-DNS_FIBER_KIT_ROOT`, they are byte-identical to fiber-kit's and the two `contract.yaml` files agree |
+| `core_test_embed` | `embed_test.cpp` | no | `tsne_embed.hpp`: three blobs stay apart, a shuffled control does not, repeat with one seed (one thread), cancel, bad input; `oblique_embed.hpp`: unit coordinates for orthogonal templates, condition number ~1 vs large for collinear, empty basis cluster refused |
+| `core_test_merge` | `merge_test.cpp` | no | `waveformiou.hpp`: identical / disjoint / half-overlapping bands, symmetry, a lag found within `maxShift`; `mergerecommend.hpp`: percentile ranks and ties, ordering, the error gate, dropped pairs, `maxCount`, `restrictTo`, `qualityFloor` |
 | `core_test_spectral` | `spectral_selftest.cpp` | `Neurosuite::spectral` | the multitaper library: FFT, DPSS, PSD and spectrogram, whitening, decimation, chunk cache, colormap, time window, against analytic values |
 | `core_test_dipsplit` | `dipsplit_test.cpp` | no | `dipsplit.hpp` on point sets with a known answer: valley depth for one and two modes, PCs and eigenvalues of an axis-aligned cloud, two-way k-means, BIC |
 | `core_test_watershed2d` | `watershed2d_test.cpp` | no | `watershed2d.hpp`: 1–3 blobs give 1–3 basins, each blob one basin; preview grid; degenerate input |
@@ -751,6 +823,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | C11 | `test/CMakeLists.txt` | **Resolved.** The core tests asked for `cxx_std_17` while the directory sets `CMAKE_CXX_STANDARD 20`, so they never proved the C++17 compatibility the docs claimed. Nothing needed C++17 (the plugins build as C++20 too), so the claim was dropped and the tests declare `cxx_std_20`; `build_invariants` keeps the tree on one standard. |
 | C21 | `channel_expr.hpp` | Has no section in §3. Its file comment is the reference for the API; the grammar as a user writes it is in [spike-detection.md](../../../doc/ndmanager-plugins/commands/spike-detection.md#expressions-order-6), and the table that pins it is `sdiff_expr_vectors.tsv` (§4.3). |
 | C22 | `dipsplit.hpp` `valley_test` | An isolated sample in a tail makes its own small KDE peak, and the valley next to it scores as deep because depth is measured against the smaller peak. A plain Gaussian sample of 4000 points scores depth ≈ 0.6. The callers add other gates (bloat, BIC, minimum sizes), and the behaviour is unchanged from both former copies; a peak-height floor would change kiloklustakwik's splits and needs checking on the reference sessions first. |
+| C23 | `tsne_embed.hpp` | The header says identical seeds give bit-identical output. That holds on one thread only: with OpenMP, the parallel reduction of the normalisation term Z sums in a different order each run, so the embedding differs slightly (seen with 4 threads on every input tried). Unchanged by the move. |
 
 **Found by the 2026-10-15 audit (all fixed)**
 

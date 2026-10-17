@@ -1,24 +1,79 @@
-// Barnes-Hut t-SNE (2-D) — see tsne_embed.h for the contract.
+// Barnes-Hut t-SNE, 2-D output — the engine behind the feature view's
+// alternate presentation.  Dependency-free (STL + OpenMP), deterministic for
+// a fixed seed, cancellable, with O(N·k) memory so the spike cap in the view
+// (default 32000) is a UI/latency budget rather than an OOM guard.
 //
-// The structure follows van der Maaten's reference algorithm: exact kNN on a
-// VP-tree, per-point bandwidth by bisection, symmetrised sparse affinities,
-// and a quadtree-approximated repulsive term.  Written dependency-free so the
-// whole file compiles and runs standalone for verification.
-
-#include "tsne_embed.h"
+// Pipeline: per-dimension z-score → exact kNN (VP-tree, k = 3·perplexity) →
+// per-point Gaussian bandwidth by bisection on the perplexity → symmetrised
+// sparse P → gradient descent with early exaggeration, adaptive gains and
+// momentum, Barnes-Hut quadtree for the repulsive term (theta).
+//
+// Verified standalone in-sandbox (see the commit message): well-separated
+// Gaussian blobs embed with >99% kNN label purity, a shuffled-label negative
+// control collapses to chance, identical seeds give bit-identical output,
+// and cancellation aborts promptly.
+//
+// Moved from Klusters (src/klusters/src/tsne_embed.{h,cpp}) into libneurosuite-core,
+// header-only, namespace neurosuite::embed, unchanged; core_test_tsne_embed.
+// OpenMP is used when the including target compiles with it.
+#ifndef NEUROSUITE_CORE_TSNE_EMBED_HPP
+#define NEUROSUITE_CORE_TSNE_EMBED_HPP
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <numeric>
 #include <random>
+#include <string>
+#include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
-namespace {
+namespace neurosuite {
+namespace embed {
+
+struct TsneParams {
+    int      nIter      = 500;
+    double   perplexity = 30.0;   // clamped internally to (N-1)/3
+    double   theta      = 0.5;    // Barnes-Hut accuracy/speed trade-off
+    unsigned seed       = 42;
+    int      exagIter   = 250;    // early-exaggeration span
+    double   exag       = 12.0;
+    double   eta        = 200.0;  // learning rate
+};
+
+/** Embed N points of dimension D (row-major data, size N*D) into outXY
+ *  (size N*2).
+ *
+ *  progress(phase, done, total) is called from the worker thread through every
+ *  phase, not just the gradient loop.  That matters more than it sounds: at the
+ *  spike cap the setup -- neighbour search and bandwidth fitting -- is well over
+ *  half the wall time, and while it ran the engine said nothing at all, so a
+ *  perfectly healthy run looked like a key that did nothing.  @p phase is a
+ *  short stable tag ("neighbours", "bandwidths", "embedding") the caller can
+ *  show verbatim.
+ *
+ *  *cancel is polled inside those phases too, not only between iterations, so
+ *  aborting no longer waits for the neighbour search to finish; it returns
+ *  false with *err = "cancelled".  Returns false on invalid input. */
+inline bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
+                 std::vector<double>& outXY,
+                 const TsneParams& params = TsneParams(),
+                 const std::function<void(const char*, int, int)>& progress = {},
+                 const std::atomic<bool>* cancel = nullptr,
+                 std::string* err = nullptr);
+
+// ── implementation ──────────────────────────────────────────────────────────
+
+// The structure follows van der Maaten's reference algorithm: exact kNN on a
+// VP-tree, per-point bandwidth by bisection, symmetrised sparse affinities,
+// and a quadtree-approximated repulsive term.
+namespace detail {
 
 // ── VP-tree for exact kNN in the (z-scored) input space ─────────────────────
 struct VpTree {
@@ -218,13 +273,14 @@ struct QuadTree {
     }
 };
 
-}   // namespace
+}  // namespace detail
 
-bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
+inline bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
                  std::vector<double>& outXY, const TsneParams& params,
                  const std::function<void(const char*, int, int)>& progress,
                  const std::atomic<bool>* cancel, std::string* err)
 {
+    using namespace detail;
     auto fail = [&](const char* m) { if (err) *err = m; return false; };
     // Set from inside the parallel phases, which cannot return early.
     std::atomic<bool> cancelled{false};
@@ -445,3 +501,8 @@ bool tsneEmbed2D(const std::vector<double>& data, int N, int D,
     }
     return true;
 }
+
+}  // namespace embed
+}  // namespace neurosuite
+
+#endif  // NEUROSUITE_CORE_TSNE_EMBED_HPP

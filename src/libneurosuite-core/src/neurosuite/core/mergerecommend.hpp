@@ -1,5 +1,5 @@
 /***************************************************************************
- * mergerecommend.h — rank candidate cluster merges by agreement between the
+ * mergerecommend.hpp — rank candidate cluster merges by agreement between the
  * error matrix and the residual matrix.
  *
  * Qt-free and header-only so the ranking can be unit-tested without a GUI.
@@ -30,15 +30,21 @@
  *
  * Copyright (C) 2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Moved from Klusters (src/klusters/src/mergerecommend.h) into libneurosuite-core,
+ * namespace neurosuite::merge, unchanged; core_test_mergerecommend.
  ***************************************************************************/
-#ifndef MERGERECOMMEND_H
-#define MERGERECOMMEND_H
+#ifndef NEUROSUITE_CORE_MERGERECOMMEND_HPP
+#define NEUROSUITE_CORE_MERGERECOMMEND_HPP
 
 #include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <map>
 #include <vector>
+
+namespace neurosuite {
+namespace merge {
 
 /**One recommended merge.  @a errorScore is the symmetrised probability and
  * @a overlapScore the envelope IOU (both for display); @a quality is the
@@ -257,4 +263,7 @@ inline std::vector<MergeCandidate> mrRecommendMerges(
                             overlapOf, maxCount, qualityFloor, restrictTo);
 }
 
-#endif // MERGERECOMMEND_H
+}  // namespace merge
+}  // namespace neurosuite
+
+#endif  // NEUROSUITE_CORE_MERGERECOMMEND_HPP

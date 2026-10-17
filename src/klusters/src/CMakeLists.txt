@@ -67,8 +67,6 @@ set(klusters_SRCS
     klusters_recluster.cpp      # KlustersApp reclustering / process execution (split from klusters.cpp)
     klusters_state.cpp          # KlustersApp action-state machine slotStateChanged (split from klusters.cpp)
     klusters_realign.cpp        # KlustersApp spike-realignment UI / batch driver (split from klusters.cpp)
-    tsne_embed.cpp              # Barnes-Hut t-SNE engine (feature view's alternate presentation)
-    oblique_embed.cpp           # oblique dual-basis projection (feature view's template-axis presentation)
     klusters_hierarchy.cpp      # KlustersApp hierarchical (.clc child) view + child-palette slots (split from klusters.cpp)
     klusters_dipdrift.cpp       # KlustersApp dip-split / probe-drift / timestamp-nudge (split from klusters.cpp)
     klusters_featurespace.cpp   # KlustersApp feature-space switcher (Parameters toolbar combo)

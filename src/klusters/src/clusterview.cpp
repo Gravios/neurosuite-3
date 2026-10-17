@@ -58,8 +58,8 @@
 #include <QElapsedTimer>
 #include <memory>
 
-#include "tsne_embed.h"
-#include "oblique_embed.h"
+#include <neurosuite/core/tsne_embed.hpp>
+#include <neurosuite/core/oblique_embed.hpp>
 #include "configuration.h"
 
 #include "neurosuite/core/neurofileio.h"   // readWti / readTcl for the projection scope
@@ -334,7 +334,7 @@ void ClusterView::runTsne(std::shared_ptr<std::vector<double>> X,
                           std::shared_ptr<QVector<int>> rows,
                           int N, int D, int nClusters, double perplexityOverride,
                           unsigned seed, const QString& startMessage){
-    TsneParams params;
+    neurosuite::embed::TsneParams params;
     params.perplexity = (perplexityOverride > 0.0)
         ? qBound(2.0, perplexityOverride, qMax(2.0, (N - 1) / 3.0))
         : qMin(configuration().getTsneStartPerplexity(), qMax(2.0, (N - 1) / 3.0));
@@ -370,7 +370,7 @@ void ClusterView::runTsne(std::shared_ptr<std::vector<double>> X,
         std::string err;
         int lastPct = -1;
         QString lastPhase;
-        const bool ok = tsneEmbed2D(*X, N, D, *out, params,
+        const bool ok = neurosuite::embed::tsneEmbed2D(*X, N, D, *out, params,
             [&](const char* phase, int done, int totalIt) {
                 const int pct = totalIt > 0 ? done * 100 / totalIt : 0;
                 // Phase changes always report; within a phase, every ~5%.
@@ -3317,7 +3317,7 @@ void ClusterView::startOblique(){
 
     // GLOBAL per-dimension mean / inv-std over ALL spikes in the group.  This is
     // the standardising reference the projection needs: centering over only the
-    // selected clusters would collapse the basis (see oblique_embed.h).  Two
+    // selected clusters would collapse the basis (see neurosuite/core/oblique_embed.hpp).  Two
     // inline passes over the feature table -- a few M reads, below a frame.
     const dataType nAll = d.totalNbOfSpikes();
     if (nAll < 2) {
@@ -3476,7 +3476,7 @@ void ClusterView::startOblique(){
     double cond = 0.0;
     std::string err;
     auto coords = std::make_shared<std::vector<double>>();
-    if (!obliqueProject(X, N, D, labelsVec, basis, gMean, gInv, xy, cond, &err, coords.get())) {
+    if (!neurosuite::embed::obliqueProject(X, N, D, labelsVec, basis, gMean, gInv, xy, cond, &err, coords.get())) {
         if (statusBar) statusBar->showMessage(
             tr("oblique failed: %1").arg(QString::fromStdString(err)), 5000);
         return;
