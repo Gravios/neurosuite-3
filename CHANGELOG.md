@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-17 | [Qt-free code moves into libneurosuite-core, with tests; merge ranking fix](#2026-10-17--qt-free-code-moves-into-libneurosuite-core-with-tests-merge-ranking-fix) |
 | 2026-10-17 | [neurosuite-3 3.1.0: a version contract with fiber-kit and ndm plugins](#2026-10-17--neurosuite-3-310-a-version-contract-with-fiber-kit-and-ndm-plugins) |
 | 2026-10-17 | [Recipes and canonical references; process_pca records the right input channel count; Qt build fix](#2026-10-17--recipes-and-canonical-references-process_pca-records-the-right-input-channel-count-qt-build-fix) |
 | 2026-10-16 | [One stderiv transform, one token rule: shared tables for both](#2026-10-16--one-stderiv-transform-one-token-rule-shared-tables-for-both) |
@@ -62,6 +63,41 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-17 — Qt-free code moves into libneurosuite-core, with tests; merge ranking fix
+
+<details>
+<summary>Details</summary>
+
+Plain C++ that lived inside the apps moves into libneurosuite-core, where it
+is built and tested without Qt. All the moves are unchanged code; each was
+checked bit-identical against the old copy.
+
+- **`dipsplit.hpp`**: the bimodality gate, PCs, two-way k-means and BIC.
+  kiloklustakwik and Klusters each had a copy, and the copies had drifted.
+  The header is their union.
+- **`watershed2d.hpp`**: Klusters' 2D density watershed.
+- **`Neurosuite::spectral`**: NeuroScope's multitaper library, as a static
+  library in core. Its self-test is now `core_test_spectral` and runs
+  without Qt; it never did before.
+- **`tsne_embed.hpp`, `oblique_embed.hpp`, `waveformiou.hpp`,
+  `mergerecommend.hpp`**: Klusters' t-SNE and oblique presentations and
+  its merge ranking. All four said they were "Qt-free so it can be
+  unit-tested" but had no test.
+- **New tests** with known answers: `core_test_dipsplit`,
+  `core_test_watershed2d`, `core_test_embed` and `core_test_merge`.
+- **Fix: merge recommendations.** When every candidate pair had the same
+  overlap (or the same error score), that witness gave every pair rank 0.5
+  instead of abstaining as documented. At the default quality floor (0.90)
+  the panel then showed nothing. Now the other witness decides.
+- **Found, not changed** (CORE_API §5):
+  - `valley_test` scores the valley beside a lone tail sample as deep
+    (C22).
+  - t-SNE repeats bit-identically only on one thread (C23).
+- *Klusters and NeuroScope are not compiled here (no Qt)*. Their changes
+  are includes, namespace prefixes and CMake.
+
+</details>
 
 ## 2026-10-17 — neurosuite-3 3.1.0: a version contract with fiber-kit and ndm plugins
 

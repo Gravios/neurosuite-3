@@ -61,7 +61,7 @@ cmake --build build-tests --parallel
 ctest --test-dir build-tests --output-on-failure
 ```
 
-Add `-DNS_SKIP_NDMANAGER_PLUGINS=ON` to leave the plugins out (35 tests, a
+Add `-DNS_SKIP_NDMANAGER_PLUGINS=ON` to leave the plugins out (37 tests, a
 quicker build).
 
 The same `-DNS_BUILD_TESTS=ON` works for a standalone subproject configure
