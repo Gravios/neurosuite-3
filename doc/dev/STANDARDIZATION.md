@@ -198,7 +198,7 @@ The tables live in `src/libneurosuite-core/test/` and, byte for byte, in
 fiber-kit's `test/`; `test_shared_contract.py` (both repositories, and
 `core_shared_contract` in ctest) fails when the copies differ.  The procedure
 for changing one is in [CORE_API.md](../../src/libneurosuite-core/docs/CORE_API.md)
-§4.3.
+§4.3; adding a row, or a PCAE method, is a recipe in [RECIPES.md](RECIPES.md).
 
 ---
 
@@ -542,9 +542,13 @@ to match real codebase structure.
   watershed) and follow its shape.
 - For YAML schema changes: read `parameteryamlreader.cpp` to find the
   current schema.  Ask Gravio if uncertain — schema changes affect
-  multiple consumers.
+  multiple consumers.  The files a new section touches are listed in
+  [RECIPES.md](RECIPES.md) §2.3.
 - For plugin additions: read a sibling plugin's `CMakeLists.txt`,
   argument-parsing block, and main flow.  Don't invent a new pattern.
+  [RECIPES.md](RECIPES.md) §2.4 lists everything a new step must touch.
+- For any format, rule or schema: [RECIPES.md](RECIPES.md) §1 names the
+  one page that specifies it; edit that page, not a copy.
 - For ProgressBar additions: the modernized version (post-audit) is
   in `src/libklustersshared/src/klustersshared/progressbar.{h,cpp}`.
   Use bare member names, `/dev/tty` output channel, the `setFailed()`

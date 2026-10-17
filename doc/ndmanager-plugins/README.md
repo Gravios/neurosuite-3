@@ -97,7 +97,9 @@ tuning: [`../design/optimization.md`](../design/optimization.md).
   [`ndm_functions`](commands/ndm_functions.md), give it a block in
   `templates/template.yaml`, add it to the Pipeline designer table
   (`src/ndmanager/tools/pipeline_script_defs.py`), and a page under
-  `commands/` listed in the [command reference](commands/README.md).
+  `commands/` listed in the [command reference](commands/README.md). The full
+  list, with the C++ program and the tests, is
+  [RECIPES.md §2.4](../dev/RECIPES.md#24-add-an-ndmanager-plugin-step).
 - `src/ndmanager-plugins/test/` checks that the template, the Pipeline
   designer and these pages stay in step with the scripts
   (`test_template_parameters.py`, `test_pipeline_designer_defs.py`,

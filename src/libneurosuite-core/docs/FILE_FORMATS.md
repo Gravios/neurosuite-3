@@ -4,6 +4,8 @@
 
 A developer reference for every on-disk format neurosuite-3 reads and writes. Every structural claim below — byte order, integer width, header layout, 0- vs 1-based indexing — cites `file:line` in the current working tree, overwhelmingly `src/libneurosuite-core/src/neurosuite/core/neurofileio.{h,cpp}`, the single source of truth for format parsing. Anything not read straight out of the code is marked **(unverified)**. Because this is a format spec, exact types matter: where a prior note and the code disagree, the **code wins** and the discrepancy is called out inline and collected in §6.
 
+**Which page is canonical.** The layout of each format is specified on its page under [doc/ndmanager-plugins/formats/](../../../doc/ndmanager-plugins/formats/README.md); this page maps each one to the code that reads and writes it ([RECIPES.md §1.1](../../../doc/dev/RECIPES.md#11-file-formats)). When this page and a format page disagree, check the code and fix whichever is wrong.
+
 This is the sibling of the cluster/spike document reference, [DOCUMENT_MODEL.md](../../klusters/docs/DOCUMENT_MODEL.md); cross-references to `STANDARDIZATION.md` use its section numbers (§3.1, §3.2, §3.3, §6.4, §6.6).
 
 <details>

@@ -67,8 +67,9 @@ Deep per-topic technical notes and multi-program walkthroughs live under [`doc/`
 
 ### Working on the code
 - **[Coding & layout standards](STANDARDIZATION.md)** — ✅ — directory layout, changelog, and coding conventions.
+- **[Recipes & canonical references](RECIPES.md)** — ✅ — the one page that specifies each format, rule and schema, and step-by-step recipes (every file to touch, and the test that proves it) for adding a vector-table row, a PCAE method, a session-YAML section or a plugin step.
 - **[Contributing](../../.github/CONTRIBUTING.md)** — ✅ — coding standards, the patch-series workflow, commit conventions, the changelog/doc layout, and the verification gates a change passes before shipping.
-- **Testing** — 🚧 — how to add a ctest suite. (Building and running the existing suites is in [BUILD.md](../BUILD.md) §6; the shared libraries' suites, the conformance vectors and recipes for adding a test are in the [libneurosuite-core](../../src/libneurosuite-core/docs/CORE_API.md) and [libklustersshared](../../src/libklustersshared/docs/LIBRARY.md) references.)
+- **[Testing](../../tests/README.md)** — ✅ — running the ctest suite (all of it, one part, or without Qt), the fiber-kit contract, the build-system invariants, and where each subproject adds a test.
 
 ---
 

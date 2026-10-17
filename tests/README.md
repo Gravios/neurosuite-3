@@ -129,6 +129,7 @@ rather than only documented.
 | libneurosuite-core | [CORE_API.md](../src/libneurosuite-core/docs/CORE_API.md), "Adding a test" |
 | libklustersshared | [LIBRARY.md](../src/libklustersshared/docs/LIBRARY.md) §8 |
 | ndmanager-plugins scripts | drop a `test_<what>.py` or `.sh` into `src/ndmanager-plugins/test/`; it is registered as `ndm_test_<what>` on the next configure. If it runs a plugin binary, map it in that directory's `CMakeLists.txt` |
+| a row of a shared vector table | [RECIPES.md](../doc/dev/RECIPES.md) §2.1 |
 | any other subproject | add the executable and an `add_test` in `<sub>/test/CMakeLists.txt`, inside `if(NS_BUILD_TESTS)`; name it `<sub>_test_<what>` |
 
 Each test is a program with its own `main()`. It prints the checks that fail

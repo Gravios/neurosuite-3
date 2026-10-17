@@ -18,6 +18,11 @@ so you don't cold-start into drift or re-litigate decisions already settled.
    active / next / planned / considered / dropped work. Check before starting
    something new so you build the right thing and don't repeat a dropped item.
 
+Before changing a format, a shared rule, the session YAML or a plugin step,
+read [`RECIPES.md`](doc/dev/RECIPES.md): it names the canonical page for each
+subject and lists every file a common change touches, with the test that
+proves it.
+
 Architecture and change history live in
 [`ARCHITECTURE.md`](doc/dev/ARCHITECTURE.md) and [`CHANGELOG.md`](CHANGELOG.md).
 

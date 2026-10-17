@@ -305,12 +305,13 @@ Namespace `neurofileio`. The only compiled part of the library; every out-of-lin
 Namespace `neurosuite::core`. Header-only, std only. The `.pca` basis file is **not** a `neurofileio` format; this header owns it.
 
 ```cpp
-enum class SdiffOrder : int32_t { None = 0, First = 1, Laplacian = 2, AllPairs = 3, Custom = 4, CustomCar = 5 };
+enum class SdiffOrder : int32_t { None = 0, First = 1, Laplacian = 2, AllPairs = 3, Custom = 4, CustomCar = 5,
+                                  Expr = 6 };
 enum class Method : int32_t {
     Standard = 0, SdiffFirst = 1, SdiffLaplacian = 2, SdiffAllPairs = 3,
     StderivFirst = 4, StderivLaplacian = 5, StderivAllPairs = 6,   // 6 = canonical
-    StderivCustom = 7, StderivCustomCar = 8 };                     // tokens stderiv_C4 / stderiv_C5
-bool        methodValid(int32_t v);          // 0..8
+    StderivCustom = 7, StderivCustomCar = 8, StderivExpr = 9 };    // tokens stderiv_C4 / _C5 / _C6
+bool        methodValid(int32_t v);          // 0..9
 SdiffOrder  spatialOrder(Method m);
 bool        hasTemporalDiff(Method m);       // all Stderiv*
 const char* methodTag(Method m);             // "standard" | "sdiff" | "stderiv"
@@ -337,6 +338,7 @@ double pcaProjectionEnergy(const int16_t* wfChannelMajor, int nChan, int nSamp, 
 
 **Consumers.** `process_pca` (`writePca`, `Method`, `spatialOrder`, `methodValid`), `process_refeaturize`, `process_refeaturize_stderiv`, `process_shadowcluster`, `process_alignspikes_pca` (`loadPca`, `pcaProjectionEnergy`), kiloklustakwik (`KK_refeaturize.cpp`, `KK_timeshift.cpp`), klusters (`klustersdoc.h`, `klustersdoc_realign.cpp`, `klustersdoc_featurespace.cpp`, `pca_row_projection.h`).
 **Twins.** fiber-kit `fiber_pca.py` (`Method` IntEnum and `method_tag`, pinned by [`pca_method_vectors.tsv`](#43-cross-language-conformance-vectors)); `src/klusters/src/pca_refine_cuda.cu` (device mirror of the projection energy).
+**Adding a value.** Append, never renumber: the value is stored in every basis. The files to touch are listed in [RECIPES.md §2.2](../../../doc/dev/RECIPES.md#22-add-a-pcae-method).
 
 ### 3.7 `projectionscope.hpp` — temporally restricted projection scope
 
@@ -658,6 +660,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | C9 | `drift_partition.hpp` | `detail::timeOf` and `detail::medianTime` are unused anywhere in the repository. `regrainForest` flattens any deeper tree (a leaf's child is re-parented to the region root) and turns a non-drift root (`parent < 0`, kind not `drift*`) into a child of region 0. |
 | C10 | `custody.hpp` `staleAfterRealign` | Unused by any C++ code (only the Python mirror's `stale_after_realign` exists). |
 | C11 | `test/CMakeLists.txt` | **Resolved.** The core tests asked for `cxx_std_17` while the directory sets `CMAKE_CXX_STANDARD 20`, so they never proved the C++17 compatibility the docs claimed. Nothing needed C++17 (the plugins build as C++20 too), so the claim was dropped and the tests declare `cxx_std_20`; `build_invariants` keeps the tree on one standard. |
+| C21 | `channel_expr.hpp` | Has no section in §3. Its file comment is the reference for the API; the grammar as a user writes it is in [spike-detection.md](../../../doc/ndmanager-plugins/commands/spike-detection.md#expressions-order-6), and the table that pins it is `sdiff_expr_vectors.tsv` (§4.3). |
 
 **Found by the 2026-10-15 audit (all fixed)**
 

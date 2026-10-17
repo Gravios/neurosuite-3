@@ -56,7 +56,7 @@ Key accessors:
 *invalid* node (rather than an undefined one) when a key is absent. All `ParameterYamlReader`
 methods are `const`, causing chained subscripts like
 `m_root["neuroscope"]["channels"]["colors"]` to throw `YAML::InvalidNode` before the guard
-could execute. This is fixed by the internal `safeGet2`/`safeGet3` helpers, which descend
+could execute. This is fixed by the internal `safeGet2` helper, which descends
 through non-const temporaries one level at a time and return an empty `YAML::Node{}` if any
 intermediate key is absent. All 13 previously unsafe chained subscripts are covered.
 
@@ -188,7 +188,10 @@ acquisitionSystem: # nBits, nChannels, samplingRate, voltageRange, amplification
 fieldPotentials:   # lfpSamplingRate
 video:             # width, height, samplingRate (top-level; written by ndmanager)
 files:             # list of {extension, samplingRate} for derived files
+sourceRecording:   # header metadata of the recording the session was converted from
+                   # (written by the converters, e.g. ndm_plx2dat; see its command page)
 probes:            # list of probe entries (see below)
+probeLibraryPath:  # extra probe library directory (see below)
 anatomicalDescription:
   channelGroups:   # list of {channels: [{id, skip}], probeId?, shankIndex?}
 spikeDetection:
@@ -198,7 +201,12 @@ units:             # list of {group, cluster, structure, type, isolationDistance
                    #          region, division, atlas, regionId}  (last four optional)
 neuroscope:        # version, miscellaneous, video (rotate/flip/…), spikes, channels
 programs:          # list of {name, category?, parameters: [{name, value, status, type?, default?, hidden?}], help}
+template:          # only in a session template: name, description, createdFrom, created, sections
 ```
+
+The apps keep a top-level key they do not model when they save, so a section
+read only by scripts survives a save. Adding a section is a recipe in
+[RECIPES.md](../dev/RECIPES.md#23-add-a-session-yaml-section).
 
 ### `probes:` section
 
@@ -216,16 +224,10 @@ probes:
     anatomicalGroups: [9, 10, 11, 12, 13, 14, 15, 16]
 ```
 
-`probeFile` paths are relative to the probe library root. The library search order (lowest →
-highest priority):
-
-```
-/usr/share/neurosuite/probes/
-/usr/local/share/neurosuite/probes/
-~/.local/share/neurosuite/probes/
-$NEUROSUITE_PROBE_PATH  (colon-separated)
-SESSION_DIR/probes/
-```
+`probeFile` is an absolute path or a path relative to a probe library
+directory. The directories searched, and their order, are listed under
+[Probe library search](../ndmanager-plugins/commands/ndm_setupgroups.md#probe-library-search)
+in the `ndm_setupgroups` reference; `probeLibraryPath` is one of them.
 
 ### `anatomicalDescription.channelGroups` — probe/shank annotations
 
@@ -288,47 +290,10 @@ built-in defaults.
 
 ### `.probe` file format
 
-Probe configuration files installed with the NeuroNexus library follow this schema:
-
-```yaml
-probeFile:
-  version: '1.0'
-  vendor: NeuroNexus
-  model: Buzsaki64
-  totalChannels: 64
-  substrate:
-    material: silicon
-    thickness_um: 15
-  shanks:
-    count: 8
-    spacing_um: 200
-    length_mm: 5.0
-  sites:
-    count_per_shank: 8
-    layout: octrode
-    area_um2: 160
-    spacing_um: null
-    geometry:           # [[x_um, y_um], …] top site first, y above the tip
-      - [-20.7, 162]
-      - [16.6,  142]
-      …
-  channelMap:
-    description: null
-    map: null           # null → sequential assignment; list → explicit mapping
-  notes: >
-    Free-text notes about the probe.
-```
-
-When `channelMap.map` is null, `ndm_setupgroups` assigns channels sequentially:
-
-```
-shank i → [channelOffset + i × count_per_shank, …, channelOffset + (i+1) × count_per_shank − 1]
-```
-
-When `channelMap.map` is a flat or nested list, it is used directly with `channelOffset` added
-to each entry.
-
-A worked session example is in `templates/jg05-20120316.yaml`.
+The probe files the `probes:` entries point at are specified in
+[formats/probe.md](../ndmanager-plugins/formats/probe.md): the layout, how
+`sites.geometry` is ordered, and how sites map to channels through
+`channelOffset` and `channelMap.map`.
 
 ---
 
