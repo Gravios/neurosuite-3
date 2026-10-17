@@ -198,6 +198,25 @@ The window is divided into:
 - **Center — Display tabs**: one tab per open view. The default opening tab is the **Overview Display** (cluster scatter + waveform side by side).
 - **Top — Toolbars**: Main toolbar (tools), Parameters bar (axis selectors, waveform/correlogram controls), Actions bar (recluster toggle, auto-select features), Cluster bar (next/previous spike).
 
+### Radial context menu (experimental)
+
+**Shift+Right-click** in a view (cluster, waveform, correlogram, trace, error
+matrix) opens a ring menu centred on the cursor. The root ring holds Tools,
+Clusters, Recluster, Undo, Redo, Hierarchy and Displays; hovering a group opens
+its actions as the next ring out (Clusters ▸ Sort Clusters is a third ring).
+Each wedge is the menu-bar action itself, so a greyed wedge is an action that is
+unavailable right now, a dot marks a checked tool, and the status bar shows the
+full name and shortcut of the wedge under the cursor.
+
+- **Flick:** hold the button, drag towards the wedge, release on it.
+- **Click:** release without moving; the menu stays open; click a wedge.
+- **Cancel:** release or click in the hub, click outside, or press Esc (Esc
+  first closes the outermost ring).
+
+The chord is `app.radialMenu` in **Preferences ▸ Input** and can be rebound. On
+an X11 desktop without a compositor the corners around the rings may show as
+black instead of transparent.
+
 ---
 
 ## Cluster palette

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-17 | [Klusters: radial context menu (proof of concept)](#2026-10-17--klusters-radial-context-menu-proof-of-concept) |
 | 2026-10-17 | [Spike extraction: one .spk row per .res time; shared extractor code](#2026-10-17--spike-extraction-one-spk-row-per-res-time-shared-extractor-code) |
 | 2026-10-17 | [Reference files for the template-library formats; one copy of the extractor helpers; plugins configure on their own](#2026-10-17--reference-files-for-the-template-library-formats-one-copy-of-the-extractor-helpers-plugins-configure-on-their-own) |
 | 2026-10-17 | [Core fixes: long tokens and groups, resolveAny order, int16 saturation, deterministic t-SNE; old resolver removed](#2026-10-17--core-fixes-long-tokens-and-groups-resolveany-order-int16-saturation-deterministic-t-sne-old-resolver-removed) |
@@ -67,6 +68,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-17 — Klusters: radial context menu (proof of concept)
+
+<details>
+<summary>Details</summary>
+
+- **Shift+Right-click** in a view opens a hierarchical radial menu: the root
+  actions on a ring around the cursor, and each group's actions on the next
+  ring out when hovered (up to four rings). It supports press-drag-release
+  (pick by direction in one motion) and click mode, and Esc backs out one ring.
+- `RadialMenu` (`radialmenu.h/.cpp`) lays out any `QMenu` tree, so a wedge is
+  the existing `QAction`: enabled and checked state, icons and shortcuts are
+  the live ones. Hidden actions and submenus they leave empty are skipped.
+- The tree (`klusters_radialmenu.cpp`) reuses menu-bar actions: Tools,
+  Clusters (with Sort Clusters as a third ring), Recluster, Undo, Redo,
+  Hierarchy, Displays. The chord is the app-scope command `app.radialMenu`, so
+  it appears in Preferences ▸ Input and Help ▸ Shortcuts and can be rebound.
+  Plain Right-click keeps its existing meanings.
+- Built on Qt 6.4.2; the widget's ring layout, hit-testing, disabled-leaf
+  refusal, hub cancel and screen-edge clamp were exercised offscreen. Not yet
+  tried on a real desktop or the reference session.
+
+</details>
 
 ## 2026-10-17 — Spike extraction: one .spk row per .res time; shared extractor code
 

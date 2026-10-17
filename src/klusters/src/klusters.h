@@ -31,6 +31,7 @@
 #include "klustersdoc.h"   // needed by inline slot methods on KlustersDoc
 #include "pluginregistry.h"  // Plugins menu (discovery + descriptors)
 class QMenu;
+class RadialMenu;
 #include <neurosuite/core/watershed2d.hpp>   // for Result struct used in live-preview state
 
 
@@ -763,6 +764,14 @@ private:
      *  (accept), on KeyPress it is invoked.  Returns true if a command claimed the key.
      *  Called from eventFilter for the ported cluster-view keys (Shift+O/E, F, A). */
     bool tryViewKeyCommand(QKeyEvent* ke, bool shortcutOverride);
+
+    // Radial context menu (proof of concept, radialmenu.h): Shift+Right-click in a view
+    // (rebindable: app.radialMenu) opens a hierarchical ring menu over a curated tree of
+    // the existing actions.  Both built lazily on the first popup.
+    RadialMenu* mRadialMenu = nullptr;
+    QMenu* mRadialMenuTree = nullptr;   ///< container only; holds the shared QActions
+    void buildRadialMenuTree();
+    void showRadialMenu(const QPoint& globalPos);
 
     // Plugins (descriptor discovery; read-only listing in v1).
     PluginRegistry mPluginRegistry;

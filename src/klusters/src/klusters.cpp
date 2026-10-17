@@ -2823,6 +2823,29 @@ void KlustersApp::registerInputBindings()
         reg.addCommand(c);
     }
 
+    {   // Shift+Right-click — the radial context menu (proof of concept,
+        // klusters_radialmenu.cpp).  App scope, so it resolves on a press in every view
+        // that funnels presses through dispatchInput (cluster, waveform, correlation,
+        // trace, error matrix ...).  Exact modifiers: plain Right keeps its view-local
+        // meanings (lasso undo-vertex, lineage overlay menu).  The popup opens during the
+        // press, so press-drag-release picks in one motion.
+        input::Command c;
+        c.id       = QStringLiteral("app.radialMenu");
+        c.scopeId  = QStringLiteral("app");
+        c.label    = tr("Radial context menu");
+        c.category = tr("Menus");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::button(Qt::RightButton, Qt::ShiftModifier);
+        c.enabled  = [](const input::Ctx& ctx){
+            return ctx.event && ctx.event->type() == QEvent::MouseButtonPress;
+        };
+        c.invoke   = [this](const input::Ctx& ctx){
+            const auto* me = static_cast<QMouseEvent*>(ctx.event);
+            showRadialMenu(me->globalPosition().toPoint());
+        };
+        reg.addCommand(c);
+    }
+
     // The shared rubber-band ZOOM, as a resolver participant for every plain BaseFrame
     // view (plan decision #2 / P0d-z).  ClusterView opts out (managesOwnPrimaryPress), so
     // its Ctrl-pan / Shift-boundary are tried first; its zoom stays on the base fall-through.

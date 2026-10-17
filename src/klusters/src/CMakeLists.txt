@@ -70,6 +70,7 @@ set(klusters_SRCS
     klusters_hierarchy.cpp      # KlustersApp hierarchical (.clc child) view + child-palette slots (split from klusters.cpp)
     klusters_dipdrift.cpp       # KlustersApp dip-split / probe-drift / timestamp-nudge (split from klusters.cpp)
     klusters_featurespace.cpp   # KlustersApp feature-space switcher (Parameters toolbar combo)
+    klusters_radialmenu.cpp     # KlustersApp radial context menu (Shift+Right; proof of concept)
     radialmenu.cpp              # hierarchical radial / marking menu widget over a QMenu tree
     klusters_timesort.cpp       # KlustersApp Sort Spikes by Time (confirm, rewrite, reopen)
     klusters_sort.cpp           # KlustersApp cluster sorting / reordering + sort progress bar (split from klusters.cpp)
