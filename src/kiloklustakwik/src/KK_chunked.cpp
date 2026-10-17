@@ -391,9 +391,12 @@ std::vector<float> KK::PreseedSubsampleCEM(float preseedFraction,
 // RunChunkedCEM overload — external boundary list (seconds)
 //
 // Converts the caller-supplied boundary times to normalised [0,1] fractions
-// using the same timeRawMin/Max reference used by the uniform variant, then
-// delegates to the core implementation with the pre-built chunkPoints list.
-// Everything from Phase 1 onward is identical to the uniform variant.
+// using the same timeRawMin/Max reference used by the uniform variant and
+// builds chunkPoints from them.  Phases 1-8 below are this driver's OWN copy,
+// not a delegation: they have drifted from the uniform driver (no preseed,
+// deletion floor at the starting K, no -FusePerChunkStages, no oscillation
+// guard, a different K-template/DipSplit order, and the only Stage 2.12 fiber
+// pass).  doc/design/runchunkedcem-drivers.md lists every difference.
 // ---------------------------------------------------------------------------
 float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                          float samplingRate,
