@@ -37,9 +37,11 @@ Mapped onto the staged plan in §3:
 - **Stage 4 (engine de-duplication): the duplication is GONE — by a different
   route than planned.** Rather than folding `klustakwikExp` *into*
   `klustakwik`, the smaller canonical `klustakwik` was removed and the superset
-  fork was kept and renamed `kiloklustakwik` (the single engine). The remaining
-  Stage-4 work — decomposing the 17.5k-line `KK.cpp` into phase TUs — is **not**
-  done.
+  fork was kept and renamed `kiloklustakwik` (the single engine). `KK.cpp`
+  has since been split into phase TUs (it is 1,538 lines; the largest file is
+  now `KK_chunked.cpp`, 5,070), so the remaining Stage-4 work is the
+  duplicated `RunChunkedCEM` drivers
+  ([runchunkedcem-drivers.md](../design/runchunkedcem-drivers.md)).
 - **Stages 1, 2, 3, and the GUI de-fork (Stage 5): NOT started.** Six YAML
   readers still exist; `${_xcorr_dir}` shared-source compilation is still in
   use; libklustersshared is still a mixed-layer library; the neuroscope/klusters
@@ -87,7 +89,7 @@ copies.** Status of each:
   `klustakwikExp` shared ~28 identically-named files; `KK.cpp` was 5,239 lines
   in one and 17,545 in the other. The smaller canonical engine was removed and
   the superset kept as the single `kiloklustakwik`. There is now one engine.
-  (Its `KK.cpp` is still 17,545 lines — see "monolithic TUs" below.)
+  (Its `KK.cpp`, then 17,545 lines, has since been split into phase TUs.)
 - **Format I/O — CENTRALIZED (0008–0017).** The `.clu`/`.res`/`.fet`/`.evt`/
   `.dat` readers that were re-implemented per app now go through a single
   `neurofileio`, now in libneurosuite-core. (The *parameter/session YAML* readers are
@@ -102,8 +104,11 @@ copies.** Status of each:
   lines each), `tracewidget`, and the four providers are still two copies.
   (The neuroscope providers' *format reads* now share `neurofileio`, but the
   view/widget/provider classes themselves are still forked.)
-- **Monolithic translation units — OPEN.** `KK.cpp` 17,545; `klustersdoc.cpp`
-  ~6.8k; `klusters.cpp` ~6.7k; `data.cpp` ~5.7k; the two `traceview.cpp` ~5k.
+- **Monolithic translation units — OPEN.** Line counts as of 2026-10-17:
+  `klusters.cpp` 9,027; `data.cpp` 7,017; `KK_chunked.cpp` 5,070; neuroscope's
+  `traceview.cpp` 5,150 and Klusters' 4,651; `klustersdoc_realign.cpp` 3,994.
+  `KK.cpp` (was 17,545) and `klustersdoc.cpp` (was ~6.8k, now 872) have been
+  split.
 - **Two different "sharing" idioms — OPEN.** libklustersshared is still consumed
   both as a linked library and as *shared source* (`${_xcorr_dir}` xcorr/realign
   kernels compiled per-app in kiloklustakwik, klusters, and libklustersshared).
@@ -227,9 +232,12 @@ are clean — those layers are the substrate the de-forked code sits on.
 - [x] One engine, not two: old canonical `klustakwik` removed; the superset
       fork kept and renamed `kiloklustakwik` (0018–0022). This resolved the
       duplication liability by removal rather than the originally-planned merge.
-- [ ] Break `KK.cpp` (still 17,545 lines) along phase boundaries (EM core,
-      phase drivers, realign orchestration, I/O) into separate TUs — continuing
-      the existing pattern (`dipsplit`, `adapt_model`, … are already separate).
+- [x] Break `KK.cpp` (was 17,545 lines) along phase boundaries into separate
+      TUs: `KK.cpp` 1,538, `KK_chunked.cpp` 5,070 (after `KK_chunk_merge.cpp`
+      and `KK_phase2b_mode3.cpp` moved out), `KK_split.cpp`, `KK_timeshift.cpp`,
+      `KK_templatematch.cpp`, … `dipsplit` moved to libneurosuite-core.
+- [ ] Merge the two `RunChunkedCEM` drivers, which carry separate, drifted
+      copies of Phases 1–8 ([runchunkedcem-drivers.md](../design/runchunkedcem-drivers.md)).
 - [ ] Gate experimental phases behind strategy objects / runtime flags rather
       than leaving them inline in the one large TU.
 
