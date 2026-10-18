@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-18 | [Windows: the GUI programs build with MSVC, and CI checks it](#2026-10-18--windows-the-gui-programs-build-with-msvc-and-ci-checks-it) |
 | 2026-10-18 | [CI builds and tests on Ubuntu 24.04, 25.10, 26.04 and 26.10](#2026-10-18--ci-builds-and-tests-on-ubuntu-2404-2510-2604-and-2610) |
 | 2026-10-18 | [CI installs SciPy; the plugins' SciPy dependency documented as it is](#2026-10-18--ci-installs-scipy-the-plugins-scipy-dependency-documented-as-it-is) |
 | 2026-10-18 | [CI builds again: two libklustersshared tests missed the export header](#2026-10-18--ci-builds-again-two-libklustersshared-tests-missed-the-export-header) |
@@ -74,6 +75,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-18 — Windows: the GUI programs build with MSVC, and CI checks it
+
+<details>
+<summary>Details</summary>
+
+- The Windows guides were never checked by CI, and the GUI code no longer
+  compiled with MSVC. Removed: Klusters' unused `gettimeofday` timer
+  (NeuroScope's runs on `std::chrono::steady_clock`); four unused
+  `<unistd.h>` includes; `M_PI` (now `std::numbers::pi`, bit-identical).
+- Ported: Klusters' save path (file stamps, flushes, `markInSync`'s mtime)
+  and libklustersshared's terminal progress bar have Windows branches; the
+  POSIX code is unchanged. `filecommit_test` now checks a stamp's fields.
+- New CI job `windows`: Klusters, NeuroScope, NDManager and their libraries
+  with MSVC 2022, Qt 6.8 and vcpkg's yaml-cpp; build only, non-blocking until
+  its first green run. KiloKlustaKwik and ndmanager-plugins stay POSIX-only
+  (WSL2 on Windows).
+- Checked: full Linux build and tests on Ubuntu 24.04 (Qt 6.4); the Windows
+  branches cross-compiled with MinGW-w64 and run under Wine (file-commit and
+  hierarchy tests pass; a deliberately broken stamp fails). MSVC itself has
+  not compiled this yet; the new job's first run will.
+
+</details>
 
 ## 2026-10-18 — CI builds and tests on Ubuntu 24.04, 25.10, 26.04 and 26.10
 

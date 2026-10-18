@@ -157,7 +157,10 @@ Two workflows gate `main` and pull requests (see [`BUILD.md`](../doc/BUILD.md) �
   -Wshadow` surfaced (non-fatal), and runs the regression suite with ctest (job
   `build`). Reproduce a failure locally with the exact configure line in
   `BUILD.md` §8. klusters and
-  libklustersshared are shadow-clean; keep them that way.
+  libklustersshared are shadow-clean; keep them that way. Job `windows`
+  builds the GUI programs with MSVC (no tests yet, not yet a gate): keep
+  POSIX calls behind `_WIN32` / `Q_OS_UNIX` and use `std::numbers::pi`, not
+  `M_PI`.
 - **`docs.yml`** builds the documentation site with `mkdocs build --strict` and
   deploys to GitHub Pages. It watches `src/*/docs/**` and `DEVELOPER_GUIDE.md`,
   so a broken relative link in a reference you touched will fail the deploy —

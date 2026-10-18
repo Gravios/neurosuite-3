@@ -215,7 +215,7 @@ rationale is in the `NS_ASAN` block of `CMakeLists.txt`.
 Two workflows run on `main` and on pull requests
 ([`.github/workflows/`](../.github/workflows/)):
 
-- **`ci.yml`** has two jobs.
+- **`ci.yml`** has three jobs.
   - **`lint`** runs [`scripts/lint.sh`](../scripts/lint.sh): `bash -n`, ruff's
     defect rules and the build invariants, with no build. Run it locally the
     same way.
@@ -242,6 +242,12 @@ Two workflows run on `main` and on pull requests
   (see [`STANDARDIZATION.md`](dev/STANDARDIZATION.md)), while kiloklustakwik,
   ndmanager and neuroscope have not been shadow-audited, so promoting it to
   `-Werror=shadow` must wait for a green baseline there.
+  - **`windows`** builds the GUI programs (Klusters, NeuroScope, NDManager)
+    and their libraries with MSVC on `windows-2022`, against Qt 6.8 and
+    vcpkg's yaml-cpp. KiloKlustaKwik and ndmanager-plugins are skipped
+    (`-DNS_SKIP_KILOKLUSTAKWIK=ON -DNS_SKIP_NDMANAGER_PLUGINS=ON`); on Windows
+    they run under WSL2. It builds without tests and does not fail the run
+    until it has passed once.
 
 - **`docs.yml`** — builds the documentation site and deploys it to GitHub Pages.
   It runs `doc/site/gen.sh` (the same pandoc pipeline that produces NeuroScope's
