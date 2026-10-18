@@ -91,7 +91,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     prefAutoMerge = new PrefAutoMerge(w);
     item = new QPageWidgetItem(prefAutoMerge, tr("Auto-Merge"));
     item->setHeader(tr("Auto-Merge Configuration"));
-    item->setIcon(QIcon(":/icons/automerge"));
+    item->setIcon(QIcon(":/icons/auto-merge-settings"));
     addPage(item);
 
     // ── Cluster view ───────────────────────────────────────────────
@@ -99,7 +99,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     prefclusterView = new PrefClusterView(w);
     item = new QPageWidgetItem(prefclusterView, tr("Cluster view"));
     item->setHeader(tr("Cluster View configuration"));
-    item->setIcon(QIcon(":/icons/clusterview"));
+    item->setIcon(QIcon(":/icons/cluster-view"));
     addPage(item);
 
     // ── Waveform view ──────────────────────────────────────────────
@@ -107,7 +107,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     prefWaveformView = new PrefWaveformView(w, nbChannels);
     item = new QPageWidgetItem(prefWaveformView, tr("Waveform view"));
     item->setHeader(tr("Waveform View configuration"));
-    item->setIcon(QIcon(":/icons/waveformview"));
+    item->setIcon(QIcon(":/icons/waveform-view"));
     addPage(item);
 
     // ── Input (generated: keyboard shortcuts from the binding registry) ─────

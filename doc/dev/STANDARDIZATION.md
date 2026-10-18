@@ -206,6 +206,35 @@ fiber-kit's `test/`; `test_shared_contract.py` (both repositories, and
 for changing one is in [CORE_API.md](../../src/libneurosuite-core/docs/CORE_API.md)
 §4.3; adding a row, or a PCAE method, is a recipe in [RECIPES.md](RECIPES.md).
 
+### 2.11 Action icons
+
+An action's icon is data, not a line at the action's creation site.
+
+1. **One table.** Every action icon is a row in the application's icon table,
+   keyed by the action's stable id — the input registry's id where the action
+   is mirrored there (`sort.bySnr`, `edit.undo`), else its menu path
+   (`menu:Tools/New Cluster`); the id rules live in `actionid.h`. The table is
+   applied in one pass once the actions exist. Do not call `setIcon()` where the
+   action is created.
+2. **One loading form per kind:**
+
+   | Kind | For | Loaded as |
+   |---|---|---|
+   | Standard | generic actions (open, save, print, undo, quit, preferences) | `QIcon::fromTheme(<freedesktop name>, QIcon(":/shared-icons/<alias>"))` — native where the desktop theme has the icon, the bundled copy (`libklustersshared-icons.qrc`) elsewhere |
+   | Bundled | the program's own actions | `QIcon(":/icons/<alias>")`; the alias is lower-case and hyphenated and names what the action does (`delete-noisy-spikes`), given in the `.qrc` (`<file alias="icons/…">`); no extension in code |
+   | Drawn | icons painted in code | a painter that takes the palette, so outlines follow the light / dark theme; the table is re-applied after a theme change |
+
+   Never `QPixmap(…)` for an icon, and never a path outside the resources.
+3. **Checks.** A test compiles the shipped `.qrc` files and fails when a row
+   names an icon that is not bundled or does not decode, or a drawn icon whose
+   painter is missing or ignores the palette. A build with `-DNS3_VERBOSE=1`
+   logs rows whose action does not exist and toolbar buttons without an icon.
+
+Klusters follows this: `src/klusters/src/actionicons.h` (the table),
+`KlustersApp::applyActionIcons()` (the pass), `klusters_test_actionicons` (the
+test). NeuroScope and ndManager still set icons at their creation sites; move
+them to a table when you touch them. Recipe: [RECIPES.md](RECIPES.md) §2.6.
+
 ---
 
 ## 3. Domain invariants

@@ -18,7 +18,8 @@ fix the recipe in the same patch.
 [2.3 Add a session-YAML section](#23-add-a-session-yaml-section) ·
 [2.4 Add an ndmanager plugin step](#24-add-an-ndmanager-plugin-step) ·
 [2.5 Change a format version, the plugin protocol or the session schema](#25-change-a-format-version-the-plugin-protocol-or-the-session-schema) ·
-[2.6 Recipes on other pages](#26-recipes-on-other-pages)
+[2.6 Give a Klusters action an icon](#26-give-a-klusters-action-an-icon) ·
+[2.7 Recipes on other pages](#27-recipes-on-other-pages)
 
 ---
 
@@ -60,6 +61,7 @@ differ, fix the page.
 | Versions at the boundary with fiber-kit and ndm plugins: plugin protocol, session schema, format versions, shared-table hashes | `contract.yaml` at the repository root (one in each repository), stated in code by `core/version_contract.hpp`; §2.5 here |
 | Rules with one implementation and mirrors in other languages (stderiv transform, sdiff grammars, custody, PCAE `Method`, formats) | [STANDARDIZATION.md](STANDARDIZATION.md) §2.10 (the table of homes); the change procedure is CORE_API.md §4.3 |
 | Code conventions, directory layout, language standard | [STANDARDIZATION.md](STANDARDIZATION.md) §2 |
+| Action icons: one table keyed by action id, loading forms, checks | [STANDARDIZATION.md](STANDARDIZATION.md) §2.11; Klusters' table is `src/klusters/src/actionicons.h` |
 | Running and adding tests | [tests/README.md](../../tests/README.md) |
 | Build options, GPU back ends, CI parity | [doc/BUILD.md](../BUILD.md) |
 | Layering and what may depend on what | [ARCHITECTURE.md](ARCHITECTURE.md) |
@@ -339,7 +341,29 @@ ndmanager warns when a plugin's `--ndm-version` format lines do not match this
 build (`contract::formatMismatches`), so a mismatch that reaches users is
 visible there too.
 
-### 2.6 Recipes on other pages
+### 2.6 Give a Klusters action an icon
+
+1. Find the action's id: its `registerActionCommand` id in `klusters.cpp`, or,
+   if it has none, `menu:` + its menu path (`menu:Tools/Split Clusters`;
+   mnemonics and a trailing "…" dropped — `actionid.h`). Preferences ▸ Radial
+   menu shows every id as a tooltip in *Available actions*.
+2. Pick the kind (STANDARDIZATION.md §2.11):
+   - **Standard** (a generic action): the freedesktop icon name; if the bundled
+     copy in `libklustersshared/src/gui/libklustersshared-icons.qrc` has another
+     name, give it as the fallback.
+   - **Bundled**: put the PNG in `src/klusters/src/icons/` and list it in
+     `klusters-icons.qrc` as `<file alias="icons/<alias>">icons/<file>.png</file>`,
+     the alias lower-case and hyphenated.
+   - **Drawn**: add a painter to `actionicons::drawnIcon()` that takes its
+     outline colour from the palette.
+3. Add the row to the table in `src/klusters/src/actionicons.cpp` (and raise the
+   array size). Do not add a `setIcon()` call where the action is created.
+
+**Test:** `ctest -R klusters_test_actionicons` (the row's icon is bundled and
+decodes; a drawn icon follows the palette). A build with `-DNS3_VERBOSE=1`
+prints any row whose id names no action when Klusters starts.
+
+### 2.7 Recipes on other pages
 
 | Change | Recipe |
 |---|---|

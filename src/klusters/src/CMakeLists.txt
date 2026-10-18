@@ -74,7 +74,8 @@ set(klusters_SRCS
     radialmenu.cpp              # hierarchical radial / marking menu widget over a QMenu tree
     radiallayout.cpp            # the radial menu's layout as data (JSON in the settings)
     actionid.cpp                # stable ids for menu actions (registry id, else menu path)
-    klusters_actionids.cpp      # KlustersApp::actionCatalog() / actionsById()
+    klusters_actionids.cpp      # KlustersApp::actionCatalog() / actionsById() / applyActionIcons()
+    actionicons.cpp             # the one table of action icons (keyed by action id)
     prefradialmenu.cpp          # Preferences ▸ Radial menu: the wheel editor
     klusters_timesort.cpp       # KlustersApp Sort Spikes by Time (confirm, rewrite, reopen)
     klusters_sort.cpp           # KlustersApp cluster sorting / reordering + sort progress bar (split from klusters.cpp)

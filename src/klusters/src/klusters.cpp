@@ -229,6 +229,10 @@ KlustersApp::KlustersApp()
     // the method.  No behavior change when no overrides are stored.
     registerInputBindings();
 
+    // Every action icon from the one table (actionicons.h), now that the actions and
+    // their registry ids exist.
+    applyActionIcons();
+
     //Apply the user settings.
     initializePreferences();
 
@@ -340,7 +344,6 @@ void KlustersApp::createMenus()
     //File Menu
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
     mOpenAction = fileMenu->addAction(tr("&Open…"));
-    mOpenAction->setIcon(QPixmap(":/shared-icons/document-open"));
     mOpenAction->setShortcut(QKeySequence::Open);
     connect(mOpenAction, &QAction::triggered, this, &KlustersApp::slotFileOpen);
 
@@ -359,44 +362,37 @@ void KlustersApp::createMenus()
     fileMenu->addSeparator();
 
     mSaveAction = fileMenu->addAction(tr("Save…"));
-    mSaveAction->setIcon(QPixmap(":/shared-icons/document-save"));
     mSaveAction->setShortcut(QKeySequence::Save);
     connect(mSaveAction, &QAction::triggered, this, &KlustersApp::slotFileSave);
 
     mSaveAsAction = fileMenu->addAction(tr("&Save As…"));
-    mSaveAsAction->setIcon(QPixmap(":/shared-icons/document-save-as"));
     connect(mSaveAsAction, &QAction::triggered, this, &KlustersApp::slotFileSaveAs);
 
     mRenumberAndSave = fileMenu->addAction(tr("Re&number and Save"));
-    mRenumberAndSave->setIcon(QIcon(QPixmap("filesave.png")));
     mRenumberAndSave->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
     connect(mRenumberAndSave,&QAction::triggered, this,&KlustersApp::slotFileRenumberAndSave);
 
     fileMenu->addSeparator();
 
     mPrintAction = fileMenu->addAction(tr("Print"));
-    mPrintAction->setIcon(QPixmap(":/shared-icons/document-print"));
     mPrintAction->setShortcut(QKeySequence::Print);
     connect(mPrintAction, &QAction::triggered, this, &KlustersApp::slotFilePrint);
 
     fileMenu->addSeparator();
 
     mCloseAction = fileMenu->addAction(tr("Close"));
-    mCloseAction->setIcon(QPixmap(":/shared-icons/document-close"));
     connect(mCloseAction, &QAction::triggered, this, &KlustersApp::slotFileClose);
 
     fileMenu->addSeparator();
 
     mQuitAction = fileMenu->addAction(tr("Quit"));
     mQuitAction->setShortcut(QKeySequence::Quit);
-    mQuitAction->setIcon(QPixmap(":/shared-icons/window-close"));
     connect(mQuitAction, &QAction::triggered, this, &KlustersApp::slotFileQuit);
 
     //Edit Menu
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
 
     mUndo = editMenu->addAction(tr("Undo"));
-    mUndo->setIcon(QPixmap(":/shared-icons/edit-undo"));
     mUndo->setShortcut(QKeySequence::Undo);
     connect(mUndo, &QAction::triggered, this, &KlustersApp::slotUndo);
 
@@ -404,7 +400,6 @@ void KlustersApp::createMenus()
     mRedo->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Y));   // explicit Ctrl+Y so the
                                                               // Linux default Ctrl+Shift+Z
                                                               // is free for the atom layer
-    mRedo->setIcon(QPixmap(":/shared-icons/edit-redo"));
     connect(mRedo, &QAction::triggered, this, &KlustersApp::slotRedo);
 
     editMenu->addSeparator();
@@ -423,17 +418,14 @@ void KlustersApp::createMenus()
     //Actions menu
     QMenu *actionMenu = menuBar()->addMenu(tr("&Actions"));
     mDeleteArtifact = actionMenu->addAction(tr("Delete &Artifact Cluster(s)"));
-    mDeleteArtifact->setIcon(QIcon(":/icons/delete_artefact"));
     mDeleteArtifact->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Delete));
     connect(mDeleteArtifact, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::moveClustersToArtefact));
 
     mDeleteNoisy = actionMenu->addAction(tr("Delete &Noisy Cluster(s)"));
-    mDeleteNoisy->setIcon(QIcon(":/icons/delete_noise"));
     mDeleteNoisy->setShortcut(Qt::Key_Delete);
     connect(mDeleteNoisy, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::moveClustersToNoise));
 
     mGroupeClusters = actionMenu->addAction(tr("&Group Clusters"));
-    mGroupeClusters->setIcon(QIcon(":/icons/group"));
     mGroupeClusters->setShortcut(Qt::Key_G);
     connect(mGroupeClusters, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::groupClusters));
 
@@ -460,7 +452,6 @@ void KlustersApp::createMenus()
     // come from the Auto-Merge preferences tab (patch 0068).  Shortcut Shift+G
     // by analogy with G for Group.
     mAutoMerge = actionMenu->addAction(tr("&Auto-Merge Similar Clusters…"));
-    mAutoMerge->setIcon(QIcon(":/icons/auto_merge_tool"));
     mAutoMerge->setShortcut(Qt::SHIFT | Qt::Key_G);
     connect(mAutoMerge, &QAction::triggered, this, &KlustersApp::slotAutoMerge);
 
@@ -528,7 +519,6 @@ void KlustersApp::createMenus()
             this, &KlustersApp::slotGenerateTemplateForSelection);
 
     mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
-    mUpdateDisplay->setIcon(QIcon(":/icons/update"));
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
 
     actionMenu->addSeparator();
@@ -540,7 +530,6 @@ void KlustersApp::createMenus()
     actionMenu->addSeparator();
 
     mUpdateErrorMatrix = actionMenu->addAction(tr("&Update Error Matrix"));
-    mUpdateErrorMatrix->setIcon(QIcon(":/icons/grouping_assistant_update"));
     mUpdateErrorMatrix->setShortcut(Qt::Key_U);
     connect(mUpdateErrorMatrix,&QAction::triggered, this,&KlustersApp::slotUpdateErrorMatrix);
 
@@ -554,7 +543,6 @@ void KlustersApp::createMenus()
     QMenu* sortMenu = mClusterSortMenu;
 
     mReorderClustersBySimilarity = sortMenu->addAction(tr("Re&order Clusters by Similarity"));
-    mReorderClustersBySimilarity->setIcon(QIcon(":/icons/reorder_by_similarity"));
     mReorderClustersBySimilarity->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_S));
     mReorderClustersBySimilarity->setToolTip(
         tr("Renumber clusters so that similar clusters get adjacent IDs, using\n"
@@ -871,44 +859,17 @@ void KlustersApp::createMenus()
     // default.  The checked state is driven from the active view's real mode by
     // updateToolModeActions(); the slots below toggle it.  Keyboard: Ctrl+1..Ctrl+4.
     mNewCluster = toolsMenu->addAction(tr("New Cluster"));
-    mNewCluster->setIcon(QIcon(":/icons/new_cluster"));
     mNewCluster->setCheckable(true);
     // Shortcut removed; reachable via menu / toolbar / Ctrl+1 (slotSingleNew).
     connect(mNewCluster,&QAction::triggered, this,&KlustersApp::slotSingleNew);
 
     mSplitClusters = toolsMenu->addAction(tr("&Split Clusters"));
-    mSplitClusters->setIcon(QIcon(":/icons/new_clusters"));
     mSplitClusters->setCheckable(true);
     connect(mSplitClusters,&QAction::triggered, this,&KlustersApp::slotMultipleNew);
 
     // Multi-lasso: a lasso tool whose closed lassos are kept rather than cut, and the
-    // button that splits by them.  The icons are drawn here (two overlapping loops;
-    // filled in three colours for the split), there being no stock artwork for them.
-    auto lassoIcon = [](bool filled){
-        QPixmap pm(44, 44);
-        pm.fill(Qt::transparent);
-        QPainter ip(&pm);
-        ip.setRenderHint(QPainter::Antialiasing);
-        const QRectF a(4, 8, 24, 22), b(16, 14, 24, 22);
-        if (filled) {
-            QPainterPath pa; pa.addEllipse(a);
-            QPainterPath pb; pb.addEllipse(b);
-            ip.setPen(Qt::NoPen);
-            ip.setBrush(QColor(255, 200, 40, 200)); ip.drawPath(pa.subtracted(pb));
-            ip.setBrush(QColor(60, 220, 255, 200)); ip.drawPath(pb.subtracted(pa));
-            ip.setBrush(QColor(255, 90, 200, 220)); ip.drawPath(pa.intersected(pb));
-        }
-        QPen pen(QColor(90, 90, 90));
-        pen.setWidthF(2.5);
-        pen.setStyle(filled ? Qt::SolidLine : Qt::DashLine);
-        ip.setPen(pen);
-        ip.setBrush(Qt::NoBrush);
-        ip.drawEllipse(a);
-        ip.drawEllipse(b);
-        return QIcon(pm);
-    };
+    // button that splits by them.  (Their icons are drawn: actionicons.cpp.)
     mMultiLasso = toolsMenu->addAction(tr("&Multi-Lasso"));
-    mMultiLasso->setIcon(lassoIcon(false));
     mMultiLasso->setCheckable(true);
     mMultiLasso->setToolTip(tr("Multi-lasso (Ctrl+5): closing a lasso keeps it instead of cutting.\n"
                                "Draw several, then Split by Lassos (Enter): each overlap pattern\n"
@@ -916,20 +877,17 @@ void KlustersApp::createMenus()
     connect(mMultiLasso,&QAction::triggered, this,&KlustersApp::slotMultiLasso);
 
     mApplyMultiLasso = toolsMenu->addAction(tr("Split by &Lassos"));
-    mApplyMultiLasso->setIcon(lassoIcon(true));
     mApplyMultiLasso->setToolTip(tr("Split the kept multi-lassos by their overlaps (Enter)"));
     connect(mApplyMultiLasso,&QAction::triggered, this,&KlustersApp::slotApplyMultiLasso);
 
     toolsMenu->addSeparator();
 
     mDeleteArtifactSpikes = toolsMenu->addAction(tr("Delete &Artifact Spikes"));
-    mDeleteArtifactSpikes->setIcon(QIcon(":/icons/delete_artefact_tool"));
     mDeleteArtifactSpikes->setCheckable(true);
     // Reachable via menu / toolbar / Ctrl+3.
     connect(mDeleteArtifactSpikes,&QAction::triggered, this,&KlustersApp::slotDeleteArtefact);
 
     mDeleteNoisySpikes = toolsMenu->addAction(tr("Delete &Noisy Spikes"));
-    mDeleteNoisySpikes->setIcon(QIcon(":/icons/delete_noise_tool"));
     mDeleteNoisySpikes->setCheckable(true);
     // Reachable via menu / toolbar / Ctrl+4.
     connect(mDeleteNoisySpikes,&QAction::triggered, this,&KlustersApp::slotDeleteNoise);
@@ -1032,12 +990,10 @@ void KlustersApp::createMenus()
     traceMenu->addSeparator();
 
     mNextSpike = traceMenu->addAction(tr("&Next Spike"));
-    mNextSpike->setIcon(QIcon(":/icons/forwardCluster"));
     mNextSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Right));
     connect(mNextSpike,&QAction::triggered, this,&KlustersApp::slotShowNextCluster);
 
     mPreviousSpike = traceMenu->addAction(tr("&Previous Spike"));
-    mPreviousSpike->setIcon(QIcon(":/icons/backCluster"));
     mPreviousSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Left));
     connect(mPreviousSpike,&QAction::triggered, this,&KlustersApp::slotShowPreviousCluster);
 
@@ -1281,7 +1237,6 @@ void KlustersApp::createMenus()
     settingsMenu->addSeparator();
     mPreferenceAction = settingsMenu->addAction(tr("&Preferences"));
     mPreferenceAction->setShortcut(Qt::Key_P);
-    mPreferenceAction->setIcon(QIcon(":/shared-icons/configure"));
     connect(mPreferenceAction,&QAction::triggered, this,&KlustersApp::executePreferencesDlg);
 
 
@@ -1867,6 +1822,9 @@ void KlustersApp::applyPreferences() {
     // Radial menu: a new layout from Preferences ▸ Radial menu takes effect on the
     // next right-click.
     rebuildRadialMenu();
+
+    // Action icons again: a theme change (Appearance) recolours the drawn ones.
+    applyActionIcons();
 
     // Templates mode toggled -> show/hide + (re)load the template palette live.
     if (templatePanel) { reloadTemplatePalette(); updateTemplatePanelVisibility(); }

@@ -202,6 +202,9 @@ protected:
     bool eventFilter(QObject* object,QEvent* event) override;
 
     void closeEvent(QCloseEvent *event) override;
+    /** A palette change (Preferences ▸ Appearance, or the system theme under
+     *  "Match system") re-applies the action icons: drawn ones follow the palette. */
+    void changeEvent(QEvent* event) override;
 public Q_SLOTS:
     /** queryClose is called by KDocMainWindow call just before being closed.
      */
@@ -789,6 +792,11 @@ public:
     QList<ActionCatalogEntry> actionCatalog() const;
     /** Id -> action, both id forms of every catalogued action. */
     QHash<QString, QAction*> actionsById() const;
+    /** Set every action icon from the one table (actionicons.h).  Run once the
+     *  actions exist, and again after a theme change (drawn icons follow the
+     *  palette).  With NS3_VERBOSE, logs table rows naming no action and toolbar
+     *  actions left without an icon. */
+    void applyActionIcons();
 private:
 
     // Plugins (descriptor discovery; read-only listing in v1).

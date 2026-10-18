@@ -1,26 +1,28 @@
 <RCC>
+    <!-- Code names an icon by its alias, ":/icons/<alias>" (lower-case, hyphenated,
+         no extension); the file name may differ.  Action icons: actionicons.h. -->
     <qresource prefix="/">
-        <file>icons/backCluster.png</file>
-        <file>icons/clusterview.png</file>
-        <file>icons/delete_artefact.png</file>
-        <file>icons/delete_artefact_tool.png</file>
-        <file>icons/delete_noise.png</file>
-        <file>icons/delete_noise_tool.png</file>
-        <file>icons/forwardCluster.png</file>
-        <file>icons/group.png</file>
-        <file>icons/grouping_assistant_update.png</file>
-        <file>icons/reorder_by_similarity.png</file>
-        <file>icons/new_cluster.png</file>
-        <file>icons/new_clusters.png</file>
+        <file alias="icons/previous-spike">icons/backCluster.png</file>
+        <file alias="icons/cluster-view">icons/clusterview.png</file>
+        <file alias="icons/delete-artifact-clusters">icons/delete_artefact.png</file>
+        <file alias="icons/delete-artifact-spikes">icons/delete_artefact_tool.png</file>
+        <file alias="icons/delete-noisy-clusters">icons/delete_noise.png</file>
+        <file alias="icons/delete-noisy-spikes">icons/delete_noise_tool.png</file>
+        <file alias="icons/next-spike">icons/forwardCluster.png</file>
+        <file alias="icons/group-clusters">icons/group.png</file>
+        <file alias="icons/update-error-matrix">icons/grouping_assistant_update.png</file>
+        <file alias="icons/reorder-by-similarity">icons/reorder_by_similarity.png</file>
+        <file alias="icons/new-cluster">icons/new_cluster.png</file>
+        <file alias="icons/split-clusters">icons/new_clusters.png</file>
         <file>icons/time_tool.png</file>
-        <file>icons/update.png</file>
-        <file>icons/waveformview.png</file>
+        <file alias="icons/update-display">icons/update.png</file>
+        <file alias="icons/waveform-view">icons/waveformview.png</file>
         <file>icons/zoom_tool.png</file>
-        <file>icons/automerge.png</file>
-        <file>icons/auto_merge_tool.png</file>
-        <file>icons/display.png</file>
-        <file>icons/reclustering.png</file>
-        <file>icons/refinement.png</file>
-        <file>icons/session.png</file>
+        <file alias="icons/auto-merge-settings">icons/automerge.png</file>
+        <file alias="icons/auto-merge">icons/auto_merge_tool.png</file>
+        <file alias="icons/display">icons/display.png</file>
+        <file alias="icons/reclustering">icons/reclustering.png</file>
+        <file alias="icons/refinement">icons/refinement.png</file>
+        <file alias="icons/session">icons/session.png</file>
     </qresource>
 </RCC>

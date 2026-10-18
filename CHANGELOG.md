@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-18 | [Klusters: one table for action icons](#2026-10-18--klusters-one-table-for-action-icons) |
 | 2026-10-18 | [Klusters: edit the radial menu in Preferences](#2026-10-18--klusters-edit-the-radial-menu-in-preferences) |
 | 2026-10-17 | [Klusters: radial context menu (proof of concept)](#2026-10-17--klusters-radial-context-menu-proof-of-concept) |
 | 2026-10-17 | [Spike extraction: one .spk row per .res time; shared extractor code](#2026-10-17--spike-extraction-one-spk-row-per-res-time-shared-extractor-code) |
@@ -69,6 +70,41 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-18 — Klusters: one table for action icons
+
+<details>
+<summary>Details</summary>
+
+- **The standard** ([STANDARDIZATION.md](doc/dev/STANDARDIZATION.md) §2.11):
+  an action's icon is a row in one table keyed by the action's stable id
+  (`actionid.h`), applied in one pass — no `setIcon()` where the action is
+  created. Generic actions use the desktop theme's icon by freedesktop name
+  with the bundled copy as fallback; Klusters' own icons load as
+  `:/icons/<alias>` with lower-case, hyphenated aliases; icons painted in code
+  take their outline from the palette. Recipe: [RECIPES.md](doc/dev/RECIPES.md)
+  §2.6.
+- Klusters: `actionicons.h/.cpp` holds the 25 icons that were set at 25
+  creation sites in `klusters.cpp`; `KlustersApp::applyActionIcons()` sets them
+  at start-up and again after Preferences ▸ Apply. `actionid.h` /
+  `klusters_actionids.cpp` take the action ids out of the radial-menu code so
+  both use the same names.
+- `klusters-icons.qrc` gives every icon a descriptive alias
+  (`delete_artefact_tool.png` → `delete-artifact-spikes`, `backCluster.png` →
+  `previous-spike`, …); the files are unchanged.
+- Fix: *File ▸ Renumber and Save* never had an icon — it pointed at
+  `filesave.png` in the working directory. It now uses `document-save`.
+- *File ▸ Quit* asks the theme for `application-exit` (the freedesktop name for
+  quitting), falling back to the bundled `window-close` it showed before.
+- The two multi-lasso icons draw their loops in the palette's text colour, so
+  they stay visible in the dark theme.
+- New test `klusters_test_actionicons`: every row against the icons the
+  program ships (both `.qrc` files compiled in) and the drawn icons' palette
+  dependence; it fails on a renamed-away alias and on a fixed outline colour
+  (negative controls). A build with `-DNS3_VERBOSE=1` logs table rows whose
+  action is missing and toolbar buttons without an icon.
+
+</details>
 
 ## 2026-10-18 — Klusters: edit the radial menu in Preferences
 
