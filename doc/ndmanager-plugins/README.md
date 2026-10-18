@@ -73,7 +73,7 @@ carries on.
 | libhdf5 | `ndm_aom2dat` | yes |
 | libxml2, `xpathReader` | legacy `.xml` parameter files | yes |
 | OpenMP | parallel processing throughout | recommended |
-| SciPy | sub-sample refinement in `ndm_estimatedrift` | optional |
+| SciPy | `ndm_spikegrouper`, `ndm_autoklusta` and the waveform-adaptation fit (`adaptmodel.py`, used by `process_reassignspikes`); elsewhere a refinement with a fallback — sub-sample drift in `ndm_estimatedrift`, least-squares in `ndm_localise`, the curve fit in `process_subtractspikes` | yes for those steps |
 | ruamel.yaml | keeps comments when `ndm_plx2dat` edits the YAML | optional |
 | CUDA ≥ 12.8 | GPU paths of the filters and detection (`process_butterworth`, `process_medianfilter`, `process_medianthreshold`); CPU fallback otherwise | optional |
 | FFmpeg / libav (`avconv`) | `ndm_extractleds`, `ndm_transcodevideo` | optional |

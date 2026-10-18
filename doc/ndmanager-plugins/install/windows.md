@@ -57,10 +57,10 @@ Builds all binaries that do not require `sys/sysinfo.h`. This covers `process_me
    vcpkg install libxml2:x64-windows yaml-cpp:x64-windows
    ```
 
-5. **python3** with pyyaml (for YAML reading in scripts if using MSYS2 later):
+5. **python3** with PyYAML, NumPy and SciPy (the Python pipeline steps):
    ```powershell
    winget install Python.Python.3
-   pip install pyyaml
+   pip install pyyaml numpy scipy
    ```
 
 6. **FFmpeg** (optional — video tools):

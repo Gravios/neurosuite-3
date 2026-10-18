@@ -18,7 +18,7 @@ Install [Homebrew](https://brew.sh):
 
 ```bash
 brew install cmake ninja libxml2 yaml-cpp python pkg-config
-pip3 install pyyaml
+pip3 install pyyaml numpy scipy
 ```
 
 ### Optional: FFmpeg (video tools)

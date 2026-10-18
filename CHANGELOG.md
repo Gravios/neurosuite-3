@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-18 | [CI installs SciPy; the plugins' SciPy dependency documented as it is](#2026-10-18--ci-installs-scipy-the-plugins-scipy-dependency-documented-as-it-is) |
 | 2026-10-18 | [CI builds again: two libklustersshared tests missed the export header](#2026-10-18--ci-builds-again-two-libklustersshared-tests-missed-the-export-header) |
 | 2026-10-18 | [Docs: roadmap and collision-decomposition workflow brought up to date](#2026-10-18--docs-roadmap-and-collision-decomposition-workflow-brought-up-to-date) |
 | 2026-10-18 | [Klusters: one table for action icons](#2026-10-18--klusters-one-table-for-action-icons) |
@@ -72,6 +73,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-18 — CI installs SciPy; the plugins' SciPy dependency documented as it is
+
+<details>
+<summary>Details</summary>
+
+- With the build fixed, CI's test step failed on `ndm_test_adaptmodel`: the
+  waveform-adaptation fit (`adaptmodel.py`, used by `process_reassignspikes`)
+  imports `scipy.optimize` for its selftest, and the CI job installed only
+  NumPy and PyYAML. CI now installs `python3-scipy`.
+- The dependency table called SciPy optional, "sub-sample refinement in
+  `ndm_estimatedrift`". `ndm_spikegrouper`, `ndm_autoklusta` and the adaptation
+  fit need it; `ndm_estimatedrift`, `ndm_localise` and `process_subtractspikes`
+  use it with a fallback. The table says so, and the Linux, macOS and Windows
+  install guides now install NumPy and SciPy (they listed only PyYAML).
+- Checked in a Python matching the runner (3.12.3, NumPy 1.26.4, SciPy 1.11.4,
+  PyYAML 6.0.1): all 20 ndmanager-plugins tests pass; with SciPy hidden,
+  `ndm_test_adaptmodel` fails exactly as in CI.
+
+</details>
 
 ## 2026-10-18 — CI builds again: two libklustersshared tests missed the export header
 

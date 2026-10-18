@@ -13,7 +13,7 @@ Follow **[doc/gpu/README.md — NVIDIA CUDA](../../gpu/README.md#nvidia-cuda)** 
 ```bash
 sudo apt install \
   cmake build-essential pkg-config \
-  libxml2-dev libyaml-cpp-dev python3-yaml libgomp1
+  libxml2-dev libyaml-cpp-dev python3-yaml python3-numpy python3-scipy libgomp1
 ```
 
 ## Step 3 — Build

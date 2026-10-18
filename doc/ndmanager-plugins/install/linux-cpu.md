@@ -9,7 +9,7 @@ sudo apt install \
   cmake build-essential pkg-config \
   libxml2-dev \
   libyaml-cpp-dev \
-  python3-yaml \
+  python3-yaml python3-numpy python3-scipy \
   libgomp1
 ```
 
