@@ -8,98 +8,144 @@
     app.radialMenu, so it is listed and rebindable in Preferences ▸ Input and
     shown in Help ▸ Shortcuts like every other binding.
 
-    The menu is a curated tree of the actions the menu bar already owns —
-    nothing is duplicated: enabled / checked state, icons and shortcuts are
-    the live ones, and a wedge simply triggers its QAction.  Hidden actions
-    (and submenus left empty by them) drop out of the rings.
+    The menu is a tree of the actions the menu bar already owns — nothing is
+    duplicated: enabled / checked state, icons and shortcuts are the live
+    ones, and a wedge simply triggers its QAction.  Hidden actions (and
+    submenus left empty by them) drop out of the rings.  Which actions, in
+    which groups and order, is data (radiallayout.h): the shipped default or
+    the layout edited in Preferences ▸ Radial menu, resolved here against the
+    catalogue of menu-bar actions (radialCatalog()).
 
     Copyright (C) 2026  neurosuite-3 contributors
     SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 
 #include "klusters.h"
+#include "configuration.h"
+#include "radiallayout.h"
 #include "radialmenu.h"
 
+#include <QHash>
 #include <QKeySequence>
 #include <QMenu>
+#include <QMenuBar>
+#include <QSet>
 #include <QStatusBar>
+#include <QWidgetAction>
+
+#include <functional>
+
+namespace {
+// Menus whose entries are not commands (recent files): kept out of the catalogue.
+bool isCatalogueMenu(const QAction* menuAction)
+{
+    return menuAction && !menuAction->inherits("QRecentFileAction");
+}
+} // namespace
+
+QList<RadialCatalogEntry> KlustersApp::radialCatalog() const
+{
+    // Registry id per action, where the action is mirrored as an app command.
+    QHash<const QAction*, QString> registryId;
+    for (auto it = appActionCommands_.constBegin(); it != appActionCommands_.constEnd(); ++it)
+        if (it.value() && !registryId.contains(it.value())) registryId.insert(it.value(), it.key());
+
+    QList<RadialCatalogEntry> out;
+    QSet<QString> seen;
+    std::function<void(const QMenu*, const QStringList&)> walk =
+        [&](const QMenu* m, const QStringList& path) {
+        for (QAction* a : m->actions()) {
+            if (!a || a->isSeparator() || qobject_cast<QWidgetAction*>(a)) continue;
+            const QString text = radiallayout::plainActionText(a->text());
+            if (text.isEmpty()) continue;
+            if (a->menu()) {
+                if (isCatalogueMenu(a)) walk(a->menu(), path + QStringList{ text });
+                continue;
+            }
+            RadialCatalogEntry e;
+            e.id = registryId.value(a, radiallayout::menuPathId(path, a->text()));
+            e.path = path;
+            e.text = text;
+            e.action = a;
+            if (seen.contains(e.id)) continue;      // the same action under two menus
+            seen.insert(e.id);
+            out.append(e);
+        }
+    };
+    for (QAction* top : menuBar()->actions())
+        if (top && top->menu() && isCatalogueMenu(top))
+            walk(top->menu(), QStringList{ radiallayout::plainActionText(top->text()) });
+    return out;
+}
+
+QHash<QString, QAction*> KlustersApp::radialActionsById() const
+{
+    // Both ids resolve for every action: the registry id the catalogue prefers and
+    // the menu path, so a stored layout survives an action gaining a registry id.
+    QHash<QString, QAction*> map;
+    for (const RadialCatalogEntry& e : radialCatalog()) {
+        map.insert(e.id, e.action);
+        map.insert(radiallayout::menuPathId(e.path, e.action->text()), e.action);
+    }
+    return map;
+}
 
 void KlustersApp::buildRadialMenuTree()
 {
-    // A container only: QMenu::addAction(QAction*) does not take ownership, and
-    // addMenu(QMenu*) adds the existing submenu's own menuAction, so every entry
-    // below is the very QAction the menu bar shows.
+    // A container only: QMenu::addAction(QAction*) does not take ownership, so every
+    // action wedge is the very QAction the menu bar shows.  Groups are new QMenus
+    // owned by the container.
     mRadialMenuTree = new QMenu(this);
-    auto add = [](QMenu* m, QAction* a) { if (a) m->addAction(a); };
-
-    // Clockwise from 12 o'clock.  A short root (9 wedges, 40° each) keeps each
-    // direction distinct enough to flick without looking.
-    QMenu* tools = mRadialMenuTree->addMenu(tr("Tools"));
-    add(tools, mNewCluster);
-    add(tools, mSplitClusters);
-    add(tools, mMultiLasso);
-    add(tools, mApplyMultiLasso);
-    add(tools, mDeleteArtifactSpikes);
-    add(tools, mDeleteNoisySpikes);
-
-    QMenu* clusters = mRadialMenuTree->addMenu(tr("Clusters"));
-    add(clusters, mDeleteArtifact);
-    add(clusters, mDeleteNoisy);
-    add(clusters, mGroupeClusters);
-    add(clusters, mPurgeSmallClusters);
-
-    QMenu* recluster = mRadialMenuTree->addMenu(tr("Recluster"));
-    add(recluster, mReCluster);
-    add(recluster, mReclusterMedian);
-    add(recluster, mSplitByKnn);
-    add(recluster, mDipSplit);
-    add(recluster, mWatershed);
-    add(recluster, mStripOutliers);
-    add(recluster, mStripWaveformOutliers);
-    add(recluster, mRealignSpikes);
-
-    add(mRadialMenuTree, mUndo);
-    add(mRadialMenuTree, mRedo);
-
-    QMenu* hierarchy = mRadialMenuTree->addMenu(tr("Hierarchy"));
-    add(hierarchy, mMergeParents);
-    add(hierarchy, mPromoteChild);
-    add(hierarchy, mGroupChildren);
-    add(hierarchy, mDissolveParent);
-    add(hierarchy, mDropChildNoise);
-
-    // The Actions ▸ Sort Clusters entries under short wedge labels (the menu
-    // bar keeps the full names; the status bar shows them on hover).  Hidden
-    // or missing entries drop out like any other.
-    QMenu* sort = mRadialMenuTree->addMenu(tr("Sort"));
-    const struct { QAction* action; const char* label; } sortEntries[] = {
-        { mReorderClustersBySimilarity,       QT_TR_NOOP("Similarity") },
-        { mSortClustersBySpikeCount,          QT_TR_NOOP("Count") },
-        { mSortClustersByTime,                QT_TR_NOOP("Time") },
-        { mSortClustersByContamination,       QT_TR_NOOP("Contam.") },
-        { mSortClustersBySnr,                 QT_TR_NOOP("SNR") },
-        { mSortClustersByAmplitude,           QT_TR_NOOP("Amplitude") },
-        { mSortClustersByAmplitudeByChannel,  QT_TR_NOOP("Amp. / channel") },
-        { mSortClustersByErrorPval,           QT_TR_NOOP("Error p") },
-        { mSortByResidualGated,               QT_TR_NOOP("Residual") },
-        { mSortByWaveformNN,                  QT_TR_NOOP("Waveform NN") },
-        { mSortByWaveformSpectral,            QT_TR_NOOP("Spectral") },
-    };
-    for (const auto& e : sortEntries) {
-        if (!e.action) continue;
-        sort->addAction(e.action);
-        mRadialMenu->setLabel(e.action, tr(e.label));
-    }
 
     // The feature-space axes as value wedges: hover one and turn the wheel.  These
     // two actions exist only here (the toolbar spinboxes are the menu-bar-side
     // control); triggering them does nothing, and RadialMenu never picks them.
     mRadialDimX = new QAction(tr("X axis feature dimension"), mRadialMenuTree);
     mRadialDimY = new QAction(tr("Y axis feature dimension"), mRadialMenuTree);
-    for (QAction* a : { mRadialDimX, mRadialDimY }) {
-        mRadialMenuTree->addAction(a);
-        mRadialMenu->setAdjustable(a);
-    }
+    mRadialMenu->setAdjustable(mRadialDimX);
+    mRadialMenu->setAdjustable(mRadialDimY);
+    mRadialDimXPrefix = tr("X");
+    mRadialDimYPrefix = tr("Y");
+
+    const QHash<QString, QAction*> byId = radialActionsById();
+    std::function<void(QMenu*, const RadialLayout&)> fill =
+        [&](QMenu* m, const RadialLayout& nodes) {
+        for (const RadialLayoutNode& n : nodes) {
+            switch (n.kind) {
+            case RadialLayoutNode::Kind::Group:
+                fill(m->addMenu(n.label), n.children);
+                break;
+            case RadialLayoutNode::Kind::Action:
+                if (QAction* a = byId.value(n.id)) {
+                    m->addAction(a);
+                    mRadialMenu->setLabel(a, n.label);   // empty clears: full text
+                } else {
+                    NS3_DIAG() << "radial menu: no action for id" << n.id;
+                }
+                break;
+            case RadialLayoutNode::Kind::Value:
+                if (n.id == QLatin1String("dimX")) {
+                    m->addAction(mRadialDimX);
+                    if (!n.label.isEmpty()) mRadialDimXPrefix = n.label;
+                } else if (n.id == QLatin1String("dimY")) {
+                    m->addAction(mRadialDimY);
+                    if (!n.label.isEmpty()) mRadialDimYPrefix = n.label;
+                }
+                break;
+            }
+        }
+    };
+    fill(mRadialMenuTree, radiallayout::fromSettings(configuration().getRadialMenuLayout()));
+}
+
+void KlustersApp::rebuildRadialMenu()
+{
+    // The layout changed (Preferences ▸ Radial menu): drop the wheel; the next
+    // right-click builds it again from the stored layout.
+    delete mRadialMenu;   mRadialMenu = nullptr;
+    delete mRadialMenuTree; mRadialMenuTree = nullptr;   // owns the groups and X / Y
+    mRadialDimX = nullptr;
+    mRadialDimY = nullptr;
 }
 
 void KlustersApp::refreshRadialDimensions()
@@ -110,8 +156,8 @@ void KlustersApp::refreshRadialDimensions()
                    && dimensionX->isEnabled() && dimensionX->maximum() > 1;
     mRadialDimX->setEnabled(live);
     mRadialDimY->setEnabled(live);
-    mRadialMenu->setLabel(mRadialDimX, tr("X: %1").arg(dimensionX->value()));
-    mRadialMenu->setLabel(mRadialDimY, tr("Y: %1").arg(dimensionY->value()));
+    mRadialMenu->setLabel(mRadialDimX, tr("%1: %2").arg(mRadialDimXPrefix).arg(dimensionX->value()));
+    mRadialMenu->setLabel(mRadialDimY, tr("%1: %2").arg(mRadialDimYPrefix).arg(dimensionY->value()));
 }
 
 void KlustersApp::showRadialStatus(QAction* a)
@@ -138,7 +184,7 @@ void KlustersApp::showRadialMenu(const QPoint& globalPos)
 {
     if (!mRadialMenu) {
         mRadialMenu = new RadialMenu(this);
-        buildRadialMenuTree();               // also sets the Sort wedges' short labels
+        buildRadialMenuTree();               // also sets the wedges' short labels
         mRadialMenu->setMenu(mRadialMenuTree);
         connect(mRadialMenu, &RadialMenu::hovered, this, &KlustersApp::showRadialStatus);
         // Wheel over X / Y: step the toolbar spinbox (it wraps, like the spinbox's own

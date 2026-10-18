@@ -211,6 +211,11 @@ void Configuration::read() {
     }
     settings.endArray();
     settings.endGroup();
+
+    //read the radial context menu layout (radiallayout.h JSON; empty = default).
+    settings.beginGroup("radialMenu");
+    radialMenuLayout = settings.value("layout", QString()).toString();
+    settings.endGroup();
 }
 
 void Configuration::write() const {  
@@ -347,6 +352,13 @@ void Configuration::write() const {
         settings.setValue("text", it.value());
     }
     settings.endArray();
+    settings.endGroup();
+
+    //write the radial context menu layout; an empty one (the default) removes the key
+    //so a later change to the shipped default reaches users who never edited theirs.
+    settings.beginGroup("radialMenu");
+    if(radialMenuLayout.isEmpty()) settings.remove("layout");
+    else settings.setValue("layout", radialMenuLayout);
     settings.endGroup();
 }
 

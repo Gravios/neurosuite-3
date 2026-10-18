@@ -32,6 +32,7 @@
 #include "pluginregistry.h"  // Plugins menu (discovery + descriptors)
 class QMenu;
 class RadialMenu;
+#include "radiallayout.h"   // RadialCatalogEntry (radialCatalog)
 #include <neurosuite/core/watershed2d.hpp>   // for Result struct used in live-preview state
 
 
@@ -776,8 +777,18 @@ private:
     // dimension spinbox (dimensionX / dimensionY), so the scatter follows live.
     QAction* mRadialDimX = nullptr;
     QAction* mRadialDimY = nullptr;
+    QString  mRadialDimXPrefix;          ///< "X" or the layout's label for the X wedge
+    QString  mRadialDimYPrefix;
     void refreshRadialDimensions();
     void showRadialStatus(QAction* a);
+public:
+    /** Every menu-bar action the wheel can hold, with its stable id (registry id,
+     *  else menu path) — the Preferences ▸ Radial menu catalogue. */
+    QList<RadialCatalogEntry> radialCatalog() const;
+    /** Drop the wheel so the next right-click rebuilds it from the stored layout. */
+    void rebuildRadialMenu();
+private:
+    QHash<QString, QAction*> radialActionsById() const;
 
     // Plugins (descriptor discovery; read-only listing in v1).
     PluginRegistry mPluginRegistry;

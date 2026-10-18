@@ -201,6 +201,12 @@ public:
     void setInputProfiles(const QMap<QString,QString>& m){inputProfiles = m;}
     const QMap<QString,QString>& getInputProfiles() const {return inputProfiles;}
 
+    /** The radial context menu's layout (radiallayout.h JSON), edited in
+     *  Preferences ▸ Radial menu.  Empty = the shipped default.  Persisted as
+     *  "radialMenu/layout". */
+    void setRadialMenuLayout(const QString& json){radialMenuLayout = json;}
+    const QString& getRadialMenuLayout() const {return radialMenuLayout;}
+
     /**Returns true if a crash and recovery autosave is performed, false othewise.*/
     bool isCrashRecovery() const{return crashRecovery;}
 
@@ -647,6 +653,7 @@ private:
     int templateXcorrMetric = 0;   // 0=cosine 1=pearson 2=raw 3=disatten 4=fastAP
     QMap<QString,QString> inputBindingOverrides;   // command id -> Chord::toString() (input-remapping plan §5)
     QMap<QString,QString> inputProfiles;           // layout name -> serialized keymap text (input-remapping "Keymap profiles")
+    QString radialMenuLayout;                      // radial menu layout JSON (radiallayout.h); empty = default
 
     bool useWhiteColorDuringPrinting;
     bool autoSelectFeatures;

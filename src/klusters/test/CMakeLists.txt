@@ -135,4 +135,14 @@ if(Qt6_FOUND)
         PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_core}")
     target_link_libraries(klusters_test_keymapprofile PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_keymapprofile COMMAND klusters_test_keymapprofile)
+
+    # Radial menu layout (radiallayout.h): the wheel's tree as data -- JSON round
+    # trip, settings fallback, malformed / wrong-version rejection, ring counting,
+    # menu-path ids.  Qt Core only (QJson); no widgets.
+    add_executable(klusters_test_radiallayout
+        radiallayout_test.cpp "${_klu_src}/radiallayout.cpp")
+    target_compile_features(klusters_test_radiallayout PRIVATE cxx_std_20)
+    target_include_directories(klusters_test_radiallayout PRIVATE "${_klu_src}")
+    target_link_libraries(klusters_test_radiallayout PRIVATE Qt6::Core)
+    add_test(NAME klusters_test_radiallayout COMMAND klusters_test_radiallayout)
 endif()
