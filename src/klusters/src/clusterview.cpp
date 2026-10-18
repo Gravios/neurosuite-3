@@ -25,7 +25,6 @@
 #include "itemcolors.h"
 #include "configuration.h"
 
-#include "timer.h"
 #include <QDebug>
 #include <QKeyEvent>
 #include <QWheelEvent>

@@ -24,7 +24,6 @@
 
 //include files for the application
 #include "clustersprovider.h"
-#include "timer.h"
 #include <neurosuite/core/custody.hpp>   // shared anchor parser (clu/clc/...)
 
 

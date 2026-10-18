@@ -29,7 +29,6 @@
 #endif
 
 #include <klustersshared/theme.h>
-#include "timer.h"
 #include "config-klusters.h"
 
 int nbUndo;

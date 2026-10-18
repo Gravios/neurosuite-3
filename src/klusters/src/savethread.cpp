@@ -17,7 +17,6 @@
 
 //include files for the application
 #include "savethread.h"
-#include "timer.h"
 
 //QT include files
 #include <QApplication>

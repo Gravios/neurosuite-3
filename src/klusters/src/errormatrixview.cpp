@@ -36,7 +36,6 @@
 #include "data.h"
 #include "configuration.h"
 
-#include "timer.h"
 
 // Incremental error-matrix reuse is a user preference (Preferences > Refinement).
 // The NS3_ERRORMATRIX_INCREMENTAL environment variable, when set, overrides the

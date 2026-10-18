@@ -50,7 +50,6 @@
 #include <iomanip> // Required for formated I/O.
 
 
-#include "timer.h"
 #include <neurosuite/core/neurofileio.h>
 #include <queue>
 
@@ -4888,8 +4887,6 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
 
 bool Data::saveClusters(FILE* clusterFile)
 {
-    RestartTimer();
-
     // Binary .clu format:
     //   int32_t  nClusters
     //   nSpikes x int32_t  cluster ids in timestamp order

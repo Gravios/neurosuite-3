@@ -33,7 +33,6 @@
 
 //include files for the application
 #include "eventsprovider.h"
-#include "timer.h"
 
 
 EventsProvider::EventsProvider(const QString& fileUrl,double rate,int position)
@@ -60,8 +59,6 @@ EventsProvider::~EventsProvider(){
 }
 
 int EventsProvider::loadData(){
-    RestartTimer();
-
 
     int nbEventsRead = 0;
     QFile file(fileName);

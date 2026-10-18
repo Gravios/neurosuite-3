@@ -81,7 +81,6 @@
 #include <math.h>
 #include <climits>
 
-#include "timer.h"
 
 #include <neurosuite/core/neurofileio.h>  // variant-aware input resolution
 #include <neurosuite/core/custody.hpp>     // shared chain-of-custody policy

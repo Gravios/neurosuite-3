@@ -49,7 +49,6 @@
 #include "clustersprovider.h"
 #include "eventsprovider.h"
 #include "itemcolors.h"
-#include "timer.h"
 
 const int TraceView::XMARGIN = 50;
 const int TraceView::YMARGIN = 0;
