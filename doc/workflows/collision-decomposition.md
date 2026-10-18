@@ -28,13 +28,26 @@ collision matches.
 
 ### 2. Run decomposition
 
+Two routes run the same engine (`process_decomposecollisions`).
+
+**In Klusters — the open group.** With the group open, run *Plugins ▸
+process_decomposecollisions*. Session, method, group, waveform geometry and the
+open stage's clu tag are filled in from the open group; only the thresholds are
+yours to set. Klusters asks before it closes and reopens the group, then
+applies the accepted decompositions itself (*batch decollide*, step 4).
+
+**From the shell — every group.**
+
 ```sh
-ndm_decomposecollisions session.yaml
+ndm_decomposecollisions session.yaml [--method M]
 ```
 
-Outputs `session.col.N` per group. The format is binary with a
-32-byte header, 32-byte parameter block, a template table, and a
-record table — see [`.col.N` format](../ndmanager-plugins/formats/col.md).
+Outputs `session.col.<method>.N` per group (a stage-tagged run:
+`session.col.<method>.N.<tag>`), and `.eap` / `.tcl` membership for groups with
+an accepted decomposition. The `.col` format is binary — a 32-byte header,
+32-byte parameter block, a template table and a record table — see
+[`.col`](../ndmanager-plugins/formats/col.md). `.clu`, `.res` and `.spk` are
+never modified.
 
 For each detected spike, the decomposer:
 
@@ -42,41 +55,45 @@ For each detected spike, the decomposer:
    templates (cuBLAS SGEMM batch correlation when CUDA is available).
 2. Tests single-unit fits against two-unit fits (with one unit
    circularly shifted in time).
-3. Records the best decomposition in `.col.N`.
+3. Records the best decomposition in the `.col`, flagged *accepted* when it
+   passes the correlation, residual and amplitude thresholds.
 
 For algorithm details (amplitude clamping, per-template projection
 percentiles, the u1-fixed/u2-shifted convention), see
-[`../design/decomposecollisions.md`](../design/decomposecollisions.md).
+[`../design/decomposecollisions.md`](../design/decomposecollisions.md) and the
+[command reference](../ndmanager-plugins/commands/ndm_decomposecollisions.md).
 
 ### 3. Visualise
 
 ```sh
-collision_viewer.py session.col.N
+collision_viewer.py SESSION [GROUP]
 ```
 
-Stacked Klusters-style display: raw event in gray, candidate
-templates in dashed blue/orange, and the sum (model fit) in green.
-Channel order is inverted (lowest channel at top) to match Klusters.
-Keyboard shortcuts: A=accept, R=reject, N=next, P=prev, I=info,
-D=delete.
+Finds `SESSION.col.<method>.N` itself. Stacked Klusters-style display: raw event
+in gray, the two component fits in blue/orange, their sum (the model fit)
+dashed green, the residual in red; a threshold panel plots residual against
+best single-unit correlation for the current unit pair. Channel order is
+inverted (lowest channel at top) to match Klusters. Keys: A = accept,
+R = reject, N = next, P = previous, I / D = scale the waveforms up / down.
 
-Walk through events flagged by the decomposer and accept or reject
-each. Accepted decompositions can be propagated back to the `.clu.N`
-as new spike entries (one per source unit), or simply kept in the
-`.col.N` for later analysis without modifying the host clu.
+Your accept / reject decisions are saved to `SESSION_decisions.csv`; they do
+not change the `.col`, so they are a review record (and a guide for retuning the
+thresholds), not an input to step 4.
 
-### 4. (Optional) Merge into the spike record
+### 4. (Optional) Fold the decompositions into the spike record
 
-If you want collision-decomposed spikes to count as separate firings
-in downstream analyses (PSTHs, cross-correlograms, etc.), use the
-`--commit` flag:
+To count collision-decomposed spikes as separate firings in downstream analyses
+(PSTHs, cross-correlograms, …), apply the `.col` in Klusters. The Klusters route
+in step 2 does this automatically; it can also be done for a lasso of spikes
+against a pinned two-cluster oblique basis (*decollide*, key D while a lasso is
+pending). Either way Klusters
 
-```sh
-ndm_decomposecollisions session.yaml --commit
-```
+- records the decompositions as `.eap` / `.tcl` membership on the current
+  stage, and
+- writes a **new stage** whose `.res` / `.clu` / `.spk` / `.fet` carry the second
+  unit of each accepted decomposition as its own spike, and opens it.
 
-This writes new `.res.N` and `.clu.N` entries for each accepted
-decomposition. The original `.col.N` is preserved as the audit
+The stage you started from is left as it was, and the `.col` stays as the audit
 trail.
 
 ## When this matters
@@ -97,5 +114,5 @@ collided events doesn't shift those statistics.
 ## See also
 
 - [`ndm_decomposecollisions`](../ndmanager-plugins/commands/ndm_decomposecollisions.md)
-- [`.col.N` format](../ndmanager-plugins/formats/col.md)
+- [`.col` format](../ndmanager-plugins/formats/col.md)
 - [`../design/decomposecollisions.md`](../design/decomposecollisions.md) — algorithm design

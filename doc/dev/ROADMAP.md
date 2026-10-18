@@ -36,6 +36,12 @@ entries: the lineage overlay (right-click menu, fold, band, ribbon, delete,
 amplitude tracking), the four matrix template strips + click-to-overlay,
 each repainted view after the paint refactor, and the Klusters + NeuroScope
 mouse gestures and Preferences ▸ Input rebind/persist/keymap round-trip.
+Since 2026-10-17 also the radial context menu on a real desktop (tested only on
+Xvfb): Right-click on each view, the lineage overlay keeping its own
+right-click menu, the X / Y wedges greyed in a display without a cluster
+view, transparent corners under a compositor, Preferences ▸ Radial menu edits
+on the reference session; and the action icons under the desktop's own icon
+theme (the Standard rows now come from it).
 Check Preferences ▸ Input / Reset all before suspecting a regression (a
 stale saved override reads exactly like one).  Estimate: 1 session.
 
@@ -184,12 +190,6 @@ matched virtual override names from dead-code reports.  ~30 lines of
 analyzer script.  Improves signal/noise across all future audit passes.
 Estimate: half a session.
 
-**`process_decomposecollisions` workflow integration.**
-Currently a power-user offline tool.  C++ engine + Python viewer, no GUI
-hookup.  If this becomes regular curation flow, deserves a Klusters menu
-entry.  If not, deserves more visible documentation so future-you doesn't
-forget it exists.  Decision: is this becoming routine or staying offline?
-
 ---
 
 ## Later
@@ -225,6 +225,41 @@ git history / `CHANGELOG.md` after roughly a quarter.)
 
 <details>
 <summary>Completed items</summary>
+
+### ✅ Action-icon standard *(2026-10-18)*
+
+An action's icon is a row in one table keyed by the action's stable id,
+applied in one pass: generic actions from the desktop theme by freedesktop
+name with the bundled copy as fallback, Klusters' own icons by hyphenated
+`.qrc` alias, painted icons from the palette (they follow light / dark).
+Fixed on the way: *Renumber and Save* had never shown its icon.  Klusters
+follows it (`actionicons.h`, `klusters_test_actionicons`); NeuroScope and
+ndManager still set icons at their creation sites.  Reference:
+`STANDARDIZATION.md` §2.11, recipe `RECIPES.md` §2.6.  Open: artwork for the
+actions that have none (the Recluster family, the sorts, Hierarchy).
+
+### ✅ Klusters radial context menu *(2026-10-17 → 10-18)*
+
+Right-click in a view opens a hierarchical ring menu (flick or click, Esc
+backs out a ring) over the menu-bar actions; the lasso undo-vertex and the
+lineage overlay keep their right-click.  Sort holds the sort actions under
+short labels; X / Y wedges step the feature dimensions with the mouse wheel.
+The layout is data (`radiallayout.h`, settings key `radialMenu/layout`) and
+is edited in Preferences ▸ Radial menu (catalogue, drag-and-drop tree, live
+preview).  Fixed on the way: the views' right-click filter swallowed every
+registry-bound right press, and a right-click on a panel title bar opened two
+menus.  Reference: `doc/klusters/README.md`, "Radial context menu".  Open:
+the live pass above.
+
+### ✅ Collision decomposition in Klusters *(2026-10-02 → 10-09)*
+
+`process_decomposecollisions` runs from Klusters' Plugins menu: its
+descriptor (`plugins/descriptions/process_decomposecollisions.xml`,
+integration `decollide-apply`) prefills the open group, and Klusters applies
+the accepted records of the `.col` sidecar it writes through the same
+grow-and-stage path as the targeted decollide (a lasso against a pinned
+two-cluster oblique basis, key D in the pending-lasso mode).  Reference:
+`doc/workflows/collision-decomposition.md`.
 
 ### ✅ PCA-basis reader accepts more than 64 channels
 

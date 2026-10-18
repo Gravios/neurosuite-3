@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-18 | [Docs: roadmap and collision-decomposition workflow brought up to date](#2026-10-18--docs-roadmap-and-collision-decomposition-workflow-brought-up-to-date) |
 | 2026-10-18 | [Klusters: one table for action icons](#2026-10-18--klusters-one-table-for-action-icons) |
 | 2026-10-18 | [Klusters: edit the radial menu in Preferences](#2026-10-18--klusters-edit-the-radial-menu-in-preferences) |
 | 2026-10-17 | [Klusters: radial context menu (proof of concept)](#2026-10-17--klusters-radial-context-menu-proof-of-concept) |
@@ -70,6 +71,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-18 — Docs: roadmap and collision-decomposition workflow brought up to date
+
+<details>
+<summary>Details</summary>
+
+- `doc/workflows/collision-decomposition.md` described the pre-Klusters state:
+  file names in the retired `.col.N` form, a `ndm_decomposecollisions --commit`
+  flag that does not exist, viewer keys I / D as "info" / "delete" (they scale
+  the waveforms), and viewer decisions as if they fed back into the `.col`
+  (they go to `SESSION_decisions.csv`). It now describes both routes — *Plugins ▸
+  process_decomposecollisions* in Klusters for the open group, and the shell
+  command for every group — and step 4 as Klusters' decollide: `.eap` / `.tcl`
+  membership on the current stage plus a new stage carrying the decomposed
+  spikes.
+- `ROADMAP.md`: the "considered" entry calling `process_decomposecollisions` an
+  offline tool with no GUI hookup is replaced by a Done entry (Klusters has run
+  it from the Plugins menu since 2026-10-02); Done entries for the radial menu
+  and the action-icon standard; the live-pass item lists the radial-menu and
+  icon-theme checks still owed on a real desktop.
+
+</details>
 
 ## 2026-10-18 — Klusters: one table for action icons
 
