@@ -48,22 +48,62 @@ double minStepForRing(int ringIndex)
 }
 } // namespace
 
-RadialMenu::RadialMenu(QWidget* parent)
-    : QWidget(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
+RadialMenu::RadialMenu(QWidget* parent, Mode m)
+    : QWidget(parent, m == Mode::Popup
+                          ? (Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
+                          : Qt::Widget),
+      mode(m)
 {
-    setAttribute(Qt::WA_TranslucentBackground);
+    if (mode == Mode::Popup) {
+        setAttribute(Qt::WA_TranslucentBackground);
+        setFocusPolicy(Qt::StrongFocus);
+    }
     setMouseTracking(true);
-    setFocusPolicy(Qt::StrongFocus);
+}
+
+void RadialMenu::setDepthLimit(int ringCount)
+{
+    depthLimit = std::clamp(ringCount, 1, kDepthCap);
 }
 
 void RadialMenu::setMenu(QMenu* menuRoot)
 {
     root = menuRoot;
-    maxDepth = root ? std::min(treeDepth(root), kDepthCap) : 1;
+    maxDepth = root ? std::min({treeDepth(root), kDepthCap, depthLimit}) : 1;
     const double r = outerRadius(maxDepth - 1) + kMargin;
     const int side = static_cast<int>(std::ceil(2.0 * r));
     setFixedSize(side, side);
+    if (mode == Mode::Embedded) {
+        centre = QPointF(side / 2.0, side / 2.0);
+        applyOpenPath();
+    } else {
+        resetRings();
+    }
+}
+
+void RadialMenu::setOpenPath(const QList<QAction*>& path)
+{
+    openPath.clear();
+    for (QAction* a : path) openPath.append(a);
+    applyOpenPath();
+}
+
+void RadialMenu::applyOpenPath()
+{
     resetRings();
+    for (const QPointer<QAction>& a : openPath) {
+        if (!a || rings.isEmpty()) break;
+        Ring& ring = rings.last();
+        const int i = static_cast<int>(ring.items.indexOf(a.data()));
+        if (i < 0) break;
+        ring.hovered = i;
+        if (!a->menu() || static_cast<int>(rings.size()) >= maxDepth
+            || visibleActions(a->menu()).isEmpty())
+            break;
+        const double mid = ring.base - i * ring.step;
+        rings.append(makeRing(a->menu(), mid, ring.step, static_cast<int>(rings.size())));
+    }
+    update();
 }
 
 QMenu* RadialMenu::menu() const
@@ -320,6 +360,7 @@ void RadialMenu::mouseMoveEvent(QMouseEvent* event)
 
 void RadialMenu::mousePressEvent(QMouseEvent* event)
 {
+    if (mode == Mode::Embedded) { event->ignore(); return; }   // a preview never picks
     // Reached in click mode (a press outside the widget closes a Qt::Popup by itself).
     const QPointF p = event->position();
     updateHover(p);
@@ -330,6 +371,7 @@ void RadialMenu::mousePressEvent(QMouseEvent* event)
 
 void RadialMenu::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (mode == Mode::Embedded) { event->ignore(); return; }
     const QPointF p = event->position();
     updateHover(p);
 
@@ -351,6 +393,7 @@ void RadialMenu::mouseReleaseEvent(QMouseEvent* event)
 
 void RadialMenu::wheelEvent(QWheelEvent* event)
 {
+    if (mode == Mode::Embedded) { event->ignore(); return; }   // let a scroll area scroll
     const QPointF p = event->position();
     updateHover(p);
     const Hit hit = hitTest(p);
@@ -387,6 +430,15 @@ void RadialMenu::keyPressEvent(QKeyEvent* event)
         return;
     }
     QWidget::keyPressEvent(event);
+}
+
+void RadialMenu::leaveEvent(QEvent* event)
+{
+    if (mode == Mode::Embedded) {
+        applyOpenPath();
+        Q_EMIT hovered(nullptr);
+    }
+    QWidget::leaveEvent(event);
 }
 
 void RadialMenu::hideEvent(QHideEvent* event)

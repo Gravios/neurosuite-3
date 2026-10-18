@@ -25,6 +25,11 @@
  * live ones, and triggering a wedge is QAction::trigger().  Separators and
  * hidden actions are skipped.  The menu tree is NOT owned.
  *
+ * Mode::Embedded makes it an ordinary child widget instead of a popup — a
+ * preview (the Preferences wheel editor): hovering opens rings as usual, but
+ * nothing is ever picked or adjusted, and leaving the widget falls back to the
+ * path set with setOpenPath().
+ *
  * Copyright (C) 2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
@@ -46,7 +51,12 @@ class RadialMenu : public QWidget
     Q_OBJECT
 
 public:
-    explicit RadialMenu(QWidget* parent = nullptr);
+    enum class Mode { Popup, Embedded };
+    explicit RadialMenu(QWidget* parent = nullptr, Mode mode = Mode::Popup);
+
+    /** At most @p rings rings are shown (clamped to 1..4); deeper groups still
+     *  show their submenu marker but do not open.  Takes effect on setMenu(). */
+    void setDepthLimit(int rings);
 
     /** The tree to show (not owned).  May be changed between popups. */
     void setMenu(QMenu* root);
@@ -65,6 +75,11 @@ public:
      *  this moment the press-drag-release gesture is armed. */
     void popup(const QPoint& globalPos);
 
+    /** Embedded mode: the rings shown while the cursor is not over the widget —
+     *  each action in @p path is a group wedge to open, from the root ring out
+     *  (actions not found, or not groups, end the path). */
+    void setOpenPath(const QList<QAction*>& path);
+
 Q_SIGNALS:
     /** A leaf was chosen.  Emitted just before the action is triggered. */
     void triggered(QAction* action);
@@ -82,6 +97,7 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+    void leaveEvent(QEvent* event) override;
 
 private:
     /** One visible ring: the actions of one menu laid out on an arc. */
@@ -109,11 +125,15 @@ private:
     QAction* leafAt(const QPointF& p);
     void  activate(QAction* a);
     void  resetRings();
+    void  applyOpenPath();
 
     QPointer<QMenu> root;
     QList<Ring> rings;
     QPointF centre;             ///< ring centre in widget coordinates
     int  maxDepth = 1;
+    int  depthLimit = 4;        ///< setDepthLimit()
+    Mode mode = Mode::Popup;
+    QList<QPointer<QAction>> openPath;   ///< setOpenPath() (embedded)
     bool gestureArmed = false;  ///< opened during a press: a release may pick
     bool dragged = false;       ///< the cursor has left the hub since opening
     bool clickPressed = false;  ///< click mode: a press landed inside the widget
