@@ -14,12 +14,34 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>              // open, O_RDONLY, O_NOCTTY, O_CLOEXEC
 #include <iostream>
-#include <unistd.h>             // isatty, fileno, STDOUT_FILENO, close
-#include <sys/ioctl.h>          // TIOCGWINSZ — terminal width
+
+#ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <io.h>               // _isatty, _fileno
+#  include <windows.h>          // GetConsoleScreenBufferInfo — console width
+#else
+#  include <fcntl.h>            // open, O_RDONLY, O_NOCTTY, O_CLOEXEC
+#  include <unistd.h>           // isatty, fileno, close
+#  include <sys/ioctl.h>        // TIOCGWINSZ — terminal width
+#endif
 
 namespace {
+
+// True when @p f writes to a terminal (a console on Windows).
+bool isTerminal(std::FILE* f)
+{
+#ifdef _WIN32
+    return ::_isatty(::_fileno(f)) != 0;
+#else
+    return ::isatty(::fileno(f)) != 0;
+#endif
+}
 
 // Layout constants.
 //
@@ -85,6 +107,18 @@ const char* const EIGHTHS[8] = {
 // nothing is a TTY or all ioctls fail; caller substitutes a default.
 int detectTerminalWidth()
 {
+#ifdef _WIN32
+    // The console's visible width; stderr first, as for the output channel.
+    // (Windows has no /dev/tty: the bar falls through to stderr there.)
+    for (const DWORD which : {STD_ERROR_HANDLE, STD_OUTPUT_HANDLE}) {
+        CONSOLE_SCREEN_BUFFER_INFO info{};
+        if (::GetConsoleScreenBufferInfo(::GetStdHandle(which), &info)) {
+            const int cols = info.srWindow.Right - info.srWindow.Left + 1;
+            if (cols > 0) return cols;
+        }
+    }
+    return 0;
+#else
     struct winsize ws{};
 
     // Try /dev/tty: bypasses shell redirections, matches what the bar
@@ -106,6 +140,7 @@ int detectTerminalWidth()
         return static_cast<int>(ws.ws_col);
     }
     return 0;
+#endif
 }
 
 // True if locale env vars indicate UTF-8.  We check LC_ALL first (it
@@ -216,7 +251,7 @@ void ProgressBar::detectCapabilities()
     //    at the existing FILE*; setvbuf on stderr is usually a no-op
     //    since stderr defaults to unbuffered, but some libc'es buffer
     //    it line-wise.  Safe to call.
-    else if (isatty(STDERR_FILENO)) {
+    else if (isTerminal(stderr)) {
         std::setvbuf(stderr, nullptr, _IONBF, 0);
         ttyFile      = stderr;
         ttyFileOwned = false;
@@ -224,7 +259,7 @@ void ProgressBar::detectCapabilities()
     }
     // 3. Last try: stdout if it's a TTY (rare — usually means /dev/tty
     //    failed for an unusual reason).  Keep it for completeness.
-    else if (isatty(STDOUT_FILENO)) {
+    else if (isTerminal(stdout)) {
         ttyFile      = stdout;
         ttyFileOwned = false;
         isTty        = true;
@@ -528,13 +563,13 @@ void BlockProgress::detectCapabilities()
         ttyFileOwned = true;
         isTty        = true;
     }
-    else if (isatty(STDERR_FILENO)) {
+    else if (isTerminal(stderr)) {
         std::setvbuf(stderr, nullptr, _IONBF, 0);
         ttyFile      = stderr;
         ttyFileOwned = false;
         isTty        = true;
     }
-    else if (isatty(STDOUT_FILENO)) {
+    else if (isTerminal(stdout)) {
         ttyFile      = stdout;
         ttyFileOwned = false;
         isTty        = true;
