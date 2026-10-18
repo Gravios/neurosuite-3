@@ -145,4 +145,17 @@ if(Qt6_FOUND)
     target_include_directories(klusters_test_radiallayout PRIVATE "${_klu_src}")
     target_link_libraries(klusters_test_radiallayout PRIVATE Qt6::Core)
     add_test(NAME klusters_test_radiallayout COMMAND klusters_test_radiallayout)
+
+    # Action icons (actionicons.h): every row of the one icon table against the
+    # icons the application ships -- both .qrc files are compiled in -- plus the
+    # drawn icons' palette dependence.  Qt Gui on the offscreen platform.
+    add_executable(klusters_test_actionicons
+        actionicons_test.cpp "${_klu_src}/actionicons.cpp"
+        "${_klu_src}/klusters-icons.qrc"
+        "${_shared_root}/gui/libklustersshared-icons.qrc")
+    set_target_properties(klusters_test_actionicons PROPERTIES AUTORCC ON)
+    target_compile_features(klusters_test_actionicons PRIVATE cxx_std_20)
+    target_include_directories(klusters_test_actionicons PRIVATE "${_klu_src}")
+    target_link_libraries(klusters_test_actionicons PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME klusters_test_actionicons COMMAND klusters_test_actionicons)
 endif()
