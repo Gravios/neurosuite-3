@@ -94,8 +94,16 @@ vcpkg) stopped on two errors:
   On Windows Klusters no longer loads Intel's IntelSYCL / IntelDPCPP packages;
   it already sets `-fsycl` itself, and now links the SYCL runtime import
   library (`sycl8.lib`, or `sycl7.lib` for 2024) directly.
+- The first Windows build then failed in three Klusters sources inside Qt's
+  `qmetatype.h` ("constexpr variable 'begin' must be initialized by a
+  constant expression", from `qvariant_cast<QIcon>` in `qtablewidget.h` /
+  `qlistwidget.h`). `-fsycl` was on every Klusters source, so each got a SYCL
+  device pass that re-reads Qt's headers, where Qt's `__FUNCSIG__`-based
+  type-name parsing fails. On Windows `-fsycl` now applies only to the two
+  SYCL sources (`groupingassistant_sycl.cpp`, `realign_xcorr_sycl.cpp`, both
+  Qt-free); the link keeps `-fsycl` and, with Ninja, runs through `icx`.
 
-Linux configures as before.
+Linux configures and builds as before.
 
 </details>
 

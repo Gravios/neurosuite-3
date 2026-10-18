@@ -216,8 +216,22 @@ if(USE_SYCL)
     # ocloc or a specific device name.  For AOT add:
     #   -fsycl-targets=spir64_gen -Xs "-device xe_hpg"  (or your GPU codename)
     set(SYCL_FLAGS "-fsycl" "-fsycl-targets=spir64")
-    target_compile_options(klusters PRIVATE
-        $<$<COMPILE_LANGUAGE:CXX>:${SYCL_FLAGS}>)
+    if(WIN32)
+        # Windows: -fsycl only on the two SYCL sources (both Qt-free).  With
+        # -fsycl every source also gets a device pass, and on Windows that
+        # pass re-reads Qt's headers, where Qt's __FUNCSIG__-based type-name
+        # parsing (qmetatype.h typenameHelper, for qvariant_cast<QIcon> etc.)
+        # is not a constant expression -- 11 errors per Qt widget source with
+        # icx 2025.1 and Qt 6.8.3.  The link below still takes -fsycl, and
+        # with Ninja it runs through icx, which bundles the device code.
+        set_source_files_properties(
+            groupingassistant_sycl.cpp
+            "${_xcorr_dir}/realign_xcorr_sycl.cpp"
+            PROPERTIES COMPILE_OPTIONS "${SYCL_FLAGS}")
+    else()
+        target_compile_options(klusters PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:${SYCL_FLAGS}>)
+    endif()
     target_link_options(klusters PRIVATE ${SYCL_FLAGS})
     # Link SYCL runtime if the CMake package exports an imported target.
     # Intel renamed the package from IntelDPCPP to IntelSYCL; try both.
