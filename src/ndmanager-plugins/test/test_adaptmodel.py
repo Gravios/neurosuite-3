@@ -35,6 +35,15 @@ def main():
                        capture_output=True, text=True)
     check("selftest exits 0", r.returncode == 0)
     check("selftest reports PASS", "SELFTEST PASS" in r.stdout)
+    if r.returncode != 0 or "SELFTEST PASS" not in r.stdout:
+        # Show why: without this a CI log carries only the two FAIL lines
+        # (a missing SciPy, say, is visible only in the selftest's stderr).
+        for name, text in (("stdout", r.stdout), ("stderr", r.stderr)):
+            tail = text.strip().splitlines()[-15:]
+            if tail:
+                print(f"  --- selftest {name} (last {len(tail)} lines) ---")
+                for line in tail:
+                    print(f"  | {line}")
 
     # 2) CLI smoke: both subcommands are exposed
     h = subprocess.run([sys.executable, SCRIPT, "--help"],
