@@ -42,8 +42,8 @@ jobs:
     name: lint (bash -n, ruff, build invariants)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install ruff and zsh
@@ -107,11 +107,11 @@ jobs:
           echo "Qt $(dpkg-query -W -f='${Version}' qt6-base-dev)"
           python3 -c 'import sys, numpy, scipy; print("Python", sys.version.split()[0], "NumPy", numpy.__version__, "SciPy", scipy.__version__)'
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The shared vector tables must match fiber-kit's copies.
       - name: Check out fiber-kit (for core_shared_contract)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Gravios/fiber-kit
           path: .fiber-kit   # hidden: kept out of repo-wide scans (test_docs.py)
@@ -144,7 +144,7 @@ jobs:
     runs-on: windows-2022
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4

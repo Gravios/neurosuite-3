@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [CI: GitHub actions moved to their Node.js 24 releases](#2026-10-19--ci-github-actions-moved-to-their-nodejs-24-releases) |
 | 2026-10-19 | [Windows: fixes from the first Windows configure](#2026-10-19--windows-fixes-from-the-first-windows-configure) |
 | 2026-10-18 | [Klusters: the Intel GPU (SYCL) backend can be configured with icx on Windows](#2026-10-18--klusters-the-intel-gpu-sycl-backend-can-be-configured-with-icx-on-windows) |
 | 2026-10-18 | [Windows: the GUI programs build with MSVC, and CI checks it](#2026-10-18--windows-the-gui-programs-build-with-msvc-and-ci-checks-it) |
@@ -77,6 +78,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — CI: GitHub actions moved to their Node.js 24 releases
+
+<details>
+<summary>Details</summary>
+
+- GitHub forces Node.js 20 actions onto Node.js 24 and warns. `ci.yml` and
+  `docs.yml` now use `actions/checkout@v7`, `actions/setup-python@v7`,
+  `actions/configure-pages@v6`, `actions/upload-pages-artifact@v5` and
+  `actions/deploy-pages@v5` (all Node.js 24 or composite; inputs and
+  permissions unchanged). `ilammy/msvc-dev-cmd@v1` has no Node.js 24 release
+  yet and stays.
+- The docs deploy still needs GitHub Pages turned on for the repository
+  (Settings ▸ Pages ▸ Source: GitHub Actions); no workflow change can do that
+  with the default token.
+
+</details>
 
 ## 2026-10-19 — Windows: fixes from the first Windows configure
 
