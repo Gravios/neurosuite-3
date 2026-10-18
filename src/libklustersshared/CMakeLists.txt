@@ -95,7 +95,8 @@ if(NS_BUILD_TESTS)
     add_executable(klustersshared_yamlformat_test
         test/yamlformat_test.cpp src/klustersshared/yamlformat.cpp)
     target_include_directories(klustersshared_yamlformat_test
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src")   # libklustersshared_export.h
     target_compile_definitions(klustersshared_yamlformat_test PRIVATE KLUSTERSSHARED_STATICLIB)
     target_link_libraries(klustersshared_yamlformat_test PRIVATE Qt6::Core yaml-cpp)  # Qt: export-macro header only
     add_test(NAME klustersshared_yamlformat_test
@@ -106,7 +107,8 @@ if(NS_BUILD_TESTS)
         test/sessiontemplate_test.cpp src/klustersshared/sessiontemplate.cpp
         src/klustersshared/yamlformat.cpp)
     target_include_directories(klustersshared_sessiontemplate_test
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src")   # libklustersshared_export.h
     target_compile_definitions(klustersshared_sessiontemplate_test PRIVATE KLUSTERSSHARED_STATICLIB)
     target_link_libraries(klustersshared_sessiontemplate_test PRIVATE Qt6::Core yaml-cpp)  # Qt: export-macro header only
     add_test(NAME klustersshared_sessiontemplate_test COMMAND klustersshared_sessiontemplate_test)

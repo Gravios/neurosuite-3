@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-18 | [CI builds again: two libklustersshared tests missed the export header](#2026-10-18--ci-builds-again-two-libklustersshared-tests-missed-the-export-header) |
 | 2026-10-18 | [Docs: roadmap and collision-decomposition workflow brought up to date](#2026-10-18--docs-roadmap-and-collision-decomposition-workflow-brought-up-to-date) |
 | 2026-10-18 | [Klusters: one table for action icons](#2026-10-18--klusters-one-table-for-action-icons) |
 | 2026-10-18 | [Klusters: edit the radial menu in Preferences](#2026-10-18--klusters-edit-the-radial-menu-in-preferences) |
@@ -71,6 +72,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-18 — CI builds again: two libklustersshared tests missed the export header
+
+<details>
+<summary>Details</summary>
+
+- `klustersshared_yamlformat_test` and `klustersshared_sessiontemplate_test`
+  compile `yamlformat.cpp` / `sessiontemplate.cpp` directly, and their headers
+  include `libklustersshared_export.h` (since 2026-10-15 / 10-16). That header
+  is in `src/libklustersshared/src/`, which neither test had on its include
+  path, so every CI build stopped there (the tests are built only with
+  `NS_BUILD_TESTS=ON`, as CI does). Both now include `src/`.
+- Reproduced the CI job locally (ubuntu-24.04, Qt 6.4.2, its package list,
+  configure flags and fiber-kit checkout): before, the whole tree built except
+  these two targets; after, it builds and `ctest` passes (82 tests, one
+  disabled in the repository).
+
+</details>
 
 ## 2026-10-18 — Docs: roadmap and collision-decomposition workflow brought up to date
 
