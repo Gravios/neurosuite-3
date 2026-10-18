@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Windows: fixes from the first Windows configure](#2026-10-19--windows-fixes-from-the-first-windows-configure) |
 | 2026-10-18 | [Klusters: the Intel GPU (SYCL) backend can be configured with icx on Windows](#2026-10-18--klusters-the-intel-gpu-sycl-backend-can-be-configured-with-icx-on-windows) |
 | 2026-10-18 | [Windows: the GUI programs build with MSVC, and CI checks it](#2026-10-18--windows-the-gui-programs-build-with-msvc-and-ci-checks-it) |
 | 2026-10-18 | [CI builds and tests on Ubuntu 24.04, 25.10, 26.04 and 26.10](#2026-10-18--ci-builds-and-tests-on-ubuntu-2404-2510-2604-and-2610) |
@@ -76,6 +77,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Windows: fixes from the first Windows configure
+
+<details>
+<summary>Details</summary>
+
+The first configure on Windows (MSVC environment, oneAPI 2025.1 `icx`, Qt 6.8,
+vcpkg) stopped on two errors:
+
+- `Cannot find source file: WIN32` for NeuroScope and NDManager: their
+  `add_executable` passed `WIN32` through a generator expression, which CMake
+  reads as a file name. Both now use the plain keyword, like Klusters.
+- Intel's own `IntelSYCLConfig.cmake` in oneAPI 2025.x fails on Windows
+  (`separate_arguments` / `SYCL_FEATURE_TEST_EXTRACT`; a known oneAPI bug).
+  On Windows Klusters no longer loads Intel's IntelSYCL / IntelDPCPP packages;
+  it already sets `-fsycl` itself, and now links the SYCL runtime import
+  library (`sycl8.lib`, or `sycl7.lib` for 2024) directly.
+
+Linux configures as before.
+
+</details>
 
 ## 2026-10-18 — Klusters: the Intel GPU (SYCL) backend can be configured with icx on Windows
 

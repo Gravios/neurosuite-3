@@ -92,16 +92,25 @@ if(USE_SYCL)
         # ── Step 2: prefer the IntelSYCL CMake package; fall back to IntelDPCPP ─
         # Intel renamed the package in oneAPI 2024+.  IntelDPCPP still works but
         # emits a deprecation warning and may not export targets in newer toolkits.
-        find_package(IntelSYCL QUIET)
-        if(IntelSYCL_FOUND)
-            message(STATUS "SYCL backend enabled — IntelSYCL CMake package loaded")
+        if(WIN32)
+            # Not on Windows: oneAPI 2025.x ships a broken IntelSYCLConfig.cmake
+            # there (separate_arguments / SYCL_FEATURE_TEST_EXTRACT errors, and it
+            # looks for sycl7 where 2025 has sycl8), and its errors are fatal.
+            # The flags are set by hand and the runtime linked directly in
+            # src/CMakeLists.txt, so the package is not needed.
+            message(STATUS "SYCL: Windows — Intel's IntelSYCL/IntelDPCPP CMake packages skipped (flags set directly)")
         else()
-            find_package(IntelDPCPP QUIET)
-            if(IntelDPCPP_FOUND)
-                message(STATUS "SYCL backend enabled — IntelDPCPP CMake package loaded (consider upgrading to IntelSYCL)")
+            find_package(IntelSYCL QUIET)
+            if(IntelSYCL_FOUND)
+                message(STATUS "SYCL backend enabled — IntelSYCL CMake package loaded")
             else()
-                # Package not found but we have the compiler — set flags manually.
-                message(STATUS "SYCL backend enabled — icpx found, CMake package absent (flags set manually)")
+                find_package(IntelDPCPP QUIET)
+                if(IntelDPCPP_FOUND)
+                    message(STATUS "SYCL backend enabled — IntelDPCPP CMake package loaded (consider upgrading to IntelSYCL)")
+                else()
+                    # Package not found but we have the compiler — set flags manually.
+                    message(STATUS "SYCL backend enabled — icpx found, CMake package absent (flags set manually)")
+                endif()
             endif()
         endif()
         # The SYCL sources need the oneAPI compiler as THE C++ compiler.  Its
@@ -128,9 +137,11 @@ if(USE_SYCL)
         # The oneAPI compiler is the active CXX compiler (CXX=icpx, or icx on
         # Windows, where there may be no icpx on PATH).
         message(STATUS "SYCL backend enabled — ${CMAKE_CXX_COMPILER} is the active CXX compiler")
-        find_package(IntelSYCL QUIET)
-        if(NOT IntelSYCL_FOUND)
-            find_package(IntelDPCPP QUIET)
+        if(NOT WIN32)   # Windows: Intel's packages are skipped (see Step 2 above)
+            find_package(IntelSYCL QUIET)
+            if(NOT IntelSYCL_FOUND)
+                find_package(IntelDPCPP QUIET)
+            endif()
         endif()
     else()
         # ── icpx not found anywhere ──────────────────────────────────────────

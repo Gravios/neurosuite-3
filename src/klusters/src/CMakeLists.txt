@@ -227,6 +227,20 @@ if(USE_SYCL)
         target_link_libraries(klusters PRIVATE IntelSYCL::SYCL_CXX)
     elseif(TARGET IntelDPCPP::SYCL_CXX)
         target_link_libraries(klusters PRIVATE IntelDPCPP::SYCL_CXX)
+    elseif(WIN32)
+        # Windows skips Intel's CMake packages (klusters/CMakeLists.txt), and
+        # the link may not go through the icx driver, so name the SYCL runtime
+        # import library itself: sycl8.lib in oneAPI 2025, sycl7.lib in 2024.
+        get_filename_component(_ns_oneapi_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        find_library(NS_SYCL_RUNTIME_LIB NAMES sycl8 sycl7 sycl
+            HINTS "$ENV{CMPLR_ROOT}/lib" "${_ns_oneapi_bin}/../lib")
+        if(NS_SYCL_RUNTIME_LIB)
+            target_link_libraries(klusters PRIVATE "${NS_SYCL_RUNTIME_LIB}")
+            message(STATUS "SYCL: runtime library ${NS_SYCL_RUNTIME_LIB}")
+        else()
+            message(WARNING "SYCL: the SYCL runtime library (sycl8.lib) was not found; "
+                            "configure in the oneAPI command prompt so CMPLR_ROOT is set")
+        endif()
     else()
         message(STATUS "SYCL: no imported CMake target found — relying on -fsycl linker flag")
     endif()
