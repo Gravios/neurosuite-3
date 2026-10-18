@@ -29,7 +29,6 @@
 #include <QTemporaryFile>
 
 //Unix include file
-#include <unistd.h>
 
 //include files for the application
 #include "eventsprovider.h"

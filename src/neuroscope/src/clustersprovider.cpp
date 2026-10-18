@@ -25,7 +25,6 @@
 #include <QDebug>
 
 //Unix include file
-#include <unistd.h>
 #include <cstdint>
 
 //include files for the application
