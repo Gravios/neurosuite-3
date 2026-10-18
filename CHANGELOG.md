@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-18 | [Klusters: edit the radial menu in Preferences](#2026-10-18--klusters-edit-the-radial-menu-in-preferences) |
 | 2026-10-17 | [Klusters: radial context menu (proof of concept)](#2026-10-17--klusters-radial-context-menu-proof-of-concept) |
 | 2026-10-17 | [Spike extraction: one .spk row per .res time; shared extractor code](#2026-10-17--spike-extraction-one-spk-row-per-res-time-shared-extractor-code) |
 | 2026-10-17 | [Reference files for the template-library formats; one copy of the extractor helpers; plugins configure on their own](#2026-10-17--reference-files-for-the-template-library-formats-one-copy-of-the-extractor-helpers-plugins-configure-on-their-own) |
@@ -68,6 +69,39 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-18 — Klusters: edit the radial menu in Preferences
+
+<details>
+<summary>Details</summary>
+
+- **Preferences ▸ Radial menu** edits the right-click wheel: add any menu-bar
+  action (searchable catalogue by menu, plus the X / Y feature-axis wedges),
+  drag rows to reorder them or move them between groups, add / rename / remove
+  groups, give actions short wedge labels, and restore the default. A preview
+  below the tree shows the wheel and opens the selected group's ring. Apply or
+  OK rebuilds the wheel for the next right-click.
+- The wheel's tree is now data (`radiallayout.h`): JSON in the Klusters
+  settings (`radialMenu/layout`; absent = the shipped default, so a later
+  change to the default reaches users who never edited theirs). Actions are
+  named by their input-registry id (e.g. `sort.bySnr`) or, where they have
+  none, by menu path (`menu:Tools/New Cluster`); an id that no longer resolves
+  is skipped and shown in red in the editor. The shipped default is the wheel
+  as before (Tools, Clusters, Recluster, Undo, Redo, Hierarchy, Sort, X, Y).
+- `RadialMenu` gains an embedded mode (an ordinary child widget for the
+  preview: hover opens rings, nothing is picked), a ring-depth limit, and an
+  open path (the rings shown when the cursor is elsewhere).
+- New test `klusters_test_radiallayout`: JSON round trip, settings fallback,
+  malformed / wrong-version rejection, unknown kinds skipped, ring counting,
+  menu-path ids.
+- Tested in the running app on Xvfb (Qt 6.4.2), synthetic session, xdotool
+  input: the default wheel resolves every id; removing a group, adding an
+  action from the catalogue, renaming a group, a wedge label, and a drag into
+  a group all show in the preview and, after OK, in the real wheel; the added
+  action triggers; the layout survives a restart; Restore Default + OK
+  removes the stored key and brings the shipped wheel back.
+
+</details>
 
 ## 2026-10-17 — Klusters: radial context menu (proof of concept)
 

@@ -1839,7 +1839,8 @@ void KlustersApp::executePreferencesDlg(){
         }
     }
 
-    // update the dialog widgets.
+    // update the dialog widgets (the radial-menu page needs the live action catalogue).
+    prefDialog->setRadialCatalog(radialCatalog());
     prefDialog->updateDialog();
 
     if(prefDialog->exec() == QDialog::Accepted){  // execute the dialog
@@ -1862,6 +1863,10 @@ void KlustersApp::applyPreferences() {
     // write() above); push the overrides onto the mirrored QActions so Qt dispatches the
     // rebound menu/toolbar shortcuts too (input-remapping plan §5).
     applyInputOverridesToActions();
+
+    // Radial menu: a new layout from Preferences ▸ Radial menu takes effect on the
+    // next right-click.
+    rebuildRadialMenu();
 
     // Templates mode toggled -> show/hide + (re)load the template palette live.
     if (templatePanel) { reloadTemplatePalette(); updateTemplatePanelVisibility(); }

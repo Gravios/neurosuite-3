@@ -31,6 +31,8 @@ class PrefAutoMerge;
 class PrefWaveformView;
 class PrefClusterView;
 class PrefInput;
+class PrefRadialMenu;
+struct RadialCatalogEntry;
 class QComboBox;
 
 class PrefDialog : public QPageDialog {
@@ -47,6 +49,10 @@ class PrefDialog : public QPageDialog {
 
     /** Syncs the N-features spinbox from the toolbar without triggering applyPreferences. */
     void syncAutoNFeatures(int n);
+
+    /** The actions the Radial menu page can place (KlustersApp::radialCatalog());
+     *  set before updateDialog(). */
+    void setRadialCatalog(const QList<RadialCatalogEntry>& entries);
 
   public Q_SLOTS:
     void slotDefault();
@@ -69,6 +75,7 @@ class PrefDialog : public QPageDialog {
     PrefWaveformView* prefWaveformView;
     PrefClusterView*  prefclusterView;
     PrefInput*        prefInput;        // generated input-binding page (input-remapping plan §5)
+    PrefRadialMenu*   prefRadialMenu;   // the right-click wheel's layout editor
     QComboBox*        themeCombo;
     bool applyEnable;
 };

@@ -73,6 +73,7 @@ set(klusters_SRCS
     klusters_radialmenu.cpp     # KlustersApp radial context menu (Right-click; proof of concept)
     radialmenu.cpp              # hierarchical radial / marking menu widget over a QMenu tree
     radiallayout.cpp            # the radial menu's layout as data (JSON in the settings)
+    prefradialmenu.cpp          # Preferences ▸ Radial menu: the wheel editor
     klusters_timesort.cpp       # KlustersApp Sort Spikes by Time (confirm, rewrite, reopen)
     klusters_sort.cpp           # KlustersApp cluster sorting / reordering + sort progress bar (split from klusters.cpp)
     klustersdoc.cpp

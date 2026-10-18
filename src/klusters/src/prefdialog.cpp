@@ -29,6 +29,8 @@
 #include "prefwaveformview.h"
 #include "prefclusterview.h"
 #include "input/prefinput.h"   // S6: relocated to libklustersshared
+#include "prefradialmenu.h"
+#include "radiallayout.h"
 #include "channellist.h"
 #include "config-klusters.h"
 #include <qhelpviewer.h>
@@ -112,6 +114,13 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     prefInput = new PrefInput(configuration(), this);   // S6: pass the app's InputPrefsStore
     item = new QPageWidgetItem(prefInput, tr("Input"));
     item->setHeader(tr("Keyboard & Mouse Bindings"));
+    item->setIcon(QIcon(":/shared-icons/folder-open"));
+    addPage(item);
+
+    // ── Radial menu (the right-click wheel's layout) ─────────────────
+    prefRadialMenu = new PrefRadialMenu(this);
+    item = new QPageWidgetItem(prefRadialMenu, tr("Radial menu"));
+    item->setHeader(tr("Right-click Wheel"));
     item->setIcon(QIcon(":/shared-icons/folder-open"));
     addPage(item);
 
@@ -247,6 +256,8 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     // Input bindings: an edited shortcut lights Apply (PrefInput blocks signals
     // during its programmatic load, so this fires only on real user edits).
     connect(prefInput, &PrefInput::changed, this, &PrefDialog::enableApply);
+    // Radial menu: any edit of the wheel lights Apply (setLayout() is silent).
+    connect(prefRadialMenu, &PrefRadialMenu::changed, this, &PrefDialog::enableApply);
 
     // Appearance: activated fires only on user choice (not the programmatic
     // populate in updateDialog), so it lights Apply like the other controls.
@@ -267,8 +278,16 @@ void PrefDialog::slotHelp()
     helpDialog->show();
 }
 
+void PrefDialog::setRadialCatalog(const QList<RadialCatalogEntry>& entries)
+{
+    prefRadialMenu->setCatalog(entries);
+}
+
 void PrefDialog::updateDialog()
 {
+    // Radial menu: the stored layout (or the shipped one).
+    prefRadialMenu->setLayout(radiallayout::fromSettings(configuration().getRadialMenuLayout()));
+
     // Session
     prefSession->setCrashRecovery(configuration().isCrashRecovery());
     prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndex());
@@ -479,6 +498,14 @@ void PrefDialog::updateConfiguration()
     // KlustersApp::applyPreferences() then pushes the QAction shortcuts.
     prefInput->commitToRegistry();
 
+    // Radial menu: store the edited layout; the shipped one is stored as "" so a
+    // later change to the default reaches users who never edited theirs.
+    {
+        const RadialLayout l = prefRadialMenu->layout();
+        configuration().setRadialMenuLayout(l == radiallayout::defaults() ? QString()
+                                                                          : radiallayout::toJson(l));
+    }
+
     enableButtonApply(false);
     applyEnable = false;
 }
@@ -575,6 +602,9 @@ void PrefDialog::slotDefault()
 
     // Input bindings: every editor back to its command's shipped default.
     prefInput->restoreDefaults();
+
+    // Radial menu: the shipped wheel.
+    prefRadialMenu->restoreDefaults();
 
     enableApply();
 }

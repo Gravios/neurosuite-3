@@ -203,7 +203,7 @@ The window is divided into:
 **Right-click** in a view (cluster, waveform, correlogram, trace, the curation
 matrices) opens a ring menu centred on the cursor. Two right-clicks keep their
 own meaning: while a lasso is being drawn, Right still removes the last point,
-and with the lineage overlay engaged it opens the overlay's menu. The root ring holds Tools,
+and with the lineage overlay engaged it opens the overlay's menu. By default the root ring holds Tools,
 Clusters, Recluster, Undo, Redo, Hierarchy, Sort and the two feature axes
 **X: n** and **Y: n**; hovering a group opens its actions as the next ring out. Sort holds the Actions ▸ Sort Clusters entries
 under short labels (Count, Time, SNR, Spectral, …); the status bar shows each
@@ -222,6 +222,28 @@ full name and shortcut of the wedge under the cursor.
 - **Click:** release without moving; the menu stays open; click a wedge.
 - **Cancel:** release or click in the hub, click outside, or press Esc (Esc
   first closes the outermost ring).
+
+**Editing the wheel — Preferences ▸ Radial menu.** The page shows the wheel as
+a tree: top-level rows are the root ring, clockwise from 12 o'clock, and a
+group's rows are the ring it opens.
+
+- **Add:** pick actions in *Available actions* (every menu-bar action, by menu,
+  plus the two feature axes; the filter box searches names) and click *Add to
+  Wheel* or double-click. They go into the selected group, or after the
+  selected row.
+- **Organise:** drag rows to reorder them or to move them into another group
+  (a group takes rows, an action does not), or use *Up* / *Down*. *New Group*
+  adds a group; *Remove* deletes the selected rows (a group with its rows).
+- **Rename:** double-click a group to rename it; double-click an action's
+  *Wedge label* to give it a short name on the wheel (empty: the action's own
+  text). For the X / Y wedges the label is the prefix before the number.
+- **Preview:** below the tree, the wheel as it will look (root ring and one ring
+  out). Selecting a row opens its group's ring; hovering works as in the real
+  menu, without triggering anything.
+- *Restore Default* brings back the shipped wheel. Apply or OK saves the layout
+  (in the Klusters settings, `radialMenu/layout`) and the next right-click uses
+  it. Rows naming an action this version does not have show in red and are
+  skipped; groups more than four rings deep do not open.
 
 The chord is `app.radialMenu` in **Preferences ▸ Input** and can be rebound
 (for example to Shift+Right); plain Right-click then opens the older Sort
