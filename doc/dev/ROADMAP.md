@@ -46,14 +46,15 @@ Check Preferences ▸ Input / Reset all before suspecting a regression (a
 stale saved override reads exactly like one).  Estimate: 1 session.
 
 **Make the CI `-Wshadow` warnings a hard gate.**
-CI exists (`.github/workflows/ci.yml`, ubuntu-24.04, CPU, Qt6) and builds
+CI exists (`.github/workflows/ci.yml`, Ubuntu 24.04 / 25.10 / 26.04 /
+26.10, CPU, Qt6) and builds
 with `-Wall -Wextra -Wshadow`, but warnings are non-fatal: klusters and
 libklustersshared are shadow-clean, the other components are not yet
 audited.  Promote to `-Werror=shadow` per component as each is cleaned.
 Selectively `#pragma GCC diagnostic ignored "-Wunused-parameter"` on the
 few Qt slot signature sites that need it; don't blanket-disable.  Also
-outstanding from the Qt 6.4–6.12 work: a CI build matrix for 6.4 / 6.10 /
-6.12.  Estimate: half a session per component.
+outstanding from the Qt 6.4–6.12 work: the per-release matrix covers
+6.4, 6.9, 6.10 and 6.11; 6.12 still needs a job (none of these releases ships it).  Estimate: half a session per component.
 
 ---
 

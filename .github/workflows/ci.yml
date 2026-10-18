@@ -1,8 +1,9 @@
 # ---------------------------------------------------------------------------
 # Continuous integration — CPU build and test gate.
 #
-# Builds the whole monorepo on the documented Ubuntu 24.04 toolchain with the
-# GPU backends disabled (GitHub runners have no CUDA / HIP / SYCL device), so it
+# Builds the whole monorepo on Ubuntu 24.04 (the reference toolchain), 25.10,
+# 26.04 and 26.10, each in its release's container, with the GPU backends
+# disabled (GitHub runners have no CUDA / HIP / SYCL device), so it
 # exercises the CPU / OpenMP path that every GPU backend falls back to.  The
 # job's purpose is to catch build-breaking regressions before they land and to
 # surface -Wall -Wextra -Wshadow diagnostics in the build log.  It then runs the
@@ -53,10 +54,59 @@ jobs:
       - name: Lint
         run: scripts/lint.sh
 
+  # One job per Ubuntu release, each in that release's container image (root,
+  # no sudo), so every release gets the same steps and its own distribution
+  # packages.  24.04 is the reference toolchain (Qt 6.4, the oldest Qt
+  # supported); 26.04 LTS and 26.10 cover the newer Qt, GCC, CMake and Python.
+  # 25.10 reached end of life on 2026-07-09: it stays in the matrix while its
+  # image and archive last, does not fail the run (continue-on-error), and its
+  # apt sources fall back to old-releases.ubuntu.com once Canonical moves it.
+  # Drop it when it gets in the way.
   build:
-    name: build (ubuntu-24.04, CPU, Qt6)
+    name: build (ubuntu-${{ matrix.release }}, CPU, Qt6)
     runs-on: ubuntu-24.04
+    container: ubuntu:${{ matrix.release }}
+    continue-on-error: ${{ matrix.eol }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { release: '24.04', eol: false }
+          - { release: '25.10', eol: true }
+          - { release: '26.04', eol: false }
+          - { release: '26.10', eol: false }
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
     steps:
+      # Before checkout: the image has no git, and actions/checkout without git
+      # downloads a tarball instead of a repository.
+      - name: Install dependencies
+        run: |
+          if ! apt-get update; then
+            # An end-of-life release's archive moves to old-releases.
+            sed -i -E 's#https?://(archive|security)\.ubuntu\.com#http://old-releases.ubuntu.com#' \
+              /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+            apt-get update
+          fi
+          apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git ca-certificates \
+            qt6-base-dev qt6-tools-dev libqt6svg6-dev \
+            libgl-dev libxkbcommon-dev libxcb-cursor0 \
+            libyaml-cpp-dev libxml2-dev libgsl-dev \
+            libhdf5-dev libsamplerate0-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            ffmpeg python3 python3-yaml python3-numpy python3-scipy
+
+      - name: Toolchain versions
+        run: |
+          . /etc/os-release && echo "$PRETTY_NAME"
+          gcc --version | head -1; cmake --version | head -1
+          echo "Qt $(dpkg-query -W -f='${Version}' qt6-base-dev)"
+          python3 -c 'import sys, numpy, scipy; print("Python", sys.version.split()[0], "NumPy", numpy.__version__, "SciPy", scipy.__version__)'
+
       - uses: actions/checkout@v4
 
       # The shared vector tables must match fiber-kit's copies.
@@ -65,18 +115,6 @@ jobs:
         with:
           repository: Gravios/fiber-kit
           path: .fiber-kit   # hidden: kept out of repo-wide scans (test_docs.py)
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config git \
-            qt6-base-dev qt6-tools-dev libqt6svg6-dev \
-            libgl-dev libxkbcommon-dev libxcb-cursor0 \
-            libyaml-cpp-dev libxml2-dev libgsl-dev \
-            libhdf5-dev libsamplerate0-dev \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-            ffmpeg python3 python3-yaml python3-numpy python3-scipy
 
       - name: Configure (GPU backends off; warnings on, non-fatal; tests on)
         run: |

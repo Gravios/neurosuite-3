@@ -25,8 +25,9 @@ The authoritative source for all of this is the top-level
 | Qt | 6, ≥ 6.4 | each GUI subproject does `find_package(Qt6 6.4 …)` |
 | Build tool | Ninja or Make | Ninja is what CI uses (`-G Ninja`) |
 
-The reference CI toolchain is **Ubuntu 24.04 with the distribution Qt6** (see
-§8). macOS (Homebrew `qt@6`) and Windows (vcpkg + the Qt Online Installer) are
+The reference CI toolchain is **Ubuntu 24.04 with the distribution Qt6**; CI
+also builds and tests on Ubuntu 25.10, 26.04 LTS and 26.10, which cover Qt 6.9,
+6.10 and 6.11, GCC 15, CMake 4 and Python 3.13/3.14 (see §8). macOS (Homebrew `qt@6`) and Windows (vcpkg + the Qt Online Installer) are
 supported for configuration; per-platform prerequisites are in each component's
 install pages, e.g. [`doc/klusters/install/`](klusters/install/linux.md).
 
@@ -214,11 +215,14 @@ rationale is in the `NS_ASAN` block of `CMakeLists.txt`.
 Two workflows run on `main` and on pull requests
 ([`.github/workflows/`](../.github/workflows/)):
 
-- **`ci.yml`** has two jobs on `ubuntu-24.04`.
+- **`ci.yml`** has two jobs.
   - **`lint`** runs [`scripts/lint.sh`](../scripts/lint.sh): `bash -n`, ruff's
     defect rules and the build invariants, with no build. Run it locally the
     same way.
-  - **`build`** is the CPU build-and-test gate. It configures with the GPU
+  - **`build`** is the CPU build-and-test gate, run once per Ubuntu release
+    (24.04, 25.10, 26.04, 26.10), each in that release's `ubuntu:<release>`
+    container with the distribution's own packages. 25.10 is past end of life
+    and does not fail the run. It configures with the GPU
     backends **off**, warnings **on but non-fatal** and the regression suite
     on, exercising the CPU/OpenMP path every GPU backend falls back to. It
     then runs ctest, with a fiber-kit checkout for `core_shared_contract`:

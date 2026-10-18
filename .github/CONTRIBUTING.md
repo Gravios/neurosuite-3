@@ -152,7 +152,8 @@ shipping the series:
 Two workflows gate `main` and pull requests (see [`BUILD.md`](../doc/BUILD.md) §8):
 
 - **`ci.yml`** runs `scripts/lint.sh` (job `lint`), then builds the whole
-  monorepo on `ubuntu-24.04` with the GPU backends off and `-Wall -Wextra
+  monorepo on Ubuntu 24.04, 25.10, 26.04 and 26.10 (one container per
+  release) with the GPU backends off and `-Wall -Wextra
   -Wshadow` surfaced (non-fatal), and runs the regression suite with ctest (job
   `build`). Reproduce a failure locally with the exact configure line in
   `BUILD.md` §8. klusters and

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-18 | [CI builds and tests on Ubuntu 24.04, 25.10, 26.04 and 26.10](#2026-10-18--ci-builds-and-tests-on-ubuntu-2404-2510-2604-and-2610) |
 | 2026-10-18 | [CI installs SciPy; the plugins' SciPy dependency documented as it is](#2026-10-18--ci-installs-scipy-the-plugins-scipy-dependency-documented-as-it-is) |
 | 2026-10-18 | [CI builds again: two libklustersshared tests missed the export header](#2026-10-18--ci-builds-again-two-libklustersshared-tests-missed-the-export-header) |
 | 2026-10-18 | [Docs: roadmap and collision-decomposition workflow brought up to date](#2026-10-18--docs-roadmap-and-collision-decomposition-workflow-brought-up-to-date) |
@@ -73,6 +74,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-18 — CI builds and tests on Ubuntu 24.04, 25.10, 26.04 and 26.10
+
+<details>
+<summary>Details</summary>
+
+- The `build` job runs once per Ubuntu release, each in that release's
+  `ubuntu:<release>` container with its own distribution packages: 24.04 (the
+  reference, Qt 6.4), 25.10 (Qt 6.9), 26.04 LTS (Qt 6.10) and 26.10 (Qt 6.11).
+  The newer releases bring GCC 15, CMake 4, Python 3.13/3.14 and NumPy 2.
+- 25.10 reached end of life on 2026-07-09. Its job does not fail the run, and
+  its apt sources fall back to old-releases.ubuntu.com once the archive moves.
+- Checked before committing by running the job's steps in a root filesystem of
+  each release, as root like the containers: 24.04, 26.04 and 26.10 build and
+  pass all 82 tests (`kk_test_per_channel_split` is disabled) with no code
+  changes.
+- BUILD.md §1 and §8, CONTRIBUTING.md and the roadmap describe the matrix; Qt
+  6.12 still has no job.
+
+</details>
 
 ## 2026-10-18 — CI installs SciPy; the plugins' SciPy dependency documented as it is
 
