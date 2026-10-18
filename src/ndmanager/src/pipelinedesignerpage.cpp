@@ -5,6 +5,7 @@
 #include "plugincategory.h"
 
 #include <QAbstractItemView>
+#include <numbers>
 #include <QApplication>
 #include <QCheckBox>
 #include <QColor>
@@ -402,10 +403,10 @@ void PipelineCanvas::drawEdge(QPainter& p, const PipelineEdge& e, bool selected)
     const float   alen = 9.f, awid = 5.f;
     QPolygonF arr;
     arr << p2
-        << QPointF(p2.x() - alen * std::cos(ang - awid * M_PI / 180.0),
-                   p2.y() - alen * std::sin(ang - awid * M_PI / 180.0))
-        << QPointF(p2.x() - alen * std::cos(ang + awid * M_PI / 180.0),
-                   p2.y() - alen * std::sin(ang + awid * M_PI / 180.0));
+        << QPointF(p2.x() - alen * std::cos(ang - awid * std::numbers::pi / 180.0),
+                   p2.y() - alen * std::sin(ang - awid * std::numbers::pi / 180.0))
+        << QPointF(p2.x() - alen * std::cos(ang + awid * std::numbers::pi / 180.0),
+                   p2.y() - alen * std::sin(ang + awid * std::numbers::pi / 180.0));
     p.setBrush(lineColor);
     p.setPen(Qt::NoPen);
     p.drawPolygon(arr);

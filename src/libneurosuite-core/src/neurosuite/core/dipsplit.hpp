@@ -41,6 +41,7 @@
 #include <numeric>
 #include <random>
 #include <vector>
+#include <numbers>
 
 namespace neurosuite {
 namespace dipsplit {
@@ -184,7 +185,7 @@ inline ValleyResult valley_test(const double* samples, int n, double threshold)
     // -- 3. KDE --------------------------------------------------------------
     // f(x) = (1 / nh) · Σ_i K((x − xᵢ) / h)    K(z) = (2π)^(-1/2) · exp(−z²/2)
     const double inv_nh = 1.0 / (static_cast<double>(n) * h);
-    const double norm   = 1.0 / std::sqrt(2.0 * M_PI);
+    const double norm   = 1.0 / std::sqrt(2.0 * std::numbers::pi);
     for (int g = 0; g < G; ++g) {
         double sum = 0.0;
         for (int i = 0; i < n; ++i) {
@@ -472,7 +473,7 @@ inline double log_likelihood_diag(
             // real spike features never have true zero variance.
             if (v < 1e-10) v = 1e-10;
             // ln L += −(nc/2) · (ln(2π) + ln v + 1)
-            logL -= 0.5 * nc * (std::log(2.0 * M_PI) + std::log(v) + 1.0);
+            logL -= 0.5 * nc * (std::log(2.0 * std::numbers::pi) + std::log(v) + 1.0);
         }
     }
     return logL;

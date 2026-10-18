@@ -4,6 +4,7 @@
 #include "decimate.h"
 
 #include <algorithm>
+#include <numbers>
 #include <cmath>
 #include <limits>
 
@@ -48,7 +49,7 @@ struct Biquad {
     }
 };
 inline Biquad lowpassBiquad(double f0, double fs, double Q) {
-    const double w = 2.0 * M_PI * f0 / fs, c = std::cos(w), s = std::sin(w);
+    const double w = 2.0 * std::numbers::pi * f0 / fs, c = std::cos(w), s = std::sin(w);
     const double al = s / (2.0 * Q), a0 = 1.0 + al;
     Biquad q;
     q.b0 = ((1 - c) / 2) / a0; q.b1 = (1 - c) / a0; q.b2 = ((1 - c) / 2) / a0;
@@ -56,7 +57,7 @@ inline Biquad lowpassBiquad(double f0, double fs, double Q) {
     return q;
 }
 inline Biquad highpassBiquad(double f0, double fs, double Q) {
-    const double w = 2.0 * M_PI * f0 / fs, c = std::cos(w), s = std::sin(w);
+    const double w = 2.0 * std::numbers::pi * f0 / fs, c = std::cos(w), s = std::sin(w);
     const double al = s / (2.0 * Q), a0 = 1.0 + al;
     Biquad q;
     q.b0 = ((1 + c) / 2) / a0; q.b1 = (-(1 + c)) / a0; q.b2 = ((1 + c) / 2) / a0;

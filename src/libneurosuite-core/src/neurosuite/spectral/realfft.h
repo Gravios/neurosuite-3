@@ -17,6 +17,7 @@
 #include <complex>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 
 namespace neuroscope {
 namespace spectral {
@@ -53,7 +54,7 @@ inline void fftRadix2(std::vector<std::complex<double>>& x, bool inverse)
 
     const double sign = inverse ? 1.0 : -1.0;
     for (std::size_t len = 2; len <= n; len <<= 1) {
-        const double ang = sign * 2.0 * M_PI / static_cast<double>(len);
+        const double ang = sign * 2.0 * std::numbers::pi / static_cast<double>(len);
         const std::complex<double> wlen(std::cos(ang), std::sin(ang));
         for (std::size_t i = 0; i < n; i += len) {
             std::complex<double> w(1.0, 0.0);

@@ -4,6 +4,7 @@
 #include "realign_center.h"
 
 #include <cmath>
+#include <numbers>
 
 namespace realign_center {
 
@@ -48,7 +49,7 @@ RecenterResult circularRecenterShift(const double* energy, int nSamp,
 
 void perSpikeCentroidShifts(const double* energy, int nSpikes, int nSamp,
                             std::vector<int>& shiftOut) {
-    const double TWO_PI = 2.0 * M_PI;
+    const double TWO_PI = 2.0 * std::numbers::pi;
     shiftOut.assign(nSpikes < 0 ? 0 : nSpikes, 0);
     if (nSpikes <= 0 || nSamp <= 0 || !energy) return;
 

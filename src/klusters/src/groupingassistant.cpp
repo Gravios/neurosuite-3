@@ -40,6 +40,7 @@
 #include "configuration.h"
 #include <vector>
 #include <utility>
+#include <numbers>
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -275,7 +276,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         return nullptr;
     }
 
-    const double piTerm = log(2.0 * M_PI) * nbDimensions / 2.0;
+    const double piTerm = log(2.0 * std::numbers::pi) * nbDimensions / 2.0;
     existCluster1 = false;
     initIndex     = 1;
 
@@ -578,7 +579,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
     // full-posteriors GPU path and the CPU fallback allocate it.
     Array<double>* probabilities = nullptr;
 
-    double piTerm = log(2.0 * M_PI) * nbDimensions / 2.0;
+    double piTerm = log(2.0 * std::numbers::pi) * nbDimensions / 2.0;
 
     // ------------------------------------------------------------------
     // Per-cluster serial precomputation: Cholesky + logTerm + packed L.

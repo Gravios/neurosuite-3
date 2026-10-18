@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numbers>
 
 namespace neuroscope {
 namespace spectral {
@@ -81,7 +82,7 @@ double concentration(const std::vector<double>& v, double W)
     std::vector<double> r(N);
     r[0] = 2.0 * W;
     for (int k = 1; k < N; ++k)
-        r[k] = std::sin(2.0 * M_PI * W * k) / (M_PI * k);
+        r[k] = std::sin(2.0 * std::numbers::pi * W * k) / (std::numbers::pi * k);
 
     double acc = 0.0;
     for (int m = 0; m < N; ++m) {
@@ -104,7 +105,7 @@ DpssTapers computeDpss(int N, double NW, int K)
     K = std::min(K, std::min(N, kmax));
 
     const double W = NW / static_cast<double>(N);
-    const double cw = std::cos(2.0 * M_PI * W);
+    const double cw = std::cos(2.0 * std::numbers::pi * W);
 
     // Symmetric tridiagonal whose eigenvectors are the DPSS.
     std::vector<double> d(N), e(N > 1 ? N - 1 : 0);

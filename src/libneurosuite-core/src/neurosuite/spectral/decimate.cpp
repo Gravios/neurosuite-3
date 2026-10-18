@@ -2,10 +2,7 @@
 
 #include <cmath>
 #include <algorithm>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include <numbers>
 
 namespace neuroscope {
 namespace spectral {
@@ -23,10 +20,10 @@ std::vector<double> designLowpass(double fc, int L)
     for (int i = 0; i < L; ++i) {
         const int k = i - M;
         const double sinc = (k == 0) ? 2.0 * fc
-                                     : std::sin(2.0 * M_PI * fc * k) / (M_PI * k);
+                                     : std::sin(2.0 * std::numbers::pi * fc * k) / (std::numbers::pi * k);
         const double w = 0.42
-                       - 0.50 * std::cos(2.0 * M_PI * i / (L - 1))
-                       + 0.08 * std::cos(4.0 * M_PI * i / (L - 1));
+                       - 0.50 * std::cos(2.0 * std::numbers::pi * i / (L - 1))
+                       + 0.08 * std::cos(4.0 * std::numbers::pi * i / (L - 1));
         h[i] = sinc * w;
         sum += h[i];
     }

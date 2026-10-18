@@ -23,6 +23,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <numbers>
 
 using namespace neuroscope::spectral;
 
@@ -45,7 +46,7 @@ int main()
         for (int k = 0; k < n; ++k) {
             std::complex<double> s(0, 0);
             for (int t = 0; t < n; ++t) {
-                double a = -2.0 * M_PI * k * t / n;
+                double a = -2.0 * std::numbers::pi * k * t / n;
                 s += x[t] * std::complex<double>(std::cos(a), std::sin(a));
             }
             ref[k] = s;
@@ -98,7 +99,7 @@ int main()
         const double f0 = 125.0;     // lands on an exact bin (125/1000*1024 = 128)
         const double amp = 2.0;
         std::vector<double> x(N);
-        for (int t = 0; t < N; ++t) x[t] = amp * std::sin(2.0 * M_PI * f0 * t / fs);
+        for (int t = 0; t < N; ++t) x[t] = amp * std::sin(2.0 * std::numbers::pi * f0 * t / fs);
 
         DpssTapers d = computeDpss(N, 4.0, 7);
         std::vector<double> psd = multitaperPsd(x.data(), N, d, fs, nfft, TaperWeighting::Uniform);
@@ -238,7 +239,7 @@ int main()
             const double f0 = 150.0;   // 150/1000*1000 = bin 150 exactly
             const double amp = 1.5;
             std::vector<double> x(N);
-            for (int t = 0; t < N; ++t) x[t] = amp * std::sin(2.0 * M_PI * f0 * t / fs);
+            for (int t = 0; t < N; ++t) x[t] = amp * std::sin(2.0 * std::numbers::pi * f0 * t / fs);
 
             RealFftPlan plan(nfft);
             check(plan.nfft() == nfft, "fftw honours non-power-of-two nfft", plan.nfft(), nfft);
@@ -268,7 +269,7 @@ int main()
         for (int s = 0; s < nS; ++s)
             for (int c = 0; c < nCh; ++c) {
                 double v = g(rng);
-                if (c == 2) v += std::sin(2.0 * M_PI * f0 * s / fs);
+                if (c == 2) v += std::sin(2.0 * std::numbers::pi * f0 * s / fs);
                 data[(size_t)s * nCh + c] = v;
             }
         std::vector<int> channels{0, 1, 2, 3};
@@ -352,7 +353,7 @@ int main()
         std::vector<double> data((size_t)nS * nCh);
         for (int s = 0; s < nS; ++s)
             for (int c = 0; c < nCh; ++c)
-                data[(size_t)s * nCh + c] = g(rng) + std::sin(2.0 * M_PI * 120.0 * s / fs);
+                data[(size_t)s * nCh + c] = g(rng) + std::sin(2.0 * std::numbers::pi * 120.0 * s / fs);
         std::vector<int> channels{0, 1, 2};
         SpectralEngine engine;
 
@@ -413,7 +414,7 @@ int main()
         for (int s = 0; s < nS; ++s)
             for (int c = 0; c < nCh; ++c)
                 data[static_cast<std::size_t>(s) * nCh + c] =
-                    g(rng) + std::sin(2.0 * M_PI * 30.0 * s / fs);
+                    g(rng) + std::sin(2.0 * std::numbers::pi * 30.0 * s / fs);
         std::vector<int> channels{0, 1};
         SpectralEngine eng;
         SpectralParams p;
@@ -451,7 +452,7 @@ int main()
         for (int s = 0; s < nS; ++s)
             for (int c = 0; c < nCh; ++c)
                 data[static_cast<std::size_t>(s) * nCh + c] =
-                    g(rng) + std::sin(2.0 * M_PI * 30.0 * s / fs);
+                    g(rng) + std::sin(2.0 * std::numbers::pi * 30.0 * s / fs);
         std::vector<int> channels{0, 1};
         SpectralEngine eng;
         SpectralParams p;

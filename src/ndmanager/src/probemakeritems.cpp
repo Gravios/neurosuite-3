@@ -17,6 +17,7 @@
 #include <QStyleOptionGraphicsItem>
 #include <QVariant>
 #include <cmath>
+#include <numbers>
 
 #include "klustersshared/parameteryamlreader_probes.h"
 
@@ -190,7 +191,7 @@ void ShankItem::rebuildPolygon()
     const qreal h        = model->lengthUm;
     const qreal halfW    = w * 0.5;
     const qreal tipDeg   = model->tipAngle;
-    const qreal halfApex = (180.0 - tipDeg) * 0.5 * M_PI / 180.0;
+    const qreal halfApex = (180.0 - tipDeg) * 0.5 * std::numbers::pi / 180.0;
     const qreal wedge    = std::tan(halfApex) * halfW;
     poly << QPointF(-halfW, 0.0)
          << QPointF( halfW, 0.0)
