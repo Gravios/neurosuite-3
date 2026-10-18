@@ -48,7 +48,7 @@ public:
     explicit PrefRadialMenu(QWidget* parent = nullptr);
 
     /** The actions that can be placed (call before setLayout()). */
-    void setCatalog(const QList<RadialCatalogEntry>& entries);
+    void setCatalog(const QList<ActionCatalogEntry>& entries);
 
     /** Show @p layout in the editor (no changed() signal). */
     void setLayout(const RadialLayout& layout);
@@ -85,7 +85,7 @@ private:
 
     QString catalogText(const QString& id) const;
 
-    QList<RadialCatalogEntry> catalog;
+    QList<ActionCatalogEntry> catalog;
     QHash<QString, int> catalogIndex;       ///< id -> catalog row (both id forms)
 
     QLineEdit*   filterEdit = nullptr;

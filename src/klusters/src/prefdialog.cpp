@@ -278,7 +278,7 @@ void PrefDialog::slotHelp()
     helpDialog->show();
 }
 
-void PrefDialog::setRadialCatalog(const QList<RadialCatalogEntry>& entries)
+void PrefDialog::setRadialCatalog(const QList<ActionCatalogEntry>& entries)
 {
     prefRadialMenu->setCatalog(entries);
 }

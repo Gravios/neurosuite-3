@@ -32,7 +32,7 @@ class PrefWaveformView;
 class PrefClusterView;
 class PrefInput;
 class PrefRadialMenu;
-struct RadialCatalogEntry;
+struct ActionCatalogEntry;
 class QComboBox;
 
 class PrefDialog : public QPageDialog {
@@ -50,9 +50,9 @@ class PrefDialog : public QPageDialog {
     /** Syncs the N-features spinbox from the toolbar without triggering applyPreferences. */
     void syncAutoNFeatures(int n);
 
-    /** The actions the Radial menu page can place (KlustersApp::radialCatalog());
+    /** The actions the Radial menu page can place (KlustersApp::actionCatalog());
      *  set before updateDialog(). */
-    void setRadialCatalog(const QList<RadialCatalogEntry>& entries);
+    void setRadialCatalog(const QList<ActionCatalogEntry>& entries);
 
   public Q_SLOTS:
     void slotDefault();

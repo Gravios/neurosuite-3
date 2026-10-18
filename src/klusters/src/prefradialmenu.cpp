@@ -171,14 +171,14 @@ PrefRadialMenu::PrefRadialMenu(QWidget* parent)
 // catalogue
 // --------------------------------------------------------------------------
 
-void PrefRadialMenu::setCatalog(const QList<RadialCatalogEntry>& entries)
+void PrefRadialMenu::setCatalog(const QList<ActionCatalogEntry>& entries)
 {
     catalog = entries;
     catalogIndex.clear();
     for (int i = 0; i < catalog.size(); ++i) {
-        const RadialCatalogEntry& e = catalog.at(i);
+        const ActionCatalogEntry& e = catalog.at(i);
         catalogIndex.insert(e.id, i);
-        if (e.action) catalogIndex.insert(radiallayout::menuPathId(e.path, e.action->text()), i);
+        if (e.action) catalogIndex.insert(actionid::menuPathId(e.path, e.action->text()), i);
     }
     fillCatalog();
 }
@@ -205,7 +205,7 @@ void PrefRadialMenu::fillCatalog()
         }
         return parent;
     };
-    for (const RadialCatalogEntry& e : catalog) {
+    for (const ActionCatalogEntry& e : catalog) {
         QTreeWidgetItem* f = folderFor(e.path);
         auto* it = f ? new QTreeWidgetItem(f) : new QTreeWidgetItem(catalogTree);
         it->setText(0, e.text);

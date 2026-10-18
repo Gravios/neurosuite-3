@@ -14,7 +14,7 @@
     submenus left empty by them) drop out of the rings.  Which actions, in
     which groups and order, is data (radiallayout.h): the shipped default or
     the layout edited in Preferences ▸ Radial menu, resolved here against the
-    catalogue of menu-bar actions (radialCatalog()).
+    catalogue of menu-bar actions (actionCatalog()).
 
     Copyright (C) 2026  neurosuite-3 contributors
     SPDX-License-Identifier: GPL-3.0-or-later
@@ -28,67 +28,9 @@
 #include <QHash>
 #include <QKeySequence>
 #include <QMenu>
-#include <QMenuBar>
-#include <QSet>
 #include <QStatusBar>
-#include <QWidgetAction>
 
 #include <functional>
-
-namespace {
-// Menus whose entries are not commands (recent files): kept out of the catalogue.
-bool isCatalogueMenu(const QAction* menuAction)
-{
-    return menuAction && !menuAction->inherits("QRecentFileAction");
-}
-} // namespace
-
-QList<RadialCatalogEntry> KlustersApp::radialCatalog() const
-{
-    // Registry id per action, where the action is mirrored as an app command.
-    QHash<const QAction*, QString> registryId;
-    for (auto it = appActionCommands_.constBegin(); it != appActionCommands_.constEnd(); ++it)
-        if (it.value() && !registryId.contains(it.value())) registryId.insert(it.value(), it.key());
-
-    QList<RadialCatalogEntry> out;
-    QSet<QString> seen;
-    std::function<void(const QMenu*, const QStringList&)> walk =
-        [&](const QMenu* m, const QStringList& path) {
-        for (QAction* a : m->actions()) {
-            if (!a || a->isSeparator() || qobject_cast<QWidgetAction*>(a)) continue;
-            const QString text = radiallayout::plainActionText(a->text());
-            if (text.isEmpty()) continue;
-            if (a->menu()) {
-                if (isCatalogueMenu(a)) walk(a->menu(), path + QStringList{ text });
-                continue;
-            }
-            RadialCatalogEntry e;
-            e.id = registryId.value(a, radiallayout::menuPathId(path, a->text()));
-            e.path = path;
-            e.text = text;
-            e.action = a;
-            if (seen.contains(e.id)) continue;      // the same action under two menus
-            seen.insert(e.id);
-            out.append(e);
-        }
-    };
-    for (QAction* top : menuBar()->actions())
-        if (top && top->menu() && isCatalogueMenu(top))
-            walk(top->menu(), QStringList{ radiallayout::plainActionText(top->text()) });
-    return out;
-}
-
-QHash<QString, QAction*> KlustersApp::radialActionsById() const
-{
-    // Both ids resolve for every action: the registry id the catalogue prefers and
-    // the menu path, so a stored layout survives an action gaining a registry id.
-    QHash<QString, QAction*> map;
-    for (const RadialCatalogEntry& e : radialCatalog()) {
-        map.insert(e.id, e.action);
-        map.insert(radiallayout::menuPathId(e.path, e.action->text()), e.action);
-    }
-    return map;
-}
 
 void KlustersApp::buildRadialMenuTree()
 {
@@ -107,7 +49,7 @@ void KlustersApp::buildRadialMenuTree()
     mRadialDimXPrefix = tr("X");
     mRadialDimYPrefix = tr("Y");
 
-    const QHash<QString, QAction*> byId = radialActionsById();
+    const QHash<QString, QAction*> byId = actionsById();
     std::function<void(QMenu*, const RadialLayout&)> fill =
         [&](QMenu* m, const RadialLayout& nodes) {
         for (const RadialLayoutNode& n : nodes) {

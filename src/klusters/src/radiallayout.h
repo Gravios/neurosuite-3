@@ -13,11 +13,9 @@
  * in the Klusters settings as JSON (Configuration::radialMenuLayout; empty =
  * the shipped defaults()) and edited in Preferences ▸ Radial menu.
  *
- * Action ids: the input registry's id where the action has one (e.g.
- * "sort.bySnr", "edit.undo"), else its menu path, "menu:Tools/New Cluster"
- * (mnemonics and a trailing ellipsis removed).  An id that no longer
- * resolves is skipped when the wheel is built and shown as unavailable in
- * the editor.
+ * Actions are named by their stable id (actionid.h).  An id that no
+ * longer resolves is skipped when the wheel is built and shown as
+ * unavailable in the editor.
  *
  * Qt Core only (QString / QJson), so the model is unit-tested without
  * widgets (test/radiallayout_test.cpp).
@@ -32,7 +30,7 @@
 #include <QString>
 #include <QStringList>
 
-class QAction;
+#include "actionid.h"   // ActionCatalogEntry, actionid::menuPathId
 
 struct RadialLayoutNode {
     enum class Kind { Group, Action, Value };
@@ -55,15 +53,6 @@ struct RadialLayoutNode {
 
 using RadialLayout = QList<RadialLayoutNode>;
 
-/** One action the wheel can hold: the editor's catalogue, built by KlustersApp
- *  from its menu bar.  @p path is the menu titles above the action. */
-struct RadialCatalogEntry {
-    QString     id;
-    QStringList path;
-    QString     text;          ///< the action's text, mnemonics removed
-    QAction*    action = nullptr;
-};
-
 namespace radiallayout {
 
 constexpr int kMaxRings = 4;    ///< RadialMenu shows at most this many rings
@@ -83,12 +72,6 @@ RadialLayout fromSettings(const QString& text);
 
 /** Rings the layout needs (1 for a flat root; a group adds one). */
 int ringsNeeded(const RadialLayout& layout);
-
-/** A menu path's id ("menu:Tools/New Cluster"). */
-QString menuPathId(const QStringList& path, const QString& actionText);
-
-/** Mnemonics removed ("&Split" -> "Split", "&&" -> "&"), trailing ellipsis dropped. */
-QString plainActionText(const QString& text);
 
 } // namespace radiallayout
 

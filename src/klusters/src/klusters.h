@@ -32,7 +32,7 @@
 #include "pluginregistry.h"  // Plugins menu (discovery + descriptors)
 class QMenu;
 class RadialMenu;
-#include "radiallayout.h"   // RadialCatalogEntry (radialCatalog)
+#include "actionid.h"      // ActionCatalogEntry (actionCatalog)
 #include <neurosuite/core/watershed2d.hpp>   // for Result struct used in live-preview state
 
 
@@ -782,13 +782,14 @@ private:
     void refreshRadialDimensions();
     void showRadialStatus(QAction* a);
 public:
-    /** Every menu-bar action the wheel can hold, with its stable id (registry id,
-     *  else menu path) — the Preferences ▸ Radial menu catalogue. */
-    QList<RadialCatalogEntry> radialCatalog() const;
     /** Drop the wheel so the next right-click rebuilds it from the stored layout. */
     void rebuildRadialMenu();
+    /** Every menu-bar action with its stable id (actionid.h: registry id, else menu
+     *  path) — the radial menu editor's catalogue (klusters_actionids.cpp). */
+    QList<ActionCatalogEntry> actionCatalog() const;
+    /** Id -> action, both id forms of every catalogued action. */
+    QHash<QString, QAction*> actionsById() const;
 private:
-    QHash<QString, QAction*> radialActionsById() const;
 
     // Plugins (descriptor discovery; read-only listing in v1).
     PluginRegistry mPluginRegistry;

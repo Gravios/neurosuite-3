@@ -138,9 +138,9 @@ if(Qt6_FOUND)
 
     # Radial menu layout (radiallayout.h): the wheel's tree as data -- JSON round
     # trip, settings fallback, malformed / wrong-version rejection, ring counting,
-    # menu-path ids.  Qt Core only (QJson); no widgets.
+    # and the action ids it stores (actionid.h).  Qt Core only (QJson); no widgets.
     add_executable(klusters_test_radiallayout
-        radiallayout_test.cpp "${_klu_src}/radiallayout.cpp")
+        radiallayout_test.cpp "${_klu_src}/radiallayout.cpp" "${_klu_src}/actionid.cpp")
     target_compile_features(klusters_test_radiallayout PRIVATE cxx_std_20)
     target_include_directories(klusters_test_radiallayout PRIVATE "${_klu_src}")
     target_link_libraries(klusters_test_radiallayout PRIVATE Qt6::Core)

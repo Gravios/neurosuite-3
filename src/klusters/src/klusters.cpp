@@ -1840,7 +1840,7 @@ void KlustersApp::executePreferencesDlg(){
     }
 
     // update the dialog widgets (the radial-menu page needs the live action catalogue).
-    prefDialog->setRadialCatalog(radialCatalog());
+    prefDialog->setRadialCatalog(actionCatalog());
     prefDialog->updateDialog();
 
     if(prefDialog->exec() == QDialog::Accepted){  // execute the dialog

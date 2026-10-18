@@ -88,10 +88,10 @@ int main()
     }
 
     // ---- ids -----------------------------------------------------------------
-    CHECK(radiallayout::plainActionText(QStringLiteral("&Split Clusters")) == QStringLiteral("Split Clusters"));
-    CHECK(radiallayout::plainActionText(QStringLiteral("R&&D...")) == QStringLiteral("R&D"));
-    CHECK(radiallayout::plainActionText(QString::fromUtf8("Save As…")) == QStringLiteral("Save As"));
-    CHECK(radiallayout::menuPathId({ QStringLiteral("&Actions"), QStringLiteral("Sort Clusters") },
+    CHECK(actionid::plainText(QStringLiteral("&Split Clusters")) == QStringLiteral("Split Clusters"));
+    CHECK(actionid::plainText(QStringLiteral("R&&D...")) == QStringLiteral("R&D"));
+    CHECK(actionid::plainText(QString::fromUtf8("Save As…")) == QStringLiteral("Save As"));
+    CHECK(actionid::menuPathId({ QStringLiteral("&Actions"), QStringLiteral("Sort Clusters") },
                                    QStringLiteral("Sort Clusters by Largest Amplitude by C&hannel"))
           == QStringLiteral("menu:Actions/Sort Clusters/Sort Clusters by Largest Amplitude by Channel"));
 
