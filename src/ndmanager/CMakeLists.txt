@@ -35,6 +35,12 @@ include(GNUInstallDirs)
 # ---------------------------------------------------------------------------
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(Qt6 OPTIONAL_COMPONENTS Svg)
+# ndmanager links yaml-cpp itself (src/CMakeLists.txt).  The package must be
+# found here: libklustersshared's find_package() makes the yaml-cpp target
+# visible only in its own directory, and an unknown name links as a plain
+# library -- -lyaml-cpp happens to work on Linux, yaml-cpp.lib does not
+# exist under vcpkg on Windows.
+find_package(yaml-cpp REQUIRED)
 
 # In a monorepo add_subdirectory build the alias target is already present.
 if(NOT TARGET KlustersShared::klustersshared)
