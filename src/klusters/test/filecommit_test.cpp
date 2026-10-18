@@ -10,6 +10,7 @@
 
 #include "filecommit.h"
 
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -41,6 +42,28 @@ int main()
     fs::remove_all(dir);
     fs::create_directories(dir);
     const std::string w = (dir / "a.spk.pending").string(), t = (dir / "a.spk").string();
+
+    // ---- stamps ----
+    // The stamp's fields are real values on the Unix-epoch nanosecond scale on
+    // every platform (POSIX stat, Win32 file information), so a fast-path
+    // decision means the same thing on both.
+    {
+        const std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        put(w, "0123456789");
+        const FileStamp a = stampOf(w);
+        check(a.ok && a.size == 10, "a stamp records the size");
+        check(a.mtimeNs > now - 60'000'000'000LL && a.mtimeNs < now + 60'000'000'000LL,
+              "a stamp's mtime is now, on the Unix-epoch scale");
+        check(a == stampOf(w), "an untouched file keeps its stamp");
+        put(w, "0123456789abc");
+        check(stampOf(w) != a && stampOf(w).size == 13, "a rewrite changes the stamp");
+        check(!stampOf((dir / "missing").string()).ok, "a missing file has no stamp");
+        const SyncStamp m = markInSync(w, w);
+        check(m.work.mtimeNs < m.takenNs - 5'000'000'000LL
+              && m.work.mtimeNs > m.takenNs - 15'000'000'000LL,
+              "markInSync moves the working copy's mtime about 10 s back");
+    }
 
     // ---- parity ----
     put(t, "0123456789");

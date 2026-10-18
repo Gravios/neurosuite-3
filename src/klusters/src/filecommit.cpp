@@ -10,9 +10,19 @@
 #include <fstream>
 #include <system_error>
 
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#else
+#  include <fcntl.h>
+#  include <sys/stat.h>
+#  include <unistd.h>
+#endif
 
 namespace filecommit {
 
@@ -34,13 +44,47 @@ std::string errnoText(const std::string& what, const std::string& path)
     return what + " " + path + ": " + std::strerror(errno);
 }
 
+#ifdef _WIN32
+// A Win32 failure sets GetLastError(), not errno; errnoText() reads errno.
+void setErrnoFromWin32()
+{
+    const DWORD e = ::GetLastError();
+    errno = (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) ? ENOENT
+          : (e == ERROR_ACCESS_DENIED || e == ERROR_SHARING_VIOLATION) ? EACCES
+          : EIO;
+}
+
+// FILETIME (100 ns since 1601-01-01) to ns since the Unix epoch, the scale
+// nowNs() and the POSIX stamps use.
+constexpr LONGLONG kFileTimeEpoch = 116444736000000000LL;   // 1601 -> 1970, in 100 ns
+
+std::int64_t fileTimeNs(LONGLONG t)
+{
+    return static_cast<std::int64_t>(t - kFileTimeEpoch) * 100;
+}
+#endif
+
 bool fsyncPath(const std::string& path, bool directory)
 {
+#ifdef _WIN32
+    // Windows cannot flush a directory handle; NTFS journals the rename itself,
+    // which is what the POSIX directory fsync is for.
+    if (directory) return true;
+    const HANDLE h = ::CreateFileW(fs::path(path).c_str(), GENERIC_WRITE,
+                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                   nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) { setErrnoFromWin32(); return false; }
+    const bool ok = ::FlushFileBuffers(h) != 0;
+    if (!ok) setErrnoFromWin32();
+    ::CloseHandle(h);
+    return ok;
+#else
     const int fd = ::open(path.c_str(), directory ? (O_RDONLY | O_DIRECTORY) : O_RDONLY);
     if (fd < 0) return false;
     const bool ok = ::fsync(fd) == 0 || (directory && (errno == EINVAL || errno == EBADF));
     ::close(fd);
     return ok;
+#endif
 }
 
 std::string parentDir(const std::string& path)
@@ -55,6 +99,26 @@ std::string rollbackOf(const std::string& target) { return target + ".rollback";
 FileStamp stampOf(const std::string& path)
 {
     FileStamp s;
+#ifdef _WIN32
+    // The same identity as POSIX: the file index stands in for the inode, the
+    // volume serial for the device, ChangeTime for ctime.
+    const HANDLE h = ::CreateFileW(fs::path(path).c_str(), FILE_READ_ATTRIBUTES,
+                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                   nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return s;
+    BY_HANDLE_FILE_INFORMATION info{};
+    FILE_BASIC_INFO basic{};
+    const bool ok = ::GetFileInformationByHandle(h, &info) != 0
+                 && ::GetFileInformationByHandleEx(h, FileBasicInfo, &basic, sizeof basic) != 0;
+    ::CloseHandle(h);
+    if (!ok) return s;
+    s.ok      = true;
+    s.size    = (static_cast<std::uint64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+    s.inode   = (static_cast<std::uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
+    s.device  = info.dwVolumeSerialNumber;
+    s.mtimeNs = fileTimeNs(basic.LastWriteTime.QuadPart);
+    s.ctimeNs = fileTimeNs(basic.ChangeTime.QuadPart);
+#else
     struct stat st;
     if (::stat(path.c_str(), &st) != 0) return s;
     s.ok      = true;
@@ -63,6 +127,7 @@ FileStamp stampOf(const std::string& path)
     s.device  = static_cast<std::uint64_t>(st.st_dev);
     s.mtimeNs = static_cast<std::int64_t>(st.st_mtim.tv_sec) * 1'000'000'000LL + st.st_mtim.tv_nsec;
     s.ctimeNs = static_cast<std::int64_t>(st.st_ctim.tv_sec) * 1'000'000'000LL + st.st_ctim.tv_nsec;
+#endif
     return s;
 }
 
@@ -79,10 +144,25 @@ SyncStamp syncStampOf(const std::string& work, const std::string& target)
 SyncStamp markInSync(const std::string& work, const std::string& target)
 {
     const std::int64_t back = nowNs() - 10'000'000'000LL;
+#ifdef _WIN32
+    const HANDLE h = ::CreateFileW(fs::path(work).c_str(), FILE_WRITE_ATTRIBUTES,
+                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                   nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+        ULARGE_INTEGER t;
+        t.QuadPart = static_cast<ULONGLONG>(back / 100 + kFileTimeEpoch);
+        FILETIME mtime;
+        mtime.dwLowDateTime  = t.LowPart;
+        mtime.dwHighDateTime = t.HighPart;
+        ::SetFileTime(h, nullptr, nullptr, &mtime);             // atime unchanged
+        ::CloseHandle(h);
+    }
+#else
     struct timespec ts[2];
     ts[0].tv_sec = 0; ts[0].tv_nsec = UTIME_OMIT;                 // atime unchanged
     ts[1].tv_sec = back / 1'000'000'000LL; ts[1].tv_nsec = back % 1'000'000'000LL;
     ::utimensat(AT_FDCWD, work.c_str(), ts, 0);
+#endif
     return syncStampOf(work, target);
 }
 

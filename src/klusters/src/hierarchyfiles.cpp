@@ -10,7 +10,11 @@
 #include <set>
 #include <system_error>
 
-#include <unistd.h>
+#ifdef _WIN32
+#  include <io.h>       // _commit, _fileno
+#else
+#  include <unistd.h>   // fsync, fileno
+#endif
 
 namespace hierarchyfiles {
 
@@ -87,7 +91,11 @@ bool stageImpl(const std::string& path, int32_t header, const std::vector<int32_
     }
     // Flushed to the disk before it can be installed: a staged file that a
     // crash could leave half-written must never be renamed over a good one.
+#ifdef _WIN32
+    if (ok) ok = std::fflush(f) == 0 && ::_commit(::_fileno(f)) == 0;
+#else
     if (ok) ok = std::fflush(f) == 0 && ::fsync(::fileno(f)) == 0;
+#endif
     const int writeErr = ok ? 0 : errno;
     ok = (std::fclose(f) == 0) && ok;        // a full disk can surface only at the flush
     if (!ok) {
