@@ -69,7 +69,8 @@ set(_srcs
     ndmanager-icons.qrc
     ndmanager-html.qrc)
 
-add_executable(ndmanager $<$<PLATFORM_ID:Windows>:WIN32> ${_srcs})
+# WIN32: a windowed program (no console) on Windows; ignored on Linux/macOS.
+add_executable(ndmanager WIN32 ${_srcs})
 
 target_include_directories(ndmanager PRIVATE
     # KlustersShared headers first so moved types (GeneralInformation etc)

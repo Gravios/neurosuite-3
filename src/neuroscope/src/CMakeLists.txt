@@ -64,8 +64,9 @@ if(NOT TARGET Neurosuite::spectral)
 endif()
 add_subdirectory(spectral)
 
-# WIN32 suppresses the console window on Windows; no-op on Linux/macOS
-add_executable(neuroscope $<$<PLATFORM_ID:Windows>:WIN32> ${_srcs})
+# WIN32: a windowed program (no console) on Windows; ignored on Linux/macOS.
+# It must be the literal keyword: a generator expression is read as a source file.
+add_executable(neuroscope WIN32 ${_srcs})
 
 target_include_directories(neuroscope PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
