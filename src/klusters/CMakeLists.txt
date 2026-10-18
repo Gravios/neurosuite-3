@@ -104,17 +104,30 @@ if(USE_SYCL)
                 message(STATUS "SYCL backend enabled — icpx found, CMake package absent (flags set manually)")
             endif()
         endif()
-        # Force the CXX compiler to icpx so CMake uses -fsycl.
-        # Only effective on a clean configure; if the user already configured
-        # with a different CXX the cached value takes precedence.
-        if(NOT CMAKE_CXX_COMPILER MATCHES "icpx")
+        # The SYCL sources need the oneAPI compiler as THE C++ compiler.  Its
+        # CMake id is IntelLLVM for both drivers: icpx (GNU-style, Linux) and
+        # icx (MSVC-style, Windows -- the one that matches Qt's MSVC binaries).
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+            # Already the oneAPI compiler (icpx, or icx on Windows): nothing to switch.
+        elseif(WIN32)
+            # Switching the cached compiler here would hand icpx (the GNU-style
+            # driver) to an MSVC build.  Leave the compiler alone and say how.
+            set(USE_SYCL OFF)
+            message(STATUS "SYCL backend: disabled — the C++ compiler is ${CMAKE_CXX_COMPILER_ID}, not Intel oneAPI.")
+            message(STATUS "  In the oneAPI command prompt, configure a fresh build directory with")
+            message(STATUS "    -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icx")
+        else()
+            # Force the CXX compiler to icpx so CMake uses -fsycl.
+            # Only effective on a clean configure; if the user already configured
+            # with a different CXX the cached value takes precedence.
             message(STATUS "SYCL: setting CMAKE_CXX_COMPILER to ${ICPX_EXECUTABLE}")
             set(CMAKE_CXX_COMPILER "${ICPX_EXECUTABLE}" CACHE FILEPATH
                 "C++ compiler (overridden to icpx for SYCL)" FORCE)
         endif()
-    elseif(CMAKE_CXX_COMPILER MATCHES "icpx")
-        # User explicitly set CXX=icpx before running cmake.
-        message(STATUS "SYCL backend enabled — icpx detected as active CXX compiler")
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+        # The oneAPI compiler is the active CXX compiler (CXX=icpx, or icx on
+        # Windows, where there may be no icpx on PATH).
+        message(STATUS "SYCL backend enabled — ${CMAKE_CXX_COMPILER} is the active CXX compiler")
         find_package(IntelSYCL QUIET)
         if(NOT IntelSYCL_FOUND)
             find_package(IntelDPCPP QUIET)
@@ -123,7 +136,7 @@ if(USE_SYCL)
         # ── icpx not found anywhere ──────────────────────────────────────────
         set(USE_SYCL OFF)
         message(STATUS "SYCL backend: disabled")
-        message(STATUS "  Reason: icpx (Intel oneAPI DPC++ compiler) not found.")
+        message(STATUS "  Reason: the Intel oneAPI DPC++ compiler (icpx; icx on Windows) not found.")
         message(STATUS "  To enable SYCL support, install the Intel oneAPI Base Toolkit:")
         message(STATUS "    https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html")
         message(STATUS "  Then source the environment before configuring:")

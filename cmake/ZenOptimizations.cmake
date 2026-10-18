@@ -104,15 +104,19 @@ endif()
 # COMPILE_LANGUAGE is restricted to C and CXX so nvcc / HIP device passes never
 # receive these host-only flags (device code handles its own optimisation).
 set(_ns_rel "$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>")
+# GNU-style flags only for a GNU-style driver: icx on Windows is IntelLLVM with
+# an MSVC-style command line (CMAKE_<LANG>_COMPILER_FRONTEND_VARIANT MSVC).
+set(_ns_gnu_cxx "$<AND:$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>,$<NOT:$<STREQUAL:${CMAKE_CXX_COMPILER_FRONTEND_VARIANT},MSVC>>>")
+set(_ns_gnu_c   "$<AND:$<C_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>,$<NOT:$<STREQUAL:${CMAKE_C_COMPILER_FRONTEND_VARIANT},MSVC>>>")
 
 add_compile_options(
-    "$<$<AND:$<COMPILE_LANGUAGE:CXX>,${_ns_rel},$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>>:-funroll-loops>"
-    "$<$<AND:$<COMPILE_LANGUAGE:C>,${_ns_rel},$<C_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>>:-funroll-loops>")
+    "$<$<AND:$<COMPILE_LANGUAGE:CXX>,${_ns_rel},${_ns_gnu_cxx}>:-funroll-loops>"
+    "$<$<AND:$<COMPILE_LANGUAGE:C>,${_ns_rel},${_ns_gnu_c}>:-funroll-loops>")
 
 if(NS_NATIVE_ARCH)
     add_compile_options(
-        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,${_ns_rel},$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>>:-march=native>"
-        "$<$<AND:$<COMPILE_LANGUAGE:C>,${_ns_rel},$<C_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>>:-march=native>")
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,${_ns_rel},${_ns_gnu_cxx}>:-march=native>"
+        "$<$<AND:$<COMPILE_LANGUAGE:C>,${_ns_rel},${_ns_gnu_c}>:-march=native>")
     message(STATUS "ZenOptimizations: -march=native applied globally "
                    "(NS_NATIVE_ARCH=ON — pass -DNS_NATIVE_ARCH=OFF for a portable build)")
 else()
@@ -132,7 +136,9 @@ endif()
 #   2. After check_ipo_supported() succeeds, verify the archiver is not NOTFOUND
 #      before actually enabling IPO; if it is still unresolved, skip silently.
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM"
+        AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    # (icx on Windows archives with lib.exe / llvm-lib like MSVC: no override.)
     # For the modern LLVM-based Intel compiler (icpx), the LTO archiver is
     # llvm-ar, located in a "compiler/" subdirectory alongside icpx:
     #   .../compiler/<version>/bin/icpx

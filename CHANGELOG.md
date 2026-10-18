@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-18 | [Klusters: the Intel GPU (SYCL) backend can be configured with icx on Windows](#2026-10-18--klusters-the-intel-gpu-sycl-backend-can-be-configured-with-icx-on-windows) |
 | 2026-10-18 | [Windows: the GUI programs build with MSVC, and CI checks it](#2026-10-18--windows-the-gui-programs-build-with-msvc-and-ci-checks-it) |
 | 2026-10-18 | [CI builds and tests on Ubuntu 24.04, 25.10, 26.04 and 26.10](#2026-10-18--ci-builds-and-tests-on-ubuntu-2404-2510-2604-and-2610) |
 | 2026-10-18 | [CI installs SciPy; the plugins' SciPy dependency documented as it is](#2026-10-18--ci-installs-scipy-the-plugins-scipy-dependency-documented-as-it-is) |
@@ -75,6 +76,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-18 — Klusters: the Intel GPU (SYCL) backend can be configured with icx on Windows
+
+<details>
+<summary>Details</summary>
+
+- Klusters' SYCL setup recognised the oneAPI compiler only by the name
+  `icpx`, and otherwise switched the cached compiler to `icpx` part-way
+  through configuring. On Windows the oneAPI compiler for an MSVC/Qt build is
+  `icx`, so SYCL could not be enabled there. It now goes by the compiler id
+  (`IntelLLVM`, covering `icx` and `icpx`); on Windows it never switches the
+  compiler and says to configure with `-DCMAKE_C_COMPILER=icx
+  -DCMAKE_CXX_COMPILER=icx`. Linux behaves as before.
+- `ZenOptimizations.cmake` passes `-funroll-loops` / `-march=native`, and
+  overrides the archiver with `llvm-ar`, only for GNU-style drivers, not for
+  `icx`'s MSVC-style command line. GCC builds are unchanged.
+- Not built here (no oneAPI on Windows available); checked that a GCC
+  configure on Ubuntu 24.04 produces the same flags as before.
+
+</details>
 
 ## 2026-10-18 — Windows: the GUI programs build with MSVC, and CI checks it
 
