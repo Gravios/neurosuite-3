@@ -1,5 +1,14 @@
 # Error-matrix compute — profiling and optimization roadmap
 
+> **Status (2026-10): lever 1 implemented; levers 2–3 open (largely moot).**
+> GPU-side aggregation ships: `cuda_compute_error_matrix` reduces the posteriors
+> into the cluster × cluster matrix on the device and only that matrix is copied
+> back (`src/klusters/src/groupingassistant_cuda.cu`, `groupingassistant.cpp`).
+> FP32 is back as a user toggle, default on: Preferences ▸ Refinement
+> "Low-precision GPU compute (FP32, faster)" (setting `errorMatrixLowPrecision`;
+> the `NS3_ERRORMATRIX_LOWPRECISION` environment variable overrides it). The
+> timing table below is the pre-aggregation baseline.
+
 The error matrix is a purely qualitative aid for visual curation: each cell
 `(i,j)` is the mean, over cluster *i*'s spikes, of the row-normalized posterior
 of that spike under cluster *j*. Nothing downstream is derived from it. This note
@@ -52,14 +61,15 @@ allocated each time. The incremental path allocates its own full
 `nSpikes×nClusters` `raw` buffer as well, so it pays the same tax (and is not the
 fast path here).
 
-FP32 was removed as a dead end: with the copy-back gone the compute is bound by
+FP32 was at this point judged a dead end (it has since returned as a default-on
+toggle, because with GPU-side aggregation the kernel is the main cost): with the copy-back gone the compute is bound by
 this host buffer and the PCIe transfer, not FP64 arithmetic. FP32 halved only the
 kernel (~1.6 → ~0.8 s) while adding conversion passes and a slower pageable
 download — net roughly even, plus ~5e-4 error and a softmax-underflow pitfall.
 
 ## Remaining levers (ranked)
 
-### 1. GPU-side aggregation — biggest, cleanest, largest change
+### 1. GPU-side aggregation — biggest, cleanest, largest change (implemented)
 Reduce the per-spike posteriors into the `nClusters × nClusters` matrix **on the
 device** and copy back only that (~99 MB) instead of the 14.8 GB intermediate.
 Removes `alloc` (~2.3 s), `download` (~0.38 s), and host `aggregate` (~0.36 s) in
