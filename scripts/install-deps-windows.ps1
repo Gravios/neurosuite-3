@@ -62,8 +62,24 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+
+# The vcpkg that ships inside Visual Studio (VC\vcpkg, which the developer
+# prompts put in VCPKG_ROOT) has no classic mode: `vcpkg install <port>` fails
+# there with "Could not locate a manifest".  It is recognised by its
+# vcpkg-bundle.json, or by sitting inside the Visual Studio tree, and a
+# separate vcpkg is used instead.
+function Test-VsBundledVcpkg([string]$root) {
+    if (-not $root) { return $false }
+    if (Test-Path ([IO.Path]::Combine($root, 'vcpkg-bundle.json'))) { return $true }
+    return ($root -match '[\\/]Microsoft Visual Studio[\\/]')
+}
 if (-not $VcpkgRoot) {
-    if ($env:VCPKG_ROOT) { $VcpkgRoot = $env:VCPKG_ROOT } else { $VcpkgRoot = 'C:\vcpkg' }
+    if ($env:VCPKG_ROOT -and -not (Test-VsBundledVcpkg $env:VCPKG_ROOT)) { $VcpkgRoot = $env:VCPKG_ROOT }
+    else { $VcpkgRoot = 'C:\vcpkg' }
+}
+if (Test-VsBundledVcpkg $VcpkgRoot) {
+    Write-Host "[warn] $VcpkgRoot is the vcpkg bundled with Visual Studio, which cannot install packages outside a vcpkg.json manifest; using C:\vcpkg instead" -ForegroundColor Yellow
+    $VcpkgRoot = 'C:\vcpkg'
 }
 $Triplet = 'x64-windows'
 $QtArch  = 'win64_msvc2022_64'
@@ -207,7 +223,8 @@ else {
 $ports = @('yaml-cpp', 'gsl', 'libxml2', 'libsamplerate')
 if ($WithHdf5)   { $ports += 'hdf5' }
 if ($WithFfmpeg) { $ports += 'ffmpeg' }
-$portArgs = @('install') + ($ports | ForEach-Object { "${_}:$Triplet" })
+# --vcpkg-root: the developer prompts' VCPKG_ROOT may still name Visual Studio's copy.
+$portArgs = @('install', '--vcpkg-root', $VcpkgRoot) + ($ports | ForEach-Object { "${_}:$Triplet" })
 Write-Step ("vcpkg libraries: " + ($ports -join ', ') + ' (built from source the first time; FFmpeg takes long)')
 Push-Location $VcpkgRoot -ErrorAction SilentlyContinue
 try { Invoke-Checked $vcpkgExe $portArgs } finally { Pop-Location -ErrorAction SilentlyContinue }

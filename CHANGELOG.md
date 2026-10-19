@@ -96,7 +96,9 @@ Each entry is folded — click **Details** to expand it. Newest first.
   aqtinstall, with no Qt account. It writes a git-ignored
   `CMakeUserPresets.json`: `cmake --preset windows` (MSVC) or
   `windows-sycl` (Intel `icx`), installing to `C:\ns3`. `-DryRun` prints
-  what it would do.
+  what it would do. The vcpkg inside Visual Studio (`VC\vcpkg`, the
+  `VCPKG_ROOT` of its developer prompts) cannot install packages outside a
+  `vcpkg.json` manifest, so it is passed over for `C:\vcpkg`.
 - `-DNS_INSTALL_DEPS=ON` on Windows runs the same script for the libraries and
   Qt. Before, it set `CMAKE_TOOLCHAIN_FILE` after `project()`, where it has no
   effect, so the vcpkg packages it installed were not found; it now puts the

@@ -304,6 +304,16 @@ if(NS_INSTALL_DEPS)
                 set(NS_VCPKG_ROOT "C:/vcpkg")
             endif()
         endif()
+        # Visual Studio's own vcpkg (VC/vcpkg, the VCPKG_ROOT of its developer
+        # prompts) has no classic mode and cannot install these packages: the
+        # script uses C:/vcpkg instead, and so must the paths below.
+        file(TO_CMAKE_PATH "${NS_VCPKG_ROOT}" _ns_vcpkg_cm)
+        if(EXISTS "${_ns_vcpkg_cm}/vcpkg-bundle.json"
+           OR _ns_vcpkg_cm MATCHES "/Microsoft Visual Studio/")
+            message(STATUS "NS_INSTALL_DEPS: ${NS_VCPKG_ROOT} is Visual Studio's vcpkg "
+                           "(no classic mode); using C:/vcpkg")
+            set(NS_VCPKG_ROOT "C:/vcpkg")
+        endif()
         set(NS_QT_ROOT "C:/Qt" CACHE PATH
             "Windows NS_INSTALL_DEPS: where Qt is installed when none is found")
         set(NS_QT_VERSION "6.8.3" CACHE STRING
