@@ -1,5 +1,13 @@
 # KiloKlustaKwik Phase-4 Rewrite — Design Document
 
+> **Status (2026-10): partially implemented, differs.** `proxy_isi`,
+> `adapt_model`, `clust_quality`, `xcorr_match` and `wave_knn_split` exist in
+> `src/`; `feat_knn` and `refine_loop` were never built. `RunChunkedCEM` lives
+> in `src/KK_chunked.cpp` (not `KK.cpp`), DipSplit in
+> `src/libneurosuite-core/src/neurosuite/core/dipsplit.hpp`, and waveforms are
+> `.spk.<method>.N` (e.g. `.spk.stderiv.N`, not `.spkD.N`). Current pipeline:
+> [doc/kiloklustakwik/README.md](../../doc/kiloklustakwik/README.md).
+
 ## Scope
 
 Replace the current post-Phase-2 logic in `KK::RunChunkedCEM` (Phases 3, 4,

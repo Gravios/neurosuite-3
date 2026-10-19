@@ -1,5 +1,11 @@
 # KiloKlustaKwik — C++17 Modernization & GPU Analysis
 
+> **Status (2026-10): historical.** These notes describe the first port from
+> v1.7. The code is now C++20, the pipeline has changed (chunked CEM and many
+> refinement stages), and output is no longer bit-identical to v1.7. Build via
+> [doc/INSTALL.md](../../doc/INSTALL.md); current reference:
+> [doc/kiloklustakwik/README.md](../../doc/kiloklustakwik/README.md).
+
 ## Summary of changes from v1.7
 
 ### Compilation
