@@ -32,13 +32,16 @@
 		<arg>
 			<option>-v</option>
 		</arg>
+		<arg>
+			<option>-h</option>
+		</arg>
 		</cmdsynopsis>
 	</refsynopsisdiv>
 
 	<refsect1>
 		<title>Description</title>
 		<para>
-			<command>process_medianthreshold</command> computes a spike detection threshold for a given high-pass filtered multiplexed binary data file using a median-based algorithm.
+			<command>process_medianthreshold</command> computes a spike detection threshold for a given high-pass filtered multiplexed binary data file using a median-based algorithm. The thresholds are printed on standard output in the grouping of the channel list (e.g. 403.3,409.2:326.2,314.3).
 		</para>
 	</refsect1>
 
@@ -78,10 +81,26 @@
 				</listitem>
 			</varlistentry>
 			<varlistentry>
+				<term><option>-d</option> <replaceable>output</replaceable></term>
+				<listitem>
+					<para>
+						also write the samples that were read to this text file, one value per line (a debugging aid; the thresholds still go to standard output)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
 				<term><option>-v</option></term>
 				<listitem>
 					<para>
 						verbose mode, displays progress information
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-h</option></term>
+				<listitem>
+					<para>
+						display help (only as the sole argument)
 					</para>
 				</listitem>
 			</varlistentry>

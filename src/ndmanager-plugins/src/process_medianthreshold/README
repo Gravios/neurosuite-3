@@ -1,11 +1,11 @@
-Process_median_threshold
--------------------------------
+process_medianthreshold
+-----------------------
 16/05/2008
 author : nicolas.lebas@college-de-france.fr
 
 1) USAGE :
 -------------
-process_median_threshold [options] [input]
+process_medianthreshold [options] [input]
 
  -f input_file		input file
  -s size				input size in bytes (ex : 32000000)
@@ -21,7 +21,7 @@ If no I/O file are given, default input and output are respectively stdin and st
 
 Example :
 ------------
->> process_median_threshold -f SPWR-01-20060621-012.fil -n 20 -c 17,18,19
+>> process_medianthreshold -f SPWR-01-20060621-012.fil -n 20 -c 17,18,19
 
 326.168,314.307,320.237
 
@@ -34,7 +34,7 @@ double-point for a new group as channels list input (see previous).
 
 Example :
 ------------
->> process_median_threshold -f SPWR-01-20060621-012.fil -n 20 -c 0,1,2,3:17,18,19
+>> process_medianthreshold -f SPWR-01-20060621-012.fil -n 20 -c 0,1,2,3:17,18,19
 
 403.262,409.192,421.053,415.122:326.168,314.307,320.237
 
