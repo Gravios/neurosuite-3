@@ -52,7 +52,7 @@ The normal route is the whole project ([Installing → Windows](../../INSTALL.md
 
 1. **Visual Studio 2022** with the **Desktop development with C++** workload. Download: https://visualstudio.microsoft.com/downloads/
 
-2. **CMake** ≥ 3.21 and **Ninja**:
+2. **CMake** ≥ 3.22 and **Ninja**:
    ```powershell
    winget install Kitware.CMake
    winget install Ninja-build.Ninja
@@ -99,6 +99,12 @@ cmake --install build\ndmanager-plugins --prefix C:\neurosuite
 
 Built on their own, the plugins' install does not copy the vcpkg DLLs: put `C:\vcpkg\installed\x64-windows\bin` on `PATH`, or build from the monorepo root, whose install copies them.
 
+`-DUSE_CUDA=OFF` only affects `process_extractemg` here. `process_butterworth`,
+`process_medianfilter`, `process_medianthreshold` and `process_spikegrouper`
+build with CUDA whenever CMake finds `nvcc`, and `process_decomposecollisions`
+has its own `-DPDC_USE_CUDA=OFF`; for a CPU-only build configure where `nvcc`
+is not on `PATH` (see the [Linux CUDA notes](linux-cuda.md#cpu-only-build-with-cuda-installed)).
+
 ### Build with CUDA
 
 ```bat
@@ -113,9 +119,9 @@ See [KiloKlustaKwik Windows CUDA](../../kiloklustakwik/install/windows-cuda.md) 
 
 ---
 
-## Option C — MSYS2 (native Bash, full pipeline)
+## Option C — MSYS2 (native Bash, no KiloKlustaKwik)
 
-MSYS2 provides a minimal Linux-like environment on Windows with Bash, GNU coreutils, and a package manager (`pacman`). The ndm_* scripts run natively.
+MSYS2 provides a minimal Linux-like environment on Windows with Bash, GNU coreutils, and a package manager (`pacman`). The ndm_* scripts run natively. This builds the plugins only, not KiloKlustaKwik, so `ndm_klustakwik` and pipelines that cluster still need WSL2 (Option A).
 
 ### Install MSYS2
 
@@ -131,6 +137,8 @@ pacman -S --needed \
   mingw-w64-ucrt-x86_64-gsl \
   mingw-w64-ucrt-x86_64-yaml-cpp \
   mingw-w64-ucrt-x86_64-python-yaml \
+  mingw-w64-ucrt-x86_64-python-numpy \
+  mingw-w64-ucrt-x86_64-python-scipy \
   python bc
 ```
 
