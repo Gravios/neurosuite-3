@@ -12,11 +12,14 @@
 	<refsect1>
 		<title>Description</title>
 		<para>
-			This is a collection of command-line tools to process electrophysiological signals, video and behavioral events. They are similar to <command>ndm</command> scripts, except that parameters are read from the command-line rather than from a central XML parameter file. Under normal circumstances, you should not need to use these tools directly: instead, you should simply run <command>ndm_start</command> and let it automatically handle all processing tasks (see the manual page for <command>ndm</command> for details).
+			This is a collection of command-line tools to process electrophysiological signals, video and behavioral events. They are similar to <command>ndm</command> scripts, except that parameters are read from the command-line rather than from the session parameter file (<filename>SESSION.yaml</filename>; an XML file is only a fallback). Under normal circumstances, you should not need to use these tools directly: instead, you should simply run <command>ndm_start</command> and let it automatically handle all processing tasks (see the manual page for <command>ndm</command> for details).
 		</para>
 	</refsect1>
 	<refsect1>
 		<title>Technical Reference</title>
+		<para>
+			The main tools, by task. Tools without a manual page print their options with <option>-h</option>; <filename>doc/ndmanager-plugins/commands/README.md</filename> in the source tree lists every command.
+		</para>
 		<variablelist>
 			<varlistentry>
 				<term>File format conversion</term>
@@ -35,6 +38,22 @@
 							<listitem>
 								<para>
 									convert files recorded with Spike2 acquisition systems.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command>process_plxconvert</command></term>
+							<listitem>
+								<para>
+									convert Plexon <replaceable>.plx</replaceable> / <replaceable>.pl2</replaceable> files to <replaceable>.dat</replaceable> plus metadata.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command>process_aomconvert</command></term>
+							<listitem>
+								<para>
+									convert AlphaOmega <replaceable>.mat</replaceable> (HDF5) files to <replaceable>.dat</replaceable> plus YAML.
 								</para>
 							</listitem>
 						</varlistentry>
@@ -70,10 +89,42 @@
 							</listitem>
 						</varlistentry>
 						<varlistentry>
+							<term><command>process_slicebinary</command></term>
+							<listitem>
+								<para>
+									copy a subset of channels of a multiplexed binary file into a new file.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_butterworth</command></term>
+							<listitem>
+								<para>
+									zero-phase Butterworth high-pass (optionally band-pass) filter (<replaceable>.dat</replaceable> -> <replaceable>.fil</replaceable>); the default filter of <command>ndm_hipass</command>.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
 							<term><command moreinfo="refentry">process_medianfilter</command></term>
 							<listitem>
 								<para>
-									hi-pass filter a multiplexed binary data file (e.g. <replaceable>.dat</replaceable> -> <replaceable>.fil</replaceable>).
+									median-based hi-pass filter (<replaceable>.dat</replaceable> -> <replaceable>.fil</replaceable>); used by <command>ndm_hipass</command> when <literal>filter: median</literal> is set, and by <command>ndm_bandpass</command>.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_lowpass</command></term>
+							<listitem>
+								<para>
+									linear-phase FIR low-pass filter, the upper edge of <command>ndm_bandpass</command>.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_extractemg</command></term>
+							<listitem>
+								<para>
+									identify, remove and extract EMG events with FastICA, per probe.
 								</para>
 							</listitem>
 						</varlistentry>
@@ -101,10 +152,82 @@
 							</listitem>
 						</varlistentry>
 						<varlistentry>
+							<term><command moreinfo="refentry">process_extractspikes_sdiff</command></term>
+							<listitem>
+								<para>
+									as <command>process_extractspikes</command>, detecting on a spatial derivative across the group's channels.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command>process_extractspikes_stderiv</command></term>
+							<listitem>
+								<para>
+									as above, detecting on a spatial plus temporal derivative and writing the transformed waveforms (<replaceable>.spkD</replaceable>).
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_reextractspikes</command></term>
+							<listitem>
+								<para>
+									second-pass detection that masks already known spikes (also a <command>_stderiv</command> variant).
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_spikegrouper</command></term>
+							<listitem>
+								<para>
+									discover spike detection channel groups from a high-pass filtered signal.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
 							<term><command moreinfo="refentry">process_pca</command></term>
 							<listitem>
 								<para>
-									compute principal component analysis (PCA) on spike data for subsequent cluster cutting (-> <replaceable>.fet</replaceable> file).
+									compute principal component analysis (PCA) on spike data for subsequent cluster cutting (-> <replaceable>.fet</replaceable> and <replaceable>.pca</replaceable> files); <command>process_pca_stderiv</command> and <command>process_pca_multichannel</command> are variants.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_refeaturize</command></term>
+							<listitem>
+								<para>
+									re-project waveforms through a saved <replaceable>.pca</replaceable> basis.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_denoiseuniform</command></term>
+							<listitem>
+								<para>
+									remove spike events that are nearly identical on all channels of a group.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_shadowcluster</command></term>
+							<listitem>
+								<para>
+									assign re-extracted spikes to shadow clusters of existing clusters.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command moreinfo="refentry">process_reassignspikes</command></term>
+							<listitem>
+								<para>
+									re-score and reassign low-amplitude burst spikes with a state-conditioned waveform model.
+								</para>
+							</listitem>
+						</varlistentry>
+						<varlistentry>
+							<term><command>process_decomposecollisions</command></term>
+							<listitem>
+								<para>
+									decompose collisions of two units after curation (run through <command>ndm_decomposecollisions</command>).
 								</para>
 							</listitem>
 						</varlistentry>
@@ -116,8 +239,6 @@
 								</para>
 							</listitem>
 						</varlistentry>
-					</variablelist>
-					<variablelist>
 						<varlistentry>
 							<term><command moreinfo="refentry">process_removeartefacts</command></term>
 							<listitem>
@@ -137,7 +258,7 @@
 							<term><command moreinfo="refentry">process_extractleds</command></term>
 							<listitem>
 								<para>
-										extract LEDs from a video (<replaceable>.mpg</replaceable>, <replaceable>.avi</replaceable>, etc.) file.
+									extract LEDs from a video (<replaceable>.mpg</replaceable>, <replaceable>.avi</replaceable>, etc.) file.
 								</para>
 							</listitem>
 						</varlistentry>

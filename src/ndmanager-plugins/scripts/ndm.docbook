@@ -25,7 +25,7 @@
 			</listitem>
 			<listitem>
 				<para>
-					Create a template XML parameter file with <application>NDManager</application>, load all scripts (descriptions are located in <filename>/usr/share/descriptions</filename>) and set their parameters: numbers of channels, sampling rates, codecs, thresholds, etc. Or better, just copy and edit an existing XML parameter file.
+					Create the session parameter file <filename>SESSION.yaml</filename> with <application>NDManager</application>, or copy <filename>templates/template.yaml</filename> from the source tree (templates are YAML), and set the parameters of the steps under <literal>programs:</literal>: numbers of channels, sampling rates, thresholds, etc. The step descriptions <application>NDManager</application> reads are installed in <filename><replaceable>prefix</replaceable>/share/ndmanager/descriptions</filename>. An old XML parameter file can be converted with <command>ndm_xml2yaml</command>.
 				</para>
 			</listitem>
 			<listitem>
@@ -58,7 +58,7 @@
 				</listitem>
 				<listitem>
 					<para>
-						Unitary scripts perform equivalent functions but are easier to use: they read all the necessary parameters from a single XML parameter file, which can be graphically edited using <application>NDManager</application>. They also provide some additional features, such as better feedback (warning and error messages). Similar to tools, you should normally not need to run unitary scripts directly.
+						Unitary scripts perform equivalent functions but are easier to use: they read all the necessary parameters from the session parameter file (<filename>SESSION.yaml</filename>), which can be graphically edited using <application>NDManager</application>. They also provide some additional features, such as better feedback (warning and error messages). Similar to tools, you should normally not need to run unitary scripts directly.
 					</para>
 				</listitem>
 				<listitem>
@@ -94,7 +94,7 @@
 		<refsect2><title>Unitary processing scripts</title>
 
 			<para>
-				Unitary processing scripts take care of a single processing step (conversion, filtering, resampling...) Under normal circumstances, you should not need to use them explicitly: instead, <command>ndm_start</command> will handle all processing steps automatically. However, in special cases where performing a single processing step is required, unitary scripts can be used directly (see their help pages in <application>NDManager</application> for details).
+				Unitary processing scripts take care of a single processing step (conversion, filtering, resampling...) Under normal circumstances, you should not need to use them explicitly: instead, <command>ndm_start</command> will handle all processing steps automatically. However, in special cases where performing a single processing step is required, unitary scripts can be used directly (see their help pages in <application>NDManager</application> for details). The list below names the main ones; <filename>doc/ndmanager-plugins/commands/README.md</filename> in the source tree documents every step.
 			</para>
 
 			<variablelist>
@@ -111,10 +111,10 @@
 								</listitem>
 							</varlistentry>
 							<varlistentry>
-								<term><command moreinfo="refentry">ndm_nev2ent</command></term>
+								<term><command>ndm_nev2evt</command></term>
 								<listitem>
 									<para>
-										convert Neuralynx <replaceable>.nev</replaceable> files to event format.
+										convert Neuralynx <replaceable>.nev</replaceable> files to event format (<replaceable>.evt</replaceable>).
 									</para>
 								</listitem>
 							</varlistentry>
@@ -147,6 +147,22 @@
 								<listitem>
 									<para>
 										convert Spike2 <replaceable>.smr</replaceable> data files to event format.
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command>ndm_plx2dat</command></term>
+								<listitem>
+									<para>
+										convert Plexon <replaceable>.plx</replaceable> / <replaceable>.pl2</replaceable> recordings to multiplexed binary format (plus events).
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command>ndm_aom2dat</command></term>
+								<listitem>
+									<para>
+										convert AlphaOmega <replaceable>.mat</replaceable> (HDF5) recordings to multiplexed binary format.
 									</para>
 								</listitem>
 							</varlistentry>
@@ -201,7 +217,39 @@
 								<term><command moreinfo="refentry">ndm_hipass</command></term>
 								<listitem>
 									<para>
-										hi-pass filter a multiplexed binary (<replaceable>.dat</replaceable>) data file (-> <replaceable>.fil</replaceable> file).
+										hi-pass filter a multiplexed binary (<replaceable>.dat</replaceable>) data file (-> <replaceable>.fil</replaceable> file); Butterworth by default, median filter on request.
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command>ndm_bandpass</command></term>
+								<listitem>
+									<para>
+										band-pass filter instead (median high-pass then FIR low-pass, -> <replaceable>.fil</replaceable>).
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command>ndm_lfp</command></term>
+								<listitem>
+									<para>
+										downsample the wideband data to an LFP file.
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command moreinfo="refentry">ndm_setupgroups</command></term>
+								<listitem>
+									<para>
+										write the anatomical and spike detection channel groups from the probes listed in the session file.
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command>ndm_spikegrouper</command></term>
+								<listitem>
+									<para>
+										discover spike detection channel groups from the <replaceable>.fil</replaceable> data.
 									</para>
 								</listitem>
 							</varlistentry>
@@ -222,10 +270,65 @@
 								</listitem>
 							</varlistentry>
 							<varlistentry>
+								<term><command>ndm_extractspikes_sdiff</command></term>
+								<listitem>
+									<para>
+										detect and extract spikes on a spatial derivative (also <command>ndm_extractspikes_stderiv</command>: spatial plus temporal derivative).
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
 								<term><command moreinfo="refentry">ndm_pca</command></term>
 								<listitem>
 									<para>
-										compute principal component analysis (PCA) on spike data for subsequent cluster cutting (-> <replaceable>.fet</replaceable> file).
+										compute principal component analysis (PCA) on spike data for subsequent cluster cutting (-> <replaceable>.fet</replaceable> and <replaceable>.pca</replaceable> files; <command>ndm_pca_stderiv</command> for stderiv spikes).
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command>ndm_klustakwik</command></term>
+								<listitem>
+									<para>
+										cluster each spike group with KiloKlustaKwik (-> <replaceable>.clu</replaceable>).
+									</para>
+								</listitem>
+							</varlistentry>
+						</variablelist>
+					</listitem>
+				</varlistentry>
+				<varlistentry>
+					<term>After sorting</term>
+					<listitem>
+						<variablelist>
+							<varlistentry>
+								<term><command moreinfo="refentry">ndm_estimatedrift</command></term>
+								<listitem>
+									<para>
+										estimate probe drift from curated clusters (-> <replaceable>.drift</replaceable>).
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command>ndm_applydrift</command></term>
+								<listitem>
+									<para>
+										apply the drift of one shank to its sibling groups.
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command moreinfo="refentry">ndm_driftcorrect</command></term>
+								<listitem>
+									<para>
+										re-featurize spike waveforms to a reference probe position.
+									</para>
+								</listitem>
+							</varlistentry>
+							<varlistentry>
+								<term><command moreinfo="refentry">ndm_decomposecollisions</command></term>
+								<listitem>
+									<para>
+										decompose collisions of two units (-> <replaceable>.col</replaceable>).
 									</para>
 								</listitem>
 							</varlistentry>
@@ -263,7 +366,7 @@
 								<term><command moreinfo="refentry">ndm_concatenate</command></term>
 								<listitem>
 									<para>
-										concatenate wideband signals and behavioral events from successive sessions, keeping them synchronized (video frames can later be concatenated and synchronized using the Matlab script <command>spots2pos</command>).
+										concatenate wideband signals and behavioral events from successive sessions, keeping them synchronized (video frames can later be concatenated and synchronized using the Matlab function <command>spots2pos</command>, which is kept in the source tree but not installed).
 									</para>
 								</listitem>
 							</varlistentry>
@@ -285,6 +388,14 @@
 					<listitem>
 						<para>
 							change channel colors in a XML parameter file.
+						</para>
+					</listitem>
+				</varlistentry>
+				<varlistentry>
+					<term><command moreinfo="refentry">ndm_xml2yaml</command></term>
+					<listitem>
+						<para>
+							convert an XML parameter file to the YAML session format.
 						</para>
 					</listitem>
 				</varlistentry>
