@@ -1,15 +1,17 @@
 # ndmanager — Session Manager
 
 ndmanager is a Qt6 GUI for managing electrophysiology recording sessions. It opens a `.yaml`
-session parameter file, provides a tabbed interface for editing all acquisition and processing
-parameters, and dispatches the `ndmanager-plugins` preprocessing pipeline — either step by step
-or as a full batch.
+session parameter file and shows its acquisition and processing parameters as pages in a
+parameter tree on the left of the window (the **Parameters** dock). It edits the session and
+the pipeline graph that the `ndmanager-plugins` preprocessing steps follow; it does not run
+them. The steps run in a terminal — see
+[Running the preprocessing pipeline](#running-the-preprocessing-pipeline).
 
 > **ndmanager reads and writes YAML only.** A legacy `.xml` parameter file no longer opens;
 > convert it first with [`ndm_xml2yaml`](../ndmanager-plugins/commands/ndm_xml2yaml.md)
 > (`ndm_xml2yaml session.xml` writes `session.yaml`).
 
-**Contents:** [Dependencies](#dependencies) · [Launching](#launching) · [What ndmanager manages](#what-ndmanager-manages) · [The Probes tab](#the-probes-tab) · [Running the preprocessing pipeline](#running-the-preprocessing-pipeline) · [Pipeline tab — editable node graph](#pipeline-tab--editable-node-graph) · [Built-in session templates](#built-in-session-templates) · [Parameter file format](#parameter-file-format) · [Installation](#installation)
+**Contents:** [Dependencies](#dependencies) · [Launching](#launching) · [Menus](#menus) · [What ndmanager manages](#what-ndmanager-manages) · [The Probes page](#the-probes-page) · [Running the preprocessing pipeline](#running-the-preprocessing-pipeline) · [Pipeline page — editable node graph](#pipeline-tab--editable-node-graph) · [Built-in session templates](#built-in-session-templates) · [Parameter file format](#parameter-file-format) · [Installation](#installation)
 
 ---
 
@@ -21,11 +23,13 @@ As declared in `src/ndmanager/CMakeLists.txt` and `src/ndmanager/src/CMakeLists.
 |---|---|---|
 | Qt6 ≥ 6.4 (Core, Gui, Widgets) | UI framework | Yes |
 | Qt6 Svg | SVG icons (`ND_HAVE_QT_SVG`) | Optional |
-| libklustersshared ≥ 2.1.0 | Shared YAML layer and widget library | Yes — build first |
+| libklustersshared ≥ 2.1.0 | Shared YAML layer and widget library | Yes |
 | yaml-cpp | YAML parameter file reading/writing | Yes |
 
-`libklustersshared` is not available as a distro package and must be built from source before
-ndmanager. See the [install guide](install/linux.md).
+`libklustersshared` is part of this repository and is not a distro package. The top-level
+build compiles it together with ndmanager, so there is nothing to build first; see
+[INSTALL.md](../INSTALL.md). Only a standalone build of `src/ndmanager` needs an installed
+LibKlustersShared 2.1.0.
 
 ---
 
@@ -42,11 +46,14 @@ ndmanager --model template.yaml   # a template as the model for a new session; S
                                   # for a name (File ▸ Use Template… with a session open)
 
 # Start a new session from the project template: File ▸ New from Project Template… (Ctrl+Shift+N)
-
-# Crash-safe wrapper — forces software OpenGL to avoid MESA/Zink segfaults
-# on Ubuntu 24.04 systems where Vulkan is present but incomplete
-scripts/ndmanager-safe session.yaml
 ```
+
+On Ubuntu 24.04 systems where Vulkan is present but incomplete, ndmanager can crash in
+MESA/Zink at start-up. `scripts/ndmanager-safe session.yaml` (in the source tree; it is not
+installed) forces software OpenGL and then starts `/usr/bin/ndmanager`. That path is fixed in
+the script, so with any other install prefix (`~/.local` or `/usr/local`, as in
+[INSTALL.md](../INSTALL.md)) the wrapper fails; copy it and change its last line to your
+`ndmanager`.
 
 Installing ndmanager registers the MIME type `application/nphys-yaml` (a `.yaml`/`.yml` file
 with an `acquisitionSystem:` key near its top — any other YAML stays plain `application/yaml`)
@@ -54,10 +61,57 @@ and the desktop entry opens it, so file managers offer ndmanager for session fil
 
 ---
 
+## Menus
+
+**File**
+
+| Entry | Shortcut | What it does |
+|---|---|---|
+| New… | Ctrl+N | A new session from `ndManagerDefault.yaml` (see [Built-in session templates](#built-in-session-templates)) |
+| New from Project Template… | Ctrl+Shift+N | A new session file from the project template |
+| Open… | Ctrl+O | Open a session `.yaml` |
+| Open Recent | | Recently opened sessions |
+| Use Template… | | Open any parameter file as the model for a new session; Save asks for a name |
+| Save… / Save As… | Ctrl+S / Ctrl+Shift+S¹ | Write the session file |
+| Save as Default | | Make the open session the starting point of **New…** |
+| Export Session as Template… | | [Save chosen sections as a template](#your-own-templates-export-a-session-apply-it-to-others) |
+| Apply Template to Session… | | Replace chosen sections with a template's |
+| Save Pipeline | Ctrl+Alt+P | Write the Pipeline graph to `<session>.ndm.default.pipeline` |
+| Save Pipeline As… | Ctrl+Alt+Shift+P | Write it under another name |
+| Load Pipeline… | | Load a `*.pipeline` file into the Pipeline graph |
+| Reload | F5 | Read the session file again (unsaved changes are offered for saving first) |
+| Close / Quit | Ctrl+W / Ctrl+Q¹ | |
+
+¹ The platform's standard keys; shown here as on Linux. Windows has no standard Save As or
+Quit key.
+
+**Actions**
+
+| Entry | What it does |
+|---|---|
+| Query… | [Look up a value in every YAML file under a directory](#query) |
+| Discover Plugins | [Add the installed plugins that describe themselves](#plugin-discovery) |
+| Record Curated Units… | [Fill the Units page from Klusters' cluster information](#record-curated-units) |
+
+**Settings**
+
+| Entry | What it does |
+|---|---|
+| Expert Mode | Shows the Files, Probes, Anatomical Groups and Spike Groups pages, the NeuroScope Channel Colors and Channel Offsets tabs, and lets you add, remove and reorder plugin parameters. On by default; the choice is kept between runs. Switching it reopens the document (unsaved changes are offered for saving first). |
+| Theme | System, Light or Dark, shared by all NeuroSuite programs |
+| Show Main Toolbar / Show StatusBar | Show or hide them |
+
+**Help** — **Handbook** (F1) opens this manual; **About** shows the program's credits.
+
+---
+
 ## What ndmanager manages
 
 The `.yaml` parameter file is the central manifest for an entire session. ndmanager provides a
-GUI page for every section of that file.
+page in the parameter tree for every section of that file. The Files, Probes, Anatomical
+Groups and Spike Groups pages, and the Channel Colors and Channel Offsets tabs of the
+NeuroScope page, are shown only in **Settings ▸ Expert Mode** (on by default). Outside expert
+mode their content is still read and saved.
 
 **Acquisition system** — channel count, bit depth (nBits), sampling rate, voltage range,
 amplification factor, and ADC offset.
@@ -69,7 +123,7 @@ propagate to neuroscope's trace display.
 
 **Probes** — which physical probes are connected, what `.probe` configuration file each uses,
 its first recording channel (`channelOffset`), and a user label, plus a geometry editor for each
-probe. The Probes tab is the GUI entry point for the `probes:` YAML section; it fills the
+probe. The Probes page is the GUI entry point for the `probes:` YAML section; it fills the
 anatomical and spike groups itself (one per shank), or `ndm_setupgroups` does it from the
 command line.
 
@@ -79,9 +133,13 @@ command line.
 dimensions (width/height) are stored in the top-level `video` YAML section and are separate
 from the neuroscope-specific rotation and flip settings.
 
-**Plugin parameters** — one page per installed `ndm_*` script, listed under **Plugins** in
-collapsible branches by purpose (Conversion, Preparation, Detection, Sorting, …; see
-[Plugins by purpose](#plugins-by-purpose)). Each page exposes the
+**Plugin parameters** — one page per plugin, listed under **Plugins** in collapsible branches
+by purpose (Conversion, Preparation, Detection, Sorting, …; see
+[Plugins by purpose](#plugins-by-purpose)). The pages are the session file's `programs:`
+entries, plus any you add: on the Plugins page **Load…** reads a plugin description (`.yaml`),
+and in expert mode **Add** creates an empty entry and **Discover** (also **Actions ▸ Discover
+Plugins**) adds the installed plugins (see [Plugin discovery](#plugin-discovery)); **Apply
+Pipeline** adds the plugins of the Pipeline graph. Each page exposes the
 parameters that script reads from the parameter file, with Mandatory/Optional/Dynamic status
 indicators. Parameters set here land in the `programs[name=...].parameters` section of the
 YAML (tier-2 of the three-tier resolution: per-group override → global session override → bash
@@ -90,6 +148,17 @@ carry an embedded `klustakwik:` sub-block with per-group calibrated values (tier
 priority) — these are typically written by `ndm_aom2dat` from probe topology. See
 [ndmanager-plugins](../ndmanager-plugins/README.md) for the complete parameter reference per
 script.
+
+### Plugin discovery
+
+**Discover Plugins** looks for executables named `ndm_*` in the directories of
+`$NDM_PLUGIN_PATH` and then of `$PATH` (a name found earlier hides the same name later). Each
+one is first run with `--ndm-version`; only a program whose first output line is
+`ndm-plugin-protocol <N>` counts as a plugin, and one with a protocol newer than this
+ndmanager understands is skipped. A plugin is then run with `--ndm-describe`, and the
+description it prints is added as a page unless a plugin of that name is already listed. The
+status bar reports how many were added; a plugin that declares file-format versions this build
+does not match is still added, with the details on the console.
 
 ### Editing a plugin's parameters
 
@@ -116,12 +185,12 @@ not take — typed, pasted or set any other way — is put back to its last good
 reason next to the cell. An empty value is always accepted: it means "not set". The three keys
 are kept when the table is edited and written back when the description is saved.
 
-A value changed here also reaches the nodes of that plugin in the [Pipeline tab](#pipeline-tab--editable-node-graph),
+A value changed here also reaches the nodes of that plugin in the [Pipeline page](#pipeline-tab--editable-node-graph),
 replacing any inspector edit of the same parameter not yet applied.
 
 ### Plugins by purpose
 
-The Plugins entry of the left-hand tree and the Pipeline tab's palette both group plugins into
+The Plugins entry of the left-hand tree and the Pipeline page's palette both group plugins into
 collapsible branches by purpose. A plugin's branch is, in order of precedence:
 
 1. the `category` its description gives (`program.category` in its `.yaml`, or in what it
@@ -147,9 +216,9 @@ program:
 
 ---
 
-## The Probes tab
+## The Probes page
 
-The Probes tab exposes the `probes:` section of the session YAML and is the starting point for
+The Probes page exposes the `probes:` section of the session YAML and is the starting point for
 any silicon probe session. It has three panes: the probe list (with **+**, **−** and
 **Replace…**), an inspector under it, and the probe's geometry editor on the right.
 
@@ -163,7 +232,7 @@ any silicon probe session. It has three panes: the probe list (with **+**, **−
 | Channel offset | `probes[].channelOffset` | The probe's first recording channel, absolute and 0-based. Follows the previous probe (its offset + its channel count) unless you type a value, which is then kept; typing the automatic value makes it follow again |
 | Anatomical groups / Spike groups | `probes[].anatomicalGroups` | Read-only: the groups generated for the probe's shanks |
 
-There is no library field in the tab: `probeLibraryPath` is a top-level key of the session YAML
+There is no library field on the page: `probeLibraryPath` is a top-level key of the session YAML
 (edit it in the file). ndmanager writes it back only when the session names one.
 
 ### Probe files
@@ -199,8 +268,8 @@ its geometry is edited.
 ### Probe library
 
 The probe library is a directory tree of `.probe` YAML files installed at
-`${CMAKE_INSTALL_DATADIR}/neurosuite/probes/` (typically
-`/usr/local/share/neurosuite/probes/`): 43 NeuroNexus models in `neuronexus/` and three general
+`<prefix>/share/neurosuite/probes/` (`<prefix>` is the install prefix, e.g. `~/.local` or
+`/usr/local`): 43 NeuroNexus models in `neuronexus/` and three general
 files in `general/` (`empty.probe`, the template **+** copies, `tetrode.probe` and
 `tetrode-array-8.probe`). The format is described in
 [`.probe`](../ndmanager-plugins/formats/probe.md).
@@ -221,7 +290,7 @@ longest shank's length is written.
 
 ### Channel groups
 
-Whenever the probes, their offsets or their geometry change the channel layout, the tab rebuilds
+Whenever the probes, their offsets or their geometry change the channel layout, the page rebuilds
 the **Anatomical Groups** and **Spike Groups** pages: one group per shank, channels in file
 order, plus one anatomical group holding every channel no probe uses. A group whose channels
 were already a group keeps its channel order, skip flags and spike parameters (`nSamples`,
@@ -237,30 +306,34 @@ from the probe file; a group on no probe loses a stale `probeId`.
 ### Workflow
 
 1. Open or create the session YAML and set the channel count; save it once.
-2. On the **Probes** tab add one probe per physical probe, in channel order; check each
+2. On the **Probes** page add one probe per physical probe, in channel order; check each
    channel offset and edit the geometry if needed.
 3. Check the **Anatomical Groups** and **Spike Groups** pages, then save.
 
-Alternatively list the probes in `probes:` and run `ndm_setupgroups` (from the Plugins tab or
-the command line), which writes the groups, `probeId`, `shankIndex` and `sitePositions_um` into
+Alternatively list the probes in `probes:` and run `ndm_setupgroups` in a terminal (or as a
+pipeline step), which writes the groups, `probeId`, `shankIndex` and `sitePositions_um` into
 the YAML. It refuses to replace existing groups unless its `overwrite` parameter is true.
 
 ---
 
 ## Running the preprocessing pipeline
 
-Plugins can be launched from ndmanager in three ways:
+ndmanager does not run plugins. Save the session (and the pipeline, if you changed the graph)
+and run the steps in a terminal:
 
-- **Individual step** — right-click a plugin page and select *Run*. Useful for reprocessing
-  one step after a parameter change.
-- **Full batch** — use **Actions → Run All** to execute the complete pipeline in the correct
-  order, equivalent to calling `ndm_start` on the command line.
-- **Pipeline Designer** — see the **Pipeline** tab below for an editable node-graph view
-  whose order is what `ndm_start` dispatches at runtime.
+```sh
+cd /data/Rat/Rat-20200101 && ndm_hipass Rat-20200101.yaml  # one step, in a session directory
+cd /data/Rat && ndm_start Rat.yaml   # the whole pipeline, in the order of the Pipeline graph
+```
 
-Plugin output streams into a docked process widget at the bottom of the window. Exit codes are
-reported; code `10` (output already exists, step skipped) is shown as a notice rather than an
-error.
+`ndm_start` follows the saved pipeline graph (see
+[Runtime behavior](#runtime-behavior-ndm_start-reads-its-own-program-list) below); each step
+reads its parameters from its `programs:` entry in the session file. The parameters of every
+step are in the [ndmanager-plugins reference](../ndmanager-plugins/README.md).
+
+On Windows the `ndm_*` steps are bash scripts started through `.bat` launchers installed
+beside them, so the same commands work in cmd and PowerShell; see
+[INSTALL.md → Windows → Run](../INSTALL.md#4-run).
 
 ---
 
@@ -298,7 +371,7 @@ its row to that table, and rerun the script; `test_template_parameters.py` and
 the template and the designer agree.
 
 The toolbar carries a preset combo (Pipeline A / C / D / Full), **Save** / **Save As**
-buttons, an **Apply Pipeline** button (pushes the graph's order into the Plugins tab, see
+buttons, an **Apply Pipeline** button (pushes the graph's order into the Plugins list, see
 below), and a **Clear** button, which empties the graph back to a fresh `ndm_start` root (its
 flags reset to their defaults) and counts as an unsaved edit.
 
@@ -311,7 +384,7 @@ flags reset to their defaults) and counts as an unsaved edit.
 
 ### Sticky-root semantics
 
-`ndm_start` is the orchestrator entry point. The Pipeline tab enforces these invariants:
+`ndm_start` is the orchestrator entry point. The Pipeline page enforces these invariants:
 
 | Invariant | How |
 |---|---|
@@ -319,7 +392,7 @@ flags reset to their defaults) and counts as an unsaved edit.
 | Exactly one | The palette doesn't offer `ndm_start` and drops of a second are rejected; loading a file keeps its first `ndm_start` and drops any other (with its edges), with a warning |
 | Never deletable | Backspace/Delete are ignored when the root is selected |
 | Indegree 0 | Edge-completion refuses any drag that ends on the root (its input port is hidden); loading drops edges into it, with a warning |
-| First in the exported list | **Apply** puts `ndm_start` first, and the session file's `programs:` list is written in the Plugins tab's order, so after Apply + save `programs[0]` is `ndm_start` |
+| First in the exported list | **Apply** puts `ndm_start` first, and the session file's `programs:` list is written in the Plugins list's order, so after Apply + save `programs[0]` is `ndm_start` |
 
 The graph must also be acyclic: the canvas refuses an edge that closes a cycle, and loading a
 hand-edited file drops, in file order, each edge that would (`ndm_start` would otherwise skip
@@ -355,9 +428,9 @@ collide with `.pipeline` files produced by other tools (Klusters, snakemake, nex
 in the same session directory. Reading a pipeline file needs `python3` with PyYAML on `PATH`.
 
 When you open a session, ndmanager auto-loads `<session>.ndm.default.pipeline` if it
-exists. If no such file exists, the Pipeline tab shows just the `ndm_start` root node —
+exists. If no such file exists, the Pipeline page shows just the `ndm_start` root node —
 you build the graph from scratch via the palette. If the file exists but cannot be loaded
-(YAML error, `python3` or PyYAML missing), a red notice in the Pipeline tab says why and that
+(YAML error, `python3` or PyYAML missing), a red notice in the Pipeline page says why and that
 the graph shown is *not* that pipeline, and **Save Pipeline** asks before overwriting the
 file. Repairs made while loading (unknown plugin types, duplicate ids, a second root, edges
 into the root or closing a cycle) are listed in the notice too.
@@ -372,24 +445,24 @@ file.
 
 These are two separate actions:
 
-- **Apply Pipeline** — orders the Plugins tab as the graph runs; the next document save
+- **Apply Pipeline** — orders the Plugins list as the graph runs; the next document save
   (Ctrl+S) writes that order to the session YAML's `programs:` block, with `ndm_start` first.
-  It does not throw away what the Plugins tab holds:
-  - a plugin already in the Plugins tab keeps its page — its tuned values, help text and
+  It does not throw away what the Plugins list holds:
+  - a plugin already in the Plugins list keeps its page — its tuned values, help text and
     script; only parameters you edited in the node inspector since the last Apply are
     written onto it;
-  - a plugin new to the Plugins tab gets a page with its node's values;
+  - a plugin new to the Plugins list gets a page with its node's values;
   - several nodes of one plugin type give one entry, at the first one's place;
   - plugins that are not in the graph, or only on disabled nodes, stay in the list after the
     graph's plugins — their entries hold the parameter overrides those plugins read.
 
 - **Save Pipeline** — writes the graph itself (positions, edges, node params) to a
-  `.pipeline` file. Doesn't touch the session YAML or the Plugins tab. The runtime
+  `.pipeline` file. Doesn't touch the session YAML or the Plugins list. The runtime
   `ndm_start` reads the plugin *order* from this file directly.
 
 At run time every plugin reads its **parameters** from its entry in the session file's
 `programs:` block, never from the pipeline file — the node parameters in a pipeline file are
-only the designer's copy. So: change parameters in the Plugins tab (or edit them in the node
+only the designer's copy. So: change parameters in the Plugins list (or edit them in the node
 inspector and **Apply**), and save the session; design the order in the graph and **Save
 Pipeline**.
 
@@ -500,7 +573,7 @@ commented out — stay in the new file and survive later saves. Fill in the fiel
 (`nChannels`, `samplingRate`, the probes and groups).
 
 The template is installed as `<datadir>/ndmanager/templates/session-template.yaml`
-(e.g. `/usr/local/share/ndmanager/templates/`). If it is not found there or beside the
+(`<prefix>/share/ndmanager/templates/`). If it is not found there or beside the
 executable (`../share/ndmanager/templates/`), ndmanager asks for the file;
 `NEUROSUITE_SESSION_TEMPLATE=/path/to/template.yaml` points it at another one.
 
@@ -643,8 +716,5 @@ For the full YAML schema see [libklustersshared](../libklustersshared/README.md#
 
 ## Installation
 
-| Platform | Guide |
-|---|---|
-| Linux (Ubuntu / Debian) | [install/linux.md](install/linux.md) |
-| Windows | [install/windows.md](install/windows.md) |
-| macOS | [install/macos.md](install/macos.md) |
+ndmanager is built and installed with the rest of NeuroSuite: see [INSTALL.md](../INSTALL.md)
+(Linux, Windows, macOS) and [BUILD.md](../BUILD.md) for build options.
