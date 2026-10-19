@@ -81,6 +81,7 @@
 #include "progressbar.h"      // BlockProgress — stage progress on the terminal
 
 #include <algorithm>
+#include <neurosuite/core/fileio64.hpp>
 #include <cerrno>
 #include <climits>
 #include <cmath>
@@ -1008,7 +1009,7 @@ static bool identifyComponent(const EmgArgs    &args,
     // -----------------------------------------------------------------
     vector<double> chanSum(nch, 0.0);
     {
-        if (fseeko(fdat, startSamp * args.nChannels * (off_t)sizeof(int16_t),
+        if (neurosuite::core::fseek64(fdat, startSamp * args.nChannels * (std::int64_t)sizeof(int16_t),
                    SEEK_SET) != 0) {
             cerr << "process_extractemg: seek failed (1a): "
                  << std::strerror(errno) << "\n";
@@ -1076,7 +1077,7 @@ static bool identifyComponent(const EmgArgs    &args,
     vector<double> dmData;  dmData.reserve((size_t)maxKeep * nch);
 
     {
-        if (fseeko(fdat, startSamp * args.nChannels * (off_t)sizeof(int16_t),
+        if (neurosuite::core::fseek64(fdat, startSamp * args.nChannels * (std::int64_t)sizeof(int16_t),
                    SEEK_SET) != 0) {
             cerr << "process_extractemg: seek failed (1b): "
                  << std::strerror(errno) << "\n";
@@ -1338,7 +1339,7 @@ static bool streamProcess(const EmgArgs        &args,
     }
 
     // -------- chunked stream loop ------------------------------------------
-    if (fseeko(fdat, 0, SEEK_SET) != 0) {
+    if (neurosuite::core::fseek64(fdat, 0, SEEK_SET) != 0) {
         cerr << "process_extractemg: seek failed: " << std::strerror(errno) << "\n";
         return false;
     }

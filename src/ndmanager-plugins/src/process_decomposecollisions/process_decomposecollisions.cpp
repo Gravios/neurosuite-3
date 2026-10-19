@@ -49,6 +49,7 @@
 #include "process_decomposecollisions.h"
 
 #include <algorithm>
+#include <neurosuite/core/fileio64.hpp>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -172,9 +173,9 @@ static std::vector<int64_t> read_res(const std::string &path)
 {
     FILE *f = fopen(path.c_str(), "rb");
     if (!f) return {};
-    fseeko(f, 0, SEEK_END);
-    size_t n = static_cast<size_t>(ftello(f)) / sizeof(int64_t);
-    fseeko(f, 0, SEEK_SET);
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    size_t n = static_cast<size_t>(neurosuite::core::ftell64(f)) / sizeof(int64_t);
+    neurosuite::core::fseek64(f, 0, SEEK_SET);
     std::vector<int64_t> v(n);
     if (n) { size_t _r = fread(v.data(), sizeof(int64_t), n, f); (void)_r; }
     fclose(f);
@@ -185,9 +186,9 @@ static std::vector<int32_t> read_clu(const std::string &path)
 {
     FILE *f = fopen(path.c_str(), "rb");
     if (!f) return {};
-    fseeko(f, 0, SEEK_END);
-    size_t total = static_cast<size_t>(ftello(f)) / sizeof(int32_t);
-    fseeko(f, 0, SEEK_SET);
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    size_t total = static_cast<size_t>(neurosuite::core::ftell64(f)) / sizeof(int32_t);
+    neurosuite::core::fseek64(f, 0, SEEK_SET);
     if (total < 2) { fclose(f); return {}; }
     std::vector<int32_t> v(total);
     { size_t _r = fread(v.data(), sizeof(int32_t), total, f); (void)_r; }
@@ -203,8 +204,8 @@ static std::vector<float> read_spk(const std::string &path,
 {
     FILE *f = fopen(path.c_str(), "rb");
     if (!f) { n_spk_out = 0; return {}; }
-    fseeko(f, 0, SEEK_END);
-    size_t total_shorts = static_cast<size_t>(ftello(f)) / sizeof(int16_t);
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    size_t total_shorts = static_cast<size_t>(neurosuite::core::ftell64(f)) / sizeof(int16_t);
     fclose(f);
 
     size_t stride = (size_t)n_samp * n_sites;

@@ -55,6 +55,8 @@
 #include "process_reextractspikes.h"
 
 #include <algorithm>
+#include <neurosuite/core/fileio64.hpp>
+#include <cstdint>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -212,17 +214,17 @@ static vector<int64_t> loadMaskGroup(const string &maskBase, int grp1Based)
     FILE *f = fopen(path.c_str(), "rb");
     if (!f) return {}; // no mask — caller gets empty vector, all candidates pass
 
-    fseeko(f, 0, SEEK_END);
-    const off_t sz = ftello(f);
-    fseeko(f, 0, SEEK_SET);
-    if (sz <= 0 || sz % (off_t)sizeof(int64_t) != 0) {
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    const std::int64_t sz = neurosuite::core::ftell64(f);
+    neurosuite::core::fseek64(f, 0, SEEK_SET);
+    if (sz <= 0 || sz % (std::int64_t)sizeof(int64_t) != 0) {
         fclose(f);
         cerr << "warning: mask file '" << path
              << "' has invalid size (" << sz << " bytes); ignoring" << endl;
         return {};
     }
-    vector<int64_t> out((size_t)(sz / (off_t)sizeof(int64_t)));
-    const size_t n = (size_t)(sz / (off_t)sizeof(int64_t));
+    vector<int64_t> out((size_t)(sz / (std::int64_t)sizeof(int64_t)));
+    const size_t n = (size_t)(sz / (std::int64_t)sizeof(int64_t));
     if (fread(out.data(), sizeof(int64_t), n, f) != n) {
         fclose(f);
         cerr << "warning: short read on mask file '" << path << "'" << endl;
@@ -296,7 +298,7 @@ int main(int argc, char **argv)
         cerr << "error: fstat failed on '" << args.inputFilePath << "'" << endl;
         ::close(fd); return 1;
     }
-    const off_t fileBytes = st.st_size;
+    const std::int64_t fileBytes = st.st_size;
     const int64_t bytesPerSample =
         (int64_t)args.totalChannelNumber * (int64_t)sizeof(int16_t);
     if (fileBytes <= 0 || fileBytes % bytesPerSample != 0) {

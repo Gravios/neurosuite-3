@@ -42,6 +42,7 @@
 #include "extractspikes_reextract.h" // -R: re-cut windows at the .res times
 #include "progressbar.h"      // BlockProgress — defrag-style stage progress
 #include <cmath>
+#include <neurosuite/core/fileio64.hpp>
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
@@ -53,7 +54,6 @@
 
 #include <cerrno>
 #include <cstdio>
-#include <unistd.h>
 
 using namespace std;
 using namespace extractspikes;
@@ -170,7 +170,7 @@ int main(int argc,char *argv[]) {
 	// is max in current buffer
 	bool *isMaxInCurBuf;
 	// Index of previous spike (calculate from the beginning of all datas)
-	off_t *lastSpikeFullId;
+	std::int64_t *lastSpikeFullId;
 	// Id of the channel containing a spike in previous buffer (-1 if it is not)
 	int *prevBuffer_spkChanId;
 	// Id of the channel containing a possible spike (-1 if there is not)
@@ -315,7 +315,7 @@ int main(int argc,char *argv[]) {
 	// nb of records to ignore in next buffer
 	ignoredInNextBuffer = new int[nbGroups];
 	// last spike peak full id / group
-	lastSpikeFullId = new off_t[nbGroups];
+	lastSpikeFullId = new std::int64_t[nbGroups];
 	// total nb of spike / group
 	nSpikeTot = new unsigned int[nbGroups];
 
@@ -356,10 +356,10 @@ int main(int argc,char *argv[]) {
 	// refractory period across the whole file) to eliminate reallocations.
 	std::vector<std::vector<int64_t>> resTimestamps(nbGroups);
 	{
-		fseeko(inputFile, 0, SEEK_END);
+		neurosuite::core::fseek64(inputFile, 0, SEEK_END);
 		const long long fileSamples =
-		    ftello(inputFile) / (arguments.totalChannelNumber * (long long)sizeof(short));
-		fseeko(inputFile, 0, SEEK_SET);
+		    neurosuite::core::ftell64(inputFile) / (arguments.totalChannelNumber * (long long)sizeof(short));
+		neurosuite::core::fseek64(inputFile, 0, SEEK_SET);
 		const size_t maxSpikes = (arguments.refractoryPeriod > 0)
 		    ? (size_t)(fileSamples / arguments.refractoryPeriod) + 1
 		    : (size_t)fileSamples;
@@ -392,11 +392,11 @@ int main(int argc,char *argv[]) {
 	BlockProgress prog(arguments.outputBaseFileName);
 	long long progTotalSamples = 0;
 	if(arguments.isInputFileProvided) {
-		off_t cur = ftello(inputFile);
-		fseeko(inputFile, 0, SEEK_END);
-		progTotalSamples = ftello(inputFile)
+		std::int64_t cur = neurosuite::core::ftell64(inputFile);
+		neurosuite::core::fseek64(inputFile, 0, SEEK_END);
+		progTotalSamples = neurosuite::core::ftell64(inputFile)
 		    / (arguments.totalChannelNumber * (long long)sizeof(short));
-		fseeko(inputFile, cur, SEEK_SET);
+		neurosuite::core::fseek64(inputFile, cur, SEEK_SET);
 		prog.beginStage("DETECT", progTotalSamples);
 	}
 
@@ -607,7 +607,7 @@ int main(int argc,char *argv[]) {
 					
 					// spike is in current buffer (if it is a significant one)
 					} else {
-						off_t maxFullId = -1;
+						std::int64_t maxFullId = -1;
 						// previous records
 						std::vector<short> prevVals(arguments.totalChannelNumber);
 						
@@ -971,7 +971,7 @@ int main(int argc,char *argv[]) {
 
 	// One entry per spike across all groups, used to drive the sequential pass.
 	struct SpikeEvent {
-		off_t fileOffset; // byte offset of waveform start in .fil
+		std::int64_t fileOffset; // byte offset of waveform start in .fil
 		int   grp;        // which group owns this spike
 		int   origIdx;    // chronological index within that group
 	};
@@ -1040,9 +1040,9 @@ int main(int argc,char *argv[]) {
 		// Append this group's spikes to the merged event list.
 		for(int i = 0; i < nSpikes; i++) {
 			SpikeEvent ev;
-			ev.fileOffset = ((off_t)(resTimestamps[grp][i] - arguments.timeBeforeSpike)
-			                 * (off_t)arguments.totalChannelNumber
-			                 * (off_t)sizeof(short));
+			ev.fileOffset = ((std::int64_t)(resTimestamps[grp][i] - arguments.timeBeforeSpike)
+			                 * (std::int64_t)arguments.totalChannelNumber
+			                 * (std::int64_t)sizeof(short));
 			ev.grp     = grp;
 			ev.origIdx = i;
 			allEvents.push_back(ev);
@@ -1080,10 +1080,10 @@ int main(int argc,char *argv[]) {
 			exit(1);
 		}
 
-		off_t filePos = 0;
+		std::int64_t filePos = 0;
 
-		const off_t progFileBytes = (off_t)progTotalSamples
-		    * arguments.totalChannelNumber * (off_t)sizeof(short);
+		const std::int64_t progFileBytes = (std::int64_t)progTotalSamples
+		    * arguments.totalChannelNumber * (std::int64_t)sizeof(short);
 		if(arguments.isInputFileProvided)
 			prog.beginStage("EXTRACT", progFileBytes);
 
@@ -1100,7 +1100,7 @@ int main(int argc,char *argv[]) {
 			// every spike within a window's length after another one started
 			// late, by up to spikeLength samples, against its .res time.
 			if(ev.fileOffset < filePos) {
-				if(fseeko(seqFile, ev.fileOffset, SEEK_SET) != 0) {
+				if(neurosuite::core::fseek64(seqFile, ev.fileOffset, SEEK_SET) != 0) {
 					fprintf(stderr, "error: cannot seek to offset %lld\n",
 					        (long long)ev.fileOffset);
 					fclose(seqFile);
@@ -1111,14 +1111,14 @@ int main(int argc,char *argv[]) {
 			// Skip forward to this waveform's start by reading and discarding
 			// the gap, so the reads stay sequential between overlaps.
 			if(ev.fileOffset > filePos) {
-				off_t gap = ev.fileOffset - filePos;
+				std::int64_t gap = ev.fileOffset - filePos;
 				while(gap > 0) {
-					size_t toRead = (gap < (off_t)discardChunk)
+					size_t toRead = (gap < (std::int64_t)discardChunk)
 					                ? (size_t)gap : discardChunk;
 					size_t got = fread(frameBuf.data(), 1, toRead, seqFile);
 					if(got == 0) break;
-					gap     -= (off_t)got;
-					filePos += (off_t)got;
+					gap     -= (std::int64_t)got;
+					filePos += (std::int64_t)got;
 				}
 			}
 
@@ -1146,7 +1146,7 @@ int main(int argc,char *argv[]) {
 				fclose(seqFile);
 				exit(1);
 			}
-			filePos += (off_t)rawLen * (off_t)sizeof(short);
+			filePos += (std::int64_t)rawLen * (std::int64_t)sizeof(short);
 
 			// Dispatch to the correct group's destination.
 			if(useInMemory[grp]) {

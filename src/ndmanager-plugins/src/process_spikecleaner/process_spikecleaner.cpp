@@ -60,6 +60,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <algorithm>
+#include <neurosuite/core/fileio64.hpp>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -181,8 +182,8 @@ int main(int argc, char *argv[])
     }
 
     // ── determine spike count from .spk file size ──────────────────────────
-    fseeko(spkIn, 0, SEEK_END);
-    const off_t spkBytes  = ftello(spkIn);
+    neurosuite::core::fseek64(spkIn, 0, SEEK_END);
+    const std::int64_t spkBytes  = neurosuite::core::ftell64(spkIn);
     const int   wavBytes  = nChan * nSamples * 2;   // int16
     if (spkBytes % wavBytes != 0) {
         cerr << "error: " << spkPath
@@ -192,7 +193,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     const int nSpikes = (int)(spkBytes / wavBytes);
-    fseeko(spkIn, 0, SEEK_SET);
+    neurosuite::core::fseek64(spkIn, 0, SEEK_SET);
 
     // ── optional files (.fet, .clu) ────────────────────────────────────────
     // Binary formats (neurosuite-3 pipeline):

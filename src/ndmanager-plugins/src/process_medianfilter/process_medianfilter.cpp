@@ -8,6 +8,8 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <iostream>
+#include <neurosuite/core/fileio64.hpp>
+#include <cstdint>
 #include <cstring>
 #include <cstdlib>
 #include <algorithm>
@@ -197,9 +199,9 @@ int main(int argc, char *argv[])
     FILE* outputFile = fopen(outputPath, "wb");
     if (!outputFile) { cerr << "error: cannot write '" << outputPath << "'\n"; exit(1); }
 
-    fseeko(inputFile, 0, SEEK_END);
-    long long int size = ftello(inputFile);
-    fseeko(inputFile, 0, SEEK_SET);
+    neurosuite::core::fseek64(inputFile, 0, SEEK_END);
+    long long int size = neurosuite::core::ftell64(inputFile);
+    neurosuite::core::fseek64(inputFile, 0, SEEK_SET);
 
     // Preallocate the output file to the exact input size.
     // On Linux this uses fallocate(2) to reserve contiguous extents, avoiding
@@ -210,7 +212,7 @@ int main(int argc, char *argv[])
     {
         int outFd = fileno(outputFile);
         if (outFd >= 0)
-            (void)posix_fallocate(outFd, 0, (off_t)size);
+            (void)posix_fallocate(outFd, 0, (std::int64_t)size);
     }
 #endif
 

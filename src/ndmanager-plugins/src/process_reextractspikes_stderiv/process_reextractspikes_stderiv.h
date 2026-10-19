@@ -58,6 +58,7 @@
 #define PROCESS_REEXTRACTSPIKES_STDERIV_H
 
 #include <cstdint>
+#include <neurosuite/core/fileio64.hpp>
 #include <string>
 #include <sys/types.h>
 
@@ -107,8 +108,8 @@ struct ReextractStderivArgs {
     // Threshold computation: factor × 4 × median|x| / 0.6745, x per -T
     double thresholdFactor = -1.0;
     ThresholdNoise thresholdNoise = THRNOISE_SDIFF;
-    off_t  threshStartByte = 0;
-    off_t  threshSizeBytes = 0;
+    std::int64_t  threshStartByte = 0;
+    std::int64_t  threshSizeBytes = 0;
 
     SdiffOrder sdiffOrder = SDIFF_ALLPAIRS;
     SeedMode   seedMode   = SEED_AUTO;

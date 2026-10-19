@@ -107,6 +107,7 @@
 #include "process_denoiseuniform.h"
 
 #include <iostream>
+#include <neurosuite/core/fileio64.hpp>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -342,11 +343,11 @@ int main(int argc, char *argv[])
 
     // ---- measure .res to determine nSpikes ----
     FILE *resIn = xfopen(resPath, "rb");
-    fseeko(resIn, 0, SEEK_END);
-    off_t resBytes = ftello(resIn);
-    fseeko(resIn, 0, SEEK_SET);
+    neurosuite::core::fseek64(resIn, 0, SEEK_END);
+    std::int64_t resBytes = neurosuite::core::ftell64(resIn);
+    neurosuite::core::fseek64(resIn, 0, SEEK_SET);
 
-    if (resBytes % (off_t)sizeof(int64_t) != 0) {
+    if (resBytes % (std::int64_t)sizeof(int64_t) != 0) {
         fprintf(stderr,
                 "error: .res file size %lld is not a multiple of 8 bytes\n",
                 (long long)resBytes);
@@ -357,9 +358,9 @@ int main(int argc, char *argv[])
 
     // ---- validate .spk size ----
     FILE *spkIn = xfopen(spkPath, "rb");
-    fseeko(spkIn, 0, SEEK_END);
-    off_t spkBytes    = ftello(spkIn);
-    fseeko(spkIn, 0, SEEK_SET);
+    neurosuite::core::fseek64(spkIn, 0, SEEK_END);
+    std::int64_t spkBytes    = neurosuite::core::ftell64(spkIn);
+    neurosuite::core::fseek64(spkIn, 0, SEEK_SET);
     int64_t expected  = nSpikes * (int64_t)nSamples * nChannels * sizeof(int16_t);
 
     if (spkBytes != expected) {
@@ -394,19 +395,19 @@ int main(int argc, char *argv[])
         unsigned char firstByte = 0;
         if (fread(&firstByte, 1, 1, cluIn) == 1) {
             cluIsBinary = (firstByte < 0x30 || firstByte > 0x39);
-            fseeko(cluIn, 0, SEEK_SET);
+            neurosuite::core::fseek64(cluIn, 0, SEEK_SET);
 
             if (cluIsBinary) {
                 // Binary: int32_t nClusters; nSpikes × int32_t
                 int32_t nc32 = 0;
                 if (fread(&nc32, sizeof(int32_t), 1, cluIn) == 1) {
                     // Validate: file size must be exactly 4 + nSpikes * 4 bytes
-                    fseeko(cluIn, 0, SEEK_END);
-                    const off_t expSize = (off_t)sizeof(int32_t) +
-                                          (off_t)nSpikes * sizeof(int32_t);
-                    if (ftello(cluIn) == expSize) {
+                    neurosuite::core::fseek64(cluIn, 0, SEEK_END);
+                    const std::int64_t expSize = (std::int64_t)sizeof(int32_t) +
+                                          (std::int64_t)nSpikes * sizeof(int32_t);
+                    if (neurosuite::core::ftell64(cluIn) == expSize) {
                         cluHeader = (int)nc32;
-                        fseeko(cluIn, sizeof(int32_t), SEEK_SET);
+                        neurosuite::core::fseek64(cluIn, sizeof(int32_t), SEEK_SET);
                         hasClu = true;
                     } else {
                         fprintf(stderr,
@@ -433,12 +434,12 @@ int main(int argc, char *argv[])
     FILE   *fetIn   = fopen(fetPath.c_str(), "rb");
     if (fetIn) {
         if (fread(&fetNDim, sizeof(int32_t), 1, fetIn) == 1) {
-            off_t expFet = (off_t)sizeof(int32_t) +
-                           (off_t)nSpikes * fetNDim * sizeof(int64_t);
-            fseeko(fetIn, 0, SEEK_END);
-            if (ftello(fetIn) == expFet) {
+            std::int64_t expFet = (std::int64_t)sizeof(int32_t) +
+                           (std::int64_t)nSpikes * fetNDim * sizeof(int64_t);
+            neurosuite::core::fseek64(fetIn, 0, SEEK_END);
+            if (neurosuite::core::ftell64(fetIn) == expFet) {
                 hasFet = true;
-                fseeko(fetIn, sizeof(int32_t), SEEK_SET);
+                neurosuite::core::fseek64(fetIn, sizeof(int32_t), SEEK_SET);
             } else {
                 fprintf(stderr,
                         "warning: .fet file size mismatch — skipping .fet\n");

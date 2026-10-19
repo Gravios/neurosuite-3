@@ -18,6 +18,8 @@
     (at your option) any later version.
  ***************************************************************************/
 #include <cerrno>
+#include <neurosuite/core/fileio64.hpp>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -73,7 +75,7 @@ static void usage(const char* name)
 static bool readRows(int fd, short* dst, long long row, long long rows, int nCh)
 {
     size_t want = (size_t)rows * nCh * sizeof(short);
-    off_t off = (off_t)row * nCh * (off_t)sizeof(short);
+    std::int64_t off = (std::int64_t)row * nCh * (std::int64_t)sizeof(short);
     char* p = reinterpret_cast<char*>(dst);
     while (want > 0) {
         ssize_t r = pread(fd, p, want, off);
@@ -86,7 +88,7 @@ static bool readRows(int fd, short* dst, long long row, long long rows, int nCh)
 static bool writeRows(int fd, const short* src, long long row, long long rows, int nCh)
 {
     size_t want = (size_t)rows * nCh * sizeof(short);
-    off_t off = (off_t)row * nCh * (off_t)sizeof(short);
+    std::int64_t off = (std::int64_t)row * nCh * (std::int64_t)sizeof(short);
     const char* p = reinterpret_cast<const char*>(src);
     while (want > 0) {
         ssize_t r = pwrite(fd, p, want, off);
@@ -207,7 +209,7 @@ int main(int argc, char* argv[])
     const int outFd = open(outPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (outFd < 0) { cerr << "error: cannot write '" << outPath << "'" << endl; return 1; }
 #ifdef __linux__
-    (void)posix_fallocate(outFd, 0, (off_t)nRows * nCh * (off_t)sizeof(short));
+    (void)posix_fallocate(outFd, 0, (std::int64_t)nRows * nCh * (std::int64_t)sizeof(short));
 #endif
 
     bool gpu = false;

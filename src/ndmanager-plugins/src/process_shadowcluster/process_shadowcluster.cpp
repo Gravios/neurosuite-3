@@ -97,6 +97,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <algorithm>
+#include <neurosuite/core/fileio64.hpp>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -300,9 +301,9 @@ static bool readFullFile(const string &path, vector<uint8_t> &buf)
 {
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f) return false;
-    fseeko(f, 0, SEEK_END);
-    const off_t sz = ftello(f);
-    fseeko(f, 0, SEEK_SET);
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    const std::int64_t sz = neurosuite::core::ftell64(f);
+    neurosuite::core::fseek64(f, 0, SEEK_SET);
     if (sz < 0) { std::fclose(f); return false; }
     buf.resize((size_t)sz);
     if (sz > 0 && std::fread(buf.data(), 1, (size_t)sz, f) != (size_t)sz) {

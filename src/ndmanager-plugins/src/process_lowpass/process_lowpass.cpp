@@ -25,6 +25,8 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <iostream>
+#include <neurosuite/core/fileio64.hpp>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -165,12 +167,12 @@ int main(int argc, char* argv[])
     FILE* out = fopen(outputPath, "wb");
     if (!out) { cerr << "error: cannot write '" << outputPath << "'\n"; exit(1); }
 
-    fseeko(in, 0, SEEK_END);
-    const long long fileBytes = ftello(in);
-    fseeko(in, 0, SEEK_SET);
+    neurosuite::core::fseek64(in, 0, SEEK_END);
+    const long long fileBytes = neurosuite::core::ftell64(in);
+    neurosuite::core::fseek64(in, 0, SEEK_SET);
 
 #ifdef __linux__
-    { int fd = fileno(out); if (fd >= 0) (void)posix_fallocate(fd, 0, (off_t)fileBytes); }
+    { int fd = fileno(out); if (fd >= 0) (void)posix_fallocate(fd, 0, (std::int64_t)fileBytes); }
 #endif
 
     const long long nSamplesPerChannel = fileBytes / sampleSize / nChannels;
@@ -208,7 +210,7 @@ int main(int argc, char* argv[])
         const long long validTo   = min(nSamplesPerChannel, readFrom + readLen);
         if (validTo > validFrom) {
             const long long dstSPC = validFrom - readFrom;         // per-channel offset in inbuf
-            fseeko(in, validFrom * nChannels * static_cast<long long>(sampleSize), SEEK_SET);
+            neurosuite::core::fseek64(in, validFrom * nChannels * static_cast<long long>(sampleSize), SEEK_SET);
             const size_t want = static_cast<size_t>((validTo - validFrom) * nChannels);
             size_t got = fread(&inbuf[static_cast<size_t>(dstSPC * nChannels)],
                                sampleSize, want, in);

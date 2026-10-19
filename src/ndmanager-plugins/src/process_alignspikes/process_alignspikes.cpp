@@ -90,6 +90,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <cstdio>
+#include <neurosuite/core/fileio64.hpp>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -100,8 +101,8 @@
 #include <numeric>
 #include <climits>
 #include <filesystem>
+#include <system_error>
 #include <stdexcept>
-#include <unistd.h>     // access(F_OK) for prealign archive
 #include <neurosuite/core/custody.hpp>      // shared chain-of-custody resolver
 #include <neurosuite/core/spike_extract.hpp> // shared window cut + stderiv transform
 #include "sdiff_pairs.h"      // shared SDIFF_CUSTOM / _CAR pattern parser
@@ -660,10 +661,10 @@ int main(int argc, char* argv[])
 
     // ── Read .res.N ───────────────────────────────────────────────────────
     FILE* resF = xfopen(resPath.c_str(), "rb");
-    fseeko(resF, 0, SEEK_END);
-    const off_t resSize  = ftello(resF);
+    neurosuite::core::fseek64(resF, 0, SEEK_END);
+    const std::int64_t resSize  = neurosuite::core::ftell64(resF);
     const int   nSpikes  = (int)(resSize / sizeof(int64_t));
-    fseeko(resF, 0, SEEK_SET);
+    neurosuite::core::fseek64(resF, 0, SEEK_SET);
 
     std::vector<int64_t> resTs(nSpikes);
     if (nSpikes > 0 && fread(resTs.data(), sizeof(int64_t), nSpikes, resF) != (size_t)nSpikes)
@@ -680,18 +681,18 @@ int main(int argc, char* argv[])
 
     // ── Read .spk.N into memory ───────────────────────────────────────────
     const int   elemsPerSpike = nSamples * nChanGrp;
-    const off_t spkExpected   = (off_t)nSpikes * elemsPerSpike * sizeof(short);
+    const std::int64_t spkExpected   = (std::int64_t)nSpikes * elemsPerSpike * sizeof(short);
 
     FILE* spkF = xfopen(spkPath.c_str(), "rb");
-    fseeko(spkF, 0, SEEK_END);
-    const off_t spkSize = ftello(spkF);
+    neurosuite::core::fseek64(spkF, 0, SEEK_END);
+    const std::int64_t spkSize = neurosuite::core::ftell64(spkF);
     if (spkSize != spkExpected) {
         fprintf(stderr,
                 "process_alignspikes: %s size %lld does not match expected %lld "
                 "(%d spikes × %d samp × %d chan × 2 bytes)\n",
                 spkPath.c_str(), (long long)spkSize, (long long)spkExpected,
                 nSpikes, nSamples, nChanGrp);
-        const off_t rowBytes = (off_t)elemsPerSpike * (off_t)sizeof(short);
+        const std::int64_t rowBytes = (std::int64_t)elemsPerSpike * (std::int64_t)sizeof(short);
         if (spkSize < spkExpected && spkSize % rowBytes == 0)
             fprintf(stderr,
                     "process_alignspikes: the .spk has %lld rows for %d spike times.  "
@@ -703,7 +704,7 @@ int main(int argc, char* argv[])
         fclose(spkF);
         exit(1);
     }
-    fseeko(spkF, 0, SEEK_SET);
+    neurosuite::core::fseek64(spkF, 0, SEEK_SET);
 
     std::vector<short> spkBuf((size_t)nSpikes * elemsPerSpike);
     if (fread(spkBuf.data(), sizeof(short), spkBuf.size(), spkF) != spkBuf.size())
@@ -787,16 +788,16 @@ int main(int argc, char* argv[])
     } else {
         // Path B (stderiv): read .fil and apply the spatial operator only.
         FILE* filShift = xfopen(filPath.c_str(), "rb");
-        fseeko(filShift, 0, SEEK_END);
-        const off_t filShiftSize = ftello(filShift);
-        fseeko(filShift, 0, SEEK_SET);
+        neurosuite::core::fseek64(filShift, 0, SEEK_END);
+        const std::int64_t filShiftSize = neurosuite::core::ftell64(filShift);
+        neurosuite::core::fseek64(filShift, 0, SEEK_SET);
 
         const int   rawElems  = nSamples * nTotalChannels;
-        const off_t rawBytes  = (off_t)rawElems * sizeof(short);
+        const std::int64_t rawBytes  = (std::int64_t)rawElems * sizeof(short);
         std::vector<short> rawWin(rawElems);
         std::vector<short> sdiffWin((size_t)nSamples * nChanGrp, 0);
         std::vector<double> rowD((size_t)nChanGrp);
-        off_t filShiftPos = 0;
+        std::int64_t filShiftPos = 0;
 
         std::vector<int> order(nSpikes);
         std::iota(order.begin(), order.end(), 0);
@@ -808,11 +809,11 @@ int main(int argc, char* argv[])
             const int i = order[oi];
             const int64_t winStart = resTs[i] - peakSampleIdx;
             if (winStart < 0) continue;
-            const off_t fileOff = winStart * (off_t)nTotalChannels * (off_t)sizeof(short);
+            const std::int64_t fileOff = winStart * (std::int64_t)nTotalChannels * (std::int64_t)sizeof(short);
             if (fileOff + rawBytes > filShiftSize) continue;
 
             if (fileOff != filShiftPos) {
-                fseeko(filShift, fileOff, SEEK_SET);
+                neurosuite::core::fseek64(filShift, fileOff, SEEK_SET);
                 filShiftPos = fileOff;
             }
             if (fread(rawWin.data(), sizeof(short), rawElems, filShift) != (size_t)rawElems)
@@ -890,9 +891,9 @@ int main(int argc, char* argv[])
                         : "undetermined, using previous sample (ndm_extractspikes)");
         }
 
-        fseeko(filF, 0, SEEK_END);
+        neurosuite::core::fseek64(filF, 0, SEEK_END);
         const int64_t filSamples =
-            (int64_t)ftello(filF) / ((int64_t)nTotalChannels * (int64_t)sizeof(short));
+            (int64_t)neurosuite::core::ftell64(filF) / ((int64_t)nTotalChannels * (int64_t)sizeof(short));
 
         // Shifted spikes in file order (extractSpikeWindows needs
         // non-decreasing times; it streams the .fil with one forward cursor).
@@ -999,7 +1000,8 @@ int main(int argc, char* argv[])
         // Best-effort copy: ignore failure (the file may already exist
         // from a previous invocation; we don't want to clobber the
         // original archive).
-        if (access(resPrealign.c_str(), F_OK) != 0) {
+        std::error_code existsEc;
+        if (!std::filesystem::exists(resPrealign, existsEc)) {
             FILE* aIn  = fopen(resPath.c_str(),     "rb");
             FILE* aOut = fopen(resPrealign.c_str(), "wb");
             if (aIn && aOut) {

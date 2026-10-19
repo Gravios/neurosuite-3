@@ -15,7 +15,9 @@
 #ifndef EXTRACTSPIKES_DETECT_H
 #define EXTRACTSPIKES_DETECT_H
 
-#include <sys/types.h>   // off_t
+#include <sys/types.h>   // std::int64_t
+#include <neurosuite/core/fileio64.hpp>
+#include <cstdint>
 #include <cmath>         // abs(float), abs(double)
 #include <cstdlib>       // abs(int), atoi, exit
 #include <cstring>       // strsep, strdupa
@@ -55,7 +57,7 @@ inline bool isRealPeak(const double peak,
     return true;
 }
 
-inline off_t getNegativePeakFullId(const int maxID, const short *cur_buf,
+inline std::int64_t getNegativePeakFullId(const int maxID, const short *cur_buf,
                                     const bool isNegativeMax, const int chanId,
                                     const int prevBuf_maxID, const short *prev_buf,
                                     const bool prevBuffer_isNegativeMax,
@@ -65,7 +67,7 @@ inline off_t getNegativePeakFullId(const int maxID, const short *cur_buf,
                                     const double prevBuf_threshold,
                                     bool &isMaxInCurBuf)
 {
-    off_t peakFullId = -1;
+    std::int64_t peakFullId = -1;
     float peakVal, recBeforePeak = 0, recAfterPeak = 0;
     double thr;
     bool isPrevNull = false, isCurNull = false;
@@ -96,11 +98,11 @@ inline off_t getNegativePeakFullId(const int maxID, const short *cur_buf,
     if(isPrevNull && isCurNull) return -1;
 
     if(isMaxInCurBuf) {
-        peakFullId = ((off_t)maxID) + ((off_t)nLoops)*((off_t)buf_size);
+        peakFullId = ((std::int64_t)maxID) + ((std::int64_t)nLoops)*((std::int64_t)buf_size);
         peakVal    = cur_buf[maxID+chanId];
         thr        = threshold;
     } else {
-        peakFullId = ((off_t)prevBuf_maxID) + ((off_t)(nLoops-1))*((off_t)buf_size);
+        peakFullId = ((std::int64_t)prevBuf_maxID) + ((std::int64_t)(nLoops-1))*((std::int64_t)buf_size);
         peakVal    = prev_buf[prevBuf_maxID+prevBuf_chanId];
         thr        = prevBuf_threshold;
     }
@@ -123,26 +125,26 @@ inline off_t getNegativePeakFullId(const int maxID, const short *cur_buf,
     return -1;
 }
 
-inline off_t getPeakFullId(const int maxID, const short *cur_buf, const int chanId,
+inline std::int64_t getPeakFullId(const int maxID, const short *cur_buf, const int chanId,
                              const int prevBuf_maxID, const short *prev_buf,
                              const int prevBuf_chanId, const int buf_size,
                              const int nChanTot, const int nLoops,
                              const double threshold, const double prevBuf_threshold,
                              bool &isMaxInCurBuf)
 {
-    off_t  peakFullId = -1;
+    std::int64_t  peakFullId = -1;
     float  peakVal, recBeforePeak = 0, recAfterPeak = 0;
     double thr;
 
     if(prevBuf_chanId > -1 && prevBuf_maxID > -1 &&
        abs(prev_buf[prevBuf_maxID+prevBuf_chanId]) >= abs(cur_buf[maxID+chanId])) {
         isMaxInCurBuf = false;
-        peakFullId    = ((off_t)prevBuf_maxID)+((off_t)nLoops-1)*((off_t)buf_size);
+        peakFullId    = ((std::int64_t)prevBuf_maxID)+((std::int64_t)nLoops-1)*((std::int64_t)buf_size);
         peakVal       = abs(prev_buf[prevBuf_maxID+prevBuf_chanId]);
         thr           = prevBuf_threshold;
     } else {
         isMaxInCurBuf = true;
-        peakFullId    = ((off_t)maxID)+((off_t)nLoops)*((off_t)buf_size);
+        peakFullId    = ((std::int64_t)maxID)+((std::int64_t)nLoops)*((std::int64_t)buf_size);
         peakVal       = abs(cur_buf[maxID+chanId]);
         thr           = threshold;
     }
@@ -275,11 +277,11 @@ inline int searchSpikeInChannels(const short *cur_buf, const int nbChanTot,
 // Args is the tool's `arguments` struct; only the fields named are read.
 
 template <class Args>
-inline bool isRefractoryPeriod(off_t lastId, off_t curId, const Args &args)
+inline bool isRefractoryPeriod(std::int64_t lastId, std::int64_t curId, const Args &args)
 {
     if(lastId < 0) return false;
-    return (curId - lastId) / (off_t)args.totalChannelNumber
-           <= (off_t)args.refractoryPeriod;
+    return (curId - lastId) / (std::int64_t)args.totalChannelNumber
+           <= (std::int64_t)args.refractoryPeriod;
 }
 
 inline double getThresholdFromChan(int chanId, int nChanGrp,

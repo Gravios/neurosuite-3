@@ -33,6 +33,8 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <cstdio>
+#include <neurosuite/core/fileio64.hpp>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -119,8 +121,8 @@ int main(int argc, char *argv[])
     FILE *spkFile=fopen(spkPath,"rb");
     if (!spkFile) { std::cerr<<"error: cannot open '"<<spkPath<<"'\n"; return 1; }
 
-    fseeko(spkFile,0,SEEK_END);
-    long long spkSize=static_cast<long long>(ftello(spkFile));
+    neurosuite::core::fseek64(spkFile,0,SEEK_END);
+    long long spkSize=static_cast<long long>(neurosuite::core::ftell64(spkFile));
     rewind(spkFile);
 
     long long bytesPerSpike=static_cast<long long>(nChannels)*waveformLength*2;
@@ -154,8 +156,8 @@ int main(int argc, char *argv[])
             std::cerr<<"warning: index "<<idx<<" out of range, skipping\n";
             continue;
         }
-        off_t offset=static_cast<off_t>(idx)*static_cast<off_t>(bytesPerSpike);
-        if (fseeko(spkFile,offset,SEEK_SET)!=0) {
+        std::int64_t offset=static_cast<std::int64_t>(idx)*static_cast<std::int64_t>(bytesPerSpike);
+        if (neurosuite::core::fseek64(spkFile,offset,SEEK_SET)!=0) {
             std::cerr<<"error: seek failed for spike "<<idx<<"\n"; continue;
         }
         size_t sps=static_cast<size_t>(nChannels*waveformLength);

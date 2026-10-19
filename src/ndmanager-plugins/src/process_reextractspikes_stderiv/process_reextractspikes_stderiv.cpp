@@ -48,6 +48,7 @@
 #include "process_reextractspikes_stderiv.h"
 #include "sdiff_pairs.h"      // shared SDIFF_CUSTOM pair-pattern parser
 #include <neurosuite/core/spike_extract.hpp>   // detectStderivSeeding (header-only)
+#include <neurosuite/core/fileio64.hpp>
 #include <neurosuite/core/stderiv_transform.hpp>   // the one spatial derivative
 
 #include <algorithm>
@@ -211,7 +212,7 @@ static inline double stderivAt(const int16_t *data,
 static void computeThresholds(const int16_t *data,
                                int64_t nSamples,
                                int nChanTot,
-                               off_t startByte, off_t sizeBytes,
+                               std::int64_t startByte, std::int64_t sizeBytes,
                                const vector<vector<int>> &chGroups,
                                SdiffOrder order,
                                double factor,
@@ -353,11 +354,11 @@ static vector<int64_t> loadMaskGroup(const string &base, int grp)
     p << base << "." << SPIKE_TIME_OUT_EXT << "." << grp;
     FILE *f = std::fopen(p.str().c_str(), "rb");
     if (!f) return {};
-    fseeko(f, 0, SEEK_END);
-    const off_t sz = ftello(f);
-    fseeko(f, 0, SEEK_SET);
-    if (sz <= 0 || sz % (off_t)sizeof(int64_t) != 0) { std::fclose(f); return {}; }
-    vector<int64_t> v((size_t)(sz / (off_t)sizeof(int64_t)));
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    const std::int64_t sz = neurosuite::core::ftell64(f);
+    neurosuite::core::fseek64(f, 0, SEEK_SET);
+    if (sz <= 0 || sz % (std::int64_t)sizeof(int64_t) != 0) { std::fclose(f); return {}; }
+    vector<int64_t> v((size_t)(sz / (std::int64_t)sizeof(int64_t)));
     if (std::fread(v.data(), sizeof(int64_t), v.size(), f) != v.size()) {
         std::fclose(f); return {};
     }
@@ -392,12 +393,12 @@ detectReferenceSeeding(const string &maskBase, int grp, const string &filPath,
         if (fs) std::fclose(fs);
         return StderivSeeding::Unknown;
     }
-    fseeko(fr, 0, SEEK_END); const off_t resBytes = ftello(fr); fseeko(fr, 0, SEEK_SET);
-    fseeko(fs, 0, SEEK_END); const off_t spkBytes = ftello(fs); fseeko(fs, 0, SEEK_SET);
-    const off_t rowBytes = (off_t)spikeLength * nChan * (off_t)sizeof(int16_t);
-    const int64_t nRes = (int64_t)(resBytes / (off_t)sizeof(int64_t));
-    if (resBytes % (off_t)sizeof(int64_t) != 0 || rowBytes <= 0
-        || spkBytes != (off_t)nRes * rowBytes) {
+    neurosuite::core::fseek64(fr, 0, SEEK_END); const std::int64_t resBytes = neurosuite::core::ftell64(fr); neurosuite::core::fseek64(fr, 0, SEEK_SET);
+    neurosuite::core::fseek64(fs, 0, SEEK_END); const std::int64_t spkBytes = neurosuite::core::ftell64(fs); neurosuite::core::fseek64(fs, 0, SEEK_SET);
+    const std::int64_t rowBytes = (std::int64_t)spikeLength * nChan * (std::int64_t)sizeof(int16_t);
+    const int64_t nRes = (int64_t)(resBytes / (std::int64_t)sizeof(int64_t));
+    if (resBytes % (std::int64_t)sizeof(int64_t) != 0 || rowBytes <= 0
+        || spkBytes != (std::int64_t)nRes * rowBytes) {
         why = ps.str() + " does not hold one " + std::to_string(spikeLength) + "x"
             + std::to_string(nChan) + " row per spike of " + pr.str();
         std::fclose(fr); std::fclose(fs);
@@ -475,8 +476,8 @@ static bool parseArgs(int argc, char **argv, ReextractStderivArgs &a)
         else if (arg == "-l" && i+1 < argc) a.peakSearchLength   = std::atoi(argv[++i]);
         else if (arg == "-r" && i+1 < argc) a.refractoryPeriod   = std::atoi(argv[++i]);
         else if (arg == "-f" && i+1 < argc) a.thresholdFactor    = std::atof(argv[++i]);
-        else if (arg == "-B" && i+1 < argc) a.threshStartByte    = (off_t)std::atoll(argv[++i]);
-        else if (arg == "-Z" && i+1 < argc) a.threshSizeBytes    = (off_t)std::atoll(argv[++i]);
+        else if (arg == "-B" && i+1 < argc) a.threshStartByte    = (std::int64_t)std::atoll(argv[++i]);
+        else if (arg == "-Z" && i+1 < argc) a.threshSizeBytes    = (std::int64_t)std::atoll(argv[++i]);
         else if (arg == "-d" && i+1 < argc) a.sdiffOrder         = (SdiffOrder)std::atoi(argv[++i]);
         else if (arg == "-P" && i+1 < argc) {
             // Same dispatch as process_extractspikes_stderiv: '+' selects order 5.
@@ -592,7 +593,7 @@ int main(int argc, char **argv)
     }
     struct stat st{};
     if (::fstat(fd, &st) != 0) { ::close(fd); return 1; }
-    const off_t fileBytes = st.st_size;
+    const std::int64_t fileBytes = st.st_size;
     const int64_t bps = (int64_t)a.totalChannelNumber * (int64_t)sizeof(int16_t);
     if (fileBytes <= 0 || fileBytes % bps != 0) {
         cerr << "error: bad .fil size" << endl; ::close(fd); return 1;

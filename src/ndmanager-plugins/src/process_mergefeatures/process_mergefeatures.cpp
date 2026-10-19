@@ -27,6 +27,7 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <cstdint>
+#include <neurosuite/core/fileio64.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -58,9 +59,9 @@ int main(int argc, char* argv[])
         die("bad features.tmp header");
 
     // Determine spike count from file size
-    fseeko(ff, 0, SEEK_END);
-    int64_t featBytes = (int64_t)ftello(ff) - (int64_t)sizeof(int32_t);
-    fseeko(ff, sizeof(int32_t), SEEK_SET);
+    neurosuite::core::fseek64(ff, 0, SEEK_END);
+    int64_t featBytes = (int64_t)neurosuite::core::ftell64(ff) - (int64_t)sizeof(int32_t);
+    neurosuite::core::fseek64(ff, sizeof(int32_t), SEEK_SET);
 
     int64_t nSpikes = featBytes / ((int64_t)sizeof(int64_t) * nFeatCols);
     if (nSpikes * (int64_t)sizeof(int64_t) * nFeatCols != featBytes)
@@ -77,8 +78,8 @@ int main(int argc, char* argv[])
     FILE* rf = fopen(resPath, "rb");
     if (!rf) die("cannot open .res file");
 
-    fseeko(rf, 0, SEEK_END);
-    int64_t resBytes = (int64_t)ftello(rf);
+    neurosuite::core::fseek64(rf, 0, SEEK_END);
+    int64_t resBytes = (int64_t)neurosuite::core::ftell64(rf);
     rewind(rf);
 
     int64_t nResSpikes = resBytes / (int64_t)sizeof(int64_t);

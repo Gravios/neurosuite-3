@@ -31,6 +31,7 @@
 #include <omp.h>
 #endif
 #include <gsl/gsl_statistics_double.h> // covariance calculation
+#include <neurosuite/core/fileio64.hpp>
 #include <gsl/gsl_eigen.h> // find eigen values and vectors
 #include <gsl/gsl_blas.h> // matrix operations
 #include <cstdlib>
@@ -457,8 +458,8 @@ int main(int argc,char *argv[])
 			cerr << "error: cannot open '" << arguments.inputFileName << "'." << endl;
 			exit(1);
 		} // if
-		fseeko(inputFile,0,SEEK_END); // put the position indicator at the end of the stream
-		arguments.inputSize = ftello(inputFile); // value of the position indicator of the stream (here ~file size)
+		neurosuite::core::fseek64(inputFile,0,SEEK_END); // put the position indicator at the end of the stream
+		arguments.inputSize = neurosuite::core::ftell64(inputFile); // value of the position indicator of the stream (here ~file size)
 	} // if
 	
 	// Check Input Size

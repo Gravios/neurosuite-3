@@ -34,6 +34,7 @@
 #include "extractspikes_reextract.h" // -R: re-cut windows at the .res times
 #include "progressbar.h"      // BlockProgress - defrag-style stage progress
 #include <neurosuite/core/stderiv_transform.hpp>   // the one spatial derivative
+#include <neurosuite/core/fileio64.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -57,7 +58,6 @@
 
 #include <cerrno>
 #include <cstdio>
-#include <unistd.h>
 
 using namespace std;
 
@@ -145,8 +145,8 @@ static void fill_sdiff_buffer(const short *raw,
 // Threshold computation
 // =========================================================================
 void computeSdiffThresholds(FILE       *fp,
-                             off_t       startByte,
-                             off_t       sizeByte,
+                             std::int64_t       startByte,
+                             std::int64_t       sizeByte,
                              int         nChanTot,
                              int         nGroups,
                              int       **channelList,
@@ -160,7 +160,7 @@ void computeSdiffThresholds(FILE       *fp,
              << (double)sizeByte / (nChanTot * sizeof(short))
              << " samples from byte " << startByte << endl;
 
-    fseeko(fp, startByte, SEEK_SET);
+    neurosuite::core::fseek64(fp, startByte, SEEK_SET);
 
     const long long nSamples =
         sizeByte / ((long long)nChanTot * (long long)sizeof(short));
@@ -334,9 +334,9 @@ void parseArgs(int argc, char **argv, arguments &a)
                   a.isPeakLengthProvided = true; break;
         case 'f': a.thresholdFactor = atof(argv[++i]);
                   a.isThresholdFactorProvided = true; break;
-        case 'B': a.threshStartByte = (off_t)atoll(argv[++i]);
+        case 'B': a.threshStartByte = (std::int64_t)atoll(argv[++i]);
                   a.isThreshStartByteProvided = true; break;
-        case 'Z': a.threshSizeBytes = (off_t)atoll(argv[++i]);
+        case 'Z': a.threshSizeBytes = (std::int64_t)atoll(argv[++i]);
                   a.isThreshSizeBytesProvided = true; break;
         case 'd': { int o = atoi(argv[++i]);
                     if(o < 0 || o > 3) {
@@ -532,7 +532,7 @@ int main(int argc, char *argv[])
     int  *prevBuffer_maxID       = new int[nbGroups];
     int  *recInPrevBuffer        = new int[nbGroups];
     int  *ignoredInNextBuffer    = new int[nbGroups];
-    off_t*lastSpikeFullId        = new off_t[nbGroups];
+    std::int64_t*lastSpikeFullId        = new std::int64_t[nbGroups];
     unsigned int *nSpikeTot      = new unsigned int[nbGroups];
 
     for(int g = 0; g < nbGroups; g++) {
@@ -551,10 +551,10 @@ int main(int argc, char *argv[])
 
     vector<vector<int64_t>> resTimestamps(nbGroups);
     {
-        fseeko(inputFile, 0, SEEK_END);
+        neurosuite::core::fseek64(inputFile, 0, SEEK_END);
         const long long fileSamples =
-            ftello(inputFile) / (args.totalChannelNumber * (long long)sizeof(short));
-        fseeko(inputFile, 0, SEEK_SET);
+            neurosuite::core::ftell64(inputFile) / (args.totalChannelNumber * (long long)sizeof(short));
+        neurosuite::core::fseek64(inputFile, 0, SEEK_SET);
         const size_t maxSpikes = (args.refractoryPeriod > 0)
             ? (size_t)(fileSamples / args.refractoryPeriod) + 1
             : (size_t)fileSamples;
@@ -574,7 +574,7 @@ int main(int argc, char *argv[])
     // =======================================================================
     if(verbose) cout << "\n<<----- Pass 1: spike detection (sdiff shadow buffer)\n\n";
 
-    fseeko(inputFile, 0, SEEK_SET);
+    neurosuite::core::fseek64(inputFile, 0, SEEK_SET);
     bool isLastLoop = false;
     unsigned long long rec_nb = 0, nbLoops = 0;
 
@@ -582,11 +582,11 @@ int main(int argc, char *argv[])
     long long progTotalSamples = 0;
     long long progSamplesDone   = 0;
     if(args.isInputFileProvided) {
-        off_t cur = ftello(inputFile);
-        fseeko(inputFile, 0, SEEK_END);
-        progTotalSamples = ftello(inputFile)
+        std::int64_t cur = neurosuite::core::ftell64(inputFile);
+        neurosuite::core::fseek64(inputFile, 0, SEEK_END);
+        progTotalSamples = neurosuite::core::ftell64(inputFile)
             / (args.totalChannelNumber * (long long)sizeof(short));
-        fseeko(inputFile, cur, SEEK_SET);
+        neurosuite::core::fseek64(inputFile, cur, SEEK_SET);
         prog.beginStage("DETECT", progTotalSamples);
     }
 
@@ -785,7 +785,7 @@ int main(int argc, char *argv[])
                                    sdiff_prev + buffer_size - args.totalChannelNumber,
                                    args.totalChannelNumber * sizeof(short));
 
-                        off_t  maxFullId     = -1;
+                        std::int64_t  maxFullId     = -1;
                         bool   isKeepPrevMax = false;
 
                         if(args.isDisableAbs) {
@@ -1005,7 +1005,7 @@ int main(int argc, char *argv[])
         _memCapEnv ? (long long)(atof(_memCapEnv) * 1073741824LL)
                    : 2LL * 1073741824LL;
 
-    struct SpikeEvent { off_t fileOffset; int grp; int origIdx; };
+    struct SpikeEvent { std::int64_t fileOffset; int grp; int origIdx; };
 
     vector<vector<short>> allWaveforms(nbGroups);
     vector<bool>          useInMemory(nbGroups, false);
@@ -1044,8 +1044,8 @@ int main(int argc, char *argv[])
         for(int s = 0; s < nSpk; s++) {
             SpikeEvent ev;
             ev.fileOffset =
-                ((off_t)(resTimestamps[grp][s] - args.timeBeforeSpike)
-                 * (off_t)args.totalChannelNumber * (off_t)sizeof(short));
+                ((std::int64_t)(resTimestamps[grp][s] - args.timeBeforeSpike)
+                 * (std::int64_t)args.totalChannelNumber * (std::int64_t)sizeof(short));
             ev.grp     = grp;
             ev.origIdx = s;
             allEvents.push_back(ev);
@@ -1083,8 +1083,8 @@ int main(int argc, char *argv[])
         const int wideRawLen   = wideSpikeLen * args.totalChannelNumber;
         vector<short> wideFrame(wideRawLen);
 
-        const off_t progFileBytes = (off_t)progTotalSamples
-            * args.totalChannelNumber * (off_t)sizeof(short);
+        const std::int64_t progFileBytes = (std::int64_t)progTotalSamples
+            * args.totalChannelNumber * (std::int64_t)sizeof(short);
         if(args.isInputFileProvided)
             prog.beginStage("EXTRACT", progFileBytes);
 
@@ -1100,15 +1100,15 @@ int main(int argc, char *argv[])
             // the wide frame starts BEFORE the nominal offset, which means
             // consecutive spikes (separated by < halfSearch samples) would require
             // seeking backward — impossible with a forward-only reader.
-            const off_t wideOffset = ev.fileOffset
-                - (off_t)halfSearch * args.totalChannelNumber * (off_t)sizeof(short);
-            const off_t safeOffset = (wideOffset >= 0) ? wideOffset : 0;
+            const std::int64_t wideOffset = ev.fileOffset
+                - (std::int64_t)halfSearch * args.totalChannelNumber * (std::int64_t)sizeof(short);
+            const std::int64_t safeOffset = (wideOffset >= 0) ? wideOffset : 0;
             const int   skipHead   = (wideOffset >= 0) ? 0
-                : (int)((-wideOffset) / (args.totalChannelNumber * (off_t)sizeof(short)));
+                : (int)((-wideOffset) / (args.totalChannelNumber * (std::int64_t)sizeof(short)));
 
             // Zero-fill wide frame (handles boundary clips).
             std::fill(wideFrame.begin(), wideFrame.end(), short(0));
-            if(fseeko(seqF, safeOffset, SEEK_SET) != 0) continue;
+            if(neurosuite::core::fseek64(seqF, safeOffset, SEEK_SET) != 0) continue;
             const int readLen = wideRawLen - skipHead * args.totalChannelNumber;
             size_t got = fread(wideFrame.data() + skipHead * args.totalChannelNumber,
                                sizeof(short), readLen, seqF);

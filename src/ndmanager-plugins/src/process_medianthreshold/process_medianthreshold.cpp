@@ -36,6 +36,7 @@
 #define _FILE_OFFSET_BITS 64
 #include "process_medianthreshold.h"
 #include <fstream>
+#include <neurosuite/core/fileio64.hpp>
 #include <algorithm>
 #include <vector>
 #include <cstring>
@@ -119,8 +120,8 @@ int main(int argc,char *argv[]) {
 			cerr<<"Error when opening Input File "<< arguments.inputFileName <<endl;
 			exit(1);
 		} // if
-		fseeko(inputFile, 0, SEEK_END);  // put the position indicator at the end of the stream
-		arguments.inputSize = ftello(inputFile); // value of the position indicator (file size)
+		neurosuite::core::fseek64(inputFile, 0, SEEK_END);  // put the position indicator at the end of the stream
+		arguments.inputSize = neurosuite::core::ftell64(inputFile); // value of the position indicator (file size)
 	} // if
 	if(arguments.isOutputFileProvided) {
 		outputFile = fopen(arguments.outputFileName,"wb");

@@ -28,6 +28,7 @@
 #define SPIKE_REC_OUT_EXT   "spk"
 
 #include <cstdint>
+#include <neurosuite/core/fileio64.hpp>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -132,8 +133,8 @@ struct arguments {
 
     // Threshold computation (internal; noise measured on the signal chosen by -T)
     double thresholdFactor;
-    off_t  threshStartByte;
-    off_t  threshSizeBytes;
+    std::int64_t  threshStartByte;
+    std::int64_t  threshSizeBytes;
     bool   isThresholdFactorProvided;
     bool   isThreshStartByteProvided;
     bool   isThreshSizeBytesProvided;
@@ -181,7 +182,7 @@ struct arguments {
 };
 
 // ── Function declarations ─────────────────────────────────────────────────
-void computeSdiffThresholds(FILE *fp, off_t startByte, off_t sizeByte,
+void computeSdiffThresholds(FILE *fp, std::int64_t startByte, std::int64_t sizeByte,
                              int nChanTot, int nGroups,
                              int **channelList, int *channelNb_group,
                              SdiffOrder order, double factor,

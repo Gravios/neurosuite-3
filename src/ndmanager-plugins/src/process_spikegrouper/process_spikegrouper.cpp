@@ -52,6 +52,7 @@
 
 #include "process_spikegrouper.h"
 #include <utility>
+#include <neurosuite/core/fileio64.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -743,9 +744,9 @@ static vector<short> loadFilWindow(const string& path, int nChannels,
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) { perror(path.c_str()); exit(11); }
 
-    fseeko(f, 0, SEEK_END);
-    long long fileSize = ftello(f);
-    fseeko(f, 0, SEEK_SET);
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    long long fileSize = neurosuite::core::ftell64(f);
+    neurosuite::core::fseek64(f, 0, SEEK_SET);
 
     int bytesPerSample = (nBits <= 16) ? 2 : 4;
     long int maxSamples = (long int)(windowSec * samplingRate);

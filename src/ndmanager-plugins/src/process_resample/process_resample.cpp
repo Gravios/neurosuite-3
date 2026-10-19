@@ -44,6 +44,7 @@
 #endif
 
 #include <cstdio>
+#include <neurosuite/core/fileio64.hpp>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -141,9 +142,9 @@ int main(int argc, char *argv[])
         fclose(fin); exit(1);
     }
 
-    fseeko(fin, 0, SEEK_END);
-    long long totalBytes  = (long long)ftello(fin);
-    fseeko(fin, 0, SEEK_SET);
+    neurosuite::core::fseek64(fin, 0, SEEK_END);
+    long long totalBytes  = (long long)neurosuite::core::ftell64(fin);
+    neurosuite::core::fseek64(fin, 0, SEEK_SET);
     long long totalFrames = totalBytes / (long long)(sizeof(short) * nChannels);
 
     printf("Input          : %s\n", inPath);
