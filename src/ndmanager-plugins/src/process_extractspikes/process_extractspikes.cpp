@@ -45,6 +45,8 @@
 #include <neurosuite/core/fileio64.hpp>
 #include <cstdlib>
 #include <cstring>
+#include <neurosuite/core/strsep.hpp>
+#include <string>
 #include <cstdint>
 
 #include <sstream>
@@ -1430,14 +1432,15 @@ int getThresholdsFromArg(int *thresNb_group, double **thresList,
 	char *groups, *currentGroup, *thresholds; // Groups of electrodes and thr
 
 	// extract thresholds from arguments
-	groups = strdupa (arguments.thresList); // Split groups
-	currentGroup = strsep (&groups, GROUP_SEPARATOR); // focus on the 1st group
+	std::string thresListCopy(arguments.thresList); // was strdupa: lives until return
+	groups = thresListCopy.data(); // Split groups
+	currentGroup = neurosuite::core::strsep(&groups, GROUP_SEPARATOR); // focus on the 1st group
 
 	while(currentGroup != NULL) {
 		// initialization
 		thresNb_group[nbGroups] = 0; // init the group thresholds number
 
-		thresholds = strsep (&currentGroup, CHANNEL_SEPARATOR); // split thr
+		thresholds = neurosuite::core::strsep(&currentGroup, CHANNEL_SEPARATOR); // split thr
 		while(thresholds != NULL) {
 			if(atoi(thresholds)<1 && *thresholds != zero) {
 				if(thresNb_group[nbGroups] == 0 && atoi(thresholds) == 0) {
@@ -1450,7 +1453,7 @@ int getThresholdsFromArg(int *thresNb_group, double **thresList,
 			// current group threshold
 			thresList[nbGroups][thresNb_group[nbGroups]] = atof(thresholds);
 
-			thresholds = strsep (&currentGroup, CHANNEL_SEPARATOR);
+			thresholds = neurosuite::core::strsep(&currentGroup, CHANNEL_SEPARATOR);
 			if(thresholds == NULL) {
 				thresNb_group[nbGroups]++;
 				break;
@@ -1458,7 +1461,7 @@ int getThresholdsFromArg(int *thresNb_group, double **thresList,
 			thresNb_group[nbGroups]++;
 		} // while (thresholds)
 
-		currentGroup = strsep (&groups, GROUP_SEPARATOR);
+		currentGroup = neurosuite::core::strsep(&groups, GROUP_SEPARATOR);
 		if(currentGroup == NULL) {
 			nbGroups++;
 			break;
@@ -1466,8 +1469,8 @@ int getThresholdsFromArg(int *thresNb_group, double **thresList,
 		nbGroups++;
 	} // while (currentGroup)
 
-	// No delete[]: groups/currentGroup/thresholds point into the strdupa (stack)
-	// copy.  They are NULL on the usual exit, but an empty group ("...:,4")
+	// No delete[]: groups/currentGroup/thresholds point into the thresListCopy
+	// buffer.  They are NULL on the usual exit, but an empty group ("...:,4")
 	// leaves `thresholds` pointing into it, and freeing that aborted the run.
 	return nbGroups;
 

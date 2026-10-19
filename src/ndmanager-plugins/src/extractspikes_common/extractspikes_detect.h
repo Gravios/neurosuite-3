@@ -20,7 +20,9 @@
 #include <cstdint>
 #include <cmath>         // abs(float), abs(double)
 #include <cstdlib>       // abs(int), atoi, exit
-#include <cstring>       // strsep, strdupa
+#include <cstring>
+#include <neurosuite/core/strsep.hpp>
+#include <string>
 #include <cstdio>
 #include <iostream>
 
@@ -301,12 +303,13 @@ inline int getChannelsFromArg(int *channelNb_group, int **channelList,
 {
     char zero = '0';
     int  nbGroups = 0;
-    char *groups  = strdupa(args.channelList);
-    char *curGrp  = strsep(&groups, GROUP_SEPARATOR);
+    std::string groupsCopy(args.channelList);   // was strdupa: lives until return
+    char *groups  = groupsCopy.data();
+    char *curGrp  = neurosuite::core::strsep(&groups, GROUP_SEPARATOR);
 
     while(curGrp != NULL) {
         channelNb_group[nbGroups] = 0;
-        char *chan = strsep(&curGrp, CHANNEL_SEPARATOR);
+        char *chan = neurosuite::core::strsep(&curGrp, CHANNEL_SEPARATOR);
         while(chan != NULL) {
             if(atoi(chan) < 1 && *chan != zero) {
                 if(atoi(chan) < 0 || channelNb_group[nbGroups] > 0) {
@@ -319,11 +322,11 @@ inline int getChannelsFromArg(int *channelNb_group, int **channelList,
                 exit(1);
             }
             channelList[nbGroups][channelNb_group[nbGroups]] = atoi(chan);
-            chan = strsep(&curGrp, CHANNEL_SEPARATOR);
+            chan = neurosuite::core::strsep(&curGrp, CHANNEL_SEPARATOR);
             if(chan == NULL) { channelNb_group[nbGroups]++; break; }
             channelNb_group[nbGroups]++;
         }
-        curGrp = strsep(&groups, GROUP_SEPARATOR);
+        curGrp = neurosuite::core::strsep(&groups, GROUP_SEPARATOR);
         if(curGrp == NULL) { nbGroups++; break; }
         nbGroups++;
     }

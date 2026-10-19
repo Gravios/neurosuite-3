@@ -40,6 +40,8 @@
 #include <algorithm>
 #include <vector>
 #include <cstring>
+#include <neurosuite/core/strsep.hpp>
+#include <string>
 #include <cstdlib>
 
 
@@ -194,8 +196,9 @@ int main(int argc,char *argv[]) {
 	} // for i
 
 	/** Computes threshold for each channel groups */
-	groups = strdupa (arguments.channelList); // Split groups
-	currentGroup = strsep (&groups, GROUP_SEPARATOR); // focus on the first group
+	std::string channelListCopy(arguments.channelList); // was strdupa: lives until return
+	groups = channelListCopy.data(); // Split groups
+	currentGroup = neurosuite::core::strsep(&groups, GROUP_SEPARATOR); // focus on the first group
 
 
 #ifdef USE_CUDA
@@ -206,17 +209,18 @@ int main(int argc,char *argv[]) {
                                arguments.totalChannelNumber, sigmas, verbose);
 
         // Re-parse groups to print output in expected format
-        char* groups2    = strdupa(arguments.channelList);
-        char* grp2       = strsep(&groups2, GROUP_SEPARATOR);
+        std::string channelListCopy2(arguments.channelList);  // was strdupa
+        char* groups2    = channelListCopy2.data();
+        char* grp2       = neurosuite::core::strsep(&groups2, GROUP_SEPARATOR);
         int   grpIdx     = 0;
         int   chListSize = 0;
         while (grp2 != NULL) {
             int   localIds[MAX_CHANNO];
             int   localN = 0;
-            char* ch2    = strsep(&grp2, CHANNEL_SEPARATOR);
+            char* ch2    = neurosuite::core::strsep(&grp2, CHANNEL_SEPARATOR);
             while (ch2 != NULL) {
                 localIds[localN++] = atoi(ch2);
-                ch2 = strsep(&grp2, CHANNEL_SEPARATOR);
+                ch2 = neurosuite::core::strsep(&grp2, CHANNEL_SEPARATOR);
                 if (ch2 == NULL) break;
             }
             chListSize += localN;
@@ -227,7 +231,7 @@ int main(int argc,char *argv[]) {
                 if (c > 0) cout << ",";
                 cout << thr;
             }
-            grp2 = strsep(&groups2, GROUP_SEPARATOR);
+            grp2 = neurosuite::core::strsep(&groups2, GROUP_SEPARATOR);
             ++grpIdx;
             if (grp2 == NULL) break;
         }
@@ -244,7 +248,7 @@ int main(int argc,char *argv[]) {
 		nbChannel_currentGroup = 0; // init the group channels number
 		groupChannelId = new int[MAX_CHANNO]; // init the group channels list
 
-		channels = strsep (&currentGroup, CHANNEL_SEPARATOR); // split channels
+		channels = neurosuite::core::strsep(&currentGroup, CHANNEL_SEPARATOR); // split channels
 		while(channels != NULL) {
 			if(atoi(channels)<1 && *channels != zero) {
 				cerr << "Error : The channels have to be positive integers." << endl;
@@ -257,7 +261,7 @@ int main(int argc,char *argv[]) {
 			}
 			groupChannelId[nbChannel_currentGroup] = atoi(channels); // current group channel's id
 
-			channels = strsep (&currentGroup, CHANNEL_SEPARATOR);
+			channels = neurosuite::core::strsep(&currentGroup, CHANNEL_SEPARATOR);
 			nbChannel_currentGroup++;
 			if(channels == NULL) {
 				break;
@@ -284,7 +288,7 @@ int main(int argc,char *argv[]) {
 		} // for c
 		if ( verbose ) cout << endl << "**********************" << endl;
 
-		currentGroup = strsep (&groups, GROUP_SEPARATOR);
+		currentGroup = neurosuite::core::strsep(&groups, GROUP_SEPARATOR);
 		nbGroups++;
 		if(currentGroup == NULL) {
 			break;

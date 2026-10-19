@@ -94,6 +94,7 @@
 #include <neurosuite/core/fileops.hpp>
 #include <cstdlib>
 #include <cstring>
+#include <neurosuite/core/strsep.hpp>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -200,7 +201,7 @@ static std::vector<int> parseIntList(const char* s)
     char* buf = strdup(s);
     char* p   = buf;
     char* tok;
-    while ((tok = strsep(&p, ",")) != nullptr) {
+    while ((tok = neurosuite::core::strsep(&p, ",")) != nullptr) {
         if (*tok) v.push_back(atoi(tok));
     }
     free(buf);
