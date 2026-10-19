@@ -67,25 +67,35 @@ carries on.
 
 | Dependency | Used for | Required |
 |---|---|---|
-| CMake, C++20 compiler | building | yes |
+| CMake ≥ 3.22, C++20 compiler | building | yes |
 | yaml-cpp | YAML parameter files (C++) | yes |
+| GSL | `process_pca`, `process_pca_multichannel` (`ndm_pca`) | yes (configure fails without it) |
 | Python 3 with PyYAML, NumPy | YAML access from the scripts; the Python steps (drift, localisation, collisions, set-up, priors, curation) | yes |
-| libhdf5 | `ndm_aom2dat` | yes |
 | libxml2, `xpathReader` | legacy `.xml` parameter files | yes |
 | OpenMP | parallel processing throughout | recommended |
-| SciPy | `ndm_spikegrouper`, `ndm_autoklusta` and the waveform-adaptation fit (`adaptmodel.py`, used by `process_reassignspikes`); elsewhere a refinement with a fallback — sub-sample drift in `ndm_estimatedrift`, least-squares in `ndm_localise`, the curve fit in `process_subtractspikes` | yes for those steps |
+| SciPy | the waveform-adaptation fit (`adaptmodel.py`, used by `process_reassignspikes`) and `ndm_autoklusta`; elsewhere a refinement with a fallback — sub-sample drift in `ndm_estimatedrift`, least-squares in `ndm_localise`, the curve fit in `process_subtractspikes` | yes for those steps |
+| scikit-learn, joblib | `ndm_autoklusta` | yes for that step |
+| libhdf5 | `process_aomconvert` (`ndm_aom2dat`); skipped at configure time without it | optional |
 | ruamel.yaml | keeps comments when `ndm_plx2dat` edits the YAML | optional |
-| CUDA ≥ 12.8 | GPU paths of the filters and detection (`process_butterworth`, `process_medianfilter`, `process_medianthreshold`); CPU fallback otherwise | optional |
-| FFmpeg / libav (`avconv`) | `ndm_extractleds`, `ndm_transcodevideo` | optional |
+| CUDA ≥ 12.8 | GPU paths of `process_butterworth`, `process_medianfilter`, `process_medianthreshold`, `process_spikegrouper`, `process_decomposecollisions` and `process_extractemg` (which also has HIP and SYCL paths); CPU path otherwise. See [install/linux-cuda.md](install/linux-cuda.md) | optional |
+| FFmpeg libraries (libavcodec, libavformat, libavutil, libswscale) | `process_extractleds` (`ndm_extractleds`); skipped at configure time without them | optional |
+| `avconv`, `avprobe` (libav programs) | `ndm_transcodevideo` (always installed; checks for them at run time) | optional |
+
+`ndm_spikegrouper` runs the C++ `process_spikegrouper` and does not need
+SciPy.
 
 ## Installation
 
-| Platform | GPU | Guide |
-|---|---|---|
-| Linux (Ubuntu / Debian) | CPU / OpenMP | [install/linux-cpu.md](install/linux-cpu.md) |
-| Linux (Ubuntu / Debian) | NVIDIA CUDA | [install/linux-cuda.md](install/linux-cuda.md) |
-| Windows | CPU (native programs); full pipeline via WSL2 | [install/windows.md](install/windows.md) |
-| macOS | CPU / OpenMP | [install/macos.md](install/macos.md) |
+The plugins are built and installed with the rest of neurosuite-3; follow
+**[Installing neurosuite-3](../INSTALL.md)** for every platform. The pages
+below add plugin-specific notes:
+
+| Platform | Notes |
+|---|---|
+| Linux, CPU / OpenMP | [install/linux-cpu.md](install/linux-cpu.md) — packages, optional dependencies, a plugins-only build |
+| Linux, NVIDIA CUDA | [install/linux-cuda.md](install/linux-cuda.md) — which programs use CUDA, CUDA ≥ 12.8, CPU-only builds |
+| Windows | [install/windows.md](install/windows.md) — native programs; clustering via WSL2 |
+| macOS | [install/macos.md](install/macos.md) — bash 4, Python virtual environment |
 
 GPU stack details (CUDA versions, MOK signing, ROCm, oneAPI) are shared with
 the other components in [`../gpu/README.md`](../gpu/README.md). Hardware
