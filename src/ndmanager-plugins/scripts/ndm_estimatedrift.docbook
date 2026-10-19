@@ -28,7 +28,7 @@
   <refsynopsisdiv>
     <cmdsynopsis>
       <command>ndm_estimatedrift</command>
-      <arg choice="opt"><replaceable>session</replaceable></arg>
+      <arg choice="opt"><replaceable>session.yaml</replaceable></arg>
     </cmdsynopsis>
   </refsynopsisdiv>
 
@@ -154,9 +154,13 @@
           Maximum allowed change (µm) in pairwise depth distance between
           a unit and the others, between the reference and the current
           window, before that unit is flagged as an outlier and excluded
-          from the per-unit drift estimate (default:
-          <literal>5.0</literal>).  Outliers are still listed in the
+          from the per-unit drift estimate.  Outliers are still listed in the
           per-window detail block for inspection.
+        </para>
+        <para>
+          <command>ndm_estimatedrift</command> currently does not read this
+          parameter: the threshold is always <literal>5.0</literal> µm
+          (the helper's default), whatever the session file says.
         </para></listitem>
       </varlistentry>
 
@@ -309,11 +313,13 @@
       <varlistentry>
         <term><parameter>probeLibrary</parameter></term>
         <listitem><para>
-          Override the probe library search path.  When not set, the plugin
-          searches in order: <envar>NEUROSUITE_PROBE_PATH</envar>,
+          Extra probe library directory.  A probe file is looked up in
+          order: as given (relative to the current directory), in
+          <parameter>probeLibrary</parameter> when set, in
+          <envar>NEUROSUITE_PROBE_PATH</envar>,
           <filename>~/.local/share/neurosuite/probes/</filename>,
           <filename>/usr/share/neurosuite/probes/</filename>, and
-          <filename>probes/</filename> relative to the session directory.
+          <filename>probes/</filename> relative to the current directory.
         </para></listitem>
       </varlistentry>
     </variablelist>
@@ -486,7 +492,7 @@ drift:
     </para>
     <programlisting language="yaml"><![CDATA[
 probes:
-  - id: 0
+  - probeId: 0
     probeFile: neuronexus/Buzsaki64.probe
     label: "left CA1"
     channelOffset: 0
@@ -511,8 +517,10 @@ anatomicalDescription:
     <title>Files</title>
     <variablelist>
       <varlistentry>
-        <term><filename>SESSION.yaml</filename> (or .xml)</term>
-        <listitem><para>Session parameter file (mandatory input).</para></listitem>
+        <term><filename>SESSION.yaml</filename></term>
+        <listitem><para>Session parameter file (mandatory input; the only
+        argument).  YAML only: convert an XML parameter file first with
+        <command>ndm_xml2yaml</command>.</para></listitem>
       </varlistentry>
       <varlistentry>
         <term><filename>SESSION.res.N</filename></term>
