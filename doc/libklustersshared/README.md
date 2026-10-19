@@ -55,7 +55,7 @@ Key accessors:
 **yaml-cpp 0.8 compatibility note:** yaml-cpp 0.8 changed `const operator[]` to produce an
 *invalid* node (rather than an undefined one) when a key is absent. All `ParameterYamlReader`
 methods are `const`, causing chained subscripts like
-`m_root["neuroscope"]["channels"]["colors"]` to throw `YAML::InvalidNode` before the guard
+`root["neuroscope"]["channels"]["colors"]` to throw `YAML::InvalidNode` before the guard
 could execute. This is fixed by the internal `safeGet2` helper, which descends
 through non-const temporaries one level at a time and return an empty `YAML::Node{}` if any
 intermediate key is absent. All 13 previously unsafe chained subscripts are covered.
@@ -95,7 +95,7 @@ re-read.
 #### `ParameterYamlModifier`
 
 Reads an existing YAML file, patches specific nodes in-place, and writes the result
-atomically. Used by neuroscope's `saveSession()` and klusters' cluster-save path.
+atomically. Used by NeuroScope's `NeuroscopeDoc::saveSession()`.
 
 ```cpp
 ParameterYamlModifier m;
@@ -126,7 +126,7 @@ These are separate from the main classes to avoid altering their API.
 
 | Type | Fields |
 |---|---|
-| `ProbeEntry` | `id` (int), `probeFile` (QString), `label` (QString), `channelOffset` (int), `anatomicalGroups` (QList\<int\>) |
+| `ProbeEntry` | `id` (int), `probeFile` (QString), `label` (QString), `channelOffset` (int), `anatomicalGroups` (QList\<int\>), `spikeGroups` (QList\<int\>; empty = same as `anatomicalGroups`); in memory only, filled by ndmanager's Probes page: `layoutKnown`, `shankChannels`, `channelPositions` |
 | `ProbeGroupMeta` | `groupId` (int), `probeId` (int), `shankIndex` (int) |
 
 **Free functions:**
@@ -138,8 +138,11 @@ These are separate from the main classes to avoid altering their API.
 | `writeProbesSection(root, probes, libraryPath)` | Emit the `probes:` sequence into a YAML document node |
 | `writeAnatomyGroupMeta(root, meta)` | Write `probeId`/`shankIndex` back into existing `channelGroups` entries (the sequence must already exist) |
 
-Call `readProbesSection` / `writeProbesSection` from `ndmanagerdoc.cpp` after the main
-`loadFromReader()` / `saveToWriter()` calls.
+Callers: ndmanager reads the section through `NdManagerYamlReader::getProbesInformation()`
+(in `ndmanagerdoc.cpp`'s `loadFromReader()`) and writes it through
+`ParameterYamlWriter::setProbesInformation()`, which calls `writeProbesSection`; its Probes
+page (`probepage.cpp`) and Klusters' drift geometry (`driftgeometry.cpp`) also call
+`readProbesSection`.
 
 ---
 
@@ -152,12 +155,14 @@ Call `readProbesSection` / `writeProbesSection` from `ndmanagerdoc.cpp` after th
 | `FileInformation` | Extension, sampling rate, and optional channel mapping for one derived file |
 | `NeuroscopeVideoInfo` | `rotation`, `flip`, `trajectory`, `backgroundImage` |
 | `ProgramInformation` | Name, help text, and parameter map for one ndmanager plugin |
-| `ProbeEntry` | One probe: `id`, `probeFile`, `label`, `channelOffset`, `anatomicalGroups` |
+| `ProbeEntry` | One probe: `id`, `probeFile`, `label`, `channelOffset`, `anatomicalGroups`, `spikeGroups` (plus in-memory layout fields) |
 | `ProbeGroupMeta` | Probe/shank annotations on an anatomical group: `groupId`, `probeId`, `shankIndex` |
 
 ---
 
 ### Application-specific thin wrappers
+
+These are not part of the library; each lives in its application's `src/` directory.
 
 | Class | Application | What it does |
 |---|---|---|
@@ -212,12 +217,12 @@ read only by scripts survives a save. Adding a section is a recipe in
 
 ```yaml
 probes:
-  - id: 0                                   # integer, referenced by ndm_setupgroups and ndm_estimatedrift
+  - probeId: 0                              # integer, referenced by ndm_setupgroups and ndm_estimatedrift
     probeFile: neuronexus/Buzsaki64.probe   # path relative to probe library root
-    label: "left CA1"                       # free text, displayed in NeuroScope / Klusters
+    label: "left CA1"                       # free text, shown by ndmanager's Probes page
     channelOffset: 0                        # first ADC channel for this probe (0-based)
     anatomicalGroups: [1, 2, 3, 4, 5, 6, 7, 8]  # written by ndm_setupgroups
-  - id: 1
+  - probeId: 1
     probeFile: neuronexus/Buzsaki64.probe
     label: "right CA1"
     channelOffset: 64
