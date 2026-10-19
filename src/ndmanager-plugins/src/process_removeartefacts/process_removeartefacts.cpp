@@ -87,7 +87,7 @@ int main(int argc,char *argv[])
 		cerr << "warning: could not open '" << resInputFilename <<  "', skipping this file." << endl;
 	}
 	string spkInputFilename = basename+".spk."+electrodeGroup;
-	ifstream  spkInputFile(spkInputFilename.c_str(),ifstream::in);
+	ifstream  spkInputFile(spkInputFilename.c_str(),ifstream::in | ifstream::binary);
 	if ( !spkInputFile.good() )
 	{
 		spk = false;
@@ -110,7 +110,7 @@ int main(int argc,char *argv[])
 		return EXIT_FAILURE;
 	}
 	string spkOutputFilename("tmp.spk");
-	ofstream  spkOutputFile(spkOutputFilename.c_str(),ifstream::out);
+	ofstream  spkOutputFile(spkOutputFilename.c_str(),ofstream::out | ofstream::binary);
 	if ( spk && !spkOutputFile.good() )
 	{
 		cerr << "error: could not create temporary output spk file." << endl;

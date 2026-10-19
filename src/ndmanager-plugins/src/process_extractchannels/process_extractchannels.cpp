@@ -169,7 +169,7 @@ int main(int argc,char *argv[])
 
 	// Open the source file
 
-	ifstream  inputFile(argv[inputFileArgument],ifstream::in);
+	ifstream  inputFile(argv[inputFileArgument],ifstream::in | ifstream::binary);
 	if ( !inputFile.good() )
 	{
 		cerr << "error: could not open " << argv[inputFileArgument] << endl;
