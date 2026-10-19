@@ -9,6 +9,15 @@ and their waveforms partially cancel during detection.
 Use this *after* a first round of curation, not before — the strip
 needs templates from labeled clusters.
 
+> **File names.** `ndm_stripdat` and `ndm_redetectspikes` read and
+> write the per-group files under their **untagged** names
+> (`session.res.N`, `session.spk.N`, `session.clu.N`), not the
+> method-tagged `.<type>.<method>.N` files the current
+> detect/extract/sort chain writes. Provide untagged files (raw,
+> `standard`-method waveforms) for every spike group before step 1;
+> `ndm_stripdat` exits without writing anything if a group's `.res` or
+> `.spk` is missing.
+
 ## Steps
 
 ### 1. Strip curated waveforms from the raw trace
@@ -21,24 +30,30 @@ Three subtraction modes:
 
 | Mode | When to use |
 |---|---|
-| `model` (default) | Per-cluster template with projection-based amplitude scaling and burst-shape compensation. The right default for most cases. |
-| `raw` | Subtracts raw `.spk.N` waveforms directly. Use when you don't yet have a curated `.clu.N`. |
+| `raw` (default) | Subtracts each spike's own `.spk.N` waveform. Near-exact cancellation, no model fitting; the right choice before re-detection. |
+| `model` | Per-cluster template with projection-based amplitude scaling and burst-shape compensation; preserves baseline noise. |
 | `botm` | Bayes-Optimal Template Matching. ~100× better residuals than `model` on the synthetic test fixture. Use when LFP analysis is the goal. |
 
-Mode is chosen via the YAML:
+Mode and cluster selection are set in the YAML:
 
 ```yaml
 - name: ndm_stripdat
   parameters:
-  - {name: subtractionMode,  value: 'botm', status: Optional}
-  - {name: autoStrip,        value: 'true', status: Optional}
-  - {name: autoStripQuality, value: '1,2,3', status: Optional}
+  - {name: subtractionMode, value: 'botm', status: Optional}
+  - {name: autoStrip,       value: 'true', status: Optional}
+  - {name: qualityTags,     value: 'good,great,excellent', status: Optional}
 ```
 
-`autoStripQuality` controls which quality-annotation tiers feed the
-strip — `'1,2,3'` strips Uncertain through Good (skip Bad). The
-original `.dat` is **never modified**; a new `session-spkclean.dat`
-is written.
+Which clusters are stripped, per group: a hand-written
+`session.strip.N` list (one cluster ID per line) if present; otherwise,
+with `autoStrip: true` (the default), every unit in the YAML `units:`
+table whose quality text matches one of `qualityTags`
+(case-insensitive; default `good,great,excellent` — the quality field
+of Klusters' cluster information dialog); otherwise `stripClusters`
+(default: every cluster except 0 and 1). The original `.dat` is
+**never modified**; a new `session-spkclean.dat` is written. An
+existing `session-spkclean.dat` is not overwritten unless
+`overwrite: true`.
 
 For the BOTM derivation and a side-by-side comparison, see
 [`../design/modeling-l1-vs-botm.md`](../design/modeling-l1-vs-botm.md).
@@ -51,18 +66,25 @@ For the full command reference, see
 ndm_redetectspikes session.yaml
 ```
 
-Runs the full spike detection chain (`ndm_hipass` →
-`ndm_extractspikes`) on `session-spkclean.dat`, then merges newly
-detected spikes into the existing `.res` / `.spk` / `.clu` files via
-`process_mergespikes`. Deletes `.fet.N` since the spike order has
-changed.
+High-pass filters `session-spkclean.dat` with `process_medianfilter`,
+sets thresholds with `process_medianthreshold` and detects and extracts
+with `process_extractspikes` (the `standard` engine), using the
+`ndm_hipass` and `ndm_detectspikes` parameters of the first round. It
+then merges the new spikes into the untagged `session.res.N` /
+`.spk.N` / `.clu.N` files via `process_mergespikes` and deletes
+`session.fet.N`, since the spike order has changed.
 
 ### 3. Rebuild features and re-sort
 
 ```sh
-ndm_pca        session.yaml --method stderiv  # → fresh .fet.stderiv.N, .pca.stderiv.N
-ndm_klustakwik session.yaml --method stderiv  # → updated .clu.stderiv.N
+ndm_pca        session.yaml   # → fresh feature files
+ndm_klustakwik session.yaml   # → updated cluster files
 ```
+
+Both commands work on the method-tagged files
+(`.spk.standard.N` → `.fet.standard.N` → `.clu.standard.N`), so bring
+the merged untagged `.res.N` / `.spk.N` from step 2 into those names
+first.
 
 The new spikes will join existing clusters where they fit and form
 new clusters where they don't. The original curated clusters are
@@ -78,7 +100,7 @@ units.
 ### 4. Curate again
 
 ```sh
-klusters session.fet.1
+klusters session.fet.standard.1
 ```
 
 Most curated clusters re-emerge with similar IDs (KiloKlustaKwik tends

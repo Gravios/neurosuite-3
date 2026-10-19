@@ -5,8 +5,8 @@ empirical KiloKlustaKwik priors once per probe-type-and-shank, then reuse
 them silently across sessions, animals, and re-extraction passes.
 Priors feed the headline KiloKlustaKwik parameters
 (`MinClusters`, `MaxClusters`, `MergeThresh`, `PenaltyMix`) used by
-`ndm_subcluster_unmatched`, with per-session `extraInfos` overrides
-still winning when present.
+`ndm_subcluster_unmatched`; any value set in the session YAML still
+wins (see [Phase 3](#phase-3--reuse-the-prior-automatically)).
 
 This document is the operational counterpart to the per-script
 descriptions in [ndmanager-plugins README](../ndmanager-plugins/README.md).
@@ -36,8 +36,7 @@ if they end up with different `nSamples` (which they normally do — a
 ### Friendly names vs. hex hashes
 
 When the signature exactly matches one of the installed
-`Template-*.yaml` files (`/usr/share/ndmanager/templates/` or
-`$NDM_TEMPLATE_DIR`), the identity gets a friendly name like
+`Template-*.yaml` files (see [Search paths](#search-paths)), the identity gets a friendly name like
 `4-octrodes-32552Hz`. Otherwise it falls back to a 16-hex-char SHA-256
 hash like `46b75788e3de5d6a`. Both are stored in every prior
 (`probe_id` and `probe_signature_hash`); the resolver validates against
@@ -66,9 +65,22 @@ hash:
 | 3 | `/etc/ndm/priors` | Lab-wide shared store |
 | 4 | The session yaml's directory | Session-local override |
 
-Template lookup follows the same pattern via `$NDM_TEMPLATE_DIR`,
-falling back to `/usr/share/ndmanager/templates` and
-`/usr/local/share/ndmanager/templates`.
+Template lookup (for friendly names) searches `$NDM_TEMPLATE_DIR`
+(colon-separated), then `/usr/share/ndmanager/templates` and
+`/usr/local/share/ndmanager/templates`, then the source tree next to the
+scripts. ndmanager installs its templates to
+`<prefix>/share/ndmanager/templates`, so with an install prefix other
+than `/usr` or `/usr/local` (for example `~/.local` or a conda
+environment) set the variable before building or resolving priors:
+
+```sh
+export NDM_TEMPLATE_DIR=$HOME/.local/share/ndmanager/templates
+```
+
+Use the same setting for `kk_build_prior.py` and every later run:
+the friendly name becomes part of the prior's file name, so a prior
+built with the templates found is not found by a resolver that falls
+back to the hex hash, and vice versa.
 
 ---
 
@@ -79,14 +91,16 @@ session as you always have. The resolver will look for a prior, find
 none, and silently fall through to the in-script defaults:
 
 ```sh
-ndm_subcluster_unmatched session_a.yaml
+ndm_subcluster_unmatched session_a.yaml --method stderiv
 ```
 
-Curate the result in Klusters as usual. Split, merge, nudge, recluster,
-and **annotate cluster quality** as you go — the `ANNOTATE` event in
-the curation log gates which clusters feed the prior. Without quality
-labels, only the structural filters (L-ratio, isolation distance, spike
-count) apply.
+Curate the result in Klusters as usual: split, merge, nudge, recluster.
+`kk_build_prior.py` keeps a logged cluster snapshot when the action was
+a group, split, recluster, realign or nudge that was not undone, and
+the cluster passes the structural filters (`--min-spikes`,
+`--max-l-ratio`, `--min-isolation`). The quality you type into the
+cluster information dialog is not logged and does not affect the prior.
+Klusters keeps a curation log only for non-`standard` methods.
 
 When you save and close, `session_a.curation_log.<group>.<method>` accumulates
 one JSON-line record per action. See
@@ -165,14 +179,19 @@ For each group it prints:
     minC=42 maxC=78 merge=55.0 penaltyMix=0.030
 ```
 
-Those four values become the **defaults** for `read_kk_param`, sliding
-into the existing three-tier resolution under script defaults. The
-full priority order is now:
+Those four values replace the script's built-in defaults. Anything set
+in the session YAML still wins. The full priority order is:
 
-1. Per-shank override in `extraInfos.ndm_subcluster_unmatched` of the
-   session YAML (highest priority — per-recording fine-tuning)
-2. Per-shank prior file value (probe-typical default)
-3. Script-builtin default (lowest priority — used if no prior matches)
+1. `spikeDetection.channelGroups.group[N].klustakwik.<name>` — per
+   shank (highest priority)
+2. `programs[ndm_subcluster_unmatched].parameters.<name>`
+3. `programs[ndm_klustakwik].parameters.<name>`
+4. The per-shank prior file value (probe-typical default)
+5. The script's built-in default (used if no prior matches)
+
+Note that a value in the `ndm_klustakwik` program block (3) hides the
+prior, so leave `minClusters`, `maxClusters`, `mergeThresh` and
+`penaltyMix` out of that block if you want the prior to apply.
 
 If no prior matches (different probe, no curation logs yet for this
 shank), the resolver returns nothing and the script falls through
@@ -186,28 +205,33 @@ behavior preserved.**
 This is the workflow you typically reach for to recover weak units:
 
 ```sh
-# 1. Re-extract spikes with a lower amplitude threshold
-process_extractspikes_stderiv session_d.yaml --threshold-factor 4.0
+# 1. Detect the spikes the first pass missed (threshold =
+#    reextractThresholdFactor, default 0.75 × thresholdFactor) and
+#    shadow-cluster them into the curated sort
+ndm_reextractspikes session_d.yaml --method stderiv
 
-# 2. Run subcluster_unmatched.  The existing prior helps even though
-#    it was trained on the original (higher-threshold) residuals
-ndm_subcluster_unmatched session_d.yaml
+# 2. Sub-cluster the unmatched bin.  The existing prior helps even
+#    though it was trained on the original (higher-threshold) residuals
+ndm_subcluster_unmatched session_d.yaml --method stderiv
 ```
+
+See [Re-extract with a lower threshold](re-extract-lower-threshold.md)
+for the full recipe.
 
 The prior's `MergeThresh` is the most-transferable number — it's
 determined by cluster geometry (d_eff), which depends on probe layout,
 not on extraction threshold. `MaxClusters` may be slightly low (lower
 threshold ⇒ more weak residuals ⇒ more clusters), so if the recluster
-hits the cap, bump it for that one run via per-session override:
+hits the cap, raise it for that shank in the session YAML:
 
 ```yaml
 # session_d.yaml — under spikeDetection.channelGroups.group[N]
-extraInfos:
-  ndm_subcluster_unmatched:
-    maxClusters: 120
+klustakwik:
+  maxClusters: 120
 ```
 
-Per-session override > prior default > script default.
+A per-shank `klustakwik` value wins over the prior; note that
+`ndm_klustakwik` reads the same per-shank keys.
 
 After curating the lower-threshold sort, regenerate the prior so
 future runs use the recalibrated values. The new YAML overwrites the
@@ -230,7 +254,7 @@ identical to the existing ones (same template), so the same prior
 resolves automatically:
 
 ```sh
-ndm_subcluster_unmatched new_rat.yaml
+ndm_subcluster_unmatched new_rat.yaml --method stderiv
 # → group 7: prior /home/<you>/.ndm/priors/4-octrodes-32552Hz.7.prior.yaml
 ```
 
@@ -325,15 +349,20 @@ Most likely the prior was built from a session at higher amplitude
 threshold (compact, well-isolated clusters → low d_eff → low merge
 threshold). Building from a lower-threshold curation pass will
 naturally raise `MergeThresh` because residual clusters are more
-diffuse — that's correct behavior. Override per-session via
-`extraInfos` if you want to clamp it for one run.
+diffuse — that's correct behavior. Set `mergeThresh` under the shank's
+`klustakwik` block in the session YAML if you want to clamp it for one
+recording.
 
 **Friendly name didn't apply, got hex hash instead.**
 Either no `Template-*.yaml` matches the session's signature, or the
-templates aren't on the search path. Check `$NDM_TEMPLATE_DIR`,
+templates aren't on the search path (an install prefix other than
+`/usr` or `/usr/local` needs `NDM_TEMPLATE_DIR`; see
+[Search paths](#search-paths)). Check `$NDM_TEMPLATE_DIR`,
 `/usr/share/ndmanager/templates`, and
 `/usr/local/share/ndmanager/templates`, or pass `--templates-dir`
-explicitly to both `kk_build_prior.py` and `kk_resolve_prior.py`.
+explicitly to `kk_build_prior.py` and `kk_resolve_prior.py`
+(`ndm_subcluster_unmatched` calls the resolver without it, so it relies
+on the environment variable).
 A hex-id prior works just as well; the friendly name is convenience.
 
 **Ndm_klustakwik doesn't pick up the prior.**

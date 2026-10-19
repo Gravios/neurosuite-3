@@ -1,7 +1,7 @@
 # First-time spike sort
 
 Walks a fresh recording from raw acquisition through to a
-manually-curated `.clu.N`. Assumes you have a session YAML — for
+manually-curated `.clu.<method>.N`. Assumes you have a session YAML — for
 new recordings, ndmanager generates one from a template; see
 [`../ndmanager/README.md`](../ndmanager/README.md).
 
@@ -27,24 +27,35 @@ Run the standard preprocessing chain:
 ```sh
 ndm_hipass         recording_001.yaml                   # → .fil
 ndm_lfp            recording_001.yaml                   # → .lfp
-ndm_extractspikes  recording_001.yaml                   # → .res.standard.N, .spk.standard.N (shared, raw)
-ndm_pca            recording_001.yaml --method stderiv  # → .fet.stderiv.N, .pca.stderiv.N
+ndm_detectspikes   recording_001.yaml                   # → .res.standard.N (spike times)
+ndm_extractspikes  recording_001.yaml --method stderiv  # → .spk.stderiv.N (waveforms at those times)
+ndm_pca            recording_001.yaml --method stderiv  # → .fet.stderiv.N
 ```
 
-For the raw (`standard`) variant, drop `--method stderiv` (standard is
-the default) and add `ndm_spikecleaner` + `ndm_denoiseuniform` before PCA. See
+Detection writes the spike times; extraction reads them and writes
+waveforms in the chosen transform (`standard`, `sdiff` or `stderiv`), so
+the extraction method may differ from the detection method. Every later
+step must use the same method as extraction, because each one reads and
+writes files named `.<type>.<method>.N`. Instead of passing `--method`
+on every command you can set `method` in each program's node of the
+session YAML; the command-line flag wins over the YAML.
+
+For the raw (`standard`) variant, drop `--method stderiv` everywhere
+(standard is the default) and add `ndm_spikecleaner` + `ndm_denoiseuniform`
+before PCA. See
 [spike detection](../ndmanager-plugins/commands/spike-detection.md)
 for the trade-offs.
 
 ### 3. Automatic clustering
 
 ```sh
-ndm_klustakwik recording_001.yaml
+ndm_klustakwik recording_001.yaml --method stderiv
 ```
 
 Runs KiloKlustaKwik for every spike group sequentially (groups are
 sequential, but KiloKlustaKwik itself is multi-threaded across chunks and
-runs). Output: `recording_001.clu.N` per group.
+runs). It reads `recording_001.fet.stderiv.N` and writes
+`recording_001.clu.stderiv.N` per group.
 
 For details on the chunked-CEM pipeline, GPU dispatch, and Phase 2.5
 subspace reclustering, see
@@ -55,20 +66,21 @@ subspace reclustering, see
 Open one shank at a time:
 
 ```sh
-klusters recording_001.fet.1
+klusters recording_001.fet.stderiv.1
 ```
 
 Or open the session YAML and pick a group. Standard editing
 operations (split, merge, recluster, realign, nudge, dipsplit) are
 documented in the [cluster-curation workflow](cluster-curation.md).
 
-**Annotate cluster quality as you go.** Mark Good / Uncertain / Bad
-in the cluster info panel — this gates which clusters are eligible
-for [empirical-prior training](empirical-priors.md) later.
+Record what you know about each unit as you go: right-click a cluster
+in the palette to open its cluster information dialog (structure, type,
+quality, notes — all free text).
 
 Save with `Ctrl+S`. Klusters writes
-`recording_001.clu.N` and appends to
-`recording_001.curation_log.<group>.<method>`.
+`recording_001.clu.stderiv.N` and appends to
+`recording_001.curation_log.N.stderiv` (no curation log is kept for the
+`standard` method).
 
 Repeat for each shank.
 

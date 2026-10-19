@@ -8,7 +8,7 @@ for the details of each step.
 | Workflow | Use when |
 |---|---|
 | [First-time spike sort](first-time-sort.md) | New recording: acquire → preprocess → KiloKlustaKwik → curate |
-| [Cluster curation](cluster-curation.md) | Working through a `.clu.N` in Klusters: split / merge / realign / nudge / dipsplit |
+| [Cluster curation](cluster-curation.md) | Working through a `.clu.<method>.N` in Klusters: split / merge / realign / nudge / dipsplit |
 | [Re-extract with a lower threshold](re-extract-lower-threshold.md) | Recover weak units missed by the first detection pass |
 | [Iterative refinement](iterative-refinement.md) | Strip → redetect → re-sort loop for cleaner separation |
 | [Empirical priors](empirical-priors.md) | Train per-probe KiloKlustaKwik defaults from accumulated curation logs |

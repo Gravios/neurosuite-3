@@ -17,14 +17,16 @@ once you trust the cluster set.
 Open the relevant shank in Klusters. Check that:
 
 - Refractory periods are clean (autocorrelograms with no peak under
-  ~1 ms in any Good cluster).
+  ~1 ms in any well-isolated cluster).
 - Cluster boundaries are well-separated in feature space.
-- Quality annotations are set on every cluster you want to be in
-  the decomposition dictionary.
+- Every cluster you do not want as a template is in noise (1) or
+  artefact (0).
 
-Decomposition relies on cluster templates being accurate. Any
-cluster with mixed/contaminated waveforms produces false-positive
-collision matches.
+Every cluster except 0 and 1 (with `excludeNoise: true`, the default)
+that has at least `minSpikesTemplate` spikes (default 30) becomes a
+template; quality annotations are not consulted. Decomposition relies
+on those templates being accurate. Any cluster with mixed/contaminated
+waveforms produces false-positive collision matches.
 
 ### 2. Run decomposition
 
