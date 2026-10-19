@@ -129,7 +129,6 @@ once()
 	minClusters=$(read_kk_param $electrodeGroup minClusters 2)
 	nStarts=$(read_kk_param $electrodeGroup nStarts 3)
 	nRuns=$(read_kk_param $electrodeGroup nRuns 0)
-	phase15Iters=$(read_kk_param $electrodeGroup phase15Iters 2)
 	initMethod=$(read_kk_param $electrodeGroup initMethod farthest)
 	penaltyMix=$(read_kk_param $electrodeGroup penaltyMix 0)
 	chunkMinutes=$(read_kk_param $electrodeGroup chunkMinutes 10)
@@ -153,7 +152,6 @@ once()
 	# them properly so the three-tier YAML resolution actually works.
 	subspaceDims=$(read_kk_param $electrodeGroup subspaceDims 3)
 	subspaceRecluster=$(read_kk_param $electrodeGroup subspaceRecluster 1)
-	subspaceReclusterDepth=$(read_kk_param $electrodeGroup subspaceReclusterDepth 2)
 	templateMatchScore=$(read_kk_param $electrodeGroup templateMatchScore 0.0)
 	templateMatchIters=$(read_kk_param $electrodeGroup templateMatchIters 10)
 	splitRecurseDepth=$(read_kk_param $electrodeGroup splitRecurseDepth 0)
@@ -211,13 +209,11 @@ once()
 		-fSaveModel              $fSaveModel              \
 		-SaveIntermediates       $saveIntermediates       \
 		-nRuns                   $nRuns                   \
-		-Phase15Iters            $phase15Iters            \
 		-SubspaceDims            $subspaceDims            \
 		-SubspaceRecluster       $subspaceRecluster       \
 		-TemplateMatchScore      $templateMatchScore      \
 		-TemplateMatchIters      $templateMatchIters      \
 		-SplitRecurseDepth       $splitRecurseDepth       \
-		-SubspaceReclusterDepth  $subspaceReclusterDepth  \
 		-CrossChunkTemplateScore $crossChunkTemplateScore                   \
 
 	check_command_status KiloKlustaKwik

@@ -69,7 +69,6 @@ given in brackets.
 | `maxPossibleClusters` | `500` | `-MaxPossibleClusters`: hard cap on the cluster table (also sizes the packed per-chunk ID range); must be ≥ `maxClusters`. |
 | `nStarts` | `3` | `-nStarts`: random restarts in non-chunked (two-phase) mode. |
 | `nRuns` | `0` | `-nRuns`: independent CEM restarts per chunk in chunked mode; the best-scoring run per chunk is kept. `0` = one run per chunk. |
-| `phase15Iters` | `1` [`2`] | Passed as `-Phase15Iters`. The current KiloKlustaKwik does not register this flag, so it has no effect. |
 | `initMethod` | `farthest` | `-InitMethod`: `farthest` or `random` centre initialisation. |
 | `penaltyMix` | `0` | `-PenaltyMix`: `0` = BIC penalty, `1` = AIC/CEM penalty, values in between blend. |
 | `chunkMinutes` | `10` | `-ChunkMinutes`: chunk length; `0` disables chunking (two-phase CEM on the whole recording). |
@@ -77,7 +76,6 @@ given in brackets.
 | `chunkPreseedFraction` | `0.05` | `-ChunkPreseedFraction`: fraction of spikes used for the Phase 0 global preseed; `0` disables. |
 | `subspaceDims` | `0` [`3`] | `-SubspaceDims`: number of top eigenvectors for subspace reclustering; `0` = all spatial dimensions. |
 | `subspaceRecluster` | `0` [`1`] | `-SubspaceRecluster`: `1` enables per-cluster subspace reclustering (Phase 2.5). |
-| `subspaceReclusterDepth` | `0` [`2`] | Passed as `-SubspaceReclusterDepth`. The current KiloKlustaKwik does not register this flag, so it has no effect. |
 | `templateMatchScore` | `0.0` | `-TemplateMatchScore`: waveform-xcorr threshold for template matching; `0` disables it. |
 | `templateMatchIters` | `10` | `-TemplateMatchIters`: maximum template-matching iterations. |
 | `crossChunkTemplateScore` | `0.0` | `-CrossChunkTemplateScore`: xcorr threshold for cross-chunk template matching; `0` disables it. |
@@ -96,6 +94,12 @@ given in brackets.
 | `saveIntermediates` | `0` | `-SaveIntermediates`: write a `.clu` each time a new best score is found. |
 | `overwrite` | `0` | `1` deletes an existing `.clu.<method>.N` and re-sorts the group; `0` skips it. |
 | `nThreads` | `0` | Exported as `OMP_NUM_THREADS` for the run; `0` = all cores (`nproc`). |
+
+Older templates also listed `phase15Iters` and `subspaceReclusterDepth`.
+KiloKlustaKwik no longer has those options (`-Phase15Iters` became
+`-TimeShiftAlignIter`, which is off unless a `-TimeShiftAlignAfterPhase*`
+switch is set; `-SubspaceReclusterDepth` was removed), so it ignored them;
+they are no longer read and can be deleted from a session file.
 
 For the algorithm behind these flags (chunked CEM phases, template
 matching, subspace reclustering, GPU dispatch) see the

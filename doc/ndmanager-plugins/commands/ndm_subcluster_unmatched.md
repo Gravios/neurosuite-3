@@ -88,7 +88,6 @@ fallback is given in brackets where it differs.
 | `maxPossibleClusters` | `1000` [`500`] | Cluster-table cap; raised because the bin can hold many low-SNR units. |
 | `nStarts` | `5` [`3`] | Random restarts (two-phase mode). |
 | `nRuns` | `0` | CEM restarts per chunk. |
-| `phase15Iters` | `2` | Passed as `-Phase15Iters`; not registered by the current KiloKlustaKwik, so no effect. |
 | `initMethod` | `farthest` | Centre initialisation. |
 | `penaltyMix` | `0.25` [`0`] | BIC/AIC blend; a small AIC share admits more clusters in the sparse bin (prior: `penalty_mix_suggested`). |
 | `chunkMinutes` | `10` | Chunk length; `0` disables chunking. |
@@ -96,7 +95,6 @@ fallback is given in brackets where it differs.
 | `chunkPreseedFraction` | `0.05` | Phase 0 preseed fraction. |
 | `subspaceDims` | `3` | Subspace dimensions for Phase 2.5. |
 | `subspaceRecluster` | `1` | Enable per-cluster subspace reclustering. |
-| `subspaceReclusterDepth` | `2` | Passed as `-SubspaceReclusterDepth`; not registered by the current KiloKlustaKwik, so no effect. |
 | `splitRecurseDepth` | `1` [`0`] | `TrySplits` recursion depth. |
 | `templateMatchScore` | `0.85` [`0.0`] | Template-match xcorr threshold; `0` disables. |
 | `templateMatchIters` | `10` | Template-match iterations. |

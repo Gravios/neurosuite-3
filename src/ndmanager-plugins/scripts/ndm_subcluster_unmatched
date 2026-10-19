@@ -415,19 +415,16 @@ with open('$sandboxStem.fet.$group','rb') as f: print(struct.unpack('<i', f.read
     # sub-structure in a pre-collapsed feature space matter the most:
     #   nStarts              — multiple random inits escape local minima
     #   ChunkMinutes         — enables time-chunked CEM on long recordings
-    #   SubspaceRecluster /
-    #     SubspaceReclusterDepth — per-cluster subspace CEM splits clusters
-    #                              that coalesced in the full 22-D space
-    #   Phase15Iters         — xcorr realignment sharpens within-cluster
-    #                          structure before the final merge
+    #   SubspaceRecluster    — per-cluster subspace CEM splits clusters
+    #                          that coalesced in the full 22-D space
     #   TemplateMatchScore   — within-chunk template matching merges over-
     #                          split chunks more conservatively than χ²
     local minClusters maxClusters maxPossibleClusters mergeThresh
     local globalMergeIter timeMergeIter
-    local nStarts nRuns phase15Iters initMethod penaltyMix
+    local nStarts nRuns initMethod penaltyMix
     local chunkMinutes chunkOverlapMinutes chunkPreseedFraction
     local maxIter splitEvery distThresh fullStepEvery changedThresh
-    local subspaceDims subspaceRecluster subspaceReclusterDepth
+    local subspaceDims subspaceRecluster
     local templateMatchScore templateMatchIters splitRecurseDepth
     local crossChunkTemplateScore
 
@@ -489,7 +486,6 @@ PYEOF
     timeMergeIter=$(read_kk_param -b ndm_subcluster_unmatched $group timeMergeIter 50)
     nStarts=$(read_kk_param -b ndm_subcluster_unmatched $group nStarts 3)
     nRuns=$(read_kk_param -b ndm_subcluster_unmatched $group nRuns 0)
-    phase15Iters=$(read_kk_param -b ndm_subcluster_unmatched $group phase15Iters 2)
     initMethod=$(read_kk_param -b ndm_subcluster_unmatched $group initMethod farthest)
     penaltyMix=$(read_kk_param -b ndm_subcluster_unmatched $group penaltyMix $_dPenMix)
     chunkMinutes=$(read_kk_param -b ndm_subcluster_unmatched $group chunkMinutes 10)
@@ -502,7 +498,6 @@ PYEOF
     changedThresh=$(read_kk_param -b ndm_subcluster_unmatched $group changedThresh 0.05)
     subspaceDims=$(read_kk_param -b ndm_subcluster_unmatched $group subspaceDims 3)
     subspaceRecluster=$(read_kk_param -b ndm_subcluster_unmatched $group subspaceRecluster 1)
-    subspaceReclusterDepth=$(read_kk_param -b ndm_subcluster_unmatched $group subspaceReclusterDepth 2)
     templateMatchScore=$(read_kk_param -b ndm_subcluster_unmatched $group templateMatchScore 0.0)
     templateMatchIters=$(read_kk_param -b ndm_subcluster_unmatched $group templateMatchIters 10)
     splitRecurseDepth=$(read_kk_param -b ndm_subcluster_unmatched $group splitRecurseDepth 0)
@@ -550,8 +545,8 @@ PYEOF
     #   -UseFeatures all              — always use every sandbox feature
     #   -fSaveModel 0                 — no .model.N (sandbox is throw-away)
     #   -SaveIntermediates 0          — no intermediate .clu.N.M files
-    # Everything else — nStarts, SubspaceRecluster*, TemplateMatch*, ChunkMinutes,
-    # Phase15Iters, etc. — is passed through so the sub-run gets the same
+    # Everything else — nStarts, SubspaceRecluster, TemplateMatch*, ChunkMinutes,
+    # etc. — is passed through so the sub-run gets the same
     # clustering muscle as the main sort.
     KlustaKwik "$sandboxStem" "$group" \
         -MinClusters             $minClusters             \
@@ -573,10 +568,8 @@ PYEOF
         -FullStepEvery           $fullStepEvery           \
         -ChangedThresh           $changedThresh           \
         -nRuns                   $nRuns                   \
-        -Phase15Iters            $phase15Iters            \
         -SubspaceDims            $subspaceDims            \
         -SubspaceRecluster       $subspaceRecluster       \
-        -SubspaceReclusterDepth  $subspaceReclusterDepth  \
         -TemplateMatchScore      $templateMatchScore      \
         -TemplateMatchIters      $templateMatchIters      \
         -SplitRecurseDepth       $splitRecurseDepth       \

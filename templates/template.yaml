@@ -1939,17 +1939,11 @@ programs:
       - name: nRuns
         value: 0
         status: Optional
-      - name: phase15Iters
-        value: 2
-        status: Optional
       - name: subspaceDims
         value: 3
         status: Optional
       - name: subspaceRecluster
         value: 1
-        status: Optional
-      - name: subspaceReclusterDepth
-        value: 2
         status: Optional
       - name: splitRecurseDepth
         value: 1
@@ -2117,20 +2111,14 @@ programs:
       starts are cheap here because the bin is smaller than the main
       spike population.
 
-      # phase15Iters: 2 (vs 1 in ndm_klustakwik)
-
-      Extra xcorr-realignment iterations sharpen within-cluster structure
-      in the low-SNR regime where PCA features are blurred by the
-      sample-wise noise.
-
-      # subspaceDims: 3, subspaceRecluster: 1, subspaceReclusterDepth: 2
+      # subspaceDims: 3, subspaceRecluster: 1
 
       Enables the per-cluster subspace CEM splits described in
       programs[ndm_klustakwik] help.  Main-sort defaults to off
       (subspaceRecluster: 0) because dense clusters rarely benefit.
       Outlier bins routinely contain clusters that coalesce in the full
       21-D space but separate cleanly in a 3-D subspace, so we turn it
-      on by default with a moderate recursion depth.
+      on by default.
 
       # splitRecurseDepth: 1
 
@@ -2530,9 +2518,6 @@ programs:
       - name: nRuns
         value: 0
         status: Optional
-      - name: phase15Iters
-        value: 1
-        status: Optional
       - name: subspaceDims
         value: 0
         status: Optional
@@ -2547,9 +2532,6 @@ programs:
         status: Optional
       - name: splitRecurseDepth
         value: 1
-        status: Optional
-      - name: subspaceReclusterDepth
-        value: 0
         status: Optional
       - name: crossChunkTemplateScore
         value: 0.0
@@ -2824,15 +2806,6 @@ programs:
 
       Maximum recursion depth of the split search (default 0).
 
-      # phase15Iters
-
-      Passed as -Phase15Iters (default 2), an option KiloKlustaKwik does not
-      read: it has no effect.
-
-      # subspaceReclusterDepth
-
-      Passed as -SubspaceReclusterDepth (default 2), an option KiloKlustaKwik
-      does not read: it has no effect.
 
 
   - name: ndm_autoklusta
