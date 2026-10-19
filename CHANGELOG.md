@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Windows: the ndm_* steps run from cmd and PowerShell through Git Bash](#2026-10-19--windows-the-ndm_-steps-run-from-cmd-and-powershell-through-git-bash) |
 | 2026-10-19 | [Windows: the install puts the programs on PATH](#2026-10-19--windows-the-install-puts-the-programs-on-path) |
 | 2026-10-19 | [Windows: one script installs the build dependencies](#2026-10-19--windows-one-script-installs-the-build-dependencies) |
 | 2026-10-19 | [Windows: the ndmanager-plugins programs build natively, and CI checks it](#2026-10-19--windows-the-ndmanager-plugins-programs-build-natively-and-ci-checks-it) |
@@ -82,6 +83,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Windows: the ndm_* steps run from cmd and PowerShell through Git Bash
+
+<details>
+<summary>Details</summary>
+
+- Typing `ndm_hipass` in PowerShell opened Windows' "Select an app" dialog:
+  the steps are extension-less bash scripts. A Windows install now puts a
+  `.bat` launcher beside each script (`src/ndmanager-plugins/cmake/NdmWindowsLaunchers.cmake`)
+  that runs it with Git for Windows' bash, or with Python for the
+  `#!/usr/bin/env python3` ones (`ndm_xml2yaml`, `process_mergespikes`, ...).
+  The sourced libraries (`ndm_functions`, `ndm_custody`) get none, nor does
+  `process_spikegrouper`, which has an `.exe` of the same name.
+- `ndm-env.bat` finds bash (`NS_BASH`, then `Program Files\Git`, the per-user
+  Git, or `..\bin\bash.exe` beside `git.exe`, never WSL's `System32\bash.exe`)
+  and Python (`NS_PYTHON`, `py -3`, then `python.exe` unless it is the
+  Microsoft Store placeholder), and puts the bin directory and `bin\ndm-bash`
+  first on PATH. `bin\ndm-bash\python3` gives the scripts the `python3` they
+  call, which the Windows Python installer does not provide.
+- The script is passed as `C:/.../ndm_hipass`: the scripts name themselves
+  with `basename $0`, which splits on `/` only, and read their parameters by
+  that name.
+- The scripts are installed with LF line endings: Git for Windows checks text
+  out as CRLF by default, and bash stops on the `\r`.
+- Checked under Wine's cmd with stand-in bash / Python programs: arguments
+  (including a quoted one with a space) arrive intact, the script path has
+  forward slashes, each detection order picks the expected program, the Store
+  placeholder is skipped, and a missing bash is reported. Not yet run with
+  real Git Bash, so the scripts themselves are untested on Windows.
+
+</details>
 
 ## 2026-10-19 — Windows: the install puts the programs on PATH
 

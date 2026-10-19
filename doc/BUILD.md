@@ -63,6 +63,12 @@ and adds `C:\ns3\bin` to your user PATH, so `klusters`, `neuroscope`,
 `powershell -ExecutionPolicy Bypass -File scripts\windows-path.ps1 -Remove`).
 Installing again to another prefix moves the entry rather than adding a second.
 
+The `ndm_*` pipeline steps are bash scripts; on Windows each gets a `.bat`
+launcher beside it (`ndm_hipass.bat`, ...) that runs it with Git for Windows'
+bash, so `ndm_hipass` works from cmd and PowerShell. Git for Windows must be
+installed (the install-deps script installs it); see
+[the plugins' Windows guide](ndmanager-plugins/install/windows.md).
+
 Options: `-WithHdf5` (`process_aomconvert`), `-WithFfmpeg`
 (`process_extractleds`; a long vcpkg build), `-WithPythonPackages` (PyYAML,
 NumPy, SciPy), `-QtVersion`, `-QtRoot`, `-VcpkgRoot`, `-Force` (overwrite the

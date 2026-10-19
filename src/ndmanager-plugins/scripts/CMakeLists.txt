@@ -1,4 +1,4 @@
-install(PROGRAMS
+set(_ndm_scripts
     cnt duration
     ndm_clean ndm_concatenate ndm_extractchannels ndm_extractemg ndm_extractleds
     ndm_detectspikes ndm_extractspikes ndm_extractspikes_sdiff
@@ -70,7 +70,16 @@ install(PROGRAMS
     # Spike subtraction pipeline (Python executables without .py extension)
     process_subtractspikes
     process_mergespikes
-    DESTINATION "${CMAKE_INSTALL_BINDIR}")
+)
+
+if(WIN32)
+    # Windows: the scripts run under Git Bash; see NdmWindowsLaunchers.cmake.
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/NdmWindowsLaunchers.cmake")
+    ndm_windows_launchers(${_ndm_scripts})
+else()
+    install(PROGRAMS ${_ndm_scripts}
+        DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()
 
 # Python helpers installed alongside their bash drivers so each script can
 # find its helper via its own directory; also land on PATH for direct use.

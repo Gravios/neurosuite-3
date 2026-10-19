@@ -10,7 +10,7 @@ ndmanager-plugins has two components with different Windows compatibility:
 
 - **WSL2 (recommended)** — run the full pipeline inside WSL Ubuntu exactly as on bare-metal Linux. See the [Linux CPU guide](linux-cpu.md) inside WSL.
 - **MSYS2** — provides Bash and GNU tools natively on Windows; the scripts run but some GNU utilities (`bc`, `awk`, `xpathReader`) must be present.
-- **Git Bash** — limited; missing several utilities required by the scripts. Not recommended for the full pipeline.
+- **Git Bash (native, from cmd / PowerShell)** — a Windows build installs a `.bat` launcher next to each script (`ndm_hipass.bat`, `ndm_start.bat`, ...), so `ndm_hipass` typed in cmd or PowerShell runs the script with Git for Windows' bash, and the extension-less Python scripts (`ndm_xml2yaml`, ...) with Python. The launchers find Git Bash in the usual places or next to `git.exe` (set `NS_BASH` to its `bin\bash.exe` otherwise) and Python as `py -3` or `python` (`NS_PYTHON` to override), and give the scripts a `python3`. The scripts are installed with LF line endings whatever the checkout used. New and not yet run end to end on Windows: report what fails.
 
 If you only need the processing binaries (to call them directly without the ndm_* wrapper scripts), native Windows builds work without any of the above.
 
