@@ -20,6 +20,7 @@ The code is the authority. Every statement below was read out of the headers in 
 | Waveform transforms and PCA | `stderiv_transform.hpp`, `pca_projection.hpp`, `spike_extract.hpp` |
 | Collision decomposition | `decollide.hpp`, `decollide_eap.hpp` |
 | Template classes and the template library | `templateclass.hpp`, `template_generate.hpp`, `running_stats.hpp`, `drift_partition.hpp`, `projectionscope.hpp` |
+| Portable file and string primitives | `fileio64.hpp`, `fileops.hpp`, `mappedfile.hpp/.cpp`, `strsep.hpp` |
 
 ### 1.2 Place in the layering
 
@@ -41,7 +42,7 @@ Build order (root `CMakeLists.txt`, see [BUILD.md §5](../../../doc/BUILD.md#5-t
 |---|---|---|
 | Project | `libneurosuite-core` VERSION 2.1.0, `LANGUAGES CXX` | `src/libneurosuite-core/CMakeLists.txt` |
 | Library target | `neurosuite-core`, `SHARED`, alias **`Neurosuite::core`** | `src/libneurosuite-core/src/CMakeLists.txt` |
-| Compiled sources | `neurosuite/core/neurofileio.cpp` only | same |
+| Compiled sources | `neurosuite/core/neurofileio.cpp` and `neurosuite/core/mappedfile.cpp` | same |
 | SOVERSION | major version (`2`) | same |
 | Package | `find_package(LibNeurosuiteCore)` → imported `Neurosuite::core` (`EXPORT_NAME core`); version file `SameMajorVersion` | `LibNeurosuiteCoreConfig.cmake.in` |
 | Export set | `LibNeurosuiteCoreTargets`, namespace `Neurosuite::`; the monorepo root also `export()`s it into the build tree and sets `LibNeurosuiteCore_DIR` | root `CMakeLists.txt` |
@@ -78,11 +79,11 @@ Three consumption modes exist in the tree:
 
 | Mode | Who | How |
 |---|---|---|
-| Link the shared library | `libklustersshared` (PUBLIC), klusters, `process_initeap`, `process_decomposecollisions` (via its `_pdc_flags` INTERFACE target), klusters' store tests | `target_link_libraries(<t> PRIVATE Neurosuite::core)` — gives the include path and `libneurosuite-core.so` |
+| Link the shared library | `libklustersshared` (PUBLIC), klusters, `process_initeap`, `process_decomposecollisions` (via its `_pdc_flags` INTERFACE target), `process_extractemg`, `process_reextractspikes`, `process_reextractspikes_stderiv` (these three for `MappedFile`), klusters' store tests | `target_link_libraries(<t> PRIVATE Neurosuite::core)` — gives the include path and `libneurosuite-core.so` |
 | Include only (header-only parts) | every other `ndmanager-plugins` binary | `src/ndmanager-plugins/src/CMakeLists.txt` adds `include_directories(${CMAKE_SOURCE_DIR}/src/libneurosuite-core/src)`; nothing is linked |
 | Source-include | kiloklustakwik | compiles `../libneurosuite-core/src/neurosuite/core/neurofileio.cpp` into each executable and defines `NEUROSUITE_CORE_STATIC` (see `src/kiloklustakwik/CMakeLists.txt`) |
 
-**Which headers need the library linked.** Only `neurofileio.cpp` is compiled, so a translation unit needs `Neurosuite::core` (or the source-include) exactly when it ODR-uses an out-of-line `neurofileio` function:
+**Which headers need the library linked.** Only `neurofileio.cpp` and `mappedfile.cpp` are compiled, so a translation unit needs `Neurosuite::core` (or, for `neurofileio`, the source-include) exactly when it ODR-uses an out-of-line `neurofileio` function or `MappedFile`:
 
 | Header | Include-only safe? |
 |---|---|
@@ -91,6 +92,8 @@ Three consumption modes exist in the tree:
 | `template_generate.hpp` | `generate`, `renderLineage` and the numeric helpers: yes. `generateToFiles`, `renderLineageToFiles`, `readResAny`: **link** |
 | `decollide_eap.hpp` | **link** (`applyDecompsToEap` calls `neurofileio::growEap`) |
 | `neurofileio.h` | **link**, except for the structs and inline helpers |
+| `fileio64.hpp`, `fileops.hpp`, `strsep.hpp` | yes — header-only |
+| `mappedfile.hpp` | **link** (`MappedFile` is implemented in `mappedfile.cpp`) |
 
 ### 1.5 Header dependency graph
 
@@ -107,6 +110,8 @@ dipsplit.hpp, watershed2d.hpp ─── std only
 tsne_embed.hpp, oblique_embed.hpp, waveformiou.hpp, mergerecommend.hpp ─── std only (tsne_embed: OpenMP if the includer uses it)
 spectral/*.h (static target Neurosuite::spectral) ─── std only (+ optional FFTW, CUDA, OpenMP)
 custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp, channel_expr.hpp ─── std only
+fileio64.hpp, fileops.hpp, strsep.hpp ─── std + platform C headers only
+mappedfile.hpp ─── neurosuite_core_export.h          mappedfile.cpp ─── POSIX mmap / Win32 file mapping
 ```
 
 ---
@@ -720,6 +725,31 @@ bool parseChannelExprs(const std::string& spec, ChannelExprSet& out, std::string
 
 **Consumers.** `stderiv_transform.hpp` (`SdiffOrder::Expr`, so every user of the transform); `libklustersshared/sdiff_pairs.h`; `process_extractspikes_stderiv`. **Mirror:** fiber-kit `fiber_stderiv.ChannelExpr` / `parse_sdiff_exprs`. **Tests.** `core_test_sdiff_expr` and fiber-kit's `test_sdiff_expr.py`, both on `sdiff_expr_vectors.tsv` (§4.3). The grammar as a user writes it is in [spike-detection.md](../../../doc/ndmanager-plugins/commands/spike-detection.md#expressions-order-6).
 
+
+### 3.22 `fileio64.hpp` — 64-bit file positions and sizes
+
+Header-only. `fseek64(FILE*, int64_t, whence)` and `ftell64(FILE*)` use `fseeko`/`ftello` on POSIX and `_fseeki64`/`_ftelli64` on Windows, where `fseek`/`ftell` take a 32-bit `long`; `fileSize64(path)` uses `std::filesystem::file_size`, because `stat` reports a 32-bit size on Windows. On POSIX a `static_assert` requires a 64-bit `off_t`.
+
+**Consumers.** Most processing programs (`process_extractspikes*`, `process_pca`, `process_medianfilter`, `process_butterworth`, `process_shadowcluster`, …), klusters (`data.cpp`, `binfile.h`, `klustersdoc_realign.cpp`, `klustersdoc_timesort.cpp`), NeuroScope `tracesprovider.cpp`. **Test.** `core_test_mappedfile`.
+
+### 3.23 `fileops.hpp` — replace, sync and name files
+
+Header-only. `replaceFile(from, to, error)` moves a file over an existing one (`std::filesystem::rename`; `std::rename` fails on Windows when the destination exists), `syncFile(FILE*)` flushes and `fsync`s (`_commit` on Windows) before a replace, and `processId()` returns the process id for unique temporary names.
+
+**Consumers.** The write-then-rename saves in klusters (`klustersdoc_realign.cpp`, `klustersdoc_featurespace.cpp`, `klustersdoc_timesort.cpp`, `convert_to_binary.cpp`) and in `process_shadowcluster`, `process_spikegrouper`, `process_alignspikes`, `process_alignspikes_pca`, `process_drifttracker`, `process_denoiseuniform`, `process_removeartefacts`. **Test.** `core_test_fileops`.
+
+### 3.24 `mappedfile.hpp` / `mappedfile.cpp` — read-only whole-file mapping
+
+`MappedFile` maps a whole file read-only: `open(path, &err)`, `data()`, `size()`, `adviseSequential()` (a hint; no-op on Windows). POSIX uses `mmap`, Windows `CreateFileMappingA` + `MapViewOfFile`. An empty file opens with `size() == 0` and `data() == nullptr`. Movable, not copyable, unmapped on destruction. The implementation is out of line in `mappedfile.cpp` so the header pulls in no `<windows.h>`; consumers **link** `Neurosuite::core`.
+
+**Consumers.** `process_extractemg`, `process_reextractspikes`, `process_reextractspikes_stderiv`. **Test.** `core_test_mappedfile`.
+
+### 3.25 `strsep.hpp` — `strsep` on every platform
+
+Header-only `neurosuite::core::strsep(char**, const char*)` with the BSD semantics (empty tokens returned as `""`), for MSVC, which has neither `strsep` nor `strdupa`.
+
+**Consumers.** `process_extractspikes`, `process_medianthreshold`, `process_alignspikes`, `extractspikes_common/extractspikes_detect.h`. Covered by the header-compile test `core_test_qt_keywords` only.
+
 ---
 
 ## 4. Tests
@@ -765,6 +795,13 @@ ctest --test-dir build -R '^core_test_|custody_conformance'   # this library onl
 | `core_test_template_generate` | `template_generate_test.cpp` | no | clu-mode drift bins, even-count median, `rint` half-to-even, eap offset alignment, adapt energy bins, `dropEmpty` |
 | `core_test_template_lineage` | `template_lineage_test.cpp` | no | `renderLineage`: kind→link, bin ordinals, parent rows, `nSpikes`, stored mean copied, empty placeholder |
 | `core_test_template_lineage_io` | `template_lineage_io_test.cpp` | yes | `renderLineageToFiles`: `.wtl` v2 + `.mti` + `.mtf` written and read back |
+| `core_test_sdiff_expr` | `sdiff_expr_test.cpp` | no | runs `sdiff_expr_vectors.tsv` (argument) against `channel_expr.hpp` and the order-6 transform in `stderiv_transform.hpp` |
+| `core_test_golden_formats` | `golden_formats_test.cpp` | yes | rewrites the `golden.*` `.wti`/`.wtf`/`.wtl`/`.eap`/`.tcl` files in `test/golden/` (argument) and checks them byte-identical, then reads every committed file, fiber-kit's `fk.*` included |
+| `core_test_spike_extract` | `spike_extract_test.cpp` | no | `extractSpikeWindows` writes the same bytes as the extractors' reference algorithm for every spatial order, at sample 0, across read buffers, raw and spatial-only |
+| `core_test_neurofileio_robust` | `neurofileio_robust_test.cpp` | yes | readers on unusual or corrupt files: format detection, truncated and crafted headers, empty groups (zero-spike `.fet`), malformed registries, `.col` |
+| `core_test_qt_keywords` | generated from every header in `core/` and `spectral/` | no | each header compiles with Qt's `emit`/`signals`/`slots`/`foreach`/`forever` macros defined |
+| `core_test_mappedfile` | `mappedfile_test.cpp` | yes | `MappedFile`: same bytes and size, empty file, missing file, move; `fseek64`/`ftell64`/`fileSize64` past 4 GiB |
+| `core_test_fileops` | `fileops_test.cpp` | no | `replaceFile` (also over an existing file), `syncFile`, `processId` |
 
 Not covered by any test in this directory: `spike_extract.hpp` beyond all-pairs windows, and `pca_projection.hpp`'s `loadPca`/`writePca`/`pcaProjectScores` (only the `Method` enum is pinned). Tests in other subprojects that exercise core code: `klusters_test_pcarowprojection` (`PcaBasis` via `pca_row_projection.h`), `klusters_test_templatelineagestore` and `klusters_test_templateclassstore` (both link `Neurosuite::core`), in `src/klusters/test/`.
 
@@ -889,7 +926,7 @@ Inconsistencies found while writing this page. None has been fixed here.
 | D8 | `stderiv_transform.hpp`, `spike_extract.hpp` | **Transform resolved (2026-10-16):** every engine now calls `spatialDeriv`/`spatialDerivBy`, and `stderiv_vectors.tsv` pins the result. **Windows partly resolved (2026-10-17):** the three extractors' `-R` pass (what `ndm_extractspikes` runs) calls `extractSpikeWindows`; it used to skip a window outside the `.fil`, leaving the `.spk` shorter than the `.res`, and now writes zeros like Klusters. Still open: the waveforms a detection run writes, and `process_reextractspikes_stderiv`, are cut by the tools' own code. |
 | D9 | `neurofileio.h` `.wtl` comment | Says the node's spike set is "the source of truth" that "the native generator re-medians", and attributes the parallel-variance combine to `template_generate.hpp`. In v2 there are no spike sets, rendering copies the mean, and the combine is in `running_stats.hpp`. [FILE_FORMATS §4.5](FILE_FORMATS.md#45-wtl--manual-template-lineage-forest-version-tagged-text) repeats "re-medians". |
 | D10 | `neurofileio.h` "Mandatory-method resolution" comment | Says there is no untagged form for `res`/`spk`/`clu`/`fet`/`pca`; `custody::resolve`/`resolveAny` still fall back to the untagged name for the Shared types `res` and `spk`. |
-| D11 | FILE_FORMATS.md | Line citations into `custody.hpp` are stale (`custody.hpp:140-152` and `:149-152` for the type tables; they are now around lines 155–169). §4.7 says `.mti`/`.mtf` are written by "klusters' `renderLineageToFiles`" and marks it unverified; the writer is `templategen::renderLineageToFiles` in this library (`template_generate.hpp`), called from klusters' `templatelineagestore.cpp`. |
-| D12 | `src/libneurosuite-core/src/CMakeLists.txt` | The comment says the library "currently" holds `neurofileio`; it now holds twelve headers. [ARCHITECTURE.md](../../../doc/dev/ARCHITECTURE.md) §0/§2.2 still places `neurofileio` in `libklustersshared` (`klustersshared/neurofileio.{h,cpp}`) and does not mention `libneurosuite-core`. |
+| D11 | FILE_FORMATS.md | **Fixed (2026-10-19).** Its `custody.hpp` and `neurofileio.{h,cpp}` line citations had drifted; it now cites functions by name, and names `templategen::renderLineageToFiles` as the `.mti`/`.mtf` writer. |
+| D12 | `src/libneurosuite-core/src/CMakeLists.txt` | The comment says the library "currently" holds `neurofileio`; it now holds 25 headers and compiles `neurofileio.cpp` and `mappedfile.cpp`. (The [ARCHITECTURE.md](../../../doc/dev/ARCHITECTURE.md) half is resolved: it lists `libneurosuite-core` and places `neurofileio` there.) |
 | D13 | `src/klusters/test/CMakeLists.txt` | Says "the templateclass engine" and "the renderLineage* engine" live out of line in `Neurosuite::core`; both are header-only. The link is needed for the `neurofileio` readers/writers. |
 | D14 | `templategen::sessionPath` vs `custody::stagePath` | Two path composers for the same name shape: `templategen::sessionPath` folds `.` in the tag to `_`, `custody::stagePath` does not. A stage containing a dot produces different file names depending on which one a caller uses. `templategen::sessionPath` also shares its name with the unrelated `custody::sessionPath(base, type)`. |
