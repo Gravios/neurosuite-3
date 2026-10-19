@@ -14,12 +14,11 @@ shortcut.
 > [the NeuroScope input system](../../neuroscope/docs/INPUT_SYSTEM.md). (An older
 > copy of the core under `src/klusters/src/input/` no longer exists.)
 
-> **Companion documents.** `claude/input-remapping-plan.md` is the design
-> rationale and the migration history (why the architecture is shaped this way,
-> and the patch-by-patch record of moving the old `eventFilter` onto it);
-> `claude/neuroscope-input-plan.md` records the NeuroScope adoption. *This*
-> document is the living reference for the system as it stands. When they
-> disagree, the code wins; fix this doc.
+> *This* document is the living reference for the system as it stands. (The
+> design notes and migration history it grew out of are not kept in the
+> repository; source comments still cite their section numbers, e.g.
+> "input-remapping plan §5".) When this doc and the code disagree, the code
+> wins; fix this doc.
 
 ---
 
@@ -84,7 +83,9 @@ both apps); `klusters.cpp` is the Klusters-only wiring.
 | `input/bindingregistry.h/.cpp` | The one registry: storage, override layer, and the resolver (`resolveEx`). |
 | `input/inputdispatcher.h/.cpp` | Qt-event glue: `chordFromEvent()`, `registry()`, `dispatch()`. |
 | `input/keymapprofile.h/.cpp` | Saveable/shippable named binding layouts. |
-| `input/prefinput.cpp` | The generated Preferences ▸ Input page (shared — both apps show it). |
+| `input/prefinput.cpp` | The generated Preferences ▸ Input page (shared — both apps show it), with the *Keymap layout* bar. |
+| `input/buttonchordedit.h/.cpp` | `ButtonChordEdit` — the page's editor for a mouse-button chord (button + modifiers; phase and modifier-match policy are kept from the registered chord). |
+| `input/wheelchordedit.h/.cpp` | `WheelChordEdit` — the page's editor for a wheel chord (direction + modifiers), which makes the Ctrl+wheel zoom commands rebindable. |
 | `input/inputprefsstore.h` | `InputPrefsStore` — the interface each app's `Configuration` implements so the shared page persists through it. |
 | `klusters.cpp` | `registerInputBindings()` (all of Klusters' scopes + commands), the `eventFilter` dispatch paths, `tryViewKeyCommand()`. |
 
@@ -142,7 +143,7 @@ up"); it does **not** round-trip.
 
 ```cpp
 struct Command {
-    QString id;        // globally unique: "cluster.lasso", "ws.sigmaUp", "app.prefs"
+    QString id;        // globally unique: "cluster.lassoAddVertex", "ws.sigmaUp", "file.save"
     QString scopeId;   // the InputScope that owns it
     QString label;     // shown in Preferences + cheat-sheet (caller tr()'s it)
     QString category;  // grouping within the page
@@ -183,7 +184,7 @@ historical behavior — see [§6](#6-focus-and-repeat-policies).
 
 ```cpp
 struct InputScope {
-    QString id;                             // "view.cluster", "mode.newCluster", "transient.watershed"
+    QString id;                             // "view.cluster", "mode.hierarchy", "transient.watershed"
     Layer   layer = Layer::App;
     std::function<bool(const Ctx&)> active; // in effect for this event? null == always (App)
     Capture capture = Capture::Passive;     // Passive | Exclusive
@@ -242,15 +243,16 @@ consults them **highest tier first**, so an inner context shadows an outer one.
    │              (a live preview, a pending lasso, a drag)      │       transient.pendingLasso,
    │                                                            │       transient.embedding
    ├───────────────────────────────────────────────────────────┤
-   │ ToolMode     the active tool                               │  e.g. mode.newCluster,
-   │                                                            │       mode.hierarchy, mode.zoom
+   │ ToolMode     the active tool                               │  e.g. view.cluster.lasso,
+   │                                                            │       mode.hierarchy
    ├───────────────────────────────────────────────────────────┤
-   │ Presentation a view's alternate presentation               │  e.g. feature / t-SNE / oblique
+   │ Presentation a view's alternate presentation               │  (no Klusters scope yet;
+   │                                                            │   would be t-SNE / oblique)
    ├───────────────────────────────────────────────────────────┤
    │ ViewType     the focused view's type                       │  e.g. view.cluster, view.trace,
    │                                                            │       view.waveform, the matrices
    ├───────────────────────────────────────────────────────────┤
-   │ App       = 0  always active; global actions               │  e.g. app.prefs, menu mirrors
+   │ App       = 0  always active; global actions               │  e.g. file.save, menu mirrors
    └───────────────────────────────────────────────────────────┘
          (consulted LAST — outermost, the fallback)
 ```
