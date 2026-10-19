@@ -27,7 +27,7 @@ reference.
 ## Table of contents
 
 ### Orientation
-- **[Building neurosuite-3](../BUILD.md)** — ✅ — the developer build reference: every CMake option, the GPU backends, the ctest suite, the AddressSanitizer build, and CI parity. (For a first build, start with the README [Quick start](../../README.md#quick-start) and the per-component `install/` guides under [`doc/`](../README.md).)
+- **[Building neurosuite-3](../BUILD.md)** — ✅ — the developer build reference: every CMake option, the GPU backends, the ctest suite, the AddressSanitizer build, and CI parity. (For a first build, start with [Installing neurosuite-3](../INSTALL.md).)
 - **[Glossary](../GLOSSARY.md)** — ✅ — component names, domain terms, on-disk formats, and architecture concepts in one place.
 - **[Architecture & restructuring plan](ARCHITECTURE.md)** — ✅ — the current layered structure, the maintainability problems being addressed, and the staged migration (project-wide; a working draft).
 - **[Component & pipeline docs](../README.md)** — ✅ — user- and pipeline-facing documentation for every component (build, usage, the sorting pipeline, file formats).
@@ -52,7 +52,7 @@ reference.
 
 ### Other components
 - **kiloklustakwik · ndmanager-plugins · ndmanager** — 🚧 — internals references as they are written; component **usage** docs already live in [`doc/`](../README.md), and the deep algorithm notes in [`doc/design/`](../design/README.md).
-- **fiber-kit** — 🚧 — the sibling library (separate repo: `github.com/Gravios/fiber-kit`). It mirrors `neurofileio`'s on-disk contract byte-for-byte via its `neuro_io`; the shared format contract and the one known divergence (`.wtl` v1 vs v2) are in [File formats](../../src/libneurosuite-core/docs/FILE_FORMATS.md) §5.
+- **fiber-kit** — 🚧 — the sibling library (separate repo: `github.com/Gravios/fiber-kit`). It mirrors `neurofileio`'s on-disk contract byte-for-byte via its `neuro_io`; fiber-kit reads both `.wtl` versions but writes v1 (spike lists), which ns3 reads as legacy stubs; the shared format contract is in [File formats](../../src/libneurosuite-core/docs/FILE_FORMATS.md) §5.
 
 ### Design notes & task workflows
 Deep per-topic technical notes and multi-program walkthroughs live under [`doc/`](../README.md); the two indexes below are canonical (the design index is cross-referenced by date from [`CHANGELOG.md`](../../CHANGELOG.md)).
