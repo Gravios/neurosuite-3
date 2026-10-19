@@ -16,8 +16,8 @@ toolchain.  The repo contains seven tightly-coupled subsystems:
 
 | Subsystem | Path | Role |
 |---|---|---|
-| **klusters** | `src/klusters/` | interactive spike-sorting GUI (Qt6, ~30K LOC) |
-| **kiloklustakwik** | `src/kiloklustakwik/` | GPU-accelerated CEM clustering engine, formerly the experimental KlustaKwikExp fork (CUDA primary, HIP/SYCL stubs) |
+| **klusters** | `src/klusters/` | interactive spike-sorting GUI (Qt6) |
+| **kiloklustakwik** | `src/kiloklustakwik/` | GPU-accelerated CEM clustering engine, formerly the experimental KlustaKwikExp fork (CUDA, HIP and SYCL backends, CPU/OpenMP fallback) |
 | **ndmanager** | `src/ndmanager/` | session management GUI |
 | **ndmanager-plugins** | `src/ndmanager-plugins/` | preprocessing plugins (CLI tools + bash wrappers) |
 | **neuroscope** | `src/neuroscope/` | trace viewer GUI |
@@ -77,7 +77,7 @@ don't introduce regressions.
 ### 2.3 Iterators and ordering
 
 - `Data::Iterator::operator()` returns `QPoint` with **ordinate already negated**
-  (Qt graphical orientation, see `data.h:405-409`).  Never apply an extra flip
+  (Qt graphical orientation, see `Data::Iterator::operator()` in `data.h`).  Never apply an extra flip
   when computing screen-space bounds from iterator output.
 - `QMap` iterates **ascending key order** by default.  Many algorithms in
   klusters rely on this; don't sort separately.
@@ -230,7 +230,7 @@ An action's icon is data, not a line at the action's creation site.
    painter is missing or ignores the palette. A build with `-DNS3_VERBOSE=1`
    logs rows whose action does not exist and toolbar buttons without an icon.
 
-Klusters follows this: `src/klusters/src/actionicons.h` (the table),
+Klusters follows this: `kTable` in `src/klusters/src/actionicons.cpp` (the table),
 `KlustersApp::applyActionIcons()` (the pass), `klusters_test_actionicons` (the
 test). NeuroScope and ndManager still set icons at their creation sites; move
 them to a table when you touch them. Recipe: [RECIPES.md](RECIPES.md) §2.6.
@@ -268,20 +268,25 @@ See `src/libneurosuite-core/docs/FILE_FORMATS.md` §3.6.
 
 ### 3.3 File formats (binary, little-endian)
 
+Per-group files are named `<base>.<type>.<method>.<group>` (`.N` below);
+the old D-suffix files (`.spkD.N`, `.fetD.N`) are retired — a stderiv run
+writes `.spk.stderiv.N` / `.fet.stderiv.N`. Layouts:
+[doc/ndmanager-plugins/formats/](../ndmanager-plugins/formats/README.md).
+
 | File | Header | Body |
 |---|---|---|
-| `.res.N` | none | int64 timestamps |
+| `.res.N` | none | int64 timestamps (binary form; a text form also exists) |
 | `.spk.N` | none | int16 sample-major waveforms |
-| `.spkD.N` | none | int16, full nCG channels (stderiv in-place, no channel dropped) |
-| `.clu.N` | int32 (count) | int32 cluster IDs |
-| `.fet.N` | int32 (nCols) | int64 features, row-major |
-| `.fetD.N` | int32 (nCols) | int64 features, `(nChan-1)*nComp+1` cols (last linearly-dependent channel dropped before PCA in `process_pca_stderiv`) |
+| `.clu.N` | int32 (count) | int32 cluster IDs (binary form; a text form also exists) |
+| `.fet.N` | int32 (nCols) | int64 features, row-major (binary form; a text form also exists) |
 | `.col.N` | 32B + 32B params | template table + record table |
 
 ### 3.4 KiloKlustaKwik gotchas
 
-- `MergeThresh` must be calibrated to `chi²(nSpatialDims, 0.99)` — the
-  default `200` is catastrophically large for typical feature dimensionality.
+- `MergeThresh` must be calibrated to `chi²(nSpatialDims, 0.99)`; the
+  default `0` does this automatically at run time (`kDefaultMergeThresh`).
+  A large fixed value (the old default was `200`) is catastrophically large
+  for typical feature dimensionality.
 - `UseFeatures` default is `"all"`; the legacy fixed-length default string
   caused session duration to compute as 0, bypassing chunked CEM entirely.
 - `probabilities` must be initialized to `nullptr` in the constructor to
@@ -289,9 +294,10 @@ See `src/libneurosuite-core/docs/FILE_FORMATS.md` §3.6.
 - GPU shared memory: query `sharedMemPerBlock` at allocate time; fall back
   to global atomics kernel when shared buffer would overflow.  RTX 5070 Ti
   has 128 KB shared memory per block; pre-Blackwell limit is 48 KB.
-- `pickInputPath(out, outSize, base, ext, elec)` is the canonical helper
-  for `.fet`/`.fetD` (and other dual-extension) lookups.  Tries
-  `<base>.<ext>.<elec>` first, falls back to `<base>.<ext>D.<elec>`.
+- `pickInputPath(out, outSize, base, ext, elec)` is the canonical input
+  lookup.  It calls `custody::resolve` with the `Method` parameter
+  (`<base>.<ext>.<Method>.<elec>`, with custody's shared/untagged
+  fallbacks); there is no D-suffix fallback.
 
 ### 3.5 NTFS / fuseblk caveat
 
@@ -519,7 +525,7 @@ sources does, and must be build-tested per backend.
 ### 7.1 Analyzer scripts
 
 - `scripts/audit/find_dead_and_dupes.py` — AST-based dead-code and
-  clone analyzer.  Tree-sitter-cpp, ~600 LOC.  Set `ROOT` to the
+  clone analyzer.  Tree-sitter-cpp, ~280 lines.  Set `ROOT` to the
   scope you want.  Outputs to stdout.  Caveats are documented in
   the report header (Qt SLOT/SIGNAL invisibility, template
   instantiation gaps, etc.).
