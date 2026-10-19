@@ -84,7 +84,7 @@ carries on.
 |---|---|---|
 | Linux (Ubuntu / Debian) | CPU / OpenMP | [install/linux-cpu.md](install/linux-cpu.md) |
 | Linux (Ubuntu / Debian) | NVIDIA CUDA | [install/linux-cuda.md](install/linux-cuda.md) |
-| Windows | CPU (native) or full pipeline via WSL2 | [install/windows.md](install/windows.md) |
+| Windows | CPU (native programs); full pipeline via WSL2 | [install/windows.md](install/windows.md) |
 | macOS | CPU / OpenMP | [install/macos.md](install/macos.md) |
 
 GPU stack details (CUDA versions, MOK signing, ROCm, oneAPI) are shared with

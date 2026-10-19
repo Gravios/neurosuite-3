@@ -243,12 +243,15 @@ Two workflows run on `main` and on pull requests
   (see [`STANDARDIZATION.md`](dev/STANDARDIZATION.md)), while kiloklustakwik,
   ndmanager and neuroscope have not been shadow-audited, so promoting it to
   `-Werror=shadow` must wait for a green baseline there.
-  - **`windows`** builds the GUI programs (Klusters, NeuroScope, NDManager)
-    and their libraries with MSVC on `windows-2022`, against Qt 6.8 and
-    vcpkg's yaml-cpp. KiloKlustaKwik and ndmanager-plugins are skipped
-    (`-DNS_SKIP_KILOKLUSTAKWIK=ON -DNS_SKIP_NDMANAGER_PLUGINS=ON`); on Windows
-    they run under WSL2. It builds without tests and does not fail the run
-    until it has passed once.
+  - **`windows`** builds the GUI programs (Klusters, NeuroScope, NDManager),
+    their libraries and the ndmanager-plugins programs with MSVC on
+    `windows-2022`, against Qt 6.8 and vcpkg's yaml-cpp, GSL and libxml2.
+    HDF5 and FFmpeg are not installed, so `process_aomconvert` and
+    `process_extractleds` are skipped; libsamplerate is not installed, so
+    `process_resample` compiles its bundled copy. KiloKlustaKwik is skipped
+    (`-DNS_SKIP_KILOKLUSTAKWIK=ON`), and the `ndm_*` bash steps run under
+    WSL2 for now. It builds without tests and does not fail the run until it
+    has passed once.
 
 - **`docs.yml`** — builds the documentation site and deploys it to GitHub Pages.
   It runs `doc/site/gen.sh` (the same pandoc pipeline that produces NeuroScope's

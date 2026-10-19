@@ -4,7 +4,7 @@
 
 ndmanager-plugins has two components with different Windows compatibility:
 
-**C++ processing binaries** (`process_medianfilter`, `process_pca`, `process_extractspikes`, etc.) — fully portable, build natively with MSVC or MinGW.
+**C++ processing binaries** (`process_medianfilter`, `process_pca`, `process_extractspikes`, etc.) — build natively with MSVC (checked by the `windows` CI job) and with MinGW-w64. Large recordings are read through a Windows file mapping and 64-bit file offsets, and binary files are opened in binary mode, so the outputs match Linux byte for byte (checked with MinGW-w64 builds under Wine on a synthetic session).
 
 **Bash pipeline scripts** (`ndm_start`, `ndm_hipass`, `ndm_pca`, etc.) — require a Bash environment. On Windows, choose one of:
 
@@ -14,7 +14,7 @@ ndmanager-plugins has two components with different Windows compatibility:
 
 If you only need the processing binaries (to call them directly without the ndm_* wrapper scripts), native Windows builds work without any of the above.
 
-> **Note:** `process_extractspikes` uses `sys/sysinfo.h`, a Linux-only header for querying available RAM. This prevents a native Windows build of that specific binary. All other binaries build without issue. If you need `ndm_extractspikes`, use WSL2.
+Not built natively yet: the GPU backends of `process_extractemg` with SYCL (a Windows SYCL build takes its CPU path) and KiloKlustaKwik. `process_aomconvert` needs HDF5 and `process_extractleds` needs FFmpeg; without them they are skipped at configure time.
 
 ---
 
@@ -34,7 +34,7 @@ Then restart and follow the [Linux CPU guide](linux-cpu.md) inside the WSL termi
 
 ## Option B — Native Windows build (processing binaries only)
 
-Builds all binaries that do not require `sys/sysinfo.h`. This covers `process_medianfilter`, `process_pca`, `process_resample`, `process_mergefeatures`, and the video tools, but **not** `process_extractspikes`.
+Builds every processing binary. The simplest route is the whole monorepo from its root (see [BUILD.md](../../BUILD.md)): the plugins are built with the GUI programs, and `cmake --install` copies the vcpkg DLLs (GSL, libxml2, yaml-cpp) next to them. The steps below build the plugins on their own.
 
 ### Prerequisites
 
@@ -52,9 +52,10 @@ Builds all binaries that do not require `sys/sysinfo.h`. This covers `process_me
    C:\vcpkg\bootstrap-vcpkg.bat
    ```
 
-4. **libxml2** and **yaml-cpp**:
+4. **GSL**, **libxml2** and **yaml-cpp** (required), **libsamplerate** (optional; a bundled copy is compiled otherwise), **HDF5** (optional; `process_aomconvert`):
    ```powershell
-   vcpkg install libxml2:x64-windows yaml-cpp:x64-windows
+   vcpkg install gsl:x64-windows libxml2:x64-windows yaml-cpp:x64-windows
+   vcpkg install libsamplerate:x64-windows hdf5:x64-windows
    ```
 
 5. **python3** with PyYAML, NumPy and SciPy (the Python pipeline steps):
@@ -84,6 +85,8 @@ cmake --build build\ndmanager-plugins
 cmake --install build\ndmanager-plugins --prefix C:\neurosuite
 ```
 
+Built on their own, the plugins' install does not copy the vcpkg DLLs: put `C:\vcpkg\installed\x64-windows\bin` on `PATH`, or build from the monorepo root, whose install copies them.
+
 ### Build with CUDA
 
 ```bat
@@ -100,7 +103,7 @@ See [KiloKlustaKwik Windows CUDA](../../kiloklustakwik/install/windows-cuda.md) 
 
 ## Option C — MSYS2 (native Bash, full pipeline)
 
-MSYS2 provides a minimal Linux-like environment on Windows with Bash, GNU coreutils, and a package manager (`pacman`). The ndm_* scripts run natively, but `process_extractspikes` still cannot build due to `sys/sysinfo.h`.
+MSYS2 provides a minimal Linux-like environment on Windows with Bash, GNU coreutils, and a package manager (`pacman`). The ndm_* scripts run natively.
 
 ### Install MSYS2
 
@@ -113,6 +116,7 @@ pacman -S --needed \
   mingw-w64-ucrt-x86_64-ninja \
   mingw-w64-ucrt-x86_64-gcc \
   mingw-w64-ucrt-x86_64-libxml2 \
+  mingw-w64-ucrt-x86_64-gsl \
   mingw-w64-ucrt-x86_64-yaml-cpp \
   mingw-w64-ucrt-x86_64-python-yaml \
   python bc

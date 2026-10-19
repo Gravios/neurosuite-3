@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Windows: the ndmanager-plugins programs build natively, and CI checks it](#2026-10-19--windows-the-ndmanager-plugins-programs-build-natively-and-ci-checks-it) |
 | 2026-10-19 | [Windows: `cmake --install` gives a folder that runs](#2026-10-19--windows-cmake---install-gives-a-folder-that-runs) |
 | 2026-10-19 | [CI: GitHub actions moved to their Node.js 24 releases](#2026-10-19--ci-github-actions-moved-to-their-nodejs-24-releases) |
 | 2026-10-19 | [Windows: fixes from the first Windows configure](#2026-10-19--windows-fixes-from-the-first-windows-configure) |
@@ -79,6 +80,43 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Windows: the ndmanager-plugins programs build natively, and CI checks it
+
+<details>
+<summary>Details</summary>
+
+- The plugins' C++ programs used POSIX calls with no Windows equivalent and
+  were skipped in Windows builds. They now build with MSVC; the `ndm_*`
+  steps are bash scripts and still run under WSL2 (Git Bash is the next
+  step).
+- libneurosuite-core gains the portable pieces the programs share:
+  `MappedFile` (`mmap`, or the Windows file mapping), `fileSize64()`,
+  `fileops.hpp` (`replaceFile`, which replaces an existing file as
+  `rename` does on POSIX; `syncFile`; `processId`) and `strsep.hpp`.
+- In the programs: 64-bit file positions through `fileio64.hpp`; `MappedFile`
+  and stdio instead of `mmap` / `pread` / `stat`; binary-mode streams for raw
+  data (text mode on Windows rewrites `\n` and stops at 0x1A, so
+  `process_extractchannels` wrote an empty file); no glibc `strdupa`,
+  `M_PI` or `libm` on Windows; no OpenMP 3.1 `reduction(max)` and no
+  variable-length array, which MSVC rejects. Klusters' saves use
+  `replaceFile` too.
+- `process_resample` compiles its bundled libsamplerate with CMake on
+  Windows (or takes vcpkg's); `process_decomposecollisions` installs a copy
+  instead of a symbolic link there; `process_extractemg` takes its CPU path
+  in a Windows SYCL build; `cmake --install` also copies the plugins' vcpkg
+  DLLs (GSL, libxml2, yaml-cpp).
+- CI: the `windows` job builds the plugins (vcpkg GSL and libxml2 added;
+  HDF5 and FFmpeg left out, so `process_aomconvert` and
+  `process_extractleds` are skipped).
+- Checked on Linux (Ubuntu 24.04): full build and tests pass, and the
+  outputs of `process_butterworth`, `extractspikes`, `reextractspikes`,
+  `reextractspikes_stderiv`, `extractemg` and `alignspikes` on a synthetic
+  session are byte-identical before and after. MinGW-w64 builds of the same
+  programs, and of `process_resample`, run under Wine give the same bytes as
+  Linux. Not yet built with MSVC outside CI.
+
+</details>
 
 ## 2026-10-19 — Windows: `cmake --install` gives a folder that runs
 
