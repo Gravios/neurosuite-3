@@ -40,10 +40,15 @@ Discovery (as implemented in `pluginregistry.cpp`): the registry globs **`*.xml`
 only** — `.yaml` descriptors are not currently scanned — across these directories,
 and **a later directory wins on a name collision**:
 
-1. `$XDG_DATA_HOME/klusters/plugins/descriptions/`  (per-user)
-2. the install share `…/share/klusters/plugins/descriptions/` (generic data dirs,
-   then the `<bindir>/../share/...` fallback)
-3. a path in `$KLUSTERS_PLUGIN_PATH`
+1. `<AppDataLocation>/plugins/descriptions/` for each of Qt's
+   `QStandardPaths::AppDataLocation` directories (per-user first). Klusters sets
+   the organization name `sourceforge` and the application name `klusters`
+   (`main.cpp`), so on Linux the per-user directory is
+   `~/.local/share/sourceforge/klusters/plugins/descriptions/`.
+2. `<GenericDataLocation>/klusters/plugins/descriptions/` — the install share
+   (`…/share/klusters/plugins/descriptions/`) on most layouts — then the
+   `<bindir>/../share/klusters/plugins/descriptions/` fallback
+3. each path in `$KLUSTERS_PLUGIN_PATH` (separated by `:`, or `;` on Windows)
 
 Because later wins, the install share currently overrides a same-named user
 descriptor, and `$KLUSTERS_PLUGIN_PATH` overrides both — i.e. the opposite of the
@@ -115,6 +120,7 @@ shaped — the CLI and the descriptor are the same contract.
 | --- | --- |
 | `recluster-integrate` | feed the engine's `.clu` through the existing recluster integration (`integrateReclusteredClusters` / `reclusteringUpdate`) |
 | `hierarchy-reload` | reload the `.clu/.clc/.clp` triple (the detection + `buildHierarchyMaps` path), refreshing both palettes |
+| `decollide-apply` | apply the collision sidecar (`<base>.col.<method>.<group>[.<tag>]`) the engine wrote, through the same code as the lasso decollide |
 | `none` | just report exit status; offer to open any produced file |
 
 `hierarchy-reload` is the hook the re-fibering workflow needs: `fiber-refiber`
@@ -150,13 +156,15 @@ routes to `integrateReclusteredClusters` (recluster kind) or the triple-reload
 
 ## 5. Worked examples (shipped as starter descriptors)
 
-`plugins/descriptions/fiber-refiber.xml` — kind `refiber`, integration
-`hierarchy-reload`: turns the spike-recluster atoms into fibers.
+Four descriptors ship in `src/klusters/plugins/descriptions/` and are installed
+to `share/klusters/plugins/descriptions`:
 
-`plugins/descriptions/klustakwik.xml` — kind `recluster`, integration
-`recluster-integrate`, `<selection>clusters</selection>`: wraps the existing
-KlustaKwik backend as a first-class plugin so the built-in recluster and a
-user's alternative backend are registered the same way.
+| Descriptor | kind | integration | What it runs |
+| --- | --- | --- | --- |
+| `fiber-refiber.xml` | `refiber` | `hierarchy-reload` | groups the `.clc` atom layer into fibers and rewrites the triple |
+| `fiber-template.xml` | `analysis` | `none` | writes the marked units' linked template series (`.wtf`), one per method and stage |
+| `klustakwik.xml` | `recluster` | `recluster-integrate` (`<selection>clusters</selection>`) | reclusters the selected clusters with KlustaKwik |
+| `process_decomposecollisions.xml` | `recluster` | `decollide-apply` | full-group collision decomposition, the batch counterpart of the lasso decollide |
 
 ---
 
