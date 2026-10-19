@@ -12,15 +12,16 @@
 	<refsynopsisdiv>
 		<cmdsynopsis>
 		<command>process_extractleds</command>
-		<arg>
-			<option>-t</option> <replaceable>threshold</replaceable>
-		</arg>
-		<arg>
-			<option>-n</option>
-		</arg>
-		<arg>
-			<option>options</option>
-		</arg>
+		<arg><option>-t</option> <replaceable>threshold</replaceable></arg>
+		<arg><option>-minsize</option> <replaceable>n</replaceable></arg>
+		<arg><option>-maxsize</option> <replaceable>n</replaceable></arg>
+		<arg><option>-colors</option> <replaceable>N</replaceable></arg>
+		<arg><option>-color</option></arg>
+		<arg><option>-smooth</option> <replaceable>alpha</replaceable></arg>
+		<arg><option>-n</option></arg>
+		<arg><option>-i</option></arg>
+		<arg><option>-i2</option></arg>
+		<arg><option>-hide</option></arg>
 		<arg choice="plain">
 			<replaceable>file</replaceable>
 		</arg>
@@ -30,18 +31,61 @@
 	<refsect1>
 		<title>Description</title>
 		<para>
-			<command>process_extractleds</command> extracts LEDs (= bright spots) from a video file. For each video frame, all bright spots are detected and listed in a .spots file, one line per spot, listing on successive columns the frame number, number of pixels in the spot, x and y coordinates of the spot center, x and y sizes of the spot (defined as standard deviations of the distributions of x and y coordinates of all the pixels in the spot), and spot color (as a YCrCb triplet).
+			<command>process_extractleds</command> extracts LEDs (= bright spots) from a video file in any container or codec FFmpeg can decode. For each video frame, all bright spots are detected and listed in a .spots file (the video file name with its extension replaced by <filename>.spots</filename>, written in the current directory), one line per spot, listing on successive columns the frame number, number of pixels in the spot, x and y coordinates of the spot center, x and y sizes of the spot (defined as standard deviations of the distributions of x and y coordinates of all the pixels in the spot), and spot color (as a YCrCb triplet). With <option>-color</option> or <option>-colors</option>, two columns are appended: hue and color label.
 		</para>
 	</refsect1>
 
 	<refsect1>
 		<title>Options</title>
+		<para>
+			Options are spelled exactly as listed; any other option prints the usage and exits with status 1.
+		</para>
 		<variablelist>
 			<varlistentry>
 				<term><option>-t</option> <replaceable>threshold</replaceable></term>
 				<listitem>
 					<para>
-						bright spots consist of pixels brighter than this threshold (default = 90)
+						fixed luminance threshold, 0-255: bright spots consist of pixels brighter than this. By default the threshold is chosen automatically for each frame with Otsu's method.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-minsize</option> <replaceable>n</replaceable></term>
+				<listitem>
+					<para>
+						minimum spot area in pixels (default 1)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-maxsize</option> <replaceable>n</replaceable></term>
+				<listitem>
+					<para>
+						maximum spot area in pixels (default unlimited)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-colors</option> <replaceable>N</replaceable></term>
+				<listitem>
+					<para>
+						number of distinct LED colors to tell apart by hue (default 0, at most 16; e.g. 2 for a red and a green LED); implies <option>-color</option>
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-color</option></term>
+				<listitem>
+					<para>
+						append the hue and color-label columns to each line
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-smooth</option> <replaceable>alpha</replaceable></term>
+				<listitem>
+					<para>
+						exponential smoothing of spot positions across frames, 0 &lt;= alpha &lt; 1 (default 0 = off; 0.5 moderate, 0.9 heavy)
 					</para>
 				</listitem>
 			</varlistentry>
@@ -54,10 +98,26 @@
 				</listitem>
 			</varlistentry>
 			<varlistentry>
-				<term><option>options</option></term>
+				<term><option>-i</option></term>
 				<listitem>
 					<para>
-						ffplay options (type 'process_extractleds -h' for details)
+						print the video rate and duration from the file header, then exit
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-i2</option></term>
+				<listitem>
+					<para>
+						print the video rate and duration by counting frames, then exit
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-hide</option></term>
+				<listitem>
+					<para>
+						accepted and ignored (backward compatibility)
 					</para>
 				</listitem>
 			</varlistentry>
@@ -74,9 +134,6 @@
 
 	<refsect1>
 		<title>Author</title>
-		<para>
-			<command>process_extractleds</command> is based on ffplay by Fabrice Bellard from the ffmpeg project.
-		</para>
 		<para>
 			<author>
 				<firstname>Michael</firstname>
