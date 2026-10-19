@@ -8,4 +8,4 @@ To get GPU-accelerated realignment, build klusters and/or kiloklustakwik with th
 appropriate GPU backend enabled. Follow the corresponding platform guide:
 
 - **klusters:** [../../klusters/install/windows.md](../../klusters/install/windows.md)
-- **KiloKlustaKwik:** [../../kiloklustakwik/install/windows-cuda.md](../../kiloklustakwik/install/windows-cuda.md)
+- **KiloKlustaKwik:** not part of the Windows build; run it under WSL2 — see [Installing neurosuite-3 → KiloKlustaKwik and the full pipeline: WSL2](../../INSTALL.md#kiloklustakwik-and-the-full-pipeline-wsl2)

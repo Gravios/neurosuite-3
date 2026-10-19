@@ -1,10 +1,24 @@
 # spikerealign — Spike Waveform Realignment
 
-SpikeRealign is the waveform realignment engine used by the klusters interactive GUI. It aligns spike waveforms to the cluster mean template via normalized circular cross-correlation, correcting for jitter in threshold-crossing detection.
+Spike realignment aligns each spike's waveform to its cluster's mean template
+by normalized circular cross-correlation, correcting jitter in
+threshold-crossing detection. It is used interactively in Klusters and by
+KiloKlustaKwik as Phase 1.5 of chunked CEM sorting.
 
-Realignment is available interactively from within klusters (cluster-by-cluster from the GUI via **Realign → Realign selected cluster**) and is also invoked automatically by KiloKlustaKwik as Phase 1.5 of chunked CEM sorting.
+In Klusters it is **Actions → Realign Spikes…** (`Shift+L`), which realigns
+the first selected cluster of the active display, and **Actions →
+PCA-Center Align All Clusters** (`Shift+P`), which runs over every cluster
+except 0 and 1.
 
-SpikeRealign is **not** a standalone binary. It is a C++ class (`SpikeRealign`) called by `RealignWorker` inside the klusters process.
+There is no standalone binary and no single realignment class. The pieces are:
+
+- the cross-correlation kernel `realign_xcorr` with its backend dispatcher
+  (namespace `XcorrDispatch`, `realign_xcorr_dispatch.cpp`) in
+  `src/libklustersshared/src/xcorr/`;
+- the Klusters document side, `KlustersDoc` in
+  `src/klusters/src/klustersdoc_realign.cpp`;
+- `RealignWorker` (`src/klusters/src/realignworker.*`), which runs it on a
+  background thread.
 
 ---
 
@@ -12,15 +26,15 @@ SpikeRealign is **not** a standalone binary. It is a C++ class (`SpikeRealign`) 
 
 The realignment runs once per cluster:
 
-1. Read all waveforms for the selected cluster from the binary `.spk` file.
+1. Read all waveforms for the cluster from the `.spk` file.
 2. Compute the cluster mean template (per sample, per channel). Pre-shift the template so its amplitude peak (summed across all channels) lands at the expected peak position. Without this step the template is misaligned and the cross-correlation would shift every spike *away* from the true peak.
-3. Pack all waveforms and the template into channel-major buffers and compute the optimal shift for every spike simultaneously using normalized circular cross-correlation summed across **all channels** via `XcorrDispatch` (routes to CUDA → HIP → SYCL → OpenMP depending on runtime availability).
-4. For each spike where the optimal shift is non-zero:
-   - (a) Advance the timestamp by the shift and update the `.res` file.
-   - (b) Re-extract the shifted waveform from the `.fil` (or `.dat`) file at the new timestamp.
-   - (c) Write the new waveform back to the `.spk` file at the same slot.
-   - (d) Re-project the new waveform through the saved PCA eigenvectors (`.pca.<method>.N`, matching the session method) and update the `.fet.<method>.N` rows.
-   - (e) The shift is limited so the spike never passes its neighbour in `.res` (it stops just short); rows are never reordered, so every method's files stay aligned.
+3. Pack all waveforms and the template into channel-major buffers and compute the optimal shift for every spike simultaneously using normalized circular cross-correlation summed across **all channels** via `XcorrDispatch` (CUDA → HIP → SYCL → OpenMP, depending on what was built and is available; SYCL is used only when `KLUSTERS_USE_SYCL=1` is set).
+4. For each spike whose score passes the threshold and whose optimal shift is non-zero:
+   - (a) Move the timestamp by the full shift and update the `.res`.
+   - (b) Re-extract the shifted waveform from the `.fil` (or `.dat`) at the new timestamp.
+   - (c) Write the new waveform to the `.spk` in the same row.
+   - (d) Re-project it through the PCA basis of the session method (`.pca.<method>.N`) and update the `.fet.<method>.N` row.
+   - (e) Rows are never reordered, so every method's files and the `.clu` stay aligned. A spike's new time may pass a neighbouring spike's; **Actions → Sort Spikes by Time** puts the rows back in time order.
 
 Sign convention (consistent with `realign_xcorr.h`): a positive shift `τ` means the spike peak is *late* by `τ` samples relative to the template. Correcting by `newTimestamp = oldTimestamp + τ` moves the spike earlier in the waveform window so its peak aligns with the template.
 
@@ -30,26 +44,31 @@ Sign convention (consistent with `realign_xcorr.h`): a positive shift `τ` means
 
 | File | Access | Description |
 |---|---|---|
-| `base.xml` / `base.yaml` | read | Session parameters (nChannels, nSamples, peakSampleIndex) |
-| `base.spk.N` | read/write | Raw waveforms — shifted in place |
-| `base.res.N` | read/write | Timestamps — updated after shifting |
-| `base.clu.N` | read | Cluster IDs — never reordered (shifts stop short of a neighbouring spike) |
-| `base.fet.N` | read/write | Features — reprojected via PCA if `.spk.N.evec` is available |
-| `base.spk.N.evec` | read | PCA eigenvectors written by `process_pca` |
+| `base.yaml` | read | Session parameters (channels, waveform length, peak sample) |
+| `base.spk.<method>.N` | read/write | Waveforms — re-extracted spikes replace their rows |
+| `base.res.N` | read/write | Timestamps |
+| `base.clu.<method>.N` | read | Cluster IDs — never reordered |
+| `base.fet.<method>.N` | read/write | Features — re-projected rows |
+| `base.pca.<method>.N` | read | PCA basis used for the re-projection |
+| `base.fil` / `base.dat` | read | Signal the waveforms are re-extracted from |
+
+All writes go to working copies (`<file>.pending`) and reach the session
+files only on **Save**. File naming: [variant naming](../ndmanager-plugins/formats/naming.md).
 
 ---
 
 ## Integration with klusters
 
-After realignment completes, klusters shows a `RealignReviewDialog` with:
+A realignment is kept as soon as it finishes; there is no review dialog. The
+views switch to the Overview Display with the realigned cluster selected, and
+the change is written by the next Save.
+To discard it, use **Undo** (`Ctrl+Z`) or close without saving.
 
-- Before/after mean waveform plots for the realigned cluster.
-- Counts of spikes shifted and of spikes held back at a neighbouring spike.
-- Accept or Reject buttons (keyboard: Left/Right arrows to navigate, Enter to confirm).
-
-Rejecting the review restores the previous cluster state from an in-memory backup without touching disk.
-
-The maximum shift search radius and minimum score threshold are configurable in **Settings → Preferences → General → Realignment**.
+The settings are in **Settings → Preferences → Refinement → Realignment
+(built-in xcorr)**: threshold (minimum score), iterations, maximum shift
+(0 = automatic) and an optional post-alignment pass. See
+[Spike realignment](../klusters/README.md#spike-realignment) in the Klusters
+manual.
 
 ---
 
@@ -61,4 +80,5 @@ KiloKlustaKwik's chunked CEM mode also performs waveform realignment (Phase 1.5)
 
 ## Installation
 
-SpikeRealign is compiled as part of the klusters build. See the klusters installation guide in `doc/klusters/`.
+The realignment code is compiled into Klusters and KiloKlustaKwik; there is
+nothing separate to install. See [Installing neurosuite-3](../INSTALL.md).

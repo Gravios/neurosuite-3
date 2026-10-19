@@ -9,3 +9,6 @@ appropriate GPU backend enabled. Follow the corresponding platform guide:
 
 - **klusters:** [../../klusters/install/linux.md](../../klusters/install/linux.md)
 - **KiloKlustaKwik:** [../../kiloklustakwik/install/linux-sycl.md](../../kiloklustakwik/install/linux-sycl.md)
+
+The realignment kernel uses the SYCL backend only when the environment
+variable `KLUSTERS_USE_SYCL=1` is set; otherwise it runs on the CPU.
