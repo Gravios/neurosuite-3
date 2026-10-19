@@ -5,7 +5,7 @@ Spike sorting and electrophysiology visualization — a modern **Qt 6 / C++20** 
 [![CI](https://github.com/Gravios/neurosuite-3/actions/workflows/ci.yml/badge.svg)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci.yml)
 [![Docs](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml/badge.svg)](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml)
 
-neurosuite-3 takes you from a raw recording to sorted single units: convert and filter the signal, detect and automatically sort spikes, curate the result by hand, and inspect everything against the LFP, events, and the animal's position. It builds on Linux (Ubuntu 24.04 / Debian 12; WSL2 works), with macOS and Windows supported, and optional GPU acceleration (CUDA / ROCm / SYCL) over a CPU fallback that is always available.
+neurosuite-3 takes you from a raw recording to sorted single units: convert and filter the signal, detect and automatically sort spikes, curate the result by hand, and inspect everything against the LFP, events, and the animal's position. It builds on Linux (Ubuntu 24.04 / Debian 12; WSL2 works) and natively on Windows 10/11 (everything except KiloKlustaKwik, which runs under WSL2); macOS configures and builds but is not checked in CI — see [INSTALL.md](doc/INSTALL.md). Optional GPU acceleration (CUDA / ROCm / SYCL) sits over a CPU fallback that is always available.
 
 ## Start here
 
@@ -51,7 +51,7 @@ That is the Linux route (macOS: the same commands with Homebrew). On **Windows**
 
 Shared foundations: **libklustersshared** (Qt widgets, the shared `input::` key/mouse engine, YAML parameter I/O) and **[libneurosuite-core](src/libneurosuite-core/docs/FILE_FORMATS.md)** (the Qt-free `neurofileio` reader/writer for every on-disk format). Spike-waveform realignment (`spikerealign`) is built into klusters and KiloKlustaKwik.
 
-All tools share one session **`.yaml`** parameter file (legacy `.xml` is still read; convert with `ndm_xml2yaml`). A starting point is [`templates/template.yaml`](templates/template.yaml).
+All tools share one session **`.yaml`** parameter file. The GUIs read YAML only (ndmanager refuses a legacy `.xml` and tells you to convert it; Klusters also opens the old `.par` files); only the `ndm_*` scripts still fall back to reading a legacy `.xml`. Convert legacy `.xml` files with `ndm_xml2yaml`. A starting point is [`templates/template.yaml`](templates/template.yaml).
 
 ---
 

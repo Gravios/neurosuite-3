@@ -29,7 +29,7 @@ Architecture and change history live in
 ## The conventions agents break most (full set in STANDARDIZATION.md §2, §6)
 
 - **Members are bare — no `m_` prefix, no Hungarian.** klusters uses zero `m_` on
-  members across ~30K LOC. When a member name collides with a constructor
+  members. When a member name collides with a constructor
   parameter, **rename the parameter** (`lbl`, `stp`, `tot`) to avoid `-Wshadow` —
   never add `m_`. Any PR that (re)introduces `m_` is a regression. Booleans are
   predicate-style (`isChanged`, `valid`, `enabled`).

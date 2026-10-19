@@ -84,10 +84,13 @@ takes seconds and needs no build. CI runs it as the `lint` job.
 `test_*.sh`) are registered one by one as `ndm_test_<name>`. Each one exits
 non-zero on failure and prints `SKIPPED` when something it needs is missing;
 ctest then reports it as skipped, not passed. Under ctest, the tests that
-cross-check a C++ binary (`subset_pca`, `plx2dat`, `adapt_format`) are given
-this build's binary. Run one standalone with `python3` or `bash`; set the
-binary's variable (`PROCESS_PCA_BIN`, `PROCESS_PLXCONVERT_BIN`,
-`PROCESS_REASSIGNSPIKES_BIN`) to include its cross-check.
+cross-check a C++ binary (`subset_pca`, `plx2dat`, `adapt_format`,
+`extract_alignment`) are given this build's binaries. Run one standalone with
+`python3` or `bash`; set the binary's variable (`PROCESS_PCA_BIN`,
+`PROCESS_PLXCONVERT_BIN`, `PROCESS_REASSIGNSPIKES_BIN`, and for
+`extract_alignment` `PROCESS_EXTRACTSPIKES_BIN`,
+`PROCESS_EXTRACTSPIKES_SDIFF_BIN`, `PROCESS_EXTRACTSPIKES_STDERIV_BIN`) to
+include its cross-check.
 
 **Shared contract with fiber-kit.** The vector tables in
 `src/libneurosuite-core/test/*.tsv` must be byte-identical to fiber-kit's
