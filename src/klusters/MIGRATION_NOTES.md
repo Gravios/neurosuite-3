@@ -1,5 +1,14 @@
 # Klusters Qt6 / C++17 Migration Notes
 
+> **Status (2026-10): historical.** These notes record the February 2026
+> Qt4/Qt5 → Qt6 migration and later patches. Since then: the code is built as
+> C++20 from the top-level `CMakeLists.txt` together with the rest of
+> neurosuite-3 (see [doc/INSTALL.md](../../doc/INSTALL.md) and
+> [doc/BUILD.md](../../doc/BUILD.md)), so the *Build Instructions* below and the
+> separate libklustersshared install no longer apply; no `SIGNAL()`/`SLOT()`
+> macros and no `Q_PRIVATE_SLOT` remain, so items 1 and 2 of *Remaining Work*
+> are done.
+
 ## Summary
 
 Migrated klusters-2.0.0 from Qt4/Qt5 to Qt6 with modern C++17 practices.
