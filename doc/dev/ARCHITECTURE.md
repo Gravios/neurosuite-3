@@ -1,8 +1,11 @@
 # NeuroSuite — Architecture & Restructuring Plan
 
-Status: working draft — updated to reflect work through patch 0027
+Status (2026-10): working draft. §0 records the patch series through 0027;
+§1 and the stage checklists in §3 are updated to the current tree
+(libneurosuite-core exists and owns `neurofileio`; Stage 1's format half is
+done).
 Scope: `neurosuite-3` (neuroscope, klusters, kiloklustakwik, ndmanager,
-ndmanager-plugins, libklustersshared, nphys-data)
+ndmanager-plugins, libklustersshared, libneurosuite-core, nphys-data)
 
 This document describes the current structure, the problems that hurt
 maintainability, a target layered architecture, and a staged migration that
@@ -42,7 +45,10 @@ Mapped onto the staged plan in §3:
   now `KK_chunked.cpp`, 5,070), so the remaining Stage-4 work is the
   duplicated `RunChunkedCEM` drivers
   ([runchunkedcem-drivers.md](../design/runchunkedcem-drivers.md)).
-- **Stages 1, 2, 3, and the GUI de-fork (Stage 5): NOT started.** Six YAML
+- **Stage 1: format half done** — `neurofileio` lives in the Qt-free
+  `Neurosuite::core` (libneurosuite-core), not in libklustersshared. The
+  parameter/session half is not started.
+- **Stages 2, 3, and the GUI de-fork (Stage 5): NOT started.** Six YAML
   readers still exist; `${_xcorr_dir}` shared-source compilation is still in
   use; libklustersshared is still a mixed-layer library; the neuroscope/klusters
   TraceView fork is untouched.
@@ -59,8 +65,8 @@ the engine duplication) is in place. The risky structural layers
 
 ## 1. Current structure
 
-Seven peers under `src/` (was eight; the second clustering engine has been
-removed):
+Eight peers under `src/` (the second clustering engine has been removed;
+libneurosuite-core was added):
 
 ```
 src/
@@ -70,7 +76,10 @@ src/
                       renamed; old canonical klustakwik removed)
   ndmanager/          parameter-file manager
   ndmanager-plugins/  processing plugins (pca, nlxconvert, drifttracker, …)
-  libklustersshared/  shared library (Qt widgets + types + I/O + compute)
+  libklustersshared/  shared Qt library (widgets + types + the input:: engine + xcorr)
+  libneurosuite-core/ Qt-free core (Neurosuite::core: neurofileio, custody
+                      naming, PCA, spike extraction, templates;
+                      Neurosuite::spectral)
   nphys-data/         data/resources
 ```
 
@@ -213,9 +222,10 @@ are clean — those layers are the substrate the de-forked code sits on.
 - [x] neuroscope session-parse robustness fix (0015).
 - [ ] Re-confirm the full read path on `nphy-069` after the 0023 restructure.
 
-### Stage 1 — neuro-io as a layer (low risk) — NOT STARTED
-- [ ] Promote `neurofileio` + the parameter/session model into a `neuro-io`
-      target (initially still inside libklustersshared, then split out).
+### Stage 1 — neuro-io as a layer (low risk) — PARTIALLY DONE
+- [x] `neurofileio` is in its own Qt-free target, `Neurosuite::core`
+      (libneurosuite-core), linked by libklustersshared and the plugins.
+- [ ] Move the parameter/session model there too.
 - [ ] Introduce one parameter model + reader/writer; retire the six per-app
       YAML readers one at a time, each behind a thin adapter. Build between each.
 
