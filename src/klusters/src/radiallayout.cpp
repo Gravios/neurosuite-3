@@ -121,6 +121,7 @@ RadialLayout defaults()
         }),
         N::value(QStringLiteral("dimX")),
         N::value(QStringLiteral("dimY")),
+        N::value(QStringLiteral("nFeat")),
     };
 }
 

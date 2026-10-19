@@ -6,8 +6,9 @@
  *   - groups: a named wedge that opens its children as the next ring out;
  *   - actions: one of Klusters' menu actions, by a stable id, optionally with
  *     a short wedge label of its own (the menu bar keeps the full text);
- *   - value wedges: "dimX" / "dimY", the feature axes stepped by the mouse
- *     wheel (optional label = the prefix shown before the number).
+ *   - value wedges stepped by the mouse wheel: "dimX" / "dimY", the feature
+ *     axes, and "nFeat", the number of features auto-selected for
+ *     reclustering (optional label = the prefix shown before the number).
  *
  * Root order is ring order, clockwise from 12 o'clock.  The layout is stored
  * in the Klusters settings as JSON (Configuration::radialMenuLayout; empty =
@@ -35,7 +36,7 @@
 struct RadialLayoutNode {
     enum class Kind { Group, Action, Value };
     Kind kind = Kind::Action;
-    QString id;                         ///< Action: catalogue id; Value: "dimX" / "dimY"
+    QString id;                         ///< Action: catalogue id; Value: "dimX" / "dimY" / "nFeat"
     QString label;                      ///< Group: its name; else an optional short label
     QList<RadialLayoutNode> children;   ///< Group only
 
@@ -57,7 +58,7 @@ namespace radiallayout {
 
 constexpr int kMaxRings = 4;    ///< RadialMenu shows at most this many rings
 
-/** The shipped wheel: Tools, Clusters, Recluster, Undo, Redo, Hierarchy, Sort, X, Y. */
+/** The shipped wheel: Tools, Clusters, Recluster, Undo, Redo, Hierarchy, Sort, X, Y, N. */
 RadialLayout defaults();
 
 /** JSON text for the settings file ({"version":1,"items":[...]}). */

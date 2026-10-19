@@ -39,15 +39,19 @@ void KlustersApp::buildRadialMenuTree()
     // owned by the container.
     mRadialMenuTree = new QMenu(this);
 
-    // The feature-space axes as value wedges: hover one and turn the wheel.  These
-    // two actions exist only here (the toolbar spinboxes are the menu-bar-side
-    // control); triggering them does nothing, and RadialMenu never picks them.
+    // The feature-space axes and the N feat count as value wedges: hover one and
+    // turn the wheel.  These actions exist only here (the toolbar spinboxes are
+    // the menu-bar-side control); triggering them does nothing, and RadialMenu
+    // never picks them.
     mRadialDimX = new QAction(tr("X axis feature dimension"), mRadialMenuTree);
     mRadialDimY = new QAction(tr("Y axis feature dimension"), mRadialMenuTree);
+    mRadialNFeat = new QAction(tr("Features auto-selected for reclustering"), mRadialMenuTree);
     mRadialMenu->setAdjustable(mRadialDimX);
     mRadialMenu->setAdjustable(mRadialDimY);
+    mRadialMenu->setAdjustable(mRadialNFeat);
     mRadialDimXPrefix = tr("X");
     mRadialDimYPrefix = tr("Y");
+    mRadialNFeatPrefix = tr("N");
 
     const QHash<QString, QAction*> byId = actionsById();
     std::function<void(QMenu*, const RadialLayout&)> fill =
@@ -72,6 +76,9 @@ void KlustersApp::buildRadialMenuTree()
                 } else if (n.id == QLatin1String("dimY")) {
                     m->addAction(mRadialDimY);
                     if (!n.label.isEmpty()) mRadialDimYPrefix = n.label;
+                } else if (n.id == QLatin1String("nFeat")) {
+                    m->addAction(mRadialNFeat);
+                    if (!n.label.isEmpty()) mRadialNFeatPrefix = n.label;
                 }
                 break;
             }
@@ -85,9 +92,10 @@ void KlustersApp::rebuildRadialMenu()
     // The layout changed (Preferences ▸ Radial menu): drop the wheel; the next
     // right-click builds it again from the stored layout.
     delete mRadialMenu;   mRadialMenu = nullptr;
-    delete mRadialMenuTree; mRadialMenuTree = nullptr;   // owns the groups and X / Y
+    delete mRadialMenuTree; mRadialMenuTree = nullptr;   // owns the groups and X / Y / N
     mRadialDimX = nullptr;
     mRadialDimY = nullptr;
+    mRadialNFeat = nullptr;
 }
 
 void KlustersApp::refreshRadialDimensions()
@@ -100,6 +108,14 @@ void KlustersApp::refreshRadialDimensions()
     mRadialDimY->setEnabled(live);
     mRadialMenu->setLabel(mRadialDimX, tr("%1: %2").arg(mRadialDimXPrefix).arg(dimensionX->value()));
     mRadialMenu->setLabel(mRadialDimY, tr("%1: %2").arg(mRadialDimYPrefix).arg(dimensionY->value()));
+
+    // N feat: live where the toolbar shows its spinbox (auto-select features on,
+    // a document open); it counts for the next recluster, whatever the view.
+    if (mRadialNFeat && autoNFeaturesSpinBox) {
+        mRadialNFeat->setEnabled(autoNFeaturesSpinBoxAction && autoNFeaturesSpinBoxAction->isVisible());
+        mRadialMenu->setLabel(mRadialNFeat,
+                              tr("%1: %2").arg(mRadialNFeatPrefix).arg(autoNFeaturesSpinBox->value()));
+    }
 }
 
 void KlustersApp::showRadialStatus(QAction* a)
@@ -113,6 +129,14 @@ void KlustersApp::showRadialStatus(QAction* a)
                   .arg(a == mRadialDimX ? tr("X axis") : tr("Y axis"))
                   .arg(spin->value()).arg(spin->maximum())
             : tr("Feature dimensions — no cluster view in this display"));
+        return;
+    }
+    if (a == mRadialNFeat) {
+        statusBar()->showMessage(a->isEnabled()
+            ? tr("Features auto-selected for reclustering: %1 of at most %2 — scroll to change")
+                  .arg(autoNFeaturesSpinBox->value()).arg(autoNFeaturesSpinBox->maximum())
+            : tr("Features auto-selected for reclustering — turn on Auto-select features "
+                 "in Preferences ▸ Reclustering"));
         return;
     }
     QString msg = a->text().remove(QLatin1Char('&'));
@@ -129,12 +153,14 @@ void KlustersApp::showRadialMenu(const QPoint& globalPos)
         buildRadialMenuTree();               // also sets the wedges' short labels
         mRadialMenu->setMenu(mRadialMenuTree);
         connect(mRadialMenu, &RadialMenu::hovered, this, &KlustersApp::showRadialStatus);
-        // Wheel over X / Y: step the toolbar spinbox (it wraps, like the spinbox's own
-        // wheel); its valueChanged runs the usual slotUpdateDimensionX/Y, so the
-        // active cluster view redraws behind the menu.
+        // Wheel over X / Y / N: step the toolbar spinbox, as its own wheel does (X
+        // and Y wrap, N stops at 1 and 25); its valueChanged runs the usual
+        // slotUpdateDimensionX/Y (the active cluster view redraws behind the menu)
+        // or slotUpdateAutoNFeatures (the setting is saved).
         connect(mRadialMenu, &RadialMenu::adjusted, this, [this](QAction* a, int steps) {
             SpinBox* spin = (a == mRadialDimX) ? dimensionX
-                          : (a == mRadialDimY) ? dimensionY : nullptr;
+                          : (a == mRadialDimY) ? dimensionY
+                          : (a == mRadialNFeat) ? autoNFeaturesSpinBox : nullptr;
             if (!spin) return;
             spin->stepBy(steps);
             refreshRadialDimensions();

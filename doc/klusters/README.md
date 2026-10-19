@@ -186,8 +186,8 @@ The window is divided into:
 matrices) opens a ring menu centred on the cursor. Two right-clicks keep their
 own meaning: while a lasso is being drawn, Right still removes the last point,
 and with the lineage overlay engaged it opens the overlay's menu. By default the root ring holds Tools,
-Clusters, Recluster, Undo, Redo, Hierarchy, Sort and the two feature axes
-**X: n** and **Y: n**; hovering a group opens its actions as the next ring out. Sort holds the Actions ▸ Sort Clusters entries
+Clusters, Recluster, Undo, Redo, Hierarchy, Sort, the two feature axes
+**X: n** and **Y: n**, and **N: n**; hovering a group opens its actions as the next ring out. Sort holds the Actions ▸ Sort Clusters entries
 under short labels (Count, Time, SNR, Spectral, …); the status bar shows each
 one's full name.
 
@@ -196,6 +196,10 @@ feature dimensions: hover one and turn the mouse wheel to step that axis through
 the features, wrapping at the ends. The scatter redraws behind the menu as you
 scroll, the toolbar's Features (x,y) boxes follow, and clicking these wedges
 never closes the menu. They are greyed in a display without a cluster view.
+The **N** wedge does the same for the toolbar's **N feat** box, the number of
+features auto-selected for reclustering (1 to 25, stopping at the ends); it is
+live while **Auto-select features** is on (Preferences ▸ Reclustering), in any
+view, and greyed otherwise.
 Each wedge is the menu-bar action itself, so a greyed wedge is an action that is
 unavailable right now, a dot marks a checked tool, and the status bar shows the
 full name and shortcut of the wedge under the cursor.
@@ -210,7 +214,7 @@ a tree: top-level rows are the root ring, clockwise from 12 o'clock, and a
 group's rows are the ring it opens.
 
 - **Add:** pick actions in *Available actions* (every menu-bar action, by menu,
-  plus the two feature axes; the filter box searches names) and click *Add to
+  plus the X, Y and N feat value wedges; the filter box searches names) and click *Add to
   Wheel* or double-click. They go into the selected group, or after the
   selected row.
 - **Organise:** drag rows to reorder them or to move them into another group
@@ -218,7 +222,7 @@ group's rows are the ring it opens.
   adds a group; *Remove* deletes the selected rows (a group with its rows).
 - **Rename:** double-click a group to rename it; double-click an action's
   *Wedge label* to give it a short name on the wheel (empty: the action's own
-  text). For the X / Y wedges the label is the prefix before the number.
+  text). For the X / Y / N wedges the label is the prefix before the number.
 - **Preview:** below the tree, the wheel as it will look (root ring and one ring
   out). Selecting a row opens its group's ring; hovering works as in the real
   menu, without triggering anything.

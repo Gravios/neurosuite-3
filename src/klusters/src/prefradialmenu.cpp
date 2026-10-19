@@ -37,11 +37,14 @@ QString valueName(const QString& id)
 {
     if (id == QLatin1String("dimX")) return PrefRadialMenu::tr("X axis feature dimension (mouse wheel)");
     if (id == QLatin1String("dimY")) return PrefRadialMenu::tr("Y axis feature dimension (mouse wheel)");
+    if (id == QLatin1String("nFeat")) return PrefRadialMenu::tr("Features auto-selected for reclustering, N feat (mouse wheel)");
     return id;
 }
 QString valuePrefix(const QString& id)
 {
-    return id == QLatin1String("dimY") ? QStringLiteral("Y") : QStringLiteral("X");
+    if (id == QLatin1String("dimY")) return QStringLiteral("Y");
+    if (id == QLatin1String("nFeat")) return QStringLiteral("N");
+    return QStringLiteral("X");
 }
 
 // An action's icon, or a transparent one of the same size, so rows without an
@@ -214,8 +217,8 @@ void PrefRadialMenu::fillCatalog()
         it->setData(0, KindRole, kKindAction);
         it->setData(0, IdRole, e.id);
     }
-    QTreeWidgetItem* axes = folderFor({ tr("Feature axes") });
-    for (const char* id : { "dimX", "dimY" }) {
+    QTreeWidgetItem* axes = folderFor({ tr("Features (mouse wheel)") });
+    for (const char* id : { "dimX", "dimY", "nFeat" }) {
         auto* it = new QTreeWidgetItem(axes);
         it->setText(0, valueName(QString::fromLatin1(id)));
         it->setIcon(0, rowIcon(nullptr));

@@ -32,9 +32,11 @@ int main()
 {
     // ---- the shipped layout -------------------------------------------------
     const RadialLayout def = radiallayout::defaults();
-    CHECK(def.size() == 9);                                   // 7 groups/actions + X + Y
+    CHECK(def.size() == 10);                                  // 7 groups/actions + X + Y + N
     CHECK(def.first().kind == N::Kind::Group && def.first().label == QStringLiteral("Tools"));
-    CHECK(def.last().kind == N::Kind::Value && def.last().id == QStringLiteral("dimY"));
+    CHECK(def.at(7).kind == N::Kind::Value && def.at(7).id == QStringLiteral("dimX"));
+    CHECK(def.at(8).kind == N::Kind::Value && def.at(8).id == QStringLiteral("dimY"));
+    CHECK(def.last().kind == N::Kind::Value && def.last().id == QStringLiteral("nFeat"));
     CHECK(radiallayout::ringsNeeded(def) == 2);
     {
         QList<QString> ids; collectIds(def, ids);

@@ -780,8 +780,10 @@ private:
     // dimension spinbox (dimensionX / dimensionY), so the scatter follows live.
     QAction* mRadialDimX = nullptr;
     QAction* mRadialDimY = nullptr;
+    QAction* mRadialNFeat = nullptr;     ///< the N feat (auto-select feature count) wedge
     QString  mRadialDimXPrefix;          ///< "X" or the layout's label for the X wedge
     QString  mRadialDimYPrefix;
+    QString  mRadialNFeatPrefix;
     void refreshRadialDimensions();
     void showRadialStatus(QAction* a);
 public:
