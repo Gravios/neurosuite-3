@@ -2,8 +2,12 @@
 """The ndmanager Pipeline designer can place every ndm_* plugin, with the
 template's parameters.
 
-  - pipelinescriptdefs.inc is what src/ndmanager/tools/pipeline_script_defs.py
-    generates from templates/template.yaml (so it is up to date);
+  - pipelinescriptdefs.inc and parametercatalog.inc are what
+    src/ndmanager/tools/pipeline_script_defs.py generates from
+    templates/template.yaml (so they are up to date);
+  - the parameter catalog (what Add offers on a plugin's page) lists every
+    parameter of the template, commented-out ones included, and each of its
+    entries is one the plugin's script reads;
   - every plugin with a template block, and every script that reads
     parameters, is in the palette or listed in NOT_IN_PALETTE with a reason
     (a plugin missing from the palette is dropped when a pipeline that uses
@@ -50,7 +54,7 @@ def check(name, cond, detail=""):
 
 
 r = subprocess.run([sys.executable, GEN, "--check"], capture_output=True, text=True)
-check("pipelinescriptdefs.inc is up to date", r.returncode == 0, r.stdout.strip())
+check("pipelinescriptdefs.inc and parametercatalog.inc are up to date", r.returncode == 0, r.stdout.strip())
 
 palette = {m[0]: m for m in gen.META}
 aliases = {m[0] for m in gen.META if m[6]}
@@ -82,6 +86,16 @@ for typ, params in nodes.items():
 check("node parameters are read by the plugin", not bad, ", ".join(bad))
 check("no node parameter overrides a fallback block", not overriding, ", ".join(overriding))
 check("aliases carry no parameters", all(not nodes[a] for a in aliases))
+
+catalog = open(os.path.join(ROOT, "src", "ndmanager", "src", "parametercatalog.inc"), encoding="utf-8").read()
+listed = set(re.findall(r'^\{ "(ndm_[\w-]+)", "([\w.]+)", ', catalog, re.M))
+expected = {(b, p) for b, ps in active.items() for p in ps} | \
+           {(b, p) for b, ps in commented.items() for p in ps if b.startswith("ndm_")}
+check("the catalog lists every template parameter", expected <= listed,
+      ", ".join(sorted(f"{b}.{p}" for b, p in expected - listed)))
+unread = sorted(f"{b}.{p}" for b, p in listed
+                if b not in tp.EXTERNAL and p not in code.get(b, {}))
+check("every catalog parameter is read by its plugin", not unread, ", ".join(unread))
 
 cpp = open(CPP, encoding="utf-8").read()
 palette_src = cpp[cpp.index("void PipelineDesignerPage::buildPalette()"):]
