@@ -6,7 +6,8 @@ set(_klustersshared_dir
 add_executable(process_alignspikes_pca process_alignspikes_pca.cpp)
 target_include_directories(process_alignspikes_pca PRIVATE "${_klustersshared_dir}")
 target_compile_features(process_alignspikes_pca PRIVATE cxx_std_20)
-target_link_libraries(process_alignspikes_pca PRIVATE m)
+# libm: a separate library on Unix; part of the C runtime on Windows.
+target_link_libraries(process_alignspikes_pca PRIVATE $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
 
 # OpenMP — used for parallel xcorr over spikes within a cluster.  Plugin
 # falls back to serial execution if OpenMP is unavailable.

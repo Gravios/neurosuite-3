@@ -85,6 +85,7 @@
 #include <cerrno>
 #include <climits>
 #include <cmath>
+#include <numbers>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -132,11 +133,11 @@ void Butter4HP::design(double cutoffHz, double sampleRateHz)
 {
     // Standard Butterworth 4-th order Q values for two cascaded biquads.
     static const double Qs[2] = {
-        1.0 / (2.0 * std::sin( M_PI       / 8.0)),   // ≈ 1.3066
-        1.0 / (2.0 * std::sin((3.0*M_PI)  / 8.0))    // ≈ 0.5412
+        1.0 / (2.0 * std::sin( std::numbers::pi       / 8.0)),   // ≈ 1.3066
+        1.0 / (2.0 * std::sin((3.0*std::numbers::pi)  / 8.0))    // ≈ 0.5412
     };
 
-    const double w0    = 2.0 * M_PI * cutoffHz / sampleRateHz;
+    const double w0    = 2.0 * std::numbers::pi * cutoffHz / sampleRateHz;
     const double cosw0 = std::cos(w0);
 
     for (int k = 0; k < 2; ++k) {
