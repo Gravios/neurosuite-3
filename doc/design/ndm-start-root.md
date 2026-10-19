@@ -91,8 +91,8 @@ clicks the root). The category is intentionally not in `catOrder`
 
 - **`loadPreset` integration.** Every preset prepends `ndm_start`
   if absent, then chains the rest. Presets stay declarative —
-  e.g. Pipeline-D is `{ndm_extractspikes_stderiv, ndm_alignspikes,
-  ndm_pca_stderiv, ndm_klustakwik}` — and the canvas prepends
+  e.g. Pipeline-D is `{ndm_hipass, ndm_extractspikes_stderiv,
+  ndm_alignspikes, ndm_pca, ndm_klustakwik}` — and the canvas prepends
   `ndm_start` automatically.
 
 ### Sticky-root visual
