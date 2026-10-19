@@ -31,16 +31,15 @@ waveforms, refeaturization checkpoint, output). Groups sorted under
 different methods can therefore coexist in one session. See
 [file naming](../formats/naming.md).
 
-`-UseFeatures` is not a parameter: the wrapper passes a string of
-`nChannels × nFeatures + 2` ones, meant to select every column with the
-timestamp column last (the chunked CEM partitions by the last selected
-dimension). `nFeatures` is read from
-`spikeDetection.channelGroups[g].nFeatures` and is mandatory. The `.fet`
-written by `ndm_pca` (through `process_mergefeatures`) has
-`nChannels × nFeatures` PCA columns, `nChannels` peak columns only with
-`extra: true`, and the timestamp column: `nChannels × nFeatures + 1`
-columns by default. There is no energy column, so the string does not
-match the file's width in either case.
+`useFeatures` (default `all`) is passed as `-UseFeatures`. `all` uses
+every column of the `.fet`, whatever its width. The `.fet` written by
+`ndm_pca` (through `process_mergefeatures`) has `nChannels × nFeatures`
+PCA columns, `nChannels` peak columns with `extra: true`, and the
+timestamp column last, which must be used: the chunked CEM takes the last
+dimension as time. A 0/1 mask needs one character per column; a shorter
+one drops the columns after it, the timestamp first. (Before 2026-10-19
+the wrapper passed `nChannels × nFeatures + 2` ones, one too many by
+default, and with `extra: true` too few, which dropped the timestamp.)
 
 A group is skipped (exit status 11) when its `.fet.<method>.N` is
 missing, and skipped (exit status 10) when its `.clu.<method>.N` already
@@ -69,6 +68,7 @@ given in brackets.
 | `maxPossibleClusters` | `500` | `-MaxPossibleClusters`: hard cap on the cluster table (also sizes the packed per-chunk ID range); must be ≥ `maxClusters`. |
 | `nStarts` | `3` | `-nStarts`: random restarts in non-chunked (two-phase) mode. |
 | `nRuns` | `0` | `-nRuns`: independent CEM restarts per chunk in chunked mode; the best-scoring run per chunk is kept. `0` = one run per chunk. |
+| `useFeatures` | `all` | `-UseFeatures`: the `.fet` columns to cluster on (see above). Left out of the template. |
 | `initMethod` | `farthest` | `-InitMethod`: `farthest` or `random` centre initialisation. |
 | `penaltyMix` | `0` | `-PenaltyMix`: `0` = BIC penalty, `1` = AIC/CEM penalty, values in between blend. |
 | `chunkMinutes` | `10` | `-ChunkMinutes`: chunk length; `0` disables chunking (two-phase CEM on the whole recording). |

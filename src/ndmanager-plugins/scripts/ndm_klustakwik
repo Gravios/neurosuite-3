@@ -106,16 +106,14 @@ once()
 	electrodes=($(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel"))
 	nElectrodes=${#electrodes[*]}
 
-	# Number of PCA features per channel
-	nFeatures=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nFeatures")
-	check_mandatory_variable $nFeatures "missing number of features for electrode group $electrodeGroup"
-
-	# UseFeatures: one '1' per PCA feature per channel, plus energy, plus timestamp.
-	# The timestamp MUST be the last '1' so that KiloKlustaKwik's timeDimIdx = nDims-1
-	# points to real session timestamps.  Without it, RunChunkedCEM partitions by
-	# energy instead of time, and Phase 3 cluster realignment is meaningless.
-	nTotalFeatures=$(( nElectrodes * nFeatures + 2 ))
-	useFeatures=$(printf '1%.0s' $(seq 1 $nTotalFeatures))
+	# UseFeatures: "all" (KiloKlustaKwik's default) uses every column of the
+	# .fet, whatever wrote it.  The timestamp is the last column and must be
+	# used: KiloKlustaKwik takes the last dimension as time, and RunChunkedCEM
+	# partitions by it.  A 0/1 mask must be as long as the .fet has columns
+	# (PCA features per channel, a peak value per channel when ndm_pca ran with
+	# extra: true, then the timestamp); a shorter one drops the columns after
+	# it, the timestamp first.
+	useFeatures=$(read_kk_param $electrodeGroup useFeatures all)
 
 	# ── Parameter resolution (three tiers) ───────────────────────────────────
 	# Probe-calibrated (usually from tier-1 per-group block):
@@ -182,7 +180,7 @@ once()
 	# // Process
 	# ////////////////////////////////////////////////////////////////////////////////////////////////
 
-	print_header "$session - Group $electrodeGroup ($nElectrodes ch, $nTotalFeatures features incl. timestamp)"
+	print_header "$session - Group $electrodeGroup ($nElectrodes ch)"
 
 	KiloKlustaKwik $session $electrodeGroup \
 		-Method                  $method                  \

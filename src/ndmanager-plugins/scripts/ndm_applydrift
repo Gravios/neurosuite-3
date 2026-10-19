@@ -155,10 +155,6 @@ if [ "$runKlustaKwik" = "true" ] || [ "$runKlustaKwik" = "1" ]; then
             continue
         }
 
-        nElectrodes=$(yaml_count "$session" "//spikeDetection/channelGroups/group[$g]/channels/channel")
-        nFeatures=$(yaml_read "$session" "//spikeDetection/channelGroups/group[$g]/nFeatures")
-        nTotalFeatures=$(( nElectrodes * nFeatures + 1 ))
-        useFeatures=$(printf '1%.0s' $(seq 1 $nTotalFeatures))
 
         print_header "$session - KlustaKwik group $g (drift-adaptive chunks)"
         echo_message "  ChunkFile: $chunksFile"
@@ -167,7 +163,7 @@ if [ "$runKlustaKwik" = "true" ] || [ "$runKlustaKwik" = "1" ]; then
             -Method          "$method" \
             -MinClusters     "$minClusters" \
             -MaxClusters     "$maxClusters" \
-            -UseFeatures     "$useFeatures" \
+            -UseFeatures     all \
             -ChunkFile       "$chunksFile" \
             -SamplingRate    "$samplingRate" \
             -MergeThresh     "$mergeThresh" \

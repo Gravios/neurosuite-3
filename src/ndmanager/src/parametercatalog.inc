@@ -316,6 +316,8 @@
   "Number of random restarts in non-chunked (two-phase) mode (default 3). In chunked mode, prefer nRuns." },
 { "ndm_klustakwik", "nRuns", "0", "Optional", true,
   "Per-chunk CEM restarts when using chunked mode (default 0 = single start per chunk). When nRuns > 0 and chunkMinutes > 0, each chunk independently runs CEMTwoPhase nRuns times with different random seeds and keeps its best-scoring result before handing it to Phase 2 cross-chunk matching. Phase 0 preseed, Phase 1.5 realignment, and Phase 2 each still run only once. This is the per-chunk analogue of nStarts in non-chunked mode. Recommended: 3." },
+{ "ndm_klustakwik", "useFeatures", "all", "Optional", false,
+  "Which .fet columns to cluster on: all (default), or a 0/1 mask with one character per column -- the PCA features of each channel, a peak value per channel when ndm_pca ran with extra: true, then the timestamp, which must stay 1 (it is the time axis of the chunked CEM)." },
 { "ndm_klustakwik", "subspaceDims", "0", "Optional", true,
   "Phase 2a/2b run on the top N spatial features, ranked by within-cluster or within-chunk variance (default 3); 0 uses every feature dimension." },
 { "ndm_klustakwik", "subspaceRecluster", "0", "Optional", true,

@@ -50,8 +50,8 @@ Existing `.chunks.N` files are overwritten.  The command exits 11 when
 **Re-sorting.**  With `runKlustaKwik: true`, the `KlustaKwik` binary is run
 for each target group (not the source group) with
 `-ChunkFile SESSION.chunks.N`, `-Method <method>`, `-SaveIntermediates 0` and
-the KlustaKwik parameters below; `UseFeatures` enables every column of the
-group's features.  Groups without `SESSION.fet.<method>.N` are skipped.  The
+the KlustaKwik parameters below; `-UseFeatures all` uses every column of
+the `.fet`, the timestamp included.  Groups without `SESSION.fet.<method>.N` are skipped.  The
 group's existing `.clu.<method>.N` is replaced.  Other KiloKlustaKwik
 parameters (the `ndm_klustakwik` block and its tiers) are not read or passed
 here.
@@ -75,8 +75,7 @@ Set under `programs:` → `- name: ndm_applydrift` → `parameters:` (see
 | `timeMergeIter` | `35` | `-TimeMergeIter`. |
 
 Also read from the YAML: `acquisitionSystem/samplingRate` (written into the
-file header and passed to KlustaKwik) and, with `runKlustaKwik`, each target
-group's channel count and `nFeatures`.
+file header and passed to KlustaKwik).
 
 The helper `process_applydrift.py` also accepts `--shank-specific`, which
 ignores the probe-level average and uses the source group's own trace; the

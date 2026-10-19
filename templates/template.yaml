@@ -117,7 +117,7 @@ anatomicalDescription:
 # channels        - physical channel indices in physical probe order (top to tip)
 # nSamples        - total waveform length in samples (e.g. 52 at 32 kHz)
 # peakSampleIndex - sample index of the expected waveform peak (0-based)
-# nFeatures       - PCA components per channel (used by ndm_pca / ndm_klustakwik)
+# nFeatures       - PCA components per channel (used by ndm_pca and Klusters)
 #
 # NOTE for ndm_pca with method: stderiv and methodOrder 1 or 3:
 #   The spatial derivative produces one linearly dependent channel (dropped before
@@ -2518,6 +2518,9 @@ programs:
       - name: nRuns
         value: 0
         status: Optional
+      # - name: useFeatures
+      #   value: all
+      #   status: Optional
       - name: subspaceDims
         value: 0
         status: Optional
@@ -2770,6 +2773,13 @@ programs:
       Passed to KiloKlustaKwik as the option of the same name with a capital
       first letter (subspaceDims -> -SubspaceDims).  The default in brackets is
       what this script passes when the parameter is unset.
+
+      # useFeatures
+
+      Which .fet columns to cluster on: all (default), or a 0/1 mask with one
+      character per column -- the PCA features of each channel, a peak value
+      per channel when ndm_pca ran with extra: true, then the timestamp, which
+      must stay 1 (it is the time axis of the chunked CEM).
 
       # method
 
