@@ -52,14 +52,14 @@ final word.
 
 ## On-disk formats
 
-Authoritative spec: [`src/libneurosuite-core/docs/FILE_FORMATS.md`](../src/libneurosuite-core/docs/FILE_FORMATS.md). Binary formats are little-endian.
+Layout of each format: [`ndmanager-plugins/formats/`](ndmanager-plugins/formats/README.md); the code that reads and writes it: [`src/libneurosuite-core/docs/FILE_FORMATS.md`](../src/libneurosuite-core/docs/FILE_FORMATS.md). Binary formats are little-endian. Per-group files are named `<base>.<type>.<method>.<group>` (for example `session.clu.stderiv.7`); the table writes `.N` for that suffix.
 
 | Ext | What |
 |---|---|
 | `.dat` / `.fil` / `.eeg` / `.lfp` | Interleaved `int16` signal — raw, filtered, and LFP (`.eeg` = legacy name for `.lfp`). |
-| `.res(.N)` | `int64` sample-index timestamps, one per spike. |
-| `.clu(.N)` / `.clc(.N)` | `int32` cluster ids (first value = count). `.clc` is the child/hierarchy clustering. |
-| `.fet(.N)` | Feature vectors — binary body is **`int64`**, row-major. |
+| `.res(.N)` | Sample-index timestamps, one per spike — text, or binary `int64`. |
+| `.clu(.N)` / `.clc(.N)` | Cluster ids, first value = cluster count — text, or binary `int32`. `.clc` is the child/hierarchy clustering. |
+| `.fet(.N)` | Feature vectors, row-major — text, or binary with an **`int64`** body. |
 | `.spk(.N)` | `int16` waveforms, sample-major; geometry supplied by the caller, no header. |
 | `.evt` | Text events: `double` ms time + label. |
 | `.col(.N)` | **Binary** accepted-collision decompositions (magic `COL\x01`) — *not* YAML. |
@@ -69,7 +69,8 @@ Authoritative spec: [`src/libneurosuite-core/docs/FILE_FORMATS.md`](../src/libne
 | `.wtl(.N)` | Manual template-lineage forest (text; v2 stores running mean/std/count). |
 | `.pca(.N)` | PCA eigenvector basis (read by `core::loadPca`, not `neurofileio`). |
 | `.mti` / `.mtf` | The final committed template model — reuses the `.wti` v2 / `.spk` schema; the distinction is role, not byte layout. |
-| `.yaml` (`.par`, `.nrs`) | Session parameters (YAML is current; `.par`/`.nrs` are legacy). |
+| `.yaml` | Session parameters. The legacy parameter format is `.xml` (convert with `ndm_xml2yaml`); Klusters also opens the older `.par` files. |
+| `.nrs` | NeuroScope's own session file: display state (window layout, shown channels, colours) saved beside the session, not parameters; stored as YAML. |
 
 ---
 
