@@ -16,7 +16,8 @@
 # ---------------------------------------------------------------------------
 
 set(_core_srcs
-    neurosuite/core/neurofileio.cpp)
+    neurosuite/core/neurofileio.cpp
+    neurosuite/core/mappedfile.cpp)
 
 add_library(neurosuite-core SHARED ${_core_srcs})
 

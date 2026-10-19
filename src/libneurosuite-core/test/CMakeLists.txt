@@ -289,3 +289,13 @@ add_executable(core_test_qt_keywords "${_qtkw_src}")
 target_compile_features(core_test_qt_keywords PRIVATE cxx_std_20)
 target_include_directories(core_test_qt_keywords PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_qt_keywords COMMAND core_test_qt_keywords)
+
+# mappedfile.hpp + fileio64.hpp: whole-file read-only mapping and 64-bit file
+# positions / sizes, the portable layer under the processing programs.
+# fileio64 is header-only; MappedFile lives in the library (no <windows.h> in
+# the header).
+add_executable(core_test_mappedfile mappedfile_test.cpp)
+target_compile_features(core_test_mappedfile PRIVATE cxx_std_20)
+target_include_directories(core_test_mappedfile PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_mappedfile PRIVATE Neurosuite::core)
+add_test(NAME core_test_mappedfile COMMAND core_test_mappedfile)

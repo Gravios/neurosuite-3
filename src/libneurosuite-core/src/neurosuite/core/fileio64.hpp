@@ -3,6 +3,10 @@
 // Header-only and dependency-free (std + the platform's stdio), so the Qt
 // programs and the plugins can use it by #include alone.
 //
+// Also fileSize64(): stat()/fstat() report st_size as a 32-bit value on
+// Windows (struct stat is the 32-bit-size variant there), so a recording past
+// 2 GiB gets a wrong size; std::filesystem::file_size is 64-bit everywhere.
+//
 // Why: fseek / ftell take and return `long`, which is 32 bits on Windows, so a
 // .fil / .spk / .res past 2 GiB is positioned wrongly there.  The POSIX
 // fseeko / ftello take `off_t`, which MSVC does not provide in that form
@@ -18,6 +22,9 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
+#include <string>
+#include <system_error>
 
 #if !defined(_WIN32)
 #include <sys/types.h>   // off_t
@@ -50,6 +57,14 @@ inline std::int64_t ftell64(std::FILE* f)
 #else
     return static_cast<std::int64_t>(::ftello(f));
 #endif
+}
+
+/** Size of the file at @p path in bytes; -1 if it cannot be read. */
+inline std::int64_t fileSize64(const std::string& path)
+{
+    std::error_code ec;
+    const auto n = std::filesystem::file_size(std::filesystem::path(path), ec);
+    return ec ? -1 : static_cast<std::int64_t>(n);
 }
 
 }  // namespace core
