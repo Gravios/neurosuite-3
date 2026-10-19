@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Pipeline: the KiloKlustaKwik calls match KiloKlustaKwik](#2026-10-19--pipeline-the-kiloklustakwik-calls-match-kiloklustakwik) |
 | 2026-10-19 | [NDManager: Add offers the parameters a plugin reads](#2026-10-19--ndmanager-add-offers-the-parameters-a-plugin-reads) |
 | 2026-10-19 | [Docs: every page checked against the code; current in-app handbooks; the site covers all documentation](#2026-10-19--docs-every-page-checked-against-the-code-current-in-app-handbooks-the-site-covers-all-documentation) |
 | 2026-10-19 | [Docs: one installation guide for every platform](#2026-10-19--docs-one-installation-guide-for-every-platform) |
@@ -87,6 +88,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Pipeline: the KiloKlustaKwik calls match KiloKlustaKwik
+
+<details>
+<summary>Details</summary>
+
+KiloKlustaKwik ignores options it does not know, so mismatches went
+unnoticed.  Every script that runs it was checked against its registered
+options and its file names:
+
+- `ndm_klustakwik` and `ndm_subcluster_unmatched` passed `-Phase15Iters` and
+  `-SubspaceReclusterDepth`, which KiloKlustaKwik no longer has.  The
+  parameters `phase15Iters` and `subspaceReclusterDepth` are removed; no sort
+  changes (they were ignored).
+- `-UseFeatures` was a hand-counted mask: one column too long by default
+  (a warning per group), too short with `ndm_pca` `extra: true`, which dropped
+  the timestamp the chunked CEM partitions by.  `ndm_klustakwik` and
+  `ndm_applydrift` now pass `all`; `ndm_klustakwik` reads a `useFeatures`
+  parameter (default `all`) for a mask.
+- `ndm_subcluster_unmatched` and `ndm_applydrift` (`runKlustaKwik: true`) ran
+  `KlustaKwik`, which is not installed; they run `KiloKlustaKwik`.  The
+  sub-clustering sandbox uses the method-tagged names KiloKlustaKwik reads and
+  writes, with `-Method`.
+- `KlustaKwikRefine` refines `<session>.clu.<method>.N` (new `--method`,
+  default `standard`) and passes `-Method`; it took the untagged `.clu.N`
+  while KiloKlustaKwik wrote `.clu.standard.N`.  A failed run now restores the
+  seed (`set -e` ended the script before the restore).
+- `test_kk_options.py` checks every KiloKlustaKwik command line in the
+  scripts against the options the program registers.
+
+</details>
 
 ## 2026-10-19 — NDManager: Add offers the parameters a plugin reads
 
