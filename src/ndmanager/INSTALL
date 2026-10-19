@@ -1,1 +1,16 @@
-cmake -DCMAKE_INSTALL_PREFIX=<path> .
+Installing ndmanager
+====================
+
+ndmanager is built and installed with the rest of NeuroSuite from the top of
+the repository; see doc/INSTALL.md (and doc/BUILD.md for build options):
+
+    cmake -B build -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DNS_INSTALL_DEPS=ON
+    cmake --build build --parallel
+    cmake --install build
+
+To install ndmanager alone, turn the other programs off at configure time
+(doc/INSTALL.md, "Installing one program only").
+
+Building this directory on its own (cmake -S src/ndmanager) needs an
+installed LibKlustersShared 2.1.0 or newer, found through CMAKE_PREFIX_PATH
+or the install prefix.
