@@ -1,18 +1,18 @@
 # Modeling options for spike removal — a practical comparison
 
+> **Status (2026-10): Option B shipped; Option A not done; Option C not
+> pursued.** BOTM is `process_subtractspikes --subtraction-mode botm
+> --botm-ridge <λ>`, exposed by `ndm_stripdat` as the `subtractionMode` and
+> `botmRidge` parameters (see [`subtractspikes-botm.md`](subtractspikes-botm.md)).
+> The Layer 1/2 `model` mode has no pre-whitening. The rest of this note is the
+> original comparison.
+
 Context: this document compares the current `process_subtractspikes`
 Layer 1/2 modeling against Bayes Optimal Template Matching (BOTM) as
 described in Proepper 2015 (TU Berlin PhD thesis, §3.4), in light of
 what you actually need from spike subtraction in the neurosuite-3
 pipeline.  It concludes with three concrete, scoped upgrade options
 you can choose between.
-
-> The sciencedirect.com paper you linked
-> (`pii/S1053811922001823`) was not retrievable — ScienceDirect
-> blocks direct fetch and the article stem didn't resolve to a
-> title via search.  If you can share the title or a preprint link
-> (PMC / bioRxiv / institutional PDF), I can fold it into a
-> revision of this document.
 
 **Contents:** [What the current code does](#what-the-current-code-does) · [What's structurally missing vs BOTM](#whats-structurally-missing-vs-botm) · [Where overlap handling sits](#where-overlap-handling-sits) · [Concrete upgrade options](#concrete-upgrade-options) · [Recommendation](#recommendation) · [Key references](#key-references)
 
