@@ -4,22 +4,26 @@ Several neurosuite-3 components optionally use GPU acceleration:
 
 | Component | GPU path | What is accelerated |
 |---|---|---|
-| `kiloklustakwik` | CUDA / HIP / SYCL | CEM E-step distance computations + Phase 1.5 waveform realignment (xcorr) |
+| `kiloklustakwik` | CUDA / HIP / SYCL | CEM E-step distance computations + waveform cross-correlation (xcorr) |
 | `klusters` | CUDA / HIP / SYCL | Grouping Assistant posterior probability matrix + interactive spike realignment (xcorr) |
+| `process_butterworth` | CUDA | Butterworth filtering |
 | `process_medianfilter` | CUDA | Median-subtraction high-pass filter |
 | `process_medianthreshold` | CUDA | Per-channel noise threshold estimation |
 | `process_spikegrouper` | CUDA / OpenMP | Coincidence matrix construction |
+| `process_decomposecollisions` | CUDA | Collision decomposition fit (opt-in with `--gpu true`) |
+| `process_extractemg` | CUDA / HIP / SYCL | EMG extraction (SYCL not on Windows) |
+| `libneurosuite-core` spectral (NeuroScope spectrogram) | CUDA (cuFFT) | FFTs |
 
 The waveform realignment cross-correlation kernel (`realign_xcorr`) is compiled into both
 `kiloklustakwik` and `klusters` — it is not a separate binary.
 
-GPU backends are auto-detected by CMake at build time. If none is found the build falls back to an OpenMP CPU path automatically — you do not need to set any flag to get a working build. Pass `-DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF` to force a CPU-only build explicitly.
+GPU backends are auto-detected by CMake at build time. `kiloklustakwik` and `process_extractemg` compile one GPU backend per build, chosen in the order CUDA > HIP > SYCL. If none is found the build falls back to an OpenMP CPU path automatically — you do not need to set any flag to get a working build. Pass `-DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF` to force a CPU-only build explicitly.
 
 ---
 
 ## NVIDIA CUDA
 
-Supported by kiloklustakwik, klusters, process\_medianfilter, process\_medianthreshold, and process\_spikegrouper.
+Supported by kiloklustakwik, klusters, process\_butterworth, process\_medianfilter, process\_medianthreshold, process\_spikegrouper, process\_decomposecollisions, process\_extractemg and the libneurosuite-core spectral library (cuFFT).
 
 ### Driver and toolkit versions
 
@@ -78,6 +82,12 @@ sudo modprobe nvidia
 
 ### Windows
 
+> **Status (2026-10):** the Windows presets and CI build with `USE_CUDA=OFF`,
+> `USE_HIP=OFF` and skip KiloKlustaKwik; the only GPU path in the documented
+> Windows build is Klusters with SYCL through the `windows-sycl` preset
+> ([INSTALL.md → Intel GPU (SYCL)](../INSTALL.md#intel-gpu-sycl)). CUDA and HIP on
+> Windows are untested. For KiloKlustaKwik use WSL2.
+
 Install the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.8 or later from NVIDIA's download page. Choose the local installer and add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin` to `PATH`. Visual Studio 2022 integration is included automatically.
 
 ### macOS
@@ -88,7 +98,7 @@ NVIDIA dropped macOS support in macOS 10.14 (Mojave). CUDA is not available on m
 
 ## AMD ROCm / HIP
 
-Supported by kiloklustakwik and klusters.
+Supported by kiloklustakwik, klusters and process\_extractemg.
 
 ### Ubuntu 22.04 / 24.04
 
@@ -114,7 +124,13 @@ hipcc --version
 rocm-smi
 ```
 
-Supported GPU families: RDNA2 (gfx1030), RDNA3 (gfx1100), CDNA2 (gfx90a), CDNA3 (gfx940/gfx942). The CMake build targets `gfx1030;gfx1100;gfx90a;gfx908` by default.
+Supported GPU families: RDNA2 (gfx1030), RDNA3 (gfx1100), CDNA2 (gfx90a), CDNA3 (gfx940/gfx942). Default targets per component:
+
+| Component | Default architectures | Override |
+|---|---|---|
+| `klusters` | `gfx1100;gfx1030;gfx90a;gfx908` | fixed in `src/klusters/src/CMakeLists.txt` |
+| `kiloklustakwik` | `gfx1030;gfx1031;gfx1100;gfx1101;gfx90a;gfx908` | `-DKK_EXP_HIP_ARCHS=…` |
+| `process_extractemg` | `gfx1030;gfx1100;gfx90a;gfx908` | `-DEXTRACTEMG_HIP_ARCHS=…` |
 
 ### Windows
 
@@ -124,7 +140,21 @@ Install [ROCm for Windows](https://rocm.docs.amd.com/en/latest/deploy/windows/in
 
 ## Intel SYCL / oneAPI (Intel Arc)
 
-Supported by kiloklustakwik and klusters. Requires Intel oneAPI Base Toolkit ≥ 2023.1 and the `icpx` compiler. When SYCL is detected at configure time, CMake auto-selects `icpx` as the C++ compiler for those components.
+Supported by kiloklustakwik, klusters and process\_extractemg (Linux). Requires Intel oneAPI Base Toolkit ≥ 2023.1 and the `icpx` compiler.
+
+The top-level build does **not** select the oneAPI compiler by itself. On
+Linux, configure with it explicitly (see [BUILD.md §4](../BUILD.md#4-gpu-backends)):
+
+```bash
+source /opt/intel/oneapi/setvars.sh
+cmake -B build -DCMAKE_CXX_COMPILER=icpx -DCMAKE_C_COMPILER=icx
+```
+
+On Windows use the `windows-sycl` preset from the oneAPI prompt (it builds
+Klusters with SYCL; KiloKlustaKwik is skipped). Only a standalone
+`src/kiloklustakwik` configure picks `icpx` automatically. A SYCL build of
+kiloklustakwik installs `KiloKlustaKwik_sycl` and a copy named
+`KiloKlustaKwik`.
 
 ### Ubuntu 22.04 / 24.04 (bare metal Intel Arc)
 
@@ -162,7 +192,7 @@ See [doc/kiloklustakwik/install/wsl2-sycl.md](../kiloklustakwik/install/wsl2-syc
 
 ### Windows (native)
 
-Download and install the [Intel oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html) for Windows. Select the offline installer. After installation, launch a **oneAPI Command Prompt** (Start → Intel oneAPI → oneAPI Command Prompt) before running `cmake`.
+Download and install the [Intel oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html) for Windows. Select the offline installer. After installation, open the **Intel oneAPI command prompt for Intel 64 for Visual Studio 2022** before running `cmake`, and build with the `windows-sycl` preset ([INSTALL.md → Intel GPU (SYCL)](../INSTALL.md#intel-gpu-sycl)).
 
 ---
 
@@ -171,21 +201,27 @@ Download and install the [Intel oneAPI Base Toolkit](https://www.intel.com/conte
 After installing the GPU toolkit, run `cmake` on the repository root and check the status messages:
 
 ```
--- KiloKlustaKwik: CUDA available — /usr/local/cuda-12.8/bin/nvcc
--- klusters xcorr: CUDA available
+-- neurosuite-3: CUDA compiler — /usr/local/cuda-12.8/bin/nvcc
+-- neurosuite-3: CUDA architectures = native (GPU detected via nvidia-smi)
+-- CUDA backend enabled — compiler: /usr/local/cuda-12.8/bin/nvcc
+-- neurosuite-spectral: CUDA (cuFFT) GPU backend enabled
+-- process_butterworth: CUDA build (86;89;100;120)
 -- process_medianfilter: CUDA build (86;89;100;120)
--- process_spikegrouper: CUDA build (86;89;100;120)
+-- KiloKlustaKwik: CUDA available — /usr/local/cuda-12.8/bin/nvcc
+-- KiloKlustaKwik: active backend → CUDA  (NVIDIA)
 ```
 
 If only the CPU path is selected you will see messages such as:
 
 ```
+-- neurosuite-3: CUDA toolkit not found — building without CUDA
 -- KiloKlustaKwik: CUDA requested but nvcc not found
--- KiloKlustaKwik: HIP requested but not found
--- KiloKlustaKwik: SYCL requested but icpx not found
+-- KiloKlustaKwik: HIP requested but hipcc not found — install ROCm: https://rocm.docs.amd.com/
+-- KiloKlustaKwik: SYCL requested but icpx not found — install oneAPI: …
+-- KiloKlustaKwik: active backend → CPU only (no GPU toolkit found)
 ```
 
-Pass `-DCMAKE_CUDA_ARCHITECTURES="120"` to target only a specific GPU generation and reduce build time.
+Pass `-DCMAKE_CUDA_ARCHITECTURES="120"` to target only a specific GPU generation and reduce build time. The `process_*` CUDA programs build for `86;89;100;120` regardless.
 
 ---
 
@@ -195,8 +231,11 @@ Each GPU-enabled binary probes for available devices at startup and selects the 
 
 | Binary | Override |
 |---|---|
-| `KiloKlustaKwik` | `KiloKlustaKwik session N -ForceCPU 1` |
-| `process_spikegrouper` | `process_spikegrouper ... --cpu` |
-| `process_medianfilter` | CPU-only build; no runtime switch |
+| `KiloKlustaKwik` | run `KiloKlustaKwik_cpu` instead (installed with every build; KiloKlustaKwik has no runtime CPU switch) |
+| `process_butterworth` | `-c` |
+| `process_medianfilter` | `-c` |
+| `process_spikegrouper` | `--cpu` |
+| `process_extractemg` | `--backend cpu` |
+| `process_decomposecollisions` | CPU unless `--gpu true` is given |
 
-Each GPU build also compiles `KiloKlustaKwik_cpu` as a permanently CPU-only binary installed alongside the GPU-enabled version. For klusters, the xcorr backend is selected at runtime via `KLUSTERS_USE_SYCL=1` (SYCL only; CUDA and HIP are probed automatically).
+For klusters, the xcorr backend is selected at runtime via `KLUSTERS_USE_SYCL=1` (SYCL only; CUDA and HIP are probed automatically).
