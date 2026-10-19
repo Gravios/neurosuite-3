@@ -30,7 +30,13 @@
 			<option>-b</option> <replaceable>buffer</replaceable>
 		</arg>
 		<arg>
+			<option>-t</option> <replaceable>nThreads</replaceable>
+		</arg>
+		<arg>
 			<option>-v</option>
+		</arg>
+		<arg>
+			<option>-h</option>
 		</arg>
 		<arg choice="plain">
 			<replaceable>input</replaceable>
@@ -87,7 +93,15 @@
 				<term><option>-b</option> <replaceable>buffer</replaceable></term>
 				<listitem>
 					<para>
-						buffer size (this can be used to optimize file I/O throughput)
+						chunk size in bytes (default 134217728 = 128 MiB; this can be used to optimize file I/O throughput)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-t</option> <replaceable>nThreads</replaceable></term>
+				<listitem>
+					<para>
+						number of OpenMP threads (default: all cores)
 					</para>
 				</listitem>
 			</varlistentry>
@@ -96,6 +110,14 @@
 				<listitem>
 					<para>
 						verbose mode, displays progress information
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-h</option></term>
+				<listitem>
+					<para>
+						display help
 					</para>
 				</listitem>
 			</varlistentry>

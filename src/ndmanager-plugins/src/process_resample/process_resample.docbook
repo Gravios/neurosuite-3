@@ -26,6 +26,12 @@
 				<option>-r</option> <replaceable>ratio</replaceable>
 			</arg>
 		</group>
+		<arg>
+			<option>-t</option> <replaceable>nThreads</replaceable>
+		</arg>
+		<arg>
+			<option>-v</option>
+		</arg>
 		<arg choice="plain">
 			<replaceable>input</replaceable>
 		</arg>
@@ -74,6 +80,22 @@
 				<listitem>
 					<para>
 						frequency ratio (output/input)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-t</option> <replaceable>nThreads</replaceable></term>
+				<listitem>
+					<para>
+						number of OpenMP threads (default: all cores)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-v</option></term>
+				<listitem>
+					<para>
+						accepted; currently prints nothing extra
 					</para>
 				</listitem>
 			</varlistentry>
