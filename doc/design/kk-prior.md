@@ -50,9 +50,13 @@ mismatched prior.
 
 Calls `kk_resolve_prior.py` early in the per-group loop. When a prior
 is found, four headline values (`MinClusters`, `MaxClusters`,
-`MergeThresh`, `PenaltyMix`) become the defaults for `read_kk_param`,
-slotting in below per-shank `extraInfos` overrides and above the
-script-builtin defaults. Missing prior, missing resolver, or
+`MergeThresh`, `PenaltyMix`) become the defaults for `read_kk_param`
+(`scripts/ndm_functions`). That function reads, in order,
+`spikeDetection.channelGroups[g].klustakwik.<name>`, then
+`programs[ndm_subcluster_unmatched].parameters.<name>`, then
+`programs[ndm_klustakwik].parameters.<name>`; the prior's value is used only
+when none of these is set, and the script-builtin default only when there is
+no prior either. Missing prior, missing resolver, or
 hash-mismatch all fall through cleanly to script defaults.
 
 ---
@@ -87,7 +91,8 @@ typically it doesn't — a 2 ms window is 64 samples at 32 kHz vs 40 at
 The signature is then SHA-256-hashed (first 16 hex chars) to produce
 `probe_signature_hash`. When the signature exactly matches one of the
 installed `Template-*.yaml` files
-(`/usr/share/ndmanager/templates/` or `$NDM_TEMPLATE_DIR`), the
+(`$NDM_TEMPLATE_DIR`, `/usr/share/ndmanager/templates/`,
+`/usr/local/share/ndmanager/templates/`, or the source tree), the
 template's basename (sans `Template-` prefix) is used as a
 human-readable `probe_id` like `4-octrodes-32552Hz`. Otherwise the
 hex hash is the `probe_id`. Both are stored in every prior file; the
@@ -146,7 +151,7 @@ The four headline parameters port differently between use cases:
 |---|---|---|
 | `MergeThresh` | Excellent | Determined by cluster geometry (`d_eff`); independent of extraction threshold |
 | `PenaltyMix` | Excellent | AIC/BIC tradeoff is shape-dependent, not data-volume-dependent |
-| `MaxClusters` | Use-case-dependent | Lower extraction threshold ⇒ more residuals ⇒ higher cluster count; bump per-session via `extraInfos` if the recluster hits the cap |
+| `MaxClusters` | Use-case-dependent | Lower extraction threshold ⇒ more residuals ⇒ higher cluster count; bump per-session via `spikeDetection.channelGroups[g].klustakwik.MaxClusters` if the recluster hits the cap |
 | `MinClusters` | Use-case-dependent | Same direction as MaxClusters but less impactful in practice |
 
 For the typical "lower-threshold re-extract" workflow, the existing
