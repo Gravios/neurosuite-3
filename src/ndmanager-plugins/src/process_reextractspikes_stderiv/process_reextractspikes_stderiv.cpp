@@ -64,10 +64,7 @@
 #include <string>
 #include <vector>
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <neurosuite/core/mappedfile.hpp>   // read-only whole-file map (mmap / Windows)
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -586,26 +583,20 @@ int main(int argc, char **argv)
         }
     }
 
-    const int fd = ::open(a.inputFilePath.c_str(), O_RDONLY);
-    if (fd < 0) {
-        cerr << "error: open '" << a.inputFilePath << "': "
-             << std::strerror(errno) << endl; return 1;
+    neurosuite::core::MappedFile input;
+    string mapError;
+    if (!input.open(a.inputFilePath, &mapError)) {
+        cerr << "error: cannot map '" << a.inputFilePath << "': " << mapError << endl;
+        return 1;
     }
-    struct stat st{};
-    if (::fstat(fd, &st) != 0) { ::close(fd); return 1; }
-    const std::int64_t fileBytes = st.st_size;
+    const std::int64_t fileBytes = input.size();
     const int64_t bps = (int64_t)a.totalChannelNumber * (int64_t)sizeof(int16_t);
     if (fileBytes <= 0 || fileBytes % bps != 0) {
-        cerr << "error: bad .fil size" << endl; ::close(fd); return 1;
+        cerr << "error: bad .fil size" << endl; return 1;
     }
     const int64_t nSamples = fileBytes / bps;
-    void *mapped = ::mmap(nullptr, (size_t)fileBytes, PROT_READ, MAP_SHARED, fd, 0);
-    if (mapped == MAP_FAILED) {
-        cerr << "error: mmap: " << std::strerror(errno) << endl;
-        ::close(fd); return 1;
-    }
-    ::madvise(mapped, (size_t)fileBytes, MADV_SEQUENTIAL);
-    const int16_t *data = static_cast<const int16_t *>(mapped);
+    input.adviseSequential();
+    const int16_t *data = static_cast<const int16_t *>(input.data());
 
     // Compute thresholds from stderiv signal over requested window.
     vector<vector<double>> thr;
@@ -777,14 +768,14 @@ int main(int argc, char **argv)
 
         FILE *fRes = std::fopen(pRes.str().c_str(), "wb");
         if (!fRes) { cerr << "error: cannot write " << pRes.str() << endl;
-                     ::munmap(mapped, (size_t)fileBytes); ::close(fd); return 1; }
+                     return 1; }
         if (!res.empty())
             std::fwrite(res.data(), sizeof(int64_t), res.size(), fRes);
         std::fclose(fRes);
 
         FILE *fSpk = std::fopen(pSpk.str().c_str(), "wb");
         if (!fSpk) { cerr << "error: cannot write " << pSpk.str() << endl;
-                     ::munmap(mapped, (size_t)fileBytes); ::close(fd); return 1; }
+                     return 1; }
         if (!res.empty()) {
             const size_t wLen = (size_t)a.spikeLength * (size_t)nChanG;
             // Two buffers: sdWav holds the intermediate spatial derivative
@@ -842,8 +833,6 @@ int main(int argc, char **argv)
         std::fclose(fSpk);
     }
 
-    ::munmap(mapped, (size_t)fileBytes);
-    ::close(fd);
 
     cout << "process_reextractspikes_stderiv: groups=" << nGroups
          << "  sdiffOrder=" << (int)a.sdiffOrder << endl;

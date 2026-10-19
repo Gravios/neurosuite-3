@@ -23,12 +23,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <iostream>
 #include <string>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <vector>
+#ifdef __linux__
+#  include <fcntl.h>      // posix_fallocate
+#endif
 #ifdef _OPENMP
 #  include <omp.h>
 #endif
@@ -72,30 +72,23 @@ static void usage(const char* name)
          << " -v             verbose\n";
 }
 
-static bool readRows(int fd, short* dst, long long row, long long rows, int nCh)
+// Whole rows at an absolute row index: seek, then read / write them all.
+// stdio with 64-bit positions (fileio64.hpp) rather than pread / pwrite, which
+// Windows does not have; the chunk loop calls these from one thread.
+static bool readRows(std::FILE* f, short* dst, long long row, long long rows, int nCh)
 {
-    size_t want = (size_t)rows * nCh * sizeof(short);
-    std::int64_t off = (std::int64_t)row * nCh * (std::int64_t)sizeof(short);
-    char* p = reinterpret_cast<char*>(dst);
-    while (want > 0) {
-        ssize_t r = pread(fd, p, want, off);
-        if (r <= 0) { if (r < 0 && errno == EINTR) continue; return false; }
-        p += r; off += r; want -= (size_t)r;
-    }
-    return true;
+    const size_t n = (size_t)rows * (size_t)nCh;
+    const std::int64_t off = (std::int64_t)row * nCh * (std::int64_t)sizeof(short);
+    return neurosuite::core::fseek64(f, off, SEEK_SET) == 0
+        && std::fread(dst, sizeof(short), n, f) == n;
 }
 
-static bool writeRows(int fd, const short* src, long long row, long long rows, int nCh)
+static bool writeRows(std::FILE* f, const short* src, long long row, long long rows, int nCh)
 {
-    size_t want = (size_t)rows * nCh * sizeof(short);
-    std::int64_t off = (std::int64_t)row * nCh * (std::int64_t)sizeof(short);
-    const char* p = reinterpret_cast<const char*>(src);
-    while (want > 0) {
-        ssize_t r = pwrite(fd, p, want, off);
-        if (r <= 0) { if (r < 0 && errno == EINTR) continue; return false; }
-        p += r; off += r; want -= (size_t)r;
-    }
-    return true;
+    const size_t n = (size_t)rows * (size_t)nCh;
+    const std::int64_t off = (std::int64_t)row * nCh * (std::int64_t)sizeof(short);
+    return neurosuite::core::fseek64(f, off, SEEK_SET) == 0
+        && std::fwrite(src, sizeof(short), n, f) == n;
 }
 
 // Filters output rows [c0, c1) of one chunk.  @p prog, when given, is moved
@@ -193,12 +186,11 @@ int main(int argc, char* argv[])
     if (fHigh > 0.0) { auto l = bwDesign(order, fHigh, fs, false); sos.insert(sos.end(), l.begin(), l.end()); }
     const int M = bwMargin(sos);
 
-    const int inFd = open(inPath, O_RDONLY);
-    if (inFd < 0) { cerr << "error: cannot open '" << inPath << "'" << endl; return 1; }
-    struct stat st;
-    fstat(inFd, &st);
-    const long long nRows = (long long)st.st_size / ((long long)nCh * (long long)sizeof(short));
-    if ((long long)st.st_size != nRows * nCh * (long long)sizeof(short))
+    std::FILE* inF = std::fopen(inPath, "rb");
+    if (!inF) { cerr << "error: cannot open '" << inPath << "'" << endl; return 1; }
+    const long long inBytes = (long long)neurosuite::core::fileSize64(inPath);
+    const long long nRows = inBytes / ((long long)nCh * (long long)sizeof(short));
+    if (inBytes != nRows * nCh * (long long)sizeof(short))
         cerr << "warning: file size is not a whole number of " << nCh
              << "-channel samples; the trailing partial sample is dropped" << endl;
     if (nRows <= M) {
@@ -206,10 +198,10 @@ int main(int argc, char* argv[])
              << "settling length (" << M << " samples)" << endl;
         return 1;
     }
-    const int outFd = open(outPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (outFd < 0) { cerr << "error: cannot write '" << outPath << "'" << endl; return 1; }
+    std::FILE* outF = std::fopen(outPath, "wb");
+    if (!outF) { cerr << "error: cannot write '" << outPath << "'" << endl; return 1; }
 #ifdef __linux__
-    (void)posix_fallocate(outFd, 0, (std::int64_t)nRows * nCh * (std::int64_t)sizeof(short));
+    (void)posix_fallocate(fileno(outF), 0, (off_t)nRows * nCh * (off_t)sizeof(short));
 #endif
 
     bool gpu = false;
@@ -274,22 +266,22 @@ int main(int argc, char* argv[])
         const long long c0 = k * C, c1 = (c0 + C < nRows) ? c0 + C : nRows;
         const long long r0 = (c0 - M > 0) ? c0 - M : 0;
         const long long r1 = (c1 + M < nRows) ? c1 + M : nRows;
-        if (!readRows(inFd, in.data(), r0, r1 - r0, nCh)) { cerr << "error: read failed" << endl; return 1; }
+        if (!readRows(inF, in.data(), r0, r1 - r0, nCh)) { cerr << "error: read failed" << endl; return 1; }
 #ifdef USE_CUDA
         if (gpu) bwCudaChunk(dev, in.data(), r0, r1 - r0, nRows, c0, c1, out.data());
         else
 #endif
         if (useDouble) cpuChunk<double>(cd, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data(), &prog);
         else           cpuChunk<float>(cf, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data(), &prog);
-        if (!writeRows(outFd, out.data(), c0, c1 - c0, nCh)) { cerr << "error: write failed" << endl; return 1; }
+        if (!writeRows(outF, out.data(), c0, c1 - c0, nCh)) { cerr << "error: write failed" << endl; return 1; }
         prog.setPosition(c1);
     }
     prog.endStage();
 #ifdef USE_CUDA
     if (dev) bwCudaFree(dev);
 #endif
-    close(inFd);
-    if (close(outFd) != 0) { cerr << "error: closing output failed" << endl; return 1; }
+    std::fclose(inF);
+    if (std::fclose(outF) != 0) { cerr << "error: closing output failed" << endl; return 1; }
     progGuard.ok = true;
     prog.finish();
     return 0;

@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.16)
 add_executable(process_reextractspikes_stderiv
     process_reextractspikes_stderiv.cpp
 )
+# MappedFile (read-only map of the .fil; mmap or the Windows file mapping)
+target_link_libraries(process_reextractspikes_stderiv PRIVATE Neurosuite::core)
 target_compile_features(process_reextractspikes_stderiv PRIVATE cxx_std_20)
 # Pull in the shared klustersshared headers (sdiff_pairs.h is header-only, so no
 # extra source is compiled — only the include directory is needed).

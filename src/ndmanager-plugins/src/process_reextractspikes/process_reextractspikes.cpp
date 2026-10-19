@@ -67,10 +67,7 @@
 #include <string>
 #include <vector>
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <neurosuite/core/mappedfile.hpp>   // read-only whole-file map (mmap / Windows)
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -286,36 +283,25 @@ int main(int argc, char **argv)
                 break;
             }
 
-    // ── mmap input ────────────────────────────────────────────────────────
-    const int fd = ::open(args.inputFilePath.c_str(), O_RDONLY);
-    if (fd < 0) {
-        cerr << "error: cannot open '" << args.inputFilePath
-             << "': " << std::strerror(errno) << endl;
+    // ── map the input ─────────────────────────────────────────────────────
+    neurosuite::core::MappedFile input;
+    string mapError;
+    if (!input.open(args.inputFilePath, &mapError)) {
+        cerr << "error: cannot map '" << args.inputFilePath << "': " << mapError << endl;
         return 1;
     }
-    struct stat st{};
-    if (fstat(fd, &st) != 0) {
-        cerr << "error: fstat failed on '" << args.inputFilePath << "'" << endl;
-        ::close(fd); return 1;
-    }
-    const std::int64_t fileBytes = st.st_size;
+    const std::int64_t fileBytes = input.size();
     const int64_t bytesPerSample =
         (int64_t)args.totalChannelNumber * (int64_t)sizeof(int16_t);
     if (fileBytes <= 0 || fileBytes % bytesPerSample != 0) {
         cerr << "error: '" << args.inputFilePath << "' size (" << fileBytes
              << ") is not a multiple of nChan*2 (" << bytesPerSample << ")" << endl;
-        ::close(fd); return 1;
+        return 1;
     }
     const int64_t nSamples = fileBytes / bytesPerSample;
-    void *mapped = ::mmap(nullptr, (size_t)fileBytes, PROT_READ, MAP_SHARED, fd, 0);
-    if (mapped == MAP_FAILED) {
-        cerr << "error: mmap failed on '" << args.inputFilePath
-             << "': " << std::strerror(errno) << endl;
-        ::close(fd); return 1;
-    }
-    const int16_t *data = static_cast<const int16_t *>(mapped);
+    const int16_t *data = static_cast<const int16_t *>(input.data());
     // Advise kernel of sequential read pattern to enable prefetching.
-    ::madvise(mapped, (size_t)fileBytes, MADV_SEQUENTIAL);
+    input.adviseSequential();
 
     if (args.verbose) {
         cerr << programVersion << endl
@@ -468,7 +454,7 @@ int main(int argc, char **argv)
         FILE *fRes = fopen(pRes.str().c_str(), "wb");
         if (!fRes) {
             cerr << "error: cannot write " << pRes.str() << endl;
-            ::munmap(mapped, (size_t)fileBytes); ::close(fd); return 1;
+            return 1;
         }
         if (!res.empty())
             fwrite(res.data(), sizeof(int64_t), res.size(), fRes);
@@ -478,7 +464,7 @@ int main(int argc, char **argv)
         FILE *fSpk = fopen(pSpk.str().c_str(), "wb");
         if (!fSpk) {
             cerr << "error: cannot write " << pSpk.str() << endl;
-            ::munmap(mapped, (size_t)fileBytes); ::close(fd); return 1;
+            return 1;
         }
         if (!res.empty()) {
             const size_t wavLen = (size_t)args.spikeLength * (size_t)nChanG;
@@ -497,8 +483,6 @@ int main(int argc, char **argv)
         fclose(fSpk);
     }
 
-    ::munmap(mapped, (size_t)fileBytes);
-    ::close(fd);
 
     // ── report ────────────────────────────────────────────────────────────
     cout << "process_reextractspikes: groups=" << nGroups << endl;

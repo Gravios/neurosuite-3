@@ -97,11 +97,7 @@
 #include <string>
 #include <vector>
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include <neurosuite/core/mappedfile.hpp>   // read-only whole-file map (mmap / Windows)
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -896,9 +892,7 @@ static bool parseArgs(int argc, char **argv, EmgArgs &args)
 
 static int64_t fileSizeBytes(const string &path)
 {
-    struct stat st;
-    if (stat(path.c_str(), &st) != 0) return -1;
-    return (int64_t)st.st_size;
+    return neurosuite::core::fileSize64(path);   // -1 on error; 64-bit on Windows too
 }
 
 // median of |x| in-place destructive copy
@@ -1518,28 +1512,19 @@ static bool extractWaveforms(const EmgArgs         &args,
         return true;
     }
 
-    int fd = ::open(datPath.c_str(), O_RDONLY);
-    if (fd < 0) {
-        cerr << "process_extractemg: open(" << datPath << ") failed: "
-             << std::strerror(errno) << "\n";
+    neurosuite::core::MappedFile dat;
+    string mapError;
+    if (!dat.open(datPath, &mapError)) {
+        cerr << "process_extractemg: cannot map " << datPath << ": " << mapError << "\n";
         return false;
     }
-    const int64_t fsize = fileSizeBytes(datPath);
-    if (fsize <= 0) { ::close(fd); return false; }
-
-    void *map = ::mmap(nullptr, (size_t)fsize, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (map == MAP_FAILED) {
-        ::close(fd);
-        cerr << "process_extractemg: mmap failed: " << std::strerror(errno) << "\n";
-        return false;
-    }
-    const int16_t *raw = static_cast<const int16_t *>(map);
+    const int64_t fsize = dat.size();
+    if (fsize <= 0) return false;
+    const int16_t *raw = static_cast<const int16_t *>(dat.data());
     const int64_t nSampTotal = fsize / (args.nChannels * (int64_t)sizeof(int16_t));
 
     FILE *fout = std::fopen(outSpkPath.c_str(), "wb");
     if (!fout) {
-        ::munmap(map, (size_t)fsize);
-        ::close(fd);
         cerr << "process_extractemg: cannot open " << outSpkPath
              << " for write: " << std::strerror(errno) << "\n";
         return false;
@@ -1570,16 +1555,12 @@ static bool extractWaveforms(const EmgArgs         &args,
             cerr << "process_extractemg: short write of waveforms (group "
                  << g << ")\n";
             std::fclose(fout);
-            ::munmap(map, (size_t)fsize);
-            ::close(fd);
             return false;
         }
         ++nWritten;
     }
 
     std::fclose(fout);
-    ::munmap(map, (size_t)fsize);
-    ::close(fd);
 
     if (args.verbose)
         cout << "    waveforms written: " << nWritten << " → " << outSpkPath << "\n";
