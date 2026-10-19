@@ -47,7 +47,10 @@ ndm_subcluster_unmatched session.yaml --method stderiv
 Runs KiloKlustaKwik on the unmatched bin only and renumbers the
 resulting clusters `unmatchedId + 1` … `unmatchedId + K` in the host
 `.clu.<method>.N`. Groups without a `.shadowmark` sidecar from step 1
-are skipped. **This step automatically picks up empirical priors** when
+are skipped. The script calls the sorter as `KlustaKwik`; this
+repository installs it as `KiloKlustaKwik`, so put a `KlustaKwik` link
+to it on your `PATH` (for example
+`ln -s "$(command -v KiloKlustaKwik)" ~/.local/bin/KlustaKwik`). **This step automatically picks up empirical priors** when
 present — see [Empirical priors](empirical-priors.md). (Setting
 `reextractAutoSubcluster: 1` in the `ndm_reextractspikes` node runs
 this step at the end of step 1, but it reads the method from the

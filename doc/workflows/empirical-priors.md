@@ -87,7 +87,9 @@ back to the hex hash, and vice versa.
 ## Phase 1 — first-time bootstrap
 
 Run `ndm_subcluster_unmatched` (or `ndm_klustakwik`) on the first
-session as you always have. The resolver will look for a prior, find
+session as you always have (`ndm_subcluster_unmatched` needs a
+`KlustaKwik` link to `KiloKlustaKwik` on your `PATH`; see
+[Re-extract with a lower threshold](re-extract-lower-threshold.md#2-sub-cluster-the-unmatched-bin)). The resolver will look for a prior, find
 none, and silently fall through to the in-script defaults:
 
 ```sh
