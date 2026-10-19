@@ -20,6 +20,7 @@
 #ifndef CUSTOM_TYPES
 #define CUSTOM_TYPES
 
+#include <stdint.h>   // int16_t, int32_t, int64_t (for both C and C++ includers)
 #include <stdlib.h>
 
 // Neuralynx data types are defined as a custom types (easier to read and maintain)
