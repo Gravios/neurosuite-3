@@ -64,6 +64,11 @@ basename), which is already "ndm_decomposecollisions" at this call
 site.  Behavior on valid sessions is unchanged; behavior on
 adversarial YAML is now correct.
 
+> **Status (2026-10): regressed.** `ndm_decomposecollisions` again passes the
+> script name as a positional argument
+> (`read_script_parameter "$session" ndm_decomposecollisions <name>`) for every
+> parameter except `method`, so the "Before" behaviour above is back.
+
 ### Fix 4 — Pre-flight and overwrite checks accept `.spkD.N`
 
 Before: both checks only looked for `.spk.N`.  Sessions produced by the
