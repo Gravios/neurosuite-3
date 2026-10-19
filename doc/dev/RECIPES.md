@@ -220,7 +220,8 @@ change to survive a save.
      `parameteryamlreader.cpp` rather than chained `operator[]`
      (doc/libklustersshared/README.md, yaml-cpp 0.8 note);
    - add a setter to `ParameterYamlWriter` if an app writes it, and to
-     `ParameterYamlModifier` if ndmanager edits it in place;
+     `ParameterYamlModifier` if NeuroScope edits it in place (ndmanager
+     writes through its own code, not the modifier);
    - add a wrapper method to the app's reader (`NdManagerYamlReader`,
      `NeuroscopeYamlReader` or `KlustersYamlReader`) only if that app needs
      it.
