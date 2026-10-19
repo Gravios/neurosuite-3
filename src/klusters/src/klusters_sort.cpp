@@ -831,8 +831,9 @@ static std::vector<int> reorderSpectralFiedlerOrder(const std::vector<double>& S
 
     // Non-negative degrees and the Gershgorin shift c >= lambda_max(L).
     std::vector<double> deg(static_cast<size_t>(N), 0.0);
-    double maxDeg = 0.0;
-    #pragma omp parallel for reduction(max:maxDeg) schedule(static)
+    // The maximum is taken after the loop: reduction(max) is OpenMP 3.1,
+    // which MSVC's OpenMP 2.0 rejects (C7660).
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < N; ++i) {
         const double* Si = &S[static_cast<size_t>(i) * N];
         double d = 0.0;
@@ -842,8 +843,10 @@ static std::vector<int> reorderSpectralFiedlerOrder(const std::vector<double>& S
             if (w > 0.0) d += w;
         }
         deg[i] = d;
-        if (d > maxDeg) maxDeg = d;
     }
+    double maxDeg = 0.0;
+    for (int i = 0; i < N; ++i)
+        if (deg[i] > maxDeg) maxDeg = deg[i];
     const double c = 2.0 * maxDeg + 1.0;
 
     auto normalise = [&](std::vector<double>& v) -> double {

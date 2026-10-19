@@ -141,9 +141,16 @@ void DriftMatrixThread::process()
 
     const Data::ClusteringSnapshot& snap = *snapshot;   // this epoch's bytes (overlay + pinned descriptor)
 
+#if defined(_MSC_VER) && !defined(__clang__)
+// MSVC (OpenMP 2.0) rejects data members in data-sharing clauses (C3028).
+// Without the clauses everything is shared: the members as before, and the
+// const locals the other branch copies per thread, which are only read.
+#pragma omp parallel for schedule(dynamic,1)
+#else
 #pragma omp parallel for schedule(dynamic,1) default(none) \
     shared(meanWav, allFileIdx, snap) \
     firstprivate(nClusters, nPts, nChan, nSamp)
+#endif
     for (int ci = 0; ci < nClusters; ++ci) {
         if (cancelled()) continue;
 

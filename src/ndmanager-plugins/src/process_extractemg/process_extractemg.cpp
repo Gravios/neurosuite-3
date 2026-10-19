@@ -1678,8 +1678,10 @@ int main(int argc, char **argv)
         cout << ")\n";
     }
 
-#ifdef _OPENMP
+#if defined(_OPENMP) && _OPENMP >= 200805
     omp_set_max_active_levels(1);   // avoid nested oversubscription
+#elif defined(_OPENMP)
+    omp_set_nested(0);              // OpenMP 2.0 (MSVC): no max_active_levels
 #endif
 
     #pragma omp parallel for schedule(dynamic, 1) if(runtime.size() > 1)

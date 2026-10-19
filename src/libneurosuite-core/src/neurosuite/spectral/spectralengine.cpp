@@ -104,7 +104,9 @@ void bandPowerByChannel(const double* blockCM, int nch, int effNSamples,
         double h1[TILE]={0}, h2[TILE]={0}, l1[TILE]={0}, l2[TILE]={0}, acc[TILE]={0};
         for (int i = 0; i < effNSamples; ++i) {
             double* row = &sm[static_cast<std::size_t>(i) * w];
+#if !defined(_MSC_VER) || defined(__clang__)   // MSVC: simd needs /openmp:experimental (C7660)
             #pragma omp simd
+#endif
             for (int k = 0; k < w; ++k) {
                 const double x = row[k];
                 const double yh = hb0 * x + h1[k];

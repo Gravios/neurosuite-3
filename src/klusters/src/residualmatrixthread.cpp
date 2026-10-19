@@ -129,9 +129,16 @@ void ResidualMatrixThread::process()
 
     const Data::ClusteringSnapshot& snap = *snapshot;   // this epoch's bytes (overlay + pinned descriptor)
 
+#if defined(_MSC_VER) && !defined(__clang__)
+// MSVC (OpenMP 2.0) rejects data members in data-sharing clauses (C3028).
+// Without the clauses everything is shared: the members as before, and the
+// const locals the other branch copies per thread, which are only read.
+#pragma omp parallel for schedule(dynamic,1)
+#else
 #pragma omp parallel for schedule(dynamic,1) default(none) \
     shared(meanWav, varWav, allFileIdx, snap) \
     firstprivate(nClusters, nPts, nChan, nSamp)
+#endif
     for (int ci = 0; ci < nClusters; ++ci) {
         if (cancelled()) continue;
 
@@ -236,9 +243,16 @@ void ResidualMatrixThread::process()
             pairs.emplace_back(i, j);
     const int nPairs = static_cast<int>(pairs.size());
 
+#if defined(_MSC_VER) && !defined(__clang__)
+// MSVC (OpenMP 2.0) rejects data members in data-sharing clauses (C3028).
+// Without the clauses everything is shared: the members as before, and the
+// const locals the other branch copies per thread, which are only read.
+#pragma omp parallel for schedule(dynamic,4)
+#else
 #pragma omp parallel for schedule(dynamic,4) default(none) \
     shared(meanWav, meanVar, pairs, scores) \
     firstprivate(nPairs, effPts, invPts)
+#endif
     for (int pi = 0; pi < nPairs; ++pi) {
         if (cancelled()) continue;
         const int i = pairs[static_cast<size_t>(pi)].first;

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Windows: OpenMP code that MSVC accepts; the CI build gets further](#2026-10-19--windows-openmp-code-that-msvc-accepts-the-ci-build-gets-further) |
 | 2026-10-19 | [Windows: the ndm_* steps run from cmd and PowerShell through Git Bash](#2026-10-19--windows-the-ndm_-steps-run-from-cmd-and-powershell-through-git-bash) |
 | 2026-10-19 | [Windows: the install puts the programs on PATH](#2026-10-19--windows-the-install-puts-the-programs-on-path) |
 | 2026-10-19 | [Windows: one script installs the build dependencies](#2026-10-19--windows-one-script-installs-the-build-dependencies) |
@@ -83,6 +84,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Windows: OpenMP code that MSVC accepts; the CI build gets further
+
+<details>
+<summary>Details</summary>
+
+- The `windows` CI job (MSVC `cl`, which implements OpenMP 2.0) stopped on
+  OpenMP constructs from later versions; Intel `icx` and GCC accept them,
+  which is why local `icx` builds succeeded. Fixed where the log showed them:
+  - Klusters' template, residual and drift matrix threads and the grouping
+    assistant named data members in `default(none)` clauses (C3028). With
+    MSVC they take a clause-free `parallel for`: everything is shared, as the
+    members were, and the per-thread copies were only of `const` locals.
+    Other compilers keep `default(none)`.
+  - `klusters_sort`: the degree maximum used `reduction(max)` (C7660); it is
+    now taken after the parallel loop, for every compiler.
+  - The spectral engine's `#pragma omp simd` (C7660) is skipped for MSVC.
+  - `process_extractemg` called `omp_set_max_active_levels` (OpenMP 3.0); with
+    OpenMP 2.0 it calls `omp_set_nested(0)`.
+- Checked on Linux: full build and tests, and the same with the MSVC branches
+  forced on under GCC. The CI log showed these errors only up to the point
+  where the build stopped (685 of 792 steps), so the next run may show more.
+
+</details>
 
 ## 2026-10-19 — Windows: the ndm_* steps run from cmd and PowerShell through Git Bash
 

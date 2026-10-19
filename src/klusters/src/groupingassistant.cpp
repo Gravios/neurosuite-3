@@ -835,9 +835,16 @@ Array<double>* GroupingAssistant::computeProbabilities(
     int nbClustersInt = nbClusters;
 
 #ifdef _OPENMP
+#if defined(_MSC_VER) && !defined(__clang__)
+// MSVC (OpenMP 2.0) rejects data members in data-sharing clauses (C3028).
+// Without the clauses everything is shared: the members as before, and the
+// const locals the other branch copies per thread, which are only read.
+#pragma omp parallel for schedule(dynamic)
+#else
 #pragma omp parallel for schedule(dynamic) default(none) \
     shared(cdata, spans, probabilities, spikesByCluster, clusteringData, \
            nbClustersInt, nbDimensions)
+#endif
 #endif
     for (int ci = 0; ci < static_cast<int>(cdata.size()); ++ci) {
         if (stopRequested()) continue;
