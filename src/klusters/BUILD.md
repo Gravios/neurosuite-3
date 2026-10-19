@@ -1,50 +1,28 @@
 # Building klusters
 
-## Standard build (OpenMP only)
+Klusters is built with the rest of neurosuite-3 from the top-level
+`CMakeLists.txt`; there is no separate Klusters build.
 
-```sh
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-sudo make install
-```
-
-## With Intel Arc / SYCL acceleration
-
-CMake must be told to use `icpx` as the CXX compiler **before** the cache is
-created.  Do this once from a clean directory:
-
-```sh
-source /opt/intel/oneapi/setvars.sh
-mkdir build && cd build
-cmake .. -DCMAKE_CXX_COMPILER=$(which icpx)
-make -j$(nproc)
-sudo make install
-```
-
-Passing `-DCMAKE_CXX_COMPILER=icpx` on the first run avoids the
-"variables that require your cache to be deleted" double-configure that
-occurs if cmake switches the compiler mid-run.
-
-If you have an existing build directory and want to enable SYCL, delete it
-first:
-
-```sh
-rm -rf build
-source /opt/intel/oneapi/setvars.sh
-mkdir build && cd build
-cmake .. -DCMAKE_CXX_COMPILER=$(which icpx)
-make -j$(nproc)
-```
+- Installation, all platforms: [doc/INSTALL.md](../../doc/INSTALL.md)
+- Build options, GPU backends (including the `icpx` compiler requirement for
+  SYCL) and the skip flags for building Klusters alone:
+  [doc/BUILD.md](../../doc/BUILD.md) — §3 *Build options*, §4 *GPU backends*,
+  §5 *The build graph and skip flags*
 
 ## Disabling GPU backends explicitly
 
 ```sh
-cmake .. -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF
+cmake -B build -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF
 ```
+
+The OpenMP CPU path is always built.
 
 ## Backend selection at runtime
 
-The xcorr realignment backend is selected automatically at startup in priority
-order: CUDA → HIP → SYCL → OpenMP.  The chosen backend is shown in the
-pre-flight Realign Spikes dialog.
+The realignment cross-correlation picks its backend when it first runs, in the
+order CUDA → HIP → SYCL → OpenMP, among the backends that were built and find
+a device. SYCL is opt-in: it is tried only when the environment variable
+`KLUSTERS_USE_SYCL` is set (for example `KLUSTERS_USE_SYCL=1 klusters …`),
+because probing the oneAPI runtime can abort on some Level Zero drivers. The
+chosen backend is printed to standard output as
+`[realign] xcorr backend: …`.
