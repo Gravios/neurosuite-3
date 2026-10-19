@@ -22,6 +22,16 @@
 namespace neuroscope {
 namespace spectral {
 
+// pi.  This header is also compiled by nvcc for spectralgpu.cu, and the CUDA
+// sources are built as C++17 (CMAKE_CUDA_STANDARD 17), where <numbers> has no
+// std::numbers.  __cpp_lib_math_constants is defined by <numbers> when it
+// does (C++20, GCC/Clang/MSVC alike; MSVC's __cplusplus cannot be trusted).
+#if defined(__cpp_lib_math_constants)
+inline constexpr double kPi = std::numbers::pi;
+#else
+inline constexpr double kPi = 3.141592653589793238462643383279502884;
+#endif
+
 // True iff n is a positive power of two.
 inline bool isPowerOfTwo(std::size_t n)
 {
@@ -54,7 +64,7 @@ inline void fftRadix2(std::vector<std::complex<double>>& x, bool inverse)
 
     const double sign = inverse ? 1.0 : -1.0;
     for (std::size_t len = 2; len <= n; len <<= 1) {
-        const double ang = sign * 2.0 * std::numbers::pi / static_cast<double>(len);
+        const double ang = sign * 2.0 * kPi / static_cast<double>(len);
         const std::complex<double> wlen(std::cos(ang), std::sin(ang));
         for (std::size_t i = 0; i < n; i += len) {
             std::complex<double> w(1.0, 0.0);
