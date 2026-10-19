@@ -8,6 +8,17 @@ distinct from the project-wide `ROADMAP.md`.  Audit and infrastructure work
 that touches plugins (compiler-flag CI, schema versioning, etc.) is tracked
 in the project roadmap; here we focus on **plugin functionality**.
 
+> **Status (2026-10):** partly stale. The pipeline diagram below is
+> current; the items were last reviewed on 2026-04-30 and are corrected
+> inline where the tree has moved on: the progressbar wiring is done; the
+> D-suffix files (`.spkD`/`.fetD`) are retired (detection is
+> `ndm_detectspikes`, and `ndm_extractspikes` / `ndm_pca` /
+> `ndm_refeaturize` / `ndm_reextractspikes` each dispatch on `--method`,
+> with `ndm_pca_stderiv` and `ndm_extractspikes_{sdiff,stderiv}` kept as
+> deprecation shims);
+> there are no `.docbook~` files; seven plugin programs have optional CUDA
+> paths; and Klusters builds its **Plugins** menu from plugin descriptors.
+
 Status indicators match the project ROADMAP convention:
 **🔥 active**, **🎯 next**, **📋 planned**, **💭 considered**, **✅ done**, **❌ dropped**.
 
@@ -29,35 +40,42 @@ Status indicators match the project ROADMAP convention:
                         ▼
             ┌───────────────────────────┐
             │  signal conditioning      │  ndm_hipass, ndm_lfp,
-            │  (filter, drift, denoise) │  ndm_estimatedrift, ndm_applydrift,
-            │                           │  ndm_denoiseuniform, ndm_resample
+            │  (filter, denoise)        │  ndm_denoiseuniform, ndm_resample
             └───────────────────────────┘
                         │
                         ▼
             ┌───────────────────────────┐
-            │  spike extraction         │  ndm_extractspikes
-            │  ┌─ raw waveform ─────────┤    ndm_extractspikes_sdiff
-            │  ├─ spatial-derivative ───┤    ndm_extractspikes_stderiv
-            │  └─ spatio-temporal ──────┤
+            │  spike detection          │  ndm_detectspikes [--method M]
+            │                           │    → .res.<method>.N
             └───────────────────────────┘
                         │
                         ▼
             ┌───────────────────────────┐
-            │  feature extraction       │  ndm_pca (raw .spk)
-            │  ┌─ canonical PCA ────────┤    ndm_pca_stderiv (.spkD → .fetD)
-            │  └─ stderiv PCA ──────────┤    ndm_refeaturize (rebuild .fet from new .spk)
+            │  waveform extraction      │  ndm_extractspikes [--method M]
+            │  (standard|sdiff|stderiv) │    → .spk.<method>.N
             └───────────────────────────┘
                         │
                         ▼
             ┌───────────────────────────┐
-            │  clustering (KiloKlustaKwik)  │  ndm_klustakwik
+            │  feature extraction       │  ndm_pca [--method M]
+            │                           │    → .fet.<method>.N, .pca.<method>.N
+            │                           │  ndm_refeaturize (rebuild .fet from
+            │                           │    a changed .spk)
             └───────────────────────────┘
                         │
                         ▼
             ┌───────────────────────────┐
-            │  refinement / curation    │  ndm_subcluster_unmatched
-            │  helpers                  │    ndm_decomposecollisions (offline)
-            └───────────────────────────┘  ndm_redetectspikes (post-curation re-run)
+            │  clustering               │  ndm_klustakwik [--method M]
+            │  (KiloKlustaKwik)         │    → .clu.<method>.N
+            └───────────────────────────┘
+                        │
+                        ▼
+            ┌───────────────────────────┐
+            │  refinement / curation    │  ndm_reextractspikes, ndm_subcluster_unmatched,
+            │  helpers                  │  ndm_decomposecollisions, ndm_stripdat,
+            │                           │  ndm_redetectspikes, ndm_estimatedrift,
+            │                           │  ndm_applydrift
+            └───────────────────────────┘
                         │
                         ▼
                 klusters (interactive sorting)
@@ -71,20 +89,13 @@ This pipeline structure organises the roadmap.
 
 ### 🎯 next
 
-**`ndm_pca` and friends: the v6 progressbar drop wiring.**
-The v6 progressbar tarball needs application — once Gravio extracts it and
-runs the build, the per-group `[PCA-7]` labels and red ✗ failure markers
-go live across `ndm_pca` and `ndm_pca_stderiv`.  Then verify on
-`jg05-20120316` group 7.  Failure-marker testing requires forcing one
-group to fail (e.g. `chmod -r` on its `.spk.N` input) — add a brief test
-recipe to docs.  Estimate: trivial, just verification.
-
-**Wire `setFailed()` in `process_pca` exit paths.**
-Five `exit(1)` sites in `process_pca.cpp`; before each, call
-`progress->setFailed(); delete progress;`.  Means red ✗ on direct CLI use,
-not just from wrapper-script failure detection.  Also: do the same for
-`process_nlxconvert` and any other plugin using `ProgressBar` heap-style.
-Estimate: half a session.
+**Verify the progressbar failure markers on the reference session.**
+The wiring is in: `ndm_pca` uses `print_group_failed` and
+`process_pca.cpp` calls `progress->setFailed()` on its failure paths.
+Still to do: a live check on `jg05-20120316` group 7, forcing one group to
+fail (e.g. `chmod -r` on its `.spk.<method>.N` input), and the same
+`setFailed()` sweep for `process_nlxconvert` and any other plugin using
+`ProgressBar` heap-style.  Estimate: half a session.
 
 **Audit `process_pca_stderiv` exit paths same as above.**
 The stderr-summary line was suppressed in the v6 drop; need to make sure
@@ -105,23 +116,20 @@ Replicate to other plugins that run per-group in parallel:
 - `process_reextractspikes`, `process_reextractspikes_stderiv`
 - `process_refeaturize`, `process_refeaturize_stderiv`
 - `process_shadowcluster`
-- `process_subcluster_unmatched` (already in memory entries as built but
-  not group-labeled)
+
+(There is no `process_subcluster_unmatched`; `ndm_subcluster_unmatched`
+runs KiloKlustaKwik directly.)
 
 Each gets a `-g N` CLI option, the wrapper passes `-g $electrodeGroup`,
 the bar shows `[<step>-<N>]`.  Mechanical sweep, ~10 plugins × 5 minutes
 each.  Estimate: 1 session.
 
-**Stale `.docbook~` files removed from tree.**
-8 backup files (`*.docbook~`) committed by accident — vim swap residue.
-They serve no purpose; `git rm` and update `.gitignore` to add `*~`.
-Estimate: trivial.
-
 **Docbook coverage extension.**
-Currently 10 of ~50 wrappers have man pages.  Sweep the major
-orchestrators (`ndm_pca`, `ndm_pca_stderiv`, `ndm_klustakwik`,
-`ndm_extractspikes` family, `ndm_hipass`, `ndm_lfp`) and write `.docbook`
-files for them.  Estimate: 1-2 sessions; can be incremental.
+Currently 13 `.docbook` man pages exist for 53 `ndm_*` wrappers (the
+per-command Markdown pages under `doc/ndmanager-plugins/commands/` cover
+the rest).  Sweep the major orchestrators (`ndm_pca`, `ndm_klustakwik`,
+`ndm_detectspikes`, `ndm_extractspikes`, `ndm_hipass`, `ndm_lfp`) and
+write `.docbook` files for them.  Estimate: 1-2 sessions; can be incremental.
 
 **Reverse direction: `ndm_yaml2xml`.**
 `ndm_xml2yaml` exists for the one-shot XML → YAML migration but no
@@ -132,10 +140,10 @@ migration considered one-way?  If yes, drop this item.  Estimate: 1
 session if proceeded with.
 
 **`ndm_clean` cleanup audit.**
-84-line wrapper that removes intermediate files.  Memory tracks no
-recent changes here, but pipeline additions (`.fetD.N`, `.col.N`,
-`.spkD.N`, `.res.pending`, `process_decomposecollisions` outputs) may
-have introduced new file types not yet in the cleanup list.  Sweep and
+81-line wrapper that removes intermediate files.  Pipeline additions
+(method-tagged `.<type>.<method>.N` names, `.col.<method>.N`, `.pending`
+working copies, `.shadowmark`, `.chunks.N`) may have introduced file
+types not yet in the cleanup list.  Sweep and
 update.  Estimate: half a session.
 
 ### 💭 considered
@@ -163,10 +171,11 @@ but introducing the standard means churning every plugin's CLI.  Decision
 needed.
 
 **`process_*` Python plugins → C++ rewrite policy.**
-Five plugins are Python: `process_applydrift.py`, `process_decomposecollisions.py`
-(deprecated, removed), `process_estimatedrift.py`, `process_localise.py`,
-`process_setupgroups.py`.  `process_decomposecollisions` was already
-ported to C++ this past quarter.  Should the others follow?  Considerations:
+Python plugins include `process_applydrift.py`, `process_estimatedrift.py`,
+`process_localise.py` and `process_setupgroups.py`.
+`process_decomposecollisions` was already ported to C++; the old
+`process_decomposecollisions.py` is still in `scripts/` but is no longer
+installed.  Should the others follow?  Considerations:
 - `applydrift` and `estimatedrift` are I/O-bound; Python is fine
 - `localise` involves matrix work; C++ would be faster
 - `setupgroups` is config plumbing; Python is appropriate
@@ -206,12 +215,12 @@ combinations have completed would let `ndm_pca` (and friends) skip
 already-done work.  Estimate: 2 sessions for the state machinery; 1
 session per plugin for adoption.
 
-**Plugin metadata for klusters integration.**
-Klusters' "redetect spikes" / "realign" / "reextract" buttons currently
-shell out to `ndm_*` wrappers.  If plugins exposed metadata (description,
-parameters, inputs/outputs) klusters could build a more flexible
-pipeline-action UI driven by what plugins are installed.  Tied to the
-`--describe` work above.  Estimate: 1-2 sessions after `--describe`.
+**Plugin metadata for klusters integration.** *(partly done)*
+Klusters already builds its **Plugins** menu from installed plugin
+descriptors, with a parameter dialog and process runner
+(`KlustersApp::populatePluginsMenu`).  What remains is the `--describe`
+manifest of inputs/outputs above, so the menu can also show what a step
+reads and writes.
 
 ### 💭 considered
 
@@ -232,8 +241,8 @@ or paranoia?
 
 **Plugin parallelism abstraction.**
 The parallel-group pattern (`(once $i) > log 2>&1 &; wait; cat log`) is
-duplicated across `ndm_pca`, `ndm_pca_stderiv`, `ndm_extractspikes_*`,
-`ndm_refeaturize_*`, `ndm_reextractspikes_*`.  Five+ copies of nearly
+duplicated across the per-group wrappers (`ndm_pca`, `ndm_refeaturize`,
+`ndm_reextractspikes`, …).  Several copies of nearly
 identical code.  A `parallel_per_group` shell function in `ndm_functions`
 that takes a command template would reduce duplication and make
 parallelism behavior change-able in one place.  Decision needed: worth
@@ -242,9 +251,11 @@ the refactor, or leave-as-is given it works?
 **GPU acceleration of `process_pca`.**
 Currently OpenMP-parallel CPU.  PCA on `.spk.N` is the longest single
 step in the typical pipeline.  cuBLAS SGEMM + eigh on the covariance
-matrix would be ~10-50× faster on Gravio's hardware (RTX 5070 Ti).  But:
-adds CUDA dependency to the plugins (currently only KiloKlustaKwik depends
-on CUDA), changes deployment story.  Decision needed: is the speedup
+matrix would be ~10-50× faster on Gravio's hardware (RTX 5070 Ti).  Seven
+plugin programs already have optional CUDA paths (`process_medianfilter`,
+`process_medianthreshold`, `process_butterworth`, `process_lowpass`,
+`process_spikegrouper`, `process_decomposecollisions`,
+`process_extractemg`), so the deployment cost is known.  Decision needed: is the speedup
 worth the deployment complexity?
 
 **`process_localise.py` → spatial localization as first-class.**
@@ -274,7 +285,7 @@ worth doing in a consolidated pass:
    meaning paths with spaces explode.  shellcheck pass over the whole
    `scripts/` directory would find these.
 
-3. **`ndm_functions` modularisation.**  Currently 1278 lines; growing.
+3. **`ndm_functions` modularisation.**  Currently 1993 lines; growing.
    Split by category: `ndm_functions_io` (file utilities),
    `ndm_functions_progress` (banners, progress integration),
    `ndm_functions_groups` (electrode-group iteration),
@@ -336,9 +347,17 @@ Full C++ rewrite from Python, with OpenMP CPU parallelism and cuBLAS
 SGEMM GPU batch correlation.  Binary `.col.N` format defined.  u1 fixed
 at τ=0; only u2 circularly shifted; self-pairs excluded.  Amplitude
 clamping uses per-template projection coefficient distributions
-(1st/99th percentile ±50% extension).  Python version `git rm`'d.
+(1st/99th percentile ±50% extension).  The Python version is no longer
+installed (the file remains in `scripts/`).
 
-### ✅ `ndm_decomposecollisions`, `ndm_reextractspikes`, `ndm_reextractspikes_stderiv`, `ndm_subcluster_unmatched` added to `install(PROGRAMS …)` in `scripts/CMakeLists.txt`.
+### ✅ Method dispatch instead of per-variant wrappers
+
+`ndm_detectspikes` is a separate step; `ndm_extractspikes`, `ndm_pca`,
+`ndm_refeaturize` and `ndm_reextractspikes` take `--method`
+(`standard` / `sdiff` / `stderiv`).  `ndm_pca_stderiv` and
+`ndm_extractspikes_{sdiff,stderiv}` remain as deprecation shims.
+
+### ✅ `ndm_decomposecollisions`, `ndm_reextractspikes`, `ndm_subcluster_unmatched` added to `install(PROGRAMS …)` in `scripts/CMakeLists.txt`.
 
 </details>
 
@@ -390,6 +409,6 @@ debounce purposes.
 or get re-scoped as work progresses.  Update the date below when you
 make changes.*
 
-*Last updated: 2026-04-30.*
+*Last updated: 2026-10-19.*
 
 </details>
