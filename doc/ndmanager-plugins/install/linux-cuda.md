@@ -1,70 +1,71 @@
 # ndmanager-plugins — Linux Installation, NVIDIA CUDA
 
-GPU acceleration speeds up `process_medianfilter` (used by `ndm_hipass`), `process_medianthreshold` (used by `ndm_extractspikes`), and `process_spikegrouper` (used by `ndm_spikegrouper`). All three fall back to OpenMP automatically when CUDA is absent, so this guide is only needed if you want GPU acceleration.
+The plugins are built with the rest of neurosuite-3
+(**[Installing neurosuite-3 → Linux](../../INSTALL.md#linux)**). This page is
+only about their CUDA paths. Every program also has a CPU path, so CUDA is
+optional.
 
-Requires CUDA ≥ 12.8 for sm_120 (Blackwell). CUDA 12.x is sufficient for sm_86 / sm_89 / sm_100.
+## Which programs use CUDA
 
-## Step 1 — Install CUDA Toolkit
+| Program | Used by | CUDA build switch |
+|---|---|---|
+| `process_butterworth` | `ndm_hipass` (default `filter: butterworth`) | built with CUDA whenever `nvcc` is found |
+| `process_medianfilter` | `ndm_hipass` with `filter: median`, `ndm_bandpass` | built with CUDA whenever `nvcc` is found |
+| `process_medianthreshold` | `ndm_detectspikes` (`standard` method), `ndm_redetectspikes`, `ndm_reextractspikes` | built with CUDA whenever `nvcc` is found |
+| `process_spikegrouper` | `ndm_spikegrouper` | built with CUDA whenever `nvcc` is found |
+| `process_decomposecollisions` | `ndm_decomposecollisions` | `PDC_USE_CUDA` (default `ON`); `process_decomposecollisions_cpu` is always built and is installed as `process_decomposecollisions` when there is no CUDA build |
+| `process_extractemg` | `ndm_extractemg` | `USE_CUDA`, `USE_HIP`, `USE_SYCL` (each default `ON`; CUDA > HIP > SYCL > CPU) |
 
-Follow **[doc/gpu/README.md — NVIDIA CUDA](../../gpu/README.md#nvidia-cuda)** for complete installation instructions, including CUDA 12.8 for RTX 5000 series and Secure Boot MOK key signing.
+The first four set `CMAKE_CUDA_ARCHITECTURES` to `86 89 100 120` in their own
+CMakeLists, overriding any `-DCMAKE_CUDA_ARCHITECTURES` you pass. Compute
+capability 12.0 (Blackwell) needs **CUDA ≥ 12.8**, so with these four the
+toolkit must be 12.8 or newer whenever `nvcc` is on `PATH`, whatever GPU you
+have.
 
-## Step 2 — System packages
+## Step 1 — Install the CUDA Toolkit
 
-```bash
-sudo apt install \
-  cmake build-essential pkg-config \
-  libxml2-dev libyaml-cpp-dev python3-yaml python3-numpy python3-scipy libgomp1
-```
+Follow **[doc/gpu/README.md — NVIDIA CUDA](../../gpu/README.md#nvidia-cuda)**
+(CUDA 12.8, Secure Boot MOK signing).
 
-## Step 3 — Build
+## Step 2 — Build
 
-CUDA is detected automatically when `nvcc` is on PATH. No extra flags required.
-
-```bash
-cd /path/to/neurosuite-3/src
-
-cmake -B build/ndmanager-plugins ndmanager-plugins \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build/ndmanager-plugins -j$(nproc)
-sudo cmake --install build/ndmanager-plugins
-```
-
-To target a specific GPU architecture:
-
-```bash
-cmake -B build/ndmanager-plugins ndmanager-plugins \
-  -DCMAKE_CUDA_ARCHITECTURES="86;89;120"
-  # 86 = Ampere (RTX 30xx), 89 = Ada (RTX 40xx), 120 = Blackwell (RTX 50xx)
-```
-
-To force CPU-only despite having CUDA installed:
-
-```bash
-cmake -B build/ndmanager-plugins ndmanager-plugins \
-  -DUSE_CUDA=OFF -DCMAKE_BUILD_TYPE=Release
-```
+With `nvcc` on `PATH`, build as in [INSTALL.md](../../INSTALL.md#linux); no
+extra flags are needed. Build options and GPU backends are in
+[BUILD.md §4](../../BUILD.md#4-gpu-backends). The system packages are those of
+the [CPU guide](linux-cpu.md#system-packages) (including `libgsl-dev`).
 
 ## Verify
 
-```bash
-process_medianfilter --version
+The programs have no `--version` option. Check the configure output instead:
+
+```
+-- process_butterworth: CUDA build (86;89;100;120)
+-- process_medianfilter: CUDA build (86;89;100;120)
+-- process_medianthreshold: CUDA build (86;89;100;120)
+-- process_spikegrouper: CUDA build (86;89;100;120)
 ```
 
-Should print `process_medianfilter (CUDA, sm_XX)`. If it prints `(OpenMP, ...)` instead, CMake did not detect CUDA — check that `nvcc --version` works and re-run from a clean build directory.
+`CPU build` on those lines means CMake did not find `nvcc`: check
+`nvcc --version` and re-configure from a clean build directory.
 
-## Performance notes
+## CPU-only build with CUDA installed
 
-`chunkSize` in the `ndm_hipass` parameter block controls how much data is loaded per GPU pass. Reduce from the default if you see out-of-memory errors:
+`-DUSE_CUDA=OFF` does not stop the four programs above from building with
+CUDA: they call `check_language(CUDA)` themselves. In a plugins-only build it
+only affects `process_extractemg`; `process_decomposecollisions` has its own
+`-DPDC_USE_CUDA=OFF`. To build the four on CPU, configure from a fresh build
+directory in a shell where `nvcc` is not on `PATH`, and check that the
+configure output says `CPU build` for them.
+
+## `chunkSize` (median filter only)
+
+`ndm_hipass` reads `chunkSize` only with `filter: median`. It is the number of
+bytes `process_medianfilter` processes per pass: default 128 MiB, and values
+above 512 MiB are clamped to 512 MiB. Lower it if the GPU runs out of memory:
 
 ```yaml
 - name: ndm_hipass
   parameters:
     - name: chunkSize
-      value: 8000000000    # 8 GB
-```
-
-## Uninstall
-
-```bash
-sudo xargs rm -f < build/ndmanager-plugins/install_manifest.txt
+      value: 67108864    # 64 MiB
 ```
