@@ -91,6 +91,7 @@
 
 #include <cstdio>
 #include <neurosuite/core/fileio64.hpp>
+#include <neurosuite/core/fileops.hpp>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -973,7 +974,7 @@ int main(int argc, char* argv[])
     }
     fclose(outF);
 
-    if (rename(spkTmp.c_str(), spkPath.c_str()) != 0) {
+    if (!neurosuite::core::replaceFile(spkTmp, spkPath)) {
         remove(spkTmp.c_str());
         die("rename of .spk.aligntmp failed");
     }
@@ -1027,7 +1028,7 @@ int main(int argc, char* argv[])
         }
         fclose(resOutF);
 
-        if (rename(resTmp.c_str(), resPath.c_str()) != 0) {
+        if (!neurosuite::core::replaceFile(resTmp, resPath)) {
             remove(resTmp.c_str());
             die("rename of .res.aligntmp failed");
         }

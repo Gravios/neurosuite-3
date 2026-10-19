@@ -98,6 +98,7 @@
 
 #include <algorithm>
 #include <neurosuite/core/fileio64.hpp>
+#include <neurosuite/core/fileops.hpp>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -810,9 +811,10 @@ int main(int argc, char **argv)
     // On in-place merge this guarantees a crash between fopen and fclose
     // leaves the original file untouched.
     auto atomicRename = [](const std::string &tmp, const std::string &final_) {
-        if (std::rename(tmp.c_str(), final_.c_str()) != 0) {
+        std::string replaceError;
+        if (!neurosuite::core::replaceFile(tmp, final_, &replaceError)) {
             cerr << "error: rename '" << tmp << "' → '" << final_ << "': "
-                 << std::strerror(errno) << endl;
+                 << replaceError << endl;
             std::exit(1);
         }
     };

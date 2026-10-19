@@ -28,6 +28,7 @@
 #include <iostream>
 #include <vector>
 #include <fstream>
+#include <neurosuite/core/fileops.hpp>
 #include <stdlib.h>
 #include <string.h>
 #include <sstream>
@@ -219,7 +220,7 @@ int main(int argc,char *argv[])
 
 	// Backup (rename) existing files
 	// (in case of an error, try to leave directory in initial state)
-	if ( rename(cluInputFilename.c_str(),(cluInputFilename+"~").c_str())  )
+	if ( !neurosuite::core::replaceFile(cluInputFilename, (cluInputFilename+"~"))  )
 	{
 		cerr << "error: cannot backup existing clu file (make sure you have removed all previously created backup files), leaving input files untouched." << endl;
 		remove(cluOutputFilename.c_str());
@@ -228,33 +229,33 @@ int main(int argc,char *argv[])
 		if ( fet ) remove(fetOutputFilename.c_str());
 		return EXIT_FAILURE;
 	}
-	if ( res && rename(resInputFilename.c_str(),(resInputFilename+"~").c_str()) )
+	if ( res && !neurosuite::core::replaceFile(resInputFilename, (resInputFilename+"~")) )
 	{
 		cerr << "error: cannot backup existing res file (make sure you have removed all previously created backup files), leaving input files untouched." << endl;
-		rename((cluInputFilename+"~").c_str(),cluInputFilename.c_str());
+		neurosuite::core::replaceFile((cluInputFilename+"~"), cluInputFilename);
 		remove(cluOutputFilename.c_str());
 		if ( res ) remove(resOutputFilename.c_str());
 		if ( spk ) remove(spkOutputFilename.c_str());
 		if ( fet ) remove(fetOutputFilename.c_str());
 		return EXIT_FAILURE;
 	}
-	if ( fet && rename(fetInputFilename.c_str(),(fetInputFilename+"~").c_str()) )
+	if ( fet && !neurosuite::core::replaceFile(fetInputFilename, (fetInputFilename+"~")) )
 	{
 		cerr << "error: cannot backup existing fet file (make sure you have removed all previously created backup files), leaving input files untouched." << endl;
-		rename((cluInputFilename+"~").c_str(),cluInputFilename.c_str());
-		if ( res ) rename((resInputFilename+"~").c_str(),resInputFilename.c_str());
+		neurosuite::core::replaceFile((cluInputFilename+"~"), cluInputFilename);
+		if ( res ) neurosuite::core::replaceFile((resInputFilename+"~"), resInputFilename);
 		remove(cluOutputFilename.c_str());
 		if ( res ) remove(resOutputFilename.c_str());
 		if ( spk ) remove(spkOutputFilename.c_str());
 		if ( fet ) remove(fetOutputFilename.c_str());
 		return EXIT_FAILURE;
 	}
-	if ( spk && rename(spkInputFilename.c_str(),(spkInputFilename+"~").c_str()) )
+	if ( spk && !neurosuite::core::replaceFile(spkInputFilename, (spkInputFilename+"~")) )
 	{
 		cerr << "error: cannot backup existing spk file (make sure you have removed all previously created backup files), leaving input files untouched." << endl;
-		rename((cluInputFilename+"~").c_str(),cluInputFilename.c_str());
-		if ( res ) rename((resInputFilename+"~").c_str(),resInputFilename.c_str());
-		if ( fet ) rename((fetInputFilename+"~").c_str(),fetInputFilename.c_str());
+		neurosuite::core::replaceFile((cluInputFilename+"~"), cluInputFilename);
+		if ( res ) neurosuite::core::replaceFile((resInputFilename+"~"), resInputFilename);
+		if ( fet ) neurosuite::core::replaceFile((fetInputFilename+"~"), fetInputFilename);
 		remove(cluOutputFilename.c_str());
 		if ( res ) remove(resOutputFilename.c_str());
 		if ( spk ) remove(spkOutputFilename.c_str());
@@ -263,19 +264,19 @@ int main(int argc,char *argv[])
 	}
 
 	// Rename temporary output files
-	if ( rename(cluOutputFilename.c_str(),cluInputFilename.c_str()) )
+	if ( !neurosuite::core::replaceFile(cluOutputFilename, cluInputFilename) )
 	{
 		cerr << "warning: cannot rename temporary output clu file (current name: '" << cluOutputFilename << "')." << endl;
 	}
-	if ( res && rename(resOutputFilename.c_str(),resInputFilename.c_str()) )
+	if ( res && !neurosuite::core::replaceFile(resOutputFilename, resInputFilename) )
 	{
 		cerr << "warning: cannot rename temporary output res file (current name: '" << resOutputFilename << "')." << endl;
 	}
-	if ( fet && rename(fetOutputFilename.c_str(),fetInputFilename.c_str()) )
+	if ( fet && !neurosuite::core::replaceFile(fetOutputFilename, fetInputFilename) )
 	{
 		cerr << "warning: cannot rename temporary output fet file (current name: '" << fetOutputFilename << "')." << endl;
 	}
-	if ( spk && rename(spkOutputFilename.c_str(),spkInputFilename.c_str()) )
+	if ( spk && !neurosuite::core::replaceFile(spkOutputFilename, spkInputFilename) )
 	{
 		cerr << "warning: cannot rename temporary output spk file (current name: '" << spkOutputFilename << "')." << endl;
 	}

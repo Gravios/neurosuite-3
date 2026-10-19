@@ -108,6 +108,7 @@
 
 #include <iostream>
 #include <neurosuite/core/fileio64.hpp>
+#include <neurosuite/core/fileops.hpp>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -614,7 +615,7 @@ int main(int argc, char *argv[])
 
         // atomic rename
         auto atomicRename = [](const string &tmp, const string &dst) {
-            if (rename(tmp.c_str(), dst.c_str()) != 0) {
+            if (!neurosuite::core::replaceFile(tmp, dst)) {
                 fprintf(stderr, "error: cannot rename %s -> %s\n",
                         tmp.c_str(), dst.c_str());
                 exit(EXIT_FAILURE);

@@ -53,6 +53,7 @@
 #include "process_spikegrouper.h"
 #include <utility>
 #include <neurosuite/core/fileio64.hpp>
+#include <neurosuite/core/fileops.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -1297,8 +1298,9 @@ static void writeYamlGroups(const string& yamlPath,
     fout.close();
 
     // Atomic replace
-    if (rename(tmpPath.c_str(), yamlPath.c_str()) != 0) {
-        perror("rename");
+    std::string replaceError;
+    if (!neurosuite::core::replaceFile(tmpPath, yamlPath, &replaceError)) {
+        fprintf(stderr, "rename: %s\n", replaceError.c_str());
         exit(1);
     }
 }

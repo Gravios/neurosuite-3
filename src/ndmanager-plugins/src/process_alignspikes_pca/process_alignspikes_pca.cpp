@@ -85,6 +85,7 @@
  *****************************************************************************/
 
 #include <algorithm>
+#include <neurosuite/core/fileops.hpp>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -206,7 +207,7 @@ static bool writeFileAtomic(const std::string& path, std::initializer_list<Block
     for (const Block& b : blocks)
         if (ok && b.bytes > 0) ok = (std::fwrite(b.data, 1, b.bytes, f) == b.bytes);
     ok = (std::fclose(f) == 0) && ok;
-    if (ok) ok = (std::rename(tmp.c_str(), path.c_str()) == 0);
+    if (ok) ok = (neurosuite::core::replaceFile(tmp, path));
     if (!ok) std::remove(tmp.c_str());
     return ok;
 }
@@ -932,7 +933,7 @@ int main(int argc, char** argv) {
             std::fclose(sfIn);
             if (std::fclose(sfOut) != 0)
                 die("spk write failed during resort");
-            if (std::rename((spkPath + ".tmp").c_str(), spkPath.c_str()) != 0)
+            if (!neurosuite::core::replaceFile((spkPath + ".tmp"), spkPath))
                 die("cannot replace " + spkPath + " with the resorted copy");
         }
         std::printf("  wrote: %s, %s%s\n", resPath.c_str(), cluPath.c_str(),

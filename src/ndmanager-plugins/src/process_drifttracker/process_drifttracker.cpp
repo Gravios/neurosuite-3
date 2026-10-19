@@ -121,6 +121,7 @@
  ***************************************************************************/
 
 #include <algorithm>
+#include <neurosuite/core/fileops.hpp>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -130,8 +131,6 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
-#include <unistd.h>     // patch55: fsync, getpid
-#include <sys/stat.h>   // patch55: fsync error reporting
 #include <limits>
 #include <map>
 #include <set>
@@ -705,7 +704,7 @@ bool readSpkRow(std::FILE* f, size_t spikeIdx, int nChan, int nSamp,
 bool writeCluFile(const std::string& path, const std::vector<int32_t>& ids)
 {
     std::set<int32_t> uniq(ids.begin(), ids.end());
-    const std::string tmpPath = path + ".tmp." + std::to_string((long)getpid());
+    const std::string tmpPath = path + ".tmp." + std::to_string(neurosuite::core::processId());
 
     std::FILE* f = std::fopen(tmpPath.c_str(), "wb");
     if (!f) {
@@ -718,7 +717,7 @@ bool writeCluFile(const std::string& path, const std::vector<int32_t>& ids)
         std::fprintf(stderr, "ERROR: %s on %s: %s\n",
                      what, tmpPath.c_str(), std::strerror(errno));
         std::fclose(f);
-        ::unlink(tmpPath.c_str());
+        std::remove(tmpPath.c_str());
         return false;
     };
 
@@ -731,21 +730,22 @@ bool writeCluFile(const std::string& path, const std::vector<int32_t>& ids)
         return cleanupAndFail("fflush failed");
     // fsync the data before closing — guarantees durability so a crash
     // between fclose() and the rename() can't lose the new content.
-    if (::fsync(fileno(f)) != 0)
+    if (!neurosuite::core::syncFile(f))
         return cleanupAndFail("fsync failed");
     if (std::fclose(f) != 0) {
         // f is already closed; nothing to clean up on the FILE side.
         std::fprintf(stderr, "ERROR: fclose failed on %s: %s\n",
                      tmpPath.c_str(), std::strerror(errno));
-        ::unlink(tmpPath.c_str());
+        std::remove(tmpPath.c_str());
         return false;
     }
     // Atomic rename: POSIX guarantees the destination is replaced
     // in a single inode swap, never half-replaced.
-    if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
+    std::string replaceError;
+    if (!neurosuite::core::replaceFile(tmpPath, path, &replaceError)) {
         std::fprintf(stderr, "ERROR: rename %s → %s failed: %s\n",
-                     tmpPath.c_str(), path.c_str(), std::strerror(errno));
-        ::unlink(tmpPath.c_str());
+                     tmpPath.c_str(), path.c_str(), replaceError.c_str());
+        std::remove(tmpPath.c_str());
         return false;
     }
     return true;
@@ -2109,7 +2109,7 @@ bool writeReport(const Params& p,
     // patch55 — write to a sibling tempfile, then atomic rename onto
     // the destination.  Same rationale as writeCluFile: never leave a
     // partial YAML report on disk if anything fails mid-write.
-    const std::string tmpPath = path + ".tmp." + std::to_string((long)getpid());
+    const std::string tmpPath = path + ".tmp." + std::to_string(neurosuite::core::processId());
     std::ofstream f(tmpPath);
     if (!f) {
         std::fprintf(stderr, "ERROR: cannot create tempfile %s: %s\n",
@@ -2252,13 +2252,14 @@ bool writeReport(const Params& p,
     if (!f) {
         std::fprintf(stderr, "ERROR: close failed on %s: %s\n",
                      tmpPath.c_str(), std::strerror(errno));
-        ::unlink(tmpPath.c_str());
+        std::remove(tmpPath.c_str());
         return false;
     }
-    if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
+    std::string replaceError;
+    if (!neurosuite::core::replaceFile(tmpPath, path, &replaceError)) {
         std::fprintf(stderr, "ERROR: rename %s → %s failed: %s\n",
-                     tmpPath.c_str(), path.c_str(), std::strerror(errno));
-        ::unlink(tmpPath.c_str());
+                     tmpPath.c_str(), path.c_str(), replaceError.c_str());
+        std::remove(tmpPath.c_str());
         return false;
     }
     return true;
