@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tidy pandoc's DocBook->Markdown output for MkDocs/Material:
-  * <span class="menuchoice">File > Open</span>  ->  **File > Open**
+  * <span class="menuchoice">File > Open</span> or [File > Open]{.menuchoice}  ->  **File > Open**
   * pandoc fenced <note> divs (:::+ note ... :::+)  ->  Material "!!! note" admonitions
   * other fenced divs (figures/screenshots wrappers)  ->  unwrapped (markers dropped)
 Definition-list ":" lines (single colon) are left untouched.
@@ -12,6 +12,9 @@ import sys
 
 txt = open(sys.argv[1]).read()
 txt = re.sub(r'<span class="menuchoice">(.*?)</span>', r'**\1**', txt, flags=re.S)
+# pandoc >= 3 writes the same span as [File \> Open]{.menuchoice}, which
+# Python-Markdown would print verbatim.
+txt = re.sub(r'\[([^\[\]]*?)\]\{\.menuchoice\}', r'**\1**', txt)
 # pandoc writes injected anchors as empty spans []{#id}; Python-Markdown doesn't
 # grok that, so emit a real HTML anchor it passes through verbatim.
 txt = re.sub(r'\[\]\{#([A-Za-z0-9._-]+)\}', r'<a id="\1"></a>', txt)

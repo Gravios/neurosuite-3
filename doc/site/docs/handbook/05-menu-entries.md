@@ -2,311 +2,311 @@
 
 ## The File Menu {#menu-file}
 
-[File \> Open]{.menuchoice}
+**File \> Open**
 
 :   Opens data files
 
-[File \> Open Recent]{.menuchoice}
+**File \> Open Recent**
 
 :   Opens data files selected from a list of recently edited data files.
 
-[File \> Load Cluster File(s)...]{.menuchoice}
+**File \> Load Cluster File(s)...**
 
 :   Loads multiple cluster files.
 
-[File \> Load Event File(s)...]{.menuchoice}
+**File \> Load Event File(s)...**
 
 :   Loads multiple event files.
 
-[File \> Create Event File...]{.menuchoice}
+**File \> Create Event File...**
 
 :   Creates an event file.
 
-[File \> Load Position File...]{.menuchoice}
+**File \> Load Position File...**
 
 :   Loads a single position file.
 
-[File \> Save]{.menuchoice}
+**File \> Save**
 
 :   Saves the session file.
 
-[File \> Save As]{.menuchoice}
+**File \> Save As**
 
 :   Saves the session file in a new location.
 
-[File \> Print]{.menuchoice}
+**File \> Print**
 
 :   Prints (or exports as PostScript or PDF) each view of the current display in a separate page.
 
-[File \> Properties]{.menuchoice}
+**File \> Properties**
 
 :   Opens a dialog displaying the properties of the currently opened file. These properties can be edited.
 
-[File \> Close]{.menuchoice}
+**File \> Close**
 
 :   Closes the session (will prompt for saving if necessary).
 
-[File \> Close Cluster File]{.menuchoice}
+**File \> Close Cluster File**
 
 :   Closes the cluster file currently selected in the Units Palette.
 
-[File \> Close Event File]{.menuchoice}
+**File \> Close Event File**
 
 :   Closes the event file currently selected in the Events Palette.
 
-[File \> Close Position File]{.menuchoice}
+**File \> Close Position File**
 
 :   Closes the position file.
 
-[File \> Quit]{.menuchoice}
+**File \> Quit**
 
 :   Quits NeuroScope (will prompt for saving if necessary).
 
 ## The Edit Menu {#menu-edit}
 
-[Edit \> Undo]{.menuchoice}
+**Edit \> Undo**
 
 :   Undoes the last change (for event edition only).
 
-[Edit \> Redo]{.menuchoice}
+**Edit \> Redo**
 
 :   Redoes the last undone change (for event edition only).
 
-[Edit \> Select All]{.menuchoice}
+**Edit \> Select All**
 
 :   Selects all the items in the current palette (channels, clusters or events).
 
-[Edit \> Select All except 0 and 1]{.menuchoice}
+**Edit \> Select All except 0 and 1**
 
 :   Selects all clusters except artefacts (cluster 0) and noise (cluster 1).
 
-[Edit \> Deselect All]{.menuchoice}
+**Edit \> Deselect All**
 
 :   Deselects all the items in the current palette (channels, clusters or events).
 
-[Edit \> Edit Mode]{.menuchoice}
+**Edit \> Edit Mode**
 
 :   Swiches between edit and non edit mode.
 
 ## The Tools Menu {#menu-tools}
 
-[Tools \> Zoom]{.menuchoice}
+**Tools \> Zoom**
 
 :   Allows you to zoom on a point (left click) or area (click and drag); double-click to reset the zoom level to the initial state.
 
-[Tools \> Draw Time Line]{.menuchoice}
+**Tools \> Draw Time Line**
 
 :   Allows you to temporarily draw a vertical line where you left click.
 
-[Tools \> Select Channels]{.menuchoice}
+**Tools \> Select Channels**
 
 :   Allows you to select channels in order to act on them (move them to compensate for an offset, change the amplitude...)
 
-[Tools \> Measure]{.menuchoice}
+**Tools \> Measure**
 
 :   Allows you to measure the time and the voltage between two points.
 
-[Tools \> Select Time]{.menuchoice}
+**Tools \> Select Time**
 
 :   Allows you to refine the time frame used to display the data.
 
-[Tools \> Select Events]{.menuchoice}
+**Tools \> Select Events**
 
 :   Allows you to select one event in order to move it or delete it.
 
-[Tools \> Add Event]{.menuchoice}
+**Tools \> Add Event**
 
 :   Allows you to add a new event (select the type of event from the submenu).
 
 ## The Channels Menu {#menu-Channels}
 
-[Channels \> Show Channels]{.menuchoice}
+**Channels \> Show Channels**
 
 :   Shows the selected channels.
 
-[Channels \> Hide Channels]{.menuchoice}
+**Channels \> Hide Channels**
 
 :   Hides the selected channels.
 
-[Channels \> Move Channels to New Group]{.menuchoice}
+**Channels \> Move Channels to New Group**
 
 :   Moves the selected channels to a newly created group (either an anatomical group or a spike group).
 
-[Channels \> Remove Channels from Group]{.menuchoice}
+**Channels \> Remove Channels from Group**
 
 :   Removes the selected channels from their current group and puts them in the Undefined Group (the "?" group). This does not actually remove the channels from the data file.
 
-[Channels \> Discard Channels]{.menuchoice}
+**Channels \> Discard Channels**
 
 :   Removes the selected channels from their current group and puts them in the Discarded Group (simultaneously acts on the anatomical and spike groups). This does not actually remove the channels from the data file.
 
-[Channels \> Synchronize Groups]{.menuchoice}
+**Channels \> Synchronize Groups**
 
 :   Synchronizes the anatomical and spike groups. The existing spike groups are discarded and replaced with the anatomical groups.
 
-[Channels \> Color by Anatomical Groups]{.menuchoice}
+**Channels \> Color by Anatomical Groups**
 
 :   Colors the channels using the anatomical group colors.
 
-[Channels \> Color by Spike Groups]{.menuchoice}
+**Channels \> Color by Spike Groups**
 
 :   Colors the channels using the spike group colors.
 
 ## The Units Menu {#menu-clusters}
 
-[Units \> Vertical Lines]{.menuchoice}
+**Units \> Vertical Lines**
 
 :   Draws spikes for selected clusters as long vertical lines.
 
-[Units \> Raster]{.menuchoice}
+**Units \> Raster**
 
 :   Draws spikes for selected clusters as rasters below the local field potential traces.
 
-[Units \> Waveforms]{.menuchoice}
+**Units \> Waveforms**
 
 :   Draws spike waveforms for selected clusters directly on the local field potential traces.
 
-[Units \> Next Spike]{.menuchoice}
+**Units \> Next Spike**
 
 :   Moves the time window to the next spike fired by one of the currently activated clusters.
 
-[Units \> Previous Spike]{.menuchoice}
+**Units \> Previous Spike**
 
 :   Moves the time window to the previous spike fired by one of the currently activated clusters.
 
 ## The Events Menu {#menu-events}
 
-[Events \> Next Event]{.menuchoice}
+**Events \> Next Event**
 
 :   Moves the time window to the next activated event.
 
-[Events \> Previous Event]{.menuchoice}
+**Events \> Previous Event**
 
 :   Moves the time window to the previous activated event.
 
-[Events \> Remove Event]{.menuchoice}
+**Events \> Remove Event**
 
 :   Removes the currently selected event.
 
 ## The Positions Menu {#menu-positions}
 
-[Positions \> Show Position View]{.menuchoice}
+**Positions \> Show Position View**
 
 :   Shows or hides the position view.
 
 ## The Traces Menu {#menu-traces}
 
-[Traces \> Multiple Columns]{.menuchoice}
+**Traces \> Multiple Columns**
 
 :   Toggles between single and multiple column mode. In mutiple column mode, each anatomical group is represented on a separate column.
 
-[Traces \> Grey-Scale]{.menuchoice}
+**Traces \> Grey-Scale**
 
 :   Displays the channels in gray-scale.
 
-[Traces \> Increase All Channel Amplitudes]{.menuchoice}
+**Traces \> Increase All Channel Amplitudes**
 
 :   Increases the amplitudes of all the channels (both visible and hidden).
 
-[Traces \> Decrease All Channel Amplitudes]{.menuchoice}
+**Traces \> Decrease All Channel Amplitudes**
 
 :   Decreases the amplitudes of all the channels (both visible and hidden).
 
-[Traces \> Increase Selected Channel Amplitudes]{.menuchoice}
+**Traces \> Increase Selected Channel Amplitudes**
 
 :   Increases the amplitudes of the selected channels.
 
-[Traces \> Decrease Selected Channel Amplitudes]{.menuchoice}
+**Traces \> Decrease Selected Channel Amplitudes**
 
 :   Decreases the amplitudes of the selected channels.
 
-[Traces \> Reset Selected Channel Amplitude]{.menuchoice}
+**Traces \> Reset Selected Channel Amplitude**
 
 :   Resets the amplitudes of the selected channels.
 
-[Traces \> Reset Selected Channel Offsets]{.menuchoice}
+**Traces \> Reset Selected Channel Offsets**
 
 :   Resets the offsets of the selected channels to the default offsets.
 
-[Traces \> Set Current Offsets as Defaults]{.menuchoice}
+**Traces \> Set Current Offsets as Defaults**
 
 :   Sets the current offsets as the default offsets to be stored in the parameter file.
 
-[Traces \> Set Default Offsets to Zero]{.menuchoice}
+**Traces \> Set Default Offsets to Zero**
 
 :   Sets the default offsets to be stored in the parameter file to zero.
 
-[Traces \> Show Labels]{.menuchoice}
+**Traces \> Show Labels**
 
 :   Shows or hides the labels (channel IDs and gains).
 
 ## The Displays Menu {#menu-displays}
 
-[Displays \> New Display]{.menuchoice}
+**Displays \> New Display**
 
 :   Creates a new Display.
 
-[Displays \> Rename Active Display]{.menuchoice}
+**Displays \> Rename Active Display**
 
 :   Brings a dialog enabling the user to enter a new label for the currently active display.
 
-[Displays \> Close Active Display]{.menuchoice}
+**Displays \> Close Active Display**
 
 :   Closes the currently active display; when there is only one display, closes all data files as well (will prompt for saving if necessary).
 
 ## The Settings Menu {#menu-settings}
 
-[Settings \> Show Toolbar]{.menuchoice}
+**Settings \> Show Toolbar**
 
 :   Shows or hides the Toolbar.
 
-[Settings \> Show Tools]{.menuchoice}
+**Settings \> Show Tools**
 
 :   Shows or hides the Tools.
 
-[Settings \> Show Parameters]{.menuchoice}
+**Settings \> Show Parameters**
 
 :   Shows or hides the Parameter Bar.
 
-[Settings \> Show Status Bar]{.menuchoice}
+**Settings \> Show Status Bar**
 
 :   Shows or hides the Status Bar.
 
-[Settings \> Display Calibration]{.menuchoice}
+**Settings \> Display Calibration**
 
 :   Shows or hides a calibration bar for channel 0 (voltage and gain are indicated).
 
-[Settings \> Configure Shortcuts]{.menuchoice}
+**Settings \> Configure Shortcuts**
 
 :   Lets you configure the shortcuts.
 
-[Settings \> Configure neuroscope]{.menuchoice}
+**Settings \> Configure neuroscope**
 
 :   Lets you configure a number of settings including default behaviors.
 
 ## The Help Menu {#menu-help}
 
-[Help \> neuroscope Handbook]{.menuchoice}
+**Help \> neuroscope Handbook**
 
 :   Opens this user manual in the Help Center.
 
-[Help \> Keyboard Shortcuts...]{.menuchoice}
+**Help \> Keyboard Shortcuts...**
 
 :   Opens a list of all keyboard shortcuts and mouse bindings and the commands they trigger. See [Keyboard and Mouse Shortcuts](./02-using-neuroscope.md#shortcuts).
 
-[Help \> What's this?]{.menuchoice}
+**Help \> What's this?**
 
 :   Activates the context help tool.
 
-[Help \> Report Bug]{.menuchoice}
+**Help \> Report Bug**
 
 :   Helps you compose an e-mail message to report a bug to the author of NeuroScope.
 
-[Help \> About neuroscope]{.menuchoice}
+**Help \> About neuroscope**
 
 :   Shows information about the authors of and contributors to NeuroScope.
 
-[Help \> About KDE]{.menuchoice}
+**Help \> About KDE**
 
 :   Shows information about the authors of and contributors to KDE.
 

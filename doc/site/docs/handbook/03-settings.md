@@ -1,6 +1,6 @@
 # Settings
 
-Selecting [Settings \> Configure neuroscope]{.menuchoice} will open the Settings Dialog. This lets you configure several default behaviors of NeuroScope.
+Selecting **Settings \> Configure neuroscope** will open the Settings Dialog. This lets you configure several default behaviors of NeuroScope.
 
 <a id="settings-general"></a>General
 
