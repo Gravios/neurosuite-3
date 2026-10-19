@@ -16,6 +16,7 @@
  ***************************************************************************/
 
 #include <cstdio>
+#include <neurosuite/core/fileops.hpp>
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
@@ -34,7 +35,7 @@ static bool convertRes(const std::string& path)
     fclose(f);
 
     std::string bak = path + ".bak";
-    rename(path.c_str(), bak.c_str());
+    neurosuite::core::replaceFile(path, bak);
 
     FILE* w = fopen(path.c_str(), "wb");
     if (!w) { fprintf(stderr, "Cannot write %s\n", path.c_str()); return false; }
@@ -68,7 +69,7 @@ static bool convertFet(const std::string& path, int& nDimOut, int64_t& nSpikesOu
     }
 
     std::string bak = path + ".bak";
-    rename(path.c_str(), bak.c_str());
+    neurosuite::core::replaceFile(path, bak);
 
     FILE* w = fopen(path.c_str(), "wb");
     if (!w) { fprintf(stderr, "Cannot write %s\n", path.c_str()); return false; }
@@ -100,7 +101,7 @@ static bool convertClu(const std::string& path)
     fclose(f);
 
     std::string bak = path + ".bak";
-    rename(path.c_str(), bak.c_str());
+    neurosuite::core::replaceFile(path, bak);
 
     FILE* w = fopen(path.c_str(), "wb");
     if (!w) { fprintf(stderr, "Cannot write %s\n", path.c_str()); return false; }

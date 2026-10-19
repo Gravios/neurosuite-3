@@ -15,6 +15,7 @@
 // identically.  The seven file-static helpers are realign-only and move with it.
 //
 #include <algorithm>
+#include <neurosuite/core/fileops.hpp>
 #include <neurosuite/core/fileio64.hpp>
 #include <functional>
 #include <numeric>
@@ -3975,11 +3976,12 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
         return false;
     }
 
-    // Atomically replace the target .spk.  std::rename overwrites in place on a
+    // Atomically replace the target .spk.  replaceFile overwrites in place on a
     // single filesystem (tmp is a sibling of the target), so a failure leaves the
-    // original .spk untouched rather than deleting it first.
-    if (std::rename(tmpPath.toLocal8Bit().constData(),
-                    targetSpkPath.toLocal8Bit().constData()) != 0) {
+    // original .spk untouched rather than deleting it first.  (std::rename
+    // would refuse an existing target on Windows.)
+    if (!neurosuite::core::replaceFile(tmpPath.toLocal8Bit().constData(),
+                                       targetSpkPath.toLocal8Bit().constData())) {
         QFile::remove(tmpPath);
         log << "re-extract: could not install rebuilt .spk over " << targetSpkPath
             << " (original left in place)";

@@ -307,4 +307,6 @@ install(FILES klusters.desktop DESTINATION share/applications/)
 # Standalone binary converter: text res/fet/clu → binary
 # ---------------------------------------------------------------------------
 add_executable(klusters_convert_binary convert_to_binary.cpp)
+# header-only neurosuite/core/fileops.hpp (replaceFile for the .bak copies)
+target_include_directories(klusters_convert_binary PRIVATE "${CMAKE_SOURCE_DIR}/src/libneurosuite-core/src")
 install(TARGETS klusters_convert_binary DESTINATION bin)

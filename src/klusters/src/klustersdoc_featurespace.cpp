@@ -16,6 +16,7 @@
  ***************************************************************************/
 
 #include "klustersdoc.h"
+#include <neurosuite/core/fileops.hpp>
 #include "klustersview.h"
 #include "data.h"
 #include "pca_row_projection.h"     // klusters::projectSpikeOntoPca — the one projection kernel
@@ -401,7 +402,8 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
 
     auto promote = [](const QString& from, const QString& to) {
         QFile::remove(to);
-        return std::rename(from.toLocal8Bit().constData(), to.toLocal8Bit().constData()) == 0;
+        return neurosuite::core::replaceFile(from.toLocal8Bit().constData(),
+                                             to.toLocal8Bit().constData());
     };
     bool promoted = true;
     if (!ownWaveforms) {
@@ -734,8 +736,8 @@ bool KlustersDoc::followMovedSpikes(QString& logOut)
                 fetOk = neurofileio::writeFetBinary(tmp.toStdString(), full.nFeatures, full.values);
                 if (fetOk) {
                     QFile::remove(fetPending);
-                    fetOk = std::rename(tmp.toLocal8Bit().constData(),
-                                        fetPending.toLocal8Bit().constData()) == 0;
+                    fetOk = neurosuite::core::replaceFile(tmp.toLocal8Bit().constData(),
+                                                          fetPending.toLocal8Bit().constData());
                 }
                 if (!fetOk) QFile::remove(tmp);
             }

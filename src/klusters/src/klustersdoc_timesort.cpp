@@ -17,6 +17,7 @@
  ***************************************************************************/
 
 #include "klustersdoc.h"
+#include <neurosuite/core/fileops.hpp>
 
 #include <QDir>
 #include <neurosuite/core/fileio64.hpp>
@@ -238,9 +239,9 @@ bool KlustersDoc::applyTimeSort(const TimeSortPlan& plan, QString& logOut)
         const QString& path = plan.files[i].path;
         const QString  bak  = path + QStringLiteral(".timesort.bak");
         QFile::remove(bak);
-        if (std::rename(local(path).constData(), local(bak).constData()) != 0) { ok = false; break; }
-        if (std::rename(local(tmps[i]).constData(), local(path).constData()) != 0) {
-            if (std::rename(local(bak).constData(), local(path).constData()) != 0)
+        if (!neurosuite::core::replaceFile(local(path).constData(), local(bak).constData())) { ok = false; break; }
+        if (!neurosuite::core::replaceFile(local(tmps[i]).constData(), local(path).constData())) {
+            if (!neurosuite::core::replaceFile(local(bak).constData(), local(path).constData()))
                 stranded << QFileInfo(bak).fileName();
             ok = false;
             break;
@@ -252,7 +253,7 @@ bool KlustersDoc::applyTimeSort(const TimeSortPlan& plan, QString& logOut)
             const QString& path = plan.files[*it].path;
             const QString  bak  = path + QStringLiteral(".timesort.bak");
             QFile::remove(path);
-            if (std::rename(local(bak).constData(), local(path).constData()) != 0)
+            if (!neurosuite::core::replaceFile(local(bak).constData(), local(path).constData()))
                 stranded << QFileInfo(bak).fileName();
         }
         dropTmps();
