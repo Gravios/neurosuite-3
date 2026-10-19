@@ -12,7 +12,10 @@ the time-ordered index; the design docs are the durable reference.
 > **Note on file naming.** Several documents below predate the
 > [variant naming convention](../ndmanager-plugins/formats/naming.md) and
 > describe the retired `.spkD` / `.fetD` / `.pcaD` "D-suffix" scheme (and the
-> bash shims that bridged it). They are kept as historical design records;
+> bash shims that bridged it) or untagged `.spk.N`-style names:
+> `reextractspikes-v1.md`, `reextract-v2.md`, `decomposecollisions.md`,
+> `template-yaml.md` and `subtractspikes-botm.md`. Several of these carry a
+> dated status banner. They are kept as historical design records;
 > for the current naming — `<base>.<type>.<method>.<group>` — see the naming
 > reference.
 
@@ -30,7 +33,7 @@ the time-ordered index; the design docs are the durable reference.
 | [`template-yaml.md`](template-yaml.md) | Session YAML template parameter-block refresh |
 | [`runchunkedcem-drivers.md`](runchunkedcem-drivers.md) | kiloklustakwik's two `RunChunkedCEM` drivers (`-ChunkFile` vs `-ChunkMinutes`) and where they differ |
 | [`kk-prior.md`](kk-prior.md) | Per-probe empirical KK priors design (probe identity, hashes, friendly names) |
-| [`ndm-start-root.md`](ndm-start-root.md) | ndmanager Pipeline tab — editable node graph with `ndm_start` as sticky root, plus YAML-driven dispatcher |
+| [`ndm-start-root.md`](ndm-start-root.md) | ndmanager Pipeline tab — editable node graph with `ndm_start` as sticky root, plus the `ndm_start` dispatcher (reads `<session>.ndm.<name>.pipeline` first, falls back to the session YAML's `programs:`) |
 | [`optimization.md`](optimization.md) | Hardware and OS tuning recipe |
 | [`substrate-labeling-refactor.md`](substrate-labeling-refactor.md) | Split the spike substrate from cluster labeling; unify flat + hierarchical as an N-layer model |
 | [`errormatrix-compute-optimization.md`](errormatrix-compute-optimization.md) | Error-matrix compute — profiling and optimization roadmap |
