@@ -19,6 +19,7 @@
  ***************************************************************************/
 
 #include <sstream>
+#include <vector>
 
 #include "sonfile.h"
 #include "sonadcchannels.h"
@@ -178,7 +179,9 @@ void SONADCChannels::write(ostream& out,bool reverse) const
 
 		// Rearrange the channels (sequentially -> multiplexed)
 
-		int32_t cumulativeNSamplesRead[nChannels],maxNSamplesRead = 0;
+		// A vector, not a variable-length array: MSVC has none.
+		std::vector<int32_t> cumulativeNSamplesRead(nChannels);
+		int32_t maxNSamplesRead = 0;
 		cumulativeNSamplesRead[0] = 0;
 		for ( uint16_t i = 1 ; i < nChannels ; ++i ) cumulativeNSamplesRead[i] = cumulativeNSamplesRead[i-1]+nSamplesRead[i-1];
 		if ( verbose ) cout << "WRITE # samples = " << currentSampleInBuffer << endl;
