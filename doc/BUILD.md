@@ -21,15 +21,16 @@ The authoritative source for all of this is the top-level
 |---|---|---|
 | CMake | ≥ 3.22 (policy range to 3.31) | `cmake_minimum_required(VERSION 3.22...3.31)` |
 | C++ compiler | C++20 | `CMAKE_CXX_STANDARD 20`, extensions off; GCC 12+/Clang 15+ |
-| C compiler | C11 | for the C sources in nphys-data / plugins |
+| C compiler | C11 | for the C sources in the plugins and kiloklustakwik (nphys-data is `LANGUAGES NONE`) |
 | Qt | 6, ≥ 6.4 | each GUI subproject does `find_package(Qt6 6.4 …)` |
 | Build tool | Ninja or Make | Ninja is what CI uses (`-G Ninja`) |
 
 The reference CI toolchain is **Ubuntu 24.04 with the distribution Qt6**; CI
 also builds and tests on Ubuntu 25.10, 26.04 LTS and 26.10, which cover Qt 6.9,
-6.10 and 6.11, GCC 15, CMake 4 and Python 3.13/3.14 (see §8). macOS (Homebrew `qt@6`) and Windows (vcpkg + Qt for MSVC; see below) are
-supported for configuration; the step-by-step installation for every platform
-is [INSTALL.md](INSTALL.md).
+6.10 and 6.11, GCC 15, CMake 4 and Python 3.13/3.14 (see §8). Windows builds natively with MSVC (vcpkg + Qt for MSVC; see below),
+everything except KiloKlustaKwik; macOS (Homebrew `qt@6`) configures and builds
+but is not checked in CI. The step-by-step installation for every platform is
+[INSTALL.md](INSTALL.md).
 
 Let CMake install the system dependencies for you with `-DNS_INSTALL_DEPS=ON`
 (apt on Linux, Homebrew on macOS, vcpkg and aqtinstall on Windows); the package
@@ -121,7 +122,9 @@ All are passed with `-D` at configure time.
 | `NS_DEPS_HDF5` / `NS_DEPS_FFMPEG` | `OFF` | Windows `NS_INSTALL_DEPS`: also install HDF5 / FFmpeg with vcpkg |
 | `NS_DEPLOY_RUNTIME` | `ON` | Windows: `cmake --install` also copies the Qt DLLs and plugins (windeployqt), vcpkg's DLLs and the oneAPI runtime next to the programs, so the install folder runs as it is |
 | `NS_ADD_TO_PATH` | `ON` | Windows: `cmake --install` puts the installed `bin` on the current user's PATH (`scripts/windows-path.ps1`; skipped with `DESTDIR`) |
-| `NS_ZEN_OPT` | (optional module) | host tuning (`-march=native`, fast-math, LTO) via `cmake/ZenOptimizations.cmake`; pass `OFF` when cross-compiling |
+| `NS_ZEN_OPT` | `ON` | host tuning from `cmake/ZenOptimizations.cmake` for Release/RelWithDebInfo: `-funroll-loops` and LTO (where the toolchain supports it) globally, and `-ffast-math` through the `ns_fast_math` interface target, which only the targets that link it get (KiloKlustaKwik); `OFF` disables all of it |
+| `NS_NATIVE_ARCH` | `ON` | with `NS_ZEN_OPT`, compile Release/RelWithDebInfo for the build host's ISA (`-march=native`); pass `OFF` for a portable or cross build |
+| `NS_FIBER_KIT_ROOT` | — | path to a fiber-kit checkout; `core_shared_contract` then also compares the shared vector tables and `contract.yaml` with it (§6) |
 
 ---
 
@@ -259,10 +262,11 @@ rationale is in the `NS_ASAN` block of `CMakeLists.txt`.
 <details>
 <summary>Reproducing CI locally</summary>
 
-Two workflows run on `main` and on pull requests
-([`.github/workflows/`](../.github/workflows/)):
+Two workflows ([`.github/workflows/`](../.github/workflows/)): `ci.yml` runs on
+pushes to `main` and pull requests into it; `docs.yml` runs on pushes to `main`
+and on manual dispatch only.
 
-- **`ci.yml`** has three jobs.
+- **`ci.yml`** has three jobs, which run side by side.
   - **`lint`** runs [`scripts/lint.sh`](../scripts/lint.sh): `bash -n`, ruff's
     defect rules and the build invariants, with no build. Run it locally the
     same way.
@@ -295,8 +299,9 @@ Two workflows run on `main` and on pull requests
     HDF5 and FFmpeg are not installed, so `process_aomconvert` and
     `process_extractleds` are skipped; libsamplerate is not installed, so
     `process_resample` compiles its bundled copy. KiloKlustaKwik is skipped
-    (`-DNS_SKIP_KILOKLUSTAKWIK=ON`), and the `ndm_*` bash steps run under
-    WSL2 for now. It builds without tests and does not fail the run until it
+    (`-DNS_SKIP_KILOKLUSTAKWIK=ON`); on Windows it still needs WSL2. The
+    `ndm_*` steps run on Windows through their `.bat` launchers and Git
+    Bash. It builds without tests and does not fail the run until it
     has passed once.
 
 - **`docs.yml`** — builds the documentation site and deploys it to GitHub Pages.
