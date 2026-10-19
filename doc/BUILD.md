@@ -56,7 +56,12 @@ cmake --build --preset windows
 cmake --install build
 ```
 
-The install goes to `C:\ns3`, with the Qt and vcpkg DLLs beside the programs.
+The install goes to `C:\ns3`, with the Qt and vcpkg DLLs beside the programs,
+and adds `C:\ns3\bin` to your user PATH, so `klusters`, `neuroscope`,
+`ndmanager` and the `process_*` programs run from any prompt opened afterwards
+(no administrator rights; `-DNS_ADD_TO_PATH=OFF` to skip; undo with
+`powershell -ExecutionPolicy Bypass -File scripts\windows-path.ps1 -Remove`).
+Installing again to another prefix moves the entry rather than adding a second.
 
 Options: `-WithHdf5` (`process_aomconvert`), `-WithFfmpeg`
 (`process_extractleds`; a long vcpkg build), `-WithPythonPackages` (PyYAML,
@@ -109,6 +114,7 @@ All are passed with `-D` at configure time.
 | `NS_QT_ROOT` / `NS_QT_VERSION` | `C:/Qt` / `6.8.3` | Windows `NS_INSTALL_DEPS`: where and which Qt to install when CMake finds none |
 | `NS_DEPS_HDF5` / `NS_DEPS_FFMPEG` | `OFF` | Windows `NS_INSTALL_DEPS`: also install HDF5 / FFmpeg with vcpkg |
 | `NS_DEPLOY_RUNTIME` | `ON` | Windows: `cmake --install` also copies the Qt DLLs and plugins (windeployqt), vcpkg's DLLs and the oneAPI runtime next to the programs, so the install folder runs as it is |
+| `NS_ADD_TO_PATH` | `ON` | Windows: `cmake --install` puts the installed `bin` on the current user's PATH (`scripts/windows-path.ps1`; skipped with `DESTDIR`) |
 | `NS_ZEN_OPT` | (optional module) | host tuning (`-march=native`, fast-math, LTO) via `cmake/ZenOptimizations.cmake`; pass `OFF` when cross-compiling |
 
 ---

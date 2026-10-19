@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Windows: the install puts the programs on PATH](#2026-10-19--windows-the-install-puts-the-programs-on-path) |
 | 2026-10-19 | [Windows: one script installs the build dependencies](#2026-10-19--windows-one-script-installs-the-build-dependencies) |
 | 2026-10-19 | [Windows: the ndmanager-plugins programs build natively, and CI checks it](#2026-10-19--windows-the-ndmanager-plugins-programs-build-natively-and-ci-checks-it) |
 | 2026-10-19 | [Windows: `cmake --install` gives a folder that runs](#2026-10-19--windows-cmake---install-gives-a-folder-that-runs) |
@@ -81,6 +82,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Windows: the install puts the programs on PATH
+
+<details>
+<summary>Details</summary>
+
+- `cmake --install` on Windows now adds `<prefix>\bin` to the current user's
+  PATH, so Klusters, NeuroScope, NDManager and the `process_*` programs start
+  from any prompt opened afterwards. `cmake/NsWindowsPath.cmake` runs
+  `scripts/windows-path.ps1 -Add` after the DLL deploy step.
+- The script edits `HKCU\Environment` only (no administrator rights), keeps
+  PATH a `REG_EXPAND_SZ` with its `%VARIABLES%` unexpanded, and records the
+  directory in `NEUROSUITE3_BIN`: installing again to the same prefix changes
+  nothing, to another prefix replaces the old entry. `-Remove` takes it off,
+  `-Show` reports it. Off with `-DNS_ADD_TO_PATH=OFF`; skipped for a staged
+  install (`DESTDIR`); a failure is a warning, never an install failure.
+- Checked: the PATH editing logic against nine cases (append, already
+  present in another spelling, moved prefix, removal, empty entries) in
+  PowerShell 7; the install step with a Windows (MinGW) toolchain: run on
+  install, skipped with `DESTDIR` and with the option off, and a failing
+  script only warns. The registry write itself has not run on Windows yet.
+
+</details>
 
 ## 2026-10-19 — Windows: one script installs the build dependencies
 

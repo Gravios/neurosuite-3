@@ -321,6 +321,7 @@ Next, in the "x64 Native Tools Command Prompt for VS 2022", in $RepoRoot :
     cmake --build --preset windows
     cmake --install build
 
-The programs are then in C:\ns3\bin, with their DLLs.  For the Intel GPU
+The programs are then in C:\ns3\bin, with their DLLs, and on your PATH
+(in prompts opened afterwards).  For the Intel GPU
 build use the oneAPI prompt and the windows-sycl preset instead.
 "@

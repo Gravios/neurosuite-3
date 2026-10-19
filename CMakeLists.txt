@@ -470,6 +470,9 @@ ns_refresh_desktop_caches()
 # subproject's install rules (declaration order); a no-op elsewhere.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/NsWindowsDeploy.cmake)
 ns_windows_deploy()
+# After the deploy step, so the folder put on PATH is complete.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/NsWindowsPath.cmake)
+ns_windows_add_to_path()
 
 # ---------------------------------------------------------------------------
 # Explicit build-time dependencies for parallel builds (belt-and-suspenders)
